@@ -246,7 +246,7 @@ RELEASE_ARGS=(
 
 ASSETS=(
     "$BIN"
-    "$BIN.sha256"
+    "$TMP/$(basename "$BIN").sha256"
     "$TMP/CHECKSUMS"
     "$TMP/sbom.json"
     "$UNIFIED"
