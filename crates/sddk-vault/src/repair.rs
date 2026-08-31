@@ -372,9 +372,7 @@ mod tests {
         let queue = load_repair_queue(&path).unwrap();
         // The tampered entry is loaded under the tampered key, original key is gone
         assert!(
-            queue
-                .get("p-52b95ef55999f9de/cycle-44-build-remediate-transition/VAULT003/test-node")
-                .is_none(),
+            !queue.contains_key("p-52b95ef55999f9de/cycle-44-build-remediate-transition/VAULT003/test-node"),
             "tampered queue must not have entry under original key"
         );
     }
