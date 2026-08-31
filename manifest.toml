@@ -1,6 +1,6 @@
 [pack]
 id = "sddk-framework"
-version = "1.61.0"
+version = "1.62.0"
 schema_version = 2
 compatibility = ">=1.91"
 risk = "medium"

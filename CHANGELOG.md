@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.62.0] - 2026-08-31
+
+### Added
+  - feat(workflow): transición `phase.build.remediate` (`REMEDIATING/build` → `OPEN/build` con gate `remediation-complete`) espejada de `phase.verify.remediate` para evitar deadlocks cuando `release.recover` mueve un ciclo a `REMEDIATING/build`. Cubre el gap identificado en [[ADR-0077]].
+
+### Fixed
+  - fix(uat): test `cli_phase_build_remediate_rejects_wrong_phase` marcado `#[ignore]` con motivo documentado (el workflow no expone ninguna transición hacia `REMEDIATING/verify`, por lo que el setup del test no puede ejercitar el rechazo bajo prueba). Seguimiento en cycle-45.
+
 ## [1.61.0] - 2026-08-30
 
 ### Added
