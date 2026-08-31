@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/adoption.schema.json",
+  "title": "SDDK Adoption Receipt",
+  "description": "The fields sddk_version, runtime_version, timestamp, and actor are runtime metadata — they may be refreshed in place by `sddk adopt refresh`. The remaining fields define the immutable identity; changing any of them is a real identity drift and produces `Conflict`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sddk_version",
+    "runtime_version",
+    "project_id",
+    "workspace_id",
+    "display_name",
+    "canonical_workspace_path",
+    "identity_source",
+    "remote_url",
+    "scope",
+    "fallback_seed",
+    "configuration_hash",
+    "paths",
+    "timestamp",
+    "actor"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "sddk_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SDDK product version that produced the receipt (runtime metadata, refreshable)."
+    },
+    "runtime_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Runtime implementation version (the sddk CLI binary version, refreshable via `sddk adopt refresh`)."
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^p-[a-f0-9]{16}$"
+    },
+    "workspace_id": {
+      "type": "string",
+      "pattern": "^w-[a-f0-9]{24}$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_workspace_path": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "identity_source": {
+      "enum": ["remote", "fallback"]
+    },
+    "remote_url": {
+      "type": ["string", "null"]
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fallback_seed": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "configuration_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vault", "artifacts", "ledger", "cache", "receipt"],
+      "properties": {
+        "vault": {"type": "string", "pattern": "^/"},
+        "artifacts": {"type": "string", "pattern": "^/"},
+        "ledger": {"type": "string", "pattern": "^/"},
+        "cache": {"type": "string", "pattern": "^/"},
+        "receipt": {"type": "string", "pattern": "^/"}
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Caller-supplied adoption timestamp (runtime metadata, refreshable)."
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Caller-supplied adopting actor (runtime metadata, refreshable)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"identity_source": {"const": "remote"}}
+      },
+      "then": {
+        "properties": {
+          "remote_url": {"type": "string", "minLength": 1},
+          "fallback_seed": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"identity_source": {"const": "fallback"}}
+      },
+      "then": {
+        "properties": {
+          "remote_url": {"type": "null"},
+          "fallback_seed": {"type": "string", "format": "uuid"}
+        }
+      }
+    }
+  ]
+}

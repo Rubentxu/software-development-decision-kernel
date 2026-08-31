@@ -1,0 +1,19 @@
+name: uat-started
+events:
+- event_type: uat.started
+  subjects:
+  - - uat
+    - u1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - cycle:c-1
+  - uat:u1
+  edges_match:
+  - from: uat:u1
+    relation: uat.started
+    to: cycle:c-1

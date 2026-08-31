@@ -1,0 +1,23 @@
+# Esquema de contrato de capítulo
+# Salida de chapter-planner. chapter-writer no escribe sin uno aprobado.
+
+required:
+  id: string
+  title: string
+  prerequisites: [string]        # ids del grafo curricular
+  learning_objectives: [string]  # verbos medibles: explicar, diseñar, diagnosticar...
+  evidence: [string]             # ids en sources.yaml
+  forbidden: [string]            # qué NO debe aparecer
+
+optional:
+  executable_examples: [string]  # rutas a proyectos en examples/
+  diagrams: [string]             # ids de diagramas (diagram-architect)
+  exercises: [string]            # ids de ejercicios (exercise-designer)
+  estimated_pages: integer
+  status: enum                   # DRAFT | READY_FOR_WRITER | BLOCKED
+
+validations:
+  - all_evidence_exists_in_sources
+  - all_prerequisites_present_before
+  - objectives_start_with_measurable_verb
+  - forbidden_not_empty

@@ -1,0 +1,19 @@
+name: view-created
+events:
+- event_type: view.created
+  subjects:
+  - - view
+    - v1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - cycle:c-1
+  - view:v1
+  edges_match:
+  - from: view:v1
+    relation: view.created
+    to: cycle:c-1

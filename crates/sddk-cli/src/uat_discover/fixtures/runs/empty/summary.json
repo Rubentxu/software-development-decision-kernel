@@ -1,0 +1,6 @@
+{
+  "goal": "No steps goal",
+  "url": "http://localhost:3000/",
+  "stepsTaken": 0,
+  "maxSteps": 50
+}

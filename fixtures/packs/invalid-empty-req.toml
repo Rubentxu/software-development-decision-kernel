@@ -1,0 +1,15 @@
+# Invalid conformance fixture — PACK008: empty requires entry.
+[pack]
+id = "fixture-invalid-empty-req"
+version = "0.1.0"
+schema_version = 2
+compatibility = ">=1.91"
+risk = "low"
+consequence = "creates"
+
+[dependencies]
+requires = [""]
+
+[[commands]]
+name = "fixture"
+surface = ["fixture"]

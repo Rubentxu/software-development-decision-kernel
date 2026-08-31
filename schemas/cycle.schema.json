@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/cycle.schema.json",
+  "title": "SDDK Cycle Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "workspace_id",
+    "cycle_id",
+    "display_name",
+    "status",
+    "phase",
+    "path",
+    "branch",
+    "base"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cycle_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["OPEN", "BLOCKED", "REMEDIATING", "RELEASE_PENDING", "RELEASED", "CLOSED", "ABANDONED", "RECOVERING"]
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["explore", "specify", "design", "plan", "build", "verify", "review", "release", "archive"]
+    },
+    "path": {
+      "type": "string",
+      "enum": ["a-min", "a-lite", "a-full", "b-direct"]
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base": {
+      "type": "string",
+      "minLength": 1
+    },
+    "head": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "artifact-ref.schema.json"
+      }
+    },
+    "release": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/Release"
+        }
+      ]
+    },
+    "remediation_round": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "remote_url": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "scope": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "Release": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

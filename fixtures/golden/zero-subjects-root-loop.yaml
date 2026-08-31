@@ -1,0 +1,14 @@
+name: zero-subjects-root-loop
+events:
+- event_type: workflow.transition.succeeded
+  subjects: []
+  cycle_id: c-1
+expect:
+  nodes: 1
+  edges: 1
+  node_keys:
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: workflow.transition.succeeded
+    to: cycle:c-1

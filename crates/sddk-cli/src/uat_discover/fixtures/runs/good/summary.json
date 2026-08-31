@@ -1,0 +1,11 @@
+{
+  "goal": "Login to the application",
+  "url": "http://localhost:3000/login",
+  "stepsTaken": 3,
+  "maxSteps": 50,
+  "done": true,
+  "stopReason": "goal reached",
+  "finalUrl": "http://localhost:3000/dashboard",
+  "pageTitle": "Dashboard",
+  "faraUrl": "http://127.0.0.1:8082"
+}

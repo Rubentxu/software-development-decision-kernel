@@ -1,0 +1,6 @@
+{
+  "goal": "Search functionality",
+  "url": "http://localhost:3000/search",
+  "stepsTaken": 1,
+  "maxSteps": 50
+}

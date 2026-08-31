@@ -1,0 +1,29 @@
+name: dedup-edge-accumulation
+events:
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - X
+  - - task
+    - Y
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - X
+  - - task
+    - Y
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - task:X
+  - task:Y
+  edges_match:
+  - from: task:X
+    relation: task.depends_on
+    to: task:Y
+  - from: task:X
+    relation: task.depends_on
+    to: task:Y

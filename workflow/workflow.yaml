@@ -1,0 +1,918 @@
+schema_version: 1
+workflow:
+  id: sddk-standard
+  version: 0.1.0
+  description: Deterministic SDDK workflow with mandatory debt verification in A-* paths
+
+statuses:
+  - OPEN
+  - BLOCKED
+  - REMEDIATING
+  - RELEASE_PENDING
+  - RELEASED
+  - CLOSED
+  - ABANDONED
+  - RECOVERING
+  - UAT_WAITING
+  - APPROVAL_PENDING
+
+phases:
+  - explore
+  - specify
+  - design
+  - plan
+  - build
+  - verify
+  - uat
+  - release
+  - archive
+
+paths:
+  A-min:
+    description: Minimal path - fastest route through workflow
+    debt_verification: mandatory
+    phases:
+      - explore
+      - specify
+      - build
+      - verify
+      - release
+  A-lite:
+    description: Lite path - standard with minimal design
+    debt_verification: mandatory
+    phases:
+      - explore
+      - specify
+      - design
+      - build
+      - verify
+      - release
+  A-full:
+    description: Full path A - complete workflow with all phases
+    debt_verification: mandatory
+    phases:
+      - explore
+      - specify
+      - design
+      - plan
+      - build
+      - verify
+      - release
+  B-direct:
+    description: Direct path B - disabled by default
+    debt_verification: disabled
+    phases:
+      - build
+      - verify
+      - release
+
+policies:
+  active_cycles_per_project: 1
+  debt_verification:
+    A-min: mandatory
+    A-lite: mandatory
+    A-full: mandatory
+    B-direct: disabled
+  require_clean_worktree_on_start: true
+  shell_arbitrary: forbidden
+
+transitions:
+  - id: cycle.start
+    from: null
+    to:
+      status: OPEN
+      phase: explore
+    requires:
+      - project.adopted
+      - project.initialized
+      - worktree.clean
+      - cycle.no_active_conflict
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+    produces:
+      - cycle-manifest
+
+  - id: cycle.start.b-direct
+    from: null
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - project.adopted
+      - project.initialized
+      - worktree.clean
+      - cycle.no_active_conflict
+    paths:
+      - B-direct
+    produces:
+      - cycle-manifest
+
+  - id: phase.explore.complete
+    from:
+      status: OPEN
+      phase: explore
+    to:
+      status: OPEN
+      phase: specify
+    requires:
+      - kind: artifact
+        name: exploration-report
+      - kind: gate
+        name: exploration-sufficient
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+    produces:
+      - exploration-report
+
+  - id: phase.specify.complete
+    from:
+      status: OPEN
+      phase: specify
+    to:
+      status: OPEN
+      phase: design
+    requires:
+      - kind: artifact
+        name: specification
+      - kind: gate
+        name: requirements-testable
+    paths:
+      - A-lite
+      - A-full
+    produces:
+      - specification
+
+  - id: phase.specify.complete.a-min
+    from:
+      status: OPEN
+      phase: specify
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - kind: artifact
+        name: specification
+      - kind: gate
+        name: requirements-testable
+    paths:
+      - A-min
+    produces:
+      - specification
+
+  - id: phase.design.complete
+    from:
+      status: OPEN
+      phase: design
+    to:
+      status: OPEN
+      phase: plan
+    requires:
+      - kind: artifact
+        name: design
+      - kind: gate
+        name: architecture-consistent
+    paths:
+      - A-full
+    produces:
+      - design
+
+  - id: phase.design.complete.a-lite
+    from:
+      status: OPEN
+      phase: design
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - kind: artifact
+        name: design
+      - kind: gate
+        name: architecture-consistent
+    paths:
+      - A-lite
+    produces:
+      - design
+
+  - id: phase.plan.complete
+    from:
+      status: OPEN
+      phase: plan
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - kind: artifact
+        name: implementation-plan
+      - kind: gate
+        name: plan-executable
+    paths:
+      - A-full
+    produces:
+      - implementation-plan
+
+  - id: phase.build.complete
+    from:
+      status: OPEN
+      phase: build
+    to:
+      status: OPEN
+      phase: verify
+    requires:
+      - kind: artifact
+        name: implementation-receipt
+      - kind: gate
+        name: implementation-complete
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+    produces:
+      - implementation-receipt
+
+  - id: phase.build.complete.b-direct
+    from:
+      status: OPEN
+      phase: build
+    to:
+      status: OPEN
+      phase: verify
+    requires:
+      - kind: artifact
+        name: implementation-receipt
+      - kind: gate
+        name: implementation-complete
+    paths:
+      - B-direct
+    produces:
+      - implementation-receipt
+
+  - id: phase.verify.complete
+    from:
+      status: OPEN
+      phase: verify
+    to:
+      status: RELEASE_PENDING
+      phase: release
+    requires:
+      - kind: artifact
+        name: verification-report
+      - kind: gate
+        name: tests-pass
+      - kind: gate
+        name: policy-compliant
+      - kind: gate
+        name: debt-severity-assigned
+      - kind: gate
+        name: debt-priority-assigned
+    paths:
+      - A-full
+    on_failure:
+      status: REMEDIATING
+      phase: verify
+    produces:
+      - verification-report
+
+  - id: phase.verify.complete.a-min
+    from:
+      status: OPEN
+      phase: verify
+    to:
+      status: RELEASE_PENDING
+      phase: release
+    requires:
+      - kind: artifact
+        name: verification-report
+      - kind: gate
+        name: tests-pass
+      - kind: gate
+        name: policy-compliant
+      - kind: gate
+        name: debt-severity-assigned
+      - kind: gate
+        name: debt-priority-assigned
+    paths:
+      - A-min
+    on_failure:
+      status: REMEDIATING
+      phase: verify
+    produces:
+      - verification-report
+
+  - id: phase.verify.complete.a-lite
+    from:
+      status: OPEN
+      phase: verify
+    to:
+      status: RELEASE_PENDING
+      phase: release
+    requires:
+      - kind: artifact
+        name: verification-report
+      - kind: gate
+        name: tests-pass
+      - kind: gate
+        name: policy-compliant
+      - kind: gate
+        name: debt-severity-assigned
+      - kind: gate
+        name: debt-priority-assigned
+    paths:
+      - A-lite
+    on_failure:
+      status: REMEDIATING
+      phase: verify
+    produces:
+      - verification-report
+
+  - id: phase.verify.complete.b-direct
+    from:
+      status: OPEN
+      phase: verify
+    to:
+      status: RELEASE_PENDING
+      phase: release
+    requires:
+      - kind: artifact
+        name: verification-report
+      - kind: gate
+        name: tests-pass
+      - kind: gate
+        name: policy-compliant
+    paths:
+      - B-direct
+    on_failure:
+      status: REMEDIATING
+      phase: verify
+    produces:
+      - verification-report
+
+  - id: phase.verify.remediate
+    from:
+      status: REMEDIATING
+      phase: verify
+    to:
+      status: OPEN
+      phase: verify
+    requires:
+      - kind: gate
+        name: remediation-complete
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+      - B-direct
+    produces: []
+
+  - id: phase.build.remediate
+    from:
+      status: REMEDIATING
+      phase: build
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - kind: gate
+        name: remediation-complete
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+      - B-direct
+    produces: []
+
+  - id: phase.verify.uat.sync
+    from:
+      status: OPEN
+      phase: verify
+    to:
+      status: UAT_WAITING
+      phase: uat
+    requires:
+      - kind: gate
+        name: uat-activated
+    paths:
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: verify
+    produces:
+      - uat-plan
+
+  - id: phase.uat.complete
+    from:
+      status: UAT_WAITING
+      phase: uat
+    to:
+      status: RELEASE_PENDING
+      phase: release
+    requires:
+      - kind: artifact
+        name: uat-report
+      - kind: gate
+        name: uat-verdict
+    paths:
+      - A-full
+    on_failure:
+      status: REMEDIATING
+      phase: verify
+    produces:
+      - uat-report
+
+  - id: release.complete
+    from:
+      status: RELEASE_PENDING
+      phase: release
+    to:
+      status: RELEASED
+      phase: archive
+    requires:
+      - kind: artifact
+        name: merge-receipt
+      - kind: artifact
+        name: release-receipt
+      - kind: gate
+        name: no-pending-effects
+      - kind: gate
+        name: release-uat-approved
+    produces:
+      - merge-receipt
+      - release-receipt
+
+  # ── Release Recovery ─────────────────────────────────────────────────────────
+  # Fail-closed recovery route: RELEASE_PENDING/release → REMEDIATING/build.
+  # Requires typed release-failure-evidence artifact and explicit gate receipt.
+  # This is the ONLY authorized path out of RELEASE_PENDING when preconditions fail.
+  - id: release.recover
+    from:
+      status: RELEASE_PENDING
+      phase: release
+    to:
+      status: REMEDIATING
+      phase: build
+    requires:
+      - kind: artifact
+        name: release-failure-evidence
+      - kind: gate
+        name: release-recovery-authorized
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+      - B-direct
+    produces:
+      - release-failure-evidence
+
+  - id: archive.complete
+    from:
+      status: RELEASED
+      phase: archive
+    to:
+      status: CLOSED
+      phase: archive
+    requires:
+      - kind: artifact
+        name: archive-manifest
+      - kind: gate
+        name: ledger-valid
+      - kind: gate
+        name: vault-index-current
+    produces:
+      - archive-manifest
+
+  # ── Managed Closure (vault-only) Branch ─────────────────────────────────────
+  # Alternate archive route for BLOCKED cycles with DeliveryKind=ManagedClosureDelivery.
+  # Does NOT require release-receipt; produces vault-receipt instead.
+  - id: archive.vault.complete
+    from:
+      status: BLOCKED
+      phase: null
+    to:
+      status: CLOSED
+      phase: archive
+    requires:
+      - kind: artifact
+        name: vault-receipt
+      - kind: artifact
+        name: archive-manifest
+      - kind: gate
+        name: vault-receipt-verified
+      - kind: gate
+        name: vault-index-current
+      - kind: gate
+        name: release-bypass-declared
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+      - B-direct
+    produces:
+      - vault-receipt
+      - archive-manifest
+
+  # ── Approval transitions ─────────────────────────────────────────────────────
+  # build phase
+  - id: phase.build.approval.requested
+    from:
+      status: OPEN
+      phase: build
+    to:
+      status: APPROVAL_PENDING
+      phase: build
+    requires:
+      - kind: gate
+        name: approval-requested
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: build
+    produces:
+      - approval-receipt
+
+  - id: phase.build.approval.resolved
+    from:
+      status: APPROVAL_PENDING
+      phase: build
+    to:
+      status: OPEN
+      phase: build
+    requires:
+      - kind: gate
+        name: approval-resolved
+    paths:
+      - A-min
+      - A-lite
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: build
+    produces:
+      - approval-receipt
+
+  # uat phase
+  - id: phase.uat.approval.requested
+    from:
+      status: OPEN
+      phase: uat
+    to:
+      status: APPROVAL_PENDING
+      phase: uat
+    requires:
+      - kind: gate
+        name: approval-requested
+    paths:
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: uat
+    produces:
+      - approval-receipt
+
+  - id: phase.uat.approval.resolved
+    from:
+      status: APPROVAL_PENDING
+      phase: uat
+    to:
+      status: OPEN
+      phase: uat
+    requires:
+      - kind: gate
+        name: approval-resolved
+    paths:
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: uat
+    produces:
+      - approval-receipt
+
+  # release phase
+  - id: phase.release.approval.requested
+    from:
+      status: OPEN
+      phase: release
+    to:
+      status: APPROVAL_PENDING
+      phase: release
+    requires:
+      - kind: gate
+        name: approval-requested
+    paths:
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: release
+    produces:
+      - approval-receipt
+
+  - id: phase.release.approval.resolved
+    from:
+      status: APPROVAL_PENDING
+      phase: release
+    to:
+      status: OPEN
+      phase: release
+    requires:
+      - kind: gate
+        name: approval-resolved
+    paths:
+      - A-full
+    on_failure:
+      status: OPEN
+      phase: release
+    produces:
+      - approval-receipt
+
+  - id: cycle.block
+    from:
+      status: OPEN
+    to:
+      status: BLOCKED
+    requires:
+      - kind: gate
+        name: block-condition-met
+    produces: []
+
+  - id: cycle.unblock
+    from:
+      status: BLOCKED
+    to:
+      status: OPEN
+    requires:
+      - kind: gate
+        name: unblock-condition-met
+    produces: []
+
+artifacts:
+  cycle-manifest:
+    producer: runtime
+    consumers:
+      - engine
+    required: true
+    description: Initial canonical cycle state
+  exploration-report:
+    producer: agent
+    consumers:
+      - reviewer
+    required: true
+    description: Report documenting exploration findings
+  specification:
+    producer: agent
+    consumers:
+      - designer
+    required: true
+    description: Requirements specification document
+  design:
+    producer: designer
+    consumers:
+      - planner
+      - verifier
+    required: true
+    description: Technical design document
+  implementation-plan:
+    producer: planner
+    consumers:
+      - builder
+    required: true
+    description: Implementation plan with tasks
+  implementation-receipt:
+    producer: builder
+    consumers:
+      - verifier
+    required: true
+    description: Receipt confirming implementation completion
+  verification-report:
+    producer: verifier
+    consumers:
+      - reviewer
+    required: true
+    description: Report documenting verification results
+  uat-plan:
+    producer: agent
+    consumers:
+      - uat-runner
+      - human
+    required: false
+    description: UAT acceptance plan (YAML canonical, ADR-012)
+  uat-report:
+    producer: agent
+    consumers:
+      - human
+      - release
+    required: false
+    description: UAT aggregated report with verdict (ADR-012)
+  merge-receipt:
+    producer: local-git
+    consumers: []
+    required: true
+    terminal: true
+    description: Receipt confirming the local HEAD SHA was pushed and verified on origin/main; no PR or CI/CD authority is required
+  release-receipt:
+    producer: local-git
+    consumers: []
+    required: true
+    terminal: true
+    description: Receipt confirming an annotated tag for the verified main SHA exists on the remote; external distribution is optional post-tag work
+  release-failure-evidence:
+    producer: agent
+    consumers:
+      - engine
+    required: true
+    description: Typed evidence of release precondition failure, including failure kind, message, and affected precondition field; persisted for audit trail
+  archive-manifest:
+    producer: archiver
+    consumers: []
+    required: true
+    terminal: true
+    description: Final archive manifest; release_receipt_id binds to vault-receipt for managed-closure cycles
+  vault-receipt:
+    producer: cli
+    consumers: []
+    required: true
+    terminal: true
+    description: Receipt confirming vault-side authority for managed-closure cycle
+  approval-receipt:
+    producer: human
+    consumers:
+      - engine
+    required: true
+    description: Receipt confirming a human approval decision for a governed capability
+
+gates:
+  exploration-sufficient:
+    gate_type:
+      binary: {}
+    description: Exploration produced sufficient information
+  requirements-testable:
+    gate_type:
+      binary: {}
+    description: Requirements are testable
+  architecture-consistent:
+    gate_type:
+      binary: {}
+    description: Architecture is internally consistent
+  plan-executable:
+    gate_type:
+      binary: {}
+    description: Implementation plan is executable
+  implementation-complete:
+    gate_type:
+      binary: {}
+    description: Implementation meets requirements
+  tests-pass:
+    gate_type:
+      binary: {}
+    description: All tests pass
+  policy-compliant:
+    gate_type:
+      binary: {}
+    description: Implementation complies with policies
+  remediation-complete:
+    gate_type:
+      binary: {}
+    description: Remediation addressed failures
+  no-pending-effects:
+    gate_type:
+      binary: {}
+    description: No pending required local Git effects; CI/CD, GitHub Actions, forge releases, and distribution are optional post-tag consumers and are excluded
+  ledger-valid:
+    gate_type:
+      binary: {}
+    description: Ledger state is valid
+  vault-index-current:
+    gate_type:
+      binary: {}
+    description: Vault index is current
+  vault-receipt-verified:
+    gate_type:
+      binary: {}
+    description: vault-receipt signature + content verify
+  release-bypass-declared:
+    gate_type:
+      binary: {}
+    description: cycle.delivery_kind == ManagedClosureDelivery declared verbatim in spec
+  block-condition-met:
+    gate_type:
+      binary: {}
+    description: Block condition is satisfied
+  unblock-condition-met:
+    gate_type:
+      binary: {}
+    description: Unblock condition is satisfied
+  uat-activated:
+    gate_type:
+      binary: {}
+    description: Orchestrator decided to run UAT (activation function, ADR-012)
+  uat-verdict:
+    gate_type:
+      binary: {}
+    description: UAT report has a human verdict (release gate per config, ADR-012)
+  release-uat-approved:
+    gate_type:
+      binary: {}
+    description: Release UAT gate passed for the configured release type (ADR-012)
+  approval-requested:
+    gate_type:
+      binary: {}
+    description: Human approval was requested for a governed capability
+  approval-resolved:
+    gate_type:
+      binary: {}
+    description: Human approved or denied a governed capability request
+  debt-severity-assigned:
+    gate_type:
+      binary: {}
+    description: Every open finding in debt-report.json has severity ∈ {critical, high, medium, low}
+  debt-priority-assigned:
+    gate_type:
+      binary: {}
+    description: Every open finding in debt-report.json has priority ∈ {P0, P1, P2, P3}
+  release-recovery-authorized:
+    gate_type:
+      binary: {}
+    description: Explicit authorization for release recovery transition; gate receipt required before recovering from RELEASE_PENDING to REMEDIATING
+
+forge:
+  provider: auto
+  capabilities:
+    git.inspect:
+      risk: low
+      consequence: creates
+    git.create_branch:
+      risk: low
+      consequence: creates
+    git.commit:
+      risk: medium
+      consequence: modifies
+    git.merge:
+      risk: medium
+      consequence: modifies
+    git.tag:
+      risk: low
+      consequence: creates
+    git.delete_branch:
+      risk: medium
+      consequence: irreversible
+    git.push:
+      risk: low
+      consequence: modifies
+    pr.create:
+      risk: low
+      consequence: creates
+    pr.merge:
+      risk: high
+      consequence: modifies
+    pr.close:
+      risk: medium
+      consequence: irreversible
+    release.create:
+      risk: high
+      consequence: creates
+    release.publish:
+      risk: high
+      consequence: creates
+    vault.index:
+      risk: low
+      consequence: creates
+    vault.validate:
+      risk: low
+      consequence: read
+    vault.search:
+      risk: low
+      consequence: read
+    vault.graph:
+      risk: low
+      consequence: read
+    vault.export:
+      risk: low
+      consequence: creates
+    uat.browser:
+      risk: medium
+      consequence: creates
+    uat.network:
+      risk: medium
+      consequence: read
+    uat.script:
+      risk: high
+      consequence: creates
+    uat.agent:
+      risk: high
+      consequence: creates
+
+storage:
+  xdg: true
+  paths:
+    data: $XDG_DATA_HOME/sddk
+    state: $XDG_STATE_HOME/sddk
+    cache: $XDG_CACHE_HOME/sddk
+
+project_identity:
+  scheme: remote-url-hash
+  scope: required
+  fallback: receipt-uuid

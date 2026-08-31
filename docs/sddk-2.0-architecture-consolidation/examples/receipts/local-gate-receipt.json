@@ -1,0 +1,48 @@
+{
+  "receipt_id": "gate-r-demo",
+  "kind": "gate",
+  "created_at": "2026-08-11T20:20:00Z",
+  "subject": {
+    "repository": "Rubentxu/software-development-decision-kernel",
+    "commit": "abc123",
+    "tree": "def456",
+    "sddk_version": "2.0.0-alpha.1"
+  },
+  "actor": {
+    "kind": "human",
+    "id": "local-user"
+  },
+  "proposal_id": null,
+  "policy_decision_id": null,
+  "inputs_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "outputs_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "evidence_refs": [
+    "artifact:test-report",
+    "artifact:clippy-report",
+    "artifact:architecture-lint"
+  ],
+  "postconditions": [
+    {
+      "name": "cargo-test-workspace",
+      "result": "pass"
+    },
+    {
+      "name": "architecture-lint",
+      "result": "pass"
+    },
+    {
+      "name": "sddk-lint",
+      "result": "pass"
+    }
+  ],
+  "result": "passed",
+  "signature": {
+    "scheme": "sigstore-keyless",
+    "certificate_ref": "artifact:certificate",
+    "signature_ref": "artifact:signature"
+  },
+  "metadata": {
+    "toolchain": "rust-1.91",
+    "pack_manifest_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  }
+}

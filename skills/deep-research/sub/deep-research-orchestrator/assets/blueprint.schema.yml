@@ -1,0 +1,57 @@
+# Esquema de blueprint (modo SOFTWARE)
+
+required_fields:
+  - blueprint.id
+  - blueprint.name
+  - blueprint.purpose
+  - blueprint.interface
+  - blueprint.algorithm
+  - blueprint.references
+  - blueprint.test_acceptance
+
+schema:
+  blueprint:
+    id: string
+    name: string
+    purpose: string
+    domain: string
+    interface:
+      language: enum [python, rust, typescript, other]
+      inputs:
+        - name: string
+          type: string
+          units: string
+          description: string
+      outputs:
+        - name: string
+          type: string
+          units: string
+          description: string
+      errors:
+        - name: string
+          condition: string
+    algorithm:
+      type: enum [deterministic, stochastic, simulation, heuristic]
+      steps: [string]
+      complexity: string
+      dependencies:
+        external: [string]
+        internal: [string]
+    references:
+      - id: string
+        title: string
+        author: string
+        page_or_section: string
+        url: string
+        evidence_level: enum [L1, L2, L3, L4, L5, L6, L7]
+        how_to_use: string
+    test_acceptance:
+      - name: string
+        description: string
+        expected_behavior: string
+        reference_value: string
+        validation_method: string
+    related_blueprints: [string]
+    notes: string
+    corpus_version: string
+    generated_at: date

@@ -1,0 +1,29 @@
+name: dedup-nodes-preserve-first
+events:
+- event_type: approval.capability.granted
+  subjects:
+  - - actor
+    - alice
+  - - capability
+    - git.commit
+  cycle_id: c-1
+- event_type: approval.capability.granted
+  subjects:
+  - - actor
+    - alice
+  - - capability
+    - git.commit
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - actor:alice
+  - capability:git.commit
+  edges_match:
+  - from: actor:alice
+    relation: approval.capability.granted
+    to: capability:git.commit
+  - from: actor:alice
+    relation: approval.capability.granted
+    to: capability:git.commit

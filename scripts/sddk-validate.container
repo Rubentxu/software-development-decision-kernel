@@ -1,0 +1,30 @@
+# sddk-validate.container — SDDK validation sandbox (podman quadlet)
+# Install: copy to ~/.config/containers/systemd/ then:
+#   systemctl --user daemon-reload && systemctl --user start sddk-validate
+# Generates podman container: sddk-validate
+[Unit]
+Description=SDDK validation sandbox (rust 1.91)
+After=network-online.target
+
+[Container]
+Image=docker.io/library/rust:1.91-slim
+ContainerName=sddk-validate
+# Shared SDK sources (read-only) + per-project output + cargo cache
+Volume=%h/.sddk-shared:/src:ro,Z
+Volume=%h/.sddk-validate:/validate:Z
+Volume=%h/.sddk-validate/cargo-cache:/usr/local/cargo/registry:Z
+Volume=%h/.sddk-validate/cargo-target:/target:Z
+# No network for hermetic builds; projects that need network get --network=host override
+Network=none
+# Run once: the pipeline is driven externally
+Exec=tail -f /dev/null
+
+[Service]
+Restart=no
+TimeoutStartSec=120
+# 64-core host; sandbox gets a bounded slice (8 cpus)
+CPUQuota=800%
+MemoryMax=16G
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,32 @@
+schema_version: 1
+id: uat-staleness-detector
+version: 1.0.0
+kind: relation_behavior
+pack: sddk-pack-uat
+triggers:
+  events:
+    - artifact.version.observed
+  patterns:
+    - "(acceptance)-[:derived_from]->(artifact changed_since acceptance.bound_hash)"
+phases: [build, verify, uat, review, release]
+read_scope:
+  node_types: [uat_acceptance, artifact, evidence]
+  max_depth: 3
+outputs:
+  - graph.staleness.detected
+  - proposal.release.revalidation.requested
+capabilities: []
+approvals: []
+execution:
+  class: deterministic
+  budget: {max_events: 50}
+  timeout_ms: 500
+identity:
+  definition_hash: sha256:REPLACE_AT_BUILD
+  prompt_hash: null
+  skill_set_hash: null
+  policy_hash: sha256:REPLACE_AT_BUILD
+evidence_requirements:
+  - acceptance must contain subject version/content hash
+fixtures:
+  - fixtures/uat-stale-after-code-change.json

@@ -1,0 +1,74 @@
+#!/bin/bash
+# pre-push hook — Mechanical push prevention for CL-APPLY-PUSH-DISCIPLINE
+# INC: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
+#
+# Rejects push to refs/heads/main unless the commit range contains a
+# release-phase marker commit matching ^chore\(release\): bump version
+#
+# stdin contract: <local_ref> <local_sha> <remote_ref> <remote_sha>
+# zero remote_sha means new branch (range is HEAD..local_sha)
+# zero local_sha means branch deletion
+
+DISCIPLINE="apply/release split"
+INC_IDENTIFIER="INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION"
+RELEASE_COMMIT_REGEX="^chore\(release\): bump version"
+
+# Read all lines from stdin
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip empty lines
+    [[ -z "$local_ref" ]] && continue
+
+    # Only check pushes to refs/heads/main
+    if [[ "$local_ref" != "refs/heads/main" ]]; then
+        # Non-main refs always pass
+        continue
+    fi
+
+    # Check for deletion of main: local_sha is all zeros (40 zeros)
+    if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+        echo "ERROR: Deletion of main is not allowed. ($DISCIPLINE | $INC_IDENTIFIER)" >&2
+        exit 1
+    fi
+
+    # Determine the commits to check
+    # If remote_sha is zeros, it's a new branch — check all commits on the branch
+    # Otherwise, check commits from the remote's current state to the new state
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        # New branch: check if HEAD contains a release commit
+        # Get the commits that would be pushed (from root to HEAD)
+        COMMITS_TO_CHECK=$(git rev-list --reverse HEAD 2>/dev/null)
+    else
+        # Existing branch: check if the new commits contain a release commit
+        # Use git merge-base to find the common ancestor
+        if git rev-parse --verify --quiet "$remote_sha" >/dev/null 2>&1; then
+            # remote_sha exists locally — check commits between it and local_sha
+            COMMITS_TO_CHECK=$(git rev-list --reverse "$remote_sha..$local_sha" 2>/dev/null)
+        else
+            # remote_sha does not exist locally (e.g. file:// protocol)
+            # Be conservative: check all commits on the branch
+            COMMITS_TO_CHECK=$(git rev-list --reverse HEAD 2>/dev/null)
+        fi
+    fi
+
+    # Check if any commit in the range matches the release commit regex
+    RELEASE_COMMIT=""
+    for commit in $COMMITS_TO_CHECK; do
+        msg=$(git log -1 --format=%s "$commit" 2>/dev/null)
+        if echo "$msg" | grep -qE "$RELEASE_COMMIT_REGEX"; then
+            RELEASE_COMMIT="$msg"
+            break
+        fi
+    done
+
+    if [[ -z "$RELEASE_COMMIT" ]]; then
+        echo "ERROR: Push to main rejected — no release commit found in range." >&2
+        echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
+        echo "ERROR: A push to main requires at least one commit matching:" >&2
+        echo "ERROR:   $RELEASE_COMMIT_REGEX" >&2
+        exit 1
+    fi
+
+done
+
+# All checks passed
+exit 0

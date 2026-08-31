@@ -1,0 +1,10 @@
+[
+  {"owner":"orchestrator","argv":["sddk","cycle","lock","status","--format","json"],"exit_code":2},
+  {"owner":"orchestrator","argv":["sddk","project","--root","."],"exit_code":2},
+  {"owner":"orchestrator","consumed_field":"cycle.branch"},
+  {"owner":"coordinator","argv":["sddk","cycle","status","--cycle","c1"],"parsed_as":"text"},
+  {"owner":"orchestrator","argv":["sddk","knowledge","status"],"exit_code":1,"fallback":"{}"},
+  {"owner":"coordinator","lease":{"expires_at_ms":1},"mutation_at_ms":2},
+  {"owner":"coordinator","evidence":{"checked":true}},
+  {"owner":"lens","argv":["sddk","cycle","status","--cycle","c1","--format","json"]}
+]

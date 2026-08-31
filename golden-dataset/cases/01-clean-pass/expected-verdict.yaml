@@ -1,0 +1,29 @@
+case: 01-clean-pass
+description: "Pure function, well-tested, no dependencies, no state."
+bucket: clean
+schema_version: golden-case/v1
+suite: negative-control
+target_phase: verify
+language: typescript
+path: A-full
+held_out: true
+trials: 3
+
+expected:
+  verify: PASS
+  debt: PASS
+  labels: []
+  forbidden_rule_ids:
+    - debt.smell.god-class
+    - debt.coupling.hidden-dependency
+    - verify.real-implementation.hardcoded-satisfier
+  clusters_that_should_find_nothing:
+    - debt-smells-cluster      # no god-class, no long-method — it's 5 lines
+    - debt-coupling-cluster    # no hidden deps, no globals, pure function
+    - debt-duplication-cluster # no duplication — single implementation
+    - debt-overeng-cluster     # no over-engineering — uses Intl, not hand-rolled
+
+rationale: |
+  This is a textbook pure function: 5 LOC, 3 tests covering all spec scenarios,
+  no side effects, no state, uses the standard library (Intl.NumberFormat).
+  Every cluster should return PASS with 0 findings.

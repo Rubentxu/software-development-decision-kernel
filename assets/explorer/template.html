@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDDK Explorer — {{TITLE}}</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #1a1a1a; --muted: #666;
+    --accent: #2563eb; --border: #e2e2e2; --chip: #eef2ff;
+    --stale: #b45309; --fresh: #15803d; --unknown: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: #fff; display: flex; align-items: baseline; gap: 16px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .entity { color: var(--muted); font-family: ui-monospace, monospace; font-size: 13px; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .panel { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  .node-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+  .node { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .node .key { font-weight: 600; }
+  .node .prov { color: var(--muted); font-size: 11px; margin-top: 4px; word-break: break-all; }
+  .edge-list { display: flex; flex-direction: column; gap: 4px; }
+  .edge { font-family: ui-monospace, monospace; font-size: 12px; padding: 4px 8px; border-left: 3px solid var(--accent); background: #f8fafc; }
+  .timeline { display: flex; flex-direction: column; gap: 6px; }
+  .t-event { font-family: ui-monospace, monospace; font-size: 12px; display: flex; gap: 12px; align-items: baseline; }
+  .t-seq { color: var(--accent); font-weight: 600; min-width: 28px; }
+  .t-type { font-weight: 600; }
+  .t-hash { color: var(--muted); font-size: 11px; }
+  .state-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .state-fresh { background: #dcfce7; color: var(--fresh); }
+  .state-possibly_stale, .state-stale { background: #fef3c7; color: var(--stale); }
+  .state-invalidated { background: #fee2e2; color: #b91c1c; }
+  .state-unknown { background: #e5e7eb; color: var(--unknown); }
+  .expand { color: var(--accent); cursor: pointer; background: none; border: none; font-size: 11px; padding: 0; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SDDK Explorer — {{TITLE}}</h1>
+  <span class="entity" id="entity-label"></span>
+</header>
+<main id="app"></main>
+<script>
+  const VM = {{VIEWMODEL_JSON}};
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    for (const child of children || []) {
+      if (typeof child === 'string') node.appendChild(document.createTextNode(child));
+      else node.appendChild(child);
+    }
+    return node;
+  }
+
+  function stateChip(state) {
+    return el('span', { class: 'state-chip state-' + (state || 'unknown') }, [state || 'unknown']);
+  }
+
+  function renderNodes(nodes) {
+    const container = el('div', { class: 'node-list' });
+    if (!nodes.length) return el('div', { class: 'empty' }, ['No nodes in this view.']);
+    for (const n of nodes) {
+      const prov = n.created_by
+        ? 'created_by ' + n.created_by + (n.content_hash ? ' · ' + n.content_hash.slice(0, 16) : '')
+        : 'no provenance';
+      const expand = n.expandable ? el('button', { class: 'expand' }, ['expand →']) : null;
+      container.appendChild(el('div', { class: 'node' }, [
+        el('div', { class: 'key' }, [n.key]),
+        el('div', { class: 'prov' }, [prov]),
+        expand,
+      ]));
+    }
+    return container;
+  }
+
+  function renderEdges(edges) {
+    const container = el('div', { class: 'edge-list' });
+    if (!edges.length) return el('div', { class: 'empty' }, ['No edges in this view.']);
+    for (const e of edges) {
+      container.appendChild(el('div', { class: 'edge' }, [
+        e.from + ' —' + e.relation + '→ ' + e.to,
+        el('div', { class: 'prov' }, [e.event_id]),
+      ]));
+    }
+    return container;
+  }
+
+  function renderTimeline(timeline) {
+    const container = el('div', { class: 'timeline' });
+    if (!timeline.length) return el('div', { class: 'empty' }, ['No events in this view.']);
+    for (const t of timeline) {
+      container.appendChild(el('div', { class: 't-event' }, [
+        el('span', { class: 't-seq' }, ['#' + t.sequence]),
+        el('span', { class: 't-type' }, [t.event_type]),
+        el('span', { class: 'prov' }, [t.event_id]),
+        el('span', { class: 't-hash' }, [t.content_hash ? t.content_hash.slice(0, 16) : '']),
+      ]));
+    }
+    return container;
+  }
+
+  function renderStaleness(s) {
+    if (!s) return null;
+    const panel = el('div', { class: 'panel' }, [el('h2', {}, ['Staleness'])]);
+    panel.appendChild(el('div', {}, [stateChip(s.state)]));
+    if (s.verified_by) panel.appendChild(el('div', { class: 'prov' }, ['verified_by ' + s.verified_by]));
+    if (s.causal_path && s.causal_path.length) {
+      panel.appendChild(el('div', { class: 'prov' }, ['causal path: ' + s.causal_path.join(' → ')]));
+    }
+    return panel;
+  }
+
+  const app = document.getElementById('app');
+  if (VM.entity) document.getElementById('entity-label').textContent = VM.entity;
+
+  if (VM.nodes && VM.nodes.length) {
+    app.appendChild(el('div', { class: 'panel' }, [
+      el('h2', {}, ['Nodes (' + VM.nodes.length + ')']),
+      renderNodes(VM.nodes),
+    ]));
+  }
+  if (VM.edges && VM.edges.length) {
+    app.appendChild(el('div', { class: 'panel' }, [
+      el('h2', {}, ['Edges (' + VM.edges.length + ')']),
+      renderEdges(VM.edges),
+    ]));
+  }
+  if (VM.timeline && VM.timeline.length) {
+    app.appendChild(el('div', { class: 'panel' }, [
+      el('h2', {}, ['Timeline (' + VM.timeline.length + ')']),
+      renderTimeline(VM.timeline),
+    ]));
+  }
+  const stalePanel = renderStaleness(VM.staleness);
+  if (stalePanel) app.appendChild(stalePanel);
+
+  if (!app.childElementCount) {
+    app.appendChild(el('div', { class: 'empty' }, ['Nothing to show for this view.']));
+  }
+</script>
+</body>
+</html>

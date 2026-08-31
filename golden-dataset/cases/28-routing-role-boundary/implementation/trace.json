@@ -1,0 +1,4 @@
+[
+  {"owner":"verify-lens","argv":["sddk","cycle","status","--cycle","c1","--format","json"]},
+  {"owner":"verify-lens","argv":["sddk","cycle","transition","--cycle","c1","--transition","phase.verify.complete","--format","json"]}
+]

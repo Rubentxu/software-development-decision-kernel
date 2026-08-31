@@ -1,0 +1,53 @@
+ideas:
+  - idea: event_log_is_source_of_truth
+    disposition: adopt
+    sddk_adaptation: SDDK operational ledger is authority; Git remains source authority for code.
+    adr: ADR-001
+  - idea: graph_is_projection
+    disposition: adopt
+    sddk_adaptation: GraphStore is rebuildable and replaceable.
+    adr: ADR-002
+  - idea: reactive_behaviors
+    disposition: adopt_with_constraint
+    sddk_adaptation: Behaviors emit observations/proposals; kernel owns governed side effects.
+    adr: ADR-003
+  - idea: relation_behaviors
+    disposition: adopt_with_constraint
+    sddk_adaptation: Deterministic edge semantics such as verifies/governs/depends_on first; agentic edges later.
+    adr: ADR-003
+  - idea: pattern_subscriptions
+    disposition: adopt_incrementally
+    sddk_adaptation: Minimal bounded pattern IR first; no full Cypher commitment.
+    spec: SPEC-004
+  - idea: frames
+    disposition: adopt
+    sddk_adaptation: Causal grouping inside one cycle/run.
+    spec: SPEC-009
+  - idea: fork_replay_diff_promote
+    disposition: adopt
+    sddk_adaptation: Event-stream counterfactuals plus policy-gated promotion; Git effects remain capabilities.
+    adr: ADR-010
+  - idea: policies_and_approvals
+    disposition: integrate_with_existing_sddk_strength
+    sddk_adaptation: Reuse/default-deny capability governance and strengthen proposal/receipt lifecycle.
+    adr: ADR-008
+  - idea: context_read_tracing
+    disposition: adopt_opt_in
+    sddk_adaptation: Record IDs/hashes read, not private reasoning content.
+    adr: ADR-013
+  - idea: minimal_core_plus_layered_packs
+    disposition: adopt
+    sddk_adaptation: Make current PackManifest a real modular product boundary.
+    adr: ADR-006
+  - idea: bridge_packs
+    disposition: adopt
+    sddk_adaptation: Cognicode and other external ontologies map into SDDK core without polluting it.
+    adr: ADR-007
+  - idea: no_central_orchestrator
+    disposition: modify
+    sddk_adaptation: Reduce God-orchestrator responsibilities, but retain explicit workflow FSM for phase/gate authority.
+    adr: ADR-003
+  - idea: graph_database_as_runtime_world
+    disposition: defer_backend_lock_in
+    sddk_adaptation: Graph semantics yes; production graph DB default no until measured need.
+    adr: ADR-011

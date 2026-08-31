@@ -1,0 +1,31 @@
+name: capability-verified-failed
+events:
+- event_type: capability.verified
+  subjects:
+  - - capability
+    - git.commit
+  - - actor
+    - alice
+  cycle_id: c-1
+- event_type: capability.failed
+  subjects:
+  - - capability
+    - git.push
+  - - actor
+    - bob
+  cycle_id: c-1
+expect:
+  nodes: 5
+  edges: 2
+  node_keys:
+  - actor:alice
+  - actor:bob
+  - capability:git.commit
+  - capability:git.push
+  edges_match:
+  - from: capability:git.commit
+    relation: capability.verified
+    to: actor:alice
+  - from: capability:git.push
+    relation: capability.failed
+    to: actor:bob

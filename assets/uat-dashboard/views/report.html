@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT Report — @RELEASE@</title>
+<style>@TOKENS@</style>
+<style>@COMPONENTS@</style>
+</head>
+<body>
+<h1>UAT Report — @RELEASE@</h1>
+<div class="sub">generated @GENERATED_AT@ &middot; read-only &middot; plan: @PLAN_REF@</div>
+
+<div class="kpis" id="kpis"></div>
+<div id="traceability"></div>
+
+<footer>sddk uat report &middot; archive view &middot; datasets embebidos inline</footer>
+
+<script>@STORAGE_JS@</script>
+<script>@COMPONENTS_JS@</script>
+<script>
+const PLAN = @PLAN_JSON@;
+const REPORT = @REPORT_JSON@;
+function render() {
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><div class="v">${REPORT.summary.coverage_pct}%</div><div class="l">coverage</div></div>
+    <div class="kpi"><div class="v">${REPORT.summary.passed}/${REPORT.summary.total_scenarios}</div><div class="l">passed</div></div>
+    <div class="kpi"><div class="v">${REPORT.summary.failed}</div><div class="l">failed</div></div>
+    <div class="kpi"><div class="v">${REPORT.summary.defects}</div><div class="l">defects</div></div>
+    <div class="kpi"><div class="v">${REPORT.verdict}</div><div class="l">verdict</div></div>
+  `;
+  document.getElementById('traceability').innerHTML = UatRender.traceability(PLAN, null);
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+baseline: v1.9.1
+ci:
+  cloud_workflow_posture: manual workflow_dispatch / optional
+  local_authority:
+    - cargo fmt --check
+    - cargo test --workspace --locked
+    - cargo clippy --workspace --all-targets --locked -- -D warnings
+    - sddk lint
+    - workflow/adoption/zero-intrusion contract tests
+  design_intent: SDDK does not depend on cloud CI as the primary local validation authority.
+release:
+  builds:
+    - linux-musl-x86_64
+    - linux-musl-aarch64
+    - macos-arm64
+    - macos-x86_64
+  integrity:
+    - checksums
+    - SBOM
+    - attestation
+    - framework MANIFEST.sha256
+    - cosign keyless signature/certificate flow
+recommended_evolution: Keep local-first validation; add independently verifiable signed local gate receipts for protected shared/release flows.

@@ -1,0 +1,29 @@
+[package]
+name = "sddk-domain"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+jsonschema = { version = "0.49", default-features = false, features = ["resolve-file"] }
+toml = "1.1"
+serde-saphyr = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11"
+serde-saphyr = { workspace = true }
+tempfile = { workspace = true }

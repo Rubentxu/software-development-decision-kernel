@@ -1,0 +1,20 @@
+# Esquema de agenda de investigación
+# Salida de research-strategist. Insumo de source-discovery-specialist.
+
+required:
+  topic: string
+  questions:
+    - id: string               # RQ-{tema}-{slug}
+      question: string         # pregunta concreta
+      claim_type: enum         # api-existence|version|behavior|performance|history|opinion|best-practice
+      evidence_level: enum     # L1-exp|L1|L2|L3|L4|L5|L6|L7 (ver references/evidence-levels.md)
+      risk: enum               # critical|normal|low
+      admissible_sources: [string]
+      status: enum             # open|investigating|resolved
+
+optional:
+  gaps: [string]               # temas que el autor no domina
+  strategy:
+    default_authority_floor: string  # suelo mínimo (normalmente L3)
+    hard_blockers: [string]    # fuentes que nunca se citan solas
+  notes: string

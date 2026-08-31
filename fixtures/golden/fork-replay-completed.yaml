@@ -1,0 +1,27 @@
+name: fork-replay-completed
+events:
+- event_type: fork.created
+  subjects:
+  - - fork
+    - f1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: fork.replay.completed
+  subjects:
+  - - fork
+    - f1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - fork:f1
+  edges_match:
+  - from: fork:f1
+    relation: fork.created
+    to: cycle:c-1
+  - from: fork:f1
+    relation: fork.replay.completed
+    to: fork:f1

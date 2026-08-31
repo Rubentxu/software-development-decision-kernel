@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/proposal-v1.json",
+  "title": "SDDK Governed Proposal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal_id",
+    "proposer",
+    "capability",
+    "arguments",
+    "reason",
+    "evidence_refs",
+    "idempotency_key",
+    "created_at",
+    "status"
+  ],
+  "properties": {
+    "proposal_id": {
+      "type": "string"
+    },
+    "proposer": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "definition_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skill_set_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "capability": {
+      "type": "string"
+    },
+    "action_class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_target": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "approved",
+        "denied",
+        "executing",
+        "executed",
+        "failed",
+        "verified",
+        "verification_failed"
+      ]
+    }
+  }
+}

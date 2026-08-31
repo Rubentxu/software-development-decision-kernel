@@ -1,0 +1,5 @@
+agent: missing-agent
+skill_ref: missing-skill
+plugin_path: missing-plugin
+prompt_ref: missing-prompt.md
+path: ./missing-file.md

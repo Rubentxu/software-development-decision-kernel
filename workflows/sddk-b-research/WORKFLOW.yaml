@@ -1,0 +1,92 @@
+# SDDK B-research — Deep, evidence-based research on any topic
+# Trigger: orchestrator delegates to deep-research-orchestrator
+# v1.0: Independent workflow, discoverable via workflow-registry (ADR-019)
+
+schema_version: 1
+workflow:
+  id: sddk-b-research
+  version: "1.0.0"
+  description: |
+    Deep, evidence-based research on any topic. Path B-research delegation.
+    Donella Meadows systems-thinking framework as methodological lens.
+    Delegates to deep-research-orchestrator agent (R0-R6 pipeline).
+
+meta:
+  name: "Deep Research"
+  trigger:
+    goal_pattern: ["research", "investigate", "find evidence", "deep dive"]
+    context_quality: [C0, C1, C2]
+    domains: [any]
+  rationale: "Use when the user asks for evidence-backed research on any topic."
+  precedence: 50
+  requires:
+    agents: [deep-research-orchestrator]
+    skills: [deep-research-methodology-hub, deep-research-strategist, deep-source-discovery-specialist, deep-source-credibility-assessor, deep-reference-validator, deep-evidence-triangulator, deep-knowledge-corpus-curator, deep-claim-extractor]
+  provides: [research-report, system-map, evidence-cards, blueprints, knowledge-graph]
+  provenance:
+    author: rubentxu
+    added_in: v1.14.0
+    spec: ADR-019
+
+trigger:
+  goal_pattern: ["/sddk-research", "investigate", "research X"]
+  context_quality: [C0, C1, C2]
+  path: B-research
+
+context_requirements:
+  sddk_init_done: optional
+
+phases:
+  - phase: triage
+    step: 0.1
+    pattern: routing
+    agent: orchestrator
+    inputs: [goal, context_quality, domain, scope, depth]
+    output: launch_plan
+  - phase: delegate-research
+    step: 1.0
+    pattern: orchestrator-worker
+    agent: deep-research-orchestrator
+    model: minimax-coding-plan/MiniMax-M3
+    depends_on: triage
+    rule: |
+      Orchestrator builds launch plan and delegates to deep-research-orchestrator.
+      Agent applies R0-R6 and produces artifacts in output directory.
+    output: [envelope, primary_report_path]
+  - phase: integrate
+    step: 2.0
+    pattern: prompt-chain
+    agent: orchestrator
+    depends_on: delegate-research
+    rule: |
+      Read research report and surface to user.
+      If LIBRO: pass evidence-cards to chapter-writer.
+      If SOFTWARE: pass blueprints to code generation.
+
+success_criteria:
+  - "agent executed R0 through required phases"
+  - "research/{topic}-research-report.md exists"
+  - "envelope includes sources_cited, verified_claims, open_gaps"
+  - "if LIBRO: evidence-cards/{topic}.yml exists"
+  - "if SOFTWARE: blueprints/{component}.yml exists"
+
+failure_modes:
+  - condition: "agent blocked (missing topic)"
+    action: "orchestrator asks user for clarification"
+  - condition: "agent partial"
+    action: "surface partial report; user decides"
+  - condition: "primary_report_path missing"
+    action: "BLOCK, retry"
+  - condition: "decay_warnings include critical claims"
+    action: "flag for user; suggest R-incremental"
+
+provenance:
+  derived_from:
+    - "deep-research-orchestrator agent (bundled)"
+    - "21 deep-* skills (bundled in skills/)"
+    - "Donella Meadows: Thinking in Systems 2008, Leverage Points 1997"
+    - "Jay Forrester: System Dynamics"
+    - "Peter Senge: Fifth Discipline"
+    - "Daniel Kim & Virginia Anderson: Systems Archetypes Basics"
+  related:
+    - "ADR-019: Workflow self-discovery, indexing and dynamic extension"

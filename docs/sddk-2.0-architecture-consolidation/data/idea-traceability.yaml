@@ -1,0 +1,44 @@
+traceability:
+  hexagonal_application_ports:
+    specs: [SPEC-001, SPEC-016, SPEC-017]
+    adrs: [ADR-004]
+    roadmap_tasks: [SDDK2-101, SDDK2-102, SDDK2-103, SDDK2-104]
+  uat_bounded_context:
+    specs: [SPEC-005, SPEC-008]
+    adrs: [ADR-005, ADR-009]
+    roadmap_tasks: [SDDK2-301, SDDK2-403, SDDK2-404, SDDK2-405, SDDK2-406]
+  event_sourced_graph:
+    specs: [SPEC-002, SPEC-003, SPEC-004]
+    adrs: [ADR-001, ADR-002, ADR-003]
+    roadmap_tasks: [SDDK2-201, SDDK2-202, SDDK2-203, SDDK2-501, SDDK2-504]
+  pack_ecosystem:
+    specs: [SPEC-006]
+    adrs: [ADR-006, ADR-007]
+    roadmap_tasks: [SDDK2-401, SDDK2-402, SDDK2-406, SDDK2-407]
+  proposal_policy_receipt:
+    specs: [SPEC-007, SPEC-015]
+    adrs: [ADR-008, ADR-014]
+    roadmap_tasks: [SDDK2-302, SDDK2-303, SDDK2-305, SDDK2-903]
+  behavioral_ir:
+    specs: [SPEC-010]
+    adrs: [ADR-012]
+    roadmap_tasks: [SDDK2-304, SDDK2-905]
+  staleness_context_reads:
+    specs: [SPEC-011, SPEC-012]
+    adrs: [ADR-013]
+    roadmap_tasks: [SDDK2-601, SDDK2-602, SDDK2-603, SDDK2-604]
+  fork_replay_diff:
+    specs: [SPEC-009]
+    adrs: [ADR-010]
+    roadmap_tasks: [SDDK2-701, SDDK2-702, SDDK2-703, SDDK2-704, SDDK2-705, SDDK2-706, SDDK2-707]
+  moldable_explorer_c4:
+    specs: [SPEC-013]
+    adrs: [ADR-017]
+    roadmap_tasks: [SDDK2-801, SDDK2-802, SDDK2-803, SDDK2-804, SDDK2-805]
+  entropy_golden_dataset:
+    specs: [SPEC-014]
+    roadmap_tasks: [SDDK2-002, SDDK2-901, SDDK2-902]
+  document_governance:
+    specs: [SPEC-018]
+    adrs: [ADR-018]
+    roadmap_tasks: [SDDK2-006, SDDK2-007, SDDK2-905]

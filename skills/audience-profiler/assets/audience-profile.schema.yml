@@ -1,0 +1,17 @@
+# Esquema de audience-profile.yml
+# Salida de audience-profiler.
+
+required:
+  persona: string              # descripción concreta y falsable del lector
+  assumed_knowledge: [string]  # lo que el lector YA sabe
+  taught_knowledge: [string]   # lo que el libro ENSEÑA
+  not_in_scope: [string]       # lo que el libro NO cubre
+  target_version: string       # ej. "Bevy 0.19 / Rust 1.95"
+  platforms: [string]          # [linux, windows, macos]
+  theory_hands_on_ratio: string # ej. "30/70"
+  exit_goal: string            # qué logra el lector al terminar
+
+optional:
+  persona_name: string         # ej. "Pat el dev Python"
+  time_budget_hours: integer
+  secondary_audience: string

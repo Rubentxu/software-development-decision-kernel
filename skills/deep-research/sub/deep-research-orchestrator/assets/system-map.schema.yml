@@ -1,0 +1,49 @@
+# Esquema de system-map (R0 — definir el sistema del tema, metodología Meadows)
+
+required_fields:
+  - system.id
+  - system.name
+  - system.purpose
+  - system.boundary
+  - system.stocks
+  - system.feedback_loops_identified
+  - system.leverage_point_tentative
+
+schema:
+  system:
+    id: string
+    name: string
+    purpose_declared: string
+    purpose_inferred: string
+    boundary:
+      included: [string]
+      excluded: [string]
+    time_horizon: string
+    units: [string]
+    stocks:
+      - id: string
+        description: string
+        units: string
+        initial_value: number | qualitative
+    key_variables:
+      - id: string
+        description: string
+        units: string
+        type: enum [stock, flow, auxiliary, parameter]
+    actors:
+      - id: string
+        role: string
+    feedback_loops_identified:
+      - id: string  # B1, R1, etc.
+        type: enum [balancing, reinforcing]
+        description: string
+    leverage_point_tentative:  # 1-12 de Meadows
+      level: integer  # 1-12
+      rationale: string
+    paradigm_in_play:
+      name: string
+      shared_assumptions: [string]
+    potential_traps: [string]  # IDs de system traps sospechosos
+    evidence:
+      source_id: [string]
+    notes: string

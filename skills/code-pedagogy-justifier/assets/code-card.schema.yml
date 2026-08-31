@@ -1,0 +1,15 @@
+# Esquema de code card
+# Justificación pedagógica de cada ejemplo. Salida de code-pedagogy-justifier.
+
+required:
+  crate: string              # chapters/chapter-{NN}-{slug}
+  region: string             # tag:: que se integra en el libro
+  concept: [string]          # ids del grafo curricular
+  approach: string           # por qué este enfoque
+  not_shown: string          # qué NO cubre
+
+optional:
+  minimalism: string         # qué se redujo para no distraer
+  tradeoff: string           # fidelidad sacrificada y por qué (debe declararse)
+  references_concept_in: string  # dónde se cubre lo omitido, si aplica
+  version: string            # versión de la card (revista si el código cambia)

@@ -1,0 +1,45 @@
+Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover
+
+Usage: sddk <COMMAND>
+
+Commands:
+  version       Show the resolved framework version for the current directory
+  project       Resolve deterministic project and workspace identity
+  adopt         Plan, apply, inspect, or repair project adoption
+  lint          Validate repository contracts and generated workflow documentation
+  generate      Generate deterministic repository documentation
+  cycle         Plan and apply workflow cycles under the local authority
+  ledger        Verify the causal ledger and list its events
+  capability    Plan and execute typed capabilities under the default-deny policy
+  git           Run typed local Git operations with verified postconditions
+  artifact      Store and verify content-addressed artifacts
+  permission    Check agent phase and capability permissions
+  validate      Validate structured results against canonical schemas
+  agent-result  Convert legacy agent output into structured results
+  release       Plan and apply local Git releases or optional forge integrations
+  vault         Index, validate, search, and export knowledge vaults
+  knowledge     Resolve the canonical knowledge vault path and profile
+  dev           Developer tooling: doctor, gates, and atomic install/verify
+  pack          Validate declarative pack manifests
+  graph         Query, inspect, and rebuild the reactive knowledge graph
+  metrics       Record, aggregate, and tune cycle telemetry metrics
+  analytics     Report, trend, and bottleneck analytics from cycle metrics
+  telemetry     Central telemetry control plane (cross-project ingest, aggregates, dashboard)
+  uat           UAT (User Acceptance Testing): data-driven YAML plans rendered to self-contained HTML dashboards, with human-in-the-loop validation
+  approval      Manage human approval decisions for governed capabilities
+  rules         Architecture-rule registry: evaluate rules against baseline JSON (SDDK2-003)
+  stale         Staleness and impact queries over the reactive graph (SPEC-012)
+  fork          Fork, replay, diff and promote controlled experiments (SPEC-009)
+  explore       Render task-specific views over the reactive graph (SPEC-013)
+  completion    Generate or install shell completion scripts
+  debt          Debt management: report generation, INC listing, INC backfill, gate evaluation
+  status        Show the current cycle snapshot and lease. Delegates to `cycle status`
+  plan          Plan a new cycle from a goal. Delegates to `cycle start`
+  run           Execute a capability. Delegates to `capability run`
+  ship          Plan a release (dry-run). Delegates to `release plan --dry-run`
+  recover       Rebuild a cycle from ledger events (dry-run). Delegates to `cycle rebuild --dry-run`
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

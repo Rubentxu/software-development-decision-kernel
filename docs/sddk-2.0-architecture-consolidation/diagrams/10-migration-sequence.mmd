@@ -1,0 +1,13 @@
+flowchart LR
+  A[v1.9.1 Baseline] --> B[Guardrails]
+  B --> C[Application Ports]
+  C --> D[Event Ledger]
+  D --> E[Evidence + Proposals]
+  E --> F[Pack Runtime]
+  F --> G[UAT Extraction]
+  G --> H[Reactive Graph]
+  H --> I[Staleness + Context Reads]
+  I --> J[Fork / Replay / Diff]
+  H --> K[Moldable Explorer]
+  J --> L[Hardening / Channels]
+  K --> L

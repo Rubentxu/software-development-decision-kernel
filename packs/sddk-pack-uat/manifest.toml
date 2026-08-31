@@ -1,0 +1,41 @@
+[pack]
+id = "sddk-pack-uat"
+version = "0.1.0"
+schema_version = 2
+compatibility = ">=1.91"
+risk = "medium"
+consequence = "modifies"
+category = "domain"
+description = "UAT (User Acceptance Testing) pack: plans, guided runner, dashboards, evidence and sign-off (SPEC-008)"
+
+[dependencies]
+requires = ["sddk-core"]
+integrates_with = ["sddk-bridge-cognicode"]
+conflicts_with = []
+
+[provides]
+capabilities = ["uat.plan", "uat.dashboard", "uat.signoff", "uat.evidence"]
+event_schemas = ["uat.session", "uat.acceptance"]
+view_types = ["uat-report", "uat-dashboard"]
+
+[[commands]]
+name = "uat"
+surface = ["uat"]
+
+[[commands]]
+name = "uat-dashboard"
+surface = ["uat", "dashboard"]
+
+[[commands]]
+name = "uat-sign-off"
+surface = ["uat", "sign-off"]
+
+[capabilities]
+"uat.session.write" = "modifies"
+"uat.acceptance.sign" = "irreversible"
+
+[fixtures]
+paths = ["fixtures/uat-plan.yaml", "fixtures/uat-session.yaml"]
+
+[artifacts]
+paths = ["dist/dashboard.html"]

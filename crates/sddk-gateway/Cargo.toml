@@ -1,0 +1,26 @@
+[package]
+name = "sddk-gateway"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-saphyr = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+sddk-domain = { path = "../sddk-domain" }
+sddk-storage = { path = "../sddk-storage" }
+time = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11"
+tempfile = { workspace = true }
+sddk-engine = { path = "../sddk-engine" }
+sddk-testkit = { path = "../sddk-testkit" }
+time = { workspace = true }

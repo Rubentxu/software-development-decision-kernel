@@ -1,0 +1,13 @@
+flowchart LR
+  P[Generated / Authored UAT Plan] --> V[Schema + Risk Validation]
+  V --> D[Designer Mode]
+  D --> R[Runner Wizard]
+  R --> C{Checks}
+  C -->|Pass| E[Evidence Capture]
+  C -->|Fail/Blocked| X[Checkpoint + Diagnostic]
+  X --> R
+  E --> RV[Reviewer Mode]
+  RV --> S[Immutable Sign-off]
+  S --> RG[Release Gate]
+  CH[Implementation Change] --> ST[Staleness Detector]
+  ST -->|possibly stale| RV

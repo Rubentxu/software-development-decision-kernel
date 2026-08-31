@@ -1,0 +1,39 @@
+# Esquema de candidate-pool.yml
+
+required_fields:
+  - candidate_pool.generated_at
+  - candidate_pool.candidates
+  - candidate_pool.candidates[].id
+  - candidate_pool.candidates[].title
+  - candidate_pool.candidates[].url
+  - candidate_pool.candidates[].source_type
+  - candidate_pool.candidates[].evidence_level
+
+schema:
+  candidate_pool:
+    generated_at: date
+    system_id: string
+    questions_covered: integer
+    sources_found: integer
+    candidates:
+      - id: string
+        title: string
+        authors: [string]
+        editors: [string]
+        year: integer
+        publisher: string
+        journal: string
+        url: string
+        url_status: enum [live, dead, unverified]
+        source_type: enum [book-primary, paper-peer-reviewed, paper-grey,
+                           institutional-white-paper, model-code, tutorial,
+                           encyclopedia, archive, blog, video, podcast, dataset]
+        evidence_level: enum [L1, L2, L3, L4, L5, L6, L7]
+        claim_types_covered: [string]
+        pages: string
+        notes: string
+    coverage:
+      <question_id>:
+        candidates: integer
+        status: enum [sufficient, insufficient, none, escalate]
+        notes: string

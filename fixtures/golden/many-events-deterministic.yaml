@@ -1,0 +1,57 @@
+name: many-events-deterministic
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - cycle
+    - c-1
+  - - capability
+    - git.commit
+  cycle_id: c-1
+- event_type: approval.capability.granted
+  subjects:
+  - - actor
+    - alice
+  - - capability
+    - git.commit
+  cycle_id: c-1
+- event_type: workflow.phase.entered
+  subjects: []
+  cycle_id: c-1
+  payload:
+    phase: verify
+- event_type: workflow.phase.exited
+  subjects: []
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - A
+  - - task
+    - B
+  cycle_id: c-1
+expect:
+  nodes: 6
+  edges: 5
+  node_keys:
+  - actor:alice
+  - capability:git.commit
+  - cycle:c-1
+  - phase:verify
+  - task:A
+  - task:B
+  edges_match:
+  - from: cycle:c-1
+    relation: approval.capability.requested
+    to: capability:git.commit
+  - from: actor:alice
+    relation: approval.capability.granted
+    to: capability:git.commit
+  - from: cycle:c-1
+    relation: entered_phase
+    to: phase:verify
+  - from: cycle:c-1
+    relation: workflow.phase.exited
+    to: cycle:c-1
+  - from: task:A
+    relation: task.depends_on
+    to: task:B

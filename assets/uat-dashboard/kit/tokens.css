@@ -1,0 +1,13 @@
+:root {
+  --bg: #0f1115;
+  --card: #181b21;
+  --text: #e6e6e6;
+  --muted: #9aa0a6;
+  --accent: #4da3ff;
+  --ok: #4caf50;
+  --warn: #ffb74d;
+  --danger: #ef5350;
+  --border: #23272e;
+  --radius: 8px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}

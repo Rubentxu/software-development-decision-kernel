@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/capability-request.schema.json",
+  "title": "SDDK Capability Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capability",
+    "arguments",
+    "reason"
+  ],
+  "properties": {
+    "capability": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "description": "Capability identifier in dotted notation (e.g., git.create_branch)"
+    },
+    "arguments": {
+      "type": "object",
+      "description": "Arguments for the capability execution"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Justification for requesting this capability"
+    },
+    "expected_state_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Expected state digest for idempotency validation"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Client-provided idempotency key"
+    }
+  }
+}

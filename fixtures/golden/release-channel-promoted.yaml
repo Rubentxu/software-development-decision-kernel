@@ -1,0 +1,27 @@
+name: release-channel-promoted
+events:
+- event_type: release.channel.promoted
+  subjects:
+  - - cycle
+    - c-1
+  - - channel
+    - stable
+  cycle_id: c-1
+- event_type: release.published
+  subjects:
+  - - channel
+    - stable
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 2
+  node_keys:
+  - channel:stable
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: release.channel.promoted
+    to: channel:stable
+  - from: channel:stable
+    relation: release.published
+    to: channel:stable

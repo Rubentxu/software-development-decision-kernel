@@ -1,0 +1,34 @@
+baseline: v1.9.1
+plan_schema: v4
+runner_modes:
+  - designer
+  - runner
+  - reviewer
+features:
+  - guided wizard runner
+  - immutable SHA-256 sign-off
+  - release acceptance records
+  - stale advisory / resign flow
+  - blind checks
+  - evidence gate
+  - checkpoints
+  - AI diagnostics
+  - plan validation/migration
+  - history/status/reporting
+known_evidence_kinds:
+  - File
+  - Screenshot
+  - CommandOutput
+  - Assertion
+  - Metric
+  - Trace
+  - Console
+  - Network
+  - Http
+  - Dom
+  - Aria
+  - Geometry
+  - Video
+  - Trajectory
+  - Note
+migration_invariant: Feature parity must be preserved while extracting the UAT bounded context.

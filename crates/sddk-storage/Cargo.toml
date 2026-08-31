@@ -1,0 +1,26 @@
+[package]
+name = "sddk-storage"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+sha2 = { workspace = true }
+sddk-domain = { path = "../sddk-domain" }
+uuid = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11"
+regex = { workspace = true }
+serde-saphyr = { workspace = true }
+tempfile = { workspace = true }

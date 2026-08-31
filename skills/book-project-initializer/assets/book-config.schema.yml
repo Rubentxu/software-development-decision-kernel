@@ -1,0 +1,17 @@
+# Esquema de book-config.yml
+# Validar antes de generar la estructura del proyecto.
+
+required:
+  - title          # string, título del libro
+  - author         # string
+  - language       # string, código ISO (es, en...)
+  - stack          # enum: [asciidoc, mdbook, quarto]
+  - primary_tech   # {name, version} ej. {name: Bevy, version: "0.19"}
+  - rust_version   # string, si aplica (MSRV)
+
+optional:
+  - subtitle
+  - edition        # entero, default 1
+  - license        # string, default "CC-BY-SA-4.0"
+  - repo_url       # string
+  - audience_level # enum: [beginner, intermediate, advanced]

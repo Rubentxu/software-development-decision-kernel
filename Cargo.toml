@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sddk-domain",
+    "crates/sddk-storage",
+    "crates/sddk-engine",
+    "crates/sddk-gateway",
+    "crates/sddk-vault",
+    "crates/sddk-cli",
+    "crates/sddk-testkit",
+    "crates/sddk-pack-uat",
+]
+exclude = ["docs/sddk-stabilization-plan"]
+
+[workspace.package]
+version = "1.61.0"
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version = "1.91"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-saphyr = "1.0"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# CLI
+clap = { version = "4.6.5", features = ["derive"] }
+clap_complete = "4"
+
+# Database
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+dirs = "6.0.0"
+
+# Crypto/Hashing
+sha2 = "0.10"
+hmac = "0.12"
+getrandom = "0.2"
+
+# UUIDs
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "=0.3.36", features = ["formatting", "parsing"] }
+
+# File system
+walkdir = "2"
+regex = "1"
+
+# HTTP
+ureq = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+# Testing
+tempfile = "3"

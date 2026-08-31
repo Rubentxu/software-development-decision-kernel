@@ -1,0 +1,20 @@
+case: 24-python-docstring-exemption
+description: Production hardcode beside a legitimate abstract-method ellipsis.
+bucket: adversarial
+schema_version: golden-case/v1
+suite: negative-control
+target_phase: verify
+language: python
+path: A-lite
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - rule_id: verify.real-implementation.hardcoded-success
+      classification: blocking_defect
+      severity: high
+      location: implementation/verifier.py
+  forbidden_rule_ids:
+    - verify.real-implementation.abstract-placeholder

@@ -1,0 +1,23 @@
+first_party_candidates:
+  - id: sddk-pack-sdd
+    category: domain
+  - id: sddk-pack-uat
+    category: domain
+    migration_priority: first
+  - id: sddk-pack-testing
+    category: domain
+  - id: sddk-pack-architecture
+    category: domain
+  - id: sddk-pack-research
+    category: domain
+  - id: sddk-pack-docs
+    category: domain
+  - id: sddk-pack-ui
+    category: domain
+  - id: sddk-pack-cognicode
+    category: bridge/domain
+  - id: sddk-pack-auto-grill
+    category: domain
+bundles:
+  - id: engineering-default
+    note: Named composition only; not a new ontology.

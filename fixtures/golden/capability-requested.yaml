@@ -1,0 +1,19 @@
+name: capability-requested
+events:
+- event_type: capability.requested
+  subjects:
+  - - capability
+    - git.push
+  - - cycle
+    - c-1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - capability:git.push
+  - cycle:c-1
+  edges_match:
+  - from: capability:git.push
+    relation: capability.requested
+    to: cycle:c-1

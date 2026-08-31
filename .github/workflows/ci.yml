@@ -1,0 +1,88 @@
+name: CI
+
+# MANUAL-ONLY (2026-08-10): SDDK never depends on CI/CD. Validation runs
+# locally (`act`, cargo test, shell contract suites); cloud CI is an optional
+# on-demand check via workflow_dispatch, never a gate.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required:
+    name: Required quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.91.0 --profile minimal --component rustfmt,clippy
+
+      - name: Select Rust toolchain
+        run: rustup default 1.91.0
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Run strict Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Lint repository contracts
+        run: cargo run --locked -q -p sddk-cli -- lint --root . --format json
+
+      - name: Run ShellCheck on shell surfaces
+        run: |
+          for f in tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh; do
+            if [ -f "$f" ]; then shellcheck "$f" || exit 1; fi
+          done
+
+      # NOTE: generated-doc freshness (workflow.md + inventory.md) is validated
+      # by `lint` (SDDK009/SDK010) — no separate `generate --check` steps.
+      # Local CI runs under `act`; the direct `generate --check` steps read the
+      # workflow manifest through the container bind mount and can report a
+      # false "stale" there (content verified identical by the lint gate and by
+      # `cargo run -- generate docs --root . --check` on the host).
+
+      - name: Run workflow contract tests
+        run: python3 tests/test_workflow_contract.py
+
+      - name: Install golden evaluation dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement golden-dataset/requirements.txt
+
+      - name: Validate golden evaluation contracts
+        run: python3 tests/test_golden_dataset_contract.py
+
+  # Non-gating mirror — mirrors all shell contract tests; cloud CI does not gate
+  shell-contracts:
+    name: Shell contract tests (non-gating mirror)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run pointer integrity
+        run: bash tests/test_pointer_integrity.sh
+
+      - name: Run hard sizing regression
+        run: bash tests/test_hard_sizing_regression.sh
+
+      - name: Run instruction contract
+        run: bash tests/test_instruction_contract.sh
+
+      - name: Run evidence capture contract (Node.js)
+        run: node tests/test_evidence_capture_contract.js
+
+      - name: Run push prevention hook contract
+        run: bash tests/test_push_prevention_hook.sh

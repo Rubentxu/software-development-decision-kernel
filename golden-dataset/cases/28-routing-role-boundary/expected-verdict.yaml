@@ -1,0 +1,16 @@
+case: 28-routing-role-boundary
+description: Verify lens illegally queries and mutates lifecycle state.
+bucket: contract
+schema_version: golden-case/v1
+suite: routing-boundary
+target_phase: verify
+language: json
+path: A-full
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - {rule_id: routing.lens-lifecycle-call, classification: blocking_defect, severity: critical, location: implementation/trace.json}
+  forbidden_rule_ids: []

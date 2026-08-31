@@ -1,0 +1,157 @@
+tiers:
+  premium:
+    opencode: deepseek/deepseek-chat
+    zcode: deepseek/deepseek-chat
+    claude: sonnet
+    codex: openai/gpt-5.4
+  fast:
+    opencode: zai-coding-plan/glm-5-turbo
+    zcode: zai-coding-plan/glm-5-turbo
+    claude: haiku
+    codex: openai/gpt-5.4-fast
+agents:
+  analytics-judge:
+    tier: fast
+  analytics-reporter:
+    tier: fast
+  analytics-researcher:
+    tier: fast
+  architecture-critic:
+    tier: premium
+  auto-grill-code-researcher:
+    tier: fast
+  auto-grill-coverage-auditor:
+    tier: fast
+  auto-grill-evidence-synthesizer:
+    tier: fast
+  auto-grill-internet-researcher:
+    tier: fast
+  auto-grill-interviewer:
+    tier: fast
+  auto-grill-judge:
+    tier: fast
+  auto-grill-loop-orchestrator:
+    tier: premium
+  auto-grill-ops-researcher:
+    tier: fast
+  auto-grill-repo-docs-researcher:
+    tier: fast
+  auto-grill-reporter:
+    tier: fast
+  auto-grill-scribe:
+    tier: fast
+  auto-grill-security-researcher:
+    tier: fast
+  auto-grill-skeptic:
+    tier: fast
+  auto-grill-standards-researcher:
+    tier: fast
+  auto-grill-user-proxy:
+    tier: fast
+  balance-advisor:
+    tier: fast
+  book-orchestrator:
+    tier: premium
+  debt-architecture-cluster:
+    tier: fast
+  debt-coupling-cluster:
+    tier: fast
+  debt-duplication-cluster:
+    tier: fast
+  debt-overeng-cluster:
+    tier: fast
+  debt-smells-cluster:
+    tier: fast
+  deep-research-orchestrator:
+    tier: premium
+  impeccable-primary:
+    tier: premium
+  jd-fix-agent:
+    tier: premium
+  jd-judge-a:
+    tier: premium
+  jd-judge-b:
+    tier: premium
+  orchestrator:
+    tier: premium
+  sddk-adopt:
+    tier: fast
+  sddk-apply:
+    tier: premium
+  sddk-archive:
+    tier: premium
+  sddk-coherence:
+    tier: premium
+  sddk-debt-verify:
+    tier: fast
+  sddk-design:
+    tier: premium
+    overrides:
+      opencode: zai-coding-plan/glm-5.3
+  sddk-explore:
+    tier: fast
+    overrides:
+      opencode: deepseek/deepseek-reasoner
+      codex: openai/gpt-5.3-codex-spark
+  sddk-init:
+    tier: fast
+  sddk-plan:
+    tier: fast
+  sddk-propose:
+    tier: fast
+    overrides:
+      opencode: zai-coding-plan/glm-5.3
+  sddk-recover:
+    tier: premium
+  sddk-release:
+    tier: premium
+  sddk-run:
+    tier: fast
+  sddk-ship:
+    tier: premium
+  sddk-spec:
+    tier: premium
+  sddk-status:
+    tier: fast
+  sddk-tasks:
+    tier: premium
+  sddk-verify:
+    tier: premium
+  studio-analyzer:
+    tier: fast
+  studio-block:
+    tier: fast
+  studio-component:
+    tier: fast
+  studio-contract-miner:
+    tier: fast
+  studio-doc-extractor:
+    tier: fast
+  studio-orchestrator:
+    tier: premium
+  studio-page:
+    tier: fast
+  studio-reverse-engineer:
+    tier: fast
+  studio-token:
+    tier: fast
+  studio-validator:
+    tier: fast
+  test-pyramid-builder:
+    tier: fast
+  uat-discovery:
+    tier: fast
+  uat-form-quality:
+    tier: fast
+  uat-guide:
+    tier: fast
+  uat-planner:
+    tier: fast
+  uat-reporter:
+    tier: fast
+  uat-runner:
+    tier: fast
+  uat-ux-form:
+    tier: fast
+  ui-auditor:
+    tier: fast

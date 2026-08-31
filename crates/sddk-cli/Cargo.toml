@@ -1,0 +1,43 @@
+[package]
+name = "sddk-cli"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[[bin]]
+name = "sddk"
+path = "src/main.rs"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-saphyr = { workspace = true }
+toml = "0.8"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+regex = { workspace = true }
+walkdir = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+sddk-domain = { path = "../sddk-domain" }
+sddk-engine = { path = "../sddk-engine" }
+sddk-gateway = { path = "../sddk-gateway" }
+sddk-storage = { path = "../sddk-storage" }
+sha2 = { workspace = true }
+sddk-vault = { path = "../sddk-vault" }
+dirs = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+sddk-testkit = { path = "../sddk-testkit" }
+jsonschema = { version = "0.49", default-features = false, features = ["resolve-file"] }
+rusqlite = { workspace = true }

@@ -1,0 +1,15 @@
+# Invalid conformance fixture — PACK010: duplicate provides capabilities.
+[pack]
+id = "fixture-invalid-dup-provides"
+version = "0.1.0"
+schema_version = 2
+compatibility = ">=1.91"
+risk = "low"
+consequence = "creates"
+
+[provides]
+capabilities = ["fixture.alpha", "fixture.alpha"]
+
+[[commands]]
+name = "fixture"
+surface = ["fixture"]

@@ -1,0 +1,15 @@
+name: chain-genesis-event
+description: |
+  First event in a stream produces genesis chain_hash:
+  chain_hash = SHA256(content_hash || "genesis")
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - capability
+    - git.commit
+  - - actor
+    - alice
+  cycle_id: c-1
+expect:
+  content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  chain_hash: sha256:82c84c93ffca4a3bc766390bb30fc3b58b392f7d2670ad57d39be9d02c6ee629

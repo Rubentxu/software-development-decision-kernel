@@ -1,0 +1,15 @@
+# Esquema de curriculum-graph.yml
+# Salida de curriculum-designer.
+
+required:
+  concepts:
+    - id: string               # identificador estable (ej. ecs-system)
+      title: string
+      prerequisites: [string]  # ids de otros conceptos
+      depth: enum              # [core, intermediate, advanced, mention]
+  out_of_scope: [string]
+  progressive_example: string  # ruta al ejemplo base reutilizado
+
+optional:
+  topological_order: [string]  # ids en orden de presentación sugerido
+  cycles_detected: [string]    # debe estar vacío en salida válida

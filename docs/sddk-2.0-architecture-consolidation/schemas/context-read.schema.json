@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/context-read-v1.json",
+  "title": "SDDK Context Read Event Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "execution_id",
+    "trigger_event_id",
+    "object_ids",
+    "exact_count",
+    "truncated"
+  ],
+  "properties": {
+    "execution_id": {
+      "type": "string"
+    },
+    "trigger_event_id": {
+      "type": "string"
+    },
+    "object_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 200
+    },
+    "exact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "content_hashes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

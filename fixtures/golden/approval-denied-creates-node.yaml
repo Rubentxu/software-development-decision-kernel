@@ -1,0 +1,30 @@
+name: approval-denied-creates-node
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - cycle
+    - c-1
+  - - capability
+    - git.push
+  cycle_id: c-1
+- event_type: approval.capability.denied
+  subjects:
+  - - actor
+    - bob
+  - - capability
+    - git.push
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - actor:bob
+  - capability:git.push
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: approval.capability.requested
+    to: capability:git.push
+  - from: actor:bob
+    relation: approval.capability.denied
+    to: capability:git.push

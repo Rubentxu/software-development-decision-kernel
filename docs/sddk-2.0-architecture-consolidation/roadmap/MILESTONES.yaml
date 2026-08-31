@@ -1,0 +1,58 @@
+baseline:
+  repo: Rubentxu/software-development-decision-kernel
+  commit: eb5117e6cd4366ceb205a5b2dde4195aa396d32f
+  version: 1.9.1
+  date: '2026-08-11'
+milestones:
+- id: M0
+  name: Baseline & Guardrails
+  phase: 0
+  depends_on: []
+- id: M1
+  name: Hexagonal Kernel
+  phase: 1
+  depends_on:
+  - M0
+  # first deliverable shipped 2026-08-16: live baseline capture + real evaluators for ARCH001-005
+  # + sddk dev check-architecture CLI (ARCH001 ratchet active: engine->storage dep causes FAIL)
+- id: M2
+  name: Event Ledger
+  phase: 2
+  depends_on:
+  - M1
+- id: M3
+  name: Evidence & Governance
+  phase: 3
+  depends_on:
+  - M2
+- id: M4
+  name: Pack Runtime + UAT
+  phase: 4
+  depends_on:
+  - M3
+- id: M5
+  name: Reactive Graph
+  phase: 5
+  depends_on:
+  - M4
+- id: M6
+  name: Staleness & Context Trace
+  phase: 6
+  depends_on:
+  - M5
+- id: M7
+  name: Fork/Replay/Diff
+  phase: 7
+  depends_on:
+  - M6
+- id: M8
+  name: Moldable Explorer
+  phase: 8
+  depends_on:
+  - M5
+- id: M9
+  name: Hardening & Channels
+  phase: 9
+  depends_on:
+  - M7
+  - M8

@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/workflow.schema.json",
+  "title": "SDDK Workflow Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow",
+    "statuses",
+    "phases",
+    "transitions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "description"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "statuses": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["OPEN", "BLOCKED", "REMEDIATING", "UAT_WAITING", "RELEASE_PENDING", "RELEASED", "CLOSED", "ABANDONED", "RECOVERING"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["explore", "specify", "design", "plan", "build", "verify", "uat", "review", "release", "archive"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "debt_verification", "phases"],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "debt_verification": {
+            "type": "string",
+            "enum": ["mandatory", "disabled"]
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Transition"
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["producer", "consumers"],
+        "properties": {
+          "producer": {
+            "type": "string"
+          },
+          "consumers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "gate_type": {
+            "$ref": "#/$defs/GateType"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "forge": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "project_identity": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "Transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "to", "requires"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/StateRef" }
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/StateRef"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Requirement"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "produces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "implementation_binding": {
+          "type": "string"
+        },
+        "on_failure": {
+          "$ref": "#/$defs/StateRef"
+        }
+      }
+    },
+    "StateRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        }
+      }
+    },
+    "Requirement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["artifact", "gate"]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "GateType": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "binary": {
+          "type": "object"
+        },
+        "percentage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["threshold"],
+          "properties": {
+            "threshold": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "count": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min"],
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

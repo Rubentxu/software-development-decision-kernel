@@ -1,0 +1,23 @@
+[package]
+name = "sddk-vault"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-saphyr = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+regex = { workspace = true }
+petgraph = "0.8"
+sha2 = { workspace = true }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11"
+tempfile = { workspace = true }

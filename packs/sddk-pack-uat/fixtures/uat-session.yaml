@@ -1,0 +1,7 @@
+# Minimal UAT session fixture (conformance).
+session_id: "fixture-session-001"
+plan_ref: "fixture-plan-001"
+verdict: "PASS"
+scenarios:
+  - id: "scn-001"
+    status: "PASS"

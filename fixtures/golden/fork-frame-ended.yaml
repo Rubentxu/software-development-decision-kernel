@@ -1,0 +1,30 @@
+name: fork-frame-ended
+events:
+- event_type: fork.created
+  subjects:
+  - - fork
+    - f1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: fork.frame.ended
+  subjects:
+  - - fork
+    - f1
+  - - frame
+    - f1a
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - fork:f1
+  - frame:f1a
+  edges_match:
+  - from: fork:f1
+    relation: fork.created
+    to: cycle:c-1
+  - from: fork:f1
+    relation: fork.frame.ended
+    to: frame:f1a

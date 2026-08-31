@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk-framework/contracts/inventory.schema.json",
+  "title": "SDDK cycle files inventory",
+  "description": "Cycle-scoped manifest of the changed files relative to the persistence-time git HEAD. The contract is authoritative for the cycle's `Files Inventory` section in phase reports (verify, archive, release).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_at",
+    "git",
+    "summary",
+    "buckets",
+    "files"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sddk.inventory/v1"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "head",
+        "comparison"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Absolute repository root used as `git -C` target."
+        },
+        "head": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" }
+          ],
+          "description": "SHA-256 of the persistence-time HEAD captured by the cycle. Null when the reducer degraded (see `summary.unavailable_reason`)."
+        },
+        "comparison": {
+          "type": "string",
+          "enum": [
+            "stage-and-working-tree-vs-head",
+            "head-vs-parent",
+            "head-vs-tag"
+          ]
+        },
+        "parent": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" }
+          ],
+          "description": "SHA referenced for `head-vs-parent` or `head-vs-tag` comparisons; null otherwise."
+        },
+        "tag": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" }
+          ],
+          "description": "Annotated tag used as the base when `comparison: head-vs-tag`; null otherwise."
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "added",
+        "modified",
+        "deleted",
+        "renamed",
+        "ignored_inventory"
+      ],
+      "properties": {
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "renamed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ignored_inventory": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ignored_by_project": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unavailable_reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "git-not-initialized",
+                "git-context-missing",
+                "io-error",
+                "invalid_rev"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "buckets": {
+      "type": "object",
+      "description": "Per-bucket counters keyed by stable prefix (`prompts/`, `agents/`, `skills/`, `assets/`, `tools/`, `docs/`, `tests/`) and `untagged_project/<first-segment>` for the rest. Empty buckets are still present with zero counters.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "added",
+          "modified",
+          "deleted",
+          "renamed"
+        ],
+        "properties": {
+          "added": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "modified": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deleted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "renamed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Each entry is a single distinct path; renames consume exactly one slot with `status: renamed` and `renamed_from` set.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bucket",
+          "status",
+          "path"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "description": "Bucket prefix; must match a key in `buckets`."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Final path (after rename) or sole path for added/modified/deleted."
+          },
+          "renamed_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous path before the rename; required when status is `renamed`, null otherwise."
+          },
+          "old_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Alias of `renamed_from` provided for readability in generators."
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Blob SHA-256 (or SHA-1 hash-object output) of the working-tree/file contents; null for `deleted`."
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Octal mode such as `0644` or `0755`; null when unavailable."
+          }
+        }
+      }
+    },
+    "ignored_by_project": {
+      "type": "array",
+      "description": "Working-tree paths excluded by the project's `.gitignore` (matched by `git check-ignore -v`). Surfaced for traceability but never used as inventory evidence.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

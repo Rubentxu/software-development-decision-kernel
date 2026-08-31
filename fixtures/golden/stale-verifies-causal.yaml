@@ -1,0 +1,27 @@
+name: stale-verifies-causal
+events:
+- event_type: test.verifies
+  subjects:
+  - - test
+    - T1
+  - - requirement
+    - R1
+  cycle_id: c-1
+- event_type: requirement.modified
+  subjects:
+  - - requirement
+    - R1
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - requirement:R1
+  - test:T1
+  edges_match:
+  - from: test:T1
+    relation: test.verifies
+    to: requirement:R1
+  - from: requirement:R1
+    relation: requirement.modified
+    to: requirement:R1

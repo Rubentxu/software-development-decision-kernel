@@ -1,0 +1,7 @@
+[
+  {
+    "step": 1,
+    "screenshot": "screenshot-01.png",
+    "action": "goto /search"
+  }
+]

@@ -1,0 +1,16 @@
+name: artifact-created
+events:
+- event_type: artifact.created
+  subjects:
+  - - artifact
+    - a1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - artifact:a1
+  edges_match:
+  - from: artifact:a1
+    relation: artifact.created
+    to: artifact:a1

@@ -1,0 +1,54 @@
+{
+  "repository": "Rubentxu/software-development-decision-kernel",
+  "baseline_commit": "eb5117e6cd4366ceb205a5b2dde4195aa396d32f",
+  "baseline_version": "1.9.1",
+  "captured_at": "2026-08-11T22:30:00+02:00",
+  "workspace_crates": [
+    "sddk-domain",
+    "sddk-storage",
+    "sddk-engine",
+    "sddk-gateway",
+    "sddk-testkit",
+    "sddk-vault",
+    "sddk-cli"
+  ],
+  "notable_large_files_bytes": {
+    "crates/sddk-cli/src/uat.rs": 196181,
+    "crates/sddk-domain/src/uat.rs": 158685,
+    "crates/sddk-cli/tests/cli.rs": 145474,
+    "crates/sddk-cli/src/dev_cmd.rs": 74728,
+    "prompts/sddk/HTML-REPORT.md": 66195,
+    "prompts/sddk/orchestrator.md": 59567,
+    "crates/sddk-engine/src/lib.rs": 54138,
+    "crates/sddk-storage/src/lib.rs": 47482,
+    "crates/sddk-cli/src/lib.rs": 45670,
+    "crates/sddk-cli/src/lint.rs": 42034,
+    "crates/sddk-gateway/src/oracles.rs": 38925,
+    "crates/sddk-cli/src/telemetry.rs": 38681
+  },
+  "known_architecture_findings": [
+    "sddk-engine directly depends on sddk-storage",
+    "sddk-cli depends on domain, engine, gateway, storage and vault and owns substantial use-case/infrastructure logic",
+    "UAT functionality is concentrated in very large domain/CLI modules",
+    "AGENTS/documentation mixes stable rules and historical/session information",
+    "PackManifest exists but is not yet the primary modular product boundary"
+  ],
+  "existing_strengths": [
+    "local-first XDG/zero-intrusion model",
+    "default-deny permissions/capability governance",
+    "receipts and artifact CAS direction",
+    "guided UAT runner with immutable SHA-256 signoff and staleness concepts",
+    "release integrity with checksums/SBOM/attestation/cosign flow",
+    "golden dataset concept and deterministic local validation philosophy"
+  ],
+  "ci_observations": [
+    "cloud CI workflows are intentionally manual/optional in the inspected baseline",
+    "local validation is the primary workflow authority",
+    "branch protection was observed but required status checks were not the core validation model"
+  ],
+  "release_observations": [
+    "multi-platform release artifacts",
+    "checksums/SBOM/attestation",
+    "cosign keyless signature/certificate verification"
+  ]
+}

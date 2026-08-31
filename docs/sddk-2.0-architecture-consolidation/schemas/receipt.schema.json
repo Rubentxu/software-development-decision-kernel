@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/receipt-v1.json",
+  "title": "SDDK Capability/Gate Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_id",
+    "kind",
+    "created_at",
+    "subject",
+    "actor",
+    "inputs_hash",
+    "outputs_hash",
+    "result"
+  ],
+  "properties": {
+    "receipt_id": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "capability",
+        "gate",
+        "release",
+        "acceptance",
+        "promotion"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subject": {
+      "type": "object"
+    },
+    "actor": {
+      "type": "object"
+    },
+    "proposal_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "policy_decision_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inputs_hash": {
+      "type": "string"
+    },
+    "outputs_hash": {
+      "type": "string"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "postconditions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "result": {
+      "enum": [
+        "passed",
+        "failed",
+        "denied",
+        "partial"
+      ]
+    },
+    "signature": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

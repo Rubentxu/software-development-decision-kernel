@@ -1,0 +1,28 @@
+name: context-read-multiple
+events:
+- event_type: context.read
+  subjects:
+  - - cycle
+    - c-1
+  - - artifact
+    - a1
+  cycle_id: c-1
+- event_type: context.read
+  subjects:
+  - - cycle
+    - c-1
+  - - artifact
+    - a2
+  cycle_id: c-1
+- event_type: context.read
+  subjects:
+  - - cycle
+    - c-1
+  - - artifact
+    - a3
+  cycle_id: c-1
+expect:
+  nodes: 0
+  edges: 0
+  node_keys: []
+  edges_match: []

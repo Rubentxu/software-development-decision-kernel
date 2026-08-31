@@ -1,0 +1,217 @@
+name: Optional tag distribution
+
+# This workflow consumes an already-pushed release tag. It is not an SDDK
+# release gate: local Git verification of main SHA plus annotated remote tag is
+# authoritative, and this optional distribution may run later or not at all.
+#
+# MANUAL-ONLY (2026-08-10): SDDK never depends on CI/CD. The automatic
+# `push: tags: v*` trigger was removed so no run is ever queued by a release;
+# distribution is triggered explicitly by a human via workflow_dispatch.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build and publish ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ALL Linux targets are musl STATIC builds: standalone, run on any
+          # distribution regardless of glibc version. glibc builds removed
+          # (2026-08-06): the installer only ever downloads musl assets.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            asset: sddk-linux-x86_64-musl
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            asset: sddk-linux-aarch64-musl
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset: sddk-darwin-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset: sddk-darwin-x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.91.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.91.0
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install musl cross tools
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build release binary
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release --target ${{ matrix.target }} -p sddk-cli --locked
+
+      - name: Package dist (checksums + SBOM + attestation)
+        run: ./target/${{ matrix.target }}/release/sddk release dist --prefix dist-out --channel release --commit "$GITHUB_SHA"
+
+      - name: Stage assets
+        run: |
+          mkdir -p assets
+          cp dist-out/dist/sddk "assets/${{ matrix.asset }}"
+          cp dist-out/dist/sbom.json "assets/${{ matrix.asset }}.sbom.json"
+          cp dist-out/dist/attestation.json "assets/${{ matrix.asset }}.attestation.json"
+          cp dist-out/dist/checksums.txt "assets/${{ matrix.asset }}.CHECKSUMS"
+          (cd assets && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.asset }}
+          path: assets/*
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            gh release create "$TAG" --generate-notes --title "$TAG" \
+              --repo "${{ github.repository }}" || true
+            gh release upload "$TAG" assets/* --clobber --repo "${{ github.repository }}"
+          else
+            echo "manual run (no tag): assets staged in workflow artifacts"
+          fi
+
+  framework-bundle:
+    name: Bundle framework assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Bundle framework (agents/skills/prompts/assets)
+        run: |
+          mkdir -p bundle
+          # The release SHA must already contain the canonical manifest produced
+          # by `sddk dev manifest`; never maintain a second producer here.
+          test -f MANIFEST.sha256
+          tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256
+          (cd bundle && sha256sum software-development-decision-kernel.tar.gz > software-development-decision-kernel.tar.gz.sha256)
+          ls -la bundle/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sddk-framework
+          path: bundle/*
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            gh release create "$TAG" --generate-notes --title "$TAG" \
+              --repo "${{ github.repository }}" || true
+            gh release upload "$TAG" bundle/* --clobber --repo "${{ github.repository }}"
+          else
+            echo "manual run (no tag): framework staged in workflow artifacts"
+          fi
+
+  sign:
+    name: Sign release assets (cosign keyless)
+    needs: [build, framework-bundle]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@053f9b74638557590800a301da1ba82351507e2c # v3.8.1
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Sign every asset (keyless)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "manual run (no tag): signing skipped"
+            exit 0
+          fi
+          for f in assets/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.sig|*.pem) continue ;;
+            esac
+            cosign sign-blob --yes "$f" \
+              --output-signature "$f.sig" \
+              --output-certificate "$f.pem"
+            echo "signed: $f"
+          done
+          gh release upload "$TAG" assets/*.sig assets/*.pem --clobber --repo "${{ github.repository }}"
+
+  smoke-test:
+    name: Smoke test installer (end-to-end)
+    needs: [sign]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@053f9b74638557590800a301da1ba82351507e2c # v3.8.1
+
+      - name: Install via scripts/install.sh against the real release
+        env:
+          HOME: /tmp/sddk-smoke-home
+          SDDK_PREFIX: /tmp/sddk-smoke-prefix
+          SDDK_FRAMEWORK_DIR: /tmp/sddk-smoke-framework
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "manual run (no tag): smoke test skipped"
+            exit 0
+          fi
+          bash scripts/install.sh --editor all --version "$TAG" 2>&1 | tee /tmp/smoke-install.log
+          grep -q "sha256 verified" /tmp/smoke-install.log
+          grep -q "signature verified (cosign keyless)" /tmp/smoke-install.log
+          grep -q "agents: 67" /tmp/smoke-install.log || grep -q "agents: " /tmp/smoke-install.log
+          grep -q "errors: 0" /tmp/smoke-install.log
+          test -L /tmp/sddk-smoke-home/.config/opencode/agents/orchestrator.md
+          test -L /tmp/sddk-smoke-home/.zcode/agents/orchestrator.md
+
+      - name: Verify binary, completions, and dev update against the real release
+        env:
+          HOME: /tmp/sddk-smoke-home
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "manual run (no tag): smoke test skipped"
+            exit 0
+          fi
+          /tmp/sddk-smoke-prefix/sddk --version
+          /tmp/sddk-smoke-prefix/sddk completion bash | head -1 | grep -q "_sddk"
+          /tmp/sddk-smoke-prefix/sddk completion zsh | head -1 | grep -q "#compdef"
+          mkdir -p /tmp/sddk-smoke-framework-2
+          /tmp/sddk-smoke-prefix/sddk dev update --root /tmp/sddk-smoke-framework-2 \
+            --version "$TAG" --editor all | tee /tmp/smoke-update.log
+          grep -q "sha256 verified" /tmp/smoke-update.log
+          test -d /tmp/sddk-smoke-framework-2/agents
+          test "$(ls /tmp/sddk-smoke-framework-2/agents | wc -l)" -ge 60
+          echo "SMOKE TEST PASS"

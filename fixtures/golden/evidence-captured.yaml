@@ -1,0 +1,30 @@
+name: evidence-captured
+events:
+- event_type: evidence.captured
+  subjects:
+  - - evidence
+    - e1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: evidence.captured
+  subjects:
+  - - evidence
+    - e2
+  - - cycle
+    - c-1
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - evidence:e1
+  - evidence:e2
+  edges_match:
+  - from: evidence:e1
+    relation: evidence.captured
+    to: cycle:c-1
+  - from: evidence:e2
+    relation: evidence.captured
+    to: cycle:c-1

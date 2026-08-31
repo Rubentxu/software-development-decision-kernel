@@ -1,0 +1,6 @@
+{
+  "claims": [
+    {"claim":"tests passed","command":"npm test","trace_event":null},
+    {"claim":"report verified","artifact":"report.md","claimed_sha256":"0000","observed_sha256":"ffff"}
+  ]
+}

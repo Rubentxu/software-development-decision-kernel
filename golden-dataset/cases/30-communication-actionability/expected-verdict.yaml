@@ -1,0 +1,16 @@
+case: 30-communication-actionability
+description: Blocked report omits impact, evidence gap, and recovery action.
+bucket: communication
+schema_version: golden-case/v1
+suite: communication
+target_phase: verify
+language: markdown
+path: A-lite
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - {rule_id: report.missing-recovery-action, classification: blocking_defect, severity: high, location: implementation/report.md}
+  forbidden_rule_ids: []

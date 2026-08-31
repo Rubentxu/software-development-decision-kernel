@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/view-descriptor-v1.json",
+  "title": "SDDK Moldable View Descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "applies_to",
+    "query",
+    "renderer",
+    "panels"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "applies_to": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "object"
+    },
+    "renderer": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "graph",
+            "timeline",
+            "table",
+            "c4",
+            "canvas",
+            "report"
+          ]
+        },
+        "layout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "panels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "drill_down": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "provenance_required": {
+      "type": "boolean"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+[pack]
+id = "sddk-framework"
+version = "1.61.0"
+schema_version = 2
+compatibility = ">=1.91"
+risk = "medium"
+consequence = "modifies"
+category = "core"
+description = "SDDK framework pack: deterministic workflow runtime, capability gateway, vault, and distribution"
+
+[dependencies]
+requires = []
+integrates_with = ["sddk-domain", "sddk-storage", "sddk-engine", "sddk-gateway", "sddk-vault", "sddk-cli"]
+conflicts_with = []
+
+[provides]
+capabilities = ["workflow.run", "capability.govern", "git.operate", "release.create", "vault.access"]
+
+[[commands]]
+name = "adopt"
+surface = ["adopt"]
+
+[[commands]]
+name = "cycle"
+surface = ["cycle"]
+
+[[commands]]
+name = "capability"
+surface = ["capability"]
+
+[[commands]]
+name = "git"
+surface = ["git"]
+
+[[commands]]
+name = "release"
+surface = ["release"]
+
+[[commands]]
+name = "vault"
+surface = ["vault"]
+
+[[commands]]
+name = "dev"
+surface = ["dev"]
+
+[capabilities]
+"git.inspect" = "creates"
+"git.create_branch" = "creates"
+"git.commit" = "modifies"
+"git.tag" = "creates"
+"git.merge" = "modifies"
+"git.delete_branch" = "irreversible"
+"git.push" = "modifies"
+"pr.create" = "creates"
+"pr.merge" = "modifies"
+"pr.close" = "irreversible"
+"release.create" = "creates"
+"release.publish" = "creates"
+
+[fixtures]
+paths = [
+    "tests/test_golden_dataset_contract.py",
+    "tests/test_hard_sizing_regression.sh",
+    "tests/test_instruction_contract.sh",
+    "tests/test_pointer_integrity.sh",
+    "tests/test_push_prevention_hook.sh",
+    "tests/test_workflow_contract.py",
+    "tests/test_evidence_capture_contract.js",
+    "justfile",
+]
+
+[artifacts]
+paths = ["dist/sddk"]

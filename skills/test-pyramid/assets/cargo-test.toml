@@ -1,0 +1,39 @@
+# Cargo test baseline — drop into a new crate's Cargo.toml
+#
+# Usage:
+#   1. Copy this into your crate's [dev-dependencies] and [profile.test] sections.
+#   2. Pin or version-pin tools per your project's MSRV.
+#   3. Add `[[test]]` entries only if you need non-default harness config.
+
+[dev-dependencies]
+# Assertion / fixtures
+pretty_assertions = "1"
+tempfile = "3"
+
+# Async test support (use what's already in workspace.dependencies)
+tokio = { version = "1", features = ["macros", "rt", "time", "test-util"] }
+tokio-test = "0.4"
+
+# Property-based testing (only if the crate parses/serializes/invents)
+proptest = "1"
+
+# HTTP mocking for downstream services (only if the crate calls out)
+httpmock = "0.7"
+# OR wiremock = "0.6"
+
+# DB integration (only if sqlx is a direct dep of the crate)
+# sqlx is usually in workspace.dependencies — add `migrate` feature in the
+# integration test crate that needs it.
+
+# Benchmarking — do NOT add to [dev-dependencies] of a binary crate.
+# Criterion lives in [dev-dependencies] for lib crates that expose benches/.
+
+[profile.test]
+# Slightly faster test compile, slower runtime. Trade-off for large workspaces.
+opt-level = 0
+debug = 1
+incremental = true
+
+# Run serially in CI to surface output deterministically when something fails.
+# Comment out for fast local dev.
+# debug-assertions = true

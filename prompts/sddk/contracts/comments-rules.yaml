@@ -1,0 +1,263 @@
+# sddk dev check comments_check — Forbidden comment patterns contract
+# ─────────────────────────────────────────────────────────────────────
+#
+# Schema: sddk/comments-rules/v1
+# Override at runtime: SDDK_COMMENTS_RULES=/path/to/custom.yaml
+# Per-invocation override: sddk dev check --rules /path/to/custom.yaml
+# Validate at edit time:  sddk dev check --rules $(pwd)/prompts/sddk/contracts/comments-rules.yaml
+#
+# Design rationale
+# ────────────────
+# Patterns used to be hard-coded as 13 distinct `ForbiddenPattern` entries
+# in the Rust scanner, even though they all share the same algorithm
+# (compile regex + match against the comment suffix of a line). The
+# language list was likewise a const array. Both are pure data: refactor
+# them into a YAML contract so adding a new pattern, language, or exclude
+# path does NOT require recompiling the sddk binary.
+#
+# Add a new pattern
+# ─────────────────
+# 1. Append an entry under `patterns:` (specific patterns BEFORE general).
+# 2. Pick a `name:` that's stable and grep-friendly (used in CI output).
+# 3. Pick a `needle:` that ALWAYS appears when the regex matches — this
+#    is a substring pre-filter that skips regex evaluation. Use empty
+#    string `""` only when the pattern has multiple phrasings and no
+#    single substring is shared (the regex still runs; just with no
+#    pre-filter).
+# 4. Test the regex with `rg "<your-regex>" --pcre2grep` or
+#    `python -c "import re; re.compile(r'<your-regex>')"`.
+#
+# Add a new language
+# ───────────────────
+# 1. Append an entry under `languages:`. `extensions` MUST be lowercase
+#    and without the leading dot. `line_comment` / `block_open` /
+#    `block_close` correspond to the comment markers of the language.
+# 2. Set the `supports_*` flags based on what string-literal forms
+#    the language allows (drives the string-stripping algorithm).
+# 3. Add a `## Test case` in `crates/sddk-cli/src/dev/comments_check.rs`
+#    to cover the new language.
+
+version: 1
+schema: sddk/comments-rules/v1
+
+# Path fragments to exclude from scanning (substring match against the
+# absolute path). Skip build artifacts, VCS, and bundle surfaces.
+exclude_paths:
+  - /target/
+  - /.git/
+  - /node_modules/
+  - /docs/
+  - /prompts/
+  - /agents/
+  - /skills/
+  - /schemas/
+  - /assets/
+  - /fixtures/
+  - /golden-dataset/
+  - /packs/
+  - /dist-aarch64/
+  - /dist-amd64/
+  - /dist-x86_64/
+
+# Directory names (exact match against the leaf) that the walker skips
+# without descending into. Independent of `exclude_paths` (which is a
+# substring match on the full path).
+skip_dirs:
+  - target
+  - .git
+  - node_modules
+
+# Languages the scanner recognizes. Used for:
+#  - file extension matching (only scan files with a known extension)
+#  - comment marker detection (each language has different markers)
+#  - string literal stripping (driven by `supports_*` flags)
+#
+# Field semantics:
+#   id             short identifier used in violation reports
+#   extensions     file extensions WITHOUT the leading dot, lowercase
+#   line_comment   single-line comment marker (null = no line comments)
+#   block_open     multi-line comment opener (null = no block comments)
+#   block_close    multi-line comment closer
+#   supports_raw_strings       language allows r"..." or r#'...'# style
+#   supports_triple_quotes     language allows """...""" or '''...''' style
+#   supports_template_literals language allows `...${expr}...` style
+languages:
+  - id: rust
+    extensions: [rs]
+    line_comment: "//"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: true
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: python
+    extensions: [py, pyi]
+    line_comment: "#"
+    block_open: null
+    block_close: null
+    supports_raw_strings: true
+    supports_triple_quotes: true
+    supports_template_literals: false
+
+  - id: javascript
+    extensions: [js, jsx, mjs, cjs, ts, tsx, vue, svelte]
+    line_comment: "//"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: true
+
+  - id: shell
+    extensions: [sh, bash, zsh, ksh]
+    line_comment: "#"
+    block_open: null
+    block_close: null
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: toml
+    extensions: [toml]
+    line_comment: "#"
+    block_open: null
+    block_close: null
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: yaml
+    extensions: [yaml, yml]
+    line_comment: "#"
+    block_open: null
+    block_close: null
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: go
+    extensions: [go]
+    line_comment: "//"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: true
+
+  - id: java
+    extensions: [java, kt, kts]
+    line_comment: "//"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: c_family
+    extensions: [c, h, cpp, cc, cxx, hpp, hh, hxx, cs, m, mm]
+    line_comment: "//"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: ruby
+    extensions: [rb]
+    line_comment: "#"
+    block_open: "=begin"
+    block_close: "=end"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+  - id: sql
+    extensions: [sql]
+    line_comment: "--"
+    block_open: "/*"
+    block_close: "*/"
+    supports_raw_strings: false
+    supports_triple_quotes: false
+    supports_template_literals: false
+
+# Forbidden comment patterns. Order matters: the FIRST match per line
+# wins. Specific composite patterns (e.g. audit markers) MUST come
+# BEFORE general standalone rules (e.g. cycle pointers) so the composite
+# rule is the one reported.
+#
+# Field semantics:
+#   name        short identifier shown in violation output (grep-friendly)
+#   description human-readable explanation (for `sddk dev check --explain`)
+#   needle      substring pre-filter that ALWAYS appears when the regex
+#               matches. Use `""` for patterns with multiple phrasings
+#               and no shared substring — the regex still runs, just
+#               without the cheap pre-filter.
+#   regex       the pattern, evaluated against the comment suffix of each
+#               line. Backreferences, lookahead, and named groups are all
+#               supported (regex crate / PCRE-like syntax).
+patterns:
+  - name: audit_marker
+    description: "Composite 'Audit (cycle N, ...)' marker — links to verify/audit reports."
+    needle: "Audit"
+    regex: '\bAudit\s*\(\s*cycle[\s-]?\d+'
+
+  - name: verify_report_ref
+    description: "Acceptance scenario / verify-report / 'was deferred in cycle N' composites."
+    needle: ""
+    regex: '\b(acceptance scenario\s+\d+|\bcycle\s*\d+\s+verify-report\b|\bwas deferred in\s+cycle\s+\d+)'
+
+  - name: action_in_cycle
+    description: "Action verbs paired with cycle/version refs ('deferred to cycle N', 'stub in v1.X')."
+    needle: ""
+    regex: '\b(deferred|stub|added|fixed|implemented|landed|replaced|removed|backport(?:ed)?|backfill|trimmed|bumped|broken|closed|reopened|audited)\s+(?:in|to|for|during|since)\s+(?:cycle[\s-]?\d+|v\d+\.\d+(?:\.\d+)?)'
+
+  - name: cycle_pointer_hyphen
+    description: "Cycle pointer with hyphen (cycle-N, kernel-cycle-N)."
+    needle: "cycle-"
+    regex: '\bcycle-[A-Za-z0-9]+\b'
+
+  - name: cycle_pointer_space
+    description: "Cycle pointer with space ('cycle N' style)."
+    needle: "cycle "
+    regex: '\b[Cc]ycle\s+\d+[A-Za-z]?\b'
+
+  - name: task_identifier
+    description: "Task/work IDs (REQ-X-Y, AC-X-Y, T-N, W-DV-N, WV-NNNN, INC-XXX-sha, P1-FIX-NNN)."
+    needle: "-"
+    regex: '\b(REQ|AC|T|CYC|TASK|WV|W|CL|K8|FEAT|BUG|FIX|ENH|INC-FORWARD|P[0-9]+-(?:FIX|INC|FEAT|ENH))-[A-Z0-9]+(-[A-Z0-9a-f]+)*\b'
+
+  - name: task_word
+    description: "Natural-language task refs ('Task 3', 'Ticket 42')."
+    needle: "Task"
+    regex: '\b(Task|Ticket)\s+\d+\b'
+
+  - name: pr_reference
+    description: "Pull request references ('merged in PR #N', 'PR #N')."
+    needle: "PR"
+    regex: '\b(merged in PR\s*#\d+\b|\bPR\s*#\d+\b)'
+
+  - name: issue_number
+    description: "Issue tracker numbers (#NNN, 3+ digits to avoid hex colors)."
+    needle: "#"
+    regex: '#[0-9]{3,}\b'
+
+  - name: tracker_ref
+    description: "External tracker refs (gh-NNN, JIRA-NNN)."
+    needle: "gh-"
+    regex: '\b(gh|JIRA)[-#]?\d{2,}\b'
+
+  - name: signed_off_by
+    description: "Git trailer authorship ('Signed-off-by:', 'Reviewed-by:', etc.)."
+    needle: "by:"
+    regex: '\b(Signed-off-by|Reviewed-by|Co-authored-by|Pair-programmed-with):'
+
+  - name: user_handle
+    description: "User handles in code comments (@author, @contributor)."
+    needle: "@author"
+    regex: '@(?:author|contributor|maintainer|reviewer)\b'
+
+  - name: placeholder_marker
+    description: "TODO/FIXME/XXX/HACK placeholders in line/block comments."
+    needle: "TODO"
+    regex: '(//|/\*|#|--)\s*(TODO|FIXME|XXX|HACK)\b'

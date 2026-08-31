@@ -1,0 +1,18 @@
+version: 1
+nodes:
+  actor: {description: Human, agent or system identity participating in work}
+  intent: {description: Goal or requested outcome}
+  work_item: {description: Unit of planned or tracked work}
+  artifact: {description: Immutable or versioned produced/observed material}
+  observation: {description: A derived or captured statement about the world}
+  evidence: {description: Provenance-bearing support or contradiction}
+  decision: {description: Accepted/rejected verdict or governance outcome}
+relations:
+  caused_by: {from: any, to: [actor, intent, observation, decision]}
+  derived_from: {from: any, to: any}
+  produced_by: {from: [artifact, observation, evidence, decision], to: [actor, work_item]}
+  supports: {from: evidence, to: [observation, decision, intent]}
+  contradicts: {from: evidence, to: [observation, decision]}
+  depends_on: {from: any, to: any}
+  satisfies: {from: [artifact, evidence, decision], to: [intent, work_item]}
+invariant: Domain nouns such as Requirement, Commit, UATScenario or C4Container live in packs and map to these primitives when cross-pack interoperability is needed.

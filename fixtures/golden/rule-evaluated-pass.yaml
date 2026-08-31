@@ -1,0 +1,27 @@
+name: rule-evaluated-pass
+events:
+- event_type: rule.evaluated
+  subjects:
+  - - rule
+    - r1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: rule.passed
+  subjects:
+  - - rule
+    - r1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - rule:r1
+  edges_match:
+  - from: rule:r1
+    relation: rule.evaluated
+    to: cycle:c-1
+  - from: rule:r1
+    relation: rule.passed
+    to: rule:r1

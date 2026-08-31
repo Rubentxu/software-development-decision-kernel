@@ -1,0 +1,21 @@
+# Esquema del corpus de conocimiento
+# Salida de research-knowledge-curator. Fuente de verdad para source-researcher.
+
+required:
+  version: string            # {date}-{n}
+  generated_at: date
+  topics:
+    - id: string             # tema
+      claims:
+        - id: string         # cl-{tema}-{slug}
+          text: string
+          status: enum       # verified|disputed|unverified|needs_recheck
+          confidence_score: number   # 0-1
+          sources: [string]  # ids de fuentes
+          decay_date: date   # cuándo re-verificar
+
+optional:
+  gaps: [string]             # conocimiento faltante
+  index: object              # mapeo tema→claims→sources
+  uncertain_decay: boolean   # si la tasa de decay es incierta
+  superseded_by: string      # si una claim fue reemplazada por otra

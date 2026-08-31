@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/evals/evaluation.schema.json",
+  "title": "SDDK External Evaluation Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "bundle_hash", "evaluation_hash", "labels_snapshot_digest", "created_at", "evaluator", "judge", "command_digests", "execution_policy", "cases"],
+  "properties": {
+    "contract_version": {"const": "golden-run/v1"},
+    "bundle_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "evaluation_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "labels_snapshot_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "evaluator": {"$ref": "#/$defs/role"},
+    "judge": {"$ref": "#/$defs/role"},
+    "command_digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluator", "judge"],
+      "properties": {
+        "evaluator": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "judge": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "execution_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "passed_environment", "read_only_paths", "timeout_seconds", "max_output_bytes"],
+      "properties": {
+        "network": {"enum": ["disabled", "external-model"]},
+        "passed_environment": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "read_only_paths": {"type": "array", "items": {"type": "string", "pattern": "^/"}, "uniqueItems": true},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "max_output_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "cases": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "model"],
+      "properties": {
+        "identity": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["identity", "model", "argv", "exit_code", "stdout_digest", "stderr_digest", "network_policy", "provenance_digest"],
+      "properties": {
+        "identity": {"type": "string"},
+        "model": {"type": "string"},
+        "argv": {"type": "array", "items": {"type": "string"}},
+        "exit_code": {"type": "integer"},
+        "stdout_digest": {"type": "string"},
+        "stderr_digest": {"type": "string"},
+        "trace_digest": {"type": ["string", "null"]},
+        "network_policy": {"enum": ["disabled", "external-model"]},
+        "provenance_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "finding": {
+      "$ref": "https://sddk.dev/contracts/verify-finding.schema.json"
+    },
+    "role_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "findings"],
+      "properties": {
+        "verdict": {"enum": ["PASS", "PASS_WITH_WARNINGS", "FAIL", "INCONCLUSIVE"]},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
+      }
+    },
+    "grade": {
+      "type": "object",
+      "required": ["expected_verdict", "actual_verdict", "tp", "fp", "fn", "tn", "passed"],
+      "properties": {
+        "expected_verdict": {"type": "string"},
+        "actual_verdict": {"type": ["string", "null"]},
+        "tp": {"type": "integer", "minimum": 0},
+        "fp": {"type": "integer", "minimum": 0},
+        "fn": {"type": "integer", "minimum": 0},
+        "tn": {"type": "integer", "minimum": 0},
+        "passed": {"type": "boolean"}
+      }
+    },
+    "trial": {
+      "type": "object",
+      "required": ["evaluator", "judge", "grade"],
+      "properties": {
+        "evaluator": {"$ref": "#/$defs/role_output"},
+        "judge": {"$ref": "#/$defs/role_output"},
+        "grade": {"$ref": "#/$defs/grade"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["precision", "recall", "f1", "false_block_rate", "critical_escape_rate", "pass_k"],
+      "properties": {
+        "precision": {"type": "number", "minimum": 0, "maximum": 1},
+        "recall": {"type": "number", "minimum": 0, "maximum": 1},
+        "f1": {"type": "number", "minimum": 0, "maximum": 1},
+        "false_block_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "critical_escape_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "pass_k": {"type": "object"}
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+case: 26-cli-contract-mutants
+description: Eight independent mutants violate invocation, evidence, lease, or ownership rules.
+bucket: contract
+schema_version: golden-case/v1
+suite: cli-contract
+target_phase: verify
+language: json
+path: A-full
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - {rule_id: cli.invalid.missing-cycle, classification: blocking_defect, severity: high, location: implementation/trace.json}
+    - {rule_id: cli.invalid.command-or-flag, classification: blocking_defect, severity: high, location: implementation/trace.json}
+    - {rule_id: cli.schema.unknown-field, classification: blocking_defect, severity: high, location: implementation/trace.json}
+    - {rule_id: cli.output.text-parse, classification: blocking_defect, severity: medium, location: implementation/trace.json}
+    - {rule_id: cli.error.hidden, classification: blocking_defect, severity: high, location: implementation/trace.json}
+    - {rule_id: cli.lease.stale, classification: blocking_defect, severity: critical, location: implementation/trace.json}
+    - {rule_id: cli.evidence.boolean-only, classification: blocking_defect, severity: high, location: implementation/trace.json}
+    - {rule_id: cli.owner.worker-lifecycle, classification: blocking_defect, severity: high, location: implementation/trace.json}
+  forbidden_rule_ids: []

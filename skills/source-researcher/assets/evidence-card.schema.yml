@@ -1,0 +1,16 @@
+# Esquema de evidence card
+# Una afirmación verificable = una card.
+
+required:
+  id: string            # ev-{concepto}-{slug}
+  source_id: string     # referencia a sources.yaml
+  claim: string         # afirmación textual
+  type: enum            # fact | interpretation | recommendation
+  verified_at: date     # ISO 8601
+  status: enum          # verified | unverified | disputed
+
+optional:
+  quote: string         # extracto literal de la fuente
+  quote_locator: string # sección, línea, §
+  version_note: string  # notas sobre versión específica
+  refutes: [string]     # ids de cards que esta contradice

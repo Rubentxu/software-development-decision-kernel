@@ -1,0 +1,12 @@
+Area,Current risk,Decision,Priority,Primary ADR
+Dependency direction,engine/CLI coupled to storage,Application ports + compile-time rules,P0/P1,ADR-004
+UAT,God modules / domain concentration,Extract bounded context + first pack,P0/P1,ADR-005
+Operational history,Multiple semantic stores,Append-only event ledger,P0/P1,ADR-001
+Knowledge graph,Potential second source of truth,Rebuildable projection only,P1,ADR-002
+Reactive automation,Hidden side effects,Proposal-only behaviors,P0,ADR-008
+Modularity,Core capability sprawl,Pack runtime,P0/P1,ADR-006
+Evidence,UAT-local semantics,Platform primitive,P1,ADR-009
+Agent identity,ID does not capture prompt/policy drift,Content-bound identity,P1,ADR-012
+Experimentation,No counterfactual run semantics,Fork/replay/diff/promote,P2,ADR-010
+Visualization,One-size graph/report risk,Moldable projections,P2,ADR-017
+CI trust,Local checks not independently verifiable,Signed gate receipts,P1/P2,ADR-014

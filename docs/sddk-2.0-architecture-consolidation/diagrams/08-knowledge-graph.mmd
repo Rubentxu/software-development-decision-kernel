@@ -1,0 +1,13 @@
+flowchart LR
+  REQ[Requirement] -->|implemented_by| COM[Commit]
+  COM -->|verified_by| TEST[Test]
+  TEST -->|produces| EV[Evidence]
+  REQ -->|accepted_by| UAT[UAT Acceptance]
+  UAT -->|supported_by| EV
+  ADR[ADR] -->|governs| COMP[Component]
+  COMP -->|contained_in| SYS[C4 Container/System]
+  AG[Agent Execution] -->|read| ADR
+  AG -->|produced| FIND[Finding]
+  FIND -->|affects| COMP
+  REL[Release] -->|contains| COM
+  REL -->|satisfied_by| UAT

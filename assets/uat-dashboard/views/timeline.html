@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT Timeline — @RELEASE@</title>
+<style>@TOKENS@</style>
+<style>@COMPONENTS@</style>
+<style>
+.kpis { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3) var(--space-4); min-width: 120px; }
+.kpi-card .v { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.kpi-card .l { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+.section { margin-bottom: var(--space-5); }
+.section-title { font-size: 1.1rem; font-weight: 600; color: var(--text); margin-bottom: var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); }
+.feature-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); margin-bottom: var(--space-3); }
+.feature-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+.feature-name { font-weight: 600; color: var(--text); }
+.feature-meta { font-size: 0.85rem; color: var(--muted); }
+.coverage-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: var(--space-2); }
+.coverage-fill { height: 100%; background: var(--ok); transition: width 0.3s; }
+.scenario-row { display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-3); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.scenario-row:last-child { border-bottom: none; }
+.scenario-title { color: var(--text); font-size: 0.9rem; }
+.scenario-tags { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.run-cells { display: flex; gap: 3px; flex-wrap: nowrap; overflow-x: auto; padding: 2px 0; }
+.run-cell { width: 28px; height: 28px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; cursor: default; flex-shrink: 0; }
+.run-cell.pass { background: var(--ok); color: #fff; }
+.run-cell.fail { background: var(--danger); color: #fff; }
+.run-cell.blocked { background: var(--warn); color: #000; }
+.run-cell.partial { background: #607d8b; color: #fff; }
+.run-cell.not_run { background: var(--border); color: var(--muted); }
+.trend { font-size: 0.75rem; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.trend.improving { background: rgba(76, 175, 80, 0.2); color: var(--ok); }
+.trend.stable { background: rgba(77, 163, 255, 0.15); color: var(--accent); }
+.trend.degrading { background: rgba(239, 83, 80, 0.2); color: var(--danger); }
+.flaky-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; }
+.flaky-badge.low { background: rgba(76, 175, 80, 0.15); color: var(--ok); }
+.flaky-badge.medium { background: rgba(255, 183, 77, 0.2); color: var(--warn); }
+.flaky-badge.high { background: rgba(239, 83, 80, 0.2); color: var(--danger); }
+.defect-tag { font-size: 0.7rem; background: rgba(239, 83, 80, 0.15); color: var(--danger); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); }
+.heat-row { display: flex; gap: 3px; align-items: center; }
+.heat-cell { width: 20px; height: 20px; border-radius: 3px; flex-shrink: 0; }
+.flakiness-legend { display: flex; gap: var(--space-3); margin-top: var(--space-2); font-size: 0.75rem; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 2px; }
+.empty-state { text-align: center; padding: var(--space-5); color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <span class="crumb">UAT Timeline</span>
+    <span class="crumb" style="color:var(--accent-strong);font-family:var(--font-mono)">@RELEASE@</span>
+  </header>
+  <p class="page-sub">history timeline &middot; flakiness heatmap &middot; defect linkage &middot; generated @GENERATED_AT@</p>
+
+  <div class="kpis" id="kpis"></div>
+  <div id="features"></div>
+
+  <footer>
+    sddk uat history --view timeline &middot; data: @PLAN_REF@ &middot; datasets embebidos inline
+  </footer>
+</div>
+
+<script>@STORAGE_JS@</script>
+<script>@COMPONENTS_JS@</script>
+<script>
+const PLAN = @PLAN_JSON@;
+const REPORT = @HISTORY_JSON@;
+
+function trendClass(t) {
+  if (t === 'improving') return 'improving';
+  if (t === 'degrading') return 'degrading';
+  return 'stable';
+}
+function trendLabel(t) {
+  if (t === 'improving') return '↑ improving';
+  if (t === 'degrading') return '↓ degrading';
+  return '→ stable';
+}
+function flakyClass(score) {
+  if (score < 0.2) return 'low';
+  if (score < 0.6) return 'medium';
+  return 'high';
+}
+function flakyLabel(score) {
+  return (score * 100).toFixed(0) + '% flaky';
+}
+function statusCell(status) {
+  const s = (status || 'NOT_RUN').toUpperCase();
+  const cls = { PASS: 'pass', FAIL: 'fail', BLOCKED: 'blocked', PARTIAL: 'partial', NOT_RUN: 'not_run' }[s] || 'not_run';
+  const label = { PASS: '✓', FAIL: '✗', BLOCKED: '⊘', PARTIAL: '◑', NOT_RUN: '–' }[s] || '–';
+  return `<div class="run-cell ${cls}" title="${s}">${label}</div>`;
+}
+function flakinessColor(score) {
+  // 0 = green, 1 = red
+  const r = Math.round(239 * score);
+  const g = Math.round(175 * (1 - score) + 83 * score);
+  const b = Math.round(80 * score + 50 * (1 - score));
+  return `rgb(${r},${g},${b})`;
+}
+
+function render() {
+  // KPIs
+  const totalScenarios = REPORT.scenarios.length;
+  const passRate = totalScenarios > 0
+    ? (REPORT.scenarios.reduce((sum, s) => sum + s.success_rate, 0) / totalScenarios * 100).toFixed(1)
+    : '0.0';
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi-card"><div class="v">${REPORT.sessions_total}</div><div class="l">sessions</div></div>
+    <div class="kpi-card"><div class="v">${totalScenarios}</div><div class="l">scenarios</div></div>
+    <div class="kpi-card"><div class="v">${passRate}%</div><div class="l">avg pass rate</div></div>
+    <div class="kpi-card"><div class="v">${REPORT.defects_total}</div><div class="l">defects</div></div>
+  `;
+
+  // Per-feature sections
+  const featuresEl = document.getElementById('features');
+  const featureMap = {};
+  for (const s of REPORT.scenarios) {
+    if (!featureMap[s.feature_id]) {
+      featureMap[s.feature_id] = [];
+    }
+    featureMap[s.feature_id].push(s);
+  }
+
+  let html = '';
+  for (const feature of PLAN.features || []) {
+    const scenarios = featureMap[feature.id] || [];
+    const total = scenarios.length;
+    const passing = scenarios.filter(s => s.runs_passing > 0 && s.runs_failing === 0).length;
+    const coverage = total > 0 ? (passing / total * 100) : 0;
+
+    html += `<div class="feature-card">
+      <div class="feature-header">
+        <div class="feature-name">${UatRender.escapeHtml(feature.name)}</div>
+        <div class="feature-meta">${passing}/${total} passing &middot; ${coverage.toFixed(0)}% coverage</div>
+      </div>
+      <div class="coverage-bar"><div class="coverage-fill" style="width:${coverage}%"></div></div>
+    </div>`;
+
+    // Scenario rows
+    html += `<div style="margin-left:var(--space-3); margin-bottom:var(--space-4);">`;
+    for (const scenario of scenarios) {
+      const last = scenario.last_run;
+      const lastDate = last ? last.at.slice(0, 10) : '—';
+      const lastStatus = last ? last.status : 'NOT_RUN';
+      const trend = trendLabel(scenario.trend);
+      const flaky = flakyLabel(scenario.flakiness_score);
+      const fc = flakyClass(scenario.flakiness_score);
+      const defects = scenario.defect_ids.length > 0
+        ? scenario.defect_ids.map(d => `<span class="defect-tag">${UatRender.escapeHtml(d)}</span>`).join('')
+        : '';
+
+      // Build run cells from sessions
+      const runStatuses = [];
+      for (const s of REPORT.scenarios) {
+        if (s.scenario_id === scenario.scenario_id) {
+          // Find in history - already have the scenario history, but we don't have per-session breakdown
+          // We only have first_run and last_run. For the heatmap, show the trend run cells.
+          // Since we don't have per-session breakdown in UatHistoryReport, we render last status + trend.
+          break;
+        }
+      }
+
+      // Fallback: use summary stats to render a representative cell
+      const passRate = (scenario.success_rate * 100).toFixed(0) + '%';
+      const runCount = scenario.runs_total;
+
+      html += `<div class="scenario-row">
+        <div class="scenario-title">${UatRender.escapeHtml(scenario.scenario_title)}</div>
+        <div class="scenario-tags">
+          <span class="trend ${trendClass(scenario.trend)}">${trend}</span>
+          <span class="flaky-badge ${fc}" title="flakiness score">${flaky}</span>
+          ${defects}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (REPORT.scenarios.length === 0) {
+    html = `<div class="empty-state">No sessions recorded yet.</div>`;
+  }
+
+  featuresEl.innerHTML = html;
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# Architecture Decision Records
+
+- [ADR-020-KERNEL-REDEFINITION](ADR-020-KERNEL-REDEFINITION.md) — ADR-020-KERNEL-REDEFINITION — Redefine SDDK as Software Development Decision Kernel
+- [ADR-021-EVENT-LEDGER-AUTHORITY](ADR-021-EVENT-LEDGER-AUTHORITY.md) — ADR-021-EVENT-LEDGER-AUTHORITY — Use an append-only Event Ledger as operational authority
+- [ADR-022-ACTIVE-GRAPH-PROJECTION](ADR-022-ACTIVE-GRAPH-PROJECTION.md) — ADR-022-ACTIVE-GRAPH-PROJECTION — Represent operational knowledge as an event-derived active graph
+- [ADR-023-SUPERVISOR-RUNTIME-SEPARATION](ADR-023-SUPERVISOR-RUNTIME-SEPARATION.md) — ADR-023-SUPERVISOR-RUNTIME-SEPARATION — Separate cognitive Supervisor from deterministic runtime
+- [ADR-024-GENERIC-WORKFLOW-IR](ADR-024-GENERIC-WORKFLOW-IR.md) — ADR-024-GENERIC-WORKFLOW-IR — Replace closed SDD phase semantics with a generic Workflow IR
+- [ADR-025-CAPABILITY-BASED-ROUTING](ADR-025-CAPABILITY-BASED-ROUTING.md) — ADR-025-CAPABILITY-BASED-ROUTING — Route semantic capabilities rather than hard-coded agents/models
+- [ADR-026-AGENT-HOST-ABSTRACTION](ADR-026-AGENT-HOST-ABSTRACTION.md) — ADR-026-AGENT-HOST-ABSTRACTION — Abstract agentic IDEs behind AgentHost event/control ports
+- [ADR-027-PROVIDER-FAILOVER](ADR-027-PROVIDER-FAILOVER.md) — ADR-027-PROVIDER-FAILOVER — Treat provider/model failure as recoverable execution routing
+- [ADR-028-CONTEXT-CAPSULES](ADR-028-CONTEXT-CAPSULES.md) — ADR-028-CONTEXT-CAPSULES — Use compiled Context Capsules for agent handoff and recovery
+- [ADR-029-UAT-BOUNDED-CONTEXT](ADR-029-UAT-BOUNDED-CONTEXT.md) — ADR-029-UAT-BOUNDED-CONTEXT — Extract UAT as a bounded context and workflow pack
+- [ADR-030-STATIC-CONTROL-PLANE](ADR-030-STATIC-CONTROL-PLANE.md) — ADR-030-STATIC-CONTROL-PLANE — Make the primary Cockpit a static self-contained projection
+- [ADR-031-GOVERNED-SIDE-EFFECTS](ADR-031-GOVERNED-SIDE-EFFECTS.md) — ADR-031-GOVERNED-SIDE-EFFECTS — Require proposal-policy-capability-verification-receipt for side effects
+- [ADR-032-FOCUSED-PORTS](ADR-032-FOCUSED-PORTS.md) — ADR-032-FOCUSED-PORTS — Replace aggregate Ledger dependencies with focused ports
+- [ADR-033-AGENT-WORKTREE-ISOLATION](ADR-033-AGENT-WORKTREE-ISOLATION.md) — ADR-033-AGENT-WORKTREE-ISOLATION — Isolate mutating agent executions using Git worktrees/branches
+- [ADR-034-PACK-MICROKERNEL](ADR-034-PACK-MICROKERNEL.md) — ADR-034-PACK-MICROKERNEL — Evolve packs into a microkernel extension contract
+- [ADR-035-EVALUATION-FEEDBACK](ADR-035-EVALUATION-FEEDBACK.md) — ADR-035-EVALUATION-FEEDBACK — Use execution history for explainable routing evaluation
+- [ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE](ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE.md) — ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE — Model artifact origin, SBOM and lifecycle as first-class provenance
+- [ADR-037-DYNAMIC-WORKFLOW-COMPILATION](ADR-037-DYNAMIC-WORKFLOW-COMPILATION.md) — ADR-037 — Dynamic Workflow Compilation and Evented Graph Expansion
+- [ADR-038-INVARIANT-DRIVEN-SDD](ADR-038-INVARIANT-DRIVEN-SDD.md) — ADR-038 — Make SDD Invariant-Driven Rather Than Phase-Driven
+- [ADR-039-ADAPTIVE-VERIFICATION](ADR-039-ADAPTIVE-VERIFICATION.md) — ADR-039 — Risk- and Evidence-Driven Adaptive Verification
+- [ADR-040-DURABLE-DEBT-REMEDIATION](ADR-040-DURABLE-DEBT-REMEDIATION.md) — ADR-040 — Durable and prioritized technical-debt remediation
+- [ADR-041-WORKFLOW-RUNTIME-V2](ADR-041-WORKFLOW-RUNTIME-V2.md) — ADR-041 — WorkflowRuntime v2: Deterministic Core with Canonical Event Emission
+- [ADR-042-TEST-TOOLING-BOUNDARY](ADR-042-TEST-TOOLING-BOUNDARY.md) — ADR-042 — Test-Tooling Boundary: Sequencing and Target Migration (Accepted)

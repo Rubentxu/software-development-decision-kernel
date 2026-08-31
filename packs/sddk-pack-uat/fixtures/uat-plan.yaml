@@ -1,0 +1,13 @@
+# Minimal UAT plan fixture (conformance — validates against uat-plan schema).
+plan_id: "fixture-plan-001"
+title: "Fixture UAT plan"
+features:
+  - id: "feature-login"
+    title: "Login flow"
+    scenarios:
+      - id: "scn-001"
+        title: "Valid credentials sign in"
+        steps:
+          - id: "stp-001"
+            action: "Enter valid username and password"
+            expected: "Dashboard is shown"

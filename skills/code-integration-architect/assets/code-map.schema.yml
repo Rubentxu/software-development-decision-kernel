@@ -1,0 +1,21 @@
+# Esquema de code-map.yml
+# Mapa bidireccional libro↔workspace. Salida de code-integration-architect.
+
+required:
+  sections:                    # dirección libro → código
+    - chapter: string          # id del capítulo
+      section: string          # título de la sección
+      crate: string            # ruta chapters/chapter-{NN}-{slug}
+      region: string           # tag:: en el .rs que se incluye
+      include_path: string     # path relativo + [tag=...]
+  crates:                      # dirección código → libro
+    - crate: string
+      referenced_by: [string]  # lista de "cap-NN §X.Y"
+      orphan: boolean
+
+optional:
+  gaps: [string]               # secciones sin código identificado
+  strategy_notes: string       # decisiones de include por capítulo
+  shared_regions:              # regiones usadas por >1 capítulo
+    - region: string
+      used_by: [string]

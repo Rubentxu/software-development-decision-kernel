@@ -1,0 +1,62 @@
+# UAT Pack Manifest — sddk-pack-uat
+#
+# This pack provides the user acceptance testing (UAT) guided runner,
+# form DSL, scenario management, and evidence collection for SDDK workflows.
+#
+# Schema version: 2 (v2 semantics — requires, integrates_with, provides, conflicts_with)
+
+[pack]
+id = "sddk-uat"
+version = "1.28.0"
+schema_version = 2
+compatibility = ">=1.26.0"
+risk = "medium"
+consequence = "modifies"
+
+[pack.description]
+short = "UAT guided runner and scenario management"
+long = """
+The UAT pack provides end-to-end acceptance testing via a guided runner
+that executes scenario plans, collects evidence, and produces verifiable
+receipts. It includes the form DSL for human-in-the-loop steps, oracle
+assessment for automated verdicts, and review policies for approval gates.
+"""
+
+[dependencies]
+# UAT is built on the universal Evidence model — EvidenceBundle, EvidenceArtifact.
+# It integrates with the capability gateway for governed execution.
+# Core kernel (sddk-domain, sddk-engine, sddk-gateway) is always required.
+required = []
+integrates_with = ["sddk-capability-gateway"]
+conflicts_with = []
+
+[capabilities]
+# These are the top-level UAT capabilities exposed to the proposal/policy system.
+# Each maps to a consequence class for risk assessment.
+"uat.plan.create" = "modifies"
+"uat.plan.execute" = "creates"
+"uat.plan.approve" = "modifies"
+"uat.evidence.collect" = "modifies"
+"uat.receipt.emit" = "creates"
+
+[provides]
+capabilities = ["uat.plan.create", "uat.plan.execute", "uat.plan.approve", "uat.evidence.collect", "uat.receipt.emit"]
+event_schemas = ["uat.plan.created", "uat.execution.started", "uat.execution.completed", "uat.verdict.reached", "uat.approval.granted", "uat.approval.denied"]
+view_types = ["UatPlanView", "UatScenarioView", "UatEvidenceView", "UatReceiptView"]
+
+[commands]
+[[commands]]
+name = "uat"
+surface = ["sddk uat"]
+description = "Run UAT scenario plans in guided mode"
+
+[[commands]]
+name = "uat-generate"
+surface = ["sddk uat generate"]
+description = "Generate UAT plan from discovery"
+
+[fixtures]
+schema_version = 1
+
+[artifacts]
+paths = ["uat-dashboard-*.html", "uat-report-*.yaml", "uat-history-*.yaml"]

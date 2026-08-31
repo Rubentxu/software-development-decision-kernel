@@ -1,0 +1,19 @@
+case: 25-typescript-negative-control
+description: Happy-path-only test misses required input and negative behavior.
+bucket: subtle
+schema_version: golden-case/v1
+suite: test-strength
+target_phase: verify
+language: typescript
+path: A-lite
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - rule_id: verify.test-strength.missing-negative-control
+      classification: blocking_defect
+      severity: high
+      location: implementation/status.ts
+  forbidden_rule_ids: []

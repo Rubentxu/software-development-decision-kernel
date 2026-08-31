@@ -1,0 +1,16 @@
+case: 29-contract-finding-shape
+description: Legacy prose finding omits mandatory evidence fields.
+bucket: contract
+schema_version: golden-case/v1
+suite: finding-contract
+target_phase: verify
+language: json
+path: A-full
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - {rule_id: finding.contract.invalid-shape, classification: blocking_defect, severity: high, location: implementation/finding.json}
+  forbidden_rule_ids: []

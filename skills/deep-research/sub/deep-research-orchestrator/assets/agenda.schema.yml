@@ -1,0 +1,32 @@
+# Esquema de research/agenda.yml
+
+required_fields:
+  - agenda.topic
+  - agenda.domain
+  - agenda.questions
+  - agenda.questions[].id
+  - agenda.questions[].question
+  - agenda.questions[].claim_type
+  - agenda.questions[].evidence_level
+  - agenda.questions[].risk
+
+schema:
+  agenda:
+    topic: string
+    domain: enum [technology, ai-ml, systems-thinking, science, medicine, economics, history, philosophy, other]
+    questions:
+      - id: string  # RQ-{kebab-slug}
+        question: string
+        claim_type: string
+        evidence_level: enum [L1, L2, L3, L4, L5, L6, L7, L1-exp]
+        risk: enum [critical, normal, low]
+        admissible_sources: [string]
+        status: enum [open, investigating, resolved, disputed, deprecated]
+        claim_id: string
+        notes: string
+    gaps:
+      - string
+    strategy:
+      default_authority_floor: enum [L1, L2, L3, L4, L5]
+      hard_blockers: [enum]
+      experimental_validation_required: bool

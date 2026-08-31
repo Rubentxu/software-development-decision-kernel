@@ -1,0 +1,29 @@
+name: dedup-across-cycles
+events:
+- event_type: test.verifies
+  subjects:
+  - - test
+    - t1
+  - - requirement
+    - r1
+  cycle_id: c-1
+- event_type: test.verifies
+  subjects:
+  - - test
+    - t1
+  - - requirement
+    - r1
+  cycle_id: c-2
+expect:
+  nodes: 4
+  edges: 2
+  node_keys:
+  - requirement:r1
+  - test:t1
+  edges_match:
+  - from: test:t1
+    relation: test.verifies
+    to: requirement:r1
+  - from: test:t1
+    relation: test.verifies
+    to: requirement:r1

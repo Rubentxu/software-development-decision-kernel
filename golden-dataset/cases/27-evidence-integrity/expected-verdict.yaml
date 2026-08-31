@@ -1,0 +1,17 @@
+case: 27-evidence-integrity
+description: Fabricated tool execution and mismatched artifact digest.
+bucket: adversarial
+schema_version: golden-case/v1
+suite: adversarial-evidence
+target_phase: verify
+language: json
+path: A-full
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - {rule_id: evidence.tool-not-executed, classification: blocking_defect, severity: critical, location: implementation/claims.json}
+    - {rule_id: evidence.artifact-hash-mismatch, classification: blocking_defect, severity: critical, location: implementation/claims.json}
+  forbidden_rule_ids: []

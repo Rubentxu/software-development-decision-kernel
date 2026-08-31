@@ -1,0 +1,24 @@
+# Esquema de stack-profile
+# Salida de book-stack-detector. Fuente de verdad para code-example-generator/verifier.
+
+required:
+  primary:
+    language: string         # rust|python|go|javascript|typescript|java|c|cpp|...
+    package_manager: string
+    build_tool: string
+    test_runner: string      # comando exacto
+    lint_tool: string        # comando exacto
+    fmt_tool: string         # comando exacto
+    workspace_convention: string   # cómo se organizan los ejemplos
+
+optional:
+  primary.version: string
+  primary.edition: string
+  secondary:                 # multi-stack
+    - language: string
+      package_manager: string
+      test_runner: string
+      lint_tool: string
+      fmt_tool: string
+  headless: boolean          # false si requiere GPU/externo
+  notes: string

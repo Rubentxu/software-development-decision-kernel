@@ -1,0 +1,47 @@
+case: 06-god-class-fail
+description: "God-class with 5 domain concerns, 8 deps, ~150 LOC, 15 public methods."
+bucket: critical-obvious
+schema_version: golden-case/v1
+suite: verify-defects
+target_phase: debt
+language: typescript
+path: A-full
+held_out: true
+trials: 3
+
+expected:
+  verify: PASS              # functional behavior is correct (if tests existed)
+  debt: FAIL
+  primary_cluster: debt-smells-cluster
+  labels:
+    - rule_id: debt.smell.god-class
+      classification: blocking_defect
+      severity: high
+      location: implementation/UserService.ts
+  forbidden_rule_ids:
+    - debt.coupling.circular-import
+  expected_findings:
+    - cluster: debt-smells-cluster
+      category: god-class
+      severity: HIGH
+      solid: SRP
+      evidence_must_contain:
+        - ">7 public methods"    # has ~15
+        - "mixed concerns"       # registration + auth + profile + billing + notifications
+        - "8 constructor deps"   # has exactly 8
+    - cluster: debt-coupling-cluster
+      type: hidden-dependency
+      severity: MEDIUM
+      note: "Config injected but might read env; EventBus is ambient state candidate"
+    - cluster: debt-architecture-cluster
+      design_quality_band: poor
+      note: "low cohesion (5 concerns), high coupling (8 deps)"
+
+false_negatives_to_watch:
+  - "If debt-smells-cluster returns PASS, it FAILED to detect an obvious god-class"
+  - "If architecture-cluster returns 'good' or 'excellent', DQS is broken"
+
+rationale: |
+  This is a textbook god-class. 5 domain concerns in one class. 8 constructor
+  dependencies. ~15 public methods. Any cluster that returns PASS here has a
+  critical false-negative bug.

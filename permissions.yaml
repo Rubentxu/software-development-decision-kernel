@@ -1,0 +1,227 @@
+# SDDK agent permission registry — default-deny.
+# Agents absent from this file are denied all phases and capabilities.
+# SDDK011 requires every agents/*.md file to be declared here.
+agents:
+  architecture-critic:
+    phases: []
+    capabilities: []
+  auto-grill-code-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-coverage-auditor:
+    phases: []
+    capabilities: []
+  auto-grill-evidence-synthesizer:
+    phases: []
+    capabilities: []
+  auto-grill-internet-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-interviewer:
+    phases: []
+    capabilities: []
+  auto-grill-judge:
+    phases: []
+    capabilities: []
+  auto-grill-loop-orchestrator:
+    phases: []
+    capabilities: []
+  auto-grill-ops-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-repo-docs-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-reporter:
+    phases: []
+    capabilities: []
+  auto-grill-scribe:
+    phases: []
+    capabilities: []
+  auto-grill-security-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-skeptic:
+    phases: []
+    capabilities: []
+  auto-grill-standards-researcher:
+    phases: []
+    capabilities: []
+  auto-grill-user-proxy:
+    phases: []
+    capabilities: []
+  balance-advisor:
+    phases: []
+    capabilities: []
+  book-orchestrator:
+    phases: []
+    capabilities: []
+  debt-architecture-cluster:
+    phases: []
+    capabilities: []
+  debt-coupling-cluster:
+    phases: []
+    capabilities: []
+  debt-duplication-cluster:
+    phases: []
+    capabilities: []
+  debt-overeng-cluster:
+    phases: []
+    capabilities: []
+  debt-smells-cluster:
+    phases: []
+    capabilities: []
+  deep-research-orchestrator:
+    phases: []
+    capabilities: []
+  impeccable-primary:
+    phases: []
+    capabilities: []
+  jd-fix-agent:
+    phases: []
+    capabilities: []
+  jd-judge-a:
+    phases: []
+    capabilities: []
+  jd-judge-b:
+    phases: []
+    capabilities: []
+  orchestrator:
+    phases: ['explore', 'specify', 'design', 'plan', 'build', 'verify', 'review', 'release', 'archive']
+    capabilities:
+      - git.inspect
+      - git.create_branch
+      - git.commit
+      - git.tag
+      - git.push
+      - pr.create
+      - release.create
+  sddk-adopt:
+    phases: []
+    capabilities: []
+  sddk-apply:
+    phases: ['build', 'verify']
+    capabilities:
+      - git.inspect
+      - git.commit
+  sddk-archive:
+    phases: []
+    capabilities: []
+  sddk-coherence:
+    phases: []
+    capabilities: []
+  sddk-debt-verify:
+    phases: ['verify']
+    capabilities: []
+  sddk-design:
+    phases: []
+    capabilities: []
+  sddk-explore:
+    phases: []
+    capabilities: []
+  sddk-init:
+    phases: []
+    capabilities: []
+  sddk-propose:
+    phases: []
+    capabilities: []
+  sddk-release:
+    phases: ['release']
+    capabilities:
+      - git.inspect
+      - git.push
+      - git.tag
+      - pr.create
+      - pr.merge
+      - release.create
+  sddk-spec:
+    phases: []
+    capabilities: []
+  sddk-tasks:
+    phases: []
+    capabilities: []
+  sddk-plan:
+    phases: []
+    capabilities: []
+  sddk-recover:
+    phases: []
+    capabilities: []
+  sddk-run:
+    phases: []
+    capabilities: []
+  sddk-ship:
+    phases: []
+    capabilities: []
+  sddk-status:
+    phases: []
+    capabilities: []
+  sddk-verify:
+    phases: ['verify']
+    capabilities:
+      - git.inspect
+  analytics-researcher:
+    phases: ['verify']
+    capabilities: [ledger.read]
+  analytics-judge:
+    phases: ['verify']
+    capabilities: [ledger.read]
+  analytics-reporter:
+    phases: ['verify']
+    capabilities: [ledger.read]
+  studio-analyzer:
+    phases: []
+    capabilities: []
+  studio-block:
+    phases: []
+    capabilities: []
+  studio-component:
+    phases: []
+    capabilities: []
+  studio-contract-miner:
+    phases: []
+    capabilities: []
+  studio-doc-extractor:
+    phases: []
+    capabilities: []
+  studio-orchestrator:
+    phases: []
+    capabilities: []
+  studio-page:
+    phases: []
+    capabilities: []
+  studio-reverse-engineer:
+    phases: []
+    capabilities: []
+  studio-token:
+    phases: []
+    capabilities: []
+  studio-validator:
+    phases: []
+    capabilities: []
+  test-pyramid-builder:
+    phases: []
+    capabilities: []
+  ui-auditor:
+    phases: []
+    capabilities: []
+  uat-guide:
+    phases: ['uat']
+    capabilities: []
+  uat-discovery:
+    phases: ['uat']
+    capabilities: []
+  uat-form-quality:
+    phases: ['uat']
+    capabilities: []
+  uat-planner:
+    phases: ['uat']
+    capabilities: []
+  uat-reporter:
+    phases: ['uat']
+    capabilities: []
+  uat-runner:
+    phases: ['uat']
+    capabilities: []
+  uat-ux-form:
+    phases: ['uat']
+    capabilities: []

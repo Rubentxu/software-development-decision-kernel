@@ -1,0 +1,8 @@
+/* Light theme — inherits tokens.css; overrides the dark palette. */
+:root {
+  --bg: #ffffff;
+  --card: #f6f7f9;
+  --text: #1a1d23;
+  --muted: #5b6472;
+  --border: #dfe3e8;
+}

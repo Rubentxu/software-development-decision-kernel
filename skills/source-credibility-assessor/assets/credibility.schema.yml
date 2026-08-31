@@ -1,0 +1,19 @@
+# Esquema de evaluación de credibilidad
+# Salida de source-credibility-assessor.
+
+required:
+  source_id: string
+  credibility_level: enum     # L1|L2|L3|L4|L5|L6|L7 (confirmado)
+  authority: number           # 0-1
+  bias: enum                  # none|commercial|ideological|self-promo
+  conflict_of_interest: enum  # none|declared|undisclosed
+  freshness: number           # 0-1
+  accessibility: enum         # live|paywall|archived|rot
+  verifiability: enum         # high|medium|low
+  verdict: enum               # admitted|rejected
+
+optional:
+  bias_detail: string
+  retrieved_at: date
+  archived_url: string        # si el original está roto
+  notes: string

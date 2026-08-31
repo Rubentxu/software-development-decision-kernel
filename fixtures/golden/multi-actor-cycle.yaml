@@ -1,0 +1,41 @@
+name: multi-actor-cycle
+events:
+- event_type: actor.registered
+  subjects:
+  - - actor
+    - alice
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: actor.registered
+  subjects:
+  - - actor
+    - bob
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: actor.registered
+  subjects:
+  - - actor
+    - carol
+  - - cycle
+    - c-1
+  cycle_id: c-1
+expect:
+  nodes: 4
+  edges: 3
+  node_keys:
+  - actor:alice
+  - actor:bob
+  - actor:carol
+  - cycle:c-1
+  edges_match:
+  - from: actor:alice
+    relation: actor.registered
+    to: cycle:c-1
+  - from: actor:bob
+    relation: actor.registered
+    to: cycle:c-1
+  - from: actor:carol
+    relation: actor.registered
+    to: cycle:c-1

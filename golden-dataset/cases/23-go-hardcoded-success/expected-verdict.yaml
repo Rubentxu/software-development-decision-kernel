@@ -1,0 +1,19 @@
+case: 23-go-hardcoded-success
+description: Go probe ignores its dependency and always reports success.
+bucket: critical-obvious
+schema_version: golden-case/v1
+suite: verify-defects
+target_phase: verify
+language: go
+path: A-min
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - rule_id: verify.real-implementation.hardcoded-success
+      classification: blocking_defect
+      severity: high
+      location: implementation/probe.go
+  forbidden_rule_ids: []

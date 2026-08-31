@@ -1,0 +1,25 @@
+entropy:
+  dimensions:
+    - loc
+    - cognitive_complexity
+    - public_surface
+    - dependency_fan_in
+    - dependency_fan_out
+    - git_churn
+    - responsibilities
+    - test_size
+    - duplication
+    - build_hotspot
+  policy: multidimensional; LOC alone never fails a gate
+golden_dataset:
+  target_cases: [30, 50]
+  target_precision_floor: 0.8
+  target_recall_floor: 0.7
+  extra_metrics:
+    - f1
+    - calibration
+    - false_positive_severity
+    - inter_rater_agreement
+    - model_stability
+    - cost_per_true_positive
+    - latency

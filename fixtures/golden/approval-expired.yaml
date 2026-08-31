@@ -1,0 +1,30 @@
+name: approval-expired
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - cycle
+    - c-1
+  - - capability
+    - gh.push
+  cycle_id: c-1
+- event_type: approval.capability.expired
+  subjects:
+  - - actor
+    - carol
+  - - capability
+    - gh.push
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - actor:carol
+  - capability:gh.push
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: approval.capability.requested
+    to: capability:gh.push
+  - from: actor:carol
+    relation: approval.capability.expired
+    to: capability:gh.push

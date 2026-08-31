@@ -1,0 +1,39 @@
+case: 11-circular-import-fail
+description: "Circular import: OrderService ↔ InventoryService."
+bucket: critical-obvious
+schema_version: golden-case/v1
+suite: verify-defects
+target_phase: debt
+language: typescript
+path: A-full
+held_out: true
+trials: 3
+
+expected:
+  verify: PASS
+  debt: FAIL
+  primary_cluster: debt-coupling-cluster
+  labels:
+    - rule_id: debt.coupling.circular-import
+      classification: blocking_defect
+      severity: critical
+      location: implementation/OrderService.ts
+  forbidden_rule_ids:
+    - debt.smell.god-class
+  expected_findings:
+    - cluster: debt-coupling-cluster
+      type: circular-import
+      severity: CRITICAL
+      evidence_must_contain:
+        - "OrderService imports InventoryService"
+        - "InventoryService imports OrderService"
+      fix_hint_must_contain: "extract shared types"
+
+false_negatives_to_watch:
+  - "If coupling-cluster returns PASS, it failed to trace the import graph"
+  - "If coupling-cluster finds the cycle but doesn't mark it CRITICAL, severity is wrong"
+
+rationale: |
+  Circular imports are always CRITICAL per the debt-coupling-cluster inline catalog.
+  This is a 2-module cycle (A→B→A). The cluster MUST detect it by tracing the
+  import statements and mark it CRITICAL.

@@ -1,0 +1,9 @@
+flowchart LR
+  H[Human Engineer / Reviewer] --> S[SDDK]
+  A[Agent Clients
+OpenCode / Claude / Codex] --> S
+  S --> G[Git / Forge]
+  S --> T[Tools / MCP / Browsers]
+  S --> L[Local XDG State]
+  S --> R[Release / Artifact Destinations]
+  S -. evidence/provenance .-> H

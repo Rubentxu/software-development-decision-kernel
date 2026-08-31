@@ -1,0 +1,30 @@
+name: gate-receipt-created
+events:
+- event_type: proposal.submitted
+  subjects:
+  - - proposal
+    - p1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: gate.receipt.created
+  subjects:
+  - - proposal
+    - p1
+  - - receipt
+    - r1
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - proposal:p1
+  - receipt:r1
+  edges_match:
+  - from: proposal:p1
+    relation: proposal.submitted
+    to: cycle:c-1
+  - from: proposal:p1
+    relation: gate.receipt.created
+    to: receipt:r1

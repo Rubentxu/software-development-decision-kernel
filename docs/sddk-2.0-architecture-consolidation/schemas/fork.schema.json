@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/fork-v1.json",
+  "title": "SDDK Fork v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fork_id",
+    "parent_stream_id",
+    "at_event_id",
+    "at_sequence",
+    "shared_prefix_hash",
+    "created_by",
+    "created_at",
+    "overrides",
+    "replay_policy"
+  ],
+  "properties": {
+    "fork_id": {
+      "type": "string"
+    },
+    "parent_stream_id": {
+      "type": "string"
+    },
+    "at_event_id": {
+      "type": "string"
+    },
+    "at_sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "shared_prefix_hash": {
+      "type": "string"
+    },
+    "label": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_by": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "overrides": {
+      "type": "object"
+    },
+    "replay_policy": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "reconstruct",
+            "strict"
+          ]
+        },
+        "llm_cache": {
+          "type": "boolean"
+        },
+        "tool_cache": {
+          "type": "boolean"
+        },
+        "record_drift": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

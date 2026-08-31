@@ -1,0 +1,27 @@
+version: 1
+policy_id: default-governed-effects
+rules:
+  - capability_pattern: "git.inspect"
+    action_class: R0
+    decision: allow
+  - capability_pattern: "git.commit"
+    action_class: R2
+    decision: allow_if
+    conditions:
+      - proposal_valid
+      - actor_has_capability
+      - working_tree_postcondition_defined
+  - capability_pattern: "git.push"
+    action_class: R3
+    decision: require_approval
+    approver_roles: [human_owner]
+  - capability_pattern: "release.publish"
+    action_class: R3
+    decision: require_approval
+    conditions:
+      - signed_gate_receipt_valid
+      - critical_uat_acceptance_fresh
+      - release_artifacts_verified
+  - capability_pattern: "*.destructive"
+    action_class: R4
+    decision: deny_by_default

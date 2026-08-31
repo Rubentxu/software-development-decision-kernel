@@ -1,0 +1,28 @@
+# Esquema de outline.yml
+# Salida de book-outline-architect.
+
+required:
+  parts:
+    - id: string
+      title: string
+      order: integer
+      chapters: [string]       # ids de capítulos
+  chapters:
+    - id: string
+      title: string
+      part: string
+      order: integer
+      concepts:
+        present: [string]      # ids del grafo curricular
+        practice: [string]
+        consolidate: [string]
+      sections:
+        - title: string
+          concept: string      # id del grafo
+      progressive_example_step: string  # opcional
+      estimated_pages: integer
+
+optional:
+  coverage_report:
+    covered: [string]
+    gaps: [string]

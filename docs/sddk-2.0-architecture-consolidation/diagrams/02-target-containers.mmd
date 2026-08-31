@@ -1,0 +1,21 @@
+flowchart TB
+  UI[CLI / Protocol / Explorer]
+  APP[Application Use Cases + Ports]
+  K[Deterministic Kernel
+Workflow Policy Identity Capability Receipts CAS Packs]
+  LEDGER[(Event Ledger)]
+  GRAPH[Graph Projection + Reactor]
+  PROJ[Other Projections
+FSM Search Metrics Reports]
+  AD[Adapters
+Storage Gateway Vault Git Browser]
+  PACKS[Domain / Infra / Bridge Packs]
+  UI --> APP
+  APP --> K
+  K --> LEDGER
+  APP --> AD
+  LEDGER --> GRAPH
+  LEDGER --> PROJ
+  PACKS --> APP
+  PACKS --> GRAPH
+  GRAPH -->|Proposal only| APP

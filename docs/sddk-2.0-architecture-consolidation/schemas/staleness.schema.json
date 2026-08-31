@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/staleness-v1.json",
+  "title": "SDDK Staleness Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject",
+    "state",
+    "detected_at",
+    "causal_path"
+  ],
+  "properties": {
+    "subject": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "fresh",
+        "possibly_stale",
+        "stale",
+        "invalidated",
+        "unknown"
+      ]
+    },
+    "detected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "causal_path": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "relation",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "changed_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "policy_effect": {
+      "enum": [
+        "none",
+        "advisory",
+        "gate_block",
+        "unknown"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,367 @@
+# SDDK A-full — Full kernel cycle for architectural changes / new domains
+# Status: STABLE (extracted from MCW Phase 1 § A-full, Phase 2, Phase 3, Phase 4)
+# Source: prompts/sddk/mcw.md § Phase 1 A-full + Phase 2 + Phase 3 + Phase 4
+# Trigger: context_quality C0/C1 OR architectural change OR new domain (per orchestrator.md § Triage)
+# v3.3: NO opt-ins. debt-verify is mandatory (depth=deep). release precedes archive.
+# Patterns: 9 (routing + parallel-sectioning + orchestrator-worker + evaluator-optimizer
+#                + circuit-breaker (apply phase) + saga + trunk-sync-gate + multi-lens-verification
+#                + spec-driven-decomposition + blackboard)
+
+name: sddk-a-full
+version: "1.1.0"
+status: stable
+description: |
+  Full SDDK cycle for architectural changes, new domains, or low context quality (C0/C1).
+  Includes all phases: explore → propose → spec||design → tasks → apply → verify → **debt-verify (deep, mandatory)** → **release (mandatory)** → archive.
+  No mid-cycle user prompts. Highest rigor, highest cost.
+  Supports `managed-closure-delivery` via `archive.vault.complete` route (ADR-0075).
+  When `delivery_kind = managed-closure-delivery`, the cycle bypasses release.complete
+  and enters archive.vault.complete directly from BLOCKED status, producing vault-receipt.json.
+
+pattern_composition:
+  - routing                       # Triage gate selects this workflow
+  - parallel-sectioning           # spec || design after propose
+  - orchestrator-worker           # sddk-* phase agents
+  - spec-driven-decomposition     # sddk-tasks
+  - evaluator-optimizer           # Coherence gates + Strict TDD RED→GREEN loop
+  - multi-lens-verification       # 6 parallel lenses + synthesis in sddk-verify
+  - parallel-sectioning           # 5 cluster agents in debt-verify (Orchestrator-Worker variant)
+  - circuit-breaker               # CIRCUIT_BREAKER config per apply task
+  - saga                          # Debt-fix cycle rollback + apply checkpoint
+  - blackboard                    # Engram + artifact-registry for shared state
+  - trunk-sync-gate               # Hard gates pre/post cycle (NEW v3.1 Rule 0)
+
+trigger:
+  goal_pattern:
+    - architectural change
+    - new domain
+    - C0 quality
+    - C1 quality
+  context_quality: [C0, C1]
+  path: A-full
+
+context_requirements:
+  sddk_init_done: true
+  branch_isolation: per_change
+
+phases:
+  # ─── PHASE 0 — CYCLE PRE-FLIGHT ────────────────────────────────────
+  - phase: trunk-sync-start
+    step: 0.1
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "git rev-parse HEAD == origin/main"
+    failure_mode: BLOCK
+    notes: |
+      Hard gate. Fetch origin main, checkout main, pull, verify HEAD == origin/main.
+      If cycle ended with commits not on main (feature branch or fix branch), Step 0.2 BLOCK.
+
+  - phase: previous-cycle-closed
+    step: 0.2
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "no unmerged branches AND ROADMAP 'Active Milestones' has zero in_progress entries"
+    failure_mode: BLOCK — resume prior cycle or mark it blocked/abandoned in ROADMAP
+    notes: |
+      v3.4: ROADMAP Serialization Lock. Read docs/ROADMAP.md, extract "## Active Milestones",
+      count entries with "Status: in_progress". If >0, BLOCK with the active cycle name and
+      recovery command (/sddk-release <active-change> or mark blocked/abandoned).
+      If ==0, acquire lock: add new cycle as in_progress to Active Milestones BEFORE Step 0.3.
+
+  - phase: knowledge-coverage
+    step: 0.3
+    pattern: spec-driven-decomposition
+    agent: orchestrator
+    gate: "docs/ROADMAP.md present, current milestone in ROADMAP, no broken ADRs"
+    failure_mode: BLOCK if ROADMAP missing or cycle's milestone not present
+
+  - phase: triage
+    step: 0.4
+    pattern: routing
+    agent: orchestrator
+    inputs: [goal, context_quality_C0_C3, jurisprudence_hits]
+    output: path_decision, capabilities_selected, lenses_selected
+    notes: |
+      Classify context_quality, mem_search goal_pattern, decide capabilities from arsenal,
+      detect execution mode and resolve model per phase.
+
+  # ─── PHASE 1 — PLAN ─────────────────────────────────────────────────
+  - phase: explore
+    step: 1.1
+    pattern: orchestrator-worker
+    agent: sddk-explore
+    model: GLM-5.1
+    gate: explore-report approved
+    output: explore-report.md
+    failure_mode: BLOCK if explore fails
+
+  - phase: propose
+    step: 1.2
+    pattern: orchestrator-worker
+    agent: sddk-propose
+    model: DeepSeek V4 Pro
+    gate: proposal approved
+    output: proposal.md
+
+  - phase: spec-and-design-parallel
+    step: 1.3
+    pattern: parallel-sectioning
+    parallel_group: spec-design
+    agents:
+      - agent: sddk-spec
+        model: DeepSeek V4 Pro
+        gate: spec approved
+        output: spec.md
+      - agent: sddk-design
+        model: MiniMax M2.7
+        gate: design approved
+        output: design.md
+    join_condition: both approved
+    notes: |
+      Parallel launch. ADR creation if architectural decisions: write ADR before tasks.
+
+  - phase: coherence-propose-spec
+    step: 1.4
+    pattern: evaluator-optimizer
+    agent: sddk-coherence
+    model: MiniMax M2.7-highspeed
+    gate: score >= 60
+    failure_mode: BLOCK if score < 60
+    depends_on: spec-and-design-parallel
+
+  - phase: tasks
+    step: 1.5
+    pattern: spec-driven-decomposition
+    agent: sddk-tasks
+    model: MiniMax M2.7
+    gate: tasks approved
+    output: tasks.md
+
+  - phase: coherence-spec-design-tasks
+    step: 1.6
+    pattern: evaluator-optimizer
+    agent: sddk-coherence
+    gate: score >= 60
+    failure_mode: BLOCK if score < 60
+    depends_on: tasks
+
+  - phase: review-budget
+    step: 1.7
+    pattern: evaluator-optimizer
+    advisory: true
+    note: "sizing advisory per ADR-0070 and matrix.sizing.advisory; recommend + allow + rationale; no BLOCK on forecast"
+
+  - phase: branch-creation
+    step: 1.8
+    pattern: trunk-sync-gate
+    rule: "git checkout -b <type>/<description> && git push -u origin <branch>"
+    gate: "branch matches ^[a-z]+/[a-z0-9-]+$ AND type in feat|fix|chore|docs|refactor|perf|test|ci|revert"
+
+  # ─── PHASE 2 — BUILD ────────────────────────────────────────────────
+  - phase: apply
+    step: 2.1
+    pattern: circuit-breaker
+    agent: sddk-apply
+    model: MiniMax M2.7
+    gate: "every commit passes git-boundary lint (type/scope/imperative/72-char/no AI attribution)"
+    inner_loop:
+      pattern: evaluator-optimizer
+      phases: [razonar, actuar, observar, evaluar]
+      per_task_max_attempts: 5
+      no_progress_streak: 3
+      strict_tdd_if_active: true
+      strict_tdd_cycle: [RED, GREEN, TRIANGULATE, REFACTOR]
+    checkpoint: "{cycle-artifacts-dir}/apply-checkpoint.json"
+    output: atomic conventional commits on branch
+
+  - phase: coherence-apply-verify
+    step: 2.2
+    pattern: evaluator-optimizer
+    agent: sddk-coherence
+    gate: score >= 60
+    failure_mode: BLOCK if score < 60
+    depends_on: apply
+
+  - phase: verify
+    step: 2.3
+    pattern: multi-lens-verification
+    agent: sddk-verify
+    model: minimax-coding-plan/MiniMax-M3
+    verify_role: coordinator
+    parallel_group: verify-lenses
+    lenses:
+      - spec-compliance
+      - architecture-connascence
+      - test-quality
+      - design-coherence
+      - jd-judge-a
+      - jd-judge-b
+    synthesis_agent: sddk-verify
+    synthesis_role: parent
+    gate: "verdict PASS or PASS_WITH_WARNINGS"
+    output: verify-report.md
+    failure_mode: FAIL → return to apply (correction cycle, max 2 iterations)
+
+  - phase: debt-verify
+    step: 2.4
+    pattern: orchestrator-worker
+    agent: sddk-debt-verify
+    model: MiniMax M2.7
+    parallel_group: debt-clusters
+    policy: mandatory
+    depth: deep
+    clusters: [debt-architecture-cluster, debt-overeng-cluster, debt-coupling-cluster, debt-smells-cluster, debt-duplication-cluster]
+    synthesis_agent: sddk-debt-verify
+    gate: "verdict PASS or PASS_WITH_WARNINGS"
+    outputs: [debt-report.json, debt-report.md]
+    contract: prompts/sddk/phases/debt-verify.md
+    failure_modes:
+      - verdict FAIL + re_iterate_from=apply:
+          pattern: saga
+          action: "remediate on the same branch, then re-run verify and debt-verify"
+          max_rounds: 3
+      - verdict FAIL + re_iterate_from=replan:
+          pattern: routing
+          action: "block automatic progression and request an explicit replan/recovery decision; runtime rewind is not implied"
+      - verdict INCONCLUSIVE:
+          action: "retry failed clusters or require human review; do not release"
+      - pre_existing_debt:
+          action: "record follow-up incidence; do not count it as introduced debt"
+
+  - phase: coherence-debt-release
+    step: 2.5
+    pattern: evaluator-optimizer
+    agent: sddk-coherence
+    gate: score >= 60
+    failure_mode: BLOCK if score < 60
+    depends_on: debt-verify
+
+  # ─── PHASE 3 — RELEASE THEN ARCHIVE ─────────────────────────
+  # NOTE (v3.3): Phase 3 was historically 8 inline sub-steps delegated to the
+  # orchestrator. Each step had its own HITL/branch-protection gate, and the
+  # chain silently aborted whenever a gate was not closed. As of v3.3 the entire
+  # Phase 3 is owned by one agent (`sddk-release`) that runs the chain
+  # end-to-end and is MANDATORY before archive (no opt-out).
+  - phase: release
+    step: 3
+    pattern: orchestrator-worker
+    agent: sddk-release
+    model: minimax-coding-plan/MiniMax-M3
+    depends_on: coherence-debt-release
+    mandatory: true
+    sub_steps_owned_by_agent:
+      - validate-verify-and-debt-subject
+      - local-verify
+      - push-main
+      - verify-main-sha
+      - annotated-semver-tag
+      - verify-remote-tag
+      - local-receipts
+      - transition-release-complete
+    gate: "release-report persisted with status=success and main HEAD == origin/main"
+    output: release-report.md
+    failure_modes:
+      - status=blocked:
+          pattern: sagacompensation
+          action: "release agent persists release-report with blockers[]; orchestrator returns blocked to user with /sddk-release <change> as recovery"
+          replayable: true   # re-launching resumes from first uncompleted sub-step
+    source_of_truth: prompts/sddk/git-contract.md
+    contract: skills/sddk-release/SKILL.md
+
+  - phase: archive
+    step: 3.5
+    pattern: orchestrator-worker
+    agent: sddk-archive
+    model: GLM-4.7
+    depends_on: release
+    gate: "release-report success; debt-report hash/subject valid; archive.complete returns CLOSED"
+    sub_steps_owned_by_agent: [sync-delta-specs, finalize-knowledge-graph, html-closing-report, archive-manifest, transition-archive-complete]
+    outputs: [archive-report.md, archive-manifest, closing-report.html]
+
+  # ─── PHASE 4 — TRUNK SYNC + F3 + RESET ───────────────────────────────
+  - phase: trunk-sync-end
+    step: 4.1
+    pattern: trunk-sync-gate
+    rule: "git checkout main && git pull origin main"
+    gate: "HEAD == origin/main"
+
+  - phase: f3-self-tuning
+    step: 4.2
+    pattern: evaluator-optimizer
+    output: sddk/next-tuning.md
+    persisted: "$SDDK_DATA_DIR/projects/{project_id}/metrics/{cycle_id}.jsonl"
+    engram_topic: "cycle-metrics/{cycle_id}"
+
+  - phase: save-jurisprudence
+    step: 4.3
+    pattern: blackboard
+    conditional: "verify_verdict=PASS AND first_pass_success=true AND reusable_decision"
+    engram_topic: "jurisprudence/{category}"
+
+  - phase: result-contract
+    step: 4.4
+    pattern: prompt-chain
+    agent: orchestrator
+    # v3.4: Release Completion Guard — result-contract CANNOT emit "cycle closed" without release success.
+    preconditions:
+      - "release phase returned status=success"
+      - "main HEAD == origin/main (bash-verified)"
+      - "semver tag exists on remote (git ls-remote --tags origin confirms)"
+      - "archive phase returned runtime_status=CLOSED"
+      - "archive-manifest references release-receipt"
+    precondition_fail_action: "emit status=blocked, next_recommended=/sddk-release <change>, do NOT declare cycle closed"
+    output: |
+      ✓ Cycle {goal_pattern} closed
+        Path: {path} (C{x}, jurisprudence: {n} hits)
+        Verdict: {verdict} {first_pass_badge}
+        Lead time: {h}h  |  Cost: ${usd}  |  Tokens: {n}
+        Spec coverage: {passing}/{total} scenarios ({pct}%)
+        main @ {tag} ({sha})
+        main_synced: {true/false}     # MUST be true to show this output
+        Bottleneck: {phase} ({reason})
+        Saved as jurisprudence: {topic_key} {if reusable}
+
+success_criteria:
+  - "all phases completed (Phase 0 → 4)"
+  - "release-report persisted with status=success"
+  - "archive-report persisted after release"
+  - "archive-manifest links the release receipt and runtime status is CLOSED"
+  - "main SHA pushed directly and verified on origin/main"
+  - "semver tag pushed and confirmed on remote"
+  - "main HEAD == origin/main (trunk-sync-end PASS)"
+  - "closing HTML generated by archive"
+  - "ROADMAP updated"
+  - "metrics saved"
+  - "result-contract emitted to user"
+
+failure_modes:
+  - condition: "any phase FAIL"
+    action: "re-iterate per orchestrator decision matrix"
+  - condition: "circuit-breaker trip"
+    action: "BLOCK, escalate to user"
+  - condition: "trunk-sync FAIL"
+    action: "BLOCK (no orphan commits)"
+  - condition: "max fix rounds reached (3)"
+    action: "escalate to user with full debt report, STOP"
+  - condition: "main SHA differs from origin/main"
+    action: "BLOCK, investigate local Git postcondition"
+  - condition: "tag push fails"
+    action: "BLOCK, investigate permissions"
+  - condition: "artifact registry unreachable"
+    action: "BLOCK, use last-known state, mark unverified"
+  - condition: "per-task attempts > CIRCUIT_PER_TASK_MAX_ATTEMPTS"
+    action: "BLOCK (loop engineering freno duro)"
+
+provenance:
+  derived_from:
+    - "prompts/sddk/mcw.md § Phase 0"
+    - "prompts/sddk/mcw.md § Phase 1 § A-full"
+    - "prompts/sddk/mcw.md § Phase 2"
+    - "prompts/sddk/mcw.md § Phase 3"
+    - "prompts/sddk/mcw.md § Phase 4"
+    - "prompts/sddk/orchestrator.md § Path-specific sequences (A-full row)"
+    - "prompts/sddk/orchestrator.md § Phase Agents table"
+    - "prompts/sddk/orchestrator.md § Debt-Verify policy"
+    - "prompts/sddk/git-contract.md § Lifecycle Overview"
+  catalog_ref: "docs/sddk-evolution/agentic-workflow-patterns-catalog.md"
+  integration_design: "docs/sddk-evolution/dynamic-workflows-integration.md"

@@ -1,0 +1,562 @@
+baseline:
+  repo: Rubentxu/software-development-decision-kernel
+  commit: eb5117e6cd4366ceb205a5b2dde4195aa396d32f
+  version: 1.9.1
+  date: '2026-08-11'
+tasks:
+- id: SDDK2-001
+  phase: 0
+  priority: MUST
+  title: Capture v1.9.1 CLI compatibility snapshot
+  depends_on: []
+  spec: SPEC-017
+  acceptance_criteria:
+  - All current top-level commands enumerated
+  - Representative UAT/release flows covered
+- id: SDDK2-002
+  phase: 0
+  priority: MUST
+  title: Record crate dependency and entropy baseline
+  depends_on:
+  - SDDK2-001
+  spec: SPEC-014
+  acceptance_criteria:
+  - Machine-readable baseline committed/exported
+  - Large UAT/CLI modules included
+- id: SDDK2-003
+  phase: 0
+  priority: MUST
+  title: Introduce architecture rule registry
+  depends_on:
+  - SDDK2-002
+  spec: SPEC-001
+  acceptance_criteria:
+  - ARCH001-ARCH005 represented
+  - Baseline waivers explicit
+- id: SDDK2-006
+  phase: 0
+  priority: MUST
+  title: Split AGENTS normative/history/handoff roles
+  depends_on: []
+  spec: SPEC-018
+  acceptance_criteria:
+  - AGENTS contains stable invariants/navigation
+  - History archived
+  - Ephemeral handoff path documented
+- id: SDDK2-007
+  phase: 0
+  priority: MUST
+  title: Add deferred-idea revisit-trigger convention
+  depends_on: []
+  spec: SPEC-018
+  acceptance_criteria:
+  - Future idea template exists
+  - Roadmap references it
+- id: SDDK2-008
+  phase: 0
+  priority: MUST
+  title: Govern repository knowledge through scan → plan → import → verify
+  depends_on:
+  - SDDK2-003
+  spec: SPEC-018
+  acceptance_criteria:
+  - scan emits kp-<hex16>; re-run yields Unchanged
+  - import rehashes source at import; mismatch hard-fails (TOCTOU closed)
+  - import --approve on Quarantine candidate fails (R10)
+  - rules check without capability returns not_applicable
+  - stale source → capability Stale; re-approve restores Current
+  - Zero writes inside workspace repo; BACKLOG has SDDK2-008
+- id: SDDK2-008.DEBT
+  phase: 0
+  priority: DEFERRED
+  title: "[DEBT] Split knowledge_ingest.rs monolith (R9)"
+  depends_on:
+  - SDDK2-008
+  spec: SPEC-018
+  acceptance_criteria:
+  - knowledge_ingest.rs split into scan.rs/import.rs/verify.rs/capability.rs/io.rs/git.rs ≤300 LOC each
+  - Unit tests for classify/relation_key/safe_relative/is_approvable_change
+- id: SDDK2-009
+  phase: 0
+  priority: MUST
+  title: Fix binary-only bundle, add skill-registry, wire knowledge pipeline, remove obsolete aliases, fix release/archive docs order
+  depends_on: []
+  spec: SPEC-018
+  acceptance_criteria:
+  - dev install --source copies MANIFEST and verifies SHA256
+  - dev link --write-registry writes skill-registry.md to XDG project dir
+  - init phases document --with-knowledge --approve pipeline with quarantine rule
+  - all evaluate-gate calls include --outcome passed
+  - obsolete sddk-* aliases removed from docs and prompts
+  - release precedes archive in phase ordering
+- id: SDDK2-101
+  phase: 1
+  priority: MUST
+  title: Create application port boundary for persistence
+  depends_on:
+  - SDDK2-003
+  spec: SPEC-001
+  acceptance_criteria:
+  - Use cases depend on traits not storage crate
+- id: SDDK2-102
+  phase: 1
+  priority: MUST
+  title: Remove engine direct dependency on storage
+  depends_on:
+  - SDDK2-101
+  spec: SPEC-001
+  acceptance_criteria:
+  - ARCH001 passes
+- id: SDDK2-103
+  phase: 1
+  priority: MUST
+  title: Move SQL/persistence orchestration out of CLI
+  depends_on:
+  - SDDK2-101
+  spec: SPEC-001
+  acceptance_criteria:
+  - CLI contains no direct SQL
+  - CLI contract tests pass
+- id: SDDK2-104
+  phase: 1
+  priority: SHOULD
+  title: Expand sddk-testkit port fakes/builders
+  depends_on:
+  - SDDK2-101
+  spec: SPEC-017
+  acceptance_criteria:
+  - Application tests require no real SQLite for core use cases
+- id: SDDK2-201
+  phase: 2
+  priority: MUST
+  title: Implement EventEnvelope v1 schema and Rust types
+  depends_on:
+  - SDDK2-102
+  spec: SPEC-002
+  acceptance_criteria:
+  - Schema validates fixtures
+  - Canonical hash golden vectors pass
+- id: SDDK2-202
+  phase: 2
+  priority: MUST
+  title: Implement SQLite EventStore adapter
+  depends_on:
+  - SDDK2-201
+  spec: SPEC-003
+  acceptance_criteria:
+  - Append ordering/idempotency tests pass
+  - XDG storage path honored
+- id: SDDK2-203
+  phase: 2
+  priority: MUST
+  title: Implement projection checkpoint and rebuild contract
+  depends_on:
+  - SDDK2-202
+  spec: SPEC-003
+  acceptance_criteria:
+  - Projection can rebuild from empty store
+- id: SDDK2-204
+  phase: 2
+  priority: MUST
+  title: Migrate one vertical to ledger-first events
+  depends_on:
+  - SDDK2-203
+  spec: SPEC-003
+  acceptance_criteria:
+  - Legacy/new state equivalence fixture passes
+- id: SDDK2-205
+  phase: 2
+  priority: SHOULD
+  title: Add JSONL event export/debug command
+  depends_on:
+  - SDDK2-202
+  spec: SPEC-002
+  acceptance_criteria:
+  - Export preserves event ordering/hash
+- id: SDDK2-301
+  phase: 3
+  priority: MUST
+  title: Extract EvidenceItem and provenance model
+  depends_on:
+  - SDDK2-201
+  spec: SPEC-005
+  acceptance_criteria:
+  - UAT evidence can map losslessly
+  - Redaction metadata supported
+- id: SDDK2-302
+  phase: 3
+  priority: MUST
+  title: Implement Proposal schema/lifecycle
+  depends_on:
+  - SDDK2-201
+  spec: SPEC-007
+  acceptance_criteria:
+  - Proposal records actor/version/evidence/idempotency
+- id: SDDK2-303
+  phase: 3
+  priority: MUST
+  title: Route one governed capability through proposal-policy-receipt
+  depends_on:
+  - SDDK2-302
+  spec: SPEC-007
+  acceptance_criteria:
+  - Denied path has zero side effects
+  - Success binds postcondition evidence
+- id: SDDK2-304
+  phase: 3
+  priority: MUST
+  title: Bind agent content hashes into actor receipts
+  depends_on:
+  - SDDK2-302
+  spec: SPEC-010
+  acceptance_criteria:
+  - Prompt/skill/policy hashes recorded
+- id: SDDK2-305
+  phase: 3
+  priority: SHOULD
+  title: Prototype signed local gate receipt
+  depends_on:
+  - SDDK2-303
+  spec: SPEC-015
+  acceptance_criteria:
+  - Receipt bound to commit and gate list
+- id: SDDK2-401
+  phase: 4
+  priority: MUST
+  title: Define Pack Manifest v2 schema
+  depends_on:
+  - SDDK2-201
+  spec: SPEC-006
+  acceptance_criteria:
+  - requires/integrates_with/provides/conflicts supported
+- id: SDDK2-402
+  phase: 4
+  priority: MUST
+  title: Implement pack registry/lifecycle/conformance
+  depends_on:
+  - SDDK2-401
+  spec: SPEC-006
+  acceptance_criteria:
+  - load/verify/disable idempotency tests
+- id: SDDK2-403
+  phase: 4
+  priority: MUST
+  title: Create UAT application/domain boundary
+  depends_on:
+  - SDDK2-301
+  - SDDK2-402
+  spec: SPEC-008
+  acceptance_criteria:
+  - CLI delegates to UAT application API
+- id: SDDK2-404
+  phase: 4
+  priority: MUST
+  title: Move UAT persistence behind ports
+  depends_on:
+  - SDDK2-403
+  spec: SPEC-008
+  acceptance_criteria:
+  - UAT domain/app does not depend on storage adapter
+- id: SDDK2-405
+  phase: 4
+  priority: MUST
+  title: Migrate guided runner assets/web boundary
+  depends_on:
+  - SDDK2-403
+  spec: SPEC-008
+  acceptance_criteria:
+  - Designer/runner/reviewer flows pass parity tests
+- id: SDDK2-406
+  phase: 4
+  priority: MUST
+  title: Ship UAT as first pack-compatible vertical
+  depends_on:
+  - SDDK2-404
+  - SDDK2-405
+  spec: SPEC-006
+  acceptance_criteria:
+  - Core starts without UAT
+  - UAT can be enabled with manifest validation
+- id: SDDK2-407
+  phase: 4
+  priority: SHOULD
+  title: Prototype Cognicode bridge pack
+  depends_on:
+  - SDDK2-402
+  spec: SPEC-006
+  acceptance_criteria:
+  - Code findings map to core observation/artifact/evidence
+- id: SDDK2-501
+  phase: 5
+  priority: MUST
+  title: Implement GraphProjection and local GraphStore
+  depends_on:
+  - SDDK2-203
+  - SDDK2-402
+  spec: SPEC-004
+  acceptance_criteria:
+  - Graph rebuilds from ledger
+  - No authoritative direct writes
+- id: SDDK2-502
+  phase: 5
+  priority: MUST
+  title: Implement bounded GraphView
+  depends_on:
+  - SDDK2-501
+  spec: SPEC-004
+  acceptance_criteria:
+  - Type/depth/project filters supported
+- id: SDDK2-503
+  phase: 5
+  priority: MUST
+  title: Implement minimal pattern IR
+  depends_on:
+  - SDDK2-502
+  spec: SPEC-004
+  acceptance_criteria:
+  - EXISTS/NOT EXISTS + bounded relations supported
+- id: SDDK2-504
+  phase: 5
+  priority: MUST
+  title: Implement deterministic reactive behavior runner
+  depends_on:
+  - SDDK2-503
+  - SDDK2-303
+  spec: SPEC-004
+  acceptance_criteria:
+  - Behaviors emit proposals/observations only
+  - Loop budget enforced
+- id: SDDK2-505
+  phase: 5
+  priority: MUST
+  title: Implement relation behaviors for verifies/depends_on
+  depends_on:
+  - SDDK2-504
+  spec: SPEC-004
+  acceptance_criteria:
+  - Endpoint changes trigger deterministic proposal/observation
+- id: SDDK2-506
+  phase: 5
+  priority: MUST
+  title: Add graph query/why/rebuild commands
+  depends_on:
+  - SDDK2-501
+  spec: SPEC-004
+  acceptance_criteria:
+  - why exposes causal/provenance path
+- id: SDDK2-601
+  phase: 6
+  priority: MUST
+  title: Implement universal staleness state and derivation
+  depends_on:
+  - SDDK2-505
+  spec: SPEC-012
+  acceptance_criteria:
+  - Causal path stored/explainable
+- id: SDDK2-602
+  phase: 6
+  priority: MUST
+  title: Integrate UAT acceptance staleness with graph
+  depends_on:
+  - SDDK2-601
+  - SDDK2-406
+  spec: SPEC-012
+  acceptance_criteria:
+  - Implementation drift marks relevant acceptance possibly_stale
+- id: SDDK2-603
+  phase: 6
+  priority: MUST
+  title: Implement bounded context.read tracing
+  depends_on:
+  - SDDK2-502
+  - SDDK2-304
+  spec: SPEC-011
+  acceptance_criteria:
+  - Reads are bookkeeping/non-triggering
+  - IDs/hashes only by default
+- id: SDDK2-604
+  phase: 6
+  priority: MUST
+  title: Add impact/why-stale commands
+  depends_on:
+  - SDDK2-601
+  spec: SPEC-012
+  acceptance_criteria:
+  - Output includes causal relation path
+- id: SDDK2-701
+  phase: 7
+  priority: MUST
+  title: Normalize frame IDs across executions
+  depends_on:
+  - SDDK2-201
+  spec: SPEC-009
+  acceptance_criteria:
+  - Events can be grouped by frame
+- id: SDDK2-702
+  phase: 7
+  priority: MUST
+  title: Implement event-stream fork metadata
+  depends_on:
+  - SDDK2-203
+  - SDDK2-701
+  spec: SPEC-009
+  acceptance_criteria:
+  - Fork shares verified prefix
+- id: SDDK2-703
+  phase: 7
+  priority: MUST
+  title: Implement reconstruct and strict replay
+  depends_on:
+  - SDDK2-702
+  spec: SPEC-009
+  acceptance_criteria:
+  - Strict replay reports first divergence
+- id: SDDK2-704
+  phase: 7
+  priority: MUST
+  title: Implement recorded LLM/tool cache for replay
+  depends_on:
+  - SDDK2-703
+  spec: SPEC-009
+  acceptance_criteria:
+  - Shared prefix causes no live I/O
+- id: SDDK2-705
+  phase: 7
+  priority: MUST
+  title: Implement structural graph/event diff
+  depends_on:
+  - SDDK2-501
+  - SDDK2-702
+  spec: SPEC-009
+  acceptance_criteria:
+  - Parent-only/fork-only/shared results exposed
+- id: SDDK2-706
+  phase: 7
+  priority: MUST
+  title: Implement fail-closed state promote
+  depends_on:
+  - SDDK2-705
+  spec: SPEC-009
+  acceptance_criteria:
+  - Parent drift conflict blocks promote
+- id: SDDK2-707
+  phase: 7
+  priority: SHOULD
+  title: Add agent/model A-B evaluation workflow
+  depends_on:
+  - SDDK2-704
+  - SDDK2-705
+  spec: SPEC-014
+  acceptance_criteria:
+  - Same fixtures compare model/prompt variants
+- id: SDDK2-801
+  phase: 8
+  priority: MUST
+  title: Define declarative view descriptor
+  depends_on:
+  - SDDK2-501
+  spec: SPEC-013
+  acceptance_criteria:
+  - Pack-extensible view schema
+- id: SDDK2-802
+  phase: 8
+  priority: MUST
+  title: Implement graph + timeline Explorer foundation
+  depends_on:
+  - SDDK2-801
+  - SDDK2-506
+  spec: SPEC-013
+  acceptance_criteria:
+  - Entity identity shared between views
+- id: SDDK2-803
+  phase: 8
+  priority: SHOULD
+  title: Implement C4 architecture drill-down view
+  depends_on:
+  - SDDK2-802
+  - SDDK2-407
+  spec: SPEC-013
+  acceptance_criteria:
+  - Context/container/component projections use same graph identities
+- id: SDDK2-804
+  phase: 8
+  priority: MUST
+  title: Implement UAT/evidence/release assurance views
+  depends_on:
+  - SDDK2-802
+  - SDDK2-406
+  spec: SPEC-013
+  acceptance_criteria:
+  - Provenance links navigable
+- id: SDDK2-805
+  phase: 8
+  priority: SHOULD
+  title: Benchmark high-performance graph renderer
+  depends_on:
+  - SDDK2-802
+  spec: SPEC-013
+  acceptance_criteria:
+  - Representative large graph benchmark documented
+- id: SDDK2-901
+  phase: 9
+  priority: MUST
+  title: Expand golden dataset to 30-50 cases
+  depends_on:
+  - SDDK2-002
+  spec: SPEC-014
+  acceptance_criteria:
+  - Multi-language balanced labels
+  - Precision/recall/F1 tracked
+- id: SDDK2-902
+  phase: 9
+  priority: MUST
+  title: Ratchet architecture/entropy gates
+  depends_on:
+  - SDDK2-901
+  - SDDK2-506
+  spec: SPEC-014
+  acceptance_criteria:
+  - Selected rules fail builds without baseline regressions
+- id: SDDK2-903
+  phase: 9
+  priority: MUST
+  title: Verify signed local gate receipts remotely
+  depends_on:
+  - SDDK2-305
+  spec: SPEC-015
+  acceptance_criteria:
+  - Wrong commit/signature/stale receipts rejected
+- id: SDDK2-904
+  phase: 9
+  priority: MUST
+  title: Implement release channel metadata and promotion policy
+  depends_on:
+  - SDDK2-903
+  spec: SPEC-015
+  acceptance_criteria:
+  - stable/candidate/edge/dev documented and machine-readable
+- id: SDDK2-905
+  phase: 9
+  priority: MUST
+  title: Generate deterministic documentation inventories
+  depends_on:
+  - SDDK2-401
+  - SDDK2-304
+  spec: SPEC-018
+  acceptance_criteria:
+  - Drift is lint-detectable
+- id: SDDK2-906
+  phase: 11
+  priority: DEFERRED
+  title: Enforce typed debt gate reports in the runtime
+  depends_on:
+  - SDDK2-301
+  - SDDK2-303
+  - SDDK2-901
+  - SDDK2-902
+  spec: SPEC-014
+  acceptance_criteria:
+  - Typed debt reports bind cycle, base/head commits, diff digest, verify hash, and analyzer provenance
+  - Missing, failed, timed-out, or malformed required cluster coverage produces INCONCLUSIVE and blocks release
+  - Runtime stores debt evidence under a dedicated artifact kind without overloading verification-report
+  - A-min, A-lite, and A-full enforce their declared depths while B-direct remains disabled

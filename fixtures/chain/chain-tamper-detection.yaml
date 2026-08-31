@@ -1,0 +1,26 @@
+name: chain-tamper-detection
+description: |
+  Chain integrity verification detects tampering:
+  - Two events in sequence
+  - Second event's chain_hash is SHA256(content_hash2 || chain_hash1)
+  - Tampering with content_hash2 produces different chain_hash2, triggering verify failure
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - capability
+    - git.commit
+  - - actor
+    - alice
+  cycle_id: c-1
+- event_type: approval.capability.granted
+  subjects:
+  - - capability
+    - git.commit
+  cycle_id: c-1
+expect:
+  events:
+  - content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    chain_hash: sha256:82c84c93ffca4a3bc766390bb30fc3b58b392f7d2670ad57d39be9d02c6ee629
+  - content_hash: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    # This is the CORRECT chain_hash; a tampered content_hash would produce a different value
+    chain_hash: sha256:780f3afea741f29bec6816492ade581e16b5ef2bce22d18ed9fb41158082d279

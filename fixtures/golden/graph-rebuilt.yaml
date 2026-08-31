@@ -1,0 +1,14 @@
+name: graph-rebuilt
+events:
+- event_type: graph.rebuilt
+  subjects: []
+  cycle_id: c-1
+expect:
+  nodes: 1
+  edges: 1
+  node_keys:
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: graph.rebuilt
+    to: cycle:c-1

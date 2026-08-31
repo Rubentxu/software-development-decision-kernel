@@ -1,0 +1,30 @@
+name: approval-granted-creates-edge
+events:
+- event_type: approval.capability.requested
+  subjects:
+  - - cycle
+    - c-1
+  - - capability
+    - git.commit
+  cycle_id: c-1
+- event_type: approval.capability.granted
+  subjects:
+  - - actor
+    - alice
+  - - capability
+    - git.commit
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - actor:alice
+  - capability:git.commit
+  - cycle:c-1
+  edges_match:
+  - from: cycle:c-1
+    relation: approval.capability.requested
+    to: capability:git.commit
+  - from: actor:alice
+    relation: approval.capability.granted
+    to: capability:git.commit

@@ -1,0 +1,60 @@
+name: deep-chain-5
+events:
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - A
+  - - task
+    - B
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - B
+  - - task
+    - C
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - C
+  - - task
+    - D
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - D
+  - - task
+    - E
+  cycle_id: c-1
+- event_type: task.created
+  subjects:
+  - - task
+    - A
+  cycle_id: c-1
+expect:
+  nodes: 6
+  edges: 5
+  node_keys:
+  - task:A
+  - task:B
+  - task:C
+  - task:D
+  - task:E
+  edges_match:
+  - from: task:A
+    relation: task.depends_on
+    to: task:B
+  - from: task:B
+    relation: task.depends_on
+    to: task:C
+  - from: task:C
+    relation: task.depends_on
+    to: task:D
+  - from: task:D
+    relation: task.depends_on
+    to: task:E
+  - from: task:A
+    relation: task.created
+    to: task:A

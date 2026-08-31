@@ -1,0 +1,27 @@
+name: agent-registered-unregistered
+events:
+- event_type: agent.registered
+  subjects:
+  - - agent
+    - a1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: agent.unregistered
+  subjects:
+  - - agent
+    - a1
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 2
+  node_keys:
+  - agent:a1
+  - cycle:c-1
+  edges_match:
+  - from: agent:a1
+    relation: agent.registered
+    to: cycle:c-1
+  - from: agent:a1
+    relation: agent.unregistered
+    to: agent:a1

@@ -1,0 +1,44 @@
+[id="{chapter-id}"]
+== {n}. {Chapter Title}
+
+// contract: planning/chapters/{chapter-id}.yml
+
+[abstract]
+{Resumen de una línea que conecta con el capítulo anterior.}
+
+=== Objetivos de aprendizaje
+
+* {Objetivo medible 1, del contrato}
+* {Objetivo medible 2}
+
+// prerequisites: {ids del grafo curricular}
+
+=== {Sección 1: introduce el primer concepto}
+
+{Explicación. Cada afirmación técnica lleva un comentario de evidencia:}
+
+// evidence: ev-{concepto}-{slug}
+{Afirmación respaldada por la evidence card.}
+
+{Transición al ejemplo.}
+
+include::../../examples/{example-path}/src/main.adoc[tag=main]
+
+<<<
+
+=== {Sección 2}
+
+{...}
+
+// diagram: {diagram-id}
+{Placeholder para diagram-architect.}
+
+=== Resumen
+
+* {Punto clave 1}
+* {Punto clave 2}
+
+[glossary]
+=== Glosario
+
+{término}:: {definición del glosario canónico.}

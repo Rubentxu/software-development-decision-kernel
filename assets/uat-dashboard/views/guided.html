@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT — Modo guiado v2</title>
+<style>@TOKENS@</style>
+<style>@COMPONENTS@</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <span class="crumb">UAT guiado (v2)</span>
+    <span class="crumb" style="color:var(--accent-strong);font-family:var(--font-mono)">@RELEASE@</span>
+  </header>
+  <p class="page-sub">Un escenario por pantalla &middot; pre-flight + context bar + evidence tipada + failure protocol</p>
+
+  <div class="tester-bar">
+    <label for="tester-name">Tester (opcional, display)</label>
+    <input id="tester-name" type="text" placeholder="Tu nombre o alias" autocomplete="off">
+    <span id="tester-id-badge" class="ctx-help-item"></span>
+  </div>
+
+  <div class="progress">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <span class="progress-label" id="progress-label">0 / 0</span>
+  </div>
+
+  <article id="wizard" class="scenario-card" aria-live="polite"></article>
+
+  <div class="footer-actions">
+    <span class="progress-summary" id="progress-summary">Progreso: 0 / 0</span>
+    <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+      <button class="btn" onclick="UAT.exportSession('@RELEASE@')">Exportar (en curso)</button>
+      <button class="btn btn-finalize" onclick="finalizeReport()">✅ Finalizar y exportar reporte</button>
+    </div>
+  </div>
+
+  <footer>
+    sddk uat dashboard &middot; guided v2 &middot; <code>@RELEASE@</code> &middot; ingiere con <code>sddk uat ingest --session &lt;file&gt;</code>
+  </footer>
+</div>
+
+<script>@STORAGE_JS@</script>
+<script>@COMPONENTS_JS@</script>
+<script>@VIDEO_ANNOTATION_JS@</script>
+<script>
+const PLAN = @PLAN_JSON@;
+const RELEASE = '@RELEASE@';
+const SDDK_INGEST_URL = '@INGEST_URL@';
+const SDDK_HEALTH_URL = '@HEALTH_URL@';
+const RUNNER_CONTEXT = @RUNNER_CONTEXT@;
+const RUNNER_MODE = RUNNER_CONTEXT?.mode || 'runner';
+const all = [];
+for (const f of PLAN.features || []) for (const s of f.scenarios || []) all.push({feature: f, scenario: s});
+const SCENARIO_ORDER = all.map(({scenario}) => scenario.id);
+
+let idx = 0;
+let verdicts = {};
+let startedAt = null;
+let finishedAt = null;
+let currentFormItems = null; // For branching runtime
+let visitedItems = new Set(); // For cycle detection in branching
+
+document.getElementById('tester-id-badge').textContent = `id: ${UAT.ensureTesterId()}`;
+
+function escapeHtml(s) { return UatRender.escapeHtml(s); }
+function loadVerdicts() {
+  const raw = UAT.loadSession(RELEASE);
+  const plan = { release: { candidate: PLAN.release?.candidate || RELEASE } };
+  const session = UAT.fromLegacy(raw, plan);
+  if (!session) return;
+  verdicts = {};
+  for (const r of session.results || []) {
+    verdicts[r.scenario_id] = {
+      status: r.status,
+      comment: r.comment || "",
+      evidence: r.evidence || [],
+      duration_minutes: r.duration_minutes || 0,
+      verdict_at: r.verdict_at || null,
+      verdict_duration_ms: r.verdict_duration_ms || null,
+      tester_notes: r.tester_notes || "",
+      observed: r.observed || "",
+      failure_reason: r.failure_reason || "",
+      linked_defect: r.linked_defect || "",
+      repro_command: r.repro_command || "",
+    };
+  }
+  startedAt = session.started_at || null;
+  finishedAt = session.finished_at || null;
+  const testerEl = document.getElementById('tester-name');
+  if (testerEl && session.executed_by && session.executed_by !== 'tester') testerEl.value = session.executed_by;
+}
+function saveVerdicts() {
+  const tester = document.getElementById('tester-name').value.trim() || '';
+  const testerId = UAT.ensureTesterId();
+  const session = {
+    schema_version: 2,
+    plan_version: PLAN.schema_version || 2,
+    session_id: UAT.uuid(),
+    plan_ref: PLAN.release?.candidate || RELEASE,
+    release: RELEASE,
+    executor: 'human',
+    executed_by: tester || testerId,
+    started_at: startedAt || UAT.nowRfc3339(),
+    finished_at: finishedAt,
+    metadata: {
+      tester: { id: testerId, display: tester || null },
+      started_at: startedAt || UAT.nowRfc3339(),
+      completed_at: finishedAt,
+      duration_ms: null,
+      env_fingerprint: null,
+      build: null,
+    },
+    results: [],
+  };
+  for (const id of SCENARIO_ORDER) {
+    const v = verdicts[id];
+    if (!v || !v.status) continue;
+    const r = {
+      scenario_id: id,
+      status: v.status,
+      comment: v.comment || '',
+      evidence: v.evidence || [],
+      duration_minutes: v.duration_minutes || 0,
+    };
+    if (v.verdict_at) r.verdict_at = v.verdict_at;
+    if (v.verdict_duration_ms) r.verdict_duration_ms = v.verdict_duration_ms;
+    if (v.tester_notes) r.tester_notes = v.tester_notes;
+    if (v.observed) r.observed = v.observed;
+    if (v.failure_reason) r.failure_reason = v.failure_reason;
+    if (v.linked_defect) r.linked_defect = v.linked_defect;
+    if (v.repro_command) r.repro_command = v.repro_command;
+    session.results.push(r);
+  }
+  UAT.saveSession(RELEASE, session);
+}
+function startIfNeeded() {
+  if (!startedAt) {
+    startedAt = UAT.nowRfc3339();
+    saveVerdicts();
+  }
+}
+
+function priorityBadge(p) {
+  const txt = (p || "P2").toUpperCase();
+  return `<span class="badge badge-${txt.toLowerCase()}">${txt}</span>`;
+}
+function assigneeBadge(a) {
+  const txt = (a || "developer").toLowerCase();
+  return `<span class="badge badge-assignee">${txt}</span>`;
+}
+
+function render() {
+  // Show staleness banner if report present
+  const staleReport = window.__STALENESS_REPORT__;
+  if (staleReport && RUNNER_MODE !== 'designer') {
+    const banner = UatRender.stalenessBanner(staleReport);
+    if (banner) {
+      const existing = document.querySelector('.staleness-banner');
+      if (!existing) {
+        const page = document.querySelector('.page');
+        if (page) page.prepend(Object.assign(document.createElement('div'), { innerHTML: banner }).firstElementChild);
+      }
+    }
+  }
+
+  // Inbox view: show on start for runner/reviewer mode
+  if (RUNNER_MODE === 'runner' || RUNNER_MODE === 'reviewer') {
+    const session = UAT.loadSession(RELEASE);
+    const inboxHtml = UatRender.inboxView(PLAN, session);
+    // Only show inbox if no verdicts yet
+    const hasVerdicts = Object.keys(verdicts).some(id => verdicts[id] && verdicts[id].status);
+    if (!hasVerdicts) {
+      document.getElementById('wizard').innerHTML = inboxHtml;
+      updateProgress();
+      bindInboxEvents();
+      return;
+    }
+  }
+
+  const total = all.length;
+  const { feature, scenario } = all[idx] || {};
+  if (!feature) {
+    document.getElementById('wizard').innerHTML = '<p class="page-sub">Plan vacío: no hay escenarios para ejecutar.</p>';
+    updateProgress();
+    return;
+  }
+  const current = verdicts[scenario.id] || {};
+  const rationale = scenario.rationale
+    ? `<p class="scenario-rationale" style="--i:2"><strong>Por qué importa.</strong>${escapeHtml(scenario.rationale)}</p>`
+    : "";
+  const steps = (scenario.plain_steps || []).map((step, i) => UatRender.stepBlock(step, i)).join("");
+  // Form DSL (v3): si el escenario declara `form`, el wizard renderiza el
+  // formulario determinista en lugar de los plain_steps.
+  const formItems = scenario.form ? scenario.form.items || [] : [];
+  currentFormItems = formItems;
+  const formSteps = scenario.form ? UatRender.formList(scenario.form, 0) : "";
+  const flags = (scenario.flags || []).map(f => `<span class="badge badge-flag">${escapeHtml(f)}</span>`).join("");
+
+  // Checkpoint block (if checkpoint in form)
+  const checkpoint = scenario.form && scenario.form.checkpoint;
+  const checkpointSummary = current.checkpoint_summary || { machine: { passed: 0, total: 0 }, fara: {}, anomalies: [] };
+  const checkpointHtml = checkpoint ? UatRender.checkpointBlock(checkpoint, checkpointSummary) : '';
+
+  // Diagnostics panel (if FAIL was set with driver data)
+  const driverData = current.driver_data || {};
+  const diagnosticsHtml = (current.status === 'FAIL' && Object.keys(driverData).length > 0)
+    ? UatRender.diagnosticsPanel({ cause: current.failure_cause, category: current.failure_category, suggested_defect: current.failure_defect_title, observed: current.observed, expected: current.expected }, driverData)
+    : '';
+
+  document.getElementById('wizard').innerHTML = `
+    ${UatRender.contextBar(scenario, feature)}
+    <header class="scenario-header" style="--i:2">
+      <div class="scenario-meta">
+        <span class="scenario-id">${escapeHtml(scenario.id)}</span>
+        <span class="scenario-feature">${escapeHtml(feature.id)} · ${escapeHtml(feature.name)}</span>
+        ${priorityBadge(scenario.priority)}
+        ${assigneeBadge(scenario.assignee)}
+        ${flags}
+      </div>
+      <h2 class="scenario-title">${escapeHtml(scenario.title)}</h2>
+    </header>
+
+    ${UatRender.userStoryBanner(scenario)}
+    ${rationale}
+    ${UatRender.preflightChecklist(scenario)}
+
+    <ol class="scenario-steps" style="--i:4">${formSteps || steps}</ol>
+
+    ${checkpointHtml}
+
+    ${diagnosticsHtml || UatRender.evidenceCaptureUI(scenario, current)}
+
+    <div class="comment-section" style="--i:7">
+      <label for="comment" class="comment-label">Comentario / notas del tester (opcional)</label>
+      <textarea id="comment" rows="2" placeholder="Lo que sea relevante para el audit trail">${escapeHtml(current.comment || "")}</textarea>
+    </div>
+
+    <div class="verdict-section" style="--i:8">
+      <span class="verdict-label">Verdict</span>
+      <div class="verdict-row">
+        ${btn('PASS', 'Pasó', '✓', 'verdict-pass')}
+        ${btn('FAIL', 'Falló', '✕', 'verdict-fail')}
+        ${btn('BLOCKED', 'Bloqueado', '⏸', 'verdict-blocked')}
+      </div>
+    </div>
+
+    <div id="failure-host" style="--i:9"></div>
+
+    <nav class="wizard-nav">
+      <span class="nav-position">Escenario ${idx + 1} de ${total}</span>
+      <div style="display:flex;gap:var(--space-2)">
+        <button class="btn" id="prev-btn" ${idx === 0 ? 'disabled' : ''}>← Anterior</button>
+        <button class="btn" id="next-btn" ${idx === total - 1 ? 'disabled' : ''}>Siguiente →</button>
+      </div>
+    </nav>
+  `;
+
+  if (current.status === 'FAIL' && !diagnosticsHtml) {
+    showFailurePanel(scenario, current.observed || "");
+  }
+  updateProgress();
+  bindEvents(scenario, feature);
+}
+
+function bindInboxEvents() {
+  document.querySelectorAll('.inbox-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const scId = row.dataset.scenario;
+      const scIdx = all.findIndex(({scenario}) => scenario.id === scId);
+      if (scIdx !== -1) {
+        idx = scIdx;
+        visitedItems.add(scId);
+        render();
+      }
+    });
+  });
+}
+
+function handleCheckpointApproval(scenarioId, approved) {
+  const entry = verdicts[scenarioId] || {};
+  entry.checkpoint_approved = approved;
+  entry.checkpoint_approved_at = UAT.nowRfc3339();
+  verdicts[scenarioId] = entry;
+  saveVerdicts();
+  // Navigate to next scenario after approval
+  if (approved && idx < all.length - 1) {
+    idx++;
+    render();
+  }
+}
+
+function handleDiagnosticsEdit(scenarioId, field, value) {
+  const entry = verdicts[scenarioId] || {};
+  if (field === 'observed') entry.observed = value;
+  else if (field === 'failure_cause') entry.failure_cause = value;
+  else if (field === 'failure_category') entry.failure_category = value;
+  else if (field === 'failure_defect_title') entry.failure_defect_title = value;
+  verdicts[scenarioId] = entry;
+  saveVerdicts();
+}
+
+function btn(key, label, emoji, cls) {
+  return `<button class="verdict ${cls}" data-verdict="${key}"><span class="v-emoji">${emoji}</span><span class="v-label">${label}</span></button>`;
+}
+
+function bindEvents(scenario, feature) {
+  document.getElementById('wizard').querySelectorAll('.verdict').forEach(b => {
+    b.addEventListener('click', () => setVerdict(scenario.id, b.dataset.verdict, b));
+  });
+  document.querySelectorAll('.copy-btn[data-copy]').forEach(b => {
+    b.addEventListener('click', () => {
+      navigator.clipboard.writeText(b.dataset.copy).then(() => {
+        const original = b.textContent;
+        b.textContent = 'copiado';
+        b.classList.add('copied');
+        setTimeout(() => { b.textContent = original; b.classList.remove('copied'); }, 1400);
+      });
+    });
+  });
+  document.getElementById('prev-btn').addEventListener('click', () => nav(-1));
+  document.getElementById('next-btn').addEventListener('click', () => nav(1));
+  UAT.pasteScreenshot(RELEASE, scenario.id, () => {
+    const drop = document.getElementById('drop');
+    if (drop) {
+      drop.textContent = '✅ Screenshot capturado';
+      drop.classList.add('captured');
+      setTimeout(() => drop.classList.remove('captured'), 600);
+    }
+    render();
+  });
+  document.querySelectorAll('[data-attach-file]').forEach(b => {
+    b.addEventListener('click', () => attachFile(scenario.id, b.dataset.attachFile));
+  });
+  document.querySelectorAll('[data-attach-text]').forEach(b => {
+    b.addEventListener('click', () => attachText(scenario.id, b.dataset.attachText));
+  });
+  document.querySelectorAll('.evidence-remove[data-remove]').forEach(b => {
+    b.addEventListener('click', () => removeEvidence(scenario.id, parseInt(b.dataset.remove, 10)));
+  });
+  // F13: Checkpoint approve/reject
+  document.querySelectorAll('.btn-checkpoint-approve').forEach(b => {
+    b.addEventListener('click', () => handleCheckpointApproval(scenario.id, true));
+  });
+  document.querySelectorAll('.btn-checkpoint-reject').forEach(b => {
+    b.addEventListener('click', () => handleCheckpointApproval(scenario.id, false));
+  });
+  // F13: Diagnostics edit
+  const editActualBtn = document.querySelector('.btn-edit-actual');
+  if (editActualBtn) {
+    editActualBtn.addEventListener('click', () => {
+      const obs = prompt('Actual Result (machine-observable):', verdicts[scenario.id]?.observed || '');
+      if (obs !== null) handleDiagnosticsEdit(scenario.id, 'observed', obs);
+    });
+  }
+  // F13: BlindMatch — auto-evaluate on form input for blind checks
+  if (scenario.form && scenario.form.items) {
+    scenario.form.items.forEach(item => {
+      if (item.check && item.check.visibility === 'blind' && item.check.expected) {
+        const checkEl = document.querySelector(`[name^="check-"]`);
+        if (checkEl) {
+          checkEl.addEventListener('change', () => {
+            const observed = checkEl.value;
+            const match = UatRender.blindMatch(observed, item.check.expected);
+            // Show match/mismatch indicator
+            const existing = document.querySelector('.match-indicator');
+            if (existing) existing.remove();
+            const indicator = document.createElement('span');
+            indicator.className = `match-indicator ${match ? 'match' : 'mismatch'}`;
+            indicator.textContent = match ? '✓ MATCH' : '✕ MISMATCH';
+            checkEl.closest('.form-controls')?.appendChild(indicator);
+          });
+        }
+      }
+    });
+  }
+  // E14: wire video + annotation evidence handlers
+  const wizardEl = document.getElementById('wizard');
+  if (window.VIDEO_ANNOTATION && wizardEl) {
+    window.VIDEO_ANNOTATION.bindHandlers(wizardEl, UAT, RELEASE, scenario.id);
+  }
+}
+
+function attachFile(scenarioId, kindLabel) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    // For screenshots, read as data URL and cache for annotation canvas
+    if (kindLabel === 'screenshot') {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result;
+        await UAT.addTypedEvidence(RELEASE, scenarioId, {
+          kind: kindLabel, blob: file, mime: file.type || 'application/octet-stream', note: file.name,
+        });
+        UAT.cacheScreenshotDataUrl(RELEASE, scenarioId, dataUrl);
+        render();
+      };
+      reader.readAsDataURL(file);
+    } else {
+      await UAT.addTypedEvidence(RELEASE, scenarioId, {
+        kind: kindLabel, blob: file, mime: file.type || 'application/octet-stream', note: file.name,
+      });
+      render();
+    }
+  };
+  input.click();
+}
+
+function attachText(scenarioId, kind) {
+  const input = document.querySelector(`[data-evidence-kind="${kind}"]`);
+  if (!input) return;
+  const value = input.value.trim();
+  if (!value) {
+    input.focus();
+    input.classList.add('evidence-text-empty');
+    setTimeout(() => input.classList.remove('evidence-text-empty'), 600);
+    return;
+  }
+  const scenario = all.find(({scenario}) => scenario.id === scenarioId).scenario;
+  const spec = (scenario.evidence && scenario.evidence.kinds || []).find(k => k.kind === kind);
+  const evidence = { kind, text: value, note: null };
+  if (spec) {
+    if (spec.expected_value != null) evidence.expected_value = spec.expected_value;
+    if (spec.match_mode) evidence.match_mode = spec.match_mode;
+  }
+  UAT.addTypedEvidence(RELEASE, scenarioId, evidence).then(() => {
+    input.value = '';
+    render();
+  });
+}
+
+function removeEvidence(scenarioId, idx) {
+  const session = UAT.loadSession(RELEASE);
+  if (!session) return;
+  const r = (session.results || []).find(r => r.scenario_id === scenarioId);
+  if (!r || !r.evidence) return;
+  r.evidence.splice(idx, 1);
+  UAT.saveSession(RELEASE, session);
+  if (verdicts[scenarioId]) verdicts[scenarioId].evidence = r.evidence;
+  render();
+}
+
+function showFailurePanel(scenario, observed) {
+  const host = document.getElementById('failure-host');
+  if (!host) return;
+  host.innerHTML = UatRender.failureProtocolPanel(scenario, observed);
+  const copyBtn = document.getElementById('copy-defect-report');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const observedTxt = document.querySelector('.failure-observed').value;
+      const cur = verdicts[scenario.id] || {};
+      cur.observed = observedTxt;
+      verdicts[scenario.id] = cur;
+      const session = {
+        release: RELEASE,
+        executor: 'human',
+        executed_by: document.getElementById('tester-name').value.trim(),
+        started_at: startedAt || UAT.nowRfc3339(),
+        metadata: { tester: { id: UAT.ensureTesterId() }, build: { commit: 'unknown' } },
+      };
+      const report = UAT.buildDefectReport({ scenario, plan: PLAN, session, observed: observedTxt });
+      if (report) {
+        navigator.clipboard.writeText(report).then(() => {
+          copyBtn.textContent = '✅ Copiado al portapapeles';
+          setTimeout(() => { copyBtn.textContent = '📋 Copiar defect report'; }, 1400);
+        });
+      } else {
+        copyBtn.textContent = '(no defect template in plan)';
+      }
+    });
+  }
+  const defectInput = document.getElementById('defect-id');
+  if (defectInput) {
+    const cur = verdicts[scenario.id] || {};
+    defectInput.value = cur.linked_defect || '';
+    defectInput.addEventListener('change', () => {
+      cur.linked_defect = defectInput.value.trim();
+      verdicts[scenario.id] = cur;
+      saveVerdicts();
+    });
+  }
+}
+
+function updateProgress() {
+  const total = all.length;
+  const done = Object.keys(verdicts).filter(id => verdicts[id] && verdicts[id].status).length;
+  const pct = total ? Math.round((100 * done) / total) : 0;
+  document.getElementById('progress-fill').style.width = pct + "%";
+  document.getElementById('progress-label').textContent = `${done} / ${total}`;
+  document.getElementById('progress-summary').textContent = `Progreso: ${done} / ${total} escenarios`;
+}
+
+function setVerdict(id, status, btnEl) {
+  startIfNeeded();
+  const entry = verdicts[id] || {};
+  entry.status = status;
+  entry.verdict_at = UAT.nowRfc3339();
+  const ta = document.getElementById('comment');
+  if (ta) entry.comment = ta.value;
+  const scenarioObj = all.find(({scenario}) => scenario.id === id);
+  const scenario = scenarioObj.scenario;
+  const repro = (scenario.plain_steps || []).find(s => s.copy_hint && (s.kind === 'shell' || !s.kind));
+  if (repro) entry.repro_command = repro.action;
+  verdicts[id] = entry;
+  saveVerdicts();
+  if (btnEl) {
+    btnEl.classList.remove('is-active');
+    void btnEl.offsetWidth;
+    btnEl.classList.add('is-active');
+  }
+
+  // F13: Branching runtime evaluation
+  // After verdict, check if there's a form with branching flow to navigate
+  if (scenario.form && scenario.form.items) {
+    const formId = scenario.form.id || id;
+    const currentItemId = formId; // item id = scenario id for single-form scenarios
+    const nextItemId = UatRender.interpretBranching(scenario.form.items, currentItemId, status);
+    if (nextItemId) {
+      // Check for cycle
+      if (visitedItems.has(nextItemId)) {
+        // Cycle detected, stop here
+        console.warn('Branching cycle detected, stopping at', nextItemId);
+      } else {
+        visitedItems.add(nextItemId);
+        // Navigate to the next item/scenario
+        const nextIdx = all.findIndex(({scenario}) => scenario.id === nextItemId || scenario.form?.id === nextItemId);
+        if (nextIdx !== -1 && nextIdx !== idx) {
+          idx = nextIdx;
+          render();
+          return;
+        }
+      }
+    }
+  }
+
+  if (status === 'FAIL') render();
+  updateProgress();
+}
+
+function nav(delta) {
+  const cur = all[idx].scenario;
+  const entry = verdicts[cur.id] || {};
+  const ta = document.getElementById('comment');
+  if (ta) entry.comment = ta.value;
+  verdicts[cur.id] = entry;
+  saveVerdicts();
+  idx = Math.max(0, Math.min(all.length - 1, idx + delta));
+  render();
+}
+
+// POST the session to the in-process ingest server (started by
+// `sddk uat open`). Returns a one-line summary for the final alert.
+async function ingestSession(session) {
+  if (!SDDK_INGEST_URL) {
+    return "\n  ingest: skipped (no endpoint — open with `sddk uat open`)\n" +
+      "\n  manual: sddk uat ingest --session uat-session-" + RELEASE + ".json\n";
+  }
+  try {
+    const resp = await fetch(SDDK_INGEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(session),
+    });
+    const json = await resp.json();
+    if (resp.ok && json.ok) {
+      return "\n  ingest: ✅ " + (json.verdict || 'OK') +
+        " — session_id=" + json.session_id + "\n" +
+        "  (the control plane already knows about this session; you can close this tab)\n";
+    }
+    return "\n  ingest: ❌ " + (json.error || ('HTTP ' + resp.status)) + "\n" +
+      "\n  manual: sddk uat ingest --session uat-session-" + RELEASE + ".json\n";
+  } catch (e) {
+    return "\n  ingest: ⚠️  could not reach " + SDDK_INGEST_URL + " (" + e + ")\n" +
+      "\n  manual: sddk uat ingest --session uat-session-" + RELEASE + ".json\n";
+  }
+}
+
+async function finalizeReport() {
+  startIfNeeded();
+  finishedAt = UAT.nowRfc3339();
+  const cur = all[idx].scenario;
+  const entry = verdicts[cur.id] || {};
+  const ta = document.getElementById('comment');
+  if (ta) entry.comment = ta.value;
+  verdicts[cur.id] = entry;
+  saveVerdicts();
+
+  const tester = document.getElementById('tester-name').value.trim();
+  const missing = SCENARIO_ORDER.filter(id => !verdicts[id] || !verdicts[id].status);
+  if (missing.length > 0) {
+    const proceed = confirm(
+      `Faltan ${missing.length} escenario(s) sin valorar:\n  ${missing.join(", ")}\n\n` +
+      `¿Finalizar igualmente? Quedarán como "no valorados".`
+    );
+    if (!proceed) return;
+  }
+  const session = UAT.finalizeAndExport({
+    release: RELEASE,
+    planRef: PLAN.release?.candidate || RELEASE,
+    executedBy: tester,
+    startedAt,
+    verdicts,
+    scenarioOrder: SCENARIO_ORDER,
+    planVersion: PLAN.schema_version || 2,
+  });
+  const teardownHTML = UatRender.teardownChecklist(cur);
+  const wizardEl = document.getElementById('wizard');
+  if (teardownHTML) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = teardownHTML;
+    wrap.style.marginTop = 'var(--space-4)';
+    wizardEl.appendChild(wrap.firstElementChild);
+  }
+  const ok = Object.values(verdicts).filter(v => v.status === 'PASS').length;
+  const fail = Object.values(verdicts).filter(v => v.status === 'FAIL').length;
+  const block = Object.values(verdicts).filter(v => v.status === 'BLOCKED').length;
+  const testerId = UAT.ensureTesterId();
+
+  // Auto-ingest: POST the session to the local sddk ingest endpoint. If the
+  // endpoint isn't reachable (e.g. user opened the HTML directly without
+  // `sddk uat open`), fall back to the manual command.
+  const ingestSummary = await ingestSession(session);
+
+  alert(
+    `Reporte finalizado y descargado:\n\n` +
+    `  pass: ${ok} | fail: ${fail} | blocked: ${block}\n` +
+    `  session_id: ${session.session_id}\n` +
+    `  tester_id: ${testerId}\n` +
+    ingestSummary +
+    `  plan_version: ${session.plan_version}\n\n` +
+    `Siguiente paso:\n` +
+    `  sddk uat ingest --session uat-session-${RELEASE}.json\n` +
+    `  sddk uat verify-integrity --session <file> --project ${tester}\n` +
+    `  sddk uat failures --release ${RELEASE}`
+  );
+}
+
+loadVerdicts();
+render();
+</script>
+</body>
+</html>

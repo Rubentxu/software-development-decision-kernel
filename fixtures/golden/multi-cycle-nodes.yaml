@@ -1,0 +1,37 @@
+name: multi-cycle-nodes
+events:
+- event_type: cycle.created
+  subjects:
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: cycle.created
+  subjects:
+  - - cycle
+    - c-2
+  cycle_id: c-2
+- event_type: approval.capability.granted
+  subjects:
+  - - actor
+    - bob
+  - - capability
+    - git.push
+  cycle_id: c-2
+expect:
+  nodes: 4
+  edges: 3
+  node_keys:
+  - actor:bob
+  - capability:git.push
+  - cycle:c-1
+  - cycle:c-2
+  edges_match:
+  - from: cycle:c-1
+    relation: cycle.created
+    to: cycle:c-1
+  - from: cycle:c-2
+    relation: cycle.created
+    to: cycle:c-2
+  - from: actor:bob
+    relation: approval.capability.granted
+    to: capability:git.push

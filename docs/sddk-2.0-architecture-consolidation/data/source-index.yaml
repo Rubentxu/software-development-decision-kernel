@@ -1,0 +1,34 @@
+baseline:
+  sddk:
+    repository: https://github.com/Rubentxu/software-development-decision-kernel
+    commit: eb5117e6cd4366ceb205a5b2dde4195aa396d32f
+    version: 1.9.1
+inspirations:
+  activegraph:
+    repository: https://github.com/yoheinakajima/activegraph
+    inspected_commit: 8aedb1866cf5dce056af97529152ffd6f468a1ed
+    adapted_ideas:
+      - event-log-as-authority
+      - graph-as-projection
+      - reactive-behaviors
+      - relation-behaviors
+      - pattern-subscriptions
+      - frames
+      - fork-replay-diff-promote
+      - policies-and-approvals
+      - context-read-tracing
+      - core-plus-layered-packs
+  activegraph_packs:
+    repository: https://github.com/yoheinakajima/activegraph-packs
+    adapted_ideas:
+      - minimal-core-vocabulary
+      - requires-vs-integrates_with
+      - bridge-packs
+      - inspector-ui
+  other_discussed_inspirations:
+    - Arrows.app / graph-first architecture visualization
+    - Moldable Development / task-specific projections
+    - C4 model drill-down
+    - tldraw-like editable canvas adapters
+    - high-performance WebGL graph visualization
+    - Cognicode code knowledge graph bridge

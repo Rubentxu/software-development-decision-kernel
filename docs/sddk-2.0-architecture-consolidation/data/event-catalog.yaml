@@ -1,0 +1,49 @@
+version: 1
+categories:
+  workflow:
+    - workflow.phase.entered
+    - workflow.phase.blocked
+    - workflow.cycle.completed
+  capability:
+    - capability.execution.requested
+    - capability.execution.approved
+    - capability.execution.denied
+    - capability.execution.started
+    - capability.execution.completed
+    - capability.execution.failed
+    - capability.postcondition.verified
+    - capability.postcondition.failed
+  evidence:
+    - evidence.item.recorded
+    - evidence.item.redacted
+    - evidence.item.invalidated
+  uat:
+    - uat.plan.created
+    - uat.scenario.started
+    - uat.check.passed
+    - uat.check.failed
+    - uat.check.blocked
+    - uat.checkpoint.reached
+    - uat.review.completed
+    - uat.acceptance.granted
+    - uat.acceptance.reopened
+  graph:
+    - graph.observation.derived
+    - graph.pattern.matched
+    - graph.staleness.detected
+  "agent":
+    - agent.execution.started
+    - agent.execution.completed
+    - agent.execution.failed
+    - context.read
+  fork:
+    - fork.created
+    - fork.override.recorded
+    - replay.divergence.detected
+    - fork.promote.proposed
+    - fork.promote.applied
+    - fork.promote.rejected
+  release:
+    - release.gate.passed
+    - release.gate.failed
+    - release.attestation.created

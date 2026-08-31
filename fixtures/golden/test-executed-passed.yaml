@@ -1,0 +1,27 @@
+name: test-executed-passed
+events:
+- event_type: test.executed
+  subjects:
+  - - test
+    - t1
+  - - requirement
+    - r1
+  cycle_id: c-1
+- event_type: test.passed
+  subjects:
+  - - test
+    - t1
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - requirement:r1
+  - test:t1
+  edges_match:
+  - from: test:t1
+    relation: test.executed
+    to: requirement:r1
+  - from: test:t1
+    relation: test.passed
+    to: test:t1

@@ -1,0 +1,37 @@
+[package]
+name = "sddk-engine"
+version.workspace = true
+edition = "2024"
+authors = ["SDDK Team"]
+license = "MIT"
+rust-version.workspace = true
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-saphyr = { workspace = true }
+thiserror = { workspace = true }
+sha2 = "0.10"
+hmac = { workspace = true }
+getrandom = { workspace = true }
+dirs = { workspace = true }
+regex = { workspace = true }
+sddk-domain = { path = "../sddk-domain" }
+time = { workspace = true }
+uuid = { workspace = true }
+tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "time", "sync", "net"] }
+rand = "0.8"
+reqwest = { workspace = true }
+
+[dev-dependencies]
+regex = { workspace = true }
+tempfile = { workspace = true }
+# WHY: cycle_authority.rs durability-required tests use file-based Storage::open(&path) reopen pattern
+# (REQ-M13-004 anti-AC hygiene — name the durability tests that justify this dev-dep)
+sddk-storage = { path = "../sddk-storage" }
+# WHY: port_contracts.rs uses InMemoryLedger for byte-equivalence cross-checks
+sddk-testkit = { path = "../sddk-testkit" }

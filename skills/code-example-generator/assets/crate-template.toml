@@ -1,0 +1,16 @@
+# Plantilla de Cargo.toml para un crate del workspace del libro.
+# Ruta: chapters/chapter-{NN}-{slug}/Cargo.toml
+# NUNCA fijes la versión de bevy a mano: el workspace la pinnea (=0.19.0).
+
+[package]
+name = "bevy-book-chapter-{NN}"     # ej. bevy-book-chapter-12
+version = "0.1.0"
+edition.workspace = true            # edition 2024 (workspace)
+rust-version.workspace = true       # 1.95 (workspace)
+publish = false
+
+[dependencies]
+bevy.workspace = true               # default-features = false (workspace)
+
+# Para crates stub (requieren GPU): añadir solo lo mínimo para compilar.
+# Para crates con tests de lógica: src/lib.rs + #[cfg(test)] mod tests.

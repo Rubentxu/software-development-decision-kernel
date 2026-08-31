@@ -1,0 +1,107 @@
+name: deep-chain-10
+events:
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - A
+  - - task
+    - B
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - B
+  - - task
+    - C
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - C
+  - - task
+    - D
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - D
+  - - task
+    - E
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - E
+  - - task
+    - F
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - F
+  - - task
+    - G
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - G
+  - - task
+    - H
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - H
+  - - task
+    - I
+  cycle_id: c-1
+- event_type: task.depends_on
+  subjects:
+  - - task
+    - I
+  - - task
+    - J
+  cycle_id: c-1
+expect:
+  nodes: 11
+  edges: 9
+  node_keys:
+  - task:A
+  - task:B
+  - task:C
+  - task:D
+  - task:E
+  - task:F
+  - task:G
+  - task:H
+  - task:I
+  - task:J
+  edges_match:
+  - from: task:A
+    relation: task.depends_on
+    to: task:B
+  - from: task:B
+    relation: task.depends_on
+    to: task:C
+  - from: task:C
+    relation: task.depends_on
+    to: task:D
+  - from: task:D
+    relation: task.depends_on
+    to: task:E
+  - from: task:E
+    relation: task.depends_on
+    to: task:F
+  - from: task:F
+    relation: task.depends_on
+    to: task:G
+  - from: task:G
+    relation: task.depends_on
+    to: task:H
+  - from: task:H
+    relation: task.depends_on
+    to: task:I
+  - from: task:I
+    relation: task.depends_on
+    to: task:J

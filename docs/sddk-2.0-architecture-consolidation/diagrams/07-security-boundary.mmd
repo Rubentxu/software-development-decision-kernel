@@ -1,0 +1,12 @@
+flowchart LR
+  B[Agent / Reactive Behavior] --> P[Proposal]
+  P --> V[Validation]
+  V --> POL[Policy]
+  POL -->|requires| H[Human Approval]
+  H --> CAP[Capability Gateway]
+  POL -->|allow| CAP
+  POL -->|deny| DEN[Denial Event]
+  CAP --> EXT[External Side Effect]
+  EXT --> PC[Postcondition Verify]
+  PC --> REC[Receipt + Evidence]
+  REC --> LED[(Ledger)]

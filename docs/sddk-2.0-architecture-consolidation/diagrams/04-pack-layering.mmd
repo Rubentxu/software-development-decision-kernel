@@ -1,0 +1,19 @@
+flowchart TB
+  RT[SDDK Kernel / Pack Runtime]
+  CORE[Core Vocabulary]
+  INFRA[Infrastructure Packs
+Evidence / bridges / adapters]
+  DOMAIN[Domain Packs
+UAT / Testing / Architecture / Research / Docs]
+  BRIDGE[Bridge Packs
+Cognicode / external ontologies]
+  BUNDLE[Bundles
+Named compositions only]
+  RT --> CORE
+  CORE --> INFRA
+  CORE --> DOMAIN
+  CORE --> BRIDGE
+  INFRA -. integrates_with .-> DOMAIN
+  BRIDGE -. emits core mappings .-> CORE
+  BUNDLE --> INFRA
+  BUNDLE --> DOMAIN

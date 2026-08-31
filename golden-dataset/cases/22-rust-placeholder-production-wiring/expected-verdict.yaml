@@ -1,0 +1,19 @@
+case: 22-rust-placeholder-production-wiring
+description: Reachable Rust todo macro in a required production function.
+bucket: critical-obvious
+schema_version: golden-case/v1
+suite: verify-defects
+target_phase: verify
+language: rust
+path: A-min
+held_out: true
+trials: 3
+expected:
+  verify: FAIL
+  debt: FAIL
+  labels:
+    - rule_id: verify.real-implementation.placeholder
+      classification: blocking_defect
+      severity: critical
+      location: implementation/lib.rs
+  forbidden_rule_ids: []

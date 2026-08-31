@@ -1,0 +1,27 @@
+schema_version = 2
+id = "sddk-pack-uat"
+version = "2.0.0-alpha.1"
+description = "Guided human UAT, evidence capture, review and release acceptance"
+requires = ["sddk-core", "sddk-evidence"]
+integrates_with = ["sddk-pack-testing", "sddk-pack-cognicode", "sddk-pack-ui"]
+conflicts_with = []
+settings_schema = "schemas/uat-settings.schema.json"
+fixtures = ["fixtures/uat-guided-runner.json"]
+migrations = ["migrations/uat-v4-to-v5"]
+
+[provides]
+events = [
+  "uat.plan.created",
+  "uat.scenario.started",
+  "uat.check.passed",
+  "uat.check.failed",
+  "uat.acceptance.granted"
+]
+views = ["uat.runner", "uat.review", "uat.release-assurance"]
+capabilities = []
+behaviors = ["uat-staleness-detector", "uat-risk-suggester"]
+
+[content_hashes]
+behavior_ir = "sha256:REPLACE_AT_BUILD"
+prompts = "sha256:REPLACE_AT_BUILD"
+assets = "sha256:REPLACE_AT_BUILD"

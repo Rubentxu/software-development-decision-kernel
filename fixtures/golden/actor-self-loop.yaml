@@ -1,0 +1,16 @@
+name: actor-self-loop
+events:
+- event_type: actor.registered
+  subjects:
+  - - actor
+    - alice
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - actor:alice
+  edges_match:
+  - from: actor:alice
+    relation: actor.registered
+    to: actor:alice

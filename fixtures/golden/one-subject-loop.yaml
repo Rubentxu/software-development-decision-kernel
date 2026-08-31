@@ -1,0 +1,16 @@
+name: one-subject-loop
+events:
+- event_type: task.blocked
+  subjects:
+  - - task
+    - A
+  cycle_id: c-1
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - task:A
+  edges_match:
+  - from: task:A
+    relation: task.blocked
+    to: task:A

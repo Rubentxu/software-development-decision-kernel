@@ -1,0 +1,217 @@
+# SDDK B-direct — Bypass SDDK for hotfixes and well-known changes
+# Status: STABLE (extracted from orchestrator.md § Path-specific sequences B-direct row)
+# Source: prompts/sddk/mcw.md § Phase 1 B-direct + orchestrator.md § Path B
+# Trigger: context_quality C3 + jurisprudence hit, OR user explicit "just do it" / "fix it"
+# v3.3: NO opt-ins. B-direct never invokes debt-verify (it's a hotfix). release remains mandatory.
+# Patterns: 4 (smallest workflow)
+
+name: sddk-b-direct
+version: "1.1.0"
+status: stable
+description: |
+  Bypass the full SDDK cycle for hotfixes, well-known changes, or C3 context with jurisprudence hit.
+  Load skill → execute → light verify → release → archive. NO spec, NO propose, NO design, NO tasks, NO coherence gates, NO debt-verify.
+  Smallest, fastest workflow. Release and archive remain mandatory.
+
+pattern_composition:
+  - routing                       # Triage gate selects this workflow
+  - prompt-chain                  # skill → execute → verify (linear)
+  - multi-lens-verification       # 1 lens light verify
+  - hitl-gate                     # PR approval
+  - trunk-sync-gate               # Hard gates pre/post cycle
+
+trigger:
+  goal_pattern:
+    - hotfix
+    - well-known change
+    - C3 quality with jurisprudence hit
+    - user "just do it"
+    - user "fix it"
+  context_quality: [C3]
+  path: B-direct
+
+context_requirements:
+  sddk_init_done: true
+  branch_isolation: per_change
+
+phases:
+  # ─── PHASE 0 — TRUNK SYNC (minimal) ────────────────────────────────
+  - phase: trunk-sync-start
+    step: 0.1
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "git rev-parse HEAD == origin/main"
+    failure_mode: BLOCK
+
+  # v3.4: ROADMAP Serialization Lock — even B-direct hotfixes must respect one-cycle-at-a-time
+  - phase: previous-cycle-closed
+    step: 0.2
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "ROADMAP 'Active Milestones' has zero in_progress entries"
+    failure_mode: BLOCK — resume prior cycle or mark it blocked/abandoned in ROADMAP
+    notes: |
+      Even hotfixes respect the serialization lock. Read docs/ROADMAP.md, check Active Milestones.
+      If an active cycle exists, the user must close it (release), mark it blocked, or abandon it
+      before this hotfix can proceed.
+
+  # SKIP 0.3 — knowledge coverage (B-direct doesn't need full knowledge audit)
+  # SKIP 0.4 — formal triage (already decided B-direct at invocation)
+
+  # ─── PHASE 1 — EXECUTE (no plan artifacts) ──────────────────────────
+  - phase: load-skill
+    step: 1.0
+    pattern: prompt-chain
+    agent: orchestrator
+    rule: "load matching skill via skill() tool"
+    notes: |
+      Path B (Direct Skill Delegation) per orchestrator.md § Routing Decision:
+      - "Review this PR/code" → judgment-day
+      - "Split this PR" → chained-pr
+      - "Create a PR" → branch-pr
+      - "Create an issue" → issue-creation
+      - "Design test strategy" → test-pyramid
+      - "Design this API/interface" → design-an-interface
+      - "Find refactoring opportunities" → improve-codebase-architecture
+      - "Resolve this term/glossary conflict" → grill-with-docs
+      - "Stress-test this plan/proposal" → auto-grill-loop
+      - "Plan commits for this change" → work-unit-commits
+      - "Debug this runtime issue" → chronos-sdd (when chronos available)
+      - "Audit architecture/connascence" → cognicode-sdd (when available)
+      - "Design/redesign/critique/polish UI" → impeccable
+
+  - phase: execute
+    step: 1.1
+    pattern: prompt-chain
+    agent: orchestrator
+    rule: "execute skill in main conversation (not via task delegation)"
+    notes: "Inline execution — no sddk-* phase agents"
+    ledger_handoff:
+      required_before: verify
+      transition: phase.build.complete.b-direct
+      artifact: implementation-receipt
+      gate: implementation-complete
+      rule: "The orchestrator must persist and hash the execution receipt, evaluate the build gate, and transition OPEN/build to OPEN/verify before launching sddk-verify. Derive lease_flags from cycle status: include both owner and token for a lease; omit both when lease is null."
+      commands:
+        - "sddk cycle status --root . --scope . --cycle {cycle_id} --format json"
+        - "sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id} --transition phase.build.complete.b-direct --gate implementation-complete --outcome passed --evidence {evidence_json_arg} --format json"
+        - "sddk cycle transition --root . --scope . --cycle {cycle_id} --transition phase.build.complete.b-direct --artifact implementation-receipt={receipt_path} --gate-receipt {receipt_id} {lease_flags} --format json"
+
+  - phase: branch-creation
+    step: 1.8
+    pattern: trunk-sync-gate
+    rule: "git checkout -b <type>/<description> && git push -u origin <branch>"
+    gate: "branch matches ^[a-z]+/[a-z0-9-]+$"
+    conditional: "execution produced commits"
+
+  # ─── PHASE 2 — LIGHT VERIFY (all core gates, single lens) ───────────
+  - phase: verify
+    step: 2.3
+    pattern: orchestrator-worker
+    agent: sddk-verify
+    verify_role: coordinator
+    lenses: [direct-acceptance]
+    acceptance_authority: [user-request, selected-skill-contract, reproduction-or-jurisprudence, project-invariants, execution-diff]
+    notes: "B-direct keeps one adaptive lens; anti-placeholder, production, regression, and SOLID gates still run."
+    gate: "verdict PASS or PASS_WITH_WARNINGS"
+    output: verify-report.md
+    failure_mode: FAIL → return to implementation owner; verify remains read-only
+
+  # SKIP 2.4 — debt-verify is disabled for B-direct by path policy
+
+  # ─── PHASE 3 — RELEASE THEN ARCHIVE ─────────────────────────
+  # NOTE (v3.3): see sddk-a-full.yaml § Phase 3 for the consolidation rationale.
+  # B-direct disables debt-verify but retains the same publication/closure
+  # ownership boundaries as A-* paths.
+  - phase: release
+    step: 3
+    pattern: orchestrator-worker
+    agent: sddk-release
+    model: minimax-coding-plan/MiniMax-M3
+    depends_on: verify
+    mandatory: true
+    sub_steps_owned_by_agent:
+      - validate-verify-subject
+      - local-verify
+      - push-main
+      - verify-main-sha
+      - annotated-semver-tag
+      - verify-remote-tag
+      - local-receipts
+      - transition-release-complete
+    roadmap_conditional: "only when change is milestone-related"
+    bump_default: patch     # hotfixes = patch
+    gate: "release-report persisted with status=success and main HEAD == origin/main"
+    output: release-report.md
+    failure_modes:
+      - status=blocked:
+          action: "release-report persisted with blockers[]; user re-runs /sddk-release <change>"
+          replayable: true
+    source_of_truth: prompts/sddk/git-contract.md
+    contract: skills/sddk-release/SKILL.md
+
+  - phase: archive
+    step: 3.5
+    pattern: orchestrator-worker
+    agent: sddk-archive
+    depends_on: release
+    gate: "release-report success and archive.complete returns CLOSED"
+    sub_steps_owned_by_agent: [sync-delta-specs, finalize-knowledge-graph, html-closing-report, archive-manifest, transition-archive-complete]
+    outputs: [archive-report.md, archive-manifest, closing-report.html]
+
+  # ─── PHASE 4 — TRUNK SYNC + F3 + RESET (minimal) ────────────────────
+  - phase: trunk-sync-end
+    step: 4.1
+    pattern: trunk-sync-gate
+    gate: "HEAD == origin/main"
+
+  - phase: f3-self-tuning
+    step: 4.2
+    pattern: evaluator-optimizer
+    output: sddk/next-tuning.md
+
+  # SKIP 4.3 — save-jurisprudence (B-direct rarely produces reusable jurisprudence)
+
+  - phase: result-contract
+    step: 4.4
+    pattern: prompt-chain
+    agent: orchestrator
+    # v3.4: Release Completion Guard — even hotfixes must merge to main before cycle closes.
+    preconditions:
+      - "release phase returned status=success"
+      - "main HEAD == origin/main (bash-verified)"
+      - "semver tag exists on remote (minimum: patch)"
+      - "archive phase returned runtime_status=CLOSED"
+      - "archive-manifest references release-receipt"
+    precondition_fail_action: "emit status=blocked, next_recommended=/sddk-release <change>, do NOT declare cycle closed"
+
+success_criteria:
+  - "skill loaded and executed"
+  - "branch created and commits pushed"
+  - "main SHA pushed directly and verified on origin/main"
+  - "semver tag pushed and confirmed on remote (minimum: patch bump)"
+  - "main HEAD == origin/main (trunk-sync-end PASS)"
+  - "release-report status=success persisted"
+  - "archive-manifest links the release receipt and runtime status is CLOSED"
+  - "minimal metrics saved"
+
+failure_modes:
+  - condition: "skill execution FAIL"
+    action: "inline retry, no formal cycle"
+  - condition: "verify FAIL"
+    action: "inline fix"
+  - condition: "main SHA differs from origin/main"
+    action: "BLOCK, investigate local Git postcondition"
+
+provenance:
+  derived_from:
+    - "prompts/sddk/mcw.md § Phase 1 B-direct"
+    - "prompts/sddk/orchestrator.md § Path-specific sequences (B-direct row)"
+    - "prompts/sddk/orchestrator.md § Routing Decision (Path B)"
+  catalog_ref: "docs/sddk-evolution/agentic-workflow-patterns-catalog.md"
+  integration_design: "docs/sddk-evolution/dynamic-workflows-integration.md"
+  notes: |
+    B-direct does NOT bypass the orchestrator or Git; it bypasses the planning phases (spec/propose/design/tasks).
+    Local Git flow (trunk sync, direct main push, SHA verification, annotated tag) is mandatory per git-contract.md.
+    Debt-verify is NOT invoked for B-direct (per orchestrator.md debt-verification policy).
+    C3 + jurisprudence hit is the most common trigger — past solution covers the change.

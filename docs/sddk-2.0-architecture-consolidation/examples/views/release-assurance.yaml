@@ -1,0 +1,33 @@
+id: release-assurance
+version: 1
+applies_to: [release, release_candidate]
+query:
+  root: selection
+  include_relations:
+    - contains
+    - satisfies
+    - verified_by
+    - accepted_by
+    - supported_by
+    - produced_by
+  max_depth: 4
+renderer:
+  kind: graph
+  layout: left-to-right
+panels:
+  - gate_summary
+  - evidence_coverage
+  - stale_items
+  - capability_receipts
+  - provenance
+  - timeline
+drill_down:
+  - architecture-c4
+  - uat-review
+  - evidence-detail
+  - agent-execution
+actions:
+  - open-source-artifact
+  - inspect-receipt
+  - request-revalidation
+provenance_required: true

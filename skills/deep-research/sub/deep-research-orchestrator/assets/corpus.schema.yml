@@ -1,0 +1,28 @@
+# Esquema de research/corpus.yml
+
+required_fields:
+  - corpus.version
+  - corpus.generated_at
+  - corpus.topics
+  - corpus.topics[].id
+
+schema:
+  corpus:
+    version: string  # "2026-08-16-01"
+    generated_at: date
+    topics:
+      - id: string  # slug
+        system_map_ref: string  # path a system-map
+        claims:
+          - id: string  # cl-{kebab-slug}
+            text: string
+            status: enum [verified, verified-with-disclaimer, disputed, needs_recheck, unverified, deprecated]
+            confidence_score: number  # 0.0-1.0
+            sources: [string]  # source IDs
+            decay_date: date
+            notes: string
+        gaps:
+          - id: string
+            question: string
+            priority: enum [critical, normal, low]
+            since: date

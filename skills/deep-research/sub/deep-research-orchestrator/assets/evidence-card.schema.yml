@@ -1,0 +1,32 @@
+# Esquema de evidence-card (modo LIBRO)
+
+required_fields:
+  - evidence_cards.topic
+  - evidence_cards.cards
+  - evidence_cards.cards[].claim_id
+  - evidence_cards.cards[].text
+  - evidence_cards.cards[].source
+
+schema:
+  evidence_cards:
+    topic: string
+    chapter: string
+    generated_at: date
+    corpus_version: string
+    cards:
+      - claim_id: string
+        text: string
+        quote_style: enum [inline, block, paraphrase]
+        excerpt: string  # cita textual verbatim
+        source:
+          id: string
+          title: string
+          author: string
+          publication: string
+          page_reference: string
+          url: string
+        confidence_score: number
+        status: enum [verified, verified-with-disclaimer]
+        decay_date: date
+        recheck_soon: bool
+        asciidoc_hint: string  # opcional, snippet AsciiDoc listo

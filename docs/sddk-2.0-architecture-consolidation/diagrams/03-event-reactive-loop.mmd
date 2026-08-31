@@ -1,0 +1,17 @@
+sequenceDiagram
+  participant U as Human/Agent
+  participant A as Application
+  participant K as Kernel/Policy
+  participant C as Capability
+  participant L as Ledger
+  participant G as Graph Projection
+  participant B as Behavior
+  U->>A: Command / proposal
+  A->>K: validate + authorize
+  K->>C: execute governed effect
+  C-->>K: result + postcondition evidence
+  K->>L: append event(s) + receipt
+  L-->>G: project
+  G-->>B: matching event/pattern
+  B->>A: new observation/proposal
+  Note over B,C: Behavior never calls governed capability directly

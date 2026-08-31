@@ -1,0 +1,45 @@
+case: 16-subtle-feature-envy-pw
+description: "Feature envy — applyDiscount calls 4 methods on Order, 0 on self."
+bucket: subtle
+schema_version: golden-case/v1
+suite: verify-defects
+target_phase: debt
+language: typescript
+path: A-full
+held_out: true
+trials: 3
+
+expected:
+  verify: PASS
+  debt: PASS_WITH_WARNINGS
+  primary_cluster: debt-smells-cluster
+  labels:
+    - rule_id: debt.smell.feature-envy
+      classification: warning
+      severity: medium
+      location: implementation/DiscountCalculator.ts
+  forbidden_rule_ids:
+    - debt.smell.god-class
+    - debt.coupling.hidden-dependency
+  expected_findings:
+    - cluster: debt-smells-cluster
+      category: feature-envy
+      severity: MEDIUM
+      solid: ISP
+      evidence_must_contain:
+        - "calls getCustomerId, getItems, getTotal, setDiscount on Order"
+        - "more interested in Order than self"
+      fix_hint: "Move applyDiscount to Order, or pass primitive values"
+
+false_negatives_to_watch:
+  - "If smells-cluster returns PASS (0 findings), it missed a MEDIUM feature-envy"
+  - "If it flags feature-envy as HIGH or CRITICAL, it's over-severity"
+
+false_positives_to_watch:
+  - "Should NOT flag as god-class — DiscountCalculator has 1 method"
+  - "Should NOT flag as hidden-dependency — CustomerRepository is injected"
+
+rationale: |
+  Feature envy is a MEDIUM smell. The method works correctly, the code is readable,
+  but the responsibility is misplaced. A good detector should flag it as MEDIUM
+  (not HIGH, not CRITICAL), allowing PASS_WITH_WARNINGS.

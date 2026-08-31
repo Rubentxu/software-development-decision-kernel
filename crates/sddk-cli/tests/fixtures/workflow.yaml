@@ -1,0 +1,59 @@
+schema_version: 1
+workflow:
+  id: fixture-workflow
+  version: 1.0.0
+  description: Minimal valid workflow fixture
+statuses:
+  - OPEN
+  - CLOSED
+phases:
+  - explore
+  - archive
+paths:
+  test:
+    description: Fully traversable test path
+    debt_verification: disabled
+    phases:
+      - explore
+      - archive
+policies: {}
+transitions:
+  - id: cycle.start
+    from: null
+    to:
+      status: OPEN
+      phase: explore
+    requires:
+      - project.ready
+    produces:
+      - cycle-manifest
+  - id: phase.explore.complete
+    from:
+      status: OPEN
+      phase: explore
+    to:
+      status: CLOSED
+      phase: archive
+    requires:
+      - kind: artifact
+        name: result
+      - kind: gate
+        name: complete
+    produces:
+      - result
+artifacts:
+  cycle-manifest:
+    producer: runtime
+    consumers:
+      - engine
+    required: true
+  result:
+    producer: agent
+    consumers:
+      - archiver
+    required: true
+gates:
+  complete:
+    gate_type:
+      binary: {}
+    description: Fixture completion gate

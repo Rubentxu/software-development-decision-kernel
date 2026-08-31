@@ -1,0 +1,46 @@
+case: 21-adversarial-hidden-mutation
+description: "Module-level mutable object mutated in-place. Looks clean, has hidden state bug."
+bucket: adversarial
+schema_version: golden-case/v1
+suite: adversarial-evidence
+target_phase: debt
+language: typescript
+path: A-full
+held_out: true
+trials: 3
+
+expected:
+  verify: PASS              # the code compiles and works for a single call
+  debt: FAIL                # but the debt cluster should catch the mutation
+  primary_cluster: debt-coupling-cluster
+  labels:
+    - rule_id: debt.coupling.mutable-module-state
+      classification: blocking_defect
+      severity: high
+      location: implementation/ConfigManager.ts
+  forbidden_rule_ids:
+    - debt.coupling.hidden-dependency
+  expected_findings:
+    - cluster: debt-coupling-cluster
+      type: module-level-var
+      subtype: mutable-module-level-var
+      severity: HIGH
+      evidence_must_contain:
+        - "const defaults is module-level mutable state"
+        - "applyDefaults mutates it via Object.assign"
+        - "second call to load() sees poisoned state"
+      fix_hint: "spread defaults into a new object instead of mutating"
+
+false_negatives_to_watch:
+  - "If coupling-cluster returns PASS, it missed a HIGH global-state finding"
+  - "The code LOOKS clean (small class, injected path) — this is a true adversarial test"
+
+false_positives_to_watch:
+  - "Should NOT flag readFileSync as hidden-dep if it's clearly an I/O class"
+  - "Should NOT flag the constructor param as coupling — it's properly injected"
+
+rationale: |
+  This is the hardest case. The code looks well-structured: small class, proper
+  injection, JSDoc. But `Object.assign(defaults, userConfig)` mutates module-level
+  state. A cluster that only checks method length or class size will miss it.
+  Only the coupling cluster's `module-level-var` signal should catch it.

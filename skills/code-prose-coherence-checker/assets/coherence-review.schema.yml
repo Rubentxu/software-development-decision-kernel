@@ -1,0 +1,16 @@
+# Esquema del informe de coherencia (modo review)
+# Salida de code-prose-coherence-checker.
+
+required:
+  chapter: string
+  mode: enum                # review | drift
+  findings:
+    - category: enum        # ver categorías en SKILL.md
+      severity: enum        # critical | high | med
+      locator: string       # sección del libro + región/archivo
+      detail: string
+  verdict: enum             # PASS | BLOCKED
+
+optional:
+  reviewed_regions: [string]
+  manual_copies_detected: [string]

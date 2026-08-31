@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT Dashboard — Trazabilidad</title>
+<style>@TOKENS@</style>
+<style>@COMPONENTS@</style>
+</head>
+<body>
+<h1>UAT — @RELEASE@</h1>
+<div class="sub">generated @GENERATED_AT@ &middot; local-first, no network &middot; plan: @PLAN_REF@</div>
+
+<div class="kpis" id="kpis"></div>
+<div id="matrix"></div>
+
+<div style="display:flex;gap:.6rem;margin-top:1.5rem">
+  <button class="btn" onclick="UAT.exportSession('@RELEASE@')">Exportar sesión JSON</button>
+  <button class="btn" onclick="UAT.importSession('@RELEASE@').then(() => render())">Importar sesión</button>
+</div>
+
+<footer>sddk uat dashboard &middot; interactive view &middot; datos embebidos inline</footer>
+
+<script>@STORAGE_JS@</script>
+<script>@COMPONENTS_JS@</script>
+<script>@STORAGE_JS@</script>
+<script>
+const PLAN = @PLAN_JSON@;
+function render() {
+  const session = UAT.loadSession('@RELEASE@');
+  document.getElementById('kpis').innerHTML = UatRender.kpis(PLAN);
+  document.getElementById('matrix').innerHTML = '';
+  document.getElementById('matrix').appendChild(UatRender.matrix(PLAN, session));
+}
+render();
+</script>
+
+</body>
+</html>

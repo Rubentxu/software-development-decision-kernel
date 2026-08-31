@@ -1,0 +1,28 @@
+version: 2
+workflow: sddk-default
+phases:
+  - id: explore
+  - id: specify
+    requires: [explore.completed]
+  - id: design
+    requires: [specify.completed]
+  - id: plan
+    requires: [design.completed]
+  - id: build
+    requires: [plan.completed]
+  - id: verify
+    requires: [build.completed]
+  - id: uat
+    requires: [verify.passed]
+    policy:
+      mode: risk_based
+  - id: review
+    requires: [uat.satisfied_or_not_required]
+  - id: release
+    requires:
+      - review.approved
+      - critical_evidence.fresh
+      - signed_gate_receipt.valid
+notes:
+  - Workflow controls phase transitions.
+  - Reactive graph behaviors may propose work or revalidation but cannot bypass these gates.

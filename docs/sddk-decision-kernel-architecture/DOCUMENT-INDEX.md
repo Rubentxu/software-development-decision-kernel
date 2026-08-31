@@ -1,0 +1,103 @@
+# Complete Document Index
+
+Total Markdown documents: **99**
+
+- [`00-vision/NAMING.md`](00-vision/NAMING.md) — Naming — SDDK
+- [`00-vision/PRD.md`](00-vision/PRD.md) — PRD — SDDK Software Development Decision Kernel
+- [`00-vision/PRINCIPLES.md`](00-vision/PRINCIPLES.md) — Architectural & Product Principles
+- [`00-vision/PRODUCT-VISION.md`](00-vision/PRODUCT-VISION.md) — Product Vision
+- [`00-vision/README.md`](00-vision/README.md) — Vision
+- [`00-vision/STUDY-GUIDE.md`](00-vision/STUDY-GUIDE.md) — Study & Adoption Guide
+- [`01-architecture/CONTROL-FLOWS.md`](01-architecture/CONTROL-FLOWS.md) — Control Flows
+- [`01-architecture/DESIGN.md`](01-architecture/DESIGN.md) — DESIGN — SDDK Software Development Decision Kernel
+- [`01-architecture/DOMAIN-MODEL.md`](01-architecture/DOMAIN-MODEL.md) — Domain Model
+- [`01-architecture/EVENT-AND-GRAPH-MODEL.md`](01-architecture/EVENT-AND-GRAPH-MODEL.md) — Event Ledger & Active Graph Model
+- [`01-architecture/HEXAGONAL-BOUNDARIES.md`](01-architecture/HEXAGONAL-BOUNDARIES.md) — Hexagonal Boundaries
+- [`01-architecture/README.md`](01-architecture/README.md) — Architecture
+- [`02-roadmap/BACKLOG.md`](02-roadmap/BACKLOG.md) — Product Backlog — Dynamic Workflow Refinement
+- [`02-roadmap/MIGRATION-PLAN.md`](02-roadmap/MIGRATION-PLAN.md) — Migration Plan — Current SDDK → Decision Kernel with Dynamic Workflows
+- [`02-roadmap/README.md`](02-roadmap/README.md) — Roadmap
+- [`02-roadmap/ROADMAP.md`](02-roadmap/ROADMAP.md) — ROADMAP — refined for Dynamic Workflows & SDD Adaptive
+- [`03-adrs/ADR-020-KERNEL-REDEFINITION.md`](03-adrs/ADR-020-KERNEL-REDEFINITION.md) — ADR-020-KERNEL-REDEFINITION — Redefine SDDK as Software Development Decision Kernel
+- [`03-adrs/ADR-021-EVENT-LEDGER-AUTHORITY.md`](03-adrs/ADR-021-EVENT-LEDGER-AUTHORITY.md) — ADR-021-EVENT-LEDGER-AUTHORITY — Use an append-only Event Ledger as operational authority
+- [`03-adrs/ADR-022-ACTIVE-GRAPH-PROJECTION.md`](03-adrs/ADR-022-ACTIVE-GRAPH-PROJECTION.md) — ADR-022-ACTIVE-GRAPH-PROJECTION — Represent operational knowledge as an event-derived active graph
+- [`03-adrs/ADR-023-SUPERVISOR-RUNTIME-SEPARATION.md`](03-adrs/ADR-023-SUPERVISOR-RUNTIME-SEPARATION.md) — ADR-023 — Separate Cognitive Supervisor from Deterministic Workflow Runtime
+- [`03-adrs/ADR-024-GENERIC-WORKFLOW-IR.md`](03-adrs/ADR-024-GENERIC-WORKFLOW-IR.md) — ADR-024 — Generic Workflow Template, IR and Runtime Algebra
+- [`03-adrs/ADR-025-CAPABILITY-BASED-ROUTING.md`](03-adrs/ADR-025-CAPABILITY-BASED-ROUTING.md) — ADR-025-CAPABILITY-BASED-ROUTING — Route semantic capabilities rather than hard-coded agents/models
+- [`03-adrs/ADR-026-AGENT-HOST-ABSTRACTION.md`](03-adrs/ADR-026-AGENT-HOST-ABSTRACTION.md) — ADR-026-AGENT-HOST-ABSTRACTION — Abstract agentic IDEs behind AgentHost event/control ports
+- [`03-adrs/ADR-027-PROVIDER-FAILOVER.md`](03-adrs/ADR-027-PROVIDER-FAILOVER.md) — ADR-027-PROVIDER-FAILOVER — Treat provider/model failure as recoverable execution routing
+- [`03-adrs/ADR-028-CONTEXT-CAPSULES.md`](03-adrs/ADR-028-CONTEXT-CAPSULES.md) — ADR-028-CONTEXT-CAPSULES — Use compiled Context Capsules for agent handoff and recovery
+- [`03-adrs/ADR-029-UAT-BOUNDED-CONTEXT.md`](03-adrs/ADR-029-UAT-BOUNDED-CONTEXT.md) — ADR-029-UAT-BOUNDED-CONTEXT — Extract UAT as a bounded context and workflow pack
+- [`03-adrs/ADR-030-STATIC-CONTROL-PLANE.md`](03-adrs/ADR-030-STATIC-CONTROL-PLANE.md) — ADR-030-STATIC-CONTROL-PLANE — Make the primary Cockpit a static self-contained projection
+- [`03-adrs/ADR-031-GOVERNED-SIDE-EFFECTS.md`](03-adrs/ADR-031-GOVERNED-SIDE-EFFECTS.md) — ADR-031-GOVERNED-SIDE-EFFECTS — Require proposal-policy-capability-verification-receipt for side effects
+- [`03-adrs/ADR-032-FOCUSED-PORTS.md`](03-adrs/ADR-032-FOCUSED-PORTS.md) — ADR-032-FOCUSED-PORTS — Replace aggregate Ledger dependencies with focused ports
+- [`03-adrs/ADR-033-AGENT-WORKTREE-ISOLATION.md`](03-adrs/ADR-033-AGENT-WORKTREE-ISOLATION.md) — ADR-033-AGENT-WORKTREE-ISOLATION — Isolate mutating agent executions using Git worktrees/branches
+- [`03-adrs/ADR-034-PACK-MICROKERNEL.md`](03-adrs/ADR-034-PACK-MICROKERNEL.md) — ADR-034-PACK-MICROKERNEL — Evolve packs into a microkernel extension contract
+- [`03-adrs/ADR-035-EVALUATION-FEEDBACK.md`](03-adrs/ADR-035-EVALUATION-FEEDBACK.md) — ADR-035 — Evaluation Feedback for Agents, Routes and Workflow Strategies
+- [`03-adrs/ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE.md`](03-adrs/ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE.md) — ADR-036-SOFTWARE-SUPPLY-CHAIN-PROVENANCE — Model artifact origin, SBOM and lifecycle as first-class provenance
+- [`03-adrs/ADR-037-DYNAMIC-WORKFLOW-COMPILATION.md`](03-adrs/ADR-037-DYNAMIC-WORKFLOW-COMPILATION.md) — ADR-037 — Dynamic Workflow Compilation and Evented Graph Expansion
+- [`03-adrs/ADR-038-INVARIANT-DRIVEN-SDD.md`](03-adrs/ADR-038-INVARIANT-DRIVEN-SDD.md) — ADR-038 — Make SDD Invariant-Driven Rather Than Phase-Driven
+- [`03-adrs/ADR-039-ADAPTIVE-VERIFICATION.md`](03-adrs/ADR-039-ADAPTIVE-VERIFICATION.md) — ADR-039 — Risk- and Evidence-Driven Adaptive Verification
+- [`03-adrs/ADR-040-DURABLE-DEBT-REMEDIATION.md`](03-adrs/ADR-040-DURABLE-DEBT-REMEDIATION.md) — ADR-040 — Durable and prioritized technical-debt remediation
+- [`03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md`](03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md) — ADR-042 — Test-Tooling Boundary: Sequencing and Target Migration (Accepted)
+- [`03-adrs/README.md`](03-adrs/README.md) — Architecture Decision Records
+- [`04-specs/README.md`](04-specs/README.md) — Specifications
+- [`04-specs/SPEC-019-SUPERVISOR-RUNTIME.md`](04-specs/SPEC-019-SUPERVISOR-RUNTIME.md) — SPEC-019 — Supervisor Runtime
+- [`04-specs/SPEC-020-CAPABILITY-REGISTRY.md`](04-specs/SPEC-020-CAPABILITY-REGISTRY.md) — SPEC-020 — Capability Registry
+- [`04-specs/SPEC-021-CONTEXT-CAPSULE-PROTOCOL.md`](04-specs/SPEC-021-CONTEXT-CAPSULE-PROTOCOL.md) — SPEC-021 — Context Capsule Protocol
+- [`04-specs/SPEC-022-AGENT-HOST-PROTOCOL.md`](04-specs/SPEC-022-AGENT-HOST-PROTOCOL.md) — SPEC-022 — AgentHost Protocol
+- [`04-specs/SPEC-023-WORKFLOW-RUNTIME-V2.md`](04-specs/SPEC-023-WORKFLOW-RUNTIME-V2.md) — SPEC-023 — Workflow Runtime v2
+- [`04-specs/SPEC-024-AGENT-EVALUATION.md`](04-specs/SPEC-024-AGENT-EVALUATION.md) — SPEC-024 — Agent, Routing & Workflow Evaluation
+- [`04-specs/SPEC-025-EXECUTION-ROUTER.md`](04-specs/SPEC-025-EXECUTION-ROUTER.md) — SPEC-025 — Execution Router
+- [`04-specs/SPEC-026-PROVIDER-HEALTH-FAILOVER.md`](04-specs/SPEC-026-PROVIDER-HEALTH-FAILOVER.md) — SPEC-026 — Provider Health & Failover
+- [`04-specs/SPEC-027-EVENT-TAXONOMY.md`](04-specs/SPEC-027-EVENT-TAXONOMY.md) — SPEC-027 — Canonical Event Taxonomy
+- [`04-specs/SPEC-028-REACTIVE-BEHAVIORS.md`](04-specs/SPEC-028-REACTIVE-BEHAVIORS.md) — SPEC-028 — Reactive Behaviors
+- [`04-specs/SPEC-029-CONTROL-PLANE-COCKPIT.md`](04-specs/SPEC-029-CONTROL-PLANE-COCKPIT.md) — SPEC-029 — Static Control Plane / Cockpit
+- [`04-specs/SPEC-030-UAT-PACK.md`](04-specs/SPEC-030-UAT-PACK.md) — SPEC-030 — UAT Bounded Context & Pack
+- [`04-specs/SPEC-031-GOVERNED-CAPABILITIES.md`](04-specs/SPEC-031-GOVERNED-CAPABILITIES.md) — SPEC-031 — Governed Capabilities
+- [`04-specs/SPEC-032-OBSERVABILITY-USAGE.md`](04-specs/SPEC-032-OBSERVABILITY-USAGE.md) — SPEC-032 — Execution Observability & Usage
+- [`04-specs/SPEC-033-FORK-REPLAY-DIFF.md`](04-specs/SPEC-033-FORK-REPLAY-DIFF.md) — SPEC-033 — Fork, Replay & Diff
+- [`04-specs/SPEC-034-PACK-CONTRACT.md`](04-specs/SPEC-034-PACK-CONTRACT.md) — SPEC-034 — Pack Contract
+- [`04-specs/SPEC-035-SOFTWARE-SUPPLY-CHAIN.md`](04-specs/SPEC-035-SOFTWARE-SUPPLY-CHAIN.md) — SPEC-035 — Software Supply Chain, SBOM & Artifact Lifecycle
+- [`04-specs/SPEC-036-MOLDABLE-VIEW-CONTRACT.md`](04-specs/SPEC-036-MOLDABLE-VIEW-CONTRACT.md) — SPEC-036 — Moldable View Contract
+- [`04-specs/SPEC-037-DYNAMIC-WORKFLOW-COMPILER.md`](04-specs/SPEC-037-DYNAMIC-WORKFLOW-COMPILER.md) — SPEC-037 — Dynamic Workflow Compiler
+- [`04-specs/SPEC-038-SDD-ADAPTIVE.md`](04-specs/SPEC-038-SDD-ADAPTIVE.md) — SPEC-038 — SDD Adaptive
+- [`04-specs/SPEC-039-WORKFLOW-PATTERN-ALGEBRA.md`](04-specs/SPEC-039-WORKFLOW-PATTERN-ALGEBRA.md) — SPEC-039 — Workflow Pattern Algebra
+- [`04-specs/SPEC-040-WORKFLOW-LABORATORY.md`](04-specs/SPEC-040-WORKFLOW-LABORATORY.md) — SPEC-040 — Workflow Laboratory
+- [`04-specs/SPEC-041-DURABLE-DEBT-REMEDIATION.md`](04-specs/SPEC-041-DURABLE-DEBT-REMEDIATION.md) — SPEC-041 — Durable technical-debt remediation
+- [`05-workflows/INCIDENT-WORKFLOW.md`](05-workflows/INCIDENT-WORKFLOW.md) — `sddk-incident` Workflow
+- [`05-workflows/README.md`](05-workflows/README.md) — Workflows
+- [`05-workflows/SDD-ADAPTIVE-WORKFLOW.md`](05-workflows/SDD-ADAPTIVE-WORKFLOW.md) — `sdd-adaptive` Workflow
+- [`05-workflows/SDD-WORKFLOW.md`](05-workflows/SDD-WORKFLOW.md) — `sddk-sdd` Workflow Family
+- [`05-workflows/UAT-WORKFLOW.md`](05-workflows/UAT-WORKFLOW.md) — `sddk-uat` Workflow
+- [`05-workflows/WORKFLOW-CATALOG.md`](05-workflows/WORKFLOW-CATALOG.md) — Workflow Pack Catalog
+- [`05-workflows/WORKFLOW-PATTERNS.md`](05-workflows/WORKFLOW-PATTERNS.md) — Workflow Patterns for SDDK
+- [`06-control-plane/COCKPIT.md`](06-control-plane/COCKPIT.md) — SDDK Cockpit
+- [`06-control-plane/EVENT-JOURNAL.md`](06-control-plane/EVENT-JOURNAL.md) — Event Journal
+- [`06-control-plane/MOLDABLE-VIEWS.md`](06-control-plane/MOLDABLE-VIEWS.md) — Moldable Views
+- [`06-control-plane/README.md`](06-control-plane/README.md) — Control Plane
+- [`07-reference/CLI.md`](07-reference/CLI.md) — Proposed CLI Surface
+- [`07-reference/EVENT-CATALOG.md`](07-reference/EVENT-CATALOG.md) — Canonical Event Catalog — Initial Set
+- [`07-reference/README.md`](07-reference/README.md) — Reference
+- [`07-reference/RESEARCH-SOURCES-DYNAMIC-WORKFLOWS.md`](07-reference/RESEARCH-SOURCES-DYNAMIC-WORKFLOWS.md) — Research Sources — Dynamic Workflows & Harness Simplification
+- [`07-reference/SCHEMA-EXAMPLES.md`](07-reference/SCHEMA-EXAMPLES.md) — Schema Examples
+- [`08-spikes/README.md`](08-spikes/README.md) — Spikes
+- [`08-spikes/SPIKE-001-OPENCODE-EVENT-CONTROL.md`](08-spikes/SPIKE-001-OPENCODE-EVENT-CONTROL.md) — SPIKE-001 — OpenCode Event & Control Adapter
+- [`08-spikes/SPIKE-002-PROVIDER-FAILOVER.md`](08-spikes/SPIKE-002-PROVIDER-FAILOVER.md) — SPIKE-002 — Provider Quota Failover
+- [`08-spikes/SPIKE-003-STATIC-COCKPIT.md`](08-spikes/SPIKE-003-STATIC-COCKPIT.md) — SPIKE-003 — Zero-Server Static Cockpit
+- [`08-spikes/SPIKE-004-ACTIVE-GRAPH-REPLAY.md`](08-spikes/SPIKE-004-ACTIVE-GRAPH-REPLAY.md) — SPIKE-004 — Event-derived Active Graph & Replay
+- [`08-spikes/SPIKE-005-CONTEXT-FAILOVER-RESUME.md`](08-spikes/SPIKE-005-CONTEXT-FAILOVER-RESUME.md) — SPIKE-005 — Context Delta for Failover Resume
+- [`08-spikes/SPIKE-006-DYNAMIC-WORKFLOW-RUNTIME.md`](08-spikes/SPIKE-006-DYNAMIC-WORKFLOW-RUNTIME.md) — SPIKE-006 — Dynamic Workflow Graph Expansion
+- [`08-spikes/SPIKE-007-SDD-ADAPTIVE-ABLATION.md`](08-spikes/SPIKE-007-SDD-ADAPTIVE-ABLATION.md) — SPIKE-007 — SDD Adaptive Ablation Study
+- [`09-implementation/ARCHITECTURE-FITNESS-FUNCTIONS.md`](09-implementation/ARCHITECTURE-FITNESS-FUNCTIONS.md) — Architecture Fitness Functions
+- [`09-implementation/DEFINITION-OF-DONE.md`](09-implementation/DEFINITION-OF-DONE.md) — Definition of Done
+- [`09-implementation/DYNAMIC-WORKFLOW-IMPLEMENTATION-PLAN.md`](09-implementation/DYNAMIC-WORKFLOW-IMPLEMENTATION-PLAN.md) — Dynamic Workflow Runtime — Implementation Plan
+- [`09-implementation/IMPLEMENTATION-BACKLOG.md`](09-implementation/IMPLEMENTATION-BACKLOG.md) — Implementation Backlog — Ordered
+- [`09-implementation/README.md`](09-implementation/README.md) — Implementation
+- [`09-implementation/REPOSITORY-TARGET-LAYOUT.md`](09-implementation/REPOSITORY-TARGET-LAYOUT.md) — Target Repository Layout
+- [`09-implementation/TEST-TOOLING-EVIDENCE-AUDIT.md`](09-implementation/TEST-TOOLING-EVIDENCE-AUDIT.md) — Test-Tooling Evidence & Audit
+- [`09-implementation/TEST-STRATEGY.md`](09-implementation/TEST-STRATEGY.md) — Test Strategy
+- [`CHANGESET-2026-08-19-DYNAMIC-WORKFLOWS.md`](CHANGESET-2026-08-19-DYNAMIC-WORKFLOWS.md) — Changeset — Dynamic Workflows & SDD Adaptive
+- [`GLOSSARY.md`](GLOSSARY.md) — Glossary
+- [`README.md`](README.md) — SDDK — Software Development Decision Kernel
+- [`DOCUMENT-INDEX.md`](DOCUMENT-INDEX.md) — Complete Document Index

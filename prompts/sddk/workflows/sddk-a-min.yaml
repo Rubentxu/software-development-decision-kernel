@@ -1,0 +1,252 @@
+# SDDK A-min — Minimal cycle for simple changes (C2 + simple scope)
+# Status: STABLE (extracted from MCW Phase 1 § A-min, Phase 2, Phase 3, Phase 4)
+# Source: prompts/sddk/mcw.md § Phase 1 A-min + Phase 2 + Phase 3 + Phase 4
+# Trigger: context_quality C2 + scope simple (single apply)
+# v3.3: NO opt-ins. debt-verify mandatory (depth=smoke). release precedes archive.
+# Patterns: 6 (subset of A-lite; v3.3 removed hitl-gate since debt-verify is no longer opt-in)
+
+name: sddk-a-min
+version: "1.1.0"
+status: stable
+description: |
+  Minimal SDDK cycle for simple changes with C2 context quality.
+  Skip propose (jurisprudence covers it), skip design, no coherence gates by default.
+  **debt-verify (smoke) and release are mandatory** — no mid-cycle prompts.
+  Lowest cost among A-* paths.
+
+pattern_composition:
+  - routing                       # Triage gate selects this workflow
+  - orchestrator-worker           # sddk-* phase agents
+  - spec-driven-decomposition     # sddk-tasks
+  - evaluator-optimizer           # Conditional coherence gate (only if spec complex)
+  - multi-lens-verification       # 2 lenses in sddk-verify
+  - orchestrator-worker           # 2 cluster agents in debt-verify (mandatory)
+  - circuit-breaker               # CIRCUIT_BREAKER config per apply task
+  - trunk-sync-gate               # Hard gates pre/post cycle
+
+trigger:
+  goal_pattern:
+    - simple change
+    - C2 quality
+    - single apply
+  context_quality: [C2]
+  path: A-min
+
+context_requirements:
+  sddk_init_done: true
+  branch_isolation: per_change
+
+phases:
+  # ─── PHASE 0 — CYCLE PRE-FLIGHT (minimal) ──────────────────────────
+  - phase: trunk-sync-start
+    step: 0.1
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "git rev-parse HEAD == origin/main"
+    failure_mode: BLOCK
+
+  - phase: previous-cycle-closed
+    step: 0.2
+    pattern: trunk-sync-gate
+    agent: orchestrator
+    gate: "no unmerged branches AND ROADMAP 'Active Milestones' has zero in_progress entries"
+    failure_mode: BLOCK — resume prior cycle or mark it blocked/abandoned in ROADMAP
+    notes: |
+      v3.4: ROADMAP Serialization Lock. Read docs/ROADMAP.md, extract "## Active Milestones",
+      count entries with "Status: in_progress". If >0, BLOCK.
+      If ==0, acquire lock: add new cycle as in_progress to Active Milestones BEFORE Step 0.3.
+
+  # SKIP 0.3 — Knowledge coverage only for A-full
+
+  - phase: triage
+    step: 0.4
+    pattern: routing
+    agent: orchestrator
+    inputs: [goal, context_quality_C2, jurisprudence_hits]
+
+  # ─── PHASE 1 — PLAN (minimal: spec → tasks → branch) ────────────────
+  # SKIP 1.1 — Explore only for A-full
+  # SKIP 1.2 — Propose only for A-lite/A-full
+  # SKIP 1.3 — Coherence propose→spec only for A-full
+  # SKIP 1.4 — Design (parallel sectioning) only for A-full
+  # SKIP 1.5 — Coherence spec+design→tasks only for A-full
+
+  - phase: spec
+    step: 1.4-min
+    pattern: orchestrator-worker
+    agent: sddk-spec
+    model: DeepSeek V4 Pro
+    gate: spec approved
+    output: spec.md
+    notes: "Just spec, no design — minimal viable plan"
+
+  - phase: tasks
+    step: 1.6
+    pattern: spec-driven-decomposition
+    agent: sddk-tasks
+    model: MiniMax M2.7
+    gate: tasks approved
+    output: tasks.md
+
+  - phase: review-budget
+    step: 1.7
+    pattern: evaluator-optimizer
+    advisory: true
+    note: "sizing advisory per ADR-0070 and matrix.sizing.advisory; recommend + allow + rationale; no BLOCK on forecast"
+
+  - phase: branch-creation
+    step: 1.8
+    pattern: trunk-sync-gate
+    rule: "git checkout -b <type>/<description> && git push -u origin <branch>"
+    gate: "branch matches ^[a-z]+/[a-z0-9-]+$"
+
+  # ─── PHASE 2 — BUILD ────────────────────────────────────────────────
+  - phase: apply
+    step: 2.1
+    pattern: circuit-breaker
+    agent: sddk-apply
+    model: MiniMax M2.7
+    gate: "every commit passes git-boundary lint"
+    inner_loop:
+      pattern: evaluator-optimizer
+      per_task_max_attempts: 5
+      no_progress_streak: 3
+    checkpoint: "{cycle-artifacts-dir}/apply-checkpoint.json"
+
+  # SKIP 2.2 — Coherence apply→verify ONLY if spec complex
+  - phase: coherence-apply-verify-conditional
+    step: 2.2-conditional
+    pattern: evaluator-optimizer
+    conditional: "spec_complex == true"
+    agent: sddk-coherence
+    gate: score >= 60
+
+  - phase: verify
+    step: 2.3
+    pattern: multi-lens-verification
+    agent: sddk-verify
+    model: minimax-coding-plan/MiniMax-M3
+    verify_role: coordinator
+    parallel_group: verify-lenses
+    lenses: [spec-compliance, test-quality]
+    synthesis_agent: sddk-verify
+    notes: "Core verify gates always run; these lenses add path-specific depth."
+    gate: "verdict PASS or PASS_WITH_WARNINGS"
+    output: verify-report.md
+    failure_mode: FAIL → return to apply (correction cycle, max 2)
+
+  - phase: debt-verify
+    step: 2.4
+    pattern: orchestrator-worker
+    agent: sddk-debt-verify
+    policy: mandatory
+    depth: smoke
+    clusters: [debt-overeng-cluster, debt-coupling-cluster]
+    synthesis_agent: sddk-debt-verify
+    gate: "verdict PASS or PASS_WITH_WARNINGS"
+    outputs: [debt-report.json, debt-report.md]
+    contract: prompts/sddk/phases/debt-verify.md
+    failure_modes:
+      - verdict FAIL + re_iterate_from=apply:
+          pattern: saga
+          action: "remediate on the same branch, then re-run verify and debt-verify"
+          max_rounds: 3
+      - verdict INCONCLUSIVE:
+          action: "retry failed clusters or require human review; do not release"
+
+  # SKIP 2.5 — Coherence debt-verify→release only for A-full
+
+  # ─── PHASE 3 — RELEASE THEN ARCHIVE ─────────────────────────
+  # NOTE (v3.3): see sddk-a-full.yaml § Phase 3 for the consolidation rationale.
+  - phase: release
+    step: 3
+    pattern: orchestrator-worker
+    agent: sddk-release
+    model: minimax-coding-plan/MiniMax-M3
+    depends_on: debt-verify
+    mandatory: true
+    sub_steps_owned_by_agent:
+      - validate-verify-and-debt-subject
+      - local-verify
+      - push-main
+      - verify-main-sha
+      - annotated-semver-tag
+      - verify-remote-tag
+      - local-receipts
+      - transition-release-complete
+    gate: "release-report persisted with status=success and main HEAD == origin/main"
+    output: release-report.md
+    failure_modes:
+      - status=blocked:
+          action: "release-report persisted with blockers[]; user re-runs /sddk-release <change>"
+          replayable: true
+    source_of_truth: prompts/sddk/git-contract.md
+    contract: skills/sddk-release/SKILL.md
+
+  - phase: archive
+    step: 3.5
+    pattern: orchestrator-worker
+    agent: sddk-archive
+    depends_on: release
+    gate: "release-report success; debt-report hash/subject valid; archive.complete returns CLOSED"
+    sub_steps_owned_by_agent: [sync-delta-specs, finalize-knowledge-graph, html-closing-report, archive-manifest, transition-archive-complete]
+    outputs: [archive-report.md, archive-manifest, closing-report.html]
+
+  # ─── PHASE 4 — TRUNK SYNC + F3 + RESET ───────────────────────────────
+  - phase: trunk-sync-end
+    step: 4.1
+    pattern: trunk-sync-gate
+    gate: "HEAD == origin/main"
+
+  - phase: f3-self-tuning
+    step: 4.2
+    pattern: evaluator-optimizer
+    output: sddk/next-tuning.md
+
+  - phase: save-jurisprudence
+    step: 4.3
+    pattern: blackboard
+    conditional: "verify_verdict=PASS AND first_pass_success=true AND reusable"
+
+  - phase: result-contract
+    step: 4.4
+    pattern: prompt-chain
+    agent: orchestrator
+    # v3.4: Release Completion Guard — cannot emit "cycle closed" without release success.
+    preconditions:
+      - "release phase returned status=success"
+      - "main HEAD == origin/main (bash-verified)"
+      - "semver tag exists on remote"
+      - "archive phase returned runtime_status=CLOSED"
+      - "archive-manifest references release-receipt"
+    precondition_fail_action: "emit status=blocked, next_recommended=/sddk-release <change>, do NOT declare cycle closed"
+
+success_criteria:
+  - "all phases completed"
+  - "release-report persisted with status=success"
+  - "archive-report persisted after release"
+  - "archive-manifest links the release receipt and runtime status is CLOSED"
+  - "main SHA pushed directly and verified on origin/main"
+  - "semver tag pushed and confirmed on remote"
+  - "main HEAD == origin/main (trunk-sync-end PASS)"
+  - "closing HTML generated by archive"
+  - "ROADMAP updated"
+  - "metrics saved"
+
+failure_modes:
+  - condition: "any phase FAIL"
+    action: "re-iterate per orchestrator decision matrix"
+  - condition: "max fix rounds (3)"
+    action: "escalate to user"
+  - condition: "main SHA differs from origin/main"
+    action: "BLOCK, investigate local Git postcondition"
+
+provenance:
+  derived_from:
+    - "prompts/sddk/mcw.md § Phase 1 § A-min"
+    - "prompts/sddk/mcw.md § Phase 2"
+    - "prompts/sddk/mcw.md § Phase 3"
+    - "prompts/sddk/mcw.md § Phase 4"
+    - "prompts/sddk/orchestrator.md § Path-specific sequences (A-min row)"
+  catalog_ref: "docs/sddk-evolution/agentic-workflow-patterns-catalog.md"
+  integration_design: "docs/sddk-evolution/dynamic-workflows-integration.md"

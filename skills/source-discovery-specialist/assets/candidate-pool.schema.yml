@@ -1,0 +1,20 @@
+# Esquema del pool de fuentes candidatas
+# Salida de source-discovery-specialist.
+
+required:
+  - id: string               # cand-{autor|tema}-{slug}
+    agenda_question: string  # RQ id de la agenda
+    modalidad: enum          # ver tabla de modalidades en SKILL.md
+    title: string
+    retrieved_at: date
+    relevance: enum          # high|medium|low
+
+optional:
+  url: string
+  author: string
+  published: date
+  version: string            # si aplica
+  level_estimate: enum       # L1..L7 (confirmado por credibility-assessor)
+  coverage: enum             # thick|thin (≥2 fuentes independientes o no)
+  notes: string
+  duplicates: [string]       # ids de otras candidatas con mismo contenido

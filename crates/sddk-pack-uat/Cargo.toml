@@ -1,0 +1,14 @@
+[package]
+name = "sddk-pack-uat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "UAT pack — user acceptance testing guided runner, form DSL, and scenario management"
+
+[dependencies]
+sddk-domain = { path = "../sddk-domain" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

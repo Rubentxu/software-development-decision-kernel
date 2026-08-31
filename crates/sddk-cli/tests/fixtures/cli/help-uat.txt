@@ -1,0 +1,35 @@
+UAT (User Acceptance Testing): data-driven YAML plans rendered to self-contained HTML dashboards, with human-in-the-loop validation
+
+Usage: sddk uat <COMMAND>
+
+Commands:
+  plan              Generate a canonical `uat-plan.yaml` for a release candidate
+  validate          Validate a uat YAML artifact against the domain schema
+  dashboard         Render a self-contained HTML dashboard from a plan (ADR-0013 kit)
+  open              Render and open the dashboard; guided mode serves same-origin ingest
+  ingest            Ingest a session into the ledger + control plane (aggregate only)
+  report            Aggregate sessions into a `uat-report.yaml` with a verdict
+  status            Show the UAT status of a release candidate
+  failures          List failed/blocked scenarios with context — what the agent reads to study where the UAT did not pass
+  config            Per-project UAT config (XDG-resident, ADR-0011): show or set
+  gate              Evaluate the `release-uat-approved` gate for a release type under the project's config. Used by the orchestrator/release agent
+  sign-off          Sign off on a release with an immutable UatAcceptanceRecord (REQ-RF-028)
+  stale             Staleness advisory: inspect UI selectors against stored fingerprints and report drift (REQ-RF-024)
+  migrate-plan      
+  verify-integrity  
+  storage-path      
+  build-manifest    
+  scenario-context  
+  history           
+  run               Execute a scripted/automated scenario via its `automation.ref` and emit a baseline `uat-session.yaml` for the ingest/report pipeline
+  review            Build the Human Review Queue (REQ-RF-022) from a plan + report: required (P0/policy), oracle conflicts, low confidence, and the deterministic sample of machine-PASS scenarios
+  assess            Evaluate semantic oracles (visual_ai / llm_rubric) of a scenario against its captured evidence using a local VLM/LLM (Fara)
+  batch             Execute all automatable scenarios of a plan in sequence and aggregate the resulting sessions into a report. Manual scenarios are skipped with a note
+  quality           E14.2: Run the form quality agent (anti-test-smells) against a plan
+  enrich-forms      E14.3: Enrich plan scenarios with optimal UatFormSpec interaction types
+  discover          E14.4: Explore live app with Fara CUA and generate an ActualApplicationModel
+  generate          E14.5: Run the full guided-pipeline (discover → plan → enrich → quality → validate)
+  help              Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

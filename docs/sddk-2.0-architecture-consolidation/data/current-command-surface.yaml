@@ -1,0 +1,56 @@
+baseline: v1.9.1
+observed_top_level_commands:
+  - version
+  - project
+  - adopt
+  - lint
+  - generate
+  - cycle
+  - ledger
+  - capability
+  - git
+  - artifact
+  - permission
+  - validate
+  - agent-result
+  - release
+  - vault
+  - knowledge
+  - dev
+  - pack
+  - metrics
+  - analytics
+  - telemetry
+  - uat
+  - rules
+  - completion
+  - help
+observed_uat_commands:
+  - plan
+  - validate
+  - dashboard
+  - open
+  - ingest
+  - report
+  - status
+  - failures
+  - config
+  - gate
+  - sign-off
+  - stale
+  - migrate-plan
+  - verify-integrity
+  - storage-path
+  - build-manifest
+  - scenario-context
+  - history
+  - run
+  - review
+  - assess
+  - batch
+  - quality
+  - enrich-forms
+  - discover
+  - generate
+  - help
+migration_rule: Existing names remain compatibility facades until replacement APIs pass parity tests.

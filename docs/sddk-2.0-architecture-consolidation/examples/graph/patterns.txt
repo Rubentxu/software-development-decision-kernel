@@ -1,0 +1,21 @@
+# Pseudo-patterns for the initial SDDK graph pattern IR.
+# These are design examples, not a commitment to full Cypher syntax.
+
+# Implemented but unverified
+MATCH (r:requirement)-[:implemented_by]->(c:commit)
+WHERE NOT EXISTS (c)-[:verified_by]->(:test)
+EMIT observation.verification_gap
+
+# Critical feature without human acceptance
+MATCH (f:feature {risk: "critical"})
+WHERE NOT EXISTS (f)-[:accepted_by]->(:human_acceptance)
+EMIT proposal.uat.required
+
+# Architecture decision potentially stale
+MATCH (a:adr)-[:governs]->(component)
+WHERE component.version > a.last_verified_version
+EMIT graph.staleness.detected
+
+# Contradictory evidence
+MATCH (e1:evidence)-[:supports]->(o:observation)<-[:contradicts]-(e2:evidence)
+EMIT proposal.review.required

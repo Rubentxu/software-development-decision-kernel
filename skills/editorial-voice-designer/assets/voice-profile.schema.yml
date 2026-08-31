@@ -1,0 +1,19 @@
+# Esquema de voice-profile
+# Salida de editorial-voice-designer. Vinculante para chapter-writer y editorial-reviewer.
+
+required:
+  archetype: [string]         # con-humor|cero-a-experto|para-dummies|referencia-formal|narrativo (mezclable)
+  tone: string
+  person: string              # primera|segunda-del-plural|segunda-del-singular|impersonal
+  humor:
+    style: string             # metaforico|ironico|absurdo|ninguno
+    intensity: string         # baja|media|alta
+  register: string            # formal|informal-estandar|coloquial
+  pacing: string              # lento|uniforme|creciente
+
+optional:
+  humor.forbidden: [string]
+  language_variant: string    # es-ES|es-LATAM|en|... (castellano por defecto)
+  examples_good: [string]
+  examples_bad: [string]
+  callout_style: string       # estilo de cajas (nota/ojo/truco)

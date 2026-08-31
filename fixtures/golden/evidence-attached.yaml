@@ -1,0 +1,30 @@
+name: evidence-attached
+events:
+- event_type: proposal.submitted
+  subjects:
+  - - proposal
+    - p1
+  - - cycle
+    - c-1
+  cycle_id: c-1
+- event_type: evidence.attached
+  subjects:
+  - - evidence
+    - e1
+  - - proposal
+    - p1
+  cycle_id: c-1
+expect:
+  nodes: 3
+  edges: 2
+  node_keys:
+  - cycle:c-1
+  - evidence:e1
+  - proposal:p1
+  edges_match:
+  - from: proposal:p1
+    relation: proposal.submitted
+    to: cycle:c-1
+  - from: evidence:e1
+    relation: evidence.attached
+    to: proposal:p1

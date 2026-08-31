@@ -1,0 +1,17 @@
+name: phase-entered-creates-phase
+events:
+- event_type: workflow.phase.entered
+  subjects: []
+  cycle_id: c-1
+  payload:
+    phase: verify
+expect:
+  nodes: 2
+  edges: 1
+  node_keys:
+  - cycle:c-1
+  - phase:verify
+  edges_match:
+  - from: cycle:c-1
+    relation: entered_phase
+    to: phase:verify

@@ -1,0 +1,77 @@
+# SDDK Framework .gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Editor
+.idea/
+.vscode/
+*.sublime-*
+
+# Temporary / generated
+*.tmp
+*.bak
+*.log
+target/
+
+# Per-project knowledge vaults (created on-demand, never committed)
+# The template lives in knowledge-template/ — that IS committed.
+# Actual vaults at ~/.sddk-knowledge/{project}/ are outside this repo.
+
+# SDDK local skill registry and agent working state (never committed)
+.atl/
+
+# Node (if any tooling is added later)
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# SDDK local-only working paths (never committed)
+sddk/
+!prompts/sddk/
+!prompts/sddk/**
+
+# Editor framework dirs (never in repo)
+.zcode/
+dist/
+
+# proptest deterministic replay cache (generated when a counter-example is
+# found). Safe to delete; proptest will rebuild on next run.
+*.proptest-regressions
+
+# Release staging artifacts (produced by `sddk release dist`, uploaded to
+# GitHub Releases via `gh release create`). NEVER committed; recreated
+# from scratch on every `sddk release dist --prefix ...` invocation.
+sddk-linux-*-musl
+sddk-linux-*-musl.sha256
+sddk-linux-*-musl.CHECKSUMS
+sddk-linux-*-musl.sbom.json
+sddk-linux-*-musl.attestation.json
+software-development-decision-kernel.tar.gz
+software-development-decision-kernel.tar.gz.sha256
+dist-amd64/
+dist-arm64/
+dist-x86_64/
+dist-aarch64/
+# Defensive: anything matching dist-{arch}/* staging tree
+/dist-*/
+docs/sddk-final-evolution-2026-08.zip
+
+# External model-evaluation runs are reproducible evidence, not source fixtures.
+golden-dataset/results/
+
+# SDDK cycle runtime CAS artifacts (recreated each cycle by sddk-archive).
+# These are durable evidence in the working tree but NEVER source fixtures:
+# the cycle ledger is regenerated from the runtime on every phase dispatch.
+# Each cycle produces: release-receipt.json, archive-manifest.json,
+# debt-report.{json,md}, debt-verify-report.md, verify-findings.json, etc.
+# Per cycle-36 discipline: no amend previous cycles, no commit runtime CAS.
+.sddk/cycles/

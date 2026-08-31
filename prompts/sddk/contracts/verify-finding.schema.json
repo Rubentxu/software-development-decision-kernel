@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/contracts/verify-finding.schema.json",
+  "title": "SDDK Verify Finding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "finding_id",
+    "rule_id",
+    "subject",
+    "location",
+    "classification",
+    "severity",
+    "confidence",
+    "production_reachable",
+    "evidence",
+    "exemption",
+    "owner_phase"
+  ],
+  "properties": {
+    "finding_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "rule_id": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"},
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base", "head", "diff_digest"],
+      "properties": {
+        "base": {"type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$"},
+        "head": {"type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$"},
+        "diff_digest": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "start_line", "end_line"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "start_line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "symbol": {"type": ["string", "null"]}
+      }
+    },
+    "classification": {
+      "enum": ["blocking_defect", "warning", "suggestion", "false_positive", "insufficient_evidence"]
+    },
+    "severity": {"enum": ["critical", "high", "medium", "low"]},
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "production_reachable": {"enum": ["yes", "no", "unknown"]},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "observation", "output_digest"],
+        "properties": {
+          "kind": {"enum": ["command", "source", "test", "trace", "artifact"]},
+          "observation": {"type": "string", "minLength": 1},
+          "command": {"type": ["string", "null"]},
+          "exit_code": {"type": ["integer", "null"]},
+          "output_digest": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "exemption": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "reason", "expires_at"],
+          "properties": {
+            "authority": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1},
+            "expires_at": {"type": ["string", "null"]}
+          }
+        }
+      ]
+    },
+    "owner_phase": {"enum": ["apply", "verify", "debt-verify", "replan", "human"]}
+  }
+}
