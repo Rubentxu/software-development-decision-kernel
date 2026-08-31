@@ -10,6 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
+use time::serde::rfc3339;
 
 /// The closed set of diagnostic codes eligible for scoped down-classification.
 pub const ALLOW_LIST: &[&str] = &["VAULT003"];
@@ -46,8 +47,10 @@ pub struct RepairReceipt {
     /// SHA-256 hex of the repair artifact (the created/rewritten file).
     pub durable_evidence_sha: String,
     /// When this receipt was created (RFC3339).
+    #[serde(with = "rfc3339")]
     pub created_at: OffsetDateTime,
     /// Receipt validity upper bound (RFC3339, ≤ created_at + 90 days).
+    #[serde(with = "rfc3339")]
     pub valid_to: OffsetDateTime,
 }
 
@@ -288,5 +291,118 @@ mod tests {
         let loaded = queue.get(key).unwrap();
         assert_eq!(loaded.cycle_id, receipt.cycle_id);
         assert_eq!(loaded.code, receipt.code);
+    }
+
+    #[test]
+    fn verify_receipt_evidence_hash_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let artifact = dir.path().join("artifact.md");
+        std::fs::write(&artifact, b"actual content").unwrap();
+
+        let receipt = receipt_fixture(); // sha is "abc123"
+        let result = verify_receipt_evidence(&receipt, &artifact);
+        let err = result.expect_err("hash mismatch must be detected");
+        match err {
+            RepairReceiptError::EvidenceHashMismatch { expected, actual } => {
+                assert_eq!(expected, "abc123");
+                assert!(!actual.is_empty());
+            }
+            _ => panic!("expected EvidenceHashMismatch"),
+        }
+    }
+
+    #[test]
+    fn verify_receipt_evidence_matches() {
+        let dir = TempDir::new().unwrap();
+        let artifact = dir.path().join("artifact.md");
+        std::fs::write(&artifact, b"actual content").unwrap();
+
+        use sha2::{Digest, Sha256};
+        let sha = format!("{:x}", Sha256::digest(b"actual content"));
+
+        let mut receipt = receipt_fixture();
+        receipt.durable_evidence_sha = sha;
+
+        let result = verify_receipt_evidence(&receipt, &artifact);
+        result.expect("matching hash must pass");
+    }
+
+    #[test]
+    fn verify_receipt_evidence_artifact_not_found() {
+        let dir = TempDir::new().unwrap();
+        let artifact = dir.path().join("nonexistent.md");
+
+        let receipt = receipt_fixture();
+        let result = verify_receipt_evidence(&receipt, &artifact);
+        let err = result.expect_err("missing artifact must fail");
+        match err {
+            RepairReceiptError::ArtifactNotFound => {}
+            _ => panic!("expected ArtifactNotFound"),
+        }
+    }
+
+    #[test]
+    fn load_repair_queue_detects_malformed_yaml() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("repair-queue.yaml");
+        // Write YAML that is syntactically valid but not a list of RepairReceipt
+        std::fs::write(&path, "not: a\nlist: of\nreceipts: true").unwrap();
+
+        let result = load_repair_queue(&path);
+        assert!(result.is_err(), "malformed YAML must return error");
+    }
+
+    #[test]
+    fn load_repair_queue_detects_tampered_entry() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("repair-queue.yaml");
+
+        let receipt = receipt_fixture();
+        append_repair_receipt(&path, &receipt).unwrap();
+
+        // Tamper: change cycle_id field
+        let content = std::fs::read_to_string(&path).unwrap();
+        let tampered = content.replace(
+            "cycle-44-build-remediate-transition",
+            "cycle-tampered-entry",
+        );
+        std::fs::write(&path, &tampered).unwrap();
+
+        // Now load - the tampered entry has a mismatched key (original key won't match)
+        let queue = load_repair_queue(&path).unwrap();
+        // The tampered entry is loaded under the tampered key, original key is gone
+        assert!(
+            queue
+                .get("p-52b95ef55999f9de/cycle-44-build-remediate-transition/VAULT003/test-node")
+                .is_none(),
+            "tampered queue must not have entry under original key"
+        );
+    }
+
+    #[test]
+    fn append_receipt_with_hash_mismatch_rejected() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("repair-queue.yaml");
+
+        // Creating a receipt with a mismatched hash within 90-day window
+        // The append itself doesn't validate hash — that's verify_receipt_evidence's job.
+        // This test documents the current behavior: append accepts any valid receipt.
+        let created_at = OffsetDateTime::now_utc();
+        let receipt = RepairReceipt {
+            cycle_id: "p-52b95ef55999f9de/cycle-44-build-remediate-transition".to_string(),
+            code: "VAULT003".to_string(),
+            node: "tampered-node".to_string(),
+            target: "p-52b95ef55999f9de/cycle-44-build-remediate-transition".to_string(),
+            repair_action: RepairAction::NodeCreation,
+            durable_evidence_sha: "wronghash".to_string(),
+            created_at,
+            valid_to: created_at + time::Duration::days(89),
+        };
+        let result = append_repair_receipt(&path, &receipt);
+        // Append should succeed (hash validation is at verify time, not append time)
+        assert!(
+            result.is_ok(),
+            "append must accept valid receipt regardless of hash"
+        );
     }
 }

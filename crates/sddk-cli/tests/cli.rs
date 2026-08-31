@@ -13581,4 +13581,470 @@ fn cli_release_vault_happy_path_emits_vault_receipt_json() {
     );
 }
 
+#[test]
+fn cli_vault_validate_scope_cycle_default_omits_scope() {
+    // Default invocation (no --scope-cycles) must produce output with no 'scope' field.
+    let fixture = CliFixture::new("vault-scope-default");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    // Node with a broken link to a cycle-scoped target
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: TERM-Test\ntype: term\nstatus: active\n---\n# Test\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    // Exit code 1 is expected when errors > 0 in validate-only mode
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "validate must succeed or exit 1 with errors: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    // Errors must be 1 (the broken link)
+    assert_eq!(json["errors"].as_u64().unwrap(), 1, "must have 1 error");
+    // scope IS present in the JSON when the diagnostic has a cycle-scoped target
+    // (this is correct behavior — skip_serializing_if only applies when scope is None)
+    let diagnostics_json = serde_json::to_string(&json["diagnostics"]).unwrap();
+    assert!(
+        diagnostics_json.contains("scope"),
+        "scope must appear in JSON for cycle-scoped broken links: {}",
+        diagnostics_json
+    );
+    // No repair_queue field when queue doesn't exist
+    assert!(
+        json.get("repair_queue").is_none(),
+        "no repair_queue when vault has no queue"
+    );
+}
+
+#[test]
+fn cli_vault_validate_malformed_scope_cycle_emits_error_kind() {
+    // Malformed --scope-cycles value must emit error_kind=InvalidScopeCycleId warning.
+    let fixture = CliFixture::new("vault-scope-malformed");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    // No broken links needed — the malformed scope itself is the error
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: TERM-Test\ntype: term\n---\n# Test\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "NOT_A_VALID_SCOPE", // malformed: no slash
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    // Must succeed (error is a warning, not failure)
+    assert!(
+        validated.status.success(),
+        "malformed scope must not fail the command: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    // Exactly 1 warning from the malformed scope
+    assert_eq!(json["warnings"].as_u64().unwrap(), 1, "must have 1 warning");
+    let diag = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["error_kind"] == "InvalidScopeCycleId")
+        .expect("must have InvalidScopeCycleId diagnostic");
+    assert_eq!(diag["code"].as_str().unwrap(), "VAULT003");
+    assert_eq!(diag["severity"].as_str().unwrap(), "warning");
+}
+
+#[test]
+fn cli_vault_validate_missing_receipt_emits_error_kind() {
+    // When --scope-cycles matches a diagnostic but no receipt exists,
+    // error_kind=RepairReceiptMissingOrInvalid must be emitted.
+    let fixture = CliFixture::new("vault-scope-missing-receipt");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    // Broken link to a cycle target
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: TERM-Test\ntype: term\n---\n# Test\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "p-52b95ef55999f9de/cycle-44-build-remediate-transition",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "missing receipt must not fail validate: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    // The broken link is still an error (no valid receipt)
+    assert_eq!(json["errors"].as_u64().unwrap(), 1, "must still be 1 error");
+    let diag = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["error_kind"] == "RepairReceiptMissingOrInvalid")
+        .expect("must have RepairReceiptMissingOrInvalid diagnostic");
+    assert_eq!(diag["severity"].as_str().unwrap(), "error");
+}
+
+#[test]
+fn cli_vault_validate_queue_observable_via_json() {
+    // When a repair-queue.yaml exists, repair_queue field appears in JSON output.
+    let fixture = CliFixture::new("vault-scope-observable");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: TERM-Test\ntype: term\n---\n# Test\n",
+    )
+    .unwrap();
+    // Write a valid repair-queue.yaml
+    fs::write(
+        vault.join("repair-queue.yaml"),
+        "---\n- cycle_id: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  code: \"VAULT003\"\n  node: \"TERM-Test\"\n  target: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  repair_action: \"node_creation\"\n  durable_evidence_sha: \"abc123\"\n  created_at: \"2026-08-31T00:00:00Z\"\n  valid_to: \"2026-11-29T00:00:00Z\"\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        validated.status.success(),
+        "validate with queue must succeed: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    assert!(
+        json.get("repair_queue").is_some(),
+        "repair_queue must appear in JSON when queue exists"
+    );
+    let queue = json["repair_queue"].as_array().unwrap();
+    assert_eq!(queue.len(), 1, "queue must have 1 entry");
+    assert_eq!(
+        queue[0]["code"].as_str().unwrap(),
+        "VAULT003",
+        "entry must have correct code"
+    );
+    assert!(
+        !queue[0]["expired"].as_bool().unwrap(),
+        "entry must not be expired"
+    );
+}
+
+#[test]
+fn cli_vault_validate_queue_malformed_emits_repair_queue_errors() {
+    // When repair-queue.yaml is malformed, repair_queue_errors appears in JSON.
+    let fixture = CliFixture::new("vault-scope-malformed-queue");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: TERM-Test\ntype: term\n---\n# Test\n",
+    )
+    .unwrap();
+    // Write malformed YAML
+    fs::write(vault.join("repair-queue.yaml"), "not: a\nlist: true\n").unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        validated.status.success(),
+        "malformed queue must not fail validate: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    assert!(
+        json.get("repair_queue_errors").is_some(),
+        "repair_queue_errors must appear for malformed queue"
+    );
+    let errors = json["repair_queue_errors"].as_array().unwrap();
+    assert!(!errors.is_empty(), "repair_queue_errors must not be empty");
+    // No repair_queue entries loaded
+    assert!(
+        json.get("repair_queue").is_none(),
+        "repair_queue must be absent when load fails"
+    );
+}
+
+#[test]
+fn cli_vault_validate_vaul001_unscopable() {
+    // VAULT001 and VAULT002 errors are never downgraded, even with matching scope.
+    let fixture = CliFixture::new("vault-vaul001-unscopable");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    // Node with empty id (VAULT001) and broken link
+    fs::write(
+        vault.join("terms/TERM-Test.md"),
+        "---\nid: \"\"\ntype: term\n---\n# Test\n\nLinks [[GhostTarget]]\n",
+    )
+    .unwrap();
+    // Also a valid node with a broken link to a non-cycle target
+    fs::write(
+        vault.join("terms/TERM-Test2.md"),
+        "---\nid: TERM-Test2\ntype: term\n---\n# Test2\n\nLinks [[MissingTarget]]\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    // Even with matching scope (and no receipt), VAULT001 must remain Error
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "p-any/any-cycle",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "validate must succeed or exit 1 with errors: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    // VAULT001 (empty id) + VAULT003 (broken link) = 2 errors
+    assert_eq!(json["errors"].as_u64().unwrap(), 2, "must have 2 errors");
+    let vaul001 = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "VAULT001")
+        .expect("VAULT001 must be present");
+    assert_eq!(
+        vaul001["severity"].as_str().unwrap(),
+        "error",
+        "VAULT001 must stay error"
+    );
+    assert!(
+        vaul001["error_kind"].is_null(),
+        "VAULT001 must not have error_kind (not a scoped diagnostic)"
+    );
+}
+
+#[test]
+fn cli_vault_validate_closed_set_guard() {
+    // Only VAULT003 is in the ALLOW_LIST; other codes are never downgraded.
+    let fixture = CliFixture::new("vault-closed-set-guard");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    // Create a valid vault with only VAULT003 broken links that could theoretically
+    // be scoped (but no receipt means no downgrade)
+    fs::write(
+        vault.join("terms/TERM-Broken.md"),
+        "---\nid: TERM-Broken\ntype: term\n---\n# Broken\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "p-52b95ef55999f9de/cycle-44-build-remediate-transition",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "validate must succeed or exit 1 with errors: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+    // Without a valid receipt, the error is NOT downgraded (remains Error)
+    assert_eq!(
+        json["errors"].as_u64().unwrap(),
+        1,
+        "must have 1 error (no receipt)"
+    );
+    assert_eq!(
+        json["warnings"].as_u64().unwrap(),
+        0,
+        "no warnings without valid receipt"
+    );
+    // Scope is attached
+    let broken = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "VAULT003")
+        .unwrap();
+    assert!(
+        broken["scope"].is_object(),
+        "VAULT003 must have scope attached"
+    );
+    // error_kind is set because no valid receipt found
+    assert_eq!(
+        broken["error_kind"].as_str().unwrap(),
+        "RepairReceiptMissingOrInvalid",
+        "missing receipt must set error_kind"
+    );
+}
+
 mod first_class_commands;

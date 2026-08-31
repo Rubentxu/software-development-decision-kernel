@@ -44,6 +44,11 @@ pub struct Diagnostic {
     /// target names an existing cycle node (`cycles/<project_id>/cycle-<N>-<slug>.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<CycleScope>,
+    /// Machine-readable error kind for scoped-cli diagnostics.
+    /// Values: `InvalidScopeCycleId`, `RepairReceiptMissingOrInvalid`,
+    /// `ReceiptEvidenceHashMismatch`, `RepairQueueMalformed`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_kind: Option<String>,
 }
 
 /// Errors emitted while validating an index.
@@ -102,6 +107,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 message: format!("node {} has no id", node.path),
                 hint: "declare an `id` in the frontmatter or rename the file to its id".into(),
                 scope: None,
+                error_kind: None,
             });
             continue;
         }
@@ -113,6 +119,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 message: "node has an empty title".into(),
                 hint: "add a `title` frontmatter field or an `# H1` heading".into(),
                 scope: None,
+                error_kind: None,
             });
         }
         if let Some(previous) = seen_ids.insert(node.id.clone(), node.path.clone()) {
@@ -123,6 +130,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 message: format!("id {} used by {} and {}", node.id, previous, node.path),
                 hint: "make node ids unique across the vault".into(),
                 scope: None,
+                error_kind: None,
             });
         }
         for target in &node.wikilinks {
@@ -135,6 +143,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                     message: format!("node {} links to missing target {target}", node.id),
                     hint: "create the target node or fix the wikilink".into(),
                     scope,
+                    error_kind: None,
                 });
             }
         }
@@ -221,5 +230,112 @@ mod tests {
         let index = parse_vault(directory.path()).unwrap();
         let diagnostics = validate_index(&index);
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn vaul003_broken_link_attaches_cycle_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        node(
+            &directory.path().join("a.md").to_string_lossy(),
+            "---\nid: A\ntype: term\n---\n# A\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+        );
+        let index = parse_vault(directory.path()).unwrap();
+        let diagnostics = validate_index(&index);
+        let broken = diagnostics
+            .iter()
+            .find(|d| d.code == "VAULT003")
+            .expect("VAULT003 diagnostic must be present");
+        assert!(
+            broken.scope.is_some(),
+            "VAULT003 for cycle-scoped target must have scope attached"
+        );
+        let scope = broken.scope.as_ref().unwrap();
+        assert_eq!(scope.project_id, "p-52b95ef55999f9de");
+        assert_eq!(
+            scope.cycle_id,
+            "p-52b95ef55999f9de/cycle-44-build-remediate-transition"
+        );
+    }
+
+    #[test]
+    fn vaul003_non_cycle_target_has_no_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        node(
+            &directory.path().join("a.md").to_string_lossy(),
+            "---\nid: A\ntype: term\n---\n# A\n\nLinks [[GhostNode]]\n",
+        );
+        let index = parse_vault(directory.path()).unwrap();
+        let diagnostics = validate_index(&index);
+        let broken = diagnostics
+            .iter()
+            .find(|d| d.code == "VAULT003")
+            .expect("VAULT003 diagnostic must be present");
+        assert!(
+            broken.scope.is_none(),
+            "VAULT003 for non-cycle target must have no scope"
+        );
+    }
+
+    #[test]
+    fn vaul001_has_no_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        node(
+            &directory.path().join("a.md").to_string_lossy(),
+            "---\nid: \"\"\ntype: term\n---\n# A\n",
+        );
+        let index = parse_vault(directory.path()).unwrap();
+        let diagnostics = validate_index(&index);
+        let missing = diagnostics
+            .iter()
+            .find(|d| d.code == "VAULT001")
+            .expect("VAULT001 diagnostic must be present");
+        assert!(missing.scope.is_none(), "VAULT001 must never have scope");
+    }
+
+    #[test]
+    fn default_json_output_omits_null_scope() {
+        // Verify skip_serializing_if = "Option::is_none" on Diagnostic.scope
+        let directory = tempfile::tempdir().unwrap();
+        node(
+            &directory.path().join("a.md").to_string_lossy(),
+            "---\nid: A\ntype: term\n---\n# A\n\nLinks [[Ghost]]\n",
+        );
+        let index = parse_vault(directory.path()).unwrap();
+        let diagnostics = validate_index(&index);
+        let json = serde_json::to_string(&diagnostics).expect("diagnostics must serialize to JSON");
+        // If scope were present (even as null), "scope":null would appear
+        assert!(
+            !json.contains("scope"),
+            "JSON output must not contain 'scope' key for absent scope: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn closed_set_guard_only_vaul003_has_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        node(
+            &directory.path().join("a.md").to_string_lossy(),
+            "---\nid: A\ntype: term\n---\n# A\n\nLinks [[VAULT001-broken]] [[VAULT002-broken]] [[VAULT003-broken]]\n",
+        );
+        node(
+            &directory.path().join("b.md").to_string_lossy(),
+            "---\nid: \"\"\ntype: term\n---\n# B\n",
+        );
+        node(
+            &directory.path().join("c.md").to_string_lossy(),
+            "---\nid: A\ntype: term\n---\n# C\n",
+        );
+        let index = parse_vault(directory.path()).unwrap();
+        let diagnostics = validate_index(&index);
+        let with_scope: Vec<_> = diagnostics.iter().filter(|d| d.scope.is_some()).collect();
+        // Only VAULT003 can have scope (closed-set guard)
+        for d in &with_scope {
+            assert_eq!(
+                d.code, "VAULT003",
+                "Only VAULT003 may have scope; {} does not",
+                d.code
+            );
+        }
     }
 }
