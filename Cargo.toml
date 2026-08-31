@@ -23,7 +23,9 @@ rust-version = "1.91"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde-saphyr = "1.0"
+serde_yaml = "0.9"
+"serde-saphyr" = "1.0"
+time = { version = "=0.3.36", features = ["formatting", "parsing", "serde"] }
 
 # Error handling
 thiserror = "2"
@@ -44,7 +46,6 @@ getrandom = "0.2"
 
 # UUIDs
 uuid = { version = "1", features = ["v4", "serde"] }
-time = { version = "=0.3.36", features = ["formatting", "parsing"] }
 
 # File system
 walkdir = "2"

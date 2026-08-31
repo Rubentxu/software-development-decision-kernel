@@ -5,6 +5,17 @@ use thiserror::Error;
 
 use crate::index::VaultIndex;
 
+/// Cycle attribution for diagnostics whose missing target identifies an existing
+/// cycle node. Closed-set recoverable codes are declared verbatim in ADR-0078;
+/// initial allow-list is `{VAULT003}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CycleScope {
+    /// Project identifier.
+    pub project_id: String,
+    /// Cycle identifier.
+    pub cycle_id: String,
+}
+
 /// Diagnostic severity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,6 +40,10 @@ pub struct Diagnostic {
     pub message: String,
     /// Suggested remediation.
     pub hint: String,
+    /// Populated only for VAULT003 broken-link diagnostics whose missing
+    /// target names an existing cycle node (`cycles/<project_id>/cycle-<N>-<slug>.md`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<CycleScope>,
 }
 
 /// Errors emitted while validating an index.
@@ -44,6 +59,34 @@ const DUPLICATE_ID: &str = "VAULT002";
 const BROKEN_LINK: &str = "VAULT003";
 const EMPTY_TITLE: &str = "VAULT004";
 
+/// Attaches cycle scope to a VAULT003 diagnostic if the missing target
+/// matches the canonical cycle node path pattern.
+///
+/// Returns `Some(CycleScope)` if `target` matches `project_id/cycle_id`
+/// where the cycle node file would be at `cycles/<project_id>/cycle-<N>-<slug>.md`.
+/// Otherwise returns `None`.
+fn attach_scope(target: &str) -> Option<CycleScope> {
+    // Target format: project_id/cycle_id (e.g. "p-52b95ef55999f9de/cycle-44-build-remediate-transition")
+    // We need to check if this target corresponds to an existing cycle node.
+    // The cycle node path convention is: cycles/<project_id>/cycle-<N>-<slug>.md
+    // But we don't have filesystem access here — we just extract the scope from the target.
+    // The actual validation that the node exists happens at a higher layer.
+    let parts: Vec<&str> = target.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let project_id = parts[0];
+    let cycle_id = parts[1];
+    // Basic validation: project_id should look like a project ID (p- followed by hex)
+    if !project_id.starts_with("p-") || cycle_id.is_empty() {
+        return None;
+    }
+    Some(CycleScope {
+        project_id: project_id.to_string(),
+        cycle_id: cycle_id.to_string(),
+    })
+}
+
 /// Validates node ids, titles, and wikilink targets deterministically.
 pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -57,6 +100,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 node: None,
                 message: format!("node {} has no id", node.path),
                 hint: "declare an `id` in the frontmatter or rename the file to its id".into(),
+                scope: None,
             });
             continue;
         }
@@ -67,6 +111,7 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 node: Some(node.id.clone()),
                 message: "node has an empty title".into(),
                 hint: "add a `title` frontmatter field or an `# H1` heading".into(),
+                scope: None,
             });
         }
         if let Some(previous) = seen_ids.insert(node.id.clone(), node.path.clone()) {
@@ -76,16 +121,19 @@ pub fn validate_index(index: &VaultIndex) -> Vec<Diagnostic> {
                 node: Some(node.id.clone()),
                 message: format!("id {} used by {} and {}", node.id, previous, node.path),
                 hint: "make node ids unique across the vault".into(),
+                scope: None,
             });
         }
         for target in &node.wikilinks {
             if index.get(target).is_none() {
+                let scope = attach_scope(target);
                 diagnostics.push(Diagnostic {
                     code: BROKEN_LINK.into(),
                     severity: Severity::Error,
                     node: Some(node.id.clone()),
                     message: format!("node {} links to missing target {target}", node.id),
                     hint: "create the target node or fix the wikilink".into(),
+                    scope,
                 });
             }
         }

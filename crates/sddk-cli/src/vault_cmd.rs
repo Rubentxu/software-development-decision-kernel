@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use sddk_gateway::CapabilityPolicy;
-use sddk_vault::{Diagnostic, GraphView, SearchHit, Severity};
+use sddk_vault::{
+    ALLOW_LIST, Diagnostic, GraphView, RepairReceipt, SearchHit, Severity, load_repair_queue,
+};
 use serde::Serialize;
 
 use crate::{
@@ -35,6 +37,10 @@ pub(crate) struct VaultIndexArgs {
     /// SQLite index database path.
     #[arg(long)]
     pub(crate) db: Option<PathBuf>,
+    /// Repeatable scope cycles for scoped VAULT003 down-classification.
+    /// Each value must match `project_id/cycle_id` form.
+    #[arg(long, value_name = "SCOPE", value_delimiter = ',')]
+    pub(crate) scope_cycles: Vec<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -106,6 +112,78 @@ fn check_vault_capability(
     Ok(())
 }
 
+/// Apply scoped down-classification to VAULT003 diagnostics that have a matching
+/// repair receipt in the queue.
+///
+/// A diagnostic is down-classified from `Error` to `Warning` when:
+/// - Its code is in the `ALLOW_LIST` (verbatim `{VAULT003}` per ADR-0078)
+/// - Its `scope` matches one of the provided `scope_cycles` arguments
+/// - A valid (non-expired) `RepairReceipt` exists in the queue for that scope
+fn apply_scope_downgrade(
+    diagnostics: &mut [Diagnostic],
+    scope_cycles: &[String],
+    queue: &std::collections::HashMap<String, RepairReceipt>,
+) {
+    if scope_cycles.is_empty() {
+        return;
+    }
+
+    let now = time::OffsetDateTime::now_utc();
+
+    for diagnostic in diagnostics.iter_mut() {
+        // Only process allow-listed codes
+        if !ALLOW_LIST.contains(&diagnostic.code.as_str()) {
+            continue;
+        }
+
+        // Check if diagnostic has a matching scope
+        let Some(ref scope) = diagnostic.scope else {
+            continue;
+        };
+
+        let scope_id = format!("{}/{}", scope.project_id, scope.cycle_id);
+        if !scope_cycles.contains(&scope_id) {
+            continue;
+        }
+
+        // Find matching receipt
+        let key = format!(
+            "{}/{}/{}",
+            scope.project_id,
+            scope.cycle_id,
+            diagnostic.node.as_deref().unwrap_or("")
+        );
+        if let Some(receipt) = queue.get(&key) {
+            // Check if receipt is valid (not expired)
+            if receipt.valid_to > now {
+                // Down-classify
+                diagnostic.severity = Severity::Warning;
+            }
+        }
+    }
+}
+
+/// Summary of a repair receipt for JSON output.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct RepairReceiptSummary {
+    cycle_id: String,
+    code: String,
+    node: String,
+    expired: bool,
+}
+
+impl From<&RepairReceipt> for RepairReceiptSummary {
+    fn from(receipt: &RepairReceipt) -> Self {
+        RepairReceiptSummary {
+            cycle_id: receipt.cycle_id.clone(),
+            code: receipt.code.clone(),
+            node: receipt.node.clone(),
+            expired: receipt.valid_to < time::OffsetDateTime::now_utc(),
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 struct IndexOutput {
@@ -117,6 +195,8 @@ struct IndexOutput {
     updated: usize,
     deleted: usize,
     diagnostics: Vec<Diagnostic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repair_queue: Option<Vec<RepairReceiptSummary>>,
 }
 
 fn run_vault_index(
@@ -132,7 +212,7 @@ fn run_vault_index(
     };
     let result = (|| -> anyhow::Result<IndexOutput> {
         check_vault_capability(&args.runtime, environment, capability)?;
-        let (index, diagnostics) = sddk_vault::index_vault(&args.vault)?;
+        let (index, mut diagnostics) = sddk_vault::index_vault(&args.vault)?;
         let backlinks: usize = index.backlinks.values().map(Vec::len).sum();
         let mut inserted = 0;
         let mut updated = 0;
@@ -152,6 +232,25 @@ fn run_vault_index(
             updated = summary.updated;
             deleted = summary.deleted;
         }
+
+        // Load repair queue and apply scoped down-classification
+        let repair_queue_path = args.vault.join("repair-queue.yaml");
+        let queue = if repair_queue_path.exists() {
+            load_repair_queue(&repair_queue_path).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // Apply scope downgrades if --scope-cycles is provided
+        apply_scope_downgrade(&mut diagnostics, &args.scope_cycles, &queue);
+
+        // Build repair queue summary for JSON output
+        let repair_queue_summary: Option<Vec<RepairReceiptSummary>> = if queue.is_empty() {
+            None
+        } else {
+            Some(queue.values().map(RepairReceiptSummary::from).collect())
+        };
+
         let (errors, warnings) = sddk_vault::summary(&diagnostics);
         Ok(IndexOutput {
             nodes: index.nodes.len(),
@@ -162,6 +261,7 @@ fn run_vault_index(
             updated,
             deleted,
             diagnostics,
+            repair_queue: repair_queue_summary,
         })
     })();
     match result {
