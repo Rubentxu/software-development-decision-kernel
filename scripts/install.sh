@@ -242,10 +242,14 @@ if [ "$RESOLVED_VERSION" != "latest" ] && \
     mkdir -p "$STAGE_ROOT"
     tar xzf "$TMP_DIR/$UNIFIED_TARBALL" -C "$STAGE_ROOT"
     STAGE_BIN="$STAGE_ROOT/bin/sddk"
-    if [ ! -x "$STAGE_BIN" ]; then
+    if [ ! -f "$STAGE_BIN" ]; then
         echo "error: unified tarball does not contain bin/sddk" >&2
         exit 1
     fi
+    # Defensive chmod: some release pipelines (incl. the GitHub CDN-cached
+    # variant we hit on cycle-47 day-0) ship the tarball without the
+    # executable bit set on the binary. Re-apply 0755 before exec'ing.
+    chmod 0755 "$STAGE_BIN" 2>/dev/null || true
     STAGE_BUNDLE="$STAGE_ROOT/framework"
     if [ ! -d "$STAGE_BUNDLE" ]; then
         echo "error: unified tarball does not contain framework/" >&2

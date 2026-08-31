@@ -344,6 +344,21 @@ pub(super) struct UpdateArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(super) format: OutputFormat,
+    /// Prune stale bundle directories after the update. By default keeps the
+    /// version pointed to by `current` plus the version just installed (if
+    /// different); `--keep N` keeps the N most recent versions instead.
+    #[arg(long)]
+    pub(super) prune: bool,
+    /// Number of recent bundle versions to keep when `--prune` is set.
+    /// 0 means "only keep current" (default when --prune without --keep).
+    /// Valid with either `--prune` or `--prune-only`.
+    #[arg(long)]
+    pub(super) keep: Option<usize>,
+    /// Skip the bundle download and only run the prune logic against the
+    /// existing layout under `--root`. Useful after `install.sh` did the
+    /// install manually and you just want to drop stale version dirs.
+    #[arg(long, conflicts_with = "version")]
+    pub(super) prune_only: bool,
 }
 
 #[derive(Debug, Clone, Args)]

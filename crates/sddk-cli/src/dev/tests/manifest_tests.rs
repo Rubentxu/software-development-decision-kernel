@@ -134,6 +134,9 @@ fn release_bundle(source: &std::path::Path, version: &str) -> (std::path::PathBu
         base_url: Some(format!("file://{}", releases.display())),
         editor: LinkEditor::All,
         format: OutputFormat::Text,
+        prune: false,
+        keep: None,
+        prune_only: false,
     };
     (releases, args)
 }
@@ -353,7 +356,7 @@ fn manifest_covers_agent_models_yaml_and_install_ships_it() {
     // Use the current CARGO_PKG_VERSION (rather than a hardcoded string) so
     // the bundle declares it is compatible with the binary that is being
     // built today, regardless of which version that is.
-    use crate::dev::bundle_manifest::{write_bundle_manifest, ContentsSection};
+    use crate::dev::bundle_manifest::{ContentsSection, write_bundle_manifest};
     write_bundle_manifest(
         &source,
         env!("CARGO_PKG_VERSION"),
@@ -383,6 +386,82 @@ fn manifest_covers_agent_models_yaml_and_install_ships_it() {
         verify_manifest(&prefix).unwrap().is_empty(),
         "installed tree must verify against its manifest"
     );
+    std::fs::remove_dir_all(&source).ok();
+    std::fs::remove_dir_all(&prefix).ok();
+}
+
+/// Cycle-47 D3: a v1 receipt (no schema_version field) under the prefix must
+/// be rewritten as v2 when the install source carries a BUNDLE.toml that
+/// declares a bundle version compatible with the running binary. The
+/// migration is implicit: `run_dev_install` always writes a v2 receipt when
+/// --source is provided.
+#[test]
+fn install_migrates_legacy_v1_receipt_to_v2_when_source_has_bundle_toml() {
+    let source = temp_root("v1-migrate-source");
+    std::fs::create_dir_all(source.join("agents")).unwrap();
+    std::fs::write(source.join("agents/a.md"), "content-a").unwrap();
+    write_manifest(&source).unwrap();
+    // Add a BUNDLE.toml declaring compat with the running binary so the
+    // install preflight passes.
+    use crate::dev::bundle_manifest::{ContentsSection, write_bundle_manifest};
+    write_bundle_manifest(
+        &source,
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+        ContentsSection::default(),
+    )
+    .unwrap();
+
+    let prefix = temp_root("v1-migrate-prefix");
+    // Pre-plant a v1 receipt (no schema_version, no bundle_version, etc.).
+    let v1 = serde_json::json!({
+        "version": "0.1.0-pre",
+        "commit": "0000000000000000000000000000000000000000",
+        "binary_sha256": "sha256:deadbeef",
+        "channel": "dev",
+        "installed_at": "2026-08-15T00:00:00Z",
+        "binary_path": "sddk",
+        "bundle": true
+    });
+    std::fs::write(
+        prefix.join("sddk-install.json"),
+        serde_json::to_string_pretty(&v1).unwrap(),
+    )
+    .unwrap();
+
+    let args = InstallArgs {
+        prefix: prefix.clone(),
+        channel: "dev".to_owned(),
+        timestamp: Some("2026-08-31T00:00:00Z".to_owned()),
+        commit: None,
+        source: Some(source.clone()),
+        release_receipt: None,
+        format: OutputFormat::Json,
+    };
+    let result = run_dev_install(args);
+    assert_eq!(
+        result.status, 0,
+        "install should succeed: {}",
+        result.stderr
+    );
+
+    // Receipt must now be v2.
+    let raw = std::fs::read_to_string(prefix.join("sddk-install.json")).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(parsed["schema_version"], 2);
+    assert_eq!(parsed["bundle_version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        parsed["bundle_sha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
+    assert_eq!(parsed["coherence_checked"], true);
+    // Old version field is REPLACED with the current install (not preserved);
+    // migration is "overwrite with v2 truth", not "merge with v1 legacy".
+    assert_eq!(parsed["version"], env!("CARGO_PKG_VERSION"));
+
     std::fs::remove_dir_all(&source).ok();
     std::fs::remove_dir_all(&prefix).ok();
 }

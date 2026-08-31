@@ -49,6 +49,12 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
             bundle.to_str().unwrap_or_default(),
             "-C",
             staged_bundle.to_str().unwrap_or_default(),
+            // The release tarball wraps every entry under
+            // `software-development-decision-kernel/`; strip that prefix so
+            // the staged bundle root matches `MANIFEST_FILE`'s expected
+            // location. This is the legacy split-asset path; the unified
+            // artifact path used by install.sh extracts to bin/ + framework/.
+            "--strip-components=1",
         ])
         .output()?;
     if !extract.status.success() {
@@ -89,19 +95,146 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
     ))
 }
 
+/// Identify a "bundle version directory" inside `framework_dir/` by name.
+/// Versions are `MAJOR.MINOR[.PATCH][-PRE][+BUILD]`; we keep it permissive
+/// but reject anything that contains path separators or whitespace, and
+/// require at least one digit so we never match `legacy`, `tmp`, etc.
+fn is_bundle_version_dir(name: &str) -> bool {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(' ') {
+        return false;
+    }
+    name.chars().any(|c| c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
+}
+
+/// Resolve the version pointed to by the `current` symlink in `framework_dir`,
+/// if any.
+fn resolve_current_version(framework_dir: &Path) -> Option<String> {
+    let current = framework_dir.join("current");
+    let target = std::fs::read_link(&current).ok()?;
+    let name = target.file_name()?.to_str()?.to_owned();
+    if is_bundle_version_dir(&name) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+/// Semver-aware "newer than" comparison for bundle version directory names.
+/// Supports dotted-numeric with optional `-prerelease` and `+build` tags.
+/// Pre-release sorts below its release; numeric segments compare numerically.
+fn cmp_bundle_version(a: &str, b: &str) -> std::cmp::Ordering {
+    fn parse(s: &str) -> (Vec<u64>, Option<&str>, Option<&str>) {
+        let (base, build) = match s.split_once('+') {
+            Some((b, build)) => (b, Some(build)),
+            None => (s, None),
+        };
+        let (core, pre) = match base.split_once('-') {
+            Some((c, pre)) => (c, Some(pre)),
+            None => (base, None),
+        };
+        let nums: Vec<u64> = core
+            .split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect();
+        (nums, pre, build)
+    }
+    let (an, ap, ab) = parse(a);
+    let (bn, bp, bb) = parse(b);
+    let ord = an.cmp(&bn);
+    if ord != std::cmp::Ordering::Equal {
+        return ord;
+    }
+    // release > pre-release for the same core
+    let pre_ord = match (ap, bp) {
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(x), Some(y)) => x.cmp(y),
+        (None, None) => std::cmp::Ordering::Equal,
+    };
+    pre_ord.then_with(|| ab.cmp(&bb))
+}
+
+/// Remove stale bundle version directories. Returns the list of removed
+/// versions and the list of kept versions (for reporting).
+///
+/// Policy:
+/// - `current_version` (if any) is always kept.
+/// - When `keep_n` is 0: keep only `current_version` (or all versions if no
+///   current symlink exists, since there is no basis to choose).
+/// - When `keep_n` > 0: keep the N most recent versions by semver-aware sort,
+///   plus `current_version` if it is not already in the kept set.
+/// - Anything else is deleted.
+pub(crate) fn prune_stale_bundles(
+    framework_dir: &Path,
+    keep_n: usize,
+    current_version: Option<&str>,
+) -> anyhow::Result<(Vec<String>, Vec<String>)> {
+    if !framework_dir.is_dir() {
+        anyhow::bail!("framework dir does not exist: {}", framework_dir.display());
+    }
+    let entries = std::fs::read_dir(framework_dir)?;
+    let mut versions: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|name| is_bundle_version_dir(name))
+        .collect();
+
+    // Newest-first sort so we can take(keep_n) from the top.
+    versions.sort_by(|a, b| cmp_bundle_version(b, a));
+
+    let mut keep: Vec<String> = versions.iter().take(keep_n).cloned().collect();
+    if let Some(cur) = current_version
+        && !keep.iter().any(|v| v == cur)
+    {
+        keep.push(cur.to_owned());
+    }
+
+    let mut removed = Vec::new();
+    for v in &versions {
+        if keep.iter().any(|k| k == v) {
+            continue;
+        }
+        let path = framework_dir.join(v);
+        if let Err(e) = std::fs::remove_dir_all(&path) {
+            anyhow::bail!("failed to remove {}: {e}", path.display());
+        }
+        removed.push(v.clone());
+    }
+    Ok((removed, keep))
+}
+
 pub(super) fn run_dev_update(
     args: super::UpdateArgs,
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<String> {
+        // Validate arg combinations that clap cannot express declaratively.
+        if args.keep.is_some() && !args.prune && !args.prune_only {
+            anyhow::bail!("--keep requires either --prune or --prune-only");
+        }
+        if !args.prune && !args.prune_only {
+            // Bare `dev update` needs a version to download.
+            if args.version.is_none() && !args.prune_only {
+                anyhow::bail!(
+                    "either --version (to download a bundle), --prune, or --prune-only is required"
+                );
+            }
+        }
+
         let mut output = String::new();
 
         // The framework distributes RELEASE BUNDLES (agents/skills/prompts/
         // workflows/assets + MANIFEST.sha256), never repository clones. Git
         // operations are the developer's responsibility: if the target root
-        // is a checkout, the user updates it with `git pull` themselves.
-        if args.root.join(".git").is_dir() {
+        // is a git checkout, the user updates it with `git pull` themselves.
+        // (--prune-only skips this check because it operates on the existing
+        // version-dir layout, which is also a non-git tree.)
+        if !args.prune_only && args.root.join(".git").is_dir() {
             anyhow::bail!(
                 "`dev update` installs release bundles and never touches git. \
                  You passed a repository checkout ({}). \
@@ -119,7 +252,14 @@ pub(super) fn run_dev_update(
         } else {
             std::fs::canonicalize(&args.root).unwrap_or(args.root.clone())
         };
-        output.push_str(&update_bundle(&bundle_root, &args)?);
+        if !args.prune_only {
+            output.push_str(&update_bundle(&bundle_root, &args)?);
+        } else {
+            output.push_str(&format!(
+                "prune-only: skipping bundle download; operating on {}\n",
+                bundle_root.display()
+            ));
+        }
 
         // The extracted bundle lands in a version dir; update_bundle extracts
         // directly into bundle_root, so if the user passed the framework root
@@ -133,7 +273,171 @@ pub(super) fn run_dev_update(
             std::fs::rename(&tmp, &current)?;
             output.push_str("framework: current -> bundle root (dev link resolves it)\n");
         }
+
+        // Cycle-47 D2: --prune [--keep N] removes stale bundle version dirs
+        // that are not `current` and not among the N most recent.
+        if args.prune {
+            let keep_n = args.keep.unwrap_or(0);
+            let active = resolve_current_version(&bundle_root);
+            let (removed, kept) = prune_stale_bundles(&bundle_root, keep_n, active.as_deref())?;
+            output.push_str(&format!(
+                "prune: removed {} stale bundle(s); kept {}\n",
+                removed.len(),
+                if kept.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    kept.join(", ")
+                }
+            ));
+            if !removed.is_empty() {
+                output.push_str(&format!("  removed: {}\n", removed.join(", ")));
+            }
+            if let Some(cur) = active.as_deref() {
+                output.push_str(&format!("  current -> {cur}\n"));
+            }
+        }
+
+        // Cycle-47 D2 --prune-only: same as --prune but skip the bundle
+        // download entirely. Useful for cleaning up after a manual
+        // install (e.g. `install.sh --version v1.63.0`) without re-pulling
+        // the tarball.
+        if args.prune_only {
+            let keep_n = args.keep.unwrap_or(0);
+            let active = resolve_current_version(&bundle_root);
+            let (removed, kept) = prune_stale_bundles(&bundle_root, keep_n, active.as_deref())?;
+            output.push_str(&format!(
+                "prune-only: removed {} stale bundle(s); kept {}\n",
+                removed.len(),
+                if kept.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    kept.join(", ")
+                }
+            ));
+            if !removed.is_empty() {
+                output.push_str(&format!("  removed: {}\n", removed.join(", ")));
+            }
+            if let Some(cur) = active.as_deref() {
+                output.push_str(&format!("  current -> {cur}\n"));
+            }
+        }
+
         Ok(output)
     })();
     render_result(result, format, |output: &String| output.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn is_bundle_version_dir_accepts_canonical_and_prerelease() {
+        assert!(is_bundle_version_dir("1.63.0"));
+        assert!(is_bundle_version_dir("1.63.0-rc.1"));
+        assert!(is_bundle_version_dir("0.1.0+build.42"));
+        // Two-segment versions like v1.63 show up in real GitHub tags;
+        // accept them — the semver-aware sort handles padding to (0,0,0).
+        assert!(is_bundle_version_dir("1.63"));
+        assert!(!is_bundle_version_dir(""));
+        assert!(!is_bundle_version_dir("legacy"));
+        assert!(!is_bundle_version_dir("tmp"));
+        assert!(!is_bundle_version_dir("a/b"));
+        assert!(!is_bundle_version_dir("has space"));
+    }
+
+    #[test]
+    fn cmp_bundle_version_handles_pre_release_and_padding() {
+        use std::cmp::Ordering;
+        assert_eq!(cmp_bundle_version("1.63.0", "1.63.0"), Ordering::Equal);
+        assert_eq!(cmp_bundle_version("1.10.0", "1.9.0"), Ordering::Greater);
+        assert_eq!(cmp_bundle_version("1.63.0-rc.1", "1.63.0"), Ordering::Less);
+        assert_eq!(
+            cmp_bundle_version("1.63.0", "1.63.0-rc.1"),
+            Ordering::Greater
+        );
+        assert_eq!(cmp_bundle_version("1.63.0", "1.63.0.0"), Ordering::Less);
+    }
+
+    fn make_version_dir(framework: &Path, version: &str) {
+        fs::create_dir_all(framework.join(version)).unwrap();
+        fs::write(framework.join(version).join("marker"), version).unwrap();
+    }
+
+    #[test]
+    fn prune_keeps_current_and_removes_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+        for v in ["1.28.0", "1.40.0", "1.50.0", "1.63.0"] {
+            make_version_dir(framework, v);
+        }
+        std::os::unix::fs::symlink(framework.join("1.63.0"), framework.join("current")).unwrap();
+
+        let (removed, kept) = prune_stale_bundles(framework, 0, Some("1.63.0")).unwrap();
+        assert_eq!(kept, vec!["1.63.0"]);
+        assert_eq!(removed.len(), 3);
+        assert!(!framework.join("1.50.0").exists());
+        assert!(!framework.join("1.40.0").exists());
+        assert!(!framework.join("1.28.0").exists());
+        assert!(framework.join("1.63.0").exists());
+        assert!(framework.join("current").exists());
+    }
+
+    #[test]
+    fn prune_with_keep_n_keeps_most_recent() {
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+        for v in ["1.28.0", "1.40.0", "1.50.0", "1.63.0"] {
+            make_version_dir(framework, v);
+        }
+        std::os::unix::fs::symlink(framework.join("1.63.0"), framework.join("current")).unwrap();
+
+        let (removed, kept) = prune_stale_bundles(framework, 2, Some("1.63.0")).unwrap();
+        // 2 most recent = 1.63.0 + 1.50.0; current is already in keep.
+        assert!(kept.contains(&"1.63.0".to_owned()));
+        assert!(kept.contains(&"1.50.0".to_owned()));
+        assert_eq!(removed.len(), 2);
+        assert!(!framework.join("1.28.0").exists());
+        assert!(!framework.join("1.40.0").exists());
+        assert!(framework.join("1.50.0").exists());
+        assert!(framework.join("1.63.0").exists());
+    }
+
+    #[test]
+    fn prune_refuses_to_remove_current_even_when_not_in_top_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+        for v in ["1.28.0", "1.63.0"] {
+            make_version_dir(framework, v);
+        }
+        std::os::unix::fs::symlink(framework.join("1.28.0"), framework.join("current")).unwrap();
+
+        let (removed, kept) = prune_stale_bundles(framework, 1, Some("1.28.0")).unwrap();
+        // keep_n=1 would pick 1.63.0, but 1.28.0 is current so it is added.
+        assert!(kept.contains(&"1.28.0".to_owned()));
+        assert!(kept.contains(&"1.63.0".to_owned()));
+        assert!(removed.is_empty());
+        assert!(framework.join("1.28.0").exists());
+        assert!(framework.join("1.63.0").exists());
+    }
+
+    #[test]
+    fn prune_ignores_non_version_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+        make_version_dir(framework, "1.63.0");
+        fs::create_dir(framework.join("legacy")).unwrap();
+        fs::create_dir(framework.join("tmp")).unwrap();
+        fs::write(framework.join("stray.txt"), "ignored").unwrap();
+        std::os::unix::fs::symlink(framework.join("1.63.0"), framework.join("current")).unwrap();
+
+        let (removed, kept) = prune_stale_bundles(framework, 0, Some("1.63.0")).unwrap();
+        assert!(removed.is_empty());
+        assert_eq!(kept, vec!["1.63.0"]);
+        // Non-version entries must survive the prune.
+        assert!(framework.join("legacy").exists());
+        assert!(framework.join("tmp").exists());
+        assert!(framework.join("stray.txt").exists());
+    }
 }
