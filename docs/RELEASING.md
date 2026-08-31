@@ -8,59 +8,176 @@ no cloning or compilation required. Users install with a one-liner
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/software-development-decision-kernel/main/scripts/install.sh | bash
 ```
 
-The `scripts/install.sh` script (244 lines):
+The `scripts/install.sh` script:
 - Detects platform (`uname -s/m`) → asset `sddk-linux-{x86_64,aarch64}-musl`
   (Linux: **musl static**, runs on any distro regardless of glibc)
-- Downloads binary + `sha256` from GitHub Releases
-- Verifies SHA256 before installing (fails if mismatch)
-- If `cosign` is available, verifies keyless signature (optional)
-- Prompts which editor to configure (opencode/zcode/claude/codex or all)
-- Downloads `software-development-decision-kernel.tar.gz` (bundle: `agents/`, `skills/`,
-  `prompts/sddk/`, `assets/`, `MANIFEST.sha256`) and extracts it to
-  `$SDDK_DATA_DIR/framework/<v>/`
+- Prefers the **unified artifact** `sddk-<TAG>-<ASSET>.tar.gz` (binary +
+  bundle in one archive, added in v1.63.0); falls back to the legacy
+  split-asset path if not present
+- Downloads the unified tarball, verifies its sha256, applies `chmod 0755`
+  defensively on the extracted binary (defends against CDN-cached releases
+  served without the exec bit), then stages an atomic install with rollback
+- Generates `BUNDLE.toml` (schema v2) inline if the bundle lacks one, so the
+  binary-vs-bundle compatibility check at `sddk dev doctor` succeeds
+- Writes `sddk-install.json` with `schema_version=2`, `bundle_version`,
+  `bundle_sha256`, `coherence_checked=true`
 - Runs `sddk dev link --editor <X>` (symlinks bundle to editor dir)
 - Prints `sddk dev doctor` (final verification)
 
-**Supported platforms in v1.28.0:**
+**Supported platforms:**
 - ✅ Linux x86_64 (musl static)
 - ✅ Linux aarch64 (musl static)
 - ⏳ macOS x86_64 + arm64 (pending: `cargo-zigbuild` toolchain already installed;
   need to generate binaries and upload to release)
 - ⏳ Windows x86_64 (pending: requires `#[cfg(unix)]` carve-out in code using
-  `std::os::unix::*` — see `crates/sddk-cli/src/dev_cmd.rs`)
+  `std::os::unix::*`)
 
-**Local-first release (manual):** tag is pushed first (`git tag vX.Y.Z &&
-git push origin vX.Y.Z`), then the binary is uploaded to GitHub Releases.
-Workflow `.github/workflows/release.yml` is in `workflow_dispatch` manual mode
-since 2026-08-10 (CI exhausted); today's operational path is:
+## Canonical release flow (v1.65.0+)
+
+Since cycle-47 every release MUST go through the end-to-end pipeline
+documented here, so that local install stays in lockstep with what ships
+through GitHub Releases. The canonical entry point is `scripts/release.sh`,
+which automates the 13 steps below.
 
 ```bash
-# 1. Tag + push (local)
-cargo build --release --target x86_64-unknown-linux-musl -p sddk-cli --locked
-git tag vX.Y.Z && git push origin vX.Y.Z
+# 1. Workspace green (gates commit, AGENTS.md §5)
+cargo fmt --all -- --check
+cargo clippy --workspace --offline --all-targets -- -D errors
+cargo test --workspace --offline
 
-# 2. Stage assets (Linux x86_64 + aarch64)
-./target/x86_64-unknown-linux-musl/release/sddk release dist \
-  --prefix dist-amd64 --channel release --commit "$(git rev-parse HEAD)"
-cp dist-amd64/dist/sddk sddk-linux-x86_64-musl
-cp dist-amd64/dist/{checksums.txt,sbom.json,attestation.json} sddk-linux-x86_64-musl.{CHECKSUMS,sbom.json,attestation.json}
-sha256sum sddk-linux-x86_64-musl > sddk-linux-x86_64-musl.sha256
-# (repeat for aarch64)
+# 2. Bump version (creates the chore(release) commit)
+bash scripts/release-bump.sh    # or hand-edit Cargo.toml + manifest.toml + CHANGELOG.md
 
-# 3. Framework bundle
-tar czf software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256
-sha256sum software-development-decision-kernel.tar.gz > software-development-decision-kernel.tar.gz.sha256
+# 3. Two commits on main:
+#      feat(uat): <description>
+#      chore(release): bump version A.B.C -> X.Y.Z
+git push origin main            # pre-push hook requires chore(release) present
 
-# 4. gh release create
-gh release create vX.Y.Z --repo Rubentxu/software-development-decision-kernel \
-  --target <commit> --title "vX.Y.Z" --notes "..." \
-  sddk-linux-x86_64-musl sddk-linux-x86_64-musl.{sha256,CHECKSUMS,sbom.json,attestation.json} \
-  sddk-linux-aarch64-musl sddk-linux-aarch64-musl.{sha256,CHECKSUMS,sbom.json,attestation.json} \
-  software-development-decision-kernel.tar.gz software-development-decision-kernel.tar.gz.sha256
+# 4. Tag + push
+git tag -a vX.Y.Z -m "vX.Y.Z - <title>"
+git push origin vX.Y.Z
+
+# 5. End-to-end: build → manifest → bundle → BUNDLE.toml → unified tarball →
+#    gh release create → install from real URL → doctor → prune → final state
+bash scripts/release.sh        # or --dry-run / --skip-tests / --skip-install / --force
 ```
 
-The E2E smoke test lives in `.github/workflows/release.yml:170-217` and runs
-automatically when CI is available.
+`scripts/release.sh` is the single source of truth. If the script cannot
+run in your environment (CI constraints, missing `gh` auth, etc.) the
+manual equivalent is documented in `AGENTS.md §8` and reproduced below in
+the section "Manual fallback". If you ship a release without going through
+this pipeline, open a follow-up cycle to retrofit the missing steps.
+
+### Why this shape
+
+- **Single script, single command.** Cycle-46/47 standardized on one entry
+  point so a partial release (binary but no bundle, release but no install)
+  is impossible to do by accident.
+- **`gh release create` is called with all assets in one shot.** The unified
+  tarball + BUNDLE.toml pair is the contract that lets `install.sh` run
+  with no surprises; legacy split-asset uploads are a fallback for
+  back-compat with old `install.sh` versions.
+- **Install from the real GitHub URL, never from a local file:// build.**
+  This catches CDN-cached assets (where `curl /releases/download/...` may
+  serve the previous release for up to ~5 minutes after `--clobber`), as
+  well as URL typos and bundle/binary mismatches that a local install
+  would silently hide. The script polls the binary sha256 against the CDN
+  until it matches what was uploaded before calling `install.sh`.
+- **`sddk dev doctor --prefix $PREFIX` is the green light.** The
+  `binary.bundle_coherence: present` and `all_present: true` checks
+  together prove that the installed binary, the installed bundle, the
+  receipt's `bundle_version`, and the active `current` symlink all agree.
+- **`sddk dev update --prune-only --keep 1` clears stale version dirs.**
+  Post-install, the framework directory may carry 15+ old `1.X.Y/` dirs
+  from prior installs; the prune keeps current + top-1 most recent and
+  drops the rest.
+- **Two commits: `feat` + `chore(rerelease)`.** The pre-push hook
+  (`githooks/pre-push`) refuses any push to `main` without a
+  `^chore\(release\): bump version` commit in the range. Merging the bump
+  into the feature commit breaks the hook.
+
+## Manual fallback
+
+When `scripts/release.sh` cannot be used, run the steps inline. This is
+the operational reference for the script.
+
+```bash
+REPO=Rubentxu/software-development-decision-kernel
+TAG=v$(awk '/^\[workspace\.package\]/{f=1; next} f && /^version = /{gsub("\"",""); print $2; exit}' Cargo.toml)
+TMP=$(mktemp -d)
+
+# 1. Build
+cargo build --release --offline --bin sddk
+BIN=$(cargo metadata --format-version 1 --offline \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' \
+)/release/sddk
+chmod 0755 "$BIN"
+
+# 2. Manifest
+$BIN dev manifest --root . --format text
+$BIN dev manifest --verify --root . --format text
+
+# 3. Bundle tarball (legacy split-asset path)
+tar czf $TMP/software-development-decision-kernel.tar.gz \
+    --xform 's|^|software-development-decision-kernel/|' \
+    -C . agents skills prompts/sddk assets MANIFEST.sha256
+sha256sum $TMP/software-development-decision-kernel.tar.gz \
+    > $TMP/software-development-decision-kernel.tar.gz.sha256
+
+# 4. BUNDLE.toml (schema v2) — extracted into the bundle
+mkdir -p $TMP/bundle && tar xzf $TMP/software-development-decision-kernel.tar.gz -C $TMP/bundle
+MANIFEST_SHA=$(awk 'NR==1 {print $1}' MANIFEST.sha256)
+printf '%s\n' '[bundle]' 'schema_version = 2' \
+    "version = \"${TAG#v}\"" \
+    "binary_min_version = \"${TAG#v}\"" \
+    "binary_max_version = \"${TAG#v}\"" \
+    '' '[contents]' "manifest_sha256 = \"$MANIFEST_SHA\"" \
+    > $TMP/bundle/software-development-decision-kernel/BUNDLE.toml
+
+# 5. Unified tarball (preferred path since v1.63.0)
+mkdir -p $TMP/pack/bin $TMP/pack/framework
+cp "$BIN" $TMP/pack/bin/sddk
+cp -r $TMP/bundle/software-development-decision-kernel $TMP/pack/framework
+tar -C $TMP/pack -czf $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz bin framework
+sha256sum $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz \
+    > $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256
+
+# 6. Checksums + sbom
+echo "$(sha256sum $BIN | awk '{print $1}')  $(basename $BIN)" > $TMP/$(basename $BIN).sha256
+( cd $TMP && sha256sum sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz software-development-decision-kernel.tar.gz ) > $TMP/CHECKSUMS
+cat > $TMP/sbom.json <<EOF
+{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[{"type":"application","name":"sddk","version":"${TAG#v}","purl":"pkg:generic/sddk@${TAG#v}"}]}
+EOF
+
+# 7. Publish
+gh release create "$TAG" --repo $REPO --title "sddk $TAG" \
+    --notes "Release $TAG" \
+    "$BIN" "$BIN.sha256" \
+    $TMP/CHECKSUMS $TMP/sbom.json \
+    $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz \
+    $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256 \
+    $TMP/software-development-decision-kernel.tar.gz \
+    $TMP/software-development-decision-kernel.tar.gz.sha256
+
+# 8. Install from real URL (wait out CDN cache)
+sleep 60   # empirical: CDN caches for up to ~5 min; --clobber uploads don't invalidate
+unset SDDK_BASE_URL SDDK_VERSION
+SDDK_PREFIX=/home/rubentxu/.local/bin
+SDDK_FRAMEWORK_DIR=/home/rubentxu/.local/share/sddk/framework
+bash scripts/install.sh --version "$TAG" --editor all
+
+# 9. Verify
+$SDDK_PREFIX/sddk dev doctor --prefix $SDDK_PREFIX
+$SDDK_PREFIX/sddk dev update --prune-only --keep 1 --root $SDDK_FRAMEWORK_DIR
+```
+
+## CI / local-first
+
+`scripts/release.sh` runs locally. `.github/workflows/release.yml` is in
+`workflow_dispatch` mode (manual only since 2026-08-10; see AGENTS.md §2.5).
+The release gate IS the local pipeline — there is no CI gating step. The
+pre-push hook (`githooks/pre-push`) enforces the `chore(release)` commit
+rule; everything else is convention.
 
 ## MANIFEST regeneration
 

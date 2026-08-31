@@ -132,3 +132,82 @@ y se actualiza con `sddk dev install`.
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
 - **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
 - **Roadmap de arquitectura:** `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
+
+---
+
+## 8. Flujo canónico de release (auto-install local)
+
+> Estandarizado tras cycle-46 (install coherence) y cycle-47 (install
+> consolidation). **Cada release que se cree debe completar todo el flujo
+> completo y autoinstalarse en local después de distribuirse por los
+> mecanismos normalizados** (GitHub Releases). Hacer un release parcial
+> (binario sin bundle, GH Release sin install, install sin prune) deja
+> el local desincronizado de lo que ven los usuarios — prohibido.
+
+**Entry point canónico:** `bash scripts/release.sh`.
+
+Ese script ejecuta los 13 pasos abajo en orden, gateados por el previo.
+Cualquier paso que falle aborta con código no-cero. Si el script no puede
+correr en tu entorno, el equivalente manual está en `docs/RELEASING.md`
+sección "Manual fallback" — pero la regla es: **si no puedes correr el
+script, abre un ciclo para arreglar lo que sea que te lo impide, no
+hagas un release a medias**.
+
+### Pipeline (13 pasos)
+
+| # | Paso | Gate | Cómo se verifica |
+|---|------|------|------------------|
+| 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version` | `git log -1 --format=%s` matchea regex |
+| 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D errors`, `cargo test --workspace` | exit code 0 |
+| 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
+| 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
+| 4 | Manifest | `$BIN dev manifest --root .` + `--verify` | `verify_manifest` sin mismatches (RDI) |
+| 5 | Bundle tarball | `tar czf` con prefix `software-development-decision-kernel/` | `bundle.tar.gz.sha256` |
+| 6 | BUNDLE.toml (v2) | `schema_version=2`, `bundle.{version,binary_min_version,binary_max_version}`, `contents.manifest_sha256` | `sddk dev install` lo valida (fail-closed) |
+| 7 | Unified tarball | `bin/sddk` + `framework/` con `chmod 0755` defensivo sobre el binario | `tar tvzf …` muestra `-rwxr-xr-x` |
+| 8 | sha256 + CHECKSUMS + sbom | CycloneDX 1.5 mínimo | existe `sddk.sha256`, `CHECKSUMS`, `sbom.json` |
+| 9 | `gh release create` | assets en un solo comando | `gh release view $TAG --repo …` |
+| 10 | Install desde URL real | `bash scripts/install.sh --version $TAG --editor all` (sin `SDDK_BASE_URL`) | exit 0, `bin/sddk` extraído con exec bit |
+| 11 | `sddk dev doctor` | `--prefix $SDDK_PREFIX` | `binary.bundle_coherence: present` + `all_present: true` |
+| 12 | `sddk dev update --prune-only --keep 1` | elimina `<version>/` stale | "removed N, kept 1.X.Y" |
+| 13 | Final state | print binary version, bundle version, current symlink, framework layout | output legible |
+
+### Flags del script
+
+```bash
+bash scripts/release.sh               # flujo completo
+bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica)
+bash scripts/release.sh --skip-tests  # asume que ya corriste los gates
+bash scripts/release.sh --skip-install # pasos 0-9 (no toca local)
+bash scripts/release.sh --force       # sobrescribe release existente en GH
+```
+
+### CD y CDN cache: por qué step 10 espera
+
+GitHub Releases se sirve desde una CDN edge. `gh release upload --clobber`
+sube el nuevo asset al storage de GH pero el CDN puede servir el viejo
+hasta ~5 minutos después (verificado durante cycle-47 D4: `curl` desde
+`/releases/download/...` devolvía el binario viejo aunque `gh release
+download` reportase el nuevo). El script hace **poll al sha256 del binario
+contra la URL pública** antes de invocar `install.sh`. Si la CDN sigue
+sirviendo stale tras 5 min, aborta con error claro. No intentar saltarse
+este poll con `--skip-install`; en su lugar, esperar a que la CDN refresque.
+
+### Por qué dos commits (`feat` + `chore(rerelease)`)
+
+El pre-push hook (`githooks/pre-push`) rechaza cualquier push a `main`
+que no contenga al menos un commit cuyo subject matchee
+`^chore\(release\): bump version`. Mezclar el bump dentro del commit de
+feature pasa el `git commit` pero falla en el `git push`, y deshacer es
+engorroso. Convención: commit de feature primero, commit de bump después,
+push único.
+
+### Después del release: ciclo
+
+Una vez publicado, el ciclo se cierra escribiendo
+`archive-manifest.md` en el directorio del ciclo con la lista de commits,
+URL del GH Release, y estado local final (`binary`, `bundle`, `current`,
+`receipt`, `doctor`). El cierre formal del ciclo (lease + transition)
+vía CLI está actualmente roto (`FOREIGN KEY constraint failed` en
+`sddk cycle lock acquire`); usamos el archive-manifest como ground truth.
+
