@@ -187,7 +187,9 @@ impl ArtifactStore {
     }
 }
 
-fn write_atomic(destination: &Path, bytes: &[u8]) -> io::Result<()> {
+/// Writes bytes to `destination` atomically using rename-overwrite.
+/// Creates parent directories if needed.
+pub fn write_atomic(destination: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
     let parent = destination.parent().expect("destination has a parent");
     let file_name = destination

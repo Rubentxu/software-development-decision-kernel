@@ -26,7 +26,7 @@ mod semantic;
 pub mod test_runner;
 mod uat_policy;
 
-pub use artifact_store::{ArtifactMeta, ArtifactStore, ArtifactStoreError};
+pub use artifact_store::{ArtifactMeta, ArtifactStore, ArtifactStoreError, write_atomic};
 pub use capability::{
     Capability, CapabilityError, CapabilityOutcome, EvidenceBundleWriteCapability,
     VerificationRequest,

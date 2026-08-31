@@ -10,6 +10,8 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 mod adoption;
+pub mod cycle_supersede;
+pub mod cycle_replan;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
@@ -19,6 +21,7 @@ pub mod inc_generator;
 pub mod operator;
 pub mod pack_registry;
 mod paths;
+pub mod receipt_writers;
 pub mod retry;
 pub mod rules;
 pub mod task_executor;
@@ -28,7 +31,10 @@ pub mod version;
 pub mod workflow_runtime;
 
 pub use adoption::*;
+pub use cycle_supersede::*;
+pub use cycle_replan::*;
 pub use event_bus::*;
+pub use execution_controller::*;
 pub use fingerprint::*;
 pub use gate_evaluator::*;
 pub use gate_signing::*;
@@ -38,6 +44,7 @@ pub use operator::{
 };
 pub use pack_registry::*;
 pub use paths::*;
+pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
@@ -822,6 +829,18 @@ pub enum EngineError {
     /// Goal input could not be read (missing or corrupt cycle/evidence).
     #[error("goal input is unreadable")]
     GoalInputUnreadable,
+    /// Cycle supersede requires exactly one of successor or reason.
+    #[error("supersede requires exactly one of successor cycle ID or closed-set reason")]
+    SupersedeRequiresExactlyOne,
+    /// Cycle supersede cannot target itself.
+    #[error("cycle cannot supersede itself")]
+    SupersedeSelfForbidden,
+    /// Cycle replan counter limit exceeded.
+    #[error("replan limit exceeded: counter > 5")]
+    ReplanLimitExceeded,
+    /// Cycle replan delta is empty.
+    #[error("replan delta is empty")]
+    ReplanEmptyDelta,
     /// Persistence rejected the operation.
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
@@ -1204,6 +1223,19 @@ impl<L: Ledger> Engine<L> {
             .verify_cycle_lease(cycle_id, owner, fencing_token, now_ms)?)
     }
 
+    /// Acquires an absent or expired cycle lease.
+    pub fn acquire_cycle_lease(
+        &mut self,
+        cycle_id: &str,
+        owner: &str,
+        now_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<CycleLease, EngineError> {
+        Ok(self
+            .ledger
+            .acquire_cycle_lease(cycle_id, owner, now_ms, expires_at_ms)?)
+    }
+
     /// Replays a cycle and verifies it equals the materialized SQLite snapshot.
     pub fn verify_cycle_snapshot(&self, cycle_id: &str) -> Result<ReplayVerification, EngineError> {
         let replayed = self.replay_cycle(cycle_id)?;
@@ -1493,6 +1525,10 @@ impl sddk_domain::SddkErrorCode for EngineError {
             Self::SnapshotMismatch { .. } => "ENGINE_SNAPSHOT_MISMATCH",
             Self::InvalidPassEvidence { .. } => "ENGINE_INVALID_PASS_EVIDENCE",
             Self::GoalInputUnreadable => "ENGINE_GOAL_INPUT_UNREADABLE",
+            Self::SupersedeRequiresExactlyOne => "ENGINE_SUPERSEDE_REQUIRES_EXACTLY_ONE",
+            Self::SupersedeSelfForbidden => "ENGINE_SUPERSEDE_SELF_FORBIDDEN",
+            Self::ReplanLimitExceeded => "ENGINE_REPLAN_LIMIT_EXCEEDED",
+            Self::ReplanEmptyDelta => "ENGINE_REPLAN_EMPTY_DELTA",
             Self::Storage(..) => "ENGINE_STORAGE",
         }
     }
@@ -1535,6 +1571,12 @@ impl sddk_domain::SddkErrorCode for EngineError {
                 "provide argv, exit_code, and output_digest in pass evidence"
             }
             Self::GoalInputUnreadable => "verify goal input is readable before retrying",
+            Self::SupersedeRequiresExactlyOne => {
+                "supply exactly one of --successor or --reason"
+            }
+            Self::SupersedeSelfForbidden => "do not supersede a cycle with itself",
+            Self::ReplanLimitExceeded => "replan counter is at its limit of 5",
+            Self::ReplanEmptyDelta => "supply a non-empty replan delta",
             Self::Storage(..) => "resolve the underlying storage error first",
         }
     }
