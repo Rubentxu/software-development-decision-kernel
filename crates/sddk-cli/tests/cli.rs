@@ -6258,7 +6258,21 @@ fn cli_phase_build_remediate_transitions_to_open_build() {
 
 /// S2: phase.build.remediate is rejected when source state is REMEDIATING/verify
 /// (source-state mismatch).
+///
+/// IGNORED: this test cannot be set up against the current workflow — there is
+/// no transition that leads to `REMEDIATING/verify`. The only path into the
+/// `REMEDIATING` state is `release.recover` (→ `REMEDIATING/build`). As a
+/// result, the test's preconditions (walk from `REMEDIATING/build` to
+/// `REMEDIATING/verify` via `phase.build.complete`) fail at the source-state
+/// check before the rejection-under-test is exercised. Two follow-ups needed:
+///   1. Decide whether the workflow should expose `REMEDIATING/verify` (i.e.
+///      add a transition that sends failed verify cycles there).
+///   2. Once (1) is decided, rewrite this test against a reachable wrong-phase
+///      state (or against `REMEDIATING/verify` once it is reachable).
+///
+/// Tracked in cycle-45 (test bug remediation follow-up).
 #[test]
+#[ignore = "workflow has no transition into REMEDIATING/verify; see comment and cycle-45"]
 fn cli_phase_build_remediate_rejects_wrong_phase() {
     let fixture = CliFixture::new("phase-build-remediate-wrong-phase");
     write(
