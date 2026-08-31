@@ -331,7 +331,13 @@ step "13/13 — final state"
 echo
 BIN_VER="$("$SDDK_PREFIX/sddk" --version 2>&1 | head -1)"
 BUNDLE_VER="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("binary_bundle_coherence", {}).get("bundle_version", "?"))' 2>/dev/null || echo "?")"
+    | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+# binary.bundle_coherence lives under checks[]; the bundle version itself
+# comes from the receipt (sddk-install.json).
+print(json.loads(open("'"$SDDK_PREFIX"'/sddk-install.json").read()).get("bundle_version", "?"))
+' 2>/dev/null || echo "?")"
 CURRENT_VER="$(basename "$(readlink "$SDDK_FRAMEWORK_DIR/current" 2>/dev/null || echo "?")")"
 echo "  binary:        $BIN_VER"
 echo "  bundle:        $BUNDLE_VER"
