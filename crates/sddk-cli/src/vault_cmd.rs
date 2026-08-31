@@ -139,6 +139,32 @@ fn check_vault_capability(
     Ok(())
 }
 
+/// Normalizes a cycle target identifier into the canonical flat vault filename.
+///
+/// Transforms `project_id/cycle_id` → `project_id-cycle_id.md` by replacing the
+/// separating slash with a hyphen, matching the actual on-disk naming convention.
+///
+/// Security: rejects targets containing path-traversal components (`..`) or
+/// absolute-path prefixes (`/`). Such inputs cannot name a valid vault node and
+/// are treated as missing artifacts.
+fn normalize_cycle_target(target: &str) -> Option<String> {
+    // Reject path-traversal or absolute-path patterns
+    if target.contains("..") || target.starts_with('/') {
+        return None;
+    }
+    // Replace the single separating slash with a hyphen to produce the flat filename
+    let normalized = target.replace('/', "-");
+    // Basic sanity: must still look like a project/cycle identifier
+    if normalized.is_empty()
+        || normalized.starts_with('-')
+        || normalized.ends_with('-')
+        || normalized.contains("--")
+    {
+        return None;
+    }
+    Some(normalized)
+}
+
 /// Apply scoped down-classification to VAULT003 diagnostics that have a matching
 /// repair receipt in the queue.
 ///
@@ -192,10 +218,18 @@ fn apply_scope_downgrade(
                 diagnostic.error_kind = Some("RepairReceiptMissingOrInvalid".to_string());
             } else {
                 // Receipt is valid — verify evidence SHA
-                // Resolve artifact path: target is relative to vault/cycles/
+                // Resolve artifact path using normalized flat filename:
+                // "project_id/cycle_id" → "project_id-cycle-id.md"
+                let Some(normalized) = normalize_cycle_target(&receipt.target) else {
+                    // Unsafe target (traversal or malformed) — treat as missing receipt
+                    diagnostic
+                        .error_kind
+                        .insert("RepairReceiptMissingOrInvalid".to_string());
+                    return;
+                };
                 let artifact_path = vault_path
                     .join("cycles")
-                    .join(receipt.target.as_str())
+                    .join(&normalized)
                     .with_extension("md");
 
                 match sddk_vault::verify_receipt_evidence(receipt, &artifact_path) {
@@ -462,4 +496,36 @@ fn graph_text(view: &GraphView) -> String {
         text.push_str(&format!("topological_order: {}\n", order.join(", ")));
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_cycle_target;
+
+    #[test]
+    fn normalize_cycle_target_valid() {
+        assert_eq!(
+            normalize_cycle_target("p-63676b11dc0ef88f/phase-c-test-boundary-cleanup"),
+            Some("p-63676b11dc0ef88f-phase-c-test-boundary-cleanup".to_string())
+        );
+        assert_eq!(
+            normalize_cycle_target("p-52b95ef55999f9de/cycle-44-build-remediate-transition"),
+            Some("p-52b95ef55999f9de-cycle-44-build-remediate-transition".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_cycle_target_rejects_traversal() {
+        assert_eq!(normalize_cycle_target("../etc/passwd"), None);
+        assert_eq!(normalize_cycle_target("p-xxx/../../etc"), None);
+        assert_eq!(normalize_cycle_target("/absolute/path"), None);
+    }
+
+    #[test]
+    fn normalize_cycle_target_rejects_malformed() {
+        assert_eq!(normalize_cycle_target(""), None);
+        assert_eq!(normalize_cycle_target("-leading-hyphen"), None);
+        assert_eq!(normalize_cycle_target("trailing-hyphen-"), None);
+        assert_eq!(normalize_cycle_target("double--hyphen"), None);
+    }
 }

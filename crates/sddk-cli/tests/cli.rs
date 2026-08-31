@@ -14147,15 +14147,15 @@ fn cli_vault_validate_hash_mismatch_blocks_downgrade() {
     )
     .unwrap();
     let vault = fixture.root.join("vault");
-    fs::create_dir_all(vault.join("cycles/p-52b95ef55999f9de")).unwrap();
-    // Create a cycle node whose FILE is at the artifact path (so verify_receipt_evidence
-    // can read and hash it), but with a DIFFERENT id so the wikilink stays broken.
+    fs::create_dir_all(vault.join("cycles")).unwrap();
+    // Create a cycle node whose FILE is at the FLAT artifact path
+    // (project-cycle-slug.md — matches normalize_cycle_target transformation),
+    // but with a DIFFERENT id so the wikilink stays broken.
     // Wikilink [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]] looks for
     // node id "p-52b95ef55999f9de/cycle-44-build-remediate-transition" → not found → VAULT003.
-    // Artifact path = vault_path/cycles/p-52b95ef55999f9de/cycle-44-build-remediate-transition.md
-    // so we create the file at that exact path.
+    // Artifact path = vault_path/cycles/p-52b95ef55999f9de-cycle-44-build-remediate-transition.md
     fs::write(
-        vault.join("cycles/p-52b95ef55999f9de/cycle-44-build-remediate-transition.md"),
+        vault.join("cycles/p-52b95ef55999f9de-cycle-44-build-remediate-transition.md"),
         "---\nid: p-52b95ef55999f9de/cycle-99-different\ntype: cycle\n---\n# cycle-99\n",
     )
     .unwrap();
@@ -14308,6 +14308,221 @@ fn cli_vault_validate_deterministic_queue_ordering() {
         json1.as_bytes(),
         json2.as_bytes(),
         "two runs must produce byte-identical JSON (deterministic repair_queue ordering)"
+    );
+}
+
+#[test]
+fn cli_vault_validate_valid_receipt_causes_scope_downgrade() {
+    // RED: Valid receipt + matching SHA + flat artifact path → VAULT003 downgrades to warning.
+    // The cycle node file is created at the flat path (project-cycle-slug.md), matching
+    // the normalize_cycle_target transformation. Wikilink stays broken (node ID mismatch),
+    // so VAULT003 is emitted. Receipt SHA matches artifact → downgrade to warning.
+    let fixture = CliFixture::new("vault-valid-receipt-downgrade");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+
+    // Create cycles subdirectory (flat naming: project-cycle-slug.md)
+    fs::create_dir_all(vault.join("cycles")).unwrap();
+
+    // The cycle node file — ID differs from wikilink target so wikilink stays broken
+    // Wikilink [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]] resolves to
+    // node with id "p-52b95ef55999f9de/cycle-44-build-remediate-transition" but file
+    // has id "p-52b95ef55999f9de/cycle-99-different" → VAULT003 emitted.
+    let cycle_content =
+        "---\nid: p-52b95ef55999f9de/cycle-99-different\ntype: cycle\n---\n# cycle-99\n";
+    fs::write(
+        vault.join("cycles/p-52b95ef55999f9de-cycle-44-build-remediate-transition.md"),
+        cycle_content,
+    )
+    .unwrap();
+
+    // Compute SHA of the actual cycle file (this is what the receipt will carry)
+    use std::io::Write;
+    let mut temp = tempfile::NamedTempFile::with_suffix(".md").unwrap();
+    temp.write_all(cycle_content.as_bytes()).unwrap();
+    temp.flush().unwrap();
+    let sha256_of_cycle = {
+        use std::process::Command;
+        let out = Command::new("sha256sum").arg(temp.path()).output().unwrap();
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_string()
+    };
+
+    // Term that links to the (non-existent) cycle target → VAULT003
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    fs::write(
+        vault.join("terms/TERM-Broken.md"),
+        "---\nid: TERM-Broken\ntype: term\n---\n# Broken\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+    )
+    .unwrap();
+
+    // Valid repair queue: correct SHA, valid dates
+    fs::write(
+        vault.join("repair-queue.yaml"),
+        format!(
+            "---\n- cycle_id: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  code: \"VAULT003\"\n  node: \"TERM-Broken\"\n  target: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  repair_action: \"node_creation\"\n  durable_evidence_sha: \"{sha256_of_cycle}\"\n  created_at: \"2026-08-31T00:00:00Z\"\n  valid_to: \"2026-11-29T00:00:00Z\"\n"
+        ),
+    )
+    .unwrap();
+
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    // GREEN phase: run with scope-cycles matching the target
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "p-52b95ef55999f9de/cycle-44-build-remediate-transition",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+
+    // Downgrade should happen → errors=0 (VAULT003 downgraded to warning)
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "valid receipt must not crash: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+
+    // The VAULT003 diagnostic should be present
+    let diag = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "VAULT003")
+        .expect("VAULT003 diagnostic must be present for broken wikilink");
+
+    // Receipt valid + SHA match → downgraded to warning (not error)
+    assert_eq!(
+        diag["severity"].as_str().unwrap(),
+        "warning",
+        "valid receipt with matching SHA must downgrade to warning"
+    );
+    // No error_kind for successful downgrade (receipt is valid)
+    assert!(
+        diag["error_kind"].is_null(),
+        "valid receipt must not set error_kind"
+    );
+}
+
+#[test]
+fn cli_vault_validate_hash_mismatch_blocks_scope_downgrade() {
+    // When receipt SHA does NOT match artifact SHA, ReceiptEvidenceHashMismatch is emitted
+    // and the diagnostic stays at Error severity (downgrade blocked).
+    let fixture = CliFixture::new("vault-hash-mismatch-blocks");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+
+    fs::create_dir_all(vault.join("cycles")).unwrap();
+
+    // Create cycle node at flat path
+    let cycle_content =
+        "---\nid: p-52b95ef55999f9de/cycle-99-different\ntype: cycle\n---\n# cycle-99\n";
+    fs::write(
+        vault.join("cycles/p-52b95ef55999f9de-cycle-44-build-remediate-transition.md"),
+        cycle_content,
+    )
+    .unwrap();
+
+    // Term that links to the (non-existent) cycle target → VAULT003
+    fs::create_dir_all(vault.join("terms")).unwrap();
+    fs::write(
+        vault.join("terms/TERM-Broken.md"),
+        "---\nid: TERM-Broken\ntype: term\n---\n# Broken\n\nLinks [[p-52b95ef55999f9de/cycle-44-build-remediate-transition]]\n",
+    )
+    .unwrap();
+
+    // WRONG SHA in receipt — does not match actual artifact
+    fs::write(
+        vault.join("repair-queue.yaml"),
+        "---\n- cycle_id: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  code: \"VAULT003\"\n  node: \"TERM-Broken\"\n  target: \"p-52b95ef55999f9de/cycle-44-build-remediate-transition\"\n  repair_action: \"node_creation\"\n  durable_evidence_sha: \"0000000000000000000000000000000000000000000000000000000000000000\"\n  created_at: \"2026-08-31T00:00:00Z\"\n  valid_to: \"2026-11-29T00:00:00Z\"\n",
+    )
+    .unwrap();
+
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    let validated = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "validate",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--scope-cycles",
+            "p-52b95ef55999f9de/cycle-44-build-remediate-transition",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+
+    assert!(
+        validated.status.success() || validated.status.code() == Some(1),
+        "hash mismatch must not crash: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&validated.stdout)).unwrap();
+
+    // VAULT003 should be present
+    let diag = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "VAULT003")
+        .expect("VAULT003 diagnostic must be present");
+
+    // Hash mismatch → error_kind = ReceiptEvidenceHashMismatch, severity stays Error
+    assert_eq!(
+        diag["error_kind"].as_str().unwrap(),
+        "ReceiptEvidenceHashMismatch",
+        "hash mismatch must set ReceiptEvidenceHashMismatch"
+    );
+    assert_eq!(
+        diag["severity"].as_str().unwrap(),
+        "error",
+        "hash mismatch must keep severity=error (downgrade blocked)"
+    );
+    // errors=1 because severity is still Error
+    assert_eq!(
+        json["errors"].as_u64().unwrap(),
+        1,
+        "hash mismatch must be an error"
     );
 }
 
