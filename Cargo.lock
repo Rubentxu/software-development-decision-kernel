@@ -1705,7 +1705,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sddk-cli"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-domain"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "jsonschema",
@@ -1754,7 +1754,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-engine"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "dirs",
  "getrandom 0.2.17",
@@ -1778,7 +1778,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-gateway"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "proptest",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-pack-uat"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "sddk-domain",
  "serde",
@@ -1808,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-storage"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "proptest",
  "regex",
@@ -1825,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-testkit"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "sddk-domain",
  "serde_json",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "sddk-vault"
-version = "1.64.0"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "petgraph",
