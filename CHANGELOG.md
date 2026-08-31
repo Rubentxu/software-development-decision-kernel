@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.63.0] - 2026-08-31
+
+### Added
+  - feat(uat): artefacto unificado `sddk-<TAG>-<ASSET>.tar.gz` por release (nuevo job `unified-artifact` en `release.yml` que combina binario + bundle + BUNDLE.toml + manifest_sha256). `scripts/install.sh` lo prefiere cuando existe; cae al path legacy (binario + bundle por separado) si no.
+  - feat(uat): schema `BUNDLE.toml` v2 (`schema_version`, `bundle.version`, `bundle.binary_min_version`, `bundle.binary_max_version`, `contents.manifest_sha256`) en `sddk-cli` (`crate::dev::bundle_manifest`). 6 tests nuevos: round-trip, exact-match, rejects-older, accepts-range, missing-file, unsupported-schema. Verifica compat semver-aware (pre-release `-rc.N` rankea bajo).
+  - feat(uat): `InstallReceipt` extendido a `schema_version = 2` con `bundle_version`, `bundle_sha256`, `bundle_path`, `coherence_checked`. `sddk dev install --source` lo escribe tras verificar `BUNDLE.toml` contra el binario (fail-closed: nunca escribe receipt parcialmente).
+  - feat(uat): doctor check `binary.bundle_coherence` v2 (3 condiciones: `receipt.version == CARGO_PKG_VERSION`, `bundle_version` matchea dir activo o BUNDLE.toml version, `verify_bundle_compat` dentro del rango declarado). `sddk dev doctor --prefix <P>` permite layout split-prefix (binario y bundle en directorios distintos).
+  - feat(uat): `sddk dev manifest --bundle` regenera `BUNDLE.toml` con `manifest_sha256` del MANIFEST presente.
+  - feat(install): `scripts/install.sh` rediseñado atómico (stage → apply → rollback on failure, trap cleanup de TMP_DIR). Detecta el tarball unificado cuando existe; legacy split-asset path preserva compatibilidad.
+
+### Fixed
+  - fix(install): INSTALL_BIN layout rustup-aware (`$PREFIX/bin/sddk` por defecto, `$PREFIX/sddk` cuando prefix termina en `/bin`). Antes asumía siempre el segundo y fallaba en el layout moderno.
+  - fix(install): download_optional() ahora soporta URLs `file://` (testing local contra mirror).
+  - fix(uat): 3 tests existentes (`uninstall_removes_prefix_and_editor_symlinks`, `verify_detects_tampered_bundle`, `cli_dev_install_accepts_committed_manifest`) actualizados para incluir `BUNDLE.toml` en sus fixtures (helper `write_test_bundle_manifest`) — falla esperada por la preflight v2 que rechaza installs sin BUNDLE.toml coherente.
+
 ## [1.62.0] - 2026-08-31
 
 ### Added

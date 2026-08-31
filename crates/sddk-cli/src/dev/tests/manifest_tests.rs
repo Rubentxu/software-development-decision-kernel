@@ -350,12 +350,15 @@ fn manifest_covers_agent_models_yaml_and_install_ships_it() {
     // Cycle-46: a coherent install (v2 schema) requires a BUNDLE.toml at the
     // source root declaring the bundle version and binary compatibility.
     // Without it `dev install --source` refuses to write the v2 receipt.
-    use crate::dev::bundle_manifest::{ContentsSection, write_bundle_manifest};
+    // Use the current CARGO_PKG_VERSION (rather than a hardcoded string) so
+    // the bundle declares it is compatible with the binary that is being
+    // built today, regardless of which version that is.
+    use crate::dev::bundle_manifest::{write_bundle_manifest, ContentsSection};
     write_bundle_manifest(
         &source,
-        "1.62.0",
-        "1.62.0",
-        "1.62.0",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
         ContentsSection::default(),
     )
     .unwrap();
