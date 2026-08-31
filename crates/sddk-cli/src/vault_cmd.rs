@@ -150,6 +150,7 @@ fn apply_scope_downgrade(
     diagnostics: &mut [Diagnostic],
     scope_cycles: &[String],
     queue: &std::collections::HashMap<String, RepairReceipt>,
+    vault_path: &std::path::Path,
 ) {
     if scope_cycles.is_empty() {
         return;
@@ -185,12 +186,32 @@ fn apply_scope_downgrade(
 
         if let Some(receipt) = queue.get(&key) {
             // Check if receipt is valid (not expired)
-            if receipt.valid_to > now {
-                // Valid receipt found — down-classify to warning
+            if receipt.valid_to <= now {
+                // Receipt is expired — downgrade to warning (not an error)
                 diagnostic.severity = Severity::Warning;
-            } else {
-                // Receipt is expired — emit warning with error_kind
                 diagnostic.error_kind = Some("RepairReceiptMissingOrInvalid".to_string());
+            } else {
+                // Receipt is valid — verify evidence SHA
+                // Resolve artifact path: target is relative to vault/cycles/
+                let artifact_path = vault_path
+                    .join("cycles")
+                    .join(receipt.target.as_str())
+                    .with_extension("md");
+
+                match sddk_vault::verify_receipt_evidence(receipt, &artifact_path) {
+                    Ok(()) => {
+                        // Evidence matches — down-classify to warning
+                        diagnostic.severity = Severity::Warning;
+                    }
+                    Err(sddk_vault::RepairReceiptError::EvidenceHashMismatch { .. }) => {
+                        // Hash mismatch — emit error_kind but keep severity=Error (blocks downgrade)
+                        diagnostic.error_kind = Some("ReceiptEvidenceHashMismatch".to_string());
+                    }
+                    Err(sddk_vault::RepairReceiptError::ArtifactNotFound) => {
+                        // Artifact not found at expected path — treat as missing receipt
+                        diagnostic.error_kind = Some("RepairReceiptMissingOrInvalid".to_string());
+                    }
+                }
             }
         } else {
             // No receipt found for this scoped diagnostic — emit warning with error_kind
@@ -285,35 +306,45 @@ fn run_vault_index(
         };
 
         // Validate scope cycle format; emit error_kind=InvalidScopeCycleId for malformed inputs
-        let mut malformed_scope_errors: Vec<Diagnostic> = Vec::new();
-        for scope_value in &args.scope_cycles {
-            if validate_scope_cycle(scope_value).is_err() {
-                malformed_scope_errors.push(Diagnostic {
-                    code: "VAULT003".to_string(),
-                    severity: Severity::Warning,
-                    node: None,
-                    message: format!(
-                        "invalid scope cycle format '{}': expected project_id/cycle_id (e.g. p-52b95ef55999f9de/cycle-44-build-remediate-transition)",
-                        scope_value
-                    ),
-                    hint: "provide scope cycles in the form project_id/cycle_id with lowercase alphanumeric and hyphens only".to_string(),
-                    scope: None,
-                    error_kind: Some("InvalidScopeCycleId".to_string()),
-                });
-            }
-        }
+        // Malformed scope is a CLI argument error → Severity::Error, fail-closed
+        let malformed_scope_errors: Vec<Diagnostic> = args
+            .scope_cycles
+            .iter()
+            .filter(|v| validate_scope_cycle(v).is_err())
+            .map(|scope_value| Diagnostic {
+                code: "VAULT003".to_string(),
+                severity: Severity::Error,
+                node: None,
+                message: format!(
+                    "invalid scope cycle format '{}': expected project_id/cycle_id (e.g. p-52b95ef55999f9de/cycle-44-build-remediate-transition)",
+                    scope_value
+                ),
+                hint: "provide scope cycles in the form project_id/cycle_id with lowercase alphanumeric and hyphens only"
+                    .to_string(),
+                scope: None,
+                error_kind: Some("InvalidScopeCycleId".to_string()),
+            })
+            .collect();
 
         // Apply scope downgrades if --scope-cycles is provided
-        apply_scope_downgrade(&mut diagnostics, &args.scope_cycles, &queue);
+        apply_scope_downgrade(&mut diagnostics, &args.scope_cycles, &queue, &args.vault);
 
-        // Append malformed scope errors as warnings (do not fail the command)
+        // Append malformed scope errors as errors (fail-closed)
         diagnostics.extend(malformed_scope_errors);
 
         // Build repair queue summary for JSON output
         // Show queue only when load succeeded (no errors); hide when load failed
+        // Sort entries deterministically by (cycle_id, code, node) for reproducible output
         let repair_queue_summary: Option<Vec<RepairReceiptSummary>> =
             if repair_queue_errors.is_none() && !queue.is_empty() {
-                Some(queue.values().map(RepairReceiptSummary::from).collect())
+                let mut entries: Vec<_> = queue.values().collect();
+                entries.sort_by_key(|r| (&r.cycle_id, &r.code, &r.node));
+                Some(
+                    entries
+                        .into_iter()
+                        .map(RepairReceiptSummary::from)
+                        .collect(),
+                )
             } else {
                 None
             };
