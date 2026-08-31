@@ -198,19 +198,16 @@ tar -C "$PACK" -czf "$UNIFIED" bin framework
 chmod 0755 "$PACK/bin/sddk"  # post-extract defensive chmod (already 0755)
 # Verify the exec bit survives in the archive AND that BUNDLE.toml lives
 # at the install.sh-expected path (not nested under software-development-decision-kernel/).
-# NOTE: bash precedence binds `!` to the immediate command, NOT to the
-# whole pipeline. `! tar | grep` parses as `(! tar) | grep`, which inverts
-# tar's success and feeds an empty stream to grep — grep then reports no
-# match even when the file is actually there. Use parentheses to negate
-# the whole pipeline, or use `||` with a flipped branch.
-if tar tvzf "$UNIFIED" | grep -q -- '-rwxr-xr-x.* bin/sddk'; then
-    : # ok — exec bit survives
-else
+# CRITICAL: do NOT use `grep -q` here. With `set -o pipefail`, `grep -q`
+# exits on the first match and closes stdin, which causes `tar` to receive
+# SIGPIPE (exit 141) and the pipeline to be reported as failed even though
+# grep found the match. Capture tar output to a variable and grep it
+# afterwards.
+TAR_LISTING="$(tar tvzf "$UNIFIED")"
+if ! grep -q -- '-rwxr-xr-x.* bin/sddk' <<<"$TAR_LISTING"; then
     die "unified tarball lost the exec bit on bin/sddk — refusing to ship"
 fi
-if tar tvzf "$UNIFIED" | grep -q -- 'framework/BUNDLE.toml$'; then
-    : # ok — BUNDLE.toml at install.sh-expected path
-else
+if ! grep -q -- 'framework/BUNDLE.toml$' <<<"$TAR_LISTING"; then
     die "unified tarball lacks framework/BUNDLE.toml at the install.sh-expected path"
 fi
 sha256sum "$UNIFIED" | awk '{print $1}' > "$UNIFIED.sha256"
