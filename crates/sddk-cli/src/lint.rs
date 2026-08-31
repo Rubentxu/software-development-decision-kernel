@@ -50,6 +50,7 @@ const RELEASE_CHAIN_ORDERING: &str = "SDDK030";
 const MATRIX_LOCKSTEP_REFUSAL: &str = "SDDK031";
 const INSTRUCTION_RECIPE_DEDUP: &str = "SDDK032";
 const GATE_CLASSIFICATION_VALIDATION: &str = "SDDK033";
+const WRITER_XDG_VALIDATION: &str = "SDDK034";
 
 const MATRIX_REQUIRED_COLUMNS: &[&str] = &[
     "intent",
@@ -3490,6 +3491,66 @@ pub fn validate_classifications_registry(path: &Path) -> Vec<Diagnostic> {
                 "waiver_expiry_days must be ≤ 30 per REQ-Process-Gate-Recoverable-Default",
             ));
         }
+    }
+
+    diagnostics
+}
+
+/// Validates that a vault export output path is inside the XDG project data directory.
+///
+/// Returns an empty Vec when the path is valid.
+/// Returns one error diagnostic when the path is outside the XDG tree
+/// (including symlink traversal attacks).
+///
+/// This implements the lint-time check for [[WRITER_XDG_FAIL_CLOSED]].
+pub fn validate_vault_export_routes_through_writer(
+    output_path: &Path,
+    xdg_project_data: &Path,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Try canonicalization to resolve symlinks
+    let Ok(canonical_output) = output_path.canonicalize() else {
+        // File doesn't exist yet — use the path as-is for prefix check
+        // This still prevents obvious traversal attempts
+        if let Ok(canonical_xdg) = xdg_project_data.canonicalize() {
+            let normalized = normalize_path(output_path);
+            if !normalized.starts_with(&canonical_xdg) {
+                diagnostics.push(diagnostic(
+                    WRITER_XDG_VALIDATION,
+                    Severity::Error,
+                    output_path,
+                    None,
+                    format!(
+                        "output path '{}' is outside the XDG project data root '{}'",
+                        output_path.display(),
+                        xdg_project_data.display()
+                    ),
+                    "vault export must write inside the XDG project data directory",
+                ));
+            }
+        }
+        return diagnostics;
+    };
+
+    let Ok(canonical_xdg) = xdg_project_data.canonicalize() else {
+        // XDG root doesn't exist — cannot validate
+        return diagnostics;
+    };
+
+    if !canonical_output.starts_with(&canonical_xdg) {
+        diagnostics.push(diagnostic(
+            WRITER_XDG_VALIDATION,
+            Severity::Error,
+            output_path,
+            None,
+            format!(
+                "output path '{}' is outside the XDG project data root '{}'",
+                output_path.display(),
+                xdg_project_data.display()
+            ),
+            "vault export must write inside the XDG project data directory",
+        ));
     }
 
     diagnostics

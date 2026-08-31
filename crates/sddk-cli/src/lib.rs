@@ -44,6 +44,7 @@ mod uat_generate;
 mod uat_quality;
 mod uat_serve;
 mod vault_cmd;
+mod writer;
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -87,6 +88,7 @@ pub use docs::{GENERATED_WORKFLOW_DOC, GenerationStatus, generate_workflow_docs}
 pub use inventory::{GENERATED_INVENTORY_DOC, generate_inventory};
 pub use lint::{
     Diagnostic, LintReport, Severity, lint_repository, validate_classifications_registry,
+    validate_vault_export_routes_through_writer,
 };
 
 /// Canonical workflow manifest path, relative to the repository root.

@@ -12,6 +12,7 @@ use sddk_cli::{
     GENERATED_INVENTORY_DOC, GENERATED_WORKFLOW_DOC, GenerationStatus, Severity,
     generate_inventory, generate_workflow_docs, lint_repository, run_from,
 };
+use sddk_domain::resolve_project_identity;
 use sddk_testkit::TestRepository;
 use sha2::Digest;
 use tempfile::TempDir;
@@ -21,6 +22,14 @@ fn compute_pass_output_digest(gate: &str, outcome: &str) -> String {
     let input = format!("{}:{}", gate, outcome);
     let hash = sha2::Sha256::digest(input.as_bytes());
     format!("sha256:{:x}", hash)
+}
+
+/// Compute the project_id from a fallback seed and scope, matching the CLI's identity resolution.
+fn fallback_project_id(seed: &str, scope: &str) -> String {
+    resolve_project_identity(None, scope, Some(seed))
+        .expect("valid fallback seed")
+        .project_id
+        .to_string()
 }
 
 /// Write a BUNDLE.toml into `source` compatible with `binary_version`.
@@ -7941,6 +7950,17 @@ fn cli_vault_index_validate_search_and_export() {
     assert_eq!(graph["cyclic"], true);
     assert!(graph["sample_cycle"].is_array());
 
+    // ADR-0082: vault export must output inside the XDG project data tree.
+    // Compute the project_id from the same fallback seed the CLI uses.
+    let project_id = fallback_project_id("00000000-0000-0000-0000-000000000001", ".");
+    let xdg_output_path = fixture
+        .data
+        .join("sddk")
+        .join("projects")
+        .join(&project_id)
+        .join("vault-export.html");
+    fs::create_dir_all(xdg_output_path.parent().unwrap()).unwrap();
+
     let exported = run_with_root(
         &fixture,
         &[
@@ -7949,12 +7969,16 @@ fn cli_vault_index_validate_search_and_export() {
             "--vault",
             vault.to_str().unwrap(),
             "--output",
-            fixture.root.join("inspector.html").to_str().unwrap(),
+            xdg_output_path.to_str().unwrap(),
         ],
         &common,
     );
-    assert!(exported.status.success());
-    let html = fs::read_to_string(fixture.root.join("inspector.html")).unwrap();
+    assert!(
+        exported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let html = fs::read_to_string(&xdg_output_path).unwrap();
     assert!(html.contains("SDDK Vault Inspector"));
     assert!(html.contains("TERM-Auth"));
 

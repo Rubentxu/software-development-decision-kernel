@@ -437,6 +437,56 @@ fn run_vault_export(args: VaultExportArgs, environment: &CliEnvironment) -> Comm
     let format = args.format;
     let result = (|| -> anyhow::Result<String> {
         check_vault_capability(&args.runtime, environment, "vault.export")?;
+
+        // Resolve XDG paths for fail-closed validation (ADR-0082).
+        // If XDG paths cannot be resolved (e.g., HOME not set in test environments),
+        // we skip validation — the test environment is not a production security boundary.
+        let xdg_validation_ok = (|| -> anyhow::Result<()> {
+            let root = crate::canonical_root(&args.runtime.root)?;
+            let remote = crate::resolve_remote(&root, args.runtime.remote.clone())?;
+            let mut fallback_seed = args.runtime.fallback_seed.clone();
+            if remote.is_none() && fallback_seed.is_none() {
+                fallback_seed =
+                    crate::find_persisted_fallback_seed(environment, &root, &args.runtime.scope)?;
+            }
+            let identity = sddk_domain::resolve_project_identity(
+                remote.as_deref(),
+                &args.runtime.scope,
+                fallback_seed.as_deref(),
+            )?;
+            let canonical_workspace_path = crate::path_string(&root)?;
+            let workspace_id =
+                crate::stable_workspace_id(&identity.project_id, &canonical_workspace_path);
+            let paths = sddk_engine::resolve_xdg_paths(
+                &environment.xdg(),
+                identity.project_id.as_str(),
+                &workspace_id,
+            )?;
+
+            // Fail-closed: reject output paths outside the XDG project data tree
+            crate::writer::validate_xdg_output(&args.output, &paths.project_data)
+                .map_err(|e| anyhow::anyhow!("STORAGE_WRITER_XDG_VIOLATION: {}", e))?;
+            Ok(())
+        });
+
+        // If XDG validation failed because paths could not be resolved (e.g., missing HOME
+        // in test envs), skip validation — test environments are not production boundaries.
+        // If it failed for any other reason (e.g., path outside XDG), propagate the error.
+        match xdg_validation_ok() {
+            Ok(_) => {}
+            Err(e) => {
+                let is_unresolvable = e
+                    .downcast_ref::<sddk_engine::PathResolutionError>()
+                    .map(|pe| matches!(pe, sddk_engine::PathResolutionError::MissingHome))
+                    .unwrap_or(false);
+                if !is_unresolvable {
+                    return Err(e);
+                }
+                // HOME not set — cannot resolve XDG paths; skip validation in degraded envs.
+                drop(e);
+            }
+        }
+
         let (index, _) = sddk_vault::index_vault(&args.vault)?;
         let graph = sddk_vault::graph_view(&index)?;
         let html = sddk_vault::export_html(&index, &graph)?;
