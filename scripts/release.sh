@@ -189,15 +189,23 @@ rm -rf "$PACK"
 mkdir -p "$PACK/bin" "$PACK/framework"
 chmod 0755 "$BIN"
 cp "$BIN" "$PACK/bin/sddk"
-cp -r "$FW_DIR" "$PACK/framework"
+# Copy the CONTENTS of FW_DIR (which is wrapped under
+# software-development-decision-kernel/) directly into pack/framework/, so
+# install.sh finds BUNDLE.toml / MANIFEST.sha256 at framework/BUNDLE.toml
+# (its expected location) instead of framework/software-development-decision-kernel/BUNDLE.toml.
+cp -r "$FW_DIR/." "$PACK/framework/"
 tar -C "$PACK" -czf "$UNIFIED" bin framework
 chmod 0755 "$PACK/bin/sddk"  # post-extract defensive chmod (already 0755)
-# Verify the exec bit survives in the archive
+# Verify the exec bit survives in the archive AND that BUNDLE.toml lives
+# at the install.sh-expected path (not nested under software-development-decision-kernel/).
 if ! tar tvzf "$UNIFIED" | grep -q -- '-rwxr-xr-x.* bin/sddk'; then
     die "unified tarball lost the exec bit on bin/sddk — refusing to ship"
 fi
+if ! tar tvzf "$UNIFIED" | grep -q -- 'framework/BUNDLE.toml$'; then
+    die "unified tarball lacks framework/BUNDLE.toml at the install.sh-expected path"
+fi
 sha256sum "$UNIFIED" | awk '{print $1}' > "$UNIFIED.sha256"
-ok "unified: $(basename "$UNIFIED") ($(stat -c%s "$UNIFIED") bytes, exec bit OK)"
+ok "unified: $(basename "$UNIFIED") ($(stat -c%s "$UNIFIED") bytes, exec bit + BUNDLE.toml OK)"
 
 # --- 8. checksums + sbom ---
 
