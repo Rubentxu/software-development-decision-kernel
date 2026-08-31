@@ -329,9 +329,13 @@ ok "stale bundles pruned"
 
 step "13/13 — final state"
 echo
-echo "  binary:        $("$SDDK_PREFIX/sddk" --version)"
-echo "  bundle:        $("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("binary_bundle_coherence", {}).get("bundle_version", "?"))' 2>/dev/null || echo "?")"
-echo "  current:       $(readlink "$SDDK_FRAMEWORK_DIR/current" || echo "?")"
+BIN_VER="$("$SDDK_PREFIX/sddk" --version 2>&1 | head -1)"
+BUNDLE_VER="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("binary_bundle_coherence", {}).get("bundle_version", "?"))' 2>/dev/null || echo "?")"
+CURRENT_VER="$(basename "$(readlink "$SDDK_FRAMEWORK_DIR/current" 2>/dev/null || echo "?")")"
+echo "  binary:        $BIN_VER"
+echo "  bundle:        $BUNDLE_VER"
+echo "  current:       $CURRENT_VER"
 echo "  framework/:"
 find "$SDDK_FRAMEWORK_DIR" -mindepth 1 -maxdepth 1 -printf '    %f\n' | sort
 echo
