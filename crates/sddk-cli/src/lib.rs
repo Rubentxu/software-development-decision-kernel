@@ -85,7 +85,9 @@ use walkdir::WalkDir;
 
 pub use docs::{GENERATED_WORKFLOW_DOC, GenerationStatus, generate_workflow_docs};
 pub use inventory::{GENERATED_INVENTORY_DOC, generate_inventory};
-pub use lint::{Diagnostic, LintReport, Severity, lint_repository};
+pub use lint::{
+    Diagnostic, LintReport, Severity, lint_repository, validate_classifications_registry,
+};
 
 /// Canonical workflow manifest path, relative to the repository root.
 pub(crate) const WORKFLOW_MANIFEST: &str = "workflow/workflow.yaml";

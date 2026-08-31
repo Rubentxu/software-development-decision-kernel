@@ -6,6 +6,7 @@ pub mod approval;
 pub mod capability;
 pub mod debt_report;
 pub mod finding;
+pub mod gate_classification;
 pub mod gate_receipt;
 pub mod identity;
 pub mod inc_record;
@@ -26,6 +27,10 @@ pub use capability::{
 };
 pub use debt_report::DebtReport;
 pub use finding::Finding;
+pub use gate_classification::{
+    GateClassification, GateClassificationError, GateKind, RecoveryAction, RecoveryHint,
+    WaiverAuthority, load_classifications,
+};
 pub use gate_receipt::{GateOutcomeStatus, GateReceipt, GateReceiptInput, GateReceiptNextSeqInput};
 pub use identity::{CycleRecord, ProjectRecord, WorkspaceRecord};
 pub use inc_record::IncRecord;

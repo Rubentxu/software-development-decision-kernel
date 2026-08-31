@@ -1,0 +1,39 @@
+# Gate Classification Registry — Wave 1 (A+B+C vertical minimum)
+#
+# Per [[REQ-Gate-Classification-Discriminator]]: Wave-1 budget gates
+# default to `class = Process` and are recoverable.
+#
+# Per [[REQ-Process-Gate-Recoverable-Default]]: all Wave-1 gates are
+# classified Process with RecoverForward recovery action.
+#
+# waiver_authority is optional; waiver_expiry_days ≤ 30 when present.
+
+[gate-uat]
+class = "process"
+recoverable = true
+recovery_action = "recover_forward"
+recovery_hint = { recovery_command = "sddk cycle replan --restage-to=Apply", hint = "Replan to Apply after fixing the UAT configuration" }
+
+[gate-budget]
+class = "process"
+recoverable = true
+recovery_action = "recover_forward"
+recovery_hint = { recovery_command = "sddk cycle replan --restage-to=Specify", hint = "Revisit budget allocation in the next Specify phase" }
+
+[gate-debt-verification]
+class = "process"
+recoverable = true
+recovery_action = "recover_forward"
+recovery_hint = { recovery_command = "sddk debt report --gate gate-debt-verification", hint = "Run debt verification and address findings before retrying" }
+
+[gate-delivery-quality]
+class = "process"
+recoverable = true
+recovery_action = "recover_forward"
+recovery_hint = { recovery_command = "sddk cycle replan --restage-to=Design", hint = "Improve delivery quality in the next Design phase" }
+
+[gate-release-clean]
+class = "process"
+recoverable = true
+recovery_action = "recover_forward"
+recovery_hint = { recovery_command = "sddk release plan --dry-run", hint = "Review the release plan and clean up before cutting the release" }

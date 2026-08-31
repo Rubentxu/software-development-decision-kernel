@@ -4,7 +4,10 @@ use std::path::{Component, Path, PathBuf};
 
 use clap::CommandFactory;
 use regex::Regex;
-use sddk_domain::{Requirement, WorkflowManifest};
+use sddk_domain::{
+    Requirement, WorkflowManifest,
+    models::gate_classification::{GateKind, RecoveryAction},
+};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -46,6 +49,7 @@ const INSTRUCTION_OWNER_BOUNDARY: &str = "SDDK029";
 const RELEASE_CHAIN_ORDERING: &str = "SDDK030";
 const MATRIX_LOCKSTEP_REFUSAL: &str = "SDDK031";
 const INSTRUCTION_RECIPE_DEDUP: &str = "SDDK032";
+const GATE_CLASSIFICATION_VALIDATION: &str = "SDDK033";
 
 const MATRIX_REQUIRED_COLUMNS: &[&str] = &[
     "intent",
@@ -3391,4 +3395,102 @@ fn lint_instruction_recipe_dedup(root: &Path, diagnostics: &mut Vec<Diagnostic>)
             }
         }
     }
+}
+
+/// Validate the gate classifications registry at `path`.
+///
+/// Returns diagnostics for:
+/// - waiver_expiry_days > 30 per [[REQ-Process-Gate-Recoverable-Default]]
+/// - invalid gate kind
+/// - invalid recovery action
+///
+/// Returns an empty Vec when the file does not exist (file-level existence
+/// checks are handled separately by the repository scan).
+pub fn validate_classifications_registry(path: &Path) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    let Ok(content) = std::fs::read_to_string(path) else {
+        // File not found — handled by the caller or scan_repository_sources
+        return diagnostics;
+    };
+
+    let Ok(raw) = content.parse::<toml::Value>() else {
+        // TOML parse errors are caught by the TOML layer
+        return diagnostics;
+    };
+
+    let Some(table) = raw.as_table() else {
+        return diagnostics;
+    };
+
+    for (gate_name, value) in table {
+        let Some(entry) = value.as_table() else {
+            diagnostics.push(diagnostic(
+                GATE_CLASSIFICATION_VALIDATION,
+                Severity::Error,
+                path,
+                None,
+                format!("entry '{gate_name}' is not a TOML table"),
+                "ensure each gate entry is a valid TOML table with required fields",
+            ));
+            continue;
+        };
+
+        // Validate class field (required)
+        let Some(class_val) = entry.get("class") else {
+            diagnostics.push(diagnostic(
+                GATE_CLASSIFICATION_VALIDATION,
+                Severity::Error,
+                path,
+                None,
+                format!("gate '{gate_name}' is missing required field 'class'"),
+                "class is required and must be one of: security, process, mixed",
+            ));
+            continue;
+        };
+        if let Some(class_str) = class_val.as_str()
+            && class_str.parse::<GateKind>().is_err()
+        {
+            diagnostics.push(diagnostic(
+                GATE_CLASSIFICATION_VALIDATION,
+                Severity::Error,
+                path,
+                None,
+                format!("gate '{gate_name}' has invalid gate kind: '{class_str}'"),
+                "class must be one of: security, process, mixed",
+            ));
+        }
+
+        // Validate recovery_action field
+        if let Some(action_val) = entry.get("recovery_action")
+            && let Some(action_str) = action_val.as_str()
+            && action_str.parse::<RecoveryAction>().is_err()
+        {
+            diagnostics.push(diagnostic(
+                GATE_CLASSIFICATION_VALIDATION,
+                Severity::Error,
+                path,
+                None,
+                format!("gate '{gate_name}' has invalid recovery action: '{action_str}'"),
+                "recovery_action must be one of: recover_forward, fail_closed, advisory",
+            ));
+        }
+
+        // Validate waiver_expiry_days ≤ 30
+        if let Some(expiry_val) = entry.get("waiver_expiry_days")
+            && let Some(expiry) = expiry_val.as_integer()
+            && expiry > 30
+        {
+            diagnostics.push(diagnostic(
+                GATE_CLASSIFICATION_VALIDATION,
+                Severity::Error,
+                path,
+                None,
+                format!("gate '{gate_name}' has waiver_expiry_days={expiry} (must be ≤ 30)"),
+                "waiver_expiry_days must be ≤ 30 per REQ-Process-Gate-Recoverable-Default",
+            ));
+        }
+    }
+
+    diagnostics
 }
