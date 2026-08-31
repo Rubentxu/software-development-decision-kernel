@@ -200,6 +200,12 @@ pub(super) struct DoctorArgs {
     /// Strict mode: exit 1 when any surface brevity check reports a file over threshold.
     #[arg(long)]
     pub(super) strict: bool,
+    /// Optional binary install prefix. When provided, the doctor checks the
+    /// receipt under `<prefix>/sddk-install.json` for binary/bundle coherence
+    /// against the active framework bundle. Falls back to the framework root
+    /// when omitted (legacy single-prefix installs).
+    #[arg(long)]
+    pub(super) prefix: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -408,6 +414,7 @@ mod smoke_tests {
         let args = super::DoctorArgs {
             format: OutputFormat::Text,
             strict: false,
+            prefix: None,
         };
         let _ = self::doctor::run_dev_doctor(args, &env());
     }

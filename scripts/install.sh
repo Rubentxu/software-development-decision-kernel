@@ -163,6 +163,11 @@ download() {
 # Try a URL; if any 4xx/5xx, return non-zero instead of failing the script.
 download_optional() {
     local url="$1" out="$2"
+    case "$url" in
+        file://*)
+            cp "${url#file://}" "$out" 2>/dev/null && return 0 || return 1
+            ;;
+    esac
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL --retry 3 -o "$out" "$url" 2>/dev/null && return 0 || return 1
     elif command -v wget >/dev/null 2>&1; then
@@ -216,10 +221,11 @@ if [ "$RESOLVED_VERSION" = "latest" ]; then
     fi
 fi
 
-# Unified artifact filename is versioned, so two `sddk-${VERSION}` tarballs
-# (one per OS/arch) do NOT collide. Same name across archs would, but we
-# download ours into $TMP_DIR scoped to this run.
-UNIFIED_TARBALL="sddk-${VERSION}.tar.gz"
+# Unified artifact filename: per-arch so the same tarball naming pattern as
+# `sddk-linux-x86_64-musl` etc. applies. The release.yml produces one
+# `sddk-${VERSION}-${ASSET}.tar.gz` per matrix entry (e.g.
+# sddk-v1.63.0-linux-x86_64-musl.tar.gz).
+UNIFIED_TARBALL="sddk-${VERSION}-${ASSET}.tar.gz"
 
 if [ "$RESOLVED_VERSION" != "latest" ] && \
    download_optional "$(release_url "$UNIFIED_TARBALL")" "$TMP_DIR/$UNIFIED_TARBALL"; then
@@ -303,23 +309,40 @@ fi
 echo "  bundle stage OK (binary=$TMP_VERSION, BUNDLE.toml present)"
 
 # ── Stage 3: atomic binary install ──────────────────────────────────────────
+# `sddk dev install` places the binary at $PREFIX/sddk when $PREFIX already
+# ends in `/bin` (e.g. /usr/local/bin) or at $PREFIX/bin/sddk otherwise
+# (rustup-style layout, the default for $HOME/.local/bin which lacks a
+# trailing /bin).
+INSTALL_BIN="$PREFIX/sddk"
+case "$PREFIX" in
+    */bin) INSTALL_BIN="$PREFIX/sddk" ;;
+    *) INSTALL_BIN="$PREFIX/bin/sddk" ;;
+esac
 CURRENT_STEP="install-binary"
 echo
 mkdir -p "$PREFIX"
 "$STAGE_BIN" dev install --prefix "$PREFIX" --channel release --source "$STAGE_BUNDLE" --format text
 APPLIED+=("binary")
-echo "  binary installed: $PREFIX/sddk"
-"$PREFIX/sddk" --version
+echo "  binary installed: $INSTALL_BIN"
+"$INSTALL_BIN" --version
 
 # ── PATH check ──────────────────────────────────────────────────────────────
 
+# Suggest the parent of bin/ when we placed the binary at bin/sddk, so the
+# user can `export PATH=<...>/bin:$PATH` and `sddk` resolves without a
+# full path.
+PATH_PARENT="$PREFIX"
+case "$PREFIX" in
+    */bin) PATH_PARENT="$PREFIX" ;;
+    *)     PATH_PARENT="$PREFIX/bin" ;;
+esac
 case ":$PATH:" in
-    *":$PREFIX:"*)
-        echo "  PATH: ok ($PREFIX already on PATH)"
+    *":$PATH_PARENT:"*)
+        echo "  PATH: ok ($PATH_PARENT already on PATH)"
         ;;
     *)
-        echo "  WARNING: $PREFIX is not on your PATH. Add it with:"
-        echo "    export PATH=\"$PREFIX:\$PATH\""
+        echo "  WARNING: $PATH_PARENT is not on your PATH. Add it with:"
+        echo "    export PATH=\"$PATH_PARENT:\$PATH\""
         ;;
 esac
 
@@ -394,18 +417,18 @@ fi
 # HOME — make sure it points at our FRAMEWORK_DIR.
 SDDK_DATA_DIR_DATA_ROOT="$(dirname "$FRAMEWORK_DIR")"
 CURRENT_STEP="symlink"
-SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$PREFIX/sddk" dev use --version "$BUNDLE_VERSION" --format text
+SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$INSTALL_BIN" dev use --version "$BUNDLE_VERSION" --format text
 APPLIED+=("symlink")
 
 # ── Stage 7: link into the chosen editor(s) ────────────────────────────────
 
 echo
-"$PREFIX/sddk" dev link --root "$FRAMEWORK_DIR/current" --editor "$EDITOR" --format text
+"$INSTALL_BIN" dev link --root "$FRAMEWORK_DIR/current" --editor "$EDITOR" --format text
 
 # ── Stage 8: doctor ─────────────────────────────────────────────────────────
 
 echo
-SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$PREFIX/sddk" dev doctor --format text || true
+SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$INSTALL_BIN" dev doctor --prefix "$PREFIX" --format text || true
 
 # ── Stage 9: completions hint ───────────────────────────────────────────────
 

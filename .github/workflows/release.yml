@@ -131,9 +131,119 @@ jobs:
             echo "manual run (no tag): framework staged in workflow artifacts"
           fi
 
+  unified-artifact:
+    # Cycle-46 (install-coherence-v1.63) capa 3 — single coherent artifact
+    # per arch containing the binary AND the framework bundle.
+    # Eagerly consumed by scripts/install.sh when available; falls back to
+    # the split assets otherwise (legacy releases).
+    name: Unified artifact ${{ matrix.asset }}
+    needs: [build, framework-bundle]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: sddk-linux-x86_64-musl
+          - asset: sddk-linux-aarch64-musl
+          - asset: sddk-darwin-arm64
+          - asset: sddk-darwin-x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download binary + framework artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: downloads
+          merge-multiple: true
+
+      - name: Assemble unified sddk-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          [ "$GITHUB_REF_TYPE" = "tag" ] || { echo "manual run: skipping"; exit 0; }
+
+          # Locate the binary for this arch.
+          BIN_FILE="downloads/${ASSET}"
+          test -f "$BIN_FILE" || { echo "missing binary $BIN_FILE"; exit 1; }
+          chmod 0755 "$BIN_FILE"
+
+          # Locate the framework bundle.
+          BUNDLE="downloads/software-development-decision-kernel.tar.gz"
+          test -f "$BUNDLE" || { echo "missing bundle $BUNDLE"; exit 1; }
+
+          # Extract bundle to a working tree.
+          WORK="$(mktemp -d)"
+          mkdir -p "$WORK/framework"
+          tar xzf "$BUNDLE" -C "$WORK/framework"
+
+          # Sanity check: bundle must include the manifest.
+          test -f "$WORK/framework/MANIFEST.sha256" \
+            || { echo "bundle lacks MANIFEST.sha256"; exit 1; }
+
+          # Place binary at bin/sddk inside the tarball.
+          mkdir -p "$WORK/bin"
+          cp "$BIN_FILE" "$WORK/bin/sddk"
+
+          # Bundle version: read from the binary itself.
+          BINARY_VERSION="$("$WORK/bin/sddk" --version 2>&1 | awk '{print $NF}')"
+          echo "  binary version: $BINARY_VERSION"
+
+          # Generate BUNDLE.toml from the bundle (manifest sha256 already
+          # in MANIFEST.sha256; we record its hash here so install.sh
+          # doctor can detect tampering). Use printf (not heredoc) so the
+          # inner TOML body does not break the YAML `run: |` literal
+          # scalar parser when the file is later re-validated.
+          MANIFEST_SHA="$(awk 'NR==1 {print $1}' "$WORK/framework/MANIFEST.sha256")"
+          printf '%s\n' \
+            '[bundle]' \
+            'schema_version = 2' \
+            "version = \"$BINARY_VERSION\"" \
+            "binary_min_version = \"$BINARY_VERSION\"" \
+            "binary_max_version = \"$BINARY_VERSION\"" \
+            '' \
+            '[contents]' \
+            "manifest_sha256 = \"$MANIFEST_SHA\"" \
+            > "$WORK/framework/BUNDLE.toml"
+
+          # Pack the unified tarball (gz, reproducible layout).
+          OUT="sddk-${TAG}-${ASSET}.tar.gz"
+          tar -C "$WORK" -czf "$OUT" bin framework
+
+          # Move into downloads so the publish step below picks it up.
+          mv "$OUT" "downloads/${OUT}"
+          (cd downloads && sha256sum "$OUT" > "$OUT.sha256")
+
+          echo "  unified artifact: downloads/$OUT ($(stat -c%s "downloads/$OUT") bytes)"
+          ls -la "downloads/$OUT"*
+
+      - name: Upload unified artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unified-${{ matrix.asset }}
+          path: downloads/sddk-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz*
+          if-no-files-found: error
+
+      - name: Publish unified artifact to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            gh release upload "$TAG" \
+              downloads/sddk-"$TAG"-${{ matrix.asset }}.tar.gz \
+              downloads/sddk-"$TAG"-${{ matrix.asset }}.tar.gz.sha256 \
+              --clobber --repo "${{ github.repository }}"
+            echo "published unified sddk-${TAG}-${{ matrix.asset }}.tar.gz"
+          else
+            echo "manual run (no tag): unified artifact staged in workflow artifacts"
+          fi
+
   sign:
     name: Sign release assets (cosign keyless)
-    needs: [build, framework-bundle]
+    needs: [build, framework-bundle, unified-artifact]
     runs-on: ubuntu-latest
     steps:
       - name: Install cosign

@@ -242,7 +242,16 @@ pub(super) fn run_dev_doctor(
         // Pre-v2 receipts (schema_version < 2) keep the legacy single-check
         // behaviour. No receipt (dogfooding `path:` override, pre-receipt
         // bundles) is informational — no check is emitted.
-        if let Ok(receipt) = read_receipt(&framework_root) {
+        // Cycle-46 (capa 3): when the binary prefix is provided explicitly,
+        // prefer the receipt under `<prefix>/sddk-install.json` (split-prefix
+        // install: binary in `$HOME/.local/bin`, bundle in
+        // `$XDG_DATA_HOME/sddk/framework/<v>`). Falls back to the framework
+        // root for legacy single-prefix installs.
+        let receipt_source = args
+            .prefix
+            .clone()
+            .unwrap_or_else(|| framework_root.clone());
+        if let Ok(receipt) = read_receipt(&receipt_source) {
             let receipt_ok = receipt.version == env!("CARGO_PKG_VERSION");
             let bundle_match = match receipt.bundle_version.as_deref() {
                 Some(expected) => {

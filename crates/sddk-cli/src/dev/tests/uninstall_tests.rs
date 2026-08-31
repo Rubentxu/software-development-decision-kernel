@@ -97,6 +97,7 @@ fn doctor_reports_claude_codex_dirs() {
     let args = crate::dev::DoctorArgs {
         format: OutputFormat::Text,
         strict: false,
+        prefix: None,
     };
     let output = crate::dev::doctor::run_dev_doctor(args, &environment);
     assert!(
