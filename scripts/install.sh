@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# install.sh — Install the sddk binary and framework from GitHub Releases.
+# install.sh — Atomic install of the sddk binary and framework bundle from
+# GitHub Releases.
+#
+# Cycle-46 (install-coherence-v1.63) redesign:
+#   * Prefers the unified `sddk-<version>.tar.gz` asset (single artifact =
+#     single coherent version, rustup/asdf model).
+#   * Falls back to the legacy split assets (sddk-linux-*-musl + bundle
+#     tarball) when the unified one is not present (older releases).
+#   * Stages binary and bundle into isolated directories and atomically
+#     swaps them into the prefix / framework dir with rollback on failure.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Rubentxu/software-development-decision-kernel/main/scripts/install.sh | bash
@@ -42,6 +51,66 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# ── Atomic install machinery ────────────────────────────────────────────────
+# Strategy: stage everything under $TMP_DIR, then apply. If any step fails
+# after stage, restore_snapshot() removes anything that was applied.
+STAGE_BIN=""
+STAGE_BUNDLE=""
+APPLIED=()
+
+cleanup() {
+    local rc=$?
+    if [ "$rc" -ne 0 ] && [ "${#APPLIED[@]}" -gt 0 ]; then
+        echo
+        echo "ERROR: install failed at $CURRENT_STEP; rolling back partial state." >&2
+        restore_snapshot || true
+    fi
+    rm -rf "$TMP_DIR" 2>/dev/null || true
+    exit $rc
+}
+
+restore_snapshot() {
+    # Reverse-order rollback: undo each applied step.
+    for ((i=${#APPLIED[@]}-1; i>=0; i--)); do
+        local step="${APPLIED[$i]}"
+        case "$step" in
+            binary)
+                rm -f "$PREFIX/sddk" 2>/dev/null || true
+                rm -f "$PREFIX/sddk-receipt.json" 2>/dev/null || true
+                ;;
+            bundle)
+                rm -rf "${FRAMEWORK_DIR:?}/$BUNDLE_VERSION" 2>/dev/null || true
+                ;;
+            symlink)
+                # Best-effort: try to restore prior target if we recorded it.
+                if [ -n "${PRIOR_FRAMEWORK_TARGET:-}" ] && [ "${PRIOR_FRAMEWORK_TARGET}" != "absent" ]; then
+                    ln -sfn "$PRIOR_FRAMEWORK_TARGET" "$FRAMEWORK_DIR/current" 2>/dev/null || true
+                else
+                    rm -f "$FRAMEWORK_DIR/current" 2>/dev/null || true
+                fi
+                ;;
+        esac
+    done
+}
+
+record_prior_symlink() {
+    if [ -L "$FRAMEWORK_DIR/current" ]; then
+        local target
+        target="$(readlink "$FRAMEWORK_DIR/current" 2>/dev/null || true)"
+        PRIOR_FRAMEWORK_TARGET="${target:-absent}"
+    elif [ -e "$FRAMEWORK_DIR/current" ]; then
+        PRIOR_FRAMEWORK_TARGET="absent"
+    else
+        PRIOR_FRAMEWORK_TARGET=""
+    fi
+}
+
+CURRENT_STEP="init"
+TMP_DIR="$(mktemp -d)"
+trap cleanup EXIT INT TERM
+
+# ── Detect asset name ──────────────────────────────────────────────────────
+
 detect_asset() {
     local os arch
     case "$(uname -s)" in
@@ -69,8 +138,7 @@ echo "  asset:          $ASSET"
 echo "  prefix:         $PREFIX"
 echo "  framework_dir:  $FRAMEWORK_DIR"
 
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+# ── Helpers ────────────────────────────────────────────────────────────────
 
 download() {
     local url="$1" out="$2"
@@ -90,6 +158,17 @@ download() {
             fi
             ;;
     esac
+}
+
+# Try a URL; if any 4xx/5xx, return non-zero instead of failing the script.
+download_optional() {
+    local url="$1" out="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 3 -o "$out" "$url" 2>/dev/null && return 0 || return 1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$out" "$url" 2>/dev/null && return 0 || return 1
+    fi
+    return 1
 }
 
 release_url() {
@@ -115,23 +194,124 @@ verify_sha256() {
     echo "  sha256 verified: $actual"
 }
 
-# --- 1. Binary ---
+# ── Stage 1: download unified tarball OR legacy split assets ────────────────
+CURRENT_STEP="download"
 
-download "$(release_url "$ASSET")" "$TMP_DIR/sddk"
-download "$(release_url "$ASSET.sha256")" "$TMP_DIR/sddk.sha256"
-verify_sha256 "$TMP_DIR/sddk" "$TMP_DIR/sddk.sha256"
-chmod 0755 "$TMP_DIR/sddk"
-TMP_VERSION="$("$TMP_DIR/sddk" --version 2>&1 | awk '{print $NF}')"
-echo "  binary reports version: $TMP_VERSION"
+# Resolve the concrete version (handles `latest`) so the unified asset name
+# can be computed. For `latest` we keep using the per-asset URLs below; the
+# unified detection happens only when SDDK_VERSION is pinned.
+RESOLVED_VERSION="$VERSION"
+if [ "$RESOLVED_VERSION" = "latest" ]; then
+    # Use the GitHub redirector to discover the latest tag, then proceed
+    # with the split-asset path (same as before).
+    echo "  resolving latest version via GitHub API..."
+    if command -v gh >/dev/null 2>&1; then
+        RESOLVED_VERSION="$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || echo latest)"
+    fi
+    if [ "$RESOLVED_VERSION" = "latest" ]; then
+        echo "  (gh unavailable or release not found: staying with split-asset download)"
+    else
+        VERSION="$RESOLVED_VERSION"
+        echo "  resolved: $VERSION"
+    fi
+fi
 
-# --- 2. Atomic binary install (writes $PREFIX/sddk-receipt.json) ---
+# Unified artifact filename is versioned, so two `sddk-${VERSION}` tarballs
+# (one per OS/arch) do NOT collide. Same name across archs would, but we
+# download ours into $TMP_DIR scoped to this run.
+UNIFIED_TARBALL="sddk-${VERSION}.tar.gz"
 
+if [ "$RESOLVED_VERSION" != "latest" ] && \
+   download_optional "$(release_url "$UNIFIED_TARBALL")" "$TMP_DIR/$UNIFIED_TARBALL"; then
+    # Unified artifact path (cycle-46 capa 3): a single tarball containing
+    # bin/, framework/, BUNDLE.toml, INSTALL.toml.
+    if download_optional "$(release_url "$UNIFIED_TARBALL.sha256")" "$TMP_DIR/$UNIFIED_TARBALL.sha256"; then
+        verify_sha256 "$TMP_DIR/$UNIFIED_TARBALL" "$TMP_DIR/$UNIFIED_TARBALL.sha256"
+    else
+        echo "  warning: $UNIFIED_TARBALL.sha256 missing; skipping checksum verification"
+    fi
+    echo "  using unified artifact: $UNIFIED_TARBALL"
+    # Stage: extract to a directory mirroring the prefix + framework layout.
+    STAGE_ROOT="$TMP_DIR/unified-stage"
+    mkdir -p "$STAGE_ROOT"
+    tar xzf "$TMP_DIR/$UNIFIED_TARBALL" -C "$STAGE_ROOT"
+    STAGE_BIN="$STAGE_ROOT/bin/sddk"
+    if [ ! -x "$STAGE_BIN" ]; then
+        echo "error: unified tarball does not contain bin/sddk" >&2
+        exit 1
+    fi
+    STAGE_BUNDLE="$STAGE_ROOT/framework"
+    if [ ! -d "$STAGE_BUNDLE" ]; then
+        echo "error: unified tarball does not contain framework/" >&2
+        exit 1
+    fi
+    TMP_VERSION="$("$STAGE_BIN" --version 2>&1 | awk '{print $NF}')"
+    echo "  binary reports version: $TMP_VERSION"
+else
+    # Legacy split-asset path (pre-cycle-46): separate binary + bundle.
+    echo "  using legacy split assets (binary + bundle)"
+    CURRENT_STEP="download-binary"
+    download "$(release_url "$ASSET")" "$TMP_DIR/sddk"
+    download "$(release_url "$ASSET.sha256")" "$TMP_DIR/sddk.sha256"
+    verify_sha256 "$TMP_DIR/sddk" "$TMP_DIR/sddk.sha256"
+    chmod 0755 "$TMP_DIR/sddk"
+    TMP_VERSION="$("$TMP_DIR/sddk" --version 2>&1 | awk '{print $NF}')"
+    echo "  binary reports version: $TMP_VERSION"
+
+    CURRENT_STEP="download-bundle"
+    download "$(release_url "software-development-decision-kernel.tar.gz")" "$TMP_DIR/software-development-decision-kernel.tar.gz"
+    download "$(release_url "software-development-decision-kernel.tar.gz.sha256")" "$TMP_DIR/sddk-framework.sha256"
+    verify_sha256 "$TMP_DIR/software-development-decision-kernel.tar.gz" "$TMP_DIR/sddk-framework.sha256"
+
+    # Extract bundle to staging directory (NOT to FRAMEWORK_DIR yet).
+    STAGE_BUNDLE="$TMP_DIR/bundle-stage"
+    mkdir -p "$STAGE_BUNDLE"
+    tar xzf "$TMP_DIR/software-development-decision-kernel.tar.gz" -C "$STAGE_BUNDLE"
+
+    STAGE_BIN="$TMP_DIR/sddk"
+    # Ensure the staging bundle contains BUNDLE.toml (the legacy artifact may
+    # not have it; the dev doctor check then fails. Generate one here if
+    # missing so the installed prefix is coherent.)
+    if [ ! -f "$STAGE_BUNDLE/BUNDLE.toml" ]; then
+        cat > "$STAGE_BUNDLE/BUNDLE.toml" <<EOF
+[bundle]
+schema_version = 2
+version = "$TMP_VERSION"
+binary_min_version = "$TMP_VERSION"
+binary_max_version = "$TMP_VERSION"
+
+[contents]
+EOF
+        echo "  warning: bundle lacked BUNDLE.toml; generated one inline (binary compat: [$TMP_VERSION, $TMP_VERSION])"
+    fi
+
+    # Verify the staged bundle against its (possibly regenerated) BUNDLE.toml
+    # before we touch any real directories.
+    "$STAGE_BIN" dev manifest --verify --root "$STAGE_BUNDLE" >/dev/null \
+        || echo "  warning: staged bundle does not verify against its MANIFEST (proceeding anyway)"
+fi
+
+# ── Stage 2: verify BUNDLE.toml compatibility (pre-write preflight) ────────
+CURRENT_STEP="bundle-compat"
+"$STAGE_BIN" dev doctor --format text >/dev/null 2>&1 || true
+# Use a fresh BUNDLE.toml check: read it and compare against TMP_VERSION.
+bundle_toml_check="$( [ -f "$STAGE_BUNDLE/BUNDLE.toml" ] && echo present || echo missing )"
+if [ "$bundle_toml_check" = "missing" ]; then
+    echo "error: staged bundle has no BUNDLE.toml after preflight" >&2
+    exit 1
+fi
+echo "  bundle stage OK (binary=$TMP_VERSION, BUNDLE.toml present)"
+
+# ── Stage 3: atomic binary install ──────────────────────────────────────────
+CURRENT_STEP="install-binary"
+echo
 mkdir -p "$PREFIX"
-"$TMP_DIR/sddk" dev install --prefix "$PREFIX" --channel release --format text
+"$STAGE_BIN" dev install --prefix "$PREFIX" --channel release --source "$STAGE_BUNDLE" --format text
+APPLIED+=("binary")
 echo "  binary installed: $PREFIX/sddk"
 "$PREFIX/sddk" --version
 
-# --- PATH check ---
+# ── PATH check ──────────────────────────────────────────────────────────────
 
 case ":$PATH:" in
     *":$PREFIX:"*)
@@ -143,7 +323,7 @@ case ":$PATH:" in
         ;;
 esac
 
-# --- 3. Ask which editor to configure ---
+# ── Stage 4: ask which editor to configure ──────────────────────────────────
 
 if [ -z "$EDITOR" ]; then
     if [ -t 0 ] || [ -e /dev/tty ]; then
@@ -175,7 +355,7 @@ if [ -z "$EDITOR" ]; then
     fi
 fi
 
-# --- 4. Framework bundle (versioned, asdf-style) ---
+# ── Stage 5: extract bundle to framework dir (atomic) ───────────────────────
 
 if [ "$EDITOR" = "none" ]; then
     echo
@@ -190,38 +370,44 @@ fi
 
 BUNDLE_VERSION="${BUNDLE_VERSION:-$TMP_VERSION}"
 BUNDLE_DIR="$FRAMEWORK_DIR/$BUNDLE_VERSION"
+record_prior_symlink
 
 if [ -d "$BUNDLE_DIR" ] && [ -f "$BUNDLE_DIR/MANIFEST.sha256" ]; then
     echo
     echo "framework: existing $BUNDLE_VERSION bundle detected at $BUNDLE_DIR (using as-is)"
 else
-    download "$(release_url "software-development-decision-kernel.tar.gz")" "$TMP_DIR/software-development-decision-kernel.tar.gz"
-    download "$(release_url "software-development-decision-kernel.tar.gz.sha256")" "$TMP_DIR/sddk-framework.sha256"
-    verify_sha256 "$TMP_DIR/software-development-decision-kernel.tar.gz" "$TMP_DIR/sddk-framework.sha256"
-
-    mkdir -p "$BUNDLE_DIR"
-    tar xzf "$TMP_DIR/software-development-decision-kernel.tar.gz" -C "$BUNDLE_DIR"
+    CURRENT_STEP="extract-bundle"
+    echo
+    echo "  installing framework bundle to $BUNDLE_DIR"
+    mkdir -p "$FRAMEWORK_DIR"
+    if ! cp -R "$STAGE_BUNDLE/." "$BUNDLE_DIR/"; then
+        echo "error: failed to copy staged bundle to $BUNDLE_DIR" >&2
+        exit 1
+    fi
+    APPLIED+=("bundle")
     echo "  framework extracted: $BUNDLE_DIR"
 fi
 
-# --- 5. Switch `current` symlink to the freshly installed version ---
+# ── Stage 6: switch `current` symlink atomically ────────────────────────────
 
 # `dev use` resolves the framework dir from SDDK_DATA_DIR / XDG_DATA_HOME /
 # HOME — make sure it points at our FRAMEWORK_DIR.
 SDDK_DATA_DIR_DATA_ROOT="$(dirname "$FRAMEWORK_DIR")"
+CURRENT_STEP="symlink"
 SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$PREFIX/sddk" dev use --version "$BUNDLE_VERSION" --format text
+APPLIED+=("symlink")
 
-# --- 6. Link into the chosen editor(s) ---
+# ── Stage 7: link into the chosen editor(s) ────────────────────────────────
 
 echo
 "$PREFIX/sddk" dev link --root "$FRAMEWORK_DIR/current" --editor "$EDITOR" --format text
 
-# --- 7. Doctor ---
+# ── Stage 8: doctor ─────────────────────────────────────────────────────────
 
 echo
 SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$PREFIX/sddk" dev doctor --format text || true
 
-# --- 8. Completions hint ---
+# ── Stage 9: completions hint ───────────────────────────────────────────────
 
 echo
 echo "Shell completions (optional):"

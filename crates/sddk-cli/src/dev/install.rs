@@ -1,5 +1,15 @@
 //! `dev install` — atomic binary prefix installation with receipt.
+//!
+//! When `--source` is provided, the source is treated as a full framework
+//! bundle: `MANIFEST.sha256` is verified, `BUNDLE.toml` is parsed and its
+//! binary compatibility range is checked against CARGO_PKG_VERSION, the
+//! surfaces are copied, and the receipt records bundle metadata (v2 schema)
+//! so `sddk dev doctor --coherence` can later validate binary↔bundle coherence
+//! without re-parsing the source.
 
+use crate::dev::bundle_manifest::{
+    BUNDLE_MANIFEST_FILE, parse_bundle_manifest, verify_bundle_compat,
+};
 use crate::dev::common::{
     CopyMode, MANIFEST_SURFACES, RECEIPT_FILE, atomic_write, copy_tree, receipt_text,
 };
@@ -24,6 +34,27 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
                     mismatches.join("\n  ")
                 );
             }
+            // Bundle compatibility: refuse to install if the source's BUNDLE.toml
+            // declares a binary range that excludes CARGO_PKG_VERSION. This is
+            // the pre-write half of the binary↔bundle coherence contract.
+            let bundle_toml = source.join(BUNDLE_MANIFEST_FILE);
+            let manifest = parse_bundle_manifest(&bundle_toml).map_err(|e| {
+                anyhow::anyhow!(
+                    "BUNDLE.toml missing or invalid at {}: {}. \
+                     A valid BUNDLE.toml is required for coherent installs (v2 schema). \
+                     Run `sddk dev manifest --bundle` to (re)generate one.",
+                    bundle_toml.display(),
+                    e
+                )
+            })?;
+            verify_bundle_compat(&manifest, env!("CARGO_PKG_VERSION")).map_err(|e| {
+                anyhow::anyhow!(
+                    "binary {} is not compatible with bundle {}: {}",
+                    env!("CARGO_PKG_VERSION"),
+                    manifest.bundle.version,
+                    e
+                )
+            })?;
         }
 
         // NOW safe to write: compute binary digest after manifest verified.
@@ -54,7 +85,7 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
 
         // Bundle surface copy: when --source is provided, copy surfaces AFTER
         // manifest verified. Binary-only (no --source) skips this block.
-        if let Some(source) = &args.source {
+        let bundle_metadata: Option<(String, String, String)> = if let Some(source) = &args.source {
             let source = std::fs::canonicalize(source)?;
             for surface in MANIFEST_SURFACES {
                 let src_dir = source.join(surface);
@@ -63,14 +94,45 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
                 }
                 copy_tree(&src_dir, &args.prefix.join(surface), CopyMode::IfChanged)?;
             }
-            // Also copy the MANIFEST.sha256 itself to the prefix so `dev verify`
-            // can re-check installed surfaces against it.
-            let manifest_src = source.join(MANIFEST_FILE);
-            if manifest_src.is_file() {
-                let manifest_dest = args.prefix.join(MANIFEST_FILE);
-                std::fs::copy(&manifest_src, &manifest_dest)?;
+            // Also copy the MANIFEST.sha256 and BUNDLE.toml themselves to the
+            // prefix so `dev verify` and `dev doctor` can re-check installed
+            // surfaces and bundle compatibility without network access.
+            for rel in [MANIFEST_FILE, BUNDLE_MANIFEST_FILE] {
+                let src = source.join(rel);
+                if src.is_file() {
+                    let dest = args.prefix.join(rel);
+                    std::fs::copy(&src, &dest)?;
+                }
             }
-        }
+            // Compute bundle manifest hash for receipt (covers BUNDLE.toml).
+            let bundle_toml = source.join(BUNDLE_MANIFEST_FILE);
+            let bundle_hash = if bundle_toml.is_file() {
+                let bundle_bytes = std::fs::read(&bundle_toml)?;
+                Some(format!("sha256:{:x}", sha2::Sha256::digest(&bundle_bytes)))
+            } else {
+                None
+            };
+            // Parse bundle version from BUNDLE.toml (already validated above).
+            let bundle_version = if bundle_toml.is_file() {
+                parse_bundle_manifest(&bundle_toml)
+                    .ok()
+                    .map(|m| m.bundle.version)
+            } else {
+                None
+            };
+            // Bundle path relative to the framework root.
+            let bundle_path = args
+                .prefix
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_owned());
+            match (bundle_version, bundle_hash, bundle_path) {
+                (Some(v), Some(h), Some(p)) => Some((v, h, p)),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         // Parse tag from --release-receipt JSON when provided.
         // This is the mechanism by which `release plan` propagates the planned
@@ -81,7 +143,14 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
             json.get("tag")?.as_str().map(String::from)
         });
 
+        let (bundle_version, bundle_sha256, bundle_path) = match bundle_metadata {
+            Some((v, h, p)) => (Some(v), Some(h), Some(p)),
+            None => (None, None, None),
+        };
+        let has_bundle = args.source.is_some();
+
         let receipt = super::InstallReceipt {
+            schema_version: if has_bundle { 2 } else { 1 },
             version: env!("CARGO_PKG_VERSION").to_owned(),
             commit: args
                 .commit
@@ -91,8 +160,12 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
             channel: args.channel.clone(),
             installed_at: args.timestamp.unwrap_or_else(default_timestamp),
             binary_path,
-            bundle: args.source.is_some(),
+            bundle: has_bundle,
             tag: tag_from_receipt,
+            bundle_version,
+            bundle_sha256,
+            bundle_path,
+            coherence_checked: if has_bundle { Some(true) } else { None },
         };
         let receipt_path = args.prefix.join(RECEIPT_FILE);
         atomic_write(

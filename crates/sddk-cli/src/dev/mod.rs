@@ -5,6 +5,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 mod agent_models;
+pub(super) mod bundle_manifest;
 mod check;
 mod check_arch;
 mod comments_check;
@@ -43,9 +44,18 @@ pub(crate) use manifest::verify_manifest;
 pub(super) const MANIFEST_FILE: &str = "MANIFEST.sha256";
 
 /// Persisted installation receipt for side-by-side prefixes.
+///
+/// `schema_version` discriminates the layout: existing v1 receipts are still
+/// loadable because every v2 field is optional. The `binary_bundle_coherence`
+/// doctor check fails if a v2 schema is expected (binary ≥1.63.0) and the
+/// loaded receipt is missing the bundle metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) struct InstallReceipt {
+    /// Receipt schema version. v1 = pre-coherence (binary only); v2 = binary +
+    /// bundle metadata required by `binary_bundle_coherence` doctor check.
+    #[serde(default = "default_receipt_schema_version")]
+    pub schema_version: u32,
     /// Installed version.
     pub version: String,
     /// Source commit.
@@ -66,6 +76,27 @@ pub(super) struct InstallReceipt {
     /// Populated by `dev install --release-receipt <path>`.
     #[serde(default)]
     pub tag: Option<String>,
+    /// v2: bundle version this receipt is bound to. When present, `dev doctor`
+    /// validates that the active `current` symlink points at this version.
+    #[serde(default)]
+    pub bundle_version: Option<String>,
+    /// v2: SHA-256 of the bundle's MANIFEST.sha256 (or BUNDLE.toml hash for
+    /// unified artifacts). Verifies post-install that the bundle on disk is
+    /// the one this receipt claims.
+    #[serde(default)]
+    pub bundle_sha256: Option<String>,
+    /// v2: install-time filesystem path of the bundle root (relative to
+    /// `$SDDK_DATA_DIR/framework/`).
+    #[serde(default)]
+    pub bundle_path: Option<String>,
+    /// v2: result of the binary↔bundle compatibility check at install time.
+    /// `true` means the binary version satisfies the BUNDLE.toml range.
+    #[serde(default)]
+    pub coherence_checked: Option<bool>,
+}
+
+fn default_receipt_schema_version() -> u32 {
+    1
 }
 
 fn default_bundle_true() -> bool {
@@ -129,6 +160,20 @@ pub(super) struct ManifestArgs {
     /// Verify an existing manifest instead of generating one.
     #[arg(long)]
     pub(super) verify: bool,
+    /// Also write BUNDLE.toml declaring the framework version and binary compatibility.
+    /// The version comes from `--bundle-version`; the binary compatibility range from
+    /// `--binary-min-version` and `--binary-max-version` (defaults to bundle version).
+    #[arg(long)]
+    pub(super) bundle: bool,
+    /// Bundle version for BUNDLE.toml (e.g. "1.62.0"). Required when --bundle is set.
+    #[arg(long, requires = "bundle")]
+    pub(super) bundle_version: Option<String>,
+    /// Minimum compatible binary version (default: same as bundle version).
+    #[arg(long, requires = "bundle")]
+    pub(super) binary_min_version: Option<String>,
+    /// Maximum compatible binary version (default: same as bundle version).
+    #[arg(long, requires = "bundle")]
+    pub(super) binary_max_version: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(super) format: OutputFormat,
@@ -394,6 +439,10 @@ mod smoke_tests {
         let args = super::ManifestArgs {
             root: Some(tmp.path().to_path_buf()),
             verify: false,
+            bundle: false,
+            bundle_version: None,
+            binary_min_version: None,
+            binary_max_version: None,
             format: OutputFormat::Text,
         };
         let _ = self::manifest::run_dev_manifest(args);

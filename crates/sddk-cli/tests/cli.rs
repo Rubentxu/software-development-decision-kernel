@@ -23,6 +23,25 @@ fn compute_pass_output_digest(gate: &str, outcome: &str) -> String {
     format!("sha256:{:x}", hash)
 }
 
+/// Write a BUNDLE.toml into `source` compatible with `binary_version`.
+///
+/// Cycle-46 helper: `dev install --source` now refuses to install without a
+/// valid BUNDLE.toml (v2 coherent install). Tests that build a synthetic
+/// release tree under a temp dir use this helper to satisfy the preflight
+/// without pulling in the full `sddk dev manifest --bundle` codepath.
+fn write_test_bundle_manifest(source: &Path, binary_version: &str) {
+    let body = format!(
+        "[bundle]\n\
+         schema_version = 2\n\
+         version = \"{binary_version}\"\n\
+         binary_min_version = \"{binary_version}\"\n\
+         binary_max_version = \"{binary_version}\"\n\
+         \n\
+         [contents]\n",
+    );
+    std::fs::write(source.join("BUNDLE.toml"), body).unwrap();
+}
+
 /// Augment evidence JSON with REQ-IPV required fields when outcome is passed.
 /// Returns the original evidence unchanged when outcome is not "passed".
 fn augment_pass_evidence(evidence: &str, gate: &str, outcome: &str) -> String {
@@ -8611,6 +8630,8 @@ fn verify_detects_tampered_bundle() {
         "manifest write failed: {}",
         String::from_utf8_lossy(&manifest_written.stderr)
     );
+    // Cycle-46: BUNDLE.toml required for coherent install (v2 schema).
+    write_test_bundle_manifest(&source, env!("CARGO_PKG_VERSION"));
 
     // Prefix: install from source so receipt.bundle = true.
     let prefix = fixture.root.join("prefix");
@@ -8697,6 +8718,10 @@ fn uninstall_removes_prefix_and_editor_symlinks() {
         "manifest write failed: {}",
         String::from_utf8_lossy(&manifest_written.stderr)
     );
+    // Cycle-46: `dev install --source` (v2 coherent install) requires
+    // BUNDLE.toml. Tests simulating a release tree write one matching the
+    // binary version under test.
+    write_test_bundle_manifest(&source, env!("CARGO_PKG_VERSION"));
 
     // Install into a prefix so the editor can link against it.
     let prefix = fixture.root.join("prefix");
@@ -10042,6 +10067,25 @@ fn cli_dev_install_accepts_committed_manifest() {
         .write_all(&archive.stdout)
         .unwrap();
     assert!(tar_child.wait_with_output().unwrap().status.success());
+
+    // Cycle-46: `dev install --source` requires BUNDLE.toml (v2 coherent
+    // install). The committed tree should already include one for tagged
+    // releases; if not (e.g. running this test mid-cycle against an older
+    // HEAD), generate it so the install preflight can succeed.
+    let bundle_toml = source.path().join("BUNDLE.toml");
+    if !bundle_toml.is_file() {
+        let pkg_version = env!("CARGO_PKG_VERSION");
+        let body = format!(
+            "[bundle]\n\
+             schema_version = 2\n\
+             version = \"{pkg_version}\"\n\
+             binary_min_version = \"{pkg_version}\"\n\
+             binary_max_version = \"{pkg_version}\"\n\
+             \n\
+             [contents]\n",
+        );
+        std::fs::write(&bundle_toml, body).unwrap();
+    }
 
     let prefix = tempfile::tempdir().unwrap();
     let installed = Command::new(env!("CARGO_BIN_EXE_sddk"))

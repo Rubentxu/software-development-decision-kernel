@@ -227,14 +227,68 @@ pub(super) fn run_dev_doctor(
         if manifest_present && !manifest_ok {
             framework_warnings += 1;
         }
-        // Binary/bundle version coherence (INC-DEBT-005): a stale `sddk`
-        // binary on PATH running against a newer (or older) bundle produced
-        // mixed-version sessions and legacy receipt rows. Compare this
-        // binary's compile-time version with the active bundle's receipt.
-        // No receipt (dogfooding `path:` override, pre-receipt bundles) is
-        // informational — no check is emitted.
+        // Binary/bundle version coherence (INC-DEBT-005 + cycle-46 v2):
+        // a stale `sddk` binary on PATH running against a newer (or older)
+        // bundle produces mixed-version sessions and legacy receipt rows.
+        //
+        // v2 schema (binary ≥ 1.63.0) checks three things:
+        //   1. `receipt.version == CARGO_PKG_VERSION` — the active binary
+        //      matches what the receipt claims was installed.
+        //   2. If the receipt binds a bundle_version, the active bundle's
+        //      directory name (or BUNDLE.toml version) matches.
+        //   3. If a BUNDLE.toml exists in the active bundle, this binary
+        //      version is within the declared compatibility range.
+        //
+        // Pre-v2 receipts (schema_version < 2) keep the legacy single-check
+        // behaviour. No receipt (dogfooding `path:` override, pre-receipt
+        // bundles) is informational — no check is emitted.
         if let Ok(receipt) = read_receipt(&framework_root) {
-            let coherent = receipt.version == env!("CARGO_PKG_VERSION");
+            let receipt_ok = receipt.version == env!("CARGO_PKG_VERSION");
+            let bundle_match = match receipt.bundle_version.as_deref() {
+                Some(expected) => {
+                    // Active bundle version comes from either the directory
+                    // name (asdf convention: framework/<v>/) or the
+                    // BUNDLE.toml inside it.
+                    let dir_name = framework_root
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(str::to_owned);
+                    let bundle_toml_version = framework_root
+                        .join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE)
+                        .is_file()
+                        .then(|| {
+                            crate::dev::bundle_manifest::parse_bundle_manifest(
+                                &framework_root
+                                    .join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE),
+                            )
+                            .ok()
+                            .map(|m| m.bundle.version)
+                        })
+                        .flatten();
+                    dir_name.as_deref() == Some(expected)
+                        || bundle_toml_version.as_deref() == Some(expected)
+                }
+                None => true, // pre-v2 receipts have no bundle binding
+            };
+            let compat_ok = framework_root
+                .join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE)
+                .is_file()
+                .then(|| {
+                    crate::dev::bundle_manifest::parse_bundle_manifest(
+                        &framework_root.join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE),
+                    )
+                    .ok()
+                    .map(|m| {
+                        crate::dev::bundle_manifest::verify_bundle_compat(
+                            &m,
+                            env!("CARGO_PKG_VERSION"),
+                        )
+                        .is_ok()
+                    })
+                })
+                .flatten()
+                .unwrap_or(true);
+            let coherent = receipt_ok && bundle_match && compat_ok;
             checks.push(DoctorCheck {
                 tool: "binary.bundle_coherence".into(),
                 present: coherent,

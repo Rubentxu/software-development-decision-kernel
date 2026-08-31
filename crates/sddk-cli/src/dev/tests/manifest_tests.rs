@@ -347,6 +347,19 @@ fn manifest_covers_agent_models_yaml_and_install_ships_it() {
         "manifest must hash the canonical config: {manifest}"
     );
 
+    // Cycle-46: a coherent install (v2 schema) requires a BUNDLE.toml at the
+    // source root declaring the bundle version and binary compatibility.
+    // Without it `dev install --source` refuses to write the v2 receipt.
+    use crate::dev::bundle_manifest::{ContentsSection, write_bundle_manifest};
+    write_bundle_manifest(
+        &source,
+        "1.62.0",
+        "1.62.0",
+        "1.62.0",
+        ContentsSection::default(),
+    )
+    .unwrap();
+
     let prefix = temp_root("agent-models-prefix");
     let args = InstallArgs {
         prefix: prefix.clone(),

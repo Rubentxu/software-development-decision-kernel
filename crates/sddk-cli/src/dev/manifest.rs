@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use sddk_gateway::GitExecutor;
+use sha2::Digest;
 
 use crate::CommandOutput;
 
@@ -41,11 +42,46 @@ pub(super) fn run_dev_manifest(args: super::ManifestArgs) -> CommandOutput {
             );
         }
         let count = write_manifest(&root)?;
-        Ok(format!(
+        let mut lines = vec![format!(
             "manifest written: {} ({} files hashed)",
             root.join(MANIFEST_FILE).display(),
             count
-        ))
+        )];
+        if args.bundle {
+            let bundle_version = args.bundle_version.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("--bundle-version is required when --bundle is set")
+            })?;
+            let min = args
+                .binary_min_version
+                .clone()
+                .unwrap_or_else(|| bundle_version.to_owned());
+            let max = args
+                .binary_max_version
+                .clone()
+                .unwrap_or_else(|| bundle_version.to_owned());
+            let mut contents = count_surface_entries(&root)?;
+            // Record the manifest hash itself so the BUNDLE.toml carries a
+            // cryptographic anchor to the per-file manifest.
+            let manifest_bytes = std::fs::read(root.join(MANIFEST_FILE))?;
+            contents.manifest_sha256 = Some(format!(
+                "sha256:{:x}",
+                sha2::Sha256::digest(&manifest_bytes)
+            ));
+            let bundle_path = crate::dev::bundle_manifest::write_bundle_manifest(
+                &root,
+                bundle_version,
+                &min,
+                &max,
+                contents,
+            )?;
+            lines.push(format!(
+                "bundle manifest written: {} (binary compat [{}, {}])",
+                bundle_path.display(),
+                min,
+                max
+            ));
+        }
+        Ok(lines.join("\n"))
     })();
     super::super::render_result(result, format, |t| t.clone())
 }
@@ -208,6 +244,47 @@ pub(super) fn write_manifest(root: &Path) -> anyhow::Result<usize> {
     let target = root.join(MANIFEST_FILE);
     atomic_write(&target, content.as_bytes(), None)?;
     Ok(entries.len())
+}
+
+/// Tally the framework surface counts for the BUNDLE.toml `contents` section.
+///
+/// Walks the same `MANIFEST_SURFACES` roots as `manifest_entries` but counts
+/// files per surface. Used by `write_bundle_manifest_for_root` to populate
+/// `agents_count`, `skills_count`, `prompts_count`, `assets_count`.
+pub(super) fn count_surface_entries(
+    root: &Path,
+) -> anyhow::Result<crate::dev::bundle_manifest::ContentsSection> {
+    use crate::dev::bundle_manifest::ContentsSection;
+    let mut counts = ContentsSection::default();
+    for surface in super::common::MANIFEST_SURFACES {
+        let dir = root.join(surface);
+        if !dir.is_dir() {
+            continue;
+        }
+        let count = count_files_recursive(&dir)?;
+        match surface {
+            "agents" => counts.agents_count = count,
+            "skills" => counts.skills_count = count,
+            "prompts" => counts.prompts_count = count,
+            "assets" => counts.assets_count = count,
+            _ => {}
+        }
+    }
+    Ok(counts)
+}
+
+fn count_files_recursive(dir: &Path) -> anyhow::Result<u32> {
+    let mut count = 0u32;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() {
+            count += 1;
+        } else if file_type.is_dir() {
+            count += count_files_recursive(&entry.path())?;
+        }
+    }
+    Ok(count)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────────
