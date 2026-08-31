@@ -1,0 +1,55 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Gate cost is observable but not budgeted
+
+## Card ID
+
+EC-CSS-006
+
+## Claim (verbatim)
+
+> "The CLI exposes per-cycle metrics (Levels A-E + L1-L6 costs) in
+> `crates/sddk-cli/src/metrics.rs`, but no published policy budgets a
+> per-cycle gate cost. The 5 Wave-1 budget gates therefore have no
+> observable complexity ceiling — drift toward 'more gates = more safety'
+> is unmeasured."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S19 | `crates/sddk-cli/src/metrics.rs` (Levels A-E + L1-L6 — referenced by L1.S8 but not directly inspected) | L1 |
+| 2 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated; no cost ceiling) | L1 |
+| 3 | GAP-5 | `crates/sddk-cli/src/metrics.rs` Levels A-E + L1-L6 not directly inspected in this research | (gap) |
+
+## Decay date
+
+2027-02-28.
+
+## Confidence
+
+corroborated (0.80).
+
+## Triangulation verdict
+
+2 L1 sources + 1 documented gap. The gap is documentary, not substance.
+
+## What this card supports
+
+- ADR-F (complexity budget policy).
+- SPEC-COMPLEXITY-BUDGET-001.
+
+## Decay warning
+
+Re-verify when `metrics.rs` schema changes or when Wave plan adds new gates.
+
+## Anti-tautology check
+
+Removing metrics does NOT make this card fail — the card claims absence of a
+budget policy, not absence of measurement.

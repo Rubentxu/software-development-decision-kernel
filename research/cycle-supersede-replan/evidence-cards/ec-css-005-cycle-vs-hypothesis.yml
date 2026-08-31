@@ -1,0 +1,64 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Cycle vs Hypothesis: domain primitive absent
+
+## Card ID
+
+EC-CSS-005
+
+## Claim (verbatim)
+
+> "There is no domain primitive in `sddk-domain` that distinguishes a
+> product goal (cycle) from a design hypothesis (decision). The runtime
+> has `Phase::{Explore, Specify, Design, Plan, Build, Verify, Uat, Review,
+> Release, Archive}` (L1.S11 §1.1), but the prompt layer executes only
+> `tasks → apply → verify → debt-verify → release → archive` — i.e. phase
+> transitions do not bind to single product intentions."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1 (Phase enum) and §1.2 (no review executor) | L1 |
+| 2 | L1.S4 | `crates/sddk-vault/src/repair.rs:19-26` (`RepairAction::{NodeCreation, PlainTextRewrite}` — narrow decision model) | L1 |
+| 3 | L1.S2 | `crates/sddk-cli/src/cycle.rs:485-558` (`run_cycle_start` takes `name` and derives `cycle_id`; no design-hypothesis field) | L1 |
+| 4 | GAP-4 | `crates/sddk-domain/src/cycle.rs` Phase enum not deeply inspected in this research | (gap) |
+
+## Decay date
+
+2027-02-28.
+
+## Confidence
+
+corroborated (0.85).
+
+## Triangulation verdict
+
+3 L1 sources + 1 documented gap. Convergent on absence; precise shape of the
+proposed primitive requires GAP-4 closure (one inspection).
+
+## What this card supports
+
+- ADR-E (cycle vs hypothesis separation).
+- SPEC-DESIGN-DECISION-001.
+
+## Decay warning
+
+Re-verify when `sddk-domain` adds new types (e.g. `Goal`, `DesignDecision`).
+
+## Anti-tautology check
+
+Adding a `sddk_domain::DesignDecision` type would invalidate this card. The
+card is structurally testable.
+
+## Cross-reference
+
+- ADR-041 Workflow Runtime v2 may own the `Goal` primitive (Wave 1 §Wave 1
+  Capacities 1). Coordination required.
+- L1.S11 already recommends removing or formalizing the orphan `Phase::Review`.

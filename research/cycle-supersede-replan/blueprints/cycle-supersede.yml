@@ -1,0 +1,109 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-blueprint
+---
+
+# Blueprint — cycle.supersede operation
+
+## Component
+
+`cycle supersede` — a first-class operation that closes a cycle goal with a
+reason while preserving prior evidence.
+
+## Inputs
+
+| Field | Type | Required | Source |
+|---|---|---|---|
+| `cycle_id` | string | yes | `CycleId::from_parts(...)` |
+| `reason` | enum | yes | `SupersedeReason::{ScopeInvalid, GoalReplaced, ExternalObsolete}` |
+| `evidence_refs` | Vec<ArtifactRef> | yes | Past evidence for traceability |
+| `successor_cycle_id` | Option<CycleId> | conditional | Required if `reason=ScopeInvalid` or `GoalReplaced` |
+| `actor` | string | yes | (human or agent) |
+| `timestamp` | RFC3339 | yes | (deterministic) |
+| `lease_owner` | string | yes | (lease gating preserved) |
+| `fencing_token` | i64 | yes | (lease gating preserved) |
+
+## Outputs
+
+| Field | Type | Notes |
+|---|---|---|
+| `event_id` | string | New `cycle.supersede.requested` event |
+| `event_hash` | string | Hash chain head |
+| `supersede_receipt_id` | string | Pointer to the durable receipt |
+| `successor_event_id` | Option<string> | Set when successor cycle is created in same tx |
+
+## Ledger events emitted
+
+1. `cycle.supersede.requested` — carries reason, evidence_refs, actor, timestamp.
+2. `cycle.supersede.applied` — emitted after artifact write + lease release.
+3. `lease.released` (existing) — emitted by cycle.lock release.
+
+The new events follow the same envelope as `cycle.start.*`. Digest and event
+count are preserved by convention: supersede adds exactly 3 events to the
+ledger (unless a successor is created in the same tx, in which case +N for
+the successor's events).
+
+## Authorization
+
+- Lease-gated (reuses `cycle rebuild`'s lease rule).
+- No `requires_approval` flag (supersede is structural, not destructive).
+- `actor.kind` MUST be `Human` or a named AgentKind with closed-set authority
+  (per ADR-0073, secretary has no supersede authority).
+
+## Side effects
+
+- `Release lease` — idempotent with prior `lease.acquired` events.
+- `Emit supersede-receipt.json` in the cycle's XDG artifact dir
+  (`$XDG_DATA_HOME/sddk/projects/<project>/workspaces/<workspace>/cycles/<cycle>/`).
+- `Mark prior evidence` as `Superseded` in the evidence index (reuses
+  `Authority::Superseded` from knowledge corpus pattern).
+- Do NOT create new vault nodes (no `vault.write` side effect).
+- Do NOT touch `release-receipt.json` (that belongs to ship).
+
+## Compatibility with current ledger
+
+- New events are **additive** — the event schema is open-ended
+  (existing `phase.*` and `cycle.*` events are unaffected).
+- No existing event is renamed, deleted, or re-signed.
+- The supersede-receipt is stored alongside existing artifacts; readers
+  that do not yet know about supersede ignore the new artifacts.
+- A `sddk cycle supersede` command is a new `CycleCommand::Supersede` variant
+  added to `crates/sddk-cli/src/cycle.rs:128`.
+
+## Authority limits
+
+- Supersede is **not** archive. Archive is destructive (vault write). Supersede
+  is additive (cycle closure with reason).
+- Supersede is **not** rebuild. Rebuild restores a snapshot from ledger events.
+  Supersede closes a goal with reason.
+- Supersede is **not** ship. Ship emits release-receipt + publish artifacts.
+  Supersede emits supersede-receipt + emits ledger events only.
+
+## Migration path
+
+1. **Phase 1 (this research)**: ADR-A drafted, blueprint drafted, spec drafted.
+2. **Phase 2 (next cycle, candidate cycle-50+)**: implement `CycleCommand::Supersede`,
+   `SupersedeReason` enum, `supersede-receipt.json` schema. RED test first
+   (anti-tautology per cycle-36 discipline).
+3. **Phase 3 (cycle-51+)**: wire to the orchestrator workflow; ensure that
+   `sddk recover` (currently `cycle rebuild` shadow) does NOT replay supersede
+   events as if they were transitions.
+
+## Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Supersede is used to evade archive | low | high | Audit: supersede requires successor OR external-obsolete evidence |
+| Lease acquire still broken | high | high | Phase 2 depends on fixing cycle lock acquire (GAP-6) |
+| Successor cycle scope ambiguous | medium | medium | Borrow ADR-021's `goal_hash` discipline for successor scope binding |
+| Ledger digest changes | low | critical | Test invariant; byte-stable across two runs |
+
+## Reference
+
+- ADR-A (draft) — supersede as first-class
+- SPEC-SUPERSEDE-001 — event schema + receipt schema
+- L1.S2, L1.S5, L1.S6, L1.S8, L1.S19
+- EXT.S39 (Meadows — structural leverage point)

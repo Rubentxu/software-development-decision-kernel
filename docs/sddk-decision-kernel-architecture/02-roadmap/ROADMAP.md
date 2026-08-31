@@ -105,6 +105,7 @@ generic runtime rather than a debt-specific kernel subsystem:
 | Phase 10 Active Graph (Wave 3) | incidence/queue projection + scope links |
 | Phase 10 Active Graph (Wave 4) | `sddk debt why` exposed via minimal facade |
 | Phase 14 Hardening | P0-P3 start policy, signed override receipts and artifact inventory |
+| Post-Wave 4 recover-forward series (cycles 50-54) | Process-failure recovery capabilities: supersede, classified gates, recovery actions, replanning, and complexity trends |
 
 ## Cross-phase slice — test-tooling boundary (per ADR-042)
 
@@ -841,6 +842,48 @@ The deterministic substrate is already shipped (ADR-021 append-only ledger, ADR-
 
 P0–P3 debt start policy, signed gates, SBOM/provenance, and read-only retention inventory are deferred to **Phase 14** of the existing 14-phase plan. Wave 5 is not bound to a new cycle; Wave 4 closes the active-graph + facade consolidation arc.
 
+## Post-Wave 4 - Recover-forward cycle series (cycle-50+)
+
+> **Planning evidence:** [cycle supersede / replan research](../../../research/cycle-supersede-replan/cycle-supersede-replan-research-report.md).
+> **Principle:** Fail closed for security; recover forward for process.
+> **Compatibility:** This series is additive and starts only after cycle-49. Waves 1-4, the VAULT003 / RepairReceipt queue (v1.65.6), and the end-to-end `release.sh` pipeline (v1.65.0) remain unchanged.
+
+### cycle-50 - Housekeeping + XDG writer foundation
+
+- [ADR-0078](../../adr/ADR-0078-vault003-scope-policy.md) retroactively documents the VAULT003 scope policy shipped in v1.65.6.
+- WriterXdgFailClosed trait and `vault export --output` validation remain a proposed implementation item (DRAFT-ADR-D).
+- Size: A-min; approximately 1.5 days.
+
+### GAP-6 pre-flight (cycle-50 bis if needed)
+
+- Investigate and repair `cycle lock acquire` (`FOREIGN KEY constraint`; `AGENTS.md` section 8).
+- Size: A-min; approximately 2-3 days.
+- This is a hard dependency for cycle-51. It is not part of the recover-forward series scope.
+
+### cycle-51 - cycle supersede (prerequisite: GAP-6)
+
+- DRAFT-ADR-A: `cycle supersede` as a first-class operation.
+- `SPEC-SUPERSEDE-001` remains an intermediate draft in the research package until a formal cycle adopts it.
+- Size: A-min; approximately 3-4 days.
+
+### cycle-52 - Gate classification + recovery-action contract
+
+- DRAFT-ADR-B: security / process / mixed gate classification.
+- DRAFT-ADR-G: RFC 9457 problem details with a recovery action.
+- Size: A-min; approximately 5-6 days.
+
+### cycle-53 - replan-in-place (depends on cycle-51)
+
+- DRAFT-ADR-C: `cycle.replan` operation.
+- `SPEC-REPLAN-001` remains an intermediate draft in the research package until a formal cycle adopts it.
+- Size: A-min; approximately 3-4 days.
+
+### cycle-54 - Cycle vs hypothesis + complexity budget
+
+- DRAFT-ADR-E: `DesignDecision` primitive.
+- DRAFT-ADR-F: trend metric, not a blocking rule.
+- Size: A-full; approximately 5-7 days.
+
 ### Wave dependencies diagram
 
 ```text
@@ -887,6 +930,7 @@ No per-command feature flag exists in `crates/sddk-cli/Cargo.toml`; rollback the
 | Wave 3 | cycle-48 | Active-cycle enumeration, two named `why` queries and at least three views specified. | Both named queries `<100ms` on the 50-cycle fixture; status view is byte-stable. |
 | Wave 4 completion | cycle-49 | Facade ready for first-class promotion; legacy migration Stage 1 begins. | First-class help set equals five verbs; dry-run and recover preserve ledger invariants. |
 | Wave 5 | Phase 14 | Deferred to the existing Phase 14 entry gate. | Deferred to the existing Phase 14 exit gate. |
+| `recover_forward_series` | cycle-50..54 | cycle-49 Wave 4 facade shipped; GAP-6 fixed before cycle-51. | ADR-0078 documented; cycle-50 has 2 items, cycle-51 has 1, cycle-52 has 2, cycle-53 has 1, and cycle-54 has 2; draft specs and blueprints remain in the research package until adoption. |
 
 **Operational sequence:** cycle-45 is next. After it closes, cycle-46 starts the consolidation arc with Wave 1 + the additive Wave 4 facade shell.
 

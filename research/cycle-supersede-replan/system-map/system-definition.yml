@@ -1,0 +1,147 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+author: deep-research-orchestrator
+date: 2026-08-31
+cycle: none (read-only research)
+status: draft
+authority: docs/evolutivo-correcciones-flexibilidad.md (deferred backlog, cycle `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup`)
+---
+
+# R0 — System Definition (Meadows lens)
+
+## Subject
+
+The SDDK cycle lifecycle (start → status → transition → lock → rebuild → archive)
+and its adjacent gates (verify, debt-verify, release, vault.validate) as a
+**system that must block dangerous changes but must not block learning or delivery**.
+
+## System boundary
+
+```
+IN  ────────────────────────────────────────────────────────────  OUT
+agent intent  ──►  cycle.start  ──►  phase transitions  ──►  ship artefact
+             │   (CycleManifest)   (cycle.transition)       (release.cmd)
+             │          │                  │                      │
+             │          ▼                  ▼                      ▼
+             │   lease acquire     gate receipts          vault artifact
+             │   (cycle.lock)     (cycle.evaluate_gate)  (XDG path)
+             │          │                  │                      │
+             ▼          ▼                  ▼                      ▼
+       failed gate? ◄── error ── no progress?  ◄── evidence? ◄── policy?
+
+Scope (in):
+  • Cycle state machine (CycleCommand, CycleLockCommand, CycleRebuild)
+  • Vault validation (VAULT001-VAULT00N) + RepairReceipt scope policy
+  • XDG fail-closed path resolution (`resolve_xdg_paths`, `XDG_DATA_HOME must be absolute`)
+  • Gate receipts and the `UP_TO_DATE` substrate (Wave plan, ADR-0068)
+  • Recovery via `cycle rebuild` (shadow-routed to `sddk recover`)
+
+Scope (out, considered but deferred):
+  • Workflow Runtime v2 (ADR-041) — runs in parallel track, owns the runtime substrate
+  • Dynamic graph engine (Phase 4) — depends on bounded execution foundation
+  • Secretary (ADR-0072/0073) — bounded sub-supervisor, independent authority
+```
+
+## Goal (verbatim from input)
+
+> "Fail closed para seguridad; recover forward para proceso."
+>
+> "Un framework debe bloquear cambios peligrosos, no bloquear el aprendizaje ni la entrega."
+
+## Stocks and flows (Meadows)
+
+| Element | Type | Notes |
+|---|---|---|
+| Open cycles per project | Stock | Accumulates; can become Tragedy-of-Commons if unbounded |
+| Gate receipts | Flow | One-shot; consumed by transitions; durable evidence |
+| RepairReceipts | Stock | Append-only YAML queue; 90-day validity window |
+| `pending_map` / `pending_parallel` | Stock | Per-tick drainage; bounded by max_concurrency |
+| Cycle leases (fencing_token) | Stock | One per cycle at a time; exclusive |
+| Phase debt (`PASS_WITH_WARNINGS`) | Stock | Accumulates across cycles; resolved by INCs |
+| `cargo test --workspace` wall time | Stock | Trending up as cycle count grows |
+
+## Feedback loops (Senge / Kim archetypes)
+
+| Loop | Type | Detected in |
+|---|---|---|
+| Policy Resistance | Balancing | Drift between runtime phases (A-full has orphan `Phase::Review`) and prompt layer (no review executor). Both layers "win" by adding their own verification. |
+| Shifting the Burden | Reinforcing | `cycle.lock acquire` currently broken (FOREIGN KEY constraint, AGENTS.md §8). The fix is delayed in favour of manual cycle-id editing. |
+| Eroding Goals | Reinforcing | "Passing" tests by tautology (cycle-42 fabricated dm02 evidence) erodes the goal of real verification. |
+| Fixes that Fail | Reinforcing | Adding a recovery path that requires human editing of the ledger reinforces the idea that the framework cannot recover itself. |
+| Limits to Success | Balancing | Vault scope policy (VAULT003) currently allow-list = 1; growth requires either expanding allow-list (lowers security) or per-cycle waivers (raises process cost). |
+| Success to the Successful | Reinforcing | RepairReceipts only accrue for cycles that already have a `dev` workflow; legacy/initial cycles cannot self-repair. |
+
+## Leverage points (Meadows, level 12 → level 1)
+
+| # | Level | Current state | Proposed leverage (per insight) |
+|---|---|---|---|
+| 12 | Paradigms | "framework debe bloquear todo" | **Recover forward** — block dangerous changes, recover from process errors |
+| 11 | Goals | "pass all gates" | **Pass meaningful gates** — drop goals that do not protect an observable invariant |
+| 10 | Structure | Gate result is binary (pass/fail) | **Gate returns executable recovery** (insight #4) |
+| 9 | Delays | Process delays known but no fast lane | (Wave 4 facade shell already exists) |
+| 8 | Buffers | Pending_map, pending_parallel, RepairReceipt queue | (already bounded) |
+| 7 | Drives | Unknown | (out of scope) |
+| 6 | Information | `error_kind` is informative but not prescriptive | **Always include recovery hint** (insight #4) |
+| 5 | Rules | Cycle vs hypothesis conflated | **Separate cycle (goal) from hypothesis (decision)** (insight #6) |
+| 4 | Self-organization | Gates cannot self-repair | **Author-aware recovery** — process gates auto-route, security gates hard-stop (insight #2) |
+| 3 | Goals (sub) | Gate budget not visible | **Complexity budget per gate** (insight #7) |
+| 2 | Parameters | Gate list is static | (no leverage — parameters are downstream) |
+
+## System traps (Meadows)
+
+| Trap | Symptom | Evidence in repo | Mitigation proposed |
+|---|---|---|---|
+| Policy Resistance | Runtime + prompt layer add verification independently | `Phase::Review` is orphan (A-full lifecycle research) | ADR-A: `phase.review` removal or formalization |
+| Shifting the Burden | Cycle lock acquire fails → manual editing | AGENTS.md §8 | Cycle lock acquire must work, or cycle start must surface the error |
+| Seeking the Wrong Goal | More gates = more safety (false) | 5 budget gates in Wave 1; additive growth | Complexity budget (insight #7) |
+| Drift to Low Performance | Cycle-42 agent claimed success, verification showed hang | `docs/handoff/HANDOFF-2026-08-26-cycle-42-archive.md` (cycle-43 anti-fabrication contract) | Tied to process gate recoverability |
+| Eroding Goals | Phase review → bypass → drift | Runtime vs prompt layer | (insight #6: ciclo vs hipótesis) |
+
+## Anti-patterns flagged (from R0 lens)
+
+- **"Collecting data without a lens"** — already avoided: input document carries a principle
+  ("fail closed / recover forward") and 7 concrete insights.
+- **Shifting the Burden to L3 sources** — accepted: all 7 insights cite code symbols; L1 evidence used below.
+- **Seeking the Wrong Goal** — accepted as risk (insight #7).
+- **Invertir en parámetros cuando el problema es de paradigma** — accepted as risk: `cycle supersede`
+  as a primitive (insight #1) is a structural change, not a parameter change.
+
+## Sources consulted at R0 (see `candidate-pool.yml` for the full list)
+
+| ID | Source | Level | Decay |
+|---|---|---|---|
+| L1.S1 | `docs/evolutivo-correcciones-flexibilidad.md` (input) | L1 | stable |
+| L1.S2 | `crates/sddk-cli/src/cycle.rs` (1200 lines) | L1 | 1-2y (Rust surface) |
+| L1.S3 | `crates/sddk-cli/src/vault_cmd.rs` (531 lines) | L1 | 1-2y |
+| L1.S4 | `crates/sddk-vault/src/repair.rs` (408 lines) | L1 | 1-2y |
+| L1.S5 | `crates/sddk-cli/src/recover.rs` (35 lines) | L1 | 1-2y |
+| L1.S6 | `docs/adr/ADR-0047-durable-debt-remediation.md` | L1 | stable (ADR accepted) |
+| L1.S7 | `docs/adr/ADR-0068-bounded-execution.md` (cycle-44 foundation) | L1 | stable |
+| L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan) | L1 | 6-12mo (roadmap drift) |
+| L1.S9 | `docs/debt/{SEVERITY,PRIORITY,README}.md` | L1 | stable |
+| L1.S10 | `docs/debt/INC-DEBT-016-dm02-flaky-hang-parallel-sync-race.md` | L1 | stable (closed) |
+| L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (A-full lifecycle review) | L1 | stable |
+| L2.S12 | git log (v1.65.0..v1.65.7) — 13 commits, 1901 insertions | L2 | 6-12mo |
+| L2.S13 | `crates/sddk-vault/src/validate.rs` (CycleScope, Severity) | L1 | 1-2y |
+
+## Decay dates
+
+- All Rust crates: 2026-08-31 + 24 months = **2028-08-31** (Rust surface rotates slower than UI frameworks).
+- Wave plan: 2026-08-31 + 6 months = **2027-02-28** (Wave 1 must ship before; otherwise drift).
+- ADRs accepted: no decay (immutable record; superseded by amendment).
+- `docs/evolutivo-correcciones-flexibilidad.md`: 2026-08-31 + 24 months = **2028-08-31** (intent is durable; mechanism may evolve).
+
+## Out-of-scope at R0
+
+- **Re-implementing bounded execution** — shipped in cycle-44 (ADR-0068); not touched here.
+- **Migrating to Workflow Runtime v2** — owned by ADR-041; runs in parallel.
+- **Touching release.sh** — under `feat(uat)` release series; not part of this research.
+- **Reverting VAULT003 / RepairReceipt** — published in v1.65.6 (commit 87c5a97); preserved verbatim.
+
+## Open questions for R1
+
+1. **Cycle vs hypothesis** (insight #6): Is there a domain primitive that already separates goal from decision in `sddk-domain`? If yes, leverage it. If no, propose `DesignDecision` as a first-class event.
+2. **Replan-in-place authority** (insight #3): Who can invoke it? Orchestrator only, or human via `sddk` CLI? What's the boundary?
+3. **Writer XDG fail-closed** (insight #5): Is the failure-closed path already enforced for vault artifacts? Where else does a writer need it (UAT, knowledge, etc.)?
+4. **Gate taxonomy** (insight #2): Which of the 5 budget gates from Wave 1 are security vs process? Map them.
+5. **Complexity budget** (insight #7): What is the per-cycle gate budget? Where is it observable?

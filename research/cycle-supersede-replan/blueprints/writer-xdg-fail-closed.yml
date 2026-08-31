@@ -1,0 +1,108 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-blueprint
+---
+
+# Blueprint — WriterXdgFailClosed trait
+
+## Component
+
+A reusable trait and helper module that enforces: "the framework never
+writes inside the user's repository; all writers resolve an XDG path or
+reject the call."
+
+## Inputs
+
+| Field | Type | Required | Source |
+|---|---|---|---|
+| `xdg_environment` | XdgEnvironment | yes | from `environment.xdg()` |
+| `project_id` | string | yes | `ResolvedProjectIdentity.project_id` |
+| `workspace_id` | string | yes | `stable_workspace_id(...)` |
+| `artifact_kind` | enum | yes | `Vault | Knowledge | Uat | Inventory | Cycle | Receipt` |
+| `sub_path` | RelativePath | yes | relative to the artifact-kind root |
+
+## Contract
+
+```rust
+pub trait WriterXdgFailClosed {
+    /// Resolves the absolute XDG path for the requested artifact.
+    /// Returns Err iff the resolved path is not under XDG_DATA_HOME
+    /// or XDG_STATE_HOME or XDG_CONFIG_HOME.
+    fn resolve_xdg_path(
+        &self,
+        kind: ArtifactKind,
+        sub_path: &RelativePath,
+    ) -> Result<PathBuf, XdgWriterError>;
+
+    /// Writes atomically (temp + rename).
+    fn write_atomic(
+        &self,
+        path: &Path,
+        contents: &[u8],
+    ) -> Result<(), XdgWriterError>;
+}
+```
+
+## Validation rules
+
+1. `XDG_DATA_HOME` MUST be absolute (per EXT.S37).
+2. The resolved path MUST be under one of `XDG_DATA_HOME`, `XDG_STATE_HOME`,
+   `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`.
+3. The resolved path MUST NOT contain `..` components.
+4. The resolved path MUST NOT point to the workspace root (`canonical_root`)
+   or any tracked file in the repo (per AGENTS.md §4.1: "No crear nuevos
+   checkouts en `~/.sddk-shared/`"; per §1: "nunca escribe dentro de otros
+   repos de proyectos").
+
+## Where it applies (R2 audit)
+
+| Site | Today | Proposed |
+|---|---|---|
+| `crates/sddk-cli/src/vault_cmd.rs:443` (`vault export`) | `std::fs::write(&args.output, &html)` — user-supplied output path, NOT auto-resolved to XDG | Validate `args.output` is NOT inside the repo; error if so |
+| `crates/sddk-cli/src/knowledge_cmd.rs:300` (`fs::write(&ctx.xdg_profile_path, json)`) | XDG-resolved | Already correct; document as exemplar |
+| `crates/sddk-cli/src/uat.rs:1677` (`uat storage`) | XDG-resolved | Already correct |
+| `crates/sddk-vault/src/repair.rs:172` (`temp_path + rename`) | Atomic write | Already correct |
+| `crates/sddk-cli/src/cycle.rs` (artifact writes) | All XDG-resolved via `paths.cycle_artifacts` | Already correct |
+
+The **gap** is `vault_cmd.rs:443` (`vault export`). Today, an agent can run
+`sddk vault export --output ./v2/vault/foo.html` and write inside the repo.
+The fix: validate the output path is not under the workspace root.
+
+## Compatibility with current behavior
+
+- Existing XDG-resolved sites (knowledge, UAT, cycle) keep their behavior;
+  the trait is a documentation/refactor aid, not a new requirement.
+- `vault export` gains a new validation: `--output` MUST NOT be inside the
+  workspace root. An alternative `--xdg-output <kind>` flag resolves to XDG.
+- No existing command's signature changes (additive flag).
+
+## Authority limits
+
+- The trait does not enforce schema or content; it enforces **where** writes
+  go, not **what** is written.
+- The trait does not bypass capability policy (`check_vault_capability`
+  is still called first).
+
+## Migration
+
+1. **Phase 1 (this research)**: trait drafted, helper module sketched.
+2. **Phase 2 (next cycle)**: implement trait, validate `vault_cmd.rs:443`
+   site, RED test for the rejection.
+3. **Phase 3**: extend to UAT wizard (which currently writes temp HTML).
+
+## Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| XDG env not set | low | medium | Already handled by `CliEnvironment::xdg()` fallback to `HOME/.local/share` |
+| Symlink escape | low | high | Canonicalize path; reject if canonicalization differs from input |
+| User-injected `--output` | medium | medium | Validate at CLI parse + at write site (defense in depth) |
+
+## Reference
+
+- ADR-D (draft) — writer XDG fail-closed
+- EC-CSS-004
+- L1.S3, L1.S4, L1.S13, L1.S21, EXT.S37

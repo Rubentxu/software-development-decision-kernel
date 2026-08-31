@@ -1,0 +1,54 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Replan-in-place has no current primitive
+
+## Card ID
+
+EC-CSS-003
+
+## Claim (verbatim)
+
+> "There is no command or transition that lets a cycle, after `verify`,
+> return to `propose/spec/design/tasks` with a recorded reason. The closest
+> primitive is `cycle rebuild`, which restores a snapshot from ledger events
+> but does not change the cycle goal."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S2 | `crates/sddk-cli/src/cycle.rs:128-147` (`CycleCommand` variants: `Start, Status, Transition, EvaluateGate, Rebuild, ArtifactsDir, Lock, Inventory` — no `Replan` or `Restage`) | L1 |
+| 2 | L1.S5 | `crates/sddk-cli/src/recover.rs` (35 lines; shadows to rebuild, not replan) | L1 |
+| 3 | L1.S8 | ROADMAP §Wave 4 (`recover <cycle>` is "replay-only relative to the canonical ledger") | L1 |
+
+## Decay date
+
+2028-08-31.
+
+## Confidence
+
+corroborated (0.90).
+
+## Triangulation verdict
+
+3 L1 sources, convergent (all negative — replan is not present).
+
+## What this card supports
+
+- ADR-C (`replan-in-place` operation).
+- SPEC-REPLAN-001.
+
+## Anti-tautology check
+
+Adding a `CycleCommand::Replan` variant would invalidate this card only by
+definition (the card claims absence). Verification requires reading the file.
+
+## Decay warning
+
+Re-verify when `CycleCommand` enum changes (currently 8 variants).

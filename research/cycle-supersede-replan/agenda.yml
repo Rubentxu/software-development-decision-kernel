@@ -1,0 +1,155 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R1
+date: 2026-08-31
+status: draft
+---
+
+# R1 — Research Agenda
+
+Prioritized by risk × evidence-need. Each Q carries its source set, expected
+answer form, and downstream consequence.
+
+## P0 — Critical (must answer before any ADR)
+
+### Q1. How does `cycle rebuild` differ from a future `cycle supersede`?
+
+- **Why P0**: Insight #1 is the highest-leverage change. Conflating rebuild
+  with supersede will silently violate the ledger invariant (rebuild restores
+  a snapshot; supersede closes a goal with reason).
+- **Source set**: L1.S2 (`crates/sddk-cli/src/cycle.rs:139`, `CycleRebuildArgs`,
+  rebuild_text), L1.S5 (`recover.rs`), `release_cmd.rs:1608` (archive.vault.complete
+  restricted to BLOCKED cycles), L2.S12 (release.sh v1.65.0+).
+- **Expected answer**: Side-by-side table; identify 4-6 fields that diverge
+  (intent, ledger effect, side effects, idempotency, authority, evidence).
+- **Downstream consequence**: ADR-A (`cycle supersede` as primitive).
+
+### Q2. Which gates in `crates/sddk-cli/src/lint.rs` + Wave 1 budget gates are security vs process?
+
+- **Why P0**: Insight #2 is the foundation for all other insights. Without
+  classification, "fail closed / recover forward" cannot be enforced.
+- **Source set**: L1.S8 (Wave plan §Wave 1.5 budget gates: `tests-pass`,
+  `policy-compliant`, `debt-severity-assigned`, `debt-priority-assigned`,
+  `bounded-execution`), L1.S2 (gate evaluation `cycle evaluate-gate`,
+  `GateOutcomeArg`), L1.S4 (`RepairReceipt` allow-list), L1.S11
+  (A-full lifecycle review).
+- **Expected answer**: A taxonomy table mapping each gate to one of
+  `security | process | mixed` with the rationale.
+- **Downstream consequence**: ADR-B (gate classification + recoverability).
+
+### Q3. Is there any existing recovery path that already routes to replan-in-place?
+
+- **Why P0**: Insight #3 needs a baseline. If `sddk recover` already
+  approximates replan, the design is incremental. If not, it's a new primitive.
+- **Source set**: L1.S5 (`recover.rs`, 35 lines, shadow-routed to `cycle rebuild`),
+  L1.S2 (`CycleRebuildArgs.dry_run` + lease-fence requirement), ADR-0068
+  (bounded execution contract).
+- **Expected answer**: Map `recover → rebuild`; identify missing transitions
+  (propose/spec/design/tasks back-references).
+- **Downstream consequence**: ADR-C (`replan-in-place` operation).
+
+### Q4. Does the XDG writer enforce "reject workspace paths" today?
+
+- **Why P0**: Insight #5 has a specific failure mode (agents creating `v2/vault/...`
+  inside the repo). Without baseline, the proposal is speculative.
+- **Source set**: L1.S2 (`crates/sddk-cli/src/cycle.rs:90-94`,
+  `resolve_xdg_paths(environment.xdg(), identity.project_id, &workspace_id)`),
+  L1.S13 (validate.rs `CycleScope` / `normalize_cycle_target`,
+  rejection of `..`, `/`, double-hyphens), L2.S12 (release.sh v1.65.0+ blocks
+  paths that bypass XDG via `--in-repo` flag explicit).
+- **Expected answer**: Code-path map. Where are XDG writers? Where could a
+  workspace-relative path leak? Where are the guards?
+- **Downstream consequence**: ADR-D (`writer-xdg-fail-closed` contract).
+
+## P1 — High (must answer before any spec is finalized)
+
+### Q5. Is there a domain primitive for "design hypothesis" today?
+
+- **Why P1**: Insight #6 needs a concrete handle. `sddk-domain::Decision`
+  may already exist; if so, "cycle vs hypothesis" is about wiring, not invention.
+- **Source set**: `crates/sddk-domain/src/` (need to grep for `Decision`,
+  `Hypothesis`, `Goal`), ADR-041 (Workflow Runtime v2 — likely owns goal).
+- **Expected answer**: Identification of the existing primitive OR proposal
+  for a new one.
+- **Downstream consequence**: ADR-E (cycle vs hypothesis separation).
+
+### Q6. What is the observable cost of a gate today?
+
+- **Why P1**: Insight #7 ("gate budget") requires a measurement story.
+- **Source set**: `crates/sddk-cli/src/metrics.rs` (Levels A-E + L1-L6 costs),
+  Wave plan §Wave 1.5, `lint.rs` (rule code counts).
+- **Expected answer**: Per-cycle wall time, per-gate time, per-gate LOC
+  consumed in workflow.yaml.
+- **Downstream consequence**: ADR-F (complexity budget policy).
+
+### Q7. Which existing transitions already emit "single recovery action"?
+
+- **Why P1**: Insight #4 ("bloqueos deben devolver una única recuperación
+  ejecutable") is a property check on current error paths.
+- **Source set**: L1.S2 (`cycle.rs` error paths: cycle lock no lease → "acquire
+  with `sddk cycle lock acquire` before rebuild"; gate missing → missing
+  field error), `lint.rs` (rule failures often diagnostic-only).
+- **Expected answer**: Sample 3-5 error paths and classify them: (a) returns
+  recovery command, (b) returns diagnostic only, (c) returns nothing.
+- **Downstream consequence**: ADR-G (recovery-action contract).
+
+## P2 — Medium (inform ADRs; not blocking)
+
+### Q8. Does `cycle lock acquire` ever succeed today?
+
+- **Why P2**: AGENTS.md §8 mentions `FOREIGN KEY constraint failed` in
+  `sddk cycle lock acquire`. If true, the cycle cannot be locked, which
+  cascades into `CycleRebuildArgs.lease_owner` failing.
+- **Source set**: `crates/sddk-storage/src/migrations.rs` (FOREIGN KEY
+  constraints), `crates/sddk-cli/src/cycle.rs:843-886`
+  (`run_cycle_lock_acquire` body).
+- **Expected answer**: Reproduce the error against HEAD=v1.65.7; identify
+  the missing parent row.
+- **Downstream consequence**: Doc-only (this is a separate fix, not in scope).
+
+### Q9. Is there a Recovery Plan pattern in `sddk-domain` or `sddk-engine`?
+
+- **Why P2**: Would let us reuse existing infrastructure.
+- **Source set**: Grep across `crates/sddk-domain/src/`, `crates/sddk-engine/src/`
+  for `Recovery`, `Plan`, `Hypothesis`.
+- **Expected answer**: Hit list or "not found".
+- **Downstream consequence**: Either reuses or proposes new.
+
+## P3 — Low (background; useful for evidence-cards)
+
+### Q10. How many open/accepted-risk INCs are outstanding today?
+
+- **Why P3**: Confirms backlog pressure (whether this research is timely).
+- **Source set**: `docs/debt/INC-*.md` (status: open vs accepted_risk vs closed).
+- **Expected answer**: Count + names.
+
+### Q11. How does the test fixture `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup`
+relate to the current repo?
+
+- **Why P3**: The evolutivo document cites a cycle not present in the repo
+  (no HANDOFF for it). Determine if it's another workspace.
+- **Source set**: `vault_cmd.rs:508` (test fixture using the cycle id as a
+  normalization example), git log, git refs.
+- **Expected answer**: Either "test fixture only" or "missing handoff".
+- **Downstream consequence**: None (observability).
+
+## Decay budget per Q
+
+| Q | Decay window | Refresh trigger |
+|---|---|---|
+| Q1-Q4 | 6 months | Any change to `cycle.rs` (commands) or `vault_cmd.rs` |
+| Q5-Q7 | 12 months | Any change to `sddk-domain` or Wave plan |
+| Q8-Q11 | 24 months | N/A (one-shot) |
+
+## Triangulation expectations
+
+Each P0/Q answers must cite ≥ 2 independent sources from `candidate-pool.yml`,
+at least one being L1 (primary code or accepted ADR).
+
+## Deliverables expected from R1 → R6
+
+- R2 → `candidate-pool.yml` (≥ 25 sources with credibility tiers)
+- R3 → `credibility/sources.yml` (L1..L7 ranking)
+- R4 → `triangulation/claims.yml` (≥ 8 critical claims, ≥ 2 sources each)
+- R5 → `corpus.yml` (deduplicated, decay-tracked)
+- R6 → `evidence-cards/*.yml` (12-18 cards), `blueprints/*.yml` (3-5 components)

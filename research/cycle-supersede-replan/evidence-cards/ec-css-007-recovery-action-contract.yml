@@ -1,0 +1,57 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Recovery action contract is partial
+
+## Card ID
+
+EC-CSS-007
+
+## Claim (verbatim)
+
+> "Some error paths in `crates/sddk-cli/src/cycle.rs` return a recovery
+> command (e.g. 'cycle {} has no lease; acquire one with `sddk cycle lock
+> acquire` before rebuild'); most return bare diagnostics. There is no
+> enforced contract that every failure response includes a single
+> executable recovery action."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S2 | `crates/sddk-cli/src/cycle.rs:773` (recovery hint inline in error) | L1 |
+| 2 | L1.S3 | `crates/sddk-cli/src/vault_cmd.rs:128-139` (`check_vault_capability` returns hint with capability name and `--approve` requirement) | L1 |
+| 3 | EXT.S38 | RFC 9457 problem details (typed `error.kind` and `help` URI are standard) | L1 |
+| 4 | L1.S19 | `AGENTS.md` rule "Fail closed para seguridad; recover forward para proceso" | L1 |
+
+## Decay date
+
+2028-08-31 (Rust) / 2023-03 (RFC 9457, stable).
+
+## Confidence
+
+independent (0.95).
+
+## Triangulation verdict
+
+3 L1 in-repo + 1 L1 standard. Convergent on partial coverage.
+
+## What this card supports
+
+- ADR-G (recovery-action contract).
+- SPEC-RECOVER-FORWARD-001.
+
+## Decay warning
+
+RFC 9457 is stable; Rust surface may change. Re-verify when CLI error
+handling is refactored.
+
+## Anti-tautology check
+
+This card is robust to error-message refactoring — it claims an absence of
+a contract, not a specific text.

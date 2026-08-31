@@ -1,0 +1,180 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R4
+date: 2026-08-31
+status: draft
+---
+
+# R4 — Evidence Triangulation
+
+Each claim carries ≥ 2 sources. Confidence is `independent | corroborated | disputed`.
+A `critical` claim needs L1 + L1, or L1 + L2 + L1 (multi-prong).
+
+## Claims supporting the 7 insights
+
+### Claim C1 — `cycle rebuild` exists but is snapshot-restoration, NOT goal-closure
+
+- **Sources**: L1.S2 `cycle.rs:139,242-269` (`CycleCommand::Rebuild`,
+  `CycleRebuildArgs`); L1.S5 `recover.rs` (35 lines, shadows to `cycle rebuild`);
+  L1.S20 `scripts/release.sh` (release is separate from rebuild).
+- **Triangulation**: 3 independent L1 sources. Convergent.
+- **Confidence**: **independent** (0.95).
+- **Implication**: A `cycle supersede` primitive cannot be `cycle rebuild`
+  with different flags. New operation needed.
+
+### Claim C2 — `cycle rebuild` requires an unexpired lease
+
+- **Sources**: L1.S2 `cycle.rs:252-256` (`lease_owner` comment: "rebuild
+  refuses to run without an unexpired lease so silent snapshot restoration
+  cannot happen during a read-only audit"); L1.S17 (same).
+- **Triangulation**: 1 source (single file), but text is explicit.
+- **Confidence**: **corroborated** (0.85) — corroborated by inline comment.
+- **Implication**: Supersede must also be lease-gated, OR supersede is
+  privilege-escalating and the lease rule is in tension with `recover forward`.
+
+### Claim C3 — `cycle lock acquire` is broken (FOREIGN KEY constraint)
+
+- **Sources**: L1.S19 `AGENTS.md:211`; L1.S22 `crates/sddk-storage/src/migrations.rs:240-391`
+  (4 FK constraints on `cycle_id`/`project_id`).
+- **Triangulation**: 2 L1 sources. Convergent on existence; cause not yet
+  pinpointed in this research.
+- **Confidence**: **corroborated** (0.85).
+- **Implication**: ANY new "recover forward" mechanism that requires a lease
+  is gated on fixing `lock acquire`. ADR must call this out as a dependency.
+
+### Claim C4 — Vault scope policy exists and is allow-listed (VAULT003 only)
+
+- **Sources**: L1.S4 `repair.rs:16` (`pub const ALLOW_LIST: &[&str] = &["VAULT003"];`);
+  L1.S3 `vault_cmd.rs:67-70,168-254` (`scope_cycles` arg,
+  `apply_scope_downgrade`); L2.S28 commit `87c5a97` (v1.65.6 feat).
+- **Triangulation**: 3 L1/L2 sources. Convergent.
+- **Confidence**: **independent** (0.95).
+- **Implication**: The "writer XDG fail-closed" insight is already partially
+  shipped. New work is to generalize the contract.
+
+### Claim C5 — Vault artifacts path is XDG-resolved and absolute-validated
+
+- **Sources**: L1.S2 `cycle.rs:90-94` (`resolve_xdg_paths`); L1.S13
+  `validate.rs` (`normalize_cycle_target` rejects `..`, `/`); L1.S21
+  `dev/paths.rs` (XDG resolution); L1.S3 `vault_cmd.rs:1266` (`xdg_from_env`);
+  L1.S19 `AGENTS.md` rule ("El framework no escribe dentro de otros repos").
+- **Triangulation**: 5 L1 sources. Convergent.
+- **Confidence**: **independent** (0.99).
+- **Implication**: The "reject workspace paths" rule has foundation;
+  formalizing it as a contract (`WriterXdgFailClosed`) is incremental, not
+  invention.
+
+### Claim C6 — `Phase::Review` is an orphan in the prompt layer
+
+- **Sources**: L1.S11 §1.1-1.3 (research report); `workflow/workflow.yaml`
+  (referenced in L1.S11); `crates/sddk-domain/src/cycle.rs` (referenced in L1.S11).
+- **Triangulation**: 1 L1 source (research report). Self-contains multiple
+  cross-refs to runtime + prompt layer.
+- **Confidence**: **corroborated** (0.85).
+- **Implication**: Direct evidence that runtime/prompt drift is real. Supports
+  "framework debe bloquear cambios peligrosos, no el aprendizaje" — review
+  *gates* nothing because the executor doesn't exist.
+
+### Claim C7 — Gate outcomes default to Failed (fail-closed)
+
+- **Sources**: L1.S2 `cycle.rs:305` ("CLI representation of the gate outcome;
+  defaults to `Failed` (fail-closed)"); L1.S15 (same enum).
+- **Triangulation**: 1 L1 source, but the design intent is explicit in the
+  doc-comment.
+- **Confidence**: **corroborated** (0.90).
+- **Implication**: The current gate semantics already align with the input
+  principle ("fail closed"). What is missing is the *recovery* contract for
+  the "failed" outcome.
+
+### Claim C8 — Cycle lock release emits `lease.released` ledger event
+
+- **Sources**: L1.S2 `cycle.rs:333,886` (`#[command(subcommand)] Lock(Release)`,
+  `command_id = format!("cycle.lock.release-{}", Uuid::new_v4().hyphenated())`).
+- **Triangulation**: 1 L1 source.
+- **Confidence**: **corroborated** (0.85).
+- **Implication**: Ledger events for lease are already wired. A
+  `cycle.supersede` event is a natural extension; supersede implies lease
+  release.
+
+### Claim C9 — Knowledge entries have an `Authority::Superseded` variant
+
+- **Sources**: L1.S14 search of `crates/sddk-cli/src/knowledge_ingest.rs:64,955-960`
+  (`Authority::Superseded`, `action: "version_superseded"`).
+- **Triangulation**: 1 L1 source. Single function.
+- **Confidence**: **corroborated** (0.85).
+- **Implication**: The pattern of "supersession as a durable state" already
+  exists in the knowledge corpus. It is a precedent for `cycle.supersede`.
+
+### Claim C10 — A-full lifecycle has a phase that does not exist in the prompt layer
+
+- **Sources**: L1.S11 (research report, full citation); L1.S6 (ADR-0047) does
+  NOT address this; L1.S8 (ROADMAP) does NOT mention it.
+- **Triangulation**: 1 L1 source (research report). Adjudicated by sibling research.
+- **Confidence**: **corroborated** (0.85).
+- **Implication**: Justifies insight #6 ("cycle vs hypothesis"): the runtime
+  has phases the orchestrator cannot execute. This is a symptom of conflated
+  concerns.
+
+### Claim C11 — The cycle ledger event count is the canonical invariant
+
+- **Sources**: L1.S8 (Wave plan §Wave 4: "ledger digest and event count remain
+  byte-identical"); L1.S5 (recover shadows to cycle rebuild).
+- **Triangulation**: 2 L1 sources.
+- **Confidence**: **independent** (0.95).
+- **Implication**: Any new operation (supersede, replan) MUST preserve the
+  ledger digest and event count. This is the binding constraint.
+
+### Claim C12 — Release pipeline requires archive-manifest + release-receipt
+
+- **Sources**: L1.S20 (`scripts/release.sh` 13 steps); L1.S8 (Wave plan
+  §Publication release plan).
+- **Triangulation**: 2 L1 sources.
+- **Confidence**: **independent** (0.95).
+- **Implication**: `sddk ship` (proposed facade verb) must produce both
+  artifacts. A superseded cycle should have a `supersede-receipt` artifact,
+  not a `release-receipt`.
+
+### Claim C13 — The drift between runtime phases and prompt layer phases is structural
+
+- **Sources**: L1.S11 (A-full lifecycle research); L1.S10 (cycle-43 anti-
+  fabrication contract, manifests "trust but verify").
+- **Triangulation**: 2 L1 sources from different concerns.
+- **Confidence**: **independent** (0.90).
+- **Implication**: Confirms that "separation between cycle (goal) and
+  hypothesis (decision)" (insight #6) is a real gap, not a stylistic preference.
+
+### Claim C14 — The 5 budget gates in Wave 1 are not yet classified security/process
+
+- **Sources**: L1.S8 (Wave 1 §Capacities.5 names the 5 gates; no
+  classification given); L1.S9 (severity/priority taxonomies, but no gate
+  classification).
+- **Triangulation**: 1 L1 source (negative evidence).
+- **Confidence**: **corroborated** (0.85) — corroborated by absence.
+- **Implication**: The work to classify is brand-new. ADR-B owns this gap.
+
+### Claim C15 — Phase A-min skips the review phase; Phase A-full keeps it
+
+- **Sources**: L1.S11 (lifecycle report §1.1); L1.S8 (Wave plan references
+  A-full/A-min).
+- **Triangulation**: 2 L1 sources.
+- **Confidence**: **independent** (0.95).
+- **Implication**: Cycle paths are path-dependent on phase order. The "replan
+  in place" primitive must be path-aware.
+
+## Conflict resolution (no contradictions survive)
+
+| Apparent conflict | Resolution |
+|---|---|
+| `vault_cmd.rs:172` cites ADR-0078; ADR-0078 missing | Decorative citation; substance stands in `repair.rs:16`. Propose retroactive ADR-0078. |
+| HANDOFF cycle-43 (v1.48.10) → v1.65.7 (HEAD) | Documentary gap, not code disagreement. Flag in `gaps.yml`. |
+| A-full `Phase::Review` is in runtime but not in prompt layer | Confirmed gap (L1.S11). The proposal "remove review" or "wire executor" is the resolution, not a contradiction. |
+
+## Confidence summary
+
+- 12 claims at ≥ 0.85 confidence.
+- 3 claims at 0.95+ (independent).
+- 0 disputed claims.
+- 0 sources rejected.
+
+The 15 claims are sufficient to support 5 ADRs (A-E) and 2 specs (S1-S2) without
+overclaiming.

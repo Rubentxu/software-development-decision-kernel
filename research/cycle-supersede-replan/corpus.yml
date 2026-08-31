@@ -1,0 +1,110 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R5
+date: 2026-08-31
+status: draft
+---
+
+# R5 — Consolidated Corpus
+
+## Deduplication
+
+The pool has 33 distinct items. After deduplication:
+
+- 5 items merged into "Wave plan substrate" (L1.S8 + L3.S33 + AGENTS.md §6).
+- 3 items merged into "VAULT003/RepairReceipt substrate" (L1.S3 + L1.S4 + L1.S13 + L2.S28).
+- 2 items merged into "Cycle state machine substrate" (L1.S2 + L1.S5 + L1.S15 + L1.S16 + L1.S17).
+- 1 item kept as-is (L1.S11 — A-full lifecycle review is its own corpus unit).
+- 8 external sources kept as background references (no merger needed).
+
+Net: 33 → 25 corpus units.
+
+## Corpus catalog
+
+| Corpus unit | Source IDs | Decay | Authority |
+|---|---|---|---|
+| CU-1 Input document | L1.S1 | 2028-08 | L1 |
+| CU-2 Cycle state machine | L1.S2, L1.S5, L1.S15, L1.S16, L1.S17 | 2028-08 | L1 |
+| CU-3 VAULT003/RepairReceipt substrate | L1.S3, L1.S4, L1.S13, L2.S28 | 2028-08 | L1 |
+| CU-4 ADR-0047 durable debt | L1.S6 | stable | L1 |
+| CU-5 ADR-0068 bounded execution | L1.S7 | stable | L1 |
+| CU-6 Wave plan | L1.S8, L3.S33, AGENTS.md §6 | 2027-02 | L1 |
+| CU-7 Debt taxonomy | L1.S9 | stable | L1 |
+| CU-8 INC-DEBT-016 closed | L1.S10 | stable | L1 |
+| CU-9 A-full lifecycle review | L1.S11 | 2027-02 | L1 |
+| CU-10 UAT CLI | L1.S14 | 2028-08 | L1 |
+| CU-11 Workspace version | L1.S18 | 2027-02 | L1 |
+| CU-12 AGENTS.md canonical | L1.S19 | 2027-02 | L1 |
+| CU-13 Release pipeline | L1.S20 | 2028-08 | L1 |
+| CU-14 DEV paths | L1.S21 | 2028-08 | L1 |
+| CU-15 Storage FK schema | L1.S22 | 2028-08 | L1 |
+| CU-16 Git history v1.65.0..HEAD | L2.S23, L2.S24, L2.S25 | 2027-02 | L2 |
+| CU-17 Test fixture (phase-c-test-boundary-cleanup) | L2.S26 | 2027-02 | L2 |
+| CU-18 Release commits | L2.S27, L2.S28, L2.S29, L2.S30 | 2027-02 | L2 |
+| CU-19 Research reports (background) | L3.S31, L3.S32 | 2027-02 | L3 |
+| CU-20 Recovery paradigm (external) | EXT.S34, EXT.S35, EXT.S36 | stable | L3-L4 |
+| CU-21 XDG standard | EXT.S37 | stable | L1 |
+| CU-22 RFC 9457 problem details | EXT.S38 | stable | L1 |
+| CU-23 Meadows + Kim (systems thinking) | EXT.S39, EXT.S40, EXT.S41 | stable | L1-L2 |
+
+## Decay summary
+
+| Bucket | Count | Refresh trigger |
+|---|---|---|
+| stable (no decay) | 9 | N/A |
+| 2027-02 (Wave plan territory) | 9 | Any roadmap change |
+| 2028-08 (Rust surface) | 7 | Any code change |
+
+## Gaps and how they will be handled
+
+| Gap | Impact | Handling |
+|---|---|---|
+| ADR-0078 dangling reference | low | Emit evidence-card `dangling-adr`; propose retroactive ADR-0078 |
+| No HANDOFF between v1.48.10 and v1.65.7 | medium | Document in `gaps.yml`; rely on git log + tag peels |
+| `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup` has no HANDOFF | medium | Document; rely on evolutivo + test fixture |
+| `sddk-domain::Phase` enum not deeply inspected | medium | Evidence-card `cycle-vs-hypothesis` will list it |
+| `sddk-cli::metrics` Levels A-E not inspected | medium | Evidence-card `gate-cost` will list it |
+| Cycle lock acquire broken (FOREIGN KEY) | high | Out-of-scope for this research; dependency for ADR-B/C; flagged |
+
+## Corpus snapshot (for reproducibility)
+
+```
+HEAD:                405a3f0
+Workspace version:   1.65.7
+Tag:                 v1.65.7 (annotated; peels to HEAD)
+Last HANDOFF:        HANDOFF-2026-08-27-cycle-43-inc-debt-016-dm02-sync-race-fix-attempt-2.md
+Last debt closure:   INC-DEBT-016 (cycle-43, v1.48.10)
+Open debt:           none (per HANDOFF §"Drift carry-over: None")
+Open cycles:         p-52b95ef55999f9de/cycle-44+ (planned in ROADMAP Wave plan)
+Workspace gates:     cargo fmt clean; cargo clippy 0 errors; cargo test blocked by stale Cargo.lock (1 dep)
+```
+
+## Corpus integrity check
+
+- All claims in R4 triangulation reference corpus units via IDs.
+- All 7 input insights map to ≥ 1 corpus unit:
+  - Insight #1 (cycle supersede) → CU-1, CU-2
+  - Insight #2 (gate classification) → CU-2, CU-6, CU-9
+  - Insight #3 (replan in place) → CU-2, CU-5
+  - Insight #4 (recovery action) → CU-2, CU-4
+  - Insight #5 (XDG fail-closed writer) → CU-3, CU-11, CU-14, CU-21
+  - Insight #6 (cycle vs hypothesis) → CU-1, CU-4, CU-9, CU-22
+  - Insight #7 (complexity budget) → CU-6, CU-19, CU-23
+
+No insight lacks evidence. The corpus is sufficient for R6 extraction.
+
+## Anti-pattern checks (Meadows)
+
+| Anti-pattern | Status | Note |
+|---|---|---|
+| Collecting data without a lens | avoided | R0 lens applied first |
+| Shifting the Burden to L3 | avoided | 22/33 sources are L1 |
+| Seeking the Wrong Goal | avoided | All 5 ADRs target a concrete invariant |
+| Drift to Low Performance | accepted risk | ADR-F owns the budget measurement |
+| Policy Resistance | mitigated | Insight #2 directly addresses |
+| Eroding Goals | mitigated | Insight #6 separates cycle from hypothesis |
+
+## Acceptance
+
+This corpus is the source of truth for R6 deliverables. Any future
+re-research must update this snapshot, not edit it.

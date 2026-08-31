@@ -1,0 +1,28 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R5
+date: 2026-08-31
+status: draft
+---
+
+# Knowledge gaps (R5 → R6 carry-over)
+
+| ID | Gap | Impact | Owner | Mitigation |
+|---|---|---|---|---|
+| GAP-1 | `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup` cycle has no HANDOFF in this repo | medium | (observability) | Rely on evolutivo file + vault_cmd.rs test fixture |
+| GAP-2 | ADR-0078 referenced by vault_cmd.rs:172 does not exist | low | (audit hygiene) | Evidence-card `dangling-adr`; propose retroactive ADR-0078 to bind VAULT003 authority |
+| GAP-3 | HANDOFF gap between v1.48.10 (cycle-43) and v1.65.7 (HEAD) | medium | (documentary) | Document; rely on git log + tag peels + commit bodies |
+| GAP-4 | `crates/sddk-domain/src/cycle.rs` Phase enum not deeply inspected | medium | (research) | Evidence-card `cycle-vs-hypothesis`; cross-reference L1.S11 |
+| GAP-5 | `crates/sddk-cli/src/metrics.rs` Levels A-E + L1-L6 not inspected | medium | (research) | Evidence-card `gate-cost`; cross-reference L1.S8 |
+| GAP-6 | `cycle lock acquire` broken (FOREIGN KEY constraint, AGENTS.md §8) | high | (out-of-scope fix) | Document; carry-forward to next cycle; ADR-B and ADR-C must call it out as a dependency |
+| GAP-7 | No formal spec for "recover forward" recovery-action contract | medium | (this research) | Propose SPEC-RECOVER-FORWARD-001 as part of R6 |
+| GAP-8 | No measurement story for per-gate cost (insight #7) | medium | (this research) | Propose SPEC-COMPLEXITY-BUDGET-001 as part of R6 |
+| GAP-9 | The 5 Wave-1 budget gates (`tests-pass`, `policy-compliant`, `debt-severity-assigned`, `debt-priority-assigned`, `bounded-execution`) are not classified security/process | medium | (this research) | ADR-B owns this classification |
+| GAP-10 | No precedent for "DesignDecision" or "Hypothesis" domain primitive | medium | (research) | Evidence-card `cycle-vs-hypothesis`; propose domain extension if absent |
+
+## Decay warnings
+
+- All 9 medium-impact gaps must be re-verified at 2027-02-28 (Wave plan decay).
+- All 1 high-impact gap (GAP-6) is a blocker for ADR-B and ADR-C; cannot be
+  authored as "ready" until at minimum a repro is documented.
+- All 1 low-impact gap (GAP-2) is documentary hygiene, not blocking.

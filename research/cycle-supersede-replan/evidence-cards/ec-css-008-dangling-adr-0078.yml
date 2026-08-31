@@ -1,0 +1,55 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Dangling ADR-0078 reference
+
+## Card ID
+
+EC-CSS-008
+
+## Claim (verbatim)
+
+> "`crates/sddk-cli/src/vault_cmd.rs:172` cites 'verbatim `{VAULT003}` per
+> ADR-0078', but ADR-0078 does not exist in `docs/adr/` or
+> `docs/sddk-decision-kernel-architecture/03-adrs/`. The substantive claim
+> (allow-list contains exactly `VAULT003`) stands in
+> `crates/sddk-vault/src/repair.rs:16`."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S3 | `crates/sddk-cli/src/vault_cmd.rs:172` | L1 |
+| 2 | L1.S4 | `crates/sddk-vault/src/repair.rs:16` | L1 |
+| 3 | (negative) | ADR-0078 absent in both ADR directories | (audit) |
+
+## Decay date
+
+2027-02-28.
+
+## Confidence
+
+corroborated (0.95).
+
+## Triangulation verdict
+
+2 L1 sources + 1 negative audit. Convergent.
+
+## What this card supports
+
+- ADR-0078 retroactive proposal (DRAFT-ADR-0078 in `adr-drafts/`).
+- Roadmap patch item §3.6 (housekeeping).
+
+## Decay warning
+
+If ADR-0078 is authored, this card is resolved and archived.
+
+## Anti-tautology check
+
+This card is structural — it does not depend on any specific code body,
+only on file presence.

@@ -1,0 +1,93 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-blueprint
+---
+
+# Blueprint — replan-in-place operation
+
+## Component
+
+A `cycle.replan` operation that, after `verify`, lets a cycle return
+formally to `propose / spec / design / tasks` with a recorded reason and
+preserves the prior cycle as `superseded`.
+
+## Inputs
+
+| Field | Type | Required | Source |
+|---|---|---|---|
+| `cycle_id` | string | yes | The cycle to replan |
+| `restage_to` | enum | yes | `Propose | Specify | Design | Tasks | Apply` |
+| `reason` | string | yes | Human-readable (≥ 32 chars) |
+| `evidence_refs` | Vec<ArtifactRef> | yes | What triggered the replan |
+| `actor` | string | yes | (human or named agent) |
+| `timestamp` | RFC3339 | yes | (deterministic) |
+
+## Outputs
+
+| Field | Type | Notes |
+|---|---|---|
+| `event_id` | string | New `cycle.replan.requested` event |
+| `prior_cycle_status` | string | `superseded` (atomically set in same tx) |
+| `new_cycle_id` | string | A new cycle id derived from `prior_cycle_id + replan-counter` |
+| `supersede_receipt_id` | string | From supersede (chained) |
+
+## Ledger events emitted
+
+1. `cycle.replan.requested` — carries `restage_to`, `reason`, `evidence_refs`.
+2. `cycle.supersede.requested` (chained) — closes prior cycle with reason.
+3. `cycle.start.requested` for the successor (same scope binding).
+
+Total: 3 new events + 1 successor-cycle.start event (4 ledger events).
+
+## Authorization
+
+- Lease-gated (inherits from cycle.supersede).
+- `actor.kind` MUST be `Human` OR an AgentKind with `replan_authority` flag
+  (closed set per ADR-0073 — secretary has no replan authority).
+- `reason` MUST be ≥ 32 chars (LLM cannot game the field).
+- `restage_to=Apply` requires an explicit `--confirm-apply` flag (Apply is
+  destructive; the other restage_to values are exploratory).
+
+## Compatibility with current ledger
+
+- Adds 4 new event types. Existing events unchanged.
+- Successor cycle is bound by `(project, scope, name)` tuple per Wave plan
+  §Wave 1.4. If a successor already exists with the same tuple, the
+  orchestrator emits `ENGINE_AMBIGUOUS_SCOPE` and rejects.
+- The replan operation creates a **new** cycle; it does NOT mutate the
+  prior cycle's events. The prior cycle is closed via supersede.
+
+## Authority limits
+
+- Replan is **not** a free-form rewrite. The new cycle must follow the
+  same path (A-min, A-lite, A-full, B-direct) as the prior cycle.
+- Replan cannot change the project_id or workspace_id. Those are bound
+  at `cycle.start` and immutable.
+- Replan from `Apply` back to `Tasks` is allowed ONLY with `--confirm-apply`.
+
+## Migration
+
+1. **Phase 1 (this research)**: blueprint + spec drafted.
+2. **Phase 2 (cycle-50+)**: implement `CycleCommand::Replan` + `cycle.replan.requested`
+   event schema.
+3. **Phase 3**: orchestrator workflow exposes replan as a recovery action for
+   process gates (per ADR-B).
+
+## Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Replan used to evade verification | medium | high | Require evidence_refs (cannot be empty) |
+| Infinite replan loop | medium | medium | Counter on successor cycle_id (`prior_id + replan-N`) — fails after N |
+| Successor scope collision | low | high | ENGINE_AMBIGUOUS_SCOPE error code (existing in Wave plan) |
+| Ledger event count growth | low | medium | Documented; per ADR-0047, durable is intentional |
+
+## Reference
+
+- ADR-C (draft) — replan-in-place
+- SPEC-REPLAN-001
+- EC-CSS-003, EC-CSS-005, EC-CSS-010
+- L1.S2, L1.S5, L1.S8, L1.S11

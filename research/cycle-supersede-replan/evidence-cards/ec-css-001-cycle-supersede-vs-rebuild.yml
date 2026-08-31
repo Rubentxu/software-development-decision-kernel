@@ -1,0 +1,56 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Cycle Rebuild vs Cycle Supersede
+
+## Card ID
+
+EC-CSS-001
+
+## Claim (verbatim)
+
+> "`cycle rebuild` restores a missing cycle snapshot from its ledger events;
+> `cycle supersede` must close the cycle goal with a reason, preserving
+> prior evidence and emitting a supersede-receipt."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S2 | `crates/sddk-cli/src/cycle.rs:139,242-269` (`CycleCommand::Rebuild`, `CycleRebuildArgs`) | L1 |
+| 2 | L1.S5 | `crates/sddk-cli/src/recover.rs:13-34` (`run_recover` shadows to `cycle rebuild`) | L1 |
+| 3 | L1.S2 | `crates/sddk-cli/src/cycle.rs:252-256` (`lease_owner` comment: rebuild refuses without lease) | L1 |
+| 4 | L2.S23 | git log (13 commits since v1.48.10, none introduces supersede) | L2 |
+
+## Decay date
+
+2028-08-31 (Rust surface).
+
+## Confidence
+
+independent (0.95).
+
+## Triangulation verdict
+
+3 independent L1 sources + 1 corroborating L2 source. Convergent.
+
+## What this card supports
+
+- ADR-A (`cycle supersede` as first-class operation).
+- SPEC-SUPERSEDE-001 (supersede contract).
+- Roadmap patch item §3.1.
+
+## Decay warning
+
+When `crates/sddk-cli/src/cycle.rs` changes (e.g. new `CycleCommand` variants),
+this card must be re-verified.
+
+## Anti-tautology check
+
+Removing `CycleRebuildArgs` does NOT make this card fail — the card describes
+a structural distinction, not a code property.

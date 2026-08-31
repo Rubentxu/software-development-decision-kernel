@@ -1,0 +1,100 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-blueprint
+---
+
+# Blueprint — gate classification taxonomy
+
+## Component
+
+A gate-classification registry that maps each gate name to one of three
+classes: `security | process | mixed`, with a recovery contract.
+
+## Inputs
+
+| Field | Type | Required | Source |
+|---|---|---|---|
+| `gate_name` | string | yes | gate registry |
+| `class` | enum | yes | `Security | Process | Mixed` |
+| `recoverable` | bool | yes | whether the gate has a recovery action |
+| `recovery_action` | enum | conditional | if `recoverable=true`: `Retry | Replan | Waive | Escalate` |
+| `waiver_authority` | enum | conditional | if `recovery_action=Waive`: `Owner | Lead | Security` |
+| `waiver_expiry_days` | u32 | conditional | if `recovery_action=Waive` |
+
+## Outputs
+
+| Field | Type | Notes |
+|---|---|---|
+| `gate_descriptor.json` | file | One per gate; stored in `docs/gates/<gate>.yml` |
+| `gate_classification` | inline | Embedded in workflow.yaml for the gate |
+
+## Default mapping (proposed)
+
+| Gate | Class | Recoverable | Recovery |
+|---|---|---|---|
+| `tests-pass` | process | yes | `Retry` |
+| `policy-compliant` | process | yes | `Waive` (owner; 30 days) |
+| `debt-severity-assigned` | process | yes | `Retry` |
+| `debt-priority-assigned` | process | yes | `Retry` |
+| `bounded-execution` | mixed | partial | `Retry` (process) / `Escalate` (security) |
+| `review-approved` | security | no | (gate cannot exist without executor; see ADR-E) |
+| `archive-manifest` integrity | security | no | (block; require re-archive) |
+| `release-receipt` integrity | security | no | (block; require re-release) |
+| `repair-receipt-hash` | process | yes | `Retry` (re-validate SHA-256) |
+| `lock-lease-valid` | security | no | (block; require re-acquire) |
+
+## How a gate emits its class
+
+The gate definition in `workflow.yaml` carries an inline annotation:
+
+```yaml
+- id: tests-pass
+  class: process
+  recoverable: true
+  recovery_action: retry
+```
+
+The orchestrator reads `class` BEFORE applying the gate. For `process`
+gates that fail, the orchestrator emits `recover-forward <command>` and
+does NOT block the cycle. For `security` gates, the orchestrator emits
+`fail-closed` and requires an explicit `sddk ledger supersede` (see ADR-A)
+to bypass.
+
+## Compatibility with current ledger
+
+- The `gate_receipt` event is unchanged (carries `outcome` + `evidence`).
+- A new `gate_descriptor` event (or registry file) carries the class.
+- Backward compatibility: gates without a `class` annotation default to
+  `process` (current behavior is permissive; this is the safer default).
+
+## Authority limits
+
+- Re-classifying a gate from `process` to `security` requires an ADR
+  amendment.
+- Re-classifying from `security` to `process` is FORBIDDEN — security
+  classification is monotone-up.
+- `Mixed` requires an explicit recovery_action per branch.
+
+## Migration
+
+1. Author gate descriptor files (one per gate).
+2. Update `workflow.yaml` annotations.
+3. Orchestrator reads class; emits `recover-forward` for process failures.
+4. Cycle-49+ integrates with `sddk run` facade verb.
+
+## Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Default-class drift (LLM misclassifies) | medium | medium | Class is loaded from registry, not LLM |
+| Recovery infinite-loop | medium | medium | Recovery has bounded retry count + escalation |
+| Security class downgrade attempt | low | critical | ADR amendment required; monotone-up rule |
+
+## Reference
+
+- ADR-B (draft) — gate classification
+- EC-CSS-002
+- L1.S8 (Wave plan), L1.S9 (severity/priority), L1.S11 (orphan review)

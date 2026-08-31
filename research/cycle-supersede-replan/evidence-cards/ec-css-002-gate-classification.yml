@@ -1,0 +1,67 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Gate classification is not yet formalized
+
+## Card ID
+
+EC-CSS-002
+
+## Claim (verbatim)
+
+> "The 5 budget gates in Wave 1 (`tests-pass`, `policy-compliant`,
+> `debt-severity-assigned`, `debt-priority-assigned`, `bounded-execution`)
+> have no published security/process classification. The current
+> `GateOutcomeArg` enum (`Passed | Failed | Waived`) treats all gates uniformly
+> with `Failed` as the default — i.e. the framework already fails closed, but
+> does not surface a recovery action."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated, no classification) | L1 |
+| 2 | L1.S2 | `crates/sddk-cli/src/cycle.rs:305-315` (`GateOutcomeArg::{Passed,Failed,Waived}`, comment "defaults to `Failed` (fail-closed)") | L1 |
+| 3 | L1.S4 | `crates/sddk-vault/src/repair.rs:16` (`ALLOW_LIST = ["VAULT003"]` — implicit security/process distinction via allow-list) | L1 |
+| 4 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review is orphan — gating a non-existent executor) | L1 |
+
+## Decay date
+
+2027-02-28 (Wave plan territory).
+
+## Confidence
+
+corroborated (0.90).
+
+## Triangulation verdict
+
+4 L1 sources, no contradictions. Convergent on the absence of formal
+classification and the implicit fail-closed default.
+
+## What this card supports
+
+- ADR-B (Gate classification + recoverability).
+- SPEC-RECOVER-FORWARD-001.
+
+## Proposed classification (for ADR-B)
+
+| Gate | Class | Recoverable | Rationale |
+|---|---|---|---|
+| `tests-pass` | process | yes (re-run + fix) | No security boundary; failure is a test defect |
+| `policy-compliant` | process | yes (amend waiver with owner) | Per ADR-0047, policy is overridable with cadence |
+| `debt-severity-assigned` | process | yes (re-run debt-verify) | Severity is observable |
+| `debt-priority-assigned` | process | yes (re-run debt-verify) | Priority is observable |
+| `bounded-execution` | mixed | partial | Wall-budget failure may be process; budget-already-exceeded is security (signals the lock is no longer enforceable) |
+| `review-approved` (orphan) | security | no (must exist before gate) | L1.S11 — gate without executor |
+| `archive-manifest` integrity | security | no | Receipt forgery is a security boundary |
+| `release-receipt` integrity | security | no | Receipt forgery is a security boundary |
+
+## Anti-tautology check
+
+Removing the `GateOutcomeArg::Failed` default does NOT make this card fail;
+the card is about classification, not the specific enum.

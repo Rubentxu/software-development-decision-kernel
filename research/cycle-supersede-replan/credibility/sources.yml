@@ -1,0 +1,126 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R3
+date: 2026-08-31
+status: draft
+---
+
+# R3 — Source Credibility Assessment
+
+Each source in `candidate-pool.yml` scored on 5 axes:
+
+- **Authority** (1-7): L1 primary code/ADR / L2 authoritative secondary / L3+
+  tertiary. Lower is better.
+- **Bias**: -2 (clean) .. +2 (project-affirming only).
+- **Conflict-of-interest**: -2 (independent) .. +2 (self-citation).
+- **Freshness**: date last verified.
+- **URL alive / reachable**: yes/no.
+
+## Tier L1 — Primary
+
+| ID | Auth | Bias | COI | Freshness | Alive | Note |
+|---|---|---|---|---|---|---|
+| L1.S1 | L1 | 0 | 0 | 2026-08-31 | yes | Input; project-affirmed by `captured_by_cycle` |
+| L1.S2 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface, no interpretation |
+| L1.S3 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S4 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S5 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface; tiny file, high signal |
+| L1.S6 | L1 | 0 | 0 | 2026-08-31 | yes | ADR-0047 ACCEPTED, decisive debt framework |
+| L1.S7 | L1 | 0 | 0 | 2026-08-31 | yes | ADR-0068 ACCEPTED, bounded execution |
+| L1.S8 | L1 | +1 | 0 | 2026-08-31 | yes | Roadmap; project-affirming by definition |
+| L1.S9 | L1 | -1 | 0 | 2026-08-31 | yes | Taxonomies; objective |
+| L1.S10 | L1 | 0 | 0 | 2026-08-31 | yes | INC closed; objective record |
+| L1.S11 | L1 | +1 | 0 | 2026-08-30 | yes | Research report; sibling project advocacy |
+| L1.S13 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S14 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S15 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface; defines CLI gate semantics |
+| L1.S16 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S17 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S18 | L1 | -1 | 0 | 2026-08-31 | yes | `Cargo.toml` |
+| L1.S19 | L1 | 0 | 0 | 2026-08-31 | yes | AGENTS.md §8 cross-cut |
+| L1.S20 | L1 | 0 | 0 | 2026-08-31 | yes | Release pipeline |
+| L1.S21 | L1 | -1 | 0 | 2026-08-31 | yes | Code surface |
+| L1.S22 | L1 | -1 | 0 | 2026-08-31 | yes | Migration schema |
+
+## Tier L2 — Authoritative secondary
+
+| ID | Auth | Bias | COI | Freshness | Alive | Note |
+|---|---|---|---|---|---|---|
+| L2.S23 | L2 | 0 | 0 | 2026-08-31 | yes | git log: 13 commits since last handoff |
+| L2.S24 | L2 | -1 | 0 | 2026-08-31 | yes | HEAD SHA |
+| L2.S25 | L2 | -1 | 0 | 2026-08-31 | yes | Annotated tag |
+| L2.S26 | L2 | 0 | 0 | 2026-08-31 | yes | Test fixture |
+| L2.S27 | L2 | 0 | 0 | 2026-08-31 | yes | Release commit |
+| L2.S28 | L2 | 0 | 0 | 2026-08-31 | yes | VAULT003/RepairReceipt commit (PRESERVED) |
+| L2.S29 | L2 | 0 | 0 | 2026-08-31 | yes | Doc-capture commit |
+| L2.S30 | L2 | 0 | 0 | 2026-08-31 | yes | Cycle-46 coherence commits |
+
+## Tier L3 — Tertiary
+
+| ID | Auth | Bias | COI | Freshness | Alive | Note |
+|---|---|---|---|---|---|---|
+| L3.S31 | L3 | 0 | 0 | 2026-08-24 | yes | Background |
+| L3.S32 | L3 | 0 | 0 | 2026-08-21 | yes | Background |
+| L3.S33 | L3 | 0 | 0 | 2026-08-31 | yes | Adjacent domain (66 KB) |
+
+## External
+
+| ID | Auth | Bias | COI | Freshness | Alive | Note |
+|---|---|---|---|---|---|---|
+| EXT.S34 | L4 | -1 | -1 | 2002 (foundational) | yes | Recovery-oriented computing (Berkeley) |
+| EXT.S35 | L3 | 0 | -1 | 2016 (SRE book) | yes | SRE postmortem culture |
+| EXT.S36 | L3 | 0 | -1 | 2018 | yes | Accelerate book |
+| EXT.S37 | L1 | -1 | -1 | 2024-08-17 | yes | XDG spec (MUST be absolute) |
+| EXT.S38 | L1 | -1 | -1 | 2023-03 | yes | RFC 9457 problem details |
+| EXT.S39 | L1 | -1 | -1 | 2008 | yes | Meadows "Thinking in Systems" |
+| EXT.S40 | L1 | -1 | -1 | 1999 | yes | Meadows "Leverage Points" |
+| EXT.S41 | L2 | -1 | -1 | 1990s | yes | Kim system archetypes (MIT Sloan) |
+
+## Credibility summary
+
+- 22 L1 primary sources (code, ADRs, repo facts).
+- 8 L2 authoritative secondary (git, tags, commits).
+- 3 L3 tertiary (research reports).
+- 8 external standards / foundational works.
+
+The pool is **code-anchored**: 22 of 33 cited items are executable Rust or
+canonical markdown. External sources are background only (no LLM claim rests
+on them alone).
+
+## Rejected sources (out of corpus)
+
+- None at this stage.
+
+## Conflicting signals detected at R3
+
+1. **`vault_cmd.rs` references ADR-0078 (line 172) but ADR-0078 does not
+   exist in `docs/adr/` or `docs/sddk-decision-kernel-architecture/03-adrs/`.**
+   - Conflict: code claim "verbatim `{VAULT003}` per ADR-0078" vs absence.
+   - Resolution: ADR-0078 is missing; the substantive claim (allow-list = 1
+     entry, code = VAULT003) is independently verifiable in
+     `crates/sddk-vault/src/repair.rs:16`. The ADR number is decorative.
+   - R6 action: emit evidence card "ADR-0078 reference is dangling;
+     substance stands in repair.rs". Suggest creating ADR-0078 retroactively
+     to bind the authority.
+2. **AGENTS.md §8 vs `crates/sddk-cli/src/cycle.rs:843-886`** (lock acquire
+   vs FOREIGN KEY constraint). Both are L1; conflict is functional not
+   documentation. Not in scope for this research; flagged for cycle-47+.
+3. **Last HANDOFF (cycle-43, v1.48.10) vs HEAD (v1.65.7)**: 17 release
+   versions without intermediate HANDOFFs. Conflict is documentary gap, not
+   code disagreement. Flagged in `gaps.yml`.
+
+## Decay enforcement
+
+All sources have a `decay` field in `candidate-pool.yml`. Sources older
+than `decay` are marked `needs_review` and must be re-verified before
+any future citation.
+
+## Acceptance for the proposal
+
+A claim may be carried into R4 triangulation iff:
+
+- It has ≥ 1 L1 source, OR
+- It has ≥ 2 L2/L3 sources, OR
+- It has 1 L2/L3 source AND 1 external source (L1 standards only).
+
+All claims in this research meet the L1-primary threshold.

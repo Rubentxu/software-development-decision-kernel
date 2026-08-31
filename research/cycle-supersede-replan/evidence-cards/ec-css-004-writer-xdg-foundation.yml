@@ -1,0 +1,59 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Writer XDG fail-closed foundation
+
+## Card ID
+
+EC-CSS-004
+
+## Claim (verbatim)
+
+> "The vault writer today enforces three properties: (a) `XDG_DATA_HOME` MUST
+> be absolute, (b) cycle targets are normalized to flat filenames rejecting
+> `..`, `/`, leading/trailing/double hyphens, (c) repair artifacts are
+> validated by SHA-256 against the receipt. There is no general
+> `WriterXdgFailClosed` trait; the rules are scattered across `vault_cmd.rs`,
+> `validate.rs`, and `repair.rs`."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S13 | `crates/sddk-vault/src/validate.rs` (`normalize_cycle_target`) | L1 |
+| 2 | L1.S4 | `crates/sddk-vault/src/repair.rs` (`append_receipt` temp-file + rename, SHA-256 verify) | L1 |
+| 3 | L1.S3 | `crates/sddk-cli/src/vault_cmd.rs:67-70,168-254` (`scope_cycles` arg, `apply_scope_downgrade`) | L1 |
+| 4 | EXT.S37 | XDG Base Directory Specification 2024-08-17 (`XDG_DATA_HOME` MUST be absolute) | L1 |
+| 5 | L1.S21 | `crates/sddk-cli/src/dev/paths.rs` (XDG root resolution) | L1 |
+
+## Decay date
+
+2028-08-31 (Rust) / 2024-08-17 (XDG spec, stable).
+
+## Confidence
+
+independent (0.99).
+
+## Triangulation verdict
+
+5 sources (4 L1 in-repo + 1 L1 standard). Convergent.
+
+## What this card supports
+
+- ADR-D (`writer-xdg-fail-closed` contract).
+- SPEC-WRITER-001.
+
+## Decay warning
+
+XDG spec changes are infrequent (last major 2024-08-17). Re-verify if any
+freedesktop.org advisory supersedes it.
+
+## Anti-tautology check
+
+If `normalize_cycle_target` were deleted, this card still stands — it claims
+the foundation exists in scattered sites, not in a single trait.

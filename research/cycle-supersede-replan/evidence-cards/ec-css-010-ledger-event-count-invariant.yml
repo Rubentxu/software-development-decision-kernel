@@ -1,0 +1,49 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Ledger event count is the binding invariant
+
+## Card ID
+
+EC-CSS-010
+
+## Claim (verbatim)
+
+> "Recover (`sddk recover <cycle>`) is replay-only relative to the canonical
+> ledger: digest and event count must remain byte-identical. Any new
+> operation (`cycle.supersede`, `cycle.replan`) inherits this invariant:
+> dry-run and rollback preserve canonical events."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S8 | ROADMAP §Wave 4 Capacities.5 (`recover <cycle>` — "replay-only relative to the canonical ledger: digest and event count remain byte-identical") | L1 |
+| 2 | L1.S5 | `crates/sddk-cli/src/recover.rs:13-34` (shadow router) | L1 |
+| 3 | L1.S6 | `docs/adr/ADR-0047-durable-debt-remediation.md` (debt-verify observes; archive writes durable) | L1 |
+
+## Decay date
+
+2028-08-31 (Rust) / stable (ADR).
+
+## Confidence
+
+independent (0.95).
+
+## Triangulation verdict
+
+3 L1 sources. Convergent.
+
+## What this card supports
+
+- All ADR A-G (every new operation must declare its ledger effect).
+- SPEC-SUPERSEDE-001 (event schema), SPEC-REPLAN-001 (event schema).
+
+## Decay warning
+
+If ADR-0047 is amended, re-verify the "observe + durable" boundary.

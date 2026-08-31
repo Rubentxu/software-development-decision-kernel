@@ -1,0 +1,45 @@
+{"id":"L1.S1","path":"docs/evolutivo-correcciones-flexibilidad.md","check":"exists","result":"ok","sha256_prefix":"","checked_at":"2026-08-31","note":"input document, 37 lines, captured_by_cycle=p-63676b11dc0ef88f/phase-c-test-boundary-cleanup"}
+{"id":"L1.S2","path":"crates/sddk-cli/src/cycle.rs","check":"exists+line-count","result":"ok","line_count":1200,"checked_at":"2026-08-31"}
+{"id":"L1.S3","path":"crates/sddk-cli/src/vault_cmd.rs","check":"exists+line-count","result":"ok","line_count":531,"checked_at":"2026-08-31"}
+{"id":"L1.S4","path":"crates/sddk-vault/src/repair.rs","check":"exists+line-count","result":"ok","line_count":408,"checked_at":"2026-08-31"}
+{"id":"L1.S5","path":"crates/sddk-cli/src/recover.rs","check":"exists+line-count","result":"ok","line_count":35,"checked_at":"2026-08-31"}
+{"id":"L1.S6","path":"docs/adr/ADR-0047-durable-debt-remediation.md","check":"exists+accepted","result":"ok","status":"accepted","checked_at":"2026-08-31"}
+{"id":"L1.S7","path":"docs/adr/ADR-0068-bounded-execution.md","check":"exists+accepted","result":"ok","status":"accepted","checked_at":"2026-08-31","note":"cycle-44 foundation"}
+{"id":"L1.S8","path":"docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md","check":"exists+line-count","result":"ok","line_count":988,"checked_at":"2026-08-31"}
+{"id":"L1.S9","path":"docs/debt/SEVERITY.md","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"L1.S10","path":"docs/debt/INC-DEBT-016-dm02-flaky-hang-parallel-sync-race.md","check":"exists+status","result":"ok","status":"closed","checked_at":"2026-08-31"}
+{"id":"L1.S11","path":"docs/research/sddk-a-full-lifecycle-review-phase-research-report.md","check":"exists+line-count","result":"ok","line_count":515,"checked_at":"2026-08-30"}
+{"id":"L1.S13","path":"crates/sddk-vault/src/validate.rs","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"L1.S14","path":"crates/sddk-cli/src/uat.rs","check":"exists","result":"ok","note":"206 KB; relevant slices grep-confirmed","checked_at":"2026-08-31"}
+{"id":"L1.S15","path":"crates/sddk-cli/src/cycle.rs:305-315","check":"symbol","result":"ok","symbol":"GateOutcomeArg","checked_at":"2026-08-31"}
+{"id":"L1.S16","path":"crates/sddk-cli/src/cycle.rs:843-886","check":"symbol","result":"ok","symbol":"run_cycle_lock_acquire","checked_at":"2026-08-31"}
+{"id":"L1.S17","path":"crates/sddk-cli/src/cycle.rs:242-269","check":"symbol","result":"ok","symbol":"CycleRebuildArgs","checked_at":"2026-08-31"}
+{"id":"L1.S18","path":"Cargo.toml","check":"version","result":"ok","version":"1.65.7","checked_at":"2026-08-31"}
+{"id":"L1.S19","path":"AGENTS.md","check":"section","result":"ok","section":"§8 (FOREIGN KEY constraint mentioned)","checked_at":"2026-08-31"}
+{"id":"L1.S20","path":"scripts/release.sh","check":"exists","result":"ok","note":"13-step pipeline","checked_at":"2026-08-31"}
+{"id":"L1.S21","path":"crates/sddk-cli/src/dev/paths.rs","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"L1.S22","path":"crates/sddk-storage/src/migrations.rs","check":"fk-constraints","result":"ok","constraint_count":4,"checked_at":"2026-08-31"}
+{"id":"L2.S23","path":"git log v1.65.0..HEAD","check":"commit-count","result":"ok","commits":13,"insertions":1901,"checked_at":"2026-08-31"}
+{"id":"L2.S24","path":"HEAD","check":"sha","result":"ok","sha":"405a3f0","checked_at":"2026-08-31"}
+{"id":"L2.S25","path":"tag","check":"annotated","result":"ok","tag":"v1.65.7","peels_to":"405a3f0","checked_at":"2026-08-31"}
+{"id":"L2.S26","path":"crates/sddk-cli/src/vault_cmd.rs:508","check":"test-fixture","result":"ok","cycle":"p-63676b11dc0ef88f/phase-c-test-boundary-cleanup","checked_at":"2026-08-31"}
+{"id":"L2.S27","path":"commit","check":"sha","result":"ok","sha":"7cacf0b","subject":"feat(uat): release.sh end-to-end con auto-install local","checked_at":"2026-08-31"}
+{"id":"L2.S28","path":"commit","check":"sha","result":"ok","sha":"87c5a97","subject":"feat(vault): add VAULT003 per-cycle scope policy and RepairReceipt queue","checked_at":"2026-08-31","note":"PRESERVED"}
+{"id":"L2.S29","path":"commit","check":"sha","result":"ok","sha":"c9c0c12","subject":"chore(docs): capturar ideas diferidas de recuperación del framework","checked_at":"2026-08-31"}
+{"id":"L2.S30","path":"commit","check":"sha","result":"ok","sha":["fb33586","66c06db"],"subject":"cycle-46 split-prefix coherence","checked_at":"2026-08-31"}
+{"id":"L3.S31","path":"docs/research/real-model-trials-runbook.md","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"L3.S32","path":"docs/research/sddk-verify-agent-practices.md","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"L3.S33","path":"docs/research/sddk-prompts-agents-workflow-evolution.md","check":"exists","result":"ok","checked_at":"2026-08-31"}
+{"id":"EXT.S34","path":"external","check":"n/a","result":"reference-only","note":"Patterson et al. 2002, Recovery-Oriented Computing","checked_at":"2026-08-31"}
+{"id":"EXT.S35","path":"external","check":"n/a","result":"reference-only","note":"Google SRE book 2016","checked_at":"2026-08-31"}
+{"id":"EXT.S36","path":"external","check":"n/a","result":"reference-only","note":"Forsgren, Humble, Kim 2018","checked_at":"2026-08-31"}
+{"id":"EXT.S37","path":"external","check":"n/a","result":"reference-only","note":"XDG Base Directory Specification 2024-08-17 (MUST absolute)","checked_at":"2026-08-31"}
+{"id":"EXT.S38","path":"external","check":"n/a","result":"reference-only","note":"RFC 9457, March 2023","checked_at":"2026-08-31"}
+{"id":"EXT.S39","path":"external","check":"n/a","result":"reference-only","note":"Meadows, Thinking in Systems, 2008","checked_at":"2026-08-31"}
+{"id":"EXT.S40","path":"external","check":"n/a","result":"reference-only","note":"Meadows, Leverage Points essay 1999","checked_at":"2026-08-31"}
+{"id":"EXT.S41","path":"external","check":"n/a","result":"reference-only","note":"Kim, System Archetypes, MIT Sloan 1990s","checked_at":"2026-08-31"}
+{"id":"GAP.1","description":"p-63676b11dc0ef88f/phase-c-test-boundary-cleanup has no HANDOFF in this repo","impact":"medium","mitigation":"rely on evolutivo file itself + test fixture in vault_cmd.rs:508"}
+{"id":"GAP.2","description":"ADR-0078 referenced by vault_cmd.rs:172 does not exist","impact":"low","mitigation":"emit evidence card; propose retroactive ADR-0078"}
+{"id":"GAP.3","description":"HANDOFF gap between v1.48.10 (cycle-43) and v1.65.7 (HEAD)","impact":"low","mitigation":"rely on git log + commit bodies + tag peels"}
+{"id":"GAP.4","description":"crates/sddk-domain/src/cycle.rs Phase enum not yet inspected","impact":"medium","mitigation":"flag in evidence-card 'cycle-vs-hypothesis'"}
+{"id":"GAP.5","description":"crates/sddk-cli/src/metrics.rs Levels A-E + L1-L6 not yet inspected","impact":"medium","mitigation":"flag in evidence-card 'gate-cost'"}

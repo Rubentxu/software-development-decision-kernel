@@ -1,0 +1,88 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R2
+date: 2026-08-31
+status: draft
+---
+
+# R2 — Candidate Source Pool
+
+Sources discovered during R2, grouped by tier. Credibility assessment in
+`credibility/sources.yml`. References validated in
+`reference-validation/reference-status.jsonl`.
+
+## Tier L1 — Primary (code, accepted ADRs, authoritative docs)
+
+| ID | Source | Path / Symbol | Decay |
+|---|---|---|---|
+| L1.S1 | Input document | `docs/evolutivo-correcciones-flexibilidad.md` | 2028-08 |
+| L1.S2 | Cycle CLI | `crates/sddk-cli/src/cycle.rs` (1200 lines) | 2028-08 |
+| L1.S3 | Vault CLI | `crates/sddk-cli/src/vault_cmd.rs` (531 lines) | 2028-08 |
+| L1.S4 | Repair queue | `crates/sddk-vault/src/repair.rs` (408 lines) | 2028-08 |
+| L1.S5 | Recover facade | `crates/sddk-cli/src/recover.rs` (35 lines) | 2028-08 |
+| L1.S6 | ADR-0047 durable debt | `docs/adr/ADR-0047-durable-debt-remediation.md` | stable |
+| L1.S7 | ADR-0068 bounded execution | `docs/adr/ADR-0068-bounded-execution.md` | stable |
+| L1.S8 | ROADMAP Wave plan | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (988 lines) | 2027-02 |
+| L1.S9 | Debt taxonomy | `docs/debt/{SEVERITY,PRIORITY,README}.md` | stable |
+| L1.S10 | INC-DEBT-016 closed | `docs/debt/INC-DEBT-016-dm02-flaky-hang-parallel-sync-race.md` | stable |
+| L1.S11 | A-full lifecycle review | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (515 lines) | 2027-02 |
+| L1.S13 | Vault validate | `crates/sddk-vault/src/validate.rs` (`CycleScope`, `normalize_cycle_target`) | 2028-08 |
+| L1.S14 | UAT CLI | `crates/sddk-cli/src/uat.rs` (206 KB — most relevant: `xdg_from_env`, `uat_storage_root`) | 2028-08 |
+| L1.S15 | Gate outcome arg | `crates/sddk-cli/src/cycle.rs:305-315` (`GateOutcomeArg::{Passed,Failed,Waived}`) | 2028-08 |
+| L1.S16 | Cycle lock acquire | `crates/sddk-cli/src/cycle.rs:843-886` | 2028-08 |
+| L1.S17 | CycleRebuildArgs | `crates/sddk-cli/src/cycle.rs:242-269` | 2028-08 |
+| L1.S18 | Workspace version | `Cargo.toml [workspace.package] version = "1.65.7"` | 2027-02 |
+| L1.S19 | AGENTS.md §8 (canonical) | `AGENTS.md:211` ("`FOREIGN KEY constraint failed`") | 2027-02 |
+| L1.S20 | Release pipeline | `scripts/release.sh` (13-step) | 2028-08 |
+| L1.S21 | DEV install paths | `crates/sddk-cli/src/dev/paths.rs`, `dev/doctor.rs` | 2028-08 |
+| L1.S22 | Foreign-key schema | `crates/sddk-storage/src/migrations.rs:240-391` (4 FK constraints) | 2028-08 |
+
+## Tier L2 — Authoritative secondary (git history, test fixtures)
+
+| ID | Source | Notes |
+|---|---|---|
+| L2.S23 | git log v1.65.0..HEAD | 13 commits; +1901 LOC; published since last HANDOFF (cycle-43, v1.48.10) |
+| L2.S24 | HEAD = 405a3f0 | `chore(release): bump version 1.65.6 -> 1.65.7` |
+| L2.S25 | Tag v1.65.7 (annotated) | Peel to 405a3f0 |
+| L2.S26 | Test fixture `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup` | Used in `vault_cmd.rs:508` normalize_cycle_target test |
+| L2.S27 | v1.65.0 release commit (`feat(uat): release.sh end-to-end con auto-install local`) | `7cacf0b` |
+| L2.S28 | v1.65.6 feat(vault) | `87c5a97` — VAULT003 scope policy + RepairReceipt queue (PRESERVED) |
+| L2.S29 | v1.65.7 chore(docs) | `c9c0c12` — captures the input document |
+| L2.S30 | Cycle-46 split-prefix coherence | `fb33586` (capa 3), `66c06db` (capas 1 y 2) |
+
+## Tier L3 — Secondary (research reports, blog posts)
+
+| ID | Source | Notes |
+|---|---|---|
+| L3.S31 | `docs/research/real-model-trials-runbook.md` | Background only |
+| L3.S32 | `docs/research/sddk-verify-agent-practices.md` | Background only |
+| L3.S33 | `docs/research/sddk-prompts-agents-workflow-evolution.md` (66 KB) | Adjacent domain |
+
+## External sources consulted (background only)
+
+| ID | Source | Tier | Notes |
+|---|---|---|---|
+| EXT.S34 | "Recovery-Oriented Computing" (Patterson et al., UC Berkeley, 2002) | L4 | Foundational for `recover forward` paradigm |
+| EXT.S35 | "Site Reliability Engineering" (Google, 2016), Ch. 10 "Postmortem Culture" | L3 | Culture of blameless recovery |
+| EXT.S36 | "Accelerate" (Forsgren, Humble, Kim, 2018), Ch. 4 "Technical Practices" | L3 | Continuous delivery as anti-fragile system |
+| EXT.S37 | XDG Base Directory Specification (freedesktop.org, 2024-08-17) | L1 | Standard: `XDG_DATA_HOME` MUST be absolute |
+| EXT.S38 | RFC 9457 "Problem Details for HTTP APIs" (March 2023) | L1 | Standard: `error.kind` taxonomy for typed errors |
+| EXT.S39 | Donella Meadows "Thinking in Systems" (2008), Ch. 1-2, 5-6 | L1 | Foundational text used in R0 |
+| EXT.S40 | Donella Meadows "Leverage Points" essay (1997, updated 1999) | L1 | 12 leverage points referenced |
+| EXT.S41 | Daniel Kim "System Archetypes" (MIT Sloan, 1990s) | L2 | 8 system archetypes referenced |
+
+## Source-gaps (to be acknowledged in R5)
+
+| Gap | Impact | Mitigation |
+|---|---|---|
+| `p-63676b11dc0ef88f/phase-c-test-boundary-cleanup` cycle has no HANDOFF in this repo | Cannot trace original ticket | Document as evidence gap; rely on the evolutivo file itself |
+| No ADR-0078 exists yet (referenced by `vault_cmd.rs` as VAULT003 allow-list authority) | Cross-reference is dangling | Note in evidence card; proposal: ADR-0078 to be authored in cycle that shipped VAULT003 |
+| No HANDOFF between v1.48.10 (cycle-43, 2026-08-27) and v1.65.7 (HEAD, 2026-08-31) | Visibility gap of 17 release versions | Document as evidence gap; rely on git log + commit bodies |
+| Release receipt structure (`scripts/release.sh` step 8) | Not yet inspected | Out of scope; only relevant if `sddk release` lifecycle changes |
+| `crates/sddk-domain/src/cycle.rs` `Phase` enum (A-full lifecycle review cross-ref) | Not yet inspected in this research | Flag in evidence-card `scope-vs-cycle` |
+| `crates/sddk-cli/src/metrics.rs` Levels A-E + L1-L6 | Not yet inspected in this research | Flag in evidence-card `gate-cost` |
+
+## Triangulation plan
+
+For each claim that supports an ADR, cite ≥ 2 sources from this pool,
+preferring L1 over L2 over L3. External sources are background, not evidence.

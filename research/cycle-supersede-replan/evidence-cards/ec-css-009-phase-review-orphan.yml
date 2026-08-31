@@ -1,0 +1,59 @@
+---
+topic: sddk-cycle-supersede-replan-flexibility
+phase: R6
+date: 2026-08-31
+status: draft
+format: yml-evidence-card
+---
+
+# Evidence Card — Phase::Review is orphan (drift between runtime and prompt)
+
+## Card ID
+
+EC-CSS-009
+
+## Claim (verbatim)
+
+> "`Phase::Review` exists in the runtime (`workflow/workflow.yaml` and
+> `crates/sddk-domain/src/cycle.rs::Phase`), gated by `review-report` and
+> `review-approved` transitions, and exercised by a test fixture — but no
+> `sddk-review` agent and no `prompts/sddk/phases/review.md` exists. The
+> current cycle `roadmap-priority` is blocked at `phase=verify` because
+> the verify → review transition requires debt receipts that the prompt
+> layer has not produced."
+
+## Evidence
+
+| # | Source | Path / Symbol | Tier |
+|---|---|---|---|
+| 1 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1-1.4, §3.1 | L1 |
+| 2 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan references A-full lifecycle) | L1 |
+| 3 | GAP-4 | `sddk-domain::Phase` enum inspection pending | (gap) |
+
+## Decay date
+
+2027-02-28.
+
+## Confidence
+
+corroborated (0.85).
+
+## Triangulation verdict
+
+2 L1 sources + 1 documented gap. The gap is inspection of an already-cited
+artifact (cross-references are inline in L1.S11).
+
+## What this card supports
+
+- ADR-A (separating cycle from hypothesis — partial justification).
+- ADR-E (cycle vs hypothesis separation).
+
+## Decay warning
+
+If a `prompts/sddk/phases/review.md` is authored and a `sddk-review` agent
+appears, this card is resolved (Phase::Review is no longer orphan).
+
+## Anti-tautology check
+
+Removing the test fixture `walk_a_full_cycle_to_release_pending` would NOT
+invalidate this card — the orphan status is structural, not test-driven.
