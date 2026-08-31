@@ -83,7 +83,8 @@ fn attach_scope(target: &str) -> Option<CycleScope> {
     }
     Some(CycleScope {
         project_id: project_id.to_string(),
-        cycle_id: cycle_id.to_string(),
+        // cycle_id is the FULL target (project_id/cycle_id) to match the queue key format
+        cycle_id: target.to_string(),
     })
 }
 

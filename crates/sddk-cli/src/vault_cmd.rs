@@ -141,16 +141,18 @@ fn apply_scope_downgrade(
             continue;
         };
 
-        let scope_id = format!("{}/{}", scope.project_id, scope.cycle_id);
-        if !scope_cycles.contains(&scope_id) {
+        // cycle_id is the full target (project_id/cycle_id) after attach_scope fix
+        if !scope_cycles.contains(&scope.cycle_id) {
             continue;
         }
 
         // Find matching receipt
+        // Key format: {cycle_id}/{code}/{node} — cycle_id is the full
+        // project_id/cycle_id target string (fixed in attach_scope)
         let key = format!(
             "{}/{}/{}",
-            scope.project_id,
             scope.cycle_id,
+            diagnostic.code,
             diagnostic.node.as_deref().unwrap_or("")
         );
         if let Some(receipt) = queue.get(&key) {
