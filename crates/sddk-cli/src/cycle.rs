@@ -8,8 +8,8 @@ use sddk_domain::{
     normalize_scope,
 };
 use sddk_engine::{
-    AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, TransitionEvidence,
-    TransitionOutcome, WorkflowLoadError,
+    AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
+    RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
 };
 use sddk_storage::SqliteEventStore;
@@ -137,6 +137,10 @@ pub(crate) enum CycleCommand {
     EvaluateGate(CycleEvaluateGateArgs),
     /// Restore a missing cycle snapshot from its ledger events.
     Rebuild(CycleRebuildArgs),
+    /// Close a cycle with a successor or a reason.
+    Supersede(CycleSupersedeArgs),
+    /// Bounded in-place revision of a cycle.
+    Replan(CycleReplanArgs),
     /// Print the XDG artifact directory for a cycle (created on demand).
     ArtifactsDir(CycleArtifactsDirArgs),
     /// Acquire, release, or inspect the exclusive cycle lease.
@@ -266,6 +270,117 @@ pub(crate) struct CycleRebuildArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
+}
+
+/// Argument for the `cycle supersede` command.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleSupersedeArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier to supersede.
+    #[arg(long)]
+    pub(crate) cycle: String,
+    /// Successor cycle identifier (mutually exclusive with --reason).
+    #[arg(long)]
+    pub(crate) successor: Option<String>,
+    /// Reason for superseding (scope_invalid | goal_replaced | external_obsolete).
+    #[arg(long, value_enum)]
+    pub(crate) reason: Option<SupersedeReasonArg>,
+    /// Evidence references as JSON array string.
+    #[arg(long, default_value = "[]")]
+    pub(crate) evidence_refs: String,
+    /// Lease owner required by the fencing check.
+    #[arg(long)]
+    pub(crate) lease_owner: String,
+    /// Fencing token of the lease the caller currently holds.
+    #[arg(long)]
+    pub(crate) fencing_token: i64,
+    /// Explicit RFC 3339 timestamp for deterministic execution.
+    #[arg(long)]
+    pub(crate) timestamp: Option<String>,
+    /// Explicit actor for deterministic execution.
+    #[arg(long)]
+    pub(crate) actor: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// CLI representation of supersede reason.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum SupersedeReasonArg {
+    /// The cycle scope became invalid.
+    ScopeInvalid,
+    /// The cycle goal was replaced by a new direction.
+    GoalReplaced,
+    /// External circumstances made the cycle obsolete.
+    ExternalObsolete,
+}
+
+impl From<SupersedeReasonArg> for SupersedeReason {
+    fn from(value: SupersedeReasonArg) -> Self {
+        match value {
+            SupersedeReasonArg::ScopeInvalid => SupersedeReason::ScopeInvalid,
+            SupersedeReasonArg::GoalReplaced => SupersedeReason::GoalReplaced,
+            SupersedeReasonArg::ExternalObsolete => SupersedeReason::ExternalObsolete,
+        }
+    }
+}
+
+/// Argument for the `cycle replan` command.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleReplanArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier to replan.
+    #[arg(long)]
+    pub(crate) cycle: String,
+    /// Target phase to restage to (propose | specify | design | tasks | apply).
+    #[arg(long, value_enum)]
+    pub(crate) restage_to: RestageToArg,
+    /// JSON delta object with changed_files and reason.
+    #[arg(long)]
+    pub(crate) delta: String,
+    /// Evidence references as JSON array string.
+    #[arg(long, default_value = "[]")]
+    pub(crate) evidence_refs: String,
+    /// Lease owner required by the fencing check.
+    #[arg(long)]
+    pub(crate) lease_owner: String,
+    /// Fencing token of the lease the caller currently holds.
+    #[arg(long)]
+    pub(crate) fencing_token: i64,
+    /// Explicit RFC 3339 timestamp for deterministic execution.
+    #[arg(long)]
+    pub(crate) timestamp: Option<String>,
+    /// Explicit actor for deterministic execution.
+    #[arg(long)]
+    pub(crate) actor: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// CLI representation of restage target.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum RestageToArg {
+    Propose,
+    Specify,
+    Design,
+    Tasks,
+    Apply,
+}
+
+impl From<RestageToArg> for RestageTo {
+    fn from(value: RestageToArg) -> Self {
+        match value {
+            RestageToArg::Propose => RestageTo::Propose,
+            RestageToArg::Specify => RestageTo::Specify,
+            RestageToArg::Design => RestageTo::Design,
+            RestageToArg::Tasks => RestageTo::Tasks,
+            RestageToArg::Apply => RestageTo::Apply,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -450,6 +565,8 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
         CycleCommand::Status(args) => run_cycle_status(args, environment),
         CycleCommand::Transition(args) => run_cycle_transition(args, environment),
         CycleCommand::Rebuild(args) => run_cycle_rebuild(args, environment),
+        CycleCommand::Supersede(args) => run_cycle_supersede(args, environment),
+        CycleCommand::Replan(args) => run_cycle_replan(args, environment),
         CycleCommand::ArtifactsDir(args) => run_cycle_artifacts_dir(args, environment),
         CycleCommand::EvaluateGate(args) => run_cycle_evaluate_gate(args, environment),
         CycleCommand::Lock(command) => run_cycle_lock(command, environment),
@@ -904,6 +1021,109 @@ fn run_cycle_lock_release(
     render_result(result, format, cycle_lock_release_text)
 }
 
+fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<CycleSupersedeOutput> {
+        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let timestamp = args
+            .timestamp
+            .clone()
+            .unwrap_or_else(default_timestamp);
+        let actor = args
+            .actor
+            .clone()
+            .or_else(|| environment.sddk_actor.clone())
+            .or_else(|| environment.user.clone())
+            .unwrap_or_else(|| "sddk-cli".into());
+        let command_id = format!("cycle.supersede-{}", Uuid::new_v4().hyphenated());
+        let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
+
+        // Parse evidence refs
+        let evidence_refs: Vec<String> =
+            serde_json::from_str(&args.evidence_refs).unwrap_or_default();
+
+        // Convert reason
+        let reason: Option<SupersedeReason> = args.reason.map(|r| r.into());
+
+        let receipt = context.engine.cycle_supersede(
+            &args.cycle,
+            args.successor,
+            reason,
+            &evidence_refs,
+            &actor,
+            &command_id,
+            &event_id,
+            &timestamp,
+            &context.paths.cycle_artifacts,
+            &args.lease_owner,
+            args.fencing_token,
+        )?;
+
+        // Load updated cycle to get manifest
+        let record = context.storage.get_cycle(&args.cycle)?;
+        Ok(CycleSupersedeOutput {
+            cycle_id: args.cycle,
+            status: wire(&record.manifest.status),
+            event_id: receipt.event_id,
+            sequence: receipt.sequence,
+            event_hash: receipt.event_hash,
+        })
+    })();
+    render_result(result, format, cycle_supersede_text)
+}
+
+fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<CycleReplanOutput> {
+        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let timestamp = args
+            .timestamp
+            .clone()
+            .unwrap_or_else(default_timestamp);
+        let actor = args
+            .actor
+            .clone()
+            .or_else(|| environment.sddk_actor.clone())
+            .or_else(|| environment.user.clone())
+            .unwrap_or_else(|| "sddk-cli".into());
+        let command_id = format!("cycle.replan-{}", Uuid::new_v4().hyphenated());
+        let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
+
+        // Parse delta
+        let delta: ReplanDelta = serde_json::from_str(&args.delta)?;
+        let evidence_refs: Vec<String> =
+            serde_json::from_str(&args.evidence_refs).unwrap_or_default();
+
+        let restage_to: RestageTo = args.restage_to.into();
+        let restage_to_display = format!("{:?}", restage_to);
+
+        // Note: cycle_replan is a stub that returns ReplanLimitExceeded.
+        // When implemented, this will return Ok(()) on success.
+        context.engine.cycle_replan(
+            &args.cycle,
+            restage_to,
+            &delta,
+            &evidence_refs,
+            &actor,
+            &command_id,
+            &event_id,
+            &timestamp,
+            &context.paths.cycle_artifacts,
+            &args.lease_owner,
+            args.fencing_token,
+        )?;
+
+        // Load updated cycle to get sequence (only reached if cycle_replan succeeds)
+        let _record = context.storage.get_cycle(&args.cycle)?;
+        Ok(CycleReplanOutput {
+            cycle_id: args.cycle,
+            restage_to: restage_to_display,
+            sequence: 0, // Placeholder until cycle_replan returns sequence info
+        })
+    })();
+    render_result(result, format, cycle_replan_text)
+}
+
 fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<Option<LeaseOutput>> {
@@ -950,6 +1170,24 @@ struct CycleRebuildOutput {
     phase: String,
     sequence: i64,
     restored: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleSupersedeOutput {
+    cycle_id: String,
+    status: String,
+    event_id: String,
+    sequence: i64,
+    event_hash: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleReplanOutput {
+    cycle_id: String,
+    restage_to: String,
+    sequence: i64,
 }
 
 #[derive(Serialize)]
@@ -1022,6 +1260,20 @@ fn cycle_rebuild_text(output: &CycleRebuildOutput) -> String {
     format!(
         "cycle_id: {}\nstatus: {}\nphase: {}\nsequence: {}\nrestored: {}\n",
         output.cycle_id, output.status, output.phase, output.sequence, output.restored
+    )
+}
+
+fn cycle_supersede_text(output: &CycleSupersedeOutput) -> String {
+    format!(
+        "cycle_id: {}\nstatus: {}\nevent_id: {}\nsequence: {}\nevent_hash: {}\n",
+        output.cycle_id, output.status, output.event_id, output.sequence, output.event_hash
+    )
+}
+
+fn cycle_replan_text(output: &CycleReplanOutput) -> String {
+    format!(
+        "cycle_id: {}\nrestage_to: {}\nsequence: {}\n",
+        output.cycle_id, output.restage_to, output.sequence
     )
 }
 

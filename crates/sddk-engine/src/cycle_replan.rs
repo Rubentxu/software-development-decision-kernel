@@ -33,13 +33,13 @@ pub enum RestageTo {
 impl<L: sddk_domain::Ledger> Engine<L> {
     /// Bounded in-place revision of a cycle.
     ///
-    /// Stub: returns `EngineError::ReplanLimitExceeded` until implemented.
+    /// Stub: validates empty delta before returning `ReplanLimitExceeded`.
     #[allow(clippy::too_many_arguments)]
     pub fn cycle_replan(
         &mut self,
         _cycle_id: &str,
         _restage_to: RestageTo,
-        _delta: &ReplanDelta,
+        delta: &ReplanDelta,
         _evidence_refs: &[String],
         _actor: &str,
         _command_id: &str,
@@ -49,6 +49,10 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         _lease_owner: &str,
         _fencing_token: i64,
     ) -> Result<(), EngineError> {
+        // Check for empty delta before limit check
+        if delta.changed_files.is_empty() || delta.reason.is_empty() {
+            return Err(EngineError::ReplanEmptyDelta);
+        }
         Err(EngineError::ReplanLimitExceeded)
     }
 }
