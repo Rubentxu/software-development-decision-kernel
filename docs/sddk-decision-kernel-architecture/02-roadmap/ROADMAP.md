@@ -114,7 +114,7 @@ multiple phases and are tracked here:
 | Phase | Test-tooling work |
 |---|---|
 | Completed | Phase A historical audit and Phase B ownership migration: Rust tests SDDK015-SDDK032, ending with the v1.58.0 final shell migration release; the only remaining shell test is `tests/test_push_prevention_hook.sh` |
-| Phase C (next work) | Pending lint/testkit/stability cleanup: add ShellCheck to the local test gate; add Ruff to the local scripts gate; evaluate proposed ADR-0022; consolidate or delete misowned tests after parity evidence and remove superseded scaffolding only after one stable release cycle |
+| Phase C (next work) | Pending lint/testkit/stability cleanup: add ShellCheck to the local test gate; add Ruff to the local scripts gate; ADR-0022 accepted (reconciled 2026-08-31 per REQ-Phase-C-ADR-0022-Status-Reconcile); consolidate or delete misowned tests after parity evidence and remove superseded scaffolding only after one stable release cycle |
 
 See [ADR-042-TEST-TOOLING-BOUNDARY.md](../03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md) (Accepted) for the full migration plan.
 

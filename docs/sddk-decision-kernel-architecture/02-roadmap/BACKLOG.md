@@ -262,7 +262,7 @@ Dynamic graph execution belongs **before** trying to make the Supervisor smarter
 
 - Add ShellCheck to the local test gate for `tests/test_*.sh`
 - Add Ruff to the local scripts gate for `scripts/`
-- Evaluate ADR-0022 (sddk-testkit, proposed) for adoption or supersession
+- Evaluate ADR-0022 (sddk-testkit, accepted 2026-08-31 per REQ-Phase-C-ADR-0022-Status-Reconcile) for adoption or supersession
 - Consolidate or delete misowned tests after parity (same test passes in new language + original deleted)
 - Remove superseded scaffolding only after one release cycle stable
 
