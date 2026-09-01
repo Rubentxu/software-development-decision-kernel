@@ -104,6 +104,20 @@ pub(crate) fn classify_auth_failure(command: &str, stderr: &str) -> Option<GitEr
     }
 }
 
+/// Returns true when git's own discovery examined the candidate `.git`
+/// markers and rejected them all, i.e. `fatal: not a git repository`.
+///
+/// An invalid `.git` entry in an ANCESTOR of `root` (for example an empty
+/// directory created by an unrelated process under a shared temp dir) makes
+/// a marker-based check pass while git authoritatively answers that no
+/// valid repository exists. In that case the stray ancestor marker must not
+/// force a hard error: git's rejection wins. A corrupt marker AT `root`
+/// keeps failing closed, and other 128 failures (dubious ownership,
+/// permission denied) always do.
+fn is_not_a_git_repository(stderr: &str) -> bool {
+    stderr.contains("not a git repository")
+}
+
 /// Read-only snapshot of repository state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -285,12 +299,17 @@ impl GitExecutor {
     /// Probes whether `root` is inside a Git worktree.
     ///
     /// Returns `Ok(true)` for a regular worktree and `Ok(false)` for a bare
-    /// repository or a non-Git directory. Git failures are only treated as
-    /// outside Git when no `.git` marker exists in `root` or its ancestors.
+    /// repository or a non-Git directory. Git failures are treated as outside
+    /// Git when no `.git` marker exists in `root` or its ancestors, or when
+    /// git itself authoritatively rejects every marker it found and `root`
+    /// carries no marker of its own (a corrupt `.git` AT `root` still fails
+    /// closed). See [`is_not_a_git_repository`].
     pub fn is_inside_work_tree(&self) -> Result<bool, GitError> {
-        let has_git_marker = self
+        let marker_at_root = std::fs::symlink_metadata(self.root.join(".git")).is_ok();
+        let marker_in_ancestor = self
             .root
             .ancestors()
+            .skip(1)
             .any(|directory| std::fs::symlink_metadata(directory.join(".git")).is_ok());
 
         match self.run_ok("rev-parse", &["--is-inside-work-tree"]) {
@@ -306,8 +325,17 @@ impl GitExecutor {
                     }),
                 }
             }
-            Err(GitError::CommandFailed { status: 128, .. }) if !has_git_marker => Ok(false),
-            Err(GitError::Runner(_)) if !has_git_marker => Ok(false),
+            Err(GitError::CommandFailed {
+                status: 128,
+                stderr,
+                ..
+            }) if !marker_in_ancestor && !marker_at_root => Ok(false),
+            Err(GitError::CommandFailed {
+                status: 128,
+                stderr,
+                ..
+            }) if !marker_at_root && is_not_a_git_repository(&stderr) => Ok(false),
+            Err(GitError::Runner(_)) if !marker_in_ancestor && !marker_at_root => Ok(false),
             Err(e) => Err(e),
         }
     }
@@ -738,6 +766,22 @@ mod tests {
             .unwrap();
         assert!(output.status.success());
         let git = GitExecutor::new(directory.path().to_path_buf());
+        assert!(!git.is_inside_work_tree().unwrap());
+    }
+
+    #[test]
+    fn is_inside_work_tree_false_for_invalid_git_marker_in_ancestor() {
+        // Regression: a transient invalid `.git` directory in an ancestor
+        // (observed in production as an empty `/tmp/.git` created by an
+        // unrelated process) must not turn git's authoritative
+        // "not a git repository" answer into a hard error. Git discovery
+        // rejects invalid markers and keeps ascending; the executor must
+        // trust that verdict instead of the mere presence of the marker.
+        let outer = tempfile::tempdir().unwrap();
+        fs::create_dir(outer.path().join(".git")).unwrap();
+        let inner = outer.path().join("inner");
+        fs::create_dir(&inner).unwrap();
+        let git = GitExecutor::new(inner);
         assert!(!git.is_inside_work_tree().unwrap());
     }
 
