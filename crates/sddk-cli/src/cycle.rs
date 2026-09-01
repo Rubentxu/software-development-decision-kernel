@@ -1160,9 +1160,19 @@ fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         // REQ-GAP6-3: apply same project-prefix guard as acquire/renew/release
         validate_cycle_project(&args.cycle, &context.identity.project_id)?;
-        // Only swallow NotFound (cycle has no lease); other errors propagate
+        // REQ-DEBT017-5: cycle not found → typed error; cycle exists but no lease → None
         let lease = match context.storage.get_cycle_lease(&args.cycle) {
             Ok(l) => Some(l),
+            Err(sddk_storage::StorageError::NotFound {
+                entity: "cycle", ..
+            }) => {
+                // Cycle does not exist in `cycles` table → propagate typed error
+                return Err(sddk_storage::StorageError::NotFound {
+                    entity: "cycle",
+                    id: args.cycle.clone(),
+                }
+                .into());
+            }
             Err(sddk_storage::StorageError::NotFound { .. }) => None,
             Err(e) => return Err(e.into()),
         };

@@ -337,6 +337,20 @@ impl Storage {
             })?)
     }
 
+    /// Reports whether a cycle row exists in the `cycles` table.
+    ///
+    /// This check is advisory — it guards the lease INSERT/UPDATE/DELETE paths
+    /// to provide a typed `STORAGE_NOT_FOUND` error instead of a generic
+    /// `STORAGE_DATABASE` FK violation. The FK constraint on `cycle_leases.cycle_id`
+    /// remains the authoritative integrity guarantee.
+    pub fn cycle_exists(&self, cycle_id: &str) -> Result<bool> {
+        Ok(self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM cycles WHERE cycle_id = ?1)",
+            [cycle_id],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Registers a project and workspace in one SQLite transaction.
     ///
     /// Replaying matching identity data is a no-op. Existing identity data that
@@ -922,6 +936,10 @@ impl Storage {
         if now_ms < 0 || expires_at_ms <= now_ms {
             return Err(StorageError::InvalidLease);
         }
+        // REQ-DEBT017-2: fail-fast with typed error when cycle does not exist
+        if !self.cycle_exists(cycle_id)? {
+            return Err(not_found("cycle", cycle_id));
+        }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -959,7 +977,17 @@ impl Storage {
     }
 
     /// Loads the current cycle lease.
+    ///
+    /// Returns `NotFound` if the cycle row does not exist in `cycles`
+    /// (REQ-DEBT017-5: typed error instead of silent `lease: none`).
+    /// Returns `NotFound` with entity `"cycle lease"` if the cycle exists
+    /// but has no active lease.
     pub fn get_cycle_lease(&self, cycle_id: &str) -> Result<CycleLease> {
+        // REQ-DEBT017-5: cycle must exist in `cycles` table — not found is
+        // a typed STORAGE_NOT_FOUND, not a silent `lease: none`
+        if !self.cycle_exists(cycle_id)? {
+            return Err(not_found("cycle", cycle_id));
+        }
         self.get_cycle_lease_on_optional(cycle_id)?
             .ok_or_else(|| not_found("cycle lease", cycle_id))
     }
@@ -980,6 +1008,10 @@ impl Storage {
     ) -> Result<CycleLease> {
         if now_ms < 0 || new_expires_at_ms <= now_ms {
             return Err(StorageError::InvalidLease);
+        }
+        // REQ-DEBT017-3: fail-fast with typed error when cycle does not exist
+        if !self.cycle_exists(cycle_id)? {
+            return Err(not_found("cycle", cycle_id));
         }
         let transaction = self
             .connection
@@ -1031,6 +1063,10 @@ impl Storage {
         command_id: &str,
         occurred_at: &str,
     ) -> Result<bool> {
+        // REQ-DEBT017-4: fail-fast with typed error when cycle does not exist
+        if !self.cycle_exists(cycle_id)? {
+            return Err(not_found("cycle", cycle_id));
+        }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
