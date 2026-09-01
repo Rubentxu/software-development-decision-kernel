@@ -1,6 +1,15 @@
 //! Integration tests for `sddk dev test count-workspace` subcommand.
 //!
-//! Tests the deterministic aggregation of `cargo test --workspace --message-format=json`.
+//! These tests only exercise CLI mechanics (help, format flag acceptance,
+//! outside-project-root error). They DO NOT invoke the subcommand from inside
+//! an SDDK project root because doing so would run `cargo test --workspace`,
+//! which re-runs this test binary → infinite recursion.
+//!
+//! Parser logic is unit-tested in `src/dev/test_cmd.rs::tests` against
+//! synthetic cargo text output. End-to-end verification (parser against real
+//! `cargo test --workspace` output) happens manually during `apply-progress`
+//! generation: the apply agent runs the binary once and copies the output
+//! verbatim into the YAML.
 
 use std::process::Command;
 
