@@ -1737,13 +1737,11 @@ fn cli_cycle_lock_acquire_own_project_succeeds() {
     assert_eq!(json["fencing_token"].as_i64().unwrap_or(1), 1);
 }
 
-/// REQ-GAP6-8: missing own-project cycle hits FK constraint.
-/// NOTE: The storage layer's `acquire_cycle_lease` does not pre-check cycle existence
-/// before INSERT, so the FK fires returning STORAGE_DATABASE. This is a separate gap
-/// from GAP-6 (foreign project). The typed error (STORAGE_CYCLE_PROJECT_MISMATCH) is
-/// correctly returned only for foreign project cycles, NOT for same-project missing cycles.
+/// REQ-DEBT017-2: missing own-project cycle returns STORAGE_NOT_FOUND.
+/// REQ-DEBT017-6: GAP-6 contract preserved — foreign prefix still returns
+/// STORAGE_CYCLE_PROJECT_MISMATCH (never reaches storage-layer pre-check).
 #[test]
-fn cli_cycle_lock_acquire_missing_own_project_returns_foreign_mismatch_when_cycle_does_not_exist() {
+fn cli_cycle_lock_acquire_missing_own_project_returns_not_found() {
     let fixture = CliFixture::new("cycle-lock-missing-own");
 
     let adopted = fixture.run_adopt(
@@ -1833,12 +1831,19 @@ fn cli_cycle_lock_acquire_missing_own_project_returns_foreign_mismatch_when_cycl
         String::from_utf8_lossy(&acquire.stderr)
     );
     let stderr = String::from_utf8_lossy(&acquire.stderr);
-    // Pre-existing behavior: storage layer FK fires → STORAGE_DATABASE
-    // GAP-6 fix: typed mismatch only for FOREIGN project prefix
-    // For same project prefix (even if cycle missing), no typed mismatch
+    // REQ-DEBT017-2: storage-layer pre-check now returns typed NotFound
+    assert!(
+        stderr.contains("STORAGE_NOT_FOUND"),
+        "should return STORAGE_NOT_FOUND: {stderr}"
+    );
+    assert!(
+        !stderr.contains("STORAGE_DATABASE"),
+        "should NOT return STORAGE_DATABASE (FK should not fire): {stderr}"
+    );
+    // REQ-DEBT017-6: GAP-6 contract — own-project prefix never reaches MISMATCH
     assert!(
         !stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
-        "same-project prefix should NOT return typed mismatch: {stderr}"
+        "same-project prefix should NOT return STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
     );
 }
 
@@ -2025,6 +2030,306 @@ fn cli_cycle_lock_release_foreign_cycle_returns_typed_error() {
     assert!(
         stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
         "stderr should contain STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-DEBT017-3/4/5: own-project missing cycle → STORAGE_NOT_FOUND
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// REQ-DEBT017-3: own-project missing cycle on renew returns STORAGE_NOT_FOUND.
+#[test]
+fn cli_cycle_lock_renew_missing_own_project_returns_not_found() {
+    let fixture = CliFixture::new("cycle-lock-renew-missing-own");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Cycle start gives us the project prefix.
+    let started = fixture.run(&[
+        "cycle",
+        "start",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--name",
+        "placeholder",
+        "--path",
+        "a-full",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--lease-owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        started.status.success(),
+        "{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started_json: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
+    let cycle_id = started_json["cycle_id"].as_str().unwrap();
+    let project_prefix = cycle_id.split('/').next().unwrap();
+    let missing_cycle = format!("{project_prefix}/never-existed-this-cycle");
+
+    let renew = fixture.run(&[
+        "cycle",
+        "lock",
+        "renew",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        &missing_cycle,
+        "--owner",
+        "agent-a",
+        "--fencing-token",
+        "1",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:30:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !renew.status.success(),
+        "missing own-project cycle renew should fail: {}",
+        String::from_utf8_lossy(&renew.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&renew.stderr);
+    assert!(
+        stderr.contains("STORAGE_NOT_FOUND"),
+        "should return STORAGE_NOT_FOUND: {stderr}"
+    );
+    assert!(
+        !stderr.contains("STORAGE_DATABASE"),
+        "should NOT return STORAGE_DATABASE: {stderr}"
+    );
+    assert!(
+        !stderr.contains("STORAGE_LEASE_NOT_RENEWABLE"),
+        "should NOT return STORAGE_LEASE_NOT_RENEWABLE (old silent behavior): {stderr}"
+    );
+}
+
+/// REQ-DEBT017-4: own-project missing cycle on release returns STORAGE_NOT_FOUND.
+#[test]
+fn cli_cycle_lock_release_missing_own_project_returns_not_found() {
+    let fixture = CliFixture::new("cycle-lock-release-missing-own");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    let started = fixture.run(&[
+        "cycle",
+        "start",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--name",
+        "placeholder",
+        "--path",
+        "a-full",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--lease-owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        started.status.success(),
+        "{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started_json: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
+    let cycle_id = started_json["cycle_id"].as_str().unwrap();
+    let project_prefix = cycle_id.split('/').next().unwrap();
+    let missing_cycle = format!("{project_prefix}/never-existed-this-cycle");
+
+    let release = fixture.run(&[
+        "cycle",
+        "lock",
+        "release",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        &missing_cycle,
+        "--owner",
+        "agent-a",
+        "--fencing-token",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !release.status.success(),
+        "missing own-project cycle release should fail: {}",
+        String::from_utf8_lossy(&release.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&release.stderr);
+    assert!(
+        stderr.contains("STORAGE_NOT_FOUND"),
+        "should return STORAGE_NOT_FOUND: {stderr}"
+    );
+    assert!(
+        !stderr.contains("STORAGE_DATABASE"),
+        "should NOT return STORAGE_DATABASE: {stderr}"
+    );
+}
+
+/// REQ-DEBT017-5: own-project missing cycle on lock status returns STORAGE_NOT_FOUND.
+#[test]
+fn cli_cycle_lock_status_missing_own_project_returns_not_found() {
+    let fixture = CliFixture::new("cycle-lock-status-missing-own");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    let started = fixture.run(&[
+        "cycle",
+        "start",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--name",
+        "placeholder",
+        "--path",
+        "a-full",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--lease-owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        started.status.success(),
+        "{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started_json: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
+    let cycle_id = started_json["cycle_id"].as_str().unwrap();
+    let project_prefix = cycle_id.split('/').next().unwrap();
+    let missing_cycle = format!("{project_prefix}/never-existed-this-cycle");
+
+    let status = fixture.run(&[
+        "cycle",
+        "lock",
+        "status",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        &missing_cycle,
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !status.status.success(),
+        "missing own-project cycle status should fail: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        stderr.contains("STORAGE_NOT_FOUND"),
+        "should return STORAGE_NOT_FOUND: {stderr}"
+    );
+    assert!(
+        !stderr.contains("lease: none"),
+        "should NOT return lease: none (old silent behavior): {stderr}"
     );
 }
 

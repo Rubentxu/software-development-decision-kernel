@@ -466,6 +466,35 @@ fn release_cycle_lease_writes_lease_released_event() {
     assert!(!miss);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-DEBT017-1: cycle_exists helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// REQ-DEBT017-1: cycle_exists returns true for existing and false for missing.
+#[test]
+fn cycle_exists_returns_true_for_existing_and_false_for_missing() {
+    let (storage, cycle) = storage_with_cycle();
+
+    // Case 1: existing cycle → true
+    let found = storage
+        .cycle_exists(&cycle.manifest.cycle_id)
+        .expect("cycle_exists must not error");
+    assert!(
+        found,
+        "cycle_exists should return true for existing cycle {}",
+        cycle.manifest.cycle_id
+    );
+
+    // Case 2: non-existing cycle → false
+    let missing = storage
+        .cycle_exists("p-NONEXISTENT/never-created")
+        .expect("cycle_exists must not error");
+    assert!(
+        !missing,
+        "cycle_exists should return false for non-existing cycle"
+    );
+}
+
 #[test]
 fn failed_event_append_rolls_back_cycle_state_update() {
     let (mut storage, cycle) = storage_with_cycle();
