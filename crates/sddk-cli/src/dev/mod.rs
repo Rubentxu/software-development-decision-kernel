@@ -22,10 +22,11 @@ pub(crate) mod paths;
 pub(crate) mod projection;
 mod reconcile;
 mod registry;
+pub(crate) mod test_cmd;
 mod uninstall;
 mod update;
 mod use_cmd;
-mod verify;
+pub(crate) mod verify;
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
 
@@ -150,6 +151,8 @@ pub(super) enum DevCommand {
     Entropy(EntropyArgs),
     /// Reconcile IDE agent configs with bundle sources (dry-run by default).
     Reconcile(self::reconcile::ReconcileArgs),
+    /// Test tooling (count-workspace).
+    Test(self::test_cmd::TestArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -409,6 +412,7 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
         DevCommand::Models(args) => self::models_cmd::run_dev_models(args, environment),
         DevCommand::Entropy(args) => self::entropy::run_dev_entropy(args, environment),
         DevCommand::Reconcile(args) => self::reconcile::run_dev_reconcile(args, environment),
+        DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
     }
 }
 
