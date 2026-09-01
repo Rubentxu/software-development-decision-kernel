@@ -54,6 +54,15 @@ pub struct JournalEntry {
 ///
 /// Returns `Severity::Medium` as the default if the event type does not match
 /// any category prefix.
+///
+/// # Severity policy cross-reference
+///
+/// SPEC-027 (`docs/sddk-decision-kernel-architecture/04-specs/SPEC-027-EVENT-TAXONOMY.md`)
+/// lists 8 event categories; this function's locked table has 7 rows because
+/// `evidence.*` and `uat.*` are consolidated (line 77) and `pack/runtime` is
+/// excluded by design (see module comment lines 40-51 — internal runtime events
+/// do not appear in the journal). Future SPEC-027 amendments MUST update both
+/// this rustdoc and the locked test at line 281-319.
 fn severity_for_event_type(event_type: &str) -> Severity {
     if event_type.starts_with("workflow.") {
         Severity::Medium
