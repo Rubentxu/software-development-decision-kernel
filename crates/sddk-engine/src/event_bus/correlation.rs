@@ -11,6 +11,13 @@ use crate::EventContext;
 ///
 /// This is an additive, idempotent helper: calling it on an envelope that
 /// already has a `correlation_id` is a no-op.
+///
+/// # Production wiring
+///
+/// Helpers ship as public tested API only. Production wiring (calling
+/// these from the `emit_*` builders) is deferred to M6 SPEC-028,
+/// when the dispatcher primitive becomes the first real consumer.
+/// See `spec.md` REQ-M14-004 amendment 2026-08-22.
 pub fn with_correlation_from_context(env: &mut EventEnvelopeV1, ctx: &EventContext) {
     if env.correlation_id.is_none() {
         env.correlation_id = Some(ctx.frame_id.clone());
@@ -21,6 +28,13 @@ pub fn with_correlation_from_context(env: &mut EventEnvelopeV1, ctx: &EventConte
 ///
 /// This is an additive, idempotent helper: calling it on an envelope that
 /// already has a `causation_id` is a no-op.
+///
+/// # Production wiring
+///
+/// Helpers ship as public tested API only. Production wiring (calling
+/// these from the `emit_*` builders) is deferred to M6 SPEC-028,
+/// when the dispatcher primitive becomes the first real consumer.
+/// See `spec.md` REQ-M14-004 amendment 2026-08-22.
 pub fn with_causation(env: &mut EventEnvelopeV1, cause_event_id: &str) {
     if env.causation_id.is_none() {
         env.causation_id = Some(cause_event_id.to_owned());
@@ -35,6 +49,13 @@ pub fn with_causation(env: &mut EventEnvelopeV1, cause_event_id: &str) {
 ///
 /// If `by_event_id` returns `None` for any ID in the chain, the chain
 /// is truncated at that point and the partial chain is returned.
+///
+/// # Production wiring
+///
+/// Helpers ship as public tested API only. Production wiring (calling
+/// these from the `emit_*` builders) is deferred to M6 SPEC-028,
+/// when the dispatcher primitive becomes the first real consumer.
+/// See `spec.md` REQ-M14-004 amendment 2026-08-22.
 pub fn trace_causation_chain(
     event_id: &str,
     by_event_id: impl Fn(&str) -> Option<EventEnvelopeV1>,
