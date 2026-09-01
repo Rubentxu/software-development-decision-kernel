@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.66.4] - 2026-09-02
+
+### Refactored
+  - refactor(domain): extrae `build_corpus_envelope(seq, event_type, payload)` a un helper dentro de `#[cfg(test)] mod tests` (`crates/sddk-domain/src/event_registry/validator.rs`). Los 28 lines de construcción inline de `EventEnvelopeV1` colapsan a 1 call site; el helper aplica `+1` internamente para preservar el contrato anti-double-increment; byte-equivalence verificada en `corpus_replay_through_validator` (evt-corpus-1..18, sequence 1..18). Cierra `INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION` (LOW/P3, duplication cluster).
+
+### Documentation
+  - docs(rustdoc): `severity_for_event_type` en `crates/sddk-domain/src/projections/journal.rs` gana una sección `# Severity policy cross-reference` que explica la consolidación de 7 filas vs 8 categorías (evidence.* + uat.*) + exclusión pack/runtime. La tabla locked de 7 ramas (líneas 67-93) queda intacta; el test `journal_projection_severity_table_locked` sigue verde. Cierra `INC-CYCLE-14-SEVERITY-SPEC-DRIFT` (LOW/P3, coupling cluster, SPEC-027).
+  - docs(rustdoc): 3 helpers de `crates/sddk-engine/src/event_bus/correlation.rs` (`with_correlation_from_context`, `with_causation`, `trace_causation_chain`) ganan una sección rustdoc `# Production wiring` que documenta el diferido a M6 SPEC-028. 0 callers de producción (solo el re-export en `event_bus/mod.rs:11`); 6 tests de los helpers pasan. Cierra `INC-CYCLE-14-HELPER-DOC-GAP` (LOW/P3, doc-quality cluster).
+  - docs(rustdoc): `crates/sddk-engine/tests/adoption.rs` líneas 44-46 — el comentario impreciso `// durability-required:` se reformula a `// File-based for fixture consistency`. El cuerpo del test (líneas 48-61) queda inalterado; `same_basename_different_remotes_and_scopes_do_not_collide` sigue verde. Cierra `INC-CYCLE-13-DURABILITY-COMMENT-ACCURACY` (LOW/P3, doc-quality cluster).
+  - docs(debt): housekeeping — flip de frontmatter `status: open → resolved` + `resolved_by` + `## Closure Evidence` para los 2 INC carry-over de v1.66.3 (`INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT`, `INC-CYCLE-13-LOC-OVERAGE`); commit `0d6dda4`. Coherencia con el contrato de cierres INC definido en `docs/debt/INC-TEMPLATE.md`.
+  - docs(release): notas post-release para v1.66.4 (`docs/releases/v1.66.4.md`) mencionan los 4 INC ids resueltos en código + 2 INC carry-over housekeeping + la estrategia de release.
+
 ## [1.66.3] - 2026-09-01
 
 ### Fixed
