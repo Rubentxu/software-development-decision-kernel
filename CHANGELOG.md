@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.66.3] - 2026-09-01
+
+### Fixed
+  - fix(cli): `sddk dev test count-workspace` ahora parsea el output de texto de `cargo test` (regex `^test result:\s+ok\.\s+(\d+)\s+passed`) en lugar de los eventos JSON que `cargo 1.91 --message-format=json --no-run` no emite. Reemplaza el parser roto `CargoMessage`/`CargoTarget`/`CargoTestResult` con una función pura `parse_cargo_test_output` y 8 unit tests (empty, dedup, FAILED-excluded, leading whitespace, ground-truth 1739-line scale, multi-binary, single-binary, no-running-lines). Live binary reporta correctamente `total_workspace_tests: 1747 / test_binaries: 79` (antes: 0). Cierra `INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT` (P2/medium).
+
+### Refactored
+  - refactor(engine): extrae `mk_*` builders de `crates/sddk-engine/tests/port_contracts.rs` a `crates/sddk-engine/tests/common/` para que el archivo de contratos no acumule LOC adicional cuando se añadan escenarios futuros. ADR-0048 supersede el budget per-file por budget total-de-módulo.
+
+### Documentation
+  - docs(apply): `apply-progress.yaml` ahora exige `sddk dev test count-workspace` como fuente única de `total_workspace_tests` (prohibido recalcular o estimar). Coherencia byte-for-byte entre apply report y live binary stdout.
+  - docs(debt): cierra `INC-DEBT-017` — el helper storage-layer `cycle_exists` + 4 pre-checks en acquire/renew/release/status (`fix/storage-cycle-lease-pre-existence-check`, v1.66.2) eliminan el drift que `fix/gap6-foreign-cycle-typed-error` (v1.66.1) dejaba fuera de scope. Contrato completo de errores tipados para `sddk cycle lock`: `foreign project → STORAGE_CYCLE_PROJECT_MISMATCH`, `own-project-missing → STORAGE_NOT_FOUND` (no más FK leak engañoso con `STORAGE_DATABASE`).
+
 ## [1.63.0] - 2026-08-31
 
 ### Added
