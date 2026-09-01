@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-017
 title: "sddk-storage acquire_cycle_lease lacks pre-existence check (FK fires STORAGE_DATABASE for own-project missing cycles)"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "6b4c9a5f3d8e2c1a4b7d9e0f5a3c8b1e"
@@ -9,6 +9,8 @@ fingerprint_aliases: []
 cluster_id: CL-NN
 created: 2026-09-01
 created_by: sddk-verify (p-63676b11dc0ef88f/gap6-foreign-cycle-typed-error)
+resolved_by: p-63676b11dc0ef88f/storage-cycle-lease-pre-existence-check
+resolved_at: 2026-09-01
 owner: unassigned
 ---
 
@@ -130,3 +132,14 @@ delivery (A-min path). No schema change. No new CLI flag.
   (the test asserts `!stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH")`).
 - ROADMAP: GAP-6 entry (`docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md:857-861`)
   documents the typed-error contract; this gap is adjacent but distinct.
+## Resolution
+
+Closed by `p-63676b11dc0ef88f/storage-cycle-lease-pre-existence-check` (v1.66.2).
+
+- `Storage::cycle_exists(&self, cycle_id) -> Result<bool>` helper added (crates/sddk-storage/src/lib.rs:340-352).
+- 4 pre-check guards added: `acquire_cycle_lease` (lib.rs:939-942), `renew_cycle_lease` (lib.rs:988-990), `release_cycle_lease` (lib.rs:1013-1015), `cycle lock status` propagation (cycle.rs:1163-1178).
+- Reuses existing `not_found(...)` path → maps to `STORAGE_NOT_FOUND` (code + recovery hint already in lib.rs:1591, 1614).
+- **No new StorageError variant**, no schema migration, no auto-creation.
+- 5 anti-regression tests GREEN (cycle_exists unit + 4 CLI integration); 1736/0 workspace tests pass.
+- Behavior change: `cycle lock status` and `cycle lock release` for missing own-project cycles now exit non-zero with `STORAGE_NOT_FOUND` (was silent `lease: none` / `released: false`). Consumers spot-checked; none broken.
+- GAP-6 anti-regression test flipped: `cli_cycle_lock_acquire_missing_own_project_returns_not_found` (was `_returns_foreign_mismatch_when_cycle_does_not_exist`).
