@@ -167,6 +167,19 @@ pub enum StorageError {
         /// Maximum allowed length.
         max: usize,
     },
+    /// The cycle's project prefix does not match the workspace's adopted project.
+    #[error(
+        "cycle {cycle_id} belongs to project {cycle_project_id}, \
+         which does not match the current workspace adoption ({expected_project_id})"
+    )]
+    CycleProjectMismatch {
+        /// The cycle identifier supplied by the caller.
+        cycle_id: String,
+        /// The project extracted from the cycle's prefix.
+        cycle_project_id: String,
+        /// The project the workspace has adopted.
+        expected_project_id: String,
+    },
 }
 
 /// SQLite-backed SDDK persistence.
@@ -1589,37 +1602,58 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::LedgerIntegrity { .. } => "STORAGE_LEDGER_INTEGRITY",
             Self::PlanHashTooShort { .. } => "STORAGE_PLAN_HASH_TOO_SHORT",
             Self::GateNameInvalid { .. } => "STORAGE_GATE_NAME_INVALID",
+            Self::CycleProjectMismatch { .. } => "STORAGE_CYCLE_PROJECT_MISMATCH",
         }
     }
 
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
-            Self::Database(..) => "retry after checking the SQLite database integrity",
-            Self::Serialization(..) => "fix the malformed JSON value before retrying",
-            Self::Io(..) => "check the filesystem path and permissions",
-            Self::NotFound { .. } => "create the record or fix the reference",
+            Self::Database(..) => "retry after checking the SQLite database integrity".into(),
+            Self::Serialization(..) => "fix the malformed JSON value before retrying".into(),
+            Self::Io(..) => "check the filesystem path and permissions".into(),
+            Self::NotFound { .. } => "create the record or fix the reference".into(),
             Self::IdempotencyConflict { .. } => {
-                "use a fresh idempotency key or the original request"
+                "use a fresh idempotency key or the original request".into()
             }
-            Self::InvalidReceiptBegin => "begin capability receipts in the started status",
-            Self::TerminalReceipt { .. } => "do not finalize a receipt that is already terminal",
-            Self::LeaseConflict { .. } => "wait for the lease to expire or release it first",
+            Self::InvalidReceiptBegin => "begin capability receipts in the started status".into(),
+            Self::TerminalReceipt { .. } => {
+                "do not finalize a receipt that is already terminal".into()
+            }
+            Self::LeaseConflict { .. } => "wait for the lease to expire or release it first".into(),
             Self::LeaseExpired { .. } => {
-                "re-acquire the lease with `acquire`; an expired lease cannot be renewed"
+                "re-acquire the lease with `acquire`; an expired lease cannot be renewed".into()
             }
             Self::LeaseNotRenewable { .. } => {
                 "call `renew` with the exact (owner, fencing_token) returned by the prior \
                  `acquire` or `renew`; release and reacquire if you need a new token"
+                    .into()
             }
-            Self::InvalidLease => "provide an expiry later than the acquisition time",
-            Self::EventScopeMismatch => "match the event scope to the cycle or project",
-            Self::RegistrationConflict { .. } => "keep the existing identity data consistent",
-            Self::SchemaVersion { .. } => "migrate the database to the supported schema version",
-            Self::LedgerIntegrity { .. } => "restore the ledger from a verified backup",
+            Self::InvalidLease => "provide an expiry later than the acquisition time".into(),
+            Self::EventScopeMismatch => "match the event scope to the cycle or project".into(),
+            Self::RegistrationConflict { .. } => {
+                "keep the existing identity data consistent".into()
+            }
+            Self::SchemaVersion { .. } => {
+                "migrate the database to the supported schema version".into()
+            }
+            Self::LedgerIntegrity { .. } => "restore the ledger from a verified backup".into(),
             Self::PlanHashTooShort { .. } => {
                 "supply a plan_hash of at least 23 characters (sha256: prefix + 16 hex digits)"
+                    .into()
             }
-            Self::GateNameInvalid { .. } => "supply a gate name of 1..=128 characters",
+            Self::GateNameInvalid { .. } => "supply a gate name of 1..=128 characters".into(),
+            Self::CycleProjectMismatch {
+                cycle_project_id,
+                expected_project_id,
+                ..
+            } => {
+                let cp = cycle_project_id.as_str();
+                let ep = expected_project_id.as_str();
+                format!(
+                    "cycle belongs to project {cp}; this workspace adopts project {ep}; \
+                     pass a --cycle whose project prefix matches {ep}, or run 'sddk adopt status' to inspect identity"
+                )
+            }
         }
     }
 }
@@ -1861,5 +1895,43 @@ impl ArtifactStore for Storage {
         project_id: &str,
     ) -> std::result::Result<Vec<sddk_domain::ArtifactRecord>, sddk_domain::StorageError> {
         Storage::list_project_artifacts(self, project_id).map_err(sddk_domain::StorageError::from)
+    }
+}
+
+#[cfg(test)]
+mod cycle_project_mismatch_tests {
+    use super::*;
+    use sddk_domain::SddkErrorCode;
+
+    #[test]
+    fn cycle_project_mismatch_code_is_stable() {
+        let err = StorageError::CycleProjectMismatch {
+            cycle_id: "p-B/foo".into(),
+            cycle_project_id: "p-B".into(),
+            expected_project_id: "p-A".into(),
+        };
+        assert_eq!(err.code(), "STORAGE_CYCLE_PROJECT_MISMATCH");
+    }
+
+    #[test]
+    fn cycle_project_mismatch_recovery_names_both_projects() {
+        let err = StorageError::CycleProjectMismatch {
+            cycle_id: "p-B/foo".into(),
+            cycle_project_id: "p-B".into(),
+            expected_project_id: "p-A".into(),
+        };
+        let recovery = err.recovery();
+        assert!(
+            recovery.contains("p-B"),
+            "recovery should name the cycle's project: {recovery}"
+        );
+        assert!(
+            recovery.contains("p-A"),
+            "recovery should name the expected project: {recovery}"
+        );
+        assert!(
+            recovery.contains("sddk adopt status"),
+            "recovery should mention 'sddk adopt status': {recovery}"
+        );
     }
 }

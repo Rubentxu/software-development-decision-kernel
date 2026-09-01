@@ -122,25 +122,25 @@ impl sddk_domain::SddkErrorCode for GatewayError {
         }
     }
 
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
-            Self::Denied { .. } => "use a capability declared in the workflow policy",
+            Self::Denied { .. } => "use a capability declared in the workflow policy".into(),
             Self::ApprovalRequired { .. } => {
-                "re-run with explicit `--approve` for R3/R4 capabilities"
+                "re-run with explicit `--approve` for R3/R4 capabilities".into()
             }
             Self::ApprovalExpired { .. } => {
-                "the approval window has closed; a new proposal must be submitted"
+                "the approval window has closed; a new proposal must be submitted".into()
             }
             Self::ApprovalAlreadyResolved { .. } => {
-                "this capability was already decided for the given cycle"
+                "this capability was already decided for the given cycle".into()
             }
             Self::ApprovalReasonRequired => {
-                "supply a non-empty `--reason` with the approval decision"
+                "supply a non-empty `--reason` with the approval decision".into()
             }
-            Self::Idempotency(..) => "use a fresh idempotency key or the original request",
-            Self::Runner(..) => "check the typed runner executable and arguments",
-            Self::Serialization(..) => "fix the structured payload before retrying",
-            Self::Capability(..) => "check the capability execution and verification",
+            Self::Idempotency(..) => "use a fresh idempotency key or the original request".into(),
+            Self::Runner(..) => "check the typed runner executable and arguments".into(),
+            Self::Serialization(..) => "fix the structured payload before retrying".into(),
+            Self::Capability(..) => "check the capability execution and verification".into(),
         }
     }
 }
@@ -157,16 +157,20 @@ impl sddk_domain::SddkErrorCode for crate::release::ReleaseError {
         }
     }
 
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
             Self::Forge(..) => {
-                "check the provider state and re-run; apply converges without duplicates"
+                "check the provider state and re-run; apply converges without duplicates".into()
             }
-            Self::Gateway(..) => "resolve the underlying gateway error first",
-            Self::Serialization(..) => "fix the release payload before retrying",
-            Self::Storage(..) => "resolve the underlying storage error first",
-            Self::Git(..) => "restore the local and remote Git postconditions before retrying",
-            Self::Precondition(..) => "satisfy the local release preconditions before retrying",
+            Self::Gateway(..) => "resolve the underlying gateway error first".into(),
+            Self::Serialization(..) => "fix the release payload before retrying".into(),
+            Self::Storage(..) => "resolve the underlying storage error first".into(),
+            Self::Git(..) => {
+                "restore the local and remote Git postconditions before retrying".into()
+            }
+            Self::Precondition(..) => {
+                "satisfy the local release preconditions before retrying".into()
+            }
         }
     }
 }

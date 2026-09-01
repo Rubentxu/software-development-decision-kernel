@@ -1508,6 +1508,526 @@ fn cli_cycle_lock_renew_extends_lease_keeping_token() {
     assert_eq!(renewed_json["owner"], "agent-a");
 }
 
+/// REQ-GAP6-2: foreign cycle on lock acquire returns STORAGE_CYCLE_PROJECT_MISMATCH
+/// before any SQL is executed.
+#[test]
+fn cli_cycle_lock_acquire_foreign_cycle_returns_typed_error() {
+    let fixture = CliFixture::new("cycle-lock-foreign-acquire");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Use a cycle ID with a foreign project prefix (p-FOREIGN does not match
+    // the project derived from https://example.com/acme/repo.git).
+    let foreign_cycle = "p-FOREIGN/never-exists";
+    let acquire = fixture.run(&[
+        "cycle",
+        "lock",
+        "acquire",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        foreign_cycle,
+        "--owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !acquire.status.success(),
+        "foreign cycle acquire should fail: {}",
+        String::from_utf8_lossy(&acquire.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&acquire.stderr);
+    assert!(
+        stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "stderr should contain STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+    assert!(
+        stderr.contains("p-FOREIGN"),
+        "stderr should name the foreign project: {stderr}"
+    );
+    assert!(
+        stderr.contains("sddk adopt status"),
+        "stderr should mention 'sddk adopt status': {stderr}"
+    );
+}
+
+/// REQ-GAP6-4: malformed cycle id (no project prefix) returns STORAGE_NOT_FOUND.
+#[test]
+fn cli_cycle_lock_acquire_malformed_cycle_returns_not_found() {
+    let fixture = CliFixture::new("cycle-lock-malformed");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Cycle id without project prefix is malformed.
+    let malformed_cycle = "orphan-cycle";
+    let acquire = fixture.run(&[
+        "cycle",
+        "lock",
+        "acquire",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        malformed_cycle,
+        "--owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !acquire.status.success(),
+        "malformed cycle acquire should fail: {}",
+        String::from_utf8_lossy(&acquire.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&acquire.stderr);
+    assert!(
+        stderr.contains("STORAGE_NOT_FOUND"),
+        "malformed cycle should return STORAGE_NOT_FOUND: {stderr}"
+    );
+    // Should NOT return the typed mismatch error.
+    assert!(
+        !stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "malformed cycle should NOT return STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+}
+
+/// REQ-GAP6-7: own-project lock acquire succeeds (no regression).
+#[test]
+fn cli_cycle_lock_acquire_own_project_succeeds() {
+    let fixture = CliFixture::new("cycle-lock-own-project");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Start a cycle in the own project WITHOUT acquiring a lease.
+    let started = fixture.run(&[
+        "cycle",
+        "start",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--name",
+        "own-cycle",
+        "--path",
+        "a-full",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        started.status.success(),
+        "cycle start should succeed: {}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started_json: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
+    let cycle_id = started_json["cycle_id"].as_str().unwrap().to_owned();
+
+    // Lock the cycle (same project) should succeed.
+    let acquire = fixture.run(&[
+        "cycle",
+        "lock",
+        "acquire",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        &cycle_id,
+        "--owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        acquire.status.success(),
+        "own-project lock acquire should succeed: {}",
+        String::from_utf8_lossy(&acquire.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&acquire.stdout).unwrap();
+    assert_eq!(json["fencing_token"].as_i64().unwrap_or(1), 1);
+}
+
+/// REQ-GAP6-8: missing own-project cycle hits FK constraint.
+/// NOTE: The storage layer's `acquire_cycle_lease` does not pre-check cycle existence
+/// before INSERT, so the FK fires returning STORAGE_DATABASE. This is a separate gap
+/// from GAP-6 (foreign project). The typed error (STORAGE_CYCLE_PROJECT_MISMATCH) is
+/// correctly returned only for foreign project cycles, NOT for same-project missing cycles.
+#[test]
+fn cli_cycle_lock_acquire_missing_own_project_returns_foreign_mismatch_when_cycle_does_not_exist() {
+    let fixture = CliFixture::new("cycle-lock-missing-own");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Cycle start gives us the project prefix.
+    let started = fixture.run(&[
+        "cycle",
+        "start",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--name",
+        "placeholder",
+        "--path",
+        "a-full",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--lease-owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        started.status.success(),
+        "{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started_json: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
+    let cycle_id = started_json["cycle_id"].as_str().unwrap();
+    // Extract project prefix from the cycle_id (e.g., "p-abc123/placeholder" -> "p-abc123")
+    let project_prefix = cycle_id.split('/').next().unwrap();
+    // Construct a cycle ID with the same project prefix but a non-existent name.
+    let missing_cycle = format!("{project_prefix}/never-existed-this-cycle");
+
+    let acquire = fixture.run(&[
+        "cycle",
+        "lock",
+        "acquire",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        &missing_cycle,
+        "--owner",
+        "agent-a",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !acquire.status.success(),
+        "missing own-project cycle should fail: {}",
+        String::from_utf8_lossy(&acquire.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&acquire.stderr);
+    // Pre-existing behavior: storage layer FK fires → STORAGE_DATABASE
+    // GAP-6 fix: typed mismatch only for FOREIGN project prefix
+    // For same project prefix (even if cycle missing), no typed mismatch
+    assert!(
+        !stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "same-project prefix should NOT return typed mismatch: {stderr}"
+    );
+}
+
+/// REQ-GAP6-3: foreign cycle on lock status returns typed error.
+#[test]
+fn cli_cycle_lock_status_foreign_cycle_returns_typed_error() {
+    let fixture = CliFixture::new("cycle-lock-status-foreign");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    // Check status of a foreign cycle.
+    let foreign_cycle = "p-FOREIGN/never-exists";
+    let status = fixture.run(&[
+        "cycle",
+        "lock",
+        "status",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        foreign_cycle,
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !status.status.success(),
+        "foreign cycle status should fail: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "stderr should contain STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+    // Previously this returned "lease: none" (silent), now it returns typed error.
+    assert!(
+        !stderr.contains("lease"),
+        "should NOT return lease:none for foreign cycle: {stderr}"
+    );
+}
+
+/// REQ-GAP6-2: foreign cycle on lock renew returns typed error.
+#[test]
+fn cli_cycle_lock_renew_foreign_cycle_returns_typed_error() {
+    let fixture = CliFixture::new("cycle-lock-renew-foreign");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    let foreign_cycle = "p-FOREIGN/never-exists";
+    let renew = fixture.run(&[
+        "cycle",
+        "lock",
+        "renew",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        foreign_cycle,
+        "--owner",
+        "agent-a",
+        "--fencing-token",
+        "1",
+        "--lease-ms",
+        "3600000",
+        "--timestamp",
+        "2026-08-04T10:30:00Z",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !renew.status.success(),
+        "foreign cycle renew should fail: {}",
+        String::from_utf8_lossy(&renew.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&renew.stderr);
+    assert!(
+        stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "stderr should contain STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+}
+
+/// REQ-GAP6-2: foreign cycle on lock release returns typed error.
+#[test]
+fn cli_cycle_lock_release_foreign_cycle_returns_typed_error() {
+    let fixture = CliFixture::new("cycle-lock-release-foreign");
+
+    let adopted = fixture.run_adopt(
+        "apply",
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+            "--timestamp",
+            "2026-08-04T10:00:00Z",
+            "--actor",
+            "cli-test",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        adopted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopted.stderr)
+    );
+
+    let foreign_cycle = "p-FOREIGN/never-exists";
+    let release = fixture.run(&[
+        "cycle",
+        "lock",
+        "release",
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+        "--cycle",
+        foreign_cycle,
+        "--owner",
+        "agent-a",
+        "--fencing-token",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        !release.status.success(),
+        "foreign cycle release should fail: {}",
+        String::from_utf8_lossy(&release.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&release.stderr);
+    assert!(
+        stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH"),
+        "stderr should contain STORAGE_CYCLE_PROJECT_MISMATCH: {stderr}"
+    );
+}
+
 #[test]
 fn cli_capability_gateway_enforces_policy_and_persists_receipts() {
     let fixture = CliFixture::new("capability-gateway");

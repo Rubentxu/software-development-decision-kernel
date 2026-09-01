@@ -21,12 +21,14 @@ impl crate::SddkErrorCode for StorageError {
             Self::Other(_) => "STORAGE_ERROR",
         }
     }
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
-            Self::NotFound { .. } => "ensure the record exists before operating on it",
-            Self::Database(_) => "check the database is accessible and not corrupted",
-            Self::LeaseConflict { .. } => "release the existing lease before acquiring a new one",
-            Self::Other(_) => "retry the operation; if the problem persists, check the logs",
+            Self::NotFound { .. } => "ensure the record exists before operating on it".into(),
+            Self::Database(_) => "check the database is accessible and not corrupted".into(),
+            Self::LeaseConflict { .. } => {
+                "release the existing lease before acquiring a new one".into()
+            }
+            Self::Other(_) => "retry the operation; if the problem persists, check the logs".into(),
         }
     }
 }

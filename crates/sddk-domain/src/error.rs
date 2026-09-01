@@ -5,7 +5,7 @@ pub trait SddkErrorCode: std::error::Error {
     /// Stable machine-readable error code.
     fn code(&self) -> &'static str;
     /// Suggested recovery action.
-    fn recovery(&self) -> &'static str;
+    fn recovery(&self) -> String;
 }
 
 #[cfg(test)]
@@ -33,11 +33,11 @@ mod tests {
             }
         }
 
-        fn recovery(&self) -> &'static str {
+        fn recovery(&self) -> String {
             match self {
-                Self::Named { .. } => "inspect the detail and retry",
-                Self::Tuple(..) => "check the tuple value",
-                Self::Unit => "retry the operation",
+                Self::Named { .. } => "inspect the detail and retry".into(),
+                Self::Tuple(..) => "check the tuple value".into(),
+                Self::Unit => "retry the operation".into(),
             }
         }
     }
@@ -46,11 +46,11 @@ mod tests {
     fn codes_and_recoveries_are_stable() {
         let named = SampleError::Named { detail: "x".into() };
         assert_eq!(named.code(), "SAMPLE_NAMED");
-        assert_eq!(named.recovery(), "inspect the detail and retry");
+        assert_eq!(named.recovery().as_str(), "inspect the detail and retry");
         let tuple = SampleError::Tuple("y".into());
         assert_eq!(tuple.code(), "SAMPLE_TUPLE");
         let unit = SampleError::Unit;
         assert_eq!(unit.code(), "SAMPLE_UNIT");
-        assert_eq!(unit.recovery(), "retry the operation");
+        assert_eq!(unit.recovery().as_str(), "retry the operation");
     }
 }

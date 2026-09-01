@@ -957,6 +957,39 @@ fn run_cycle_lock(command: CycleLockCommand, environment: &CliEnvironment) -> Co
     }
 }
 
+/// Validates that the given cycle_id belongs to the expected project.
+///
+/// Returns `Ok(())` if the cycle's project prefix matches `expected_project_id`.
+/// Returns `Err(StorageError::CycleProjectMismatch)` if the cycle belongs to a
+/// different project (fail-fast before any SQL).
+/// Returns `Err(StorageError::NotFound)` if the cycle_id is malformed (per
+/// REQ-GAP6-4: malformed cycle ids keep `STORAGE_NOT_FOUND`).
+fn validate_cycle_project(
+    cycle_id: &str,
+    expected_project_id: &sddk_domain::ProjectId,
+) -> Result<(), sddk_storage::StorageError> {
+    match CycleId::new(cycle_id) {
+        Ok(cid) => {
+            let cycle_project = cid.project();
+            let expected = expected_project_id.as_str();
+            if cycle_project != expected {
+                Err(sddk_storage::StorageError::CycleProjectMismatch {
+                    cycle_id: cycle_id.to_owned(),
+                    cycle_project_id: cycle_project.to_owned(),
+                    expected_project_id: expected.to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        }
+        // Malformed cycle ids (no project prefix) continue to STORAGE_NOT_FOUND
+        Err(_) => Err(sddk_storage::StorageError::NotFound {
+            entity: "cycle",
+            id: cycle_id.to_owned(),
+        }),
+    }
+}
+
 fn run_cycle_lock_acquire(
     args: CycleLockAcquireArgs,
     environment: &CliEnvironment,
@@ -964,6 +997,7 @@ fn run_cycle_lock_acquire(
     let format = args.format;
     let result = (|| -> anyhow::Result<LeaseOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         let lease = context.storage.acquire_cycle_lease(
             &args.cycle,
@@ -980,6 +1014,7 @@ fn run_cycle_lock_renew(args: CycleLockRenewArgs, environment: &CliEnvironment) 
     let format = args.format;
     let result = (|| -> anyhow::Result<LeaseOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         let lease = context.storage.renew_cycle_lease(
             &args.cycle,
@@ -1000,6 +1035,7 @@ fn run_cycle_lock_release(
     let format = args.format;
     let result = (|| -> anyhow::Result<CycleLockReleaseOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
         let command_id = format!("cycle.lock.release-{}", Uuid::new_v4().hyphenated());
         let actor = args
             .actor
@@ -1122,11 +1158,15 @@ fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment
     let format = args.format;
     let result = (|| -> anyhow::Result<Option<LeaseOutput>> {
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        Ok(context
-            .storage
-            .get_cycle_lease(&args.cycle)
-            .ok()
-            .map(Into::into))
+        // REQ-GAP6-3: apply same project-prefix guard as acquire/renew/release
+        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        // Only swallow NotFound (cycle has no lease); other errors propagate
+        let lease = match context.storage.get_cycle_lease(&args.cycle) {
+            Ok(l) => Some(l),
+            Err(sddk_storage::StorageError::NotFound { .. }) => None,
+            Err(e) => return Err(e.into()),
+        };
+        Ok(lease.map(Into::into))
     })();
     render_result(result, format, lease_option_text)
 }

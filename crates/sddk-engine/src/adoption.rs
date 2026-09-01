@@ -161,27 +161,24 @@ impl SddkErrorCode for AdoptionError {
         }
     }
 
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
             Self::UnsafeState {
                 status: AdoptionStatusKind::Conflict,
                 ..
-            } => {
-                "if only the CLI version changed, run `sddk adopt refresh`; \
+            } => "if only the CLI version changed, run `sddk adopt refresh`; \
                  for identity drift, inspect the receipt manually"
-            }
+                .into(),
             Self::UnsafeState {
                 status: AdoptionStatusKind::Corrupt,
                 ..
-            } => {
-                "inspect the receipt file (it may have been truncated or \
+            } => "inspect the receipt file (it may have been truncated or \
                  edited) and re-adopt only after backing it up"
-            }
-            Self::NothingToRepair => {
-                "nothing to repair; run `sddk adopt apply` to create the \
+                .into(),
+            Self::NothingToRepair => "nothing to repair; run `sddk adopt apply` to create the \
                  initial adoption state"
-            }
-            _ => "inspect the error detail and retry",
+                .into(),
+            _ => "inspect the error detail and retry".into(),
         }
     }
 }

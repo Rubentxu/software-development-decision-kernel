@@ -1533,49 +1533,63 @@ impl sddk_domain::SddkErrorCode for EngineError {
         }
     }
 
-    fn recovery(&self) -> &'static str {
+    fn recovery(&self) -> String {
         match self {
             Self::UndeclaredTransition { .. } => {
-                "use a transition declared in the workflow manifest"
+                "use a transition declared in the workflow manifest".into()
             }
             Self::CreationTransitionRequiresStartApi { .. } => {
-                "use the cycle-start API for creation transitions"
+                "use the cycle-start API for creation transitions".into()
             }
             Self::SourceStateMismatch { .. } => {
-                "check the current cycle state and retry with the matching transition"
+                "check the current cycle state and retry with the matching transition".into()
             }
-            Self::MissingRequirement { .. } => "satisfy the declared precondition before retrying",
-            Self::MissingArtifact { .. } => "provide the required artifact in the evidence",
-            Self::MissingGateReceipt { .. } => "evaluate the gate with `cycle evaluate-gate` first",
-            Self::UnknownGateReceipt { .. } => "reference an existing gate receipt",
-            Self::GateReceiptMismatch { .. } => "use a receipt for the same gate and transition",
-            Self::StaleGateReceipt { .. } => "re-evaluate the gate against the current cycle state",
-            Self::UnregisteredEvaluator { .. } => "register the evaluator for the gate",
-            Self::GateReceiptScopeMismatch { .. } => "use a receipt from the same cycle",
-            Self::GateFailedWithoutTarget { .. } => "declare an on_failure target for the gate",
+            Self::MissingRequirement { .. } => {
+                "satisfy the declared precondition before retrying".into()
+            }
+            Self::MissingArtifact { .. } => "provide the required artifact in the evidence".into(),
+            Self::MissingGateReceipt { .. } => {
+                "evaluate the gate with `cycle evaluate-gate` first".into()
+            }
+            Self::UnknownGateReceipt { .. } => "reference an existing gate receipt".into(),
+            Self::GateReceiptMismatch { .. } => {
+                "use a receipt for the same gate and transition".into()
+            }
+            Self::StaleGateReceipt { .. } => {
+                "re-evaluate the gate against the current cycle state".into()
+            }
+            Self::UnregisteredEvaluator { .. } => "register the evaluator for the gate".into(),
+            Self::GateReceiptScopeMismatch { .. } => "use a receipt from the same cycle".into(),
+            Self::GateFailedWithoutTarget { .. } => {
+                "declare an on_failure target for the gate".into()
+            }
             Self::UndeclaredProducedArtifact { .. } => {
-                "only offer artifacts the transition produces"
+                "only offer artifacts the transition produces".into()
             }
-            Self::ArtifactKindMismatch { .. } => "match the artifact key to its kind",
-            Self::UnknownPath { .. } => "use a workflow path declared in the manifest",
-            Self::TransitionPathMismatch { .. } => "use a transition allowed for the cycle path",
-            Self::StalePlan { .. } => "re-plan against the current cycle snapshot",
-            Self::InvalidPlan => "recompute the plan deterministically",
-            Self::StateSerialization(..) => "fix the workflow state JSON",
-            Self::MissingReplayState { .. } => "create the cycle before replaying",
-            Self::MissingStateAfter { .. } => "restore the ledger or rebuild the cycle",
-            Self::NonObjectStateAfter { .. } => "repair the corrupted ledger event",
-            Self::CorruptStateAfter { .. } => "repair the corrupted ledger event",
-            Self::SnapshotMismatch { .. } => "rebuild the snapshot from ledger events",
+            Self::ArtifactKindMismatch { .. } => "match the artifact key to its kind".into(),
+            Self::UnknownPath { .. } => "use a workflow path declared in the manifest".into(),
+            Self::TransitionPathMismatch { .. } => {
+                "use a transition allowed for the cycle path".into()
+            }
+            Self::StalePlan { .. } => "re-plan against the current cycle snapshot".into(),
+            Self::InvalidPlan => "recompute the plan deterministically".into(),
+            Self::StateSerialization(..) => "fix the workflow state JSON".into(),
+            Self::MissingReplayState { .. } => "create the cycle before replaying".into(),
+            Self::MissingStateAfter { .. } => "restore the ledger or rebuild the cycle".into(),
+            Self::NonObjectStateAfter { .. } => "repair the corrupted ledger event".into(),
+            Self::CorruptStateAfter { .. } => "repair the corrupted ledger event".into(),
+            Self::SnapshotMismatch { .. } => "rebuild the snapshot from ledger events".into(),
             Self::InvalidPassEvidence { .. } => {
-                "provide argv, exit_code, and output_digest in pass evidence"
+                "provide argv, exit_code, and output_digest in pass evidence".into()
             }
-            Self::GoalInputUnreadable => "verify goal input is readable before retrying",
-            Self::SupersedeRequiresExactlyOne => "supply exactly one of --successor or --reason",
-            Self::SupersedeSelfForbidden => "do not supersede a cycle with itself",
-            Self::ReplanLimitExceeded => "replan counter is at its limit of 5",
-            Self::ReplanEmptyDelta => "supply a non-empty replan delta",
-            Self::Storage(..) => "resolve the underlying storage error first",
+            Self::GoalInputUnreadable => "verify goal input is readable before retrying".into(),
+            Self::SupersedeRequiresExactlyOne => {
+                "supply exactly one of --successor or --reason".into()
+            }
+            Self::SupersedeSelfForbidden => "do not supersede a cycle with itself".into(),
+            Self::ReplanLimitExceeded => "replan counter is at its limit of 5".into(),
+            Self::ReplanEmptyDelta => "supply a non-empty replan delta".into(),
+            Self::Storage(..) => "resolve the underlying storage error first".into(),
         }
     }
 }
