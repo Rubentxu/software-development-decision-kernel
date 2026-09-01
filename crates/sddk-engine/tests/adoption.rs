@@ -41,9 +41,9 @@ fn plan_is_write_free_and_reports_identity_paths_and_hash() {
     assert_eq!(plan.receipt.paths.ledger, path_text(&plan.paths.ledger));
 }
 
-// durability-required: apply_adoption calls Storage::open(&plan.paths.ledger) internally,
-// opening a separate connection; the plan's paths.ledger resolves to a TempDir path,
-// not an in-memory database, so in-memory migration is not byte-equivalent.
+// File-based for fixture consistency with surrounding suite; this test
+// does not require durability but uses Fixture::new() to match the
+// adoption suite's helpers.
 #[test]
 fn same_basename_different_remotes_and_scopes_do_not_collide() {
     let fixture = Fixture::new();
