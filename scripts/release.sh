@@ -242,7 +242,9 @@ RELEASE_ARGS=(
     --title "sddk $TAG"
     --notes "Release $TAG — published by scripts/release.sh."
 )
-[ "$FORCE" = "1" ] && RELEASE_ARGS+=(--clobber)
+# Note: --clobber is NOT supported on `gh release create` in gh <2.99 (only on `upload`).
+# We pass --clobber to `gh release upload` below, which is the path that actually needs it.
+# Forcing re-create of an existing release is handled by deleting first.
 
 ASSETS=(
     "$BIN"
