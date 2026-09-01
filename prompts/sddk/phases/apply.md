@@ -328,6 +328,10 @@ Persist progress to **XDG operational artifacts** (the canonical store):
 
 **Merge Protocol reminder**: if Step D found previous apply-progress, your new artifact MUST include ALL previously completed tasks PLUS your new completions in a single combined artifact. Never overwrite without merging.
 
+### Test-count discipline
+
+The apply phase MUST source `test_aggregate.total_workspace_tests` from the verbatim stdout of `sddk dev test count-workspace` (REQ-C13-COUNT-WORKSPACE). Hand-rolled counts, per-package sums, or values that disagree with the most recent verify-phase `cargo test --workspace` output are FORBIDDEN.
+
 ## Per-task telemetry (write to apply-progress per attempt)
 
 For each attempt, persist:

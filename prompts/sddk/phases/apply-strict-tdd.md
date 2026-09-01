@@ -363,6 +363,10 @@ expect(screen.getByRole("button")).toBeDisabled();
 - For refactoring tasks, ALWAYS write approval tests before touching code
 - Run ONLY the relevant test file during the cycle, not the full suite
 
+## Test-count discipline (Strict TDD)
+
+When composing the apply envelope (`test_aggregate.total_workspace_tests`), the apply phase MUST source the count from the verbatim output of `sddk dev test count-workspace` (REQ-C13-COUNT-WORKSPACE). Hand-rolled counts, per-package sums, or values that disagree with the most recent verify-phase `cargo test --workspace` output are FORBIDDEN. This prevents CL-REPORTING-DEFECT from recurring under hand-rolled counts.
+
 ## Integration with L3 inner loop
 
 Each TDD cycle maps to one attempt in the inner loop:
