@@ -10,8 +10,8 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 mod adoption;
-pub mod cycle_supersede;
 pub mod cycle_replan;
+pub mod cycle_supersede;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
@@ -31,8 +31,8 @@ pub mod version;
 pub mod workflow_runtime;
 
 pub use adoption::*;
-pub use cycle_supersede::*;
 pub use cycle_replan::*;
+pub use cycle_supersede::*;
 pub use event_bus::*;
 pub use execution_controller::*;
 pub use fingerprint::*;
@@ -1571,9 +1571,7 @@ impl sddk_domain::SddkErrorCode for EngineError {
                 "provide argv, exit_code, and output_digest in pass evidence"
             }
             Self::GoalInputUnreadable => "verify goal input is readable before retrying",
-            Self::SupersedeRequiresExactlyOne => {
-                "supply exactly one of --successor or --reason"
-            }
+            Self::SupersedeRequiresExactlyOne => "supply exactly one of --successor or --reason",
             Self::SupersedeSelfForbidden => "do not supersede a cycle with itself",
             Self::ReplanLimitExceeded => "replan counter is at its limit of 5",
             Self::ReplanEmptyDelta => "supply a non-empty replan delta",

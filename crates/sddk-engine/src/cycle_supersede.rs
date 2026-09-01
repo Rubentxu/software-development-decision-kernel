@@ -10,10 +10,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::{Engine, EngineError, EventReceipt, write_atomic};
 use sddk_domain::{LedgerEventInput, StorageError as DomainStorageError};
-use crate::{
-    Engine, EngineError, EventReceipt, write_atomic,
-};
 use serde_json::json;
 
 /// Reason for superseding a cycle when no successor is available.
@@ -89,9 +87,9 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(i64::MAX);
-        let lease_result = self
-            .ledger
-            .verify_cycle_lease(cycle_id, lease_owner, fencing_token, now_ms);
+        let lease_result =
+            self.ledger
+                .verify_cycle_lease(cycle_id, lease_owner, fencing_token, now_ms);
         match lease_result {
             Ok(_) => {}
             Err(DomainStorageError::NotFound { .. }) => {
@@ -151,7 +149,9 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             actor: actor.to_owned(),
             event_type: "cycle.supersede.applied".to_owned(),
             occurred_at: occurred_at.to_owned(),
-            state_before: Some(serde_json::to_value(&current).map_err(EngineError::StateSerialization)?),
+            state_before: Some(
+                serde_json::to_value(&current).map_err(EngineError::StateSerialization)?,
+            ),
             state_after: None,
             payload: json!({
                 "successor": successor,
@@ -173,8 +173,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             lease_owner: actor.to_owned(),
             fencing_token: 0, // Filled by caller before calling cycle_supersede
         };
-        let receipt_json =
-            serde_json::to_string_pretty(&receipt_input).map_err(EngineError::StateSerialization)?;
+        let receipt_json = serde_json::to_string_pretty(&receipt_input)
+            .map_err(EngineError::StateSerialization)?;
         let receipt_file_path = receipt_path.join(cycle_id).join("supersede-receipt.json");
         if let Some(parent) = receipt_file_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -190,7 +190,12 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         // Emit cycle.supersede.requested event (cycle status → Closed)
         let _event_requested = self
             .ledger
-            .update_cycle_with_event(&updated_manifest, occurred_at, &event_input_requested, false)
+            .update_cycle_with_event(
+                &updated_manifest,
+                occurred_at,
+                &event_input_requested,
+                false,
+            )
             .map_err(EngineError::Storage)?;
 
         // Emit cycle.supersede.applied event (cycle stays Closed)

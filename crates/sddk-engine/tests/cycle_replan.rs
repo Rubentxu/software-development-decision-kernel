@@ -9,9 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use sddk_domain::{CycleManifest, CyclePath, CycleStatus, Phase};
-use sddk_engine::{
-    CycleStartInput, Engine, EventContext, RestageTo,
-};
+use sddk_engine::{CycleStartInput, Engine, EventContext, RestageTo};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");

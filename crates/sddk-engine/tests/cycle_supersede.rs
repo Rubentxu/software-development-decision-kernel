@@ -13,10 +13,7 @@ use std::path::Path;
 use sddk_domain::{
     CycleManifest, CyclePath, CycleStatus, Phase, StorageError as DomainStorageError,
 };
-use sddk_engine::{
-    CycleStartInput, Engine, EventContext,
-    SupersedeReason,
-};
+use sddk_engine::{CycleStartInput, Engine, EventContext, SupersedeReason};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
@@ -134,7 +131,10 @@ fn supersede_requires_lease_fence() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, sddk_engine::EngineError::Storage(DomainStorageError::LeaseConflict { .. })),
+        matches!(
+            err,
+            sddk_engine::EngineError::Storage(DomainStorageError::LeaseConflict { .. })
+        ),
         "expected LeaseConflict error, got: {:?}",
         err
     );
@@ -257,7 +257,11 @@ fn supersede_appends_requested_and_applied_events() {
         "test-actor",
         1,
     );
-    assert!(result.is_ok(), "supersede should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "supersede should succeed: {:?}",
+        result.err()
+    );
 
     // Check 2 new events appended
     let events = engine.ledger().list_cycle_events("cycle-1").unwrap();
@@ -303,7 +307,10 @@ fn supersede_reason_scope_invalid() {
         "test-actor",
         1,
     );
-    assert!(result.is_ok(), "supersede with ScopeInvalid reason should succeed");
+    assert!(
+        result.is_ok(),
+        "supersede with ScopeInvalid reason should succeed"
+    );
 }
 
 #[test]
@@ -327,7 +334,10 @@ fn supersede_reason_goal_replaced() {
         "test-actor",
         1,
     );
-    assert!(result.is_ok(), "supersede with GoalReplaced reason should succeed");
+    assert!(
+        result.is_ok(),
+        "supersede with GoalReplaced reason should succeed"
+    );
 }
 
 #[test]

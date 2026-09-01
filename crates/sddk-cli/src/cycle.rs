@@ -1025,10 +1025,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
     let format = args.format;
     let result = (|| -> anyhow::Result<CycleSupersedeOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let timestamp = args
-            .timestamp
-            .clone()
-            .unwrap_or_else(default_timestamp);
+        let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let actor = args
             .actor
             .clone()
@@ -1076,10 +1073,7 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
     let format = args.format;
     let result = (|| -> anyhow::Result<CycleReplanOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let timestamp = args
-            .timestamp
-            .clone()
-            .unwrap_or_else(default_timestamp);
+        let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let actor = args
             .actor
             .clone()

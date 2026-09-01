@@ -45,61 +45,65 @@ fn extract_inventory_path(envelope: &str) -> Option<PathBuf> {
         if line.starts_with("path:") {
             let path = line.trim_start_matches("path:").trim();
             return Some(PathBuf::from(path));
-}
+        }
 
-/// inventory_with_receipt_files: supersede-receipt.json and replan-receipt.json
-/// are permitted in the cycle artifacts directory and do not cause inventory failures.
-#[test]
-fn inventory_with_receipt_files() {
-    let repo = sddk_testkit::TestRepository::new().unwrap();
-    repo.init().unwrap();
-    let sandbox = CliSandbox::new(repo, env!("CARGO_BIN_EXE_sddk")).unwrap();
-    sandbox
-        .init_git("receipts", "receipts@example.com")
-        .unwrap();
+        /// inventory_with_receipt_files: supersede-receipt.json and replan-receipt.json
+        /// are permitted in the cycle artifacts directory and do not cause inventory failures.
+        #[test]
+        fn inventory_with_receipt_files() {
+            let repo = sddk_testkit::TestRepository::new().unwrap();
+            repo.init().unwrap();
+            let sandbox = CliSandbox::new(repo, env!("CARGO_BIN_EXE_sddk")).unwrap();
+            sandbox
+                .init_git("receipts", "receipts@example.com")
+                .unwrap();
 
-    // Set up a simple tracked file
-    sandbox.repo().write("docs/readme.md", "# Hello\n").unwrap();
-    sandbox.repo().commit_all("init").unwrap();
+            // Set up a simple tracked file
+            sandbox.repo().write("docs/readme.md", "# Hello\n").unwrap();
+            sandbox.repo().commit_all("init").unwrap();
 
-    // Create the cycle artifacts directory with supersede and replan receipts
-    let cycle_id = "c-receipts";
-    let xdg_path = sandbox.path().join(".sddk_xdg");
-    let artifacts_path = xdg_path.join("projects").join("default").join("cycles").join(cycle_id);
-    std::fs::create_dir_all(&artifacts_path).unwrap();
+            // Create the cycle artifacts directory with supersede and replan receipts
+            let cycle_id = "c-receipts";
+            let xdg_path = sandbox.path().join(".sddk_xdg");
+            let artifacts_path = xdg_path
+                .join("projects")
+                .join("default")
+                .join("cycles")
+                .join(cycle_id);
+            std::fs::create_dir_all(&artifacts_path).unwrap();
 
-    // Write supersede-receipt.json
-    let supersede_receipt = artifacts_path.join("supersede-receipt.json");
-    std::fs::write(
+            // Write supersede-receipt.json
+            let supersede_receipt = artifacts_path.join("supersede-receipt.json");
+            std::fs::write(
         &supersede_receipt,
         r#"{"cycle_id":"c-receipts","successor":"c-successor","reason":"goal_replaced","event_ids":["evt-1","evt-2"]}"#
     ).unwrap();
 
-    // Write replan-receipt.json
-    let replan_receipt = artifacts_path.join("replan-receipt.json");
-    std::fs::write(
+            // Write replan-receipt.json
+            let replan_receipt = artifacts_path.join("replan-receipt.json");
+            std::fs::write(
         &replan_receipt,
         r#"{"cycle_id":"c-receipts","restage_to":"specify","delta":{"changed_files":["docs/readme.md"],"reason":"update readme"}},"#
     ).unwrap();
 
-    // Run inventory
-    let envelope = run_inventory(&sandbox, cycle_id);
-    let inv_path =
-        extract_inventory_path(&envelope).expect("envelope should contain inventory path");
+            // Run inventory
+            let envelope = run_inventory(&sandbox, cycle_id);
+            let inv_path =
+                extract_inventory_path(&envelope).expect("envelope should contain inventory path");
 
-    // Validate against schema - should pass
-    let schema_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../prompts/sddk/contracts/inventory.schema.json");
-    validate_inventory(&schema_path, &inv_path)
-        .expect("inventory with receipt files should validate against schema");
+            // Validate against schema - should pass
+            let schema_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../prompts/sddk/contracts/inventory.schema.json");
+            validate_inventory(&schema_path, &inv_path)
+                .expect("inventory with receipt files should validate against schema");
 
-    // Receipt files are outside the git working tree, so they don't appear in inventory
-    assert_eq!(
-        read_json_int(&inv_path, "summary.added").unwrap(),
-        0,
-        "receipts: no added files (receipts are not in git)"
-    );
-}
+            // Receipt files are outside the git working tree, so they don't appear in inventory
+            assert_eq!(
+                read_json_int(&inv_path, "summary.added").unwrap(),
+                0,
+                "receipts: no added files (receipts are not in git)"
+            );
+        }
     }
     None
 }

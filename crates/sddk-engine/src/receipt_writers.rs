@@ -16,8 +16,11 @@ pub fn write_atomic(destination: &Path, bytes: &[u8]) -> io::Result<()> {
         .unwrap_or("artifact");
     let mut last_error = None;
     for attempt in 0..100 {
-        let temporary =
-            parent.join(format!(".{file_name}.tmp-{}-{}", std::process::id(), attempt));
+        let temporary = parent.join(format!(
+            ".{file_name}.tmp-{}-{}",
+            std::process::id(),
+            attempt
+        ));
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

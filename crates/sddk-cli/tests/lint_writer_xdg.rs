@@ -22,7 +22,10 @@ impl WriterXdgTestEnv {
         let dir = TempDir::new().unwrap();
         let xdg_root = dir.path().join("project_data");
         fs::create_dir_all(&xdg_root).unwrap();
-        Self { _dir: dir, xdg_root }
+        Self {
+            _dir: dir,
+            xdg_root,
+        }
     }
 
     fn create_output(&self, relative: &str) -> PathBuf {
