@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT
 title: "Apply envelope reported 636 workspace tests when actual is 1076"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "67e91b05600e2991"
@@ -10,6 +10,8 @@ cluster_id: CL-REPORTING-DEFECT
 created: 2026-08-22
 created_by: sddk-verify
 owner: orchestrator
+resolved_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
+resolved_at: 2026-09-01
 ---
 
 # INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT — apply envelope test count misrepresentation
@@ -72,5 +74,14 @@ than the full workspace.
 - `~/.local/share/sddk/projects/p-52b95ef55999f9de/changes/kernel-cycle-13-m1-hexagonal-ports/apply-progress.yaml` — the apply envelope with the misreport
 - `~/.local/share/sddk/projects/p-52b95ef55999f9de/cycle-artifacts/p-52b95ef55999f9de/kernel-cycle-13-m1-hexagonal-ports/verify-report.md` — verify phase output (ground-truth 1076)
 - `~/.local/share/sddk/projects/p-52b95ef55999f9de/cycle-artifacts/p-52b95ef55999f9de/kernel-cycle-13-m1-hexagonal-ports/implementation-receipt.md` — implementation receipt documenting the misreport
+
+## Closure Evidence
+
+Closed by `p-63676b11dc0ef88f/cycle-13-debt-sweep-correction` (v1.66.3).
+
+- **Resolution:** Parser rewritten as `parse_cargo_test_output` (pure function, regex+HashSet, no I/O). 8 unit tests cover edge cases. Live binary returns `total_workspace_tests: 1747 / test_binaries: 79`.
+- **Archive manifest:** `archive-manifest.md` sha256 `5445cba1bcd7b268a262e5006f69b6c331ea7b7f458f15a5b417b21ad3e143fb`
+- **Release tag:** [v1.66.3](https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.66.3)
+- **Release receipt sha256:** `fe537a9920a309ecb9a980884c1b4bde0f8d0cf5104f7b2360c7ecf70930ff29`
 
 > Filled by `sddk-archive` (cycle-13); consumed by `sddk-debt-verify` for cross-cycle correlation via fingerprint.

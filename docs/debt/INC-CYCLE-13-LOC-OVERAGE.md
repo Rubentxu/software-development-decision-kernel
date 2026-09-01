@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-13-LOC-OVERAGE
 title: "Cycle-13 port_contracts.rs LOC overage vs spec AC M13-002 budget"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "e6c644d1e8ce5f17"
@@ -10,6 +10,8 @@ cluster_id: CL-LOC-OVERAGE
 created: 2026-08-22
 created_by: sddk-verify
 owner: orchestrator
+resolved_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
+resolved_at: 2026-09-01
 ---
 
 # INC-CYCLE-13-LOC-OVERAGE — port_contracts.rs LOC overage
@@ -68,5 +70,14 @@ in `verify-report.md`.
 - `docs/adr/ADR-0047-inc01-cycle-8-loc-budget-exception.md` — exception precedent
 - `docs/adr/ADR-0047-inc02-cycle-9-apply-discipline-and-loc-reality.md` — LOC reality lesson
 - `~/.local/share/sddk/projects/p-52b95ef55999f9de/cycle-artifacts/p-52b95ef55999f9de/kernel-cycle-13-m1-hexagonal-ports/verify-report.md` — verify phase output
+
+## Closure Evidence
+
+Closed by `p-63676b11dc0ef88f/cycle-13-debt-sweep-correction` (v1.66.3).
+
+- **Resolution:** ADR-0048 supersedes per-file LOC targets with total-module-sum budgets. port_contracts.rs (244 LOC) untouched in correction commit. 9/9 byte-equivalence tests pass.
+- **Archive manifest:** `archive-manifest.md` sha256 `5445cba1bcd7b268a262e5006f69b6c331ea7b7f458f15a5b417b21ad3e143fb`
+- **Release tag:** [v1.66.3](https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.66.3)
+- **Release receipt sha256:** `fe537a9920a309ecb9a980884c1b4bde0f8d0cf5104f7b2360c7ecf70930ff29`
 
 > Filled by `sddk-archive` (cycle-13); consumed by `sddk-debt-verify` for cross-cycle correlation via fingerprint.
