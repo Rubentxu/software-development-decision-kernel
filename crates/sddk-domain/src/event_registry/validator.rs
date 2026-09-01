@@ -157,6 +157,42 @@ mod tests {
         env
     }
 
+    fn build_corpus_envelope(
+        seq: usize,
+        event_type: &str,
+        payload: serde_json::Value,
+    ) -> EventEnvelopeV1 {
+        let mut env = EventEnvelopeV1 {
+            event_id: format!("evt-corpus-{}", seq + 1),
+            event_type: event_type.to_string(),
+            schema_version: 1,
+            stream_id: "stream-corpus".to_string(),
+            sequence: (seq + 1) as u64,
+            project_id: "p-corpus".to_string(),
+            occurred_at: "2026-08-22T00:00:00Z".into(),
+            recorded_at: "2026-08-22T00:00:00Z".into(),
+            actor: ActorRef {
+                kind: ActorKind::System,
+                id: "sddk-cli".into(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            },
+            subjects: vec![],
+            payload,
+            evidence_refs: vec![],
+            content_hash: String::new(),
+            metadata: None,
+            causation_id: None,
+            correlation_id: None,
+            cycle_id: None,
+            frame_id: None,
+            fork_id: None,
+        };
+        env.content_hash = env.compute_content_hash();
+        env
+    }
+
     #[test]
     fn validator_passes_valid_envelope() {
         let registry = std_registry();
@@ -377,34 +413,7 @@ mod tests {
         // Build EventEnvelopeV1 corpus and validate through CanonicalEventValidator
         let mut envelopes: Vec<EventEnvelopeV1> = Vec::new();
         for (seq, (event_type, payload)) in corpus.iter().enumerate() {
-            let mut env = EventEnvelopeV1 {
-                event_id: format!("evt-corpus-{}", seq + 1),
-                event_type: event_type.to_string(),
-                schema_version: 1,
-                stream_id: "stream-corpus".to_string(),
-                sequence: (seq + 1) as u64,
-                project_id: "p-corpus".to_string(),
-                occurred_at: "2026-08-22T00:00:00Z".into(),
-                recorded_at: "2026-08-22T00:00:00Z".into(),
-                actor: ActorRef {
-                    kind: ActorKind::System,
-                    id: "sddk-cli".into(),
-                    definition_hash: None,
-                    policy_hash: None,
-                    model: None,
-                },
-                subjects: vec![],
-                payload: payload.clone(),
-                evidence_refs: vec![],
-                content_hash: String::new(),
-                metadata: None,
-                causation_id: None,
-                correlation_id: None,
-                cycle_id: None,
-                frame_id: None,
-                fork_id: None,
-            };
-            env.content_hash = env.compute_content_hash();
+            let env = build_corpus_envelope(seq, event_type, payload.clone());
 
             // Validate through CanonicalEventValidator — must not reject
             assert!(
