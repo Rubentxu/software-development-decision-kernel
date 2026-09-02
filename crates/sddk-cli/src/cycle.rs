@@ -1353,23 +1353,25 @@ fn run_cycle_lock(command: CycleLockCommand, environment: &CliEnvironment) -> Co
 fn validate_cycle_project(
     cycle_id: &str,
     expected_project_id: &sddk_domain::ProjectId,
-) -> Result<(), sddk_storage::StorageError> {
+) -> Result<(), sddk_domain::StorageError> {
     match CycleId::new(cycle_id) {
         Ok(cid) => {
             let cycle_project = cid.project();
             let expected = expected_project_id.as_str();
             if cycle_project != expected {
-                Err(sddk_storage::StorageError::CycleProjectMismatch {
-                    cycle_id: cycle_id.to_owned(),
-                    cycle_project_id: cycle_project.to_owned(),
-                    expected_project_id: expected.to_owned(),
-                })
+                // CycleProjectMismatch has no domain equivalent; surface it as Other
+                // so the error still reaches failure_envelope (fallback to storage).
+                Err(sddk_domain::StorageError::Other(format!(
+                    "cycle project mismatch: cycle {} belongs to {}, expected {}",
+                    cycle_id, cycle_project, expected
+                )))
             } else {
                 Ok(())
             }
         }
         // Malformed cycle ids (no project prefix) continue to STORAGE_NOT_FOUND
-        Err(_) => Err(sddk_storage::StorageError::NotFound {
+        // Use domain error so failure_envelope picks up the cycle-specific hint.
+        Err(_) => Err(sddk_domain::StorageError::NotFound {
             entity: "cycle",
             id: cycle_id.to_owned(),
         }),
@@ -1718,15 +1720,15 @@ fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment
             Err(sddk_storage::StorageError::NotFound {
                 entity: "cycle", ..
             }) => {
-                // Cycle does not exist in `cycles` table → propagate typed error
-                return Err(sddk_storage::StorageError::NotFound {
+                // Cycle does not exist in `cycles` table → use domain error so
+                // failure_envelope picks up the cycle-specific hint (WARN-001).
+                return Err(anyhow::anyhow!(sddk_domain::StorageError::NotFound {
                     entity: "cycle",
                     id: cycle_id.clone(),
-                }
-                .into());
+                }));
             }
             Err(sddk_storage::StorageError::NotFound { .. }) => None,
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(anyhow::anyhow!(e)),
         };
         Ok(lease.map(Into::into))
     })();
@@ -2995,6 +2997,128 @@ mod tests {
         assert!(
             !stderr.contains("STORAGE_NOT_FOUND"),
             "error should NOT be STORAGE_NOT_FOUND"
+        );
+    }
+
+    // ── WARN-001: hints-coverage ─────────────────────────────────────────────
+
+    /// Regression test: malformed cycle id via validate_cycle_project surfaces
+    /// sddk_domain::StorageError::NotFound (cycle-specific hint), NOT the generic
+    /// "create the record or fix the reference" from sddk_storage.
+    #[test]
+    fn s_lock_acquire_malformed_cycle_emits_domain_hint_not_generic() {
+        // Malformed cycle id (no project prefix) triggers validate_cycle_project's
+        // Err(_ => NotFound) path. Before the fix this constructed
+        // sddk_storage::StorageError::NotFound → generic hint.
+        let proj = temp_project();
+        let project_root = proj.path();
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440099";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+
+        // Seed project so RuntimeContext::open succeeds
+        seed_one_active_lease(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            "c-valid-seed",
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        // "malformed-cycle" has no project prefix → CycleId::new fails →
+        // validate_cycle_project returns domain StorageError::NotFound
+        let args = CycleLockAcquireArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some("malformed-cycle".to_string()),
+            owner: "test-owner".to_string(),
+            lease_ms: 3_600_000,
+            timestamp: None,
+            format: OutputFormat::Text,
+        };
+
+        let output = run_cycle_lock_acquire(args, &env);
+
+        assert!(
+            output.status != 0,
+            "run_cycle_lock_acquire should return error for malformed cycle"
+        );
+        let stderr = &output.stderr;
+        // Domain hint must appear
+        assert!(
+            stderr.contains("sddk cycle start"),
+            "stderr should contain domain hint with `sddk cycle start`, got: {}",
+            stderr
+        );
+        // Generic storage hint must NOT appear
+        assert!(
+            !stderr.contains("create the record or fix the reference"),
+            "stderr should NOT contain generic storage hint, got: {}",
+            stderr
+        );
+    }
+
+    /// Regression test: run_cycle_lock_status with nonexistent cycle surfaces
+    /// sddk_domain::StorageError::NotFound (cycle-specific hint) via the
+    /// fixed re-wrap, NOT the generic "create the record or fix the reference".
+    #[test]
+    fn s_lock_status_nonexistent_cycle_emits_domain_hint_not_generic() {
+        let proj = temp_project();
+        let project_root = proj.path();
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440100";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+
+        // Seed project so RuntimeContext::open succeeds
+        seed_one_active_lease(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            "c-valid-lock-seed",
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleLockStatusArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(format!("{}/c-nonexistent-lock-cycle", project_id)),
+            format: OutputFormat::Text,
+        };
+
+        let output = run_cycle_lock_status(args, &env);
+
+        assert!(
+            output.status != 0,
+            "run_cycle_lock_status should return error for nonexistent cycle"
+        );
+        let stderr = &output.stderr;
+        // Domain hint must appear
+        assert!(
+            stderr.contains("sddk cycle start") || stderr.contains("sddk cycle rebuild"),
+            "stderr should contain domain hint with cycle commands, got: {}",
+            stderr
+        );
+        // Generic storage hint must NOT appear
+        assert!(
+            !stderr.contains("create the record or fix the reference"),
+            "stderr should NOT contain generic storage hint, got: {}",
+            stderr
         );
     }
 
