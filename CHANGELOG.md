@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.66.5] - 2026-09-02
+
+### Documentation
+  - docs(agents): corrige la narrativa de `AGENTS.md §8` sobre el cierre formal del ciclo. La nota que decía "actualmente roto" se elimina; el cierre CLI ya es operativo desde v1.66.1 (`validate_cycle_project`) y v1.66.2 (`Storage::cycle_exists`, INC-DEBT-017). Preserva el rol durable de `archive-manifest.md` como ground-truth del cierre (líneas 208 + 213).
+  - docs(roadmap): cierra el GAP-6 dentro de `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` bajo un heading `### GAP-6 — Closed by v1.66.1 + v1.66.2 (cycle-50 bis not needed)`. El texto original queda preservado dentro de un blockquote `> **Original (archived for audit):**` para audit trail. Rationale del cycle-57 + INC-DEBT-017 nombrados.
+  - docs(backlog): añade un candidato BSG (`## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)`) en `docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md`, posicionado tras el bloque `Out of scope (v1)` del Epic LF. Owner: orchestrator. Priority: P3. Incluye referencia sha256 al exploration-report para audit. Symptoma vivo documentado en el F4 gotcha de `AGENTS.md §8`.
+  - docs(roadmap): añade el Epic LF (Ledger Forensic) + candidatos cycle-55/56 (`pausa de ciclo` y `backlog como objetos del ledger`) a `ROADMAP.md`. Documenta la pausa de ciclo como objeto del ledger y el backlog como fuente viva de candidatos. 0 Rust, 0 Cargo, 0 tests; solo prosa.
+  - docs(debt): flip de frontmatter `status: open → resolved` + `resolved_by` + `## Closure Evidence` para los 2 INC carry-over de v1.66.3 (`INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT`, `INC-CYCLE-13-LOC-OVERAGE`) que ya habían sido resueltos por cycle-13. Coherencia con el contrato de cierres INC definido en `docs/debt/INC-TEMPLATE.md`. Commit `bb263bd`.
+
+Cycle path: A-min (docs-delivery). Diff composition: 3 markdown files / +34 / -7 (rama `fix/gap6-cycle-lock-repair`) — no Rust, no Cargo, no tests, no prompts/skills. Verify verdict: PASS_WITH_WARNINGS (W1 cosmetic, W2 release-time gate). Debt verdict: PASS (zero findings). Sin cambios en runtime, binario, bundle, fixtures ni public APIs.
+
 ## [1.66.4] - 2026-09-02
 
 ### Refactored
