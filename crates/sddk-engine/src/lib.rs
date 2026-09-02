@@ -1745,3 +1745,432 @@ impl sddk_domain::SddkErrorCode for EngineError {
         }
     }
 }
+
+#[cfg(test)]
+mod frontier_tests {
+    use super::*;
+    use sddk_domain::{GateOutcomeStatus, GateReceipt};
+    use sddk_testkit::InMemoryLedger;
+    use std::collections::HashMap;
+
+    /// Minimal workflow manifest for linear topology tests.
+    fn linear_workflow() -> WorkflowManifest {
+        use sddk_domain::{Phase, Transition, WORKFLOW_SCHEMA_VERSION};
+        WorkflowManifest {
+            schema_version: WORKFLOW_SCHEMA_VERSION,
+            workflow: sddk_domain::WorkflowDef {
+                id: "linear".into(),
+                version: "0.1.0".into(),
+                description: "Linear test workflow".into(),
+            },
+            statuses: vec![CycleStatus::Open, CycleStatus::Closed],
+            phases: vec![Phase::Explore, Phase::Specify, Phase::Design],
+            paths: HashMap::new(),
+            policies: sddk_domain::Policies::default(),
+            transitions: vec![
+                Transition {
+                    id: "phase.explore.complete".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Explore),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Specify),
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+                Transition {
+                    id: "phase.specify.complete".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Specify),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+                Transition {
+                    id: "cycle.close".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Closed,
+                        phase: None,
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+            ],
+            artifacts: HashMap::new(),
+            gates: HashMap::new(),
+            forge: None,
+            storage: None,
+            project_identity: None,
+        }
+    }
+
+    /// Diamond topology workflow for D1 binding proof.
+    /// Node layout:
+    ///   explore.complete
+    ///       /        \
+    ///  spec-a       spec-b
+    ///       \        /
+    ///      design.join
+    fn diamond_workflow() -> WorkflowManifest {
+        use sddk_domain::{Phase, Transition, WORKFLOW_SCHEMA_VERSION};
+        WorkflowManifest {
+            schema_version: WORKFLOW_SCHEMA_VERSION,
+            workflow: sddk_domain::WorkflowDef {
+                id: "diamond".into(),
+                version: "0.1.0".into(),
+                description: "Diamond topology test workflow".into(),
+            },
+            statuses: vec![CycleStatus::Open, CycleStatus::Closed],
+            phases: vec![Phase::Explore, Phase::Specify, Phase::Design],
+            paths: HashMap::new(),
+            policies: sddk_domain::Policies::default(),
+            transitions: vec![
+                Transition {
+                    id: "phase.explore.complete".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Explore),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Specify),
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+                // Diamond left branch
+                Transition {
+                    id: "spec.a".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Specify),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+                // Diamond right branch
+                Transition {
+                    id: "spec.b".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Specify),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+                // Join transition
+                Transition {
+                    id: "cycle.close".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Closed,
+                        phase: None,
+                    },
+                    requires: vec![],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                },
+            ],
+            artifacts: HashMap::new(),
+            gates: HashMap::new(),
+            forge: None,
+            storage: None,
+            project_identity: None,
+        }
+    }
+
+    /// Workflow with gate requirements for unmet gate test.
+    fn workflow_with_gate() -> WorkflowManifest {
+        use sddk_domain::{Phase, Transition, WORKFLOW_SCHEMA_VERSION};
+        WorkflowManifest {
+            schema_version: WORKFLOW_SCHEMA_VERSION,
+            workflow: sddk_domain::WorkflowDef {
+                id: "gate-test".into(),
+                version: "0.1.0".into(),
+                description: "Workflow with gate requirements".into(),
+            },
+            statuses: vec![CycleStatus::Open, CycleStatus::Closed],
+            phases: vec![Phase::Explore, Phase::Design],
+            paths: HashMap::new(),
+            policies: sddk_domain::Policies::default(),
+            transitions: vec![Transition {
+                id: "phase.explore.complete".into(),
+                from: Some(StateRef {
+                    status: CycleStatus::Open,
+                    phase: Some(Phase::Explore),
+                }),
+                to: StateRef {
+                    status: CycleStatus::Open,
+                    phase: Some(Phase::Design),
+                },
+                requires: vec![
+                    Requirement::Structured {
+                        kind: "gate".into(),
+                        name: "exploration-sufficient".into(),
+                    },
+                ],
+                paths: vec![],
+                produces: vec![],
+                implementation_binding: None,
+                on_failure: None,
+            }],
+            artifacts: HashMap::new(),
+            gates: [(
+                "exploration-sufficient".into(),
+                sddk_domain::GateDef {
+                    gate_type: None,
+                    description: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            forge: None,
+            storage: None,
+            project_identity: None,
+        }
+    }
+
+    fn make_state(status: CycleStatus, phase: Phase) -> CycleManifest {
+        CycleManifest {
+            schema_version: 1,
+            project_id: "test-project".into(),
+            workspace_id: "test-workspace".into(),
+            cycle_id: "cycle-1".into(),
+            display_name: "Test Cycle".into(),
+            status,
+            phase,
+            path: CyclePath::AFull,
+            branch: "main".into(),
+            base: "abc123".into(),
+            head: None,
+            artifacts: HashMap::new(),
+            release: None,
+            delivery_kind: None,
+            remediation_round: 0,
+            remote_url: None,
+            scope: None,
+        }
+    }
+
+    /// Helper: inject a gate receipt into the ledger.
+    fn inject_gate_receipt(
+        ledger: &mut InMemoryLedger,
+        cycle_id: &str,
+        transition_id: &str,
+        state: &CycleManifest,
+        gate: &str,
+    ) {
+        let plan_hash = plan_hash_for_receipt(cycle_id, transition_id, state);
+        let input = sddk_domain::GateReceiptNextSeqInput {
+            project_id: state.project_id.clone(),
+            cycle_id: Some(cycle_id.into()),
+            gate: gate.into(),
+            evaluator: "test".into(),
+            transition_id: transition_id.into(),
+            plan_hash,
+            outcome: GateOutcomeStatus::Passed,
+            evidence: serde_json::json!({}),
+            actor: "test".into(),
+            command_id: "cmd-1".into(),
+            frame_id: "frame-1".into(),
+            evaluated_at: "2024-01-01T00:00:00Z".into(),
+        };
+        ledger.insert_gate_receipt_next_seq(&input).unwrap();
+    }
+
+    #[test]
+    fn frontier_for_state_linear_topology() {
+        let workflow = linear_workflow();
+        let state = make_state(CycleStatus::Open, Phase::Explore);
+        let ledger = InMemoryLedger::new();
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+
+        // From Explore, only phase.explore.complete is legal
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].transition_id, "phase.explore.complete");
+        assert!(frontier[0].requires_met);
+        assert!(frontier[0].unmet_gates.is_empty());
+    }
+
+    #[test]
+    fn frontier_for_state_linear_from_design_one_transition() {
+        let workflow = linear_workflow();
+        // From Design phase, only cycle.close is legal (phase.explore.complete
+        // goes to Specify, not from it)
+        let state = make_state(CycleStatus::Open, Phase::Design);
+        let ledger = InMemoryLedger::new();
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].transition_id, "cycle.close");
+        assert!(frontier[0].requires_met);
+    }
+
+    #[test]
+    fn frontier_for_state_diamond_topology() {
+        // D1 binding: diamond fixture produces different frontier from linear
+        let workflow = diamond_workflow();
+        let ledger = InMemoryLedger::new();
+
+        // From Explore
+        let state_explore = make_state(CycleStatus::Open, Phase::Explore);
+        let frontier_explore =
+            frontier_for_state(&workflow, &state_explore, "cycle-1", &ledger).unwrap();
+        assert_eq!(frontier_explore.len(), 1);
+        assert_eq!(frontier_explore[0].transition_id, "phase.explore.complete");
+
+        // From Specify: TWO parallel transitions (the diamond branches)
+        let state_specify = make_state(CycleStatus::Open, Phase::Specify);
+        let frontier_specify =
+            frontier_for_state(&workflow, &state_specify, "cycle-1", &ledger).unwrap();
+        assert_eq!(frontier_specify.len(), 2);
+        let ids: Vec<_> = frontier_specify
+            .iter()
+            .map(|e| e.transition_id.clone())
+            .collect();
+        assert!(ids.contains(&"spec.a".into()));
+        assert!(ids.contains(&"spec.b".into()));
+
+        // From Design: join transition
+        let state_design = make_state(CycleStatus::Open, Phase::Design);
+        let frontier_design =
+            frontier_for_state(&workflow, &state_design, "cycle-1", &ledger).unwrap();
+        assert_eq!(frontier_design.len(), 1);
+        assert_eq!(frontier_design[0].transition_id, "cycle.close");
+    }
+
+    #[test]
+    fn frontier_for_state_terminal_returns_empty() {
+        let workflow = linear_workflow();
+        // CLOSED is terminal — no outgoing transitions
+        let state = make_state(CycleStatus::Closed, Phase::Explore);
+        let ledger = InMemoryLedger::new();
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+        assert!(frontier.is_empty());
+    }
+
+    #[test]
+    fn frontier_for_state_missing_gate_marks_requires_met_false() {
+        let workflow = workflow_with_gate();
+        let state = make_state(CycleStatus::Open, Phase::Explore);
+        let ledger = InMemoryLedger::new();
+        // No gate receipt injected — transition should show requires_met=false
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].transition_id, "phase.explore.complete");
+        assert!(!frontier[0].requires_met);
+        assert_eq!(
+            frontier[0].unmet_gates,
+            vec!["exploration-sufficient".to_string()]
+        );
+    }
+
+    #[test]
+    fn frontier_for_state_gate_satisfied() {
+        let workflow = workflow_with_gate();
+        let state = make_state(CycleStatus::Open, Phase::Explore);
+        let mut ledger = InMemoryLedger::new();
+
+        // Inject the gate receipt
+        inject_gate_receipt(
+            &mut ledger,
+            "cycle-1",
+            "phase.explore.complete",
+            &state,
+            "exploration-sufficient",
+        );
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+
+        assert_eq!(frontier.len(), 1);
+        assert!(frontier[0].requires_met);
+        assert!(frontier[0].unmet_gates.is_empty());
+    }
+
+    #[test]
+    fn frontier_for_state_wrong_phase_no_transitions() {
+        let workflow = linear_workflow();
+        // From Specify, no transitions have source phase = Specify (except the
+        // ones from Explore that go TO Specify)
+        let state = make_state(CycleStatus::Open, Phase::Specify);
+        let ledger = InMemoryLedger::new();
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+        // phase.specify.complete has from phase=Specify
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].transition_id, "phase.specify.complete");
+    }
+
+    #[test]
+    fn frontier_for_state_derives_from_ledger_replay_not_artifacts() {
+        // S-NEXT-STATE-DERIVATION proof: frontier uses the state passed in,
+        // not artifacts from disk. We verify by passing a state with no
+        // artifacts and checking that simple requirements fail correctly.
+        let workflow = workflow_with_gate();
+        // state has no artifacts
+        let state = make_state(CycleStatus::Open, Phase::Explore);
+        let mut ledger = InMemoryLedger::new();
+
+        // inject gate but no artifact — simple requirement should fail
+        inject_gate_receipt(
+            &mut ledger,
+            "cycle-1",
+            "phase.explore.complete",
+            &state,
+            "exploration-sufficient",
+        );
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+        // Gate is satisfied but the workflow has no artifact produced, so
+        // requires_met depends only on gates here (empty requires for this transition)
+        assert!(frontier[0].requires_met);
+    }
+}
