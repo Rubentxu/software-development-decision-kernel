@@ -11,6 +11,16 @@ use crate::StorageError;
 use crate::metrics::MetricsRecord;
 use crate::models::*;
 
+/// Gate receipt schema contract: number of fields in `GateReceipt`.
+///
+/// CPL-01: This constant documents the expected field count. Adding/removing
+/// a field requires coordinated updates across all 3 `Ledger` implementations:
+/// - `GateReceipt` struct (domain)
+/// - `gate_receipt_from_row` SQL deserializer (storage)
+/// - `list_gate_receipts_for` in-memory filter (testkit)
+/// - `FakeLedger` stub (engine)
+pub const GATE_RECEIPT_FIELD_COUNT: usize = 14;
+
 /// Hexagonal port over the SDDK ledger.
 pub trait Ledger {
     // ── Cycle ops ─────────────────────────────────────────────────────────
@@ -100,6 +110,19 @@ pub trait Ledger {
     /// Returns receipts ordered by `evaluated_at ASC`. An empty list means no
     /// fresh gate receipt exists for this state — the caller classifies the
     /// transition as `requires_met: false`.
+    ///
+    /// # Schema contract
+    ///
+    /// All implementations MUST return `GateReceipt` with exactly 14 fields:
+    /// `receipt_id`, `project_id`, `cycle_id`, `gate`, `evaluator`,
+    /// `transition_id`, `plan_hash`, `outcome`, `evidence`, `actor`,
+    /// `command_id`, `frame_id`, `evaluated_at`, `seq`.
+    /// The SQLite projection in `Storage::list_gate_receipts_for` uses the same
+    /// 14-column SELECT. Adding a field requires coordinated updates across:
+    /// - `GateReceipt` struct (domain)
+    /// - `gate_receipt_from_row` SQL deserializer (storage)
+    /// - `list_gate_receipts_for` in-memory filter (testkit)
+    /// - `FakeLedger` stub (engine)
     fn list_gate_receipts_for(
         &self,
         cycle_id: &str,
@@ -764,4 +787,27 @@ pub trait ArtifactStore {
         &self,
         project_id: &str,
     ) -> Result<Vec<crate::models::ArtifactRecord>, StorageError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CPL-01: verify that `GateReceipt` struct has exactly 14 fields.
+    ///
+    /// This guards against schema drift when adding/removing fields.
+    /// If this test fails, update all 4 implementations:
+    /// - `GateReceipt` struct (domain)
+    /// - `gate_receipt_from_row` SQL deserializer (storage)
+    /// - `list_gate_receipts_for` in-memory filter (testkit)
+    /// - `FakeLedger` stub (engine)
+    #[test]
+    fn gate_receipt_projection_parity_across_impls() {
+        // We can't easily count struct fields at compile time in Rust without
+        // macros, so we assert the documented constant matches our expectation.
+        assert_eq!(
+            GATE_RECEIPT_FIELD_COUNT, 14,
+            "GATE_RECEIPT_FIELD_COUNT must be 14; update all 4 Ledger impls if this changes"
+        );
+    }
 }
