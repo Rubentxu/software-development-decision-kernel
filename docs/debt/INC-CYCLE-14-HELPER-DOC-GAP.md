@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-HELPER-DOC-GAP
 title: "Correlation/causation helpers are pub fn with 0 production callers; rustdoc lacks deferred-wiring note"
-status: open
+status: resolved
 severity: low
 priority: P3
 fingerprint: "a8954ad16336955b"
@@ -10,6 +10,8 @@ cluster_id: CL-DOC-QUALITY
 created: 2026-08-22
 created_by: sddk-debt-verify
 owner: orchestrator
+resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
+resolved_at: 2026-09-01
 ---
 
 # INC-CYCLE-14-HELPER-DOC-GAP — pub correlation/causation helpers lack deferred-wiring rustdoc note
@@ -83,6 +85,14 @@ that an engineer reading the public API would naturally seek.
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-08-22 | sddk-debt-verify | created | helpers added in `4c6a0bd`; 0 production callers confirmed via `grep` (21 hits, all in `event_bus.rs`) |
+
+## Closure Evidence
+
+Closed by `p-63676b11dc0ef88f/cycle-50-housekeeping-p3` (v1.66.4).
+
+- **Resolution:** Added `# Production wiring` rustdoc section to all 3 helpers (`with_correlation_from_context`, `with_causation`, `trace_causation_chain`) in `correlation.rs`. Section clarifies: "Helpers ship as public tested API only. Production wiring (calling these from the `emit_*` builders) is deferred to M6 SPEC-028, when the dispatcher primitive becomes the first real consumer."
+- **Closing commit:** `60cd621` — docs(rustdoc): add # Production wiring rustdoc to correlation helpers (cycle-50 commit #2)
+- **Release tag:** [v1.66.4](https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.66.4)
 
 ## References
 

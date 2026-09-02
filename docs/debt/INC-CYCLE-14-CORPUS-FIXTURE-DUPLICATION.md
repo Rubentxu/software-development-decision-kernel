@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION
 title: "corpus_replay_through_validator inlines EventEnvelopeV1 construction duplicating valid_envelope fixture"
-status: open
+status: resolved
 severity: low
 priority: P3
 fingerprint: "126823680682cdbc"
@@ -10,6 +10,8 @@ cluster_id: CL-DUPLICATION
 created: 2026-08-22
 created_by: sddk-debt-verify
 owner: orchestrator
+resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
+resolved_at: 2026-09-01
 ---
 
 # INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION — corpus test duplicates envelope-builder fixture
@@ -90,6 +92,14 @@ helper or a `[corpus]; 18 fixture` table.
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-08-22 | sddk-debt-verify | created | inline construction at `event_registry.rs:808-836` (added in `b6fc6d0`) duplicates `valid_envelope` at `event_registry.rs:533-563` |
+
+## Closure Evidence
+
+Closed by `p-63676b11dc0ef88f/cycle-50-housekeeping-p3` (v1.66.4).
+
+- **Resolution:** Extracted `build_corpus_envelope(seq, event_type, payload)` helper inside `#[cfg(test)] mod tests` at `validator.rs:160-194`. 28-line inline construction removed from corpus test loop. Anti-double-increment verified: helper applies `+1` internally; call site passes 0-based `seq` unmodified. `corpus_replay_through_validator` passes with byte-equivalent JSON replay (evt-corpus-1..18, sequence 1..18).
+- **Closing commit:** `4bd47fc` — refactor(domain): extract build_corpus_envelope helper (cycle-50 commit #4)
+- **Release tag:** [v1.66.4](https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.66.4)
 
 ## References
 

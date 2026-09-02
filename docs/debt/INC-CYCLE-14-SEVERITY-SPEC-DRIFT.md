@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-SEVERITY-SPEC-DRIFT
 title: "JournalProjection severity policy diverges from SPEC-027 categories (pack/runtime collapsed into default)"
-status: open
+status: resolved
 severity: low
 priority: P3
 fingerprint: "2060c4f2b969e014"
@@ -10,6 +10,8 @@ cluster_id: CL-COUPLING
 created: 2026-08-22
 created_by: sddk-debt-verify
 owner: orchestrator
+resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
+resolved_at: 2026-09-01
 ---
 
 # INC-CYCLE-14-SEVERITY-SPEC-DRIFT — severity_for_event_type ↔ SPEC-027 drift
@@ -97,6 +99,14 @@ SPEC-027 itself or a follow-up ADR records the consolidation decision.
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-08-22 | sddk-debt-verify | created | 7-row policy at `projections.rs:458-486`; SPEC-027 lists 8 categories including pack/runtime |
+
+## Closure Evidence
+
+Closed by `p-63676b11dc0ef88f/cycle-50-housekeeping-p3` (v1.66.4).
+
+- **Resolution:** Extended `severity_for_event_type` rustdoc with `# Severity policy cross-reference` section referencing SPEC-027, naming the 7-row vs 8-category consolidation (evidence.* + uat.* merged), and naming the pack/runtime exclusion by design. 7-branch table body unchanged; locked test `journal_projection_severity_table_locked` still asserts 7 rows and passes.
+- **Closing commit:** `b5f7a4a` — docs(rustdoc): extend severity_for_event_type rustdoc with SPEC-027 cross-reference (cycle-50 commit #5)
+- **Release tag:** [v1.66.4](https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.66.4)
 
 ## References
 
