@@ -27,7 +27,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use sddk_gateway::GitExecutor;
 
 use crate::{
-    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, render_result,
+    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, cycle, failure,
+    render_result,
 };
 
 /// Schema identifier emitted at the top of every artifact.
@@ -44,8 +45,9 @@ pub(crate) struct CycleInventoryArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Optional override for the comparison base (default: stage + working
     /// tree vs HEAD). Accepts only `stage-and-working-tree-vs-head` in this
     /// revision; other enum values land alongside future reducer modes.
@@ -178,10 +180,21 @@ pub(crate) fn run_cycle_inventory(
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
-    let cycle_id = args.cycle.clone();
+    let resolved = match crate::cycle::resolve_cycle_context(
+        &args.runtime,
+        environment,
+        args.cycle.as_deref(),
+    ) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let cycle_id = match resolved.cycle_id {
+        Some(id) => id,
+        None => return crate::failure("cycle inference failed: no cycle_id resolved".to_string()),
+    };
     let comparison = args.comparison.clone();
     let result: anyhow::Result<InventoryEnvelope> = (|| -> anyhow::Result<InventoryEnvelope> {
-        let context = RuntimeContext::open(&args.runtime, environment, true)?;
+        let context = RuntimeContext::open(&resolved.runtime, environment, true)?;
         let artifacts_dir = context.cycle_artifacts_path.join(&cycle_id);
         std::fs::create_dir_all(&artifacts_dir)?;
         let payload = build_inventory_payload(&context, &comparison)?;

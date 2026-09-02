@@ -996,6 +996,35 @@ impl Storage {
         Ok(get_cycle_lease_on(&self.connection, cycle_id).optional()?)
     }
 
+    /// Lists all active (unexpired) leases for cycles belonging to a project.
+    /// Used by the cycle inference layer to resolve `--cycle` when zero args
+    /// are passed (S1/S3).
+    pub fn list_active_cycle_leases_for_project(
+        &self,
+        project_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<CycleLease>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT cl.cycle_id, cl.owner, cl.acquired_at_ms, cl.expires_at_ms, cl.fencing_token
+             FROM cycle_leases cl
+             INNER JOIN cycles c ON cl.cycle_id = c.cycle_id
+             WHERE c.project_id = ?1 AND cl.expires_at_ms > ?2
+             ORDER BY cl.acquired_at_ms DESC",
+        )?;
+        let leases = stmt.query_map(params![project_id, now_ms], |row| {
+            Ok(CycleLease {
+                cycle_id: row.get(0)?,
+                owner: row.get(1)?,
+                acquired_at_ms: row.get(2)?,
+                expires_at_ms: row.get(3)?,
+                fencing_token: row.get(4)?,
+            })
+        })?;
+        leases
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
     /// Extends the expiry of the lease you already hold without changing the
     /// fencing token (reuse / renew semantics).
     pub fn renew_cycle_lease(
@@ -1824,6 +1853,15 @@ impl sddk_domain::Ledger for Storage {
         now_ms: i64,
     ) -> std::result::Result<CycleLease, sddk_domain::StorageError> {
         Storage::verify_cycle_lease(self, cycle_id, owner, fencing_token, now_ms)
+            .map_err(|e| e.into())
+    }
+
+    fn list_active_cycle_leases_for_project(
+        &self,
+        project_id: &str,
+        now_ms: i64,
+    ) -> std::result::Result<Vec<CycleLease>, sddk_domain::StorageError> {
+        Storage::list_active_cycle_leases_for_project(self, project_id, now_ms)
             .map_err(|e| e.into())
     }
 

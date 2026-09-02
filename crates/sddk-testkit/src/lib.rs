@@ -270,6 +270,32 @@ impl sddk_domain::Ledger for InMemoryLedger {
         })
     }
 
+    fn list_active_cycle_leases_for_project(
+        &self,
+        project_id: &str,
+        now_ms: i64,
+    ) -> Sr<Vec<sddk_domain::CycleLease>> {
+        let leases = self.leases.read().unwrap();
+        let mut result: Vec<_> = leases
+            .values()
+            .filter(|l| l.expires_at_ms > now_ms)
+            .filter(|l| {
+                // Filter by project: need to check cycles table
+                self.cycles
+                    .read()
+                    .unwrap()
+                    .get(&l.cycle_id)
+                    .map(|c| c.manifest.project_id.as_str() == project_id)
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        // Sort by acquired_at_ms DESC (most recent first)
+        result.sort_by_key(|l| l.acquired_at_ms);
+        result.reverse();
+        Ok(result)
+    }
+
     fn get_gate_receipt(&self, receipt_id: &str) -> Sr<sddk_domain::GateReceipt> {
         self.gate_receipts
             .read()

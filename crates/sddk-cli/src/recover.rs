@@ -18,12 +18,13 @@ pub(crate) fn run_recover(
 ) -> CommandOutput {
     let args = CycleRebuildArgs {
         runtime: RuntimeArgs {
-            root: PathBuf::from("."),
-            scope: ".".to_string(),
+            root: Some(PathBuf::from(".")),
+            scope: Some(".".to_string()),
             remote: None,
             fallback_seed: None,
+            no_infer: false,
         },
-        cycle,
+        cycle: Some(cycle),
         dry_run,
         lease_owner: None,
         fencing_token: None,

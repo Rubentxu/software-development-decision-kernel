@@ -4,8 +4,9 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::{
-    ActorKind, ArtifactRef, ControlPlane, CycleId, CycleManifest, CyclePath, WorkflowManifest,
-    normalize_scope,
+    ActorKind, ArtifactRef, ControlPlane, CycleId, CycleManifest, CyclePath, ProjectId,
+    WorkflowManifest, normalize_remote_url, normalize_scope, stable_fallback_project_id,
+    stable_project_id,
 };
 use sddk_engine::{
     AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
@@ -26,21 +27,348 @@ const CYCLE_START_REQUIREMENTS: [&str; 4] = [
     "cycle.no_active_conflict",
 ];
 
-/// Shared runtime resolution inputs for cycle and ledger commands.
+/// Inference error kinds for typed degradation (D2).
+#[derive(Debug, Clone)]
+pub(crate) enum InferenceError {
+    /// Walk-up from cwd found no project marker.
+    NoProjectContext { cwd: String },
+    /// Explicit args required but missing when `--no-infer` is set.
+    ExplicitRequired { missing: Vec<String> },
+    /// Zero active leases for the resolved project (S3).
+    NoActiveCycle { project_id: String, hint: String },
+    /// Multiple active leases — ambiguity resolved with candidate list (S3).
+    AmbiguousCycle {
+        project_id: String,
+        candidates: Vec<CycleCandidate>,
+    },
+}
+
+/// One active cycle lease candidate for ambiguity resolution.
+#[derive(Debug, Clone)]
+pub(crate) struct CycleCandidate {
+    pub cycle_id: String,
+    pub owner: String,
+    pub expires_at_ms: i64,
+}
+
+/// Result of resolving cycle context from args + state.
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedCycleContext {
+    /// Fully resolved RuntimeArgs (all optionals filled).
+    pub runtime: RuntimeArgs,
+    /// Resolved project identity (from identity resolution).
+    /// None when cycle is explicit (deferred to RuntimeContext::open).
+    pub project_id: Option<sddk_domain::ProjectId>,
+    /// Resolved scope (from identity resolution).
+    pub scope: String,
+    /// Active leases found for the project (used for ambiguity).
+    pub active_leases: Vec<CycleCandidate>,
+    /// Resolved cycle_id (only set when unambiguous).
+    pub cycle_id: Option<String>,
+}
+
+impl std::fmt::Display for InferenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InferenceError::NoProjectContext { cwd } => {
+                write!(
+                    f,
+                    "no adopted project found from: {}\n  hint: run `sddk project resolve` or `sddk init` first",
+                    cwd
+                )
+            }
+            InferenceError::ExplicitRequired { missing } => {
+                write!(
+                    f,
+                    "explicit --root/--scope required (--no-infer is set): missing {}",
+                    missing.join(", ")
+                )
+            }
+            InferenceError::NoActiveCycle { project_id, hint } => {
+                write!(
+                    f,
+                    "no active cycle found for project {}\n  hint: {}",
+                    project_id, hint
+                )
+            }
+            InferenceError::AmbiguousCycle {
+                project_id,
+                candidates,
+            } => {
+                writeln!(
+                    f,
+                    "multiple active cycles for project {}; pass one explicitly:",
+                    project_id
+                )?;
+                for c in candidates {
+                    writeln!(f, "  sddk cycle status --cycle {}", c.cycle_id)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for InferenceError {}
+
+/// Marker files for project walk-up (S1/S4).
+const PROJECT_MARKERS: &[&str] = &["sddk", ".git", "AGENTS.md"];
+
+/// Walks up from `cwd` looking for a project marker file/directory.
+/// Returns the first directory containing a marker, or None.
+fn walk_up_for_project_marker(cwd: &std::path::Path) -> Option<PathBuf> {
+    let mut current = Some(cwd.to_path_buf());
+    loop {
+        let cur = current?;
+        for marker in PROJECT_MARKERS {
+            if cur.join(marker).exists() {
+                return Some(cur);
+            }
+        }
+        current = cur.parent().map(|p| p.to_path_buf());
+    }
+}
+
+/// Resolves `--root`, `--scope`, and `--cycle` from current state.
+///
+/// This is the ONE shared resolver used by all cycle subcommands (S6).
+/// Explicit args always win over inference (S2). When `--no-infer` is set,
+/// missing required args produce today's clap errors.
+///
+/// Project identity (needed only for cycle inference) is deferred to
+/// `RuntimeContext::open` which handles fallback seed generation.
+pub(crate) fn resolve_cycle_context(
+    args: &RuntimeArgs,
+    environment: &CliEnvironment,
+    cycle_arg: Option<&str>,
+) -> Result<ResolvedCycleContext, InferenceError> {
+    // S2: explicit args win; nothing to infer if all explicit
+    let root_explicit = args.root.is_some();
+    let scope_explicit = args.scope.is_some();
+    let cycle_explicit = cycle_arg.is_some();
+
+    if args.no_infer {
+        let mut missing = Vec::new();
+        if args.root.is_none() {
+            missing.push("--root".to_string());
+        }
+        if args.scope.is_none() {
+            missing.push("--scope".to_string());
+        }
+        if cycle_arg.is_none() {
+            missing.push("--cycle".to_string());
+        }
+        if !missing.is_empty() {
+            return Err(InferenceError::ExplicitRequired { missing });
+        }
+        // All explicit — build resolved runtime without project identity
+        // (RuntimeContext::open handles identity resolution)
+        let root = args.root.clone().unwrap_or_else(|| PathBuf::from("."));
+        let scope = args.scope.clone().unwrap_or_else(|| ".".to_string());
+        let mut resolved = args.clone();
+        if resolved.root.is_none() {
+            resolved.root = Some(root);
+        }
+        if resolved.scope.is_none() {
+            resolved.scope = Some(scope.clone());
+        }
+        return Ok(ResolvedCycleContext {
+            runtime: resolved,
+            project_id: None, // Deferred to RuntimeContext::open
+            scope,
+            active_leases: Vec::new(),
+            cycle_id: cycle_arg.map(String::from),
+        });
+    }
+
+    // Inference path (no_infer = false)
+    // Step 1: Resolve root — use explicit if provided, otherwise walk up from cwd
+    let root = if let Some(ref r) = args.root {
+        r.clone()
+    } else {
+        let cwd = std::env::current_dir().map_err(|_| InferenceError::NoProjectContext {
+            cwd: ".".to_string(),
+        })?;
+        walk_up_for_project_marker(&cwd).ok_or_else(|| InferenceError::NoProjectContext {
+            cwd: cwd.to_string_lossy().to_string(),
+        })?
+    };
+
+    // Step 2: Resolve scope — use explicit if provided, otherwise default to "."
+    let scope = args.scope.clone().unwrap_or_else(|| ".".to_string());
+
+    // Step 3: Build resolved runtime with inferred root/scope filled in
+    let mut resolved = args.clone();
+    if resolved.root.is_none() {
+        resolved.root = Some(root.clone());
+    }
+    if resolved.scope.is_none() {
+        resolved.scope = Some(scope.clone());
+    }
+
+    // Step 4: Resolve cycle from active leases (only if cycle not explicit)
+    // This requires project identity, which we defer to RuntimeContext::open.
+    // For cycle inference we need project_id now, so we resolve it here
+    // using the same logic as RuntimeContext::open (remote OR fallback_seed OR generate).
+    let cycle_id = if let Some(c) = cycle_arg {
+        Some(c.to_string())
+    } else {
+        // Need project_id for cycle inference — resolve it using available signals
+        let remote = crate::resolve_remote(&root, args.remote.clone())
+            .ok()
+            .flatten();
+        let mut fallback_seed = args.fallback_seed.clone();
+        if remote.is_none() && fallback_seed.is_none() {
+            fallback_seed = crate::find_persisted_fallback_seed(environment, &root, &scope)
+                .ok()
+                .flatten();
+        }
+        // If no remote and no fallback_seed, we can't infer cycle without walking up
+        // to find project markers. Use the project_id from project markers if available.
+        let project_id = if remote.is_some() {
+            // Use remote for project_id
+            if let Some(ref remote_url) = remote {
+                let normalized = normalize_remote_url(remote_url).ok();
+                if let Some(ref url) = normalized {
+                    let id = stable_project_id(url, &scope);
+                    Some(ProjectId::new(id).ok())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else if let Some(ref seed) = fallback_seed {
+            let id = stable_fallback_project_id(seed.as_str(), &scope);
+            Some(ProjectId::new(id).ok())
+        } else {
+            // No remote, no fallback_seed — can't infer cycle without project markers
+            // to generate a fallback seed. Walk up to find project markers.
+            let walked_root = walk_up_for_project_marker(&root);
+            if walked_root.is_none() {
+                return Err(InferenceError::NoProjectContext {
+                    cwd: root.to_string_lossy().to_string(),
+                });
+            }
+            // With project markers found, we can now get fallback_seed
+            let walked_root = walked_root.unwrap();
+            let new_fallback_seed =
+                crate::find_persisted_fallback_seed(environment, &walked_root, &scope)
+                    .ok()
+                    .flatten();
+            if let Some(ref seed) = new_fallback_seed {
+                let id = stable_fallback_project_id(seed.as_str(), &scope);
+                Some(ProjectId::new(id).ok())
+            } else {
+                None
+            }
+        };
+
+        let project_id = match project_id {
+            Some(Some(id)) => id,
+            _ => {
+                return Err(InferenceError::NoProjectContext {
+                    cwd: root.to_string_lossy().to_string(),
+                });
+            }
+        };
+
+        // Open storage to list active leases
+        let workspace_id = {
+            let canonical_workspace_path =
+                crate::path_string(&root).map_err(|_| InferenceError::NoProjectContext {
+                    cwd: root.to_string_lossy().to_string(),
+                })?;
+            crate::stable_workspace_id(&project_id, &canonical_workspace_path)
+        };
+        let paths =
+            sddk_engine::resolve_xdg_paths(&environment.xdg(), project_id.as_str(), &workspace_id)
+                .map_err(|_| InferenceError::NoProjectContext {
+                    cwd: root.to_string_lossy().to_string(),
+                })?;
+        let storage = match crate::Storage::open_read_only(&paths.ledger) {
+            Ok(s) => s,
+            Err(_) => {
+                // Storage not found — no active cycles possible
+                return Err(InferenceError::NoActiveCycle {
+                    project_id: project_id.to_string(),
+                    hint: format!(
+                        "start one with: sddk cycle start --root {} --scope {} --name <name>",
+                        root.to_string_lossy(),
+                        scope
+                    ),
+                });
+            }
+        };
+        let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let leases = storage
+            .list_active_cycle_leases_for_project(project_id.as_str(), now_ms)
+            .map_err(|_| InferenceError::NoActiveCycle {
+                project_id: project_id.to_string(),
+                hint: "could not query active leases".to_string(),
+            })?;
+
+        if leases.is_empty() {
+            return Err(InferenceError::NoActiveCycle {
+                project_id: project_id.to_string(),
+                hint: format!(
+                    "start one with: sddk cycle start --root {} --scope {} --name <name>",
+                    root.to_string_lossy(),
+                    scope
+                ),
+            });
+        }
+
+        if leases.len() > 1 {
+            let candidates: Vec<CycleCandidate> = leases
+                .iter()
+                .map(|l| CycleCandidate {
+                    cycle_id: l.cycle_id.clone(),
+                    owner: l.owner.clone(),
+                    expires_at_ms: l.expires_at_ms,
+                })
+                .collect();
+            return Err(InferenceError::AmbiguousCycle {
+                project_id: project_id.to_string(),
+                candidates,
+            });
+        }
+
+        // Exactly one active lease
+        Some(leases[0].cycle_id.clone())
+    };
+
+    Ok(ResolvedCycleContext {
+        runtime: resolved,
+        project_id: None, // Deferred to RuntimeContext::open
+        scope,
+        active_leases: Vec::new(),
+        cycle_id,
+    })
+}
+
 #[derive(Debug, Clone, Args)]
 pub(crate) struct RuntimeArgs {
     /// Checkout or worktree root.
+    /// When absent and `--no-infer` is not set, the cycle inference layer
+    /// walks up from cwd searching for a project marker (sddk manifest, .git,
+    /// AGENTS.md). When `no_infer` is true, this must be provided explicitly.
     #[arg(long)]
-    pub(crate) root: PathBuf,
+    pub(crate) root: Option<PathBuf>,
     /// Required monorepo scope, using `.` for the repository root.
+    /// When absent and `--no-infer` is not set, inferred from the resolved root.
     #[arg(long)]
-    pub(crate) scope: String,
+    pub(crate) scope: Option<String>,
     /// Explicit remote URL instead of read-only Git discovery.
     #[arg(long)]
     pub(crate) remote: Option<String>,
     /// Stable UUID for a repository without a remote.
     #[arg(long)]
     pub(crate) fallback_seed: Option<String>,
+    /// Opt out of context inference. When set, `--root` and `--scope` must be
+    /// passed explicitly and `--cycle` is a required argument on cycle commands.
+    #[arg(long)]
+    pub(crate) no_infer: bool,
 }
 /// Resolved identity, storage, and engine for one runtime invocation.
 pub(crate) struct RuntimeContext {
@@ -70,18 +398,20 @@ impl RuntimeContext {
         environment: &CliEnvironment,
         generate_seed: bool,
     ) -> anyhow::Result<Self> {
-        let root = crate::canonical_root(&args.root)?;
+        let root =
+            crate::canonical_root(args.root.as_deref().unwrap_or(std::path::Path::new(".")))?;
+        let scope = args.scope.as_deref().unwrap_or(".");
         let remote = crate::resolve_remote(&root, args.remote.clone())?;
         let mut fallback_seed = args.fallback_seed.clone();
         if remote.is_none() && fallback_seed.is_none() {
-            fallback_seed = crate::find_persisted_fallback_seed(environment, &root, &args.scope)?;
+            fallback_seed = crate::find_persisted_fallback_seed(environment, &root, scope)?;
         }
         if remote.is_none() && fallback_seed.is_none() && generate_seed {
             fallback_seed = Some(Uuid::new_v4().hyphenated().to_string());
         }
         let identity = sddk_domain::resolve_project_identity(
             remote.as_deref(),
-            &args.scope,
+            scope,
             fallback_seed.as_deref(),
         )?;
         let canonical_workspace_path = crate::path_string(&root)?;
@@ -155,8 +485,9 @@ pub(crate) struct CycleArtifactsDirArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -200,8 +531,9 @@ pub(crate) struct CycleStatusArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -212,8 +544,9 @@ pub(crate) struct CycleTransitionArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Declared transition identifier, for example `phase.build.complete`.
     #[arg(long)]
     pub(crate) transition: String,
@@ -248,8 +581,9 @@ pub(crate) struct CycleRebuildArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Dry-run: validate the ledger state without persisting any changes.
     #[arg(long)]
     pub(crate) dry_run: bool,
@@ -278,8 +612,9 @@ pub(crate) struct CycleSupersedeArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier to supersede.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Successor cycle identifier (mutually exclusive with --reason).
     #[arg(long, conflicts_with = "reason")]
     pub(crate) successor: Option<String>,
@@ -333,8 +668,9 @@ pub(crate) struct CycleReplanArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier to replan.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Target phase to restage to (propose | specify | design | tasks | apply).
     #[arg(long, value_enum)]
     pub(crate) restage_to: RestageToArg,
@@ -388,8 +724,9 @@ pub(crate) struct CycleEvaluateGateArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Transition that declares the gate.
     #[arg(long)]
     pub(crate) transition: String,
@@ -456,8 +793,9 @@ pub(crate) struct CycleLockAcquireArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Lease owner.
     #[arg(long)]
     pub(crate) owner: String,
@@ -477,8 +815,9 @@ pub(crate) struct CycleLockRenewArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Lease owner.
     #[arg(long)]
     pub(crate) owner: String,
@@ -501,8 +840,9 @@ pub(crate) struct CycleLockReleaseArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Lease owner.
     #[arg(long)]
     pub(crate) owner: String,
@@ -522,8 +862,9 @@ pub(crate) struct CycleLockStatusArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
-    pub(crate) cycle: String,
+    pub(crate) cycle: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -603,7 +944,7 @@ fn run_cycle_start(args: CycleStartArgs, environment: &CliEnvironment) -> Comman
     let format = args.format;
     let result = (|| -> anyhow::Result<CycleStartOutput> {
         let mut context = RuntimeContext::open(&args.runtime, environment, true)?;
-        let scope = normalize_scope(&args.runtime.scope)?;
+        let scope = normalize_scope(args.runtime.scope.as_deref().unwrap_or("."))?;
         let cycle_id = CycleId::from_parts(&context.identity.project_id, &args.name)?;
         let mut manifest = CycleManifest::new(
             context.identity.project_id.to_string(),
@@ -676,10 +1017,18 @@ fn run_cycle_start(args: CycleStartArgs, environment: &CliEnvironment) -> Comman
 
 fn run_cycle_status(args: CycleStatusArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleStatusOutput> {
-        let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let record = context.storage.get_cycle(&args.cycle)?;
-        let lease = context.storage.get_cycle_lease(&args.cycle).ok();
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        let record = context.storage.get_cycle(cycle_id)?;
+        let lease = context.storage.get_cycle_lease(cycle_id).ok();
         Ok(CycleStatusOutput {
             cycle_id: record.manifest.cycle_id,
             status: wire(&record.manifest.status),
@@ -695,33 +1044,38 @@ fn run_cycle_status(args: CycleStatusArgs, environment: &CliEnvironment) -> Comm
 
 fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleTransitionOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         match context
             .storage
-            .get_cycle_lease(&args.cycle)
+            .get_cycle_lease(cycle_id)
             .map_err(Into::into)
         {
             Ok(_) => {
                 let owner = args.lease_owner.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("cycle {} is leased; --lease-owner is required", args.cycle)
+                    anyhow::anyhow!("cycle {} is leased; --lease-owner is required", cycle_id)
                 })?;
                 let token = args.fencing_token.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "cycle {} is leased; --fencing-token is required",
-                        args.cycle
-                    )
+                    anyhow::anyhow!("cycle {} is leased; --fencing-token is required", cycle_id)
                 })?;
                 context
                     .engine
-                    .require_lease_fence(&args.cycle, owner, token, now_ms)?;
+                    .require_lease_fence(cycle_id, owner, token, now_ms)?;
             }
             Err(sddk_domain::StorageError::NotFound { .. }) => {
                 if args.lease_owner.is_some() || args.fencing_token.is_some() {
                     anyhow::bail!(
                         "cycle {} has no lease; fencing arguments are not applicable",
-                        args.cycle
+                        cycle_id
                     );
                 }
             }
@@ -752,7 +1106,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
         }
         let plan = context
             .engine
-            .plan_transition(&args.cycle, &args.transition, evidence)?;
+            .plan_transition(cycle_id, &args.transition, evidence)?;
         let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let command_id = format!("cycle.transition-{}", Uuid::new_v4().hyphenated());
         let actor_id = args
@@ -768,10 +1122,10 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
         } else {
             ActorKind::System
         };
-        let event_id_prefix = format!("tr-{}", args.cycle);
+        let event_id_prefix = format!("tr-{}", cycle_id);
         let outcome_input = OutcomeEventInput {
             project_id: context.identity.project_id.to_string(),
-            cycle_id: args.cycle.clone(),
+            cycle_id: cycle_id.clone(),
             transition_id: args.transition.clone(),
             from_phase: None,
             to_phase: None,
@@ -857,38 +1211,46 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
 
 fn run_cycle_rebuild(args: CycleRebuildArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleRebuildOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         // `rebuild` is no longer a silent read-only audit: it requires the
         // caller to hold the same lease fence as a phase transition. An
         // expired lease is rejected with `LeaseExpired` (fail-closed).
         match context
             .storage
-            .get_cycle_lease(&args.cycle)
+            .get_cycle_lease(cycle_id)
             .map_err(Into::into)
         {
             Ok(_) => {
                 let owner = args.lease_owner.as_deref().ok_or_else(|| {
                     anyhow::anyhow!(
                         "cycle {} is leased; --lease-owner is required for rebuild",
-                        args.cycle
+                        cycle_id
                     )
                 })?;
                 let token = args.fencing_token.ok_or_else(|| {
                     anyhow::anyhow!(
                         "cycle {} is leased; --fencing-token is required for rebuild",
-                        args.cycle
+                        cycle_id
                     )
                 })?;
                 context
                     .engine
-                    .require_lease_fence(&args.cycle, owner, token, now_ms)?;
+                    .require_lease_fence(cycle_id, owner, token, now_ms)?;
             }
             Err(sddk_domain::StorageError::NotFound { .. }) => {
                 anyhow::bail!(
                     "cycle {} has no lease; acquire one with `sddk cycle lock acquire` before rebuild",
-                    args.cycle
+                    cycle_id
                 );
             }
             Err(error) => return Err(error.into()),
@@ -908,7 +1270,7 @@ fn run_cycle_rebuild(args: CycleRebuildArgs, environment: &CliEnvironment) -> Co
         let rebuilt =
             context
                 .engine
-                .rebuild_cycle(&args.cycle, &event_context, now_ms, args.dry_run)?;
+                .rebuild_cycle(cycle_id, &event_context, now_ms, args.dry_run)?;
         Ok(CycleRebuildOutput {
             cycle_id: rebuilt.manifest.cycle_id,
             status: wire(&rebuilt.manifest.status),
@@ -925,12 +1287,19 @@ fn run_cycle_artifacts_dir(
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<ArtifactsDirOutput> {
-        let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let dir = context.cycle_artifacts_path.join(&args.cycle);
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        let dir = context.cycle_artifacts_path.join(&cycle_id);
         std::fs::create_dir_all(&dir)?;
         Ok(ArtifactsDirOutput {
-            cycle_id: args.cycle,
+            cycle_id,
             path: dir,
         })
     })();
@@ -995,12 +1364,19 @@ fn run_cycle_lock_acquire(
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<LeaseOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
-        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         let lease = context.storage.acquire_cycle_lease(
-            &args.cycle,
+            &cycle_id,
             &args.owner,
             now_ms,
             now_ms + args.lease_ms,
@@ -1012,12 +1388,19 @@ fn run_cycle_lock_acquire(
 
 fn run_cycle_lock_renew(args: CycleLockRenewArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<LeaseOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
-        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
         let now_ms = timestamp_ms(args.timestamp.as_deref())?;
         let lease = context.storage.renew_cycle_lease(
-            &args.cycle,
+            &cycle_id,
             &args.owner,
             args.fencing_token,
             now_ms,
@@ -1033,9 +1416,16 @@ fn run_cycle_lock_release(
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleLockReleaseOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
-        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
         let command_id = format!("cycle.lock.release-{}", Uuid::new_v4().hyphenated());
         let actor = args
             .actor
@@ -1045,7 +1435,7 @@ fn run_cycle_lock_release(
             .unwrap_or_else(|| "sddk-cli".into());
         let released = context.storage.release_cycle_lease(
             context.identity.project_id.as_str(),
-            &args.cycle,
+            &cycle_id,
             &args.owner,
             args.fencing_token,
             &actor,
@@ -1059,8 +1449,15 @@ fn run_cycle_lock_release(
 
 fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleSupersedeOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let actor = args
             .actor
@@ -1072,7 +1469,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
         let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
 
         // GAP-UX-1: validate cycle belongs to this project before touching storage
-        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
 
         // Parse evidence refs
         let evidence_refs: Vec<String> =
@@ -1082,7 +1479,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
         let reason: Option<SupersedeReason> = args.reason.map(|r| r.into());
 
         let receipt = context.engine.cycle_supersede(
-            &args.cycle,
+            &cycle_id,
             args.successor,
             reason,
             &evidence_refs,
@@ -1096,9 +1493,9 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
         )?;
 
         // Load updated cycle to get manifest
-        let record = context.storage.get_cycle(&args.cycle)?;
+        let record = context.storage.get_cycle(&cycle_id)?;
         Ok(CycleSupersedeOutput {
-            cycle_id: args.cycle,
+            cycle_id,
             status: wire(&record.manifest.status),
             event_id: receipt.event_id,
             sequence: receipt.sequence,
@@ -1110,8 +1507,15 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
 
 fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<CycleReplanOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let actor = args
             .actor
@@ -1133,7 +1537,7 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
         // Note: cycle_replan is a stub that returns ReplanLimitExceeded.
         // When implemented, this will return Ok(()) on success.
         context.engine.cycle_replan(
-            &args.cycle,
+            &cycle_id,
             restage_to,
             &delta,
             &evidence_refs,
@@ -1147,9 +1551,9 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
         )?;
 
         // Load updated cycle to get sequence (only reached if cycle_replan succeeds)
-        let _record = context.storage.get_cycle(&args.cycle)?;
+        let _record = context.storage.get_cycle(&cycle_id)?;
         Ok(CycleReplanOutput {
-            cycle_id: args.cycle,
+            cycle_id,
             restage_to: restage_to_display,
             sequence: 0, // Placeholder until cycle_replan returns sequence info
         })
@@ -1159,12 +1563,19 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
 
 fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<Option<LeaseOutput>> {
-        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         // REQ-GAP6-3: apply same project-prefix guard as acquire/renew/release
-        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
         // REQ-DEBT017-5: cycle not found → typed error; cycle exists but no lease → None
-        let lease = match context.storage.get_cycle_lease(&args.cycle) {
+        let lease = match context.storage.get_cycle_lease(&cycle_id) {
             Ok(l) => Some(l),
             Err(sddk_storage::StorageError::NotFound {
                 entity: "cycle", ..
@@ -1172,7 +1583,7 @@ fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment
                 // Cycle does not exist in `cycles` table → propagate typed error
                 return Err(sddk_storage::StorageError::NotFound {
                     entity: "cycle",
-                    id: args.cycle.clone(),
+                    id: cycle_id.clone(),
                 }
                 .into());
             }
@@ -1439,8 +1850,15 @@ fn run_cycle_evaluate_gate(
     environment: &CliEnvironment,
 ) -> CommandOutput {
     let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
     let result = (|| -> anyhow::Result<GateEvaluationOutput> {
-        let mut context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let timestamp = args
             .timestamp
             .clone()
@@ -1456,7 +1874,7 @@ fn run_cycle_evaluate_gate(
         // `--outcome passed` explicitly.
         let outcome = args.outcome.into();
         let receipt = context.engine.evaluate_gate(&GateEvaluationInput {
-            cycle_id: args.cycle.clone(),
+            cycle_id: cycle_id.clone(),
             transition_id: args.transition.clone(),
             gate: args.gate.clone(),
             evaluator: args.evaluator.clone(),

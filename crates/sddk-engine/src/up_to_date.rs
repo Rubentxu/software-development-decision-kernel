@@ -218,6 +218,13 @@ mod tests {
         ) -> Result<sddk_domain::CycleLease, sddk_domain::StorageError> {
             unimplemented!()
         }
+        fn list_active_cycle_leases_for_project(
+            &self,
+            _: &str,
+            _: i64,
+        ) -> Result<Vec<sddk_domain::CycleLease>, sddk_domain::StorageError> {
+            Ok(vec![])
+        }
         fn get_gate_receipt(
             &self,
             _: &str,

@@ -17,12 +17,13 @@ pub(crate) fn run_status(
 ) -> CommandOutput {
     let args = CycleStatusArgs {
         runtime: RuntimeArgs {
-            root: PathBuf::from("."),
-            scope: ".".to_string(),
+            root: Some(PathBuf::from(".")),
+            scope: Some(".".to_string()),
             remote: None,
             fallback_seed: None,
+            no_infer: false,
         },
-        cycle,
+        cycle: Some(cycle),
         format,
     };
     cycle::run_cycle(cycle::CycleCommand::Status(args), environment)

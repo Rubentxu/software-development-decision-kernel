@@ -21,10 +21,11 @@ pub(crate) fn run_run(
     // executable).
     let args = CapabilityArgs {
         runtime: RuntimeArgs {
-            root: PathBuf::from("."),
-            scope: ".".to_string(),
+            root: Some(PathBuf::from(".")),
+            scope: Some(".".to_string()),
             remote: None,
             fallback_seed: None,
+            no_infer: false,
         },
         cycle: None,
         capability: name.clone(),

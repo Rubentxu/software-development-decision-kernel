@@ -19,10 +19,11 @@ pub(crate) fn run_plan(
 ) -> CommandOutput {
     let args = CycleStartArgs {
         runtime: RuntimeArgs {
-            root: PathBuf::from("."),
-            scope: ".".to_string(),
+            root: Some(PathBuf::from(".")),
+            scope: Some(".".to_string()),
             remote: None,
             fallback_seed: None,
+            no_infer: false,
         },
         name,
         path,

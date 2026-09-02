@@ -77,6 +77,14 @@ pub trait Ledger {
         fencing_token: i64,
         now_ms: i64,
     ) -> Result<CycleLease, StorageError>;
+    /// Lists all active (unexpired) leases for cycles belonging to a project.
+    /// Used by the cycle inference layer to resolve `--cycle` when zero args
+    /// are passed (S1/S3).
+    fn list_active_cycle_leases_for_project(
+        &self,
+        project_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<CycleLease>, StorageError>;
 
     // ── Gate receipts ──────────────────────────────────────────────────────
     /// Loads one gate receipt by identifier.

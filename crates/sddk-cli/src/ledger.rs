@@ -391,10 +391,11 @@ mod tests {
         let tmp = std::env::temp_dir().join("sddk-export-test.jsonl");
         let _args = LedgerExportArgs {
             runtime: RuntimeArgs {
-                root: tmp.parent().unwrap().to_path_buf(),
-                scope: ".".to_string(),
+                root: Some(tmp.parent().unwrap().to_path_buf()),
+                scope: Some(".".to_string()),
                 remote: None,
                 fallback_seed: None,
+                no_infer: false,
             },
             cycle: None,
             frame: None,

@@ -442,16 +442,22 @@ fn run_vault_export(args: VaultExportArgs, environment: &CliEnvironment) -> Comm
         // If XDG paths cannot be resolved (e.g., HOME not set in test environments),
         // we skip validation — the test environment is not a production security boundary.
         let xdg_validation_ok = (|| -> anyhow::Result<()> {
-            let root = crate::canonical_root(&args.runtime.root)?;
+            let root = crate::canonical_root(
+                args.runtime
+                    .root
+                    .as_ref()
+                    .unwrap_or(&std::path::PathBuf::from("."))
+                    .as_path(),
+            )?;
             let remote = crate::resolve_remote(&root, args.runtime.remote.clone())?;
             let mut fallback_seed = args.runtime.fallback_seed.clone();
+            let scope = args.runtime.scope.as_deref().unwrap_or(".");
             if remote.is_none() && fallback_seed.is_none() {
-                fallback_seed =
-                    crate::find_persisted_fallback_seed(environment, &root, &args.runtime.scope)?;
+                fallback_seed = crate::find_persisted_fallback_seed(environment, &root, scope)?;
             }
             let identity = sddk_domain::resolve_project_identity(
                 remote.as_deref(),
-                &args.runtime.scope,
+                scope,
                 fallback_seed.as_deref(),
             )?;
             let canonical_workspace_path = crate::path_string(&root)?;
