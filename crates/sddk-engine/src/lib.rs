@@ -1602,9 +1602,12 @@ pub fn frontier_for_state(
                         unmet_requirements.push(name.clone());
                     }
                 }
-                // Other structured requirements (not gates, not artifacts) are
-                // treated as requirements — must be satisfied externally
-                Requirement::Structured { .. } => {}
+                // Unknown structured requirement kinds must be satisfied externally and
+                // are conservatively treated as unmet (mirrors evaluate_plan's InvalidPlan
+                // strictness — never recommend a transition the engine would reject).
+                Requirement::Structured { name, .. } => {
+                    unmet_requirements.push(name.clone());
+                }
             }
         }
 
@@ -2127,6 +2130,72 @@ mod frontier_tests {
 
         assert_eq!(frontier.len(), 1);
         assert!(frontier[0].requires_met);
+        assert!(frontier[0].unmet_gates.is_empty());
+    }
+
+    #[test]
+    fn frontier_treats_unknown_structured_requirement_as_unmet() {
+        // OVG-01: unknown Structured kinds must be treated as unmet — the advisor
+        // must never mark requires_met=true for a transition the engine would
+        // reject.  Use kind="approval" (neither "gate" nor "artifact").
+        let workflow = {
+            use sddk_domain::{Phase, Transition, WORKFLOW_SCHEMA_VERSION};
+            WorkflowManifest {
+                schema_version: WORKFLOW_SCHEMA_VERSION,
+                workflow: sddk_domain::WorkflowDef {
+                    id: "structured-unknown".into(),
+                    version: "0.1.0".into(),
+                    description: "Workflow with unknown structured requirement kind".into(),
+                },
+                statuses: vec![CycleStatus::Open, CycleStatus::Closed],
+                phases: vec![Phase::Explore, Phase::Design],
+                paths: HashMap::new(),
+                policies: sddk_domain::Policies::default(),
+                transitions: vec![Transition {
+                    id: "phase.explore.complete".into(),
+                    from: Some(StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Explore),
+                    }),
+                    to: StateRef {
+                        status: CycleStatus::Open,
+                        phase: Some(Phase::Design),
+                    },
+                    requires: vec![Requirement::Structured {
+                        kind: "approval".into(),
+                        name: "signoff".into(),
+                    }],
+                    paths: vec![],
+                    produces: vec![],
+                    implementation_binding: None,
+                    on_failure: None,
+                }],
+                artifacts: HashMap::new(),
+                gates: HashMap::new(),
+                forge: None,
+                storage: None,
+                project_identity: None,
+            }
+        };
+        let state = make_state(CycleStatus::Open, Phase::Explore);
+        let ledger = InMemoryLedger::new();
+
+        let frontier = frontier_for_state(&workflow, &state, "cycle-1", &ledger).unwrap();
+
+        // The transition is visible in the frontier (advisory, not blocked) but
+        // requires_met must be false because "approval" is an unknown kind.
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].transition_id, "phase.explore.complete");
+        assert!(
+            !frontier[0].requires_met,
+            "unknown structured kind must be unmet"
+        );
+        assert!(
+            frontier[0]
+                .unmet_requirements
+                .contains(&"signoff".to_string()),
+            "unmet_requirements must contain the unknown kind's name"
+        );
         assert!(frontier[0].unmet_gates.is_empty());
     }
 
