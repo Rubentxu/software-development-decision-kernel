@@ -11,6 +11,7 @@ use sddk_domain::{
 use sddk_engine::{
     AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
     RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
+    frontier_for_state,
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
 };
 use sddk_storage::SqliteEventStore;
@@ -478,10 +479,25 @@ pub(crate) enum CycleCommand {
     Lock(CycleLockCommand),
     /// Build the cycle-scoped files inventory artifact (`sddk.inventory/v1`).
     Inventory(crate::inventory_cycle::CycleInventoryArgs),
+    /// Print the frontier of legal transitions from the current cycle state.
+    Next(CycleNextArgs),
 }
 
 #[derive(Debug, Clone, Args)]
 pub(crate) struct CycleArtifactsDirArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleNextArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     /// Cycle identifier.
@@ -914,6 +930,7 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
         CycleCommand::Inventory(args) => {
             crate::inventory_cycle::run_cycle_inventory(args, environment)
         }
+        CycleCommand::Next(args) => run_cycle_next(args, environment),
     }
 }
 
@@ -1561,6 +1578,99 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
     render_result(result, format, cycle_replan_text)
 }
 
+fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandOutput {
+    use sddk_engine::frontier_for_state;
+    let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let result = (|| -> anyhow::Result<CycleNextOutput> {
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+
+        // Load the workflow (from root or canonical fallback)
+        let workflow = load_workflow(&resolved.runtime.root.clone().unwrap_or_else(|| std::path::PathBuf::from(".")))?;
+
+        // Replay cycle state from ledger (S-NEXT-STATE-DERIVATION)
+        let replay = context.engine.replay_cycle(&cycle_id).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let state = &replay.manifest;
+
+        // Compute frontier
+        let frontier_entries = frontier_for_state(&workflow, state, &cycle_id, context.engine.ledger())
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // Get lease if present
+        let lease_opt: Option<LeaseOutput> = context.storage.get_cycle_lease(&cycle_id).ok().map(Into::into);
+        let lease_owner: String = lease_opt.as_ref().map(|l: &LeaseOutput| l.owner.clone()).unwrap_or_else(|| "<owner>".to_string());
+        let lease_token: i64 = lease_opt.as_ref().map(|l: &LeaseOutput| l.fencing_token).unwrap_or(0);
+
+        // Build output entries
+        let frontier: Vec<FrontierEntryOutput> = frontier_entries
+            .iter()
+            .map(|entry| {
+                let command = if entry.requires_met {
+                    let transition = workflow
+                        .transitions
+                        .iter()
+                        .find(|t| t.id == entry.transition_id);
+                    let binding = transition.and_then(|t| t.implementation_binding.clone());
+                    Some(format!(
+                        "sddk cycle transition --cycle {} --transition {} --lease-owner {} --fencing-token {}",
+                        cycle_id,
+                        entry.transition_id,
+                        lease_owner,
+                        lease_token
+                    ))
+                } else {
+                    None
+                };
+
+                let hint = if entry.requires_met {
+                    None
+                } else {
+                    let unmet: Vec<String> = entry
+                        .unmet_gates
+                        .iter()
+                        .map(|g| format!("sddk cycle evaluate-gate --gate {} --cycle {} --transition {}", g, cycle_id, entry.transition_id))
+                        .chain(entry.unmet_requirements.iter().map(|r| format!("requirement: {}", r)))
+                        .collect();
+                    Some(if unmet.is_empty() {
+                        "blocked — evaluate gate first".to_string()
+                    } else {
+                        unmet.join("; ")
+                    })
+                };
+
+                FrontierEntryOutput {
+                    transition_id: entry.transition_id.clone(),
+                    command,
+                    requires_met: entry.requires_met,
+                    target_phase: Some(format!("{:?}", entry.to.phase)),
+                    hint,
+                }
+            })
+            .collect();
+
+        let reason = if frontier.is_empty() {
+            Some(format!("terminal — status={:?}", state.status))
+        } else {
+            None
+        };
+
+        Ok(CycleNextOutput {
+            cycle: cycle_id,
+            node: format!("{:?}/{:?}", state.status, state.phase),
+            frontier,
+            lease: lease_opt,
+            reason,
+        })
+    })();
+    render_result(result, format, cycle_next_text)
+}
+
 fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
     let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
@@ -1652,6 +1762,26 @@ struct CycleReplanOutput {
 #[serde(rename_all = "snake_case")]
 struct CycleLockReleaseOutput {
     released: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleNextOutput {
+    cycle: String,
+    node: String,
+    frontier: Vec<FrontierEntryOutput>,
+    lease: Option<LeaseOutput>,
+    reason: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct FrontierEntryOutput {
+    transition_id: String,
+    command: Option<String>,
+    requires_met: bool,
+    target_phase: Option<String>,
+    hint: Option<String>,
 }
 
 impl From<sddk_domain::CycleLease> for LeaseOutput {
@@ -1751,6 +1881,33 @@ fn lease_option_text(lease: &Option<LeaseOutput>) -> String {
         Some(lease) => lease_text(lease),
         None => "lease: none\n".to_owned(),
     }
+}
+
+fn cycle_next_text(output: &CycleNextOutput) -> String {
+    let mut s = format!("cycle: {}\nnode: {}\n", output.cycle, output.node);
+    if let Some(ref reason) = output.reason {
+        s.push_str(&format!("frontier: [] ({})\n", reason));
+        return s;
+    }
+    s.push_str("frontier:\n");
+    for entry in &output.frontier {
+        s.push_str(&format!("  - transition: {}\n", entry.transition_id));
+        if entry.requires_met {
+            if let Some(ref cmd) = entry.command {
+                s.push_str(&format!("    command: {}\n", cmd));
+            }
+        } else {
+            if let Some(ref hint) = entry.hint {
+                s.push_str(&format!("    hint: {}\n", hint));
+            }
+        }
+        s.push_str(&format!("    requires_met: {}\n", entry.requires_met));
+        if let Some(ref phase) = entry.target_phase {
+            s.push_str(&format!("    target_phase: {}\n", phase));
+        }
+    }
+    s.push_str(&lease_option_text(&output.lease));
+    s
 }
 
 fn cycle_path_text(path: &CyclePath) -> String {
