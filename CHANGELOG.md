@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.69.0] - 2026-09-02
+
+### Added
+  - feat(domain): `StorageError::recovery()` ahora devuelve hints accionables keyed by entity — `cycle` (`sddk cycle start --scope .` / `sddk cycle rebuild --cycle <id>`), `gate receipt` (`sddk cycle evaluate-gate`), catch-all (`ensure the record exists`), y `LeaseConflict` (`sddk cycle lock inspect --cycle <id>` / `sddk cycle lock release --cycle <id>` con cycle_id rellenado). Generaliza GAP-UX-1 (v1.66.6 / cycle-51) más allá de `EngineError`. Audit grep `create the record|fix the reference` en `crates/sddk-cli/src/` → 0 hits.
+  - feat(engine): `EngineError::recovery()` cita la invocación exacta `sddk cycle evaluate-gate --gate <name> --transition <id>` con parámetros rellenados desde el error context (gate name, transition id, receipt id). 26 variantes actualizadas en `crates/sddk-engine/src/lib.rs:1682`.
+  - feat(cli): `FrontierEntryOutput` JSON gains `from_phase` / `to_phase` / `closes_cycle` surfaced desde `FrontierEntry.from.phase` / `FrontierEntry.to.phase` / `FrontierEntry.to.status` (OVG-02/03 del debt report de v1.68.0). Agents que leen `sddk cycle next --format json` ahora reciben la fase source/target del cycle y un boolean `closes_cycle`.
+  - refactor(cli): `swap_current_to(framework_dir, target)` extraído a `crates/sddk-cli/src/dev/mod.rs:47` — colapsa 3 duplication sites (update.rs:130 post-prune, update.rs:279 dev-link, use_cmd.rs:59 install path). Atomicity y dev-link semantics sin cambios.
+
+### Fixed
+  - fix(cli): WARN-001 leak cerrado — `validate_cycle_project` ahora construye `sddk_domain::StorageError::NotFound { entity: "cycle", .. }` para cycle-ids malformados en lugar del `sddk_storage::StorageError::NotFound` genérico. 4 call sites affected (`cycle lock acquire` / `renew` / `release` / `status`). Commit `9d7f548` revierte solo la rama `CycleProjectMismatch` (preserva el error code `STORAGE_CYCLE_PROJECT_MISMATCH` que 4 integration tests assertean); la migración de `NotFound` se preserva.
+  - chore(cli): prefijo `INC-DEBT-020:` removido de 4 production comments en `crates/sddk-cli/src/dev/update.rs` (la INC se cerró en v1.68.0). Las 3 referencias restantes viven dentro de `#[cfg(test)]` blocks.
+
+### Tests
+  - test(domain): nuevo test `gate_receipt_projection_parity_across_impls` en `crates/sddk-domain/src/ports.rs` assertea `GATE_RECEIPT_FIELD_COUNT = 14` across las 3 Ledger impls (Storage SQLite, InMemoryLedger testkit, FakeLedger engine stub). Drift en el SELECT de 13/14 columnas ahora lo caza `cargo test`.
+  - test(cli): `swap_current_to_dev_link_mode` + `swap_current_to_version_dir` cubren las dos ramas del helper.
+  - test(cli): `s_dev_link_preserved_without_prune_flags_keeps_dev_link_target` upgraded a ejercitar el helper real end-to-end (cierra la tautología `S-DEV-LINK-PRESERVED` cycle-53 PARTIAL).
+  - test(cli): `cycle_next_json_output_has_stable_shape` actualizado con los 3 nuevos fields (`from_phase` / `to_phase` / `closes_cycle`).
+  - test(workspace): `cargo test --workspace --locked` 1781 tests passed, 0 failed.
+
+### Documentation
+  - docs(release): notas v1.69.0 (`docs/releases/v1.69.0.md`) documentan la generalización de GAP-UX-1, los nuevos fields de `FrontierEntryOutput`, la refactorización de `swap_current_to`, y la prueba live stderr del WARN-001 leak closure.
+  - docs(release): `docs/RELEASING.md` sin cambios — el flujo canónico de 13 pasos sigue verde tras cycle-54.
+
+Cycle path: B-direct. 6 commits en rango `8789f05..9d7f548` (4 feat/refactor/fix + 2 in-cycle corrections: WARN-001 closure y CycleProjectMismatch revert). Verify verdict: `PASS_WITH_WARNINGS` (WARN-001 closed in-cycle; sin debt evidence gate porque el path es B-direct).
+
 ## [1.68.0] - 2026-09-02
 
 ### Added
