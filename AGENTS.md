@@ -216,3 +216,53 @@ reemplazado). **F4 gotcha:** bare slugs sin `project_id/` prefix (p.ej.
 `STORAGE_NOT_FOUND` aunque la fila exista — la causa viva es la falta de
 normalización del bare-slug en `validate_cycle_project`.
 
+---
+
+## 9. Cycle supersede workflow
+
+> Nuevo tras cycle-51 `kernel-cycle-51-supersede-first-class` (v1.66.6).
+
+### Invocación canónica
+
+```bash
+sddk cycle supersede \
+  --cycle <cycle-id> \
+  --successor <successor-cycle-id> \
+  --evidence-ref '["<artifact-ref>"]' \
+  --lease-owner <actor> \
+  --fencing-token <token>
+```
+
+Opcional con `--reason` (scope_invalid | goal_replaced | external_obsolete)
+en lugar de `--successor` — exactamente uno de los dos.
+
+### Reglas de validación
+
+| Check | Nivel | Código de error | Mensaje |
+|-------|-------|-----------------|---------|
+| Lease fence | Fail-closed | `LeaseConflict` | Sin lease = rechazo inmediato |
+| XOR successor/reason | CLI | Parse error | clap `conflicts_with` |
+| evidence_refs no vacío | Engine | `SupersedeEvidenceRefsRequired` | MUST (SPEC §2 línea 87) |
+| successor existe | Engine | `SupersedeSuccessorNotFound` | Crear el ciclo primero |
+| Anti-self-supersede | Engine | `SupersedeSelfForbidden` | No superseder un ciclo consigo mismo |
+
+### Flujo de commits (9 anchor commits)
+
+| # | Tipo | Descripción |
+|---|------|-------------|
+| 1 | `fix(engine)` | GAP-BUG-1: libera lease atómicamente |
+| 2 | `fix(engine)` | GAP-BUG-2/3: lease_owner y fencing_token del caller |
+| 3 | `fix(cli)` | GAP-UX-1: validate_cycle_project antes de storage |
+| 4 | `feat(engine)` | GAP-V-1/2/3: conflicts_with, successor exists, evidence_refs |
+| 5 | `test(engine)` | 6 tests engine + 1 CLI test |
+| 6 | `docs` | ADR-0079 accepted (en `~/.sddk-knowledge/`) |
+| 7 | `docs` | SPEC-SUPERSEDE-001 promoted |
+| 8 | `docs` | AGENTS.md §9 añadido |
+| 9 | `chore(release)` | Release notes v1.66.6 |
+
+### Notas de implementación
+
+- `InMemoryLedger::acquire_cycle_lease` hardcodea `fencing_token=1` — tests deben usar `1`
+- Receipt se escribe en `<cycle-artifacts>/<cycle-id>/supersede-receipt.json`
+- Ellease se libera atómicamente en `update_cycle_with_event(..., release_lease_on_phase_change=true)`
+
