@@ -2151,10 +2151,12 @@ mod tests {
             .with_project(project_id)
             .build();
 
-        // Build the initial event
+        // Build the initial event with state_after = cycle manifest
+        // (required for replay_cycle which is called by run_cycle_next)
         let event_input = EventBuilder::new("cycle.created")
             .with_cycle(cycle_id)
             .with_project(project_id)
+            .state_after(serde_json::to_value(&cycle_record.manifest).unwrap())
             .build();
 
         // Insert cycle + event
@@ -2891,5 +2893,441 @@ mod tests {
                 handler
             );
         }
+    }
+
+    // ── S-NEXT-NO-WORKFLOW ───────────────────────────────────────────────────
+
+    #[test]
+    fn s_next_no_workflow_returns_typed_error_when_workflow_unreadable() {
+        // S-NEXT-NO-WORKFLOW: cycle whose workflow file is a directory (not readable as file)
+        // → typed error (WorkflowLoadError::Io), NOT panic, NOT STORAGE_NOT_FOUND
+        let proj = temp_project();
+        let project_root = proj.path();
+
+        // Make workflow/workflow.yaml a DIRECTORY (not a file) — this triggers Io error
+        // that is NOT NotFound, so load_workflow propagates it as typed error.
+        // Note: we create workflow/workflow.yaml AS A DIRECTORY so that when
+        // load_workflow_path tries to read it as a file, it gets EISDIR (not ENOENT).
+        let workflow_file_as_dir = project_root.join("workflow").join("workflow.yaml");
+        fs::create_dir_all(&workflow_file_as_dir).unwrap();
+
+        // Use valid UUID as fallback_seed since RuntimeContext::open requires UUID validation
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440001";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+        let cycle_id = "c-no-workflow-001";
+
+        seed_one_active_lease(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleNextArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(cycle_id.to_string()),
+            format: OutputFormat::Text,
+        };
+
+        let output = run_cycle_next(args, &env);
+
+        // Must return error status
+        assert!(
+            output.status != 0,
+            "run_cycle_next should return non-zero status for unreadable workflow, got stdout: {}",
+            output.stdout
+        );
+        // Error must mention the workflow path
+        let stderr = &output.stderr;
+        assert!(
+            stderr.contains("workflow") || stderr.contains("workflow.yaml"),
+            "error should mention workflow path, got: {}",
+            stderr
+        );
+        // Must NOT be STORAGE_NOT_FOUND (different error kind)
+        assert!(
+            !stderr.contains("STORAGE_NOT_FOUND"),
+            "error should NOT be STORAGE_NOT_FOUND"
+        );
+    }
+
+    // ── S-NEXT-TERMINAL ─────────────────────────────────────────────────────
+
+    /// Seeds a cycle in CLOSED/terminal status for S-NEXT-TERMINAL test.
+    fn seed_terminal_cycle(
+        state_home: &std::path::Path,
+        project_root: &std::path::Path,
+        project_id: &str,
+        cycle_id: &str,
+        fallback_seed: &str,
+        scope: &str,
+    ) -> anyhow::Result<()> {
+        let ledger_dir = state_home.join("sddk").join("projects").join(project_id);
+        fs::create_dir_all(&ledger_dir).unwrap();
+        let ledger_path = ledger_dir.join("ledger.sqlite");
+
+        let mut storage = crate::Storage::open(&ledger_path)?;
+
+        let project = ProjectRecord {
+            project_id: project_id.to_string(),
+            display_name: "test-project".to_string(),
+            remote_url: None,
+            scope: scope.to_string(),
+            created_at: "2026-08-19T00:00:00Z".to_string(),
+        };
+        let workspace = WorkspaceRecord {
+            workspace_id: "ws-test".to_string(),
+            project_id: project_id.to_string(),
+            canonical_path: project_root.to_string_lossy().to_string(),
+            created_at: "2026-08-19T00:00:00Z".to_string(),
+        };
+        storage.register_project_workspace(&project, &workspace)?;
+
+        let mut cycle_record = CycleBuilder::new(CyclePath::AFull)
+            .with_id(cycle_id)
+            .with_project(project_id)
+            .build();
+        // Set terminal status
+        cycle_record.manifest.phase = Phase::Explore;
+        cycle_record.manifest.status = CycleStatus::Closed;
+
+        // Build event with state_after = cycle manifest (required for replay_cycle)
+        let event_input = EventBuilder::new("cycle.created")
+            .with_cycle(cycle_id)
+            .with_project(project_id)
+            .state_after(serde_json::to_value(&cycle_record.manifest).unwrap())
+            .build();
+
+        storage.insert_cycle_with_event(&cycle_record, &event_input)?;
+
+        // No lease needed for terminal cycle (lease released on close)
+
+        drop(storage);
+
+        let workspace_id_for_path = stable_workspace_id(
+            &ProjectId::new(project_id).unwrap(),
+            project_root.to_str().unwrap(),
+        );
+        let data_home = project_root.join(".local").join("data");
+        let seed_dir = data_home
+            .join("sddk")
+            .join("projects")
+            .join(project_id)
+            .join("workspaces")
+            .join(workspace_id_for_path);
+        fs::create_dir_all(&seed_dir).unwrap();
+        fs::write(seed_dir.join("fallback_seed"), fallback_seed).unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn s_next_terminal_cycle_returns_empty_frontier_with_explicit_reason() {
+        // S-NEXT-TERMINAL: cycle in CLOSED status → frontier empty + explicit reason
+        let proj = temp_project();
+        let project_root = proj.path();
+
+        // Use valid UUID as fallback_seed since RuntimeContext::open requires UUID validation
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440002";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+        let cycle_id = "c-terminal-001";
+
+        seed_terminal_cycle(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleNextArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(cycle_id.to_string()),
+            format: OutputFormat::Text,
+        };
+
+        let output = run_cycle_next(args, &env);
+
+        // Status should be 0 (informative, not error)
+        assert_eq!(
+            output.status, 0,
+            "cycle next on terminal cycle should return status 0"
+        );
+        // Human output: frontier empty + explicit reason about terminal status
+        assert!(
+            output.stdout.contains("frontier: []"),
+            "frontier should be empty, got: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("terminal") || output.stdout.contains("CLOSED"),
+            "output should mention terminal/CLOSED, got: {}",
+            output.stdout
+        );
+    }
+
+    #[test]
+    fn s_next_terminal_json_has_empty_frontier_and_reason() {
+        // S-NEXT-TERMINAL JSON surface: frontier: [], reason: "terminal: status=CLOSED"
+        let proj = temp_project();
+        let project_root = proj.path();
+
+        // Use valid UUID as fallback_seed since RuntimeContext::open requires UUID validation
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440003";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+        let cycle_id = "c-terminal-json-001";
+
+        seed_terminal_cycle(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleNextArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(cycle_id.to_string()),
+            format: OutputFormat::Json,
+        };
+
+        let output = run_cycle_next(args, &env);
+
+        assert_eq!(
+            output.status, 0,
+            "cycle next on terminal cycle should return status 0"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&output.stdout).expect("stdout should be valid JSON");
+        let frontier = json.get("frontier").expect("JSON should have frontier");
+        assert!(
+            frontier.as_array().map_or(false, |arr| arr.is_empty()),
+            "frontier should be empty array in JSON"
+        );
+        assert!(
+            json.get("reason").is_some(),
+            "JSON should have reason field for terminal cycle"
+        );
+    }
+
+    // ── S-NEXT-GATES ───────────────────────────────────────────────────────
+
+    /// Seeds a cycle at Explore phase with a transition that has a gate requirement
+    /// but NO gate receipt injected.
+    fn seed_cycle_with_gate_requirement(
+        state_home: &std::path::Path,
+        project_root: &std::path::Path,
+        project_id: &str,
+        cycle_id: &str,
+        fallback_seed: &str,
+        scope: &str,
+    ) -> anyhow::Result<()> {
+        let ledger_dir = state_home.join("sddk").join("projects").join(project_id);
+        fs::create_dir_all(&ledger_dir).unwrap();
+        let ledger_path = ledger_dir.join("ledger.sqlite");
+
+        let mut storage = crate::Storage::open(&ledger_path)?;
+
+        let project = ProjectRecord {
+            project_id: project_id.to_string(),
+            display_name: "test-project".to_string(),
+            remote_url: None,
+            scope: scope.to_string(),
+            created_at: "2026-08-19T00:00:00Z".to_string(),
+        };
+        let workspace = WorkspaceRecord {
+            workspace_id: "ws-test".to_string(),
+            project_id: project_id.to_string(),
+            canonical_path: project_root.to_string_lossy().to_string(),
+            created_at: "2026-08-19T00:00:00Z".to_string(),
+        };
+        storage.register_project_workspace(&project, &workspace)?;
+
+        // Build cycle at Explore phase with a gate transition in the manifest
+        let mut cycle_record = CycleBuilder::new(CyclePath::AFull)
+            .with_id(cycle_id)
+            .with_project(project_id)
+            .build();
+        cycle_record.manifest.phase = Phase::Explore;
+        cycle_record.manifest.status = CycleStatus::Open;
+
+        // Build event with state_after = cycle manifest (required for replay_cycle)
+        let event_input = EventBuilder::new("cycle.created")
+            .with_cycle(cycle_id)
+            .with_project(project_id)
+            .state_after(serde_json::to_value(&cycle_record.manifest).unwrap())
+            .build();
+
+        storage.insert_cycle_with_event(&cycle_record, &event_input)?;
+
+        // Acquire active lease
+        let now_ms = time::OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let expires_ms = now_ms + 3_600_000;
+        storage.acquire_cycle_lease(cycle_id, "test-owner", now_ms, expires_ms)?;
+
+        drop(storage);
+
+        let workspace_id_for_path = stable_workspace_id(
+            &ProjectId::new(project_id).unwrap(),
+            project_root.to_str().unwrap(),
+        );
+        let data_home = project_root.join(".local").join("data");
+        let seed_dir = data_home
+            .join("sddk")
+            .join("projects")
+            .join(project_id)
+            .join("workspaces")
+            .join(workspace_id_for_path);
+        fs::create_dir_all(&seed_dir).unwrap();
+        fs::write(seed_dir.join("fallback_seed"), fallback_seed).unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn s_next_gates_unmet_shows_blocked_and_requires_met_false() {
+        // S-NEXT-GATES: transition with unmet gate requirement → blocked + requires_met: false
+        let proj = temp_project();
+        let project_root = proj.path();
+
+        // Use valid UUID as fallback_seed since RuntimeContext::open requires UUID validation
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440004";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+        let cycle_id = "c-gates-001";
+
+        seed_cycle_with_gate_requirement(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleNextArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(cycle_id.to_string()),
+            format: OutputFormat::Text,
+        };
+
+        let output = run_cycle_next(args, &env);
+
+        assert_eq!(
+            output.status, 0,
+            "cycle next should succeed even with unmet gates"
+        );
+        // Human surface: hint mentions "evaluate gate first" or similar blocked message
+        let stdout = &output.stdout;
+        assert!(
+            stdout.contains("evaluate-gate") || stdout.contains("sddk cycle evaluate"),
+            "human surface should show evaluate-gate hint, got: {}",
+            stdout
+        );
+        // Command should NOT appear for unmet gates (only hint)
+        assert!(
+            !stdout.contains("command:"),
+            "command should NOT appear for unmet gate transitions"
+        );
+    }
+
+    #[test]
+    fn s_next_gates_unmet_json_shows_requires_met_false() {
+        // S-NEXT-GATES JSON surface: requires_met: false for unmet gate transition
+        let proj = temp_project();
+        let project_root = proj.path();
+
+        // Use valid UUID as fallback_seed since RuntimeContext::open requires UUID validation
+        let fallback_seed = "550e8400-e29b-41d4-a716-446655440005";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+        let cycle_id = "c-gates-json-001";
+
+        seed_cycle_with_gate_requirement(
+            &project_root.join(".local").join("state"),
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .unwrap();
+
+        let env = make_env(project_root);
+        let args = CycleNextArgs {
+            runtime: RuntimeArgs {
+                root: Some(project_root.to_path_buf()),
+                scope: Some(scope.to_string()),
+                remote: None,
+                fallback_seed: Some(fallback_seed.to_string()),
+                no_infer: false,
+            },
+            cycle: Some(cycle_id.to_string()),
+            format: OutputFormat::Json,
+        };
+
+        let output = run_cycle_next(args, &env);
+
+        assert_eq!(
+            output.status, 0,
+            "cycle next should succeed even with unmet gates"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&output.stdout).expect("stdout should be valid JSON");
+        let frontier = json
+            .get("frontier")
+            .expect("JSON should have frontier")
+            .as_array()
+            .expect("frontier should be array");
+        // At least one entry should have requires_met: false
+        let has_unmet = frontier.iter().any(|entry| {
+            entry
+                .get("requires_met")
+                .map_or(false, |v| v == &serde_json::Value::Bool(false))
+        });
+        assert!(
+            has_unmet,
+            "at least one frontier entry should have requires_met: false, got: {}",
+            output.stdout
+        );
     }
 }
