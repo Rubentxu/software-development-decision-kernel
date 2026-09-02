@@ -106,6 +106,7 @@ generic runtime rather than a debt-specific kernel subsystem:
 | Phase 10 Active Graph (Wave 4) | `sddk debt why` exposed via minimal facade |
 | Phase 14 Hardening | P0-P3 start policy, signed override receipts and artifact inventory |
 | Post-Wave 4 recover-forward series (cycles 50-54) | Process-failure recovery capabilities: supersede, classified gates, recovery actions, replanning, and complexity trends |
+| Post-Wave 4 lifecycle-flexibility candidates (cycles 55-56) | Cycle pause with intact dossier; backlog/roadmap elevated from hand-edited markdown to ledger-backed governed objects |
 
 ## Cross-phase slice — test-tooling boundary (per ADR-042)
 
@@ -883,6 +884,39 @@ P0–P3 debt start policy, signed gates, SBOM/provenance, and read-only retentio
 - DRAFT-ADR-E: `DesignDecision` primitive.
 - DRAFT-ADR-F: trend metric, not a blocking rule.
 - Size: A-full; approximately 5-7 days.
+
+## Post-Wave 4 — Lifecycle-flexibility candidates (cycle-55+)
+
+> **Origin:** maintainer requirement (2026-09-02), extending the recover-forward principle
+> ("fail closed for security; recover forward for process") to *emergent needs*: a workflow
+> must absorb interruptions (new ideas, priority shifts) without losing consistency.
+> **Seed docs:** [evolutivo-correcciones-flexibilidad](../../../docs/evolutivo-correcciones-flexibilidad.md)
+> (insights 1-7 → series 50-54; new insights 8-9 → these candidates).
+> **Backlog epic:** [BACKLOG.md §Epic LF](./BACKLOG.md).
+
+### cycle-55 - cycle pause (candidate; prerequisites: GAP-6 + cycle-51)
+
+- DRAFT-ADR-H: `cycle pause` — park an active cycle with an intact dossier, a typed reason
+  (e.g. `priority_revoked`, `context_switch`, `dependency_waiting`) and an optional
+  review-by date. The ADR decides between a new `CycleStatus::Paused` variant and a reason
+  taxonomy over the existing `Blocked` state.
+- Legal transitions: `Open→Paused`, `Paused→Open` (resume, with lease re-fencing),
+  `Paused→Superseded` (via cycle-51 supersede, keeping the cross-reference).
+- Lease auto-release on pause; no CLI closure operations while paused.
+- Size: A-min; approximately 2-3 days.
+
+### cycle-56 - backlog/roadmap as governed ledger objects (candidate; depends on cycle-55)
+
+- DRAFT-ADR-I: the idea lifecycle becomes ledger events — `backlog.item.registered`
+  (with origin evidence: cycle id, phase, artifacts), `backlog.item.triaged`
+  (versioned, consultable priority), `backlog.item.promoted` (to roadmap entry or cycle),
+  `backlog.item.discarded`. Emergent ideas are captured without breaking or closing the
+  originating cycle.
+- `BACKLOG.md` and `ROADMAP.md` become **rendered projections** of ledger state
+  (minimal viable: markdown entries carry ledger IDs so they remain traceable and
+  tooling-queryable) — elevating backlog and roadmap from hand-edited documentation
+  to governed, consistent-by-construction artifacts.
+- Size: A-min; approximately 3-4 days.
 
 ### Wave dependencies diagram
 

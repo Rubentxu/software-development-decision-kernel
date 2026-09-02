@@ -154,6 +154,41 @@ Ver [SPEC-RECONCILE-001 §8](../../reconciliation-spec.md#8-criterios-de-aceptac
 ADR-040 and SPEC-041. SDD-specific types remain pack-owned; no debt special case
 enters the generic workflow kernel.
 
+## Epic LF — Lifecycle Flexibility: cycle pause + backlog/roadmap as governed objects (candidate)
+
+> **Status:** proposed (candidate, no ejecutado). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
+> **Prerequisites:** GAP-6 (reparación de `cycle lock acquire`) + cycle-51 (supersede de primera clase).
+> **Owner:** orchestrator
+> **Origin:** requisito del maintainer (2026-09-02): "pausar un ciclo porque surge una necesidad nueva, capturar esa idea en el backlog con especificación y priorización, y que nada se rompa ni se pierda — consistencia por construcción, arquitectura emergente".
+
+### Governance flow (objetivo)
+
+`idea` → `backlog capture` (evento, con evidencia de origen) → `triage` (prioridad versionada) → `roadmap entry` → `cycle`. El markdown de BACKLOG/ROADMAP deja de ser la fuente de verdad y pasa a ser proyección consultable del ledger.
+
+### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H)
+
+- Estado `CycleStatus::Paused` o taxonomía de razones sobre `Blocked` (decisión del ADR con evidencia).
+- Transiciones legales: `Open→Paused`, `Paused→Open` (resume con re-fencing del lease), `Paused→Superseded` (vía cycle-51, manteniendo la referencia cruzada).
+- Razón tipada (`priority_revoked`, `context_switch`, `dependency_waiting`) + fecha de revisión opcional.
+- Lease auto-release al pausar; expediente y evidencia intactos; sin transiciones de cierre mientras está pausado.
+
+### Primitive 2 — backlog/roadmap como objetos del ledger (→ cycle-56, DRAFT-ADR-I)
+
+- Eventos `backlog.item.registered` / `.triaged` / `.promoted` / `.discarded`, con evidencia de origen (ciclo, fase, artefactos) — capturar una idea emergente nunca rompe ni cierra el ciclo que la originó.
+- Prioridad como metadata versionada y consultable por tooling (no como una fila de markdown).
+- `BACKLOG.md` / `ROADMAP.md` como proyecciones renderizadas (mínimo viable: entradas con IDs de ledger trazables).
+
+### Acceptance criteria (borrador, se cierra en la fase spec de cada ciclo)
+
+- Pausar un ciclo activo conserva expediente y evidencia; reanudar o supersedar deja rastro consultable en el ledger.
+- Toda idea emergida durante un ciclo puede capturarse sin cerrarlo, con trazabilidad completa origen→backlog→roadmap→ciclo.
+- Cero edición manual del ledger; las proyecciones markdown se regeneran desde el estado del ledger.
+
+### Out of scope (v1)
+
+- Priorización automática asistida por IA.
+- Sincronización con trackers externos (Tuleap, Jira, GitHub Projects).
+
 ## Important sequencing
 Dynamic graph execution belongs **before** trying to make the Supervisor smarter. The runtime must be able to validate and durably execute proposed strategies first.
 
