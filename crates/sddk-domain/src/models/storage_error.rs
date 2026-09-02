@@ -23,10 +23,22 @@ impl crate::SddkErrorCode for StorageError {
     }
     fn recovery(&self) -> String {
         match self {
+            Self::NotFound { entity, .. } if *entity == "cycle" => {
+                "run `sddk cycle start --scope .` to create a new cycle, \
+                 or `sddk cycle rebuild --cycle <id>` if the cycle exists in ledger events"
+                    .into()
+            }
+            Self::NotFound { entity, .. } if *entity == "gate receipt" => {
+                "evaluate the gate with `sddk cycle evaluate-gate` before the transition".into()
+            }
             Self::NotFound { .. } => "ensure the record exists before operating on it".into(),
             Self::Database(_) => "check the database is accessible and not corrupted".into(),
-            Self::LeaseConflict { .. } => {
-                "release the existing lease before acquiring a new one".into()
+            Self::LeaseConflict { cycle_id, .. } => {
+                format!(
+                    "run `sddk cycle lock inspect --cycle {}` to see the current lease, \
+                     then `sddk cycle lock release --cycle {}` to release it",
+                    cycle_id, cycle_id
+                )
             }
             Self::Other(_) => "retry the operation; if the problem persists, check the logs".into(),
         }

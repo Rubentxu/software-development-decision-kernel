@@ -1681,66 +1681,162 @@ impl sddk_domain::SddkErrorCode for EngineError {
 
     fn recovery(&self) -> String {
         match self {
-            Self::UndeclaredTransition { .. } => {
-                "use a transition declared in the workflow manifest".into()
+            Self::UndeclaredTransition { transition_id } => {
+                format!("use a transition declared in the workflow manifest (got: {transition_id})")
             }
-            Self::CreationTransitionRequiresStartApi { .. } => {
-                "use the cycle-start API for creation transitions".into()
+            Self::CreationTransitionRequiresStartApi { transition_id } => {
+                format!("use `sddk cycle start` for creation transitions (got: {transition_id})")
             }
-            Self::SourceStateMismatch { .. } => {
-                "check the current cycle state and retry with the matching transition".into()
+            Self::SourceStateMismatch { transition_id, .. } => {
+                format!(
+                    "run `sddk cycle status --cycle <id>` to check current state; got transition: {transition_id}"
+                )
             }
-            Self::MissingRequirement { .. } => {
-                "satisfy the declared precondition before retrying".into()
+            Self::MissingRequirement {
+                transition_id,
+                requirement,
+            } => {
+                format!(
+                    "satisfy requirement `{requirement}` before retrying (transition: {transition_id})"
+                )
             }
-            Self::MissingArtifact { .. } => "provide the required artifact in the evidence".into(),
-            Self::MissingGateReceipt { .. } => {
-                "evaluate the gate with `cycle evaluate-gate` first".into()
+            Self::MissingArtifact {
+                transition_id,
+                artifact,
+            } => {
+                format!("provide artifact `{artifact}` in evidence (transition: {transition_id})")
             }
-            Self::UnknownGateReceipt { .. } => "reference an existing gate receipt".into(),
-            Self::GateReceiptMismatch { .. } => {
-                "use a receipt for the same gate and transition".into()
+            Self::MissingGateReceipt {
+                transition_id,
+                gate,
+            } => {
+                format!(
+                    "run `sddk cycle evaluate-gate --gate {} --transition {} --cycle <cycle-id>` to evaluate the gate",
+                    gate, transition_id
+                )
             }
-            Self::StaleGateReceipt { .. } => {
-                "re-evaluate the gate against the current cycle state".into()
+            Self::UnknownGateReceipt {
+                transition_id,
+                receipt_id,
+            } => {
+                format!(
+                    "reference an existing gate receipt (receipt: {receipt_id}, transition: {transition_id})"
+                )
             }
-            Self::UnregisteredEvaluator { .. } => "register the evaluator for the gate".into(),
-            Self::GateReceiptScopeMismatch { .. } => "use a receipt from the same cycle".into(),
-            Self::GateFailedWithoutTarget { .. } => {
-                "declare an on_failure target for the gate".into()
+            Self::GateReceiptMismatch {
+                receipt_id,
+                gate,
+                transition_id,
+            } => {
+                format!(
+                    "use a gate receipt for gate `{gate}` and transition `{transition_id}` (got receipt: {receipt_id})"
+                )
             }
-            Self::UndeclaredProducedArtifact { .. } => {
-                "only offer artifacts the transition produces".into()
+            Self::StaleGateReceipt { receipt_id } => {
+                format!(
+                    "re-run `sddk cycle evaluate-gate` for receipt {receipt_id} against the current cycle state"
+                )
             }
-            Self::ArtifactKindMismatch { .. } => "match the artifact key to its kind".into(),
-            Self::UnknownPath { .. } => "use a workflow path declared in the manifest".into(),
-            Self::TransitionPathMismatch { .. } => {
-                "use a transition allowed for the cycle path".into()
+            Self::UnregisteredEvaluator { gate, evaluator } => {
+                format!(
+                    "register evaluator `{evaluator}` for gate `{gate}` in the workflow manifest"
+                )
             }
-            Self::StalePlan { .. } => "re-plan against the current cycle snapshot".into(),
-            Self::InvalidPlan => "recompute the plan deterministically".into(),
-            Self::StateSerialization(..) => "fix the workflow state JSON".into(),
-            Self::MissingReplayState { .. } => "create the cycle before replaying".into(),
-            Self::MissingStateAfter { .. } => "restore the ledger or rebuild the cycle".into(),
-            Self::NonObjectStateAfter { .. } => "repair the corrupted ledger event".into(),
-            Self::CorruptStateAfter { .. } => "repair the corrupted ledger event".into(),
-            Self::SnapshotMismatch { .. } => "rebuild the snapshot from ledger events".into(),
-            Self::InvalidPassEvidence { .. } => {
-                "provide argv, exit_code, and output_digest in pass evidence".into()
+            Self::GateReceiptScopeMismatch {
+                receipt_id,
+                cycle,
+                expected,
+            } => {
+                format!(
+                    "use a gate receipt from the same cycle (receipt: {receipt_id}, got: {cycle}, expected: {expected})"
+                )
             }
-            Self::GoalInputUnreadable => "verify goal input is readable before retrying".into(),
+            Self::GateFailedWithoutTarget {
+                transition_id,
+                gate,
+            } => {
+                format!(
+                    "declare an on_failure target for gate `{gate}` in transition `{transition_id}`"
+                )
+            }
+            Self::UndeclaredProducedArtifact {
+                transition_id,
+                artifact,
+            } => {
+                format!(
+                    "only offer artifacts declared as outputs (got: {artifact} in {transition_id})"
+                )
+            }
+            Self::ArtifactKindMismatch { key, kind } => {
+                format!("match artifact key `{key}` to declared kind `{kind}`")
+            }
+            Self::UnknownPath { path } => {
+                format!("use a workflow path declared in the manifest (got: {path})")
+            }
+            Self::TransitionPathMismatch {
+                transition_id,
+                path,
+            } => {
+                format!(
+                    "use a transition allowed for workflow path `{path}` (got: {transition_id})"
+                )
+            }
+            Self::StalePlan { cycle_id } => {
+                format!(
+                    "re-plan with `sddk cycle replan --cycle {}` against the current snapshot",
+                    cycle_id
+                )
+            }
+            Self::InvalidPlan => {
+                "re-plan with `sddk cycle replan --cycle <id>` to recompute the plan".into()
+            }
+            Self::StateSerialization(..) => "fix the workflow state JSON in the ledger".into(),
+            Self::MissingReplayState { cycle_id } => {
+                format!("create cycle {cycle_id} before replaying")
+            }
+            Self::MissingStateAfter { sequence } => {
+                format!("restore the ledger from backup; event at sequence {sequence} is corrupt")
+            }
+            Self::NonObjectStateAfter { sequence } => {
+                format!(
+                    "restore the ledger from backup; event at sequence {sequence} has invalid state"
+                )
+            }
+            Self::CorruptStateAfter { sequence, .. } => {
+                format!(
+                    "restore the ledger from backup; event at sequence {sequence} has corrupt state_after"
+                )
+            }
+            Self::SnapshotMismatch { cycle_id } => {
+                format!(
+                    "rebuild snapshot with `sddk cycle rebuild --cycle {}`",
+                    cycle_id
+                )
+            }
+            Self::InvalidPassEvidence { reason } => {
+                format!("provide argv, exit_code, and output_digest in pass evidence: {reason}")
+            }
+            Self::GoalInputUnreadable => {
+                "verify the goal input files are readable before retrying".into()
+            }
             Self::SupersedeRequiresExactlyOne => {
-                "supply exactly one of --successor or --reason".into()
+                "supply exactly one of --successor <cycle-id> or --reason <reason>".into()
             }
-            Self::SupersedeSelfForbidden => "do not supersede a cycle with itself".into(),
+            Self::SupersedeSelfForbidden => {
+                "the --successor cycle-id must differ from the current cycle".into()
+            }
             Self::SupersedeEvidenceRefsRequired => {
-                "supply at least one evidence reference with --evidence-ref".into()
+                "supply at least one evidence reference with --evidence-ref <ref>".into()
             }
             Self::SupersedeSuccessorNotFound(succ) => {
-                format!("create successor cycle {} first", succ)
+                format!("create successor cycle {succ} with `sddk cycle start` before superseding")
             }
-            Self::ReplanLimitExceeded => "replan counter is at its limit of 5".into(),
-            Self::ReplanEmptyDelta => "supply a non-empty replan delta".into(),
+            Self::ReplanLimitExceeded => {
+                "replan counter is at its limit of 5; open a new cycle to continue".into()
+            }
+            Self::ReplanEmptyDelta => {
+                "supply a non-empty delta with `sddk cycle replan --delta <json>`".into()
+            }
             Self::Storage(..) => "resolve the underlying storage error first".into(),
         }
     }
