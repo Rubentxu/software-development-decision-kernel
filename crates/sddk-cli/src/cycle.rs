@@ -1664,11 +1664,19 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
                     })
                 };
 
+                // OVG-02: surface from_phase (was previously unconsumed)
+                let from_phase = entry.from.phase.as_ref().map(|p| format!("{:?}", p));
+                // OVG-03: surface to_phase and closes_cycle (to.status was unconsumed)
+                let to_phase = entry.to.phase.as_ref().map(|p| format!("{:?}", p));
+                let closes_cycle = entry.to.status == sddk_domain::CycleStatus::Closed;
+
                 FrontierEntryOutput {
                     transition_id: entry.transition_id.clone(),
                     command,
                     requires_met: entry.requires_met,
-                    target_phase: Some(format!("{:?}", entry.to.phase)),
+                    from_phase,
+                    to_phase,
+                    closes_cycle,
                     hint,
                 }
             })
@@ -1800,7 +1808,12 @@ struct FrontierEntryOutput {
     transition_id: String,
     command: Option<String>,
     requires_met: bool,
-    target_phase: Option<String>,
+    /// Source phase for this transition (OVG-02: was previously unconsumed).
+    from_phase: Option<String>,
+    /// Target phase for this transition.
+    to_phase: Option<String>,
+    /// Whether this transition closes the cycle (OVG-03: to.status was previously unconsumed).
+    closes_cycle: bool,
     hint: Option<String>,
 }
 
@@ -1920,8 +1933,15 @@ fn cycle_next_text(output: &CycleNextOutput) -> String {
             s.push_str(&format!("    hint: {}\n", hint));
         }
         s.push_str(&format!("    requires_met: {}\n", entry.requires_met));
-        if let Some(ref phase) = entry.target_phase {
-            s.push_str(&format!("    target_phase: {}\n", phase));
+        // OVG-02/03: surface from/to phase and closes_cycle
+        if let Some(ref from) = entry.from_phase {
+            s.push_str(&format!("    from_phase: {}\n", from));
+        }
+        if let Some(ref to) = entry.to_phase {
+            s.push_str(&format!("    → {}\n", to));
+        }
+        if entry.closes_cycle {
+            s.push_str("    closes_cycle: true\n");
         }
     }
     s.push_str(&lease_option_text(&output.lease));
@@ -2779,11 +2799,14 @@ mod tests {
     fn cycle_next_json_output_has_stable_shape() {
         // S-NEXT-JSON: verify JSON envelope has required fields
         // We test FrontierEntryOutput serialization shape here
+        // OVG-02/03: includes from_phase, to_phase, closes_cycle
         let entry = FrontierEntryOutput {
             transition_id: "phase.explore.complete".to_string(),
             command: Some("sddk cycle transition --cycle c-1 --transition phase.explore.complete --lease-owner test --fencing-token 1".to_string()),
             requires_met: true,
-            target_phase: Some("Specify".to_string()),
+            from_phase: Some("Explore".to_string()),
+            to_phase: Some("Specify".to_string()),
+            closes_cycle: false,
             hint: None,
         };
 
@@ -2799,6 +2822,19 @@ mod tests {
             "entry should have requires_met"
         );
         assert!(parsed.get("command").is_some(), "entry should have command");
+        // OVG-02/03 fields
+        assert!(
+            parsed.get("from_phase").is_some(),
+            "entry should have from_phase (OVG-02)"
+        );
+        assert!(
+            parsed.get("to_phase").is_some(),
+            "entry should have to_phase (OVG-03)"
+        );
+        assert!(
+            parsed.get("closes_cycle").is_some(),
+            "entry should have closes_cycle (OVG-03)"
+        );
     }
 
     #[test]
