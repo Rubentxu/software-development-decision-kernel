@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.66.6] - 2026-09-02
+
+### Fixed
+  - fix(engine): `cycle_supersede` libera el lease atómicamente en la misma transacción que `cycle.supersede.applied` (antes: `release_lease_on_phase_change=false`). Cierra GAP-BUG-1 (P2/medium).
+  - fix(engine): `supersede-receipt.json` ahora escribe `lease_owner` y `fencing_token` desde los argumentos del caller (antes: usaba `actor` y hardcodeaba `0`). Cierra GAP-BUG-2 y GAP-BUG-3 (P2/medium).
+  - fix(cli): `cycle supersede` llama `validate_cycle_project` antes de cualquier acceso a storage, convirtiendo `STORAGE_NOT_FOUND` para bare slugs en un error tipado apuntando a la forma canónica `<project_id>/<slug>`. Cierra GAP-UX-1 (P3/low).
+
+### Added
+  - feat(domain): `Ledger::cycle_exists` para validar existencia de successor antes de cualquier mutación de estado (patrón INC-DEBT-017). Cierra GAP-V-2 (P2/medium).
+  - feat(cli): clap `#[arg(conflicts_with)]` en `--successor` para que la combinación `--successor` + `--reason` sea rechazada en parse-time. Cierra GAP-V-1 (P3/low).
+  - feat(engine): rechazo de `--evidence-refs "[]"` vacío antes de cualquier mutación de estado (SPEC §2 línea 87: MUST). Cierra GAP-V-3 (P2/medium).
+
+### Tests
+  - test(engine): 6 nuevos tests en `crates/sddk-engine/tests/cycle_supersede.rs` cubren los gaps BUG-1/2/3, UX-1, V-2/3, y la invariante de digest del ledger (`supersede_releases_lease_atomically`, `supersede_receipt_lease_owner_matches_caller`, `supersede_receipt_fencing_token_matches_caller`, `supersede_rejects_nonexistent_successor`, `supersede_rejects_empty_evidence_refs`, `supersede_preserves_ledger_event_hashes`).
+  - test(cli): 1 nuevo test en `crates/sddk-cli/tests/first_class_commands.rs` cubre el rechazo de `--successor + --reason` en parse-time (`supersede_cli_conflicts_with_rejected_at_parse_time`).
+
+### Documentation
+  - docs(adr): `ADR-0079-cycle-supersede` flip status → `accepted`. Cierra GAP-DOC-1.a.
+  - docs(spec): `SPEC-SUPERSEDE-001` promovido a `docs/sddk-decision-kernel-architecture/04-specs/`. Cierra GAP-DOC-1.b.
+  - docs(agents): `AGENTS.md §9` cycle supersede workflow añadido. Cierra GAP-DOC-1.c.
+  - docs(release): notas de release para v1.66.6 (`docs/releases/v1.66.6.md`) documentan los 11 gaps cerrados. Cierra GAP-DOC-1.d.
+
+Cycle path: A-full (engine + CLI + domain feat + 7 tests + 4 docs promotions + release notes). 7 commits en rango `b4ea945..a797e09`. Verify verdict: PASS_WITH_WARNINGS. Debt verdict: PASS_WITH_WARNINGS (2 pre-existing MEDIUM findings F-1 time-coupling + F-2 N+3-vs-N+2 spec drift, deferred a cycle-52; sin nuevas findings).
+
 ## [1.66.5] - 2026-09-02
 
 ### Documentation
