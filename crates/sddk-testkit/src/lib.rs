@@ -74,6 +74,10 @@ impl sddk_domain::Ledger for InMemoryLedger {
             })
     }
 
+    fn cycle_exists(&self, cycle_id: &str) -> Sr<bool> {
+        Ok(self.cycles.read().unwrap().contains_key(cycle_id))
+    }
+
     fn list_cycle_events(&self, cycle_id: &str) -> Sr<Vec<sddk_domain::LedgerEvent>> {
         let events = self.events.read().unwrap();
         let mut result: Vec<_> = events

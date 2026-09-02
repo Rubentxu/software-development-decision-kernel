@@ -16,6 +16,8 @@ pub trait Ledger {
     // ── Cycle ops ─────────────────────────────────────────────────────────
     /// Loads a cycle snapshot by identifier.
     fn get_cycle(&self, cycle_id: &str) -> Result<CycleRecord, StorageError>;
+    /// Reports whether a cycle record exists in the ledger (no-mutation check).
+    fn cycle_exists(&self, cycle_id: &str) -> Result<bool, StorageError>;
     /// Lists all ledger events for one cycle in ascending global sequence order.
     fn list_cycle_events(&self, cycle_id: &str) -> Result<Vec<LedgerEvent>, StorageError>;
     /// Inserts a cycle snapshot and its initial event atomically.

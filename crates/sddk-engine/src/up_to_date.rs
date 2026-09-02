@@ -143,6 +143,13 @@ mod tests {
                 })
         }
 
+        fn cycle_exists(&self, cycle_id: &str) -> Result<bool, sddk_domain::StorageError> {
+            Ok(self
+                .cycle
+                .as_ref()
+                .is_some_and(|c| c.manifest.cycle_id == cycle_id))
+        }
+
         fn list_cycle_events(
             &self,
             _: &str,

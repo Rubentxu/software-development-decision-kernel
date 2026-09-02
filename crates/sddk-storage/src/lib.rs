@@ -1720,6 +1720,10 @@ impl sddk_domain::Ledger for Storage {
         Storage::get_cycle(self, cycle_id).map_err(|e| e.into())
     }
 
+    fn cycle_exists(&self, cycle_id: &str) -> std::result::Result<bool, sddk_domain::StorageError> {
+        Storage::cycle_exists(self, cycle_id).map_err(|e| e.into())
+    }
+
     fn list_cycle_events(
         &self,
         cycle_id: &str,
