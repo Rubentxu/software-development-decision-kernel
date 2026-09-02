@@ -1353,18 +1353,21 @@ fn run_cycle_lock(command: CycleLockCommand, environment: &CliEnvironment) -> Co
 fn validate_cycle_project(
     cycle_id: &str,
     expected_project_id: &sddk_domain::ProjectId,
-) -> Result<(), sddk_domain::StorageError> {
+) -> Result<(), anyhow::Error> {
     match CycleId::new(cycle_id) {
         Ok(cid) => {
             let cycle_project = cid.project();
             let expected = expected_project_id.as_str();
             if cycle_project != expected {
-                // CycleProjectMismatch has no domain equivalent; surface it as Other
-                // so the error still reaches failure_envelope (fallback to storage).
-                Err(sddk_domain::StorageError::Other(format!(
-                    "cycle project mismatch: cycle {} belongs to {}, expected {}",
-                    cycle_id, cycle_project, expected
-                )))
+                // CycleProjectMismatch stays on storage layer — domain has no
+                // equivalent, and the 4 integration tests assert on
+                // STORAGE_CYCLE_PROJECT_MISMATCH code.
+                Err(sddk_storage::StorageError::CycleProjectMismatch {
+                    cycle_id: cycle_id.to_owned(),
+                    cycle_project_id: cycle_project.to_owned(),
+                    expected_project_id: expected.to_owned(),
+                }
+                .into())
             } else {
                 Ok(())
             }
@@ -1374,7 +1377,8 @@ fn validate_cycle_project(
         Err(_) => Err(sddk_domain::StorageError::NotFound {
             entity: "cycle",
             id: cycle_id.to_owned(),
-        }),
+        }
+        .into()),
     }
 }
 
