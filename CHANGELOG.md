@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.68.0] - 2026-09-02
+
+### Added
+  - feat(cli): nuevo subcomando `sddk cycle next` — frontier advisor que deriva la frontera del ciclo desde el grafo de transiciones DECLARADAS en `workflow.yaml`. Salida humana (lista de transiciones con `requires_met` y hints) o `--json` (envelope `{cycle, node, phase, frontier: [{transition_id, to, requires_met, unmet_gates, unmet_requirements, hint}]}`). Cierra slice 2 del Epic SD. La proof D1 (zero hardcoded sequences) la demuestra el diamond fixture test (`frontier_for_state_diamond_topology`, engine/lib.rs:2050-2080): si `frontier_for_state` hardcodease el path A-min, el diamond de 4 transiciones con 2 ramas paralelas fallaría al exigir 2 entradas con ambos ids.
+  - feat(engine): `frontier_for_state(workflow, state, cycle_id, ledger)` como derivación pura. Estado siempre viene de `engine.replay_cycle` → `replay_state` (nunca de artefactos pre-calculados).
+  - feat(storage): `Ledger::list_gate_receipts_for(cycle_id, transition_id, plan_hash)` (trait method nuevo, 3 impls: `Storage` SQLite con SELECT 13-columnas, `InMemoryLedger` testkit, `FakeLedger` engine stub). Soporta el path de "blocked transitions" del advisor sin tocar la autoridad de escritura.
+
+### Fixed
+  - fix(cli): `sddk dev update --prune-only --keep N` y `--prune` ahora re-apuntan el symlink `current` a la versión más nueva retenida (INC-DEBT-020). Antes, el prune dejaba el symlink colgando a una versión ya eliminada y `sddk dev doctor` fallaba con `binary.bundle_coherence: ABSENT` aunque la versión actual del bundle estuviera intacta. Nuevo helper `repoint_current_to_newest(framework_dir, newest_version)` en `update.rs:487` ejecutado desde ambas ramas prune (update.rs:315, 344). Modo dev-link sin flags de prune preserva su comportamiento previo (guard `!prune && !prune_only` en update.rs:282).
+  - fix(engine): `frontier_for_state` clasifica `Requirement::Structured { kind }` con kind desconocido como `unmet_requirements` (cierra OVG-01 HIGH del debt report). Antes: catch-all silenciaba como satisfecho divergiendo de `evaluate_plan` y `apply_transition` que rechazan; ahora: convergencia semántica entre advisor (`cycle next`) y autoridad (`cycle transition`).
+
+### Tests
+  - test(engine): 8 tests `cargo test -p sddk-engine frontier` cubren diamond topology, terminal cycle, gate satisfied, missing gate, replay derivation, unknown kind (OVG-01), y state derivation from ledger replay. Diamond fixture test prueba D1 binding.
+  - test(cli): 33 tests `cargo test -p sddk-cli --lib cycle` cubren S-NEXT-COMMAND, S-NEXT-JSON, S-NEXT-GATES, S-NEXT-TERMINAL, S-NEXT-NO-WORKFLOW, S-NEXT-INFERENCE, zero-arg inference con lease único.
+  - test(cli): 9 tests `cargo test -p sddk-cli --lib dev::update` cubren las 3 ramas de prune (PRUNE-ONLY-REPONTS, modo normal preserve, dev-link sin prune preserve) más 2 regresiones del helper (`repoint_current_skips_nonexistent_version_dir`, `repoint_current_to_newest_symlink_swap_is_atomic`).
+  - test(workspace): `cargo test --workspace --locked` 1781 tests passed (1 flaky infra-noise `dev::rdi_tests` bajo paralelismo, pasa en `--test-threads=1`).
+
+### Documentation
+  - docs(release): notas v1.68.0 (`docs/releases/v1.68.0.md`) documentan cycle next advisor + INC-DEBT-020 fix + transparencia verify FAIL→corrección→gate-closure.
+  - docs(release): `docs/RELEASING.md` step 10 (Prune) y step 11 (Final state) añadidos en cycle-53; el fix INC-DEBT-020 hace que step 10 ya no requiera el "manual fix" histórico.
+  - docs(agents): `AGENTS.md §5` checklist añade item de prune post-release con referencia al fix.
+
+Cycle path: A-min (smoke depth). 11 commits en rango `2aa5e36..669d7dc` (8 feat/fix + 1 corrección clippy + 1 docs + 1 in-cycle OVG-01 remediation). Verify verdict: PASS_WITH_WARNINGS (1 PARTIAL `S-DEV-LINK-PRESERVED` tautológica documentada con plan de cycle-54). Debt verdict: PASS_WITH_WARNINGS (1 HIGH OVG-01 remediado in-cycle, 5 backlog follow-ups con fingerprints).
+
 ## [1.67.0] - 2026-09-02
 
 ### Added
