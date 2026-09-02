@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.67.0] - 2026-09-02
+
+### Added
+  - feat(cycle): inferencia de contexto para subcomandos de `sddk cycle`. Cuando el estado es inequívoco (marcador de proyecto + único lease activo), los comandos `status`, `transition`, `rebuild`, `artifacts-dir`, `lock acquire/renew/release`, `supersede`, `replan`, `lock-status`, `evaluate-gate` ya no requieren repetir `--root/--scope/--cycle`. Resolver único: `resolve_cycle_context` en `crates/sddk-cli/src/cycle.rs:140` con 11 call sites. Cierra slice 1 del Epic SD (state-driven CLI).
+  - feat(domain): nuevo método de trait `Ledger::list_active_cycle_leases_for_project` (read-only SQL) implementado en `Storage`, `InMemoryLedger` (testkit), `FakeLedger` (engine). Soporta el path de inferencia sin tocar la autoridad de escritura.
+  - feat(cli): nuevo opt-out `--no-infer` para automatización y tests que prefieren la forma "siempre explícita". Sin args explícitos + `--no-infer` → `InferenceError::ExplicitRequired` listando `--root/--scope/--cycle`.
+  - feat(cli): errores tipados de inferencia (`InferenceError::{NoProjectContext, ExplicitRequired, NoActiveCycle, AmbiguousCycle}`) con hints concretos: candidatos con cycle_ids + ready-to-paste `sddk cycle status --cycle <id>` para ambigüedad; hint de `sddk cycle start` para "no active lease"; hint a `sddk project resolve` / `sddk init` para "no project context".
+
+### Changed
+  - refactor(cli): `RuntimeArgs.root: PathBuf` → `Option<PathBuf>` y `RuntimeArgs.scope: String` → `Option<String>` (deferred defaults via `unwrap_or(Path::new("."))` / `unwrap_or(".")` en `RuntimeContext::open`). Compatibilidad hacia atrás con callers pre-inferencia (ledger.rs, plan.rs, recover.rs, run.rs, ship.rs, status.rs, vault_cmd.rs).
+
+### Tests
+  - test(cli): 9 tests en `crates/sddk-cli/src/cycle.rs` cubren S1, S2a, S2b, S3, S3b, S4, S5a, S5b, S6. Verificados por `cargo test -p sddk-cli --lib cycle` (9/9 pass) y `cargo test --workspace --locked` (593 passed; 1 pre-existing infra-noise fail bajo paralelismo, pasa en solitario).
+
+### Documentation
+  - docs(release): notas v1.67.0 en `docs/releases/v1.67.0.md` documentan el slice 1 del Epic SD con escenarios S1-S7, live smoke de `sddk cycle status` zero-arg, evidencia de verify, y limitaciones conocidas.
+  - docs(roadmap): referencia a `docs/sddk-decision-kernel-architecture/02-roadmap/RESEARCH/state-driven-cli/RESEARCH.md` como fuente canónica del Epic SD.
+
+Cycle path: B-direct (cycle-family + storage + testkit + domain-trait + propagación mecánica a 7 callers + 9 tests + release notes). 4 commits en rango `fc5d7b3..a34c882` (e24598a feat, a34c882 test) + bump 1.67.0. Verify verdict: PASS_WITH_WARNINGS (1 pre-existing flaky infra-noise test + 1 missing runtime cycle record — filesystem-artifacts-only closure; `archive-manifest.md` es ground-truth durable del cierre, igual que en cycle-51).
+
 ## [1.66.6] - 2026-09-02
 
 ### Fixed
