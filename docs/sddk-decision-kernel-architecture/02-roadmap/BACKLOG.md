@@ -165,12 +165,13 @@ enters the generic workflow kernel.
 
 `idea` → `backlog capture` (evento, con evidencia de origen) → `triage` (prioridad versionada) → `roadmap entry` → `cycle`. El markdown de BACKLOG/ROADMAP deja de ser la fuente de verdad y pasa a ser proyección consultable del ledger.
 
-### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H) ✅ IMPLEMENTED
+### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H) ✅ RESOLVED (cycle-55, kernel-cycle-55-cycle-pause, v1.70.0)
 
 - Estado `CycleStatus::Paused` o taxonomía de razones sobre `Blocked` (decisión del ADR con evidencia).
 - Transiciones legales: `Open→Paused`, `Paused→Open` (resume con re-fencing del lease), `Paused→Superseded` (vía cycle-51, manteniendo la referencia cruzada).
 - Razón tipada (`priority_revoked`, `context_switch`, `dependency_waiting`) + fecha de revisión opcional.
 - Lease auto-release al pausar; expediente y evidencia intactos; sin transiciones de cierre mientras está pausado.
+- **See:** [[ADR-0080-cycle-pause]], [[REQ-Cycle-Pause-Contract]], [[REQ-Cycle-Resume-Contract]], [[SPEC-PAUSE-001]]
 
 ### Primitive 2 — backlog/roadmap como objetos del ledger (→ cycle-56, DRAFT-ADR-I)
 
