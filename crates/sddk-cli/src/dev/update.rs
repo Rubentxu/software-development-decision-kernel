@@ -465,4 +465,62 @@ mod tests {
         assert!(framework.join("tmp").exists());
         assert!(framework.join("stray.txt").exists());
     }
+
+    // ── INC-DEBT-020 regression tests ──────────────────────────────────────────
+
+    #[test]
+    fn prune_repoint_current_after_prune_keeps_valid_target() {
+        // INC-DEBT-020: after prune removes stale versions, current must still
+        // point to a valid directory (repoint_current_to_newest).
+        // Scenario: current=1.70.0, we keep [1.65.0], 1.70.0 gets removed.
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+
+        // Create versions; 1.70.0 is current but will be removed by prune.
+        for v in ["1.60.0", "1.65.0", "1.70.0"] {
+            make_version_dir(framework, v);
+        }
+        std::os::unix::fs::symlink(framework.join("1.70.0"), framework.join("current")).unwrap();
+
+        // Simulate prune that keeps 1.65.0 (not 1.70.0) — e.g. --keep 1
+        // when active was 1.70.0 but kept = [1.65.0] because 1.70.0 was in a
+        // "removed" set from a previous prune cycle.
+        let removed = vec!["1.70.0".to_owned()];
+        let kept = vec!["1.65.0".to_owned()];
+
+        // Call repoint_current_to_newest with the newest kept version
+        repoint_current_to_newest(framework, kept.first().unwrap());
+
+        // current must now point to 1.65.0 (valid, existing dir)
+        let current_target = std::fs::read_link(framework.join("current")).unwrap();
+        assert_eq!(
+            current_target.file_name().unwrap().to_str().unwrap(),
+            "1.65.0",
+            "current must repoint to newest kept version"
+        );
+        assert!(
+            framework.join("1.65.0").is_dir(),
+            "current target must be an existing directory"
+        );
+    }
+
+    #[test]
+    fn repoint_current_skips_nonexistent_version_dir() {
+        // If the "newest" kept version dir doesn't exist on disk, skip repoint.
+        let dir = tempfile::tempdir().unwrap();
+        let framework = dir.path();
+
+        make_version_dir(framework, "1.60.0");
+        std::os::unix::fs::symlink(framework.join("1.60.0"), framework.join("current")).unwrap();
+
+        // Try to repoint to a non-existent version
+        repoint_current_to_newest(framework, "1.99.0");
+
+        // current should still point to 1.60.0 (unchanged)
+        let current_target = std::fs::read_link(framework.join("current")).unwrap();
+        assert_eq!(
+            current_target.file_name().unwrap().to_str().unwrap(),
+            "1.60.0",
+        );
+    }
 }
