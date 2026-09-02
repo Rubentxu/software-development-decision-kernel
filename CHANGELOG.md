@@ -3,6 +3,18 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.70.0] - 2026-09-02
+
+### Features
+  - feat(engine): frontier_for_state surfaces pause/resume/supersede when Paused
+  - feat(cli): add CycleCommand::Pause and CycleCommand::Resume with args and handlers
+  - feat(engine): implement cycle_pause and cycle_resume primitives
+  - feat(cycle): add CycleStatus::Paused variant and PauseReason closed-set
+
+### Other
+  - docs: ADR-cycle-pause draft + BACKLOG Primitive 1 status + CHANGELOG entry
+  - test(cli): clap rejects invalid PauseReason at parse-time
+
 ## [Unreleased]
 
 ### Added
