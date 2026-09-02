@@ -1302,6 +1302,27 @@ impl Storage {
         let rows = statement.query_map([cycle_id], gate_receipt_from_row)?;
         rows.map(|row| row.map_err(StorageError::from)).collect()
     }
+
+    /// Lists gate receipts for one cycle and transition that match the given plan hash.
+    ///
+    /// Returns receipts ordered by `evaluated_at ASC`. An empty list means no
+    /// fresh gate receipt exists for this state.
+    pub fn list_gate_receipts_for(
+        &self,
+        cycle_id: &str,
+        transition_id: &str,
+        plan_hash: &str,
+    ) -> Result<Vec<GateReceipt>> {
+        let mut statement = self.connection.prepare(
+            "SELECT receipt_id, project_id, cycle_id, gate, evaluator, transition_id,
+                    plan_hash, outcome, evidence, actor, command_id, frame_id, evaluated_at, seq
+             FROM gate_receipts
+             WHERE cycle_id = ?1 AND transition_id = ?2 AND plan_hash = ?3
+             ORDER BY evaluated_at ASC",
+        )?;
+        let rows = statement.query_map([cycle_id, transition_id, plan_hash], gate_receipt_from_row)?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
 }
 
 pub(crate) fn migrate(connection: &mut Connection) -> Result<()> {
@@ -1877,6 +1898,16 @@ impl sddk_domain::Ledger for Storage {
         input: &GateReceiptNextSeqInput,
     ) -> std::result::Result<GateReceipt, sddk_domain::StorageError> {
         Storage::insert_gate_receipt_next_seq(self, input).map_err(|e| e.into())
+    }
+
+    fn list_gate_receipts_for(
+        &self,
+        cycle_id: &str,
+        transition_id: &str,
+        plan_hash: &str,
+    ) -> std::result::Result<Vec<GateReceipt>, sddk_domain::StorageError> {
+        Storage::list_gate_receipts_for(self, cycle_id, transition_id, plan_hash)
+            .map_err(|e| e.into())
     }
 
     fn get_project_optional(

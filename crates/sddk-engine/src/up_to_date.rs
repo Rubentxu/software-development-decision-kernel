@@ -237,6 +237,14 @@ mod tests {
         ) -> Result<sddk_domain::GateReceipt, sddk_domain::StorageError> {
             unimplemented!()
         }
+        fn list_gate_receipts_for(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> Result<Vec<sddk_domain::GateReceipt>, sddk_domain::StorageError> {
+            Ok(vec![])
+        }
         fn get_project_optional(
             &self,
             _: &str,

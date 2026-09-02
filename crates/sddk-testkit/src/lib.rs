@@ -336,6 +336,26 @@ impl sddk_domain::Ledger for InMemoryLedger {
         Ok(receipt)
     }
 
+    fn list_gate_receipts_for(
+        &self,
+        cycle_id: &str,
+        transition_id: &str,
+        plan_hash: &str,
+    ) -> Sr<Vec<sddk_domain::GateReceipt>> {
+        let receipts = self.gate_receipts.read().unwrap();
+        let mut result: Vec<_> = receipts
+            .values()
+            .filter(|r| {
+                r.cycle_id.as_deref() == Some(cycle_id)
+                    && r.transition_id == transition_id
+                    && r.plan_hash == plan_hash
+            })
+            .cloned()
+            .collect();
+        result.sort_by_key(|r| r.evaluated_at.clone());
+        Ok(result)
+    }
+
     fn get_project_optional(&self, project_id: &str) -> Sr<Option<sddk_domain::ProjectRecord>> {
         Ok(self.projects.read().unwrap().get(project_id).cloned())
     }

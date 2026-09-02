@@ -94,6 +94,18 @@ pub trait Ledger {
         &mut self,
         input: &GateReceiptNextSeqInput,
     ) -> Result<GateReceipt, StorageError>;
+    /// Lists all gate receipts for one cycle and transition that match the
+    /// given plan hash (derived from the cycle state before the transition).
+    ///
+    /// Returns receipts ordered by `evaluated_at ASC`. An empty list means no
+    /// fresh gate receipt exists for this state — the caller classifies the
+    /// transition as `requires_met: false`.
+    fn list_gate_receipts_for(
+        &self,
+        cycle_id: &str,
+        transition_id: &str,
+        plan_hash: &str,
+    ) -> Result<Vec<GateReceipt>, StorageError>;
 
     // ── Project / workspace ────────────────────────────────────────────────
     /// Loads a logical project when present.
