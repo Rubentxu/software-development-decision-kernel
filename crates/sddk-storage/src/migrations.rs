@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS cycles (
     project_id TEXT NOT NULL,
     workspace_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN (
-        'OPEN', 'BLOCKED', 'REMEDIATING', 'RELEASE_PENDING',
+        'OPEN', 'BLOCKED', 'REMEDIATING', 'PAUSED', 'RELEASE_PENDING',
         'RELEASED', 'CLOSED', 'ABANDONED', 'RECOVERING'
     )),
     phase TEXT NOT NULL CHECK (phase IN (

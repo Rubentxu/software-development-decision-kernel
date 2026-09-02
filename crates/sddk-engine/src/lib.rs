@@ -10,6 +10,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 mod adoption;
+pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
 pub mod event_bus;
@@ -847,6 +848,18 @@ pub enum EngineError {
     /// Cycle replan delta is empty.
     #[error("replan delta is empty")]
     ReplanEmptyDelta,
+    /// Cycle pause requires an active lease fence.
+    #[error("pause requires an active lease fence; run `sddk cycle lock acquire` first")]
+    PauseRequiresLeaseFence,
+    /// Cycle cannot be paused from a terminal status.
+    #[error("pause is forbidden from terminal statuses: closed, released, abandoned")]
+    PauseFromTerminalForbidden,
+    /// Cycle is already paused.
+    #[error("cycle is already paused")]
+    PauseAlreadyPaused,
+    /// Cycle resume is only allowed from Paused status.
+    #[error("resume is only allowed from paused status")]
+    ResumeFromPausedOnly,
     /// Persistence rejected the operation.
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
@@ -1675,6 +1688,10 @@ impl sddk_domain::SddkErrorCode for EngineError {
             Self::SupersedeSuccessorNotFound(..) => "ENGINE_SUPERSEDE_SUCCESSOR_NOT_FOUND",
             Self::ReplanLimitExceeded => "ENGINE_REPLAN_LIMIT_EXCEEDED",
             Self::ReplanEmptyDelta => "ENGINE_REPLAN_EMPTY_DELTA",
+            Self::PauseRequiresLeaseFence => "ENGINE_PAUSE_REQUIRES_LEASE_FENCE",
+            Self::PauseFromTerminalForbidden => "ENGINE_PAUSE_FROM_TERMINAL_FORBIDDEN",
+            Self::PauseAlreadyPaused => "ENGINE_PAUSE_ALREADY_PAUSED",
+            Self::ResumeFromPausedOnly => "ENGINE_RESUME_FROM_PAUSED_ONLY",
             Self::Storage(..) => "ENGINE_STORAGE",
         }
     }
@@ -1836,6 +1853,18 @@ impl sddk_domain::SddkErrorCode for EngineError {
             }
             Self::ReplanEmptyDelta => {
                 "supply a non-empty delta with `sddk cycle replan --delta <json>`".into()
+            }
+            Self::PauseRequiresLeaseFence => {
+                "acquire a lease with `sddk cycle lock acquire --owner <you>` before pausing".into()
+            }
+            Self::PauseFromTerminalForbidden => {
+                "pause is only allowed from non-terminal statuses: open, blocked, remediating, uat_waiting, approval_pending, recovering".into()
+            }
+            Self::PauseAlreadyPaused => {
+                "cycle is already paused; use `sddk cycle resume` to resume it".into()
+            }
+            Self::ResumeFromPausedOnly => {
+                "resume is only allowed when the cycle is in Paused status".into()
             }
             Self::Storage(..) => "resolve the underlying storage error first".into(),
         }
