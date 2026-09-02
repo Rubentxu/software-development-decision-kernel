@@ -1320,7 +1320,8 @@ impl Storage {
              WHERE cycle_id = ?1 AND transition_id = ?2 AND plan_hash = ?3
              ORDER BY evaluated_at ASC",
         )?;
-        let rows = statement.query_map([cycle_id, transition_id, plan_hash], gate_receipt_from_row)?;
+        let rows =
+            statement.query_map([cycle_id, transition_id, plan_hash], gate_receipt_from_row)?;
         rows.map(|row| row.map_err(StorageError::from)).collect()
     }
 }

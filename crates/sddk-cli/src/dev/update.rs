@@ -485,8 +485,8 @@ mod tests {
         // Simulate prune that keeps 1.65.0 (not 1.70.0) — e.g. --keep 1
         // when active was 1.70.0 but kept = [1.65.0] because 1.70.0 was in a
         // "removed" set from a previous prune cycle.
-        let removed = vec!["1.70.0".to_owned()];
-        let kept = vec!["1.65.0".to_owned()];
+        let _removed = vec!["1.70.0".to_owned()];
+        let kept = ["1.65.0".to_owned()];
 
         // Call repoint_current_to_newest with the newest kept version
         repoint_current_to_newest(framework, kept.first().unwrap());

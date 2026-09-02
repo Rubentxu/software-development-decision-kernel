@@ -168,7 +168,15 @@ bash scripts/install.sh --version "$TAG" --editor all
 
 # 9. Verify
 $SDDK_PREFIX/sddk dev doctor --prefix $SDDK_PREFIX
+
+# 10. Prune — INC-DEBT-020 (cycle-53): after pruning, `current` is
+#     repointed to the newest kept version so the symlink never dangles.
 $SDDK_PREFIX/sddk dev update --prune-only --keep 1 --root $SDDK_FRAMEWORK_DIR
+
+# 11. Final state — binary version, bundle version, current symlink target
+echo "=== release final state ==="
+$SDDK_PREFIX/sddk --version
+$SDDK_PREFIX/sddk dev doctor --prefix $SDDK_PREFIX
 ```
 
 ## CI / local-first

@@ -1581,13 +1581,11 @@ pub fn frontier_for_state(
 
         for req in &transition.requires {
             match req {
-                Requirement::Structured { kind, name }
-                    if kind == "gate" =>
-                {
+                Requirement::Structured { kind, name } if kind == "gate" => {
                     let plan_hash = plan_hash_for_receipt(cycle_id, &transition.id, state);
                     let receipts = ledger
                         .list_gate_receipts_for(cycle_id, &transition.id, &plan_hash)
-                        .map_err(|e| EngineError::Storage(e.into()))?;
+                        .map_err(EngineError::Storage)?;
                     if receipts.is_empty() {
                         unmet_gates.push(name.clone());
                         all_gates_met = false;
@@ -1599,15 +1597,14 @@ pub fn frontier_for_state(
                         unmet_requirements.push(name.clone());
                     }
                 }
-                Requirement::Structured { kind, name } => {
-                    if kind == "artifact" {
-                        if !state.artifacts.contains_key(name) {
-                            unmet_requirements.push(name.clone());
-                        }
+                Requirement::Structured { kind, name } if kind == "artifact" => {
+                    if !state.artifacts.contains_key(name) {
+                        unmet_requirements.push(name.clone());
                     }
-                    // Other structured requirements are treated as requirements
-                    // (not gates) — they must be satisfied externally
                 }
+                // Other structured requirements (not gates, not artifacts) are
+                // treated as requirements — must be satisfied externally
+                Requirement::Structured { .. } => {}
             }
         }
 
@@ -1946,12 +1943,10 @@ mod frontier_tests {
                     status: CycleStatus::Open,
                     phase: Some(Phase::Design),
                 },
-                requires: vec![
-                    Requirement::Structured {
-                        kind: "gate".into(),
-                        name: "exploration-sufficient".into(),
-                    },
-                ],
+                requires: vec![Requirement::Structured {
+                    kind: "gate".into(),
+                    name: "exploration-sufficient".into(),
+                }],
                 paths: vec![],
                 produces: vec![],
                 implementation_binding: None,

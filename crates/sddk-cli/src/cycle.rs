@@ -11,8 +11,8 @@ use sddk_domain::{
 use sddk_engine::{
     AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
     RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
-    frontier_for_state,
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
+    frontier_for_state,
 };
 use sddk_storage::SqliteEventStore;
 use serde::Serialize;
@@ -1592,20 +1592,40 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
             .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
 
         // Load the workflow (from root or canonical fallback)
-        let workflow = load_workflow(&resolved.runtime.root.clone().unwrap_or_else(|| std::path::PathBuf::from(".")))?;
+        let workflow = load_workflow(
+            &resolved
+                .runtime
+                .root
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from(".")),
+        )?;
 
         // Replay cycle state from ledger (S-NEXT-STATE-DERIVATION)
-        let replay = context.engine.replay_cycle(&cycle_id).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let replay = context
+            .engine
+            .replay_cycle(&cycle_id)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         let state = &replay.manifest;
 
         // Compute frontier
-        let frontier_entries = frontier_for_state(&workflow, state, &cycle_id, context.engine.ledger())
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let frontier_entries =
+            frontier_for_state(&workflow, state, &cycle_id, context.engine.ledger())
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Get lease if present
-        let lease_opt: Option<LeaseOutput> = context.storage.get_cycle_lease(&cycle_id).ok().map(Into::into);
-        let lease_owner: String = lease_opt.as_ref().map(|l: &LeaseOutput| l.owner.clone()).unwrap_or_else(|| "<owner>".to_string());
-        let lease_token: i64 = lease_opt.as_ref().map(|l: &LeaseOutput| l.fencing_token).unwrap_or(0);
+        let lease_opt: Option<LeaseOutput> = context
+            .storage
+            .get_cycle_lease(&cycle_id)
+            .ok()
+            .map(Into::into);
+        let lease_owner: String = lease_opt
+            .as_ref()
+            .map(|l: &LeaseOutput| l.owner.clone())
+            .unwrap_or_else(|| "<owner>".to_string());
+        let lease_token: i64 = lease_opt
+            .as_ref()
+            .map(|l: &LeaseOutput| l.fencing_token)
+            .unwrap_or(0);
 
         // Build output entries
         let frontier: Vec<FrontierEntryOutput> = frontier_entries
@@ -1896,10 +1916,8 @@ fn cycle_next_text(output: &CycleNextOutput) -> String {
             if let Some(ref cmd) = entry.command {
                 s.push_str(&format!("    command: {}\n", cmd));
             }
-        } else {
-            if let Some(ref hint) = entry.hint {
-                s.push_str(&format!("    hint: {}\n", hint));
-            }
+        } else if let Some(ref hint) = entry.hint {
+            s.push_str(&format!("    hint: {}\n", hint));
         }
         s.push_str(&format!("    requires_met: {}\n", entry.requires_met));
         if let Some(ref phase) = entry.target_phase {
@@ -2768,8 +2786,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&entry).expect("serialize");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("deserialize");
 
         assert!(
             parsed.get("transition_id").is_some(),
@@ -2779,10 +2796,7 @@ mod tests {
             parsed.get("requires_met").is_some(),
             "entry should have requires_met"
         );
-        assert!(
-            parsed.get("command").is_some(),
-            "entry should have command"
-        );
+        assert!(parsed.get("command").is_some(), "entry should have command");
     }
 
     #[test]

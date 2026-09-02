@@ -107,6 +107,7 @@ y se actualiza con `sddk dev install`.
 [ ] shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh    # parity con just ci (Phase C gated — stable)
 [ ] Si tocaste assets/: sddk dev install        # bundle runtime actualizado
 [ ] Tras release: sddk dev doctor | grep bundle_coherence (binario == bundle)
+[ ] Tras release: sddk dev update --prune-only --keep 1 --root ~/.local/share/sddk/framework (INC-DEBT-020: current repoints a newest kept)
 [ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh
 [ ] git status                                  # clean
 [ ] git diff                                    # revisas lo que vas a commitear
