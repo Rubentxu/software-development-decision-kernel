@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::{
-    ActorKind, ArtifactRef, ControlPlane, CycleId, CycleManifest, CyclePath, ProjectId,
-    WorkflowManifest, normalize_remote_url, normalize_scope, stable_fallback_project_id,
+    ActorKind, ArtifactRef, ControlPlane, CycleId, CycleManifest, CyclePath, PauseReason,
+    ProjectId, WorkflowManifest, normalize_remote_url, normalize_scope, stable_fallback_project_id,
     stable_project_id,
 };
 use sddk_engine::{
@@ -472,6 +472,10 @@ pub(crate) enum CycleCommand {
     Supersede(CycleSupersedeArgs),
     /// Bounded in-place revision of a cycle.
     Replan(CycleReplanArgs),
+    /// Pause a cycle, releasing the lease.
+    Pause(CyclePauseArgs),
+    /// Resume a paused cycle, re-acquiring a fresh lease.
+    Resume(CycleResumeArgs),
     /// Print the XDG artifact directory for a cycle (created on demand).
     ArtifactsDir(CycleArtifactsDirArgs),
     /// Acquire, release, or inspect the exclusive cycle lease.
@@ -713,6 +717,82 @@ pub(crate) struct CycleReplanArgs {
     pub(crate) format: OutputFormat,
 }
 
+/// Argument for the `cycle pause` command.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CyclePauseArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier to pause.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// Reason for pausing (priority_revoked | context_switch | dependency_waiting).
+    #[arg(long, value_enum)]
+    pub(crate) reason: PauseReasonArg,
+    /// Optional RFC3339 timestamp for when the cycle should be reviewed.
+    #[arg(long)]
+    pub(crate) review_at: Option<String>,
+    /// Lease owner required by the fencing check.
+    #[arg(long)]
+    pub(crate) lease_owner: String,
+    /// Fencing token of the lease the caller currently holds.
+    #[arg(long)]
+    pub(crate) fencing_token: i64,
+    /// Explicit RFC 3339 timestamp for deterministic execution.
+    #[arg(long)]
+    pub(crate) timestamp: Option<String>,
+    /// Explicit actor for deterministic execution.
+    #[arg(long)]
+    pub(crate) actor: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Argument for the `cycle resume` command.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleResumeArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier to resume.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// Lease owner for the new lease.
+    #[arg(long)]
+    pub(crate) lease_owner: String,
+    /// Explicit RFC 3339 timestamp for deterministic execution.
+    #[arg(long)]
+    pub(crate) timestamp: Option<String>,
+    /// Explicit actor for deterministic execution.
+    #[arg(long)]
+    pub(crate) actor: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// CLI representation of pause reason.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum PauseReasonArg {
+    /// Priority was revoked — a higher-priority item requires the team's attention.
+    PriorityRevoked,
+    /// Context switch — the team must pivot to a different focus.
+    ContextSwitch,
+    /// Waiting on a dependency — external blocker that is not yet resolved.
+    DependencyWaiting,
+}
+
+impl From<PauseReasonArg> for PauseReason {
+    fn from(value: PauseReasonArg) -> Self {
+        match value {
+            PauseReasonArg::PriorityRevoked => PauseReason::PriorityRevoked,
+            PauseReasonArg::ContextSwitch => PauseReason::ContextSwitch,
+            PauseReasonArg::DependencyWaiting => PauseReason::DependencyWaiting,
+        }
+    }
+}
+
 /// CLI representation of restage target.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub(crate) enum RestageToArg {
@@ -931,6 +1011,8 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
             crate::inventory_cycle::run_cycle_inventory(args, environment)
         }
         CycleCommand::Next(args) => run_cycle_next(args, environment),
+        CycleCommand::Pause(args) => run_cycle_pause(args, environment),
+        CycleCommand::Resume(args) => run_cycle_resume(args, environment),
     }
 }
 
@@ -1584,6 +1666,106 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
     render_result(result, format, cycle_replan_text)
 }
 
+fn run_cycle_pause(args: CyclePauseArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let result = (|| -> anyhow::Result<CyclePauseOutput> {
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
+        let actor = args
+            .actor
+            .clone()
+            .or_else(|| environment.sddk_actor.clone())
+            .or_else(|| environment.user.clone())
+            .unwrap_or_else(|| "sddk-cli".into());
+        let command_id = format!("cycle.pause-{}", Uuid::new_v4().hyphenated());
+        let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
+
+        // GAP-UX-1: validate cycle belongs to this project before touching storage
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
+
+        let reason: PauseReason = args.reason.into();
+
+        let receipt = context.engine.cycle_pause(
+            &cycle_id,
+            reason,
+            args.review_at.as_deref(),
+            &actor,
+            &command_id,
+            &event_id,
+            &timestamp,
+            &context.paths.cycle_artifacts,
+            &args.lease_owner,
+            args.fencing_token,
+        )?;
+
+        // Load updated cycle to get manifest
+        let record = context.storage.get_cycle(&cycle_id)?;
+        Ok(CyclePauseOutput {
+            cycle_id,
+            status: wire(&record.manifest.status),
+            event_id: receipt.event_id,
+            sequence: receipt.sequence,
+            event_hash: receipt.event_hash,
+        })
+    })();
+    render_result(result, format, cycle_pause_text)
+}
+
+fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let result = (|| -> anyhow::Result<CycleResumeOutput> {
+        let mut context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
+        let actor = args
+            .actor
+            .clone()
+            .or_else(|| environment.sddk_actor.clone())
+            .or_else(|| environment.user.clone())
+            .unwrap_or_else(|| "sddk-cli".into());
+        let command_id = format!("cycle.resume-{}", Uuid::new_v4().hyphenated());
+        let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
+
+        // GAP-UX-1: validate cycle belongs to this project before touching storage
+        validate_cycle_project(&cycle_id, &context.identity.project_id)?;
+
+        let resume_output = context.engine.cycle_resume(
+            &cycle_id,
+            &actor,
+            &command_id,
+            &event_id,
+            &timestamp,
+            &context.paths.cycle_artifacts,
+            &args.lease_owner,
+        )?;
+
+        // Load updated cycle to get manifest
+        let record = context.storage.get_cycle(&cycle_id)?;
+        Ok(CycleResumeOutput {
+            cycle_id,
+            status: wire(&record.manifest.status),
+            event_id: resume_output.event_id,
+            sequence: resume_output.sequence,
+            event_hash: resume_output.event_hash,
+            new_fencing_token: resume_output.new_fencing_token,
+        })
+    })();
+    render_result(result, format, cycle_resume_text)
+}
+
 fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandOutput {
     use sddk_engine::frontier_for_state;
     let format = args.format;
@@ -1786,6 +1968,27 @@ struct CycleSupersedeOutput {
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
+struct CyclePauseOutput {
+    cycle_id: String,
+    status: String,
+    event_id: String,
+    sequence: i64,
+    event_hash: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleResumeOutput {
+    cycle_id: String,
+    status: String,
+    event_id: String,
+    sequence: i64,
+    event_hash: String,
+    new_fencing_token: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
 struct CycleReplanOutput {
     cycle_id: String,
     restage_to: String,
@@ -1901,6 +2104,25 @@ fn cycle_replan_text(output: &CycleReplanOutput) -> String {
     format!(
         "cycle_id: {}\nrestage_to: {}\nsequence: {}\n",
         output.cycle_id, output.restage_to, output.sequence
+    )
+}
+
+fn cycle_pause_text(output: &CyclePauseOutput) -> String {
+    format!(
+        "cycle_id: {}\nstatus: {}\nevent_id: {}\nsequence: {}\nevent_hash: {}\n",
+        output.cycle_id, output.status, output.event_id, output.sequence, output.event_hash
+    )
+}
+
+fn cycle_resume_text(output: &CycleResumeOutput) -> String {
+    format!(
+        "cycle_id: {}\nstatus: {}\nevent_id: {}\nsequence: {}\nevent_hash: {}\nnew_fencing_token: {}\n",
+        output.cycle_id,
+        output.status,
+        output.event_id,
+        output.sequence,
+        output.event_hash,
+        output.new_fencing_token
     )
 }
 
