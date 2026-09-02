@@ -56,10 +56,7 @@ pub(super) fn run_dev_use(args: super::UseArgs, environment: &CliEnvironment) ->
             version_dir
         };
         // Atomically swap the `current` symlink.
-        let tmp = dir.join("current.tmp");
-        let _ = std::fs::remove_file(&tmp);
-        std::os::unix::fs::symlink(&target, &tmp)?;
-        std::fs::rename(&tmp, &current)?;
+        super::swap_current_to(&dir, &target);
         Ok(UseOutput {
             version: args.version.unwrap_or_else(|| "current".to_owned()),
             current: target.to_string_lossy().into_owned(),

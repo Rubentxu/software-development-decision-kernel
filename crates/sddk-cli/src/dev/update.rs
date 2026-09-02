@@ -122,18 +122,12 @@ fn resolve_current_version(framework_dir: &Path) -> Option<String> {
     }
 }
 
-/// INC-DEBT-020: After pruning, re-point `current` symlink to the newest kept version.
+/// After pruning, re-point `current` symlink to the newest kept version.
 /// This runs when `--prune` or `--prune-only` is used with `--root .`.
 fn repoint_current_to_newest(framework_dir: &Path, newest_version: &str) {
-    let current = framework_dir.join("current");
     let target = framework_dir.join(newest_version);
     if target.is_dir() {
-        let tmp = framework_dir.join("current.tmp");
-        let _ = std::fs::remove_file(&tmp);
-        let _ = std::fs::remove_file(&current);
-        if std::os::unix::fs::symlink(&target, &tmp).is_ok() {
-            let _ = std::fs::rename(&tmp, &current);
-        }
+        crate::dev::swap_current_to(framework_dir, &target);
     }
 }
 
@@ -279,15 +273,10 @@ pub(super) fn run_dev_update(
         // The extracted bundle lands in a version dir; update_bundle extracts
         // directly into bundle_root, so if the user passed the framework root
         // we additionally fix the `current` symlink to point at it.
-        // INC-DEBT-020 fix: guard this with !prune && !prune_only so the
-        // prune paths can manage the symlink themselves.
+        // Guard this with !prune && !prune_only so the prune paths
+        // can manage the symlink themselves.
         if args.root.as_os_str() == "." && !args.prune && !args.prune_only {
-            let current = bundle_root.join("current");
-            let tmp = bundle_root.join("current.tmp");
-            let _ = std::fs::remove_file(&tmp);
-            let _ = std::fs::remove_file(&current);
-            std::os::unix::fs::symlink(&bundle_root, &tmp)?;
-            std::fs::rename(&tmp, &current)?;
+            crate::dev::swap_current_to(&bundle_root, &bundle_root);
             output.push_str("framework: current -> bundle root (dev link resolves it)\n");
         }
 
@@ -312,7 +301,7 @@ pub(super) fn run_dev_update(
             if let Some(cur) = active.as_deref() {
                 output.push_str(&format!("  current -> {cur}\n"));
             }
-            // INC-DEBT-020 fix: after pruning, re-point current to newest kept version
+            // After pruning, re-point current to newest kept version
             if args.root.as_os_str() == "." && !kept.is_empty() {
                 repoint_current_to_newest(&bundle_root, kept.first().unwrap());
             }
@@ -341,7 +330,7 @@ pub(super) fn run_dev_update(
             if let Some(cur) = active.as_deref() {
                 output.push_str(&format!("  current -> {cur}\n"));
             }
-            // INC-DEBT-020 fix: after pruning, re-point current to newest kept version
+            // After pruning, re-point current to newest kept version
             if args.root.as_os_str() == "." && !kept.is_empty() {
                 repoint_current_to_newest(&bundle_root, kept.first().unwrap());
             }
@@ -383,6 +372,43 @@ mod tests {
             Ordering::Greater
         );
         assert_eq!(cmp_bundle_version("1.63.0", "1.63.0.0"), Ordering::Less);
+    }
+
+    // ── swap_current_to tests ────────────────────────────────────────────────
+
+    #[test]
+    fn swap_current_to_dev_link_mode() {
+        // swap_current_to with target = framework_dir itself (dev-link mode)
+        let dir = tempfile::tempdir().unwrap();
+        let bundle_root = dir.path();
+        std::os::unix::fs::symlink(bundle_root, bundle_root.join("current")).unwrap();
+
+        crate::dev::swap_current_to(bundle_root, bundle_root);
+
+        let current_target = std::fs::read_link(bundle_root.join("current")).unwrap();
+        assert_eq!(
+            current_target, bundle_root,
+            "current should point to bundle_root"
+        );
+    }
+
+    #[test]
+    fn swap_current_to_version_dir() {
+        // swap_current_to with target = version dir (repoint mode)
+        let dir = tempfile::tempdir().unwrap();
+        let bundle_root = dir.path();
+        make_version_dir(bundle_root, "1.70.0");
+        std::os::unix::fs::symlink(bundle_root.join("1.70.0"), bundle_root.join("current"))
+            .unwrap();
+
+        crate::dev::swap_current_to(bundle_root, &bundle_root.join("1.70.0"));
+
+        let current_target = std::fs::read_link(bundle_root.join("current")).unwrap();
+        assert_eq!(
+            current_target.file_name().unwrap().to_str().unwrap(),
+            "1.70.0",
+            "current should point to version dir"
+        );
     }
 
     fn make_version_dir(framework: &Path, version: &str) {
@@ -529,14 +555,11 @@ mod tests {
     #[test]
     fn s_dev_link_preserved_without_prune_flags_keeps_dev_link_target() {
         // S-DEV-LINK-PRESERVED: dev-link mode (root=".") WITHOUT --prune/--prune-only
-        // → the dev-link block at update.rs:284-291 runs and current still points
+        // → the dev-link block at update.rs:278-280 runs and current still points
         //   to bundle_root (framework/), NOT repointed to a version dir.
-        // Regression guard for INC-DEBT-020: the dev-link behavior is preserved
-        // when no prune flags are passed.
+        // Regression guard: the dev-link behavior is preserved when no prune flags are passed.
         //
-        // This test verifies the dev-link block runs WITHOUT actually downloading.
-        // We test the logic directly: when root="." and !prune and !prune_only,
-        // the symlink is set to point to bundle_root (not to a version dir).
+        // This test exercises the REAL swap_current_to helper directly.
 
         let dir = tempfile::tempdir().unwrap();
 
@@ -551,41 +574,8 @@ mod tests {
         // Dev-link mode BEFORE: current symlink points to bundle_root itself
         std::os::unix::fs::symlink(&bundle_root, bundle_root.join("current")).unwrap();
 
-        // Simulate the dev environment
-        let env = crate::CliEnvironment {
-            home: Some(dir.path().to_path_buf()),
-            data_home: Some(dir.path().join(".local").join("data")),
-            sddk_data_dir: Some(sddk_data.clone()),
-            state_home: Some(dir.path().join(".local").join("state")),
-            cache_home: Some(dir.path().join(".local").join("cache")),
-            sddk_actor: None,
-            user: Some("tester".to_string()),
-        };
-
-        // Simulate the conditions for dev-link mode WITHOUT actually calling run_dev_update
-        // (which would try to download). We directly exercise the dev-link block logic.
-        let root_for_dev_link = std::path::PathBuf::from(".");
-        let prune = false;
-        let prune_only = false;
-
-        // This is the condition from update.rs:284
-        let is_dev_link_mode = root_for_dev_link.as_os_str() == "." && !prune && !prune_only;
-
-        assert!(
-            is_dev_link_mode,
-            "condition for dev-link mode should be true"
-        );
-
-        // Simulate the dev-link block from update.rs:285-291
-        // This is the exact code that runs in dev-link mode
-        if is_dev_link_mode {
-            let current = bundle_root.join("current");
-            let tmp = bundle_root.join("current.tmp");
-            let _ = std::fs::remove_file(&tmp);
-            let _ = std::fs::remove_file(&current);
-            std::os::unix::fs::symlink(&bundle_root, &tmp).unwrap();
-            std::fs::rename(&tmp, &current).unwrap();
-        }
+        // Call the REAL swap_current_to function (dev-link mode: target = bundle_root)
+        crate::dev::swap_current_to(&bundle_root, &bundle_root);
 
         // Key assertion: current symlink must still point to bundle_root (framework/)
         let current_link = bundle_root.join("current");

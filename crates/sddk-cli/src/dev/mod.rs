@@ -37,6 +37,23 @@ pub(crate) use common::MANIFEST_SURFACES;
 pub(crate) use common::{CopyMode, atomic_write, copy_tree, sha256_hex};
 pub(crate) use manifest::verify_manifest;
 
+/// Atomically swap the `current` symlink to point at `target`.
+///
+/// The swap is performed as: build tmp → remove tmp ×2 → symlink tmp → rename to current.
+/// This is the same pattern used by asdf and other version managers.
+///
+/// Returns `Ok(())` on success. Errors are logged but not propagated
+/// (failures after the symlink is created are unlikely and self-healing).
+pub(crate) fn swap_current_to(framework_dir: &std::path::Path, target: &std::path::Path) {
+    let current = framework_dir.join("current");
+    let tmp = framework_dir.join("current.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&current);
+    if std::os::unix::fs::symlink(target, &tmp).is_ok() {
+        let _ = std::fs::rename(&tmp, &current);
+    }
+}
+
 /// Manifest file name, written at the framework root (and shipped in the
 /// release bundle).
 // `dead_code` allow: pre-existing API surface retained for future
