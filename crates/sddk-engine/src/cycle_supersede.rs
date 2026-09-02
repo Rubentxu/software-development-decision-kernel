@@ -108,12 +108,24 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             _ => {}
         }
 
+        // GAP-V-3: evidence_refs MUST NOT be empty (SPEC §2 line 87 MUST)
+        if evidence_refs.is_empty() {
+            return Err(EngineError::SupersedeEvidenceRefsRequired);
+        }
+
         // Load the current cycle to validate state and get manifest
         let current = self.ledger.get_cycle(cycle_id)?.manifest;
 
         // Anti-self-supersede: successor cannot be the same as cycle_id
         if successor.as_deref() == Some(cycle_id) {
             return Err(EngineError::SupersedeSelfForbidden);
+        }
+
+        // GAP-V-2: successor cycle MUST exist in the cycles table before any mutation
+        if let Some(ref succ) = successor
+            && !self.ledger.cycle_exists(succ)?
+        {
+            return Err(EngineError::SupersedeSuccessorNotFound(succ.clone()));
         }
 
         // Build the two events: cycle.supersede.requested + cycle.supersede.applied
@@ -170,8 +182,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             successor: successor.clone(),
             reason: reason.clone(),
             event_ids: [event_id_requested, event_id_applied.clone()],
-            lease_owner: actor.to_owned(),
-            fencing_token: 0, // Filled by caller before calling cycle_supersede
+            lease_owner: lease_owner.to_owned(),
+            fencing_token,
         };
         let receipt_json = serde_json::to_string_pretty(&receipt_input)
             .map_err(EngineError::StateSerialization)?;
@@ -188,14 +200,10 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         })?;
 
         // Emit cycle.supersede.requested event (cycle status → Closed)
+        // GAP-BUG-1: release lease atomically in the same transaction
         let _event_requested = self
             .ledger
-            .update_cycle_with_event(
-                &updated_manifest,
-                occurred_at,
-                &event_input_requested,
-                false,
-            )
+            .update_cycle_with_event(&updated_manifest, occurred_at, &event_input_requested, true)
             .map_err(EngineError::Storage)?;
 
         // Emit cycle.supersede.applied event (cycle stays Closed)

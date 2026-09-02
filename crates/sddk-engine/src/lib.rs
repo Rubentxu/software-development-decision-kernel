@@ -835,6 +835,12 @@ pub enum EngineError {
     /// Cycle supersede cannot target itself.
     #[error("cycle cannot supersede itself")]
     SupersedeSelfForbidden,
+    /// Cycle supersede evidence_refs list cannot be empty.
+    #[error("supersede evidence refs list cannot be empty")]
+    SupersedeEvidenceRefsRequired,
+    /// Cycle supersede successor cycle does not exist.
+    #[error("successor cycle does not exist: {0}")]
+    SupersedeSuccessorNotFound(String),
     /// Cycle replan counter limit exceeded.
     #[error("replan limit exceeded: counter > 5")]
     ReplanLimitExceeded,
@@ -1527,6 +1533,8 @@ impl sddk_domain::SddkErrorCode for EngineError {
             Self::GoalInputUnreadable => "ENGINE_GOAL_INPUT_UNREADABLE",
             Self::SupersedeRequiresExactlyOne => "ENGINE_SUPERSEDE_REQUIRES_EXACTLY_ONE",
             Self::SupersedeSelfForbidden => "ENGINE_SUPERSEDE_SELF_FORBIDDEN",
+            Self::SupersedeEvidenceRefsRequired => "ENGINE_SUPERSEDE_EVIDENCE_REFS_REQUIRED",
+            Self::SupersedeSuccessorNotFound(..) => "ENGINE_SUPERSEDE_SUCCESSOR_NOT_FOUND",
             Self::ReplanLimitExceeded => "ENGINE_REPLAN_LIMIT_EXCEEDED",
             Self::ReplanEmptyDelta => "ENGINE_REPLAN_EMPTY_DELTA",
             Self::Storage(..) => "ENGINE_STORAGE",
@@ -1587,6 +1595,12 @@ impl sddk_domain::SddkErrorCode for EngineError {
                 "supply exactly one of --successor or --reason".into()
             }
             Self::SupersedeSelfForbidden => "do not supersede a cycle with itself".into(),
+            Self::SupersedeEvidenceRefsRequired => {
+                "supply at least one evidence reference with --evidence-ref".into()
+            }
+            Self::SupersedeSuccessorNotFound(succ) => {
+                format!("create successor cycle {} first", succ)
+            }
             Self::ReplanLimitExceeded => "replan counter is at its limit of 5".into(),
             Self::ReplanEmptyDelta => "supply a non-empty replan delta".into(),
             Self::Storage(..) => "resolve the underlying storage error first".into(),
