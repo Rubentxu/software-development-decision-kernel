@@ -524,6 +524,9 @@ fn manifest_for_path(status: CycleStatus, phase: Phase, path: CyclePath) -> Cycl
         remediation_round: 0,
         remote_url: Some("https://example.com/owner/project".into()),
         scope: Some("owner".into()),
+        pause_at: None,
+        review_at: None,
+        last_pause_reason: None,
     }
 }
 

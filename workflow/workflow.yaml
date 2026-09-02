@@ -15,6 +15,7 @@ statuses:
   - RECOVERING
   - UAT_WAITING
   - APPROVAL_PENDING
+  - PAUSED
 
 phases:
   - explore
@@ -647,6 +648,70 @@ transitions:
     requires:
       - kind: gate
         name: unblock-condition-met
+    produces: []
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # cycle.pause — operator-driven pause (engine-method mutation, not transition planner)
+  # Added for frontier visibility; actual enforcement is in Engine::cycle_pause
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: cycle.pause
+    from:
+      status: OPEN
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  - id: cycle.pause.from_blocked
+    from:
+      status: BLOCKED
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  - id: cycle.pause.from_remediating
+    from:
+      status: REMEDIATING
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  - id: cycle.pause.from_uat_waiting
+    from:
+      status: UAT_WAITING
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  - id: cycle.pause.from_approval_pending
+    from:
+      status: APPROVAL_PENDING
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  - id: cycle.pause.from_recovering
+    from:
+      status: RECOVERING
+    to:
+      status: PAUSED
+    requires: []
+    produces: []
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # cycle.resume — resume a paused cycle (engine-method mutation)
+  # Re-acquires a fresh lease with a new fencing token
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: cycle.resume
+    from:
+      status: PAUSED
+    to:
+      status: OPEN
+    requires: []
     produces: []
 
 artifacts:

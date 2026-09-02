@@ -2086,6 +2086,9 @@ mod frontier_tests {
             remediation_round: 0,
             remote_url: None,
             scope: None,
+            pause_at: None,
+            review_at: None,
+            last_pause_reason: None,
         }
     }
 

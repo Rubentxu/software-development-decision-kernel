@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use time::OffsetDateTime;
 
 use crate::identity::{CycleId, IdentitySource};
 
@@ -32,11 +33,13 @@ pub enum CycleStatus {
     UatWaiting,
     /// Cycle is blocked waiting on a human approval decision.
     ApprovalPending,
+    /// Cycle is paused (operator-driven pause; distinct from ApprovalPending which is event-driven).
+    Paused,
 }
 
 crate::assert_variant_count_eq!(
     CycleStatus,
-    10,
+    11,
     [
         CycleStatus::Open,
         CycleStatus::Blocked,
@@ -48,8 +51,41 @@ crate::assert_variant_count_eq!(
         CycleStatus::Recovering,
         CycleStatus::UatWaiting,
         CycleStatus::ApprovalPending,
+        CycleStatus::Paused,
     ]
 );
+
+/// Reason for pausing a cycle (closed set).
+///
+/// Per ADR-0078 closed-set discipline: reasons MUST be a closed set to prevent drift.
+/// Adding a 4th reason requires a new ADR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PauseReason {
+    /// Priority was revoked — a higher-priority item requires the team's attention.
+    PriorityRevoked,
+    /// Context switch — the team must pivot to a different focus.
+    ContextSwitch,
+    /// Waiting on a dependency — external blocker that is not yet resolved.
+    DependencyWaiting,
+}
+
+impl PauseReason {
+    /// Returns the string representation of the pause reason.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PauseReason::PriorityRevoked => "priority_revoked",
+            PauseReason::ContextSwitch => "context_switch",
+            PauseReason::DependencyWaiting => "dependency_waiting",
+        }
+    }
+}
+
+impl std::fmt::Display for PauseReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// Workflow phases.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -161,6 +197,15 @@ pub struct CycleManifest {
     /// Scope for identity computation.
     #[serde(default)]
     pub scope: Option<String>,
+    /// When the cycle was last paused (UTC).
+    #[serde(default)]
+    pub pause_at: Option<OffsetDateTime>,
+    /// Optional review-at timestamp (informational only; no auto-reactivation).
+    #[serde(default)]
+    pub review_at: Option<OffsetDateTime>,
+    /// Reason for the last pause.
+    #[serde(default)]
+    pub last_pause_reason: Option<PauseReason>,
 }
 
 impl CycleManifest {
@@ -192,6 +237,9 @@ impl CycleManifest {
             remediation_round: 0,
             remote_url: None,
             scope: None,
+            pause_at: None,
+            review_at: None,
+            last_pause_reason: None,
         }
     }
 }
