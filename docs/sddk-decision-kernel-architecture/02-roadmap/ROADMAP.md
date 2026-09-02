@@ -855,11 +855,14 @@ P0–P3 debt start policy, signed gates, SBOM/provenance, and read-only retentio
 - WriterXdgFailClosed trait and `vault export --output` validation remain a proposed implementation item (DRAFT-ADR-D).
 - Size: A-min; approximately 1.5 days.
 
-### GAP-6 pre-flight (cycle-50 bis if needed)
+### GAP-6 — Closed by v1.66.1 + v1.66.2 (cycle-50 bis not needed)
 
-- Investigate and repair `cycle lock acquire` (`FOREIGN KEY constraint`; `AGENTS.md` section 8).
-- Size: A-min; approximately 2-3 days.
-- This is a hard dependency for cycle-51. It is not part of the recover-forward series scope.
+> **Original (archived for audit):**
+> - Investigate and repair `cycle lock acquire` (`FOREIGN KEY constraint`; `AGENTS.md` section 8).
+> - Size: A-min; approximately 2-3 days.
+> - This is a hard dependency for cycle-51. It is not part of the recover-forward series scope.
+
+**Status:** Closed. Root cause addressed by `validate_cycle_project` (v1.66.1) and `Storage::cycle_exists` (v1.66.2, INC-DEBT-017). The original "Investigate and repair" framing is superseded by these releases. Cycle-57 (this cycle) exists solely to correct the stale narrative and capture the bare-slug UX gap as a backlog item.
 
 ### cycle-51 - cycle supersede (prerequisite: GAP-6)
 
