@@ -281,7 +281,7 @@ pub(crate) struct CycleSupersedeArgs {
     #[arg(long)]
     pub(crate) cycle: String,
     /// Successor cycle identifier (mutually exclusive with --reason).
-    #[arg(long)]
+    #[arg(long, conflicts_with = "reason")]
     pub(crate) successor: Option<String>,
     /// Reason for superseding (scope_invalid | goal_replaced | external_obsolete).
     #[arg(long, value_enum)]
@@ -1070,6 +1070,9 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
             .unwrap_or_else(|| "sddk-cli".into());
         let command_id = format!("cycle.supersede-{}", Uuid::new_v4().hyphenated());
         let event_id = format!("evt-{}", Uuid::new_v4().hyphenated());
+
+        // GAP-UX-1: validate cycle belongs to this project before touching storage
+        validate_cycle_project(&args.cycle, &context.identity.project_id)?;
 
         // Parse evidence refs
         let evidence_refs: Vec<String> =
