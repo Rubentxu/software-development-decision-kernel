@@ -1500,6 +1500,144 @@ fn transition_applies_to_path(transition: &Transition, path: &str) -> bool {
     transition.paths.is_empty() || transition.paths.iter().any(|candidate| candidate == path)
 }
 
+/// One entry in the frontier of legal transitions from a given cycle state.
+///
+/// Produced by [`frontier_for_state`] and consumed by the `cycle next` CLI
+/// command to render the human-readable advisory output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrontierEntry {
+    /// Declared transition identifier.
+    pub transition_id: String,
+    /// Source state of this transition.
+    pub from: StateRef,
+    /// Target state of this transition.
+    pub to: StateRef,
+    /// Whether all gate requirements are satisfied by fresh ledger receipts.
+    pub requires_met: bool,
+    /// Gate names that are NOT satisfied (empty when `requires_met` is true).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmet_gates: Vec<String>,
+    /// Commands / hints that are NOT satisfied (non-gate requirements).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmet_requirements: Vec<String>,
+}
+
+/// Derives the frontier of legal transitions from the declared workflow graph
+/// and the current cycle state, intersecting with gate receipts from the ledger.
+///
+/// This is a pure derivation — no I/O beyond reading the ledger. The function
+/// reads the current cycle state (status + phase + path) and the workflow
+/// manifest to enumerate all transitions whose `from` state matches the current
+/// state and whose `paths` attribute allows the current cycle path.
+///
+/// Gate satisfaction is determined by querying `list_gate_receipts_for` with the
+/// cycle_id, transition_id, and the plan_hash computed from the current state.
+/// A transition is `requires_met: true` only when ALL gate requirements have
+/// at least one fresh receipt in the ledger.
+///
+/// # D1 Binding
+///
+/// This function hard-codes ZERO phase sequences. The frontier is derived
+/// entirely from the declared transitions in the workflow manifest filtered by
+/// the current state. A different workflow manifest with a different topology
+/// (e.g. diamond/parallel) produces a different frontier without any code
+/// changes.
+pub fn frontier_for_state(
+    workflow: &WorkflowManifest,
+    state: &CycleManifest,
+    cycle_id: &str,
+    ledger: &dyn Ledger,
+) -> Result<Vec<FrontierEntry>, EngineError> {
+    let path_name = cycle_path_name(&state.path);
+    let mut entries = Vec::new();
+
+    for transition in &workflow.transitions {
+        // Skip transitions without a source state (cycle.start variants)
+        let from = match &transition.from {
+            Some(f) => f,
+            None => continue,
+        };
+
+        // Filter by current status
+        if from.status != state.status {
+            continue;
+        }
+
+        // Filter by phase (if declared; None means any phase matches)
+        if from.phase.is_some_and(|p| p != state.phase) {
+            continue;
+        }
+
+        // Filter by workflow path
+        if !transition_applies_to_path(transition, path_name) {
+            continue;
+        }
+
+        // For each gate requirement, check if a fresh receipt exists
+        let mut unmet_gates = Vec::new();
+        let mut unmet_requirements = Vec::new();
+        let mut all_gates_met = true;
+
+        for req in &transition.requires {
+            match req {
+                Requirement::Structured { kind, name }
+                    if kind == "gate" =>
+                {
+                    let plan_hash = plan_hash_for_receipt(cycle_id, &transition.id, state);
+                    let receipts = ledger
+                        .list_gate_receipts_for(cycle_id, &transition.id, &plan_hash)
+                        .map_err(|e| EngineError::Storage(e.into()))?;
+                    if receipts.is_empty() {
+                        unmet_gates.push(name.clone());
+                        all_gates_met = false;
+                    }
+                }
+                Requirement::Simple(name) => {
+                    // Simple requirements are checked against state.artifacts
+                    if !state.artifacts.contains_key(name) {
+                        unmet_requirements.push(name.clone());
+                    }
+                }
+                Requirement::Structured { kind, name } => {
+                    if kind == "artifact" {
+                        if !state.artifacts.contains_key(name) {
+                            unmet_requirements.push(name.clone());
+                        }
+                    }
+                    // Other structured requirements are treated as requirements
+                    // (not gates) — they must be satisfied externally
+                }
+            }
+        }
+
+        entries.push(FrontierEntry {
+            transition_id: transition.id.clone(),
+            from: from.clone(),
+            to: transition.to.clone(),
+            requires_met: all_gates_met && unmet_requirements.is_empty(),
+            unmet_gates,
+            unmet_requirements,
+        });
+    }
+
+    Ok(entries)
+}
+
+/// Computes the plan hash for gate receipt queries.
+///
+/// Matches the deterministic hash used when the receipt was originally
+/// created in `Engine::evaluate_gate`.
+fn plan_hash_for_receipt(cycle_id: &str, transition_id: &str, state: &CycleManifest) -> String {
+    let material = serde_json::json!({
+        "cycle_id": cycle_id,
+        "transition_id": transition_id,
+        "state_before": state,
+    });
+    let digest = Sha256::digest(material.to_string().as_bytes());
+    format!("sha256:{digest:x}")
+}
+
 impl sddk_domain::SddkErrorCode for EngineError {
     fn code(&self) -> &'static str {
         match self {
