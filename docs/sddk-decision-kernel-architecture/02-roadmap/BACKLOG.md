@@ -189,6 +189,43 @@ enters the generic workflow kernel.
 - Priorización automática asistida por IA.
 - Sincronización con trackers externos (Tuleap, Jira, GitHub Projects).
 
+## Epic SD — State-Driven CLI: advisor + context inference (candidate, next iteration)
+
+> **Status:** proposed (candidato, sin ejecutar). Research package completo: [`research/state-driven-cli/RESEARCH.md`](../../../research/state-driven-cli/RESEARCH.md).
+> **Prerequisites:** ninguno duro. GAP-UX-1 (v1.66.6) es el precedente; `resolve_project_identity`, `cycle_leases`, transiciones declaradas del engine y `WorkflowRun` ya existen en el dominio (~80% de cimientos presentes).
+> **Owner:** orchestrator
+> **Origin:** requisito del maintainer (2026-09-02): "el CLI puede inferir muchos datos a partir del estado actual y evitar el sobre-esfuerzo del LLM de adivinar dónde estamos y cómo pasarle los argumentos requeridos cuando ya son fácilmente inferidos". Refinamientos vinculantes: (1) workflows dinámicos futuros — cero secuencias hardcodeadas en el advisor; (2) inferencia > declaración.
+
+### Problema (una línea)
+
+El LLM gasta ~10–25k tokens por ciclo en burocracia: adivinar args deducibles del estado (`--root/--scope/--cycle`), reintentar tras errores genéricos (`STORAGE_NOT_FOUND` + recovery sin comando), y recargar docs (AGENTS §8/§9 + mcw.md) para recordar el flujo.
+
+### Primitive 1 — Context inference (→ cycle-52)
+
+- `--root` por walk-up de marcadores; `--project-id`/`--scope` vía `resolve_project_identity`; `--cycle` desde el lease activo.
+- Precedencia: arg explícito > inferido > error tipado con lista de candidatos. Flag `--no-infer` como opt-out.
+
+### Primitive 2 — Frontier advisor `sddk cycle next` (→ cycle-53)
+
+- Computa la frontera de transiciones legales leyendo el **grafo declarado** del workflow (+ ledger events + artifacts). Output humano con `hint:` y `--json` para agentes (~150 tokens vs ~800 de reconstrucción actual).
+- **Restricción D1 (vinculante):** cero secuencias canónicas hardcodeadas — el advisor sigue cualquier topología declarada, incluidas las auto-generadas del Epic LF/`WorkflowRun`.
+
+### Primitive 3 — Actionable hints + reconciliación YAML↔ledger (→ cycle-54)
+
+- Todo error cita el comando exacto (generalización de GAP-UX-1; grep de "recovery: create the record" genérico = 0).
+- `sddk cycle next --json` pasa a ser la única fuente de estado que los prompts del orquestador consumen, eliminando la recarga de AGENTS §8/§9 + mcw.md por fase. Reconcilia el mismatch workflow-YAML (orquestador) vs transiciones declaradas (kernel) documentado en cycle-51.
+
+### Acceptance criteria (borrador, se cierra en la fase spec de cada ciclo)
+
+- `sddk cycle status` con cero args funciona en proyecto adoptado con lease activo único; en ambigüedad devuelve error tipado con candidatos.
+- `sddk cycle next --json` produce la transición legal correcta en ≤1 comando para cualquier estado, y sigue correcto con un workflow de topología no-A-min (proof: YAML alternativo).
+- Errores de storage/engine citan comando exacto; el orquestador referencia `cycle next` como fuente de estado.
+
+### Out of scope (v1)
+
+- Ejecución de workflows dinámicos en runtime (dominio del Epic LF / `WorkflowRun` instanciado).
+- Sugerencias semánticas asistidas por IA ("qué ciclo debería abrir"); el advisor es determinista y derivado de datos declarados.
+
 ## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)
 
 **Problem:** `sddk cycle status --cycle <bare-slug>` returns generic `STORAGE_NOT_FOUND`; should return a typed error that points the user to the canonical form `<project_id>/<slug>`.

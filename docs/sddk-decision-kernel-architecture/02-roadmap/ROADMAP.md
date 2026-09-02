@@ -888,6 +888,32 @@ P0–P3 debt start policy, signed gates, SBOM/provenance, and read-only retentio
 - DRAFT-ADR-F: trend metric, not a blocking rule.
 - Size: A-full; approximately 5-7 days.
 
+## Next iteration — State-Driven CLI (Epic SD, cycle-52..54 candidates)
+
+> **Origin:** maintainer requirement (2026-09-02): the CLI should infer state and arguments
+> the way git does (walk-up discovery, persistent state, actionable hints), instead of forcing
+> the LLM to declare `--root/--scope/--cycle` on every command and reload docs to remember the
+> flow. Binding refinements: (1) future dynamic workflows — the advisor derives steps from
+> *declared data* (transition graph, later `WorkflowRun` instances), never from hardcoded
+> sequences; (2) inference over declaration.
+> **Research package:** [`research/state-driven-cli/RESEARCH.md`](../../../research/state-driven-cli/RESEARCH.md)
+> (live repro of the pain, inventory of existing domain foundations ~80% present, token
+> economics ~10–25k tokens/cycle of recoverable bureaucracy, risks).
+> **Backlog epic:** [BACKLOG.md §Epic SD](./BACKLOG.md).
+
+| Cycle | Candidate | Size | Deliverable |
+|---|---|---|---|
+| cycle-52 | Context inference | S/M | Zero-arg commands when state is unambiguous (`--root` walk-up, `--project-id` via `resolve_project_identity`, `--cycle` via active lease); typed ambiguity errors listing candidates; `--no-infer` opt-out |
+| cycle-53 | Frontier advisor | M | `sddk cycle next` (+ `--json` for agents) computing legal transitions from the *declared* workflow graph + ledger events + artifacts; proof with a non-A-min topology (no hardcoded phase order) |
+| cycle-54 | Actionable hints + reconciliation | M | Every storage/engine error cites the exact command (GAP-UX-1 generalized); `cycle next --json` becomes the orchestrator prompts' single state source, closing the workflow-YAML ↔ declared-transitions mismatch documented in cycle-51 |
+
+Convergence: when Epic LF ships dynamic workflow instances (`WorkflowRun` with
+`node_id`/`attempt_seq`), the advisor's frontier source swaps from the static declared graph
+to the run graph — the cycle-52..54 contract (derived frontier + dual human/JSON surface)
+is stable under that swap.
+
+---
+
 ## Post-Wave 4 — Lifecycle-flexibility candidates (cycle-55+)
 
 > **Origin:** maintainer requirement (2026-09-02), extending the recover-forward principle
