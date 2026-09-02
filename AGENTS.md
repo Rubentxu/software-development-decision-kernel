@@ -207,7 +207,12 @@ push único.
 Una vez publicado, el ciclo se cierra escribiendo
 `archive-manifest.md` en el directorio del ciclo con la lista de commits,
 URL del GH Release, y estado local final (`binary`, `bundle`, `current`,
-`receipt`, `doctor`). El cierre formal del ciclo (lease + transition)
-vía CLI está actualmente roto (`FOREIGN KEY constraint failed` en
-`sddk cycle lock acquire`); usamos el archive-manifest como ground truth.
+`receipt`, `doctor`). El cierre formal del ciclo vía CLI es operativo
+desde v1.66.1 (`validate_cycle_project`, `sddk cycle lock acquire`) y
+v1.66.2 (`Storage::cycle_exists`, INC-DEBT-017). Seguimos usando
+`archive-manifest.md` como ground-truth durable del cierre (rol no
+reemplazado). **F4 gotcha:** bare slugs sin `project_id/` prefix (p.ej.
+`p-63676b11dc0ef88f/gap6-lock-repair` sin el prefijo de proyecto) disparan
+`STORAGE_NOT_FOUND` aunque la fila exista — la causa viva es la falta de
+normalización del bare-slug en `validate_cycle_project`.
 
