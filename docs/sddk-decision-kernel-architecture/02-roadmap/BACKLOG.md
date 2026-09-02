@@ -189,6 +189,25 @@ enters the generic workflow kernel.
 - Priorización automática asistida por IA.
 - Sincronización con trackers externos (Tuleap, Jira, GitHub Projects).
 
+## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)
+
+**Problem:** `sddk cycle status --cycle <bare-slug>` returns generic `STORAGE_NOT_FOUND`; should return a typed error that points the user to the canonical form `<project_id>/<slug>`.
+
+**Proposed fix:** Extend `validate_cycle_project` to accept a bare slug and return a descriptive error message (or distinct error code) that guides the user toward using the full `<project_id>/<slug>` form, rather than conflating bare-slug input with an actual missing row.
+
+**Acceptance criteria:**
+- Running `sddk cycle status --cycle gap6-lock-repair` (bare slug) returns a clear, actionable error message indicating the correct canonical form.
+- Running `sddk cycle status --cycle p-63676b11dc0ef88f/gap6-lock-repair` (full id) succeeds normally.
+- Error message distinguishes "bare slug provided" from "cycle row not found".
+
+**Out of scope:** Normalization of bare slugs across all CLI commands; full slug canonicalization infrastructure.
+
+**Owner:** orchestrator
+
+**Priority:** P3
+
+**Reference:** explore report `p-63676b11dc0ef88f/cycle-artifacts/gap6-lock-repair` (cycle-57, sha256 `eed9b8140669cef66470b55e779e45b9fdcbfe90d7788dab790e5a2b111d823b`)
+
 ## Important sequencing
 Dynamic graph execution belongs **before** trying to make the Supervisor smarter. The runtime must be able to validate and durably execute proposed strategies first.
 
