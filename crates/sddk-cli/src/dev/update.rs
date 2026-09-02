@@ -122,6 +122,21 @@ fn resolve_current_version(framework_dir: &Path) -> Option<String> {
     }
 }
 
+/// INC-DEBT-020: After pruning, re-point `current` symlink to the newest kept version.
+/// This runs when `--prune` or `--prune-only` is used with `--root .`.
+fn repoint_current_to_newest(framework_dir: &Path, newest_version: &str) {
+    let current = framework_dir.join("current");
+    let target = framework_dir.join(newest_version);
+    if target.is_dir() {
+        let tmp = framework_dir.join("current.tmp");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&current);
+        if std::os::unix::fs::symlink(&target, &tmp).is_ok() {
+            let _ = std::fs::rename(&tmp, &current);
+        }
+    }
+}
+
 /// Semver-aware "newer than" comparison for bundle version directory names.
 /// Supports dotted-numeric with optional `-prerelease` and `+build` tags.
 /// Pre-release sorts below its release; numeric segments compare numerically.
@@ -264,7 +279,9 @@ pub(super) fn run_dev_update(
         // The extracted bundle lands in a version dir; update_bundle extracts
         // directly into bundle_root, so if the user passed the framework root
         // we additionally fix the `current` symlink to point at it.
-        if args.root.as_os_str() == "." {
+        // INC-DEBT-020 fix: guard this with !prune && !prune_only so the
+        // prune paths can manage the symlink themselves.
+        if args.root.as_os_str() == "." && !args.prune && !args.prune_only {
             let current = bundle_root.join("current");
             let tmp = bundle_root.join("current.tmp");
             let _ = std::fs::remove_file(&tmp);
@@ -295,6 +312,10 @@ pub(super) fn run_dev_update(
             if let Some(cur) = active.as_deref() {
                 output.push_str(&format!("  current -> {cur}\n"));
             }
+            // INC-DEBT-020 fix: after pruning, re-point current to newest kept version
+            if args.root.as_os_str() == "." && !kept.is_empty() {
+                repoint_current_to_newest(&bundle_root, kept.first().unwrap());
+            }
         }
 
         // Cycle-47 D2 --prune-only: same as --prune but skip the bundle
@@ -319,6 +340,10 @@ pub(super) fn run_dev_update(
             }
             if let Some(cur) = active.as_deref() {
                 output.push_str(&format!("  current -> {cur}\n"));
+            }
+            // INC-DEBT-020 fix: after pruning, re-point current to newest kept version
+            if args.root.as_os_str() == "." && !kept.is_empty() {
+                repoint_current_to_newest(&bundle_root, kept.first().unwrap());
             }
         }
 
