@@ -156,7 +156,7 @@ enters the generic workflow kernel.
 
 ## Epic LF — Lifecycle Flexibility: cycle pause + backlog/roadmap as governed objects (candidate)
 
-> **Status:** proposed (candidate, no ejecutado). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
+> **Status:** proposed → **in-progress** (Primitive 1: cycle-55 in apply). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
 > **Prerequisites:** GAP-6 (reparación de `cycle lock acquire`) + cycle-51 (supersede de primera clase).
 > **Owner:** orchestrator
 > **Origin:** requisito del maintainer (2026-09-02): "pausar un ciclo porque surge una necesidad nueva, capturar esa idea en el backlog con especificación y priorización, y que nada se rompa ni se pierda — consistencia por construcción, arquitectura emergente".
@@ -165,7 +165,7 @@ enters the generic workflow kernel.
 
 `idea` → `backlog capture` (evento, con evidencia de origen) → `triage` (prioridad versionada) → `roadmap entry` → `cycle`. El markdown de BACKLOG/ROADMAP deja de ser la fuente de verdad y pasa a ser proyección consultable del ledger.
 
-### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H)
+### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H) ✅ IMPLEMENTED
 
 - Estado `CycleStatus::Paused` o taxonomía de razones sobre `Blocked` (decisión del ADR con evidencia).
 - Transiciones legales: `Open→Paused`, `Paused→Open` (resume con re-fencing del lease), `Paused→Superseded` (vía cycle-51, manteniendo la referencia cruzada).

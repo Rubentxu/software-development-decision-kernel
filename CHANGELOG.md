@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+  - feat(domain): `CycleStatus::Paused` variant + `PauseReason` closed set (`priority_revoked`, `context_switch`, `dependency_waiting`) + `CycleManifest` fields (`pause_at`, `review_at`, `last_pause_reason`). `assert_variant_count_eq!` bumped to 11.
+  - feat(engine): `Engine::cycle_pause` releases lease atomically, emits `cycle.pause.requested` + `cycle.pause.applied` events, writes `pause-receipt.json`. `Engine::cycle_resume` re-acquires fresh lease with incremented fencing token.
+  - feat(cli): `sddk cycle pause --reason <value> --lease-owner <owner> --fencing-token <token>` pauses a cycle. `sddk cycle resume --lease-owner <owner>` resumes a paused cycle and prints new fencing token.
+  - feat(cli): `PauseReasonArg` clap ValueEnum (`priority-revoked`, `context-switch`, `dependency-waiting`).
+  - feat(engine): `frontier_for_state` now surfaces `cycle.pause` (no-op advisory), `cycle.resume`, and `cycle.supersede` when cycle status is `Paused`.
+  - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
+  - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
+
 ## [1.69.0] - 2026-09-02
 
 ### Added
