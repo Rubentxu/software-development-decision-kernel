@@ -1634,6 +1634,44 @@ pub fn frontier_for_state(
         });
     }
 
+    // When status is Paused, surface cycle.pause (no-op since already paused),
+    // cycle.resume (already in workflow), and cycle.supersede (engine method).
+    // cycle.pause is added as a no-op advisory so 'sddk cycle next' shows it
+    // with requires_met=true to indicate the cycle is already paused.
+    if state.status == CycleStatus::Paused {
+        // cycle.pause as no-op (already paused)
+        entries.push(FrontierEntry {
+            transition_id: "cycle.pause".to_owned(),
+            from: StateRef {
+                status: CycleStatus::Paused,
+                phase: None,
+            },
+            to: StateRef {
+                status: CycleStatus::Paused,
+                phase: None,
+            },
+            requires_met: true,
+            unmet_gates: vec![],
+            unmet_requirements: vec![],
+        });
+
+        // cycle.supersede from Paused (engine method for closing a paused cycle)
+        entries.push(FrontierEntry {
+            transition_id: "cycle.supersede".to_owned(),
+            from: StateRef {
+                status: CycleStatus::Paused,
+                phase: None,
+            },
+            to: StateRef {
+                status: CycleStatus::Closed,
+                phase: None,
+            },
+            requires_met: true,
+            unmet_gates: vec![],
+            unmet_requirements: vec![],
+        });
+    }
+
     Ok(entries)
 }
 
