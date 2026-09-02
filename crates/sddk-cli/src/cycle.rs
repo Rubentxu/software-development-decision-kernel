@@ -3132,7 +3132,7 @@ mod tests {
             serde_json::from_str(&output.stdout).expect("stdout should be valid JSON");
         let frontier = json.get("frontier").expect("JSON should have frontier");
         assert!(
-            frontier.as_array().map_or(false, |arr| arr.is_empty()),
+            frontier.as_array().is_some_and(|arr| arr.is_empty()),
             "frontier should be empty array in JSON"
         );
         assert!(
@@ -3322,7 +3322,7 @@ mod tests {
         let has_unmet = frontier.iter().any(|entry| {
             entry
                 .get("requires_met")
-                .map_or(false, |v| v == &serde_json::Value::Bool(false))
+                .is_some_and(|v| v == &serde_json::Value::Bool(false))
         });
         assert!(
             has_unmet,
