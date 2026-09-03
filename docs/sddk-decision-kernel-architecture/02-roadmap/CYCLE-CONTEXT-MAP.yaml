@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 map_id: sddk-cycle-context-map
 purpose: >-
   Machine-readable context-loading policy for the semantic Work Item selected from
@@ -9,6 +9,7 @@ entrypoint: docs/sddk-decision-kernel-architecture/02-roadmap/LLM-START-HERE.md
 execution_plan: docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml
 timeline: docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md
 protocol: docs/sddk-decision-kernel-architecture/02-roadmap/AGENT-EXECUTION-PROTOCOL.md
+decision_memory_model: docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
 
 context_policy:
   load_order: [tier0_navigation, tier1_canonical, tier2_cycle_pack, tier3_exploration]
@@ -21,6 +22,8 @@ context_policy:
     - If accepted design, released behavior, tests and planning disagree, stop and reconcile the conflict explicitly.
     - Historical proposal prose never silently overrides current code, accepted ADR/spec or canonical planning state.
     - Record consulted sources and assumptions in the cycle context snapshot before implementation.
+    - Once CDD Decision Memory is shipped, resolve canonical Decision Memory HEAD and staleness before constructing a new agent context.
+    - A Decision Memory what-if/rejected branch is advisory unless explicitly promoted through the canonical policy/authority path.
 
 source_roles:
   navigation:
@@ -39,6 +42,9 @@ source_roles:
     - executable tests covering the affected contracts
   architecture_baseline:
     - docs/ARCHITECTURE-MODEL.md
+  cdd_design:
+    - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+    - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
 
 always_read:
   tier0_navigation:
@@ -68,8 +74,10 @@ historical_sources:
   complete_evolution_readme: docs/sddk-complete-evolution-2026-08-23/CURRENT/README.md
   complete_evolution_roadmap: docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
   complete_evolution_backlog: docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+  cdd_evolution: docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
 
 accepted_decision_sources:
+  decision_memory_model: docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
   secretary_spec: docs/sddk-decision-kernel-architecture/04-specs/SPEC-042-secretary-runtime.md
   secretary_budget_adr: docs/adr/ADR-0072-secretary-budgets.md
   secretary_authority_adr: docs/adr/ADR-0073-secretary-authority.md
@@ -84,9 +92,10 @@ packs:
       - docs/evolutivo-workflows-dinamicos-STATUS.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
       - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
     evidence:
       - PR/merge evidence for the canonical documentation change
-      - consistency check that spine, timeline, backlog and status companions agree
+      - consistency check that spine, timeline, backlog, context map and status companions agree
 
   dynamic-workflow-ir:
     match_prefixes: [DW-IR-]
@@ -196,11 +205,73 @@ packs:
       - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
     discover_and_read:
       - context capsule/delta/staleness/negative-knowledge proposals referenced by the complete-evolution index
       - current recovery/current-run projections and tests
       - accepted context/provenance ADRs/specs
     invariant: Cold-start context is reconstructed from durable state, not prior chat memory.
+
+  cdd-role:
+    match_prefixes: [CDD-ROLE-]
+    must_read:
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - agents/orchestrator.md
+      - prompts/sddk/orchestrator.md
+      - prompts/sddk/phase-contracts.md
+      - skills/_shared/sddk-phase-common.md
+    discover_and_read:
+      - all current agent wrappers that may dispatch other agents
+      - coordinator-specific verify/debt-verify contracts
+      - current permission/tool declarations in agent wrappers
+      - accepted authority ADRs/specs from HX-AUTHORITY-001
+    invariant: A leaf cannot dispatch; each join has one synthesis owner; role authority is explicit and machine-validatable.
+
+  cdd-handoff:
+    match_prefixes: [CDD-HANDOFF-]
+    must_read:
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
+      - prompts/sddk/launch-plan-helper.md
+      - prompts/sddk/phase-contracts.md
+      - skills/_shared/sddk-phase-common.md
+      - prompts/sddk/phases/verify.md
+    discover_and_read:
+      - current phase return envelopes and coordinator worker envelopes
+      - auto-grill working-summary/contribution/rejection patterns
+      - accepted role/context/provenance contracts from direct dependencies
+    invariant: Summaries never replace lossless artifacts; mandatory risk, evidence and dissent cannot be silently dropped during synthesis.
+
+  cdd-memory:
+    match_prefixes: [CDD-MEMORY-]
+    must_read:
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
+      - prompts/sddk/decision-model.md
+      - skills/sddk-cycle-resume/SKILL.md
+      - docs/ARCHITECTURE-MODEL.md
+    discover_and_read:
+      - current content-hash/canonical-serialization utilities and artifact registry/CAS contracts
+      - event ledger correlation/causation/replay contracts from H0
+      - Planning Ledger revision/provenance contracts from H1
+      - WorkflowRun/Decision Plane revisions from H2-H3
+      - accepted storage/retention/provenance ADRs/specs
+    invariant: Decision Memory is an immutable reconstructible projection/index; canonical facts remain in runtime/ledger/vault/artifacts and advisory branches never acquire authority implicitly.
+
+  cdd-continuity:
+    match_prefixes: [CDD-CONTINUE-]
+    must_read:
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
+      - skills/sddk-cycle-resume/SKILL.md
+      - prompts/sddk/decision-model.md
+      - prompts/sddk/orchestrator.md
+    discover_and_read:
+      - Context Compiler outputs from CTX-COMPILER-001/002
+      - Decision Plane current frontier/policy contracts
+      - CDD role/handoff/memory contracts from direct dependencies
+      - old Human-Agent ResumeInfo/RehydrationPlan design only for semantic overlap analysis
+    invariant: ResumeView reconstructs from durable evidence plus Decision Memory HEAD; chat/Engram can enrich recall but never become required authority.
 
   human-collaboration:
     match_prefixes: [HX-DECISION-, HX-RESUME-]
@@ -210,12 +281,13 @@ packs:
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/DEPENDENCY-MAP.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/ROADMAP-UPDATED.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
     discover_and_read:
       - Decision Plane/policy contracts shipped in H3
-      - AgentHost/context contracts shipped in H4
+      - AgentHost/context/CDD contracts shipped in H4
       - current pause/resume receipts and lifecycle tests
       - accepted HITL/human-authority ADRs/specs
-    invariant: Human decisions are immutable/provenance-preserving and share the canonical policy/transition path.
+    invariant: Human decisions are immutable/provenance-preserving and share canonical policy, CDD memory and transition paths.
 
   secretary:
     match_prefixes: [RX-SECRETARY-]
@@ -223,14 +295,16 @@ packs:
       - docs/evolutivo-workflows-dinamicos-STATUS.md
       - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
       - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
       - docs/sddk-decision-kernel-architecture/04-specs/SPEC-042-secretary-runtime.md
       - docs/adr/ADR-0072-secretary-budgets.md
       - docs/adr/ADR-0073-secretary-authority.md
       - crates/sddk-engine/src/cycle_replan.rs
     discover_and_read:
       - current reactive trigger/replan code and tests
-      - Decision Plane and HumanDecision authority contracts produced earlier in the spine
-    invariant: Secretary proposes bounded actions; it never becomes a parallel mutable orchestrator.
+      - Decision Plane, HumanDecision and CDD contribution/memory contracts produced earlier in the spine
+    invariant: Secretary proposes bounded actions through CDD; it never becomes a parallel mutable orchestrator or moves canonical Decision Memory HEAD directly.
 
   advanced-runtime:
     match_prefixes: [DW-OPERATORS-, DW-REPLAY-]
@@ -256,6 +330,19 @@ packs:
       - experiment/telemetry proposals referenced by current design indexes
       - accepted experiment/promotion ADRs/specs
     invariant: Promotion decisions use reproducible comparison evidence, not subjective agent preference.
+
+  decision-lab:
+    match_prefixes: [LAB-DECISION-]
+    must_read:
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+    discover_and_read:
+      - CDD Decision Memory branch/fork/reflog contracts from H4
+      - Workflow Lab fork/ablation/metrics contracts
+      - Decision Plane legal-action/policy contracts
+      - relevant research/prototypes for Pareto, beam/best-first, ToT, GoT, MCTS or LATS-like strategies
+    invariant: Deterministic legal frontier remains the baseline; experimental search is bounded, receipted, replayable where possible, and cannot bypass policy/HITL or mutate canonical HEAD.
 
   engineering-assurance:
     match_prefixes: [EA-ASSURANCE-, EA-UAT-]
@@ -301,21 +388,23 @@ packs:
     must_read:
       - docs/ARCHITECTURE-MODEL.md
       - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H9
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
     discover_and_read:
       - docs/control-plane material relevant to graph/projection/query boundaries
       - accepted graph/provenance/why ADRs/specs
-      - canonical event/evidence/revision schemas produced by earlier horizons
-    invariant: Graph is a projection/query layer over canonical evidence, not an alternate source of runtime truth.
+      - canonical event/evidence/revision/Decision Memory schemas produced by earlier horizons
+    invariant: Graph is a projection/query layer over canonical evidence and CDD memory relations, not an alternate source of runtime truth.
 
   cockpit:
     match_prefixes: [COCKPIT-]
     must_read:
       - docs/ARCHITECTURE-MODEL.md
       - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H9
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
     discover_and_read:
-      - docs/control-plane material relevant to overview/journal/timeline/execution graph views
+      - docs/control-plane material relevant to overview/journal/timeline/execution/decision-memory graph views
       - Active Graph contracts from direct dependencies
-      - provider/usage/assurance/lab projection contracts
+      - provider/usage/assurance/lab/handoff projection contracts
     invariant: Cockpit is read/projection-first unless a separately accepted command contract explicitly authorizes mutation.
 
   gci:
@@ -326,9 +415,11 @@ packs:
       - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
       - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
       - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
     discover_and_read:
       - GCI-specific documents referenced by CURRENT/INDEX.md
-      - stable event/replay/lab/assurance evidence from H6-H9
+      - stable event/replay/lab/assurance/Decision Memory evidence from H6-H9
+      - decision/delegation outcomes, rejected branches and revisit triggers
       - accepted experiment/promotion/rollback ADRs/specs
     invariant: Learned strategies cannot bypass deterministic policy, human authority, evidence gates or rollback.
 
@@ -394,17 +485,21 @@ context_snapshot:
     - consulted_adrs_specs
     - consulted_code_tests
     - consulted_execution_evidence
+    - decision_memory_head_if_available
+    - context_revision_if_available
+    - relevant_contribution_and_synthesis_refs_if_available
     - conflicts_found
     - assumptions
     - exit_gate
   persistence: >-
-    Store with the concrete cycle/run artifacts. When H1 Planning Ledger is shipped,
-    project these fields from ledger/run provenance instead of maintaining a competing manual source.
+    Store with the concrete cycle/run artifacts. When H1 Planning Ledger and H4 CDD are shipped,
+    project these fields from ledger/run/Decision-Memory provenance instead of maintaining a competing manual source.
 
 resolution_order_when_sources_disagree:
   - Do not silently resolve the contradiction.
   - Establish current released/runtime/test truth.
   - Establish accepted ADR/spec intent and compatibility obligations.
   - Compare canonical planning state and historical STATUS classification.
+  - Resolve relevant Decision Memory path only as provenance/index, never as stronger authority than its source artifacts.
   - If planning is stale, reconcile it with evidence.
   - If accepted design and implementation materially conflict, stop the cycle and create the required governed decision/ADR before continuing.
