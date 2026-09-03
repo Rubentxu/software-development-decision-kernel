@@ -3,13 +3,14 @@
 > **Design source:** `evolutivo-workflows-dinamicos-integracion-roadmap.md`
 > **Current assessment baseline:** v1.70.0 / 2026-09-03
 > **Canonical roadmap:** `sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
+> **Execution spine:** `sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml`
 > **Canonical backlog:** `sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md`
 
 ## Current disposition
 
-The dynamic-workflow evolution remains the principal technical design dossier for the next runtime evolution, but **its local horizon/cycle numbering is not the repository planning authority**.
+The dynamic-workflow evolution remains the principal technical design dossier for Workflow IR, persisted generated execution, reactive behavior and advanced operators, but its local horizon/cycle numbering is not repository planning authority.
 
-Its useful ideas are now distributed across the canonical H0-H5 sequence:
+Its useful ideas map to the canonical line as follows:
 
 | Theme | Assessment | Canonical destination |
 |---|---|---|
@@ -18,53 +19,61 @@ Its useful ideas are now distributed across the canonical H0-H5 sequence:
 | transition/predicate contract | `REMAINING` | `DW-IR-002` |
 | graph revision/hash/provenance | `PARTIAL` | H0/H2 |
 | persisted WorkflowRun | `PARTIAL` | H2 `DW-RUNTIME` |
-| generated DAG execution | `REMAINING` | H2 `DW-RUNTIME` |
+| generated bounded DAG execution | `REMAINING` | H2 `DW-RUNTIME` |
 | generated frontier / dynamic next | `PARTIAL` | H3 `DEC-PLANE` |
-| reactive triggers/replan substrate | `PARTIAL` | H4 `RX-SECRETARY` |
-| Secretary integration | `REMAINING/BLOCKED` | H4 after Decision Plane + authority |
-| Map | `PARTIAL` | H5 `DW-OPERATORS` |
-| Reduce / Join semantics | `REMAINING` | H5 `DW-OPERATORS` |
-| real operator output semantics | `PARTIAL` | H0 contracts + H5 completion |
-| Workflow Laboratory | `REMAINING` | H5 `LAB-WORKFLOW` |
+| reactive trigger/replan substrate | `PARTIAL` | H5 `RX-SECRETARY` |
+| Secretary integration | `REMAINING` | H5 after Decision Plane + AgentHost/context + human authority |
+| Map | `PARTIAL` | H6 `DW-OPERATORS-002` |
+| Reduce / Join semantics | `REMAINING` | H6 `DW-OPERATORS-003..004` |
+| real operator output semantics | `PARTIAL` | H0 contracts + H6 `DW-OPERATORS-001` |
+| Workflow Laboratory | `REMAINING` | H6 `LAB-WORKFLOW` |
 | Planning Ledger | `REMAINING`, promoted | H1 `PLN-LEDGER` |
 
-## Important sequencing refinements
+## Important sequencing refinement
 
-The repository-wide canonical order is now:
+The repository-wide path now continues all the way to GA:
 
 ```text
-H0 IR/governance hardening
+H0 deterministic foundations
 → H1 Planning SSOT
 → H2 persisted generated workflow MVP
-→ H3 unified Decision Plane
-→ H4 human/reactive authority
-→ H5 advanced operators + lab
-→ H6 assurance/learning
+→ H3 Decision Plane
+→ H4 AgentHost + Context Compiler
+→ H5 human/reactive authority
+→ H6 advanced operators + lab
+→ H7 assurance + UAT
+→ H8 adaptive SDD
+→ H9 graph + cockpit
+→ H10 governed learning
+→ H11 multi-pack proof
+→ H12 production hardening + GA
 ```
 
-This preserves the strongest rule from the original dossier: **durable dynamic execution before smarter supervision**.
+This preserves the most important rule from the dossier: **durable dynamic execution before smarter supervision**.
 
-## MVP boundary
+## H2 MVP boundary
 
-The H2 vertical slice must remain intentionally narrow:
+The generated-workflow MVP remains intentionally narrow:
 
 - Sequence;
-- bounded Parallel;
 - Conditional/deterministic gates;
-- persisted WorkflowRun;
-- durable execution state;
+- bounded Parallel;
+- persisted `WorkflowRun`;
+- durable node/run state;
 - deterministic replay/resume.
 
 Do not pull full Map/Reduce/Join or Secretary into this vertical slice.
 
 ## Planning Ledger refinement
 
-The Planning Ledger is promoted ahead of the runtime MVP because the repository has demonstrated a concrete governance failure mode: planning prose can remain stale while implementation advances. H1 should make semantic Work Items and dependencies machine-readable before further large evolutions multiply.
+Planning Ledger remains H1 because SDDK has already demonstrated a real governance failure mode: prose can remain stale while code advances. The ledger must make semantic Work Items, dependencies and execution bindings machine-readable before another long evolution creates more planning drift.
 
 ## Identity rule
 
-References such as `cycle-58`, `cycle-59`, etc. in this dossier are historical/design-local labels only. New implementation planning must use canonical semantic IDs such as `DW-RUNTIME-001` and bind them to concrete cycles/runs separately.
+References such as `cycle-58`, `cycle-59`, etc. in the original dossier are historical/design-local labels only. New work uses semantic IDs such as `DW-RUNTIME-001` and binds them separately to concrete cycle/run IDs.
 
 ## Execution rule
 
-Continue to use `evolutivo-workflows-dinamicos-integracion-roadmap.md` for detailed architecture and acceptance ideas. Use `ROADMAP.md` and `BACKLOG.md` for priority, status, dependencies and official execution order.
+Use `evolutivo-workflows-dinamicos-integracion-roadmap.md` for detailed technical architecture and acceptance ideas.
+
+Use `EXECUTION-SPINE.yaml` to decide **what happens next**. The agent must not infer ordering from this dossier, and must not skip ahead to reactive/advanced-operator work while an earlier canonical Work Item is non-terminal.
