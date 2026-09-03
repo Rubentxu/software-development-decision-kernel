@@ -35,6 +35,7 @@ pub mod rules;
 pub mod schema;
 pub mod staleness;
 pub mod test_model;
+pub mod test_ports;
 pub mod transition_ast;
 pub mod uat;
 pub mod validator;
@@ -76,6 +77,7 @@ pub use rules::*;
 pub use schema::*;
 pub use staleness::*;
 pub use test_model::*;
+pub use test_ports::*;
 pub use transition_ast::{
     ContentHash, EvalContext, MAX_PREDICATE_DEPTH, PredicateExpr, SCHEMA_VERSION, TransitionAst,
     TransitionAstError, TransitionSpecV1,
