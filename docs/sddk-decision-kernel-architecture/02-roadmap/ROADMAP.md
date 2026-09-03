@@ -3,90 +3,92 @@
 > **Status:** canonical human planning view
 > **Baseline:** `main` / v1.70.0 as reconciled on 2026-09-03
 > **Machine execution source:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
+> **Human cycle timeline:** [`EXECUTION-TIMELINE.md`](./EXECUTION-TIMELINE.md)
+> **Context routing:** [`CYCLE-CONTEXT-MAP.yaml`](./CYCLE-CONTEXT-MAP.yaml)
 > **Agent procedure:** [`AGENT-EXECUTION-PROTOCOL.md`](./AGENT-EXECUTION-PROTOCOL.md)
+> **Decision Memory model:** [`DECISION-MEMORY-GIT-MODEL.md`](./DECISION-MEMORY-GIT-MODEL.md)
 
 ## 1. Purpose
 
-This document describes **why** SDDK evolves in a particular order and what each horizon must achieve.
+This document explains **why** SDDK evolves in a particular order and what each horizon must achieve.
 
-It is deliberately not the source from which an agent guesses the next cycle. Exact execution order lives in `EXECUTION-SPINE.yaml`.
+It is deliberately **not** the source from which an agent guesses the next cycle. Exact order, dependencies and current status live in `EXECUTION-SPINE.yaml`.
 
-The planning hierarchy is:
+Planning hierarchy:
 
-1. **Product goal / GA terminal condition** — what complete means.
+1. **GA terminal condition** — what complete means.
 2. **Horizons H0-H12** — dependency-ordered capability stages.
-3. **Semantic Work Items** — stable implementation identities.
+3. **Semantic Work Items** — stable capability identities.
 4. **Cycles/runs** — concrete execution attempts bound to one semantic Work Item.
 
-Historical cycle numbers are evidence only. They are never feature identities.
+Historical `cycle-N` identifiers are execution evidence only, never capability identity.
 
 ## 2. Sources of truth
 
 | Concern | Authoritative source |
 |---|---|
-| Exact next-work selection | `EXECUTION-SPINE.yaml` |
+| Exact next-work selection | `EXECUTION-SPINE.yaml` / Planning Ledger after H1 |
+| Human chronology to GA | `EXECUTION-TIMELINE.md` |
+| Context to load for a Work Item | `CYCLE-CONTEXT-MAP.yaml` |
 | Agent selection/governance algorithm | `AGENT-EXECUTION-PROTOCOL.md` |
-| Horizon intent and exit gates | this `ROADMAP.md` |
-| Capability descriptions/status context | `BACKLOG.md` |
+| Horizon intent and dependency rationale | this `ROADMAP.md` |
+| Capability descriptions | `BACKLOG.md` |
 | Historical proposal mapping | `EVOLUTION-CROSSWALK.md` + pack `STATUS.md` files |
-| Released truth | `CHANGELOG.md` + git tags/commits + executable tests |
-| Concrete execution evidence | cycle/run artifacts, receipts and ledgers |
-| Future planning SSOT | Planning Ledger introduced in H1; it will project/update this plan rather than replace semantic identities |
-| Design rationale | accepted specs and ADRs |
+| Released truth | `CHANGELOG.md` + git tags/commits + executable behavior/tests |
+| Concrete execution truth | cycle/run artifacts, receipts and ledgers |
+| Durable project knowledge | accepted vault requirements/ADRs/specs |
+| Decision/deliberation history after H4 | Decision Memory projection over canonical evidence; never stronger authority than its sources |
 
-When planning prose conflicts with released behavior or durable execution evidence, execution evidence wins and planning state must be reconciled.
+When prose conflicts with released behavior or durable execution evidence, the evidence wins and planning must be reconciled.
 
 ## 3. Deterministic continuation rule
-
-An LLM/agent must not choose work by reading the newest design document.
-
-The canonical rule is:
 
 ```text
 if exactly one Work Item is ACTIVE:
     resume it
 else:
     scan EXECUTION-SPINE.yaml by ascending order
-    choose the first non-terminal item whose dependencies are terminal
+    choose first non-terminal item whose dependencies are terminal
 
 if selected item is BLOCKED:
-    stop; do not skip it
+    stop; never skip it silently
 
-bind one concrete cycle/run to the semantic Work Item
-execute until its exit_gate has evidence
+bind a concrete cycle/run
+load the context pack
+satisfy exit_gate with durable evidence
 mark terminal
 recompute next
 ```
 
-The detailed procedure is normative in `AGENT-EXECUTION-PROTOCOL.md`.
+Once H4 CDD/Decision Memory exists, session recovery additionally resolves canonical Decision Memory `HEAD`, computes staleness and renders a bounded `ResumeView`; it **does not** replace runtime/Planning Ledger reconstruction.
 
 ## 4. Status vocabulary
 
-Use only:
-
-- `PROPOSED` — admitted in the future line but not yet dependency-ready.
-- `READY` — dependencies satisfied and acceptance contract exists.
+- `PROPOSED` — admitted future work, not yet acceptance-ready.
+- `READY` — dependencies/acceptance contract permit execution.
 - `ACTIVE` — currently executing.
-- `BLOCKED` — cannot proceed; canonical line stops unless the plan is governed/revised.
+- `BLOCKED` — canonical line stops until resolved/replanned.
 - `PARTIAL` — meaningful substrate exists but capability is incomplete.
-- `SHIPPED` — acceptance contract is satisfied by released/evidenced implementation.
-- `ABSORBED` — intent was delivered through a newer abstraction/capability.
-- `SUPERSEDED` — intentionally replaced and must not drive new implementation.
+- `SHIPPED` — acceptance contract satisfied by evidenced implementation.
+- `ABSORBED` — intent delivered through a newer capability.
+- `SUPERSEDED` — intentionally replaced.
 
-Terminal states are `SHIPPED`, `ABSORBED`, `SUPERSEDED`.
+Terminal: `SHIPPED`, `ABSORBED`, `SUPERSEDED`.
 
-## 5. Current baseline
+## 5. Reconciled baseline
 
-v1.70.0 already contains foundations that older evolution packs still describe as future work:
+v1.70.0 already contains important substrate:
 
 - state-driven active-cycle context inference;
 - graph-aware `cycle next` over declared workflow YAML;
-- actionable recovery/error contracts;
-- cycle pause/resume with `CycleStatus::Paused`, leases/fencing and typed receipts;
-- first-class facade/project-input behavior and earlier parity work;
-- Workflow IR, graph revision, replan and operator substrates.
+- actionable recovery/conflict hints;
+- pause/resume with `CycleStatus::Paused`, leases/fencing and typed receipts;
+- first-class facade/project-input and parity work;
+- Workflow IR, graph revision, replan and operator substrates;
+- artifact-first handoff discipline;
+- separation between workflow state, durable vault knowledge and optional Engram memory.
 
-Therefore the line does **not** restart AFI, State-Driven CLI, lifecycle flexibility or Human-Agent work from zero.
+Older packs therefore remain evidence/design sources, not executable mega-roadmaps.
 
 ## 6. Official path to GA
 
@@ -99,11 +101,11 @@ H2  Generated Workflow MVP
  ↓
 H3  Decision Plane
  ↓
-H4  AgentHost & Context Compiler
+H4  AgentHost, Context Compiler & Decision Memory
  ↓
 H5  Human & Reactive Control
  ↓
-H6  Runtime Completeness & Workflow Lab
+H6  Runtime Completeness, Decision Search & Workflow Lab
  ↓
 H7  Engineering Assurance & UAT
  ↓
@@ -118,89 +120,87 @@ H11 Multi-pack Proof
 H12 Supply Chain, Production Hardening & GA
 ```
 
-No later horizon bypasses an earlier horizon gate unless an ADR/explicit planning decision proves the dependency is invalid and updates the execution spine.
+No later horizon bypasses an earlier gate unless an explicit governed plan revision proves the dependency invalid.
 
 ---
 
 ## H0 — Reconcile & Deterministic Foundations
 
-**Goal:** make planning, Workflow IR, authority boundaries, architecture boundaries and replay/event assumptions truthful before building a new persisted runtime path.
+**Goal:** make planning, Workflow IR, authority boundaries, architecture boundaries and replay/event assumptions truthful before adding new persistent runtime complexity.
 
-### Canonical semantic sequence
+### Sequence
 
 `GOV-ROADMAP-001 → DW-IR-001 → DW-IR-002 → DW-IR-003 → DW-IR-004 → DW-IR-005 → HX-AUTHORITY-001 → ARCH-HEX-001 → EVT-LEDGER-001`
 
 ### Exit gate
 
-- one canonical roadmap/backlog/spine exists;
-- semantic IDs are used for capability identity;
-- typed Workflow IR contracts required by H2 are deterministic and versioned;
-- human/agent/Secretary authority assumptions are explicit;
-- only architecture-boundary debt that blocks H1-H3 is closed;
-- canonical event/replay contracts required by persisted workflow runs are stable and tested.
+- one canonical roadmap/backlog/spine/context map;
+- stable semantic Work Item identities;
+- deterministic/versioned Workflow IR contracts;
+- one explicit authority matrix for CLI/agent/human/Secretary;
+- only architecture debt blocking H1-H3 is closed;
+- canonical event/correlation/causation/replay contracts are stable and tested.
 
 ---
 
 ## H1 — Planning SSOT
 
-**Goal:** make planning state machine-readable and deterministic so agents no longer interpret hand-written roadmap prose.
+**Goal:** make planning state machine-readable and deterministic so agents no longer interpret Markdown as executable state.
 
-### Canonical semantic sequence
+### Sequence
 
 `PLN-LEDGER-001 → PLN-LEDGER-002 → PLN-LEDGER-003 → PLN-LEDGER-004`
 
-### Required capability
+### Scope
 
-Planning Ledger / Decision Ledger models:
+Planning Ledger models:
 
-- stable semantic Work Item identity;
+- semantic Work Item identity;
 - dependency graph;
 - status transitions;
-- acceptance/evidence references;
+- acceptance/evidence refs;
 - supersedes/absorbs relations;
-- decision/provenance records;
-- cycle/run execution bindings;
-- deterministic projections such as `status`, `next`, `blocked`, `show`, `graph`.
+- planning decisions/provenance;
+- cycle/run bindings;
+- `status`, `next`, `blocked`, `show`, `graph` projections.
 
 ### Exit gate
 
-A clean checkout computes the same active/next planning graph without interpreting historical narratives.
+A clean checkout computes the same planning graph and same next Work Item without interpreting historical prose.
 
 ---
 
 ## H2 — Generated Workflow MVP
 
-**Goal:** prove one narrow persisted generated-workflow vertical slice before reactive intelligence or advanced operators.
+**Goal:** prove one narrow persisted generated-workflow slice before reactive intelligence or advanced operators.
 
-### Canonical semantic sequence
+### Sequence
 
 `DW-RUNTIME-001 → DW-RUNTIME-002 → DW-RUNTIME-003 → DW-RUNTIME-004 → DW-RUNTIME-005`
 
-### Vertical slice
-
 ```text
-NewWorkflowPlan / Workflow IR
-  → validation + deterministic compilation
-  → ExecutionGraphRevision
-  → persisted WorkflowRun
-  → Sequence / Conditional / bounded Parallel
-  → durable node/run state + receipts
-  → resume + deterministic replay
+NewWorkflowPlan
+ → deterministic validation/compilation
+ → ExecutionGraphRevision
+ → persisted WorkflowRun
+ → Sequence / Conditional / bounded Parallel
+ → durable node/run state + receipts
+ → resume + deterministic replay
 ```
 
-Map, Reduce, advanced Join, Secretary and cognitive replanning remain outside this MVP.
+Map/Reduce/full Join, Secretary and cognitive replanning remain outside this MVP.
 
 ### Exit gate
 
-A bounded generated DAG can be persisted, executed, stopped, resumed and replayed to equivalent state with stable revision/provenance identity.
+A bounded generated DAG persists, executes, stops, resumes and replays to equivalent state with stable provenance/revision identity.
 
 ---
 
 ## H3 — Decision Plane
 
-**Goal:** make “what can/should happen next?” one coherent domain capability for declared and generated workflows.
+**Goal:** one coherent domain answer to **what actions are legal/available next and why?** for declared and generated workflows.
 
-### Canonical semantic sequence
+### Sequence
 
 `DEC-PLANE-001 → DEC-PLANE-002 → DEC-PLANE-003 → DEC-PLANE-004`
 
@@ -212,208 +212,340 @@ Unify:
 - generated run frontier;
 - `cycle next` intent;
 - recovery hints;
-- policy;
+- typed policy;
 - CurrentRun projection;
-- explainable decision context/provenance.
+- explainable decision/provenance.
 
 ### Exit gate
 
-Available actions derive from persisted state + policy for both declared and generated workflows, and CLI consumes that same semantic contract.
+Available actions derive from persisted state + policy and CLI/recovery consume the same semantic contract.
 
 ---
 
-## H4 — AgentHost & Context Compiler
+## H4 — AgentHost, Context Compiler & Decision Memory
 
-**Goal:** make the canonical runtime/Decision Plane usable efficiently by agents without shell-command discovery loops or hidden conversational state.
+**Goal:** enable a fresh orchestrator/agent to continue work across sessions and agents with stable semantic tools, bounded reconstructible context, machine-enforced role boundaries, rich handoffs and a navigable durable history of decisions.
 
-### Canonical semantic sequence
+### Sequence
 
-`AGENT-HOST-001 → AGENT-HOST-002 → CTX-COMPILER-001 → CTX-COMPILER-002`
+```text
+AGENT-HOST-001
+ → AGENT-HOST-002
+ → CTX-COMPILER-001
+ → CTX-COMPILER-002
+ → CDD-ROLE-001
+ → CDD-HANDOFF-001
+ → CDD-HANDOFF-002
+ → CDD-MEMORY-001
+ → CDD-MEMORY-002
+ → CDD-CONTINUE-001
+```
 
-### Scope
+### H4.A AgentHost
 
-- semantic AgentHost tool surface;
-- provider failure classification, health/failover and usage telemetry;
-- context capsules/deltas;
-- staleness and negative knowledge;
-- CurrentRun/recovery context for cold starts.
+- semantic tool surface over planning/runtime/Decision Plane;
+- no shell-command discovery loops for normal semantic work;
+- provider health, failure classification, bounded failover and usage telemetry.
 
-### Exit gate
+### H4.B Context Compiler
 
-A fresh agent can inspect and continue work through semantic tools with bounded, provenance-aware context and provider-resilient execution.
+- context capsules and deltas;
+- staleness;
+- provenance;
+- negative knowledge;
+- cold-start context reconstructed from durable state rather than prior chat.
+
+### H4.C CDD — Continuity, Delegation & Deliberation
+
+#### Typed roles
+
+`AgentRoleContract` makes explicit and machine-validatable:
+
+- role kind: orchestrator/coordinator/leaf/evaluator/advisor;
+- responsibilities;
+- dispatch allowlist;
+- mutation authority;
+- tool/read/write scopes;
+- input/output schemas;
+- budgets;
+- synthesis ownership;
+- forbidden actions.
+
+#### Rich handoff
+
+Delegation moves from a small summary envelope to:
+
+```text
+DelegationRequest
+ + immutable ContextLease
+        ↓
+AgentContributionEnvelope
+        ↓
+OrchestrationSynthesisReceipt
+```
+
+Contributions preserve coverage, findings, alternatives, rejected options, pros/cons, assumptions, uncertainty, risks, questions, evidence and artifact refs.
+
+A synthesis receipt records what was consumed/omitted, conflicts, dissent and information-loss checks.
+
+#### Git-like Decision Memory
+
+The memory model is a content-addressed immutable DAG, inspired by Git semantics rather than a flat transcript:
+
+```text
+MemoryBlob / MemoryTree / MemoryCommit
+                 +
+parents + refs + HEAD + tags + reflog
+                 ↓
+DecisionMemoryProjection
+```
+
+Example:
+
+```text
+                         what-if/cache-B
+                        o M7
+                       /   \
+canonical   M1---M2---M3---M6---M9 ← HEAD
+                    \       /   \
+                     M4---M5     M8
+                  option-B     secretary/recovery
+```
+
+Important invariants:
+
+- objects immutable after content-addressing;
+- refs are cheap movable pointers;
+- multiple parents are allowed for explicit synthesis/merge;
+- a merge has a receipt and preserves conflict/dissent/evidence;
+- `what-if`/`rejected` branches are advisory;
+- only governed policy/authority may advance canonical `HEAD`;
+- raw artifacts/contributions remain reachable;
+- private model chain-of-thought is never required/persisted.
+
+The LLM normally receives a bounded tree projection rather than the complete DAG:
+
+```text
+HEAD
+├─ current goal
+├─ current Work Item
+├─ runtime frontier
+├─ binding decisions
+├─ active assumptions
+├─ open risks/questions
+├─ negative knowledge
+├─ pending delegations
+└─ continuation candidates
+```
+
+A session checkpoint becomes a ref/tag to a memory commit. `diff(previous_session, HEAD)` explains what changed without relying on a narrative summary.
+
+### H4 exit gate
+
+A fresh agent/session can:
+
+1. reconstruct authoritative runtime/planning state;
+2. resolve Decision Memory canonical `HEAD`;
+3. render a bounded staleness-aware resume tree;
+4. traverse/diff historical decision branches to original evidence;
+5. recover typed delegated contributions and synthesis receipts;
+6. propose continuation candidates with pros/cons, risks, reversibility and prerequisites;
+7. do all of the above without previous chat history or Engram being mandatory.
 
 ---
 
 ## H5 — Human & Reactive Control
 
-**Goal:** add explicit human authority and bounded reactive assistance on the same Decision Plane.
+**Goal:** add explicit human authority and bounded reactive assistance using the exact same Decision Plane + CDD contracts.
 
-### Canonical semantic sequence
+### Sequence
 
 `HX-DECISION-001 → HX-DECISION-002 → HX-RESUME-001 → RX-SECRETARY-001 → RX-SECRETARY-002 → RX-SECRETARY-003`
 
-### Human authority path
+### Human path
 
 ```text
 Policy
-  → CurrentRunView / decision context
-  → HumanDecisionRequest / ApprovalRequest
-  → HumanDecisionPort
-  → immutable decision + receipt
-  → authorized workflow transition
+ → CurrentRunView / ResumeView
+ → HumanDecisionRequest
+ → HumanDecisionPort
+ → immutable HumanDecision + receipt
+ → Decision Memory commit
+ → authorized workflow transition
 ```
 
-### Reactive path
+`HX-RESUME-001` specializes human collaboration over the generic CDD ResumeView; it must not create a second continuity/memory model.
 
-Secretary is not a second orchestrator:
+### Secretary path
+
+Secretary is not another orchestrator:
 
 - L0 deterministic reactions first;
 - L1 bounded closed-set proposals second;
-- cognitive replan only after deterministic strategies cannot decide;
-- all accepted actions traverse the same policy/authority path and produce durable provenance.
+- cognitive replan only when deterministic paths cannot decide;
+- proposal arrives through CDD Contribution/ContinuationCandidate;
+- every accepted action traverses policy/authority and leaves durable provenance/Decision Memory;
+- Secretary never directly moves canonical Decision Memory `HEAD`.
 
 ### Exit gate
 
-Human and reactive decisions can safely progress/recover workflows without a parallel authority model and cold-start resume does not depend on chat memory.
+Human and reactive decisions safely progress/recover workflows without parallel authority, memory or handoff models.
 
 ---
 
-## H6 — Runtime Completeness & Workflow Lab
+## H6 — Runtime Completeness, Decision Search & Workflow Lab
 
-**Goal:** complete advanced operator semantics and create the empirical promotion environment after the MVP runtime and control planes are stable.
+**Goal:** complete advanced operator semantics, stabilize empirical comparison, then evaluate richer decision-search strategies without contaminating deterministic core behavior.
 
-### Canonical semantic sequence
+### Sequence
 
-`DW-OPERATORS-001 → DW-OPERATORS-002 → DW-OPERATORS-003 → DW-OPERATORS-004 → DW-REPLAY-001 → LAB-WORKFLOW-001 → LAB-WORKFLOW-002`
+```text
+DW-OPERATORS-001 → DW-OPERATORS-002 → DW-OPERATORS-003 → DW-OPERATORS-004
+ → DW-REPLAY-001
+ → LAB-WORKFLOW-001 → LAB-WORKFLOW-002
+ → LAB-DECISION-001 → LAB-DECISION-002
+```
 
-### Scope
+### Runtime completion
 
-- durable child outputs and lineage;
-- complete Map;
-- complete Reduce;
+- durable child outputs/lineage;
+- Map;
+- Reduce;
 - JoinAny/JoinAll;
-- graph/node/depth/concurrency/budget guards;
-- advanced replay and partial recovery;
-- stable runtime metrics;
-- fork/ablation, strategy comparison and promotion/shadow evidence.
+- graph/depth/concurrency/budget guards;
+- advanced replay/partial recovery.
+
+### Workflow Lab
+
+- stable quality/cost/latency/retry/handoff/failure metrics;
+- fork/ablation;
+- shadow/promotion evidence.
+
+### Decision Lab
+
+Core deterministic baseline:
+
+1. legal frontier from Decision Plane;
+2. policy filtering;
+3. typed `ContinuationCandidate` scoring;
+4. explicit risk/reversibility/evidence/uncertainty/cost dimensions;
+5. Pareto frontier;
+6. human escalation on material ambiguity/risk.
+
+Then bounded experimental lookahead:
+
+- Decision Memory branch/fork;
+- beam/best-first baseline;
+- depth/node/token/time budgets;
+- explicit pruning receipts;
+- counterfactual replay/evaluation;
+- no mutation of canonical `HEAD`.
+
+Finally evaluate Tree-of-Thoughts/Graph-of-Thoughts/MCTS/LATS-like strategies **as experiments only**. Promotion requires evidence of quality uplift plus bounded cost, stability, traceability, rollback and preserved policy/HITL.
 
 ### Exit gate
 
-Advanced dynamic graphs have durable deterministic semantics and alternative workflow strategies can be compared reproducibly.
+Advanced graphs are durable/replayable and alternative workflow/decision strategies can be compared reproducibly without weakening deterministic governance.
 
 ---
 
 ## H7 — Engineering Assurance & UAT
 
-**Goal:** turn quality/acceptance expectations into typed, reproducible capabilities on the canonical runtime.
+**Goal:** turn quality and user acceptance into typed reproducible evidence on the canonical runtime.
 
-### Canonical semantic sequence
+### Sequence
 
 `EA-ASSURANCE-001 → EA-ASSURANCE-002 → UAT-BC-001 → EA-UAT-001`
 
-### Scope
+Scope:
 
 - assurance profiles/rules;
-- evidence taxonomy and resolvers;
+- evidence taxonomy/resolvers;
 - deterministic evaluators;
 - UAT scenario/human-check/defect/retest/signoff lifecycle;
-- Decision Plane gates backed by assurance/UAT evidence.
+- Decision Plane policy backed by assurance/UAT evidence.
 
-### Exit gate
-
-Workflow progression can be gated by deterministic assurance and explicit human UAT evidence without a separate execution engine.
+**Exit:** workflow progression can be gated by deterministic assurance and explicit human UAT evidence without a second engine.
 
 ---
 
 ## H8 — Adaptive SDD
 
-**Goal:** deliver the adaptive SDD path only after the generic dynamic runtime, Decision Plane, lab and assurance foundations exist.
+**Goal:** deliver adaptive SDD only after generic runtime, Decision Plane, CDD, Lab and assurance foundations exist.
 
-### Canonical semantic sequence
+### Sequence
 
 `SDD-ADAPTIVE-001 → SDD-ADAPTIVE-002 → SDD-ADAPTIVE-003 → SDD-ADAPTIVE-004 → SDD-ADAPTIVE-005`
 
-### Scope
+Scope:
 
 - ChangeContract + SHAPE;
 - adaptive specialist selection;
 - BUILD WorkGraph/WorkUnit mapping;
-- CONVERGE + adaptive verification;
-- INTEGRATE + legacy projections;
+- CONVERGE/adaptive verification;
+- INTEGRATE/legacy projections;
 - empirical comparison against A-full.
 
-### Promotion rule
-
-Adaptive is not promoted merely because it is cheaper. Require non-inferior quality/invariant coverage and bounded rollout evidence from Workflow Lab.
-
-### Exit gate
-
-Representative simple and high-risk changes complete with required invariants/evidence, and promotion decision is evidence-backed.
+**Promotion rule:** never promote merely because it is cheaper; require non-inferior quality/invariant evidence.
 
 ---
 
 ## H9 — Active Graph & Cockpit
 
-**Goal:** make SDDK's causal state inspectable and operationally understandable.
+**Goal:** make operational, causal and deliberative state inspectable.
 
-### Canonical semantic sequence
+### Sequence
 
 `GRAPH-WHY-001 → GRAPH-WHY-002 → COCKPIT-001 → COCKPIT-002`
 
-### Scope
+Scope:
 
-- typed graph projections for requirements, evidence, decisions, runs, artifacts, debt and lineage;
-- causal `why` / `debt why` queries;
-- overview/journal/timeline/execution graph;
-- provider health, usage, assurance and experiment views.
+- typed graph projections over requirements/evidence/decisions/Decision Memory/delegations/runs/artifacts/debt/lineage;
+- `why`, `debt why`, `decision why`;
+- journal/timeline/execution graph;
+- Decision Memory branch tree;
+- provider/usage/assurance/handoff/experiment views.
 
-### Exit gate
+H9 visualizes/query-projects the H4 Decision Memory. It must not create another graph database of authority.
 
-A user or agent can inspect both operational state and causal explanation without manually reconstructing it from logs/files.
+**Exit:** a user/agent can inspect both state and causal/deliberative explanation without manually reconstructing files/logs.
 
 ---
 
 ## H10 — Governed Continuous Improvement
 
-**Goal:** learn from stable execution semantics without allowing learned behavior to bypass governance.
+**Goal:** learn from stable execution and decision evidence without letting learned behavior bypass governance.
 
-### Canonical semantic sequence
+### Sequence
 
 `GCI-LEARNING-001 → GCI-LEARNING-002 → GCI-LEARNING-003`
 
-### Scope
+Scope:
 
-- ExperienceEpisode-style projections;
-- process mining over canonical events;
+- ExperienceEpisode projections;
+- process mining over events + decision/delegation outcomes;
+- rejected-branch/revisit-trigger analysis;
 - strategy quality/cost/risk comparison;
 - bounded experiments;
 - evidence-backed promotion/tuning;
 - rollback and policy ratchets.
 
-### Exit gate
-
-SDDK can improve strategies from real evidence while deterministic policy, human authority and rollback remain mandatory boundaries.
+**Exit:** SDDK can improve strategies from real evidence while deterministic policy, human authority and rollback remain mandatory.
 
 ---
 
 ## H11 — Multi-pack Proof
 
-**Goal:** prove the kernel/runtime is genuinely generic rather than accidentally SDD-specific.
+**Goal:** prove the kernel/runtime/CDD model is generic rather than accidentally SDD-specific.
 
-### Canonical semantic sequence
+### Sequence
 
 `MULTIPACK-001 → MULTIPACK-002 → MULTIPACK-003 → MULTIPACK-004`
-
-### Scope
 
 - lock generic pack contracts;
 - run UAT on the same runtime/Decision Plane;
 - run Incident on the same runtime/Decision Plane;
-- architecture and end-to-end proof that pack-specific kernel branches are unnecessary.
-
-### Exit gate
-
-SDD, UAT and Incident operate through the same generic kernel/runtime contracts with no domain-specific kernel special cases.
+- prove no pack-specific kernel special cases.
 
 ---
 
@@ -421,75 +553,67 @@ SDD, UAT and Incident operate through the same generic kernel/runtime contracts 
 
 **Goal:** turn the validated architecture into a production-grade stable release.
 
-### Canonical semantic sequence
+### Sequence
 
 `SUPPLYCHAIN-001 → SUPPLYCHAIN-002 → PROD-HARDEN-001 → PROD-HARDEN-002 → GA-001 → GA-002`
 
-### Scope
+Scope:
 
-- SBOM/provenance and artifact lifecycle;
-- signed gates and controlled overrides;
-- performance, retention and migration hardening;
-- reliability/security/upgrade/rollback/operator documentation;
+- SBOM/provenance/artifact lifecycle;
+- signed gates/controlled overrides;
+- performance/retention/migration hardening;
+- reliability/security/upgrade/rollback/operator docs;
 - release-readiness matrix across SDD/UAT/Incident;
 - stable compatibility contract.
 
 ### GA terminal condition
 
-`GA-002` is terminal only when:
+`GA-002` is terminal only when representative canonical scenarios, security/recovery/provenance, supported upgrade/rollback and compatibility gates all have evidence and no unresolved P0/P1 debt blocks release.
 
-- representative canonical scenarios pass;
-- no unresolved P0/P1 debt blocks release;
-- security/recovery/provenance gates pass;
-- supported upgrade/rollback paths have evidence;
-- the GA release/tag exists;
-- compatibility policy is documented.
-
-After `GA-002`, this execution plan ends. Post-GA evolution starts from a new versioned plan rather than silently appending work to this one.
+After `GA-002`, this plan ends; post-GA work starts from a new versioned plan.
 
 ---
 
-## 7. Relationship to the old North Star 0-14
-
-The previous 0-14 direction remains valuable as architectural/product history, but the execution line above now places all of its remaining capabilities on an explicit path:
+## 7. Relationship to previous architectural directions
 
 | Previous direction | Canonical horizon |
 |---|---|
 | baseline / architecture ratchet / hexagonal convergence | H0 |
 | canonical event ledger | H0 |
-| workflow runtime core + dynamic workflow engine | H2 + H6 |
+| workflow runtime core / generated execution | H2 + H6 |
+| DecisionSnapshot/current-run intent | H3 |
 | AgentHost/provider resilience | H4 |
-| reactive Supervisor/Secretary | H5 |
 | Context Compiler | H4 |
-| adaptive SDD | H8 |
+| session continuity / rich delegation / Decision Memory | H4 |
+| human collaboration / Secretary | H5 |
+| dynamic/counterfactual decision search | H6 |
 | Workflow Laboratory | H6 |
-| Active Graph / `why` | H9 |
-| Static Cockpit | H9 |
-| UAT bounded context | H7 |
+| Engineering Assurance / UAT | H7 |
+| adaptive SDD | H8 |
+| Active Graph / Cockpit | H9 |
+| GCI/process mining | H10 |
 | multi-pack proof | H11 |
-| supply chain / hardening | H12 |
-| production/GA stabilization | H12 |
+| supply chain / production / GA | H12 |
 
-Nothing material is left as an unscheduled “retained epic”.
+Nothing material should remain as an unscheduled “retained epic”.
 
-## 8. Historical evolution packs
+## 8. Evolution dossiers
 
-The following are design dossiers, not parallel roadmaps:
+These are design/research dossiers, not parallel roadmaps:
 
 - `docs/evolutivo-workflows-dinamicos-integracion-roadmap.md`
 - `docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/`
 - `docs/sddk-complete-evolution-2026-08-23/`
+- `docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md`
 
-Their current disposition is recorded in `EVOLUTION-CROSSWALK.md` and companion `STATUS.md` files.
-
-Useful ideas may be re-admitted only by mapping them to a semantic Work Item on `EXECUTION-SPINE.yaml` or by a governed plan revision.
+Their ideas become executable only when mapped to semantic Work Items in `EXECUTION-SPINE.yaml`.
 
 ## 9. Current next work
 
-At this branch state:
+On this documentation branch:
 
-1. `GOV-ROADMAP-001` is `ACTIVE` because PR #1 is establishing this governance baseline.
-2. After it becomes terminal, `DW-IR-001` is the deterministic next item.
-3. Every subsequent item is already ordered to `GA-002` in `EXECUTION-SPINE.yaml`.
+1. `GOV-ROADMAP-001` remains `ACTIVE` until PR #1 is merged/reconciled.
+2. `DW-IR-001` is the deterministic next Work Item.
+3. The complete route, including CDD/Decision Memory, is already placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 
-That is the official line an LLM should follow cycle by cycle.
+That is the official line an LLM must follow.
