@@ -156,7 +156,7 @@ enters the generic workflow kernel.
 
 ## Epic LF — Lifecycle Flexibility: cycle pause + backlog/roadmap as governed objects (candidate)
 
-> **Status:** proposed → **in-progress** (Primitive 1: cycle-55 in apply). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
+> **Status:** in-progress (Primitive 1 ✅ RESOLVED cycle-55 v1.70.0 · Primitive 2: cycle-56 in-progress `kernel-cycle-56-backlog-ledger`). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
 > **Prerequisites:** GAP-6 (reparación de `cycle lock acquire`) + cycle-51 (supersede de primera clase).
 > **Owner:** orchestrator
 > **Origin:** requisito del maintainer (2026-09-02): "pausar un ciclo porque surge una necesidad nueva, capturar esa idea en el backlog con especificación y priorización, y que nada se rompa ni se pierda — consistencia por construcción, arquitectura emergente".
