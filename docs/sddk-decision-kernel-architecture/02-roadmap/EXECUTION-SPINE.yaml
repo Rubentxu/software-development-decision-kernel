@@ -80,7 +80,7 @@ items:
   - order: 23
     id: TEST-ADAPTER-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-adapter-001-spi-capability-registry CLOSED; release v1.74.0; exit gate proven: 9 puertos SPI object-safe (dyn probado en runtime), CapabilityRegistryV1 determinista, ProjectTestMapV1 (.sddk/test-map.yaml v1) via serde-saphyr two-pass, FallbackResolver fail-closed registry->map->Unresolved; 20 tests (387 lib)
     depends_on: [TEST-MODEL-001]
     objective: Implement the generic topology/test adapter SPI, capability registry and explicit project mapping fallback.
     exit_gate: Adapters only detect/translate mechanisms while kernel planning stays generic; unsupported ecosystems can declare stable topology/test mappings without kernel changes.

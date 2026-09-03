@@ -432,8 +432,9 @@ Do not read this document top-to-bottom and guess. Use `EXECUTION-SPINE.yaml` an
 ```text
 SHIPPED: GOV-ROADMAP-001 (PR #1 merged at 2596e46) and DW-IR-001 (v1.71.0) and DW-IR-002 (cycle dw-ir-002-transition-predicate-ast, release v1.72.0, 2026-09-03)
 SHIPPED: TEST-MODEL-001 (cycle test-model-001-neutral-verification-contracts, release v1.73.0, 2026-09-03)
-CURRENT: TEST-ADAPTER-001
-NEXT after TEST-ADAPTER-001 evidence: TEST-ADAPTER-002
+SHIPPED: TEST-ADAPTER-001 (cycle test-adapter-001-spi-capability-registry, release v1.74.0, 2026-09-03)
+CURRENT: TEST-ADAPTER-002
+NEXT after TEST-ADAPTER-002 evidence: TEST-SELECT-001
 LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001
 FINAL: GA-002
 ```
