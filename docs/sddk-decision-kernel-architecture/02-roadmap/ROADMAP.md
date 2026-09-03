@@ -657,7 +657,7 @@ Their ideas become executable only when mapped to semantic Work Items in `EXECUT
 ## 9. Current next work
 
 1. `GOV-ROADMAP-001`, `DW-IR-001` and `DW-IR-002` are `SHIPPED` (PR #1 at `2596e46`; ExecutionScope v1.71.0; transition/predicate AST v1.72.0).
-2. `TEST-EVIDENCE-001` is the deterministic CURRENT Work Item (impact propagation shipped v1.76.0); `TEST-APPLY-001` is NEXT.
+2. `TEST-APPLY-001` is the deterministic CURRENT Work Item (evidence freshness/invalidation shipped v1.77.0); with it the TEST-* block closes and `DW-IR-003` resumes.
 3. H0 then proceeds through adapter proof, selector, evidence/invalidation and apply/verify integration.
 4. The complete route, including CDD/Decision Memory, remains placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 

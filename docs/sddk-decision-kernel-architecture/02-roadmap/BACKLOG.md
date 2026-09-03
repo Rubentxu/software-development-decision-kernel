@@ -435,8 +435,9 @@ SHIPPED: TEST-MODEL-001 (cycle test-model-001-neutral-verification-contracts, re
 SHIPPED: TEST-ADAPTER-001 (cycle test-adapter-001-spi-capability-registry, release v1.74.0, 2026-09-03)
 SHIPPED: TEST-ADAPTER-002 (cycle test-adapter-002-composability-uat, release v1.75.0, 2026-09-03)
 SHIPPED: TEST-SELECT-001 (cycle test-select-001-impact-propagation, release v1.76.0, 2026-09-03)
-CURRENT: TEST-EVIDENCE-001
-NEXT after TEST-EVIDENCE-001 evidence: TEST-APPLY-001
+SHIPPED: TEST-EVIDENCE-001 (cycle test-evidence-001-receipts-freshness-invalidation, release v1.77.0, 2026-09-03)
+CURRENT: TEST-APPLY-001
+NEXT after TEST-APPLY-001 evidence: DW-IR-003
 LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001
 FINAL: GA-002
 ```

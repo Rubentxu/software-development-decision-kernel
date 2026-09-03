@@ -18,9 +18,9 @@ A concrete historical label such as `cycle-72` is assigned at execution time and
 After reconciling the 2026-09-03 scoped-verification reprioritization with current `main` (DW-IR-002 shipped v1.72.0 while the TEST-* block was landing):
 
 ```text
-SHIPPED  → GOV-ROADMAP-001, DW-IR-001, DW-IR-002, TEST-MODEL-001, TEST-ADAPTER-001, TEST-ADAPTER-002, TEST-SELECT-001
-CURRENT  → TEST-EVIDENCE-001
-NEXT     → TEST-APPLY-001
+SHIPPED  → GOV-ROADMAP-001, DW-IR-001, DW-IR-002, TEST-MODEL-001, TEST-ADAPTER-001, TEST-ADAPTER-002, TEST-SELECT-001, TEST-EVIDENCE-001
+CURRENT  → TEST-APPLY-001
+NEXT     → DW-IR-003
 FINAL    → GA-002
 ```
 

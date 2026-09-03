@@ -104,7 +104,7 @@ items:
   - order: 26
     id: TEST-EVIDENCE-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-evidence-001-receipts-freshness-invalidation CLOSED; release v1.77.0; exit gate probado: solo evidencia que INTERSECA se invalida (closure transitivo cycle-safe tras enmienda de spec), receipts no relacionados reutilizables (tested_sut_ids precisos), escape-rate y savings medibles (SelectionTelemetryV1); 30 tests (444 lib); 2 rounds de correccion documentados
     depends_on: [TEST-SELECT-001]
     objective: Implement TestEvidenceReceipt freshness, graph-driven invalidation, reuse and selection-quality telemetry.
     exit_gate: Only intersecting evidence becomes stale; unrelated receipts are reusable; escape-rate and time/tool/token savings are measurable against full verify.
