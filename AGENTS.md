@@ -42,11 +42,18 @@ y se actualiza con `sddk dev install`.
 - `main` es la rama única de desarrollo + releases. No hay `develop`, `release/*` ni hotfix.
 - Cualquier feature se commitea directo a `main` (o se squash-margea en PRs externos).
 
-### 2.3. Workspace
+### 2.3. Workspace y alcance de verificación
 
 - `Cargo.toml` `[workspace.package] version` = versión de desarrollo actual (puede ir
   ahead del último tag hasta `chore(release)`).
-- `cargo test --workspace` verde + `cargo clippy --workspace` sin errores antes de commitear.
+- **Durante `apply` no se exige `cargo test --workspace` después de cada cambio.**
+  El agente sigue `prompts/sddk/change-scoped-testing.md`: ejecuta el lote mínimo
+  justificado por el cambio/SUT y reserva el perfil completo para `verify`/release.
+- Este repo es Rust, por eso sus adapters concretos usan Cargo; la política SDDK es
+  **agnóstica de lenguaje/build/test runner** y debe funcionar igual en repos JVM,
+  JS/TS, Python, Go, .NET, C/C++, Bazel o polyglot mediante adapters/capabilities.
+- `cargo test --workspace`, clippy/fmt globales siguen siendo gates válidos en el
+  **full verification profile** de este repositorio y en el flujo de release.
 
 ### 2.4. Memory + Engram
 - Sesiones largas DEBEN cerrar con `engram_mem_session_summary` (goal, discoveries,
@@ -55,9 +62,10 @@ y se actualiza con `sddk dev install`.
 
 ### 2.5. CI local-first, cloud async
 
-- **El gate de verificación es LOCAL**: `cargo test --workspace` + `cargo clippy
-  --workspace` + fmt antes de commitear (ver checklist §5). GitHub Actions cloud
-  **NO bloquea**: sin required status checks, runs = evidencia asíncrona.
+- **El gate de verificación sigue siendo LOCAL**, pero su amplitud depende de la fase:
+  `apply` = scoped/progresivo; `verify`/release = perfil completo (`cargo test --workspace`
+  + clippy + fmt y demás checks declarados para este repo).
+- GitHub Actions cloud **NO bloquea**: sin required status checks, runs = evidencia asíncrona.
 - **Prohibido** esperar runs de la nube (`gh pr checks --watch`, retrasar
   push/merge por CI) o "arreglar CI" sin reproducir en local primero.
 - **Workflows en local**: `act` v0.2.89 (`/usr/local/bin/act`) + podman;
@@ -65,6 +73,17 @@ y se actualiza con `sddk dev install`.
   `~/.config/act/actrc`. Ejemplo: `act pull_request -W .github/workflows/<wf>.yml`.
 - Los minutos del plan free de GitHub están agotados — el cloud puede ni
   ejecutar; confía en el gate local.
+
+### 2.6. Contrato de testing para agentes
+
+- Autoridad de alcance durante implementación: `prompts/sddk/change-scoped-testing.md`.
+- El agente razona en `ActiveChangeSet → ProjectTestTopology → SUT impact → verification batch`,
+  no en comandos Cargo/Maven/pytest/etc.
+- Los comandos concretos son mecanismos de adapter.
+- Si el impacto no se puede mapear con seguridad: **fail closed y reportar la relación
+  SUT/dependency/contract/test/capability que falta**. No ejecutar todo para ocultar incertidumbre.
+- Tras `TEST-APPLY-001`, inventar manualmente el test scope cuando SDDK ofrece plan
+  semántico es una violación de protocolo.
 
 ---
 
@@ -101,19 +120,28 @@ y se actualiza con `sddk dev install`.
 ## 5. Checklist antes de commitear
 
 ```text
-[ ] cargo build --release -p sddk-cli            # compila
-[ ] cargo test --workspace                       # verde
-[ ] cargo clippy --workspace --all-targets -- -D errors    # 0 errores (gate duro, cycle-17+)
-[ ] shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh    # parity con just ci (Phase C gated — stable)
+[ ] apply: ejecutar SOLO el lote scoped admitido por el cambio/SUT actual
+[ ] apply: registrar qué SUT/capability/tests se ejecutaron y por qué
+[ ] apply: si el impacto no es justificable, bloquear/reportar; NO lanzar todo
 [ ] Si tocaste assets/: sddk dev install        # bundle runtime actualizado
-[ ] Tras release: sddk dev doctor | grep bundle_coherence (binario == bundle)
-[ ] Tras release: sddk dev update --prune-only --keep 1 --root ~/.local/share/sddk/framework (INC-DEBT-020: current repoints a newest kept)
-[ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh
+[ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh cuando el scope lo requiera
 [ ] git status                                  # clean
 [ ] git diff                                    # revisas lo que vas a commitear
 [ ] commit mensaje: feat(uat): … o fix(uat): …
-[ ] git push origin main                        # pusheas
+[ ] git push origin main                        # pusheas según el contrato de entrega activo
 ```
+
+**Antes de `verify`/release** se aplica el perfil completo del repositorio:
+
+```text
+[ ] cargo build --release -p sddk-cli
+[ ] cargo fmt --check
+[ ] cargo clippy --workspace --all-targets -- -D errors
+[ ] cargo test --workspace
+[ ] shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh
+```
+
+El full profile no debe copiarse dentro de cada inner loop de `apply`.
 
 ---
 
@@ -130,6 +158,8 @@ y se actualiza con `sddk dev install`.
 
 - **Release & distribution:** `docs/RELEASING.md`
 - **Architecture model:** `docs/ARCHITECTURE-MODEL.md`
+- **Scoped testing contract:** `prompts/sddk/change-scoped-testing.md`
+- **Scoped verification ADR:** `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
 - **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
 - **Roadmap de arquitectura:** `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
@@ -266,4 +296,3 @@ en lugar de `--successor` — exactamente uno de los dos.
 - `InMemoryLedger::acquire_cycle_lease` hardcodea `fencing_token=1` — tests deben usar `1`
 - Receipt se escribe en `<cycle-artifacts>/<cycle-id>/supersede-receipt.json`
 - Ellease se libera atómicamente en `update_cycle_with_event(..., release_lease_on_phase_change=true)`
-
