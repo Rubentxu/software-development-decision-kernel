@@ -1,7 +1,7 @@
 # SDDK Roadmap — Canonical Evolution Line to GA
 
 > **Status:** canonical human planning view
-> **Baseline:** `main` / v1.70.0 as reconciled on 2026-09-03
+> **Baseline:** `main` / v1.70.0 release baseline as reconciled on 2026-09-03; current workspace has advanced beyond it
 > **Machine execution source:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
 > **Human cycle timeline:** [`EXECUTION-TIMELINE.md`](./EXECUTION-TIMELINE.md)
 > **Context routing:** [`CYCLE-CONTEXT-MAP.yaml`](./CYCLE-CONTEXT-MAP.yaml)
@@ -88,6 +88,8 @@ v1.70.0 already contains important substrate:
 - artifact-first handoff discipline;
 - separation between workflow state, durable vault knowledge and optional Engram memory.
 
+After that release baseline, `DW-IR-001` was implemented on `main` as the typed/versioned/migration-safe `ExecutionScope` contract. The canonical spine therefore treats it as `SHIPPED` and inserts the generic test-impact foundation before `DW-IR-002`, rather than pretending already delivered work has not happened.
+
 Older packs therefore remain evidence/design sources, not executable mega-roadmaps.
 
 ## 6. Official path to GA
@@ -126,16 +128,59 @@ No later horizon bypasses an earlier gate unless an explicit governed plan revis
 
 ## H0 — Reconcile & Deterministic Foundations
 
-**Goal:** make planning, Workflow IR, authority boundaries, architecture boundaries and replay/event assumptions truthful before adding new persistent runtime complexity.
+**Goal:** make planning, **language-agnostic change-scoped verification**, Workflow IR, authority boundaries, architecture boundaries and replay/event assumptions truthful before adding new persistent runtime complexity.
+
+The scoped-verification foundation is intentionally pulled in front of the **remaining** Workflow IR work because every later coding cycle otherwise pays repeated broad-test and test-discovery cost. `DW-IR-001` is preserved as already shipped. The capability must be generic from the start: Rust/Cargo is an adapter used by this repository, not a kernel assumption.
 
 ### Sequence
 
-`GOV-ROADMAP-001 → DW-IR-001 → DW-IR-002 → DW-IR-003 → DW-IR-004 → DW-IR-005 → HX-AUTHORITY-001 → ARCH-HEX-001 → EVT-LEDGER-001`
+```text
+GOV-ROADMAP-001
+ → DW-IR-001                       # SHIPPED on current main
+ → TEST-MODEL-001
+ → TEST-ADAPTER-001
+ → TEST-ADAPTER-002
+ → TEST-SELECT-001
+ → TEST-EVIDENCE-001
+ → TEST-APPLY-001
+ → DW-IR-002 → DW-IR-003 → DW-IR-004 → DW-IR-005
+ → HX-AUTHORITY-001 → ARCH-HEX-001 → EVT-LEDGER-001
+```
 
-### Exit gate
+### H0.A Change-scoped verification foundation
+
+The kernel works with semantic concepts:
+
+```text
+ActiveChangeSet
+ → ProjectTestTopology
+ → SUT Impact Graph
+ → VerificationCapabilities
+ → TestSelectionPlan
+ → TestEvidenceReceipt
+```
+
+The model supports single-language, multi-module and polyglot repositories. Build/test ecosystems are adapters and may be composed in one repository. A cross-language change can propagate through API/schema/generated-code/runtime-contract edges without a language-specific planner branch.
+
+Examples of adapter families include Cargo; Maven/Gradle; npm/pnpm/yarn and JS test runners; Python/pytest/tox/nox; Go; .NET; CMake/Meson/Bazel; and future ecosystems through the same SPI. Unsupported ecosystems have a generic explicit project profile/mapping fallback rather than forcing a kernel change.
+
+Lifecycle invariant:
+
+```text
+apply  = smallest justified progressive verification evidence
+verify = project's declared full verification profile
+```
+
+If impact cannot be justified, `apply` fails closed with the missing topology/test/capability relation; it does not hide uncertainty by running every test.
+
+### H0 exit gate
 
 - one canonical roadmap/backlog/spine/context map;
 - stable semantic Work Item identities;
+- generic change/SUT/test/capability contracts and adapter boundary;
+- same impact/planner semantics proven across Rust, contrasting non-Rust fixtures and a polyglot/cross-language boundary;
+- explainable progressive selection with durable evidence freshness/invalidation and escape-rate telemetry;
+- coding agents consume scoped semantic verification instead of broad runner discovery loops;
 - deterministic/versioned Workflow IR contracts;
 - one explicit authority matrix for CLI/agent/human/Secretary;
 - only architecture debt blocking H1-H3 is closed;
@@ -486,7 +531,7 @@ Scope:
 - INTEGRATE/legacy projections;
 - empirical comparison against A-full.
 
-**Promotion rule:** never promote merely because it is cheaper; require non-inferior quality/invariant evidence.
+**Promotion rule:** never promote merely because it is cheaper; require non-inferior quality/invariant evidence. H8 may learn richer selection strategies, but it builds on the deterministic H0 SUT/topology/evidence foundation instead of creating another test-selection model.
 
 ---
 
@@ -579,6 +624,7 @@ After `GA-002`, this plan ends; post-GA work starts from a new versioned plan.
 | Previous direction | Canonical horizon |
 |---|---|
 | baseline / architecture ratchet / hexagonal convergence | H0 |
+| language-agnostic SUT impact / scoped apply verification | H0 |
 | canonical event ledger | H0 |
 | workflow runtime core / generated execution | H2 + H6 |
 | DecisionSnapshot/current-run intent | H3 |
@@ -610,8 +656,9 @@ Their ideas become executable only when mapped to semantic Work Items in `EXECUT
 
 ## 9. Current next work
 
-1. `GOV-ROADMAP-001` is `SHIPPED` (PR #1 merged at `2596e46`; reconciliation evidence in `EXECUTION-SPINE.yaml`).
-2. `DW-IR-001` is the deterministic CURRENT Work Item; `DW-IR-002` is NEXT.
-3. The complete route, including CDD/Decision Memory, is already placed through `GA-002` in `EXECUTION-SPINE.yaml`.
+1. `GOV-ROADMAP-001` and `DW-IR-001` are `SHIPPED`.
+2. `TEST-MODEL-001` is the deterministic CURRENT Work Item; `TEST-ADAPTER-001` is NEXT.
+3. H0 then proceeds through adapter proof, selector, evidence/invalidation and apply/verify integration before `DW-IR-002`.
+4. The complete route, including CDD/Decision Memory, remains placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 
 That is the official line an LLM must follow.

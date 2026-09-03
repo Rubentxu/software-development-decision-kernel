@@ -77,6 +77,8 @@ historical_sources:
   cdd_evolution: docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
 
 accepted_decision_sources:
+  change_scoped_verification_adr: docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md
+  change_scoped_verification_spec: docs/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md
   decision_memory_model: docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
   secretary_spec: docs/sddk-decision-kernel-architecture/04-specs/SPEC-042-secretary-runtime.md
   secretary_budget_adr: docs/adr/ADR-0072-secretary-budgets.md
@@ -96,6 +98,25 @@ packs:
     evidence:
       - PR/merge evidence for the canonical documentation change
       - consistency check that spine, timeline, backlog, context map and status companions agree
+
+  change-scoped-verification:
+    match_prefixes: [TEST-MODEL-, TEST-ADAPTER-, TEST-SELECT-, TEST-EVIDENCE-, TEST-APPLY-]
+    must_read:
+      - docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md
+      - docs/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md
+      - prompts/sddk/change-scoped-testing.md
+      - agents/sddk-apply.md
+      - prompts/sddk/phases/apply.md
+      - prompts/sddk/phases/apply-strict-tdd.md
+      - prompts/sddk/phases/verify.md
+    discover_and_read:
+      - current project-capability/test-runner detection code and tests
+      - git change/diff adapters and repository/project metadata contracts
+      - current evidence/receipt/cache/invalidation contracts
+      - docs/adr/ADR-0069-test-tooling-ownership.md
+      - docs/sddk-decision-kernel-architecture/03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md
+      - representative fixtures/tests for Rust and non-Rust ecosystem discovery
+    invariant: Kernel planning remains language/build/test-runner neutral; ecosystem behavior is supplied by composable adapters/profiles, unknown impact fails closed, apply stays scoped and verify owns the declared full-project profile.
 
   dynamic-workflow-ir:
     match_prefixes: [DW-IR-]
@@ -230,7 +251,7 @@ packs:
   cdd-handoff:
     match_prefixes: [CDD-HANDOFF-]
     must_read:
-      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacion.md
+      - docs/evolutivo-continuidad-sesiones-delegacion-deliberacionacion.md
       - docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md
       - prompts/sddk/launch-plan-helper.md
       - prompts/sddk/phase-contracts.md

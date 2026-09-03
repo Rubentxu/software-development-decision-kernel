@@ -64,16 +64,64 @@ items:
   - order: 20
     id: DW-IR-001
     horizon: H0
-    status: READY
+    status: SHIPPED # implemented on main by af9730467549d14c89750210ae1040fbb7eacfa9; workspace advanced to 1.71.0
     depends_on: [GOV-ROADMAP-001]
     objective: Replace stringly execution scope with a typed, migration-safe contract.
     exit_gate: Typed scope is versioned, serialized deterministically and covered by migration/round-trip tests.
+
+  - order: 22
+    id: TEST-MODEL-001
+    horizon: H0
+    status: READY
+    depends_on: [DW-IR-001]
+    objective: Define language-neutral ActiveChangeSet, ProjectTestTopology, SUT impact graph and verification-capability contracts.
+    exit_gate: Domain contracts are versioned/tested, contain no build-system-specific planning semantics, support multi-component/polyglot topology and model unknown impact fail-closed.
+
+  - order: 23
+    id: TEST-ADAPTER-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [TEST-MODEL-001]
+    objective: Implement the generic topology/test adapter SPI, capability registry and explicit project mapping fallback.
+    exit_gate: Adapters only detect/translate mechanisms while kernel planning stays generic; unsupported ecosystems can declare stable topology/test mappings without kernel changes.
+
+  - order: 24
+    id: TEST-ADAPTER-002
+    horizon: H0
+    status: PROPOSED
+    depends_on: [TEST-ADAPTER-001]
+    objective: Prove adapter composability with SDDK's Rust stack plus multiple non-Rust and polyglot fixtures.
+    exit_gate: UAT proves the same domain/planner contracts with Rust and at least two contrasting non-Rust ecosystems plus one cross-language contract edge; adding another ecosystem requires an adapter/profile, not kernel branching.
+
+  - order: 25
+    id: TEST-SELECT-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [TEST-ADAPTER-002]
+    objective: Implement deterministic change-to-SUT impact propagation and progressive verification batch selection.
+    exit_gate: Direct/component/dependency/contract/risk batches are explainable, bounded and stable for identical topology/change inputs; unmapped impact blocks instead of running everything.
+
+  - order: 26
+    id: TEST-EVIDENCE-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [TEST-SELECT-001]
+    objective: Implement TestEvidenceReceipt freshness, graph-driven invalidation, reuse and selection-quality telemetry.
+    exit_gate: Only intersecting evidence becomes stale; unrelated receipts are reusable; escape-rate and time/tool/token savings are measurable against full verify.
+
+  - order: 27
+    id: TEST-APPLY-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [TEST-EVIDENCE-001]
+    objective: Integrate language-agnostic scoped verification with apply, strict TDD, verify and coding-agent semantic contracts.
+    exit_gate: Apply consumes semantic topology/impact/next-batch data without runner discovery loops, strict TDD stays scoped, verify remains the declared full-profile boundary, and protocol/UAT reject ad-hoc broad apply testing.
 
   - order: 30
     id: DW-IR-002
     horizon: H0
     status: PROPOSED
-    depends_on: [DW-IR-001]
+    depends_on: [TEST-APPLY-001]
     objective: Stabilize transition/predicate AST and validation semantics.
     exit_gate: Versioned AST round-trips deterministically and rejects invalid transitions predictably.
 
