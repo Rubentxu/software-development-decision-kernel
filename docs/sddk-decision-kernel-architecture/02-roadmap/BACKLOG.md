@@ -434,8 +434,9 @@ SHIPPED: GOV-ROADMAP-001 (PR #1 merged at 2596e46) and DW-IR-001 (v1.71.0) and D
 SHIPPED: TEST-MODEL-001 (cycle test-model-001-neutral-verification-contracts, release v1.73.0, 2026-09-03)
 SHIPPED: TEST-ADAPTER-001 (cycle test-adapter-001-spi-capability-registry, release v1.74.0, 2026-09-03)
 SHIPPED: TEST-ADAPTER-002 (cycle test-adapter-002-composability-uat, release v1.75.0, 2026-09-03)
-CURRENT: TEST-SELECT-001
-NEXT after TEST-SELECT-001 evidence: TEST-EVIDENCE-001
+SHIPPED: TEST-SELECT-001 (cycle test-select-001-impact-propagation, release v1.76.0, 2026-09-03)
+CURRENT: TEST-EVIDENCE-001
+NEXT after TEST-EVIDENCE-001 evidence: TEST-APPLY-001
 LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001
 FINAL: GA-002
 ```

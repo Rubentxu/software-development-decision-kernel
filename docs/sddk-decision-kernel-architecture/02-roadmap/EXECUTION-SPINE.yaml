@@ -96,7 +96,7 @@ items:
   - order: 25
     id: TEST-SELECT-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-select-001-impact-propagation CLOSED; release v1.76.0; exit gate probado: batches direct/component/dependency/contract/risk explicables (ImpactReason tipado por batch), acotados y ESTABLES para inputs identicos (hash canonico del plan), unmapped impact BLOQUEA con InsufficientMappingV1 + verify_required por SutKind (fail-closed verificado adversarialmente 6/6); 15 tests (414 lib, 1949 workspace); RiskPolicyEscalation restaurada (errata de conteo en spec TEST-MODEL-001)
     depends_on: [TEST-ADAPTER-002]
     objective: Implement deterministic change-to-SUT impact propagation and progressive verification batch selection.
     exit_gate: Direct/component/dependency/contract/risk batches are explainable, bounded and stable for identical topology/change inputs; unmapped impact blocks instead of running everything.
