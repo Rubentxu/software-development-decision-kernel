@@ -1,318 +1,418 @@
 # SDDK Agent Execution Protocol
 
-> **Purpose:** define the deterministic procedure an LLM/agent must follow to continue SDDK from any clean checkout without guessing roadmap intent or loading irrelevant historical context.
-> **Canonical entry point:** [`LLM-START-HERE.md`](./LLM-START-HERE.md)
-> **Machine-readable plan:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
-> **Human temporal projection:** [`EXECUTION-TIMELINE.md`](./EXECUTION-TIMELINE.md)
-> **Machine-readable cycle context:** [`CYCLE-CONTEXT-MAP.yaml`](./CYCLE-CONTEXT-MAP.yaml)
+> **Purpose:** deterministic procedure an LLM/agent follows to continue SDDK from any clean checkout/session without guessing roadmap intent, trusting chat memory or losing delegated context.
+> **Entry point:** [`LLM-START-HERE.md`](./LLM-START-HERE.md)
+> **Machine plan:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
+> **Timeline:** [`EXECUTION-TIMELINE.md`](./EXECUTION-TIMELINE.md)
+> **Context routing:** [`CYCLE-CONTEXT-MAP.yaml`](./CYCLE-CONTEXT-MAP.yaml)
+> **Decision Memory model:** [`DECISION-MEMORY-GIT-MODEL.md`](./DECISION-MEMORY-GIT-MODEL.md)
 
 ## 1. Core rule
 
-The agent MUST NOT infer the next evolution from prose, old cycle numbers, commit chronology, or whichever design document looks newest.
+The agent MUST NOT infer the next evolution from prose, chat/session memory, historical cycle numbers, commit chronology or the newest-looking design document.
 
-The canonical execution/context decision is:
+Bootstrap decision:
 
 ```text
 EXECUTION-SPINE.yaml
-        +
-EXECUTION-TIMELINE.md
-        +
-CYCLE-CONTEXT-MAP.yaml
-        +
-Planning Ledger (when H1 is shipped)
-        +
-actual execution/release evidence
-        =
-next semantic Work Item + required cycle context
+ + EXECUTION-TIMELINE.md
+ + CYCLE-CONTEXT-MAP.yaml
+ + actual execution/release evidence
+ + Planning Ledger when H1 exists
+ = next semantic Work Item + required context
 ```
 
-Until H1 exists, `EXECUTION-SPINE.yaml` is the bootstrap machine-readable planning source. `CYCLE-CONTEXT-MAP.yaml` is the bootstrap machine-readable context-routing source.
+Once H4 CDD exists:
+
+```text
+above authoritative state
+ + canonical Decision Memory HEAD
+ + staleness validation
+ = bounded ResumeView + deliberative provenance
+```
+
+Decision Memory never outranks the canonical sources from which it is projected.
 
 ## 2. Mandatory startup algorithm
-
-Every implementation session starts with this exact algorithm:
 
 1. Read `LLM-START-HERE.md`.
 2. Read `EXECUTION-SPINE.yaml`.
 3. Count `ACTIVE` Work Items.
-   - exactly one: resume it;
-   - more than one: fail closed and reconcile planning state;
-   - zero: scan by ascending `order`.
-4. Select the first non-terminal Work Item whose `depends_on` entries are all terminal (`SHIPPED`, `ABSORBED`, `SUPERSEDED`).
-5. If the selected item is `BLOCKED`, stop and report the blocker. Never jump to a later item merely because it is easier.
-6. If the selected item is `PROPOSED`, verify that its acceptance contract is present before promoting it to `READY`.
-7. Locate the selected Work Item in `EXECUTION-TIMELINE.md` to establish predecessor, successor, horizon and context-pack key.
-8. Resolve that context-pack key in `CYCLE-CONTEXT-MAP.yaml`.
-9. Load Tier 0, Tier 1 and the selected Tier 2 pack before implementation.
-10. Read current repository/release evidence relevant to the selected Work Item and all direct dependencies.
-11. Reconcile the plan only if evidence proves status/context is stale.
-12. Record the required cycle context snapshot.
-13. Create/bind one concrete cycle/run execution instance to the semantic Work Item.
-14. Execute only the selected Work Item plus explicitly admitted prerequisite fixes.
-15. Validate its `exit_gate` with durable evidence.
-16. Mark it `SHIPPED`, `ABSORBED` or `SUPERSEDED`, attach evidence, close the run, reconcile planning state and recompute the next item.
+   - one: resume it;
+   - more than one: fail closed/reconcile;
+   - zero: scan ascending `order`.
+4. Select first non-terminal item whose dependencies are terminal.
+5. If `BLOCKED`, stop; never jump ahead.
+6. If `PROPOSED`, require acceptance contract before `READY`.
+7. Locate it in `EXECUTION-TIMELINE.md`.
+8. Resolve context-pack key in `CYCLE-CONTEXT-MAP.yaml`.
+9. Load Tier 0/1/selected Tier 2 context.
+10. Reconstruct current runtime/cycle/ledger/vault state through authoritative mechanisms; do not use chat memory as state authority.
+11. Once CDD is shipped, resolve Decision Memory canonical `HEAD`, validate its referenced subject/planning/workflow/knowledge revisions and build `ResumeView`.
+12. Read direct dependency completion evidence and relevant released behavior/tests.
+13. Reconcile stale planning/context only with stronger evidence.
+14. Record cycle context snapshot.
+15. Bind concrete cycle/run to semantic Work Item.
+16. Execute only selected Work Item plus explicitly admitted prerequisite repairs.
+17. Validate exact `exit_gate` with durable evidence.
+18. Persist/reconcile planning/runtime state and, when CDD exists, contribution/synthesis/Decision Memory provenance.
+19. Mark terminal and recompute NEXT.
 
-Skipping the context-loading steps is a protocol violation: a cycle is not ready to implement until its context snapshot exists.
+A cycle is not implementation-ready until its context snapshot exists.
 
-## 3. Temporal identity: semantic Work Item vs concrete cycle
-
-A cycle number is not a feature name.
+## 3. Semantic identity vs execution identity
 
 Correct:
 
 ```text
-Work Item: DW-RUNTIME-003
-Execution binding: cycle-72
-Temporal position: order 160 / H2
+Work Item: CDD-MEMORY-001
+Execution binding: cycle-84
+Temporal order: 267 / H4
 ```
 
 Incorrect:
 
 ```text
-"cycle-72" == generated workflow runtime
+cycle-84 == decision memory
 ```
 
-This prevents historical cycle-number collisions and lets the same semantic capability be retried, paused, superseded or completed across multiple execution attempts without changing its identity.
+Semantic identity survives retry/pause/supersede; execution IDs are evidence instances.
 
-`EXECUTION-TIMELINE.md` is the human chronological projection. `EXECUTION-SPINE.yaml` remains normative for exact order, status and dependencies.
+## 4. One canonical work line
 
-## 4. One canonical line
+Default: one `ACTIVE` semantic Work Item.
 
-The default governance rule is **one ACTIVE Work Item on the canonical spine**.
+Concurrency requires an accepted decision proving:
 
-A second concurrent item is allowed only if an ADR proves:
+- no dependency edge;
+- no shared authoritative mutation conflict;
+- bounded merge/conflict risk;
+- planning can represent both bindings;
+- each has independent context/evidence identity.
 
-- there is no dependency edge between the items;
-- they cannot mutate the same authoritative state or contracts;
-- merge/conflict risk is bounded;
-- the Planning Ledger can represent both active bindings unambiguously;
-- each item has an independent context/evidence snapshot.
+No proof → serial execution.
 
-Without that ADR, the agent works serially.
+## 5. Context tiers
 
-## 5. Mandatory cycle context model
+### Tier 0 — navigation/governance
 
-The selected Work Item determines what the agent is allowed to load as implementation context.
-
-### Tier 0 — navigation/governance — always read
-
-- selected entry from `EXECUTION-SPINE.yaml`;
-- selected entry from `EXECUTION-TIMELINE.md`;
-- selected context pack from `CYCLE-CONTEXT-MAP.yaml`;
+- selected spine entry;
+- selected timeline entry;
+- selected context pack;
 - this protocol.
 
-### Tier 1 — canonical capability context — always read
+### Tier 1 — canonical capability context
 
-- selected horizon section in `ROADMAP.md`;
-- selected capability/Work Item in `BACKLOG.md`;
-- direct dependency completion evidence;
-- current code/tests for the contract boundary being changed;
-- accepted ADRs/specs directly constraining the Work Item.
+- relevant `ROADMAP.md` horizon;
+- relevant `BACKLOG.md` capability;
+- direct dependency evidence;
+- current code/tests;
+- accepted ADR/spec constraints;
+- crosswalk/status when inherited from old proposals.
 
-Read `EVOLUTION-CROSSWALK.md` whenever the capability was inherited from an older evolution.
+### Tier 2 — selected design pack
 
-### Tier 2 — selected design pack — mandatory
+Use `must_read`, `discover_and_read`, invariant and code anchors from `CYCLE-CONTEXT-MAP.yaml`.
 
-Load the `must_read`, `discover_and_read`, invariants and code anchors from the matching `CYCLE-CONTEXT-MAP.yaml` pack.
+Historical packs:
 
-Historical pack rule:
+1. read `STATUS.md` first;
+2. load only current relevant files;
+3. original cycle order is non-canonical;
+4. old prose cannot override accepted/current evidence.
 
-1. read its `STATUS.md` first;
-2. load only the files relevant to the current Work Item;
-3. treat historical cycle numbers and original execution order as non-canonical;
-4. use old material for rationale/acceptance ideas only where it does not conflict with accepted/current contracts.
+### Tier 3 — exploration
 
-### Tier 3 — exploration — on demand only
+Only when contradiction, underspecification, stale plan, missing architectural decision or tests reveal unmodelled prerequisite.
 
-Search additional code, ADRs, specs, commits or historical docs only if:
+## 6. Cycle context snapshot
 
-- Tier 0–2 reveal a contradiction;
-- required acceptance behavior is underspecified;
-- current code proves the planned assumption stale;
-- a decision is missing;
-- tests expose an unmodeled prerequisite.
-
-The existence of more documentation is not a reason to load it. Context must remain bounded and relevant.
-
-## 6. Required cycle context snapshot
-
-Before implementation, persist a context snapshot with the concrete cycle/run evidence.
-
-Minimum shape:
+Minimum:
 
 ```yaml
-work_item: DW-RUNTIME-003
-execution_binding: cycle-72
-horizon: H2
-temporal_order: 160
+work_item: CDD-MEMORY-001
+execution_binding: cycle-84
+horizon: H4
+temporal_order: 267
 direct_dependencies:
-  - id: DW-RUNTIME-002
-    evidence: <receipt/commit/test/release refs>
+  - id: CDD-HANDOFF-002
+    evidence: []
 consulted:
-  canonical:
-    - EXECUTION-SPINE.yaml
-    - EXECUTION-TIMELINE.md
-    - ROADMAP.md#H2
-    - BACKLOG.md#DW-RUNTIME
-  design:
-    - <context-pack must_read files>
-  adrs_specs:
-    - <accepted decisions>
-  code_tests:
-    - <paths>
-  execution_evidence:
-    - <dependency/current-state evidence>
+  canonical: []
+  design: []
+  adrs_specs: []
+  code_tests: []
+  execution_evidence: []
+decision_memory_head: null
+context_revision: null
+contribution_synthesis_refs: []
 conflicts_found: []
 assumptions: []
-exit_gate: <exact spine exit gate>
+exit_gate: <exact gate>
 ```
 
-The snapshot is not a second roadmap. It is evidence of **what context the executing agent actually used**.
+Unsupported future fields remain null before the corresponding capability ships.
 
-Once H1 Planning Ledger exists, these fields should be projected from ledger/run provenance wherever possible.
+## 7. Authority/conflict resolution
 
-## 7. Source authority and conflict resolution
-
-No single source type answers every question.
-
-| Question | Authority |
+| Question | Primary authority |
 |---|---|
-| What is next? | `EXECUTION-SPINE.yaml` / Planning Ledger after H1 |
-| Where does it sit in the journey? | `EXECUTION-TIMELINE.md` |
-| What context must be loaded? | `CYCLE-CONTEXT-MAP.yaml` |
-| Why is the horizon ordered this way? | `ROADMAP.md` |
-| What capability is intended? | `BACKLOG.md` + accepted spec/ADR |
-| What historical idea does this absorb? | `EVOLUTION-CROSSWALK.md` + pack `STATUS.md` |
-| What is actually released? | current behavior/tests + `CHANGELOG.md` + tags/commits |
-| What happened in the predecessor? | cycle/run artifacts, receipts and ledger evidence |
+| What is next? | spine / Planning Ledger after H1 |
+| Where is it in GA journey? | timeline |
+| What context must load? | context map |
+| What is intended? | backlog + accepted spec/ADR |
+| What is released? | executable behavior/tests + changelog/tags/commits |
+| What happened in a run? | runtime/cycle artifacts/receipts/ledger |
+| Why was a decision made after CDD? | Decision Memory path to source evidence/contributions |
+| What did chat remember? | advisory only |
 
-If sources disagree, the agent MUST NOT silently pick the convenient answer.
+Conflict procedure:
 
-Procedure:
+1. establish current executable/runtime truth;
+2. establish accepted design/compatibility obligations;
+3. establish planning state;
+4. use Decision Memory only to reconstruct provenance/history, not override sources;
+5. reconcile stale planning if evidence is authoritative;
+6. if accepted design and implementation materially conflict, stop for governed decision/ADR.
 
-1. establish actual released/runtime/test truth;
-2. establish accepted ADR/spec intent and compatibility obligations;
-3. establish canonical planning state;
-4. inspect historical STATUS/crosswalk only to understand drift/origin;
-5. reconcile stale planning if execution evidence is authoritative;
-6. if accepted design and implementation materially conflict, stop and create the required governed decision/ADR before continuing.
+## 8. Session continuity
 
-## 8. What an agent may read for design
+### Before CDD
 
-Once the next Work Item and context pack are selected, the agent may consult:
+Use existing artifact-first/runtime reconstruction (`sddk-cycle-resume` semantics), durable vault knowledge and optional Engram/session summaries.
 
-- `BACKLOG.md` for capability context;
-- `ROADMAP.md` for horizon intent and exit gates;
-- `EVOLUTION-CROSSWALK.md` for historical proposal disposition;
-- accepted ADRs/specs for constraints;
-- only the historical pack files admitted by the context map;
-- `CHANGELOG.md`, git history and tests for shipped truth;
-- predecessor cycle evidence to understand assumptions, debt and carry-forward.
+Session summaries can suggest where to look. They cannot prove runtime/planning state.
 
-None of those sources may override the execution ordering silently.
+### After CDD
 
-If a design source contradicts the spine/context map, the agent must either:
-
-1. reconcile a stale status/context route using stronger evidence, or
-2. propose an ADR/plan/context-map version change.
-
-It must not improvise a different roadmap.
-
-## 9. Work Item admission checklist
-
-Before moving `PROPOSED -> READY`, the agent verifies:
-
-- dependencies are terminal;
-- objective is still useful against current code;
-- acceptance/exit gate is testable;
-- required ADR/spec decisions exist or are part of the item;
-- no newer work has already `ABSORBED` the capability;
-- scope is small enough for one bounded cycle, or the item is split before execution;
-- UAT/evidence expectations are explicit;
-- `CYCLE-CONTEXT-MAP.yaml` has a matching pack and useful context route;
-- the context snapshot can identify predecessor evidence and target code/tests.
-
-## 10. Scope expansion rule
-
-During a cycle the agent may discover new work. It must classify it:
-
-- **required to satisfy current exit gate:** add as a child task of the current Work Item;
-- **new independent capability:** create a new semantic Work Item and place it in the spine with explicit dependencies and a context-pack route;
-- **future optimization:** backlog it after the capability it optimizes;
-- **invalidated assumption:** stop and propose ADR/plan revision;
-- **missing contextual dependency:** amend the context map without reordering product work if the dependency is informational only.
-
-The agent must not silently absorb large adjacent features into the current cycle.
-
-## 11. Updating the spine, timeline or context map
-
-Changing these files is a governed planning operation.
-
-Allowed without ADR:
-
-- status transition supported by evidence;
-- adding evidence references;
-- splitting an oversized not-yet-ACTIVE item while preserving dependency order;
-- clarifying an exit gate without changing product intent;
-- adding a missing context source that does not alter product/dependency semantics;
-- correcting a stale historical path after repository reorganization.
-
-Requires an ADR or explicit planning decision:
-
-- reordering dependency-bearing items;
-- skipping a horizon gate;
-- deleting an admitted capability;
-- introducing a second authority/control path;
-- changing the GA terminal condition;
-- promoting an experimental strategy to default without required evidence;
-- changing a context route in a way that effectively changes architecture/product scope.
-
-Structural changes must update `EXECUTION-SPINE.yaml`, `EXECUTION-TIMELINE.md`, `CYCLE-CONTEXT-MAP.yaml`, `ROADMAP.md`/`BACKLOG.md` where relevant, and the Planning Ledger once H1 owns the model.
-
-## 12. Horizon path to GA
-
-The canonical path is complete, not open-ended:
+Resolve:
 
 ```text
-H0  Reconcile & Deterministic Foundations
- ↓
-H1  Planning SSOT
- ↓
-H2  Generated Workflow MVP
- ↓
-H3  Decision Plane
- ↓
-H4  AgentHost & Context Compiler
- ↓
-H5  Human & Reactive Control
- ↓
-H6  Runtime Completeness & Workflow Lab
- ↓
-H7  Engineering Assurance & UAT
- ↓
-H8  Adaptive SDD
- ↓
-H9  Active Graph & Cockpit
- ↓
-H10 Governed Continuous Improvement
- ↓
-H11 Multi-pack Proof
- ↓
-H12 Supply Chain, Production Hardening & GA
+canonical Decision Memory HEAD
+   + current canonical revisions
+        ↓
+staleness-aware ResumeView
 ```
 
-Within each horizon, `EXECUTION-TIMELINE.md` makes the semantic cycle order visible and `EXECUTION-SPINE.yaml` makes it executable.
+A historical session is addressed via ref/tag/checkpoint, then diffed against current `HEAD`.
 
-## 13. Terminal condition
+Expected semantics:
 
-The plan is complete only when `GA-002` is terminal with evidence.
+```text
+memory log --graph
+memory show <ref>
+memory diff <A>..<B>
+memory merge-base <A> <B>
+memory why <decision>
+memory reflog
+resume explain [--at <ref|timestamp>]
+session diff <A> <B>
+```
 
-At that point the agent must not continue inventing work under this plan. Post-GA evolution starts with a new versioned execution plan derived from observed needs, compatibility commitments and retained backlog.
+Historical checkout is read/reconstruction. It does not restore old authority blindly.
 
-## 14. Minimal agent prompt contract
+## 9. Role topology after `CDD-ROLE-001`
 
-An orchestrator can prepend the following rule to any SDDK development agent:
+Every governed role has `AgentRoleContract`.
 
-> Continue SDDK by reading `docs/sddk-decision-kernel-architecture/02-roadmap/LLM-START-HERE.md`. Determine the current semantic Work Item from `EXECUTION-SPINE.yaml`, locate it in `EXECUTION-TIMELINE.md`, load its required context through `CYCLE-CONTEXT-MAP.yaml`, and follow `AGENT-EXECUTION-PROTOCOL.md`. Record the cycle context snapshot before implementation. Do not skip blocked/earlier work, do not use cycle numbers as capability identities, and do not load historical evolution packs outside the selected context route. Finish the exact exit gate with durable evidence, update planning state, and only then compute the next Work Item.
+Required validation:
 
-This is deliberately short enough to embed in AgentHost/IDE instructions later while keeping detailed governance here.
+- orchestrator owns top-level sequencing/synthesis;
+- coordinator owns only declared bounded fan-out/join;
+- leaf never dispatches;
+- evaluator/judge evaluates immutable subject and does not silently mutate it;
+- advisor/Secretary proposal authority is distinct from mutation authority;
+- allowed workers/tools/read/write/mutation scopes are explicit;
+- one synthesis owner per join;
+- no cycles of delegation authority.
+
+Role violation blocks rather than becoming a warning.
+
+## 10. Delegation after `CDD-HANDOFF-001`
+
+Every non-trivial governed delegation carries:
+
+```text
+DelegationRequest
+ + AgentRoleContract
+ + immutable ContextLease
+```
+
+`ContextLease` pins at least objective, context revision, source subject, planning/workflow revision and Decision Memory `HEAD` when available.
+
+Worker returns `AgentContributionEnvelope`, including:
+
+- coverage satisfied/missing;
+- findings;
+- proposals/alternatives/rejected options;
+- pros/cons;
+- assumptions/uncertainty;
+- risks/open questions;
+- evidence/artifact refs;
+- context delta;
+- recommendation/confidence;
+- metrics.
+
+The full artifact remains recoverable. The envelope is an index, not lossy replacement.
+
+## 11. Coordinator/orchestrator synthesis after `CDD-HANDOFF-002`
+
+Synthesis emits `OrchestrationSynthesisReceipt`:
+
+```yaml
+consumed_contributions: []
+omitted_contributions: []
+conflicts: []
+dissent: []
+resolved_by: []
+selected_option: null
+alternative_options: []
+evidence_refs: []
+compression_refs: []
+information_loss_checks: []
+next_candidates: []
+```
+
+Hard information-loss guard: compression/synthesis cannot silently remove:
+
+- blockers;
+- critical/high risks;
+- mandatory evidence gaps;
+- unresolved material dissent;
+- rejected options carrying `revisit_when`;
+- authority decisions;
+- open questions affecting acceptance.
+
+If these disappear between contribution and synthesis, synthesis is invalid.
+
+## 12. Decision Memory after `CDD-MEMORY-001/002`
+
+Decision Memory adopts Git-like semantics without storing state inside `.git`.
+
+### Immutable object model
+
+```text
+DecisionMemoryBlob
+DecisionMemoryTree
+DecisionMemoryCommit(parents[])
+```
+
+### Refs
+
+```text
+refs/heads/canonical
+refs/heads/session/<id>
+refs/heads/decision/<decision>/<option>
+refs/heads/what-if/<experiment>
+refs/heads/rejected/<decision>/<option>
+refs/tags/cycle/<cycle>
+refs/tags/release/<version>
+HEAD -> refs/heads/canonical
+```
+
+### Hard invariants
+
+- object hash derives from deterministic canonical payload;
+- addressed object is immutable;
+- graph is acyclic;
+- ref moves append reflog;
+- merge/synthesis with multiple parents requires explicit merge receipt;
+- raw source evidence remains reachable;
+- advisory branch never acquires runtime authority implicitly;
+- private chain-of-thought is not persisted or required.
+
+A deletion/compaction policy may use reachability + retention, but cannot remove audit-required evidence.
+
+## 13. Continuation frontier after `CDD-CONTINUE-001`
+
+The orchestrator receives a bounded `ResumeView` and one or more `ContinuationCandidate` values.
+
+Each candidate records:
+
+- action + kind;
+- prerequisites;
+- pros/cons;
+- risk;
+- reversibility;
+- evidence/confidence/uncertainty;
+- expected value/cost;
+- what it blocks/unlocks;
+- whether human authority is required.
+
+The user may see only the best 1–3 options, but Decision Memory preserves admitted alternatives and pruning rationale.
+
+## 14. Human/Secretary integration
+
+Human and Secretary paths must consume CDD rather than invent parallel contracts.
+
+Secretary:
+
+- L0 deterministic reactions first;
+- L1 bounded proposal through Contribution/Candidate;
+- cognitive replan only after deterministic paths fail;
+- cannot directly move canonical memory `HEAD` or runtime state;
+- accepted proposal goes through policy/authority and produces receipts/provenance.
+
+Human decisions likewise become immutable decision evidence linked into Decision Memory after authorization.
+
+## 15. Decision-tree/graph search governance
+
+### Core baseline
+
+Core Decision Plane remains deterministic:
+
+1. enumerate legal actions;
+2. policy filter;
+3. create typed candidates;
+4. score explicit risk/reversibility/evidence/uncertainty/cost/unlock dimensions;
+5. calculate Pareto frontier;
+6. escalate material ambiguity/risk.
+
+### H6 bounded search
+
+`LAB-DECISION-001` may fork Decision Memory branches with:
+
+- Pareto baseline;
+- bounded beam/best-first;
+- depth/node/token/time budgets;
+- environment feedback;
+- pruning receipts;
+- counterfactual comparison;
+- no canonical mutation.
+
+### Experimental strategies
+
+`LAB-DECISION-002` may compare ToT/GoT/MCTS/LATS-like strategies.
+
+They cannot become default without reproducible evidence of quality benefit, bounded cost/stability, rollback and preserved policy/HITL. Deterministic baseline/fallback remains.
+
+## 16. End-of-cycle completion
+
+A cycle is terminal only when:
+
+1. exact spine exit gate is satisfied;
+2. required tests/UAT/evidence pass;
+3. architecture/dependency rules hold;
+4. durable evidence is attached;
+5. Work Item is `SHIPPED`, `ABSORBED` or `SUPERSEDED`;
+6. planning is reconciled;
+7. when available, delegation/synthesis/Decision Memory provenance is complete;
+8. NEXT is recomputed.
+
+## 17. Anti-patterns
+
+- “I remember from yesterday...” as authority.
+- full transcript as required recovery mechanism.
+- summary without link to raw artifact/evidence.
+- coordinator hiding worker dissent.
+- worker using stale context revision silently.
+- leaf dispatching agents.
+- Secretary as a second orchestrator.
+- treating `what-if` branch as accepted because it scored higher.
+- MCTS/ToT as default before Workflow Lab proof.
+- storing private chain-of-thought as product memory.
+- Decision Memory becoming a second Planning/Event Ledger.
+
+## 18. Terminal condition
+
+This execution protocol terminates under the current plan at `GA-002`. Post-GA evolution starts under a new versioned plan.
