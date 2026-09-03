@@ -112,7 +112,7 @@ items:
   - order: 27
     id: TEST-APPLY-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-apply-001-scoped-session-contracts CLOSED; release v1.78.0; exit gate probado: ApplyVerificationSessionV1 consume datos semanticos sin runner discovery (test session_no_runner_commands), strict TDD acotado (RED solo compile/type/lint), verify frontera full-profile intacta, fail-closed heredado (Blocked/VerifyRequired con InsufficientMappingV1); UAT rechaza broad apply ad-hoc; carryovers FIND-000002/3/5 cerrados; 8 tests sesion (452 lib, 1987 workspace); BLOQUE TEST-* COMPLETO (6/6 SHIPPED)
     depends_on: [TEST-EVIDENCE-001]
     objective: Integrate language-agnostic scoped verification with apply, strict TDD, verify and coding-agent semantic contracts.
     exit_gate: Apply consumes semantic topology/impact/next-batch data without runner discovery loops, strict TDD stays scoped, verify remains the declared full-profile boundary, and protocol/UAT reject ad-hoc broad apply testing.
