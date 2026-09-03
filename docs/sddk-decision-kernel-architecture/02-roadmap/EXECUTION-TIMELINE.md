@@ -15,25 +15,31 @@ The canonical roadmap is a dependency-ordered semantic line. By default:
 
 A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-At the time this line was reconciled (2026-09-03, after PR #1 merge `2596e46`):
+After the 2026-09-03 scoped-verification reprioritization:
 
 ```text
-CURRENT  → DW-IR-001
-NEXT     → DW-IR-002
+CURRENT  → TEST-MODEL-001
+NEXT     → TEST-ADAPTER-001
 FINAL    → GA-002
 ```
 
-`GOV-ROADMAP-001` closed as `SHIPPED` with merge/reconciliation evidence (PR #1 merged at `2596e46`; roadmap/backlog/spine/timeline/context-map/protocol agree; historical packs are non-canonical design evidence). Deterministic selection resolves `DW-IR-001`.
+`GOV-ROADMAP-001` remains `SHIPPED`. The new H0 verification foundation is deliberately inserted before Workflow IR because every later implementation cycle benefits from cheaper, more precise test feedback. `DW-IR-001` resumes only after `TEST-APPLY-001` closes the generic service/apply integration.
 
 ---
 
 ## H0 — Reconcile & Deterministic Foundations
 
-**Goal:** make planning, Workflow IR, authority, architecture boundaries and event semantics trustworthy before building persisted generated execution.
+**Goal:** make planning, language-neutral change-scoped verification, Workflow IR, authority, architecture boundaries and event semantics trustworthy before building persisted generated execution.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
 | 10 | `GOV-ROADMAP-001` | Canonical roadmap/backlog/spine/context governance | `governance` |
+| 12 | `TEST-MODEL-001` | Language-neutral ActiveChangeSet + ProjectTestTopology + SUT graph model | `change-scoped-verification` |
+| 13 | `TEST-ADAPTER-001` | Generic topology/test adapter SPI + capability registry + explicit fallback | `change-scoped-verification` |
+| 14 | `TEST-ADAPTER-002` | Prove Rust + multiple non-Rust + polyglot adapter composability | `change-scoped-verification` |
+| 15 | `TEST-SELECT-001` | Deterministic impact propagation + progressive batch selection | `change-scoped-verification` |
+| 16 | `TEST-EVIDENCE-001` | Evidence receipts, freshness, invalidation, reuse + escape telemetry | `change-scoped-verification` |
+| 17 | `TEST-APPLY-001` | Integrate scoped testing with apply/TDD/verify/agent contracts | `change-scoped-verification` |
 | 20 | `DW-IR-001` | Typed execution scope | `dynamic-workflow-ir` |
 | 30 | `DW-IR-002` | Versioned transition/predicate AST | `dynamic-workflow-ir` |
 | 40 | `DW-IR-003` | Revision/hash/provenance invariants | `dynamic-workflow-ir` |
@@ -43,7 +49,7 @@ FINAL    → GA-002
 | 80 | `ARCH-HEX-001` | Close only architecture debt blocking H1–H3 | `architecture` |
 | 90 | `EVT-LEDGER-001` | Canonical event/version/replay contract | `event-ledger` |
 
-**H0 exit:** deterministic contracts required by planning persistence/generated runtime are accepted and tested; authority and architecture boundaries are explicit.
+**H0 exit:** agents use a generic topology/impact/evidence service instead of broad runner guessing; deterministic contracts required by planning persistence/generated runtime are accepted and tested; authority and architecture boundaries are explicit.
 
 ---
 
@@ -237,14 +243,16 @@ FINAL    → GA-002
 2. Do not execute a later horizon because its code looks easier or more interesting.
 3. Do not resurrect an old evolution pack as a parallel timeline.
 4. Do not reuse historical cycle numbers as semantic identity.
-5. Do not pull advanced Map/Reduce/Join into H2.
-6. Do not introduce Human/Secretary authority before Decision Plane + CDD role/handoff/memory foundations.
-7. A Decision Memory `what-if`/rejected branch is advisory until governed promotion; it never gains runtime authority by being newer or more detailed.
-8. Do not introduce ToT/GoT/MCTS/LATS-like search into core runtime; evaluate it in H6 and retain deterministic baseline/fallback.
-9. Do not introduce learning/process mining before stable runtime/replay/lab evidence.
-10. Do not promote adaptive SDD without Workflow Lab evidence.
-11. Do not claim generic-kernel maturity before multi-pack proof.
-12. Do not claim GA before supply-chain, recovery, security and release-readiness gates pass.
+5. Test-impact planning must remain language/build/test-runner neutral; ecosystem support is an adapter/profile concern.
+6. Normal `apply` does not compensate for unknown impact by running the entire repository; unknown mapping fails closed and `verify` owns broad integration evidence.
+7. Do not pull advanced Map/Reduce/Join into H2.
+8. Do not introduce Human/Secretary authority before Decision Plane + CDD role/handoff/memory foundations.
+9. A Decision Memory `what-if`/rejected branch is advisory until governed promotion; it never gains runtime authority by being newer or more detailed.
+10. Do not introduce ToT/GoT/MCTS/LATS-like search into core runtime; evaluate it in H6 and retain deterministic baseline/fallback.
+11. Do not introduce learning/process mining before stable runtime/replay/lab evidence.
+12. Do not promote adaptive SDD without Workflow Lab evidence.
+13. Do not claim generic-kernel maturity before multi-pack proof.
+14. Do not claim GA before supply-chain, recovery, security and release-readiness gates pass.
 
 ## 3. How the agent uses this document
 
