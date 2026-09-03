@@ -1,7 +1,7 @@
 # SDDK Roadmap — Canonical Evolution Line to GA
 
 > **Status:** canonical human planning view
-> **Baseline:** `main` / v1.70.0 as reconciled on 2026-09-03
+> **Baseline:** `main` / v1.70.0 release baseline as reconciled on 2026-09-03; current workspace has advanced beyond it
 > **Machine execution source:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
 > **Human cycle timeline:** [`EXECUTION-TIMELINE.md`](./EXECUTION-TIMELINE.md)
 > **Context routing:** [`CYCLE-CONTEXT-MAP.yaml`](./CYCLE-CONTEXT-MAP.yaml)
@@ -88,6 +88,8 @@ v1.70.0 already contains important substrate:
 - artifact-first handoff discipline;
 - separation between workflow state, durable vault knowledge and optional Engram memory.
 
+After that release baseline, `DW-IR-001` was implemented on `main` as the typed/versioned/migration-safe `ExecutionScope` contract. The canonical spine therefore treats it as `SHIPPED` and inserts the generic test-impact foundation before `DW-IR-002`, rather than pretending already delivered work has not happened.
+
 Older packs therefore remain evidence/design sources, not executable mega-roadmaps.
 
 ## 6. Official path to GA
@@ -128,19 +130,20 @@ No later horizon bypasses an earlier gate unless an explicit governed plan revis
 
 **Goal:** make planning, **language-agnostic change-scoped verification**, Workflow IR, authority boundaries, architecture boundaries and replay/event assumptions truthful before adding new persistent runtime complexity.
 
-The scoped-verification foundation is intentionally pulled in front of Workflow IR because every later coding cycle otherwise pays repeated broad-test and test-discovery cost. The capability must be generic from the start: Rust/Cargo is an adapter used by this repository, not a kernel assumption.
+The scoped-verification foundation is intentionally pulled in front of the **remaining** Workflow IR work because every later coding cycle otherwise pays repeated broad-test and test-discovery cost. `DW-IR-001` is preserved as already shipped. The capability must be generic from the start: Rust/Cargo is an adapter used by this repository, not a kernel assumption.
 
 ### Sequence
 
 ```text
 GOV-ROADMAP-001
+ → DW-IR-001                       # SHIPPED on current main
  → TEST-MODEL-001
  → TEST-ADAPTER-001
  → TEST-ADAPTER-002
  → TEST-SELECT-001
  → TEST-EVIDENCE-001
  → TEST-APPLY-001
- → DW-IR-001 → DW-IR-002 → DW-IR-003 → DW-IR-004 → DW-IR-005
+ → DW-IR-002 → DW-IR-003 → DW-IR-004 → DW-IR-005
  → HX-AUTHORITY-001 → ARCH-HEX-001 → EVT-LEDGER-001
 ```
 
@@ -653,9 +656,9 @@ Their ideas become executable only when mapped to semantic Work Items in `EXECUT
 
 ## 9. Current next work
 
-1. `GOV-ROADMAP-001` is `SHIPPED`.
+1. `GOV-ROADMAP-001` and `DW-IR-001` are `SHIPPED`.
 2. `TEST-MODEL-001` is the deterministic CURRENT Work Item; `TEST-ADAPTER-001` is NEXT.
-3. H0 then proceeds through adapter proof, selector, evidence/invalidation and apply/verify integration before resuming `DW-IR-001`.
+3. H0 then proceeds through adapter proof, selector, evidence/invalidation and apply/verify integration before `DW-IR-002`.
 4. The complete route, including CDD/Decision Memory, remains placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 
 That is the official line an LLM must follow.
