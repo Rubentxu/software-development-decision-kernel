@@ -27,6 +27,7 @@ pub mod macros;
 pub mod metrics;
 pub mod models;
 pub mod pack;
+pub mod plan_revision;
 pub mod ports;
 pub mod projections;
 pub mod proposal;
@@ -68,6 +69,10 @@ pub use legacy::*;
 pub use metrics::*;
 pub use models::*;
 pub use pack::*;
+pub use plan_revision::{
+    Edge, NormalizedPlan, NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionError,
+    PlanRevisionLineageV1, PlanRevisionV1,
+};
 pub use ports::{
     ArtifactStore, ControlPlane, EventAppended, EventStore, GraphStore, Ledger, LedgerFactory,
     NoopTaskExecutor, TaskError, TaskExecutor, TaskOutput,
