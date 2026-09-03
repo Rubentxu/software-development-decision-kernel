@@ -3,7 +3,7 @@
 //!
 //! ## Design
 //!
-//! - Closed enums with `assert_variant_count_eq!` guards (ReuseDecision=3, StaleReason=6,
+//! - Closed enums with `assert_variant_count_eq!` guards (ReuseDecision=3, StaleReason=7,
 //!   TestEvidenceError=4) per errata TEST-MODEL-001.
 //! - Deterministic: BTreeMap/BTreeSet, canonical JSON, ordered reports.
 //! - No filesystem or persistence dependency — EvidenceStoreV1 is an in-memory BTreeMap adapter.
