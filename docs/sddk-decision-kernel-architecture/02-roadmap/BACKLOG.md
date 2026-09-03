@@ -39,6 +39,64 @@ Allowed states: `PROPOSED`, `READY`, `ACTIVE`, `BLOCKED`, `PARTIAL`, `SHIPPED`, 
 
 - `GOV-ROADMAP-001` — canonical roadmap, backlog, evolution crosswalk, execution spine, timeline, context map and agent continuation protocol.
 
+### `TEST-MODEL`
+
+Purpose: model **what changed, what can be affected and what verification capability exists** without assuming a language, build system or runner.
+
+- `TEST-MODEL-001` — language-neutral `ActiveChangeSet`, `ProjectTestTopology`, SUT graph and `VerificationCapability` contracts.
+
+Core model supports:
+
+- single-language, multi-module and polyglot repositories;
+- components/build units/source/config/schema/generated artifacts;
+- runtime and contract boundaries;
+- stable semantic tests/suites/capabilities;
+- provenance/confidence on inferred topology relations;
+- fail-closed unknown impact.
+
+### `TEST-ADAPTER`
+
+Purpose: keep ecosystem mechanics outside kernel planning.
+
+- `TEST-ADAPTER-001` — generic topology/test adapter SPI, capability registry and explicit project mapping fallback;
+- `TEST-ADAPTER-002` — prove composability with SDDK's Rust stack, multiple contrasting non-Rust fixtures and a cross-language/polyglot contract edge.
+
+Adapter rule:
+
+```text
+kernel chooses semantic evidence
+adapter discovers/translates mechanism
+runner executes
+receipt returns to kernel
+```
+
+Cargo, Maven/Gradle, npm/pnpm/yarn, pytest, Go, .NET, CMake/Bazel/etc. are adapter families, never planning branches in the kernel. Unsupported ecosystems can use a stable explicit profile/mapping until a native adapter exists.
+
+### `TEST-SELECT`
+
+- `TEST-SELECT-001` — deterministic change→SUT impact propagation and progressive direct/component/dependency/contract/risk batch selection.
+
+Normal `apply` stops when scoped obligations have fresh evidence. Unknown impact blocks; it does not silently trigger a whole-repository test run.
+
+### `TEST-EVIDENCE`
+
+- `TEST-EVIDENCE-001` — `TestEvidenceReceipt`, freshness identity, graph-driven invalidation/reuse and selector-quality telemetry.
+
+Primary quality guard: broad `verify` regressions missed by scoped `apply` become **escape-rate** evidence against the mapping/selection strategy.
+
+### `TEST-APPLY`
+
+- `TEST-APPLY-001` — integrate semantic topology/impact/next-batch behavior with `apply`, strict TDD, `verify` and coding-agent contracts.
+
+Lifecycle invariant:
+
+```text
+apply  = progressive change-scoped verification
+verify = declared full-project verification profile
+```
+
+This is project/language neutral and also applies when one repository contains several ecosystems.
+
 ### `DW-IR`
 
 - `DW-IR-001` — typed execution scope;
@@ -369,10 +427,11 @@ H9 visualizes/query-projects H4 CDD; it does not create a second memory graph of
 Do not read this document top-to-bottom and guess. Use `EXECUTION-SPINE.yaml` and `AGENT-EXECUTION-PROTOCOL.md`.
 
 ```text
-SHIPPED: GOV-ROADMAP-001 (PR #1 merged at 2596e46, reconciled 2026-09-03)
-CURRENT: DW-IR-001
-NEXT after DW-IR-001 evidence: DW-IR-002
+SHIPPED: GOV-ROADMAP-001
+CURRENT: TEST-MODEL-001
+NEXT after TEST-MODEL-001 evidence: TEST-ADAPTER-001
+LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001 → DW-IR-001
 FINAL: GA-002
 ```
 
-The spine contains every admitted Work Item between those points, including CDD/Decision Memory and Decision Lab, with explicit order, dependencies, objective and exit gate.
+The spine contains every admitted Work Item between those points, including language-agnostic scoped verification, CDD/Decision Memory and Decision Lab, with explicit order, dependencies, objective and exit gate.
