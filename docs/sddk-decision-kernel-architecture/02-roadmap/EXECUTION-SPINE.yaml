@@ -88,7 +88,7 @@ items:
   - order: 24
     id: TEST-ADAPTER-002
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-adapter-002-composability-uat CLOSED; release v1.75.0; exit gate probado por UAT: Rust + TypeScript + Python componen por el camino generico, Go anadido como 4o ecosistema = solo perfil (cero branching de kernel), arista de contrato cross-language schema:openapi->component:web-client resuelta por FallbackResolver; 12 tests UAT (399 lib, 1934 workspace)
     depends_on: [TEST-ADAPTER-001]
     objective: Prove adapter composability with SDDK's Rust stack plus multiple non-Rust and polyglot fixtures.
     exit_gate: UAT proves the same domain/planner contracts with Rust and at least two contrasting non-Rust ecosystems plus one cross-language contract edge; adding another ecosystem requires an adapter/profile, not kernel branching.
