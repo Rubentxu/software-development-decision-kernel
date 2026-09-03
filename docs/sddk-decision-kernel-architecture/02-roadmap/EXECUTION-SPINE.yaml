@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 plan_id: sddk-canonical-evolution
 baseline:
   release: v1.70.0
@@ -32,17 +32,19 @@ terminal_goal:
   id: GA-002
   condition: >-
     SDDK reaches GA with the canonical runtime, Decision Plane, agent/human control,
-    advanced operators, assurance/UAT, adaptive SDD, graph/cockpit, governed learning,
-    multi-pack proof, supply-chain controls and production hardening validated by evidence.
+    durable continuity and Git-like Decision Memory, typed delegation/synthesis,
+    advanced operators and bounded decision-search strategies, assurance/UAT,
+    adaptive SDD, graph/cockpit, governed learning, multi-pack proof,
+    supply-chain controls and production hardening validated by evidence.
 
 horizons:
   - { id: H0, name: Reconcile & Deterministic Foundations }
   - { id: H1, name: Planning SSOT }
   - { id: H2, name: Generated Workflow MVP }
   - { id: H3, name: Decision Plane }
-  - { id: H4, name: AgentHost & Context Compiler }
+  - { id: H4, name: AgentHost, Context Compiler & Decision Memory }
   - { id: H5, name: Human & Reactive Control }
-  - { id: H6, name: Runtime Completeness & Workflow Lab }
+  - { id: H6, name: Runtime Completeness, Decision Search & Workflow Lab }
   - { id: H7, name: Engineering Assurance & UAT }
   - { id: H8, name: Adaptive SDD }
   - { id: H9, name: Active Graph & Cockpit }
@@ -259,11 +261,59 @@ items:
     objective: Integrate CurrentRunView/recovery context into AgentHost cold-start behavior.
     exit_gate: Fresh agent session reconstructs required working context without relying on prior chat memory.
 
+  - order: 261
+    id: CDD-ROLE-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CTX-COMPILER-002]
+    objective: Introduce typed AgentRoleContract and validate delegation/authority topology.
+    exit_gate: Orchestrator, coordinator, leaf, evaluator and advisor boundaries are machine-validatable, including dispatch allowlists, mutation authority, tool scopes and synthesis ownership.
+
+  - order: 263
+    id: CDD-HANDOFF-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CDD-ROLE-001]
+    objective: Introduce typed DelegationRequest, immutable ContextLease and AgentContributionEnvelope.
+    exit_gate: Every governed delegation binds objective/context revision and returns coverage, findings, alternatives, assumptions, risks, evidence and artifact refs under a validated schema.
+
+  - order: 265
+    id: CDD-HANDOFF-002
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CDD-HANDOFF-001]
+    objective: Add OrchestrationSynthesisReceipt, dissent preservation and information-loss guards.
+    exit_gate: Coordinator/orchestrator synthesis records consumed and omitted contributions, conflicts, dissent and evidence; mandatory risk/evidence cannot disappear silently during compression.
+
+  - order: 267
+    id: CDD-MEMORY-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CDD-HANDOFF-002]
+    objective: Implement Git-like content-addressed Decision Memory object and ref model.
+    exit_gate: Immutable MemoryCommit/Tree/Blob objects support parents, canonical serialization/hash, refs, HEAD, tags and append-only reflog while advisory branches have no runtime authority.
+
+  - order: 268
+    id: CDD-MEMORY-002
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CDD-MEMORY-001]
+    objective: Add traversable Decision Memory history, branch/diff/merge-base and session-delta projections.
+    exit_gate: Agent/user can log/show/tree/diff ancestry, resolve historical session checkpoints, compute merge-base/fork-point and inspect decision/delegation branches back to original evidence.
+
+  - order: 269
+    id: CDD-CONTINUE-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CDD-MEMORY-002]
+    objective: Integrate ResumeView and rich ContinuationCandidate frontier into AgentHost/orchestrator cold start.
+    exit_gate: A fresh session resolves Decision Memory HEAD, reconstructs a bounded staleness-aware resume tree and presents evidence-linked continuation candidates with pros, cons, risks, reversibility and prerequisites.
+
   - order: 270
     id: HX-DECISION-001
     horizon: H5
     status: PROPOSED
-    depends_on: [CTX-COMPILER-002]
+    depends_on: [CDD-CONTINUE-001]
     objective: Implement HumanDecision request/decision/receipt contracts and HumanDecisionPort.
     exit_gate: Human decisions are immutable, provenance-preserving and adapter-independent.
 
@@ -280,8 +330,8 @@ items:
     horizon: H5
     status: PROPOSED
     depends_on: [HX-DECISION-002]
-    objective: Implement ResumeInfo, RehydrationPlan and semantic cold-start resume.
-    exit_gate: Human/agent continuation reconstructs pending work and decisions safely after cold start.
+    objective: Implement ResumeInfo, RehydrationPlan and semantic cold-start resume on top of CDD ResumeView.
+    exit_gate: Human/agent continuation reconstructs pending work and decisions safely after cold start without duplicating Decision Memory/context semantics.
 
   - order: 300
     id: RX-SECRETARY-001
@@ -296,8 +346,8 @@ items:
     horizon: H5
     status: PROPOSED
     depends_on: [RX-SECRETARY-001]
-    objective: Implement bounded L1 Secretary proposals using the same authority path as humans.
-    exit_gate: Secretary can only propose closed-set actions; accepted actions pass policy and durable authorization.
+    objective: Implement bounded L1 Secretary proposals using the same authority and CDD contribution path as humans/agents.
+    exit_gate: Secretary can only propose closed-set actions; proposals carry evidence/context provenance and accepted actions pass policy and durable authorization.
 
   - order: 320
     id: RX-SECRETARY-003
@@ -305,7 +355,7 @@ items:
     status: PROPOSED
     depends_on: [RX-SECRETARY-002]
     objective: Add bounded cognitive replan for cases deterministic strategies cannot resolve.
-    exit_gate: LLM replan is budgeted, explainable, policy-bounded and recoverable.
+    exit_gate: LLM replan is budgeted, explainable, policy-bounded, Decision-Memory-traceable and recoverable.
 
   - order: 330
     id: DW-OPERATORS-001
@@ -363,11 +413,27 @@ items:
     objective: Implement fork/ablation, strategy comparison and promotion/shadow evidence.
     exit_gate: Competing workflow strategies can be compared reproducibly before promotion.
 
+  - order: 392
+    id: LAB-DECISION-001
+    horizon: H6
+    status: PROPOSED
+    depends_on: [LAB-WORKFLOW-002]
+    objective: Implement bounded Decision Memory branch/fork lookahead with deterministic Pareto and beam/best-first baselines.
+    exit_gate: Candidate branches are budgeted, pruning is receipted, environment feedback is provenance-linked and counterfactual runs cannot mutate canonical HEAD.
+
+  - order: 394
+    id: LAB-DECISION-002
+    horizon: H6
+    status: PROPOSED
+    depends_on: [LAB-DECISION-001]
+    objective: Evaluate ToT/GoT/MCTS/LATS-like decision strategies as reproducible Workflow Lab experiments.
+    exit_gate: No non-deterministic search strategy is promoted without evidence of quality uplift, bounded cost/stability, rollback, traceability and policy/HITL preservation.
+
   - order: 400
     id: EA-ASSURANCE-001
     horizon: H7
     status: PROPOSED
-    depends_on: [LAB-WORKFLOW-002]
+    depends_on: [LAB-DECISION-002]
     objective: Implement assurance profiles, evidence taxonomy and rule contracts.
     exit_gate: Assurance intent is represented as deterministic domain data, not agent prose.
 
@@ -440,40 +506,40 @@ items:
     horizon: H9
     status: PROPOSED
     depends_on: [SDD-ADAPTIVE-005]
-    objective: Build typed active-graph projections from canonical events, artifacts and evidence.
-    exit_gate: Requirements, evidence, decisions, runs, debt and lineage have queryable typed relations.
+    objective: Build typed active-graph projections from canonical events, artifacts, evidence and Decision Memory.
+    exit_gate: Requirements, evidence, decisions, memory branches, delegations, runs, debt and lineage have queryable typed relations.
 
   - order: 500
     id: GRAPH-WHY-002
     horizon: H9
     status: PROPOSED
     depends_on: [GRAPH-WHY-001]
-    objective: Expose causal why/debt-why queries through the minimal facade.
-    exit_gate: User/agent can explain why a state, decision or debt item exists using provenance-linked paths.
+    objective: Expose causal why/debt-why/decision-why queries through the minimal facade.
+    exit_gate: User/agent can explain why a state, decision or debt item exists using provenance-linked paths to original evidence/contributions.
 
   - order: 510
     id: COCKPIT-001
     horizon: H9
     status: PROPOSED
     depends_on: [GRAPH-WHY-002]
-    objective: Implement static/control-plane overview, journal, timeline and execution-graph views.
-    exit_gate: Core operational state is inspectable without reconstructing it manually from files/logs.
+    objective: Implement static/control-plane overview, journal, timeline, execution-graph and Decision Memory tree views.
+    exit_gate: Core operational and deliberative state is inspectable without reconstructing it manually from files/logs.
 
   - order: 520
     id: COCKPIT-002
     horizon: H9
     status: PROPOSED
     depends_on: [COCKPIT-001]
-    objective: Add provider health, usage, assurance and experiment comparison views.
-    exit_gate: Operational and experimental decisions are observable through stable projections.
+    objective: Add provider health, usage, assurance, handoff quality and experiment comparison views.
+    exit_gate: Operational, delegation and experimental decisions are observable through stable projections.
 
   - order: 530
     id: GCI-LEARNING-001
     horizon: H10
     status: PROPOSED
     depends_on: [COCKPIT-002]
-    objective: Project ExperienceEpisode-style records and perform process mining over canonical events.
-    exit_gate: Repeated execution patterns and failure/recovery paths are reproducibly discoverable.
+    objective: Project ExperienceEpisode-style records and perform process mining over canonical events and Decision Memory outcomes.
+    exit_gate: Repeated execution, decision, delegation and failure/recovery paths are reproducibly discoverable without treating memory projections as authority.
 
   - order: 540
     id: GCI-LEARNING-002
