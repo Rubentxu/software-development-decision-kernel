@@ -1525,7 +1525,7 @@ mod tests {
         // Recompute digest from the mutated canonical JSON (this is what would be
         // stored if new() were called afresh with the mutated data)
         let new_digest = cs2.compute_change_set_digest();
-        let prev = digest_before.as_ref().map(String::as_str);
+        let prev = digest_before.as_deref();
         assert_ne!(
             prev,
             Some(new_digest.as_str()),
