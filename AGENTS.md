@@ -42,11 +42,18 @@ y se actualiza con `sddk dev install`.
 - `main` es la rama única de desarrollo + releases. No hay `develop`, `release/*` ni hotfix.
 - Cualquier feature se commitea directo a `main` (o se squash-margea en PRs externos).
 
-### 2.3. Workspace
+### 2.3. Workspace y verificación progresiva
 
 - `Cargo.toml` `[workspace.package] version` = versión de desarrollo actual (puede ir
   ahead del último tag hasta `chore(release)`).
-- `cargo test --workspace` verde + `cargo clippy --workspace` sin errores antes de commitear.
+- **Durante coding/`apply` NO se usa `cargo test --workspace` como gate rutinario.**
+  Se ejecutan únicamente los checks/tests justificables por el cambio activo y su SUT,
+  según `prompts/sddk/change-scoped-testing.md`.
+- La suite completa del workspace/proyecto pertenece al goal **`verify`**. Release/GA
+  deben consumir una evidencia `verify` fresca en lugar de crear otra autoridad de testing.
+- Hasta que `TEST-APPLY-001` esté SHIPPED, la selección acotada se hace con la política
+  bootstrap (Git diff + ownership + dependencias/rdeps + tests explícitos) y se registra
+  la razón. Después, el agente DEBE consumir el servicio semántico de SDDK.
 
 ### 2.4. Memory + Engram
 - Sesiones largas DEBEN cerrar con `engram_mem_session_summary` (goal, discoveries,
@@ -55,16 +62,41 @@ y se actualiza con `sddk dev install`.
 
 ### 2.5. CI local-first, cloud async
 
-- **El gate de verificación es LOCAL**: `cargo test --workspace` + `cargo clippy
-  --workspace` + fmt antes de commitear (ver checklist §5). GitHub Actions cloud
-  **NO bloquea**: sin required status checks, runs = evidencia asíncrona.
+- **El feedback de `apply` es LOCAL y acotado al cambio.** No conviertas cada commit
+  en un `cargo test --workspace` + `cargo clippy --workspace` indiscriminado.
+- **El gate integral es `verify`:** allí sí corre el perfil completo declarado por el
+  proyecto (suite total + checks globales/assurance que correspondan).
+- GitHub Actions cloud **NO bloquea**: sin required status checks, runs = evidencia
+  asíncrona.
 - **Prohibido** esperar runs de la nube (`gh pr checks --watch`, retrasar
   push/merge por CI) o "arreglar CI" sin reproducir en local primero.
 - **Workflows en local**: `act` v0.2.89 (`/usr/local/bin/act`) + podman;
   `ubuntu-latest` mapeado a `catthehacker/ubuntu:rust-latest` vía
   `~/.config/act/actrc`. Ejemplo: `act pull_request -W .github/workflows/<wf>.yml`.
 - Los minutos del plan free de GitHub están agotados — el cloud puede ni
-  ejecutar; confía en el gate local.
+  ejecutar; confía en la evidencia local de `apply`/`verify`.
+
+### 2.6. Contrato de testing para agentes de código
+
+La regla operativa es:
+
+```text
+apply  = cambio activo → SUT afectado → tests progresivos acotados → receipts
+verify = perfil completo del proyecto / suite total
+```
+
+Antes de ejecutar tests durante código:
+
+1. identifica el cambio activo (no el repo entero);
+2. mapea el SUT/paquete/módulo/contrato afectado;
+3. ejecuta el batch mínimo requerido por esa relación;
+4. ensancha sólo por dependencia, contrato o riesgo demostrado;
+5. registra qué se probó y por qué;
+6. si no puedes justificar el mapeo, **fail closed** y reporta el hueco;
+7. no ocultes la incertidumbre ejecutando todos los tests "por si acaso".
+
+Contrato detallado: `prompts/sddk/change-scoped-testing.md`.
+Diseño objetivo: `docs/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md`.
 
 ---
 
@@ -101,19 +133,25 @@ y se actualiza con `sddk dev install`.
 ## 5. Checklist antes de commitear
 
 ```text
-[ ] cargo build --release -p sddk-cli            # compila
-[ ] cargo test --workspace                       # verde
-[ ] cargo clippy --workspace --all-targets -- -D errors    # 0 errores (gate duro, cycle-17+)
-[ ] shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh    # parity con just ci (Phase C gated — stable)
+[ ] Identifica ActiveChangeSet / diff de la tarea actual
+[ ] Mapea SUT + tests/checks afectados y registra la razón
+[ ] Ejecuta sólo los checks/tests progresivos requeridos por ese cambio
+[ ] NO ejecutes cargo test --workspace salvo que el goal activo sea verify
+[ ] Si el impacto es desconocido: bloquea/reportar mapping gap; no "run all"
+[ ] cargo build/check/clippy sólo con el scope afectado cuando sea posible
+[ ] shellcheck únicamente sobre scripts afectados cuando aplique
 [ ] Si tocaste assets/: sddk dev install        # bundle runtime actualizado
 [ ] Tras release: sddk dev doctor | grep bundle_coherence (binario == bundle)
 [ ] Tras release: sddk dev update --prune-only --keep 1 --root ~/.local/share/sddk/framework (INC-DEBT-020: current repoints a newest kept)
-[ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh
+[ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh cuando su SUT esté afectado
 [ ] git status                                  # clean
 [ ] git diff                                    # revisas lo que vas a commitear
 [ ] commit mensaje: feat(uat): … o fix(uat): …
 [ ] git push origin main                        # pusheas
 ```
+
+El checklist de commit es de `apply`. El **full test profile** se ejecuta en `verify`,
+no repetido en cada commit.
 
 ---
 
@@ -130,6 +168,8 @@ y se actualiza con `sddk dev install`.
 
 - **Release & distribution:** `docs/RELEASING.md`
 - **Architecture model:** `docs/ARCHITECTURE-MODEL.md`
+- **Testing contract:** `prompts/sddk/change-scoped-testing.md`
+- **Change-scoped verification spec:** `docs/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md`
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
 - **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
 - **Roadmap de arquitectura:** `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
@@ -159,7 +199,7 @@ hagas un release a medias**.
 | # | Paso | Gate | Cómo se verifica |
 |---|------|------|------------------|
 | 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version` | `git log -1 --format=%s` matchea regex |
-| 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D errors`, `cargo test --workspace` | exit code 0 |
+| 1 | Verify boundary | perfil integral/fresco de `verify`; mientras el script legacy ejecute `cargo fmt --check`, `cargo clippy -D errors`, `cargo test --workspace`, ese bloque se considera la ejecución de `verify`, no un gate adicional de `apply` | exit code 0 + receipt cuando `TEST-APPLY-001` lo integre |
 | 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
 | 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
 | 4 | Manifest | `$BIN dev manifest --root .` + `--verify` | `verify_manifest` sin mismatches (RDI) |
@@ -178,7 +218,7 @@ hagas un release a medias**.
 ```bash
 bash scripts/release.sh               # flujo completo
 bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica)
-bash scripts/release.sh --skip-tests  # asume que ya corriste los gates
+bash scripts/release.sh --skip-tests  # sólo válido con evidencia verify fresca equivalente
 bash scripts/release.sh --skip-install # pasos 0-9 (no toca local)
 bash scripts/release.sh --force       # sobrescribe release existente en GH
 ```
@@ -265,5 +305,4 @@ en lugar de `--successor` — exactamente uno de los dos.
 
 - `InMemoryLedger::acquire_cycle_lease` hardcodea `fencing_token=1` — tests deben usar `1`
 - Receipt se escribe en `<cycle-artifacts>/<cycle-id>/supersede-receipt.json`
-- Ellease se libera atómicamente en `update_cycle_with_event(..., release_lease_on_phase_change=true)`
-
+- El lease se libera atómicamente en `update_cycle_with_event(..., release_lease_on_phase_change=true)`
