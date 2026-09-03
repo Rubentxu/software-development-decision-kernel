@@ -15,10 +15,10 @@ The canonical roadmap is a dependency-ordered semantic line. By default:
 
 A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-After reconciling the 2026-09-03 scoped-verification reprioritization with current `main`:
+After reconciling the 2026-09-03 scoped-verification reprioritization with current `main` (DW-IR-002 shipped v1.72.0 while the TEST-* block was landing):
 
 ```text
-SHIPPED  → DW-IR-001
+SHIPPED  → GOV-ROADMAP-001, DW-IR-001, DW-IR-002
 CURRENT  → TEST-MODEL-001
 NEXT     → TEST-ADAPTER-001
 FINAL    → GA-002

@@ -120,7 +120,7 @@ items:
   - order: 30
     id: DW-IR-002
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/dw-ir-002-transition-predicate-ast CLOSED; release v1.72.0; exit gate proven: versioned TransitionAst with closed-set validation errors, deterministic canonical serialization, real depth-bound, legacy migration with predictable rejection (41 module tests, 1855 workspace tests). NOTE: shipped ahead of the TEST-APPLY-001 dependency rewiring introduced by PR #2 (was in flight when that plan landed); dependency edge preserved as accepted by PR #2.
     depends_on: [TEST-APPLY-001]
     objective: Stabilize transition/predicate AST and validation semantics.
     exit_gate: Versioned AST round-trips deterministically and rejects invalid transitions predictably.
