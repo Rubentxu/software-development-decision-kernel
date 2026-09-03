@@ -1,0 +1,410 @@
+schema_version: 1
+map_id: sddk-cycle-context-map
+purpose: >-
+  Machine-readable context-loading policy for the semantic Work Item selected from
+  EXECUTION-SPINE.yaml. It tells an LLM what it must read before implementation,
+  what it may read on demand, and which historical material is only advisory.
+
+entrypoint: docs/sddk-decision-kernel-architecture/02-roadmap/LLM-START-HERE.md
+execution_plan: docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml
+timeline: docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md
+protocol: docs/sddk-decision-kernel-architecture/02-roadmap/AGENT-EXECUTION-PROTOCOL.md
+
+context_policy:
+  load_order: [tier0_navigation, tier1_canonical, tier2_cycle_pack, tier3_exploration]
+  rules:
+    - Read STATUS.md before consuming any historical evolution pack.
+    - Load only the selected Work Item family pack, not every evolution dossier.
+    - Always read direct dependency completion evidence before changing code.
+    - Read current implementation/tests for the contracts being changed.
+    - Discover and read accepted ADRs/specs that constrain the selected Work Item.
+    - If accepted design, released behavior, tests and planning disagree, stop and reconcile the conflict explicitly.
+    - Historical proposal prose never silently overrides current code, accepted ADR/spec or canonical planning state.
+    - Record consulted sources and assumptions in the cycle context snapshot before implementation.
+
+source_roles:
+  navigation:
+    - docs/sddk-decision-kernel-architecture/02-roadmap/LLM-START-HERE.md
+    - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml
+    - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md
+    - docs/sddk-decision-kernel-architecture/02-roadmap/CYCLE-CONTEXT-MAP.yaml
+    - docs/sddk-decision-kernel-architecture/02-roadmap/AGENT-EXECUTION-PROTOCOL.md
+  canonical_planning:
+    - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md
+    - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md
+    - docs/sddk-decision-kernel-architecture/02-roadmap/EVOLUTION-CROSSWALK.md
+  release_truth:
+    - CHANGELOG.md
+    - git tags/commits for the selected capability and direct dependencies
+    - executable tests covering the affected contracts
+  architecture_baseline:
+    - docs/ARCHITECTURE-MODEL.md
+
+always_read:
+  tier0_navigation:
+    - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml#selected-work-item
+    - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md#selected-work-item
+    - docs/sddk-decision-kernel-architecture/02-roadmap/CYCLE-CONTEXT-MAP.yaml#selected-context-pack
+    - docs/sddk-decision-kernel-architecture/02-roadmap/AGENT-EXECUTION-PROTOCOL.md
+  tier1_canonical:
+    - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#selected-horizon
+    - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md#selected-capability
+    - direct-dependency completion evidence
+    - current code and tests for the selected contract boundary
+    - accepted ADRs/specs directly constraining the selected Work Item
+
+historical_sources:
+  dynamic_workflow_status: docs/evolutivo-workflows-dinamicos-STATUS.md
+  dynamic_workflow_dossier: docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+  lifecycle_flexibility: docs/evolutivo-correcciones-flexibilidad.md
+  human_agent_status: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+  human_agent_readme: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/README.md
+  human_agent_baseline: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/BASELINE.md
+  human_agent_dependency_map: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/DEPENDENCY-MAP.md
+  human_agent_implementation: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
+  human_agent_roadmap: docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/ROADMAP-UPDATED.md
+  complete_evolution_status: docs/sddk-complete-evolution-2026-08-23/STATUS.md
+  complete_evolution_index: docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+  complete_evolution_readme: docs/sddk-complete-evolution-2026-08-23/CURRENT/README.md
+  complete_evolution_roadmap: docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
+  complete_evolution_backlog: docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+
+accepted_decision_sources:
+  secretary_spec: docs/sddk-decision-kernel-architecture/04-specs/SPEC-042-secretary-runtime.md
+  secretary_budget_adr: docs/adr/ADR-0072-secretary-budgets.md
+  secretary_authority_adr: docs/adr/ADR-0073-secretary-authority.md
+
+packs:
+  governance:
+    match_ids: [GOV-ROADMAP-001]
+    must_read:
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EVOLUTION-CROSSWALK.md
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+    evidence:
+      - PR/merge evidence for the canonical documentation change
+      - consistency check that spine, timeline, backlog and status companions agree
+
+  dynamic-workflow-ir:
+    match_prefixes: [DW-IR-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - crates/sddk-domain/src/workflow_ir.rs
+    discover_and_read:
+      - accepted ADR/spec for typed scope, transition AST, revision/hash/provenance or operator contracts affected by the selected item
+      - tests referencing NewWorkflowPlan, WorkflowStep, Transition, WorkflowPatchSet or deterministic serialization
+    relevant_only:
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md when authority/scope semantics intersect human control
+
+  human-authority:
+    match_prefixes: [HX-AUTHORITY-]
+    must_read:
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/BASELINE.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/DEPENDENCY-MAP.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+    discover_and_read:
+      - accepted authority/policy ADRs and current CLI/runtime mutation paths
+
+  architecture:
+    match_prefixes: [ARCH-HEX-]
+    must_read:
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md
+    discover_and_read:
+      - accepted architecture/hexagonal-boundary ADRs relevant to the crates touched
+      - dependency/crate-boundary tests and architecture checks
+    scope_rule: Close only architecture debt that blocks the canonical dependency path; do not start a broad refactor program.
+
+  event-ledger:
+    match_prefixes: [EVT-LEDGER-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - docs/ARCHITECTURE-MODEL.md
+    discover_and_read:
+      - current event/domain code containing event schema, causation, correlation, journal or replay contracts
+      - accepted event/replay ADRs/specs
+      - replay/idempotency tests
+
+  planning-ledger:
+    match_prefixes: [PLN-LEDGER-]
+    must_read:
+      - docs/evolutivo-correcciones-flexibilidad.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EVOLUTION-CROSSWALK.md
+    discover_and_read:
+      - historical Planning Lifecycle/Decision Ledger sections still referenced by current code/docs
+      - current cycle/run ledger and receipt models
+      - accepted planning/provenance ADRs/specs
+    invariant: H1 must absorb the bootstrap execution spine semantically; it must not create a second competing planning identity system.
+
+  dynamic-runtime:
+    match_prefixes: [DW-RUNTIME-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - crates/sddk-domain/src/workflow_ir.rs
+    discover_and_read:
+      - current definitions/usages of WorkflowRun, ExecutionGraphRevision, NewWorkflowPlan and persisted run state
+      - compiler/validator/runtime ports and adapters touched by the selected Work Item
+      - replay/resume and persistence tests
+      - accepted workflow-runtime ADRs/specs
+    forbidden_context_expansion:
+      - full Map/Reduce/Join implementation work before H6
+      - Secretary implementation before H5
+
+  decision-plane:
+    match_prefixes: [DEC-PLANE-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+    discover_and_read:
+      - current cycle-next, recovery, workflow-state and policy code/tests
+      - Human-Agent CurrentRunView design sections
+      - old AFI DecisionSnapshot intent only through its current STATUS/crosswalk mapping
+      - accepted policy/decision ADRs/specs
+    invariant: There is one persisted decision/progression model for declared and generated workflows.
+
+  agent-first:
+    match_prefixes: [AGENT-HOST-]
+    must_read:
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/README.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+    discover_and_read:
+      - current facade/goal/agent integration code and parity tests
+      - accepted AgentHost/provider ADRs/specs
+      - Decision Plane contract produced in H3
+    invariant: Do not reimplement AFI-001..010 literally; preserve only unabsorbed semantic intent.
+
+  agent-context:
+    match_prefixes: [CTX-COMPILER-]
+    must_read:
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
+    discover_and_read:
+      - context capsule/delta/staleness/negative-knowledge proposals referenced by the complete-evolution index
+      - current recovery/current-run projections and tests
+      - accepted context/provenance ADRs/specs
+    invariant: Cold-start context is reconstructed from durable state, not prior chat memory.
+
+  human-collaboration:
+    match_prefixes: [HX-DECISION-, HX-RESUME-]
+    must_read:
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/README.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/DEPENDENCY-MAP.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/IMPLEMENTATION-PLAN.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/ROADMAP-UPDATED.md
+    discover_and_read:
+      - Decision Plane/policy contracts shipped in H3
+      - AgentHost/context contracts shipped in H4
+      - current pause/resume receipts and lifecycle tests
+      - accepted HITL/human-authority ADRs/specs
+    invariant: Human decisions are immutable/provenance-preserving and share the canonical policy/transition path.
+
+  secretary:
+    match_prefixes: [RX-SECRETARY-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+      - docs/sddk-decision-kernel-architecture/04-specs/SPEC-042-secretary-runtime.md
+      - docs/adr/ADR-0072-secretary-budgets.md
+      - docs/adr/ADR-0073-secretary-authority.md
+      - crates/sddk-engine/src/cycle_replan.rs
+    discover_and_read:
+      - current reactive trigger/replan code and tests
+      - Decision Plane and HumanDecision authority contracts produced earlier in the spine
+    invariant: Secretary proposes bounded actions; it never becomes a parallel mutable orchestrator.
+
+  advanced-runtime:
+    match_prefixes: [DW-OPERATORS-, DW-REPLAY-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - crates/sddk-engine/src/operator.rs
+    discover_and_read:
+      - current Map/Reduce/Join/loop/operator tests and checkpoint/replay code
+      - WorkflowRun/graph revision lineage produced in H2
+      - accepted operator/replay ADRs/specs
+    invariant: Advanced operators consume the canonical persisted runtime; they do not create alternate lifecycle semantics.
+
+  workflow-lab:
+    match_prefixes: [LAB-WORKFLOW-]
+    must_read:
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+      - docs/evolutivo-workflows-dinamicos-integracion-roadmap.md
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+    discover_and_read:
+      - stable runtime metrics produced by preceding H6 items
+      - experiment/telemetry proposals referenced by current design indexes
+      - accepted experiment/promotion ADRs/specs
+    invariant: Promotion decisions use reproducible comparison evidence, not subjective agent preference.
+
+  engineering-assurance:
+    match_prefixes: [EA-ASSURANCE-, EA-UAT-]
+    must_read:
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/README.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+    discover_and_read:
+      - EA-specific documents referenced by CURRENT/INDEX.md
+      - current evidence/UAT/policy code and tests
+      - accepted assurance ADRs/specs
+    invariant: EA is a cross-cutting evidence/policy capability over the canonical runtime, not a new execution engine.
+
+  uat:
+    match_prefixes: [UAT-BC-]
+    must_read:
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+      - docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/STATUS.md
+    discover_and_read:
+      - current UAT domain/spec/test assets in the repository
+      - accepted UAT lifecycle/defect/retest/signoff ADRs/specs
+      - Engineering Assurance contracts produced by direct dependencies
+    invariant: UAT runs as a bounded context/pack on the common runtime and Decision Plane.
+
+  adaptive-sdd:
+    match_prefixes: [SDD-ADAPTIVE-]
+    must_read:
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H8
+      - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md#SDD-ADAPTIVE
+      - docs/evolutivo-workflows-dinamicos-STATUS.md
+    discover_and_read:
+      - accepted ChangeContract/SHAPE/BUILD/CONVERGE/INTEGRATE ADRs/specs
+      - current A-full workflow/contracts used as parity reference
+      - Workflow Lab metrics/experiment evidence from H6
+      - assurance/UAT contracts from H7
+    invariant: Adaptive does not become default without non-inferior quality/invariant evidence.
+
+  active-graph:
+    match_prefixes: [GRAPH-WHY-]
+    must_read:
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H9
+    discover_and_read:
+      - docs/control-plane material relevant to graph/projection/query boundaries
+      - accepted graph/provenance/why ADRs/specs
+      - canonical event/evidence/revision schemas produced by earlier horizons
+    invariant: Graph is a projection/query layer over canonical evidence, not an alternate source of runtime truth.
+
+  cockpit:
+    match_prefixes: [COCKPIT-]
+    must_read:
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H9
+    discover_and_read:
+      - docs/control-plane material relevant to overview/journal/timeline/execution graph views
+      - Active Graph contracts from direct dependencies
+      - provider/usage/assurance/lab projection contracts
+    invariant: Cockpit is read/projection-first unless a separately accepted command contract explicitly authorizes mutation.
+
+  gci:
+    match_prefixes: [GCI-LEARNING-]
+    must_read:
+      - docs/sddk-complete-evolution-2026-08-23/STATUS.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/README.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/INDEX.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/ROADMAP-CONTINUATION.md
+      - docs/sddk-complete-evolution-2026-08-23/CURRENT/02-roadmap/IMPLEMENTATION-BACKLOG.md
+    discover_and_read:
+      - GCI-specific documents referenced by CURRENT/INDEX.md
+      - stable event/replay/lab/assurance evidence from H6-H9
+      - accepted experiment/promotion/rollback ADRs/specs
+    invariant: Learned strategies cannot bypass deterministic policy, human authority, evidence gates or rollback.
+
+  multipack:
+    match_prefixes: [MULTIPACK-]
+    must_read:
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H11
+      - docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md#MULTIPACK
+    discover_and_read:
+      - canonical pack interfaces/contracts
+      - SDD, UAT and Incident pack specifications and end-to-end tests
+      - architecture checks proving no pack-specific kernel branch
+    invariant: Any pack-specific kernel special case is a failed exit gate unless explicitly generalized.
+
+  supply-chain:
+    match_prefixes: [SUPPLYCHAIN-]
+    must_read:
+      - docs/RELEASING.md
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H12
+    discover_and_read:
+      - accepted SBOM/provenance/artifact-lifecycle/signing/policy ADRs/specs
+      - build/release provenance implementation and tests
+      - current CI/release workflows relevant to artifact origin
+    invariant: Release artifacts and sensitive promotions have traceable, reproducible and auditable provenance.
+
+  production:
+    match_prefixes: [PROD-HARDEN-]
+    must_read:
+      - docs/RELEASING.md
+      - docs/ARCHITECTURE-MODEL.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md#H12
+    discover_and_read:
+      - operator/upgrade/rollback/backup/recovery/security documentation
+      - representative performance/reliability/migration tests
+      - accepted production-hardening/security ADRs/specs
+    invariant: Production readiness is demonstrated by executable recovery/performance/security evidence.
+
+  ga:
+    match_prefixes: [GA-]
+    must_read:
+      - docs/RELEASING.md
+      - CHANGELOG.md
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml
+      - docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-TIMELINE.md
+    discover_and_read:
+      - terminal evidence for every direct and horizon-level predecessor
+      - GA release-readiness matrix
+      - security, recovery, supply-chain, regression, UAT and multipack evidence
+      - compatibility/versioning policy
+    invariant: GA is evidence closure, not a feature-development cycle.
+
+context_snapshot:
+  required_before_implementation: true
+  fields:
+    - work_item
+    - execution_binding
+    - horizon
+    - direct_dependencies_and_terminal_evidence
+    - consulted_canonical_documents
+    - consulted_design_documents
+    - consulted_adrs_specs
+    - consulted_code_tests
+    - consulted_execution_evidence
+    - conflicts_found
+    - assumptions
+    - exit_gate
+  persistence: >-
+    Store with the concrete cycle/run artifacts. When H1 Planning Ledger is shipped,
+    project these fields from ledger/run provenance instead of maintaining a competing manual source.
+
+resolution_order_when_sources_disagree:
+  - Do not silently resolve the contradiction.
+  - Establish current released/runtime/test truth.
+  - Establish accepted ADR/spec intent and compatibility obligations.
+  - Compare canonical planning state and historical STATUS classification.
+  - If planning is stale, reconcile it with evidence.
+  - If accepted design and implementation materially conflict, stop the cycle and create the required governed decision/ADR before continuing.
