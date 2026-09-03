@@ -1,371 +1,243 @@
-# Product Backlog — Dynamic Workflow Refinement
+# SDDK Product Backlog — Canonical Capability View
 
-## Epic DW — Dynamic Workflow Runtime
-- WorkflowTemplate schema.
-- WorkflowIR schema and hash/provenance.
-- WorkflowCompiler service.
-- WorkflowValidator service.
-- Map/Join/Race/Loop operators.
-- ExecutionGraphRevision.
-- ExpansionProposal command/event lifecycle.
-- graph budget/conflict/worktree guards.
-- deterministic replay test.
+> **Status:** canonical capability backlog
+> **Baseline:** v1.70.0 / 2026-09-03 reconciliation
+> **Ordering:** follow `ROADMAP.md` horizons H0 → H6.
 
-## Epic SDD-A — Adaptive SDD
-- ChangeContract schema.
-- SHAPE capability and dynamic specialist selection.
-- WorkGraph/WorkUnit model.
-- BUILD worktree mapping.
-- CONVERGE verdict/gap schema.
-- adaptive verification router.
-- proposal/spec/design/tasks/report projections.
-- INTEGRATE behavior composition.
+## 1. Backlog rules
 
-## Epic LAB — Workflow Laboratory
-- WorkflowExperiment entity.
-- A-full/adaptive comparable evaluation contract.
-- fork/ablation runner.
-- workflow metrics.
-- handoff/read-use proxy.
-- static Cockpit comparison views.
-- promotion/shadow policy.
+This backlog tracks **capabilities**, not release chronology.
 
-## Epic SECRETARY-A — Secretary Subagent (Phase 6 foundation)
+- Use semantic IDs (`DW-RUNTIME-001`, `HX-DECISION-001`, ...).
+- Do not use historical `cycle-N` as a capability identity.
+- Status values are restricted to `PROPOSED`, `READY`, `ACTIVE`, `BLOCKED`, `PARTIAL`, `SHIPPED`, `ABSORBED`, `SUPERSEDED`.
+- Released behavior wins over stale planning text.
+- Execution bindings belong in cycle/run artifacts and, after H1, the Planning Ledger.
 
-> **Status:** Stage 0 docs-only (este ciclo) · **Stage 1:** `proposed / blocked-by-SPEC-028-promoted` (gate definido en [[SPEC-042-secretary-runtime]] §Promotion gate)
-> **Owner:** secretary-orchestrator
-> **Spec:** [[SPEC-042-secretary-runtime]] · **ADRs:** [[ADR-0072-secretary-budgets]] · [[ADR-0073-secretary-authority]]
+## 2. Reconciled shipped/absorbed work
 
-### Stage 0 deliverables (cycle actual)
+These items are retained here specifically to prevent old evolution packs from reopening them as new projects.
 
-- `SPEC-042-secretary-runtime.md` (`docs/sddk-decision-kernel-architecture/04-specs/`)
-- `ADR-0072-secretary-budgets.md` (`docs/adr/`)
-- `ADR-0073-secretary-authority.md` (`docs/adr/`)
-- Epic `SECRETARY-A` en este BACKLOG
-- `ROADMAP.md §Phase 6` amendment
-- Entrada opt-in en `CHANGELOG.md`
+| Work Item | Status | Current disposition |
+|---|---|---|
+| `SD-CONTEXT-001` | `SHIPPED` | State-driven active-cycle context inference shipped in v1.67.0. |
+| `SD-NEXT-001` | `SHIPPED` | `cycle next` derives the next legal transition from declared workflow YAML; shipped in v1.68.0. |
+| `SD-RECOVERY-001` | `SHIPPED` | Actionable workflow/source/evidence conflict and recovery hints shipped in v1.69.0. |
+| `LF-PAUSE-001` | `SHIPPED` | Pause/resume, `CycleStatus::Paused`, leases/fencing and receipts shipped in v1.70.0. |
+| `AFI-FACADE-001` | `ABSORBED` | Old Agent-First facade intent absorbed by facade/project-input, goal semantics and parity work already delivered across earlier releases. |
+| `AFI-STATEFUL-CLI-001` | `ABSORBED` | Old semantic CLI intent substantially absorbed by state-driven context, `cycle next` and recovery contracts. |
+| `MAP-FOUNDATION-001` | `PARTIAL` | Map/runtime/operator substrate exists, but advanced durable output/join semantics are not complete. |
 
-### Stage 1 deliverables (próximo ciclo — **bloqueado por el gate `SPEC-028-promoted`**)
-
-- `agents/secretary.md`
-- `prompts/sddk/secretary.md`
-- `skills/secretary-runtime/SKILL.md`
-- `workflows/sddk-secretary.yaml`
-- Implementación closed-set L1 (agent-only MVP)
-- Per-call budget composition
-- Anti-fabrication tests baseline
-
-### Stage 2 deliverables (futuro — requiere ADR adicional)
-
-- Opcional `sddk secretary status | rebuild | verify | agenda-add | agenda-drop` en `crates/sddk-cli` (solo si Stage 1+ lo justifica)
-- Requiere ADR explícito para levantar la regla "no Rust binary"
-
-### Priorización comparativa
-
-| Epic | Business value | Dependencies | Stage 0 fit | Cycle candidate |
-|------|---------------|-------------|-------------|-----------------|
-| SECRETARY-A | Alto — cierra gap documental Phase 6 arrastrado desde fundación; habilita metric `% fallos sin LLM Supervisor` en Stage 1+ | Stage 0 sin deps runtime; Stage 1+ requiere el gate `SPEC-028-promoted` + Phase 4 DW parcial | ✅ Óptimo — cero runtime deps; solo docs | **Este ciclo (Stage 0)** |
-| DW | Medio-alto — Dynamic Workflow Engine | Phase 4 (no SECRETARY-A) | ⚠️ Dependiente de Phase 4 | cycle-30+ |
-| SDD-A | Medio — Adaptive SDD | Phase 8 (no SECRETARY-A) | ❌ Fuera de scope | cycle-31+ |
-| LAB | Medio — Workflow Laboratory | Phase 9 (no SECRETARY-A) | ❌ Fuera de scope | cycle-32+ |
-| IDE-AR | Medio — Authoritative IDE reconciliation | Ninguna (cycle-29 completado) | ❌ Fuera de scope | cycle-29 |
-| DEBT | Medio — Durable remediation | ADR-021/022/031/032/034/039, SPEC-023/027/031/034/035/038 | ❌ Fuera de scope | backlog |
-| MAP | Alto — Map operator (completado) | Ninguna (✅ completado cycle-31) | N/A (completado) | cycle-31 ✅ |
-| TEST-BOUNDARY | Medio — Test-Tooling Boundary | Ninguna (Phase C en curso) | ❌ Fuera de scope | Phase C |
-
-**Nota:** Stage 1 NO está marcado como ready-to-ship. Solo Stage 0 es entregable de este ciclo. Stage 1 queda explícitamente `proposed / blocked-by-SPEC-028-promoted`.
-
-### Dependencias duras
-
-- El gate `SPEC-028-promoted` (definido en [[SPEC-042-secretary-runtime]] §Promotion gate) es precondición para cualquier trabajo Stage 1+ — SPEC-028 debe alcanzar successor aceptado/implementado o status transition via ADR antes de que Stage 1 abra.
-- Dynamic graph execution (Phase 4) debe estar parcialmente shipped antes de Stage 1+
-- La regla "Dynamic graph execution before Supervisor smarter" se preserva en [[ROADMAP.md §Important sequencing]]
-
-### Parent→child ordering
-
-Orden de commits de este ciclo: Epic `SECRETARY-A` → `SPEC-042` → `ADR-0072/73` (Epic → SPEC → ADR; mit R3 orphan-adr). Cada nivel precede al siguiente y referencia al anterior.
-
-## Existing priority epics retained
-- Hexagonal convergence/focused ports.
-- Canonical events/ledger.
-- OpenCode AgentHost.
-- Provider failover/router.
-- Context Capsules.
-- Active Graph/Why.
-- Static Cockpit.
-
-## Epic IDE-AR — Authoritative IDE reconciliation (cycle-29 candidate)
-
-> **Status:** proposed (no ejecutado). Spec en [`docs/reconciliation-spec.md`](../../reconciliation-spec.md). ADR en [`docs/adr/ADR-0064-sddk-authored-reconciliation.md`](../../adr/ADR-0064-sddk-authored-reconciliation.md). Roadmap entry en [`ROADMAP.md §Cycle-29 candidate`](./ROADMAP.md).
-
-### Capability
-`sddk dev reconcile [--apply] [--check] [--format json] [--editor <X>] [--root <path>] [--<ide>-dir <path>]`
-
-### Capabilities per IDE
-- **opencode / zcode (JSON):** mutate in-place 5 claves sddk en `agent[name]`, preserva `extras` (claves no-sddk). Parsea `opencode.json` / `zcode.json` completos.
-- **claude (YAML frontmatter + body):** parsea `.md` completo, reescribe con frontmatter conocido + claves extra + body. `claude_model_valid` se aplica.
-- **codex (TOML):** `toml::from_str` del `.toml`, reescribe con claves sddk + extras (incl. `model_reasoning_*`). `toml::to_string_pretty` + `atomic_write`.
-
-### Core traits
-- `EditorCapabilities { ide, supports_mode, supports_hidden, supports_prompt_ref, supports_tools, model_validator }`.
-- `ReconcileAdapter { capabilities(), read_existing(), reconcile(ctx, apply) }`.
-- Cada adaptador concreto (`OpenCodeAdapter`, `ZCodeAdapter`, `ClaudeAdapter`, `CodexAdapter`) implementa `EditorAdapter` (link) + `ReconcileAdapter` (reconcile).
-
-### Ownership rule
-- Agente "de sddk" ⇔ nombre en `root/agents/*.md` (leído por `load_agent_sources`).
-- Solo agentes sddk → reconciliables / pruneables.
-- Agentes de usuario y campos ajenos → **preservados intactos**.
-- `NoModelConfigured` → `skipped` (no se borra entrada existente).
-
-### Acceptance gate
-Ver [SPEC-RECONCILE-001 §8](../../reconciliation-spec.md#8-criterios-de-aceptación).
-
-### Out of scope (v1)
-- `permission`, `color`, `tools`, `metadata` por IDE (framework extensible los soporta; ciclo posterior).
-- Migrar `dev link` a reconciliar por defecto (no en v1 — preserva ADR-0018).
-- Limpiar el `model:` inerte del frontmatter fuente (sigue inerte; `agent-models.yaml` manda).
-
-### Test pyramid
-- Unit (por IDE): `read_existing`, `reconcile`, idempotencia.
-- Integration: `--check` exit codes, `--format json` schema estable.
-- E2E: drift simulado → `reconcile --apply` → drift eliminado.
-- Regression: `link_e2e_tests.rs`, `models_cmd_tests.rs`, `agent_models_tests.rs` (todos verdes).
-
-### Cycle binding (resolved 2026-08-26)
-- **cycle-29 = reconcile** (aceptado).
-- Map source-context isolation + cross-tick replay → **cycle-30** (reprogramado).
-- Decisión tomada antes de `phase.propose.complete`.
-- UAT extraction.
-- Supply-chain provenance.
-
-## Epic DEBT — Durable remediation
-- `DebtReportV2` SDD-pack schema and canonical Rust validator.
-- CAS-bound report plus evaluator-derived `DebtVerdict` and signed gate evidence.
-- canonical `debt.*` events with idempotent operation IDs.
-- rebuildable incidence, Active Graph and optional `INC-NNN` Markdown projections.
-- tagged lifecycle operations for create/observe/reopen/reprioritize/resolve/fingerprint alias.
-- governed accepted-risk, expiry, early resolution and emergency-plan override.
-- deterministic P0-P3 queue with reason codes and versioned policy.
-- immutable debt-plan input bound at workflow start.
-- selected-debt ChangeContract invariant and bounded same-run convergence.
-- read-only artifact inventory before any compaction proposal.
-
-**Dependencies:** ADR-021/022/031/032/034/039, SPEC-023/027/031/034/035/038,
-ADR-040 and SPEC-041. SDD-specific types remain pack-owned; no debt special case
-enters the generic workflow kernel.
-
-## Epic LF — Lifecycle Flexibility: cycle pause + backlog/roadmap as governed objects (candidate)
-
-> **Status:** in-progress (Primitive 1 ✅ RESOLVED cycle-55 v1.70.0 · Primitive 2: cycle-56 in-progress `kernel-cycle-56-backlog-ledger`). Seed: [`docs/evolutivo-correcciones-flexibilidad.md`](../../evolutivo-correcciones-flexibilidad.md) — extension con insights 8-9 de la serie recover-forward. Roadmap entries en [`ROADMAP.md §Post-Wave 4 — Lifecycle-flexibility candidates`](./ROADMAP.md).
-> **Prerequisites:** GAP-6 (reparación de `cycle lock acquire`) + cycle-51 (supersede de primera clase).
-> **Owner:** orchestrator
-> **Origin:** requisito del maintainer (2026-09-02): "pausar un ciclo porque surge una necesidad nueva, capturar esa idea en el backlog con especificación y priorización, y que nada se rompa ni se pierda — consistencia por construcción, arquitectura emergente".
-
-### Governance flow (objetivo)
-
-`idea` → `backlog capture` (evento, con evidencia de origen) → `triage` (prioridad versionada) → `roadmap entry` → `cycle`. El markdown de BACKLOG/ROADMAP deja de ser la fuente de verdad y pasa a ser proyección consultable del ledger.
-
-### Primitive 1 — `cycle pause` (→ cycle-55, DRAFT-ADR-H) ✅ RESOLVED (cycle-55, kernel-cycle-55-cycle-pause, v1.70.0)
-
-- Estado `CycleStatus::Paused` o taxonomía de razones sobre `Blocked` (decisión del ADR con evidencia).
-- Transiciones legales: `Open→Paused`, `Paused→Open` (resume con re-fencing del lease), `Paused→Superseded` (vía cycle-51, manteniendo la referencia cruzada).
-- Razón tipada (`priority_revoked`, `context_switch`, `dependency_waiting`) + fecha de revisión opcional.
-- Lease auto-release al pausar; expediente y evidencia intactos; sin transiciones de cierre mientras está pausado.
-- **See:** [[ADR-0080-cycle-pause]], [[REQ-Cycle-Pause-Contract]], [[REQ-Cycle-Resume-Contract]], [[SPEC-PAUSE-001]]
-
-### Primitive 2 — backlog/roadmap como objetos del ledger (→ cycle-56, DRAFT-ADR-I)
-
-- Eventos `backlog.item.registered` / `.triaged` / `.promoted` / `.discarded`, con evidencia de origen (ciclo, fase, artefactos) — capturar una idea emergente nunca rompe ni cierra el ciclo que la originó.
-- Prioridad como metadata versionada y consultable por tooling (no como una fila de markdown).
-- `BACKLOG.md` / `ROADMAP.md` como proyecciones renderizadas (mínimo viable: entradas con IDs de ledger trazables).
-
-### Acceptance criteria (borrador, se cierra en la fase spec de cada ciclo)
-
-- Pausar un ciclo activo conserva expediente y evidencia; reanudar o supersedar deja rastro consultable en el ledger.
-- Toda idea emergida durante un ciclo puede capturarse sin cerrarlo, con trazabilidad completa origen→backlog→roadmap→ciclo.
-- Cero edición manual del ledger; las proyecciones markdown se regeneran desde el estado del ledger.
-
-### Out of scope (v1)
-
-- Priorización automática asistida por IA.
-- Sincronización con trackers externos (Tuleap, Jira, GitHub Projects).
-
-## Epic SD — State-Driven CLI: advisor + context inference (candidate, next iteration)
-
-> **Status:** proposed (candidato, sin ejecutar). Research package completo: [`research/state-driven-cli/RESEARCH.md`](../../../research/state-driven-cli/RESEARCH.md).
-> **Prerequisites:** ninguno duro. GAP-UX-1 (v1.66.6) es el precedente; `resolve_project_identity`, `cycle_leases`, transiciones declaradas del engine y `WorkflowRun` ya existen en el dominio (~80% de cimientos presentes).
-> **Owner:** orchestrator
-> **Origin:** requisito del maintainer (2026-09-02): "el CLI puede inferir muchos datos a partir del estado actual y evitar el sobre-esfuerzo del LLM de adivinar dónde estamos y cómo pasarle los argumentos requeridos cuando ya son fácilmente inferidos". Refinamientos vinculantes: (1) workflows dinámicos futuros — cero secuencias hardcodeadas en el advisor; (2) inferencia > declaración.
-
-### Problema (una línea)
-
-El LLM gasta ~10–25k tokens por ciclo en burocracia: adivinar args deducibles del estado (`--root/--scope/--cycle`), reintentar tras errores genéricos (`STORAGE_NOT_FOUND` + recovery sin comando), y recargar docs (AGENTS §8/§9 + mcw.md) para recordar el flujo.
-
-### Primitive 1 — Context inference (→ cycle-52)
-
-- `--root` por walk-up de marcadores; `--project-id`/`--scope` vía `resolve_project_identity`; `--cycle` desde el lease activo.
-- Precedencia: arg explícito > inferido > error tipado con lista de candidatos. Flag `--no-infer` como opt-out.
-
-### Primitive 2 — Frontier advisor `sddk cycle next` (→ cycle-53)
-
-- Computa la frontera de transiciones legales leyendo el **grafo declarado** del workflow (+ ledger events + artifacts). Output humano con `hint:` y `--json` para agentes (~150 tokens vs ~800 de reconstrucción actual).
-- **Restricción D1 (vinculante):** cero secuencias canónicas hardcodeadas — el advisor sigue cualquier topología declarada, incluidas las auto-generadas del Epic LF/`WorkflowRun`.
-
-### Primitive 3 — Actionable hints + reconciliación YAML↔ledger (→ cycle-54)
-
-- Todo error cita el comando exacto (generalización de GAP-UX-1; grep de "recovery: create the record" genérico = 0).
-- `sddk cycle next --json` pasa a ser la única fuente de estado que los prompts del orquestador consumen, eliminando la recarga de AGENTS §8/§9 + mcw.md por fase. Reconcilia el mismatch workflow-YAML (orquestador) vs transiciones declaradas (kernel) documentado en cycle-51.
-
-### Acceptance criteria (borrador, se cierra en la fase spec de cada ciclo)
-
-- `sddk cycle status` con cero args funciona en proyecto adoptado con lease activo único; en ambigüedad devuelve error tipado con candidatos.
-- `sddk cycle next --json` produce la transición legal correcta en ≤1 comando para cualquier estado, y sigue correcto con un workflow de topología no-A-min (proof: YAML alternativo).
-- Errores de storage/engine citan comando exacto; el orquestador referencia `cycle next` como fuente de estado.
-
-### Out of scope (v1)
-
-- Ejecución de workflows dinámicos en runtime (dominio del Epic LF / `WorkflowRun` instanciado).
-- Sugerencias semánticas asistidas por IA ("qué ciclo debería abrir"); el advisor es determinista y derivado de datos declarados.
-
-## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)
-
-**Problem:** `sddk cycle status --cycle <bare-slug>` returns generic `STORAGE_NOT_FOUND`; should return a typed error that points the user to the canonical form `<project_id>/<slug>`.
-
-**Proposed fix:** Extend `validate_cycle_project` to accept a bare slug and return a descriptive error message (or distinct error code) that guides the user toward using the full `<project_id>/<slug>` form, rather than conflating bare-slug input with an actual missing row.
-
-**Acceptance criteria:**
-- Running `sddk cycle status --cycle gap6-lock-repair` (bare slug) returns a clear, actionable error message indicating the correct canonical form.
-- Running `sddk cycle status --cycle p-63676b11dc0ef88f/gap6-lock-repair` (full id) succeeds normally.
-- Error message distinguishes "bare slug provided" from "cycle row not found".
-
-**Out of scope:** Normalization of bare slugs across all CLI commands; full slug canonicalization infrastructure.
-
-**Owner:** orchestrator
-
-**Priority:** P3
-
-**Reference:** explore report `p-63676b11dc0ef88f/cycle-artifacts/gap6-lock-repair` (cycle-57, sha256 `eed9b8140669cef66470b55e779e45b9fdcbfe90d7788dab790e5a2b111d823b`)
-
-## Important sequencing
-Dynamic graph execution belongs **before** trying to make the Supervisor smarter. The runtime must be able to validate and durably execute proposed strategies first.
+`SHIPPED` and `ABSORBED` entries should only change after evidence shows the classification is wrong.
 
 ---
 
-## Debt carry-forward — cycle-30 (closed 2026-08-25, tag v1.46.0, commit e56ce0b)
+## 3. H0 — Reconcile & Harden
 
-> Cycle-30 verdict: **PASS_WITH_WARNINGS** (7 findings: 2 P2 + 5 P3; 2 P3 resolved in-archive)
+### Epic `GOV-ROADMAP` — Planning/documentation governance
 
-### P2 — Medium priority (owner: orchestrator)
+| Work Item | Status | Acceptance |
+|---|---|---|
+| `GOV-ROADMAP-001` Canonical roadmap/backlog | `ACTIVE` | One official H0-H6 line, one capability backlog, no competing mega-roadmaps. |
+| `GOV-ROADMAP-002` Evolution crosswalk | `ACTIVE` | Old packs mapped to `SHIPPED` / `ABSORBED` / `PARTIAL` / remaining epics. |
+| `GOV-ROADMAP-003` Semantic identity policy | `ACTIVE` | New work uses semantic IDs; cycle IDs are execution bindings only. |
+| `GOV-ROADMAP-004` Repository status reconciliation rule | `READY` | A repeatable rule specifies how planning docs are corrected when release/code evidence disagrees. |
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `RUNTIME_CHECKPOINT_NOT_IMPLEMENTED` | MapCheckpointState built but runtime-side draining out of scope | CL-05 | cycle-30 introduced | **CLOSED in cycle-32 (v1.48.0)** — `drain_pending_map` + `pending_map` field; see ADR-0067 |
-| `PREEXISTING_CLIPPY_DEBT_SDDK_CLI` | 7 clippy errors in sddk-cli/ confirmed preexisting on base aac9920 | CL-01 | pre_existing | cycle-32+ or earlier if dedup found |
+### Epic `DW-IR` — Workflow IR hardening
 
-> **INC-DEBT-007** emitted for `PREEXISTING_CLIPPY_DEBT_SDDK_CLI` (docs/debt/INC-DEBT-007-preexisting-clippy-sddk-cli.md).
-
-### P3 — Low priority (backlog / cycle-31+)
-
-| ID | Title | Cluster | Status |
+| Work Item | Status | Depends on | Acceptance |
 |---|---|---|---|
-| `TDD-CHRONOLOGY-DEVIATION` | cycle-30 collapsed RED + GREEN into single commit 7dd9502 | CL-01 | cycle-31+ may enforce stricter chronology |
-| `SEQUENTIAL_PENDING_UNTESTABLE` | Sequential Pending path cannot be exercised through TaskExecutor | CL-05 | architecture-bound; no fix without new operator types |
-| `C4_INTENT_HASH_DRIFT` | proposal-c4-intent.md embedded SHA256 stale vs disk | CL-08 | **RESOLVED in archive** — SHA256 regenerated |
-| `HANDOFF_TEMPLATE_GAPS` | handoff had unfilled `<commit-sha>` placeholders | CL-09 | **RESOLVED in archive** — placeholders filled |
-| `CONCURRENT_PATH_SOURCE_SNAPSHOT_EMPTY` | concurrent Pending path instantiates empty BTreeMap for source_outputs_snapshot | CL-03 | cycle-30 introduced | **CLOSED in cycle-32 (v1.48.0)** — `source_outputs_snapshot` populated from `source_outcome.outputs.clone()` in `evaluate_map_body` (INV-11 fix) |
+| `DW-IR-001` Typed execution scope | `READY` | — | Replace stringly scope where execution semantics require a closed typed contract; preserve schema migration compatibility. |
+| `DW-IR-002` Transition/predicate AST contract | `READY` | — | Stable versioned serialization and deterministic validation. |
+| `DW-IR-003` Graph revision/hash/provenance invariants | `READY` | — | Same normalized plan compiles to stable identity; mutations create explicit new revision lineage. |
+| `DW-IR-004` Operator I/O/error contract | `READY` | — | Operators expose explicit input/output/error semantics rather than relying on placeholder values. |
+| `DW-IR-005` IR determinism tests | `READY` | `DW-IR-001..004` | Round-trip, hash stability and invalid-plan tests prove the H2 compiler boundary. |
 
-### Epic MAP — Map operator (cycle-31 focus: DC-MAP-002 dispatch global)
+### Epic `HX-AUTHORITY` — Human/agent authority reconciliation
 
-> **Owner:** orchestrator
-> **Scope:** DC-MAP-002 dispatch global refactor; affects Map, Parallel, and Sequence equally.
-> **Spec:** `REQ-Map-Dispatch-Global` (vault, to be created in cycle-31 propose phase).
-> **Status:** ✅ COMPLETED in cycle-31 (v1.47.0, commit 8fbf287)
-> **Out of scope for cycle-31:** runtime-side checkpoint draining (architecture-bound; separate concern from dispatch).
+| Work Item | Status | Acceptance |
+|---|---|---|
+| `HX-AUTHORITY-001` Authority matrix | `READY` | Existing CLI/agent/human/Secretary responsibilities and writable state are explicitly classified. |
+| `HX-AUTHORITY-002` No-parallel-authority invariant | `READY` | Future human and Secretary paths are required to converge on the same Decision Plane/policy semantics. |
 
-### P3 — Low priority (cycle-31 carry-forward)
+---
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `DISPATCH_LATE_MERGE` | Apply agent merged feat branch to main prematurely (before release complete) | CL-07 | cycle-31 introduced | cycle-32+ apply must NOT merge to main until release receipt confirmed |
-| `RESOLVE_CHILDREN_DUPLICATION` | 3 recursive patterns (Sequence/Parallel/Choice children) share structure; `resolve_children(ids, ir)` helper would deduplicate | CL-06 | cycle-31 introduced | cycle-32+ extract `resolve_children(ids, ir)` helper |
-| `TDD_DOCSTRING_STALE` | Old docstring in operator_trait_tests.rs still mentions RED/GREEN cycle-31 steps | CL-01 | cycle-31 introduced | cycle-32+ rewrite docstring to reflect final implementation |
-| `STALE_DISPATCH_TEST_NAMES` | 3 test names in operator_trait_tests.rs referenced removed `dispatch()` function | CL-01 | cycle-31 introduced | **RESOLVED in archive** — renamed to `build_operator_*` (commit 8fbf287) |
-| `MISSING_APPLY_PROGRESS` | apply-progress.yaml was not emitted by apply agent | CL-07 | cycle-31 introduced | **RESOLVED in archive** — regenerated by release phase |
-| `BODY_TYPE_REFINEMENT` | REQ-WF-RT-015 said body stored as `Arc<dyn Operator>` but actual type is `Arc<Task>` | CL-06 | cycle-31 introduced | **RESOLVED in archive** — spec updated + docstring fixed (ADR-0066:70-71) |
-| `FMT_REGRESSION_INTRODUCED` | 23 rustfmt violations introduced by cycle-31 commits | CL-01 | cycle-31 introduced | **RESOLVED in archive** — fixed by orchestrator (b5a12d4 fmt commit) |
+## 4. H1 — Planning SSOT
 
-## Debt carry-forward — cycle-32 (closed 2026-08-25, tag v1.48.0, commit b855552)
+### Epic `PLN-LEDGER` — Planning / Decision Ledger
 
-> Cycle-32 verdict: **PASS_WITH_WARNINGS** (4 findings: 2 P2 + 2 P3; 2 P2 closed, 2 P3 open)
-> **ADR:** [ADR-0067](../../adr/ADR-0067-map-runtime-checkpoint-draining.md)
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `PLN-LEDGER-001` Planning domain model | `PROPOSED` | `GOV-ROADMAP` | Stable WorkItem, dependency, state, evidence and decision/provenance contracts. |
+| `PLN-LEDGER-002` Repository persistence | `PROPOSED` | `PLN-LEDGER-001` | Checkout reconstructs the same planning graph deterministically. |
+| `PLN-LEDGER-003` Cycle/run bindings | `PROPOSED` | `PLN-LEDGER-001` | Execution IDs bind to semantic work without becoming conceptual IDs. |
+| `PLN-LEDGER-004` Roadmap projections | `PROPOSED` | `PLN-LEDGER-002` | Human-readable status/next/blocked/graph/show projections derive from the ledger. |
+| `PLN-LEDGER-005` Planning migration | `PROPOSED` | `PLN-LEDGER-002` | Current active backlog imported with provenance and without rewriting historical cycle evidence. |
 
-### P2 — Medium priority (owner: orchestrator)
+This epic **absorbs Lifecycle Flexibility Primitive 2 / Planning Lifecycle** from the older roadmap.
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `RUNTIME_CHECKPOINT_NOT_IMPLEMENTED` | MapCheckpointState built but runtime-side draining out of scope | CL-05 | cycle-30 introduced | **CLOSED in cycle-32 (v1.48.0)** — `pending_map` + `drain_pending_map`; ADR-0067 §Decision.1 + §Decision.4 |
-| `PREEXISTING_CLIPPY_DEBT_SDDK_CLI` | 7 clippy errors in sddk-cli/ confirmed preexisting on base aac9920 | CL-01 | pre_existing | **INC-DEBT-007** (3 cycles stale; out of scope for cycle-32) |
+---
 
-### P3 — Low priority (backlog / acceptable)
+## 5. H2 — Generated Workflow MVP
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `CONCURRENT_PATH_SOURCE_SNAPSHOT_EMPTY` | concurrent Pending path instantiates empty BTreeMap for source_outputs_snapshot | CL-03 | cycle-30 introduced | **CLOSED in cycle-32 (v1.48.0)** — INV-11 fix in `evaluate_map_body` |
-| `DRAIN_PATTERN_DUPLICATION` | `drain_pending_map` and `drain_pending_parallel` share skeleton — acceptable refactor candidate | CL-06 | cycle-32 introduced | Acceptable per ADR-0067 §Decision.4; refactor candidate for cycle-33+ if warranted |
+### Epic `DW-RUNTIME` — Persisted generated workflow vertical slice
 
-## Debt carry-forward — cycle-33 (closed 2026-08-25, tag v1.48.1, commit b81fc02)
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `DW-RUNTIME-001` Compile plan to graph revision | `PROPOSED` | `DW-IR` | Valid `NewWorkflowPlan` compiles into a deterministic `ExecutionGraphRevision`. |
+| `DW-RUNTIME-002` Persist `WorkflowRun` | `PROPOSED` | `DW-RUNTIME-001` | Run identity, graph revision and provenance survive process restart. |
+| `DW-RUNTIME-003` Execute bounded DAG | `PROPOSED` | `DW-RUNTIME-002` | Sequence + bounded Parallel + Conditional execute without hard-coded workflow command sequences. |
+| `DW-RUNTIME-004` Durable node/run state | `PROPOSED` | `DW-RUNTIME-003` | Progress, terminal state, failures and receipts are persisted. |
+| `DW-RUNTIME-005` Replay/reconstruction | `PROPOSED` | `DW-RUNTIME-004` | Replay reconstructs equivalent run/graph state deterministically. |
+| `DW-RUNTIME-006` Resume vertical slice | `PROPOSED` | `DW-RUNTIME-004` | A stopped process resumes the same persisted run safely. |
 
-> Cycle-33 verdict: **PASS** (2 findings: 1 P2 closed, 1 P3 introduced)
-> **API change:** `EditorCapabilities` removed `PartialEq, Eq` derives (leaf crate, 0 consumers)
+**Explicitly deferred:** full Map/Reduce/Join, Secretary and cognitive replanning.
 
-### P2 — Medium priority (owner: orchestrator)
+---
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `PREEXISTING_CLIPPY_DEBT_SDDK_CLI` | 7 clippy errors in sddk-cli/ confirmed preexisting on base aac9920 | CL-01 | pre_existing | **CLOSED in cycle-33 (v1.48.1)** — `cargo clippy --workspace --all-targets -- -D errors` exit 0; was exit 101 |
+## 6. H3 — Decision Plane
 
-### P3 — Low priority (cycle-34 candidate / introduced)
+### Epic `DEC-PLANE` — Unified progression/policy surface
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `DEAD_CODE_SDDK_CLI` | 18 dead_code warnings in sddk-cli (unused exports, dead code paths) | CL-01 | pre-existing | **CLOSED in cycle-34 (v1.48.2)** — 33 items resolved: 17 deleted (C1) + 9 annotated per ADR-0064 §D-4/§D-5 (8 + 1 follow-up C3) + 7 follow-up items; cargo clippy dead_code = 0 in sddk-cli |
-| `FIND-000016` | EditorCapabilities removed `PartialEq, Eq` (function pointer field has unpredictable equality) | CL-01 | cycle-33 introduced | **Documented in CHANGELOG**; leaf crate; 0 workspace consumers |
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `DEC-PLANE-001` CurrentRunView | `PROPOSED` | `DW-RUNTIME` | One projection exposes declared/generated frontier, current state, blockers and available actions. |
+| `DEC-PLANE-002` Generic next-action contract | `PROPOSED` | `DEC-PLANE-001` | `cycle next`/equivalent consumes persisted frontier + policy for both declared and generated workflows. |
+| `DEC-PLANE-003` Policy evaluation boundary | `PROPOSED` | `DEC-PLANE-001` | Available/forbidden/requires-approval actions are typed and explainable. |
+| `DEC-PLANE-004` Decision context/provenance | `PROPOSED` | `DEC-PLANE-003` | Decision inputs are durable/explainable and satisfy the useful intent of the old `DecisionSnapshot` proposal. |
+| `DEC-PLANE-005` CLI/AgentHost parity | `PROPOSED` | `DEC-PLANE-002..004` | Both surfaces expose the same semantic actions/results. |
 
-## Epic TEST-BOUNDARY — Test-Tooling Boundary (per ADR-042)
+### Epic `HX-CURRENT-RUN`
 
-> **Status:** Phase A audit and Phase B ownership migration completed. Phase C is the re-prioritized lint/testkit/stability cleanup. ADR-0069 (accepted) owns the ownership policy. ADR-042 (Accepted) owns the sequencing and migration plan.
-> Phased per [ADR-042 §Migration plan](../03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md).
+`HX-CURRENT-RUN` is not a second implementation. It is the Human-Agent consumer/projection requirements for `DEC-PLANE-001` and is tracked as an **aliasing capability** to avoid duplicate CurrentRun models.
 
-### Phase A — Historical audit (completed)
+---
 
-- Audit 19 shell contract tests from commit `643180a`; classify each per ADR-0069 ownership cells
-- Flag binary-behavior tests that belong in Rust (see TEST-TOOLING-EVIDENCE-AUDIT.md §Concrete false positives)
-- Light annotation of test filenames with ownership prefix where convention supports it
-- Record findings in `TEST-TOOLING-EVIDENCE-AUDIT.md` §5 + §6
-- **Outcome:** Completed; findings documented and Phase B ownership migration scoped
+## 7. H4 — Human & Reactive Control
 
-### Phase B — Ownership migration (completed)
+### Epic `HX-DECISION` — Human decision / HITL
 
-- Migrated ownership into Rust tests SDDK015-SDDK032, ending with the v1.58.0 final shell migration release
-- Retained `tests/test_push_prevention_hook.sh` as the only shell test
-- **Outcome:** Completed; Python and JS contract tests are retained as their correct ownership outcomes
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `HX-DECISION-001` HumanDecision domain contracts | `PROPOSED` | `HX-AUTHORITY`, `DEC-PLANE` | Immutable request/decision/receipt types with provenance. |
+| `HX-DECISION-002` HumanDecisionPort | `PROPOSED` | `HX-DECISION-001` | Application layer requests decisions without depending on CLI/UI adapters. |
+| `HX-DECISION-003` Risk-sensitive approval policy | `PROPOSED` | `DEC-PLANE-003`, `HX-DECISION-001` | Policy decides autonomous/approval/deny behavior deterministically where possible. |
+| `HX-DECISION-004` CLI/AgentHost adapters | `PROPOSED` | `HX-DECISION-002..003` | Adapters preserve identical authority and receipt semantics. |
 
-### Phase C — Re-prioritized lint/testkit/stability cleanup (next work)
+### Epic `HX-RESUME` — Semantic resumability
 
-- Add ShellCheck to the local test gate for `tests/test_*.sh`
-- Add Ruff to the local scripts gate for `scripts/`
-- Evaluate ADR-0022 (sddk-testkit, accepted 2026-08-31 per REQ-Phase-C-ADR-0022-Status-Reconcile) for adoption or supersession
-- Consolidate or delete misowned tests after parity (same test passes in new language + original deleted)
-- Remove superseded scaffolding only after one release cycle stable
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `HX-RESUME-001` ResumeInfo / rehydration model | `PROPOSED` | `DEC-PLANE-001` | Cold start explains current state, pending decision/work and safe continuation. |
+| `HX-RESUME-002` RehydrationPlan | `PROPOSED` | `HX-RESUME-001` | Required context is reconstructed explicitly instead of relying on agent memory. |
+| `HX-RESUME-003` Resume parity | `PROPOSED` | `HX-RESUME-002` | CLI and agent surfaces resume the same run with equivalent semantics. |
 
-## Debt carry-forward — cycle-34 (closed 2026-08-25, tag v1.48.2, commit a7f1d8a)
+Note: v1.70.0 pause/resume is valuable substrate but does **not** by itself complete semantic cold-start Human-Agent resumability.
 
-> Cycle-34 verdict: **PASS** (0 findings — 33 dead_code items resolved, debt-report clean)
-> **ADR-0064 §D-4/§D-5** (capability-framework contract) cited for annotation rationale.
+### Epic `RX-SECRETARY` — Bounded reactive control
 
-### P3 — Low priority (closed in cycle-34)
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `RX-SECRETARY-001` Deterministic reaction rules | `PROPOSED` | `DEC-PLANE` | L0 reactions use typed signals and policy with no LLM required. |
+| `RX-SECRETARY-002` Bounded proposal contract | `BLOCKED` | `DEC-PLANE`, authority gate | Secretary proposes closed-set actions; it does not mutate workflow state directly. |
+| `RX-SECRETARY-003` Proposal authorization/receipts | `BLOCKED` | `HX-DECISION`, `RX-SECRETARY-002` | Accepted actions pass the same policy/authority path and are durably receipted. |
+| `RX-SECRETARY-004` Cognitive replan boundary | `BLOCKED` | `RX-SECRETARY-001..003` | LLM replan is bounded, explainable and used only after deterministic options are exhausted. |
 
-| ID | Title | Cluster | Attribution | Remediation |
-|---|---|---|---|---|
-| `INC-DEBT-008` | 18 dead_code warnings in sddk-cli (carry-forward from cycle-33) | CL-02 | pre-existing | **CLOSED in cycle-34 (v1.48.2)** — see `docs/debt/INC-DEBT-008-dead-code-sddk-cli.md`; 17 deleted + 9 annotated per ADR-0064 + 7 follow-up items |
-| `FIND-000017` | Pre-existing dead_code in sddk-cli (24 items surfaced in cycle-33 debt-verify) | CL-02 | pre-existing | **CLOSED in cycle-34 (v1.48.2)** — promoted to INC-DEBT-008; full inventory and ADR-0064 mapping in debt doc |
+Existing Secretary specs/ADRs remain design inputs; they do not override this dependency order.
+
+---
+
+## 8. H5 — Runtime Completeness & Workflow Lab
+
+### Epic `DW-OPERATORS`
+
+| Work Item | Status | Depends on | Acceptance |
+|---|---|---|---|
+| `DW-OPERATORS-001` Map durable semantics | `PARTIAL` | `DW-RUNTIME` | Dynamic fan-out has persisted child lineage, outputs and replay semantics. |
+| `DW-OPERATORS-002` Reduce semantics | `PROPOSED` | `DW-OPERATORS-001` | Typed deterministic aggregation and failure policy. |
+| `DW-OPERATORS-003` JoinAny/JoinAll semantics | `PROPOSED` | `DW-RUNTIME` | Explicit completion/cancellation/output semantics. |
+| `DW-OPERATORS-004` Child output model | `PARTIAL` | `DW-RUNTIME` | Remove placeholder `Value::Null` result semantics from real execution paths. |
+| `DW-OPERATORS-005` Runtime guards | `PROPOSED` | `DW-OPERATORS-001..004` | graph/node/depth/concurrency/budget bounds enforced durably. |
+
+### Epic `DW-REPLAY`
+
+- durable graph revision lineage;
+- child lifecycle reconstruction;
+- cross-tick replay invariants;
+- recovery after partial expansion/execution;
+- deterministic conflict detection.
+
+### Epic `LAB-WORKFLOW`
+
+| Work Item | Status | Depends on |
+|---|---|---|
+| `LAB-WORKFLOW-001` Stable workflow metrics | `PROPOSED` | `DW-REPLAY` |
+| `LAB-WORKFLOW-002` Fork/ablation runner | `PROPOSED` | `LAB-WORKFLOW-001` |
+| `LAB-WORKFLOW-003` Strategy comparison | `PROPOSED` | `LAB-WORKFLOW-002` |
+| `LAB-WORKFLOW-004` Promotion/shadow policy | `PROPOSED` | `LAB-WORKFLOW-003` |
+
+---
+
+## 9. H6 — Assurance & Governed Learning
+
+### Epic `EA-ASSURANCE` — Engineering Assurance
+
+Current disposition: **valid capability family, not a separate execution engine**.
+
+Planned sub-capabilities:
+
+- assurance profiles;
+- evidence taxonomy/types;
+- evidence resolvers;
+- deterministic evaluators;
+- capability/risk-specific rules;
+- UAT integration;
+- policy/decision outputs consumable by the Decision Plane;
+- provenance and explainability.
+
+Detailed EA tasks from `sddk-complete-evolution-2026-08-23` must be re-admitted individually against this architecture rather than executed verbatim from the old pack.
+
+### Epic `GCI-LEARNING` — Governed Continuous Improvement
+
+Current disposition: **valid future capability; blocked until stable event/replay semantics**.
+
+Planned sub-capabilities:
+
+- ExperienceEpisode-like projections;
+- process mining from canonical workflow/run events;
+- strategy quality/cost comparison;
+- bounded experiments;
+- evidence-backed strategy promotion;
+- rollback and policy ratchets.
+
+---
+
+## 10. Other retained product epics
+
+The following remain in the North Star and should be scheduled by dependency/value without creating a parallel roadmap:
+
+- `ARCH-HEX` — hexagonal convergence / focused ports;
+- `EVT-LEDGER` — canonical events and journal/replay;
+- `AGENT-HOST` — AgentHost and provider resilience;
+- `CTX-COMPILER` — context capsules/deltas/staleness;
+- `SDD-ADAPTIVE` — adaptive SDD experimental path;
+- `GRAPH-WHY` — Active Graph and causal `why` queries;
+- `COCKPIT` — static/control-plane projections;
+- `UAT-BC` — UAT bounded context/pack;
+- `MULTIPACK` — proof that SDD/UAT/Incident share the same kernel/runtime;
+- `SUPPLYCHAIN` — SBOM/provenance/artifact lifecycle/policy hardening;
+- `TEST-BOUNDARY` — remaining test-tooling boundary cleanup.
+
+Admission into an active horizon requires a dependency argument and acceptance contract.
+
+## 11. Immediate next queue
+
+Unless new evidence invalidates dependencies, the next semantic queue is:
+
+1. finish `GOV-ROADMAP-001..004`;
+2. implement/accept `DW-IR-001..005`;
+3. implement `HX-AUTHORITY-001..002` as contract reconciliation, not a new runtime;
+4. start `PLN-LEDGER-001`;
+5. proceed to `DW-RUNTIME-001` only when H0 exit criteria are satisfied.
+
+Do **not** start Map/Reduce/Join completion, Secretary Stage 1+, process mining or GCI ahead of this queue.
