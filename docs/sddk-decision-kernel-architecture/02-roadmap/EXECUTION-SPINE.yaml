@@ -72,7 +72,7 @@ items:
   - order: 22
     id: TEST-MODEL-001
     horizon: H0
-    status: READY
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/test-model-001-neutral-verification-contracts CLOSED; release v1.73.0; exit gate proven: 8 agregados SPEC-043 s3 versionados (7 enums cerrados), serializacion canonica determinista, fail-closed InsufficientMapping/MappingOutcome, topologia polyglota, 47 tests (367 lib)
     depends_on: [DW-IR-001]
     objective: Define language-neutral ActiveChangeSet, ProjectTestTopology, SUT impact graph and verification-capability contracts.
     exit_gate: Domain contracts are versioned/tested, contain no build-system-specific planning semantics, support multi-component/polyglot topology and model unknown impact fail-closed.
