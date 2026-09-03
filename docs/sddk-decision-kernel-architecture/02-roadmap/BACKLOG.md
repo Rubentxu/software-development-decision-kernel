@@ -1,7 +1,7 @@
 # SDDK Product Backlog — Canonical Capability View
 
 > **Status:** canonical capability context
-> **Baseline:** v1.70.0 / 2026-09-03 reconciliation
+> **Baseline:** v1.70.0 release baseline / 2026-09-03 reconciliation; current workspace has advanced beyond it
 > **Exact execution order:** [`EXECUTION-SPINE.yaml`](./EXECUTION-SPINE.yaml)
 > **Agent execution rule:** [`AGENT-EXECUTION-PROTOCOL.md`](./AGENT-EXECUTION-PROTOCOL.md)
 > **Decision Memory design:** [`DECISION-MEMORY-GIT-MODEL.md`](./DECISION-MEMORY-GIT-MODEL.md)
@@ -27,6 +27,7 @@ Allowed states: `PROPOSED`, `READY`, `ACTIVE`, `BLOCKED`, `PARTIAL`, `SHIPPED`, 
 | `SD-NEXT-001` | `SHIPPED` | `cycle next` derives legal transition from declared workflow YAML; v1.68.0. |
 | `SD-RECOVERY-001` | `SHIPPED` | Actionable conflict/recovery hints; v1.69.0. |
 | `LF-PAUSE-001` | `SHIPPED` | Pause/resume, `Paused`, leases/fencing/receipts; v1.70.0. |
+| `DW-IR-001` | `SHIPPED` | Typed/versioned/migration-safe `ExecutionScope` implemented on `main` by `af973046`; planning reconciled after implementation. |
 | `AFI-FACADE-001` | `ABSORBED` | Agent-first facade intent absorbed by facade/project-input/goal/parity work. |
 | `AFI-STATEFUL-CLI-001` | `ABSORBED` | Semantic CLI intent substantially absorbed by state-driven context/next/recovery. |
 | `MAP-FOUNDATION-001` | `PARTIAL` | Operator substrate exists; durable output/lineage/advanced semantics remain H6. |
@@ -38,6 +39,16 @@ Allowed states: `PROPOSED`, `READY`, `ACTIVE`, `BLOCKED`, `PARTIAL`, `SHIPPED`, 
 ### `GOV-ROADMAP`
 
 - `GOV-ROADMAP-001` — canonical roadmap, backlog, evolution crosswalk, execution spine, timeline, context map and agent continuation protocol.
+
+### `DW-IR`
+
+- `DW-IR-001` — **SHIPPED** typed execution scope;
+- `DW-IR-002` — transition/predicate AST contract;
+- `DW-IR-003` — graph revision/hash/provenance invariants;
+- `DW-IR-004` — typed operator I/O/error contract;
+- `DW-IR-005` — IR/compiler determinism proof.
+
+The new testing foundation is inserted after already-shipped `DW-IR-001` and before `DW-IR-002` so no historical delivery is rewritten.
 
 ### `TEST-MODEL`
 
@@ -96,14 +107,6 @@ verify = declared full-project verification profile
 ```
 
 This is project/language neutral and also applies when one repository contains several ecosystems.
-
-### `DW-IR`
-
-- `DW-IR-001` — typed execution scope;
-- `DW-IR-002` — transition/predicate AST contract;
-- `DW-IR-003` — graph revision/hash/provenance invariants;
-- `DW-IR-004` — typed operator I/O/error contract;
-- `DW-IR-005` — IR/compiler determinism proof.
 
 ### `HX-AUTHORITY`
 
@@ -427,10 +430,10 @@ H9 visualizes/query-projects H4 CDD; it does not create a second memory graph of
 Do not read this document top-to-bottom and guess. Use `EXECUTION-SPINE.yaml` and `AGENT-EXECUTION-PROTOCOL.md`.
 
 ```text
-SHIPPED: GOV-ROADMAP-001
+SHIPPED: GOV-ROADMAP-001 → DW-IR-001
 CURRENT: TEST-MODEL-001
 NEXT after TEST-MODEL-001 evidence: TEST-ADAPTER-001
-LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001 → DW-IR-001
+LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001 → DW-IR-002
 FINAL: GA-002
 ```
 
