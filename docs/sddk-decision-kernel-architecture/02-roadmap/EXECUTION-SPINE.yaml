@@ -1,0 +1,572 @@
+schema_version: 1
+plan_id: sddk-canonical-evolution
+baseline:
+  release: v1.70.0
+  reconciled_at: 2026-09-03
+purpose: >-
+  Machine-readable, dependency-ordered execution spine for SDDK. This file tells an
+  agent exactly what to resume, what to start next, and what terminal state means.
+
+status_vocabulary:
+  terminal: [SHIPPED, ABSORBED, SUPERSEDED]
+  executable: [ACTIVE, READY, PARTIAL]
+  non_executable: [PROPOSED, BLOCKED]
+
+selection_rule:
+  - If exactly one item is ACTIVE, resume that item.
+  - If more than one item is ACTIVE, fail closed and reconcile planning state.
+  - If no item is ACTIVE, scan items by ascending order.
+  - Select the first non-terminal item whose dependencies are all terminal.
+  - If that item is PROPOSED, promote it to READY only when its acceptance contract is present.
+  - If that item is BLOCKED, stop the line and report the blocker; do not skip ahead.
+  - Bind the selected semantic work item to a concrete cycle/run ID only when execution starts.
+  - A cycle/run ID is evidence of execution, never the identity of the capability.
+  - On completion, attach evidence, move the item to SHIPPED or ABSORBED, then recompute next.
+
+cycle_binding:
+  identity: semantic_work_item_id
+  execution_instance: cycle_or_run_id
+  rule: one ACTIVE semantic work item at a time on the canonical spine
+
+terminal_goal:
+  id: GA-002
+  condition: >-
+    SDDK reaches GA with the canonical runtime, Decision Plane, agent/human control,
+    advanced operators, assurance/UAT, adaptive SDD, graph/cockpit, governed learning,
+    multi-pack proof, supply-chain controls and production hardening validated by evidence.
+
+horizons:
+  - { id: H0, name: Reconcile & Deterministic Foundations }
+  - { id: H1, name: Planning SSOT }
+  - { id: H2, name: Generated Workflow MVP }
+  - { id: H3, name: Decision Plane }
+  - { id: H4, name: AgentHost & Context Compiler }
+  - { id: H5, name: Human & Reactive Control }
+  - { id: H6, name: Runtime Completeness & Workflow Lab }
+  - { id: H7, name: Engineering Assurance & UAT }
+  - { id: H8, name: Adaptive SDD }
+  - { id: H9, name: Active Graph & Cockpit }
+  - { id: H10, name: Governed Continuous Improvement }
+  - { id: H11, name: Multi-pack Proof }
+  - { id: H12, name: Supply Chain, Production Hardening & GA }
+
+items:
+  - order: 10
+    id: GOV-ROADMAP-001
+    horizon: H0
+    status: ACTIVE
+    depends_on: []
+    objective: Establish one canonical roadmap, backlog, evolution crosswalk and execution spine.
+    exit_gate: PR #1 merged; roadmap/backlog/spine agree; historical packs are non-canonical design evidence.
+
+  - order: 20
+    id: DW-IR-001
+    horizon: H0
+    status: READY
+    depends_on: [GOV-ROADMAP-001]
+    objective: Replace stringly execution scope with a typed, migration-safe contract.
+    exit_gate: Typed scope is versioned, serialized deterministically and covered by migration/round-trip tests.
+
+  - order: 30
+    id: DW-IR-002
+    horizon: H0
+    status: PROPOSED
+    depends_on: [DW-IR-001]
+    objective: Stabilize transition/predicate AST and validation semantics.
+    exit_gate: Versioned AST round-trips deterministically and rejects invalid transitions predictably.
+
+  - order: 40
+    id: DW-IR-003
+    horizon: H0
+    status: PROPOSED
+    depends_on: [DW-IR-002]
+    objective: Define graph revision, hash, provenance and lineage invariants.
+    exit_gate: Equivalent normalized plans produce stable identity; mutations create explicit revision lineage.
+
+  - order: 50
+    id: DW-IR-004
+    horizon: H0
+    status: PROPOSED
+    depends_on: [DW-IR-003]
+    objective: Define typed operator input/output/error contracts.
+    exit_gate: Runtime operators no longer rely on undefined placeholder output semantics at the contract boundary.
+
+  - order: 60
+    id: DW-IR-005
+    horizon: H0
+    status: PROPOSED
+    depends_on: [DW-IR-004]
+    objective: Prove IR determinism and compiler-boundary invariants.
+    exit_gate: Round-trip, hash stability, invalid-plan and deterministic compilation tests pass.
+
+  - order: 70
+    id: HX-AUTHORITY-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [DW-IR-005]
+    objective: Reconcile CLI, agent, human and Secretary authority into one explicit matrix.
+    exit_gate: Writable state, approval authority, provenance and no-parallel-authority invariant are accepted.
+
+  - order: 80
+    id: ARCH-HEX-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [HX-AUTHORITY-001]
+    objective: Close only architecture-boundary debt that blocks the canonical runtime path.
+    exit_gate: Required domain/application/adapter boundaries for H1-H3 are clean and enforced by tests/checks.
+
+  - order: 90
+    id: EVT-LEDGER-001
+    horizon: H0
+    status: PROPOSED
+    depends_on: [ARCH-HEX-001]
+    objective: Lock canonical event, causation/correlation and replay contracts required by persisted runs.
+    exit_gate: Event schema/versioning and replay invariants required by H2 are deterministic and tested.
+
+  - order: 100
+    id: PLN-LEDGER-001
+    horizon: H1
+    status: PROPOSED
+    depends_on: [EVT-LEDGER-001]
+    objective: Implement Planning Ledger domain model and state machine.
+    exit_gate: WorkItem, dependency, status, evidence, decision and provenance contracts are versioned and tested.
+
+  - order: 110
+    id: PLN-LEDGER-002
+    horizon: H1
+    status: PROPOSED
+    depends_on: [PLN-LEDGER-001]
+    objective: Persist the planning graph in-repository deterministically.
+    exit_gate: Fresh checkout reconstructs an identical planning graph without interpreting narrative markdown.
+
+  - order: 120
+    id: PLN-LEDGER-003
+    horizon: H1
+    status: PROPOSED
+    depends_on: [PLN-LEDGER-002]
+    objective: Bind semantic work items to cycle/run execution evidence and migrate active planning state.
+    exit_gate: Existing active backlog is imported with provenance; cycle IDs remain execution-only identities.
+
+  - order: 130
+    id: PLN-LEDGER-004
+    horizon: H1
+    status: PROPOSED
+    depends_on: [PLN-LEDGER-003]
+    objective: Expose deterministic roadmap status/next/blocked/show/graph projections.
+    exit_gate: An agent can compute the same next work item from the ledger on repeated clean checkouts.
+
+  - order: 140
+    id: DW-RUNTIME-001
+    horizon: H2
+    status: PROPOSED
+    depends_on: [PLN-LEDGER-004]
+    objective: Compile NewWorkflowPlan into deterministic ExecutionGraphRevision.
+    exit_gate: Valid plan compiles deterministically with stable revision/provenance identity.
+
+  - order: 150
+    id: DW-RUNTIME-002
+    horizon: H2
+    status: PROPOSED
+    depends_on: [DW-RUNTIME-001]
+    objective: Persist WorkflowRun identity, graph revision and lifecycle.
+    exit_gate: Run survives restart with equivalent persisted identity and provenance.
+
+  - order: 160
+    id: DW-RUNTIME-003
+    horizon: H2
+    status: PROPOSED
+    depends_on: [DW-RUNTIME-002]
+    objective: Execute Sequence and Conditional nodes from persisted generated state.
+    exit_gate: Bounded generated path executes without hard-coded workflow command sequences.
+
+  - order: 170
+    id: DW-RUNTIME-004
+    horizon: H2
+    status: PROPOSED
+    depends_on: [DW-RUNTIME-003]
+    objective: Add bounded Parallel with durable node/run states, failures and receipts.
+    exit_gate: Parallel execution is bounded, persisted and reconstructible.
+
+  - order: 180
+    id: DW-RUNTIME-005
+    horizon: H2
+    status: PROPOSED
+    depends_on: [DW-RUNTIME-004]
+    objective: Close end-to-end replay and resume vertical slice.
+    exit_gate: Persisted generated DAG can stop, resume and replay to equivalent state under UAT.
+
+  - order: 190
+    id: DEC-PLANE-001
+    horizon: H3
+    status: PROPOSED
+    depends_on: [DW-RUNTIME-005]
+    objective: Introduce CurrentRunView for declared and generated workflow state.
+    exit_gate: One projection exposes frontier, blockers, pending decisions and available actions.
+
+  - order: 200
+    id: DEC-PLANE-002
+    horizon: H3
+    status: PROPOSED
+    depends_on: [DEC-PLANE-001]
+    objective: Generalize next-action computation across declared and generated runs.
+    exit_gate: Next legal actions derive from persisted frontier, not hard-coded CLI sequences.
+
+  - order: 210
+    id: DEC-PLANE-003
+    horizon: H3
+    status: PROPOSED
+    depends_on: [DEC-PLANE-002]
+    objective: Add typed policy evaluation, explanation and decision provenance.
+    exit_gate: Actions are classified allowed/denied/requires-approval with durable reasons.
+
+  - order: 220
+    id: DEC-PLANE-004
+    horizon: H3
+    status: PROPOSED
+    depends_on: [DEC-PLANE-003]
+    objective: Make CLI/recovery surfaces consume the same Decision Plane contract.
+    exit_gate: CLI semantic actions and recovery hints are parity-tested against the Decision Plane.
+
+  - order: 230
+    id: AGENT-HOST-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [DEC-PLANE-004]
+    objective: Expose semantic AgentHost tools over the Decision Plane and planning/runtime contracts.
+    exit_gate: Agent can inspect, plan and invoke admitted semantic actions without shell command discovery loops.
+
+  - order: 240
+    id: AGENT-HOST-002
+    horizon: H4
+    status: PROPOSED
+    depends_on: [AGENT-HOST-001]
+    objective: Add provider failure classification, health, failover and usage telemetry.
+    exit_gate: Same semantic action survives supported provider failures with bounded, observable routing behavior.
+
+  - order: 250
+    id: CTX-COMPILER-001
+    horizon: H4
+    status: PROPOSED
+    depends_on: [AGENT-HOST-002]
+    objective: Implement context capsules, deltas, staleness and negative-knowledge contracts.
+    exit_gate: Context is explicit, bounded, provenance-aware and reconstructible.
+
+  - order: 260
+    id: CTX-COMPILER-002
+    horizon: H4
+    status: PROPOSED
+    depends_on: [CTX-COMPILER-001]
+    objective: Integrate CurrentRunView/recovery context into AgentHost cold-start behavior.
+    exit_gate: Fresh agent session reconstructs required working context without relying on prior chat memory.
+
+  - order: 270
+    id: HX-DECISION-001
+    horizon: H5
+    status: PROPOSED
+    depends_on: [CTX-COMPILER-002]
+    objective: Implement HumanDecision request/decision/receipt contracts and HumanDecisionPort.
+    exit_gate: Human decisions are immutable, provenance-preserving and adapter-independent.
+
+  - order: 280
+    id: HX-DECISION-002
+    horizon: H5
+    status: PROPOSED
+    depends_on: [HX-DECISION-001]
+    objective: Implement risk-sensitive approval policy and CLI/AgentHost adapters.
+    exit_gate: Autonomous/approval/deny paths are deterministic where possible and parity-tested.
+
+  - order: 290
+    id: HX-RESUME-001
+    horizon: H5
+    status: PROPOSED
+    depends_on: [HX-DECISION-002]
+    objective: Implement ResumeInfo, RehydrationPlan and semantic cold-start resume.
+    exit_gate: Human/agent continuation reconstructs pending work and decisions safely after cold start.
+
+  - order: 300
+    id: RX-SECRETARY-001
+    horizon: H5
+    status: PROPOSED
+    depends_on: [HX-RESUME-001]
+    objective: Implement deterministic L0 reactive rules over typed signals.
+    exit_gate: Common recoverable reactions execute without LLM involvement and produce receipts.
+
+  - order: 310
+    id: RX-SECRETARY-002
+    horizon: H5
+    status: PROPOSED
+    depends_on: [RX-SECRETARY-001]
+    objective: Implement bounded L1 Secretary proposals using the same authority path as humans.
+    exit_gate: Secretary can only propose closed-set actions; accepted actions pass policy and durable authorization.
+
+  - order: 320
+    id: RX-SECRETARY-003
+    horizon: H5
+    status: PROPOSED
+    depends_on: [RX-SECRETARY-002]
+    objective: Add bounded cognitive replan for cases deterministic strategies cannot resolve.
+    exit_gate: LLM replan is budgeted, explainable, policy-bounded and recoverable.
+
+  - order: 330
+    id: DW-OPERATORS-001
+    horizon: H6
+    status: PROPOSED
+    depends_on: [RX-SECRETARY-003]
+    objective: Complete durable child output and lineage model; remove placeholder output semantics.
+    exit_gate: Child lifecycle/output/provenance is typed, persisted and replayable.
+
+  - order: 340
+    id: DW-OPERATORS-002
+    horizon: H6
+    status: PROPOSED
+    depends_on: [DW-OPERATORS-001]
+    objective: Complete durable Map fan-out semantics.
+    exit_gate: Dynamic fan-out has bounded child creation, output collection and deterministic replay.
+
+  - order: 350
+    id: DW-OPERATORS-003
+    horizon: H6
+    status: PROPOSED
+    depends_on: [DW-OPERATORS-002]
+    objective: Complete Reduce aggregation semantics.
+    exit_gate: Aggregation is typed, deterministic and has explicit partial/failure policy.
+
+  - order: 360
+    id: DW-OPERATORS-004
+    horizon: H6
+    status: PROPOSED
+    depends_on: [DW-OPERATORS-003]
+    objective: Complete JoinAny/JoinAll and graph/runtime guards.
+    exit_gate: Join completion/cancellation/output plus depth/node/concurrency/budget guards are deterministic.
+
+  - order: 370
+    id: DW-REPLAY-001
+    horizon: H6
+    status: PROPOSED
+    depends_on: [DW-OPERATORS-004]
+    objective: Prove advanced graph revision, cross-tick replay and partial-recovery invariants.
+    exit_gate: Advanced dynamic graph state reconstructs after interruption with no ambiguous lineage.
+
+  - order: 380
+    id: LAB-WORKFLOW-001
+    horizon: H6
+    status: PROPOSED
+    depends_on: [DW-REPLAY-001]
+    objective: Add stable workflow/runtime metrics and observability projections.
+    exit_gate: Runs expose comparable quality, cost, latency, retries, handoffs and failure metrics.
+
+  - order: 390
+    id: LAB-WORKFLOW-002
+    horizon: H6
+    status: PROPOSED
+    depends_on: [LAB-WORKFLOW-001]
+    objective: Implement fork/ablation, strategy comparison and promotion/shadow evidence.
+    exit_gate: Competing workflow strategies can be compared reproducibly before promotion.
+
+  - order: 400
+    id: EA-ASSURANCE-001
+    horizon: H7
+    status: PROPOSED
+    depends_on: [LAB-WORKFLOW-002]
+    objective: Implement assurance profiles, evidence taxonomy and rule contracts.
+    exit_gate: Assurance intent is represented as deterministic domain data, not agent prose.
+
+  - order: 410
+    id: EA-ASSURANCE-002
+    horizon: H7
+    status: PROPOSED
+    depends_on: [EA-ASSURANCE-001]
+    objective: Implement evidence resolvers and deterministic evaluators.
+    exit_gate: Evidence can be collected and evaluated reproducibly with explainable verdicts.
+
+  - order: 420
+    id: UAT-BC-001
+    horizon: H7
+    status: PROPOSED
+    depends_on: [EA-ASSURANCE-002]
+    objective: Extract UAT lifecycle as a bounded context/pack on the canonical runtime.
+    exit_gate: Scenarios, human checks, defects/retests and signoff have typed durable lifecycle semantics.
+
+  - order: 430
+    id: EA-UAT-001
+    horizon: H7
+    status: PROPOSED
+    depends_on: [UAT-BC-001]
+    objective: Integrate assurance/UAT verdicts with Decision Plane policy and provenance.
+    exit_gate: Workflow progression can be gated by reproducible assurance/UAT evidence.
+
+  - order: 440
+    id: SDD-ADAPTIVE-001
+    horizon: H8
+    status: PROPOSED
+    depends_on: [EA-UAT-001]
+    objective: Implement ChangeContract and SHAPE/adaptive specialist selection.
+    exit_gate: Change intent and required specialists are typed, bounded and evidence-linked.
+
+  - order: 450
+    id: SDD-ADAPTIVE-002
+    horizon: H8
+    status: PROPOSED
+    depends_on: [SDD-ADAPTIVE-001]
+    objective: Implement BUILD WorkGraph/WorkUnit execution mapping.
+    exit_gate: Adaptive work decomposes into canonical runtime work units with conflict guards.
+
+  - order: 460
+    id: SDD-ADAPTIVE-003
+    horizon: H8
+    status: PROPOSED
+    depends_on: [SDD-ADAPTIVE-002]
+    objective: Implement CONVERGE and adaptive verification routing.
+    exit_gate: Gaps and verification obligations converge deterministically against ChangeContract invariants.
+
+  - order: 470
+    id: SDD-ADAPTIVE-004
+    horizon: H8
+    status: PROPOSED
+    depends_on: [SDD-ADAPTIVE-003]
+    objective: Implement INTEGRATE and legacy document projections/parity.
+    exit_gate: Adaptive path preserves required artifacts/invariants and can coexist with A-full reference behavior.
+
+  - order: 480
+    id: SDD-ADAPTIVE-005
+    horizon: H8
+    status: PROPOSED
+    depends_on: [SDD-ADAPTIVE-004]
+    objective: Compare adaptive vs A-full in Workflow Lab and decide promotion.
+    exit_gate: Promotion requires non-inferior quality/invariant coverage plus bounded cost/efficiency evidence.
+
+  - order: 490
+    id: GRAPH-WHY-001
+    horizon: H9
+    status: PROPOSED
+    depends_on: [SDD-ADAPTIVE-005]
+    objective: Build typed active-graph projections from canonical events, artifacts and evidence.
+    exit_gate: Requirements, evidence, decisions, runs, debt and lineage have queryable typed relations.
+
+  - order: 500
+    id: GRAPH-WHY-002
+    horizon: H9
+    status: PROPOSED
+    depends_on: [GRAPH-WHY-001]
+    objective: Expose causal why/debt-why queries through the minimal facade.
+    exit_gate: User/agent can explain why a state, decision or debt item exists using provenance-linked paths.
+
+  - order: 510
+    id: COCKPIT-001
+    horizon: H9
+    status: PROPOSED
+    depends_on: [GRAPH-WHY-002]
+    objective: Implement static/control-plane overview, journal, timeline and execution-graph views.
+    exit_gate: Core operational state is inspectable without reconstructing it manually from files/logs.
+
+  - order: 520
+    id: COCKPIT-002
+    horizon: H9
+    status: PROPOSED
+    depends_on: [COCKPIT-001]
+    objective: Add provider health, usage, assurance and experiment comparison views.
+    exit_gate: Operational and experimental decisions are observable through stable projections.
+
+  - order: 530
+    id: GCI-LEARNING-001
+    horizon: H10
+    status: PROPOSED
+    depends_on: [COCKPIT-002]
+    objective: Project ExperienceEpisode-style records and perform process mining over canonical events.
+    exit_gate: Repeated execution patterns and failure/recovery paths are reproducibly discoverable.
+
+  - order: 540
+    id: GCI-LEARNING-002
+    horizon: H10
+    status: PROPOSED
+    depends_on: [GCI-LEARNING-001]
+    objective: Compare strategies through bounded experiments using Workflow Lab evidence.
+    exit_gate: Candidate strategy changes have measurable quality/cost/risk evidence.
+
+  - order: 550
+    id: GCI-LEARNING-003
+    horizon: H10
+    status: PROPOSED
+    depends_on: [GCI-LEARNING-002]
+    objective: Implement evidence-backed promotion, tuning, rollback and policy ratchets.
+    exit_gate: Learned changes cannot bypass deterministic policy, human authority or rollback requirements.
+
+  - order: 560
+    id: MULTIPACK-001
+    horizon: H11
+    status: PROPOSED
+    depends_on: [GCI-LEARNING-003]
+    objective: Lock generic pack contracts and verify SDD has no kernel-only exceptions.
+    exit_gate: Pack/runtime boundary is explicit and testable.
+
+  - order: 570
+    id: MULTIPACK-002
+    horizon: H11
+    status: PROPOSED
+    depends_on: [MULTIPACK-001]
+    objective: Run UAT pack on the same canonical runtime and Decision Plane.
+    exit_gate: UAT requires no domain-specific kernel branch.
+
+  - order: 580
+    id: MULTIPACK-003
+    horizon: H11
+    status: PROPOSED
+    depends_on: [MULTIPACK-002]
+    objective: Run Incident pack on the same canonical runtime and Decision Plane.
+    exit_gate: Incident lifecycle requires no domain-specific kernel branch.
+
+  - order: 590
+    id: MULTIPACK-004
+    horizon: H11
+    status: PROPOSED
+    depends_on: [MULTIPACK-003]
+    objective: Prove SDD, UAT and Incident share one generic kernel/runtime contract.
+    exit_gate: Architecture checks and end-to-end UAT prove no pack-specific kernel special cases.
+
+  - order: 600
+    id: SUPPLYCHAIN-001
+    horizon: H12
+    status: PROPOSED
+    depends_on: [MULTIPACK-004]
+    objective: Implement SBOM, provenance and governed artifact lifecycle.
+    exit_gate: Released artifacts have traceable origin, lifecycle and reproducible provenance evidence.
+
+  - order: 610
+    id: SUPPLYCHAIN-002
+    horizon: H12
+    status: PROPOSED
+    depends_on: [SUPPLYCHAIN-001]
+    objective: Add signed gates, policy ratchets and controlled overrides.
+    exit_gate: Sensitive promotions/overrides are authenticated, auditable and policy-bounded.
+
+  - order: 620
+    id: PROD-HARDEN-001
+    horizon: H12
+    status: PROPOSED
+    depends_on: [SUPPLYCHAIN-002]
+    objective: Close performance, retention, migration and reliability hardening.
+    exit_gate: Production SLO/retention/migration targets are defined and pass representative load/recovery tests.
+
+  - order: 630
+    id: PROD-HARDEN-002
+    horizon: H12
+    status: PROPOSED
+    depends_on: [PROD-HARDEN-001]
+    objective: Complete security review, upgrade/rollback paths and operator documentation.
+    exit_gate: Supported upgrade, rollback, backup/recovery and security scenarios have executable evidence.
+
+  - order: 640
+    id: GA-001
+    horizon: H12
+    status: PROPOSED
+    depends_on: [PROD-HARDEN-002]
+    objective: Execute release-readiness matrix across canonical SDD, UAT and Incident scenarios.
+    exit_gate: All GA acceptance, regression, security, recovery and provenance gates pass without unresolved P0/P1 debt.
+
+  - order: 650
+    id: GA-002
+    horizon: H12
+    status: PROPOSED
+    depends_on: [GA-001]
+    objective: Publish the GA release and freeze the first stable compatibility contract.
+    exit_gate: GA tag/release exists, compatibility policy is documented, and post-GA evolution starts from a new plan version.
