@@ -15,15 +15,16 @@ The canonical roadmap is a dependency-ordered semantic line. By default:
 
 A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-After the 2026-09-03 scoped-verification reprioritization:
+After reconciling the 2026-09-03 scoped-verification reprioritization with current `main`:
 
 ```text
+SHIPPED  → DW-IR-001
 CURRENT  → TEST-MODEL-001
 NEXT     → TEST-ADAPTER-001
 FINAL    → GA-002
 ```
 
-`GOV-ROADMAP-001` remains `SHIPPED`. The new H0 verification foundation is deliberately inserted before Workflow IR because every later implementation cycle benefits from cheaper, more precise test feedback. `DW-IR-001` resumes only after `TEST-APPLY-001` closes the generic service/apply integration.
+`GOV-ROADMAP-001` and `DW-IR-001` are already `SHIPPED`. The new H0 verification foundation is inserted **after the work already delivered and before `DW-IR-002`**, so all remaining implementation cycles benefit from cheaper, more precise test feedback without rewriting history.
 
 ---
 
@@ -34,13 +35,13 @@ FINAL    → GA-002
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
 | 10 | `GOV-ROADMAP-001` | Canonical roadmap/backlog/spine/context governance | `governance` |
-| 12 | `TEST-MODEL-001` | Language-neutral ActiveChangeSet + ProjectTestTopology + SUT graph model | `change-scoped-verification` |
-| 13 | `TEST-ADAPTER-001` | Generic topology/test adapter SPI + capability registry + explicit fallback | `change-scoped-verification` |
-| 14 | `TEST-ADAPTER-002` | Prove Rust + multiple non-Rust + polyglot adapter composability | `change-scoped-verification` |
-| 15 | `TEST-SELECT-001` | Deterministic impact propagation + progressive batch selection | `change-scoped-verification` |
-| 16 | `TEST-EVIDENCE-001` | Evidence receipts, freshness, invalidation, reuse + escape telemetry | `change-scoped-verification` |
-| 17 | `TEST-APPLY-001` | Integrate scoped testing with apply/TDD/verify/agent contracts | `change-scoped-verification` |
-| 20 | `DW-IR-001` | Typed execution scope | `dynamic-workflow-ir` |
+| 20 | `DW-IR-001` | Typed execution scope — already shipped on `main` | `dynamic-workflow-ir` |
+| 22 | `TEST-MODEL-001` | Language-neutral ActiveChangeSet + ProjectTestTopology + SUT graph model | `change-scoped-verification` |
+| 23 | `TEST-ADAPTER-001` | Generic topology/test adapter SPI + capability registry + explicit fallback | `change-scoped-verification` |
+| 24 | `TEST-ADAPTER-002` | Prove Rust + multiple non-Rust + polyglot adapter composability | `change-scoped-verification` |
+| 25 | `TEST-SELECT-001` | Deterministic impact propagation + progressive batch selection | `change-scoped-verification` |
+| 26 | `TEST-EVIDENCE-001` | Evidence receipts, freshness, invalidation, reuse + escape telemetry | `change-scoped-verification` |
+| 27 | `TEST-APPLY-001` | Integrate scoped testing with apply/TDD/verify/agent contracts | `change-scoped-verification` |
 | 30 | `DW-IR-002` | Versioned transition/predicate AST | `dynamic-workflow-ir` |
 | 40 | `DW-IR-003` | Revision/hash/provenance invariants | `dynamic-workflow-ir` |
 | 50 | `DW-IR-004` | Typed operator I/O/error contracts | `dynamic-workflow-ir` |
