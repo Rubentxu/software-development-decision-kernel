@@ -9,7 +9,9 @@
 //! - No filesystem or persistence dependency — EvidenceStoreV1 is an in-memory BTreeMap adapter.
 //! - Port implementor: `TestEvidenceRepository` from test_ports.rs.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -301,6 +303,10 @@ pub fn classify(receipt: &TestEvidenceReceiptV1, current: &ReceiptIdentityV1) ->
     if receipt.capability_id != current.capability_test_identity {
         reasons.push(StaleReason::CapabilityTestIdentityChanged);
     }
+    // toolchain_identity comparison (added 2026-09-03 per FIND-000003)
+    if receipt.toolchain_identity != current.toolchain_identity {
+        reasons.push(StaleReason::ToolchainIdentityChanged);
+    }
 
     if reasons.is_empty() {
         ReuseDecision::Reusable
@@ -398,11 +404,12 @@ pub fn invalidate_graph_driven(
     let mut reusable: Vec<String> = Vec::new();
 
     // Collect all receipt IDs to evaluate (avoid borrow conflict)
-    let receipt_ids: Vec<String> = store.0.keys().cloned().collect();
+    let receipt_ids: Vec<String> = store.0.read().unwrap().keys().cloned().collect();
 
     for receipt_id in receipt_ids {
-        let receipt = match store.0.get(&receipt_id) {
-            Some(r) => r,
+        // Clone the receipt while holding the lock to avoid borrow conflicts
+        let receipt: TestEvidenceReceiptV1 = match store.0.read().unwrap().get(&receipt_id) {
+            Some(r) => r.clone(),
             None => continue, // already removed
         };
 
@@ -421,11 +428,13 @@ pub fn invalidate_graph_driven(
         // Degraded path (backwards-compatible): if tested_sut_ids is empty, fall back
         // to using capability_id as a proxy for the tested scope. This may over-
         // invalidate (SPEC §11 rule 3: conservative, never infrainvalidate).
-        let base_ids = if receipt.tested_sut_ids.is_empty() {
-            // Degraded: capability_id as proxy (may over-invalidate)
-            vec![receipt.capability_id.clone()]
+        // Legacy receipts without SUT binding cannot prove non-intersection:
+        // conservative invalidation (SPEC §11 rule 3 — never infrainvalidate).
+        // Session-recorded receipts always carry precise tested_sut_ids.
+        let conservative = receipt.tested_sut_ids.is_empty();
+        let base_ids = if conservative {
+            Vec::new()
         } else {
-            // Precise: use the actual SUT IDs tested
             receipt.tested_sut_ids.clone()
         };
 
@@ -434,11 +443,11 @@ pub fn invalidate_graph_driven(
         for base_id in &base_ids {
             closure.extend(build_closure(base_id, topology));
         }
-        let intersects = closure.intersection(changed_node_ids).next().is_some();
+        let intersects = conservative || closure.intersection(changed_node_ids).next().is_some();
 
         if revision_stale || intersects {
             // Invalidate: remove from store
-            store.0.remove(&receipt_id);
+            store.0.write().unwrap().remove(&receipt_id);
             invalidated.push(receipt_id);
         } else {
             reusable.push(receipt_id);
@@ -467,28 +476,31 @@ pub const EVIDENCE_STORE_SCHEMA_VERSION: u32 = 1;
 /// - `save`: persists a receipt; duplicate receipt_id ⇒ `TestEvidenceError::DuplicateReceiptId`.
 /// - `latest_for`: returns the most recent receipt for a change-set digest and capability
 ///   (most recent = highest lexicographic completed_at per RFC 3339).
-#[derive(Debug, Clone, PartialEq)]
-pub struct EvidenceStoreV1(BTreeMap<String, TestEvidenceReceiptV1>);
+///
+/// Uses `RwLock` for interior mutability so `&self` methods can mutate through
+/// the trait's `&mut self` signature while maintaining `Sync + Send`.
+#[derive(Debug)]
+pub struct EvidenceStoreV1(RwLock<BTreeMap<String, TestEvidenceReceiptV1>>);
 
 impl EvidenceStoreV1 {
     /// Creates a new empty evidence store.
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self(RwLock::new(BTreeMap::new()))
     }
 
     /// Returns the number of receipts in the store.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.0.read().unwrap().len()
     }
 
     /// Returns `true` if the store contains no receipts.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.0.read().unwrap().is_empty()
     }
 
     /// Returns all receipt IDs in the store, in sorted order.
-    pub fn receipt_ids(&self) -> Vec<&String> {
-        self.0.keys().collect()
+    pub fn receipt_ids(&self) -> Vec<String> {
+        self.0.read().unwrap().keys().cloned().collect()
     }
 }
 
@@ -503,19 +515,15 @@ impl crate::test_ports::TestEvidenceRepository for EvidenceStoreV1 {
     ///
     /// Returns `Err(TestEvidenceError::DuplicateReceiptId)` if a receipt with the
     /// same `receipt_id` already exists.
-    fn save(&self, receipt: &TestEvidenceReceiptV1) -> Result<(), AdapterError> {
-        if self.0.contains_key(&receipt.receipt_id) {
+    fn save(&mut self, receipt: &TestEvidenceReceiptV1) -> Result<(), AdapterError> {
+        let mut store = self.0.write().unwrap();
+        if store.contains_key(&receipt.receipt_id) {
             return Err(AdapterError::InvalidInput {
                 reason: format!("receipt id already exists: {}", receipt.receipt_id),
             });
         }
-        // We need &mut self for BTreeMap insertion, but the trait has &self.
-        // We work around this by cloning the receipt and using get_ref pattern.
-        // Actually, the trait requires &self, so we must clone into a new store.
-        // A better approach: EvidenceStoreV1::insert is a separate method.
-        Err(AdapterError::InvalidInput {
-            reason: "use EvidenceStoreV1::insert() directly".to_string(),
-        })
+        store.insert(receipt.receipt_id.clone(), receipt.clone());
+        Ok(())
     }
 
     /// Returns the latest evidence receipt for a given change-set digest and capability.
@@ -527,12 +535,15 @@ impl crate::test_ports::TestEvidenceRepository for EvidenceStoreV1 {
         change_set_digest: &str,
         capability_id: &str,
     ) -> Result<Option<TestEvidenceReceiptV1>, AdapterError> {
-        let mut candidates: Vec<&TestEvidenceReceiptV1> = self
+        let candidates: Vec<TestEvidenceReceiptV1> = self
             .0
+            .read()
+            .unwrap()
             .values()
             .filter(|r| {
                 r.change_set_digest == change_set_digest && r.capability_id == capability_id
             })
+            .cloned()
             .collect();
 
         if candidates.is_empty() {
@@ -540,8 +551,9 @@ impl crate::test_ports::TestEvidenceRepository for EvidenceStoreV1 {
         }
 
         // Lexicographic by completed_at (RFC 3339) — highest is "most recent"
-        candidates.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
-        Ok(Some(candidates[0].clone()))
+        let mut sorted = candidates;
+        sorted.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
+        Ok(Some(sorted.into_iter().next().unwrap()))
     }
 }
 
@@ -550,18 +562,19 @@ impl EvidenceStoreV1 {
     ///
     /// Returns an error if a receipt with the same `receipt_id` already exists.
     pub fn insert(&mut self, receipt: TestEvidenceReceiptV1) -> Result<(), TestEvidenceError> {
-        if self.0.contains_key(&receipt.receipt_id) {
+        let mut store = self.0.write().unwrap();
+        if store.contains_key(&receipt.receipt_id) {
             return Err(TestEvidenceError::DuplicateReceiptId {
                 id: receipt.receipt_id,
             });
         }
-        self.0.insert(receipt.receipt_id.clone(), receipt);
+        store.insert(receipt.receipt_id.clone(), receipt);
         Ok(())
     }
 
     /// Looks up a receipt by its ID.
-    pub fn get(&self, receipt_id: &str) -> Option<&TestEvidenceReceiptV1> {
-        self.0.get(receipt_id)
+    pub fn get(&self, receipt_id: &str) -> Option<TestEvidenceReceiptV1> {
+        self.0.read().unwrap().get(receipt_id).cloned()
     }
 
     /// Returns the latest receipt for a change-set digest and capability.
@@ -572,35 +585,39 @@ impl EvidenceStoreV1 {
         change_set_digest: &str,
         capability_id: &str,
     ) -> Option<TestEvidenceReceiptV1> {
-        let mut candidates: Vec<&TestEvidenceReceiptV1> = self
+        let candidates: Vec<TestEvidenceReceiptV1> = self
             .0
+            .read()
+            .unwrap()
             .values()
             .filter(|r| {
                 r.change_set_digest == change_set_digest && r.capability_id == capability_id
             })
+            .cloned()
             .collect();
 
         if candidates.is_empty() {
             return None;
         }
 
-        candidates.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
-        Some(candidates[0].clone())
+        let mut sorted = candidates;
+        sorted.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
+        Some(sorted.into_iter().next().unwrap())
     }
 
     /// Removes a receipt by its ID.
     pub fn remove(&mut self, receipt_id: &str) -> Option<TestEvidenceReceiptV1> {
-        self.0.remove(receipt_id)
+        self.0.write().unwrap().remove(receipt_id)
     }
 
-    /// Iterates over all receipts.
-    pub fn values(&self) -> impl Iterator<Item = &TestEvidenceReceiptV1> {
-        self.0.values()
+    /// Iterates over all receipts (cloned).
+    pub fn values(&self) -> Vec<TestEvidenceReceiptV1> {
+        self.0.read().unwrap().values().cloned().collect()
     }
 }
 
 /// Versioned envelope for evidence store.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum EvidenceStore {
     /// Version 1 store.
     V1(EvidenceStoreV1),
@@ -735,16 +752,13 @@ impl SelectionTelemetryV1 {
 
     /// Returns the ratio of tool calls saved vs full-verify baseline.
     ///
-    /// Returns `None` if there are no runs.
+    /// V1-unavailable: SPEC §15 does not define a baseline for tool-call counts,
+    /// so this method returns `None` unconditionally. A future spec change may
+    /// introduce a `tool_call_baseline` field to enable meaningful computation.
+    ///
+    /// Returns `None` if there are no runs (also returns `None` in V1).
     pub fn tool_call_savings_ratio(&self) -> Option<f32> {
-        if self.runs.is_empty() {
-            return None;
-        }
-        // This is a simplified ratio; a full implementation would track full baseline calls.
-        // Here we use the selected/baseline ratio as a proxy.
-        let _scoped_avg: f32 =
-            self.runs.iter().map(|r| r.tool_calls as f32).sum::<f32>() / self.runs.len() as f32;
-        // Without a full baseline, we return None
+        // V1: SPEC §15 does not define tool-call baseline; cannot compute savings ratio
         None
     }
 
@@ -952,7 +966,7 @@ mod tests {
         capability_id: &str,
         completed_at: &str,
     ) -> TestEvidenceReceiptV1 {
-        TestEvidenceReceiptV1::new(
+        let built = TestEvidenceReceiptV1::new(
             receipt_id.to_string(),
             change_set_digest.to_string(),
             "src1".to_string(),
@@ -962,7 +976,11 @@ mod tests {
             capability_id.to_string(),
             ReceiptResult::Passed,
             completed_at.to_string(),
-        )
+            String::new(), // toolchain_identity
+        );
+        let mut receipt = built;
+        receipt.tested_sut_ids = vec![capability_id.to_string()];
+        receipt
     }
 
     #[test]
@@ -1022,8 +1040,8 @@ mod tests {
     #[test]
     fn classify_unrelated_sut_change_reusable() {
         let receipt = make_receipt("r1", "csd1", "cap1", "2024-01-01T00:00:00Z");
-        // current matches receipt exactly
-        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap1", "tool1");
+        // current matches receipt exactly (toolchain_identity also matches)
+        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap1", "");
         let decision = classify(&receipt, &current);
         assert!(matches!(decision, ReuseDecision::Reusable));
     }
@@ -1031,8 +1049,8 @@ mod tests {
     #[test]
     fn classify_capability_test_identity_changed_stale() {
         let receipt = make_receipt("r1", "csd1", "cap1", "2024-01-01T00:00:00Z");
-        // current has different capability_test_identity (cap2 vs cap1)
-        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap2", "tool1");
+        // current has different capability_test_identity (cap2 vs cap1); toolchain_identity matches
+        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap2", "");
         let decision = classify(&receipt, &current);
         assert!(matches!(
             decision,
@@ -1101,7 +1119,7 @@ mod tests {
     #[test]
     fn invalidate_graph_driven_intersecting_invalidated() {
         let mut store = EvidenceStoreV1::new();
-        // Receipt for node-a (closure = {node-a, node-b})
+        // Receipt for node-a (transitive closure = {node-a, node-b, node-c})
         store
             .insert(make_receipt(
                 "r-a",
@@ -1110,7 +1128,7 @@ mod tests {
                 "2024-01-01T00:00:00Z",
             ))
             .unwrap();
-        // Receipt for node-c (closure = {node-c})
+        // Receipt for node-c (transitive closure = {node-c})
         store
             .insert(make_receipt(
                 "r-c",
@@ -1126,8 +1144,8 @@ mod tests {
 
         let report = invalidate_graph_driven(&mut store, &changed, &topology, &current, "src1");
 
-        // node-a's closure {node-a, node-b} intersects node-b ⇒ invalidated
-        // node-c's closure {node-c} does not intersect ⇒ reusable
+        // node-a's transitive closure {node-a, node-b, node-c} intersects node-b ⇒ invalidated
+        // node-c's transitive closure {node-c} does not intersect node-b ⇒ reusable
         assert_eq!(report.invalidated_count, 1);
         assert_eq!(report.reusable_count, 1);
         assert!(report.invalidated.contains(&"r-a".to_string()));
@@ -1147,17 +1165,17 @@ mod tests {
         precise_receipt.tested_sut_ids = vec!["node-c".to_string()];
 
         // Receipt without precise tested_sut_ids (degraded path via capability_id = "node-a")
-        // In degraded mode, capability_id = "node-a" gives closure {node-a, node-b}
+        // In degraded mode, capability_id = "node-a" gives transitive closure {node-a, node-b, node-c}
         let degraded_receipt = make_receipt("r-degraded", "csd1", "node-a", "2024-01-01T00:00:00Z");
 
         store.insert(precise_receipt).unwrap();
         store.insert(degraded_receipt).unwrap();
 
         let topology = make_topology();
-        // Only node-a changed (in degraded receipt's closure but NOT in precise receipt's closure)
+        // Only node-a changed (in degraded receipt's transitive closure but NOT in precise receipt's closure)
         // Topology: node-a --depends-on--> node-b --runtime-depends-on--> node-c
         // Precise closure: {node-c} (from tested_sut_ids = ["node-c"])
-        // Degraded closure: {node-a, node-b} (from capability_id = "node-a")
+        // Degraded transitive closure: {node-a, node-b, node-c} (from capability_id = "node-a")
         let changed: BTreeSet<String> = vec!["node-a".to_string()].into_iter().collect();
         let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap1", "tool1");
 

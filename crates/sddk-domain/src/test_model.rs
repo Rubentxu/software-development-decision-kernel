@@ -992,6 +992,10 @@ impl TestSelectionPlanV1 {
 /// An evidence receipt recording the outcome of a test execution (TEST-EVIDENCE-001 lifecycle).
 ///
 /// ## Changelog
+/// - **2026-09-03**: Added `toolchain_identity` field (V1 compatibility, defaults to empty).
+///   Compared in `classify()` to emit `StaleReason::ToolchainIdentityChanged`. Allows
+///   detection of toolchain version changes (e.g. rustc 1.75 → 1.76) that affect
+///   test outcomes even when all other identity fields match.
 /// - **2026-09-03**: Added `tested_sut_ids` field (V1 compatibility, defaults to empty).
 ///   Enables precise graph-driven invalidation: receipts with non-empty `tested_sut_ids`
 ///   use those SUT IDs for closure computation instead of falling back to `capability_id`
@@ -1020,6 +1024,10 @@ pub struct TestEvidenceReceiptV1 {
     pub result: ReceiptResult,
     /// RFC 3339 timestamp when execution completed (non-empty).
     pub completed_at: String,
+    /// Toolchain identity in effect when this receipt was produced (V1, defaults to empty).
+    /// Compared in `classify()` to detect toolchain version changes that may affect outcomes.
+    #[serde(default)]
+    pub toolchain_identity: String,
     /// Precise SUT node IDs tested by this receipt. Used for accurate graph-driven
     /// invalidation. When non-empty, `invalidate_graph_driven` builds the closure from
     /// these IDs instead of using `capability_id` as a proxy. When empty, falls back
@@ -1041,6 +1049,7 @@ impl TestEvidenceReceiptV1 {
         capability_id: String,
         result: ReceiptResult,
         completed_at: String,
+        toolchain_identity: String,
     ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
@@ -1053,6 +1062,7 @@ impl TestEvidenceReceiptV1 {
             capability_id,
             result,
             completed_at,
+            toolchain_identity,
             tested_sut_ids: Vec::new(),
         }
     }
@@ -1803,6 +1813,7 @@ mod tests {
             "cargo-test".into(),
             ReceiptResult::Passed,
             "2026-09-03T12:00:00Z".into(),
+            String::new(), // toolchain_identity
         );
         let json = serde_json::to_string(&receipt).unwrap();
         let roundtrip: TestEvidenceReceiptV1 = serde_json::from_str(&json).unwrap();

@@ -35,6 +35,7 @@ pub mod rules;
 pub mod schema;
 pub mod staleness;
 pub mod test_adapters;
+pub mod test_apply;
 pub mod test_evidence;
 pub mod test_model;
 pub mod test_ports;
@@ -79,6 +80,10 @@ pub use replay::*;
 pub use rules::*;
 pub use schema::*;
 pub use staleness::*;
+pub use test_apply::{
+    APPLY_SESSION_SCHEMA_VERSION, ApplyVerificationSessionV1, NEXT_BATCH_OUTCOME_SCHEMA_VERSION,
+    NextBatchOutcome, SESSION_STATUS_SCHEMA_VERSION, SessionStatus,
+};
 pub use test_model::*;
 pub use test_ports::*;
 pub use transition_ast::{

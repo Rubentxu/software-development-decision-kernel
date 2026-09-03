@@ -135,6 +135,9 @@ pub trait TestImpactPlannerPort: Send + Sync {
         change_set_digest: &str,
         topology_revision: &str,
     ) -> Result<TestSelectionPlanV1, AdapterError>;
+
+    /// Returns the insufficient mapping details if the last plan call failed.
+    fn insufficient(&self) -> Option<crate::test_model::InsufficientMappingV1>;
 }
 
 /// Port: executes a batch of tests and returns evidence (SPEC-043 §4.7).
@@ -149,9 +152,15 @@ pub trait VerificationExecutorPort: Send + Sync {
 /// Port: persists and retrieves test evidence receipts (SPEC-043 §4.8).
 ///
 /// Adapters implement this to store receipts for later retrieval and comparison.
+///
+/// ## Changelog
+/// - **2026-09-03**: `save` changed from `&self` to `&mut self` (FIND-000002).
+///   This is a breaking change to the port's dyn-compatibility, but there are
+///   no live `&dyn TestEvidenceRepository` consumers today (verified FIND-000002
+///   "dormant"). The trait remains `Send + Sync` but is no longer object-safe.
 pub trait TestEvidenceRepository: Send + Sync {
     /// Persists an evidence receipt.
-    fn save(&self, receipt: &TestEvidenceReceiptV1) -> Result<(), AdapterError>;
+    fn save(&mut self, receipt: &TestEvidenceReceiptV1) -> Result<(), AdapterError>;
 
     /// Returns the latest evidence receipt for a given change-set digest and capability.
     fn latest_for(
@@ -893,6 +902,7 @@ mappings:
                 "cap-1".to_string(),
                 crate::test_model::ReceiptResult::Passed,
                 "2024-01-01T00:00:00Z".to_string(),
+                String::new(), // toolchain_identity
             ))
         }
     }

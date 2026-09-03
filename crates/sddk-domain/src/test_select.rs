@@ -739,6 +739,12 @@ impl TestImpactPlannerPort for ImpactPlannerV1 {
 
         Ok(plan)
     }
+
+    fn insufficient(&self) -> Option<InsufficientMappingV1> {
+        let stored = self.stored_unmapped.read().unwrap();
+        let (artifacts, suts, relations) = stored.as_ref()?;
+        Some(self.build_insufficient(artifacts.clone(), suts.clone(), relations.clone()))
+    }
 }
 
 // ── Internal result type ──────────────────────────────────────────────────────
