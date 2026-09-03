@@ -34,6 +34,7 @@ pub mod replay;
 pub mod rules;
 pub mod schema;
 pub mod staleness;
+pub mod test_adapters;
 pub mod test_model;
 pub mod test_ports;
 pub mod transition_ast;
