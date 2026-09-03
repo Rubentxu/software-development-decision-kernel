@@ -128,7 +128,7 @@ items:
   - order: 40
     id: DW-IR-003
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-03: cycle p-63676b11dc0ef88f/dw-ir-003-plan-revision-lineage CLOSED; release v1.79.0; exit gate probado: NormalizedPlanV1 (equivalencia semantica: ir_id/prompt/model no afectan identidad; diferencias semanticas si) con plan_identity estable, PlanRevisionLineageV1 append-only con mutations tipadas (7) + provenance + revision_id determinista y NoOpMutation rechazado; 17 tests modulo + 19 lenses adversariales del verificador (469 lib, 2019 workspace); placeholders edges/policy documentados como limitaciones IR-v1 con colision NIL
     depends_on: [DW-IR-002]
     objective: Define graph revision, hash, provenance and lineage invariants.
     exit_gate: Equivalent normalized plans produce stable identity; mutations create explicit revision lineage.

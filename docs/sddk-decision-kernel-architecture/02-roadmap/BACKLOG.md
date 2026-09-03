@@ -437,8 +437,9 @@ SHIPPED: TEST-ADAPTER-002 (cycle test-adapter-002-composability-uat, release v1.
 SHIPPED: TEST-SELECT-001 (cycle test-select-001-impact-propagation, release v1.76.0, 2026-09-03)
 SHIPPED: TEST-EVIDENCE-001 (cycle test-evidence-001-receipts-freshness-invalidation, release v1.77.0, 2026-09-03)
 SHIPPED: TEST-APPLY-001 (cycle test-apply-001-scoped-session-contracts, release v1.78.0, 2026-09-03) — TEST-* block COMPLETE (6/6)
-CURRENT: DW-IR-003
-NEXT after DW-IR-003 evidence: DW-IR-004
+SHIPPED: DW-IR-003 (cycle dw-ir-003-plan-revision-lineage, release v1.79.0, 2026-09-03)
+CURRENT: DW-IR-004
+NEXT after DW-IR-004 evidence: DW-IR-005
 LATER H0: TEST-ADAPTER-002 → TEST-SELECT-001 → TEST-EVIDENCE-001 → TEST-APPLY-001
 FINAL: GA-002
 ```
