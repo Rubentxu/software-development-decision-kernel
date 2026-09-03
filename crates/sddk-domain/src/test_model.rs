@@ -290,11 +290,16 @@ pub enum ImpactReason {
     ComponentIntegrationTest,
     /// Cross-component contract test coverage.
     CrossComponentContractTest,
+    /// Risk-policy escalation for Architecture/Security/Mutation/Uat capabilities.
+    ///
+    /// Restored 2026-09-03 — dropped by count errata in TEST-MODEL-001 spec.
+    /// SPEC-043 §3.6 enumerates 16 v1 reasons (errata corrected "15" → "16").
+    RiskPolicyEscalation,
 }
 
 crate::assert_variant_count_eq!(
     ImpactReason,
-    15,
+    16,
     [
         ImpactReason::DirectSourceTouch,
         ImpactReason::ComponentOwnership,
@@ -311,6 +316,7 @@ crate::assert_variant_count_eq!(
         ImpactReason::LocalUnitTest,
         ImpactReason::ComponentIntegrationTest,
         ImpactReason::CrossComponentContractTest,
+        ImpactReason::RiskPolicyEscalation,
     ]
 );
 
@@ -1453,8 +1459,9 @@ mod tests {
             ImpactReason::LocalUnitTest,
             ImpactReason::ComponentIntegrationTest,
             ImpactReason::CrossComponentContractTest,
+            ImpactReason::RiskPolicyEscalation,
         ];
-        assert_eq!(variants.len(), 15);
+        assert_eq!(variants.len(), 16);
     }
 
     #[test]

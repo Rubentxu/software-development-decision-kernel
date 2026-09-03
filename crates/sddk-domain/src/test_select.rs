@@ -11,6 +11,11 @@
 //! Determinism: BTreeMap/BTreeSet, sorted iteration, canonical JSON for hashing.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::RwLock;
+
+/// Raw unmapped data stored after a `Blocked` verdict, used to reconstruct
+/// `InsufficientMappingV1` on demand via `insufficient()`.
+type StoredUnmapped = Option<(Vec<String>, Vec<String>, Vec<TopologyEdgeKind>)>;
 
 use sha2::{Digest, Sha256};
 
@@ -39,13 +44,17 @@ use crate::test_ports::{
 ///   functions with no side-effects.
 /// - Fail-closed: unmapped artifacts or dangling edges produce a `Blocked` verdict
 ///   with an `InsufficientMappingV1` that encodes exactly what could not be mapped.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImpactPlannerV1 {
     change_set: ActiveChangeSetV1,
     topology: ProjectTestTopologyV1,
     registry: CapabilityRegistryV1,
     map: Option<ProjectTestMapV1>,
     stage4_policy_enabled: bool,
+    /// Stores the raw unmapped data from the last `plan()` call that produced a
+    /// `Blocked` verdict, so `insufficient()` can reconstruct the `InsufficientMappingV1`
+    /// on demand. Uses `RwLock` for interior mutability (`Sync` + `Clone`).
+    stored_unmapped: RwLock<StoredUnmapped>,
 }
 
 impl ImpactPlannerV1 {
@@ -68,6 +77,7 @@ impl ImpactPlannerV1 {
             registry,
             map,
             stage4_policy_enabled,
+            stored_unmapped: RwLock::new(None),
         }
     }
 
@@ -84,28 +94,19 @@ impl ImpactPlannerV1 {
         &self.topology.topology_revision
     }
 
-    /// Returns `Some` if this planner is in a fail-closed state due to unmapped
-    /// artifacts or invalid explicit-map references; `None` otherwise.
+    /// Returns `Some` with the `InsufficientMappingV1` reconstructed from stored raw
+    /// unmapped data; `None` if the last `plan()` call did not produce a `Blocked` verdict.
     pub fn insufficient(&self) -> Option<InsufficientMappingV1> {
-        self.compute_insufficient()
+        self.stored_unmapped
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|(artifacts, suts, relations)| {
+                self.build_insufficient(artifacts.clone(), suts.clone(), relations.clone())
+            })
     }
 
     // ── Internal propagation engine ─────────────────────────────────────────────
-
-    /// Computes the `InsufficientMappingV1` if any unmapped artifacts were detected.
-    fn compute_insufficient(&self) -> Option<InsufficientMappingV1> {
-        let _unmapped_artifacts: BTreeSet<String> = BTreeSet::new();
-        let _unmapped_suts: BTreeSet<String> = BTreeSet::new();
-        let _missing_relations: BTreeSet<TopologyEdgeKind> = BTreeSet::new();
-
-        // We track unmapped artifacts in the propagation loop and collect them here.
-        // For now, construct a descriptive insufficient mapping based on any failures.
-        // The actual unmapped detection happens inside plan() computation.
-
-        // We return None here because insufficient is only populated after a failed plan().
-        // The struct field is populated during plan() execution.
-        None
-    }
 
     /// Main propagation: runs all stages and returns (batches, impacted_suts, unmapped).
     fn propagate(&self) -> PropResult {
@@ -517,10 +518,6 @@ impl ImpactPlannerV1 {
     }
 
     /// Stage 4: risk policy escalation (Architecture/Security/Mutation/Uat).
-    ///
-    /// Uses `DirectSourceTouch` as the impact reason since risk policies are
-    /// triggered by source changes; `RiskPolicyEscalation` would be the ideal
-    /// reason but is not yet in the closed `ImpactReason` enum.
     fn propagate_stage4(
         &self,
         impacted_suts: &BTreeSet<String>,
@@ -542,7 +539,7 @@ impl ImpactPlannerV1 {
                         stage4
                             .entry(cap.capability_id.clone())
                             .or_default()
-                            .push(ImpactReason::DirectSourceTouch);
+                            .push(ImpactReason::RiskPolicyEscalation);
                     }
                 }
             }
@@ -633,13 +630,21 @@ impl ImpactPlannerV1 {
         unmapped_suts: Vec<String>,
         missing_relations: Vec<TopologyEdgeKind>,
     ) -> InsufficientMappingV1 {
-        let verify_required = unmapped_artifacts.iter().any(|a| {
-            // Check if any unmapped artifact corresponds to a Schema node
-            self.topology
-                .nodes
-                .get(a)
-                .map(|n| n.kind == SutKind::Schema || n.kind == SutKind::ContractBoundary)
-                .unwrap_or(false)
+        // verify_required = true when:
+        // 1. An unmapped SUT is not in the topology at all (can't verify the unknown),
+        //    OR
+        // 2. An unmapped SUT IS in the topology and its kind is
+        //    Schema/ContractBoundary/GeneratedArtifact (per SPEC-043 §3.6 fail-closed).
+        let verify_required = unmapped_suts.iter().any(|s| {
+            match self.topology.nodes.get(s) {
+                Some(n) => {
+                    n.kind == SutKind::Schema
+                        || n.kind == SutKind::ContractBoundary
+                        || n.kind == SutKind::GeneratedArtifact
+                }
+                // Node not in topology → can't verify, needs human review
+                None => true,
+            }
         });
 
         InsufficientMappingV1::new(
@@ -691,27 +696,16 @@ impl TestImpactPlannerPort for ImpactPlannerV1 {
 
         // REQ-4: Fail-closed
         if prop.has_unmapped {
-            let plan = TestSelectionPlanV1::new(
-                format!(
-                    "plan:{}:{}",
-                    self.injected_change_set_digest(),
-                    self.topology.topology_revision
-                ),
-                self.injected_change_set_digest(),
-                self.topology.topology_revision.clone(),
-                String::new(), // sut_graph_revision
-                String::new(), // policy_revision
-                prop.impacted_suts,
-                Vec::new(), // no batches when blocked
-                Vec::new(), // no reused receipts
-                prop.unmapped_artifacts
-                    .iter()
-                    .chain(prop.unmapped_suts.iter())
-                    .cloned()
-                    .collect(),
-                0.0,
-                PlanVerdict::Blocked,
+            let insufficient = self.build_insufficient(
+                prop.unmapped_artifacts.clone(),
+                prop.unmapped_suts.clone(),
+                prop.missing_relations.clone(),
             );
+            *self.stored_unmapped.write().unwrap() = Some((
+                prop.unmapped_artifacts.clone(),
+                prop.unmapped_suts.clone(),
+                prop.missing_relations.clone(),
+            ));
 
             return Err(AdapterError::InvalidInput {
                 reason: format!(
@@ -1203,8 +1197,9 @@ mod tests {
     }
 
     #[test]
-    fn insufficient_returns_insufficient_mapping() {
+    fn insufficient_returns_insufficient_mapping_on_blocked() {
         let topo = simple_topology();
+        // Change an artifact that has no owner in the topology → unmapped
         let cs = ActiveChangeSetV1::new(
             "test-project".to_string(),
             "base".to_string(),
@@ -1220,11 +1215,100 @@ mod tests {
 
         let planner = ImpactPlannerV1::new(cs.clone(), topo.clone(), reg, None, false);
 
+        let digest = cs.change_set_digest.clone().unwrap();
+        let result = planner.plan(&digest, &topo.topology_revision);
+
+        // plan() must fail with Blocked
+        assert!(
+            matches!(result, Err(AdapterError::InvalidInput { .. })),
+            "unmapped artifact must produce InvalidInput"
+        );
+
+        // After plan() fails, insufficient() must return Some with real data
         let insufficient = planner.insufficient();
-        // Since no plan() was called yet, insufficient() returns None
-        // But after plan() fails, the insufficient would be captured
-        // This tests the method exists and is callable
-        assert!(insufficient.is_none() || insufficient.is_some());
+        assert!(
+            insufficient.is_some(),
+            "insufficient() must be Some after Blocked verdict"
+        );
+        let insufficient = insufficient.unwrap();
+
+        // unmapped_artifacts must contain the orphan path
+        assert!(
+            insufficient
+                .unmapped_artifacts
+                .contains(&"nonexistent/file.rs".to_string()),
+            "unmapped_artifacts must contain the orphan path"
+        );
+
+        // justification and remediation must be non-empty (fail-closed contract)
+        assert!(
+            !insufficient.justification.is_empty(),
+            "justification must be non-empty"
+        );
+        assert!(
+            !insufficient.remediation.is_empty(),
+            "remediation must be non-empty"
+        );
+
+        // verify_required is false for a plain path (not Schema/ContractBoundary/GeneratedArtifact)
+        assert!(
+            !insufficient.verify_required,
+            "verify_required must be false for non-critical unmapped artifact"
+        );
+    }
+
+    #[test]
+    fn insufficient_verify_required_true_for_schema_node() {
+        // Create a topology where an explicit map entry points to a non-existent SUT
+        // that would be classified as Schema if it existed → verify_required=true
+        let topo = simple_topology();
+        let cs = simple_change_set("src:lib");
+        let reg = standard_registry();
+
+        // Create a map that references a Schema node that doesn't exist
+        // by using a dangling reference via explicit map
+        let yaml_map = r#"
+schema_version: 1
+mappings:
+  - sut: "schema:missing_api"
+    tests:
+      - id: "test:orphan_schema"
+        kind: contract
+    affects: []
+    reason: "Maps to non-existent Schema node"
+"#;
+        let map = ProjectTestMapV1::from_yaml_str(yaml_map).unwrap();
+
+        let planner = ImpactPlannerV1::new(cs.clone(), topo.clone(), reg, Some(map), false);
+
+        let digest = cs.change_set_digest.clone().unwrap();
+        let result = planner.plan(&digest, &topo.topology_revision);
+
+        // plan() must fail because sut "schema:missing_api" doesn't exist in topology
+        assert!(
+            matches!(result, Err(AdapterError::InvalidInput { .. })),
+            "unknown sut in explicit map must produce InvalidInput"
+        );
+
+        let insufficient = planner.insufficient();
+        assert!(
+            insufficient.is_some(),
+            "insufficient() must be Some after Blocked"
+        );
+        let insufficient = insufficient.unwrap();
+
+        // The unmapped sut is "schema:missing_api" — since its kind would be Schema,
+        // verify_required must be true
+        assert!(
+            insufficient.verify_required,
+            "verify_required must be true for unmapped SUT of kind Schema"
+        );
+        assert!(
+            insufficient
+                .unmapped_suts
+                .contains(&"schema:missing_api".to_string()),
+            "unmapped_suts must contain the unknown Schema node id"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
