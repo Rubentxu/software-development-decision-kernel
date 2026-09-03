@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/interaction-event.v1.json",
+  "title": "InteractionEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "type",
+    "attention",
+    "facts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cycle_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "phase": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "type": {
+      "enum": [
+        "cycle.started",
+        "cycle.resumed",
+        "phase.started",
+        "phase.progress",
+        "finding.noteworthy",
+        "decision.required",
+        "decision.made",
+        "assumption.invalidated",
+        "plan.reframed",
+        "phase.blocked",
+        "phase.completed",
+        "cycle.completed"
+      ]
+    },
+    "attention": {
+      "enum": [
+        "silent",
+        "phase_summary",
+        "noteworthy",
+        "decision",
+        "critical"
+      ]
+    },
+    "facts": {
+      "type": "object"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "timestamp": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

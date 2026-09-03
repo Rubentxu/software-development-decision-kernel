@@ -1,0 +1,30 @@
+# Package Index
+
+Markdown files: 26
+
+- `00-vision/CHANGESET-SUMMARY.md`
+- `00-vision/EVOLUTION-PRD.md`
+- `00-vision/PRODUCT-FIT-AND-NON-GOALS.md`
+- `01-architecture/DECISION-QUALITY-LOOP.md`
+- `01-architecture/EVOLUTION-ARCHITECTURE.md`
+- `02-roadmap/IMPLEMENTATION-BACKLOG.md`
+- `02-roadmap/ROADMAP-CONTINUATION.md`
+- `03-adrs/ADR-041-ENGINEERING-ASSURANCE-BOUNDED-CONTEXT.md`
+- `03-adrs/ADR-042-REASONING-CAPABILITY-PROFILE-SEPARATION.md`
+- `03-adrs/ADR-043-EVIDENCE-BACKED-ASSURANCE.md`
+- `03-adrs/ADR-044-GOVERNED-CONTINUOUS-IMPROVEMENT.md`
+- `04-specs/SPEC-042-ENGINEERING-ASSURANCE-PACK.md`
+- `04-specs/SPEC-043-ENGINEERING-PROFILE-PROTOCOL.md`
+- `04-specs/SPEC-044-ASSURANCE-EVIDENCE-CONTRACT.md`
+- `04-specs/SPEC-045-SYSTEMS-REVIEW-WORKFLOW.md`
+- `04-specs/SPEC-046-GOVERNED-CONTINUOUS-IMPROVEMENT.md`
+- `07-reference/GLOSSARY-EXTENSION.md`
+- `07-reference/RESEARCH-SYNTHESIS.md`
+- `09-implementation/ARCHITECTURE-FITNESS-FUNCTIONS-EXTENSION.md`
+- `09-implementation/MIGRATION-AND-COMPATIBILITY.md`
+- `09-implementation/TEST-AND-EVALUATION-STRATEGY.md`
+- `README.md`
+- `proposed-content/skills/rust-systems-reasoning/SKILL.md`
+- `proposed-content/skills/rust-systems-reasoning/references/rust-assurance.md`
+- `proposed-content/skills/systems-reasoning/SKILL.md`
+- `proposed-content/skills/systems-reasoning/references/principles.md`

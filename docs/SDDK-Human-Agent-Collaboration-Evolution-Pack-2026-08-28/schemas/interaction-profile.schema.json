@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sddk.dev/schemas/interaction-profile.v1.json",
+  "title": "InteractionProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "audience",
+    "autonomy",
+    "personality"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "audience": {
+      "enum": [
+        "novice",
+        "standard",
+        "expert",
+        "audit"
+      ]
+    },
+    "autonomy": {
+      "enum": [
+        "guided",
+        "balanced",
+        "autopilot"
+      ]
+    },
+    "personality": {
+      "type": "object",
+      "required": [
+        "preset"
+      ],
+      "properties": {
+        "preset": {
+          "enum": [
+            "neutral",
+            "mentor",
+            "concise",
+            "wisecracking_robot",
+            "custom"
+          ]
+        },
+        "sarcasm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "dry_humor": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "warmth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "directness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "locale": {
+      "type": "string"
+    },
+    "preferences": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}
