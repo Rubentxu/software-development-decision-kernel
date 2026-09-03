@@ -990,6 +990,13 @@ impl TestSelectionPlanV1 {
 // ── TestEvidenceReceipt ───────────────────────────────────────────────────────
 
 /// An evidence receipt recording the outcome of a test execution (TEST-EVIDENCE-001 lifecycle).
+///
+/// ## Changelog
+/// - **2026-09-03**: Added `tested_sut_ids` field (V1 compatibility, defaults to empty).
+///   Enables precise graph-driven invalidation: receipts with non-empty `tested_sut_ids`
+///   use those SUT IDs for closure computation instead of falling back to `capability_id`
+///   as a proxy (which over-invalidated). When empty, falls back to conservative
+///   capability_id-based closure per SPEC §11 rule 3.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TestEvidenceReceiptV1 {
@@ -1013,6 +1020,12 @@ pub struct TestEvidenceReceiptV1 {
     pub result: ReceiptResult,
     /// RFC 3339 timestamp when execution completed (non-empty).
     pub completed_at: String,
+    /// Precise SUT node IDs tested by this receipt. Used for accurate graph-driven
+    /// invalidation. When non-empty, `invalidate_graph_driven` builds the closure from
+    /// these IDs instead of using `capability_id` as a proxy. When empty, falls back
+    /// to conservative capability_id-based closure (may over-invalidate).
+    #[serde(default)]
+    pub tested_sut_ids: Vec<String>,
 }
 
 impl TestEvidenceReceiptV1 {
@@ -1040,6 +1053,7 @@ impl TestEvidenceReceiptV1 {
             capability_id,
             result,
             completed_at,
+            tested_sut_ids: Vec::new(),
         }
     }
 

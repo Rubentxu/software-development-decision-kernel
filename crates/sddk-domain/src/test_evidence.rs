@@ -201,8 +201,9 @@ pub enum ReceiptIdentity {
 
 /// Why a receipt is considered stale (SPEC §11, closed enum).
 ///
-/// Exactly 6 variants — one per field of the 7-field identity (all except
-/// capability_test_identity which is the test-input digest grouping).
+/// Exactly 7 variants — one per field of the 7-field ReceiptIdentityV1 identity:
+/// change_set_digest, source_revision, topology_revision, sut_graph_revision,
+/// policy_revision, capability_test_identity, toolchain_identity.
 /// Adding a variant requires updating SPEC §11.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -217,19 +218,23 @@ pub enum StaleReason {
     SutGraphRevisionChanged,
     /// The policy revision changed.
     PolicyRevisionChanged,
+    /// The capability or test identity changed (receipt.capability_id vs
+    /// current.capability_test_identity per SPEC §11).
+    CapabilityTestIdentityChanged,
     /// The toolchain identity changed.
     ToolchainIdentityChanged,
 }
 
 crate::assert_variant_count_eq!(
     StaleReason,
-    6,
+    7,
     [
         StaleReason::ChangeSetChanged,
         StaleReason::SourceRevisionChanged,
         StaleReason::TopologyRevisionChanged,
         StaleReason::SutGraphRevisionChanged,
         StaleReason::PolicyRevisionChanged,
+        StaleReason::CapabilityTestIdentityChanged,
         StaleReason::ToolchainIdentityChanged,
     ]
 );
@@ -292,11 +297,9 @@ pub fn classify(receipt: &TestEvidenceReceiptV1, current: &ReceiptIdentityV1) ->
     if receipt.policy_revision != current.policy_revision {
         reasons.push(StaleReason::PolicyRevisionChanged);
     }
-    // Note: receipt.capability_id corresponds to current.capability_test_identity
+    // receipt.capability_id vs current.capability_test_identity per SPEC §11
     if receipt.capability_id != current.capability_test_identity {
-        // capability_test_identity encompasses test/capability + test-input digest
-        // No dedicated StaleReason variant (per spec: 6 reasons for 7 fields,
-        // where capability_test_identity is grouped from §11)
+        reasons.push(StaleReason::CapabilityTestIdentityChanged);
     }
 
     if reasons.is_empty() {
@@ -405,10 +408,27 @@ pub fn invalidate_graph_driven(
             || receipt.source_revision != new_source_revision;
 
         // Graph-based invalidation: build closure and check intersection
-        // We use the receipt's capability_id as a stand-in for the SUT node tested.
-        // In a full implementation, the receipt would carry the actual SUT node id.
-        // Here we use the capability_id as a proxy for the tested scope.
-        let closure = build_closure(&receipt.capability_id, topology);
+        //
+        // Precision path: if receipt carries precise SUT IDs (tested_sut_ids), build
+        // the closure from those. This allows receipts to NOT be invalidated by
+        // changes outside their actual test closure even when sharing capability_id.
+        //
+        // Degraded path (backwards-compatible): if tested_sut_ids is empty, fall back
+        // to using capability_id as a proxy for the tested scope. This may over-
+        // invalidate (SPEC §11 rule 3: conservative, never infrainvalidate).
+        let base_ids = if receipt.tested_sut_ids.is_empty() {
+            // Degraded: capability_id as proxy (may over-invalidate)
+            vec![receipt.capability_id.clone()]
+        } else {
+            // Precise: use the actual SUT IDs tested
+            receipt.tested_sut_ids.clone()
+        };
+
+        // Build closure from base IDs and check for intersection with changed nodes
+        let mut closure: BTreeSet<String> = BTreeSet::new();
+        for base_id in &base_ids {
+            closure.extend(build_closure(base_id, topology));
+        }
         let intersects = closure.intersection(changed_node_ids).next().is_some();
 
         if revision_stale || intersects {
@@ -896,9 +916,10 @@ mod tests {
             StaleReason::TopologyRevisionChanged,
             StaleReason::SutGraphRevisionChanged,
             StaleReason::PolicyRevisionChanged,
+            StaleReason::CapabilityTestIdentityChanged,
             StaleReason::ToolchainIdentityChanged,
         ];
-        assert_eq!(variants.len(), 6);
+        assert_eq!(variants.len(), 7);
     }
 
     #[test]
@@ -1002,6 +1023,18 @@ mod tests {
         assert!(matches!(decision, ReuseDecision::Reusable));
     }
 
+    #[test]
+    fn classify_capability_test_identity_changed_stale() {
+        let receipt = make_receipt("r1", "csd1", "cap1", "2024-01-01T00:00:00Z");
+        // current has different capability_test_identity (cap2 vs cap1)
+        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap2", "tool1");
+        let decision = classify(&receipt, &current);
+        assert!(matches!(
+            decision,
+            ReuseDecision::Stale { reasons } if reasons.len() == 1 && reasons[0] == StaleReason::CapabilityTestIdentityChanged
+        ));
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // REQ-7.3: UAT-7 invalidation selectiva
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1094,6 +1127,45 @@ mod tests {
         assert_eq!(report.reusable_count, 1);
         assert!(report.invalidated.contains(&"r-a".to_string()));
         assert!(report.reusable.contains(&"r-c".to_string()));
+    }
+
+    /// UAT-6 reinforced: precise tested_sut_ids prevents invalidation by changes
+    /// outside the receipt's actual closure even when capability_id would suggest
+    /// over-invalidation.
+    #[test]
+    fn invalidate_graph_driven_precise_tested_sut_ids_avoid_overinvalidation() {
+        let mut store = EvidenceStoreV1::new();
+
+        // Receipt with precise tested_sut_ids = ["node-c"]
+        // This receipt tested ONLY node-c (leaf), not its ancestors
+        let mut precise_receipt = make_receipt("r-precise", "csd1", "cap1", "2024-01-01T00:00:00Z");
+        precise_receipt.tested_sut_ids = vec!["node-c".to_string()];
+
+        // Receipt without precise tested_sut_ids (degraded path via capability_id = "node-a")
+        // In degraded mode, capability_id = "node-a" gives closure {node-a, node-b}
+        let degraded_receipt = make_receipt("r-degraded", "csd1", "node-a", "2024-01-01T00:00:00Z");
+
+        store.insert(precise_receipt).unwrap();
+        store.insert(degraded_receipt).unwrap();
+
+        let topology = make_topology();
+        // Only node-a changed (in degraded receipt's closure but NOT in precise receipt's closure)
+        // Topology: node-a --depends-on--> node-b --runtime-depends-on--> node-c
+        // Precise closure: {node-c} (from tested_sut_ids = ["node-c"])
+        // Degraded closure: {node-a, node-b} (from capability_id = "node-a")
+        let changed: BTreeSet<String> = vec!["node-a".to_string()].into_iter().collect();
+        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "cap1", "tool1");
+
+        let report = invalidate_graph_driven(&mut store, &changed, &topology, &current, "src1");
+
+        // r-precise: closure = {node-c} (from tested_sut_ids), does NOT intersect node-a
+        //            ⇒ remains reusable (precise, no over-invalidation)
+        // r-degraded: closure = {node-a, node-b} (from capability_id proxy), intersects node-a
+        //            ⇒ invalidated (degraded path over-invalidates)
+        assert_eq!(report.invalidated_count, 1);
+        assert_eq!(report.reusable_count, 1);
+        assert!(report.invalidated.contains(&"r-degraded".to_string()));
+        assert!(report.reusable.contains(&"r-precise".to_string()));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
