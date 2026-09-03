@@ -333,15 +333,18 @@ pub enum InvalidationReport {
     V1(InvalidationReportV1),
 }
 
-/// Builds the depth-1 closure of nodes reachable from the given SUT node via
-/// DependsOn / RuntimeDependsOn edges, plus the node itself.
+/// Builds the transitive closure of nodes reachable from the given SUT node via
+/// DependsOn / RuntimeDependsOn edges (plus the node itself), following edges
+/// until exhaustion. Cycle-safe: uses BTreeSet insertion guard to prevent
+/// re-processing already-visited nodes.
 ///
-/// Uses BFS with a BTreeSet for deterministic ordering.
+/// This is NOT depth-1: the BFS queue ensures all reachable nodes are
+/// included transitively. See SPEC-043 §11 ENMIENDA 2026-09-03.
 fn build_closure(sut_node_id: &str, topology: &ProjectTestTopologyV1) -> BTreeSet<String> {
     let mut closure: BTreeSet<String> = BTreeSet::new();
     closure.insert(sut_node_id.to_string());
 
-    // BFS depth-1: collect nodes reachable via DependsOn / RuntimeDependsOn
+    // BFS transitive (cycle-safe): collect all nodes reachable via DependsOn / RuntimeDependsOn
     let mut queue: Vec<String> = vec![sut_node_id.to_string()];
 
     while let Some(current) = queue.pop() {
@@ -374,7 +377,9 @@ fn build_closure(sut_node_id: &str, topology: &ProjectTestTopologyV1) -> BTreeSe
 /// Performs graph-driven selective invalidation of evidence receipts.
 ///
 /// For each receipt in the store:
-/// 1. Build a closure of SUT nodes (tested node + depth-1 DependsOn/RuntimeDependsOn reachable).
+/// 1. Build a transitive closure of SUT nodes (tested node + all DependsOn/RuntimeDependsOn
+///    reachable nodes, cycle-safe). This is NOT depth-1 — the BFS traverses the full
+///    reachable subgraph. See SPEC-043 §11 ENMIENDA 2026-09-03.
 /// 2. Intersect the closure with `changed_node_ids`.
 /// 3. If intersection is non-empty ⇒ invalidate (remove from store, add to report).
 /// 4. Additionally, if topology_revision, policy_revision, or toolchain_identity differ
@@ -1166,6 +1171,38 @@ mod tests {
         assert_eq!(report.reusable_count, 1);
         assert!(report.invalidated.contains(&"r-degraded".to_string()));
         assert!(report.reusable.contains(&"r-precise".to_string()));
+    }
+
+    /// ENMIENDA 2026-09-03 (SPEC-043 §11): closure is transitive cycle-safe.
+    /// Chain depth-2: a --depends-on--> b --runtime-depends-on--> c.
+    /// Receipt for a; change in c ⇒ receipt MUST be invalidated (transitive closure).
+    #[test]
+    fn invalidate_graph_driven_transitive_closure_depth2() {
+        let mut store = EvidenceStoreV1::new();
+        // Receipt for node-a (transitive closure = {node-a, node-b, node-c})
+        store
+            .insert(make_receipt(
+                "r-a",
+                "csd1",
+                "node-a",
+                "2024-01-01T00:00:00Z",
+            ))
+            .unwrap();
+
+        let topology = make_topology();
+        // Change node-c (deep in the dependency chain)
+        let changed: BTreeSet<String> = vec!["node-c".to_string()].into_iter().collect();
+        let current = make_identity("csd1", "src1", "topo1", "sut1", "pol1", "node-a", "tool1");
+
+        let report = invalidate_graph_driven(&mut store, &changed, &topology, &current, "src1");
+
+        // Transitive closure of node-a includes node-c ⇒ invalidated
+        assert_eq!(report.invalidated_count, 1);
+        assert_eq!(report.reusable_count, 0);
+        assert!(report.invalidated.contains(&"r-a".to_string()));
+
+        // Determinism: single-element vectors are trivially ordered
+        assert_eq!(report.invalidated, vec!["r-a"]);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
