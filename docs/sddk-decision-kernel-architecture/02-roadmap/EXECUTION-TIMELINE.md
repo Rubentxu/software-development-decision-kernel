@@ -7,23 +7,15 @@
 
 ## 1. Temporal rule
 
-The canonical roadmap is a **single dependency-ordered semantic line**.
-
-By default:
+The canonical roadmap is a dependency-ordered semantic line. By default:
 
 ```text
 1 semantic Work Item = 1 bounded implementation cycle
 ```
 
-If a Work Item is too large, it may use more than one concrete execution attempt only under `AGENT-EXECUTION-PROTOCOL.md`. The semantic Work Item keeps the same identity until its exit gate is satisfied or the plan is explicitly split before execution.
+A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-Concrete historical labels such as `cycle-72` are assigned at execution time and are never used to determine roadmap order.
-
-The agent moves left-to-right / top-to-bottom only after the current Work Item is terminal with evidence.
-
-## 2. Current bootstrap
-
-At the time this execution line was created:
+At the time this line was reconciled:
 
 ```text
 CURRENT  → GOV-ROADMAP-001
@@ -31,13 +23,13 @@ NEXT     → DW-IR-001
 FINAL    → GA-002
 ```
 
-After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliation evidence and the next computation should resolve to `DW-IR-001`.
+After PR #1 is merged, `GOV-ROADMAP-001` closes with merge/reconciliation evidence and deterministic selection resolves `DW-IR-001`.
 
 ---
 
 ## H0 — Reconcile & Deterministic Foundations
 
-**Goal:** make planning, Workflow IR, architecture boundaries and event semantics trustworthy before building the new persisted runtime.
+**Goal:** make planning, Workflow IR, authority, architecture boundaries and event semantics trustworthy before building persisted generated execution.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -51,7 +43,7 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 | 80 | `ARCH-HEX-001` | Close only architecture debt blocking H1–H3 | `architecture` |
 | 90 | `EVT-LEDGER-001` | Canonical event/version/replay contract | `event-ledger` |
 
-**H0 exit:** deterministic contracts required by planning persistence and generated runtime are accepted/tested; authority and architecture boundaries are explicit.
+**H0 exit:** deterministic contracts required by planning persistence/generated runtime are accepted and tested; authority and architecture boundaries are explicit.
 
 ---
 
@@ -66,7 +58,7 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 | 120 | `PLN-LEDGER-003` | Bind semantic work to cycles/runs and migrate active planning | `planning-ledger` |
 | 130 | `PLN-LEDGER-004` | `status/next/blocked/show/graph` projections | `planning-ledger` |
 
-**H1 exit:** a clean checkout computes the same planning graph and same next Work Item without interpreting roadmap prose.
+**H1 exit:** a clean checkout computes the same planning graph and next Work Item without interpreting roadmap prose.
 
 ---
 
@@ -88,7 +80,7 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 
 ## H3 — Decision Plane
 
-**Goal:** one answer to “what can/should happen next?” for declared and generated runs.
+**Goal:** one semantic answer to “what can/should happen next?” for declared and generated runs.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -101,9 +93,9 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 
 ---
 
-## H4 — AgentHost & Context Compiler
+## H4 — AgentHost, Context Compiler & Decision Memory
 
-**Goal:** let agents operate through stable semantic capabilities with explicit reconstructible context instead of discovering shell commands or depending on chat memory.
+**Goal:** let fresh agents operate semantically with reconstructible context, explicit role boundaries, rich handoffs and a durable navigable history of why decisions were made.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -111,31 +103,37 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 | 240 | `AGENT-HOST-002` | Provider health/failure/failover/usage telemetry | `agent-first` |
 | 250 | `CTX-COMPILER-001` | Capsules/deltas/staleness/negative knowledge | `agent-context` |
 | 260 | `CTX-COMPILER-002` | Cold-start reconstruction from CurrentRunView/recovery state | `agent-context` |
+| 261 | `CDD-ROLE-001` | Typed agent roles + delegation/authority topology validation | `cdd-role` |
+| 263 | `CDD-HANDOFF-001` | DelegationRequest + ContextLease + ContributionEnvelope | `cdd-handoff` |
+| 265 | `CDD-HANDOFF-002` | SynthesisReceipt + dissent/information-loss guard | `cdd-handoff` |
+| 267 | `CDD-MEMORY-001` | Git-like content-addressed Decision Memory DAG + refs/HEAD/reflog | `cdd-memory` |
+| 268 | `CDD-MEMORY-002` | log/tree/show/diff/merge-base/branch + session-delta projections | `cdd-memory` |
+| 269 | `CDD-CONTINUE-001` | ResumeView + rich ContinuationCandidate frontier | `cdd-continuity` |
 
-**H4 exit:** a fresh agent can inspect and act semantically with bounded reconstructible context.
+**H4 exit:** a fresh LLM resolves authoritative state plus Decision Memory `HEAD`, can traverse/diff relevant decision branches and receives/provides typed, loss-auditable agent handoffs without prior chat memory.
 
 ---
 
 ## H5 — Human & Reactive Control
 
-**Goal:** add HITL and bounded reactive assistance without creating a second authority/orchestration model.
+**Goal:** add HITL and bounded reactive assistance on top of the same Decision Plane, CDD handoff contracts and Decision Memory.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
 | 270 | `HX-DECISION-001` | Human decision types + `HumanDecisionPort` | `human-collaboration` |
 | 280 | `HX-DECISION-002` | Risk policy + CLI/AgentHost adapters | `human-collaboration` |
-| 290 | `HX-RESUME-001` | `ResumeInfo` + `RehydrationPlan` + semantic cold start | `human-collaboration` |
+| 290 | `HX-RESUME-001` | `ResumeInfo` + `RehydrationPlan` over CDD ResumeView | `human-collaboration` |
 | 300 | `RX-SECRETARY-001` | Deterministic L0 reactions | `secretary` |
-| 310 | `RX-SECRETARY-002` | Bounded L1 Secretary proposals | `secretary` |
+| 310 | `RX-SECRETARY-002` | Bounded L1 Secretary proposals through CDD contribution path | `secretary` |
 | 320 | `RX-SECRETARY-003` | Budgeted/policy-bounded cognitive replan | `secretary` |
 
-**H5 exit:** human and Secretary actions share one policy/authorization/provenance path.
+**H5 exit:** human and Secretary actions share one policy/authorization/provenance path and leave Decision Memory evidence rather than side-channel state.
 
 ---
 
-## H6 — Runtime Completeness & Workflow Lab
+## H6 — Runtime Completeness, Decision Search & Workflow Lab
 
-**Goal:** complete advanced operator semantics only after durable generated execution and control-plane decisions are stable.
+**Goal:** complete advanced operator semantics, stabilize empirical comparison and only then experiment with bounded alternative-decision search.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -146,14 +144,14 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 | 370 | `DW-REPLAY-001` | Advanced graph revision/replay/recovery proof | `advanced-runtime` |
 | 380 | `LAB-WORKFLOW-001` | Stable runtime/workflow metrics | `workflow-lab` |
 | 390 | `LAB-WORKFLOW-002` | Fork/ablation/strategy comparison/promotion evidence | `workflow-lab` |
+| 392 | `LAB-DECISION-001` | Decision-Memory branch/fork lookahead + Pareto/beam/best-first baseline | `decision-lab` |
+| 394 | `LAB-DECISION-002` | Evaluate ToT/GoT/MCTS/LATS-like strategies before any promotion | `decision-lab` |
 
-**H6 exit:** advanced graphs are deterministic/replayable and alternative strategies can be compared reproducibly.
+**H6 exit:** advanced graphs are deterministic/replayable; counterfactual decision branches are bounded and traceable; experimental search cannot bypass canonical policy/HITL or mutate canonical `HEAD`.
 
 ---
 
 ## H7 — Engineering Assurance & UAT
-
-**Goal:** make evidence, assurance and human acceptance first-class consumers of the canonical runtime and Decision Plane.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -167,8 +165,6 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 ---
 
 ## H8 — Adaptive SDD
-
-**Goal:** prove an adaptive SDD path while keeping A-full as the quality reference until evidence supports promotion.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -184,36 +180,30 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 
 ## H9 — Active Graph & Cockpit
 
-**Goal:** expose causal, operational and experimental state as projections of canonical evidence, never as alternate runtime truth.
-
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
-| 490 | `GRAPH-WHY-001` | Typed active-graph projections | `active-graph` |
-| 500 | `GRAPH-WHY-002` | `why` / `debt why` causal queries | `active-graph` |
-| 510 | `COCKPIT-001` | Overview/journal/timeline/execution graph views | `cockpit` |
-| 520 | `COCKPIT-002` | Provider/usage/assurance/experiment views | `cockpit` |
+| 490 | `GRAPH-WHY-001` | Typed active-graph projection including Decision Memory/delegation relations | `active-graph` |
+| 500 | `GRAPH-WHY-002` | `why` / `debt why` / `decision why` causal queries | `active-graph` |
+| 510 | `COCKPIT-001` | Overview/journal/timeline/execution + Decision Memory tree views | `cockpit` |
+| 520 | `COCKPIT-002` | Provider/usage/assurance/handoff/experiment views | `cockpit` |
 
-**H9 exit:** users/agents can inspect current and causal state without manually reconstructing files/logs.
+**H9 exit:** users/agents can inspect current state, causal history and deliberative branches without manually reconstructing files/logs.
 
 ---
 
 ## H10 — Governed Continuous Improvement
 
-**Goal:** learn from stable canonical execution evidence without allowing learning to bypass policy or authority.
-
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
-| 530 | `GCI-LEARNING-001` | ExperienceEpisode projection + process mining | `gci` |
+| 530 | `GCI-LEARNING-001` | ExperienceEpisode/process mining over events + decision/delegation outcomes | `gci` |
 | 540 | `GCI-LEARNING-002` | Bounded strategy experiments | `gci` |
 | 550 | `GCI-LEARNING-003` | Evidence-backed promotion/tuning/rollback | `gci` |
 
-**H10 exit:** workflow improvement is measurable, reversible and governed.
+**H10 exit:** workflow and decision-strategy improvement is measurable, reversible and governed.
 
 ---
 
 ## H11 — Multi-pack Proof
-
-**Goal:** prove SDDK is a generic kernel/runtime rather than an SDD-specific engine.
 
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
@@ -228,8 +218,6 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 
 ## H12 — Supply Chain, Production Hardening & GA
 
-**Goal:** make the proven architecture releasable, operable, secure and supportable as a stable product.
-
 | Order | Semantic cycle | Purpose | Context pack |
 |---:|---|---|---|
 | 600 | `SUPPLYCHAIN-001` | SBOM/provenance/artifact lifecycle | `supply-chain` |
@@ -243,28 +231,29 @@ After PR #1 is merged, `GOV-ROADMAP-001` must be closed with merge/reconciliatio
 
 ---
 
-## 3. Timeline invariants
-
-The following are non-negotiable unless the canonical plan is explicitly revised:
+## 2. Timeline invariants
 
 1. Do not jump over the first non-terminal dependency-satisfied Work Item.
 2. Do not execute a later horizon because its code looks easier or more interesting.
 3. Do not resurrect an old evolution pack as a parallel timeline.
 4. Do not reuse historical cycle numbers as semantic identity.
 5. Do not pull advanced Map/Reduce/Join into H2.
-6. Do not introduce Human/Secretary authority before the Decision Plane.
-7. Do not introduce learning/process mining before stable runtime/replay/lab evidence.
-8. Do not promote adaptive SDD without Workflow Lab evidence.
-9. Do not claim generic-kernel maturity before multi-pack proof.
-10. Do not claim GA before supply-chain, recovery, security and release-readiness gates pass.
+6. Do not introduce Human/Secretary authority before Decision Plane + CDD role/handoff/memory foundations.
+7. A Decision Memory `what-if`/rejected branch is advisory until governed promotion; it never gains runtime authority by being newer or more detailed.
+8. Do not introduce ToT/GoT/MCTS/LATS-like search into core runtime; evaluate it in H6 and retain deterministic baseline/fallback.
+9. Do not introduce learning/process mining before stable runtime/replay/lab evidence.
+10. Do not promote adaptive SDD without Workflow Lab evidence.
+11. Do not claim generic-kernel maturity before multi-pack proof.
+12. Do not claim GA before supply-chain, recovery, security and release-readiness gates pass.
 
-## 4. How the agent uses this document
+## 3. How the agent uses this document
 
 For the selected Work Item:
 
 1. locate it here;
-2. identify its predecessor, successor, horizon and context-pack key;
+2. identify predecessor, successor, horizon and context-pack key;
 3. load that key from `CYCLE-CONTEXT-MAP.yaml`;
-4. read the selected Work Item's exact dependency/objective/exit gate from `EXECUTION-SPINE.yaml`;
+4. read exact dependencies/objective/exit gate from `EXECUTION-SPINE.yaml`;
 5. execute under `AGENT-EXECUTION-PROTOCOL.md`;
-6. never use this Markdown table to override a newer evidenced status in the canonical Planning Ledger/spine.
+6. when H4 CDD is shipped, resolve the current Decision Memory/ResumeView as additional reconstructed context;
+7. never use this Markdown projection to override newer evidenced Planning Ledger/spine/runtime truth.
