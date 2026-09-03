@@ -15,15 +15,15 @@ The canonical roadmap is a dependency-ordered semantic line. By default:
 
 A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-At the time this line was reconciled:
+At the time this line was reconciled (2026-09-03, after PR #1 merge `2596e46`):
 
 ```text
-CURRENT  → GOV-ROADMAP-001
-NEXT     → DW-IR-001
+CURRENT  → DW-IR-001
+NEXT     → DW-IR-002
 FINAL    → GA-002
 ```
 
-After PR #1 is merged, `GOV-ROADMAP-001` closes with merge/reconciliation evidence and deterministic selection resolves `DW-IR-001`.
+`GOV-ROADMAP-001` closed as `SHIPPED` with merge/reconciliation evidence (PR #1 merged at `2596e46`; roadmap/backlog/spine/timeline/context-map/protocol agree; historical packs are non-canonical design evidence). Deterministic selection resolves `DW-IR-001`.
 
 ---
 

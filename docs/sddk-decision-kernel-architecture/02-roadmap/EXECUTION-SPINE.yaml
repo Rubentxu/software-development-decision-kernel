@@ -56,7 +56,7 @@ items:
   - order: 10
     id: GOV-ROADMAP-001
     horizon: H0
-    status: ACTIVE
+    status: SHIPPED # reconciled 2026-09-03: PR #1 merged (merge commit 2596e46 = origin/main); spine/timeline/roadmap/backlog/context-map/protocol consistency verified; historical packs classified non-canonical via STATUS.md companions
     depends_on: []
     objective: Establish one canonical roadmap, backlog, evolution crosswalk and execution spine.
     exit_gate: PR #1 merged; roadmap/backlog/spine agree; historical packs are non-canonical design evidence.

@@ -369,8 +369,9 @@ H9 visualizes/query-projects H4 CDD; it does not create a second memory graph of
 Do not read this document top-to-bottom and guess. Use `EXECUTION-SPINE.yaml` and `AGENT-EXECUTION-PROTOCOL.md`.
 
 ```text
-ACTIVE: GOV-ROADMAP-001
-NEXT after evidence/merge: DW-IR-001
+SHIPPED: GOV-ROADMAP-001 (PR #1 merged at 2596e46, reconciled 2026-09-03)
+CURRENT: DW-IR-001
+NEXT after DW-IR-001 evidence: DW-IR-002
 FINAL: GA-002
 ```
 

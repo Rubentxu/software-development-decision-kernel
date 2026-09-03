@@ -610,10 +610,8 @@ Their ideas become executable only when mapped to semantic Work Items in `EXECUT
 
 ## 9. Current next work
 
-On this documentation branch:
-
-1. `GOV-ROADMAP-001` remains `ACTIVE` until PR #1 is merged/reconciled.
-2. `DW-IR-001` is the deterministic next Work Item.
+1. `GOV-ROADMAP-001` is `SHIPPED` (PR #1 merged at `2596e46`; reconciliation evidence in `EXECUTION-SPINE.yaml`).
+2. `DW-IR-001` is the deterministic CURRENT Work Item; `DW-IR-002` is NEXT.
 3. The complete route, including CDD/Decision Memory, is already placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 
 That is the official line an LLM must follow.
