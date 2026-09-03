@@ -37,6 +37,7 @@ pub mod staleness;
 pub mod test_adapters;
 pub mod test_model;
 pub mod test_ports;
+pub mod test_select;
 pub mod transition_ast;
 pub mod uat;
 pub mod validator;
