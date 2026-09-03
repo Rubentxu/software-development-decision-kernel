@@ -16,6 +16,7 @@ pub mod error;
 pub mod event_envelope;
 pub mod event_registry;
 pub mod evidence;
+pub mod execution_scope;
 pub mod fork;
 pub mod format;
 pub mod goal;
@@ -51,6 +52,7 @@ pub use event_registry::{
     EventValidatorError,
 };
 pub use evidence::*;
+pub use execution_scope::{ExecutionScope, ExecutionScopeV1, ScopeError, ScopePath, ScopePhase};
 pub use fork::*;
 pub use goal::*;
 pub use graph::*;
