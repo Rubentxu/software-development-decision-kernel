@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 use std::panic;
 
 use sddk_domain::operator_contract::OperatorContractError;
-use sddk_domain::plan_revision::{PlanProvenanceV1, PlanRevisionLineageV1};
 use sddk_domain::operator_contract::OperatorInputSchema;
-use sddk_domain::{OperatorId, Operator, WorkflowIR};
+use sddk_domain::plan_revision::{PlanProvenanceV1, PlanRevisionLineageV1};
+use sddk_domain::{Operator, OperatorId, WorkflowIR};
 use serde_json::Value;
 
 fn make_sample_ir() -> WorkflowIR {
@@ -44,10 +44,11 @@ fn make_sample_ir() -> WorkflowIR {
 #[test]
 fn malformed_json_rejected_no_panic() {
     let truncated = br#"{"ir_id": null, "schema_version": 1, "template_ref""#;
-    let result = panic::catch_unwind(|| {
-        serde_json::from_slice::<WorkflowIR>(truncated)
-    });
-    assert!(result.is_err() || result.unwrap().is_err(), "malformed JSON must return Err");
+    let result = panic::catch_unwind(|| serde_json::from_slice::<WorkflowIR>(truncated));
+    assert!(
+        result.is_err() || result.unwrap().is_err(),
+        "malformed JSON must return Err"
+    );
 }
 
 /// Scenario: missing required field in OperatorInputSchema returns structured error (REQ-IRDT-IP-01).

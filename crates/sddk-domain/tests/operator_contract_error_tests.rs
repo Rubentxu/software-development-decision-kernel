@@ -135,10 +135,11 @@ fn schema_dialect_unknown_serializes_to_valid_json() {
     // Serialize to JSON string
     let json_str = serde_json::to_string(&err).expect("must serialize to JSON string");
     // Verify it's valid JSON that can be parsed back
-    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("must be valid parseable JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("must be valid parseable JSON");
     // The JSON is {"schema_dialect_unknown":{"dialect":"x"}}
-    let inner = parsed.get("schema_dialect_unknown")
+    let inner = parsed
+        .get("schema_dialect_unknown")
         .expect("variant key must exist");
     assert_eq!(inner.get("dialect").and_then(|v| v.as_str()), Some("x"));
 }

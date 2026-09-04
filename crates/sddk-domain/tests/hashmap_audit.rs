@@ -34,8 +34,8 @@ fn is_ir_canonical_form(path: &Path) -> bool {
     // Check if the file defines types that:
     // 1. Have compute_content_hash or plan_identity method
     // 2. Derive Serialize AND Deserialize
-    let has_hash_method = content.contains("fn compute_content_hash")
-        || content.contains("fn plan_identity");
+    let has_hash_method =
+        content.contains("fn compute_content_hash") || content.contains("fn plan_identity");
     let has_serde_derives = content.contains("Serialize") && content.contains("Deserialize");
 
     has_hash_method && has_serde_derives
@@ -72,11 +72,7 @@ fn no_hashmap_in_ir_canonical_forms() {
 
         let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if let Some(line) = file_has_hashmap_field(&file_path) {
-            violations.push(format!(
-                "{}: {}",
-                file_name,
-                line
-            ));
+            violations.push(format!("{}: {}", file_name, line));
         }
     }
 

@@ -37,7 +37,7 @@ fn extract_sequence_children_count(op: &Arc<dyn sddk_engine::operator::Operator>
     let debug = format!("{:?}", op);
     // Format is like "Sequence { children: [...] }"
     if debug.contains("Sequence") {
-        // Extract the number from "children: [ ... ]" 
+        // Extract the number from "children: [ ... ]"
         // Simple heuristic: look for "children: [" and count commas + 1
         if let Some(start) = debug.find("children: [") {
             let after = &debug[start + "children: [".len()..];
@@ -142,11 +142,14 @@ fn build_operator_equivalent_ir_permutation_equivalence() {
 
     // Both should have kind "Sequence"
     assert_eq!(runtime_a.kind(), runtime_b.kind(), "kind must match");
-    
+
     // Both should have same children count
     let count_a = extract_sequence_children_count(&runtime_a);
     let count_b = extract_sequence_children_count(&runtime_b);
-    assert_eq!(count_a, count_b, "Sequence children count must match across IR permutations");
+    assert_eq!(
+        count_a, count_b,
+        "Sequence children count must match across IR permutations"
+    );
 }
 
 /// Scenario: Sequence children order matches IR declaration order, NOT sorted order
@@ -176,18 +179,27 @@ fn sequence_declaration_order_preserved() {
     ops.insert(OperatorId("t1".into()), t1);
     ops.insert(OperatorId("t2".into()), t2);
     ops.insert(OperatorId("t3".into()), t3);
-    ops.insert(OperatorId("c".into()), DomainOperator::Task {
-        capability: CapabilityId("c.cap".into()),
-        inputs: Default::default(),
-    });
-    ops.insert(OperatorId("a".into()), DomainOperator::Task {
-        capability: CapabilityId("a.cap".into()),
-        inputs: Default::default(),
-    });
-    ops.insert(OperatorId("b".into()), DomainOperator::Task {
-        capability: CapabilityId("b.cap".into()),
-        inputs: Default::default(),
-    });
+    ops.insert(
+        OperatorId("c".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("c.cap".into()),
+            inputs: Default::default(),
+        },
+    );
+    ops.insert(
+        OperatorId("a".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("a.cap".into()),
+            inputs: Default::default(),
+        },
+    );
+    ops.insert(
+        OperatorId("b".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("b.cap".into()),
+            inputs: Default::default(),
+        },
+    );
     ops.insert(OperatorId("seq".into()), seq);
     let ir = make_ir(ops);
 
@@ -216,18 +228,27 @@ fn choice_branches_sorted() {
         .collect(),
     };
     let mut ops = BTreeMap::new();
-    ops.insert(OperatorId("z_id".into()), DomainOperator::Task {
-        capability: CapabilityId("z.cap".into()),
-        inputs: Default::default(),
-    });
-    ops.insert(OperatorId("a_id".into()), DomainOperator::Task {
-        capability: CapabilityId("a.cap".into()),
-        inputs: Default::default(),
-    });
-    ops.insert(OperatorId("m_id".into()), DomainOperator::Task {
-        capability: CapabilityId("m.cap".into()),
-        inputs: Default::default(),
-    });
+    ops.insert(
+        OperatorId("z_id".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("z.cap".into()),
+            inputs: Default::default(),
+        },
+    );
+    ops.insert(
+        OperatorId("a_id".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("a.cap".into()),
+            inputs: Default::default(),
+        },
+    );
+    ops.insert(
+        OperatorId("m_id".into()),
+        DomainOperator::Task {
+            capability: CapabilityId("m.cap".into()),
+            inputs: Default::default(),
+        },
+    );
     ops.insert(OperatorId("choice".into()), choice);
     let ir = make_ir(ops);
 

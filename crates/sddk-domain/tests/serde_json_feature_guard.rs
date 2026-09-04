@@ -16,8 +16,8 @@ fn serde_json_preserve_order_disabled() {
         .unwrap()
         .join("Cargo.lock");
 
-    let lock_content = std::fs::read_to_string(&lock_path)
-        .expect("Cargo.lock must be present for CI gate");
+    let lock_content =
+        std::fs::read_to_string(&lock_path).expect("Cargo.lock must be present for CI gate");
 
     // Find serde_json entry and its resolved features
     let lock_text = lock_content.as_str();
