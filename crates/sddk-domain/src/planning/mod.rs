@@ -474,6 +474,121 @@ pub enum ProvenanceError {
     DanglingReference(String),
 }
 
+// ── Planning Graph Identity ───────────────────────────────────────────────────
+
+/// A volatile-field-excluded WorkItem projection for identity computation.
+///
+/// Excludes fields that change across replays without semantic change:
+/// - `created_at` (wall-clock, not reproducible)
+/// - `status` (mutable by definition)
+///
+/// This is the canonical projection used for `compute_planning_graph_identity`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkItemIdentityProjection {
+    pub id: WorkItemId,
+    pub cycle_id: CycleId,
+    pub title: String,
+    pub description: String,
+    pub actor_ref: Option<ActorRef>,
+    pub schema_version: u32,
+}
+
+/// A volatile-field-excluded DependencyEdge projection for identity computation.
+///
+/// Excludes `actor_ref` which may change across replays.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencyEdgeIdentityProjection {
+    pub from_id: WorkItemId,
+    pub to_id: WorkItemId,
+    pub kind: DependencyEdgeKind,
+    pub schema_version: u32,
+}
+
+impl From<&WorkItemV1> for WorkItemIdentityProjection {
+    fn from(wi: &WorkItemV1) -> Self {
+        Self {
+            id: wi.id.clone(),
+            cycle_id: wi.cycle_id.clone(),
+            title: wi.title.clone(),
+            description: wi.description.clone(),
+            actor_ref: wi.actor_ref.clone(),
+            schema_version: wi.schema_version,
+        }
+    }
+}
+
+impl From<&DependencyEdgeV1> for DependencyEdgeIdentityProjection {
+    fn from(edge: &DependencyEdgeV1) -> Self {
+        Self {
+            from_id: edge.from_id.clone(),
+            to_id: edge.to_id.clone(),
+            kind: edge.kind,
+            schema_version: edge.schema_version,
+        }
+    }
+}
+
+/// Computes the deterministic SHA-256 identity of a planning graph.
+///
+/// The identity is computed over canonical JSON of:
+/// - All WorkItems in the cycle (sorted by id), with volatile fields excluded
+/// - All DependencyEdges (sorted by from_id then to_id), with volatile fields excluded
+/// - All evidence_refs (sorted)
+/// - All decision_refs (sorted)
+///
+/// This function is PURE — it takes pre-fetched data and produces a deterministic hash.
+/// Volatile fields (`created_at`, `status`) are excluded per FIND-PLN-008.
+///
+/// # Arguments
+/// * `work_items` - All WorkItems in the cycle
+/// * `edges` - All DependencyEdges in the cycle
+/// * `evidence_refs` - All CAS hashes of evidence in the cycle
+/// * `decision_refs` - All DecisionIds in the cycle
+///
+/// # Returns
+/// SHA-256 hex string of the canonical JSON projection
+pub fn compute_planning_graph_identity(
+    work_items: &[WorkItemV1],
+    edges: &[DependencyEdgeV1],
+    evidence_refs: &[CasHash],
+    decision_refs: &[DecisionId],
+) -> String {
+    // Sort work items by id for deterministic ordering
+    let mut sorted_wis: Vec<WorkItemIdentityProjection> =
+        work_items.iter().map(WorkItemIdentityProjection::from).collect();
+    sorted_wis.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Sort edges by (from_id, to_id) for deterministic ordering
+    let mut sorted_edges: Vec<DependencyEdgeIdentityProjection> =
+        edges.iter().map(DependencyEdgeIdentityProjection::from).collect();
+    sorted_edges.sort_by(|a, b| {
+        (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id))
+    });
+
+    // Sort evidence refs
+    let mut sorted_evidence = evidence_refs.to_vec();
+    sorted_evidence.sort();
+
+    // Sort decision refs
+    let mut sorted_decisions = decision_refs.to_vec();
+    sorted_decisions.sort();
+
+    // Build canonical JSON
+    let canonical = serde_json::json!({
+        "work_items": sorted_wis,
+        "edges": sorted_edges,
+        "evidence_refs": sorted_evidence,
+        "decision_refs": sorted_decisions,
+    });
+
+    let digest = Sha256::digest(serde_json::to_string(&canonical).unwrap().as_bytes());
+    format!("{:x}", digest)
+}
+
+// ── Service ──────────────────────────────────────────────────────────────────
+
+pub mod service;
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
