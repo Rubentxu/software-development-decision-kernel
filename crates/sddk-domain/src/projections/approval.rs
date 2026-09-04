@@ -149,14 +149,15 @@ impl Projection for ApprovalProjection {
                 state.last_event_at = event.occurred_at.clone();
                 state.last_event_id = event.event_id.clone();
                 state.decision = Some(ApprovalDecision::Granted);
-                // AC-EVT-LEDGER-06: prefer payload["actor"] for legacy corpus,
-                // fall back to event.actor.id (EventEnvelopeV1 always has actor)
-                state.actor = event
-                    .payload
-                    .get("actor")
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-                    .or_else(|| Some(event.actor.id.clone()));
+                // AC-EVT-LEDGER-10: canonical provenance wins — event.actor.id first,
+                // payload["actor"] as legacy fallback only when envelope is absent
+                state.actor = Some(event.actor.id.clone()).or_else(|| {
+                    event
+                        .payload
+                        .get("actor")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                });
                 state.reason = event
                     .payload
                     .get("reason")
@@ -169,14 +170,15 @@ impl Projection for ApprovalProjection {
                 state.last_event_at = event.occurred_at.clone();
                 state.last_event_id = event.event_id.clone();
                 state.decision = Some(ApprovalDecision::Denied);
-                // AC-EVT-LEDGER-06: prefer payload["actor"] for legacy corpus,
-                // fall back to event.actor.id (EventEnvelopeV1 always has actor)
-                state.actor = event
-                    .payload
-                    .get("actor")
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-                    .or_else(|| Some(event.actor.id.clone()));
+                // AC-EVT-LEDGER-10: canonical provenance wins — event.actor.id first,
+                // payload["actor"] as legacy fallback only when envelope is absent
+                state.actor = Some(event.actor.id.clone()).or_else(|| {
+                    event
+                        .payload
+                        .get("actor")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                });
                 state.reason = event
                     .payload
                     .get("reason")
@@ -289,7 +291,8 @@ mod tests {
 
         let state = proj.state_ref().get(&key).unwrap();
         assert_eq!(state.decision, Some(ApprovalDecision::Granted));
-        assert_eq!(state.actor, Some("alice".into()));
+        // AC-EVT-LEDGER-10: envelope ActorRef.id wins over payload["actor"]
+        assert_eq!(state.actor, Some("sddk-cli".into()));
         assert_eq!(state.reason, Some("ok, reversible via reflog".into()));
         assert_eq!(proj.checkpoint().last_event_sequence, 2);
     }
@@ -325,7 +328,8 @@ mod tests {
         let key = ("c-1".into(), "git.delete_branch".into());
         let state = proj.state_ref().get(&key).unwrap();
         assert_eq!(state.decision, Some(ApprovalDecision::Denied));
-        assert_eq!(state.actor, Some("bob".into()));
+        // AC-EVT-LEDGER-10: envelope ActorRef.id wins over payload["actor"]
+        assert_eq!(state.actor, Some("sddk-cli".into()));
     }
 
     #[test]
