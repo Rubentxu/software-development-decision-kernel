@@ -26,6 +26,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.82.0] - 2026-09-04
+
+### Added
+  - docs(adr): **ADR-069-EXPLICIT-AUTHORITY-MATRIX** accepted — locks the canonical 4-actor taxonomy (Human, Agent, System, Secretary ≡ `Agent{role=secretary}`), the writable-surface matrix (8 surfaces), the approval-point matrix (≥12 points), the provenance baseline (`EventEnvelopeV1.actor: ActorRef` 5-field contract + CLI prefix-string mapping locked as v1.81.x contract), and the no-parallel-authority invariant. All code-level enforcement explicitly deferred to ARCH-HEX-001 (order 80), EVT-LEDGER-001 (order 90), and RX-SECRETARY-001/002 (order 300/310). Closes AC-HX-AUTH-01..06, REQ-AUTH-TAX-01..04, REQ-AUTH-WS-01..04, REQ-AUTH-AP-01..04, REQ-AUTH-PR-01..03, REQ-AUTH-NPA-01..04, REQ-AUTH-REC-01..02.
+  - docs(adr): **ADR-0072-AMENDMENT-1** accepted — renames Secretary's runtime identity from the prose-level `secretary role` to `Agent{role=secretary, behavior_id, closed_set_version}` for taxonomy consistency with ADR-069. Does NOT alter ADR-0072's budget-composition decision.
+  - docs(adr): **ADR-0073-AMENDMENT-1** accepted — binds Secretary's closed-set L1 admission predicate (prose-level) to `actor.kind == Agent && actor.role == "secretary"`. The 8 auto-resolvable event classes and the orchestrator-/runtime-exclusive prohibitions remain. Stage 1 enforcement deferred to RX-SECRETARY-001/002 + EVT-LEDGER-001.
+
+### Tests
+  - test(domain): new `crates/sddk-domain/tests/actor_authority_baseline_tests.rs` (8 tests) — regression baselines for current ActorKind closed-set (3 variants), ActorRef 5-field contract, CLI prefix-string mapping (`user:*` → Human, `agent:*` → Agent, fallback → System), and provenance loss in `LedgerEvent`, `GateReceipt`, `JournalEntry`. Locks current behavior so downstream ARCH-HEX-001 + EVT-LEDGER-001 cycles can flip it with confidence. Closes AC-HX-AUTH-01, AC-HX-AUTH-04, AC-HX-AUTH-07, REQ-AUTH-TAX-01..03, REQ-AUTH-PR-01..03, REQ-AUTH-TST-01..02.
+
+### Documentation
+  - docs(debt): **INC-HX-AUTH-001** (writable-state, P2, owner ARCH-HEX-001) — 8 mutable surfaces lack formal authority declaration.
+  - docs(debt): **INC-HX-AUTH-002** (approval-authority, **P0/critical**, owner ARCH-HEX-001) — `event_bus/emit.rs:259` hardcodes `kind: ActorKind::Human` regardless of caller. The most critical current policy violation.
+  - docs(debt): **INC-HX-AUTH-003** (provenance, P1, owner EVT-LEDGER-001) — `LedgerEvent`/`GateReceipt`/`JournalEntry`/`EventContext` carry `actor: String` instead of `ActorRef`.
+  - docs(debt): **INC-HX-AUTH-004** (no-parallel-authority, P1, owners ARCH-HEX-001 + RX-SECRETARY-001/002 + EVT-LEDGER-001) — 7 dual-writer paths (approval, approval_request, cycle_transition, cycle_pause, gate_receipt, knowledge_ingest, secretary_closed_set).
+
+Cycle path: A-min (governance-only). 3 commits en rango `27e37e7..078782d` (1 docs(adr) + 1 test(uat) + 1 docs(debt)). 8 REQs (TAX/WS/AP/PR/NPA/REC/TST/INC) / 24 Given-When-Then scenarios / 8 acceptance criteria covered. Verify verdict pending.
+
 ## [1.81.0] - 2026-09-04
 
 ### Added
