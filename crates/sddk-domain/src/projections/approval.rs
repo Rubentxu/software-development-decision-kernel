@@ -149,11 +149,14 @@ impl Projection for ApprovalProjection {
                 state.last_event_at = event.occurred_at.clone();
                 state.last_event_id = event.event_id.clone();
                 state.decision = Some(ApprovalDecision::Granted);
+                // AC-EVT-LEDGER-06: prefer payload["actor"] for legacy corpus,
+                // fall back to event.actor.id (EventEnvelopeV1 always has actor)
                 state.actor = event
                     .payload
                     .get("actor")
                     .and_then(|v| v.as_str())
-                    .map(String::from);
+                    .map(String::from)
+                    .or_else(|| Some(event.actor.id.clone()));
                 state.reason = event
                     .payload
                     .get("reason")
@@ -166,11 +169,14 @@ impl Projection for ApprovalProjection {
                 state.last_event_at = event.occurred_at.clone();
                 state.last_event_id = event.event_id.clone();
                 state.decision = Some(ApprovalDecision::Denied);
+                // AC-EVT-LEDGER-06: prefer payload["actor"] for legacy corpus,
+                // fall back to event.actor.id (EventEnvelopeV1 always has actor)
                 state.actor = event
                     .payload
                     .get("actor")
                     .and_then(|v| v.as_str())
-                    .map(String::from);
+                    .map(String::from)
+                    .or_else(|| Some(event.actor.id.clone()));
                 state.reason = event
                     .payload
                     .get("reason")
