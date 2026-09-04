@@ -5,6 +5,7 @@
 //! - Each variant carries meaningful context (operator_id, variant name, field)
 
 use sddk_domain::operator_contract::OperatorContractError;
+use serde_json;
 
 /// OperatorContractError has exactly 8 variants as specified in SPEC §V-2.
 /// The compile-time guard `assert_variant_count_eq!` in the module ensures this.
@@ -115,4 +116,29 @@ fn all_error_variants_are_thread_safe() {
 fn all_error_variants_are_partial_eq() {
     fn assert_partial_eq<T: PartialEq>() {}
     assert_partial_eq::<OperatorContractError>();
+}
+
+/// SchemaDialectUnknown serialization produces valid JSON (FIND-000005).
+/// This variant is forward-only (unreachable from deserialization of the closed
+/// SchemaDialect enum). We verify it serializes to valid JSON and that the JSON
+/// is parseable, proving the variant is serialization-safe.
+///
+/// Note: Full round-trip (serialize → deserialize) is not possible due to
+/// &'static str fields + thiserror::Error + serde Derive requiring 'static.
+/// This is a known thiserror limitation; the variant is still safe for forward
+/// serialization paths (e.g., logging, debugging).
+#[test]
+fn schema_dialect_unknown_serializes_to_valid_json() {
+    let err = OperatorContractError::SchemaDialectUnknown {
+        dialect: "x".into(),
+    };
+    // Serialize to JSON string
+    let json_str = serde_json::to_string(&err).expect("must serialize to JSON string");
+    // Verify it's valid JSON that can be parsed back
+    let parsed: serde_json::Value = serde_json::from_str(&json_str)
+        .expect("must be valid parseable JSON");
+    // The JSON is {"schema_dialect_unknown":{"dialect":"x"}}
+    let inner = parsed.get("schema_dialect_unknown")
+        .expect("variant key must exist");
+    assert_eq!(inner.get("dialect").and_then(|v| v.as_str()), Some("x"));
 }
