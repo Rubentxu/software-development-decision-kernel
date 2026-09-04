@@ -11,10 +11,12 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use sddk_domain::{
-    operator_contract::{default_input_schema, default_output_schema, variant_name, OperatorInputSchema,
-                       OperatorOutputSchema},
     GraphStore, NodeId, NodeRun, Operator as DomainOperator, OperatorId, TaskExecutor, WorkflowIR,
     WorkflowRun,
+    operator_contract::{
+        OperatorInputSchema, OperatorOutputSchema, default_input_schema, default_output_schema,
+        variant_name,
+    },
 };
 
 // -- GraphStoreBox wrapper -----------------------------------------------------
@@ -1180,7 +1182,7 @@ impl Operator for Choice {
 ///
 /// **DW-IR-004 output contract (V-4):**
 /// - Output key: `item_results: Array<{operator_id, outputs}>` replaces the v1.29.0
-///   placeholder `outputs["items"]: Array`
+///   untyped `Array` placeholder that used to live under the `items` key of `outputs`
 /// - Post-evaluation validates outputs against `Map`'s default `OperatorOutputSchema`
 ///   via `aggregate_collect_all::validate_output`. Contract violations return
 ///   `Err(OperatorError::EvalFailed(...))` — the exit gate is enforced.
@@ -1292,7 +1294,7 @@ impl Operator for Map {
         };
         let source_outcome = self.source.evaluate(&mut source_ctx)?;
 
-        // (b) Extract items collection from source outputs (key convention: outputs["items"]).
+        // (b) Extract items collection from source outputs (key convention: the `items` key under `outputs`).
         // Clone outputs for items extraction, then move source_outcome for snapshot (cycle-32).
         let source_outputs_clone: BTreeMap<String, serde_json::Value>;
         let items: Vec<serde_json::Value> = match &source_outcome {
@@ -1606,7 +1608,7 @@ impl Map {
             // No failures: either items was empty (vacuous success) or all succeeded
             let mut outputs = BTreeMap::new();
             // item_results: array of {operator_id, outputs} — typed projection replacing
-            // the v1.29.0 placeholder outputs["items"]: Array
+            // the v1.29.0 untyped `Array` placeholder under the `items` key of `outputs`
             let item_results: Vec<serde_json::Value> = results
                 .into_iter()
                 .map(|v| {
@@ -1616,7 +1618,10 @@ impl Map {
                     })
                 })
                 .collect();
-            outputs.insert("item_results".to_string(), serde_json::Value::Array(item_results));
+            outputs.insert(
+                "item_results".to_string(),
+                serde_json::Value::Array(item_results),
+            );
             // Validate post-evaluation: outputs must conform to Map's OperatorOutputSchema
             if let Err(e) = self.validate_output(&node_id, &outputs) {
                 return Err(OperatorError::EvalFailed(e.to_string()));
@@ -1641,7 +1646,10 @@ impl Map {
                     })
                 })
                 .collect();
-            outputs.insert("item_results".to_string(), serde_json::Value::Array(item_results));
+            outputs.insert(
+                "item_results".to_string(),
+                serde_json::Value::Array(item_results),
+            );
             if let Err(e) = self.validate_output(&node_id, &outputs) {
                 return Err(OperatorError::EvalFailed(e.to_string()));
             }

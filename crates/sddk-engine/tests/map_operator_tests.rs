@@ -222,7 +222,9 @@ fn map_source_produces_three_items_runs_body_three_times() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("item_results").expect("expected item_results key");
+    let results = outputs
+        .get("item_results")
+        .expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -260,7 +262,9 @@ fn map_source_empty_collection_runs_body_zero_times() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("item_results").expect("expected item_results key");
+    let results = outputs
+        .get("item_results")
+        .expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -327,7 +331,9 @@ fn map_injects_item_and_index_into_body_inputs() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("item_results").expect("expected item_results key");
+    let results = outputs
+        .get("item_results")
+        .expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -375,7 +381,9 @@ fn map_preserves_base_inputs_non_destructively() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("item_results").expect("expected item_results key");
+    let results = outputs
+        .get("item_results")
+        .expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -498,7 +506,9 @@ fn map_task_body_runs_fan_out() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("item_results").expect("expected item_results key");
+    let results = outputs
+        .get("item_results")
+        .expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -629,7 +639,9 @@ fn map_max_concurrency_one_runs_sequentially() {
     };
 
     // Results in iteration order
-    let results = outputs.get("item_results").expect("item_results key must exist");
+    let results = outputs
+        .get("item_results")
+        .expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array, got {results:?}"),
@@ -721,7 +733,9 @@ fn map_max_concurrency_two_gates_to_two_at_a_time() {
     );
 
     // Results preserved in iteration order
-    let results = outputs.get("item_results").expect("item_results key must exist");
+    let results = outputs
+        .get("item_results")
+        .expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
@@ -766,7 +780,9 @@ fn map_max_concurrency_zero_runs_all_in_parallel_unbounded() {
         panic!("expected Succeeded, got {outcome:?}");
     };
 
-    let results = outputs.get("item_results").expect("item_results key must exist");
+    let results = outputs
+        .get("item_results")
+        .expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
@@ -842,7 +858,9 @@ fn map_collect_all_partial_failures_returns_succeeded_with_failures() {
     };
 
     // Results: successful outputs only, no null for failed indices
-    let results = outputs.get("item_results").expect("item_results key must exist");
+    let results = outputs
+        .get("item_results")
+        .expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
@@ -1323,7 +1341,9 @@ fn map_collect_all_preserved_across_replay() {
         panic!("expected Succeeded, got {outcome:?}");
     };
 
-    let results = outputs.get("item_results").expect("item_results key must exist");
+    let results = outputs
+        .get("item_results")
+        .expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),

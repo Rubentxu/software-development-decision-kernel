@@ -7,9 +7,8 @@
 //! - REQ-OPOUT-005: items no longer appears as an output key
 
 use sddk_domain::operator_contract::{
-    default_input_schema, default_output_schema,
-    OperatorInputSchema, OperatorOutputSchema, OperatorSchema, SchemaDialect,
-    OPERATOR_CONTRACT_SCHEMA_VERSION,
+    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorInputSchema, OperatorOutputSchema, OperatorSchema,
+    SchemaDialect, default_input_schema, default_output_schema,
 };
 use sddk_domain::{CapabilityId, GuardExpr, Operator as DomainOperator, OperatorId};
 
@@ -21,12 +20,9 @@ fn output_schema_field_versions_are_one() {
         let output = default_output_schema(variant);
         for (field_name, field_schema) in &output.static_fields {
             assert_eq!(
-                field_schema.version,
-                OPERATOR_CONTRACT_SCHEMA_VERSION,
+                field_schema.version, OPERATOR_CONTRACT_SCHEMA_VERSION,
                 "output field '{}' schema_version must be {} for {:?}",
-                field_name,
-                OPERATOR_CONTRACT_SCHEMA_VERSION,
-                variant
+                field_name, OPERATOR_CONTRACT_SCHEMA_VERSION, variant
             );
         }
     }
@@ -40,12 +36,9 @@ fn input_schema_field_versions_are_one() {
         let input = default_input_schema(variant);
         for (field_name, field_schema) in &input.static_fields {
             assert_eq!(
-                field_schema.version,
-                OPERATOR_CONTRACT_SCHEMA_VERSION,
+                field_schema.version, OPERATOR_CONTRACT_SCHEMA_VERSION,
                 "input field '{}' schema_version must be {} for {:?}",
-                field_name,
-                OPERATOR_CONTRACT_SCHEMA_VERSION,
-                variant
+                field_name, OPERATOR_CONTRACT_SCHEMA_VERSION, variant
             );
         }
     }
@@ -132,14 +125,16 @@ fn all_field_schemas_use_jsonschema_draft07() {
             assert!(
                 matches!(fschema.dialect, SchemaDialect::JsonSchemaDraft07),
                 "input field '{}' dialect must be JsonSchemaDraft07 for {:?}",
-                fname, variant
+                fname,
+                variant
             );
         }
         for (fname, fschema) in &output.static_fields {
             assert!(
                 matches!(fschema.dialect, SchemaDialect::JsonSchemaDraft07),
                 "output field '{}' dialect must be JsonSchemaDraft07 for {:?}",
-                fname, variant
+                fname,
+                variant
             );
         }
     }
@@ -185,17 +180,53 @@ fn static_fields_uses_btreemap() {
 
 fn all_variants() -> Vec<DomainOperator> {
     vec![
-        DomainOperator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+        DomainOperator::Task {
+            capability: CapabilityId("test.cap".into()),
+            inputs: Default::default(),
+        },
         DomainOperator::Sequence { body: vec![] },
-        DomainOperator::Parallel { branches: vec![], max_concurrency: 1 },
-        DomainOperator::Map { source: OperatorId("src".into()), body: OperatorId("body".into()), max_concurrency: 4 },
-        DomainOperator::Join { policy: "all".into(), branches: vec![] },
-        DomainOperator::Race { branches: vec![], timeout_ms: 1000 },
-        DomainOperator::Choice { branches: Default::default() },
-        DomainOperator::Loop { max_iterations: 10, until: GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Gate { condition: GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Wait { event_type: "click".into(), timeout_ms: 5000 },
-        DomainOperator::SubWorkflow { run_ref: "run-1".into() },
-        DomainOperator::Compensate { of: OperatorId("op0".into()) },
+        DomainOperator::Parallel {
+            branches: vec![],
+            max_concurrency: 1,
+        },
+        DomainOperator::Map {
+            source: OperatorId("src".into()),
+            body: OperatorId("body".into()),
+            max_concurrency: 4,
+        },
+        DomainOperator::Join {
+            policy: "all".into(),
+            branches: vec![],
+        },
+        DomainOperator::Race {
+            branches: vec![],
+            timeout_ms: 1000,
+        },
+        DomainOperator::Choice {
+            branches: Default::default(),
+        },
+        DomainOperator::Loop {
+            max_iterations: 10,
+            until: GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Gate {
+            condition: GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Wait {
+            event_type: "click".into(),
+            timeout_ms: 5000,
+        },
+        DomainOperator::SubWorkflow {
+            run_ref: "run-1".into(),
+        },
+        DomainOperator::Compensate {
+            of: OperatorId("op0".into()),
+        },
     ]
 }

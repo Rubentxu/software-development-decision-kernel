@@ -3,9 +3,7 @@
 //! Landing site per SPEC section 8 — validates the map from Operator variant
 //! to its input/output schema is total over all 12 Operator variants.
 
-use sddk_domain::operator_contract::{
-    default_input_schema, default_output_schema, variant_name,
-};
+use sddk_domain::operator_contract::{default_input_schema, default_output_schema, variant_name};
 use sddk_domain::{CapabilityId, GuardExpr, Operator as DomainOperator, OperatorId};
 
 /// variant_name is non-empty for all 12 Operator variants.
@@ -14,7 +12,11 @@ fn variant_name_is_nonempty_for_all() {
     let variants = all_variants();
     for variant in &variants {
         let name = variant_name(variant);
-        assert!(!name.is_empty(), "variant_name must be non-empty for {:?}", variant);
+        assert!(
+            !name.is_empty(),
+            "variant_name must be non-empty for {:?}",
+            variant
+        );
     }
 }
 
@@ -114,17 +116,53 @@ fn map_and_sequence_schemas_differ() {
 
 fn all_variants() -> Vec<DomainOperator> {
     vec![
-        DomainOperator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+        DomainOperator::Task {
+            capability: CapabilityId("test.cap".into()),
+            inputs: Default::default(),
+        },
         DomainOperator::Sequence { body: vec![] },
-        DomainOperator::Parallel { branches: vec![], max_concurrency: 1 },
-        DomainOperator::Map { source: OperatorId("src".into()), body: OperatorId("body".into()), max_concurrency: 4 },
-        DomainOperator::Join { policy: "all".into(), branches: vec![] },
-        DomainOperator::Race { branches: vec![], timeout_ms: 1000 },
-        DomainOperator::Choice { branches: Default::default() },
-        DomainOperator::Loop { max_iterations: 10, until: GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Gate { condition: GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Wait { event_type: "click".into(), timeout_ms: 5000 },
-        DomainOperator::SubWorkflow { run_ref: "run-1".into() },
-        DomainOperator::Compensate { of: OperatorId("op0".into()) },
+        DomainOperator::Parallel {
+            branches: vec![],
+            max_concurrency: 1,
+        },
+        DomainOperator::Map {
+            source: OperatorId("src".into()),
+            body: OperatorId("body".into()),
+            max_concurrency: 4,
+        },
+        DomainOperator::Join {
+            policy: "all".into(),
+            branches: vec![],
+        },
+        DomainOperator::Race {
+            branches: vec![],
+            timeout_ms: 1000,
+        },
+        DomainOperator::Choice {
+            branches: Default::default(),
+        },
+        DomainOperator::Loop {
+            max_iterations: 10,
+            until: GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Gate {
+            condition: GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Wait {
+            event_type: "click".into(),
+            timeout_ms: 5000,
+        },
+        DomainOperator::SubWorkflow {
+            run_ref: "run-1".into(),
+        },
+        DomainOperator::Compensate {
+            of: OperatorId("op0".into()),
+        },
     ]
 }

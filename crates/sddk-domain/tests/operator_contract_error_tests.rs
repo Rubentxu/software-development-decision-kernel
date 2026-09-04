@@ -35,8 +35,14 @@ fn extra_field_error_has_context() {
         field: "rogue".into(),
     };
     let desc = format!("{err}");
-    assert!(desc.contains("rogue"), "error description must mention the field");
-    assert!(desc.contains("Map"), "error description must mention variant");
+    assert!(
+        desc.contains("rogue"),
+        "error description must mention the field"
+    );
+    assert!(
+        desc.contains("Map"),
+        "error description must mention variant"
+    );
 }
 
 /// MissingRequiredField carries field name and variant context.
@@ -48,17 +54,17 @@ fn missing_field_error_has_context() {
         field: "item_results".into(),
     };
     let desc = format!("{err}");
-    assert!(desc.contains("item_results"), "error must mention missing field");
+    assert!(
+        desc.contains("item_results"),
+        "error must mention missing field"
+    );
     assert!(desc.contains("Map"), "error must mention variant");
 }
 
 /// UnsupportedSchemaVersion carries expected vs actual version.
 #[test]
 fn unsupported_schema_version_error() {
-    let err = OperatorContractError::UnsupportedSchemaVersion {
-        got: 0,
-        want: 1,
-    };
+    let err = OperatorContractError::UnsupportedSchemaVersion { got: 0, want: 1 };
     let desc = format!("{err}");
     assert!(desc.contains("0"), "error must show got version");
     assert!(desc.contains("1"), "error must show want version");
@@ -67,9 +73,7 @@ fn unsupported_schema_version_error() {
 /// UnknownOperatorVariant carries variant name.
 #[test]
 fn unknown_variant_error() {
-    let err = OperatorContractError::UnknownOperatorVariant {
-        variant: "Unknown",
-    };
+    let err = OperatorContractError::UnknownOperatorVariant { variant: "Unknown" };
     let desc = format!("{err}");
     assert!(desc.contains("Unknown"), "error must mention variant name");
 }
@@ -93,7 +97,10 @@ fn schema_dialect_unknown_error() {
         dialect: "unknown-dialect".into(),
     };
     let desc = format!("{err}");
-    assert!(desc.contains("unknown-dialect"), "error must mention dialect");
+    assert!(
+        desc.contains("unknown-dialect"),
+        "error must mention dialect"
+    );
 }
 
 /// All 8 variants implement std::error::Error + Send + Sync.

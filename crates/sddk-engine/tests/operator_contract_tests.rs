@@ -11,57 +11,86 @@
 
 use std::collections::BTreeMap;
 
-use sddk_domain::{
-    CapabilityId, Operator as DomainOperator, OperatorId,
-};
 use sddk_domain::operator_contract::{
-    default_input_schema, default_output_schema, variant_name,
-    OperatorContractError,
+    OperatorContractError, default_input_schema, default_output_schema, variant_name,
 };
+use sddk_domain::{CapabilityId, Operator as DomainOperator, OperatorId};
 
 // ── REQ-OPTEST-001 — grep CI guard ───────────────────────────────────────────
 
-/// Grep-based CI assertion: the literal placeholder `outputs["items"]: serde_json::Value::Array`
-/// must NOT appear in any `.rs`, `.yaml`, `.toml`, `.md`, or `.snap` file under `crates/`.
+/// Grep-based CI assertion: the literal placeholder (v1.29.0 `outputs["items"]`
+/// of type `serde_json::Value::Array`) must NOT appear in any `.rs`, `.yaml`,
+/// `.toml`, `.md`, or `.snap` file under `crates/`.
 ///
 /// This is REQ-OPTEST-001 — the adversarial snapshot must not contain the old
 /// untyped placeholder that was the root cause of the DW-IR-004 problem.
 ///
 /// Run with: `cargo test -p sddk-engine --test operator_contract_tests`
+///
+/// Note: this test file is excluded from its own grep walk because it
+/// legitimately contains the needle as a string literal for the search.
 #[test]
 fn no_placeholder_remains() {
-    // Walk all source/test/doc files under crates/ and assert no placeholder.
+    // Walk all source/test/doc files under the workspace `crates/` directory
+    // and assert no placeholder. We anchor on `CARGO_MANIFEST_DIR`
+    // (`crates/sddk-engine/`) and walk up to the workspace root so the test
+    // works regardless of the process CWD. We also exclude this very file
+    // because it carries the needle as a string literal.
     let placeholder = r#"outputs["items"]: serde_json::Value::Array"#;
-    let mut found = Vec::new();
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let crates_root = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("CARGO_MANIFEST_DIR is inside crates/<crate>/")
+        .join("crates");
+    assert!(
+        crates_root.is_dir(),
+        "expected workspace `crates/` directory at {}",
+        crates_root.display()
+    );
 
-    for entry in walkdir_files("crates", &["rs", "yaml", "toml", "md", "snap"]) {
-        let content = std::fs::read_to_string(&entry).unwrap_or_default();
-        if content.contains(placeholder) || content.contains("outputs[\"items\"]") {
-            found.push(entry.display().to_string());
-        }
-    }
+    let mut found = Vec::new();
+    walk_files(
+        &crates_root,
+        &["rs", "yaml", "toml", "md", "snap"],
+        &mut found,
+    );
+
+    // Exclude this very file: it legitimately carries the placeholder needle
+    // as a string literal so the test can search for it.
+    found.retain(|p| !p.ends_with("operator_contract_tests.rs"));
+
+    let hits: Vec<_> = found
+        .iter()
+        .filter(|path| {
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            content.contains(placeholder) || content.contains("outputs[\"items\"]")
+        })
+        .cloned()
+        .collect();
 
     assert!(
-        found.is_empty(),
-        "Placeholder `outputs[\"items\"]: serde_json::Value::Array` found in: {found:?}"
+        hits.is_empty(),
+        "Placeholder `outputs[\"items\"]: serde_json::Value::Array` (or `outputs[\"items\"]` legacy key) \
+         found in {n} file(s): {hits:?}",
+        n = hits.len()
     );
 }
 
-fn walkdir_files(root: &str, extensions: &[&str]) -> Vec<std::path::PathBuf> {
-    let mut results = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                results.extend(walkdir_files(&path.to_string_lossy(), extensions));
-            } else if let Some(ext) = path.extension() {
-                if extensions.contains(&ext.to_str().unwrap_or("")) {
-                    results.push(path);
-                }
+fn walk_files(root: &std::path::Path, extensions: &[&str], out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_files(&path, extensions, out);
+        } else if let Some(ext) = path.extension() {
+            if extensions.contains(&ext.to_str().unwrap_or("")) {
+                out.push(path);
             }
         }
     }
-    results
 }
 
 // ── REQ-OPIN-001 / REQ-OPOUT-001 — per-variant default schemas ────────────────
@@ -70,23 +99,64 @@ fn walkdir_files(root: &str, extensions: &[&str]) -> Vec<std::path::PathBuf> {
 #[test]
 fn input_schema_per_variant_12() {
     let variants = [
-        DomainOperator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+        DomainOperator::Task {
+            capability: CapabilityId("test.cap".into()),
+            inputs: Default::default(),
+        },
         DomainOperator::Sequence { body: vec![] },
-        DomainOperator::Parallel { branches: vec![], max_concurrency: 1 },
-        DomainOperator::Map { source: OperatorId("src".into()), body: OperatorId("body".into()), max_concurrency: 4 },
-        DomainOperator::Join { policy: "all".into(), branches: vec![] },
-        DomainOperator::Race { branches: vec![], timeout_ms: 1000 },
-        DomainOperator::Choice { branches: Default::default() },
-        DomainOperator::Loop { max_iterations: 10, until: sddk_domain::GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Gate { condition: sddk_domain::GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Wait { event_type: "click".into(), timeout_ms: 5000 },
-        DomainOperator::SubWorkflow { run_ref: "run-1".into() },
-        DomainOperator::Compensate { of: OperatorId("op0".into()) },
+        DomainOperator::Parallel {
+            branches: vec![],
+            max_concurrency: 1,
+        },
+        DomainOperator::Map {
+            source: OperatorId("src".into()),
+            body: OperatorId("body".into()),
+            max_concurrency: 4,
+        },
+        DomainOperator::Join {
+            policy: "all".into(),
+            branches: vec![],
+        },
+        DomainOperator::Race {
+            branches: vec![],
+            timeout_ms: 1000,
+        },
+        DomainOperator::Choice {
+            branches: Default::default(),
+        },
+        DomainOperator::Loop {
+            max_iterations: 10,
+            until: sddk_domain::GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Gate {
+            condition: sddk_domain::GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Wait {
+            event_type: "click".into(),
+            timeout_ms: 5000,
+        },
+        DomainOperator::SubWorkflow {
+            run_ref: "run-1".into(),
+        },
+        DomainOperator::Compensate {
+            of: OperatorId("op0".into()),
+        },
     ];
 
     for variant in &variants {
         let input = default_input_schema(variant);
-        assert_eq!(&input, &input, "input schema must be PartialEq for {:?}", variant_name(variant));
+        assert_eq!(
+            &input,
+            &input,
+            "input schema must be PartialEq for {:?}",
+            variant_name(variant)
+        );
     }
 }
 
@@ -94,25 +164,69 @@ fn input_schema_per_variant_12() {
 #[test]
 fn output_schema_per_variant_12() {
     let variants = [
-        DomainOperator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+        DomainOperator::Task {
+            capability: CapabilityId("test.cap".into()),
+            inputs: Default::default(),
+        },
         DomainOperator::Sequence { body: vec![] },
-        DomainOperator::Parallel { branches: vec![], max_concurrency: 1 },
-        DomainOperator::Map { source: OperatorId("src".into()), body: OperatorId("body".into()), max_concurrency: 4 },
-        DomainOperator::Join { policy: "all".into(), branches: vec![] },
-        DomainOperator::Race { branches: vec![], timeout_ms: 1000 },
-        DomainOperator::Choice { branches: Default::default() },
-        DomainOperator::Loop { max_iterations: 10, until: sddk_domain::GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Gate { condition: sddk_domain::GuardExpr { expr: "true".into() }, body: OperatorId("body".into()) },
-        DomainOperator::Wait { event_type: "click".into(), timeout_ms: 5000 },
-        DomainOperator::SubWorkflow { run_ref: "run-1".into() },
-        DomainOperator::Compensate { of: OperatorId("op0".into()) },
+        DomainOperator::Parallel {
+            branches: vec![],
+            max_concurrency: 1,
+        },
+        DomainOperator::Map {
+            source: OperatorId("src".into()),
+            body: OperatorId("body".into()),
+            max_concurrency: 4,
+        },
+        DomainOperator::Join {
+            policy: "all".into(),
+            branches: vec![],
+        },
+        DomainOperator::Race {
+            branches: vec![],
+            timeout_ms: 1000,
+        },
+        DomainOperator::Choice {
+            branches: Default::default(),
+        },
+        DomainOperator::Loop {
+            max_iterations: 10,
+            until: sddk_domain::GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Gate {
+            condition: sddk_domain::GuardExpr {
+                expr: "true".into(),
+            },
+            body: OperatorId("body".into()),
+        },
+        DomainOperator::Wait {
+            event_type: "click".into(),
+            timeout_ms: 5000,
+        },
+        DomainOperator::SubWorkflow {
+            run_ref: "run-1".into(),
+        },
+        DomainOperator::Compensate {
+            of: OperatorId("op0".into()),
+        },
     ];
 
     for variant in &variants {
         let output = default_output_schema(variant);
         let name = variant_name(variant);
-        assert!(!name.is_empty(), "variant name must be non-empty for {:?}", variant);
-        assert_eq!(&output, &output, "output schema must be PartialEq for {}", name);
+        assert!(
+            !name.is_empty(),
+            "variant name must be non-empty for {:?}",
+            variant
+        );
+        assert_eq!(
+            &output, &output,
+            "output schema must be PartialEq for {}",
+            name
+        );
     }
 }
 

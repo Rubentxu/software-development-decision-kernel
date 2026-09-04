@@ -51,8 +51,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::operator_contract::{
-    default_input_schema, default_output_schema, OperatorContractProjectionV1,
-    OperatorInputSchemaProjection, OperatorOutputSchemaProjection, OPERATOR_CONTRACT_SCHEMA_VERSION,
+    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorContractProjectionV1, OperatorInputSchemaProjection,
+    OperatorOutputSchemaProjection, default_input_schema, default_output_schema,
 };
 use crate::workflow_ir::{
     Budgets, EdgeId, GuardExpr, Invariant, Operator, OperatorId, Policy, WorkflowIR,
@@ -99,7 +99,6 @@ pub struct NormalizedPlanV1 {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub edges: BTreeMap<EdgeId, Edge>,
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Typed operator contracts keyed by operator ID.
     ///
     /// Populated by projecting each operator in `nodes` through
@@ -156,8 +155,14 @@ impl NormalizedPlanV1 {
                 let input = default_input_schema(op);
                 let output = default_output_schema(op);
                 let projection = OperatorContractProjectionV1 {
-                    inputs: BTreeMap::from([(op_id.clone(), OperatorInputSchemaProjection::from(&input))]),
-                    outputs: BTreeMap::from([(op_id.clone(), OperatorOutputSchemaProjection::from(&output))]),
+                    inputs: BTreeMap::from([(
+                        op_id.clone(),
+                        OperatorInputSchemaProjection::from(&input),
+                    )]),
+                    outputs: BTreeMap::from([(
+                        op_id.clone(),
+                        OperatorOutputSchemaProjection::from(&output),
+                    )]),
                     schema_version: OPERATOR_CONTRACT_SCHEMA_VERSION,
                 };
                 (op_id.clone(), projection)

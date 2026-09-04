@@ -26,6 +26,7 @@ pub mod legacy;
 pub mod macros;
 pub mod metrics;
 pub mod models;
+pub mod operator_contract;
 pub mod pack;
 pub mod plan_revision;
 pub mod ports;
@@ -45,7 +46,6 @@ pub mod transition_ast;
 pub mod uat;
 pub mod validator;
 pub mod view;
-pub mod operator_contract;
 pub mod workflow;
 pub mod workflow_ir;
 pub mod workflow_run;
@@ -69,13 +69,13 @@ pub use identity::*;
 pub use legacy::*;
 pub use metrics::*;
 pub use models::*;
-pub use pack::*;
 pub use operator_contract::{
+    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorContractError, OperatorContractProjectionV1,
+    OperatorInputSchema, OperatorInputSchemaProjection, OperatorOutputSchema,
+    OperatorOutputSchemaProjection, OperatorSchema, SchemaDialect, TypedOperator,
     default_input_schema, default_output_schema, variant_name,
-    OperatorContractError, OperatorContractProjectionV1, OperatorInputSchema,
-    OperatorInputSchemaProjection, OperatorOutputSchema, OperatorOutputSchemaProjection,
-    OperatorSchema, OPERATOR_CONTRACT_SCHEMA_VERSION, SchemaDialect, TypedOperator,
 };
+pub use pack::*;
 pub use plan_revision::{
     Edge, NormalizedPlan, NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionError,
     PlanRevisionLineageV1, PlanRevisionV1,

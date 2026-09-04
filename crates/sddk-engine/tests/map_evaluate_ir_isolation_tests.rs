@@ -212,7 +212,9 @@ fn map_evaluate_does_not_resolve_source_after_construction() {
             outputs,
             node_id: _,
         } => {
-            let results = outputs.get("item_results").expect("expected item_results key");
+            let results = outputs
+                .get("item_results")
+                .expect("expected item_results key");
             let arr = results.as_array().expect("results should be array");
             assert_eq!(arr.len(), 2, "body should run 2 times");
         }

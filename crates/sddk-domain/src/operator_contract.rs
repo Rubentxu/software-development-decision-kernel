@@ -107,10 +107,7 @@ impl OperatorSchema {
     /// and the given dialect and document.
     ///
     /// The `source` is computed automatically from `document`.
-    pub fn with_defaults(
-        dialect: SchemaDialect,
-        document: serde_json::Value,
-    ) -> Self {
+    pub fn with_defaults(dialect: SchemaDialect, document: serde_json::Value) -> Self {
         let source = compute_content_hash(&document);
         Self {
             version: OPERATOR_CONTRACT_SCHEMA_VERSION,
@@ -555,7 +552,7 @@ fn map_default_input() -> OperatorInputSchema {
 
 /// Constructs the default `OperatorOutputSchema` for `Operator::Map`.
 ///
-/// **This replaces the v1.29.0 placeholder `outputs["items"]: serde_json::Value::Array`.**
+/// **This replaces the v1.29.0 placeholder: the `items` key of `outputs` typed as `serde_json::Value::Array`.**
 /// The typed contract is `item_results: BTreeMap<OperatorId, NodeOutcome::Succeeded>`.
 /// For serialization purposes we use a JSON Schema that describes the projection shape.
 fn map_default_output() -> OperatorOutputSchema {
@@ -730,10 +727,7 @@ fn loop_default_output() -> OperatorOutputSchema {
     );
     OperatorOutputSchema {
         static_fields,
-        required_fields: BTreeSet::from([
-            "iterations_completed".into(),
-            "last_outputs".into(),
-        ]),
+        required_fields: BTreeSet::from(["iterations_completed".into(), "last_outputs".into()]),
         accepts_extra_fields: false,
         description: None,
     }
@@ -938,8 +932,7 @@ pub fn variant_name(variant: &Operator) -> &'static str {
 
 /// Computes the canonical content hash of a JSON value.
 fn compute_content_hash(value: &serde_json::Value) -> crate::workflow_ir::ContentHash {
-    let bytes =
-        serde_json::to_vec(value).expect("serde_json::Value is always serializable");
+    let bytes = serde_json::to_vec(value).expect("serde_json::Value is always serializable");
     let digest = Sha256::digest(&bytes);
     let hex = format!("{:064x}", digest);
     format!("sha256:{}", hex)
@@ -1005,8 +998,9 @@ mod tests {
     fn operator_contract_error_in_domain_module() {
         // OperatorContractError lives in domain, not in engine.
         // This test verifies the type is accessible and matches the expected variant count.
-        let _err: OperatorContractError =
-            OperatorContractError::SchemaDialectUnknown { dialect: "test".into() };
+        let _err: OperatorContractError = OperatorContractError::SchemaDialectUnknown {
+            dialect: "test".into(),
+        };
         assert!(matches!(
             _err,
             OperatorContractError::SchemaDialectUnknown { .. }
@@ -1059,7 +1053,9 @@ mod tests {
                 expected: "sha256:0".into(),
                 actual: "sha256:1".into(),
             },
-            OperatorContractError::SchemaDialectUnknown { dialect: "bad".into() },
+            OperatorContractError::SchemaDialectUnknown {
+                dialect: "bad".into(),
+            },
         ];
 
         // Every variant maps to exactly one static string — no String carries
@@ -1080,12 +1076,17 @@ mod tests {
         let good_source = compute_content_hash(&doc);
 
         // Same source → OK
-        let schema =
-            OperatorSchema::new(OPERATOR_CONTRACT_SCHEMA_VERSION, SchemaDialect::JsonSchemaDraft07, good_source.clone(), doc.clone());
+        let schema = OperatorSchema::new(
+            OPERATOR_CONTRACT_SCHEMA_VERSION,
+            SchemaDialect::JsonSchemaDraft07,
+            good_source.clone(),
+            doc.clone(),
+        );
         assert!(schema.is_ok());
 
         // Wrong source → Err
-        let bad_source = "sha256:0000000000000000000000000000000000000000000000000000000000000000".into();
+        let bad_source =
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000".into();
         let schema2 = OperatorSchema::new(
             OPERATOR_CONTRACT_SCHEMA_VERSION,
             SchemaDialect::JsonSchemaDraft07,
@@ -1111,11 +1112,7 @@ mod tests {
         let input: BTreeMap<String, serde_json::Value> =
             BTreeMap::from([("rogue".into(), serde_json::json!(1))]);
 
-        let result = schema.validate(
-            &OperatorId("op0".into()),
-            "Task",
-            &input,
-        );
+        let result = schema.validate(&OperatorId("op0".into()), "Task", &input);
         assert!(matches!(
             result,
             Err(OperatorContractError::ExtraFieldDisallowed { field, .. })
@@ -1140,11 +1137,7 @@ mod tests {
 
         let input: BTreeMap<String, serde_json::Value> = BTreeMap::new();
 
-        let result = schema.validate(
-            &OperatorId("op0".into()),
-            "Task",
-            &input,
-        );
+        let result = schema.validate(&OperatorId("op0".into()), "Task", &input);
         assert!(matches!(
             result,
             Err(OperatorContractError::MissingRequiredField { field, .. })
@@ -1164,11 +1157,7 @@ mod tests {
 
         let output: BTreeMap<String, serde_json::Value> = BTreeMap::new();
 
-        let result = schema.validate(
-            &OperatorId("op0".into()),
-            "Map",
-            &output,
-        );
+        let result = schema.validate(&OperatorId("op0".into()), "Map", &output);
         assert!(matches!(
             result,
             Err(OperatorContractError::MissingRequiredField { field, .. })
@@ -1189,11 +1178,7 @@ mod tests {
         let output: BTreeMap<String, serde_json::Value> =
             BTreeMap::from([("items".into(), serde_json::json!([]))]); // old placeholder key
 
-        let result = schema.validate(
-            &OperatorId("op0".into()),
-            "Map",
-            &output,
-        );
+        let result = schema.validate(&OperatorId("op0".into()), "Map", &output);
         assert!(matches!(
             result,
             Err(OperatorContractError::ExtraFieldDisallowed { field, .. })
@@ -1208,18 +1193,54 @@ mod tests {
         use std::collections::BTreeMap;
 
         let variants = [
-            Operator::Task { capability: CapabilityId("test.cap".to_string()), inputs: BTreeMap::new() },
+            Operator::Task {
+                capability: CapabilityId("test.cap".to_string()),
+                inputs: BTreeMap::new(),
+            },
             Operator::Sequence { body: vec![] },
-            Operator::Parallel { branches: vec![], max_concurrency: 1 },
-            Operator::Map { source: OperatorId("src".to_string()), body: OperatorId("body".to_string()), max_concurrency: 4 },
-            Operator::Join { policy: "all".to_string(), branches: vec![] },
-            Operator::Race { branches: vec![], timeout_ms: 1000 },
-            Operator::Choice { branches: BTreeMap::new() },
-            Operator::Loop { max_iterations: 10, until: GuardExpr { expr: "true".to_string() }, body: OperatorId("body".to_string()) },
-            Operator::Gate { condition: GuardExpr { expr: "true".to_string() }, body: OperatorId("body".to_string()) },
-            Operator::Wait { event_type: "click".to_string(), timeout_ms: 5000 },
-            Operator::SubWorkflow { run_ref: "run-1".to_string() },
-            Operator::Compensate { of: OperatorId("op0".to_string()) },
+            Operator::Parallel {
+                branches: vec![],
+                max_concurrency: 1,
+            },
+            Operator::Map {
+                source: OperatorId("src".to_string()),
+                body: OperatorId("body".to_string()),
+                max_concurrency: 4,
+            },
+            Operator::Join {
+                policy: "all".to_string(),
+                branches: vec![],
+            },
+            Operator::Race {
+                branches: vec![],
+                timeout_ms: 1000,
+            },
+            Operator::Choice {
+                branches: BTreeMap::new(),
+            },
+            Operator::Loop {
+                max_iterations: 10,
+                until: GuardExpr {
+                    expr: "true".to_string(),
+                },
+                body: OperatorId("body".to_string()),
+            },
+            Operator::Gate {
+                condition: GuardExpr {
+                    expr: "true".to_string(),
+                },
+                body: OperatorId("body".to_string()),
+            },
+            Operator::Wait {
+                event_type: "click".to_string(),
+                timeout_ms: 5000,
+            },
+            Operator::SubWorkflow {
+                run_ref: "run-1".to_string(),
+            },
+            Operator::Compensate {
+                of: OperatorId("op0".to_string()),
+            },
         ];
 
         for variant in &variants {
