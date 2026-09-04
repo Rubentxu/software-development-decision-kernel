@@ -26,6 +26,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.80.0] - 2026-09-04
+
+### Added
+  - feat(domain): new `operator_contract` module (`crates/sddk-domain/src/operator_contract.rs`) with typed I/O contracts for all 12 Operator variants. `OperatorInputSchema` and `OperatorOutputSchema` replace the v1.29.0 untyped placeholder `outputs["items"]: serde_json::Value::Array`. `SchemaDialect` closed enum (JsonSchemaDraft07). `OperatorContractError` closed enum with exactly 8 variants. `OPERATOR_CONTRACT_SCHEMA_VERSION = 1`. 15 domain lib tests pass.
+  - feat(domain): `NormalizedPlanV1` now carries `operator_contracts: BTreeMap<OperatorId, OperatorContractProjectionV1>` — the canonical map from each operator to its typed I/O contract. Populated by `from_workflow_ir` via `default_input_schema`/`default_output_schema`.
+  - feat(engine): `Map::aggregate_collect_all` now produces `item_results: [{operator_id, outputs}, ...]` instead of the old `results`/`failures` split. `Map` struct gains `body_id: OperatorId` field. `validate_output` method validates Map output against default `OperatorOutputSchema`. All 31 map tests pass.
+  - test(engine): new `crates/sddk-engine/tests/operator_contract_tests.rs` with 9 tests covering REQ-OPTEST-001 grep CI guard, per-variant schema coverage, and output validation.
+  - test(domain): new `crates/sddk-domain/tests/operator_contract_schema_tests.rs` (10 tests), `operator_contract_error_tests.rs` (9 tests), `operator_contract_lineage_tests.rs` (7 tests) covering schema structural properties, error variant exhaustiveness, and variant-to-schema totality.
+  - docs: ADR-067-TYPED-OPERATOR-IO accepted with Decisions 1-4 covering dialect selection, schema structure, Map output redesign, and error taxonomy.
+
 ## [1.69.0] - 2026-09-02
 
 ### Added
