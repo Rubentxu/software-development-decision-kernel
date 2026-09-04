@@ -26,6 +26,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.84.0] - 2026-09-04
+
+### Added
+  - docs(adr): **ADR-071-EVENT-SCHEMA-VERSIONING** accepted — codifica la regla "los nuevos eventos del workspace no pueden añadirse a `std_registry`; en su lugar se modelan como `Type::Custom(<id>)` con `schema_id` versionado en `EventEnvelopeV1`." Closes AC-EVT-01/12, formaliza el ciclo de extensión sin tocar el canónico.
+  - feat(domain): `ActorRef` struct (5 campos) emitido junto a `ActorKind` (3 variantes locked) como campo **aditivo** `actor_ref: Option<ActorRef>` en 4 carriers canónicos: `LedgerEvent`, `GateReceipt`, `EventContext`, `JournalEntry`. El corpus legacy conserva `actor: String` vía `#[serde(default)]`. Closes AC-02.
+  - feat(domain,engine): `EventContext` ahora soporta `causation_id` y `correlation_id` (UUIDv7). Los 9 sitios de `emit.rs` cablean `with_correlation_from_context` para propagar ambos IDs en cada evento emitido. Closes AC-03.
+  - feat(domain,storage): primitivo `Snapshot` + `SnapshotPort` trait + `MIGRATION_11` + tabla `event_snapshots_v1` para replay equality. `Storage::verify_cross_ledger_consistency` valida invariante AC-06 contra el store.
+  - feat(cli): `sddk ledger replay --from-snapshot --verify-hashes` y `sddk ledger verify-cross-ledger` para auditoría de causalidad sin código ad-hoc.
+  - fix(engine,cli): AC-08 (`gate_receipt` requiere autoridad System) y AC-09 (`knowledge_ingest` requiere autoridad Human) — engine gate + CLI knowledge_ingest validan `AuthorityContext` contra `WritableSurface::GateReceipts` / `WritableSurface::KnowledgeGraphVault`.
+  - fix(domain): AC-06 `ApprovalState` envelope-wins precedence — `event.actor.id` toma precedencia sobre el payload `ApprovalDecisionInput.actor` (con fallback legacy `payload.actor`). AC-10 reforzado en projection.
+  - test(domain,engine,storage): 4 suites nuevas — `event_replay_equality` (3 tests, AC-05), `event_correlation_widening` (9 tests, AC-02/03), `cross_ledger_consistency` (4 tests, AC-06), `event_correlation_wiring` (10 tests, AC-03 wiring at 9 emit sites), `approval_envelope_wins_test` (4 tests, AC-10). Total nuevos: 30 tests.
+  - test(cli): `CliFixture::run` ahora fija `USER=user:test-cli-actor` para que los tests de knowledge-import operen con actor Human por defecto (no Agent).
+
+### Fixed
+  - fix(debt): **INC-HX-AUTH-003** (P1) — frontmatter flipped `status: open → status: resolved`; provenance de eventos ahora confiable vía `actor_ref: Option<ActorRef>` aditivo en 4 carriers canónicos.
+
+### Changed
+  - docs(debt): **INC-HX-AUTH-004** paths 4-5 cerrados (gate_receipt → EVT-LEDGER-001, knowledge_ingest → EVT-LEDGER-001). Paths 1-3 cerrados por ARCH-HEX-001. Paths 6-7 siguen OPEN owner RX-SECRETARY-001/002.
+
+### Tests
+  - test(workspace): `cargo test --workspace` 2124/2124 PASS (115 grupos). `cargo clippy -D errors` exit 0. `cargo fmt --check` exit 0. `cargo build --release -p sddk-cli` exit 0.
+  - verify round 1 → FAIL (2 BLOCKER + 1 CRITICAL + 2 HIGH); 5 commits de corrección (dac6b59, ab52600, 3baba1b, 64f8516, 34c6150); verify round 2 → PASS.
+
 ## [1.83.0] - 2026-09-04
 
 ### Added
