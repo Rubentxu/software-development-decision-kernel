@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 14;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 15;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -207,6 +207,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
         tx.execute_batch(MIGRATION_14)
             .map_err(super::StorageError::Database)?;
         tx.pragma_update(None, "user_version", 14)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
+    if version < 15 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_15)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 15)
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
@@ -693,4 +703,39 @@ CREATE TABLE IF NOT EXISTS work_item_dependencies_v1 (
     FOREIGN KEY (from_id) REFERENCES work_items_v1(id),
     FOREIGN KEY (to_id) REFERENCES work_items_v1(id)
 );
+"#;
+
+pub(crate) const MIGRATION_15: &str = r#"
+-- Planning Ledger: EvidenceAttachment metadata + DecisionRecord rows.
+-- Evidence bodies in CAS via CasPort::put (NOT added to SQL).
+-- DecisionRecord rationale INLINE (no CAS split per Q3 lock).
+-- MIGRATION_15 is purely additive: no DROP, no ALTER, no rename.
+
+CREATE TABLE IF NOT EXISTS evidence_attachments_v1 (
+    id              TEXT PRIMARY KEY,           -- UUIDv7
+    work_item_id    TEXT NOT NULL,
+    kind            TEXT NOT NULL,             -- PlanningEvidenceKind: log|metric|snapshot|reference|approval
+    body_ref        TEXT NOT NULL,             -- sha256:<hex> from CasPort::put
+    actor_ref_kind  TEXT,
+    actor_ref_id    TEXT,
+    actor_ref_label TEXT,
+    schema_version  INTEGER NOT NULL,
+    FOREIGN KEY (work_item_id) REFERENCES work_items_v1(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_attachments_v1_work_item_id
+    ON evidence_attachments_v1(work_item_id);
+
+CREATE TABLE IF NOT EXISTS decision_records_v1 (
+    id              TEXT PRIMARY KEY,           -- UUIDv7
+    work_item_id    TEXT NOT NULL,
+    kind            TEXT NOT NULL,             -- DecisionKind: accept|reject|defer|escalate
+    rationale       TEXT NOT NULL,             -- required non-empty (domain enforces)
+    actor_ref_kind  TEXT,
+    actor_ref_id    TEXT,
+    actor_ref_label TEXT,
+    schema_version  INTEGER NOT NULL,
+    FOREIGN KEY (work_item_id) REFERENCES work_items_v1(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_decision_records_v1_work_item_id
+    ON decision_records_v1(work_item_id);
 "#;
