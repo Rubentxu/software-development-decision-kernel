@@ -26,6 +26,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.81.0] - 2026-09-04
+
+### Added
+  - feat(domain): `LedgerEventInput` now derives `Serialize`/`Deserialize` and round-trips byte-exactly via JSON (`crates/sddk-domain/src/models/ledger.rs`). Closes REQ-IRDT-RT-06 / AC-IRDT-06.
+  - test(domain): `test_stability_roundtrip_serde_with_operator_contracts` exercises `NormalizedPlanV1` round-trip with a populated `operator_contracts` field (≥2 entries); asserts `plan_identity()` stability AND per-operator projection equality. Closes REQ-IRDT-RT-02 / AC-IRDT-02.
+  - test(domain): `roundtrip_preserves_content_hash` in `event_envelope.rs` proves `EventEnvelopeV1` JSON round-trip preserves `compute_content_hash()`. Closes REQ-IRDT-RT-05 / AC-IRDT-05.
+  - test(domain): `crates/sddk-domain/tests/invalid_plan_rejection.rs` (5 tests) asserts invalid plans are rejected with structured errors and zero panics — covers malformed JSON, missing required field, extra field under strict schema, empty lineage, and the documented NoOp mutation. Closes REQ-IRDT-IP-01, IP-02, IP-04 / AC-IRDT-11, AC-IRDT-13.
+  - test(domain): `crates/sddk-domain/tests/hashmap_audit.rs` (CI guard) walks `crates/sddk-domain/src/*.rs` and asserts NO `HashMap` field appears in any IR canonical form. Closes REQ-IRDT-HS-05 / AC-IRDT-10.
+  - test(domain): `crates/sddk-domain/tests/serde_json_feature_guard.rs` verifies `serde_json` is built WITHOUT `preserve_order` / `indexmap` features. Closes REQ-IRDT-HS-03 / AC-IRDT-09.
+  - test(domain): `schema_dialect_unknown_serializes_to_valid_json` in `operator_contract_error_tests.rs` constructs `OperatorContractError::SchemaDialectUnknown { dialect: ... }` directly and proves its serialization safety. Closes FIND-000005 carryover / REQ-IRDT-IP-03 / AC-IRDT-12.
+  - test(engine): new `crates/sddk-engine/tests/build_operator_ir_permutation_equivalence.rs` (3 tests) — load-bearing for the IR→runtime frontier: (1) two IRs with identical `compute_content_hash()` but different `BTreeMap` insertion order produce structurally equivalent runtime trees (structural comparison via downcast + debug-format); (2) `Sequence` runtime children preserve IR declaration order; (3) `Choice` branches iteration is BTreeMap sorted-key order. Closes REQ-IRDT-HS-04, REQ-IRDT-DC-02..DC-04 / AC-IRDT-08, AC-IRDT-14..AC-IRDT-16.
+  - test(engine): `build_operator_eval_failed_for_missing_operator_id` (extension to `build_operator_tests.rs`) — proves `build_operator` rejects malformed IR with structured `OperatorError::EvalFailed` error rather than panicking. Closes REQ-IRDT-IP-02.
+  - docs: ADR-068-DETERMINISTIC-IR-RUNTIME-BOUNDARY accepted — establishes the IR→runtime `build_operator()` frontier at `crates/sddk-engine/src/operator.rs::build_operator` (line 1726) as the canonical second "compiler boundary" of the H0 determinism program. Documents the 4-invariant exit gate, the testable surfaces, and the carryover close-out from DW-IR-004 (FIND-000005) plus deferrals (FIND-000001, FIND-000002 to H6/DW-OPERATORS-001).
+
+### Tests
+  - test(workspace): 109 new tests pass across `sddk-domain` (lib + 6 new integration files) and `sddk-engine` (1 new integration file). 19 REQs / 22 Given-When-Then scenarios / 16 acceptance criteria covered. Cycle path: A-min. Verify verdict pending.
+
+Cycle path: A-min. 5 commits en rango `ee6a5e2..2c9770e` (1 docs(adr) + 1 feat(domain) + 1 test(domain) + 1 test(engine) + 1 chore(release) bump).
+
 ## [1.80.0] - 2026-09-04
 
 ### Added
