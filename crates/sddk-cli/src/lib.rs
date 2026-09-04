@@ -314,15 +314,20 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// Plan a new cycle from a goal. Delegates to `cycle start`.
+    /// Plan a new cycle from a goal (DEPRECATED: use `sddk plan workitem` instead).
     Plan {
-        /// Display name used to derive the stable cycle identifier.
+        /// Subcommand (workitem, dep, evidence, decision, graph).
+        /// When absent, falls back to legacy `cycle start` with deprecation warning.
+        #[command(subcommand)]
+        command: Option<plan::PlanCommand>,
+        /// Legacy: display name used to derive the stable cycle identifier.
+        /// DEPRECATED — emits warning and delegates to `cycle start`.
         #[arg(long)]
-        name: String,
-        /// Workflow path applied to the cycle.
+        name: Option<String>,
+        /// Legacy: workflow path applied to the cycle.
         #[arg(long, value_enum)]
         path: Option<crate::cycle::CyclePathArg>,
-        /// Git branch associated with the cycle.
+        /// Legacy: git branch associated with the cycle.
         #[arg(long)]
         branch: Option<String>,
         /// Output format.
@@ -668,11 +673,20 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         // ── First-class facade commands (D2 shadow routing) ───────────────
         Command::Status { cycle, format } => status::run_status(cycle, format, environment),
         Command::Plan {
+            command,
             name,
             path,
             branch,
             format,
-        } => plan::run_plan(name, path, branch, format, environment),
+        } => {
+            if let Some(cmd) = command {
+                plan::run_plan(cmd, environment)
+            } else {
+                // Legacy D2 facade: emit deprecation warning and delegate
+                let name = name.unwrap_or_default();
+                plan::run_plan_legacy(name, path, branch, format, environment)
+            }
+        }
         Command::Run { name, format } => run::run_run(name, format, environment),
         Command::Ship { tag, cycle, format } => ship::run_ship(tag, cycle, format, environment),
         Command::Recover {
