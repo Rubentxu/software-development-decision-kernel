@@ -5,12 +5,38 @@
 //!   behaviors (no hash verification — fast prefix reconstruction).
 //! - `strict`: re-execute with chain verification (fail-closed on first causal
 //!   mismatch) and serve recorded LLM/tool responses from the response cache.
+//!
+//! ## Snapshot primitive (AC-EVT-LEDGER-04)
+//!
+//! A `Snapshot` records the stream head at a point in time so replay can resume
+//! from it rather than re-processing the entire history.
 
 use serde::{Deserialize, Serialize};
 
 use crate::event_envelope::EventEnvelopeV1;
 use crate::fork::ResponseCachePort;
 use crate::projections::Projection;
+
+/// A named point-in-time snapshot of a stream's replay position.
+///
+/// Mirrors the key identity fields of `EventEnvelopeV1` so replay can resume
+/// from the snapshot rather than from genesis. The snapshot is immutable once
+/// saved — a new snapshot captures any later position.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snapshot {
+    /// Unique name for this snapshot (chosen by the caller, e.g. "daily-checkpoint").
+    pub name: String,
+    /// Stream this snapshot applies to.
+    pub stream_id: String,
+    /// Sequence number of the last event included in this snapshot.
+    pub sequence: u64,
+    /// Content hash of the event at `sequence` (sha256:<hex>).
+    pub content_hash: String,
+    /// Chain hash of the event at `sequence`.
+    pub chain_hash: String,
+    /// Wall-clock time when the snapshot was taken (RFC 3339).
+    pub taken_at_ms: i64,
+}
 
 /// Errors emitted by the replay engine.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

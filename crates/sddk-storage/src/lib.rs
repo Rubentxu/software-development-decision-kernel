@@ -187,6 +187,25 @@ pub struct Storage {
     connection: Connection,
 }
 
+/// Report from [`Storage::verify_cross_ledger_consistency`] (AC-EVT-LEDGER-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossLedgerConsistencyReport {
+    /// Total events in `events_v1`.
+    pub events_v1_count: usize,
+    /// Total events in `ledger_events`.
+    pub ledger_events_count: usize,
+    /// Events present in `events_v1` but absent from `ledger_events`.
+    pub in_v1_not_ledger: Vec<String>,
+    /// Events present in `ledger_events` but absent from `events_v1`.
+    pub in_ledger_not_v1: Vec<String>,
+    /// Total divergence count (sum of both lists).
+    pub total_divergences: usize,
+    /// Tolerance threshold that was applied.
+    pub tolerance_events: usize,
+    /// True when `total_divergences <= tolerance_events`.
+    pub within_tolerance: bool,
+}
+
 /// Canonical regex for a gate receipt identifier produced by
 /// [`Storage::insert_gate_receipt_next_seq`](Storage::insert_gate_receipt_next_seq).
 /// Format: `gate-{gate(1..128)}-{plan_hash[7..23]}-{seq}`.
@@ -686,6 +705,70 @@ impl Storage {
         Ok(LedgerVerification {
             event_count: events.len(),
             last_hash: previous_hash,
+        })
+    }
+
+    /// Verifies bidirectional consistency between `events_v1` and `ledger_events`
+    /// within a configurable tolerance window (AC-EVT-LEDGER-06).
+    ///
+    /// Compares every event present in `events_v1` against `ledger_events` and
+    /// vice versa. Returns a structured report naming all divergences.
+    ///
+    /// # Arguments
+    /// * `tolerance_events` — maximum number of unmatched events to tolerate
+    ///   before returning an error. Pass 0 for strict comparison.
+    ///
+    /// # Returns
+    /// `Ok(CrossLedgerConsistencyReport)` on success (including when divergences
+    /// are within tolerance). `Err` only on storage failure.
+    pub fn verify_cross_ledger_consistency(
+        &self,
+        tolerance_events: usize,
+    ) -> Result<CrossLedgerConsistencyReport> {
+        use std::collections::HashSet;
+
+        // Load all events_v1 event_ids and ledger_events event_ids
+        let events_v1_ids: HashSet<String> = {
+            let mut stmt = self
+                .connection
+                .prepare("SELECT event_id FROM events_v1 ORDER BY sequence")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            rows.map(|r| r.map_err(StorageError::from))
+                .collect::<std::result::Result<HashSet<_>, _>>()?
+        };
+
+        let ledger_event_ids: HashSet<String> = {
+            let mut stmt = self
+                .connection
+                .prepare("SELECT event_id FROM ledger_events ORDER BY sequence")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            rows.map(|r| r.map_err(StorageError::from))
+                .collect::<std::result::Result<HashSet<_>, _>>()?
+        };
+
+        // Events in events_v1 but not in ledger_events
+        let in_v1_not_ledger: Vec<String> = events_v1_ids
+            .difference(&ledger_event_ids)
+            .cloned()
+            .collect();
+
+        // Events in ledger_events but not in events_v1
+        let in_ledger_not_v1: Vec<String> = ledger_event_ids
+            .difference(&events_v1_ids)
+            .cloned()
+            .collect();
+
+        let total_divergences = in_v1_not_ledger.len() + in_ledger_not_v1.len();
+        let within_tolerance = total_divergences <= tolerance_events;
+
+        Ok(CrossLedgerConsistencyReport {
+            events_v1_count: events_v1_ids.len(),
+            ledger_events_count: ledger_event_ids.len(),
+            in_v1_not_ledger,
+            in_ledger_not_v1,
+            total_divergences,
+            tolerance_events,
+            within_tolerance,
         })
     }
 

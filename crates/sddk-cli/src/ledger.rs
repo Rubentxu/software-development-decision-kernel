@@ -2,6 +2,8 @@
 
 use anyhow::Context;
 use clap::{Args, Subcommand};
+use sddk_domain::ports::SnapshotPort;
+use sddk_domain::replay::Snapshot;
 use serde::Serialize;
 
 use crate::{
@@ -20,6 +22,10 @@ pub(crate) enum LedgerCommand {
     Events(LedgerEventsArgs),
     /// Export ledger events as newline-delimited JSON (JSONL) to a file.
     Export(LedgerExportArgs),
+    /// Replay events from a named snapshot, optionally verifying chain hashes.
+    Replay(ReplayArgs),
+    /// Verify bidirectional consistency between events_v1 and ledger_events.
+    VerifyCrossLedger(VerifyCrossLedgerArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -88,6 +94,36 @@ pub(crate) struct LedgerExportArgs {
     pub(crate) output: std::path::PathBuf,
 }
 
+#[derive(Debug, Clone, Args)]
+pub(crate) struct ReplayArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Name of the snapshot to replay from.
+    #[arg(long)]
+    pub(crate) from_snapshot: String,
+    /// Verify content and chain hashes during replay.
+    #[arg(long)]
+    pub(crate) verify_hashes: bool,
+    /// Stream to replay (defaults to project stream).
+    #[arg(long)]
+    pub(crate) stream: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct VerifyCrossLedgerArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Tolerance: maximum unmatched events to accept without failing.
+    #[arg(long, default_value_t = 0)]
+    pub(crate) tolerance: usize,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
 pub(crate) fn run_ledger(command: LedgerCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         LedgerCommand::Verify(args) => run_ledger_verify(args, environment),
@@ -95,6 +131,8 @@ pub(crate) fn run_ledger(command: LedgerCommand, environment: &CliEnvironment) -
         LedgerCommand::BackfillChain(args) => run_backfill_chain(args, environment),
         LedgerCommand::Events(args) => run_ledger_events(args, environment),
         LedgerCommand::Export(args) => run_ledger_export(args, environment),
+        LedgerCommand::Replay(args) => run_replay(args, environment),
+        LedgerCommand::VerifyCrossLedger(args) => run_verify_cross_ledger(args, environment),
     }
 }
 
@@ -346,6 +384,183 @@ fn run_ledger_export(args: LedgerExportArgs, environment: &CliEnvironment) -> Co
 struct ExportOutput {
     path: std::path::PathBuf,
     count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct ReplayOutput {
+    snapshot_name: String,
+    stream: String,
+    events_applied: u64,
+    from_sequence: u64,
+    to_sequence: u64,
+    status: ReplayStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ReplayStatus {
+    Success,
+    Fail { error: String },
+}
+
+fn run_replay(args: ReplayArgs, environment: &CliEnvironment) -> CommandOutput {
+    use sddk_domain::EventStore;
+    use sddk_storage::event_store::SqliteEventStore;
+    let format = args.format;
+    let result = (|| -> anyhow::Result<ReplayOutput> {
+        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let ledger_dir = context.paths.ledger.parent().unwrap();
+        let mut event_store = SqliteEventStore::open(ledger_dir)?;
+
+        // Load snapshot
+        let snapshot: sddk_domain::replay::Snapshot = event_store
+            .load_snapshot(&args.from_snapshot)
+            .map_err(|e| anyhow::anyhow!("load_snapshot: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("snapshot '{}' not found", args.from_snapshot))?;
+
+        let stream = args.stream.unwrap_or_else(|| snapshot.stream_id.clone());
+
+        if stream != snapshot.stream_id {
+            anyhow::bail!(
+                "stream '{}' does not match snapshot stream '{}'",
+                stream,
+                snapshot.stream_id
+            );
+        }
+
+        // Verify chain if requested
+        if args.verify_hashes {
+            event_store
+                .verify_stream_chain(&stream)
+                .map_err(|e| anyhow::anyhow!("verify_stream_chain: {e}"))?;
+            event_store
+                .verify_chain_integrity(&stream)
+                .map_err(|e| anyhow::anyhow!("verify_chain_integrity: {e}"))?;
+        }
+
+        // Load events after snapshot
+        let events = event_store.load_stream(&stream, Some(snapshot.sequence), u32::MAX)?;
+        let from_seq = snapshot.sequence + 1;
+        let to_seq = events
+            .last()
+            .map(|e| e.sequence)
+            .unwrap_or(snapshot.sequence);
+
+        Ok(ReplayOutput {
+            snapshot_name: snapshot.name,
+            stream: stream.clone(),
+            events_applied: events.len() as u64,
+            from_sequence: from_seq,
+            to_sequence: to_seq,
+            status: ReplayStatus::Success,
+        })
+    })();
+    render_result(result, format, replay_text)
+}
+
+fn replay_text(output: &ReplayOutput) -> String {
+    match &output.status {
+        ReplayStatus::Success => format!(
+            "snapshot: {}\nstream: {}\nevents_applied: {}\nfrom_sequence: {}\nto_sequence: {}\nstatus: SUCCESS\n",
+            output.snapshot_name,
+            output.stream,
+            output.events_applied,
+            output.from_sequence,
+            output.to_sequence
+        ),
+        ReplayStatus::Fail { error } => format!(
+            "snapshot: {}\nstream: {}\nstatus: FAIL\nerror: {}\n",
+            output.snapshot_name, output.stream, error
+        ),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct VerifyCrossLedgerOutput {
+    events_v1_count: usize,
+    ledger_events_count: usize,
+    in_v1_not_ledger: Vec<String>,
+    in_ledger_not_v1: Vec<String>,
+    total_divergences: usize,
+    tolerance_events: usize,
+    within_tolerance: bool,
+    status: VerifyCrossLedgerStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum VerifyCrossLedgerStatus {
+    Pass,
+    Fail { error: String },
+}
+
+fn run_verify_cross_ledger(
+    args: VerifyCrossLedgerArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<VerifyCrossLedgerOutput> {
+        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let report = context
+            .storage
+            .verify_cross_ledger_consistency(args.tolerance)
+            .map_err(|e| anyhow::anyhow!("verify_cross_ledger_consistency: {e}"))?;
+        let status = if report.within_tolerance {
+            VerifyCrossLedgerStatus::Pass
+        } else {
+            VerifyCrossLedgerStatus::Fail {
+                error: format!(
+                    "{} divergences exceed tolerance of {}",
+                    report.total_divergences, report.tolerance_events
+                ),
+            }
+        };
+        Ok(VerifyCrossLedgerOutput {
+            events_v1_count: report.events_v1_count,
+            ledger_events_count: report.ledger_events_count,
+            in_v1_not_ledger: report.in_v1_not_ledger,
+            in_ledger_not_v1: report.in_ledger_not_v1,
+            total_divergences: report.total_divergences,
+            tolerance_events: report.tolerance_events,
+            within_tolerance: report.within_tolerance,
+            status,
+        })
+    })();
+    render_result(result, format, verify_cross_ledger_text)
+}
+
+fn verify_cross_ledger_text(output: &VerifyCrossLedgerOutput) -> String {
+    let status_str = match &output.status {
+        VerifyCrossLedgerStatus::Pass => "PASS",
+        VerifyCrossLedgerStatus::Fail { .. } => "FAIL",
+    };
+    let mut text = format!(
+        "events_v1_count: {}\nledger_events_count: {}\ntotal_divergences: {}\ntolerance_events: {}\nwithin_tolerance: {}\nstatus: {}\n",
+        output.events_v1_count,
+        output.ledger_events_count,
+        output.total_divergences,
+        output.tolerance_events,
+        output.within_tolerance,
+        status_str
+    );
+    if !output.in_v1_not_ledger.is_empty() {
+        text.push_str(&format!(
+            "in_v1_not_ledger: {}\n",
+            output.in_v1_not_ledger.join(", ")
+        ));
+    }
+    if !output.in_ledger_not_v1.is_empty() {
+        text.push_str(&format!(
+            "in_ledger_not_v1: {}\n",
+            output.in_ledger_not_v1.join(", ")
+        ));
+    }
+    if let VerifyCrossLedgerStatus::Fail { error } = &output.status {
+        text.push_str(&format!("error: {}\n", error));
+    }
+    text
 }
 
 fn ledger_verify_text(output: &LedgerVerifyOutput) -> String {

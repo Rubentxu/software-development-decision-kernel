@@ -144,6 +144,17 @@ impl SqliteEventStore {
             tx.commit()
                 .map_err(|e| DomainStorageError::Database(e.to_string()))?;
         }
+        if version < 11 {
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
+            tx.execute_batch(MIGRATION_11)
+                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
+            tx.pragma_update(None, "sddk_eventstore_version", 11)
+                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
+            tx.commit()
+                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
+        }
         Ok(())
     }
 
@@ -610,6 +621,78 @@ impl EventStore for SqliteEventStore {
     }
 }
 
+// ── SnapshotPort impl (AC-EVT-LEDGER-04) ─────────────────────────────────────
+
+use sddk_domain::ports::SnapshotError as DomainSnapshotError;
+use sddk_domain::replay::Snapshot;
+
+impl sddk_domain::ports::SnapshotPort for SqliteEventStore {
+    fn save_snapshot(&mut self, snapshot: &Snapshot) -> Result<(), DomainSnapshotError> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO event_snapshots_v1
+                 (name, stream_id, sequence, content_hash, chain_hash, taken_at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    snapshot.name,
+                    snapshot.stream_id,
+                    snapshot.sequence as i64,
+                    snapshot.content_hash,
+                    snapshot.chain_hash,
+                    snapshot.taken_at_ms,
+                ],
+            )
+            .map_err(|e| DomainSnapshotError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn load_snapshot(&self, name: &str) -> Result<Option<Snapshot>, DomainSnapshotError> {
+        let result = self.conn.query_row(
+            "SELECT name, stream_id, sequence, content_hash, chain_hash, taken_at_ms
+             FROM event_snapshots_v1 WHERE name = ?1",
+            [name],
+            |row| {
+                Ok(Snapshot {
+                    name: row.get(0)?,
+                    stream_id: row.get(1)?,
+                    sequence: row.get::<_, i64>(2)? as u64,
+                    content_hash: row.get(3)?,
+                    chain_hash: row.get(4)?,
+                    taken_at_ms: row.get(5)?,
+                })
+            },
+        );
+        match result {
+            Ok(s) => Ok(Some(s)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DomainSnapshotError::Storage(e.to_string())),
+        }
+    }
+
+    fn list_snapshots(&self, stream_id: &str) -> Result<Vec<String>, DomainSnapshotError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name FROM event_snapshots_v1 WHERE stream_id = ?1 ORDER BY name")
+            .map_err(|e| DomainSnapshotError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([stream_id], |row| row.get::<_, String>(0))
+            .map_err(|e| DomainSnapshotError::Storage(e.to_string()))?;
+        rows.map(|r| r.map_err(|e| DomainSnapshotError::Storage(e.to_string())))
+            .collect::<Result<Vec<String>, DomainSnapshotError>>()
+    }
+
+    fn delete_snapshot(&mut self, name: &str) -> Result<(), DomainSnapshotError> {
+        let deleted = self
+            .conn
+            .execute("DELETE FROM event_snapshots_v1 WHERE name = ?1", [name])
+            .map_err(|e| DomainSnapshotError::Storage(e.to_string()))?;
+        if deleted == 0 {
+            return Err(DomainSnapshotError::NotFound(name.to_string()));
+        }
+        Ok(())
+    }
+}
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 fn row_to_envelope(row: &rusqlite::Row) -> Result<EventEnvelopeV1, DomainStorageError> {
@@ -696,3 +779,24 @@ fn row_to_envelope(row: &rusqlite::Row) -> Result<EventEnvelopeV1, DomainStorage
         metadata,
     })
 }
+
+// ── MIGRATION_11: event_snapshots_v1 (AC-EVT-LEDGER-04) ──────────────────────
+
+/// SQL for MIGRATION_11: creates the event_snapshots_v1 table.
+///
+/// AC-EVT-LEDGER-04: persists named replay snapshots so replay can resume
+/// from a known position rather than reprocessing the entire stream.
+const MIGRATION_11: &str = r#"
+CREATE TABLE IF NOT EXISTS event_snapshots_v1 (
+    name            TEXT NOT NULL,
+    stream_id       TEXT NOT NULL,
+    sequence        INTEGER NOT NULL,
+    content_hash    TEXT NOT NULL,
+    chain_hash      TEXT NOT NULL,
+    taken_at_ms     INTEGER NOT NULL,
+    PRIMARY KEY (name, stream_id)
+);
+
+CREATE INDEX IF NOT EXISTS event_snapshots_v1_stream_idx
+    ON event_snapshots_v1(stream_id);
+"#;

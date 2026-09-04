@@ -188,7 +188,38 @@ pub trait LedgerFactory: Send + Sync {
     }
 }
 
-// ── Control-plane port ────────────────────────────────────────────────────────
+// ── Snapshot port (AC-EVT-LEDGER-04) ─────────────────────────────────────────
+
+use crate::replay::Snapshot;
+
+/// Errors from snapshot operations.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SnapshotError {
+    /// No snapshot with the given name exists.
+    #[error("snapshot not found: {0}")]
+    NotFound(String),
+    /// Storage backend failure.
+    #[error("snapshot storage: {0}")]
+    Storage(String),
+}
+
+/// Hexagonal port for persisting and loading replay snapshots.
+///
+/// The concrete implementation is `sddk_storage::SqliteSnapshotStore` which
+/// satisfies it via `impl SnapshotPort for Storage` in the storage crate.
+pub trait SnapshotPort {
+    /// Saves a named snapshot, replacing any existing snapshot with the same name.
+    fn save_snapshot(&mut self, snapshot: &Snapshot) -> Result<(), SnapshotError>;
+
+    /// Loads a named snapshot, or `None` when no snapshot with that name exists.
+    fn load_snapshot(&self, name: &str) -> Result<Option<Snapshot>, SnapshotError>;
+
+    /// Lists all saved snapshot names for a given stream.
+    fn list_snapshots(&self, stream_id: &str) -> Result<Vec<String>, SnapshotError>;
+
+    /// Deletes a named snapshot.
+    fn delete_snapshot(&mut self, name: &str) -> Result<(), SnapshotError>;
+}
 
 /// Hexagonal port over the SDDK control-plane SQLite store (SDDK2-103).
 /// The concrete implementation is `sddk_storage::SqliteControlPlane`.
