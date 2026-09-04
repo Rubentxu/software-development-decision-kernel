@@ -26,6 +26,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.83.0] - 2026-09-04
+
+### Added
+  - docs(adr): **ADR-070-ENGINE-AUTHORITY-ENFORCEMENT** accepted — enforces the matrix declared by ADR-069 at runtime via `AuthorityContext` (`for_cli` canonical + `#[cfg(test)] for_test`), `infer_actor_kind` extraction (locked v1.81.x prefix heuristic, replaces `cycle.rs:1217-1223`), and `WRITABLE_SURFACE_MATRIX` const table (8 surfaces × admitted `ActorKind`). New `EngineError::AuthorityContextRejected` variant for fail-closed validation. Closes AC-ARCH-HEX-01/02/04/05/07, REQ-LYR-*, REQ-WS-*.
+  - feat(engine): new `crates/sddk-engine/src/authority.rs` module (~200 lines) declaring `WritableSurface` enum (8 variants matching ADR-069 §3), `AuthorityContext` struct + `for_cli`/`for_test` constructors + `validate(surface)` method, `infer_actor_kind(actor_id: &str) -> ActorKind` helper, and `WRITABLE_SURFACE_MATRIX` const table.
+  - feat(engine): `apply_transition`, `cycle_pause`, `cycle_resume`, `cycle_supersede` each accept `auth: &AuthorityContext` as required parameter; each calls `auth.validate(WritableSurface)` before any ledger mutation (fail-closed). `cycle_pause` and `cycle_supersede` additionally verify `auth.lease_owner` matches.
+  - feat(engine): `ApprovalDecisionInput` and `ApprovalRequestedInput` each gain `actor_kind: ActorKind` field. `emit_approval_decision` (event_bus/emit.rs:259) replaces hardcoded `kind: ActorKind::Human` with caller-supplied input and validates `actor_kind ∈ {Human, System}` for decision events. `emit_approval_requested` (emit.rs:191) replaces hardcoded `kind: ActorKind::Agent` with caller-supplied input and validates `actor_kind ∈ {Agent}` for request events.
+  - feat(cli): `cycle.rs:1217-1223` prefix heuristic replaced with `sddk_engine::authority::infer_actor_kind` call; `AuthorityContext::for_cli(...)` constructed from CLI env. `approval.rs` populates `actor_kind` on `ApprovalDecisionInput` via the same helper. Closes DRY violation flagged in HX-AUTHORITY-001 audit note.
+
+### Fixed
+  - fix(engine): **INC-HX-AUTH-002 closed** (P0/critical, ARCH-HEX-001 owner) — forced-Human default in `emit_approval_decision` removed; caller-supplied `actor_kind` propagates to `EventEnvelopeV1.actor.kind`. Provenance is now trustworthy for H1's PLN-LEDGER-001 work.
+  - fix(engine): **INC-HX-AUTH-001 closed** (P1) — 8 writable surfaces now have runtime authority validation via `WRITABLE_SURFACE_MATRIX`.
+
+### Changed
+  - docs(debt): **INC-HX-AUTH-004** annotated "4 of 7 paths closed by ARCH-HEX-001" (paths 1-4: approval grant/deny, approval_request, cycle_transition, cycle_pause/resume). 3 paths deferred: gate_receipt creation → EVT-LEDGER-001, knowledge_ingest → EVT-LEDGER-001, secretary_closed_set → RX-SECRETARY-001/002 + EVT-LEDGER-001.
+
+### Tests
+  - test(engine): new `crates/sddk-engine/tests/event_authority.rs` (12 tests) — caller-supplied `actor_kind` survives round-trip in `emit_approval_decision` and `emit_approval_requested` across Human/Agent/System variants; 2 validator rejection tests; 1 prefix-heuristic consistency test; 3 writable-surface-matrix coverage tests. `cargo test -p sddk-engine --test event_authority` 12/12 pass.
+  - test(domain): 8 tests in `crates/sddk-domain/tests/actor_authority_baseline_tests.rs` continue to PASS unchanged — `ActorKind` closed set, `ActorRef` 5 fields, CLI prefix mapping, `LedgerEvent`/`GateReceipt`/`JournalEntry` provenance loss all preserved.
+  - test(workspace): `cargo test --workspace --offline` green; 1 unrelated pre-existing flake in `dev::rdi_tests` (same as DW-IR-005 / HX-AUTHORITY-001, unrelated to this cycle).
+
+### Documentation
+  - docs(adr): **ADR-070** cross-references ADR-069 (matrix), ADR-068 (determinism), INC-HX-AUTH-001/-002/-004, plus downstream EVT-LEDGER-001 + RX-SECRETARY-001/002 + DW-OPERATORS-001.
+  - docs(debt): INC-HX-AUTH-001, INC-HX-AUTH-002 frontmatter `status: closed` + Lifecycle row dated 2026-09-04. INC-HX-AUTH-004 sub-lifecycle annotation with 4 closed + 3 deferred paths.
+
+Cycle path: A-min (CODE-CHANGE, not governance-only — exit gate demands "enforced by tests/checks"). 5 commits en rango `d43b120..f08317f` (1 docs(adr) + 3 feat/fix/test + 1 style hygiene post full profile). 10 ACs / 21 REQs / 20 Given-When-Then scenarios. Verify verdict pending.
+
 ## [1.82.0] - 2026-09-04
 
 ### Added
