@@ -8,6 +8,7 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod cas;
 pub mod control_plane;
 pub mod event_store;
 pub mod fork_store;
@@ -16,6 +17,7 @@ mod migrations;
 mod models;
 pub mod projection_store;
 pub mod rebuild;
+pub use cas::FilesystemCas;
 pub use control_plane::{ProjectStatusRow, SCHEMA_V1, SqliteControlPlane};
 pub use event_store::SqliteEventStore;
 pub use fork_store::SqliteForkStore;

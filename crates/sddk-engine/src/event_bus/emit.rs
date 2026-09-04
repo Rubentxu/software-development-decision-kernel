@@ -653,6 +653,404 @@ pub fn emit_workflow_node_failed<S: EventStore>(
     store.append(&env)
 }
 
+// ── Planning Ledger event emission (PLN-LEDGER-001 / ADR-072) ─────────────────
+
+use sddk_domain::planning::{
+    CasHash, DecisionId, DecisionKind, DependencyEdgeKind, EvidenceId, PlanningEvidenceKind,
+    WorkItemId, WorkItemStatus,
+};
+
+/// Input for planning work item events.
+#[derive(Debug, Clone)]
+pub struct PlanningWorkItemEventInput {
+    /// Project that owns the cycle.
+    pub project_id: String,
+    /// Cycle this work item belongs to.
+    pub cycle_id: String,
+    /// Work item identifier.
+    pub work_item_id: WorkItemId,
+    /// Work item title.
+    pub title: String,
+    /// Current status.
+    pub status: WorkItemStatus,
+    /// Optional actor reference.
+    pub actor_ref: Option<sddk_domain::ActorRef>,
+    /// Wall-clock time (RFC 3339).
+    pub occurred_at: String,
+    /// Causation chain.
+    pub causation_id: Option<String>,
+    /// Correlation group.
+    pub correlation_id: Option<String>,
+}
+
+/// Input for planning dependency edge events.
+#[derive(Debug, Clone)]
+pub struct PlanningDependencyEventInput {
+    /// Project that owns the cycle.
+    pub project_id: String,
+    /// Cycle this edge belongs to.
+    pub cycle_id: String,
+    /// Source work item (blocker).
+    pub from_id: WorkItemId,
+    /// Target work item (blocked).
+    pub to_id: WorkItemId,
+    /// Kind of dependency.
+    pub kind: DependencyEdgeKind,
+    /// Optional actor reference.
+    pub actor_ref: Option<sddk_domain::ActorRef>,
+    /// Wall-clock time (RFC 3339).
+    pub occurred_at: String,
+    /// Causation chain.
+    pub causation_id: Option<String>,
+    /// Correlation group.
+    pub correlation_id: Option<String>,
+}
+
+/// Emits a `planning.work_item.drafted` event.
+///
+/// Uses Type::Custom (never std_registry), schema_version: 1,
+/// and with_correlation_from_context per ADR-071.
+pub fn emit_planning_work_item_drafted<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-drafted", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.drafted".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.activated` event.
+pub fn emit_planning_work_item_activated<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-activated", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.activated".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.paused` event.
+pub fn emit_planning_work_item_paused<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-paused", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.paused".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.resumed` event.
+pub fn emit_planning_work_item_resumed<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-resumed", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.resumed".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.completed` event.
+pub fn emit_planning_work_item_completed<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-completed", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.completed".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.superseded` event.
+pub fn emit_planning_work_item_superseded<S: EventStore>(
+    store: &mut S,
+    input: &PlanningWorkItemEventInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-superseded", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.superseded".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: input
+            .actor_ref
+            .clone()
+            .unwrap_or_else(|| sddk_domain::ActorRef {
+                kind: sddk_domain::ActorKind::System,
+                id: "system".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+        subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

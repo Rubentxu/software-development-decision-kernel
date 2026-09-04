@@ -29,6 +29,7 @@ pub mod models;
 pub mod operator_contract;
 pub mod pack;
 pub mod plan_revision;
+pub mod planning;
 pub mod ports;
 pub mod projections;
 pub mod proposal;
@@ -80,9 +81,16 @@ pub use plan_revision::{
     Edge, NormalizedPlan, NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionError,
     PlanRevisionLineageV1, PlanRevisionV1,
 };
+pub use planning::{
+    CasHash, DECISION_RECORD_SCHEMA_VERSION, DEPENDENCY_EDGE_SCHEMA_VERSION, DecisionError,
+    DecisionId, DecisionKind, DecisionRecordV1, DependencyEdgeKind, DependencyEdgeV1,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentV1, EvidenceId,
+    PLANNING_PROVENANCE_SCHEMA_VERSION, PlanningEvidenceKind, PlanningProvenanceChainV1,
+    ProvenanceError, WORK_ITEM_SCHEMA_VERSION, WorkItemId, WorkItemStatus, WorkItemV1,
+};
 pub use ports::{
-    ArtifactStore, ControlPlane, EventAppended, EventStore, GraphStore, Ledger, LedgerFactory,
-    NoopTaskExecutor, TaskError, TaskExecutor, TaskOutput,
+    ArtifactStore, CasError, CasPort, ControlPlane, EventAppended, EventStore, GraphStore, Ledger,
+    LedgerFactory, NoopTaskExecutor, TaskError, TaskExecutor, TaskOutput,
 };
 pub use projections::{
     Checkpoint, CycleState, CycleStateProjection, JournalEntry, JournalProjection, Projection,

@@ -13,9 +13,13 @@ pub use correlation::{
 };
 pub use emit::{
     ApprovalDecisionInput, ApprovalRequestedInput, OutcomeEventInput, PhaseEventInput,
-    WorkflowNodeEventInput, WorkflowRunEventInput, emit_approval_decision, emit_approval_requested,
-    emit_outcome_event, emit_phase_event, emit_workflow_node_completed, emit_workflow_node_failed,
-    emit_workflow_node_running, emit_workflow_run_completed, emit_workflow_run_started,
+    PlanningDependencyEventInput, PlanningWorkItemEventInput, WorkflowNodeEventInput,
+    WorkflowRunEventInput, emit_approval_decision, emit_approval_requested, emit_outcome_event,
+    emit_phase_event, emit_planning_work_item_activated, emit_planning_work_item_completed,
+    emit_planning_work_item_drafted, emit_planning_work_item_paused,
+    emit_planning_work_item_resumed, emit_planning_work_item_superseded,
+    emit_workflow_node_completed, emit_workflow_node_failed, emit_workflow_node_running,
+    emit_workflow_run_completed, emit_workflow_run_started,
 };
 pub use envelopes::{build_event_envelope, build_outcome_envelope};
 pub use storage_path::project_storage_dir;

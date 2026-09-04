@@ -3,7 +3,7 @@
 //! This module declares:
 //! - AuthorityContext: the canonical caller-supplied authority record
 //! - infer_actor_kind: the locked v1.81.x prefix heuristic helper
-//! - WritableSurface: the 8-surface enum matching ADR-069 §3
+//! - WritableSurface: the 12-surface enum (8 from ADR-069 §3 + 4 planning surfaces)
 //! - WRITABLE_SURFACE_MATRIX: const table mapping surface → admitted ActorKind
 //! - validate: AuthorityContext::validate(surface) returns Result<(), EngineError>
 //!
@@ -12,7 +12,7 @@
 use crate::EngineError;
 use sddk_domain::ActorKind;
 
-/// The 8 writable surfaces from ADR-069 §3.
+/// The 12 writable surfaces (8 from ADR-069 §3 + 4 planning surfaces from ADR-072).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WritableSurface {
     CycleState,
@@ -23,6 +23,15 @@ pub enum WritableSurface {
     FrameworkBundle,
     GithubReleases,
     KnowledgeGraphVault,
+    // Planning surfaces (ADR-072)
+    /// A planning work item.
+    PlanItem,
+    /// A dependency edge between planning work items.
+    DependencyEdge,
+    /// An evidence attachment on a planning work item.
+    EvidenceAttachment,
+    /// A decision record on a planning work item.
+    DecisionRecord,
 }
 
 impl WritableSurface {
@@ -37,6 +46,10 @@ impl WritableSurface {
             WritableSurface::FrameworkBundle => "framework_bundle",
             WritableSurface::GithubReleases => "github_releases",
             WritableSurface::KnowledgeGraphVault => "knowledge_graph_vault",
+            WritableSurface::PlanItem => "plan_item",
+            WritableSurface::DependencyEdge => "dependency_edge",
+            WritableSurface::EvidenceAttachment => "evidence_attachment",
+            WritableSurface::DecisionRecord => "decision_record",
         }
     }
 }
@@ -134,7 +147,7 @@ pub fn infer_actor_kind(actor_id: &str) -> ActorKind {
     }
 }
 
-/// The 8-surface matrix from ADR-069 §3.
+/// The 12-surface matrix (ADR-069 §3 + ADR-072 planning surfaces).
 ///
 /// Each row maps a `WritableSurface` to the set of `ActorKind` values
 /// that are admitted to write to that surface.
@@ -159,6 +172,17 @@ pub const WRITABLE_SURFACE_MATRIX: &[(WritableSurface, &[ActorKind])] = &[
     (WritableSurface::FrameworkBundle, &[ActorKind::System]),
     (WritableSurface::GithubReleases, &[ActorKind::System]),
     (WritableSurface::KnowledgeGraphVault, &[ActorKind::Human]),
+    // Planning surfaces (ADR-072)
+    (
+        WritableSurface::PlanItem,
+        &[ActorKind::Human, ActorKind::Agent],
+    ),
+    (WritableSurface::DependencyEdge, &[ActorKind::System]),
+    (
+        WritableSurface::EvidenceAttachment,
+        &[ActorKind::Human, ActorKind::Agent],
+    ),
+    (WritableSurface::DecisionRecord, &[ActorKind::Human]),
 ];
 
 #[cfg(test)]
@@ -200,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_covers_eight_surfaces() {
-        assert_eq!(WRITABLE_SURFACE_MATRIX.len(), 8);
+    fn matrix_covers_twelve_surfaces() {
+        assert_eq!(WRITABLE_SURFACE_MATRIX.len(), 12);
     }
 }

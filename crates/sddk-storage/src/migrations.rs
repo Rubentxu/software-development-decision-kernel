@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 13;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 14;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -197,6 +197,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
         tx.execute_batch(MIGRATION_13)
             .map_err(super::StorageError::Database)?;
         tx.pragma_update(None, "user_version", 13)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
+    if version < 14 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_14)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 14)
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
@@ -649,4 +659,38 @@ CREATE TRIGGER IF NOT EXISTS node_runs_v1_no_delete
 BEGIN
     SELECT RAISE(ABORT, 'node_runs_v1 is append-only');
 END;
+"#;
+
+pub(crate) const MIGRATION_14: &str = r#"
+-- Planning Ledger: WorkItem and DependencyEdge SQL topology (Shape C hybrid).
+-- Evidence and Decision bodies are stored in CAS; only references live in SQL.
+-- This migration is additive: existing tables and event rows remain untouched.
+
+CREATE TABLE IF NOT EXISTS work_items_v1 (
+    id              TEXT PRIMARY KEY,           -- UUIDv7
+    cycle_id        TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    status          TEXT NOT NULL,             -- WorkItemStatus serialised as snake_case
+    actor_ref_kind  TEXT,                     -- nullable: "Human" | "Agent" | "System"
+    actor_ref_id    TEXT,
+    actor_ref_label TEXT,
+    created_at      INTEGER NOT NULL,          -- Unix timestamp
+    schema_version  INTEGER NOT NULL,
+    FOREIGN KEY (cycle_id) REFERENCES cycles(cycle_id)
+);
+CREATE INDEX IF NOT EXISTS idx_work_items_v1_cycle_id ON work_items_v1(cycle_id);
+
+CREATE TABLE IF NOT EXISTS work_item_dependencies_v1 (
+    from_id         TEXT NOT NULL,
+    to_id           TEXT NOT NULL,
+    kind            TEXT NOT NULL,            -- DependencyEdgeKind: "blocks" | "blocks_on_closure"
+    actor_ref_kind  TEXT,                    -- nullable
+    actor_ref_id    TEXT,
+    actor_ref_label TEXT,
+    schema_version  INTEGER NOT NULL,
+    PRIMARY KEY (from_id, to_id, kind),
+    FOREIGN KEY (from_id) REFERENCES work_items_v1(id),
+    FOREIGN KEY (to_id) REFERENCES work_items_v1(id)
+);
 "#;

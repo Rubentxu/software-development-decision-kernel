@@ -820,6 +820,39 @@ pub trait ArtifactStore {
     ) -> Result<Vec<crate::models::ArtifactRecord>, StorageError>;
 }
 
+// ── CAS port (PLN-LEDGER-001) ─────────────────────────────────────────────────
+
+use crate::planning::CasHash;
+
+/// Error from CAS operations.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CasError {
+    /// Content not found in CAS.
+    #[error("CAS content not found: {0}")]
+    NotFound(String),
+    /// Hash mismatch — content does not match the requested hash.
+    #[error("CAS hash mismatch: expected {expected}, computed {computed}")]
+    HashMismatch { expected: String, computed: String },
+    /// Storage I/O error.
+    #[error("CAS storage error: {0}")]
+    Storage(String),
+}
+
+/// Content-addressed storage port for immutable planning evidence and decision bodies.
+///
+/// The default CAS root is `~/.local/share/sddk/cas/<sha[0:2]>/<sha[2:4]>/<sha>.json`.
+/// Bodies are stored as JSON and addressed by SHA-256 content hash.
+pub trait CasPort: Send + Sync {
+    /// Stores content and returns its CAS hash.
+    fn put(&self, content: &[u8]) -> Result<CasHash, CasError>;
+
+    /// Retrieves content by CAS hash.
+    fn get(&self, hash: &CasHash) -> Result<Vec<u8>, CasError>;
+
+    /// Returns true if the given hash exists in CAS.
+    fn exists(&self, hash: &CasHash) -> Result<bool, CasError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
