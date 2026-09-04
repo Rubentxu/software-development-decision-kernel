@@ -39,6 +39,7 @@ This is severity **high** because it means the system's authority model is not e
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; ADR-069 §6; INC-HX-AUTH-004 |
+| 2026-09-04 | sddk-apply | partial close: path 4 (gate receipt) and path 5 (knowledge ingest) | commit 26950e4 (AC-EVT-LEDGER-08), commit 9862603 (AC-EVT-LEDGER-09) |
 
 ## References
 

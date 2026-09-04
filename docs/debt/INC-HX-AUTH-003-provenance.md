@@ -36,6 +36,7 @@ This is severity **high** because provenance — the ability to trace who perfor
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; ADR-069 §5; INC-HX-AUTH-003 |
+| 2026-09-04 | sddk-apply | resolved: actor_ref widened (additive) in LedgerEvent, GateReceipt, JournalEntry, EventContext | commits 0a18982, c63167d (EVT-LEDGER-001 cycle) |
 
 ## References
 
