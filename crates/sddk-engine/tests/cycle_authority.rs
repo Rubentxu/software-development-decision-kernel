@@ -122,7 +122,7 @@ fn advance(
                     evaluated_at: TIMESTAMP.into(),
                     actor: "test-runtime".into(),
                     command_id: format!("gate-{gate}"),
-                })
+                }, &sys_auth())
                 .unwrap()
                 .receipt_id,
         },
@@ -187,6 +187,10 @@ fn context(event_id: &str, command_id: &str) -> EventContext {
 
 fn auth() -> AuthorityContext {
     AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
+}
+
+fn sys_auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::System, "test-system")
 }
 
 // durability-required: setup() opens Storage at path, registers data, reopens Storage::open(&path)
@@ -436,7 +440,7 @@ fn gate_receipt_requires_registered_evaluator_and_matches_plan_state() {
         evaluated_at: TIMESTAMP.into(),
         actor: "test-runtime".into(),
         command_id: "gate-1".into(),
-    });
+    }, &sys_auth());
     assert!(matches!(
         unregistered,
         Err(sddk_engine::EngineError::UnregisteredEvaluator { gate, evaluator })
@@ -464,7 +468,7 @@ fn gate_receipt_requires_registered_evaluator_and_matches_plan_state() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-3".into(),
-        })
+        }, &sys_auth())
         .unwrap();
     let mut apply_evidence = TransitionEvidence::default();
     apply_evidence.artifacts.insert(
@@ -515,7 +519,7 @@ fn transition_rejects_mismatched_or_foreign_gate_receipts() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-1".into(),
-        })
+        }, &sys_auth())
         .unwrap();
     let mut evidence = TransitionEvidence::default();
     evidence.artifacts.insert(
@@ -567,7 +571,7 @@ fn apply_transition_releases_lease_on_phase_change() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-requirements-testable-1".into(),
-        })
+        }, &sys_auth())
         .unwrap();
 
     let mut evidence = TransitionEvidence::default();
@@ -704,7 +708,7 @@ fn engine_evaluate_gate_increments_seq_on_reevaluation() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-1".into(),
-        })
+        }, &sys_auth())
         .unwrap();
     assert_eq!(first.seq, 1);
     assert!(
@@ -735,7 +739,7 @@ fn engine_evaluate_gate_increments_seq_on_reevaluation() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-2".into(),
-        })
+        }, &sys_auth())
         .unwrap();
     assert_eq!(second.seq, 2);
     assert!(
@@ -784,7 +788,7 @@ fn engine_evaluate_gate_fresh_state_before_starts_seq_at_one() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-1".into(),
-        })
+        }, &sys_auth())
         .unwrap();
 
     // Advance the cycle — state_before changes → new plan_hash
@@ -806,7 +810,7 @@ fn engine_evaluate_gate_fresh_state_before_starts_seq_at_one() {
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: "gate-2".into(),
-        })
+        }, &sys_auth())
         .unwrap();
     assert_eq!(r2.seq, 1);
     assert!(
@@ -832,7 +836,7 @@ fn waive_gate(
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: format!("gate-{gate}"),
-        })
+        }, &sys_auth())
         .unwrap()
         .receipt_id
 }

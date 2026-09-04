@@ -276,7 +276,7 @@ fn failed_verification_uses_declared_remediation_target() {
                     evaluated_at: TIMESTAMP.into(),
                     actor: "test-runtime".into(),
                     command_id: "gate-tests-pass".into(),
-                })
+                }, &sys_auth())
                 .unwrap()
                 .receipt_id,
         },
@@ -559,6 +559,10 @@ fn auth() -> AuthorityContext {
     AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
 }
 
+fn sys_auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::System, "test-system")
+}
+
 fn pass_gate(
     engine: &mut Engine<Storage>,
     cycle_id: &str,
@@ -580,7 +584,7 @@ fn pass_gate(
             evaluated_at: TIMESTAMP.into(),
             actor: "test-runtime".into(),
             command_id: format!("gate-{gate}"),
-        })
+        }, &sys_auth())
         .unwrap()
         .receipt_id
 }

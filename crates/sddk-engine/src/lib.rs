@@ -953,10 +953,15 @@ impl<L: Ledger> Engine<L> {
     /// The evaluator must be registered for the gate, the gate must be declared
     /// by the transition, and the receipt is bound to the deterministic plan
     /// hash of the current cycle state.
+    ///
+    /// AC-EVT-LEDGER-08: validates `auth` against `WritableSurface::GateReceipts`
+    /// (System only) before any storage mutation.
     pub fn evaluate_gate(
         &mut self,
         input: &GateEvaluationInput,
+        auth: &crate::authority::AuthorityContext,
     ) -> Result<GateReceipt, EngineError> {
+        auth.validate(crate::authority::WritableSurface::GateReceipts)?;
         if !self
             .evaluators
             .get(&input.gate)

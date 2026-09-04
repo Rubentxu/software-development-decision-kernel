@@ -2304,6 +2304,9 @@ fn run_cycle_evaluate_gate(
             .or_else(|| environment.sddk_actor.clone())
             .or_else(|| environment.user.clone())
             .unwrap_or_else(|| "sddk-cli".into());
+        // AC-EVT-LEDGER-08: gate receipt creation requires System authority
+        let actor_kind = infer_actor_kind(&actor);
+        let auth = AuthorityContext::for_cli(actor.clone(), actor_kind, None, None);
         // Fail-closed: when --outcome is omitted we record `Failed`, so a
         // caller that wants to advance the workflow MUST pass
         // `--outcome passed` explicitly.
@@ -2318,7 +2321,7 @@ fn run_cycle_evaluate_gate(
             evaluated_at: timestamp,
             actor,
             command_id: format!("gate-{}", uuid::Uuid::new_v4().hyphenated()),
-        })?;
+        }, &auth)?;
         // Sign the receipt with the local key (fail-closed: no key → no
         // signature; release verify will reject unsigned receipts).
         let signature = {
