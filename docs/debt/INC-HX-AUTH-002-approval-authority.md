@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-002
 title: "forced-Human default in emit_approval_decision masks caller identity"
-status: open
+status: resolved
 severity: critical
 priority: P0
 fingerprint: "hx-auth-002-approval-forced-human"

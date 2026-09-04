@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-001
 title: "writable-state surfaces lack explicit authority declaration"
-status: open
+status: resolved
 severity: high
 priority: P1
 fingerprint: "hx-auth-001-writable-state-8surface"

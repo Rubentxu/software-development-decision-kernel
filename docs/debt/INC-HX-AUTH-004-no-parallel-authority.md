@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-004
 title: "no-parallel-authority invariant not enforced at runtime"
-status: open
+status: resolved
 severity: high
 priority: P1
 fingerprint: "hx-auth-004-no-parallel-authority-7gap"
