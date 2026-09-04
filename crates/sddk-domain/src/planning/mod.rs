@@ -585,6 +585,282 @@ pub fn compute_planning_graph_identity(
     format!("{:x}", digest)
 }
 
+// ── Storage Records ─────────────────────────────────────────────────────────────
+
+/// SQL row representation for WorkItem persistence.
+///
+/// Decomposes ActorRef into its component fields for SQL storage.
+#[derive(Debug, Clone)]
+pub struct WorkItemRecord {
+    pub id: WorkItemId,
+    pub cycle_id: CycleId,
+    pub title: String,
+    pub description: String,
+    pub status: WorkItemStatus,
+    pub actor_ref_kind: Option<String>,
+    pub actor_ref_id: Option<String>,
+    pub actor_ref_label: Option<String>,
+    pub created_at: i64,
+    pub schema_version: u32,
+}
+
+impl WorkItemRecord {
+    /// Converts this record into a domain WorkItemV1.
+    pub fn into_domain(self) -> WorkItemV1 {
+        let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
+            (Some(kind), Some(id), label) => Some(ActorRef {
+                kind: match kind.as_str() {
+                    "Human" => ActorKind::Human,
+                    "Agent" => ActorKind::Agent,
+                    _ => ActorKind::System,
+                },
+                id,
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+            _ => None,
+        };
+        WorkItemV1 {
+            id: self.id,
+            cycle_id: self.cycle_id,
+            title: self.title,
+            description: self.description,
+            status: self.status,
+            actor_ref,
+            created_at: self.created_at,
+            schema_version: self.schema_version,
+        }
+    }
+
+    /// Creates a record from a domain WorkItemV1.
+    pub fn from_domain(wi: &WorkItemV1) -> Self {
+        let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &wi.actor_ref {
+            Some(ar) => (
+                Some(match ar.kind {
+                    ActorKind::Human => "Human",
+                    ActorKind::Agent => "Agent",
+                    ActorKind::System => "System",
+                }.to_string()),
+                Some(ar.id.clone()),
+                Some(ar.id.clone()), // label defaults to id in our usage
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: wi.id.clone(),
+            cycle_id: wi.cycle_id.clone(),
+            title: wi.title.clone(),
+            description: wi.description.clone(),
+            status: wi.status,
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            created_at: wi.created_at,
+            schema_version: wi.schema_version,
+        }
+    }
+}
+
+/// SQL row representation for DependencyEdge persistence.
+#[derive(Debug, Clone)]
+pub struct DependencyEdgeRecord {
+    pub from_id: WorkItemId,
+    pub to_id: WorkItemId,
+    pub kind: DependencyEdgeKind,
+    pub actor_ref_kind: Option<String>,
+    pub actor_ref_id: Option<String>,
+    pub actor_ref_label: Option<String>,
+    pub schema_version: u32,
+}
+
+impl DependencyEdgeRecord {
+    /// Converts this record into a domain DependencyEdgeV1.
+    pub fn into_domain(self) -> DependencyEdgeV1 {
+        let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
+            (Some(kind), Some(id), label) => Some(ActorRef {
+                kind: match kind.as_str() {
+                    "Human" => ActorKind::Human,
+                    "Agent" => ActorKind::Agent,
+                    _ => ActorKind::System,
+                },
+                id,
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+            _ => None,
+        };
+        DependencyEdgeV1 {
+            from_id: self.from_id,
+            to_id: self.to_id,
+            kind: self.kind,
+            actor_ref,
+            schema_version: self.schema_version,
+        }
+    }
+
+    /// Creates a record from a domain DependencyEdgeV1.
+    pub fn from_domain(edge: &DependencyEdgeV1) -> Self {
+        let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &edge.actor_ref {
+            Some(ar) => (
+                Some(match ar.kind {
+                    ActorKind::Human => "Human",
+                    ActorKind::Agent => "Agent",
+                    ActorKind::System => "System",
+                }.to_string()),
+                Some(ar.id.clone()),
+                Some(ar.id.clone()),
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            from_id: edge.from_id.clone(),
+            to_id: edge.to_id.clone(),
+            kind: edge.kind,
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            schema_version: edge.schema_version,
+        }
+    }
+}
+
+/// SQL row representation for EvidenceAttachment persistence.
+#[derive(Debug, Clone)]
+pub struct EvidenceAttachmentRecord {
+    pub id: EvidenceId,
+    pub work_item_id: WorkItemId,
+    pub kind: PlanningEvidenceKind,
+    pub body_ref: CasHash,
+    pub actor_ref_kind: Option<String>,
+    pub actor_ref_id: Option<String>,
+    pub actor_ref_label: Option<String>,
+    pub schema_version: u32,
+}
+
+impl EvidenceAttachmentRecord {
+    /// Converts this record into a domain EvidenceAttachmentV1.
+    pub fn into_domain(self) -> EvidenceAttachmentV1 {
+        let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
+            (Some(kind), Some(id), label) => Some(ActorRef {
+                kind: match kind.as_str() {
+                    "Human" => ActorKind::Human,
+                    "Agent" => ActorKind::Agent,
+                    _ => ActorKind::System,
+                },
+                id,
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+            _ => None,
+        };
+        EvidenceAttachmentV1 {
+            id: self.id,
+            work_item_id: self.work_item_id,
+            kind: self.kind,
+            body_ref: self.body_ref,
+            actor_ref,
+            schema_version: self.schema_version,
+        }
+    }
+
+    /// Creates a record from a domain EvidenceAttachmentV1.
+    pub fn from_domain(ea: &EvidenceAttachmentV1) -> Self {
+        let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &ea.actor_ref {
+            Some(ar) => (
+                Some(match ar.kind {
+                    ActorKind::Human => "Human",
+                    ActorKind::Agent => "Agent",
+                    ActorKind::System => "System",
+                }.to_string()),
+                Some(ar.id.clone()),
+                Some(ar.id.clone()),
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: ea.id.clone(),
+            work_item_id: ea.work_item_id.clone(),
+            kind: ea.kind,
+            body_ref: ea.body_ref.clone(),
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            schema_version: ea.schema_version,
+        }
+    }
+}
+
+/// SQL row representation for DecisionRecord persistence.
+#[derive(Debug, Clone)]
+pub struct DecisionRecordRecord {
+    pub id: DecisionId,
+    pub work_item_id: WorkItemId,
+    pub kind: DecisionKind,
+    pub rationale: String,
+    pub actor_ref_kind: Option<String>,
+    pub actor_ref_id: Option<String>,
+    pub actor_ref_label: Option<String>,
+    pub schema_version: u32,
+}
+
+impl DecisionRecordRecord {
+    /// Converts this record into a domain DecisionRecordV1.
+    pub fn into_domain(self) -> DecisionRecordV1 {
+        let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
+            (Some(kind), Some(id), label) => Some(ActorRef {
+                kind: match kind.as_str() {
+                    "Human" => ActorKind::Human,
+                    "Agent" => ActorKind::Agent,
+                    _ => ActorKind::System,
+                },
+                id,
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
+            _ => None,
+        };
+        // This should not fail since we're converting from a valid record
+        DecisionRecordV1 {
+            id: self.id,
+            work_item_id: self.work_item_id,
+            kind: self.kind,
+            rationale: self.rationale,
+            actor_ref,
+            schema_version: self.schema_version,
+        }
+    }
+
+    /// Creates a record from a domain DecisionRecordV1.
+    pub fn from_domain(dr: &DecisionRecordV1) -> Self {
+        let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &dr.actor_ref {
+            Some(ar) => (
+                Some(match ar.kind {
+                    ActorKind::Human => "Human",
+                    ActorKind::Agent => "Agent",
+                    ActorKind::System => "System",
+                }.to_string()),
+                Some(ar.id.clone()),
+                Some(ar.id.clone()),
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: dr.id.clone(),
+            work_item_id: dr.work_item_id.clone(),
+            kind: dr.kind,
+            rationale: dr.rationale.clone(),
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            schema_version: dr.schema_version,
+        }
+    }
+}
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub mod service;
