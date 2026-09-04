@@ -182,11 +182,15 @@ pub enum StorageError {
         /// The project the workspace has adopted.
         expected_project_id: String,
     },
+    /// An evidence attachment body is empty.
+    #[error("evidence attachment body must be non-empty")]
+    EmptyEvidenceBody,
 }
 
 /// SQLite-backed SDDK persistence.
 pub struct Storage {
     connection: Connection,
+    cas_root: std::path::PathBuf,
 }
 
 /// Report from [`Storage::verify_cross_ledger_consistency`] (AC-EVT-LEDGER-06).
@@ -223,21 +227,30 @@ impl Storage {
         {
             std::fs::create_dir_all(parent)?;
         }
-        Self::from_connection(Connection::open(path)?, true)
+        let cas_root = crate::cas::FilesystemCas::default_root();
+        Self::from_connection(Connection::open(path)?, true, cas_root)
     }
 
     /// Opens an existing database without creating files or applying migrations.
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
         let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        Self::from_connection(connection, false)
+        let cas_root = crate::cas::FilesystemCas::default_root();
+        Self::from_connection(connection, false, cas_root)
     }
 
     /// Opens an isolated in-memory database and applies all migrations.
     pub fn open_in_memory() -> Result<Self> {
-        Self::from_connection(Connection::open_in_memory()?, true)
+        // Use a temporary directory for CAS in in-memory mode
+        let cas_root = std::env::temp_dir().join("sddk_cas_inmemory");
+        std::fs::create_dir_all(&cas_root).ok();
+        Self::from_connection(Connection::open_in_memory()?, true, cas_root)
     }
 
-    fn from_connection(mut connection: Connection, writable: bool) -> Result<Self> {
+    fn from_connection(
+        mut connection: Connection,
+        writable: bool,
+        cas_root: std::path::PathBuf,
+    ) -> Result<Self> {
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "foreign_keys", true)?;
         if writable {
@@ -253,7 +266,7 @@ impl Storage {
                 });
             }
         }
-        Ok(Self { connection })
+        Ok(Self { connection, cas_root })
     }
 
     /// Returns the currently applied storage schema version.
@@ -1798,6 +1811,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::PlanHashTooShort { .. } => "STORAGE_PLAN_HASH_TOO_SHORT",
             Self::GateNameInvalid { .. } => "STORAGE_GATE_NAME_INVALID",
             Self::CycleProjectMismatch { .. } => "STORAGE_CYCLE_PROJECT_MISMATCH",
+            Self::EmptyEvidenceBody => "STORAGE_EMPTY_EVIDENCE_BODY",
         }
     }
 
@@ -1848,6 +1862,9 @@ impl sddk_domain::SddkErrorCode for StorageError {
                     "cycle belongs to project {cp}; this workspace adopts project {ep}; \
                      pass a --cycle whose project prefix matches {ep}, or run 'sddk adopt status' to inspect identity"
                 )
+            }
+            Self::EmptyEvidenceBody => {
+                "supply a non-empty evidence body".into()
             }
         }
     }
@@ -2113,6 +2130,523 @@ impl ArtifactStore for Storage {
         project_id: &str,
     ) -> std::result::Result<Vec<sddk_domain::ArtifactRecord>, sddk_domain::StorageError> {
         Storage::list_project_artifacts(self, project_id).map_err(sddk_domain::StorageError::from)
+    }
+}
+
+// ── Planning CRUD ──────────────────────────────────────────────────────────
+
+impl Storage {
+    // ── Planning WorkItem CRUD ─────────────────────────────────────────────
+
+    /// Inserts a new WorkItem.
+    ///
+    /// Fails with `IdempotencyConflict` if the id already exists.
+    pub fn insert_work_item(&self, item: &sddk_domain::WorkItemRecord) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO work_items_v1 (
+                id, cycle_id, title, description, status,
+                actor_ref_kind, actor_ref_id, actor_ref_label,
+                created_at, schema_version
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                item.id,
+                item.cycle_id,
+                item.title,
+                item.description,
+                serde_json::to_string(&item.status).unwrap(),
+                item.actor_ref_kind,
+                item.actor_ref_id,
+                item.actor_ref_label,
+                item.created_at,
+                item.schema_version,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Loads a WorkItem by id.
+    pub fn get_work_item(&self, id: &str) -> Result<Option<sddk_domain::WorkItemRecord>> {
+        let result = self.connection.query_row(
+            "SELECT id, cycle_id, title, description, status,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    created_at, schema_version
+             FROM work_items_v1 WHERE id = ?1",
+            [id],
+            |row| {
+                let status_str: String = row.get(4)?;
+                let status = serde_json::from_str(&status_str).unwrap();
+                Ok(sddk_domain::WorkItemRecord {
+                    id: row.get(0)?,
+                    cycle_id: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    status,
+                    actor_ref_kind: row.get(5)?,
+                    actor_ref_id: row.get(6)?,
+                    actor_ref_label: row.get(7)?,
+                    created_at: row.get(8)?,
+                    schema_version: row.get(9)?,
+                })
+            },
+        );
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Lists all WorkItems for a cycle.
+    pub fn list_work_items_by_cycle(
+        &self,
+        cycle_id: &str,
+    ) -> Result<Vec<sddk_domain::WorkItemRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT id, cycle_id, title, description, status,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    created_at, schema_version
+             FROM work_items_v1 WHERE cycle_id = ?1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([cycle_id], |row| {
+            let status_str: String = row.get(4)?;
+            let status = serde_json::from_str(&status_str).unwrap();
+            Ok(sddk_domain::WorkItemRecord {
+                id: row.get(0)?,
+                cycle_id: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                status,
+                actor_ref_kind: row.get(5)?,
+                actor_ref_id: row.get(6)?,
+                actor_ref_label: row.get(7)?,
+                created_at: row.get(8)?,
+                schema_version: row.get(9)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Lists WorkItems for a cycle filtered by status.
+    pub fn list_work_items_by_status(
+        &self,
+        cycle_id: &str,
+        status: &sddk_domain::WorkItemStatus,
+    ) -> Result<Vec<sddk_domain::WorkItemRecord>> {
+        let status_str = serde_json::to_string(status).unwrap();
+        let mut stmt = self.connection.prepare(
+            "SELECT id, cycle_id, title, description, status,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    created_at, schema_version
+             FROM work_items_v1 WHERE cycle_id = ?1 AND status = ?2 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![cycle_id, status_str], |row| {
+            let status_str: String = row.get(4)?;
+            let status = serde_json::from_str(&status_str).unwrap();
+            Ok(sddk_domain::WorkItemRecord {
+                id: row.get(0)?,
+                cycle_id: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                status,
+                actor_ref_kind: row.get(5)?,
+                actor_ref_id: row.get(6)?,
+                actor_ref_label: row.get(7)?,
+                created_at: row.get(8)?,
+                schema_version: row.get(9)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Updates a WorkItem's status atomically.
+    pub fn update_work_item_status(
+        &mut self,
+        id: &str,
+        new_status: sddk_domain::WorkItemStatus,
+        _actor_ref: Option<sddk_domain::ActorRef>,
+    ) -> Result<()> {
+        let status_str = serde_json::to_string(&new_status).unwrap();
+        let rows = self.connection.execute(
+            "UPDATE work_items_v1 SET status = ?1 WHERE id = ?2",
+            params![status_str, id],
+        )?;
+        if rows == 0 {
+            return Err(StorageError::NotFound {
+                entity: "work_item",
+                id: id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    // ── Planning DependencyEdge CRUD ───────────────────────────────────────
+
+    /// Inserts a DependencyEdge with idempotent composite PK.
+    ///
+    /// Uses `INSERT OR IGNORE` so duplicate (from_id, to_id, kind) is a no-op.
+    pub fn insert_dependency_edge(&self, edge: &sddk_domain::DependencyEdgeRecord) -> Result<()> {
+        self.connection.execute(
+            "INSERT OR IGNORE INTO work_item_dependencies_v1 (
+                from_id, to_id, kind,
+                actor_ref_kind, actor_ref_id, actor_ref_label,
+                schema_version
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                edge.from_id,
+                edge.to_id,
+                serde_json::to_string(&edge.kind).unwrap(),
+                edge.actor_ref_kind,
+                edge.actor_ref_id,
+                edge.actor_ref_label,
+                edge.schema_version,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Lists outgoing edges from a WorkItem.
+    pub fn get_dependency_edges_from(
+        &self,
+        from_id: &str,
+    ) -> Result<Vec<sddk_domain::DependencyEdgeRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT from_id, to_id, kind,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM work_item_dependencies_v1 WHERE from_id = ?1 ORDER BY to_id ASC",
+        )?;
+        let rows = stmt.query_map([from_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_str).unwrap();
+            Ok(sddk_domain::DependencyEdgeRecord {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                kind,
+                actor_ref_kind: row.get(3)?,
+                actor_ref_id: row.get(4)?,
+                actor_ref_label: row.get(5)?,
+                schema_version: row.get(6)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Lists incoming edges to a WorkItem.
+    pub fn get_dependency_edges_to(
+        &self,
+        to_id: &str,
+    ) -> Result<Vec<sddk_domain::DependencyEdgeRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT from_id, to_id, kind,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM work_item_dependencies_v1 WHERE to_id = ?1 ORDER BY from_id ASC",
+        )?;
+        let rows = stmt.query_map([to_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_str).unwrap();
+            Ok(sddk_domain::DependencyEdgeRecord {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                kind,
+                actor_ref_kind: row.get(3)?,
+                actor_ref_id: row.get(4)?,
+                actor_ref_label: row.get(5)?,
+                schema_version: row.get(6)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Lists all DependencyEdges for a cycle.
+    pub fn list_dependency_edges_by_cycle(
+        &self,
+        cycle_id: &str,
+    ) -> Result<Vec<sddk_domain::DependencyEdgeRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT d.from_id, d.to_id, d.kind,
+                    d.actor_ref_kind, d.actor_ref_id, d.actor_ref_label,
+                    d.schema_version
+             FROM work_item_dependencies_v1 d
+             JOIN work_items_v1 w ON d.from_id = w.id
+             WHERE w.cycle_id = ?1
+             ORDER BY d.from_id ASC, d.to_id ASC",
+        )?;
+        let rows = stmt.query_map([cycle_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_str).unwrap();
+            Ok(sddk_domain::DependencyEdgeRecord {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                kind,
+                actor_ref_kind: row.get(3)?,
+                actor_ref_id: row.get(4)?,
+                actor_ref_label: row.get(5)?,
+                schema_version: row.get(6)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    // ── Planning EvidenceAttachment CRUD ─────────────────────────────────
+
+    /// Inserts an EvidenceAttachment: writes body to CAS, stores metadata in SQL.
+    ///
+    /// Fails with `StorageError::EmptyEvidenceBody` if body is empty.
+    pub fn insert_evidence_attachment(
+        &mut self,
+        attachment: &sddk_domain::EvidenceAttachmentRecord,
+        body: &[u8],
+    ) -> Result<()> {
+        if body.is_empty() {
+            return Err(StorageError::EmptyEvidenceBody);
+        }
+        // Write to CAS
+        let cas_hash = self.cas_put(body)?;
+        // Store metadata with the CAS hash
+        self.connection.execute(
+            "INSERT INTO evidence_attachments_v1 (
+                id, work_item_id, kind, body_ref,
+                actor_ref_kind, actor_ref_id, actor_ref_label,
+                schema_version
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                attachment.id,
+                attachment.work_item_id,
+                serde_json::to_string(&attachment.kind).unwrap(),
+                cas_hash,
+                attachment.actor_ref_kind,
+                attachment.actor_ref_id,
+                attachment.actor_ref_label,
+                attachment.schema_version,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Loads an EvidenceAttachment and its body from CAS.
+    pub fn get_evidence_attachment(
+        &self,
+        id: &str,
+    ) -> Result<Option<(sddk_domain::EvidenceAttachmentRecord, Vec<u8>)>> {
+        let result = self.connection.query_row(
+            "SELECT id, work_item_id, kind, body_ref,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM evidence_attachments_v1 WHERE id = ?1",
+            [id],
+            |row| {
+                let kind_str: String = row.get(2)?;
+                let kind = serde_json::from_str(&kind_str).unwrap();
+                Ok((
+                    sddk_domain::EvidenceAttachmentRecord {
+                        id: row.get(0)?,
+                        work_item_id: row.get(1)?,
+                        kind,
+                        body_ref: row.get(3)?,
+                        actor_ref_kind: row.get(4)?,
+                        actor_ref_id: row.get(5)?,
+                        actor_ref_label: row.get(6)?,
+                        schema_version: row.get(7)?,
+                    },
+                    row.get::<_, String>(3)?, // body_ref for CAS lookup
+                ))
+            },
+        );
+        match result {
+            Ok((rec, body_ref)) => {
+                // Load body from CAS
+                let body = self.cas_get(&body_ref)?;
+                Ok(Some((rec, body)))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Lists evidence attachments for a WorkItem.
+    pub fn list_evidence_attachments_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<sddk_domain::EvidenceAttachmentRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT id, work_item_id, kind, body_ref,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM evidence_attachments_v1 WHERE work_item_id = ?1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([work_item_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_str).unwrap();
+            Ok(sddk_domain::EvidenceAttachmentRecord {
+                id: row.get(0)?,
+                work_item_id: row.get(1)?,
+                kind,
+                body_ref: row.get(3)?,
+                actor_ref_kind: row.get(4)?,
+                actor_ref_id: row.get(5)?,
+                actor_ref_label: row.get(6)?,
+                schema_version: row.get(7)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    // ── Planning DecisionRecord CRUD ──────────────────────────────────────
+
+    /// Inserts a DecisionRecord.
+    ///
+    /// The domain layer should have already validated that rationale is non-empty.
+    pub fn insert_decision_record(
+        &self,
+        record: &sddk_domain::DecisionRecordRecord,
+    ) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO decision_records_v1 (
+                id, work_item_id, kind, rationale,
+                actor_ref_kind, actor_ref_id, actor_ref_label,
+                schema_version
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                record.id,
+                record.work_item_id,
+                serde_json::to_string(&record.kind).unwrap(),
+                record.rationale,
+                record.actor_ref_kind,
+                record.actor_ref_id,
+                record.actor_ref_label,
+                record.schema_version,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Loads a DecisionRecord by id.
+    pub fn get_decision_record(
+        &self,
+        id: &str,
+    ) -> Result<Option<sddk_domain::DecisionRecordRecord>> {
+        let result = self.connection.query_row(
+            "SELECT id, work_item_id, kind, rationale,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM decision_records_v1 WHERE id = ?1",
+            [id],
+            |row| {
+                let kind_str: String = row.get(2)?;
+                let kind = serde_json::from_str(&kind_str).unwrap();
+                Ok(sddk_domain::DecisionRecordRecord {
+                    id: row.get(0)?,
+                    work_item_id: row.get(1)?,
+                    kind,
+                    rationale: row.get(3)?,
+                    actor_ref_kind: row.get(4)?,
+                    actor_ref_id: row.get(5)?,
+                    actor_ref_label: row.get(6)?,
+                    schema_version: row.get(7)?,
+                })
+            },
+        );
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Lists decision records for a WorkItem.
+    pub fn list_decision_records_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<sddk_domain::DecisionRecordRecord>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT id, work_item_id, kind, rationale,
+                    actor_ref_kind, actor_ref_id, actor_ref_label,
+                    schema_version
+             FROM decision_records_v1 WHERE work_item_id = ?1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([work_item_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_str).unwrap();
+            Ok(sddk_domain::DecisionRecordRecord {
+                id: row.get(0)?,
+                work_item_id: row.get(1)?,
+                kind,
+                rationale: row.get(3)?,
+                actor_ref_kind: row.get(4)?,
+                actor_ref_id: row.get(5)?,
+                actor_ref_label: row.get(6)?,
+                schema_version: row.get(7)?,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    // ── Planning Provenance Chain ─────────────────────────────────────────
+
+    /// Builds a provenance chain for a cycle from current storage state.
+    ///
+    /// Aggregates all WorkItems, edges, evidence, and decisions for the cycle.
+    pub fn build_provenance_chain(
+        &self,
+        cycle_id: &str,
+    ) -> Result<sddk_domain::PlanningProvenanceChainV1> {
+        let work_items = self.list_work_items_by_cycle(cycle_id)?;
+        let work_item_ids: Vec<_> = work_items.iter().map(|w| w.id.clone()).collect();
+
+        let edges = self.list_dependency_edges_by_cycle(cycle_id)?;
+
+        // Collect evidence refs from all work items in cycle
+        let mut all_evidence_refs: Vec<sddk_domain::CasHash> = Vec::new();
+        for wi in &work_item_ids {
+            let evidence = self.list_evidence_attachments_by_work_item(wi)?;
+            all_evidence_refs.extend(evidence.iter().map(|e| e.body_ref.clone()));
+        }
+
+        // Collect decision refs from all work items in cycle
+        let mut all_decision_refs: Vec<_> = Vec::new();
+        for wi in &work_item_ids {
+            let decisions = self.list_decision_records_by_work_item(wi)?;
+            all_decision_refs.extend(decisions.iter().map(|d| d.id.clone()));
+        }
+
+        Ok(sddk_domain::PlanningProvenanceChainV1::new(
+            cycle_id.to_string(),
+            work_item_ids,
+            all_evidence_refs,
+            all_decision_refs,
+        ))
+    }
+
+    // ── CAS helpers ─────────────────────────────────────────────────────
+
+    fn cas_put(&mut self, body: &[u8]) -> Result<sddk_domain::CasHash> {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(body);
+        let hash_hex = format!("{:x}", hash);
+        let cas_hash = format!("sha256:{}", hash_hex);
+
+        // Create directory structure
+        let first = &hash_hex[0..2];
+        let second = &hash_hex[2..4];
+        let path = self
+            .cas_root
+            .join(first)
+            .join(second)
+            .join(&hash_hex);
+        if !path.exists() {
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::write(&path, body)?;
+        }
+        Ok(cas_hash)
+    }
+
+    fn cas_get(&self, cas_hash: &str) -> Result<Vec<u8>> {
+        let hash_hex = cas_hash.trim_start_matches("sha256:");
+        let first = &hash_hex[0..2];
+        let second = &hash_hex[2..4];
+        let path = self.cas_root.join(first).join(second).join(hash_hex);
+        std::fs::read(&path).map_err(StorageError::from)
     }
 }
 

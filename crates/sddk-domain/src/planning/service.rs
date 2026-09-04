@@ -246,11 +246,12 @@ impl DependencyResolutionService {
         }
 
         // Kahn's algorithm: start with nodes that have no incoming edges
-        let mut queue: Vec<&WorkItemId> = in_degree
-            .iter()
-            .filter(|(_, &degree)| degree == 0)
-            .map(|(node, _)| *node)
-            .collect();
+        let mut queue: Vec<&WorkItemId> = Vec::new();
+        for (node, &degree) in &in_degree {
+            if degree == 0 {
+                queue.push(*node);
+            }
+        }
 
         let mut processed_count = 0;
 
@@ -273,11 +274,12 @@ impl DependencyResolutionService {
         // If not all nodes were processed, there's a cycle
         if processed_count != all_nodes.len() {
             // Find nodes involved in cycle (those with in-degree > 0 after Kahn's)
-            let cycle_nodes: Vec<WorkItemId> = in_degree
-                .iter()
-                .filter(|(_, &degree)| degree > 0)
-                .map(|(node, _)| (*node).clone())
-                .collect();
+            let mut cycle_nodes: Vec<WorkItemId> = Vec::new();
+            for (node, &degree) in &in_degree {
+                if degree > 0 {
+                    cycle_nodes.push((*node).clone());
+                }
+            }
 
             return Err(DependencyResolutionError::CycleDetected {
                 work_item_ids: cycle_nodes,
@@ -308,7 +310,7 @@ impl DependencyResolutionService {
         status_lookup: &impl Fn(&WorkItemId) -> Option<WorkItemStatus>,
     ) -> Result<(), DependencyResolutionError> {
         // Filter to only incoming edges for our target
-        let incoming: Vec<&DependencyEdgeV1> = edges.iter().filter(|e| e.to_id == target.id).collect();
+        let incoming: Vec<DependencyEdgeV1> = edges.iter().filter(|e| e.to_id == target.id).cloned().collect();
 
         if next_status.is_terminal() {
             Self::resolve_can_terminalize(target, next_status, &incoming, status_lookup)

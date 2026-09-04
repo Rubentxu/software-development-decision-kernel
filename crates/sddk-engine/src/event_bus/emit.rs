@@ -119,6 +119,86 @@ pub struct ApprovalDecisionInput {
     pub correlation_id: Option<String>,
 }
 
+// ── Planning event input types ─────────────────────────────────────────────────
+
+/// Input for a `planning.work_item.created` event emission.
+#[derive(Debug, Clone)]
+pub struct WorkItemCreatedInput {
+    pub project_id: String,
+    pub cycle_id: String,
+    pub work_item_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub actor_id: String,
+    pub actor_kind: ActorKind,
+    pub occurred_at: String,
+    pub causation_id: Option<String>,
+    pub correlation_id: Option<String>,
+}
+
+/// Input for a `planning.work_item.transitioned` event emission.
+#[derive(Debug, Clone)]
+pub struct WorkItemTransitionedInput {
+    pub project_id: String,
+    pub cycle_id: String,
+    pub work_item_id: String,
+    pub from_status: String,
+    pub to_status: String,
+    pub actor_id: String,
+    pub actor_kind: ActorKind,
+    pub occurred_at: String,
+    pub causation_id: Option<String>,
+    pub correlation_id: Option<String>,
+}
+
+/// Input for a `planning.dependency.added` event emission.
+#[derive(Debug, Clone)]
+pub struct DependencyAddedInput {
+    pub project_id: String,
+    pub cycle_id: String,
+    pub from_work_item_id: String,
+    pub to_work_item_id: String,
+    pub dependency_kind: String,
+    pub actor_id: String,
+    pub actor_kind: ActorKind,
+    pub occurred_at: String,
+    pub causation_id: Option<String>,
+    pub correlation_id: Option<String>,
+}
+
+/// Input for a `planning.evidence.attached` event emission.
+#[derive(Debug, Clone)]
+pub struct EvidenceAttachedInput {
+    pub project_id: String,
+    pub cycle_id: String,
+    pub work_item_id: String,
+    pub evidence_id: String,
+    pub evidence_kind: String,
+    pub cas_hash: String,
+    pub actor_id: String,
+    pub actor_kind: ActorKind,
+    pub occurred_at: String,
+    pub causation_id: Option<String>,
+    pub correlation_id: Option<String>,
+}
+
+/// Input for a `planning.decision.recorded` event emission.
+#[derive(Debug, Clone)]
+pub struct DecisionRecordedInput {
+    pub project_id: String,
+    pub cycle_id: String,
+    pub work_item_id: String,
+    pub decision_id: String,
+    pub decision_kind: String,
+    pub rationale_summary: String,
+    pub actor_id: String,
+    pub actor_kind: ActorKind,
+    pub occurred_at: String,
+    pub causation_id: Option<String>,
+    pub correlation_id: Option<String>,
+}
+
 // ── Emit functions ─────────────────────────────────────────────────────────────
 
 /// Appends two events to events_v1:
@@ -1026,6 +1106,290 @@ pub fn emit_planning_work_item_superseded<S: EventStore>(
                 model: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.created` event.
+pub fn emit_work_item_created<S: EventStore>(
+    store: &mut S,
+    input: &WorkItemCreatedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-created", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "title": input.title,
+        "description": input.description,
+        "status": input.status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.created".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: input.actor_kind,
+            id: input.actor_id.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+        },
+        subjects: vec![EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.work_item.transitioned` event.
+pub fn emit_work_item_transitioned<S: EventStore>(
+    store: &mut S,
+    input: &WorkItemTransitionedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-wi-{}-transitioned", input.work_item_id);
+    let payload = serde_json::json!({
+        "work_item_id": input.work_item_id,
+        "cycle_id": input.cycle_id,
+        "from_status": input.from_status,
+        "to_status": input.to_status,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.work_item.transitioned".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: input.actor_kind,
+            id: input.actor_id.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+        },
+        subjects: vec![EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.dependency.added` event.
+pub fn emit_dependency_added<S: EventStore>(
+    store: &mut S,
+    input: &DependencyAddedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!(
+        "planning-dep-{}-to-{}-added",
+        input.from_work_item_id, input.to_work_item_id
+    );
+    let payload = serde_json::json!({
+        "from_work_item_id": input.from_work_item_id,
+        "to_work_item_id": input.to_work_item_id,
+        "dependency_kind": input.dependency_kind,
+        "cycle_id": input.cycle_id,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.dependency.added".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: input.actor_kind,
+            id: input.actor_id.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+        },
+        subjects: vec![
+            EntityRef {
+                kind: "work_item".into(),
+                id: input.from_work_item_id.clone(),
+                version: None,
+                content_hash: None,
+            },
+            EntityRef {
+                kind: "work_item".into(),
+                id: input.to_work_item_id.clone(),
+                version: None,
+                content_hash: None,
+            },
+        ],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.evidence.attached` event.
+pub fn emit_evidence_attached<S: EventStore>(
+    store: &mut S,
+    input: &EvidenceAttachedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-ev-{}-attached", input.evidence_id);
+    let payload = serde_json::json!({
+        "evidence_id": input.evidence_id,
+        "work_item_id": input.work_item_id,
+        "evidence_kind": input.evidence_kind,
+        "cas_hash": input.cas_hash,
+        "cycle_id": input.cycle_id,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.evidence.attached".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: input.actor_kind,
+            id: input.actor_id.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+        },
+        subjects: vec![EntityRef {
+            kind: "work_item".into(),
+            id: input.work_item_id.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: Some(input.cycle_id.clone()),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    store.append(&env)
+}
+
+/// Emits a `planning.decision.recorded` event.
+pub fn emit_decision_recorded<S: EventStore>(
+    store: &mut S,
+    input: &DecisionRecordedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("planning-dec-{}-recorded", input.decision_id);
+    let payload = serde_json::json!({
+        "decision_id": input.decision_id,
+        "work_item_id": input.work_item_id,
+        "decision_kind": input.decision_kind,
+        "rationale_summary": input.rationale_summary,
+        "cycle_id": input.cycle_id,
+    });
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "planning.decision.recorded".to_string(),
+        schema_version: 1,
+        stream_id: input.cycle_id.clone(),
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: input.actor_kind,
+            id: input.actor_id.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+        },
+        subjects: vec![EntityRef {
             kind: "work_item".into(),
             id: input.work_item_id.clone(),
             version: None,
