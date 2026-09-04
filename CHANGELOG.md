@@ -26,6 +26,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - test(engine): 9 new tests in `crates/sddk-engine/tests/cycle_pause.rs` cover pause/resume scenarios.
   - test(cli): 3 new tests in `crates/sddk-cli/tests/cycle_pause_args.rs` cover clap parse-time rejection of invalid `--reason` values.
 
+## [1.85.0] - 2026-09-04
+
+### Added
+  - docs(adr): **ADR-072-PLANNING-LEDGER-DOMAIN-MODEL** accepted — 3 architectural locks: Shape C hybrid persistence (SQL topology + CAS evidence bodies), WritableSurface extended with 4 new variants (PlanItem [Human, Agent], DependencyEdge [System], EvidenceAttachment [Human, Agent], DecisionRecord [Human]), WorkItemStatus 6-variant closed set (`Draft`, `Active`, `Paused`, `Done`, `Superseded`, `Cancelled`) with compile-time `assert_variant_count_eq! 6`.
+  - feat(domain): nuevo módulo `crates/sddk-domain/src/planning/mod.rs` (~681 líneas) con 6 domain types — `WorkItemV1`, `DependencyEdgeV1` (con `DependencyEdgeKind` 2-variant: `Blocks`, `BlocksOnClosure`), `WorkItemStatus` (6-variant con tabla de transiciones compile-time enforced), `EvidenceAttachmentV1` (con `PlanningEvidenceKind` 5-variant), `DecisionRecordV1` (con `DecisionKind` 4-variant: `Accept`, `Reject`, `Defer`, `Escalate`), `PlanningProvenanceChainV1`. Closes AC-PLN-01..06.
+  - feat(engine): `WritableSurface` enum extendido de 8 → 12 variantes con `assert_variant_count_eq! 12`; `WRITABLE_SURFACE_MATRIX` con 4 nuevas entradas admitiendo actor kinds por superficie. Closes AC-PLN-10.
+  - feat(engine): 6 nuevos `emit_planning_work_item_*` (drafted, activated, paused, resumed, completed, superseded) usando `Type::Custom(<id>)` con `schema_version: 1` per ADR-071. Todos cablean `with_correlation_from_context` para propagar `causation_id`+`correlation_id`. Closes AC-PLN-09.
+  - feat(storage): `MIGRATION_14` con 2 tablas SQL (work_items_v1, work_item_dependencies_v1) — Shape C topology portion. Migration aditiva (no DROP/ALTER sobre tablas existentes).
+  - feat(storage): `FilesystemCas` en `crates/sddk-storage/src/cas.rs` (~177 líneas) — Shape C evidence-bodies portion. CAS root default `~/.local/share/sddk/cas/<sha[0:2]>/<sha[2:4]>/<sha>.json`.
+  - feat(domain,storage): `CasPort` trait en `crates/sddk-domain/src/ports.rs` (`put`/`get`/`exists`).
+  - test(domain): 14 nuevos unit tests en `planning/mod.rs` — round-trip WorkItemV1/DependencyEdgeV1/EvidenceAttachmentV1/DecisionRecordV1, state machine invariants (7 transiciones válidas, terminales rechazan todo, identity hash determinista). 5 nuevos unit tests en `storage/cas.rs` — FilesystemCas put/get round-trip + hash collision.
+  - test(domain): preserved 8 actor_authority_baseline + 12 event_authority + 9 event_correlation_widening + 4 cross_ledger_consistency + 3 event_replay_equality + 10 event_correlation_wiring + 4 approval_envelope_wins_test + 25 DW-IR-005 determinism — todas UNCHANGED y PASS.
+
+### Changed
+  - authority.rs: 4 nuevas variantes WritableSurface + 4 nuevas filas en WRITABLE_SURFACE_MATRIX (12 totales).
+  - event_bus/emit.rs: +398 líneas con 6 nuevos emitters ADR-071 compliant.
+  - storage/migrations.rs: `LATEST_SCHEMA_VERSION` bumped 13 → 14; MIGRATION_14 aditiva.
+
+### Tests
+  - test(workspace): `cargo test --workspace` 2143/0/9 PASS (vs 2124 baseline, +19 nuevos). `cargo clippy --workspace --all-targets -- -D errors` exit 0. `cargo fmt --check` exit 0.
+  - verify verdict: **PASS_WITH_WARNINGS** — 8/12 ACs PASS, 4/12 PARTIAL (AC-PLN-09/10/11/12 — cobertura de integration tests). 4 MEDIUM + 4 LOW deviations registradas en debt-report.
+  - debt-verify verdict: PASS_WITH_WARNINGS — 0 BLOCKER/CRITICAL/HIGH; FIND-PLN-004/005/006 (test pyramid gap) owner PLN-LEDGER-002 (next cycle).
+
+### Carryovers preservados
+  - FIND-000001..000005 (DW-OPERATORS-001 H6) — unchanged
+  - FIND-000006 (ARCH-HEX-001 LOW unused ActorKind import at approval.rs:10) — unchanged
+  - FIND-000007 (EVT-LEDGER-001 LOW unused EntityRef import at event_replay_equality.rs:8) — unchanged
+  - FIND-000008 (EVT-LEDGER-001 LOW unused mut storage at cross_ledger_consistency.rs:174) — unchanged
+  - INC-HX-AUTH-003 — unchanged (resolved)
+  - INC-HX-AUTH-004 — unchanged (partial 5/7 paths; paths 6-7 OPEN owner RX-SECRETARY-001/002)
+
+### Known issues (carry to PLN-LEDGER-002/003)
+  - **FIND-PLN-004/005/006 (MEDIUM/P1)**: ~48 integration tests pendientes (engine integration for 6 emit functions + storage integration for MIGRATION_14 + WritableSurface validation tests). Owner PLN-LEDGER-002.
+  - **FIND-PLN-001 (MEDIUM/P1)**: Apply fase bundle 10-14 concerns en 1 mega-commit. AGENTS.md §2.1 violation. Owner process-followup-cycle.
+  - **FIND-PLN-007 (LOW/P2)**: `PlanningProvenanceChainV1::verify_references` es stub documentado. Owner PLN-LEDGER-003.
+  - **FIND-PLN-008 (LOW/P2)**: `WorkItemV1::compute_identity` usa serialización completa (incluye created_at volátil). Owner domain-identity-cleanup.
+
 ## [1.84.0] - 2026-09-04
 
 ### Added
