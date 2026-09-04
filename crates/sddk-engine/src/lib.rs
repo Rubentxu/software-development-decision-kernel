@@ -27,6 +27,7 @@ pub mod retry;
 pub mod rules;
 pub mod task_executor;
 pub mod tasks;
+pub mod authority;
 pub mod up_to_date;
 pub mod version;
 pub mod workflow_runtime;
@@ -857,6 +858,16 @@ pub enum EngineError {
     /// Cycle is already paused.
     #[error("cycle is already paused")]
     PauseAlreadyPaused,
+    /// Actor kind is not admitted for the target writable surface.
+    #[error("authority context rejected: actor_kind {kind} not admitted on surface {surface} ({reason})")]
+    AuthorityContextRejected {
+        /// Surface that was being written.
+        surface: String,
+        /// Actor kind that was supplied.
+        kind: String,
+        /// Why it was rejected.
+        reason: String,
+    },
     /// Cycle resume is only allowed from Paused status.
     #[error("resume is only allowed from paused status")]
     ResumeFromPausedOnly,
@@ -1731,6 +1742,7 @@ impl sddk_domain::SddkErrorCode for EngineError {
             Self::PauseAlreadyPaused => "ENGINE_PAUSE_ALREADY_PAUSED",
             Self::ResumeFromPausedOnly => "ENGINE_RESUME_FROM_PAUSED_ONLY",
             Self::Storage(..) => "ENGINE_STORAGE",
+            Self::AuthorityContextRejected { .. } => "ENGINE_AUTHORITY_CONTEXT_REJECTED",
         }
     }
 
@@ -1905,6 +1917,9 @@ impl sddk_domain::SddkErrorCode for EngineError {
                 "resume is only allowed when the cycle is in Paused status".into()
             }
             Self::Storage(..) => "resolve the underlying storage error first".into(),
+            Self::AuthorityContextRejected { .. } => {
+                "authority context rejected: check actor_kind is admitted for the target surface".into()
+            }
         }
     }
 }
