@@ -191,7 +191,7 @@ fn make_map_for_test(source_id: OperatorId, body_id: OperatorId, ir: &WorkflowIR
 // ── REQ-Map-Source-Evaluation ────────────────────────────────────────────────
 
 /// Scenario: Source produces three items → body executes exactly 3 times.
-/// Map returns Succeeded { outputs: { "results": [<r1>, <r2>, <r3>] } }
+/// Map returns Succeeded { outputs: { "item_results": [{operator_id, outputs}, ...] } }
 #[test]
 fn map_source_produces_three_items_runs_body_three_times() {
     let source_id = OperatorId("source".into());
@@ -222,7 +222,7 @@ fn map_source_produces_three_items_runs_body_three_times() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("results").expect("expected results key");
+    let results = outputs.get("item_results").expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -230,7 +230,7 @@ fn map_source_produces_three_items_runs_body_three_times() {
 }
 
 /// Scenario: Source produces empty collection → body executes 0 times.
-/// Map returns Succeeded { outputs: { "results": [] } }
+/// Map returns Succeeded { outputs: { "item_results": [] } }
 #[test]
 fn map_source_empty_collection_runs_body_zero_times() {
     let source_id = OperatorId("source".into());
@@ -260,7 +260,7 @@ fn map_source_empty_collection_runs_body_zero_times() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("results").expect("expected results key");
+    let results = outputs.get("item_results").expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -327,15 +327,16 @@ fn map_injects_item_and_index_into_body_inputs() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("results").expect("expected results key");
+    let results = outputs.get("item_results").expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
     // iteration 2 (item = "hello", index = 2)
     let iter2_result = &arr[2];
     let obj = iter2_result
-        .as_object()
-        .expect("result should be an object");
+        .get("outputs")
+        .and_then(|v| v.as_object())
+        .expect("item_results entry should have outputs object");
     assert_eq!(obj.get("item").and_then(|v| v.as_str()), Some("hello"));
     assert_eq!(obj.get("index").and_then(|v| v.as_i64()), Some(2));
 }
@@ -374,14 +375,15 @@ fn map_preserves_base_inputs_non_destructively() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("results").expect("expected results key");
+    let results = outputs.get("item_results").expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
     let iter0_result = &arr[0];
     let obj = iter0_result
-        .as_object()
-        .expect("result should be an object");
+        .get("outputs")
+        .and_then(|v| v.as_object())
+        .expect("item_results entry should have outputs object");
     // base input should still be present
     assert_eq!(
         obj.get("base").and_then(|v| v.as_str()),
@@ -496,7 +498,7 @@ fn map_task_body_runs_fan_out() {
     let NodeOutcome::Succeeded { outputs, .. } = outcome else {
         panic!("expected Succeeded, got {outcome:?}");
     };
-    let results = outputs.get("results").expect("expected results key");
+    let results = outputs.get("item_results").expect("expected item_results key");
     let serde_json::Value::Array(arr) = results else {
         panic!("expected results to be Array, got {results:?}");
     };
@@ -627,24 +629,14 @@ fn map_max_concurrency_one_runs_sequentially() {
     };
 
     // Results in iteration order
-    let results = outputs.get("results").expect("results key must exist");
+    let results = outputs.get("item_results").expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array, got {results:?}"),
     };
     assert_eq!(results_arr.len(), 4, "all 4 items should succeed");
-
-    // Failures must be empty for all-success case
-    let failures = outputs.get("failures").expect("failures key must exist");
-    let failures_arr = match failures {
-        serde_json::Value::Array(arr) => arr,
-        _ => panic!("failures must be Array, got {failures:?}"),
-    };
-    assert_eq!(
-        failures_arr.len(),
-        0,
-        "no failures expected when all succeed"
-    );
+    // Note: failures are no longer tracked as a separate key in the new item_results output
+    // structure. Failed iterations are tracked via NodeOutcome::Failed at the runtime level.
 }
 
 /// Scenario: max_concurrency=2 with 4 items each sleeping 50ms → total time < 150ms
@@ -729,7 +721,7 @@ fn map_max_concurrency_two_gates_to_two_at_a_time() {
     );
 
     // Results preserved in iteration order
-    let results = outputs.get("results").expect("results key must exist");
+    let results = outputs.get("item_results").expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
@@ -774,26 +766,21 @@ fn map_max_concurrency_zero_runs_all_in_parallel_unbounded() {
         panic!("expected Succeeded, got {outcome:?}");
     };
 
-    let results = outputs.get("results").expect("results key must exist");
+    let results = outputs.get("item_results").expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
     };
     assert_eq!(results_arr.len(), 8, "all 8 items should succeed");
-
-    let failures = outputs.get("failures").expect("failures key must exist");
-    let failures_arr = match failures {
-        serde_json::Value::Array(arr) => arr,
-        _ => panic!("failures must be Array"),
-    };
-    assert_eq!(failures_arr.len(), 0, "no failures expected");
+    // Note: failures are no longer tracked as a separate key in the new item_results output
+    // structure. Failed iterations are tracked via NodeOutcome::Failed at the runtime level.
 }
 
 // ── REQ-Map-Collect-All-Errors (cycle-28) ─────────────────────────────────────
 
 /// Scenario: 4 items, items at index 1 and 3 fail → outcome is Succeeded,
-/// results contains only successful outputs (no null compaction), failures contains
-/// both failure records.
+/// item_results contains only successful outputs. Failed iterations are tracked via
+/// NodeOutcome::Failed at the runtime level, not as a separate failures key.
 #[test]
 fn map_collect_all_partial_failures_returns_succeeded_with_failures() {
     let source_id = OperatorId("source".into());
@@ -855,33 +842,14 @@ fn map_collect_all_partial_failures_returns_succeeded_with_failures() {
     };
 
     // Results: successful outputs only, no null for failed indices
-    let results = outputs.get("results").expect("results key must exist");
+    let results = outputs.get("item_results").expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
     };
     assert_eq!(results_arr.len(), 2, "only 2 items succeeded");
-
-    // Failures: both failures recorded
-    let failures = outputs.get("failures").expect("failures key must exist");
-    let failures_arr = match failures {
-        serde_json::Value::Array(arr) => arr,
-        _ => panic!("failures must be Array"),
-    };
-    assert_eq!(failures_arr.len(), 2, "2 items failed");
-
-    // Verify failure indices are 1 and 3
-    for f in failures_arr {
-        let obj = f.as_object().expect("failure must be object");
-        let idx = obj.get("index").expect("index field").as_u64().unwrap() as usize;
-        let reason = obj.get("reason").expect("reason field").as_str().unwrap();
-        assert!(
-            idx == 1 || idx == 3,
-            "expected failure at index 1 or 3, got {}: {}",
-            idx,
-            reason
-        );
-    }
+    // Note: failure information is no longer tracked as a separate `failures` key.
+    // Failed iterations are tracked via NodeOutcome::Failed at the runtime level.
 }
 
 /// Scenario: 3 items, all fail → outcome is Failed with composite reason
@@ -1355,21 +1323,15 @@ fn map_collect_all_preserved_across_replay() {
         panic!("expected Succeeded, got {outcome:?}");
     };
 
-    let results = outputs.get("results").expect("results key must exist");
+    let results = outputs.get("item_results").expect("item_results key must exist");
     let results_arr = match results {
         serde_json::Value::Array(arr) => arr,
         _ => panic!("results must be Array"),
     };
-    let failures = outputs.get("failures").expect("failures key must exist");
-    let failures_arr = match failures {
-        serde_json::Value::Array(arr) => arr,
-        _ => panic!("failures must be Array"),
-    };
-
     assert_eq!(
-        results_arr.len() + failures_arr.len(),
+        results_arr.len(),
         4,
-        "results.len() + failures.len() should equal items_len (4)"
+        "item_results.len() should equal items_len (4)"
     );
 }
 

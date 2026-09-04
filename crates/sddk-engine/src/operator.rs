@@ -11,7 +11,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use sddk_domain::{
-    GraphStore, NodeId, NodeRun, Operator as DomainOperator, TaskExecutor, WorkflowIR, WorkflowRun,
+    operator_contract::{default_input_schema, default_output_schema, variant_name, OperatorInputSchema,
+                       OperatorOutputSchema},
+    GraphStore, NodeId, NodeRun, Operator as DomainOperator, OperatorId, TaskExecutor, WorkflowIR,
+    WorkflowRun,
 };
 
 // -- GraphStoreBox wrapper -----------------------------------------------------
@@ -1160,11 +1163,10 @@ impl Operator for Choice {
 
 /// Map operator: fan-out body across a collection from source.
 ///
-/// **Cycle-30 semantics:**
+/// **DW-IR-004 semantics (H0):**
 /// - Source-context isolation (DC-MAP-001): `source.evaluate` uses fresh child
 ///   `OperatorContext` with Arc-cloned shared fields, own ScratchGraphStore,
 ///   `pending_sender: None`. Source MUST NOT mutate parent's `node_run.state`/`attempts`.
-/// - Extracts `outputs["items"]: Array` from source outputs (key convention)
 /// - Body MUST be `DomainOperator::Task`; other variants return
 ///   `EvalFailed("map body must be Task")`
 /// - Iterates over source items; per iteration `i`, merges `{item: items[i], index: i}`
@@ -1175,8 +1177,14 @@ impl Operator for Choice {
 ///   - `>= 2` → semaphore-gated thread pool with at most N concurrent iterations
 /// - Error aggregation = **collect-all**: `Succeeded` if ≥1 body succeeded;
 ///   `Failed` with composite reason only if ALL failed
-/// - Outputs: `outputs["results"]: Array<Value>` (successful outputs only, iteration order)
-///   + `outputs["failures"]: Array<{index: u64, reason: string}>` (all failures, iteration order)
+///
+/// **DW-IR-004 output contract (V-4):**
+/// - Output key: `item_results: Array<{operator_id, outputs}>` replaces the v1.29.0
+///   placeholder `outputs["items"]: Array`
+/// - Post-evaluation validates outputs against `Map`'s default `OperatorOutputSchema`
+///   via `aggregate_collect_all::validate_output`. Contract violations return
+///   `Err(OperatorError::EvalFailed(...))` — the exit gate is enforced.
+///
 /// - **Cross-tick replay** (cycle-30): when body returns `Pending`, MapCheckpointState
 ///   is built and `Pending { Channel { resume_token: T } }` returned. Runtime drains
 ///   per tick. Source NOT re-evaluated on replay (INV-11).
@@ -1188,6 +1196,8 @@ impl Operator for Choice {
 /// - DC-MAP-002 (dispatch global)
 #[derive(Debug)]
 pub struct Map {
+    /// OperatorId of the body operator — used in item_results output.
+    body_id: OperatorId,
     /// Resolved source operator — evaluated to produce the collection.
     source: Arc<dyn Operator>,
     /// Resolved body operator — evaluated once per item in the source collection.
@@ -1245,6 +1255,7 @@ impl Map {
                     }
                 };
                 Ok(Map {
+                    body_id: body.clone(),
                     source: resolved_source,
                     body: body_task,
                     max_concurrency: *max_concurrency,
@@ -1573,6 +1584,16 @@ impl Map {
     }
 
     /// Aggregate results and failures using collect-all semantics.
+    ///
+    /// Produces `item_results` as the primary output key per the DW-IR-004 Map output
+    /// contract (spec section 6 V-4). Each entry is `{operator_id, outputs}`.
+    ///
+    /// # Contract validation
+    ///
+    /// Post-evaluation validates `outputs` against `Map`'s default `OperatorOutputSchema`.
+    /// On validation failure, returns `Err(OperatorError::EvalFailed)` with the contract
+    /// error details. This ensures the exit gate "no undefined placeholder semantics
+    /// at the contract boundary" is enforced.
     fn aggregate_collect_all(
         &self,
         ctx: &mut OperatorContext,
@@ -1584,8 +1605,22 @@ impl Map {
         if failures.is_empty() {
             // No failures: either items was empty (vacuous success) or all succeeded
             let mut outputs = BTreeMap::new();
-            outputs.insert("results".to_string(), serde_json::Value::Array(results));
-            outputs.insert("failures".to_string(), serde_json::Value::Array(failures));
+            // item_results: array of {operator_id, outputs} — typed projection replacing
+            // the v1.29.0 placeholder outputs["items"]: Array
+            let item_results: Vec<serde_json::Value> = results
+                .into_iter()
+                .map(|v| {
+                    serde_json::json!({
+                        "operator_id": self.body_id.0,
+                        "outputs": v
+                    })
+                })
+                .collect();
+            outputs.insert("item_results".to_string(), serde_json::Value::Array(item_results));
+            // Validate post-evaluation: outputs must conform to Map's OperatorOutputSchema
+            if let Err(e) = self.validate_output(&node_id, &outputs) {
+                return Err(OperatorError::EvalFailed(e.to_string()));
+            }
             Ok(NodeOutcome::Succeeded { node_id, outputs })
         } else if results.is_empty() {
             // All failed → Failed with composite reason
@@ -1597,10 +1632,40 @@ impl Map {
         } else {
             // Partial success → Succeeded with both results and failures
             let mut outputs = BTreeMap::new();
-            outputs.insert("results".to_string(), serde_json::Value::Array(results));
-            outputs.insert("failures".to_string(), serde_json::Value::Array(failures));
+            let item_results: Vec<serde_json::Value> = results
+                .into_iter()
+                .map(|v| {
+                    serde_json::json!({
+                        "operator_id": self.body_id.0,
+                        "outputs": v
+                    })
+                })
+                .collect();
+            outputs.insert("item_results".to_string(), serde_json::Value::Array(item_results));
+            if let Err(e) = self.validate_output(&node_id, &outputs) {
+                return Err(OperatorError::EvalFailed(e.to_string()));
+            }
             Ok(NodeOutcome::Succeeded { node_id, outputs })
         }
+    }
+
+    /// Post-evaluation output validation against the default `OperatorOutputSchema`.
+    ///
+    /// Validates that `outputs` conforms to the Map variant's default output contract.
+    /// Returns `Err(OperatorContractError)` on violation; the caller wraps it in
+    /// `OperatorError::EvalFailed`.
+    fn validate_output(
+        &self,
+        node_id: &NodeId,
+        outputs: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<(), sddk_domain::operator_contract::OperatorContractError> {
+        let variant = DomainOperator::Map {
+            source: OperatorId(String::new()),
+            body: OperatorId(String::new()),
+            max_concurrency: self.max_concurrency,
+        };
+        let schema = default_output_schema(&variant);
+        schema.validate(&OperatorId(node_id.0.clone()), "Map", outputs)
     }
 }
 

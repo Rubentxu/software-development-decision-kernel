@@ -197,7 +197,7 @@ fn runtime_smoke_map_runs_through_one_tick() {
             outputs,
             node_id: _,
         }) => {
-            let results = outputs.get("results").expect("expected results key");
+            let results = outputs.get("item_results").expect("expected item_results key");
             let arr = results.as_array().expect("results should be array");
             assert_eq!(arr.len(), 3, "body should run 3 times");
         }
