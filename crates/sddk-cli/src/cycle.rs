@@ -1235,7 +1235,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
             event_id_prefix,
             failed_gates: vec![],
         };
-        let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind.clone(), None, None);
+        let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind, None, None);
         let applied = match context.engine.apply_transition(
             &plan,
             &event_context(

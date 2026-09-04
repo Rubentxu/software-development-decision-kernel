@@ -8,8 +8,11 @@ use sddk_domain::{
     ActorKind, ApprovalDecision, EventAppended, EventEnvelopeV1, StorageError as DomainStorageError,
 };
 use sddk_engine::{
-    authority::{AuthorityContext, infer_actor_kind, WritableSurface},
-    event_bus::{emit_approval_decision, emit_approval_requested, ApprovalDecisionInput, ApprovalRequestedInput},
+    authority::{AuthorityContext, WritableSurface, infer_actor_kind},
+    event_bus::{
+        ApprovalDecisionInput, ApprovalRequestedInput, emit_approval_decision,
+        emit_approval_requested,
+    },
 };
 
 // Minimal in-memory store wrapper — only implements the methods needed by the emit functions.
@@ -36,7 +39,10 @@ impl sddk_domain::EventStore for TestStore {
         })
     }
 
-    fn load_by_event_id(&self, _event_id: &str) -> Result<Option<EventEnvelopeV1>, DomainStorageError> {
+    fn load_by_event_id(
+        &self,
+        _event_id: &str,
+    ) -> Result<Option<EventEnvelopeV1>, DomainStorageError> {
         Ok(None)
     }
 
@@ -77,7 +83,11 @@ impl sddk_domain::EventStore for TestStore {
         Ok(0)
     }
 
-    fn load_by_sequence(&self, _stream_id: &str, _seq: u64) -> Result<Option<EventEnvelopeV1>, DomainStorageError> {
+    fn load_by_sequence(
+        &self,
+        _stream_id: &str,
+        _seq: u64,
+    ) -> Result<Option<EventEnvelopeV1>, DomainStorageError> {
         Ok(None)
     }
 }
@@ -229,37 +239,66 @@ fn infer_actor_kind_system_fallback() {
 fn writable_surface_cycle_state_allows_all_actor_kinds() {
     // CycleState admits Human, Agent, and System (per WRITABLE_SURFACE_MATRIX).
     let auth_human = AuthorityContext::for_test(ActorKind::Human, "user:test");
-    assert!(auth_human.validate(WritableSurface::CycleState).is_ok(), "Human on CycleState");
+    assert!(
+        auth_human.validate(WritableSurface::CycleState).is_ok(),
+        "Human on CycleState"
+    );
 
     let auth_agent = AuthorityContext::for_test(ActorKind::Agent, "agent:test");
-    assert!(auth_agent.validate(WritableSurface::CycleState).is_ok(), "Agent on CycleState");
+    assert!(
+        auth_agent.validate(WritableSurface::CycleState).is_ok(),
+        "Agent on CycleState"
+    );
 
     let auth_system = AuthorityContext::for_test(ActorKind::System, "sddk-cli");
-    assert!(auth_system.validate(WritableSurface::CycleState).is_ok(), "System on CycleState");
+    assert!(
+        auth_system.validate(WritableSurface::CycleState).is_ok(),
+        "System on CycleState"
+    );
 }
 
 #[test]
 fn writable_surface_plan_revisions_allows_human_and_agent() {
     // PlanRevisions admits Human and Agent (per WRITABLE_SURFACE_MATRIX).
     let auth_human = AuthorityContext::for_test(ActorKind::Human, "user:test");
-    assert!(auth_human.validate(WritableSurface::PlanRevisions).is_ok(), "Human on PlanRevisions");
+    assert!(
+        auth_human.validate(WritableSurface::PlanRevisions).is_ok(),
+        "Human on PlanRevisions"
+    );
 
     let auth_agent = AuthorityContext::for_test(ActorKind::Agent, "agent:test");
-    assert!(auth_agent.validate(WritableSurface::PlanRevisions).is_ok(), "Agent on PlanRevisions");
+    assert!(
+        auth_agent.validate(WritableSurface::PlanRevisions).is_ok(),
+        "Agent on PlanRevisions"
+    );
 
     let auth_system = AuthorityContext::for_test(ActorKind::System, "sddk-cli");
-    assert!(auth_system.validate(WritableSurface::PlanRevisions).is_err(), "System on PlanRevisions");
+    assert!(
+        auth_system
+            .validate(WritableSurface::PlanRevisions)
+            .is_err(),
+        "System on PlanRevisions"
+    );
 }
 
 #[test]
 fn writable_surface_gate_receipts_rejects_human_and_agent() {
     // GateReceipts admits only System (per WRITABLE_SURFACE_MATRIX).
     let auth_human = AuthorityContext::for_test(ActorKind::Human, "user:test");
-    assert!(auth_human.validate(WritableSurface::GateReceipts).is_err(), "Human on GateReceipts");
+    assert!(
+        auth_human.validate(WritableSurface::GateReceipts).is_err(),
+        "Human on GateReceipts"
+    );
 
     let auth_agent = AuthorityContext::for_test(ActorKind::Agent, "agent:test");
-    assert!(auth_agent.validate(WritableSurface::GateReceipts).is_err(), "Agent on GateReceipts");
+    assert!(
+        auth_agent.validate(WritableSurface::GateReceipts).is_err(),
+        "Agent on GateReceipts"
+    );
 
     let auth_system = AuthorityContext::for_test(ActorKind::System, "sddk-cli");
-    assert!(auth_system.validate(WritableSurface::GateReceipts).is_ok(), "System on GateReceipts");
+    assert!(
+        auth_system.validate(WritableSurface::GateReceipts).is_ok(),
+        "System on GateReceipts"
+    );
 }

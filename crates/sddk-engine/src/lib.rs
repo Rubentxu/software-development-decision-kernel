@@ -10,6 +10,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 mod adoption;
+pub mod authority;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
@@ -27,7 +28,6 @@ pub mod retry;
 pub mod rules;
 pub mod task_executor;
 pub mod tasks;
-pub mod authority;
 pub mod up_to_date;
 pub mod version;
 pub mod workflow_runtime;
@@ -859,7 +859,9 @@ pub enum EngineError {
     #[error("cycle is already paused")]
     PauseAlreadyPaused,
     /// Actor kind is not admitted for the target writable surface.
-    #[error("authority context rejected: actor_kind {kind} not admitted on surface {surface} ({reason})")]
+    #[error(
+        "authority context rejected: actor_kind {kind} not admitted on surface {surface} ({reason})"
+    )]
     AuthorityContextRejected {
         /// Surface that was being written.
         surface: String,

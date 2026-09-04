@@ -6,7 +6,9 @@
 
 use clap::{Args, Subcommand};
 use sddk_domain::projections::ApprovalProjection;
-use sddk_domain::{ActorKind, ApprovalDecision, EventEnvelopeV1, EventStore, Projection, SddkErrorCode};
+use sddk_domain::{
+    ActorKind, ApprovalDecision, EventEnvelopeV1, EventStore, Projection, SddkErrorCode,
+};
 use sddk_engine::{
     authority::infer_actor_kind,
     event_bus::{self, ApprovalDecisionInput},

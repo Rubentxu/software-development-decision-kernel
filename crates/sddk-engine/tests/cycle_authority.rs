@@ -15,7 +15,8 @@ use sddk_domain::{
     ArtifactRef, CycleManifest, CyclePath, CycleStatus, Phase, StorageError as DomainStorageError,
 };
 use sddk_engine::{
-    authority::AuthorityContext, CycleStartInput, Engine, EventContext, GateEvaluationInput, GateReceiptRef, TransitionEvidence,
+    CycleStartInput, Engine, EventContext, GateEvaluationInput, GateReceiptRef, TransitionEvidence,
+    authority::AuthorityContext,
 };
 use sddk_storage::{ProjectRecord, RID_FORMAT_REGEX, Storage, StorageError, WorkspaceRecord};
 

@@ -14,7 +14,7 @@ use std::path::Path;
 use sddk_domain::{
     CycleManifest, CyclePath, CycleStatus, PauseReason, Phase, StorageError as DomainStorageError,
 };
-use sddk_engine::{authority::AuthorityContext, CycleStartInput, Engine, EventContext};
+use sddk_engine::{CycleStartInput, Engine, EventContext, authority::AuthorityContext};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
@@ -357,7 +357,7 @@ fn pause_already_paused_idempotent() {
         &receipt_dir,
         "alice",
         2,
-    &auth(),
+        &auth(),
     );
 
     assert!(result.is_err(), "cycle_pause from Paused should fail");
@@ -434,7 +434,7 @@ fn resume_happy_path_reacquires_lease_and_prints_new_token() {
         TIMESTAMP,
         &receipt_dir,
         "bob",
-    &auth(),
+        &auth(),
     );
 
     assert!(
@@ -492,7 +492,7 @@ fn resume_from_non_paused_rejected() {
         TIMESTAMP,
         &receipt_dir,
         "bob",
-    &auth(),
+        &auth(),
     );
 
     assert!(result.is_err(), "cycle_resume from Open should fail");

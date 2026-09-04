@@ -13,7 +13,9 @@ use std::path::Path;
 use sddk_domain::{
     CycleManifest, CyclePath, CycleStatus, Phase, StorageError as DomainStorageError,
 };
-use sddk_engine::{authority::AuthorityContext, CycleStartInput, Engine, EventContext, SupersedeReason};
+use sddk_engine::{
+    CycleStartInput, Engine, EventContext, SupersedeReason, authority::AuthorityContext,
+};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
@@ -232,7 +234,7 @@ fn supersede_self_is_forbidden() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -267,7 +269,7 @@ fn supersede_appends_requested_and_applied_events() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
     assert!(
         result.is_ok(),
@@ -318,7 +320,7 @@ fn supersede_reason_scope_invalid() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
     assert!(
         result.is_ok(),
@@ -346,7 +348,7 @@ fn supersede_reason_goal_replaced() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
     assert!(
         result.is_ok(),
@@ -374,7 +376,7 @@ fn supersede_reason_external_obsolete() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
     assert!(
         result.is_ok(),
@@ -414,7 +416,7 @@ fn supersede_releases_lease_atomically() {
         Path::new("/tmp"),
         "lease-owner",
         1, // must match the fencing_token computed by acquire_cycle_lease
-    &auth(),
+        &auth(),
     );
     assert!(
         result.is_ok(),
@@ -572,7 +574,7 @@ fn supersede_rejects_nonexistent_successor_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
 
     // Must fail with SupersedeSuccessorNotFound
@@ -644,7 +646,7 @@ fn supersede_rejects_empty_evidence_refs_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
-    &auth(),
+        &auth(),
     );
 
     // Must fail with SupersedeEvidenceRefsRequired

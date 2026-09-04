@@ -139,11 +139,23 @@ pub fn infer_actor_kind(actor_id: &str) -> ActorKind {
 /// Each row maps a `WritableSurface` to the set of `ActorKind` values
 /// that are admitted to write to that surface.
 pub const WRITABLE_SURFACE_MATRIX: &[(WritableSurface, &[ActorKind])] = &[
-    (WritableSurface::CycleState, &[ActorKind::Human, ActorKind::Agent, ActorKind::System]),
-    (WritableSurface::LedgerEvents, &[ActorKind::Human, ActorKind::Agent, ActorKind::System]),
+    (
+        WritableSurface::CycleState,
+        &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
+    ),
+    (
+        WritableSurface::LedgerEvents,
+        &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
+    ),
     (WritableSurface::GateReceipts, &[ActorKind::System]),
-    (WritableSurface::PlanRevisions, &[ActorKind::Human, ActorKind::Agent]),
-    (WritableSurface::TransitionRecords, &[ActorKind::Human, ActorKind::Agent, ActorKind::System]),
+    (
+        WritableSurface::PlanRevisions,
+        &[ActorKind::Human, ActorKind::Agent],
+    ),
+    (
+        WritableSurface::TransitionRecords,
+        &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
+    ),
     (WritableSurface::FrameworkBundle, &[ActorKind::System]),
     (WritableSurface::GithubReleases, &[ActorKind::System]),
     (WritableSurface::KnowledgeGraphVault, &[ActorKind::Human]),
