@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::{Engine, EngineError, EventReceipt, write_atomic};
+use crate::{Engine, EngineError, EventReceipt, write_atomic, authority::AuthorityContext};
 use sddk_domain::{LedgerEventInput, StorageError as DomainStorageError};
 use serde_json::json;
 
@@ -67,6 +67,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
     /// * `receipt_path` — directory where `supersede-receipt.json` is written
     /// * `lease_owner` — owner string used when acquiring the lease
     /// * `fencing_token` — fencing token used when acquiring the lease
+    /// * `auth` — authority context (validates actor_kind against CycleState surface)
     #[allow(clippy::too_many_arguments)]
     pub fn cycle_supersede(
         &mut self,
@@ -81,7 +82,9 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         receipt_path: &Path,
         lease_owner: &str,
         fencing_token: i64,
+        auth: &AuthorityContext,
     ) -> Result<EventReceipt, EngineError> {
+        auth.validate(crate::authority::WritableSurface::CycleState)?;
         // Validate lease fence (fail-closed: no lease = LeaseConflict)
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

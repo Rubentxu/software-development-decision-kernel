@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use time::format_description::well_known::Rfc3339;
 
-use crate::{Engine, EngineError, EventReceipt, write_atomic};
+use crate::{Engine, EngineError, EventReceipt, write_atomic, authority::AuthorityContext};
 use sddk_domain::{LedgerEventInput, PauseReason, StorageError as DomainStorageError};
 use serde_json::json;
 
@@ -63,6 +63,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
     /// * `receipt_path` — directory where `pause-receipt.json` is written
     /// * `lease_owner` — owner string used when acquiring the lease
     /// * `fencing_token` — fencing token used when acquiring the lease
+    /// * `auth` — authority context (validates actor_kind against CycleState surface)
     #[allow(clippy::too_many_arguments)]
     pub fn cycle_pause(
         &mut self,
@@ -76,7 +77,9 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         receipt_path: &Path,
         lease_owner: &str,
         fencing_token: i64,
+        auth: &AuthorityContext,
     ) -> Result<EventReceipt, EngineError> {
+        auth.validate(crate::authority::WritableSurface::CycleState)?;
         // Load the current cycle to validate state and get manifest
         let current = self.ledger.get_cycle(cycle_id)?.manifest;
 
@@ -232,6 +235,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
     /// * `occurred_at` — ISO8601 timestamp
     /// * `receipt_path` — directory where `resume-receipt.json` is written
     /// * `new_lease_owner` — owner for the new lease
+    /// * `auth` — authority context (validates actor_kind against CycleState surface)
     #[allow(clippy::too_many_arguments)]
     pub fn cycle_resume(
         &mut self,
@@ -242,7 +246,9 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         occurred_at: &str,
         receipt_path: &Path,
         new_lease_owner: &str,
+        auth: &AuthorityContext,
     ) -> Result<CycleResumeOutput, EngineError> {
+        auth.validate(crate::authority::WritableSurface::CycleState)?;
         // Load the current cycle to validate state
         let current = self.ledger.get_cycle(cycle_id)?.manifest;
 

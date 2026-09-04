@@ -15,7 +15,7 @@ use sddk_domain::{
     ArtifactRef, CycleManifest, CyclePath, CycleStatus, Phase, StorageError as DomainStorageError,
 };
 use sddk_engine::{
-    CycleStartInput, Engine, EventContext, GateEvaluationInput, GateReceiptRef, TransitionEvidence,
+    authority::AuthorityContext, CycleStartInput, Engine, EventContext, GateEvaluationInput, GateReceiptRef, TransitionEvidence,
 };
 use sddk_storage::{ProjectRecord, RID_FORMAT_REGEX, Storage, StorageError, WorkspaceRecord};
 
@@ -130,7 +130,7 @@ fn advance(
         .plan_transition("cycle-1", transition_id, evidence)
         .unwrap();
     engine
-        .apply_transition(&plan, &context(event_id, command_id))
+        .apply_transition(&plan, &context(event_id, command_id), &auth())
         .unwrap();
 }
 
@@ -179,6 +179,10 @@ fn context(event_id: &str, command_id: &str) -> EventContext {
         actor: "test-runtime".into(),
         occurred_at: TIMESTAMP.into(),
     }
+}
+
+fn auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
 }
 
 // durability-required: setup() opens Storage at path, registers data, reopens Storage::open(&path)
@@ -473,7 +477,7 @@ fn gate_receipt_requires_registered_evaluator_and_matches_plan_state() {
         .plan_transition("cycle-1", "phase.specify.complete", apply_evidence)
         .unwrap();
     engine
-        .apply_transition(&apply_plan, &context("evt-3", "command-c"))
+        .apply_transition(&apply_plan, &context("evt-3", "command-c"), &auth())
         .unwrap();
 
     let current = engine.ledger().get_cycle("cycle-1").unwrap().manifest;
@@ -577,6 +581,7 @@ fn apply_transition_releases_lease_on_phase_change() {
         .apply_transition(
             &plan,
             &context("evt-spec-complete-1", "command-spec-complete-1"),
+            &auth(),
         )
         .unwrap();
     assert_eq!(applied.manifest.phase, Phase::Design);
@@ -859,6 +864,6 @@ fn engine_transition_with_waived_gate_receipt_proceeds() {
         .unwrap();
     assert_eq!(plan.outcome(), sddk_engine::TransitionOutcome::Succeeded);
     engine
-        .apply_transition(&plan, &context("evt-3", "command-c"))
+        .apply_transition(&plan, &context("evt-3", "command-c"), &auth())
         .unwrap();
 }

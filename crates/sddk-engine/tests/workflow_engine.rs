@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use sddk_domain::StorageError;
 use sddk_domain::{ArtifactRef, CycleManifest, CyclePath, CycleStatus, Phase};
 use sddk_engine::{
-    CycleStartInput, DebtVerificationPolicy, Engine, EngineError, EventContext,
+    authority::AuthorityContext, CycleStartInput, DebtVerificationPolicy, Engine, EngineError, EventContext,
     GateEvaluationInput, GateReceiptRef, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
     WorkflowValidationError, load_workflow_path, load_workflow_str,
 };
@@ -49,7 +49,7 @@ fn creates_cycle_and_applies_declared_transition() {
     assert_eq!(plan.state_after().phase, Phase::Specify);
 
     let applied = engine
-        .apply_transition(&plan, &context("event-explore"))
+        .apply_transition(&plan, &context("event-explore"), &auth())
         .unwrap();
     assert_eq!(applied.manifest.phase, Phase::Specify);
     assert_eq!(applied.event.sequence, 2);
@@ -142,7 +142,7 @@ fn reduced_path_transitions_are_path_scoped() {
     assert_eq!(verify.state_after().status, CycleStatus::Open);
     assert_eq!(verify.state_after().phase, Phase::Verify);
     let verified = engine
-        .apply_transition(&verify, &context("event-b-direct-verify"))
+        .apply_transition(&verify, &context("event-b-direct-verify"), &auth())
         .unwrap()
         .manifest;
 
@@ -233,7 +233,7 @@ fn block_and_unblock_preserve_the_current_phase() {
     assert_eq!(block.state_after().status, CycleStatus::Blocked);
     assert_eq!(block.state_after().phase, Phase::Explore);
     engine
-        .apply_transition(&block, &context("event-block"))
+        .apply_transition(&block, &context("event-block"), &auth())
         .unwrap();
 
     let unblock_evidence = gate_evidence(
@@ -248,7 +248,7 @@ fn block_and_unblock_preserve_the_current_phase() {
     assert_eq!(unblock.state_after().status, CycleStatus::Open);
     assert_eq!(unblock.state_after().phase, Phase::Explore);
     engine
-        .apply_transition(&unblock, &context("event-unblock"))
+        .apply_transition(&unblock, &context("event-unblock"), &auth())
         .unwrap();
 }
 
@@ -323,7 +323,7 @@ fn failed_verification_uses_declared_remediation_target() {
     assert_eq!(plan.state_after().status, CycleStatus::Remediating);
     assert_eq!(plan.state_after().phase, Phase::Verify);
     let applied = engine
-        .apply_transition(&plan, &context("event-remediation"))
+        .apply_transition(&plan, &context("event-remediation"), &auth())
         .unwrap();
     assert_eq!(applied.outcome, TransitionOutcome::Failed);
     assert_eq!(applied.manifest.status, CycleStatus::Remediating);
@@ -339,7 +339,7 @@ fn duplicate_event_id_rolls_back_transition_snapshot() {
         .unwrap();
 
     assert!(matches!(
-        engine.apply_transition(&plan, &context("duplicate-event")),
+        engine.apply_transition(&plan, &context("duplicate-event"), &auth()),
         Err(EngineError::Storage(StorageError::Database(_)))
     ));
     let stored = engine.ledger().get_cycle(&cycle.cycle_id).unwrap();
@@ -363,7 +363,7 @@ fn replay_matches_the_latest_stored_snapshot() {
         .plan_transition(&cycle.cycle_id, "phase.explore.complete", evidence)
         .unwrap();
     engine
-        .apply_transition(&plan, &context("event-explore"))
+        .apply_transition(&plan, &context("event-explore"), &auth())
         .unwrap();
 
     let replayed = engine.verify_cycle_snapshot(&cycle.cycle_id).unwrap();
@@ -550,6 +550,10 @@ fn context(event_id: &str) -> EventContext {
         actor: "test-runtime".into(),
         occurred_at: TIMESTAMP.into(),
     }
+}
+
+fn auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
 }
 
 fn pass_gate(

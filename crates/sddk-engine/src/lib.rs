@@ -1123,7 +1123,9 @@ impl<L: Ledger> Engine<L> {
         &mut self,
         plan: &TransitionPlan,
         context: &EventContext,
+        auth: &crate::authority::AuthorityContext,
     ) -> Result<TransitionResult, EngineError> {
+        auth.validate(crate::authority::WritableSurface::TransitionRecords)?;
         let current = self.ledger.get_cycle(&plan.state_before.cycle_id)?.manifest;
         if current != plan.state_before {
             return Err(EngineError::StalePlan {

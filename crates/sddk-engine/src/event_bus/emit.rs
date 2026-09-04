@@ -75,6 +75,8 @@ pub struct ApprovalRequestedInput {
     pub occurred_at: String,
     /// Actor identifier (orchestrator agent).
     pub actor_id: String,
+    /// Actor kind (caller-supplied; must be Agent for approval requests).
+    pub actor_kind: ActorKind,
 }
 
 /// Input for an approval-decision event emission.
@@ -92,6 +94,8 @@ pub struct ApprovalDecisionInput {
     pub decision: ApprovalDecision,
     /// Human operator identifier.
     pub actor_id: String,
+    /// Actor kind (caller-supplied; must be Human or System for approval decisions).
+    pub actor_kind: ActorKind,
     /// Mandatory justification for the decision.
     pub reason: String,
     /// Wall-clock time of the decision (RFC 3339).
@@ -165,6 +169,15 @@ pub fn emit_approval_requested<S: EventStore>(
     store: &mut S,
     input: &ApprovalRequestedInput,
 ) -> Result<EventAppended, StorageError> {
+    // Validator: only Agent may emit approval-requested events (per ADR-069 §4).
+    match input.actor_kind {
+        ActorKind::Agent => {}
+        ActorKind::Human | ActorKind::System => {
+            return Err(StorageError::Other(
+                "emit_approval_requested requires actor_kind Agent".into(),
+            ));
+        }
+    }
     // Normalize capability dots to hyphens for the event_id segment
     let capability_segment = input.capability.replace('.', "-");
     let event_id = format!(
@@ -188,7 +201,7 @@ pub fn emit_approval_requested<S: EventStore>(
         occurred_at: input.occurred_at.clone(),
         recorded_at: input.occurred_at.clone(),
         actor: ActorRef {
-            kind: ActorKind::Agent,
+            kind: input.actor_kind,
             id: input.actor_id.clone(),
             definition_hash: None,
             policy_hash: None,
@@ -227,6 +240,15 @@ pub fn emit_approval_decision<S: EventStore>(
     store: &mut S,
     input: &ApprovalDecisionInput,
 ) -> Result<EventAppended, StorageError> {
+    // Validator: only Human or System may emit approval-decision events (per ADR-069 §4).
+    match input.actor_kind {
+        ActorKind::Human | ActorKind::System => {}
+        ActorKind::Agent => {
+            return Err(StorageError::Other(
+                "emit_approval_decision requires actor_kind Human or System".into(),
+            ));
+        }
+    }
     let verb = match input.decision {
         ApprovalDecision::Granted => "granted",
         ApprovalDecision::Denied => "denied",
@@ -256,7 +278,7 @@ pub fn emit_approval_decision<S: EventStore>(
         occurred_at: input.occurred_at.clone(),
         recorded_at: input.occurred_at.clone(),
         actor: ActorRef {
-            kind: ActorKind::Human,
+            kind: input.actor_kind,
             id: input.actor_id.clone(),
             definition_hash: None,
             policy_hash: None,
@@ -557,6 +579,7 @@ mod tests {
             expires_at: "2026-08-18T18:00:00Z".into(),
             occurred_at: "2026-08-17T10:00:00Z".into(),
             actor_id: "agent:sddk".into(),
+            actor_kind: ActorKind::Agent,
         };
         // Compute the expected event_id manually
         let capability_segment = "git-delete_branch"; // dots replaced with hyphens
@@ -609,10 +632,12 @@ mod tests {
             expires_at: "2026-08-20T12:00:00Z".into(),
             occurred_at: "2026-08-18T09:00:00Z".into(),
             actor_id: "agent:orchestrator".into(),
+            actor_kind: ActorKind::Agent,
         };
         assert_eq!(input.capability, "git.delete_branch");
         assert_eq!(input.cycle_id, "c-99");
         assert!(input.expires_at.contains("2026-08-20"));
+        assert!(matches!(input.actor_kind, ActorKind::Agent));
     }
 
     #[test]
@@ -625,11 +650,13 @@ mod tests {
             request_hash: "sha256:deadbeefcafebabe".into(),
             decision: ApprovalDecision::Granted,
             actor_id: "alice".into(),
+            actor_kind: ActorKind::Human,
             reason: "reversible via reflog".into(),
             occurred_at: "2026-08-18T09:30:00Z".into(),
         };
         assert_eq!(input.decision, ApprovalDecision::Granted);
         assert_eq!(input.actor_id, "alice");
         assert!(!input.reason.is_empty());
+        assert!(matches!(input.actor_kind, ActorKind::Human));
     }
 }

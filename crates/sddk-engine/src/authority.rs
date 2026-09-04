@@ -76,8 +76,9 @@ impl AuthorityContext {
         }
     }
 
-    /// Test-only constructor.
-    #[cfg(test)]
+    /// Constructs an AuthorityContext for testing or internal use.
+    ///
+    /// For CLI call sites, use `for_cli` instead.
     pub fn for_test(actor_kind: ActorKind, actor_id: impl Into<String>) -> Self {
         Self {
             actor_kind,

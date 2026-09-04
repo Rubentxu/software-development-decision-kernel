@@ -14,7 +14,7 @@ use std::path::Path;
 use sddk_domain::{
     CycleManifest, CyclePath, CycleStatus, PauseReason, Phase, StorageError as DomainStorageError,
 };
-use sddk_engine::{CycleStartInput, Engine, EventContext};
+use sddk_engine::{authority::AuthorityContext, CycleStartInput, Engine, EventContext};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
@@ -115,6 +115,10 @@ fn receipt_path(directory: &tempfile::TempDir) -> std::path::PathBuf {
     directory.path().to_path_buf()
 }
 
+fn auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REQ-Cycle-Pause-Contract tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,6 +161,7 @@ fn pause_happy_path_releases_lease_and_writes_receipt() {
         &receipt_dir,
         "alice",
         1,
+        &auth(),
     );
 
     assert!(
@@ -216,6 +221,7 @@ fn pause_without_lease_fails_closed() {
         &receipt_dir,
         "alice",
         1,
+        &auth(),
     );
 
     assert!(result.is_err(), "cycle_pause should fail without lease");
@@ -264,6 +270,7 @@ fn pause_from_terminal_forbidden() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -284,6 +291,7 @@ fn pause_from_terminal_forbidden() {
         &receipt_dir,
         "alice",
         1,
+        &auth(),
     );
 
     assert!(result.is_err(), "cycle_pause from Closed should fail");
@@ -329,6 +337,7 @@ fn pause_already_paused_idempotent() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -348,6 +357,7 @@ fn pause_already_paused_idempotent() {
         &receipt_dir,
         "alice",
         2,
+    &auth(),
     );
 
     assert!(result.is_err(), "cycle_pause from Paused should fail");
@@ -404,6 +414,7 @@ fn resume_happy_path_reacquires_lease_and_prints_new_token() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -423,6 +434,7 @@ fn resume_happy_path_reacquires_lease_and_prints_new_token() {
         TIMESTAMP,
         &receipt_dir,
         "bob",
+    &auth(),
     );
 
     assert!(
@@ -480,6 +492,7 @@ fn resume_from_non_paused_rejected() {
         TIMESTAMP,
         &receipt_dir,
         "bob",
+    &auth(),
     );
 
     assert!(result.is_err(), "cycle_resume from Open should fail");
@@ -547,6 +560,7 @@ fn supersede_from_paused_records_prior_status() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -569,6 +583,7 @@ fn supersede_from_paused_records_prior_status() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -627,6 +642,7 @@ fn cycle_next_surfaces_resume_and_supersede_when_paused() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -684,6 +700,7 @@ fn review_at_informational_only() {
             &receipt_dir,
             "alice",
             1,
+            &auth(),
         )
         .unwrap();
 

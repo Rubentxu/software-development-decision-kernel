@@ -13,7 +13,7 @@ use std::path::Path;
 use sddk_domain::{
     CycleManifest, CyclePath, CycleStatus, Phase, StorageError as DomainStorageError,
 };
-use sddk_engine::{CycleStartInput, Engine, EventContext, SupersedeReason};
+use sddk_engine::{authority::AuthorityContext, CycleStartInput, Engine, EventContext, SupersedeReason};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
@@ -110,6 +110,10 @@ fn context(event_id: &str, command_id: &str) -> EventContext {
     }
 }
 
+fn auth() -> AuthorityContext {
+    AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime")
+}
+
 // ── REQ-Cycle-Lease-Fence ────────────────────────────────────────────────────
 
 #[test]
@@ -130,6 +134,7 @@ fn supersede_requires_lease_fence() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        &auth(),
     );
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -168,6 +173,7 @@ fn supersede_requires_exactly_one_of_successor_or_reason() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        &auth(),
     );
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -190,6 +196,7 @@ fn supersede_requires_exactly_one_of_successor_or_reason() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        &auth(),
     );
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -225,6 +232,7 @@ fn supersede_self_is_forbidden() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -259,6 +267,7 @@ fn supersede_appends_requested_and_applied_events() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
     assert!(
         result.is_ok(),
@@ -309,6 +318,7 @@ fn supersede_reason_scope_invalid() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
     assert!(
         result.is_ok(),
@@ -336,6 +346,7 @@ fn supersede_reason_goal_replaced() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
     assert!(
         result.is_ok(),
@@ -363,6 +374,7 @@ fn supersede_reason_external_obsolete() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
     assert!(
         result.is_ok(),
@@ -402,6 +414,7 @@ fn supersede_releases_lease_atomically() {
         Path::new("/tmp"),
         "lease-owner",
         1, // must match the fencing_token computed by acquire_cycle_lease
+    &auth(),
     );
     assert!(
         result.is_ok(),
@@ -457,6 +470,7 @@ fn supersede_receipt_writes_lease_owner_from_caller_arg() {
             receipt_dir.path(),
             "alice", // lease_owner passed as "alice"
             1,
+            &auth(),
         )
         .unwrap();
 
@@ -504,6 +518,7 @@ fn supersede_receipt_writes_fencing_token_used() {
             receipt_dir.path(),
             "test-actor",
             1, // fencing_token — must match what acquire_cycle_lease computed internally
+            &auth(),
         )
         .unwrap();
 
@@ -557,6 +572,7 @@ fn supersede_rejects_nonexistent_successor_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
 
     // Must fail with SupersedeSuccessorNotFound
@@ -628,6 +644,7 @@ fn supersede_rejects_empty_evidence_refs_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
+    &auth(),
     );
 
     // Must fail with SupersedeEvidenceRefsRequired
@@ -699,6 +716,7 @@ fn supersede_preserves_ledger_event_digests() {
             Path::new("/tmp"),
             "test-actor",
             1,
+            &auth(),
         )
         .unwrap();
 
