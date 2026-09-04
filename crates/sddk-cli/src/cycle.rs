@@ -1234,6 +1234,8 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
             actor_kind,
             event_id_prefix,
             failed_gates: vec![],
+            causation_id: None,
+            correlation_id: None,
         };
         let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind, None, None);
         let applied = match context.engine.apply_transition(
@@ -1272,6 +1274,8 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
                         actor_id,
                         actor_kind,
                         event_id_prefix: format!("ph-{}", plan.state_before().cycle_id),
+                        causation_id: None,
+                        correlation_id: None,
                     };
                     if let Ok(mut store) = SqliteEventStore::open(outcome_store_path) {
                         let _ = event_bus::emit_phase_event(&mut store, &phase_input);

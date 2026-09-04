@@ -21,6 +21,8 @@ fn make_phase_input(cycle_id: &str, from: &str, to: &str) -> PhaseEventInput {
         actor_id: "user:test".into(),
         actor_kind: ActorKind::Human,
         event_id_prefix: format!("ph-{cycle_id}"),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
@@ -37,6 +39,8 @@ fn make_outcome_input(cycle_id: &str, transition_id: &str) -> OutcomeEventInput 
         actor_kind: ActorKind::Human,
         event_id_prefix: format!("tr-{cycle_id}"),
         failed_gates: vec![],
+        causation_id: None,
+        correlation_id: None,
     }
 }
 

@@ -41,6 +41,16 @@ pub fn with_causation(env: &mut EventEnvelopeV1, cause_event_id: &str) {
     }
 }
 
+/// Sets `correlation_id` to `correlation` if the field is not already set.
+///
+/// This is an additive, idempotent helper: calling it on an envelope that
+/// already has a `correlation_id` is a no-op.
+pub fn with_correlation_id(env: &mut EventEnvelopeV1, correlation: &str) {
+    if env.correlation_id.is_none() {
+        env.correlation_id = Some(correlation.to_owned());
+    }
+}
+
 /// Walks the causation chain of an event by following `causation_id` links.
 ///
 /// Returns the ordered list from the given event back to the root (the event
@@ -239,6 +249,8 @@ mod tests {
             actor_id: "alice".into(),
             actor_kind: ActorKind::Human,
             event_id_prefix: "e".into(),
+            causation_id: None,
+            correlation_id: None,
         };
 
         // Emit an envelope with correlation_id already set (preset)

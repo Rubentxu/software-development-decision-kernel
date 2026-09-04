@@ -8,7 +8,9 @@ pub mod storage_path;
 // Re-export all public items for external consumers.
 // External consumers (e.g. crates/sddk-cli/src/approval.rs) use:
 //   sddk_engine::event_bus::{emit_approval_requested, emit_approval_decision, ...}
-pub use correlation::{trace_causation_chain, with_causation, with_correlation_from_context};
+pub use correlation::{
+    trace_causation_chain, with_causation, with_correlation_from_context, with_correlation_id,
+};
 pub use emit::{
     ApprovalDecisionInput, ApprovalRequestedInput, OutcomeEventInput, PhaseEventInput,
     WorkflowNodeEventInput, WorkflowRunEventInput, emit_approval_decision, emit_approval_requested,

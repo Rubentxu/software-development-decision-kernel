@@ -106,6 +106,8 @@ fn make_request_input(actor_kind: ActorKind) -> ApprovalRequestedInput {
             ActorKind::System => "sddk-cli".into(),
         },
         actor_kind,
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
@@ -124,6 +126,8 @@ fn make_decision_input(actor_kind: ActorKind) -> ApprovalDecisionInput {
         actor_kind,
         reason: "Test approval reason".into(),
         occurred_at: "2026-08-04T10:00:00Z".into(),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 

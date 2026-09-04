@@ -236,6 +236,8 @@ fn run_approval_decision(
             actor_kind,
             reason: args.reason.clone(),
             occurred_at: timestamp,
+            causation_id: None,
+            correlation_id: None,
         };
 
         let appended = event_bus::emit_approval_decision(&mut event_store, &input)

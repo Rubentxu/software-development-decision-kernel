@@ -128,6 +128,8 @@ mod tests {
             actor_id: "user:test".into(),
             actor_kind: ActorKind::Human,
             event_id_prefix: "e-c-1".into(),
+            causation_id: None,
+            correlation_id: None,
         };
         let env = build_event_envelope(
             "e-c-1-entered-c-1",

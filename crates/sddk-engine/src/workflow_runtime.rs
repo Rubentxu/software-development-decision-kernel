@@ -359,6 +359,8 @@ impl<R: RunStore> WorkflowRuntime<R> {
                 occurred_at: self.clock.now(),
                 actor_id: "workflow-runtime".into(),
                 actor_kind: ActorKind::System,
+                causation_id: None,
+                correlation_id: None,
             };
             emit_workflow_run_started(store, &input)?;
         }
@@ -374,6 +376,8 @@ impl<R: RunStore> WorkflowRuntime<R> {
                 occurred_at: self.clock.now(),
                 actor_id: "workflow-runtime".into(),
                 actor_kind: ActorKind::System,
+                causation_id: None,
+                correlation_id: None,
             };
             emit_workflow_run_completed(store, &input)?;
         }
@@ -391,6 +395,8 @@ impl<R: RunStore> WorkflowRuntime<R> {
                 actor_id: "workflow-runtime".into(),
                 actor_kind: ActorKind::System,
                 reason: None,
+                causation_id: None,
+                correlation_id: None,
             };
             emit_workflow_node_running(store, &input)?;
         }
@@ -408,6 +414,8 @@ impl<R: RunStore> WorkflowRuntime<R> {
                 actor_id: "workflow-runtime".into(),
                 actor_kind: ActorKind::System,
                 reason: None,
+                causation_id: None,
+                correlation_id: None,
             };
             emit_workflow_node_completed(store, &input)?;
         }
@@ -425,6 +433,8 @@ impl<R: RunStore> WorkflowRuntime<R> {
                 actor_id: "workflow-runtime".into(),
                 actor_kind: ActorKind::System,
                 reason: Some(reason.into()),
+                causation_id: None,
+                correlation_id: None,
             };
             emit_workflow_node_failed(store, &input)?;
         }

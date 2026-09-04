@@ -8,6 +8,7 @@ use serde_json::json;
 
 use crate::TransitionOutcome;
 
+use super::correlation::{with_causation, with_correlation_from_context, with_correlation_id};
 use super::envelopes::{build_event_envelope, build_outcome_envelope};
 
 // ── Input types ────────────────────────────────────────────────────────────────
@@ -31,6 +32,10 @@ pub struct PhaseEventInput {
     pub actor_kind: ActorKind,
     /// Prefix for deterministic event_id generation.
     pub event_id_prefix: String,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 /// Input for transition-outcome event emission.
@@ -56,6 +61,10 @@ pub struct OutcomeEventInput {
     pub event_id_prefix: String,
     /// Names of gates that failed (empty for succeeded transitions).
     pub failed_gates: Vec<String>,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 /// Input for an approval-requested event emission.
@@ -77,6 +86,10 @@ pub struct ApprovalRequestedInput {
     pub actor_id: String,
     /// Actor kind (caller-supplied; must be Agent for approval requests).
     pub actor_kind: ActorKind,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 /// Input for an approval-decision event emission.
@@ -100,6 +113,10 @@ pub struct ApprovalDecisionInput {
     pub reason: String,
     /// Wall-clock time of the decision (RFC 3339).
     pub occurred_at: String,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 // ── Emit functions ─────────────────────────────────────────────────────────────
@@ -118,21 +135,35 @@ pub fn emit_phase_event<S: EventStore>(
     input: &PhaseEventInput,
 ) -> Result<(EventAppended, EventAppended), StorageError> {
     let exited_id = format!("{}-exited-{}", input.event_id_prefix, input.cycle_id);
-    let exited_env = build_event_envelope(
+    let mut exited_env = build_event_envelope(
         &exited_id,
         "workflow.phase.exited",
         &input.from_phase,
         input,
     );
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut exited_env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut exited_env, corr);
+    }
+    exited_env.content_hash = exited_env.compute_content_hash();
     let from_result = store.append(&exited_env)?;
 
     let entered_id = format!("{}-entered-{}", input.event_id_prefix, input.cycle_id);
-    let entered_env = build_event_envelope(
+    let mut entered_env = build_event_envelope(
         &entered_id,
         "workflow.phase.entered",
         &input.to_phase,
         input,
     );
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut entered_env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut entered_env, corr);
+    }
+    entered_env.content_hash = entered_env.compute_content_hash();
     let to_result = store.append(&entered_env)?;
 
     Ok((from_result, to_result))
@@ -154,7 +185,14 @@ pub fn emit_outcome_event<S: EventStore>(
         TransitionOutcome::Failed => "workflow.transition.failed",
     };
     let event_id = format!("{}-outcome-{}", input.event_id_prefix, input.cycle_id);
-    let env = build_outcome_envelope(event_id, event_type, input);
+    let mut env = build_outcome_envelope(event_id, event_type, input);
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
 
@@ -223,6 +261,12 @@ pub fn emit_approval_requested<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -300,6 +344,12 @@ pub fn emit_approval_decision<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -319,6 +369,10 @@ pub struct WorkflowRunEventInput {
     pub actor_id: String,
     /// Actor kind.
     pub actor_kind: ActorKind,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 /// Input for workflow node events.
@@ -338,6 +392,10 @@ pub struct WorkflowNodeEventInput {
     pub actor_kind: ActorKind,
     /// Optional reason (for failed events).
     pub reason: Option<String>,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
 }
 
 /// Emits a `workflow.run.started` event.
@@ -379,6 +437,12 @@ pub fn emit_workflow_run_started<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -422,6 +486,12 @@ pub fn emit_workflow_run_completed<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -468,6 +538,12 @@ pub fn emit_workflow_node_running<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -514,6 +590,12 @@ pub fn emit_workflow_node_completed<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -561,6 +643,12 @@ pub fn emit_workflow_node_failed<S: EventStore>(
         frame_id: None,
         fork_id: None,
     };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
     env.content_hash = env.compute_content_hash();
     store.append(&env)
 }
@@ -580,6 +668,8 @@ mod tests {
             occurred_at: "2026-08-17T10:00:00Z".into(),
             actor_id: "agent:sddk".into(),
             actor_kind: ActorKind::Agent,
+            causation_id: None,
+            correlation_id: None,
         };
         // Compute the expected event_id manually
         let capability_segment = "git-delete_branch"; // dots replaced with hyphens
@@ -633,6 +723,8 @@ mod tests {
             occurred_at: "2026-08-18T09:00:00Z".into(),
             actor_id: "agent:orchestrator".into(),
             actor_kind: ActorKind::Agent,
+            causation_id: None,
+            correlation_id: None,
         };
         assert_eq!(input.capability, "git.delete_branch");
         assert_eq!(input.cycle_id, "c-99");
@@ -653,6 +745,8 @@ mod tests {
             actor_kind: ActorKind::Human,
             reason: "reversible via reflog".into(),
             occurred_at: "2026-08-18T09:30:00Z".into(),
+            causation_id: None,
+            correlation_id: None,
         };
         assert_eq!(input.decision, ApprovalDecision::Granted);
         assert_eq!(input.actor_id, "alice");
