@@ -430,17 +430,20 @@ fn gate_receipt_requires_registered_evaluator_and_matches_plan_state() {
     let (_storage, mut engine) = setup();
     start_cycle(&mut engine, "evt-1");
 
-    let unregistered = engine.evaluate_gate(&GateEvaluationInput {
-        cycle_id: "cycle-1".into(),
-        transition_id: "phase.explore.complete".into(),
-        gate: "exploration-sufficient".into(),
-        evaluator: "untrusted.script".into(),
-        evidence: serde_json::json!({}),
-        outcome: sddk_storage::GateOutcomeStatus::Passed,
-        evaluated_at: TIMESTAMP.into(),
-        actor: "test-runtime".into(),
-        command_id: "gate-1".into(),
-    }, &sys_auth());
+    let unregistered = engine.evaluate_gate(
+        &GateEvaluationInput {
+            cycle_id: "cycle-1".into(),
+            transition_id: "phase.explore.complete".into(),
+            gate: "exploration-sufficient".into(),
+            evaluator: "untrusted.script".into(),
+            evidence: serde_json::json!({}),
+            outcome: sddk_storage::GateOutcomeStatus::Passed,
+            evaluated_at: TIMESTAMP.into(),
+            actor: "test-runtime".into(),
+            command_id: "gate-1".into(),
+        },
+        &sys_auth(),
+    );
     assert!(matches!(
         unregistered,
         Err(sddk_engine::EngineError::UnregisteredEvaluator { gate, evaluator })
@@ -826,17 +829,20 @@ fn waive_gate(
     gate: &str,
 ) -> String {
     engine
-        .evaluate_gate(&GateEvaluationInput {
-            cycle_id: cycle_id.into(),
-            transition_id: transition_id.into(),
-            gate: gate.into(),
-            evaluator: sddk_engine::DEFAULT_EVALUATOR.into(),
-            evidence: serde_json::json!({"reason": "gate-not-applicable"}),
-            outcome: sddk_storage::GateOutcomeStatus::Waived,
-            evaluated_at: TIMESTAMP.into(),
-            actor: "test-runtime".into(),
-            command_id: format!("gate-{gate}"),
-        }, &sys_auth())
+        .evaluate_gate(
+            &GateEvaluationInput {
+                cycle_id: cycle_id.into(),
+                transition_id: transition_id.into(),
+                gate: gate.into(),
+                evaluator: sddk_engine::DEFAULT_EVALUATOR.into(),
+                evidence: serde_json::json!({"reason": "gate-not-applicable"}),
+                outcome: sddk_storage::GateOutcomeStatus::Waived,
+                evaluated_at: TIMESTAMP.into(),
+                actor: "test-runtime".into(),
+                command_id: format!("gate-{gate}"),
+            },
+            &sys_auth(),
+        )
         .unwrap()
         .receipt_id
 }

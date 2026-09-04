@@ -2311,17 +2311,20 @@ fn run_cycle_evaluate_gate(
         // caller that wants to advance the workflow MUST pass
         // `--outcome passed` explicitly.
         let outcome = args.outcome.into();
-        let receipt = context.engine.evaluate_gate(&GateEvaluationInput {
-            cycle_id: cycle_id.clone(),
-            transition_id: args.transition.clone(),
-            gate: args.gate.clone(),
-            evaluator: args.evaluator.clone(),
-            evidence: serde_json::from_str(&args.evidence)?,
-            outcome,
-            evaluated_at: timestamp,
-            actor,
-            command_id: format!("gate-{}", uuid::Uuid::new_v4().hyphenated()),
-        }, &auth)?;
+        let receipt = context.engine.evaluate_gate(
+            &GateEvaluationInput {
+                cycle_id: cycle_id.clone(),
+                transition_id: args.transition.clone(),
+                gate: args.gate.clone(),
+                evaluator: args.evaluator.clone(),
+                evidence: serde_json::from_str(&args.evidence)?,
+                outcome,
+                evaluated_at: timestamp,
+                actor,
+                command_id: format!("gate-{}", uuid::Uuid::new_v4().hyphenated()),
+            },
+            &auth,
+        )?;
         // Sign the receipt with the local key (fail-closed: no key → no
         // signature; release verify will reject unsigned receipts).
         let signature = {

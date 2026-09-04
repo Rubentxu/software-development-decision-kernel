@@ -266,17 +266,20 @@ fn failed_verification_uses_declared_remediation_target() {
         "tests-pass".into(),
         GateReceiptRef {
             receipt_id: engine
-                .evaluate_gate(&GateEvaluationInput {
-                    cycle_id: cycle_id.clone(),
-                    transition_id: "phase.verify.complete".into(),
-                    gate: "tests-pass".into(),
-                    evaluator: sddk_engine::DEFAULT_EVALUATOR.into(),
-                    evidence: serde_json::json!({"failed": 1}),
-                    outcome: sddk_storage::GateOutcomeStatus::Failed,
-                    evaluated_at: TIMESTAMP.into(),
-                    actor: "test-runtime".into(),
-                    command_id: "gate-tests-pass".into(),
-                }, &sys_auth())
+                .evaluate_gate(
+                    &GateEvaluationInput {
+                        cycle_id: cycle_id.clone(),
+                        transition_id: "phase.verify.complete".into(),
+                        gate: "tests-pass".into(),
+                        evaluator: sddk_engine::DEFAULT_EVALUATOR.into(),
+                        evidence: serde_json::json!({"failed": 1}),
+                        outcome: sddk_storage::GateOutcomeStatus::Failed,
+                        evaluated_at: TIMESTAMP.into(),
+                        actor: "test-runtime".into(),
+                        command_id: "gate-tests-pass".into(),
+                    },
+                    &sys_auth(),
+                )
                 .unwrap()
                 .receipt_id,
         },

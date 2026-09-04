@@ -15,7 +15,7 @@ use crate::knowledge_cmd::{
     resolve_managed_knowledge,
 };
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
-use sddk_engine::authority::{infer_actor_kind, AuthorityContext};
+use sddk_engine::authority::{AuthorityContext, infer_actor_kind};
 
 const SCHEMA_VERSION: &str = "1.0.0";
 const INGESTION_ROOT: &str = "ingestion";
@@ -313,7 +313,7 @@ pub(crate) fn run_import(args: KnowledgeImportArgs, environment: &CliEnvironment
             .or_else(|| environment.sddk_actor.clone())
             .unwrap_or_else(|| "anonymous".into());
         let actor_kind = infer_actor_kind(&actor);
-        let auth = AuthorityContext::for_cli(actor, actor_kind.clone(), None, None);
+        let auth = AuthorityContext::for_cli(actor, actor_kind, None, None);
         auth.validate(sddk_engine::authority::WritableSurface::KnowledgeGraphVault)
             .map_err(|e| anyhow::anyhow!("authority check failed: {}", e))?;
         let path = plan_path(&context.vault_path, &args.plan)?;
