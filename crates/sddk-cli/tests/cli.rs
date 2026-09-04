@@ -10707,7 +10707,8 @@ impl CliFixture {
             .env("HOME", &self.home)
             .env("XDG_DATA_HOME", &self.data)
             .env("XDG_STATE_HOME", &self.state)
-            .env("XDG_CACHE_HOME", &self.cache);
+            .env("XDG_CACHE_HOME", &self.cache)
+            .env("USER", "user:test-cli-actor");
         command.output().unwrap()
     }
 
