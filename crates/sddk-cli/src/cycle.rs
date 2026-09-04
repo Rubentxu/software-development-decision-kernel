@@ -11,6 +11,7 @@ use sddk_domain::{
 use sddk_engine::{
     AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
     RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
+    authority::{AuthorityContext, infer_actor_kind},
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
     frontier_for_state,
 };
@@ -1234,6 +1235,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
             event_id_prefix,
             failed_gates: vec![],
         };
+        let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind.clone(), None, None);
         let applied = match context.engine.apply_transition(
             &plan,
             &event_context(
@@ -1243,6 +1245,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
                 environment,
                 &timestamp,
             ),
+            &auth,
         ) {
             Ok(applied) => {
                 // Emit workflow.transition.succeeded
@@ -1582,6 +1585,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
 
         // Convert reason
         let reason: Option<SupersedeReason> = args.reason.map(|r| r.into());
+        let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let receipt = context.engine.cycle_supersede(
             &cycle_id,
@@ -1595,6 +1599,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
             &context.paths.cycle_artifacts,
             &args.lease_owner,
             args.fencing_token,
+            &auth,
         )?;
 
         // Load updated cycle to get manifest
@@ -1691,6 +1696,7 @@ fn run_cycle_pause(args: CyclePauseArgs, environment: &CliEnvironment) -> Comman
         validate_cycle_project(&cycle_id, &context.identity.project_id)?;
 
         let reason: PauseReason = args.reason.into();
+        let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let receipt = context.engine.cycle_pause(
             &cycle_id,
@@ -1703,6 +1709,7 @@ fn run_cycle_pause(args: CyclePauseArgs, environment: &CliEnvironment) -> Comman
             &context.paths.cycle_artifacts,
             &args.lease_owner,
             args.fencing_token,
+            &auth,
         )?;
 
         // Load updated cycle to get manifest
@@ -1741,6 +1748,7 @@ fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> Comm
 
         // GAP-UX-1: validate cycle belongs to this project before touching storage
         validate_cycle_project(&cycle_id, &context.identity.project_id)?;
+        let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let resume_output = context.engine.cycle_resume(
             &cycle_id,
@@ -1750,6 +1758,7 @@ fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> Comm
             &timestamp,
             &context.paths.cycle_artifacts,
             &args.lease_owner,
+            &auth,
         )?;
 
         // Load updated cycle to get manifest

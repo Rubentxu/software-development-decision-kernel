@@ -6,8 +6,11 @@
 
 use clap::{Args, Subcommand};
 use sddk_domain::projections::ApprovalProjection;
-use sddk_domain::{ApprovalDecision, EventEnvelopeV1, EventStore, Projection, SddkErrorCode};
-use sddk_engine::event_bus::{self, ApprovalDecisionInput};
+use sddk_domain::{ActorKind, ApprovalDecision, EventEnvelopeV1, EventStore, Projection, SddkErrorCode};
+use sddk_engine::{
+    authority::infer_actor_kind,
+    event_bus::{self, ApprovalDecisionInput},
+};
 use sddk_storage::SqliteEventStore;
 use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
@@ -219,6 +222,7 @@ fn run_approval_decision(
         }
 
         let request_hash = state.request_hash.clone();
+        let actor_kind = infer_actor_kind(&actor);
 
         let input = ApprovalDecisionInput {
             project_id: context.identity.project_id.to_string(),
@@ -227,6 +231,7 @@ fn run_approval_decision(
             request_hash,
             decision,
             actor_id: actor,
+            actor_kind,
             reason: args.reason.clone(),
             occurred_at: timestamp,
         };
