@@ -656,9 +656,9 @@ Their ideas become executable only when mapped to semantic Work Items in `EXECUT
 
 ## 9. Current next work
 
-1. `GOV-ROADMAP-001`, `DW-IR-001` and `DW-IR-002` are `SHIPPED` (PR #1 at `2596e46`; ExecutionScope v1.71.0; transition/predicate AST v1.72.0).
-2. `DW-IR-004` is the deterministic CURRENT Work Item (plan revision/lineage shipped v1.79.0); `DW-IR-005` is NEXT.
-3. H0 then proceeds through adapter proof, selector, evidence/invalidation and apply/verify integration.
+1. `SHIPPED` Work Items in execution order: `GOV-ROADMAP-001`, `DW-IR-001`, `TEST-MODEL-001`, `TEST-ADAPTER-001`, `TEST-ADAPTER-002`, `TEST-SELECT-001`, `TEST-EVIDENCE-001`, `TEST-APPLY-001`, `DW-IR-002`, `DW-IR-003` (last SHIPPED: graph revision/lineage, v1.79.0). Canonical spine baseline was reconciled 2026-09-03 (PR #1 at `2596e46`; ExecutionScope v1.71.0; transition/predicate AST v1.72.0).
+2. `DW-IR-004` (typed operator input/output/error contracts) is the deterministic CURRENT Work Item; `DW-IR-005` is NEXT.
+3. H0 then proceeds through `HX-AUTHORITY-001` → `ARCH-HEX-001` → `EVT-LEDGER-001` before H1 (Planning SSOT).
 4. The complete route, including CDD/Decision Memory, remains placed through `GA-002` in `EXECUTION-SPINE.yaml`.
 
 That is the official line an LLM must follow.
