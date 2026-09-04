@@ -151,6 +151,8 @@ mod tests {
             actor: "alice".into(),
             actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
+            correlation_id: None,
+            causation_id: None,
         };
         let mut env = minimal_env();
         assert!(env.correlation_id.is_none());
@@ -167,6 +169,8 @@ mod tests {
             actor: "alice".into(),
             actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
+            correlation_id: None,
+            causation_id: None,
         };
         let mut env = minimal_env();
         env.correlation_id = Some("preset-correlation".into());
@@ -264,6 +268,8 @@ mod tests {
             actor: "alice".into(),
             actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
+            correlation_id: None,
+            causation_id: None,
         };
         with_correlation_from_context(&mut env_after_helper, &ctx);
         env_after_helper.content_hash = env_after_helper.compute_content_hash();

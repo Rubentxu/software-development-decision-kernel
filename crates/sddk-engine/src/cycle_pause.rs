@@ -144,6 +144,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             state_before: None,
             state_after: None,
             payload: payload_requested,
+            causation_id: None,
+            correlation_id: None,
         };
 
         let event_input_applied = LedgerEventInput {
@@ -165,6 +167,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
                 "review_at": review_at,
                 "event_ids": [event_id_requested.clone(), event_id_applied.clone()],
             }),
+            causation_id: None,
+            correlation_id: None,
         };
 
         // Update the manifest: set status to Paused and record pause metadata
@@ -288,6 +292,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             state_before: None,
             state_after: None,
             payload: payload_requested,
+            causation_id: None,
+            correlation_id: None,
         };
 
         let event_input_applied = LedgerEventInput {
@@ -307,6 +313,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             payload: json!({
                 "event_ids": [event_id_requested.clone(), event_id_applied.clone(), event_id_lease.clone()],
             }),
+            causation_id: None,
+            correlation_id: None,
         };
 
         let event_input_lease = LedgerEventInput {
@@ -326,6 +334,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
                 "lease_owner": new_lease_owner,
                 "fencing_token": new_fencing_token,
             }),
+            causation_id: None,
+            correlation_id: None,
         };
 
         // Update the manifest: set status back to Open, clear pause metadata

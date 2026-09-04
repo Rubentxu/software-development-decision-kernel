@@ -141,6 +141,8 @@ pub fn ledger_with_pass_gate_receipt(
         evaluated_at: "2026-08-19T00:00:00Z".to_string(),
         command_id: format!("cmd-{}", uuid::Uuid::new_v4()),
         frame_id: format!("frame-{}", uuid::Uuid::new_v4()),
+        causation_id: None,
+        correlation_id: None,
     };
 
     let receipt = ledger

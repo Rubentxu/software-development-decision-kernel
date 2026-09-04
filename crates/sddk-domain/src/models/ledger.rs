@@ -24,6 +24,14 @@ pub struct LedgerEventInput {
     pub state_before: Option<Value>,
     pub state_after: Option<Value>,
     pub payload: Value,
+    /// Causation chain: event_id of the immediate predecessor in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+    /// Correlation group: frame_id of the command that triggered this event.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
 }
 
 /// An immutable hash-linked ledger event.
@@ -48,6 +56,14 @@ pub struct LedgerEvent {
     pub payload: Value,
     pub previous_hash: Option<String>,
     pub event_hash: String,
+    /// Causation chain: event_id of the immediate predecessor in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+    /// Correlation group: frame_id of the command that triggered this event.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
 }
 
 impl LedgerEvent {
@@ -65,6 +81,8 @@ impl LedgerEvent {
             state_before: self.state_before.clone(),
             state_after: self.state_after.clone(),
             payload: self.payload.clone(),
+            causation_id: self.causation_id.clone(),
+            correlation_id: self.correlation_id.clone(),
         }
     }
 }
@@ -116,6 +134,8 @@ mod tests {
             state_before: Some(serde_json::json!({"before": "value"})),
             state_after: Some(serde_json::json!({"after": "value"})),
             payload: serde_json::json!({"key": "value", "nested": {"a": 1}}),
+            causation_id: Some("evt-previous-001".to_string()),
+            correlation_id: Some("frame-001".to_string()),
         };
 
         // Byte-exact round-trip via serde_json

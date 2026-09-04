@@ -111,6 +111,8 @@ fn ledger_roundtrip_sqlite() {
             command_id: "cmd-contract".into(),
             frame_id: "frame-contract".into(),
             evaluated_at: common::TS.into(),
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap();
     assert!(receipt.receipt_id.starts_with("gate-"));

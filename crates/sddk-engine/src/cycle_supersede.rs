@@ -154,6 +154,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             state_before: None,
             state_after: None,
             payload: payload_requested,
+            causation_id: None,
+            correlation_id: None,
         };
 
         let event_input_applied = LedgerEventInput {
@@ -175,6 +177,8 @@ impl<L: sddk_domain::Ledger> Engine<L> {
                 "reason": reason.as_ref().map(|r| r.as_str()),
                 "event_ids": [event_id_requested.clone(), event_id_applied.clone()],
             }),
+            causation_id: None,
+            correlation_id: None,
         };
 
         // Insert the two events and update cycle status to Closed

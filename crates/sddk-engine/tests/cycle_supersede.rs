@@ -110,6 +110,8 @@ fn context(event_id: &str, command_id: &str) -> EventContext {
         actor: "test-runtime".into(),
         actor_ref: None,
         occurred_at: TIMESTAMP.into(),
+        correlation_id: None,
+        causation_id: None,
     }
 }
 

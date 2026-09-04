@@ -140,6 +140,8 @@ fn ledger_event_carries_string_actor_only_no_kind() {
         payload: serde_json::json!({}),
         previous_hash: None,
         event_hash: "hash".into(),
+        causation_id: None,
+        correlation_id: None,
     };
     // actor is a String, not an ActorKind
     let _actor_string: String = event.actor;
@@ -167,6 +169,8 @@ fn gate_receipt_carries_string_actor_only_no_kind() {
         frame_id: "frame-001".into(),
         evaluated_at: "2026-09-04T00:00:00Z".into(),
         seq: 1,
+        causation_id: None,
+        correlation_id: None,
     };
     // actor is a String, not an ActorKind
     let _actor_string: String = receipt.actor;

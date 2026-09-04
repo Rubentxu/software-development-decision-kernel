@@ -529,7 +529,7 @@ impl Storage {
                     frame_id: event.frame_id.clone(),
                     command_id: event.command_id.clone(),
                     actor: event.actor.clone(),
-                    actor_ref: None,
+                    actor_ref: event.actor_ref.clone(),
                     event_type: "lease.released".to_owned(),
                     occurred_at: event.occurred_at.clone(),
                     state_before: None,
@@ -538,6 +538,8 @@ impl Storage {
                         "cycle_id": manifest.cycle_id,
                         "released_at_ms": updated_at,
                     }),
+                    causation_id: event.causation_id.clone(),
+                    correlation_id: event.correlation_id.clone(),
                 };
                 append_event_on(&transaction, &release_event)?;
             }
@@ -1128,6 +1130,8 @@ impl Storage {
             state_before: None,
             state_after: None,
             payload,
+            causation_id: None,
+            correlation_id: None,
         };
         append_event_on(&transaction, &event)?;
         transaction.commit()?;
@@ -1223,6 +1227,8 @@ impl Storage {
             frame_id: input.frame_id.clone(),
             evaluated_at: input.evaluated_at.clone(),
             seq,
+            causation_id: input.causation_id.clone(),
+            correlation_id: input.correlation_id.clone(),
         })
     }
 
@@ -1279,6 +1285,8 @@ impl Storage {
             frame_id: input.frame_id.clone(),
             evaluated_at: input.evaluated_at.clone(),
             seq: input.seq,
+            causation_id: input.causation_id.clone(),
+            correlation_id: input.correlation_id.clone(),
         })
     }
 
@@ -1445,6 +1453,8 @@ fn append_event_on(transaction: &Transaction<'_>, input: &LedgerEventInput) -> R
         payload: input.payload.clone(),
         previous_hash,
         event_hash,
+        causation_id: input.causation_id.clone(),
+        correlation_id: input.correlation_id.clone(),
     })
 }
 
@@ -1558,7 +1568,7 @@ fn event_from_row(row: &Row<'_>) -> rusqlite::Result<LedgerEvent> {
         frame_id: row.get(4)?,
         command_id: row.get(5)?,
         actor: row.get(6)?,
-        // actor_ref column (MIGRATION_11) is added separately; placeholder None for existing rows
+        // actor_ref / causation_id / correlation_id columns added in MIGRATION_11+; placeholder None for existing rows
         actor_ref: None,
         event_type: row.get(7)?,
         occurred_at: row.get(8)?,
@@ -1567,6 +1577,8 @@ fn event_from_row(row: &Row<'_>) -> rusqlite::Result<LedgerEvent> {
         payload: serde_json::from_str(&payload_json).map_err(json_from_sql_error)?,
         previous_hash: row.get(12)?,
         event_hash: row.get(13)?,
+        causation_id: None,
+        correlation_id: None,
     })
 }
 
@@ -1651,12 +1663,14 @@ fn gate_receipt_from_row(row: &Row<'_>) -> rusqlite::Result<GateReceipt> {
         outcome: serde_json::from_value(Value::String(outcome)).map_err(json_from_sql_error)?,
         evidence: serde_json::from_str(&evidence_json).map_err(json_from_sql_error)?,
         actor: row.get(9)?,
-        // actor_ref column (MIGRATION_11) is added separately; placeholder None for existing rows
+        // actor_ref / causation_id / correlation_id columns added in MIGRATION_11+; placeholder None for existing rows
         actor_ref: None,
         command_id: row.get(10)?,
         frame_id: row.get(11)?,
         evaluated_at: row.get(12)?,
         seq: row.get(13)?,
+        causation_id: None,
+        correlation_id: None,
     })
 }
 

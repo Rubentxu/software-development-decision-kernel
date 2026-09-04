@@ -446,6 +446,14 @@ pub struct EventContext {
     pub actor_ref: Option<ActorRef>,
     /// Explicit event timestamp.
     pub occurred_at: String,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    /// Causation chain: set by the caller to the predecessor event_id in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
 }
 
 /// Caller evidence used to evaluate a transition.
@@ -1003,6 +1011,8 @@ impl<L: Ledger> Engine<L> {
                 command_id: input.command_id.clone(),
                 frame_id,
                 evaluated_at: input.evaluated_at.clone(),
+                causation_id: None,
+                correlation_id: None,
             })?)
     }
 
@@ -1479,6 +1489,8 @@ fn event_input(
         state_before,
         state_after,
         payload,
+        causation_id: context.causation_id.clone(),
+        correlation_id: context.correlation_id.clone(),
     }
 }
 
@@ -2206,6 +2218,8 @@ mod frontier_tests {
             command_id: "cmd-1".into(),
             frame_id: "frame-1".into(),
             evaluated_at: "2024-01-01T00:00:00Z".into(),
+            causation_id: None,
+            correlation_id: None,
         };
         ledger.insert_gate_receipt_next_seq(&input).unwrap();
     }

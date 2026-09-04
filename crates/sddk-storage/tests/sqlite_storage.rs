@@ -582,6 +582,8 @@ fn event(event_id: &str, cycle_id: Option<&str>) -> LedgerEventInput {
         state_before: None,
         state_after: None,
         payload: json!({"event": event_id}),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
@@ -625,6 +627,8 @@ fn gate_receipt_input_full(
         frame_id: "frame-1".into(),
         evaluated_at: CREATED_AT.into(),
         seq: 1,
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
@@ -648,6 +652,8 @@ fn gate_receipt_next_seq_input(
         command_id: "cmd-1".into(),
         frame_id: "frame-1".into(),
         evaluated_at: CREATED_AT.into(),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
@@ -693,6 +699,8 @@ fn storage_insert_gate_receipt_allocates_seq_per_group() {
             command_id: "cmd-2".into(),
             frame_id: "frame-2".into(),
             evaluated_at: CREATED_AT.into(),
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap();
     assert_eq!(second.seq, 2);
@@ -785,6 +793,8 @@ fn storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq() {
                         command_id: format!("cmd-a-{}", i),
                         frame_id: format!("frame-a-{}", i),
                         evaluated_at: CREATED_AT.into(),
+                        causation_id: None,
+                        correlation_id: None,
                     })
                     .unwrap();
             }
@@ -816,6 +826,8 @@ fn storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq() {
                         command_id: format!("cmd-b-{}", i),
                         frame_id: format!("frame-b-{}", i),
                         evaluated_at: CREATED_AT.into(),
+                        causation_id: None,
+                        correlation_id: None,
                     })
                     .unwrap();
             }
@@ -1137,6 +1149,8 @@ fn storage_insert_gate_receipt_next_seq_rejects_short_plan_hash() {
             command_id: "cmd-1".into(),
             frame_id: "frame-1".into(),
             evaluated_at: CREATED_AT.into(),
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap_err();
     assert!(matches!(
@@ -1232,6 +1246,8 @@ fn storage_insert_next_seq_rejects_long_gate_without_side_effects() {
             command_id: "cmd-1".into(),
             frame_id: "frame-1".into(),
             evaluated_at: CREATED_AT.into(),
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap_err();
     assert!(matches!(
@@ -1273,6 +1289,8 @@ fn storage_insert_gate_receipt_waived_round_trip() {
             command_id: "cmd-1".into(),
             frame_id: "frame-1".into(),
             evaluated_at: CREATED_AT.into(),
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap();
 
@@ -1311,6 +1329,8 @@ fn storage_insert_legacy_rejects_long_gate() {
             frame_id: "frame-1".into(),
             evaluated_at: CREATED_AT.into(),
             seq: 1,
+            causation_id: None,
+            correlation_id: None,
         })
         .unwrap_err();
     assert!(matches!(

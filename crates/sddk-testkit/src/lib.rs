@@ -118,6 +118,8 @@ impl sddk_domain::Ledger for InMemoryLedger {
             payload: event.payload.clone(),
             previous_hash,
             event_hash,
+            causation_id: event.causation_id.clone(),
+            correlation_id: event.correlation_id.clone(),
         };
         self.cycles
             .write()
@@ -158,6 +160,8 @@ impl sddk_domain::Ledger for InMemoryLedger {
             payload: event.payload.clone(),
             previous_hash,
             event_hash,
+            causation_id: event.causation_id.clone(),
+            correlation_id: event.correlation_id.clone(),
         };
         // Update cycle snapshot
         let mut cycles = self.cycles.write().unwrap();
@@ -331,6 +335,8 @@ impl sddk_domain::Ledger for InMemoryLedger {
             command_id: input.command_id.clone(),
             frame_id: format!("frame-{:032x}", seq as u64),
             seq,
+            causation_id: input.causation_id.clone(),
+            correlation_id: input.correlation_id.clone(),
         };
         self.gate_receipts
             .write()
@@ -490,6 +496,8 @@ impl EventBuilder {
             state_before: self.state_before,
             state_after: self.state_after,
             payload: self.payload,
+            causation_id: None,
+            correlation_id: None,
         }
     }
 }

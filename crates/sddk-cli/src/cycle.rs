@@ -2231,6 +2231,8 @@ fn event_context(
             .unwrap_or_else(|| "sddk-cli".into()),
         actor_ref: None,
         occurred_at: occurred_at.to_owned(),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 

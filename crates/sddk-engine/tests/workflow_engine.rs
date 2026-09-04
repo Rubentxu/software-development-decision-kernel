@@ -550,6 +550,8 @@ fn context(event_id: &str) -> EventContext {
         actor: "test-runtime".into(),
         actor_ref: None,
         occurred_at: TIMESTAMP.into(),
+        correlation_id: None,
+        causation_id: None,
     }
 }
 
@@ -646,5 +648,7 @@ fn raw_state_event(cycle_id: &str, state_after: Option<serde_json::Value>) -> Le
         state_before: None,
         state_after,
         payload: json!({"transition_id": "test.corrupt"}),
+        causation_id: None,
+        correlation_id: None,
     }
 }

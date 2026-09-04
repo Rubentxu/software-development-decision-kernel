@@ -89,6 +89,12 @@ pub struct GateReceiptInput {
     pub frame_id: String,
     pub evaluated_at: String,
     pub seq: i64,
+    /// Causation chain: event_id of the immediate predecessor in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub causation_id: Option<String>,
+    /// Correlation group: frame_id of the command that triggered this receipt.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub correlation_id: Option<String>,
 }
 
 /// Data required to persist one authorized gate receipt, with atomic seq allocation.
@@ -109,6 +115,12 @@ pub struct GateReceiptNextSeqInput {
     pub command_id: String,
     pub frame_id: String,
     pub evaluated_at: String,
+    /// Causation chain: event_id of the immediate predecessor in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub causation_id: Option<String>,
+    /// Correlation group: frame_id of the command that triggered this receipt.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub correlation_id: Option<String>,
 }
 
 /// An authorized, persisted gate evaluation receipt.
@@ -131,4 +143,10 @@ pub struct GateReceipt {
     pub frame_id: String,
     pub evaluated_at: String,
     pub seq: i64,
+    /// Causation chain: event_id of the immediate predecessor in the same stream.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub causation_id: Option<String>,
+    /// Correlation group: frame_id of the command that triggered this receipt.
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    pub correlation_id: Option<String>,
 }

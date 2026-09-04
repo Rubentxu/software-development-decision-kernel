@@ -39,6 +39,8 @@ fn event(sequence_seed: &str, payload: &str) -> LedgerEventInput {
         state_before: None,
         state_after: None,
         payload: serde_json::json!({"seed": sequence_seed, "data": payload}),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 

@@ -79,6 +79,8 @@ pub(crate) fn mk_event(cycle_id: &str) -> LedgerEventInput {
         state_before: None,
         state_after: None,
         payload: json!({}),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 

@@ -1822,6 +1822,8 @@ mod tests {
             frame_id: "frame".into(),
             evaluated_at: "2026-08-03T12:00:00Z".into(),
             seq: 1,
+            causation_id: None,
+            correlation_id: None,
         };
         let receipt_passed = GateReceipt {
             receipt_id: "rcpt-passed".into(),
@@ -1839,6 +1841,8 @@ mod tests {
             frame_id: "frame".into(),
             evaluated_at: "2026-08-03T12:00:00Z".into(),
             seq: 2,
+            causation_id: None,
+            correlation_id: None,
         };
 
         // Waived receipt does NOT satisfy the release gate
