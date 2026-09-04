@@ -137,6 +137,7 @@ pub fn ledger_with_pass_gate_receipt(
         outcome: sddk_domain::GateOutcomeStatus::Passed,
         evidence: serde_json::json!({ "fixture": true }),
         actor: "sddk-testkit".to_string(),
+        actor_ref: None,
         evaluated_at: "2026-08-19T00:00:00Z".to_string(),
         command_id: format!("cmd-{}", uuid::Uuid::new_v4()),
         frame_id: format!("frame-{}", uuid::Uuid::new_v4()),

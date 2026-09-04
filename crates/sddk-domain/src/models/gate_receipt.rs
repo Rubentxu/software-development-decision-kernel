@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::event_envelope::ActorRef;
+
 /// Error when validating pass evidence for a gate receipt.
 ///
 /// Per REQ-IPV (spec-v2), a phase gate MUST NOT be satisfied by an
@@ -79,7 +81,10 @@ pub struct GateReceiptInput {
     pub plan_hash: String,
     pub outcome: GateOutcomeStatus,
     pub evidence: Value,
+    /// Deprecated: use `actor_ref` instead. Preserved for legacy corpus replay.
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    pub actor_ref: Option<ActorRef>,
     pub command_id: String,
     pub frame_id: String,
     pub evaluated_at: String,
@@ -97,7 +102,10 @@ pub struct GateReceiptNextSeqInput {
     pub plan_hash: String,
     pub outcome: GateOutcomeStatus,
     pub evidence: Value,
+    /// Deprecated: use `actor_ref` instead. Preserved for legacy corpus replay.
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    pub actor_ref: Option<ActorRef>,
     pub command_id: String,
     pub frame_id: String,
     pub evaluated_at: String,
@@ -115,7 +123,10 @@ pub struct GateReceipt {
     pub plan_hash: String,
     pub outcome: GateOutcomeStatus,
     pub evidence: Value,
+    /// Deprecated: use `actor_ref` instead. Preserved for legacy corpus replay.
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    pub actor_ref: Option<ActorRef>,
     pub command_id: String,
     pub frame_id: String,
     pub evaluated_at: String,

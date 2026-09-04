@@ -2,15 +2,23 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::event_envelope::{ActorKind, ActorRef};
+
 /// Data required to append one ledger event.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct LedgerEventInput {
     pub event_id: String,
     pub project_id: String,
     pub cycle_id: Option<String>,
     pub frame_id: String,
     pub command_id: String,
+    /// Deprecated: use `actor_ref` instead. Preserved for legacy corpus replay.
+    #[serde(default)]
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_ref: Option<ActorRef>,
     pub event_type: String,
     pub occurred_at: String,
     pub state_before: Option<Value>,
@@ -19,7 +27,7 @@ pub struct LedgerEventInput {
 }
 
 /// An immutable hash-linked ledger event.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct LedgerEvent {
     pub sequence: i64,
     pub event_id: String,
@@ -27,7 +35,12 @@ pub struct LedgerEvent {
     pub cycle_id: Option<String>,
     pub frame_id: String,
     pub command_id: String,
+    /// Deprecated: use `actor_ref` instead. Preserved for legacy corpus replay.
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_ref: Option<ActorRef>,
     pub event_type: String,
     pub occurred_at: String,
     pub state_before: Option<Value>,
@@ -46,6 +59,7 @@ impl LedgerEvent {
             frame_id: self.frame_id.clone(),
             command_id: self.command_id.clone(),
             actor: self.actor.clone(),
+            actor_ref: self.actor_ref.clone(),
             event_type: self.event_type.clone(),
             occurred_at: self.occurred_at.clone(),
             state_before: self.state_before.clone(),
@@ -90,6 +104,13 @@ mod tests {
             frame_id: "frame-001".to_string(),
             command_id: "cmd-001".to_string(),
             actor: "test-actor".to_string(),
+            actor_ref: Some(ActorRef {
+                kind: ActorKind::Human,
+                id: "user:test-actor".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+            }),
             event_type: "test.event".to_string(),
             occurred_at: "2026-09-04T12:00:00Z".to_string(),
             state_before: Some(serde_json::json!({"before": "value"})),

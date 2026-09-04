@@ -33,6 +33,7 @@ fn event(sequence_seed: &str, payload: &str) -> LedgerEventInput {
         frame_id: format!("frame-{sequence_seed}"),
         command_id: format!("command-{sequence_seed}"),
         actor: "property-test".into(),
+        actor_ref: None,
         event_type: "test.event".into(),
         occurred_at: "2026-08-04T10:00:00Z".into(),
         state_before: None,

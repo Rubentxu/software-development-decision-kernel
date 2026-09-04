@@ -1,7 +1,7 @@
 //! Journal projection: deterministic record of all events with severity metadata.
 
+use crate::event_envelope::ActorRef;
 use crate::models::Severity;
-
 use crate::projections::{Checkpoint, Projection, ProjectionError, ProjectionVersion};
 
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ pub struct JournalEntry {
     pub correlation_id: Option<String>,
     /// Optional causation ID for chain tracing.
     pub causation_id: Option<String>,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    /// Additive: not present in pre-EVT-LEDGER-001 events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_ref: Option<ActorRef>,
 }
 
 // ── Severity policy table ──────────────────────────────────────────────────────
@@ -165,6 +169,7 @@ impl Projection for JournalProjection {
             severity: severity_for_event_type(&event.event_type),
             correlation_id: event.correlation_id.clone(),
             causation_id: event.causation_id.clone(),
+            actor_ref: Some(event.actor.clone()),
         };
 
         self.state.push(entry);

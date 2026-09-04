@@ -132,6 +132,7 @@ fn ledger_event_carries_string_actor_only_no_kind() {
         frame_id: "frame-001".into(),
         command_id: "cmd-001".into(),
         actor: "user:test".into(), // String only — no ActorKind
+        actor_ref: None,           // EVT-LEDGER-001 widens carriers additively
         event_type: "test.event".into(),
         occurred_at: "2026-09-04T00:00:00Z".into(),
         state_before: None,
@@ -161,6 +162,7 @@ fn gate_receipt_carries_string_actor_only_no_kind() {
         outcome: sddk_domain::models::gate_receipt::GateOutcomeStatus::Passed,
         evidence: serde_json::json!({}),
         actor: "user:test".into(), // String only — no ActorKind
+        actor_ref: None,           // EVT-LEDGER-001 widens carriers additively
         command_id: "cmd-001".into(),
         frame_id: "frame-001".into(),
         evaluated_at: "2026-09-04T00:00:00Z".into(),
@@ -191,6 +193,7 @@ fn journal_entry_has_no_actor_fields() {
         severity: Severity::Medium,
         correlation_id: None,
         causation_id: None,
+        actor_ref: None, // EVT-LEDGER-001 adds actor_ref to JournalEntry
     };
 
     // Access all fields to prove none are actor_*

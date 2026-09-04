@@ -148,6 +148,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             frame_id: format!("frame:{command_id}"),
             command_id: command_id.to_owned(),
             actor: actor.to_owned(),
+            actor_ref: None,
             event_type: "cycle.supersede.requested".to_owned(),
             occurred_at: occurred_at.to_owned(),
             state_before: None,
@@ -162,6 +163,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             frame_id: format!("frame:{command_id}"),
             command_id: command_id.to_owned(),
             actor: actor.to_owned(),
+            actor_ref: None,
             event_type: "cycle.supersede.applied".to_owned(),
             occurred_at: occurred_at.to_owned(),
             state_before: Some(

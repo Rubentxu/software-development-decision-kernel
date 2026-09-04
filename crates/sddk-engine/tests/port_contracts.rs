@@ -107,6 +107,7 @@ fn ledger_roundtrip_sqlite() {
             outcome: GateOutcomeStatus::Passed,
             evidence: json!({}),
             actor: "test-runtime".into(),
+            actor_ref: None,
             command_id: "cmd-contract".into(),
             frame_id: "frame-contract".into(),
             evaluated_at: common::TS.into(),

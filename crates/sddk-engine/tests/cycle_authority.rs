@@ -178,6 +178,7 @@ fn context(event_id: &str, command_id: &str) -> EventContext {
         frame_id: format!("frame:{command_id}"),
         event_id: event_id.into(),
         actor: "test-runtime".into(),
+        actor_ref: None,
         occurred_at: TIMESTAMP.into(),
     }
 }

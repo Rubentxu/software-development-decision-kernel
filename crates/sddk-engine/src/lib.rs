@@ -60,10 +60,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use sddk_domain::{
-    ArtifactRef, CycleLease, CycleManifest, CyclePath, CycleRecord, CycleStatus, GateOutcomeStatus,
-    GateReceipt, GateReceiptNextSeqInput, Ledger, LedgerEvent, LedgerEventInput, Phase,
-    Requirement, StateRef, StorageError, Transition, WORKFLOW_SCHEMA_VERSION, WorkflowManifest,
-    models::gate_receipt::validate_pass_evidence,
+    ActorKind, ActorRef, ArtifactRef, CycleLease, CycleManifest, CyclePath, CycleRecord,
+    CycleStatus, GateOutcomeStatus, GateReceipt, GateReceiptNextSeqInput, Ledger, LedgerEvent,
+    LedgerEventInput, Phase, Requirement, StateRef, StorageError, Transition,
+    WORKFLOW_SCHEMA_VERSION, WorkflowManifest, models::gate_receipt::validate_pass_evidence,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -439,8 +439,11 @@ pub struct EventContext {
     pub frame_id: String,
     /// Stable event identifier.
     pub event_id: String,
-    /// Actor responsible for the command.
+    /// Deprecated: use `actor_ref` instead. Preserved for CLI compatibility.
     pub actor: String,
+    /// Canonical actor provenance (per ADR-069 §5 and ADR-071 §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_ref: Option<ActorRef>,
     /// Explicit event timestamp.
     pub occurred_at: String,
 }
@@ -996,6 +999,7 @@ impl<L: Ledger> Engine<L> {
                 outcome: input.outcome,
                 evidence: input.evidence.clone(),
                 actor: input.actor.clone(),
+                actor_ref: None,
                 command_id: input.command_id.clone(),
                 frame_id,
                 evaluated_at: input.evaluated_at.clone(),
@@ -1469,6 +1473,7 @@ fn event_input(
         frame_id: context.frame_id.clone(),
         command_id: context.command_id.clone(),
         actor: context.actor.clone(),
+        actor_ref: context.actor_ref.clone(),
         event_type: event_type.to_owned(),
         occurred_at: context.occurred_at.clone(),
         state_before,
@@ -2197,6 +2202,7 @@ mod frontier_tests {
             outcome: GateOutcomeStatus::Passed,
             evidence: serde_json::json!({}),
             actor: "test".into(),
+            actor_ref: None,
             command_id: "cmd-1".into(),
             frame_id: "frame-1".into(),
             evaluated_at: "2024-01-01T00:00:00Z".into(),

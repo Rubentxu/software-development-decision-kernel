@@ -73,6 +73,7 @@ pub(crate) fn mk_event(cycle_id: &str) -> LedgerEventInput {
         frame_id: "frame-contract".into(),
         command_id: "cmd-contract".into(),
         actor: "test-runtime".into(),
+        actor_ref: None,
         event_type: "cycle.created".into(),
         occurred_at: TS.into(),
         state_before: None,

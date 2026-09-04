@@ -149,6 +149,7 @@ mod tests {
             frame_id: "frame-7".into(),
             event_id: "evt-1".into(),
             actor: "alice".into(),
+            actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
         };
         let mut env = minimal_env();
@@ -164,6 +165,7 @@ mod tests {
             frame_id: "frame-7".into(),
             event_id: "evt-1".into(),
             actor: "alice".into(),
+            actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
         };
         let mut env = minimal_env();
@@ -260,6 +262,7 @@ mod tests {
             frame_id: "frame-1".into(),
             event_id: "e-entered-c-1".into(),
             actor: "alice".into(),
+            actor_ref: None,
             occurred_at: "2026-08-22T00:00:00Z".into(),
         };
         with_correlation_from_context(&mut env_after_helper, &ctx);

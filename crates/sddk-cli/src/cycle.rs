@@ -2229,6 +2229,7 @@ fn event_context(
             .or_else(|| environment.sddk_actor.clone())
             .or_else(|| environment.user.clone())
             .unwrap_or_else(|| "sddk-cli".into()),
+        actor_ref: None,
         occurred_at: occurred_at.to_owned(),
     }
 }

@@ -548,6 +548,7 @@ fn context(event_id: &str) -> EventContext {
         frame_id: format!("frame-{event_id}"),
         event_id: event_id.into(),
         actor: "test-runtime".into(),
+        actor_ref: None,
         occurred_at: TIMESTAMP.into(),
     }
 }
@@ -639,6 +640,7 @@ fn raw_state_event(cycle_id: &str, state_after: Option<serde_json::Value>) -> Le
         frame_id: "frame-replay".into(),
         command_id: "command-replay".into(),
         actor: "test-runtime".into(),
+        actor_ref: None,
         event_type: "cycle.transitioned".into(),
         occurred_at: TIMESTAMP.into(),
         state_before: None,
