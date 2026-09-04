@@ -34,7 +34,7 @@ Commands:
   completion    Generate or install shell completion scripts
   debt          Debt management: report generation, INC listing, INC backfill, gate evaluation
   status        Show the current cycle snapshot and lease. Delegates to `cycle status`
-  plan          Plan a new cycle from a goal. Delegates to `cycle start`
+  plan          Plan a new cycle from a goal (DEPRECATED: use `sddk plan workitem` instead)
   run           Execute a capability. Delegates to `capability run`
   ship          Plan a release (dry-run). Delegates to `release plan --dry-run`
   recover       Rebuild a cycle from ledger events (dry-run). Delegates to `cycle rebuild --dry-run`

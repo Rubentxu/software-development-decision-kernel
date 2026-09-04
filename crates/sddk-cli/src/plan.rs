@@ -27,7 +27,7 @@ const DEPRECATION_WARNING: &str =
      use 'sddk cycle start --name <name>' instead";
 
 /// ── PlanCommand enum ─────────────────────────────────────────────────────────
-
+///
 /// Planning ledger subcommands.
 ///
 /// Each subcommand wires Storage CRUD + Authority + EventBus per ADR-073 §3.1.
