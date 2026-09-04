@@ -612,6 +612,51 @@ mod tests {
         assert_eq!(np.plan_identity(), np2.plan_identity());
     }
 
+    // REQ-IRDT-RT-02: NormalizedPlanV1 round-trip with populated operator_contracts (≥2 entries).
+    #[test]
+    fn test_stability_roundtrip_serde_with_operator_contracts() {
+        // Build IR with ≥2 operators so operator_contracts has ≥2 entries
+        let ir = ir_with_extra_node(); // has op0 and op1
+        let np = NormalizedPlanV1::from_workflow_ir(&ir);
+
+        // Verify operator_contracts is populated
+        assert!(
+            np.operator_contracts.len() >= 2,
+            "operator_contracts must have ≥2 entries, got {}",
+            np.operator_contracts.len()
+        );
+
+        // Round-trip
+        let bytes = serde_json::to_vec(&np).unwrap();
+        let np2: NormalizedPlanV1 = serde_json::from_slice(&bytes).unwrap();
+
+        // plan_identity must be stable
+        assert_eq!(
+            np.plan_identity(),
+            np2.plan_identity(),
+            "plan_identity must be stable after round-trip"
+        );
+
+        // Per-operator projection must match
+        assert_eq!(
+            np.operator_contracts.len(),
+            np2.operator_contracts.len(),
+            "operator_contracts count must match after round-trip"
+        );
+
+        for (op_id, proj1) in &np.operator_contracts {
+            let proj2 = np2
+                .operator_contracts
+                .get(op_id)
+                .expect("operator id must be preserved in round-trip");
+            assert_eq!(
+                proj1, proj2,
+                "per-operator projection must match for {:?}",
+                op_id
+            );
+        }
+    }
+
     // REQ-3: lineage
     #[test]
     fn test_lineage_initial_then_derive_nodes_changed() {

@@ -240,6 +240,23 @@ mod tests {
         assert_eq!(env1.compute_content_hash(), env2.compute_content_hash());
     }
 
+    // REQ-IRDT-RT-05: EventEnvelopeV1 round-trip preserves compute_content_hash.
+    #[test]
+    fn roundtrip_preserves_content_hash() {
+        let mut env = minimal_envelope();
+        env.content_hash = env.compute_content_hash();
+        let original_hash = env.compute_content_hash();
+
+        let json = env.to_canonical_json();
+        let deserialized: EventEnvelopeV1 = serde_json::from_str(&json).expect("must deserialize");
+        let recomputed_hash = deserialized.compute_content_hash();
+
+        assert_eq!(
+            recomputed_hash, original_hash,
+            "compute_content_hash must be preserved after round-trip"
+        );
+    }
+
     #[test]
     fn to_canonical_json_is_brace_terminated() {
         let j = minimal_envelope().to_canonical_json();
