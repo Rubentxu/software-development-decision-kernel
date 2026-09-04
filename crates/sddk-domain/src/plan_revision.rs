@@ -50,6 +50,10 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::operator_contract::{
+    default_input_schema, default_output_schema, OperatorContractProjectionV1,
+    OperatorInputSchemaProjection, OperatorOutputSchemaProjection, OPERATOR_CONTRACT_SCHEMA_VERSION,
+};
 use crate::workflow_ir::{
     Budgets, EdgeId, GuardExpr, Invariant, Operator, OperatorId, Policy, WorkflowIR,
 };
@@ -95,6 +99,15 @@ pub struct NormalizedPlanV1 {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub edges: BTreeMap<EdgeId, Edge>,
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// Typed operator contracts keyed by operator ID.
+    ///
+    /// Populated by projecting each operator in `nodes` through
+    /// `default_input_schema` / `default_output_schema`.  The `description`
+    /// field of each schema is excluded from the projection (non-semantic).
+    /// Legacy IRs default to an empty map via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub operator_contracts: BTreeMap<OperatorId, OperatorContractProjectionV1>,
 }
 
 /// Minimal edge representation (placeholder for the blocker above).
@@ -134,6 +147,23 @@ impl NormalizedPlanV1 {
             config: Default::default(),
         };
 
+        // Populate operator_contracts: project each operator to its typed contract.
+        // Non-semantic description fields are excluded by the projection types.
+        let operator_contracts = ir
+            .operators
+            .iter()
+            .map(|(op_id, op)| {
+                let input = default_input_schema(op);
+                let output = default_output_schema(op);
+                let projection = OperatorContractProjectionV1 {
+                    inputs: BTreeMap::from([(op_id.clone(), OperatorInputSchemaProjection::from(&input))]),
+                    outputs: BTreeMap::from([(op_id.clone(), OperatorOutputSchemaProjection::from(&output))]),
+                    schema_version: OPERATOR_CONTRACT_SCHEMA_VERSION,
+                };
+                (op_id.clone(), projection)
+            })
+            .collect();
+
         Self {
             nodes: ir.operators.clone(),
             guards: ir.guards.clone(),
@@ -144,6 +174,7 @@ impl NormalizedPlanV1 {
             schema_version: 1,
             // Blocker placeholder — always empty until WorkflowIR has edges.
             edges: BTreeMap::new(),
+            operator_contracts,
         }
     }
 
