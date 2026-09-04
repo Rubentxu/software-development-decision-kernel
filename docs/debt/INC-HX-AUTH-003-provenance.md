@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-003
 title: "LedgerEvent / GateReceipt / JournalEntry / EventContext lose actor_kind at engine boundary"
-status: open
+status: resolved
 severity: high
 priority: P1
 fingerprint: "hx-auth-003-provenance-loss-4types"
