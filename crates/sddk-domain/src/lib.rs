@@ -81,16 +81,16 @@ pub use plan_revision::{
     Edge, NormalizedPlan, NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionError,
     PlanRevisionLineageV1, PlanRevisionV1,
 };
+pub use planning::service::{DependencyResolutionError, DependencyResolutionService};
 pub use planning::{
-    CasHash, DECISION_RECORD_SCHEMA_VERSION, DecisionRecordRecord, DependencyEdgeIdentityProjection,
-    DEPENDENCY_EDGE_SCHEMA_VERSION, DecisionError, DecisionId, DecisionKind, DecisionRecordV1,
-    DependencyEdgeKind, DependencyEdgeV1, EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
-    EvidenceAttachmentRecord, EvidenceAttachmentV1, EvidenceId, PLANNING_PROVENANCE_SCHEMA_VERSION,
-    PlanningEvidenceKind, PlanningProvenanceChainV1, ProvenanceError, WORK_ITEM_SCHEMA_VERSION,
-    WorkItemId, WorkItemIdentityProjection, WorkItemRecord, WorkItemStatus, WorkItemV1,
-    compute_planning_graph_identity, DependencyEdgeRecord,
+    CasHash, DECISION_RECORD_SCHEMA_VERSION, DEPENDENCY_EDGE_SCHEMA_VERSION, DecisionError,
+    DecisionId, DecisionKind, DecisionRecordRecord, DecisionRecordV1,
+    DependencyEdgeIdentityProjection, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, EvidenceAttachmentV1, EvidenceId,
+    PLANNING_PROVENANCE_SCHEMA_VERSION, PlanningEvidenceKind, PlanningProvenanceChainV1,
+    ProvenanceError, WORK_ITEM_SCHEMA_VERSION, WorkItemId, WorkItemIdentityProjection,
+    WorkItemRecord, WorkItemStatus, WorkItemV1, compute_planning_graph_identity,
 };
-pub use planning::service::{DependencyResolutionService, DependencyResolutionError};
 pub use ports::{
     ArtifactStore, CasError, CasPort, ControlPlane, EventAppended, EventStore, GraphStore, Ledger,
     LedgerFactory, NoopTaskExecutor, TaskError, TaskExecutor, TaskOutput,

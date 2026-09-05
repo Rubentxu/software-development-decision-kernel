@@ -6,7 +6,7 @@
 
 use sddk_domain::planning::service::{DependencyResolutionError, DependencyResolutionService};
 use sddk_domain::planning::{
-    DependencyEdgeKind, DependencyEdgeV1, WorkItemV1, WORK_ITEM_SCHEMA_VERSION,
+    DependencyEdgeKind, DependencyEdgeV1, WORK_ITEM_SCHEMA_VERSION, WorkItemV1,
 };
 
 /// Helper: build a WorkItemV1 with the given id, cycle, and status.
@@ -25,12 +25,7 @@ fn work_item(id: &str, cycle: &str, status: sddk_domain::planning::WorkItemStatu
 
 /// Helper: build a DependencyEdgeV1.
 fn edge(from_id: &str, to_id: &str, kind: DependencyEdgeKind) -> DependencyEdgeV1 {
-    DependencyEdgeV1::new(
-        from_id.to_string(),
-        to_id.to_string(),
-        kind,
-        None,
-    )
+    DependencyEdgeV1::new(from_id.to_string(), to_id.to_string(), kind, None)
 }
 
 // ── Blocks semantics ─────────────────────────────────────────────────────────
@@ -46,7 +41,10 @@ fn blocks_blocks_draft_to_active() {
     };
 
     let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &status_lookup);
-    assert!(matches!(result, Err(DependencyResolutionError::BlockedBy { .. })));
+    assert!(matches!(
+        result,
+        Err(DependencyResolutionError::BlockedBy { .. })
+    ));
 }
 
 #[test]
@@ -60,7 +58,10 @@ fn blocks_blocks_active_to_paused() {
     };
 
     let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &status_lookup);
-    assert!(matches!(result, Err(DependencyResolutionError::BlockedBy { .. })));
+    assert!(matches!(
+        result,
+        Err(DependencyResolutionError::BlockedBy { .. })
+    ));
 }
 
 #[test]
@@ -107,7 +108,11 @@ fn blocks_on_closure_allows_non_terminal_to_non_terminal() {
 #[test]
 fn blocks_on_closure_blocks_terminal_transition() {
     // a (Active) -> b via BlocksOnClosure — non-terminal predecessor blocks terminalize
-    let target = work_item("b", "cycle-1", sddk_domain::planning::WorkItemStatus::Active);
+    let target = work_item(
+        "b",
+        "cycle-1",
+        sddk_domain::planning::WorkItemStatus::Active,
+    );
     let edges = vec![edge("a", "b", DependencyEdgeKind::BlocksOnClosure)];
     let status_lookup = |id: &sddk_domain::planning::WorkItemId| match id.as_str() {
         "a" => Some(sddk_domain::planning::WorkItemStatus::Active),
@@ -120,13 +125,20 @@ fn blocks_on_closure_blocks_terminal_transition() {
         &edges,
         &status_lookup,
     );
-    assert!(matches!(result, Err(DependencyResolutionError::BlockedBy { .. })));
+    assert!(matches!(
+        result,
+        Err(DependencyResolutionError::BlockedBy { .. })
+    ));
 }
 
 #[test]
 fn blocks_on_closure_allows_when_predecessor_is_terminal() {
     // a (Done) -> b via BlocksOnClosure — terminal predecessor allows terminalize
-    let target = work_item("b", "cycle-1", sddk_domain::planning::WorkItemStatus::Active);
+    let target = work_item(
+        "b",
+        "cycle-1",
+        sddk_domain::planning::WorkItemStatus::Active,
+    );
     let edges = vec![edge("a", "b", DependencyEdgeKind::BlocksOnClosure)];
     let status_lookup = |id: &sddk_domain::planning::WorkItemId| match id.as_str() {
         "a" => Some(sddk_domain::planning::WorkItemStatus::Done),
@@ -155,7 +167,10 @@ fn self_loop_is_detected() {
     };
 
     let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &status_lookup);
-    assert!(matches!(result, Err(DependencyResolutionError::SelfLoop { .. })));
+    assert!(matches!(
+        result,
+        Err(DependencyResolutionError::SelfLoop { .. })
+    ));
 }
 
 // ── Edge cases ────────────────────────────────────────────────────────────────
@@ -186,5 +201,8 @@ fn mixed_blocks_and_blocks_on_closure() {
     };
 
     let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &status_lookup);
-    assert!(matches!(result, Err(DependencyResolutionError::BlockedBy { .. })));
+    assert!(matches!(
+        result,
+        Err(DependencyResolutionError::BlockedBy { .. })
+    ));
 }

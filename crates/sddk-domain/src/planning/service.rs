@@ -49,14 +49,21 @@ impl std::fmt::Display for DependencyResolutionError {
             DependencyResolutionError::CycleDetected { work_item_ids } => {
                 write!(f, "cycle detected: {:?}", work_item_ids)
             }
-            DependencyResolutionError::BlockedBy { predecessor_id, current_status, kind } => {
+            DependencyResolutionError::BlockedBy {
+                predecessor_id,
+                current_status,
+                kind,
+            } => {
                 write!(
                     f,
                     "blocked by predecessor {} in status {:?} (kind: {:?})",
                     predecessor_id, current_status, kind
                 )
             }
-            DependencyResolutionError::UnknownPredecessor { work_item_id, predecessor_id } => {
+            DependencyResolutionError::UnknownPredecessor {
+                work_item_id,
+                predecessor_id,
+            } => {
                 write!(
                     f,
                     "unknown predecessor {} for work item {}",
@@ -217,11 +224,14 @@ impl DependencyResolutionService {
     /// * `Err(DependencyResolutionError::CycleDetected)` if a cycle is found
     pub fn detect_cycles(edges: &[DependencyEdgeV1]) -> Result<(), DependencyResolutionError> {
         // Build adjacency list for Blocks edges only
-        let mut in_degree: std::collections::HashMap<&WorkItemId, usize> = std::collections::HashMap::new();
-        let mut adjacency: std::collections::HashMap<&WorkItemId, Vec<&WorkItemId>> = std::collections::HashMap::new();
+        let mut in_degree: std::collections::HashMap<&WorkItemId, usize> =
+            std::collections::HashMap::new();
+        let mut adjacency: std::collections::HashMap<&WorkItemId, Vec<&WorkItemId>> =
+            std::collections::HashMap::new();
 
         // Collect all unique nodes
-        let mut all_nodes: std::collections::HashSet<&WorkItemId> = std::collections::HashSet::new();
+        let mut all_nodes: std::collections::HashSet<&WorkItemId> =
+            std::collections::HashSet::new();
         for edge in edges {
             if edge.kind == DependencyEdgeKind::Blocks {
                 all_nodes.insert(&edge.from_id);
@@ -241,7 +251,10 @@ impl DependencyResolutionService {
                 // Increment in-degree for to_id
                 *in_degree.entry(&edge.to_id).or_default() += 1;
                 // Add edge to adjacency list
-                adjacency.entry(&edge.from_id).or_default().push(&edge.to_id);
+                adjacency
+                    .entry(&edge.from_id)
+                    .or_default()
+                    .push(&edge.to_id);
             }
         }
 
@@ -310,7 +323,11 @@ impl DependencyResolutionService {
         status_lookup: &impl Fn(&WorkItemId) -> Option<WorkItemStatus>,
     ) -> Result<(), DependencyResolutionError> {
         // Filter to only incoming edges for our target
-        let incoming: Vec<DependencyEdgeV1> = edges.iter().filter(|e| e.to_id == target.id).cloned().collect();
+        let incoming: Vec<DependencyEdgeV1> = edges
+            .iter()
+            .filter(|e| e.to_id == target.id)
+            .cloned()
+            .collect();
 
         if next_status.is_terminal() {
             Self::resolve_can_terminalize(target, next_status, &incoming, status_lookup)
@@ -325,12 +342,24 @@ impl DependencyResolutionService {
 mod tests {
     use super::*;
 
-    fn status_draft() -> WorkItemStatus { WorkItemStatus::Draft }
-    fn status_active() -> WorkItemStatus { WorkItemStatus::Active }
-    fn status_paused() -> WorkItemStatus { WorkItemStatus::Paused }
-    fn status_done() -> WorkItemStatus { WorkItemStatus::Done }
-    fn status_superseded() -> WorkItemStatus { WorkItemStatus::Superseded }
-    fn status_cancelled() -> WorkItemStatus { WorkItemStatus::Cancelled }
+    fn status_draft() -> WorkItemStatus {
+        WorkItemStatus::Draft
+    }
+    fn status_active() -> WorkItemStatus {
+        WorkItemStatus::Active
+    }
+    fn status_paused() -> WorkItemStatus {
+        WorkItemStatus::Paused
+    }
+    fn status_done() -> WorkItemStatus {
+        WorkItemStatus::Done
+    }
+    fn status_superseded() -> WorkItemStatus {
+        WorkItemStatus::Superseded
+    }
+    fn status_cancelled() -> WorkItemStatus {
+        WorkItemStatus::Cancelled
+    }
 
     fn make_work_item(id: &str) -> crate::planning::WorkItemV1 {
         crate::planning::WorkItemV1::new(
@@ -348,7 +377,12 @@ mod tests {
     }
 
     fn make_boc_edge(from: &str, to: &str) -> DependencyEdgeV1 {
-        DependencyEdgeV1::new(from.into(), to.into(), DependencyEdgeKind::BlocksOnClosure, None)
+        DependencyEdgeV1::new(
+            from.into(),
+            to.into(),
+            DependencyEdgeKind::BlocksOnClosure,
+            None,
+        )
     }
 
     // ── resolve_can_activate tests ──────────────────────────────────────────────
@@ -366,11 +400,9 @@ mod tests {
     #[test]
     fn all_predecessors_done_allowed() {
         let target = make_work_item("C");
-        let edges = vec![
-            make_blocks_edge("A", "C"),
-            make_blocks_edge("B", "C"),
-        ];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let edges = vec![make_blocks_edge("A", "C"), make_blocks_edge("B", "C")];
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Done);
         lookup_map.insert("B".into(), WorkItemStatus::Done);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
@@ -383,13 +415,18 @@ mod tests {
     fn blocks_predecessor_draft_rejected() {
         let target = make_work_item("B");
         let edges = vec![make_blocks_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Draft);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
         let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &lookup);
         match result {
-            Err(DependencyResolutionError::BlockedBy { predecessor_id, current_status: WorkItemStatus::Draft, .. }) if predecessor_id == "A" => (),
+            Err(DependencyResolutionError::BlockedBy {
+                predecessor_id,
+                current_status: WorkItemStatus::Draft,
+                ..
+            }) if predecessor_id == "A" => (),
             other => panic!("expected BlockedBy with predecessor_id=A, got {:?}", other),
         }
     }
@@ -398,13 +435,18 @@ mod tests {
     fn blocks_predecessor_active_rejected() {
         let target = make_work_item("B");
         let edges = vec![make_blocks_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Active);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
         let result = DependencyResolutionService::resolve_can_activate(&target, &edges, &lookup);
         match result {
-            Err(DependencyResolutionError::BlockedBy { predecessor_id, current_status, .. }) => {
+            Err(DependencyResolutionError::BlockedBy {
+                predecessor_id,
+                current_status,
+                ..
+            }) => {
                 assert_eq!(predecessor_id, "A");
                 assert_eq!(current_status, WorkItemStatus::Active);
             }
@@ -417,7 +459,8 @@ mod tests {
         // BlocksOnClosure should NOT block non-terminal transitions
         let target = make_work_item("B");
         let edges = vec![make_boc_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Active); // non-terminal predecessor
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
@@ -448,7 +491,8 @@ mod tests {
             make_blocks_edge("B", "D"), // Active ← should block
             make_blocks_edge("C", "D"), // Cancelled
         ];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Done);
         lookup_map.insert("B".into(), WorkItemStatus::Active);
         lookup_map.insert("C".into(), WorkItemStatus::Cancelled);
@@ -466,7 +510,8 @@ mod tests {
     fn terminalize_blocks_on_closure_predecessor_active_rejected() {
         let target = make_work_item("B");
         let edges = vec![make_boc_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Active); // non-terminal
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
@@ -477,7 +522,11 @@ mod tests {
             &lookup,
         );
         match result {
-            Err(DependencyResolutionError::BlockedBy { predecessor_id, current_status, kind: DependencyEdgeKind::BlocksOnClosure }) => {
+            Err(DependencyResolutionError::BlockedBy {
+                predecessor_id,
+                current_status,
+                kind: DependencyEdgeKind::BlocksOnClosure,
+            }) => {
                 assert_eq!(predecessor_id, "A");
                 assert_eq!(current_status, WorkItemStatus::Active);
             }
@@ -489,7 +538,8 @@ mod tests {
     fn terminalize_blocks_on_closure_predecessor_done_allowed() {
         let target = make_work_item("B");
         let edges = vec![make_boc_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Done);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
@@ -506,7 +556,8 @@ mod tests {
     fn terminalize_with_superseded_predecessor_allowed() {
         let target = make_work_item("B");
         let edges = vec![make_blocks_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Superseded);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
@@ -523,10 +574,7 @@ mod tests {
 
     #[test]
     fn no_cycles_allowed() {
-        let edges = vec![
-            make_blocks_edge("A", "B"),
-            make_blocks_edge("B", "C"),
-        ];
+        let edges = vec![make_blocks_edge("A", "B"), make_blocks_edge("B", "C")];
 
         let result = DependencyResolutionService::detect_cycles(&edges);
         assert!(result.is_ok());
@@ -535,13 +583,13 @@ mod tests {
     #[test]
     fn simple_cycle_rejected() {
         // A → B → A cycle
-        let edges = vec![
-            make_blocks_edge("A", "B"),
-            make_blocks_edge("B", "A"),
-        ];
+        let edges = vec![make_blocks_edge("A", "B"), make_blocks_edge("B", "A")];
 
         let result = DependencyResolutionService::detect_cycles(&edges);
-        assert!(matches!(result, Err(DependencyResolutionError::CycleDetected { .. })));
+        assert!(matches!(
+            result,
+            Err(DependencyResolutionError::CycleDetected { .. })
+        ));
     }
 
     #[test]
@@ -572,7 +620,10 @@ mod tests {
         ];
 
         let result = DependencyResolutionService::detect_cycles(&edges);
-        assert!(matches!(result, Err(DependencyResolutionError::CycleDetected { .. })));
+        assert!(matches!(
+            result,
+            Err(DependencyResolutionError::CycleDetected { .. })
+        ));
     }
 
     // ── resolve_transition integration tests ────────────────────────────────────
@@ -581,7 +632,8 @@ mod tests {
     fn resolve_transition_to_active_uses_blocks_semantics() {
         let target = make_work_item("B");
         let edges = vec![make_blocks_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Active);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 
@@ -598,11 +650,9 @@ mod tests {
     #[test]
     fn resolve_transition_to_done_uses_both_edge_kinds() {
         let target = make_work_item("B");
-        let edges = vec![
-            make_blocks_edge("A", "B"),
-            make_boc_edge("C", "B"),
-        ];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let edges = vec![make_blocks_edge("A", "B"), make_boc_edge("C", "B")];
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Done); // terminal
         lookup_map.insert("C".into(), WorkItemStatus::Active); // non-terminal → should block for terminal transition
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
@@ -622,7 +672,8 @@ mod tests {
         // Verify the service is pure by calling with the same inputs
         let target = make_work_item("B");
         let edges = vec![make_blocks_edge("A", "B")];
-        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> = std::collections::HashMap::new();
+        let mut lookup_map: std::collections::HashMap<WorkItemId, WorkItemStatus> =
+            std::collections::HashMap::new();
         lookup_map.insert("A".into(), WorkItemStatus::Done);
         let lookup = |id: &WorkItemId| lookup_map.get(id).copied();
 

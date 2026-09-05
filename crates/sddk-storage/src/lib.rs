@@ -266,7 +266,10 @@ impl Storage {
                 });
             }
         }
-        Ok(Self { connection, cas_root })
+        Ok(Self {
+            connection,
+            cas_root,
+        })
     }
 
     /// Returns the currently applied storage schema version.
@@ -1863,9 +1866,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
                      pass a --cycle whose project prefix matches {ep}, or run 'sddk adopt status' to inspect identity"
                 )
             }
-            Self::EmptyEvidenceBody => {
-                "supply a non-empty evidence body".into()
-            }
+            Self::EmptyEvidenceBody => "supply a non-empty evidence body".into(),
         }
     }
 }
@@ -2497,10 +2498,7 @@ impl Storage {
     /// Inserts a DecisionRecord.
     ///
     /// The domain layer should have already validated that rationale is non-empty.
-    pub fn insert_decision_record(
-        &self,
-        record: &sddk_domain::DecisionRecordRecord,
-    ) -> Result<()> {
+    pub fn insert_decision_record(&self, record: &sddk_domain::DecisionRecordRecord) -> Result<()> {
         self.connection.execute(
             "INSERT INTO decision_records_v1 (
                 id, work_item_id, kind, rationale,
@@ -2629,11 +2627,7 @@ impl Storage {
         // Create directory structure
         let first = &hash_hex[0..2];
         let second = &hash_hex[2..4];
-        let path = self
-            .cas_root
-            .join(first)
-            .join(second)
-            .join(&hash_hex);
+        let path = self.cas_root.join(first).join(second).join(&hash_hex);
         if !path.exists() {
             std::fs::create_dir_all(path.parent().unwrap())?;
             std::fs::write(&path, body)?;

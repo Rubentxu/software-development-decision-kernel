@@ -554,16 +554,18 @@ pub fn compute_planning_graph_identity(
     decision_refs: &[DecisionId],
 ) -> String {
     // Sort work items by id for deterministic ordering
-    let mut sorted_wis: Vec<WorkItemIdentityProjection> =
-        work_items.iter().map(WorkItemIdentityProjection::from).collect();
+    let mut sorted_wis: Vec<WorkItemIdentityProjection> = work_items
+        .iter()
+        .map(WorkItemIdentityProjection::from)
+        .collect();
     sorted_wis.sort_by(|a, b| a.id.cmp(&b.id));
 
     // Sort edges by (from_id, to_id) for deterministic ordering
-    let mut sorted_edges: Vec<DependencyEdgeIdentityProjection> =
-        edges.iter().map(DependencyEdgeIdentityProjection::from).collect();
-    sorted_edges.sort_by(|a, b| {
-        (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id))
-    });
+    let mut sorted_edges: Vec<DependencyEdgeIdentityProjection> = edges
+        .iter()
+        .map(DependencyEdgeIdentityProjection::from)
+        .collect();
+    sorted_edges.sort_by(|a, b| (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id)));
 
     // Sort evidence refs
     let mut sorted_evidence = evidence_refs.to_vec();
@@ -637,11 +639,14 @@ impl WorkItemRecord {
     pub fn from_domain(wi: &WorkItemV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &wi.actor_ref {
             Some(ar) => (
-                Some(match ar.kind {
-                    ActorKind::Human => "Human",
-                    ActorKind::Agent => "Agent",
-                    ActorKind::System => "System",
-                }.to_string()),
+                Some(
+                    match ar.kind {
+                        ActorKind::Human => "Human",
+                        ActorKind::Agent => "Agent",
+                        ActorKind::System => "System",
+                    }
+                    .to_string(),
+                ),
                 Some(ar.id.clone()),
                 Some(ar.id.clone()), // label defaults to id in our usage
             ),
@@ -704,11 +709,14 @@ impl DependencyEdgeRecord {
     pub fn from_domain(edge: &DependencyEdgeV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &edge.actor_ref {
             Some(ar) => (
-                Some(match ar.kind {
-                    ActorKind::Human => "Human",
-                    ActorKind::Agent => "Agent",
-                    ActorKind::System => "System",
-                }.to_string()),
+                Some(
+                    match ar.kind {
+                        ActorKind::Human => "Human",
+                        ActorKind::Agent => "Agent",
+                        ActorKind::System => "System",
+                    }
+                    .to_string(),
+                ),
                 Some(ar.id.clone()),
                 Some(ar.id.clone()),
             ),
@@ -770,11 +778,14 @@ impl EvidenceAttachmentRecord {
     pub fn from_domain(ea: &EvidenceAttachmentV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &ea.actor_ref {
             Some(ar) => (
-                Some(match ar.kind {
-                    ActorKind::Human => "Human",
-                    ActorKind::Agent => "Agent",
-                    ActorKind::System => "System",
-                }.to_string()),
+                Some(
+                    match ar.kind {
+                        ActorKind::Human => "Human",
+                        ActorKind::Agent => "Agent",
+                        ActorKind::System => "System",
+                    }
+                    .to_string(),
+                ),
                 Some(ar.id.clone()),
                 Some(ar.id.clone()),
             ),
@@ -838,11 +849,14 @@ impl DecisionRecordRecord {
     pub fn from_domain(dr: &DecisionRecordV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &dr.actor_ref {
             Some(ar) => (
-                Some(match ar.kind {
-                    ActorKind::Human => "Human",
-                    ActorKind::Agent => "Agent",
-                    ActorKind::System => "System",
-                }.to_string()),
+                Some(
+                    match ar.kind {
+                        ActorKind::Human => "Human",
+                        ActorKind::Agent => "Agent",
+                        ActorKind::System => "System",
+                    }
+                    .to_string(),
+                ),
                 Some(ar.id.clone()),
                 Some(ar.id.clone()),
             ),
