@@ -1,39 +1,20 @@
 {
   "active_item": "TEST-LEDGER-C",
   "per_horizon": {
-    "H0": {
+    "h0": {
       "total": 2,
       "terminal": 2,
       "executable": 0,
       "non_executable": 0
     },
-    "H1": {
+    "h1": {
       "total": 2,
       "terminal": 0,
-      "executable": 1,
-      "non_executable": 1
+      "executable": 2,
+      "non_executable": 0
     }
   },
   "terminal_count": 2,
-  "executable_count": 1,
-  "non_executable_count": 1,
-  "active_count": 1,
-  "horizons": [
-    {
-      "id": "H0",
-      "name": "Reconcile & Deterministic Foundations",
-      "total": 2,
-      "terminal": 2,
-      "executable": 0,
-      "non_executable": 0
-    },
-    {
-      "id": "H1",
-      "name": "Planning SSOT",
-      "total": 2,
-      "terminal": 0,
-      "executable": 1,
-      "non_executable": 1
-    }
-  ]
+  "executable_count": 2,
+  "non_executable_count": 0
 }
