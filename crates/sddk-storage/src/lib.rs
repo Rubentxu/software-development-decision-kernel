@@ -17,6 +17,7 @@ mod migrations;
 mod models;
 pub mod projection_store;
 pub mod rebuild;
+pub mod spine_import;
 pub use cas::FilesystemCas;
 pub use control_plane::{ProjectStatusRow, SCHEMA_V1, SqliteControlPlane};
 pub use event_store::SqliteEventStore;
@@ -194,6 +195,10 @@ pub enum StorageError {
 pub struct Storage {
     connection: Connection,
     cas_root: std::path::PathBuf,
+    /// Stable process-local UUID assigned at construction time.
+    handle_id: String,
+    /// Lazy-computed CAS root identity (SHA-256 of canonical CAS root path).
+    cas_root_id_cache: std::sync::OnceLock<String>,
 }
 
 /// Report from [`Storage::verify_cross_ledger_consistency`] (AC-EVT-LEDGER-06).
@@ -249,6 +254,15 @@ impl Storage {
         Self::from_connection(Connection::open_in_memory()?, true, cas_root)
     }
 
+    /// Opens an in-memory database with a specific CAS root path.
+    ///
+    /// This is a test-only constructor for cross-storage testing scenarios
+    /// where the CAS root path needs to be controlled.
+    #[cfg(test)]
+    pub fn open_in_memory_with_cas_root(cas_root: std::path::PathBuf) -> Result<Self> {
+        Self::from_connection(Connection::open_in_memory()?, true, cas_root)
+    }
+
     fn from_connection(
         mut connection: Connection,
         writable: bool,
@@ -269,10 +283,38 @@ impl Storage {
                 });
             }
         }
+        let handle_id = uuid::Uuid::new_v4().to_string();
         Ok(Self {
             connection,
             cas_root,
+            handle_id,
+            cas_root_id_cache: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Returns the stable CAS root identity string for this storage.
+    ///
+    /// The CAS root ID is the SHA-256 of the canonical absolute CAS root path.
+    /// Two storage handles with the same CAS root path will return the same ID.
+    pub fn cas_root_id(&self) -> String {
+        self.cas_root_id_cache
+            .get_or_init(|| {
+                let canonical = self
+                    .cas_root
+                    .canonicalize()
+                    .unwrap_or_else(|_| self.cas_root.clone());
+                let path_str = canonical.to_string_lossy().into_owned();
+                let digest = sha2::Sha256::digest(path_str.as_bytes());
+                format!("{:x}", digest)
+            })
+            .clone()
+    }
+
+    /// Returns the stable handle identifier for this storage instance.
+    ///
+    /// The handle ID is a process-local UUID assigned at construction time.
+    pub fn handle_id(&self) -> &str {
+        &self.handle_id
     }
 
     /// Returns the currently applied storage schema version.
@@ -2628,6 +2670,44 @@ impl Storage {
         ))
     }
 
+    /// Builds a provenance chain for a cycle with schema version 2 producer metadata.
+    ///
+    /// Same as `build_provenance_chain`, but stamps the chain with
+    /// `producer_cas_root_id = self.cas_root_id()` and `schema_version = 2`.
+    ///
+    /// Used for cross-storage verification scenarios.
+    pub fn build_provenance_chain_v2(
+        &self,
+        cycle_id: &str,
+    ) -> Result<sddk_domain::PlanningProvenanceChainV1> {
+        let work_items = self.list_work_items_by_cycle(cycle_id)?;
+        let work_item_ids: Vec<_> = work_items.iter().map(|w| w.id.clone()).collect();
+
+        let _edges = self.list_dependency_edges_by_cycle(cycle_id)?;
+
+        // Collect evidence refs from all work items in cycle
+        let mut all_evidence_refs: Vec<sddk_domain::CasHash> = Vec::new();
+        for wi in &work_item_ids {
+            let evidence = self.list_evidence_attachments_by_work_item(wi)?;
+            all_evidence_refs.extend(evidence.iter().map(|e| e.body_ref.clone()));
+        }
+
+        // Collect decision refs from all work items in cycle
+        let mut all_decision_refs: Vec<_> = Vec::new();
+        for wi in &work_item_ids {
+            let decisions = self.list_decision_records_by_work_item(wi)?;
+            all_decision_refs.extend(decisions.iter().map(|d| d.id.clone()));
+        }
+
+        Ok(sddk_domain::PlanningProvenanceChainV1::new_v2(
+            cycle_id.to_string(),
+            work_item_ids,
+            all_evidence_refs,
+            all_decision_refs,
+            self.cas_root_id(),
+        ))
+    }
+
     // ── CAS helpers ─────────────────────────────────────────────────────
 
     fn cas_put(&mut self, body: &[u8]) -> Result<sddk_domain::CasHash> {
@@ -2692,6 +2772,14 @@ impl sddk_domain::PlanningGraphRead for Storage {
     {
         Storage::list_decision_records_by_work_item(self, work_item_id)
             .map_err(sddk_domain::StorageError::from)
+    }
+
+    fn cas_root_id(&self) -> String {
+        Storage::cas_root_id(self)
+    }
+
+    fn handle_id(&self) -> String {
+        Storage::handle_id(self).to_string()
     }
 }
 

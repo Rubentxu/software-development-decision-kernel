@@ -417,11 +417,16 @@ pub enum DecisionError {
 // ── PlanningProvenanceChainV1 ─────────────────────────────────────────────────
 
 /// Schema version constant for PlanningProvenanceChainV1.
-pub const PLANNING_PROVENANCE_SCHEMA_VERSION: u32 = 1;
+/// Bumped from 1 to 2: adds optional producer metadata for cross-storage verification.
+pub const PLANNING_PROVENANCE_SCHEMA_VERSION: u32 = 2;
 
 /// A provenance chain linking a cycle to its WorkItems, evidence, and decisions.
 ///
 /// Queryable by cycle_id; preserves ordering; reconstructable deterministically.
+///
+/// Schema version 2 adds optional producer metadata for cross-storage verification:
+/// - `producer_cas_root_id`: CAS root of the storage that built this chain
+/// - `producer_signature`: Optional signature of the producer (None this cycle)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanningProvenanceChainV1 {
     /// Cycle this chain belongs to.
@@ -432,10 +437,21 @@ pub struct PlanningProvenanceChainV1 {
     pub evidence_refs: Vec<CasHash>,
     /// Decision record identifiers in this cycle.
     pub decision_refs: Vec<DecisionId>,
+
+    // Schema version 2 (OPTIONAL for backward compat with v1 chains):
+    /// CAS root ID of the storage that produced this chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_cas_root_id: Option<String>,
+    /// Optional signature of the producer (future use).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_signature: Option<String>,
+    /// Schema version; 2 for new chains.
+    #[serde(default)]
+    pub schema_version: u32,
 }
 
 impl PlanningProvenanceChainV1 {
-    /// Creates a new PlanningProvenanceChainV1.
+    /// Creates a new PlanningProvenanceChainV1 (schema version 1 — no producer metadata).
     pub fn new(
         cycle_id: CycleId,
         work_item_ids: Vec<WorkItemId>,
@@ -447,6 +463,43 @@ impl PlanningProvenanceChainV1 {
             work_item_ids,
             evidence_refs,
             decision_refs,
+            producer_cas_root_id: None,
+            producer_signature: None,
+            schema_version: 1,
+        }
+    }
+
+    /// Creates a new PlanningProvenanceChainV1 with schema version 2 producer metadata.
+    ///
+    /// Used by `Storage::build_provenance_chain_v2` when building a chain from a specific
+    /// storage handle, stamping the producer CAS root ID.
+    pub fn new_v2(
+        cycle_id: CycleId,
+        work_item_ids: Vec<WorkItemId>,
+        evidence_refs: Vec<CasHash>,
+        decision_refs: Vec<DecisionId>,
+        producer_cas_root_id: String,
+    ) -> Self {
+        Self {
+            cycle_id,
+            work_item_ids,
+            evidence_refs,
+            decision_refs,
+            producer_cas_root_id: Some(producer_cas_root_id),
+            producer_signature: None,
+            schema_version: PLANNING_PROVENANCE_SCHEMA_VERSION,
+        }
+    }
+
+    /// Returns the effective schema version for this chain.
+    ///
+    /// Returns the stamped `schema_version` field, or 1 if the field is 0
+    /// (indicating a v1 chain serialized before the field was added).
+    pub fn effective_schema_version(&self) -> u32 {
+        if self.schema_version == 0 {
+            1
+        } else {
+            self.schema_version
         }
     }
 
@@ -462,9 +515,53 @@ impl PlanningProvenanceChainV1 {
     ///
     /// The structural `cycle_id` non-emptiness check is preserved so that the
     /// domain-level test `empty_cycle_id_rejected` continues to pass without storage.
+    ///
+    /// Cross-storage drift is NOT checked in this method; use `verify_references_with_options`
+    /// to enable cross-storage drift detection.
     pub fn verify_references(&self, store: &dyn PlanningGraphRead) -> Result<(), ProvenanceError> {
+        self.verify_references_with_options(store, &VerifyReferencesOptions::default())
+    }
+
+    /// Verifies this chain with cross-storage drift detection.
+    ///
+    /// When `options.strict_cross_storage` is false (default), v1 chains (those without
+    /// a producer stamp) are verified without cross-storage checks (backward compat).
+    /// When `options.strict_cross_storage` is true, drift is detected even for v1 chains
+    /// in cross-storage contexts.
+    ///
+    /// The drift check runs BEFORE the dangling-ref iteration, so an empty verifier
+    /// still surfaces `CrossStorageDrift` if CAS roots are mismatched, rather than
+    /// reporting every reference as dangling.
+    pub fn verify_references_with_options(
+        &self,
+        store: &dyn PlanningGraphRead,
+        options: &VerifyReferencesOptions,
+    ) -> Result<(), ProvenanceError> {
         if self.cycle_id.is_empty() {
             return Err(ProvenanceError::EmptyCycleId);
+        }
+
+        // Cross-storage drift detection (runs FIRST, before dangling-ref iteration)
+        let verifier_cas_root_id = store.cas_root_id();
+        let verifier_handle_id = store.handle_id();
+
+        let cross_storage = match &self.producer_cas_root_id {
+            Some(producer_id) => producer_id != &verifier_cas_root_id,
+            None => options.strict_cross_storage,
+        };
+
+        if cross_storage {
+            return Err(ProvenanceError::CrossStorageDrift {
+                reason: if self.producer_cas_root_id.is_some() {
+                    "cas_root_id_mismatch".to_string()
+                } else {
+                    "producer_stamp_absent_or_mismatch".to_string()
+                },
+                producer_cas_root_id: self.producer_cas_root_id.clone(),
+                verifier_cas_root_id,
+                producer_handle_id: self.producer_signature.clone(),
+                verifier_handle_id,
+            });
         }
 
         // Verify each work_item_id exists in the cycle
@@ -574,6 +671,28 @@ pub enum ProvenanceError {
     EmptyCycleId,
     #[error("dangling reference: {0}")]
     DanglingReference(String),
+    /// Cross-storage drift detected: producer and verifier disagree on CAS root identity.
+    #[error("cross-storage drift: {reason}")]
+    CrossStorageDrift {
+        /// Human-readable reason for the drift.
+        reason: String,
+        /// CAS root ID of the storage that produced this chain (if known).
+        producer_cas_root_id: Option<String>,
+        /// CAS root ID of the verifying storage.
+        verifier_cas_root_id: String,
+        /// Handle ID of the producer (if known).
+        producer_handle_id: Option<String>,
+        /// Handle ID of the verifier.
+        verifier_handle_id: String,
+    },
+}
+
+/// Options for `verify_references`.
+#[derive(Debug, Clone, Default)]
+pub struct VerifyReferencesOptions {
+    /// When true, detect drift even on v1 chains (chains without a producer stamp).
+    /// When false, v1 chains are verified without cross-storage checks (backward compat).
+    pub strict_cross_storage: bool,
 }
 
 // ── Planning Graph Read Port ─────────────────────────────────────────────────
@@ -607,6 +726,17 @@ pub trait PlanningGraphRead {
         &self,
         work_item_id: &str,
     ) -> Result<Vec<DecisionRecordRecord>, StorageError>;
+
+    /// Returns the stable CAS root identity string for this storage.
+    ///
+    /// The CAS root ID is the SHA-256 of the canonical absolute CAS root path.
+    /// Two storage handles with the same CAS root path will return the same ID.
+    fn cas_root_id(&self) -> String;
+
+    /// Returns the stable handle identifier for this storage instance.
+    ///
+    /// The handle ID is a process-local UUID assigned at construction time.
+    fn handle_id(&self) -> String;
 }
 
 // ── Planning Graph Identity ───────────────────────────────────────────────────

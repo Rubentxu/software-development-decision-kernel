@@ -36,6 +36,7 @@ pub mod proposal;
 pub mod replay;
 pub mod rules;
 pub mod schema;
+pub mod spine;
 pub mod staleness;
 pub mod test_adapters;
 pub mod test_apply;
@@ -103,6 +104,10 @@ pub use projections::{
 pub use replay::*;
 pub use rules::*;
 pub use schema::*;
+pub use spine::{
+    ExecutionSpineV1, SpineCycleBinding, SpineHorizon, SpineHorizonDef, SpineItemV1, SpineStatus,
+};
+pub use spine::{SpineParseError, canonicalize_spine_bytes, parse_spine_yaml};
 pub use staleness::*;
 pub use test_apply::{
     APPLY_SESSION_SCHEMA_VERSION, ApplyVerificationSessionV1, NEXT_BATCH_OUTCOME_SCHEMA_VERSION,
