@@ -8,8 +8,8 @@
 //! - Identity stability via storage: insert then call compute_planning_graph_identity twice → equal
 
 use sddk_domain::planning::{
-    DecisionKind, EvidenceAttachmentRecord, PlanningEvidenceKind, WorkItemRecord, WorkItemStatus,
-    compute_planning_graph_identity,
+    DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, EvidenceAttachmentRecord,
+    PlanningEvidenceKind, WorkItemRecord, WorkItemStatus, compute_planning_graph_identity,
 };
 use sddk_domain::{CycleId, CycleManifest};
 use sddk_storage::{CycleRecord, ProjectRecord, Storage, WorkspaceRecord};
@@ -448,5 +448,114 @@ fn graph_identity_deterministic_across_re_lists() {
     assert_eq!(
         hash_a, hash_b,
         "compute_planning_graph_identity must be deterministic across re-lists"
+    );
+}
+
+// ── Self-loop rejection (AC-PLN2-02 / spec line 90) ──────────────────────────
+
+/// AC-PLN2-02: insert_dependency_edge rejects self-loops (from_id == to_id).
+#[test]
+fn insert_dependency_edge_rejects_self_loop() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("ledger.sqlite");
+    let mut storage = Storage::open(&db_path).expect("must open");
+
+    let cycle_id = setup_project_workspace_cycle(&mut storage, "selfloop");
+
+    // Insert a work item
+    let wi_record = WorkItemRecord {
+        id: "wi-selfloop-test".into(),
+        cycle_id: cycle_id.into(),
+        title: "self-loop test".into(),
+        description: "desc".into(),
+        status: WorkItemStatus::Draft,
+        actor_ref_kind: Some("Agent".into()),
+        actor_ref_id: Some("agent:test".into()),
+        actor_ref_label: Some("test".into()),
+        created_at: CREATED_AT,
+        schema_version: 1,
+    };
+    storage
+        .insert_work_item(&wi_record)
+        .expect("insert workitem must succeed");
+
+    // Self-loop edge must be rejected
+    let self_loop_edge = DependencyEdgeRecord {
+        from_id: "wi-selfloop-test".into(),
+        to_id: "wi-selfloop-test".into(),
+        kind: DependencyEdgeKind::Blocks,
+        actor_ref_kind: Some("System".into()),
+        actor_ref_id: Some("system:planner".into()),
+        actor_ref_label: Some("planner".into()),
+        schema_version: 1,
+    };
+    let result = storage.insert_dependency_edge(&self_loop_edge);
+    assert!(
+        result.is_err(),
+        "insert_dependency_edge must reject self-loop"
+    );
+    let err = result.unwrap_err();
+    assert!(
+        format!("{}", err).contains("self-loop"),
+        "error must mention self-loop: {err}"
+    );
+}
+
+/// Valid non-self-loop edge must still succeed after self-loop rejection.
+#[test]
+fn insert_dependency_edge_valid_edge_still_works() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("ledger.sqlite");
+    let mut storage = Storage::open(&db_path).expect("must open");
+
+    let cycle_id = setup_project_workspace_cycle(&mut storage, "valid-edge");
+
+    // Insert two work items
+    let wi_a = WorkItemRecord {
+        id: "wi-valid-a".into(),
+        cycle_id: cycle_id.clone().into(),
+        title: "A".into(),
+        description: "desc".into(),
+        status: WorkItemStatus::Draft,
+        actor_ref_kind: Some("Agent".into()),
+        actor_ref_id: Some("agent:test".into()),
+        actor_ref_label: Some("test".into()),
+        created_at: CREATED_AT,
+        schema_version: 1,
+    };
+    let wi_b = WorkItemRecord {
+        id: "wi-valid-b".into(),
+        cycle_id: cycle_id.into(),
+        title: "B".into(),
+        description: "desc".into(),
+        status: WorkItemStatus::Draft,
+        actor_ref_kind: Some("Agent".into()),
+        actor_ref_id: Some("agent:test".into()),
+        actor_ref_label: Some("test".into()),
+        created_at: CREATED_AT,
+        schema_version: 1,
+    };
+    storage
+        .insert_work_item(&wi_a)
+        .expect("insert A must succeed");
+    storage
+        .insert_work_item(&wi_b)
+        .expect("insert B must succeed");
+
+    // Valid edge A → B must succeed
+    let edge = DependencyEdgeRecord {
+        from_id: "wi-valid-a".into(),
+        to_id: "wi-valid-b".into(),
+        kind: DependencyEdgeKind::Blocks,
+        actor_ref_kind: Some("System".into()),
+        actor_ref_id: Some("system:planner".into()),
+        actor_ref_label: Some("planner".into()),
+        schema_version: 1,
+    };
+    let result = storage.insert_dependency_edge(&edge);
+    assert!(
+        result.is_ok(),
+        "insert_dependency_edge must accept valid edge: {}",
+        result.unwrap_err()
     );
 }

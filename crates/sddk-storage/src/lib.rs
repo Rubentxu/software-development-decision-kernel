@@ -185,6 +185,9 @@ pub enum StorageError {
     /// An evidence attachment body is empty.
     #[error("evidence attachment body must be non-empty")]
     EmptyEvidenceBody,
+    /// A dependency edge has the same source and target work item.
+    #[error("self-loop dependency edge rejected: from_id == to_id ({0})")]
+    SelfLoop(String),
 }
 
 /// SQLite-backed SDDK persistence.
@@ -1815,6 +1818,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::GateNameInvalid { .. } => "STORAGE_GATE_NAME_INVALID",
             Self::CycleProjectMismatch { .. } => "STORAGE_CYCLE_PROJECT_MISMATCH",
             Self::EmptyEvidenceBody => "STORAGE_EMPTY_EVIDENCE_BODY",
+            Self::SelfLoop(_) => "STORAGE_SELF_LOOP",
         }
     }
 
@@ -1867,6 +1871,10 @@ impl sddk_domain::SddkErrorCode for StorageError {
                 )
             }
             Self::EmptyEvidenceBody => "supply a non-empty evidence body".into(),
+            Self::SelfLoop(_) => {
+                "remove the self-loop: a dependency edge cannot have the same source and target work item"
+                    .into()
+            }
         }
     }
 }
@@ -2285,7 +2293,11 @@ impl Storage {
     /// Inserts a DependencyEdge with idempotent composite PK.
     ///
     /// Uses `INSERT OR IGNORE` so duplicate (from_id, to_id, kind) is a no-op.
+    /// Rejects self-loops (from_id == to_id) at insert time per AC-PLN2-02 / spec line 90.
     pub fn insert_dependency_edge(&self, edge: &sddk_domain::DependencyEdgeRecord) -> Result<()> {
+        if edge.from_id == edge.to_id {
+            return Err(StorageError::SelfLoop(edge.from_id.clone()));
+        }
         self.connection.execute(
             "INSERT OR IGNORE INTO work_item_dependencies_v1 (
                 from_id, to_id, kind,
@@ -2592,7 +2604,7 @@ impl Storage {
         let work_items = self.list_work_items_by_cycle(cycle_id)?;
         let work_item_ids: Vec<_> = work_items.iter().map(|w| w.id.clone()).collect();
 
-        let edges = self.list_dependency_edges_by_cycle(cycle_id)?;
+        let _edges = self.list_dependency_edges_by_cycle(cycle_id)?;
 
         // Collect evidence refs from all work items in cycle
         let mut all_evidence_refs: Vec<sddk_domain::CasHash> = Vec::new();
