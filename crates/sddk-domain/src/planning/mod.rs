@@ -19,9 +19,13 @@ use crate::event_envelope::{ActorKind, ActorRef};
 
 /// Planning work item lifecycle status.
 ///
-/// Six-variant closed set per ADR-072 §3.3.
+/// Seven-variant closed set per ADR-072 §3.3 + PLN-LEDGER-004 AC-PLN4-02.
+///
 /// No Accepted or Blocked state — those concerns are expressed via
 /// dependency edges and authority decisions respectively.
+/// `PromotionBlocked` is a projection-layer status (not persisted) that
+/// distinguishes a PROPOSED item missing its exit_gate from a structurally
+/// blocked item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkItemStatus {
@@ -37,6 +41,10 @@ pub enum WorkItemStatus {
     Superseded,
     /// Cancelled: work abandoned.
     Cancelled,
+    /// PromotionBlocked: PROPOSED item missing exit_gate (projection-only).
+    /// Not persisted; derived during projection computation.
+    #[serde(skip_serializing)]
+    PromotionBlocked,
 }
 
 impl WorkItemStatus {
@@ -85,13 +93,37 @@ impl WorkItemStatus {
             WorkItemStatus::Done => vec![],
             WorkItemStatus::Superseded => vec![],
             WorkItemStatus::Cancelled => vec![],
+            WorkItemStatus::PromotionBlocked => vec![],
+        }
+    }
+
+    /// Resolves the projection status for a work item.
+    ///
+    /// Returns `PromotionBlocked` iff:
+    /// - `spine_status` is `Some("proposed")` (the item was imported from spine as PROPOSED)
+    /// - AND `exit_gate` is `None` or empty (missing acceptance contract)
+    ///
+    /// This is a projection-layer concern; the persisted `WorkItemStatus` remains
+    /// `Draft` (per PLN-LEDGER-004 AC-PLN4-02 spec).
+    pub fn resolve_for_projection(
+        status: WorkItemStatus,
+        spine_status: Option<&str>,
+        exit_gate: Option<&str>,
+    ) -> WorkItemStatus {
+        if status == WorkItemStatus::Draft
+            && spine_status == Some("proposed")
+            && (exit_gate.is_none() || exit_gate.unwrap().is_empty())
+        {
+            WorkItemStatus::PromotionBlocked
+        } else {
+            status
         }
     }
 }
 
 assert_variant_count_eq!(
     WorkItemStatus,
-    6,
+    7,
     [
         WorkItemStatus::Draft,
         WorkItemStatus::Active,
@@ -99,6 +131,7 @@ assert_variant_count_eq!(
         WorkItemStatus::Done,
         WorkItemStatus::Superseded,
         WorkItemStatus::Cancelled,
+        WorkItemStatus::PromotionBlocked,
     ]
 );
 
@@ -857,6 +890,10 @@ pub fn compute_planning_graph_identity(
 /// SQL row representation for WorkItem persistence.
 ///
 /// Decomposes ActorRef into its component fields for SQL storage.
+///
+/// Spine metadata columns (spine_order, spine_horizon, spine_status, exit_gate)
+/// are populated during spine import and are NOT part of `WorkItemV1` domain type.
+/// These columns are NOT included in `WorkItemIdentityProjection` per PLN-LEDGER-002 §8 invariant.
 #[derive(Debug, Clone)]
 pub struct WorkItemRecord {
     pub id: WorkItemId,
@@ -869,10 +906,21 @@ pub struct WorkItemRecord {
     pub actor_ref_label: Option<String>,
     pub created_at: i64,
     pub schema_version: u32,
+    /// Spine execution order (populated during spine import).
+    pub spine_order: Option<i32>,
+    /// Spine horizon classification (populated during spine import).
+    pub spine_horizon: Option<String>,
+    /// Spine status at time of import (populated during spine import).
+    pub spine_status: Option<String>,
+    /// Exit gate definition (populated during spine import).
+    pub exit_gate: Option<String>,
 }
 
 impl WorkItemRecord {
     /// Converts this record into a domain WorkItemV1.
+    ///
+    /// Note: spine metadata columns are NOT carried into the domain type.
+    /// They are accessible only through `RoadmapGraphRead::get_work_item_with_spine_metadata`.
     pub fn into_domain(self) -> WorkItemV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
             (Some(kind), Some(id), label) => Some(ActorRef {
@@ -901,6 +949,9 @@ impl WorkItemRecord {
     }
 
     /// Creates a record from a domain WorkItemV1.
+    ///
+    /// Note: spine metadata columns are NOT set from the domain type.
+    /// They must be populated separately during spine import.
     pub fn from_domain(wi: &WorkItemV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &wi.actor_ref {
             Some(ar) => (
@@ -928,6 +979,10 @@ impl WorkItemRecord {
             actor_ref_label,
             created_at: wi.created_at,
             schema_version: wi.schema_version,
+            spine_order: None,
+            spine_horizon: None,
+            spine_status: None,
+            exit_gate: None,
         }
     }
 }
@@ -1142,6 +1197,7 @@ impl DecisionRecordRecord {
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
+pub mod projections;
 pub mod service;
 
 // ── Tests ────────────────────────────────────────────────────────────────────
