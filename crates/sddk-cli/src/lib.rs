@@ -674,17 +674,16 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::Status { cycle, format } => status::run_status(cycle, format, environment),
         Command::Plan {
             command,
-            name,
-            path,
-            branch,
-            format,
+            name: _,
+            path: _,
+            branch: _,
+            format: _,
         } => {
             if let Some(cmd) = command {
                 plan::run_plan(cmd, environment)
             } else {
-                // Legacy D2 facade: emit deprecation warning and delegate
-                let name = name.unwrap_or_default();
-                plan::run_plan_legacy(name, path, branch, format, environment)
+                // No subcommand provided — show error
+                crate::failure("sddk plan requires a subcommand: workitem, dep, evidence, decision, graph, or roadmap. Use 'sddk plan --help' for more information.".to_string())
             }
         }
         Command::Run { name, format } => run::run_run(name, format, environment),

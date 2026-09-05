@@ -35,10 +35,6 @@ use crate::{
     failure,
 };
 
-/// Deprecation warning emitted when using the legacy `sddk plan <name>` form.
-const DEPRECATION_WARNING: &str = "sddk plan <name> is deprecated and will be removed in v1.87.0; \
-     use 'sddk cycle start --name <name>' instead";
-
 /// Minimal adoption receipt fields needed to resolve the ledger path.
 /// We deserialize only the fields we need rather than depending on the full type.
 #[derive(Debug, Deserialize)]
@@ -521,39 +517,6 @@ fn render_json<T: serde::Serialize>(value: T) -> CommandOutput {
         stdout: json,
         stderr: String::new(),
     }
-}
-
-/// Run the deprecated `sddk plan <name>` facade.
-///
-/// Emits a deprecation warning to stderr and delegates to `cycle start`.
-pub(crate) fn run_plan_legacy(
-    name: String,
-    path: Option<CyclePathArg>,
-    branch: Option<String>,
-    format: OutputFormat,
-    environment: &CliEnvironment,
-) -> CommandOutput {
-    // Emit deprecation warning to stderr
-    eprintln!("{}", DEPRECATION_WARNING);
-    let args = CycleStartArgs {
-        runtime: RuntimeArgs {
-            root: Some(PathBuf::from(".")),
-            scope: Some(".".to_string()),
-            remote: None,
-            fallback_seed: None,
-            no_infer: false,
-        },
-        name,
-        path,
-        branch,
-        base: None,
-        timestamp: None,
-        actor: None,
-        lease_owner: None,
-        lease_ms: 3_600_000,
-        format,
-    };
-    cycle::run_cycle(cycle::CycleCommand::Start(args), environment)
 }
 
 // ── WorkItem subcommand handler ───────────────────────────────────────────────
