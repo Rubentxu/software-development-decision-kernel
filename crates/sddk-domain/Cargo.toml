@@ -27,3 +27,5 @@ time = { workspace = true }
 proptest = "1.11"
 serde-saphyr = { workspace = true }
 tempfile = { workspace = true }
+sddk-storage = { path = "../sddk-storage" }
+rusqlite = { workspace = true }
