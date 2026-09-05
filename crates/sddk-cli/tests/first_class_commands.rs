@@ -81,21 +81,31 @@ fn recover_help_exits_zero() {
     assert_eq!(status.code(), Some(0), "sddk recover --help must exit 0");
 }
 
-/// Delegation test: `sddk plan --help` mentions "cycle start".
+/// `sddk plan` without a subcommand must NOT silently start a cycle.
+/// It must either emit an error or show help requiring a subcommand (ADR-073 §3.1).
 #[test]
-fn plan_help_mentions_cycle_start_delegation() {
+fn plan_without_subcommand_fails_or_shows_error() {
     let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
-        .args(["plan", "--help"])
+        .args(["plan"])
         .output()
         .expect("sddk binary not found");
+    // Must exit non-zero — must NOT silently start a cycle
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "sddk plan without subcommand must not silently succeed"
+    );
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    // Must emit an error message indicating subcommand is required
     assert!(
-        combined.contains("cycle start"),
-        "sddk plan --help must mention delegation to 'cycle start'"
+        combined.to_lowercase().contains("error")
+            || combined.contains("subcommand")
+            || combined.contains("invalid"),
+        "sddk plan without subcommand must emit an error or require subcommand, got: {combined}"
     );
 }
 
