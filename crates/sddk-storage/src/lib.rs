@@ -2776,6 +2776,131 @@ impl Storage {
         let path = self.cas_root.join(first).join(second).join(hash_hex);
         std::fs::read(&path).map_err(StorageError::from)
     }
+
+    // ── Roadmap-wide queries for decision-plane projections ───────────────────
+
+    /// Lists ALL work items across ALL cycles (roadmap-wide enumeration).
+    pub fn list_work_items_roadmap(
+        &self,
+    ) -> Result<Vec<sddk_domain::planning::projections::WorkItemSnapshot>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT id, cycle_id, title, description, status,
+                    spine_order, spine_horizon, spine_status, exit_gate
+             FROM work_items_v1 ORDER BY spine_order ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let status_str: String = row.get(4)?;
+            let status = serde_json::from_str(&status_str).unwrap();
+            Ok(sddk_domain::planning::projections::WorkItemSnapshot {
+                id: row.get(0)?,
+                cycle_id: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                status,
+                spine_order: row.get(5)?,
+                spine_horizon: row.get(6)?,
+                spine_status: row.get(7)?,
+                exit_gate: row.get(8)?,
+                blocks: Vec::new(),
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Lists ALL dependency edges across ALL cycles (roadmap-wide enumeration).
+    pub fn list_dependency_edges_roadmap(
+        &self,
+    ) -> Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT from_id, to_id, kind FROM work_item_dependencies_v1")?;
+        let rows = stmt.query_map([], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = match kind_str.as_str() {
+                "blocks" => sddk_domain::planning::projections::DependencyEdgeKindSnapshot::Blocks,
+                "blocks_on_closure" => {
+                    sddk_domain::planning::projections::DependencyEdgeKindSnapshot::BlocksOnClosure
+                }
+                _ => sddk_domain::planning::projections::DependencyEdgeKindSnapshot::Blocks,
+            };
+            Ok(sddk_domain::planning::projections::DependencyEdgeSnapshot {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                kind,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Lists incoming edges for a work item (items that depend on this one).
+    pub fn list_incoming_edges_for(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT from_id, to_id, kind FROM work_item_dependencies_v1 WHERE to_id = ?1",
+        )?;
+        let rows = stmt.query_map([work_item_id], |row| {
+            let kind_str: String = row.get(2)?;
+            let kind = match kind_str.as_str() {
+                "blocks" => sddk_domain::planning::projections::DependencyEdgeKindSnapshot::Blocks,
+                "blocks_on_closure" => {
+                    sddk_domain::planning::projections::DependencyEdgeKindSnapshot::BlocksOnClosure
+                }
+                _ => sddk_domain::planning::projections::DependencyEdgeKindSnapshot::Blocks,
+            };
+            Ok(sddk_domain::planning::projections::DependencyEdgeSnapshot {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                kind,
+            })
+        })?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
+    /// Returns a work item snapshot with spine metadata populated.
+    pub fn get_work_item_with_spine_metadata(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Option<sddk_domain::planning::projections::WorkItemSnapshot>> {
+        let result = self.connection.query_row(
+            "SELECT id, cycle_id, title, description, status,
+                    spine_order, spine_horizon, spine_status, exit_gate
+             FROM work_items_v1 WHERE id = ?1",
+            [work_item_id],
+            |row| {
+                let status_str: String = row.get(4)?;
+                let status = serde_json::from_str(&status_str).unwrap();
+                Ok(sddk_domain::planning::projections::WorkItemSnapshot {
+                    id: row.get(0)?,
+                    cycle_id: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    status,
+                    spine_order: row.get(5)?,
+                    spine_horizon: row.get(6)?,
+                    spine_status: row.get(7)?,
+                    exit_gate: row.get(8)?,
+                    blocks: Vec::new(),
+                })
+            },
+        );
+        match result {
+            Ok(wi) => Ok(Some(wi)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::from(e)),
+        }
+    }
+
+    /// Returns true if any work items have been imported into the roadmap.
+    pub fn is_ledger_imported(&self) -> Result<bool> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM work_items_v1 WHERE spine_status IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
 }
 
 // ── PlanningGraphRead port implementation ─────────────────────────────────────
@@ -2822,6 +2947,46 @@ impl sddk_domain::PlanningGraphRead for Storage {
 
     fn handle_id(&self) -> String {
         Storage::handle_id(self).to_string()
+    }
+}
+
+// ── RoadmapGraphRead port implementation ─────────────────────────────────────
+
+/// Implements the domain's `RoadmapGraphRead` port for the concrete `Storage` type.
+impl sddk_domain::planning::roadmap_read::RoadmapGraphRead for Storage {
+    fn list_work_items_roadmap(
+        &self,
+    ) -> std::result::Result<Vec<sddk_domain::planning::projections::WorkItemSnapshot>, sddk_domain::StorageError>
+    {
+        Storage::list_work_items_roadmap(self).map_err(sddk_domain::StorageError::from)
+    }
+
+    fn list_dependency_edges_roadmap(
+        &self,
+    ) -> std::result::Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>, sddk_domain::StorageError>
+    {
+        Storage::list_dependency_edges_roadmap(self).map_err(sddk_domain::StorageError::from)
+    }
+
+    fn list_incoming_edges_for(
+        &self,
+        work_item_id: &str,
+    ) -> std::result::Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>, sddk_domain::StorageError>
+    {
+        Storage::list_incoming_edges_for(self, work_item_id).map_err(sddk_domain::StorageError::from)
+    }
+
+    fn get_work_item_with_spine_metadata(
+        &self,
+        work_item_id: &str,
+    ) -> std::result::Result<Option<sddk_domain::planning::projections::WorkItemSnapshot>, sddk_domain::StorageError>
+    {
+        Storage::get_work_item_with_spine_metadata(self, work_item_id)
+            .map_err(sddk_domain::StorageError::from)
+    }
+
+    fn is_ledger_imported(&self) -> std::result::Result<bool, sddk_domain::StorageError> {
+        Storage::is_ledger_imported(self).map_err(sddk_domain::StorageError::from)
     }
 }
 

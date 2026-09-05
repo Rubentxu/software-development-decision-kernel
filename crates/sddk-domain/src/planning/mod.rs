@@ -1198,6 +1198,7 @@ impl DecisionRecordRecord {
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub mod projections;
+pub mod roadmap_read;
 pub mod service;
 
 // ── Tests ────────────────────────────────────────────────────────────────────
