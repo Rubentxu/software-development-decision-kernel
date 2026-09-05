@@ -100,6 +100,10 @@ fn make_work_item(id: &str, cycle_id: &str) -> WorkItemRecord {
         actor_ref_label: None,
         created_at: 0,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     }
 }
 

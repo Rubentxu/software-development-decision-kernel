@@ -121,6 +121,10 @@ fn store_with_wi(cycle_id: &str, wi_ids: &[&str]) -> FakePlanningGraphRead {
             actor_ref_label: None,
             created_at: 0,
             schema_version: 1,
+            spine_order: None,
+            spine_horizon: None,
+            spine_status: None,
+            exit_gate: None,
         })
         .collect();
     FakePlanningGraphRead::default().with_work_items(cycle_id, items)
@@ -364,6 +368,10 @@ fn multi_cycle_isolation() {
             actor_ref_label: None,
             created_at: 0,
             schema_version: 1,
+            spine_order: None,
+            spine_horizon: None,
+            spine_status: None,
+            exit_gate: None,
         }],
     );
 
@@ -711,6 +719,10 @@ fn chain_with_many_references_is_valid() {
             actor_ref_label: None,
             created_at: 0,
             schema_version: 1,
+            spine_order: None,
+            spine_horizon: None,
+            spine_status: None,
+            exit_gate: None,
         })
         .collect();
     store = store.with_work_items("cycle-001", items);

@@ -84,6 +84,10 @@ fn evidence_attachment_cas_round_trip() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_record)
@@ -153,6 +157,10 @@ fn evidence_insert_empty_body_rejected() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_record)
@@ -198,6 +206,10 @@ fn decision_record_insert_get_round_trip() {
         actor_ref_label: Some("bob".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_record)
@@ -246,6 +258,10 @@ fn decision_record_list_by_work_item() {
         actor_ref_label: Some("bob".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_record)
@@ -291,6 +307,10 @@ fn build_provenance_chain_over_persisted_records() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi)
@@ -377,6 +397,10 @@ fn graph_identity_deterministic_across_re_lists() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     let wi_b = WorkItemRecord {
         id: "wi-idb".into(),
@@ -389,6 +413,10 @@ fn graph_identity_deterministic_across_re_lists() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage.insert_work_item(&wi_a).unwrap();
     storage.insert_work_item(&wi_b).unwrap();
@@ -474,6 +502,10 @@ fn insert_dependency_edge_rejects_self_loop() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_record)
@@ -522,6 +554,10 @@ fn insert_dependency_edge_valid_edge_still_works() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     let wi_b = WorkItemRecord {
         id: "wi-valid-b".into(),
@@ -534,6 +570,10 @@ fn insert_dependency_edge_valid_edge_still_works() {
         actor_ref_label: Some("test".into()),
         created_at: CREATED_AT,
         schema_version: 1,
+        spine_order: None,
+        spine_horizon: None,
+        spine_status: None,
+        exit_gate: None,
     };
     storage
         .insert_work_item(&wi_a)
