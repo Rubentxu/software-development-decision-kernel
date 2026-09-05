@@ -7,6 +7,7 @@ use sddk_domain::{
 use serde_json::json;
 
 use crate::TransitionOutcome;
+use crate::authority::{AuthorityContext, WritableSurface};
 
 use super::correlation::{with_causation, with_correlation_from_context, with_correlation_id};
 use super::envelopes::{build_event_envelope, build_outcome_envelope};
@@ -135,6 +136,8 @@ pub struct WorkItemCreatedInput {
     pub occurred_at: String,
     pub causation_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// Authority context for validation (REQ-PLN2-AUTH-003).
+    pub authority: AuthorityContext,
 }
 
 /// Input for a `planning.work_item.transitioned` event emission.
@@ -150,6 +153,8 @@ pub struct WorkItemTransitionedInput {
     pub occurred_at: String,
     pub causation_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// Authority context for validation (REQ-PLN2-AUTH-003).
+    pub authority: AuthorityContext,
 }
 
 /// Input for a `planning.dependency.added` event emission.
@@ -165,6 +170,8 @@ pub struct DependencyAddedInput {
     pub occurred_at: String,
     pub causation_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// Authority context for validation (REQ-PLN2-AUTH-003).
+    pub authority: AuthorityContext,
 }
 
 /// Input for a `planning.evidence.attached` event emission.
@@ -181,6 +188,8 @@ pub struct EvidenceAttachedInput {
     pub occurred_at: String,
     pub causation_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// Authority context for validation (REQ-PLN2-AUTH-003).
+    pub authority: AuthorityContext,
 }
 
 /// Input for a `planning.decision.recorded` event emission.
@@ -197,6 +206,8 @@ pub struct DecisionRecordedInput {
     pub occurred_at: String,
     pub causation_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// Authority context for validation (REQ-PLN2-AUTH-003).
+    pub authority: AuthorityContext,
 }
 
 // ── Emit functions ─────────────────────────────────────────────────────────────
@@ -1136,6 +1147,11 @@ pub fn emit_work_item_created<S: EventStore>(
     store: &mut S,
     input: &WorkItemCreatedInput,
 ) -> Result<EventAppended, StorageError> {
+    // REQ-PLN2-AUTH-003: authority check MUST precede emission (fail-closed)
+    input
+        .authority
+        .validate(WritableSurface::PlanItem)
+        .map_err(|e| StorageError::Other(format!("authority rejected: {e}")))?;
     let event_id = format!("planning-wi-{}-created", input.work_item_id);
     let payload = serde_json::json!({
         "work_item_id": input.work_item_id,
@@ -1191,6 +1207,11 @@ pub fn emit_work_item_transitioned<S: EventStore>(
     store: &mut S,
     input: &WorkItemTransitionedInput,
 ) -> Result<EventAppended, StorageError> {
+    // REQ-PLN2-AUTH-003: authority check MUST precede emission (fail-closed)
+    input
+        .authority
+        .validate(WritableSurface::PlanItem)
+        .map_err(|e| StorageError::Other(format!("authority rejected: {e}")))?;
     let event_id = format!("planning-wi-{}-transitioned", input.work_item_id);
     let payload = serde_json::json!({
         "work_item_id": input.work_item_id,
@@ -1245,6 +1266,11 @@ pub fn emit_dependency_added<S: EventStore>(
     store: &mut S,
     input: &DependencyAddedInput,
 ) -> Result<EventAppended, StorageError> {
+    // REQ-PLN2-AUTH-003: authority check MUST precede emission (fail-closed)
+    input
+        .authority
+        .validate(WritableSurface::DependencyEdge)
+        .map_err(|e| StorageError::Other(format!("authority rejected: {e}")))?;
     let event_id = format!(
         "planning-dep-{}-to-{}-added",
         input.from_work_item_id, input.to_work_item_id
@@ -1310,6 +1336,11 @@ pub fn emit_evidence_attached<S: EventStore>(
     store: &mut S,
     input: &EvidenceAttachedInput,
 ) -> Result<EventAppended, StorageError> {
+    // REQ-PLN2-AUTH-003: authority check MUST precede emission (fail-closed)
+    input
+        .authority
+        .validate(WritableSurface::EvidenceAttachment)
+        .map_err(|e| StorageError::Other(format!("authority rejected: {e}")))?;
     let event_id = format!("planning-ev-{}-attached", input.evidence_id);
     let payload = serde_json::json!({
         "evidence_id": input.evidence_id,
@@ -1365,6 +1396,11 @@ pub fn emit_decision_recorded<S: EventStore>(
     store: &mut S,
     input: &DecisionRecordedInput,
 ) -> Result<EventAppended, StorageError> {
+    // REQ-PLN2-AUTH-003: authority check MUST precede emission (fail-closed)
+    input
+        .authority
+        .validate(WritableSurface::DecisionRecord)
+        .map_err(|e| StorageError::Other(format!("authority rejected: {e}")))?;
     let event_id = format!("planning-dec-{}-recorded", input.decision_id);
     let payload = serde_json::json!({
         "decision_id": input.decision_id,

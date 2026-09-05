@@ -11,6 +11,7 @@ use sddk_domain::{
     ActorKind, ActorRef, CasHash, DecisionId, DecisionKind, DependencyEdgeKind, EventAppended,
     EventEnvelopeV1, EventStore, EvidenceId, PlanningEvidenceKind, WorkItemId, WorkItemStatus,
 };
+use sddk_engine::authority::AuthorityContext;
 use sddk_engine::event_bus::emit::{
     DecisionRecordedInput, DependencyAddedInput, EvidenceAttachedInput, WorkItemCreatedInput,
     WorkItemTransitionedInput, emit_decision_recorded, emit_dependency_added,
@@ -39,6 +40,7 @@ fn make_wi_created_input() -> WorkItemCreatedInput {
         occurred_at: "2026-09-05T10:00:00Z".into(),
         causation_id: None,
         correlation_id: None,
+        authority: AuthorityContext::for_test(ActorKind::Agent, "agent:test"),
     }
 }
 
@@ -125,6 +127,7 @@ fn make_wi_transitioned_input() -> WorkItemTransitionedInput {
         occurred_at: "2026-09-05T11:00:00Z".into(),
         causation_id: None,
         correlation_id: None,
+        authority: AuthorityContext::for_test(ActorKind::Human, "user:alice"),
     }
 }
 
@@ -183,6 +186,7 @@ fn make_dep_added_input() -> DependencyAddedInput {
         occurred_at: "2026-09-05T12:00:00Z".into(),
         causation_id: None,
         correlation_id: None,
+        authority: AuthorityContext::for_test(ActorKind::System, "system:planner"),
     }
 }
 
@@ -242,6 +246,7 @@ fn make_evidence_attached_input() -> EvidenceAttachedInput {
         occurred_at: "2026-09-05T13:00:00Z".into(),
         causation_id: None,
         correlation_id: None,
+        authority: AuthorityContext::for_test(ActorKind::Agent, "agent:ci"),
     }
 }
 
@@ -301,6 +306,7 @@ fn make_decision_recorded_input() -> DecisionRecordedInput {
         occurred_at: "2026-09-05T14:00:00Z".into(),
         causation_id: None,
         correlation_id: None,
+        authority: AuthorityContext::for_test(ActorKind::Human, "user:bob"),
     }
 }
 
