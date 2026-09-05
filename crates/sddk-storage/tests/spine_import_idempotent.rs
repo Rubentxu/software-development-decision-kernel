@@ -8,6 +8,8 @@ use sddk_storage::Storage;
 use sddk_storage::spine_import::{
     SpineImportError, compute_spine_body_ref, import_spine, map_spine_status,
 };
+use rusqlite;
+use tempfile::TempDir;
 
 fn make_spine_yaml(items_yaml: &str) -> Vec<u8> {
     format!(
@@ -22,6 +24,53 @@ items:
         items_yaml
     )
     .into_bytes()
+}
+
+fn make_spine_item_with_order(
+    id: &str,
+    status: &str,
+    depends_on: &[&str],
+    order: u32,
+    horizon: &str,
+) -> String {
+    let deps = depends_on
+        .iter()
+        .map(|d| format!("\"{}\"", d))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        r#"  - order: {}
+    id: {}
+    horizon: {}
+    status: {}
+    depends_on: [{}]
+    objective: Test objective for {}
+    exit_gate: Test gate"#,
+        order,
+        id,
+        horizon,
+        status,
+        deps,
+        id
+    )
+}
+
+fn make_spine_item_with_gate(id: &str, status: &str, depends_on: &[&str], exit_gate: &str) -> String {
+    let deps = depends_on
+        .iter()
+        .map(|d| format!("\"{}\"", d))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        r#"  - order: 1
+    id: {}
+    horizon: H1
+    status: {}
+    depends_on: [{}]
+    objective: Test objective for {}
+    exit_gate: {}"#,
+        id, status, deps, id, exit_gate
+    )
 }
 
 fn make_spine_item(id: &str, status: &str, depends_on: &[&str]) -> String {
@@ -223,7 +272,7 @@ fn spine_import_one_evidence_per_spine_item() {
 fn spine_import_body_ref_is_content_addressable() {
     let bytes = make_spine_yaml(&make_spine_item("WI-001", "SHIPPED", &[]));
     let canonical = sddk_domain::spine::canonicalize_spine_bytes(&bytes);
-    let body_ref = compute_spine_body_ref(&canonical);
+    let _body_ref = compute_spine_body_ref(&canonical);
 
     // Re-read the spine file using manifest dir to find it
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -256,6 +305,65 @@ fn spine_import_work_item_identity_is_spine_id() {
     assert_eq!(wi.id, "PLN-LEDGER-003", "work item id = spine id");
     assert_eq!(wi.cycle_id, "PLN-LEDGER-003", "cycle_id = spine id (Q5 S1)");
     assert_eq!(wi.title, "PLN-LEDGER-003", "title = spine id (Q6)");
+}
+
+/// Scenario: spine_order and spine_horizon are backfilled from spine YAML on import
+#[test]
+fn spine_import_backfills_order_and_horizon() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("ledger.sqlite");
+    let mut storage = Storage::open(&db_path).unwrap();
+    let bytes = make_spine_yaml(&format!(
+        "{}\n{}",
+        make_spine_item_with_order("WI-001", "PROPOSED", &[], 100, "H1"),
+        make_spine_item_with_order("WI-002", "ACTIVE", &[], 200, "H2"),
+    ));
+
+    import_spine(&bytes, &mut storage).unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let rows: Vec<(String, i64, String)> = conn
+        .prepare("SELECT id, spine_order, spine_horizon FROM work_items_v1 ORDER BY spine_order")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].0, "WI-001");
+    assert_eq!(rows[0].1, 100);
+    assert_eq!(rows[0].2.to_lowercase(), "h1");
+    assert_eq!(rows[1].0, "WI-002");
+    assert_eq!(rows[1].1, 200);
+    assert_eq!(rows[1].2.to_lowercase(), "h2");
+}
+
+/// Scenario: exit_gate is backfilled from spine YAML on import
+#[test]
+fn spine_import_backfills_exit_gate() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("ledger.sqlite");
+    let mut storage = Storage::open(&db_path).unwrap();
+    let bytes = make_spine_yaml(&make_spine_item_with_gate(
+        "WI-001",
+        "PROPOSED",
+        &[],
+        "Gate-Alpha",
+    ));
+
+    import_spine(&bytes, &mut storage).unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let exit_gate: String = conn
+        .query_row(
+            "SELECT exit_gate FROM work_items_v1 WHERE id = 'WI-001'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("row must exist");
+
+    assert_eq!(exit_gate, "Gate-Alpha");
 }
 
 /// Scenario: map_spine_status all 8 variants
