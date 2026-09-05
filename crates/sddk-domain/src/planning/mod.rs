@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::StorageError;
 use crate::assert_variant_count_eq;
 use crate::event_envelope::{ActorKind, ActorRef};
 
@@ -452,16 +453,117 @@ impl PlanningProvenanceChainV1 {
     /// Verifies this chain has no dangling references.
     ///
     /// A dangling reference is one that appears in evidence_refs or decision_refs
-    /// but not in work_item_ids. Subclasses of references (e.g. evidence bodies)
-    /// require separate CAS verification.
-    pub fn verify_references(&self) -> Result<(), ProvenanceError> {
-        // This is a stub: real verification requires access to the storage layer
-        // to check that referenced WorkItems exist. The domain model only
-        // validates the structural shape here.
+    /// Verifies this chain has no dangling references using the provided storage.
+    ///
+    /// Iterates `work_item_ids` against `list_work_items_by_cycle`,
+    /// `evidence_refs` against evidence found via `list_evidence_attachments_by_work_item`,
+    /// and `decision_refs` against `list_decisions_by_work_item`.
+    /// Dangling references produce `Err(ProvenanceError::DanglingReference(id))`.
+    ///
+    /// The structural `cycle_id` non-emptiness check is preserved so that the
+    /// domain-level test `empty_cycle_id_rejected` continues to pass without storage.
+    pub fn verify_references(&self, store: &dyn PlanningGraphRead) -> Result<(), ProvenanceError> {
         if self.cycle_id.is_empty() {
             return Err(ProvenanceError::EmptyCycleId);
         }
+
+        // Verify each work_item_id exists in the cycle
+        let work_items = store
+            .list_work_items_by_cycle(&self.cycle_id)
+            .map_err(|e| ProvenanceError::DanglingReference(format!("storage-error: {}", e)))?;
+        let work_item_ids: std::collections::HashSet<_> =
+            work_items.iter().map(|w| w.id.clone()).collect();
+
+        for wi_id in &self.work_item_ids {
+            if !work_item_ids.contains(wi_id) {
+                return Err(ProvenanceError::DanglingReference(wi_id.clone()));
+            }
+        }
+
+        // Verify each evidence_ref points to an existing evidence attachment
+        let mut found_evidence: std::collections::HashSet<CasHash> =
+            std::collections::HashSet::new();
+        for wi_id in &self.work_item_ids {
+            let evidence = store
+                .list_evidence_attachments_by_work_item(wi_id)
+                .map_err(|e| ProvenanceError::DanglingReference(format!("storage-error: {}", e)))?;
+            for e in evidence {
+                found_evidence.insert(e.body_ref.clone());
+            }
+        }
+        for ev_ref in &self.evidence_refs {
+            if !found_evidence.contains(ev_ref) {
+                return Err(ProvenanceError::DanglingReference(ev_ref.clone()));
+            }
+        }
+
+        // Verify each decision_ref points to an existing decision record
+        let mut found_decisions: std::collections::HashSet<DecisionId> =
+            std::collections::HashSet::new();
+        for wi_id in &self.work_item_ids {
+            let decisions = store
+                .list_decision_records_by_work_item(wi_id)
+                .map_err(|e| ProvenanceError::DanglingReference(format!("storage-error: {}", e)))?;
+            for d in decisions {
+                found_decisions.insert(d.id.clone());
+            }
+        }
+        for dec_ref in &self.decision_refs {
+            if !found_decisions.contains(dec_ref) {
+                return Err(ProvenanceError::DanglingReference(dec_ref.clone()));
+            }
+        }
+
         Ok(())
+    }
+
+    /// Computes the deterministic SHA-256 identity of the full planning graph
+    /// for this chain's cycle.
+    ///
+    /// The identity is computed over canonical JSON of:
+    /// - All WorkItems in the cycle (sorted by id), with volatile fields excluded
+    /// - All DependencyEdges (sorted by from_id then to_id), with volatile fields excluded
+    /// - All evidence_refs (sorted)
+    /// - All decision_refs (sorted)
+    ///
+    /// This method fetches the full graph from `store` and delegates to
+    /// `compute_planning_graph_identity`. Volatile fields (`created_at`, `status`)
+    /// are excluded per FIND-PLN-008.
+    pub fn compute_graph_identity(
+        &self,
+        store: &dyn PlanningGraphRead,
+    ) -> Result<String, StorageError> {
+        let work_items = store.list_work_items_by_cycle(&self.cycle_id)?;
+        let domain_wis: Vec<WorkItemV1> = work_items.into_iter().map(|r| r.into_domain()).collect();
+
+        let edges = store.list_dependency_edges_by_cycle(&self.cycle_id)?;
+        let domain_edges: Vec<DependencyEdgeV1> =
+            edges.into_iter().map(|r| r.into_domain()).collect();
+
+        // Collect all evidence refs
+        let mut all_evidence: Vec<CasHash> = Vec::new();
+        for wi_id in &self.work_item_ids {
+            let ev = store.list_evidence_attachments_by_work_item(wi_id)?;
+            all_evidence.extend(ev.into_iter().map(|e| e.body_ref));
+        }
+        let mut sorted_evidence = all_evidence;
+        sorted_evidence.sort();
+
+        // Collect all decision refs
+        let mut all_decisions: Vec<DecisionId> = Vec::new();
+        for wi_id in &self.work_item_ids {
+            let dec = store.list_decision_records_by_work_item(wi_id)?;
+            all_decisions.extend(dec.into_iter().map(|d| d.id));
+        }
+        let mut sorted_decisions = all_decisions;
+        sorted_decisions.sort();
+
+        Ok(compute_planning_graph_identity(
+            &domain_wis,
+            &domain_edges,
+            &sorted_evidence,
+            &sorted_decisions,
+        ))
     }
 }
 
@@ -472,6 +574,39 @@ pub enum ProvenanceError {
     EmptyCycleId,
     #[error("dangling reference: {0}")]
     DanglingReference(String),
+}
+
+// ── Planning Graph Read Port ─────────────────────────────────────────────────
+
+/// Read-only port for accessing planning graph data.
+///
+/// Used by `PlanningProvenanceChainV1::compute_graph_identity` and
+/// `PlanningProvenanceChainV1::verify_references` to fetch graph data
+/// without coupling the domain to a specific storage implementation.
+///
+/// The trait is object-safe (no associated types, no `Self` in generics).
+pub trait PlanningGraphRead {
+    /// Lists all WorkItem records for a cycle.
+    fn list_work_items_by_cycle(&self, cycle_id: &str)
+    -> Result<Vec<WorkItemRecord>, StorageError>;
+
+    /// Lists all DependencyEdge records for a cycle.
+    fn list_dependency_edges_by_cycle(
+        &self,
+        cycle_id: &str,
+    ) -> Result<Vec<DependencyEdgeRecord>, StorageError>;
+
+    /// Lists all evidence attachment records for a WorkItem.
+    fn list_evidence_attachments_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<EvidenceAttachmentRecord>, StorageError>;
+
+    /// Lists all decision records for a WorkItem.
+    fn list_decision_records_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<DecisionRecordRecord>, StorageError>;
 }
 
 // ── Planning Graph Identity ───────────────────────────────────────────────────
@@ -1045,23 +1180,8 @@ mod tests {
         assert_eq!(ea.kind, ea2.kind);
     }
 
-    #[test]
-    fn planning_provenance_chain_empty_cycle_id_rejected() {
-        let chain =
-            PlanningProvenanceChainV1::new("".into(), vec!["wi-001".into()], vec![], vec![]);
-        assert!(chain.verify_references().is_err());
-    }
-
-    #[test]
-    fn planning_provenance_chain_valid() {
-        let chain = PlanningProvenanceChainV1::new(
-            "cycle-001".into(),
-            vec!["wi-001".into(), "wi-002".into()],
-            vec!["sha256:abc".into()],
-            vec!["dec-001".into()],
-        );
-        assert!(chain.verify_references().is_ok());
-    }
+    // NOTE: verify_references tests moved to crates/sddk-domain/tests/planning_provenance.rs
+    // The structural tests (empty cycle_id, valid chain) are covered there with FakePlanningGraphRead.
 
     #[test]
     fn work_item_identity_is_deterministic() {

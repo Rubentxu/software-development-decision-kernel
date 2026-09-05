@@ -87,9 +87,10 @@ pub use planning::{
     DecisionId, DecisionKind, DecisionRecordRecord, DecisionRecordV1,
     DependencyEdgeIdentityProjection, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
     EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, EvidenceAttachmentV1, EvidenceId,
-    PLANNING_PROVENANCE_SCHEMA_VERSION, PlanningEvidenceKind, PlanningProvenanceChainV1,
-    ProvenanceError, WORK_ITEM_SCHEMA_VERSION, WorkItemId, WorkItemIdentityProjection,
-    WorkItemRecord, WorkItemStatus, WorkItemV1, compute_planning_graph_identity,
+    PLANNING_PROVENANCE_SCHEMA_VERSION, PlanningEvidenceKind, PlanningGraphRead,
+    PlanningProvenanceChainV1, ProvenanceError, WORK_ITEM_SCHEMA_VERSION, WorkItemId,
+    WorkItemIdentityProjection, WorkItemRecord, WorkItemStatus, WorkItemV1,
+    compute_planning_graph_identity,
 };
 pub use ports::{
     ArtifactStore, CasError, CasPort, ControlPlane, EventAppended, EventStore, GraphStore, Ledger,

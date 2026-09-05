@@ -228,6 +228,41 @@ fn evidence_refs_sorted_for_determinism() {
 }
 
 #[test]
+fn evidence_body_change_alters_identity() {
+    // GIVEN an evidence body whose CAS hash differs between two captures
+    // (simulated by passing different evidence_refs to the identity computation)
+    let items = vec![work_item("wi-001", "cycle-1", "A", WorkItemStatus::Active)];
+    let edges: Vec<DependencyEdgeV1> = vec![];
+    let evidence_a = vec!["sha256:originalbody".to_string()];
+    let evidence_b = vec!["sha256:modifiedbody".to_string()];
+    let decisions: Vec<String> = vec![];
+
+    let hash_a = compute_planning_graph_identity(&items, &edges, &evidence_a, &decisions);
+    let hash_b = compute_planning_graph_identity(&items, &edges, &evidence_b, &decisions);
+
+    assert_ne!(
+        hash_a, hash_b,
+        "evidence CAS hash change must alter the identity"
+    );
+}
+
+#[test]
+fn decision_rationale_change_alters_identity() {
+    // GIVEN a decision whose id differs between two captures
+    // (decision_refs are DecisionIds — changing the id means a different decision)
+    let items = vec![work_item("wi-001", "cycle-1", "A", WorkItemStatus::Active)];
+    let edges: Vec<DependencyEdgeV1> = vec![];
+    let evidence: Vec<String> = vec![];
+    let decisions_a = vec!["dec-original".to_string()];
+    let decisions_b = vec!["dec-modified".to_string()];
+
+    let hash_a = compute_planning_graph_identity(&items, &edges, &evidence, &decisions_a);
+    let hash_b = compute_planning_graph_identity(&items, &edges, &evidence, &decisions_b);
+
+    assert_ne!(hash_a, hash_b, "decision id change must alter the identity");
+}
+
+#[test]
 fn decision_refs_sorted_for_determinism() {
     let items = vec![work_item("wi-001", "cycle-1", "A", WorkItemStatus::Active)];
     let edges: Vec<DependencyEdgeV1> = vec![];

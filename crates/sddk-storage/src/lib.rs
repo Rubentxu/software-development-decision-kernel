@@ -2656,6 +2656,45 @@ impl Storage {
     }
 }
 
+// ── PlanningGraphRead port implementation ─────────────────────────────────────
+
+/// Implements the domain's `PlanningGraphRead` port for the concrete `Storage` type.
+impl sddk_domain::PlanningGraphRead for Storage {
+    fn list_work_items_by_cycle(
+        &self,
+        cycle_id: &str,
+    ) -> std::result::Result<Vec<sddk_domain::WorkItemRecord>, sddk_domain::StorageError> {
+        Storage::list_work_items_by_cycle(self, cycle_id).map_err(sddk_domain::StorageError::from)
+    }
+
+    fn list_dependency_edges_by_cycle(
+        &self,
+        cycle_id: &str,
+    ) -> std::result::Result<Vec<sddk_domain::DependencyEdgeRecord>, sddk_domain::StorageError>
+    {
+        Storage::list_dependency_edges_by_cycle(self, cycle_id)
+            .map_err(sddk_domain::StorageError::from)
+    }
+
+    fn list_evidence_attachments_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> std::result::Result<Vec<sddk_domain::EvidenceAttachmentRecord>, sddk_domain::StorageError>
+    {
+        Storage::list_evidence_attachments_by_work_item(self, work_item_id)
+            .map_err(sddk_domain::StorageError::from)
+    }
+
+    fn list_decision_records_by_work_item(
+        &self,
+        work_item_id: &str,
+    ) -> std::result::Result<Vec<sddk_domain::DecisionRecordRecord>, sddk_domain::StorageError>
+    {
+        Storage::list_decision_records_by_work_item(self, work_item_id)
+            .map_err(sddk_domain::StorageError::from)
+    }
+}
+
 #[cfg(test)]
 mod cycle_project_mismatch_tests {
     use super::*;
