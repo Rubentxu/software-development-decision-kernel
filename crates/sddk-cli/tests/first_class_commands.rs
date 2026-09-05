@@ -160,6 +160,61 @@ fn release_revalidate_help_exits_zero() {
     );
 }
 
+/// AC-PLN4-13 (a): `DEPRECATION_WARNING` constant removed from plan.rs.
+#[test]
+fn plan_no_deprecation_warning_constant() {
+    let plan_rs = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plan.rs")
+    ).expect("read plan.rs");
+    assert!(
+        !plan_rs.contains("DEPRECATION_WARNING"),
+        "DEPRECATION_WARNING constant must be removed from plan.rs"
+    );
+}
+
+/// AC-PLN4-13 (b): `sddk plan --help` lists `roadmap` subcommand.
+#[test]
+fn plan_help_lists_roadmap() {
+    let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["plan", "--help"])
+        .output()
+        .expect("sddk binary not found");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("roadmap"),
+        "sddk plan --help must list roadmap subcommand: {}",
+        combined
+    );
+}
+
+/// AC-PLN4-13 (c): existing `sddk plan graph --cycle-id` surface unchanged.
+#[test]
+fn plan_graph_cycle_id_unchanged() {
+    let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["plan", "graph", "--help"])
+        .output()
+        .expect("sddk binary not found");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "sddk plan graph --help must exit 0"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("--cycle-id"),
+        "sddk plan graph --help must show --cycle-id: {}",
+        combined
+    );
+}
+
 /// Dispatch test: `sddk release revalidate --help` shows all required arguments.
 #[test]
 fn release_revalidate_help_shows_required_args() {
