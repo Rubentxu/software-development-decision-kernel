@@ -64,7 +64,7 @@ fn open_storage_for_plan(environment: &CliEnvironment) -> Option<Storage> {
                 .join("sddk/projects")
                 .join(project_id)
                 .join("ledger.sqlite");
-            if let Some(storage) = Storage::open(&ledger_path).ok() {
+            if let Ok(storage) = Storage::open(&ledger_path) {
                 return Some(storage);
             }
         }
