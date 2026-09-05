@@ -491,6 +491,66 @@ fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> Comma
                 }
                 Err(e) => return failure(format!("failed to get work item: {}", e)),
             };
+            let existing_domain = existing.clone().into_domain();
+
+            // REQ-PLN2-CLI-002 / spec line 276: validate status-state transition
+            if !existing_domain.status.can_transition_to(target_status) {
+                return failure(format!(
+                    "invalid transition from {:?} to {:?}",
+                    existing_domain.status, target_status
+                ));
+            }
+
+            // REQ-PLN2-CLI-002: load incoming edges and apply DependencyResolutionService
+            let incoming_edges = match storage.get_dependency_edges_to(&args.work_item_id) {
+                Ok(edges) => edges,
+                Err(e) => {
+                    return failure(format!("failed to load dependency edges: {}", e));
+                }
+            };
+            let domain_edges: Vec<DependencyEdgeV1> = incoming_edges
+                .into_iter()
+                .map(|r| r.into_domain())
+                .collect();
+
+            // Build a pure status lookup from the storage handle
+            let status_lookup =
+                |wid: &sddk_domain::planning::WorkItemId| -> Option<WorkItemStatus> {
+                    if wid == &existing_domain.id {
+                        Some(existing_domain.status)
+                    } else {
+                        storage.get_work_item(wid).ok().flatten().map(|r| r.status)
+                    }
+                };
+
+            // spec line 794: dependency check mandatory for Draft→Active and terminal transitions
+            let is_terminal = matches!(
+                target_status,
+                WorkItemStatus::Done | WorkItemStatus::Superseded | WorkItemStatus::Cancelled
+            );
+
+            if is_terminal {
+                // Terminal transition: check BlocksOnClosure + Blocks via resolve_can_terminalize
+                if let Err(e) = DependencyResolutionService::resolve_can_terminalize(
+                    &existing_domain,
+                    target_status,
+                    &domain_edges,
+                    &status_lookup,
+                ) {
+                    return failure(format!("transition blocked: {}", e));
+                }
+            } else if target_status == WorkItemStatus::Active {
+                // Draft → Active: check Blocks via resolve_can_activate
+                if let Err(e) = DependencyResolutionService::resolve_can_activate(
+                    &existing_domain,
+                    &domain_edges,
+                    &status_lookup,
+                ) {
+                    return failure(format!("transition blocked: {}", e));
+                }
+            }
+            // Other transitions (e.g. Active↔Paused): no dependency check per spec line 794
+
             let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
             let _updated = WorkItemRecord {
                 status: target_status,

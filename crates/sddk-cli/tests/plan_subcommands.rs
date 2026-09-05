@@ -541,3 +541,244 @@ fn plan_decision_record_empty_rationale_rejected() {
         "decision with empty rationale must be rejected"
     );
 }
+
+// ── work-item transition validation (REQ-PLN2-CLI-002) ─────────────────────────────────
+
+/// AC-PLN2-07: transition Draft → Active allowed when no predecessors block.
+#[test]
+fn plan_workitem_transition_allowed_no_deps() {
+    let fixture = PlanFixture::with_cycle();
+
+    // Create a Draft work item
+    let wi: serde_json::Value = serde_json::from_slice(
+        &fixture
+            .run_plan(&[
+                "work-item",
+                "create",
+                "--cycle-id",
+                &fixture.cycle_id,
+                "--title",
+                "Transition test",
+                "--description",
+                "desc",
+                "--actor-id",
+                "agent:test",
+            ])
+            .stdout,
+    )
+    .expect("create must succeed");
+    let work_item_id = wi.get("id").expect("id").as_str().unwrap();
+
+    // Transition Draft → Active must succeed
+    let result = fixture.run_plan(&[
+        "work-item",
+        "transition",
+        "--work-item-id",
+        work_item_id,
+        "--to",
+        "Active",
+        "--actor-id",
+        "agent:test",
+    ]);
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "transition Draft→Active must succeed with no deps: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+/// AC-PLN2-07: transition Draft → Active BLOCKED by non-terminal predecessor (Blocks).
+#[test]
+fn plan_workitem_transition_draft_to_active_blocked_by_active_predecessor() {
+    let fixture = PlanFixture::with_cycle();
+
+    // Create work item A (will be predecessor)
+    let wi_a: serde_json::Value = serde_json::from_slice(
+        &fixture
+            .run_plan(&[
+                "work-item",
+                "create",
+                "--cycle-id",
+                &fixture.cycle_id,
+                "--title",
+                "Predecessor A",
+                "--description",
+                "desc",
+                "--actor-id",
+                "agent:test",
+            ])
+            .stdout,
+    )
+    .expect("create A must succeed");
+    let id_a = wi_a.get("id").expect("id").as_str().unwrap();
+
+    // Create work item B (target)
+    let wi_b: serde_json::Value = serde_json::from_slice(
+        &fixture
+            .run_plan(&[
+                "work-item",
+                "create",
+                "--cycle-id",
+                &fixture.cycle_id,
+                "--title",
+                "Target B",
+                "--description",
+                "desc",
+                "--actor-id",
+                "agent:test",
+            ])
+            .stdout,
+    )
+    .expect("create B must succeed");
+    let id_b = wi_b.get("id").expect("id").as_str().unwrap();
+
+    // Add a Blocks dependency: A → B (A blocks B)
+    let add_dep = fixture.run_plan(&[
+        "dep",
+        "add",
+        "--from-id",
+        id_a,
+        "--to-id",
+        id_b,
+        "--kind",
+        "Blocks",
+        "--actor-id",
+        "system:planner",
+    ]);
+    assert_eq!(
+        add_dep.status.code(),
+        Some(0),
+        "dep add must succeed: {}",
+        String::from_utf8_lossy(&add_dep.stderr)
+    );
+
+    // Transition B Draft → Active must be BLOCKED because A is still Draft
+    let result = fixture.run_plan(&[
+        "work-item",
+        "transition",
+        "--work-item-id",
+        id_b,
+        "--to",
+        "Active",
+        "--actor-id",
+        "agent:test",
+    ]);
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "transition must be blocked by predecessor"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("transition blocked") || stderr.contains("blocked"),
+        "error must mention 'blocked': {stderr}"
+    );
+}
+
+/// AC-PLN2-07: terminal transition blocked by non-terminal BlocksOnClosure predecessor.
+#[test]
+fn plan_workitem_transition_terminal_blocked_by_blocks_on_closure_predecessor() {
+    let fixture = PlanFixture::with_cycle();
+
+    // Create work item A (predecessor)
+    let wi_a: serde_json::Value = serde_json::from_slice(
+        &fixture
+            .run_plan(&[
+                "work-item",
+                "create",
+                "--cycle-id",
+                &fixture.cycle_id,
+                "--title",
+                "Predecessor A",
+                "--description",
+                "desc",
+                "--actor-id",
+                "agent:test",
+            ])
+            .stdout,
+    )
+    .expect("create A must succeed");
+    let id_a = wi_a.get("id").expect("id").as_str().unwrap();
+
+    // Create work item B (target)
+    let wi_b: serde_json::Value = serde_json::from_slice(
+        &fixture
+            .run_plan(&[
+                "work-item",
+                "create",
+                "--cycle-id",
+                &fixture.cycle_id,
+                "--title",
+                "Target B",
+                "--description",
+                "desc",
+                "--actor-id",
+                "agent:test",
+            ])
+            .stdout,
+    )
+    .expect("create B must succeed");
+    let id_b = wi_b.get("id").expect("id").as_str().unwrap();
+
+    // Add a BlocksOnClosure dependency: A → B
+    let add_dep = fixture.run_plan(&[
+        "dep",
+        "add",
+        "--from-id",
+        id_a,
+        "--to-id",
+        id_b,
+        "--kind",
+        "BlocksOnClosure",
+        "--actor-id",
+        "system:planner",
+    ]);
+    assert_eq!(
+        add_dep.status.code(),
+        Some(0),
+        "dep add must succeed: {}",
+        String::from_utf8_lossy(&add_dep.stderr)
+    );
+
+    // Transition B Draft → Active must succeed (BlocksOnClosure doesn't block non-terminal)
+    let to_active = fixture.run_plan(&[
+        "work-item",
+        "transition",
+        "--work-item-id",
+        id_b,
+        "--to",
+        "Active",
+        "--actor-id",
+        "agent:test",
+    ]);
+    assert_eq!(
+        to_active.status.code(),
+        Some(0),
+        "Draft→Active must succeed (BlocksOnClosure doesn't block it): {}",
+        String::from_utf8_lossy(&to_active.stderr)
+    );
+
+    // Transition B Active → Done must be BLOCKED because A is still Draft
+    // (BlocksOnClosure blocks terminal transitions when predecessor is non-terminal)
+    let result = fixture.run_plan(&[
+        "work-item",
+        "transition",
+        "--work-item-id",
+        id_b,
+        "--to",
+        "Done",
+        "--actor-id",
+        "agent:test",
+    ]);
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "terminal transition must be blocked by non-terminal BlocksOnClosure predecessor"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("transition blocked") || stderr.contains("blocked"),
+        "error must mention 'blocked': {stderr}"
+    );
+}
