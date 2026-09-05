@@ -37,9 +37,19 @@ pub(crate) fn atomic_write(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("artifact");
+
+    // Linux error code for "text file busy" (ETXTBSY).
+    // Returned by rename(2) when the destination is currently open for execution.
+    #[cfg(unix)]
+    const ETXTBSY: i32 = 26;
+
     let mut last_error = None;
     for attempt in 0..100 {
-        let temporary = parent.join(format!(".{file_name}.tmp-{}-{attempt}", std::process::id()));
+        let temporary = parent.join(format!(
+            ".{file_name}.tmp-{}-{}",
+            std::process::id(),
+            attempt
+        ));
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -64,11 +74,29 @@ pub(crate) fn atomic_write(
                     }
                     std::fs::rename(&temporary, destination)
                 })();
-                if let Err(source) = result {
-                    let _ = std::fs::remove_file(&temporary);
-                    return Err(source.into());
+
+                if result.is_ok() {
+                    return Ok(());
                 }
-                return Ok(());
+
+                let source = result.unwrap_err();
+
+                // ETXTBSY: destination is open for execution — retry after a
+                // short delay so the kernel can finish with it. The temp file is
+                // removed before retry; a fresh temp is created in the next loop
+                // iteration with an incremented attempt number.
+                #[cfg(unix)]
+                if source.raw_os_error() == Some(ETXTBSY) {
+                    let _ = std::fs::remove_file(&temporary);
+                    if attempt + 1 < 100 {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        last_error = None;
+                        continue;
+                    }
+                }
+
+                let _ = std::fs::remove_file(&temporary);
+                return Err(source.into());
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 last_error = Some(error);
