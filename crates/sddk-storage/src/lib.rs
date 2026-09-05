@@ -2197,8 +2197,9 @@ impl Storage {
             "INSERT INTO work_items_v1 (
                 id, cycle_id, title, description, status,
                 actor_ref_kind, actor_ref_id, actor_ref_label,
-                created_at, schema_version
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                created_at, schema_version,
+                spine_order, spine_horizon, spine_status, exit_gate
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 item.id,
                 item.cycle_id,
@@ -2210,6 +2211,10 @@ impl Storage {
                 item.actor_ref_label,
                 item.created_at,
                 item.schema_version,
+                item.spine_order,
+                item.spine_horizon,
+                item.spine_status,
+                item.exit_gate,
             ],
         )?;
         Ok(())
@@ -2220,7 +2225,8 @@ impl Storage {
         let result = self.connection.query_row(
             "SELECT id, cycle_id, title, description, status,
                     actor_ref_kind, actor_ref_id, actor_ref_label,
-                    created_at, schema_version
+                    created_at, schema_version,
+                    spine_order, spine_horizon, spine_status, exit_gate
              FROM work_items_v1 WHERE id = ?1",
             [id],
             |row| {
@@ -2237,6 +2243,10 @@ impl Storage {
                     actor_ref_label: row.get(7)?,
                     created_at: row.get(8)?,
                     schema_version: row.get(9)?,
+                    spine_order: row.get(10)?,
+                    spine_horizon: row.get(11)?,
+                    spine_status: row.get(12)?,
+                    exit_gate: row.get(13)?,
                 })
             },
         );
@@ -2255,7 +2265,8 @@ impl Storage {
         let mut stmt = self.connection.prepare(
             "SELECT id, cycle_id, title, description, status,
                     actor_ref_kind, actor_ref_id, actor_ref_label,
-                    created_at, schema_version
+                    created_at, schema_version,
+                    spine_order, spine_horizon, spine_status, exit_gate
              FROM work_items_v1 WHERE cycle_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([cycle_id], |row| {
@@ -2272,6 +2283,10 @@ impl Storage {
                 actor_ref_label: row.get(7)?,
                 created_at: row.get(8)?,
                 schema_version: row.get(9)?,
+                spine_order: row.get(10)?,
+                spine_horizon: row.get(11)?,
+                spine_status: row.get(12)?,
+                exit_gate: row.get(13)?,
             })
         })?;
         rows.map(|row| row.map_err(StorageError::from)).collect()
@@ -2287,7 +2302,8 @@ impl Storage {
         let mut stmt = self.connection.prepare(
             "SELECT id, cycle_id, title, description, status,
                     actor_ref_kind, actor_ref_id, actor_ref_label,
-                    created_at, schema_version
+                    created_at, schema_version,
+                    spine_order, spine_horizon, spine_status, exit_gate
              FROM work_items_v1 WHERE cycle_id = ?1 AND status = ?2 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map(params![cycle_id, status_str], |row| {
@@ -2304,6 +2320,10 @@ impl Storage {
                 actor_ref_label: row.get(7)?,
                 created_at: row.get(8)?,
                 schema_version: row.get(9)?,
+                spine_order: row.get(10)?,
+                spine_horizon: row.get(11)?,
+                spine_status: row.get(12)?,
+                exit_gate: row.get(13)?,
             })
         })?;
         rows.map(|row| row.map_err(StorageError::from)).collect()
@@ -2327,6 +2347,33 @@ impl Storage {
                 id: id.to_string(),
             });
         }
+        Ok(())
+    }
+
+    /// Backfills NULL spine metadata columns on an existing work item.
+    ///
+    /// Used during re-import when a spine row exists but the spine columns are NULL.
+    /// Caller must verify no conflict before calling (SpineImportError::ImportConflict
+    /// if any column is already populated with different values).
+    ///
+    /// Used by `import_spine` when the re-import backfill rule applies (PLN-LEDGER-004 AC-PLN4-04).
+    pub fn backfill_spine_columns(
+        &self,
+        work_item_id: &str,
+        spine_order: i32,
+        spine_horizon: &str,
+        spine_status: &str,
+        exit_gate: &str,
+    ) -> Result<()> {
+        self.connection.execute(
+            "UPDATE work_items_v1 SET
+                spine_order = ?1,
+                spine_horizon = ?2,
+                spine_status = ?3,
+                exit_gate = ?4
+             WHERE id = ?5",
+            params![spine_order, spine_horizon, spine_status, exit_gate, work_item_id],
+        )?;
         Ok(())
     }
 

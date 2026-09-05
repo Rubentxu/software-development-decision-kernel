@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 15;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 16;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -217,6 +217,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
         tx.execute_batch(MIGRATION_15)
             .map_err(super::StorageError::Database)?;
         tx.pragma_update(None, "user_version", 15)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
+    if version < 16 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_16)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 16)
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
@@ -738,4 +748,16 @@ CREATE TABLE IF NOT EXISTS decision_records_v1 (
 );
 CREATE INDEX IF NOT EXISTS idx_decision_records_v1_work_item_id
     ON decision_records_v1(work_item_id);
+"#;
+
+pub(crate) const MIGRATION_16: &str = r#"
+-- Planning Ledger: spine metadata columns on work_items_v1 (PLN-LEDGER-004).
+-- Four additive NULL-able columns store spine-imported metadata.
+-- MIGRATION_16 is purely additive: no DROP, no ALTER of existing columns.
+-- These columns are NOT part of WorkItemIdentityProjection (PLN-LEDGER-002 §8 invariant).
+
+ALTER TABLE work_items_v1 ADD COLUMN spine_order INTEGER;
+ALTER TABLE work_items_v1 ADD COLUMN spine_horizon TEXT;
+ALTER TABLE work_items_v1 ADD COLUMN spine_status TEXT;
+ALTER TABLE work_items_v1 ADD COLUMN exit_gate TEXT;
 "#;

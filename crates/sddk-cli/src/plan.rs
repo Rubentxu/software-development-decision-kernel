@@ -466,6 +466,10 @@ fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> Comma
                 actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
                 created_at: OffsetDateTime::now_utc().unix_timestamp(),
                 schema_version: WORK_ITEM_SCHEMA_VERSION,
+                spine_order: None,
+                spine_horizon: None,
+                spine_status: None,
+                exit_gate: None,
             };
             if let Err(e) = storage.insert_work_item(&record) {
                 return failure(format!("failed to create work item: {}", e));
