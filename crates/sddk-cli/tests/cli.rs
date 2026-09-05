@@ -51,6 +51,13 @@ fn write_test_bundle_manifest(source: &Path, binary_version: &str) {
     std::fs::write(source.join("BUNDLE.toml"), body).unwrap();
 }
 
+/// Process-level mutex guard to serialize `cli_dev_install_default_layout_is_executable_and_verify_passes`
+/// against concurrent test parallelism (INC-005720 / ETXTBSY flake).
+fn dev_install_serial_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Augment evidence JSON with REQ-IPV required fields when outcome is passed.
 /// Returns the original evidence unchanged when outcome is not "passed".
 fn augment_pass_evidence(evidence: &str, gate: &str, outcome: &str) -> String {
@@ -9054,6 +9061,8 @@ fn cli_dev_install_with_bin_suffix_avoids_nesting_and_uses_executable_mode() {
 #[test]
 fn cli_dev_install_default_layout_is_executable_and_verify_passes() {
     use std::os::unix::fs::PermissionsExt;
+
+    let _serial = dev_install_serial_lock();
 
     let fixture = CliFixture::new("dev-install-exec-mode");
     let prefix = fixture.root.join("opt/sdk");
