@@ -2010,10 +2010,7 @@ fn run_cycle_verify_references(
                         status: status_code,
                         stdout: format!(
                             "cycle: {}\nstatus: {}\nverifier_cas_root_id: {}\ndangling: {}\n",
-                            args.cycle
-                                .as_ref()
-                                .map(String::as_str)
-                                .unwrap_or("<inferred>"),
+                            args.cycle.as_deref().unwrap_or("<inferred>"),
                             status,
                             output.verifier_cas_root_id,
                             output.dangling,

@@ -212,9 +212,7 @@ pub fn import_spine(
         let expected_status = map_spine_status(item.status)?;
 
         // Check if this work item already exists
-        let existing = storage
-            .get_work_item(&work_item_id)
-            .map_err(StorageError::from)?;
+        let existing = storage.get_work_item(&work_item_id)?;
 
         if let Some(existing_wi) = existing {
             // Idempotency check: compare all identity fields.
@@ -258,9 +256,7 @@ pub fn import_spine(
             created_at: timestamp_now(),
             schema_version: sddk_domain::WORK_ITEM_SCHEMA_VERSION,
         };
-        storage
-            .insert_work_item(&record)
-            .map_err(StorageError::from)?;
+        storage.insert_work_item(&record)?;
 
         // Insert dependency edges (kind = Blocks per ADR-073 Q2)
         for dep_id in &item.depends_on {
@@ -274,16 +270,12 @@ pub fn import_spine(
                 schema_version: sddk_domain::DEPENDENCY_EDGE_SCHEMA_VERSION,
             };
             // insert_dependency_edge uses INSERT OR IGNORE — idempotent on composite PK
-            storage
-                .insert_dependency_edge(&edge)
-                .map_err(StorageError::from)?;
+            storage.insert_dependency_edge(&edge)?;
         }
 
         // Insert evidence attachment (one per spine item, body_ref = sha256(canonical))
         // Write the canonical bytes to CAS first
-        storage
-            .cas_put(&canonical_bytes)
-            .map_err(StorageError::from)?;
+        storage.cas_put(&canonical_bytes)?;
 
         let evidence_id = uuid::Uuid::new_v4().to_string();
         let evidence_record = sddk_domain::EvidenceAttachmentRecord {
@@ -296,9 +288,7 @@ pub fn import_spine(
             actor_ref_label: None,
             schema_version: sddk_domain::EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
         };
-        storage
-            .insert_evidence_attachment(&evidence_record, &canonical_bytes)
-            .map_err(StorageError::from)?;
+        storage.insert_evidence_attachment(&evidence_record, &canonical_bytes)?;
 
         imported += 1;
     }
