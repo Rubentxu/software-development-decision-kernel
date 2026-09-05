@@ -105,6 +105,88 @@ fn parse_actor_ref(actor_id: &str) -> (Option<String>, Option<String>, Option<St
     }
 }
 
+// ── Import command ───────────────────────────────────────────────────────────────
+
+/// Arguments for `sddk plan import --spine <PATH>`.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct PlanImportArgs {
+    /// Path to the EXECUTION-SPINE.yaml file.
+    #[arg(long)]
+    pub(crate) spine: std::path::PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Run `sddk plan import --spine <PATH>`.
+fn run_import(args: PlanImportArgs, environment: &CliEnvironment) -> CommandOutput {
+    let mut storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
+
+    let bytes = match std::fs::read(&args.spine) {
+        Ok(b) => b,
+        Err(e) => {
+            return failure(format!(
+                "failed to read spine file {}: {}",
+                args.spine.display(),
+                e
+            ));
+        }
+    };
+
+    use sddk_storage::spine_import::{import_spine, SpineImportError};
+
+    match import_spine(&bytes, &mut storage) {
+        Ok(summary) => {
+            match args.format {
+                OutputFormat::Json => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "{{\"imported\":{},\"already_present\":{},\"conflicts\":{}}}\n",
+                        summary.imported, summary.already_present, summary.conflicts
+                    ),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "imported={} already_present={} conflicts={}\n",
+                        summary.imported, summary.already_present, summary.conflicts
+                    ),
+                    stderr: String::new(),
+                },
+            }
+        }
+        Err(SpineImportError::ParseError(e)) => {
+            failure(format!("spine parse error at {}:{}: {}", e.line, e.column, e.reason))
+        }
+        Err(SpineImportError::SelfLoop { item_id }) => {
+            failure(format!("self-loop: item {item_id} depends on itself"))
+        }
+        Err(SpineImportError::UnknownDependency { item_id, unknown }) => {
+            failure(format!(
+                "unknown dependency: item {item_id} depends on unknown {unknown}"
+            ))
+        }
+        Err(SpineImportError::ImportConflict {
+            id,
+            field,
+            expected,
+            actual,
+        }) => failure(format!(
+            "import conflict: {id}.{field}: expected {expected:?}, got {actual:?}"
+        )),
+        Err(SpineImportError::Storage(e)) => failure(format!("storage error: {}", e)),
+    }
+}
+
 /// Parses a string into a WorkItemStatus.
 fn parse_work_item_status(s: &str) -> Result<WorkItemStatus, String> {
     match s.to_lowercase().as_str() {
@@ -157,6 +239,8 @@ pub(crate) enum PlanCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Import the EXECUTION-SPINE.yaml into the planning ledger.
+    Import(PlanImportArgs),
 }
 
 // ── WorkItem subcommands ───────────────────────────────────────────────────────
@@ -315,15 +399,16 @@ pub(crate) struct DecisionRecordArgs {
 // ── Runner functions ───────────────────────────────────────────────────────────
 
 /// Run the `plan` subcommand dispatcher.
-pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
+ pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         PlanCommand::WorkItem { command } => run_workitem(command, environment),
         PlanCommand::Dep { command } => run_dep(command, environment),
         PlanCommand::Evidence { command } => run_evidence(command, environment),
         PlanCommand::Decision { command } => run_decision(command, environment),
         PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, environment),
+        PlanCommand::Import(args) => run_import(args, environment),
     }
-}
+ }
 
 /// Run the deprecated `sddk plan <name>` facade.
 ///

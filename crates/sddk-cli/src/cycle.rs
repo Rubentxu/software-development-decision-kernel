@@ -458,7 +458,7 @@ fn load_workflow(root: &std::path::Path) -> anyhow::Result<WorkflowManifest> {
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum CycleCommand {
+ pub(crate) enum CycleCommand {
     /// Create a cycle through the declared `cycle.start` transition.
     Start(CycleStartArgs),
     /// Show the current cycle snapshot and lease.
@@ -486,6 +486,8 @@ pub(crate) enum CycleCommand {
     Inventory(crate::inventory_cycle::CycleInventoryArgs),
     /// Print the frontier of legal transitions from the current cycle state.
     Next(CycleNextArgs),
+    /// Verify the provenance chain for a cycle (supports cross-storage drift detection).
+    VerifyReferences(CycleVerifyReferencesArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -509,6 +511,22 @@ pub(crate) struct CycleNextArgs {
     /// When absent and `--no-infer` is not set, inferred from the active lease.
     #[arg(long)]
     pub(crate) cycle: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleVerifyReferencesArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier.
+    /// When absent and `--no-infer` is not set, inferred from the active lease.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// When set, detect drift even on v1 chains (no producer stamp) in cross-storage contexts.
+    #[arg(long)]
+    pub(crate) strict_cross_storage: bool,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -997,7 +1015,7 @@ fn parse_tuned_path(bias: &str) -> Option<CyclePathArg> {
     }
 }
 
-pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> CommandOutput {
+ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         CycleCommand::Start(args) => run_cycle_start(args, environment),
         CycleCommand::Status(args) => run_cycle_status(args, environment),
@@ -1014,8 +1032,9 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
         CycleCommand::Next(args) => run_cycle_next(args, environment),
         CycleCommand::Pause(args) => run_cycle_pause(args, environment),
         CycleCommand::Resume(args) => run_cycle_resume(args, environment),
+        CycleCommand::VerifyReferences(args) => run_cycle_verify_references(args, environment),
     }
-}
+ }
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1898,6 +1917,108 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
         })
     })();
     render_result(result, format, cycle_next_text)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleVerifyReferencesOutput {
+    verifier_cas_root_id: String,
+    status: String,
+    dangling: usize,
+    error: Option<String>,
+}
+
+fn run_cycle_verify_references(
+    args: CycleVerifyReferencesArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    use sddk_domain::planning::{ProvenanceError, VerifyReferencesOptions};
+
+    let format = args.format;
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref())
+    {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let result = (|| -> anyhow::Result<CycleVerifyReferencesOutput> {
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+
+        let chain = context
+            .storage
+            .build_provenance_chain_v2(&cycle_id)
+            .map_err(|e| anyhow::anyhow!("failed to build provenance chain: {}", e))?;
+
+        let verifier_cas_root_id = context.storage.cas_root_id();
+        let options = VerifyReferencesOptions {
+            strict_cross_storage: args.strict_cross_storage,
+        };
+
+        match chain.verify_references_with_options(&context.storage, &options) {
+            Ok(()) => Ok(CycleVerifyReferencesOutput {
+                verifier_cas_root_id,
+                status: "aligned".to_string(),
+                dangling: 0,
+                error: None,
+            }),
+            Err(ProvenanceError::CrossStorageDrift {
+                reason,
+                producer_cas_root_id,
+                verifier_cas_root_id: verifier_id,
+                producer_handle_id,
+                verifier_handle_id: verifier_hid,
+            }) => Ok(CycleVerifyReferencesOutput {
+                verifier_cas_root_id,
+                status: "drift".to_string(),
+                dangling: 0,
+                error: Some(format!(
+                    "CrossStorageDrift {{ reason: {reason}, producer_cas_root_id: {producer_cas_root_id:?}, verifier_cas_root_id: {verifier_id}, producer_handle_id: {producer_handle_id:?}, verifier_handle_id: {verifier_hid} }}"
+                )),
+            }),
+            Err(ProvenanceError::DanglingReference(id)) => Ok(CycleVerifyReferencesOutput {
+                verifier_cas_root_id,
+                status: "aligned".to_string(),
+                dangling: 1,
+                error: Some(format!("DanglingReference: {id}")),
+            }),
+            Err(ProvenanceError::EmptyCycleId) => Ok(CycleVerifyReferencesOutput {
+                verifier_cas_root_id,
+                status: "aligned".to_string(),
+                dangling: 0,
+                error: Some("EmptyCycleId".to_string()),
+            }),
+        }
+    })();
+
+    match result {
+        Ok(output) => {
+            let status_code = if output.error.is_some() { 1 } else { 0 };
+            match format {
+                OutputFormat::Json => CommandOutput {
+                    status: status_code,
+                    stdout: format!("{}\n", serde_json::to_string_pretty(&output).unwrap()),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => {
+                    let status = if output.error.is_some() { "FAILED" } else { "PASSED" };
+                    CommandOutput {
+                        status: status_code,
+                        stdout: format!(
+                            "cycle: {}\nstatus: {}\nverifier_cas_root_id: {}\ndangling: {}\n",
+                            args.cycle.as_ref().map(String::as_str).unwrap_or("<inferred>"),
+                            status,
+                            output.verifier_cas_root_id,
+                            output.dangling,
+                        ),
+                        stderr: output.error.unwrap_or_default(),
+                    }
+                }
+            }
+        }
+        Err(e) => crate::failure(format!("verify-references failed: {}", e)),
+    }
 }
 
 fn run_cycle_lock_status(args: CycleLockStatusArgs, environment: &CliEnvironment) -> CommandOutput {
