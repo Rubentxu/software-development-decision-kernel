@@ -55,7 +55,9 @@ fn write_test_bundle_manifest(source: &Path, binary_version: &str) {
 /// against concurrent test parallelism (INC-005720 / ETXTBSY flake).
 fn dev_install_serial_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// Augment evidence JSON with REQ-IPV required fields when outcome is passed.
