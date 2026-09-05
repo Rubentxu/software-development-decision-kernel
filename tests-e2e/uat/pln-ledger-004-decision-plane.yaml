@@ -1,0 +1,73 @@
+# UAT plan for PLN-LEDGER-004: Decision-plane projections
+#
+# Tests the end-to-end spine import + roadmap projection feature.
+# Validates: spine metadata backfill, project_status, project_next,
+# project_blocked, project_graph, and promotion logic.
+
+plan_id: "pln-ledger-004-decision-plane"
+title: "PLN-LEDGER-004 Decision-plane Projections"
+version: "1.0"
+
+features:
+  - id: "spine-metadata-backfill"
+    title: "Spine metadata columns are backfilled on re-import"
+    scenarios:
+      - id: "scn-backfill-null-columns"
+        title: "Re-import of existing spine item backfills NULL columns"
+        steps:
+          - id: "stp-import-skeleton"
+            action: "Import spine YAML with only identity fields (no spine metadata)"
+            expected: "Import succeeds with imported=1"
+          - id: "stp-reimport-full"
+            action: "Re-import same spine YAML with full metadata"
+            expected: "Import succeeds with backfilled=1"
+
+  - id: "project-status"
+    title: "project_status returns correct active_item"
+    scenarios:
+      - id: "scn-active-item-identified"
+        title: "ACTIVE spine item is reported as active_item"
+        steps:
+          - id: "stp-import-mixed"
+            action: "Import spine YAML with TEST-LEDGER-A (PROPOSED), TEST-LEDGER-B (ACTIVE)"
+            expected: "project_status output identifies TEST-LEDGER-B as active_item"
+
+  - id: "project-next"
+    title: "project_next returns items with no incoming blockers"
+    scenarios:
+      - id: "scn-unblocked-items-next"
+        title: "Items not blocked by anything appear in project_next"
+        steps:
+          - id: "stp-import-chain"
+            action: "Import spine YAML with A blocks B blocks C (chain)"
+            expected: "project_next returns A (in_degree=0, nothing blocks it)"
+
+  - id: "project-blocked"
+    title: "project_blocked returns items with unresolved blockers"
+    scenarios:
+      - id: "scn-blocked-by-active"
+        title: "PROPOSED item with ACTIVE blocker is in project_blocked"
+        steps:
+          - id: "stp-import-blocked"
+            action: "Import spine YAML where B (PROPOSED) depends on A (ACTIVE)"
+            expected: "project_blocked contains B (blocked by unresolved A)"
+
+  - id: "project-graph"
+    title: "project_graph returns correct Kahn-order topology"
+    scenarios:
+      - id: "scn-kahn-order-correct"
+        title: "Dependency graph is topologically sorted"
+        steps:
+          - id: "stp-import-dag"
+            action: "Import spine YAML with A→B→C→D chain"
+            expected: "project_graph returns nodes in A,B,C,D order (Kahn's algorithm)"
+
+  - id: "promotion-blocked"
+    title: "PROPOSED item without exit_gate is PromotionBlocked"
+    scenarios:
+      - id: "scn-proposed-no-gate"
+        title: "PROPOSED spine item with NULL exit_gate cannot promote"
+        steps:
+          - id: "stp-import-proposed-no-gate"
+            action: "Import spine YAML with PROPOSED item and no exit_gate"
+            expected: "WorkItemStatus::resolve_for_projection returns PromotionBlocked"
