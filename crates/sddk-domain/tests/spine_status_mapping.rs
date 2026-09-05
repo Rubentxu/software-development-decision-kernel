@@ -2,8 +2,8 @@
 //!
 //! Tests AC-PLN3-09 per the locked §7 mapping table.
 
-use sddk_domain::spine::SpineStatus;
 use sddk_domain::planning::WorkItemStatus;
+use sddk_domain::spine::SpineStatus;
 
 /// Scenario: PROPOSED → Draft
 #[test]
@@ -94,7 +94,13 @@ fn status_mapping_table_is_total_and_correct() {
     for (spine_status, expected_wi_status) in table {
         let result = spine_status.to_work_item_status();
         assert!(result.is_ok(), "{:?} should map to Ok", spine_status);
-        assert_eq!(result.unwrap(), expected_wi_status, "{:?} should map to {:?}", spine_status, expected_wi_status);
+        assert_eq!(
+            result.unwrap(),
+            expected_wi_status,
+            "{:?} should map to {:?}",
+            spine_status,
+            expected_wi_status
+        );
     }
 }
 
@@ -125,5 +131,8 @@ fn six_work_item_status_variants_from_spine() {
     assert!(reached.contains(&WorkItemStatus::Paused));
     assert!(reached.contains(&WorkItemStatus::Done));
     assert!(reached.contains(&WorkItemStatus::Superseded));
-    assert!(!reached.contains(&WorkItemStatus::Cancelled), "Cancelled is NOT reachable from spine import");
+    assert!(
+        !reached.contains(&WorkItemStatus::Cancelled),
+        "Cancelled is NOT reachable from spine import"
+    );
 }

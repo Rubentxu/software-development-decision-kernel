@@ -141,40 +141,37 @@ fn run_import(args: PlanImportArgs, environment: &CliEnvironment) -> CommandOutp
         }
     };
 
-    use sddk_storage::spine_import::{import_spine, SpineImportError};
+    use sddk_storage::spine_import::{SpineImportError, import_spine};
 
     match import_spine(&bytes, &mut storage) {
-        Ok(summary) => {
-            match args.format {
-                OutputFormat::Json => CommandOutput {
-                    status: 0,
-                    stdout: format!(
-                        "{{\"imported\":{},\"already_present\":{},\"conflicts\":{}}}\n",
-                        summary.imported, summary.already_present, summary.conflicts
-                    ),
-                    stderr: String::new(),
-                },
-                OutputFormat::Text => CommandOutput {
-                    status: 0,
-                    stdout: format!(
-                        "imported={} already_present={} conflicts={}\n",
-                        summary.imported, summary.already_present, summary.conflicts
-                    ),
-                    stderr: String::new(),
-                },
-            }
-        }
-        Err(SpineImportError::ParseError(e)) => {
-            failure(format!("spine parse error at {}:{}: {}", e.line, e.column, e.reason))
-        }
+        Ok(summary) => match args.format {
+            OutputFormat::Json => CommandOutput {
+                status: 0,
+                stdout: format!(
+                    "{{\"imported\":{},\"already_present\":{},\"conflicts\":{}}}\n",
+                    summary.imported, summary.already_present, summary.conflicts
+                ),
+                stderr: String::new(),
+            },
+            OutputFormat::Text => CommandOutput {
+                status: 0,
+                stdout: format!(
+                    "imported={} already_present={} conflicts={}\n",
+                    summary.imported, summary.already_present, summary.conflicts
+                ),
+                stderr: String::new(),
+            },
+        },
+        Err(SpineImportError::ParseError(e)) => failure(format!(
+            "spine parse error at {}:{}: {}",
+            e.line, e.column, e.reason
+        )),
         Err(SpineImportError::SelfLoop { item_id }) => {
             failure(format!("self-loop: item {item_id} depends on itself"))
         }
-        Err(SpineImportError::UnknownDependency { item_id, unknown }) => {
-            failure(format!(
-                "unknown dependency: item {item_id} depends on unknown {unknown}"
-            ))
-        }
+        Err(SpineImportError::UnknownDependency { item_id, unknown }) => failure(format!(
+            "unknown dependency: item {item_id} depends on unknown {unknown}"
+        )),
         Err(SpineImportError::ImportConflict {
             id,
             field,
@@ -399,7 +396,7 @@ pub(crate) struct DecisionRecordArgs {
 // ── Runner functions ───────────────────────────────────────────────────────────
 
 /// Run the `plan` subcommand dispatcher.
- pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
+pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         PlanCommand::WorkItem { command } => run_workitem(command, environment),
         PlanCommand::Dep { command } => run_dep(command, environment),
@@ -408,7 +405,7 @@ pub(crate) struct DecisionRecordArgs {
         PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, environment),
         PlanCommand::Import(args) => run_import(args, environment),
     }
- }
+}
 
 /// Run the deprecated `sddk plan <name>` facade.
 ///

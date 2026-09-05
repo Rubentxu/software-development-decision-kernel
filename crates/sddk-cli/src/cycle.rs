@@ -458,7 +458,7 @@ fn load_workflow(root: &std::path::Path) -> anyhow::Result<WorkflowManifest> {
 }
 
 #[derive(Debug, Subcommand)]
- pub(crate) enum CycleCommand {
+pub(crate) enum CycleCommand {
     /// Create a cycle through the declared `cycle.start` transition.
     Start(CycleStartArgs),
     /// Show the current cycle snapshot and lease.
@@ -1015,7 +1015,7 @@ fn parse_tuned_path(bias: &str) -> Option<CyclePathArg> {
     }
 }
 
- pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> CommandOutput {
+pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         CycleCommand::Start(args) => run_cycle_start(args, environment),
         CycleCommand::Status(args) => run_cycle_status(args, environment),
@@ -1034,7 +1034,7 @@ fn parse_tuned_path(bias: &str) -> Option<CyclePathArg> {
         CycleCommand::Resume(args) => run_cycle_resume(args, environment),
         CycleCommand::VerifyReferences(args) => run_cycle_verify_references(args, environment),
     }
- }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1935,8 +1935,7 @@ fn run_cycle_verify_references(
     use sddk_domain::planning::{ProvenanceError, VerifyReferencesOptions};
 
     let format = args.format;
-    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref())
-    {
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
         Ok(r) => r,
         Err(e) => return crate::failure(e.to_string()),
     };
@@ -2002,12 +2001,19 @@ fn run_cycle_verify_references(
                     stderr: String::new(),
                 },
                 OutputFormat::Text => {
-                    let status = if output.error.is_some() { "FAILED" } else { "PASSED" };
+                    let status = if output.error.is_some() {
+                        "FAILED"
+                    } else {
+                        "PASSED"
+                    };
                     CommandOutput {
                         status: status_code,
                         stdout: format!(
                             "cycle: {}\nstatus: {}\nverifier_cas_root_id: {}\ndangling: {}\n",
-                            args.cycle.as_ref().map(String::as_str).unwrap_or("<inferred>"),
+                            args.cycle
+                                .as_ref()
+                                .map(String::as_str)
+                                .unwrap_or("<inferred>"),
                             status,
                             output.verifier_cas_root_id,
                             output.dangling,

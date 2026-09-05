@@ -2,10 +2,12 @@
 //!
 //! Tests AC-PLN3-07, AC-PLN3-08, AC-PLN3-10, AC-PLN3-11, AC-PLN3-12, AC-PLN3-15.
 
-use sddk_storage::spine_import::{import_spine, SpineImportError, compute_spine_body_ref, map_spine_status};
-use sddk_storage::Storage;
 use sddk_domain::planning::WorkItemStatus;
 use sddk_domain::spine::SpineStatus;
+use sddk_storage::Storage;
+use sddk_storage::spine_import::{
+    SpineImportError, compute_spine_body_ref, import_spine, map_spine_status,
+};
 
 fn make_spine_yaml(items_yaml: &str) -> Vec<u8> {
     format!(
@@ -92,7 +94,11 @@ fn spine_import_dependency_edges_idempotent() {
 
     // Should have exactly one edge (WI-B depends on WI-A), not two
     let edges = storage.list_dependency_edges_by_cycle("WI-B").unwrap();
-    assert_eq!(edges.len(), 1, "exactly one dependency edge for WI-B → WI-A");
+    assert_eq!(
+        edges.len(),
+        1,
+        "exactly one dependency edge for WI-B → WI-A"
+    );
     assert_eq!(edges[0].from_id, "WI-B");
     assert_eq!(edges[0].to_id, "WI-A");
 }
@@ -104,10 +110,18 @@ fn spine_import_graph_identity_stable_across_reimport() {
     let bytes = make_spine_yaml(&make_spine_item("WI-001", "ACTIVE", &[]));
 
     import_spine(&bytes, &mut storage).unwrap();
-    let id1 = storage.build_provenance_chain("WI-001").unwrap().cycle_id.clone();
+    let id1 = storage
+        .build_provenance_chain("WI-001")
+        .unwrap()
+        .cycle_id
+        .clone();
 
     import_spine(&bytes, &mut storage).unwrap();
-    let id2 = storage.build_provenance_chain("WI-001").unwrap().cycle_id.clone();
+    let id2 = storage
+        .build_provenance_chain("WI-001")
+        .unwrap()
+        .cycle_id
+        .clone();
 
     assert_eq!(id1, id2, "graph identity should be stable across re-import");
 }
@@ -145,7 +159,10 @@ fn spine_import_status_mutated_returns_conflict() {
     let bytes_mutated = make_spine_yaml(&make_spine_item("WI-001", "ACTIVE", &[]));
 
     let result = import_spine(&bytes_mutated, &mut storage);
-    assert!(result.is_err(), "mutated status should return ImportConflict");
+    assert!(
+        result.is_err(),
+        "mutated status should return ImportConflict"
+    );
 }
 
 /// Scenario: Row depends on itself → SelfLoop
@@ -188,8 +205,12 @@ fn spine_import_one_evidence_per_spine_item() {
 
     import_spine(&bytes, &mut storage).unwrap();
 
-    let ev1 = storage.list_evidence_attachments_by_work_item("WI-001").unwrap();
-    let ev2 = storage.list_evidence_attachments_by_work_item("WI-002").unwrap();
+    let ev1 = storage
+        .list_evidence_attachments_by_work_item("WI-001")
+        .unwrap();
+    let ev2 = storage
+        .list_evidence_attachments_by_work_item("WI-002")
+        .unwrap();
 
     assert_eq!(ev1.len(), 1, "WI-001 has exactly one evidence row");
     assert_eq!(ev2.len(), 1, "WI-002 has exactly one evidence row");
@@ -206,15 +227,21 @@ fn spine_import_body_ref_is_content_addressable() {
 
     // Re-read the spine file using manifest dir to find it
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let spine_path = manifest_dir.join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+    let spine_path = manifest_dir
+        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes_again = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml").unwrap()
+        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+            .unwrap()
     });
     let canonical_again = sddk_domain::spine::canonicalize_spine_bytes(&bytes_again);
 
     // The key property is that the same bytes produce the same hash
     let body_ref_again = compute_spine_body_ref(&canonical_again);
-    assert_eq!(body_ref_again, compute_spine_body_ref(&canonical_again), "same bytes produce same hash");
+    assert_eq!(
+        body_ref_again,
+        compute_spine_body_ref(&canonical_again),
+        "same bytes produce same hash"
+    );
 }
 
 /// Scenario: Imported WorkItem carries spine identity (Q5 + Q6)
@@ -246,6 +273,12 @@ fn map_spine_status_all_variants() {
     ] {
         let result = map_spine_status(status);
         assert!(result.is_ok(), "{:?} should map successfully", status);
-        assert_eq!(result.unwrap(), expected, "{:?} should map to {:?}", status, expected);
+        assert_eq!(
+            result.unwrap(),
+            expected,
+            "{:?} should map to {:?}",
+            status,
+            expected
+        );
     }
 }

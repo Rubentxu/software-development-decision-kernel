@@ -3,18 +3,19 @@
 //! Tests AC-PLN3-05 and AC-PLN3-06.
 
 use sddk_domain::spine::{
-    parse_spine_yaml, canonicalize_spine_bytes, ExecutionSpineV1, SpineStatus,
-    SpineParseError,
+    ExecutionSpineV1, SpineParseError, SpineStatus, canonicalize_spine_bytes, parse_spine_yaml,
 };
 
 /// Scenario: Current EXECUTION-SPINE.yaml parses cleanly
 #[test]
 fn spine_parses_current_execution_spine_file() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let spine_path = manifest_dir.join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+    let spine_path = manifest_dir
+        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
         // Fallback: try relative path from CWD
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml").unwrap()
+        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+            .unwrap()
     });
 
     let spine = parse_spine_yaml(&bytes).expect("EXECUTION-SPINE.yaml should parse");
@@ -79,8 +80,13 @@ items:
 "#,
             yaml_status
         );
-        let spine = parse_spine_yaml(yaml.as_bytes()).expect(&format!("{yaml_status} should parse"));
-        assert_eq!(spine.items[0].status, expected, "status {yaml_status} should map to {:?}", expected);
+        let spine =
+            parse_spine_yaml(yaml.as_bytes()).expect(&format!("{yaml_status} should parse"));
+        assert_eq!(
+            spine.items[0].status, expected,
+            "status {yaml_status} should map to {:?}",
+            expected
+        );
     }
 }
 
@@ -88,9 +94,11 @@ items:
 #[test]
 fn spine_roundtrip_is_stable() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let spine_path = manifest_dir.join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+    let spine_path = manifest_dir
+        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml").unwrap()
+        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+            .unwrap()
     });
 
     let spine1 = parse_spine_yaml(&bytes).expect("first parse should succeed");
@@ -102,7 +110,10 @@ fn spine_roundtrip_is_stable() {
     for (a, b) in spine1.items.iter().zip(spine2.items.iter()) {
         assert_eq!(a.id, b.id, "item id should be stable");
         assert_eq!(a.status, b.status, "item status should be stable");
-        assert_eq!(a.depends_on, b.depends_on, "item depends_on should be stable");
+        assert_eq!(
+            a.depends_on, b.depends_on,
+            "item depends_on should be stable"
+        );
     }
 }
 
@@ -110,9 +121,11 @@ fn spine_roundtrip_is_stable() {
 #[test]
 fn spine_cycle_binding_preserved() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let spine_path = manifest_dir.join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+    let spine_path = manifest_dir
+        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml").unwrap()
+        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+            .unwrap()
     });
 
     let spine = parse_spine_yaml(&bytes).expect("should parse");
@@ -150,7 +163,11 @@ items: []
     let result = parse_spine_yaml(yaml.as_bytes());
     assert!(result.is_err(), "unknown field should be rejected");
     let err = result.unwrap_err();
-    assert!(err.reason.contains("unknown_field"), "should mention unknown_field: {}", err.reason);
+    assert!(
+        err.reason.contains("unknown_field"),
+        "should mention unknown_field: {}",
+        err.reason
+    );
 }
 
 /// Scenario: Empty items[] array is accepted
