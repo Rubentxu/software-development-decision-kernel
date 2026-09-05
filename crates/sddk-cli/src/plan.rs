@@ -19,6 +19,11 @@ use sddk_domain::planning::{
     DependencyEdgeV1, EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
     PlanningEvidenceKind, WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
 };
+use sddk_domain::planning::projections::{
+    project_blocked, project_graph, project_next, project_show, project_status,
+    BlockedProjection, GraphFormat, NextProjection, ShowProjection, StatusProjection,
+};
+use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::{DependencyResolutionError, DependencyResolutionService};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -238,6 +243,40 @@ pub(crate) enum PlanCommand {
     },
     /// Import the EXECUTION-SPINE.yaml into the planning ledger.
     Import(PlanImportArgs),
+    /// Roadmap decision-plane projections (status, next, blocked, show, graph).
+    Roadmap {
+        #[command(subcommand)]
+        command: RoadmapCommand,
+    },
+}
+
+// ── Roadmap subcommands ─────────────────────────────────────────────────────────
+
+/// Roadmap decision-plane projection subcommands.
+#[derive(Debug, Clone, Subcommand)]
+pub(crate) enum RoadmapCommand {
+    /// Show roadmap status: per-horizon counts, active item, terminal/executable/non-executable partition.
+    /// Output is always JSON to stdout.
+    Status,
+    /// Show the next recommended work item based on the selection rule.
+    /// Output is always JSON to stdout.
+    Next,
+    /// Show blocked items: PromotionBlocked vs Blocked partition with Kahn-first cycle detection.
+    /// Output is always JSON to stdout.
+    Blocked,
+    /// Show details for a specific work item.
+    /// Output is always JSON to stdout.
+    Show {
+        /// Work item identifier.
+        #[arg(long)]
+        id: String,
+    },
+    /// Show the roadmap dependency graph.
+    Graph {
+        /// Output format: json, dot, or mermaid.
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
 }
 
 // ── WorkItem subcommands ───────────────────────────────────────────────────────
@@ -404,6 +443,83 @@ pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> Co
         PlanCommand::Decision { command } => run_decision(command, environment),
         PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, environment),
         PlanCommand::Import(args) => run_import(args, environment),
+        PlanCommand::Roadmap { command } => run_roadmap(command, environment),
+    }
+}
+
+/// Run roadmap decision-plane projection subcommands.
+fn run_roadmap(command: RoadmapCommand, environment: &CliEnvironment) -> CommandOutput {
+    let storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure("No adopted project found. Run 'sddk adopt' first.".to_string());
+        }
+    };
+
+    let snapshot = match storage.snapshot_roadmap() {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("Failed to snapshot roadmap: {e}"));
+        }
+    };
+
+    match command {
+        RoadmapCommand::Status => {
+            let result = project_status(&snapshot);
+            match result {
+                Ok(projection) => render_json(projection),
+                Err(e) => failure(format!("project_status error: {e}")),
+            }
+        }
+        RoadmapCommand::Next => {
+            let result = project_next(&snapshot);
+            match result {
+                Ok(projection) => render_json(projection),
+                Err(e) => failure(format!("project_next error: {e}")),
+            }
+        }
+        RoadmapCommand::Blocked => {
+            let result = project_blocked(&snapshot);
+            match result {
+                Ok(projection) => render_json(projection),
+                Err(e) => failure(format!("project_blocked error: {e}")),
+            }
+        }
+        RoadmapCommand::Show { id } => {
+            let result = project_show(&snapshot, &id);
+            match result {
+                Ok(projection) => render_json(projection),
+                Err(e) => failure(format!("project_show error: {e}")),
+            }
+        }
+        RoadmapCommand::Graph { format } => {
+            let graph_format = match format.as_str() {
+                "dot" => GraphFormat::Dot,
+                "mermaid" => GraphFormat::Mermaid,
+                _ => GraphFormat::Json, // default to json
+            };
+            let result = project_graph(&snapshot, graph_format);
+            match result {
+                Ok(output) => CommandOutput {
+                    status: 0,
+                    stdout: output,
+                    stderr: String::new(),
+                },
+                Err(e) => failure(format!("project_graph error: {e}")),
+            }
+        }
+    }
+}
+
+/// Render a value as JSON to stdout.
+fn render_json<T: serde::Serialize>(value: T) -> CommandOutput {
+    let json = serde_json::to_string_pretty(&value).unwrap_or_else(|e| {
+        format!("{{\"error\": \"serialization failed: {}\"", e)
+    });
+    CommandOutput {
+        status: 0,
+        stdout: json,
+        stderr: String::new(),
     }
 }
 
