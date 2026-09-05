@@ -11,20 +11,115 @@
 //! | `sddk plan decision record` | NEW |
 //! | `sddk plan graph` | NEW |
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use sddk_domain::planning::{
+    DECISION_RECORD_SCHEMA_VERSION, DecisionKind, DependencyEdgeKind, DependencyEdgeRecord,
+    DependencyEdgeV1, EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
+    PlanningEvidenceKind, WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
+};
+use sddk_domain::{DependencyResolutionError, DependencyResolutionService};
+use serde::Deserialize;
+use time::OffsetDateTime;
+use uuid::Uuid;
 
 use crate::{
-    CliEnvironment, CommandOutput, OutputFormat,
+    CliEnvironment, CommandOutput, OutputFormat, Storage,
     cycle::{self, CyclePathArg, CycleStartArgs, RuntimeArgs},
     failure,
 };
 
 /// Deprecation warning emitted when using the legacy `sddk plan <name>` form.
-const DEPRECATION_WARNING: &str =
-    "sddk plan <name> is deprecated and will be removed in v1.87.0; \
+const DEPRECATION_WARNING: &str = "sddk plan <name> is deprecated and will be removed in v1.87.0; \
      use 'sddk cycle start --name <name>' instead";
+
+/// Minimal adoption receipt fields needed to resolve the ledger path.
+/// We deserialize only the fields we need rather than depending on the full type.
+#[derive(Debug, Deserialize)]
+struct MinimalReceipt {
+    project_id: String,
+}
+
+/// Opens Storage from the project root, looking up the adoption receipt to find
+/// the ledger path. Returns `Some(Storage)` on success, `None` if no adopted project found.
+fn open_storage_for_plan(environment: &CliEnvironment) -> Option<Storage> {
+    // Walk up from cwd looking for .sddk/adoption.json
+    let cwd = std::env::current_dir().ok()?;
+    let mut dir = cwd.as_path();
+    loop {
+        let receipt_path = dir.join(".sddk").join("adoption.json");
+        if receipt_path.is_file() {
+            let bytes = std::fs::read(&receipt_path).ok()?;
+            let receipt: MinimalReceipt = serde_json::from_slice(&bytes).ok()?;
+            // The ledger is at <state_home>/sddk/projects/<project_id>/ledger.sqlite
+            let xdg = environment.xdg();
+            let state_home = xdg
+                .state_home
+                .as_deref()
+                .map(PathBuf::from)
+                .or_else(|| xdg.home.as_deref().map(|h| h.join(".local/state")))?;
+            let project_id = &receipt.project_id;
+            let ledger_path = state_home
+                .join("sddk/projects")
+                .join(project_id)
+                .join("ledger.sqlite");
+            if let Some(storage) = Storage::open(&ledger_path).ok() {
+                return Some(storage);
+            }
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return None,
+        }
+    }
+}
+
+/// Parses an actor_id string like "Human:alice" or "agent:cli" into an ActorRef.
+fn parse_actor_ref(actor_id: &str) -> (Option<String>, Option<String>, Option<String>) {
+    if let Some(rest) = actor_id.strip_prefix("Human:") {
+        (
+            Some("Human".to_string()),
+            Some(rest.to_string()),
+            Some(rest.to_string()),
+        )
+    } else if let Some(rest) = actor_id.strip_prefix("Agent:") {
+        (
+            Some("Agent".to_string()),
+            Some(rest.to_string()),
+            Some(rest.to_string()),
+        )
+    } else if let Some(rest) = actor_id.strip_prefix("System:") {
+        (
+            Some("System".to_string()),
+            Some(rest.to_string()),
+            Some(rest.to_string()),
+        )
+    } else {
+        // Treat as System by default
+        (
+            Some("System".to_string()),
+            Some(actor_id.to_string()),
+            Some(actor_id.to_string()),
+        )
+    }
+}
+
+/// Parses a string into a WorkItemStatus.
+fn parse_work_item_status(s: &str) -> Result<WorkItemStatus, String> {
+    match s.to_lowercase().as_str() {
+        "draft" => Ok(WorkItemStatus::Draft),
+        "active" => Ok(WorkItemStatus::Active),
+        "paused" => Ok(WorkItemStatus::Paused),
+        "done" => Ok(WorkItemStatus::Done),
+        "superseded" => Ok(WorkItemStatus::Superseded),
+        "cancelled" => Ok(WorkItemStatus::Cancelled),
+        _ => Err(format!(
+            "invalid status: {} (expected: draft, active, paused, done, superseded, cancelled)",
+            s
+        )),
+    }
+}
 
 /// ── PlanCommand enum ─────────────────────────────────────────────────────────
 ///
@@ -220,16 +315,13 @@ pub(crate) struct DecisionRecordArgs {
 // ── Runner functions ───────────────────────────────────────────────────────────
 
 /// Run the `plan` subcommand dispatcher.
-pub(crate) fn run_plan(
-    command: PlanCommand,
-    _environment: &CliEnvironment,
-) -> CommandOutput {
+pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
-        PlanCommand::WorkItem { command } => run_workitem(command),
-        PlanCommand::Dep { command } => run_dep(command),
-        PlanCommand::Evidence { command } => run_evidence(command),
-        PlanCommand::Decision { command } => run_decision(command),
-        PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format),
+        PlanCommand::WorkItem { command } => run_workitem(command, environment),
+        PlanCommand::Dep { command } => run_dep(command, environment),
+        PlanCommand::Evidence { command } => run_evidence(command, environment),
+        PlanCommand::Decision { command } => run_decision(command, environment),
+        PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, environment),
     }
 }
 
@@ -268,79 +360,462 @@ pub(crate) fn run_plan_legacy(
 
 // ── WorkItem subcommand handler ───────────────────────────────────────────────
 
-fn run_workitem(command: WorkItemCommand) -> CommandOutput {
+fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> CommandOutput {
+    let storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
     match command {
         WorkItemCommand::Create(args) => {
-            failure(format!(
-                "workitem create: PLN-LEDGER-002 CLI storage wiring pending (cycle_id={}, title={})",
-                args.cycle_id, args.title
-            ))
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let record = WorkItemRecord {
+                id: Uuid::new_v4().hyphenated().to_string(),
+                cycle_id: args.cycle_id,
+                title: args.title,
+                description: args.description,
+                status: WorkItemStatus::Draft,
+                actor_ref_kind,
+                actor_ref_id: Some(actor_ref_id.unwrap_or_default()),
+                actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
+                created_at: OffsetDateTime::now_utc().unix_timestamp(),
+                schema_version: WORK_ITEM_SCHEMA_VERSION,
+            };
+            if let Err(e) = storage.insert_work_item(&record) {
+                return failure(format!("failed to create work item: {}", e));
+            }
+            match args.format {
+                OutputFormat::Json => CommandOutput {
+                    status: 0,
+                    stdout: format!("{{\"id\": \"{}\", \"status\": \"draft\"}}\n", record.id),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!("work item created: {} (status: Draft)\n", record.id),
+                    stderr: String::new(),
+                },
+            }
         }
         WorkItemCommand::Show(args) => {
-            failure(format!(
-                "workitem show: PLN-LEDGER-002 CLI storage wiring pending (work_item_id={})",
-                args.work_item_id
-            ))
+            let wi = match storage.get_work_item(&args.work_item_id) {
+                Ok(Some(r)) => r.into_domain(),
+                Ok(None) => {
+                    return failure(format!("work item not found: {}", args.work_item_id));
+                }
+                Err(e) => return failure(format!("failed to get work item: {}", e)),
+            };
+            match args.format {
+                OutputFormat::Json => match serde_json::to_string_pretty(&wi) {
+                    Ok(json) => CommandOutput {
+                        status: 0,
+                        stdout: format!("{json}\n"),
+                        stderr: String::new(),
+                    },
+                    Err(e) => failure(format!("failed to serialize: {}", e)),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "id: {}\ncycle: {}\ntitle: {}\nstatus: {:?}\n",
+                        wi.id, wi.cycle_id, wi.title, wi.status
+                    ),
+                    stderr: String::new(),
+                },
+            }
         }
         WorkItemCommand::List(args) => {
-            failure(format!(
-                "workitem list: PLN-LEDGER-002 CLI storage wiring pending (cycle_id={})",
-                args.cycle_id
-            ))
+            let items = match storage.list_work_items_by_cycle(&args.cycle_id) {
+                Ok(items) => items,
+                Err(e) => return failure(format!("failed to list work items: {}", e)),
+            };
+            // Filter by status if provided
+            let items: Vec<_> = if let Some(ref status_str) = args.status {
+                let target = match parse_work_item_status(status_str) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return failure(e);
+                    }
+                };
+                items.into_iter().filter(|i| i.status == target).collect()
+            } else {
+                items
+            };
+            let domain_items: Vec<_> = items.into_iter().map(|r| r.into_domain()).collect();
+            match args.format {
+                OutputFormat::Json => match serde_json::to_string_pretty(&domain_items) {
+                    Ok(json) => CommandOutput {
+                        status: 0,
+                        stdout: format!("{json}\n"),
+                        stderr: String::new(),
+                    },
+                    Err(e) => failure(format!("failed to serialize: {}", e)),
+                },
+                OutputFormat::Text => {
+                    if domain_items.is_empty() {
+                        CommandOutput {
+                            status: 0,
+                            stdout: "no work items found\n".to_string(),
+                            stderr: String::new(),
+                        }
+                    } else {
+                        let lines: Vec<String> = domain_items
+                            .iter()
+                            .map(|wi| format!("- {} [{}] ({:?})", wi.id, wi.title, wi.status))
+                            .collect();
+                        CommandOutput {
+                            status: 0,
+                            stdout: format!("{}\n", lines.join("\n")),
+                            stderr: String::new(),
+                        }
+                    }
+                }
+            }
         }
         WorkItemCommand::Transition(args) => {
-            failure(format!(
-                "workitem transition: PLN-LEDGER-002 CLI storage wiring pending (work_item_id={}, to={})",
-                args.work_item_id, args.to
-            ))
+            let target_status = match parse_work_item_status(&args.to) {
+                Ok(s) => s,
+                Err(e) => {
+                    return failure(e);
+                }
+            };
+            let mut storage = storage;
+            let existing = match storage.get_work_item(&args.work_item_id) {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    return failure(format!("work item not found: {}", args.work_item_id));
+                }
+                Err(e) => return failure(format!("failed to get work item: {}", e)),
+            };
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let _updated = WorkItemRecord {
+                status: target_status,
+                actor_ref_kind,
+                actor_ref_id: Some(actor_ref_id.unwrap_or_default()),
+                actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
+                ..existing
+            };
+            if let Err(e) = storage.update_work_item_status(&args.work_item_id, target_status, None)
+            {
+                return failure(format!("failed to transition work item: {}", e));
+            }
+            match args.format {
+                OutputFormat::Json => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "{{\"id\": \"{}\", \"status\": \"{:?}\"}}\n",
+                        args.work_item_id, target_status
+                    ),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "work item {} transitioned to {:?}\n",
+                        args.work_item_id, target_status
+                    ),
+                    stderr: String::new(),
+                },
+            }
         }
     }
 }
 
 // ── Dep subcommand handler ────────────────────────────────────────────────────
 
-fn run_dep(command: DepCommand) -> CommandOutput {
+fn run_dep(command: DepCommand, environment: &CliEnvironment) -> CommandOutput {
+    let mut storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
     match command {
         DepCommand::Add(args) => {
-            failure(format!(
-                "dep add: PLN-LEDGER-002 CLI storage wiring pending (from_id={}, to_id={}, kind={})",
-                args.from_id, args.to_id, args.kind
-            ))
+            // Parse the dependency kind
+            let kind = match args.kind.to_lowercase().as_str() {
+                "blocks" => DependencyEdgeKind::Blocks,
+                "blocksonclosure" | "blocks_on_closure" => DependencyEdgeKind::BlocksOnClosure,
+                _ => {
+                    return failure(format!(
+                        "invalid dependency kind: {} (expected Blocks or BlocksOnClosure)",
+                        args.kind
+                    ));
+                }
+            };
+            let from_id = &args.from_id;
+            let to_id = &args.to_id;
+            // Load both work items to get their statuses
+            let from_wi = match storage.get_work_item(from_id) {
+                Ok(Some(r)) => r.into_domain(),
+                Ok(None) => return failure(format!("from work item not found: {}", from_id)),
+                Err(e) => return failure(format!("failed to get from work item: {}", e)),
+            };
+            let to_wi = match storage.get_work_item(to_id) {
+                Ok(Some(r)) => r.into_domain(),
+                Ok(None) => return failure(format!("to work item not found: {}", to_id)),
+                Err(e) => return failure(format!("failed to get to work item: {}", e)),
+            };
+            // Load all edges for the to-workitem to check dependency resolution
+            let all_edges = match storage.list_dependency_edges_by_cycle(&to_wi.cycle_id) {
+                Ok(edges) => edges,
+                Err(e) => return failure(format!("failed to load dependency edges: {}", e)),
+            };
+            let domain_edges: Vec<DependencyEdgeV1> =
+                all_edges.into_iter().map(|r| r.into_domain()).collect();
+            let status_lookup = |wid: &sddk_domain::planning::WorkItemId| {
+                if wid == &from_wi.id {
+                    Some(from_wi.status)
+                } else if wid == &to_wi.id {
+                    Some(to_wi.status)
+                } else {
+                    storage.get_work_item(wid).ok().flatten().map(|r| r.status)
+                }
+            };
+            // Validate using DependencyResolutionService
+            if let Err(e) = DependencyResolutionService::resolve_can_activate(
+                &to_wi,
+                &domain_edges,
+                &status_lookup,
+            ) {
+                return failure(format!(
+                    "dependency blocked: {} (kind: {:?}): {}",
+                    args.to_id, kind, e
+                ));
+            }
+            // Parse actor ref
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let edge_record = DependencyEdgeRecord {
+                from_id: from_id.clone(),
+                to_id: to_id.clone(),
+                kind,
+                actor_ref_kind,
+                actor_ref_id: Some(actor_ref_id.unwrap_or_default()),
+                actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
+                schema_version: 1,
+            };
+            if let Err(e) = storage.insert_dependency_edge(&edge_record) {
+                return failure(format!("failed to add dependency: {}", e));
+            }
+            match args.format {
+                OutputFormat::Json => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "{{\"from\": \"{}\", \"to\": \"{}\", \"kind\": \"{:?}\"}}\n",
+                        from_id, to_id, kind
+                    ),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!("dependency added: {} ─[{:.?}]─> {}\n", from_id, kind, to_id),
+                    stderr: String::new(),
+                },
+            }
         }
     }
 }
 
 // ── Evidence subcommand handler ────────────────────────────────────────────────
 
-fn run_evidence(command: EvidenceCommand) -> CommandOutput {
+fn run_evidence(command: EvidenceCommand, environment: &CliEnvironment) -> CommandOutput {
+    let mut storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
     match command {
         EvidenceCommand::Attach(args) => {
-            failure(format!(
-                "evidence attach: PLN-LEDGER-002 CLI storage wiring pending (work_item_id={}, kind={})",
-                args.work_item_id, args.kind
-            ))
+            // Read the evidence body file
+            let body = match std::fs::read(&args.body_file) {
+                Ok(b) => b,
+                Err(e) => {
+                    return failure(format!(
+                        "failed to read evidence file {}: {}",
+                        args.body_file.display(),
+                        e
+                    ));
+                }
+            };
+            if body.is_empty() {
+                return failure(format!(
+                    "evidence body is empty: {}",
+                    args.body_file.display()
+                ));
+            }
+            // Parse the evidence kind
+            let planning_kind = match args.kind.to_lowercase().as_str() {
+                "log" => PlanningEvidenceKind::Log,
+                "metric" | "metrics" => PlanningEvidenceKind::Metric,
+                "snapshot" => PlanningEvidenceKind::Snapshot,
+                "reference" => PlanningEvidenceKind::Reference,
+                "approval" => PlanningEvidenceKind::Approval,
+                _ => {
+                    return failure(format!(
+                        "invalid evidence kind: {} (expected: log, metric, snapshot, reference, approval)",
+                        args.kind
+                    ));
+                }
+            };
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let work_item_id = args.work_item_id.clone();
+            let record = EvidenceAttachmentRecord {
+                id: Uuid::new_v4().hyphenated().to_string(),
+                work_item_id,
+                kind: planning_kind,
+                body_ref: "pending".to_string(), // Will be set by storage
+                actor_ref_kind,
+                actor_ref_id: Some(actor_ref_id.unwrap_or_default()),
+                actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
+                schema_version: EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
+            };
+            match storage.insert_evidence_attachment(&record, &body) {
+                Ok(()) => {
+                    // Get the CAS hash that was computed
+                    use sha2::{Digest, Sha256};
+                    let hash = Sha256::digest(&body);
+                    let cas_hash = format!("sha256:{:x}", hash);
+                    match args.format {
+                        OutputFormat::Json => CommandOutput {
+                            status: 0,
+                            stdout: format!(
+                                "{{\"id\": \"{}\", \"work_item_id\": \"{}\", \"cas\": \"{}\"}}\n",
+                                record.id, record.work_item_id, cas_hash
+                            ),
+                            stderr: String::new(),
+                        },
+                        OutputFormat::Text => CommandOutput {
+                            status: 0,
+                            stdout: format!(
+                                "evidence attached: {} to {} (cas: {})\n",
+                                record.id, record.work_item_id, cas_hash
+                            ),
+                            stderr: String::new(),
+                        },
+                    }
+                }
+                Err(e) => failure(format!("failed to attach evidence: {}", e)),
+            }
         }
     }
 }
 
 // ── Decision subcommand handler ────────────────────────────────────────────────
 
-fn run_decision(command: DecisionCommand) -> CommandOutput {
+fn run_decision(command: DecisionCommand, environment: &CliEnvironment) -> CommandOutput {
+    let storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
     match command {
         DecisionCommand::Record(args) => {
-            failure(format!(
-                "decision record: PLN-LEDGER-002 CLI storage wiring pending (work_item_id={}, kind={})",
-                args.work_item_id, args.kind
-            ))
+            // Parse decision kind
+            let decision_kind = match args.kind.to_lowercase().as_str() {
+                "accept" | "architectural" => DecisionKind::Accept,
+                "reject" | "rejection" | "implementation" => DecisionKind::Reject,
+                "defer" | "deferred" | "priority" => DecisionKind::Defer,
+                "escalate" | "escalated" => DecisionKind::Escalate,
+                _ => {
+                    return failure(format!(
+                        "invalid decision kind: {} (expected: accept, reject, defer, escalate)",
+                        args.kind
+                    ));
+                }
+            };
+            // Validate rationale is non-empty using the domain constructor
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let domain_dr = match sddk_domain::planning::DecisionRecordV1::new(
+                Uuid::new_v4().hyphenated().to_string(),
+                args.work_item_id.clone(),
+                decision_kind,
+                args.rationale.clone(),
+                None, // actor_ref
+            ) {
+                Ok(dr) => dr,
+                Err(_) => {
+                    return failure("rationale must be non-empty".to_string());
+                }
+            };
+            let mut record = sddk_domain::planning::DecisionRecordRecord::from_domain(&domain_dr);
+            // Override actor_ref fields with CLI-provided values
+            record.actor_ref_kind = actor_ref_kind;
+            record.actor_ref_id = Some(actor_ref_id.unwrap_or_default());
+            record.actor_ref_label = Some(actor_ref_label.unwrap_or_default());
+            if let Err(e) = storage.insert_decision_record(&record) {
+                return failure(format!("failed to record decision: {}", e));
+            }
+            match args.format {
+                OutputFormat::Json => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "{{\"id\": \"{}\", \"work_item_id\": \"{}\"}}\n",
+                        record.id, record.work_item_id
+                    ),
+                    stderr: String::new(),
+                },
+                OutputFormat::Text => CommandOutput {
+                    status: 0,
+                    stdout: format!(
+                        "decision recorded: {} for work item {}\n",
+                        record.id, record.work_item_id
+                    ),
+                    stderr: String::new(),
+                },
+            }
         }
     }
 }
 
 // ── Graph subcommand handler ──────────────────────────────────────────────────
 
-fn run_graph(cycle_id: &str, format: OutputFormat) -> CommandOutput {
-    failure(format!(
-        "graph: PLN-LEDGER-002 CLI storage wiring pending (cycle_id={})",
-        cycle_id
-    ))
+fn run_graph(cycle_id: &str, format: OutputFormat, environment: &CliEnvironment) -> CommandOutput {
+    let storage = match open_storage_for_plan(environment) {
+        Some(s) => s,
+        None => {
+            return failure(
+                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
+                    .to_string(),
+            );
+        }
+    };
+    match storage.build_provenance_chain(cycle_id) {
+        Ok(chain) => match format {
+            OutputFormat::Json => match serde_json::to_string_pretty(&chain) {
+                Ok(json) => CommandOutput {
+                    status: 0,
+                    stdout: format!("{json}\n"),
+                    stderr: String::new(),
+                },
+                Err(e) => failure(format!("failed to serialize provenance chain: {}", e)),
+            },
+            OutputFormat::Text => CommandOutput {
+                status: 0,
+                stdout: format!(
+                    "cycle: {}\nwork items: {}\nevidence: {}\ndecisions: {}\n",
+                    chain.cycle_id,
+                    chain.work_item_ids.len(),
+                    chain.evidence_refs.len(),
+                    chain.decision_refs.len()
+                ),
+                stderr: String::new(),
+            },
+        },
+        Err(e) => failure(format!("failed to build provenance chain: {}", e)),
+    }
 }
