@@ -1,8 +1,8 @@
 schema_version: 2
 plan_id: sddk-canonical-evolution
 baseline:
-  release: v1.70.0
-  reconciled_at: 2026-09-03
+  release: v1.87.1
+  reconciled_at: 2026-09-05
 purpose: >-
   Machine-readable, dependency-ordered execution spine for SDDK. This file tells an
   agent exactly what to resume, what to start next, and what terminal state means.
@@ -136,7 +136,7 @@ items:
   - order: 50
     id: DW-IR-004
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [DW-IR-003]
     objective: Define typed operator input/output/error contracts.
     exit_gate: Runtime operators no longer rely on undefined placeholder output semantics at the contract boundary.
@@ -144,7 +144,7 @@ items:
   - order: 60
     id: DW-IR-005
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [DW-IR-004]
     objective: Prove IR determinism and compiler-boundary invariants.
     exit_gate: Round-trip, hash stability, invalid-plan and deterministic compilation tests pass.
@@ -152,7 +152,7 @@ items:
   - order: 70
     id: HX-AUTHORITY-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [DW-IR-005]
     objective: Reconcile CLI, agent, human and Secretary authority into one explicit matrix.
     exit_gate: Writable state, approval authority, provenance and no-parallel-authority invariant are accepted.
@@ -160,7 +160,7 @@ items:
   - order: 80
     id: ARCH-HEX-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [HX-AUTHORITY-001]
     objective: Close only architecture-boundary debt that blocks the canonical runtime path.
     exit_gate: Required domain/application/adapter boundaries for H1-H3 are clean and enforced by tests/checks.
@@ -168,7 +168,7 @@ items:
   - order: 90
     id: EVT-LEDGER-001
     horizon: H0
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [ARCH-HEX-001]
     objective: Lock canonical event, causation/correlation and replay contracts required by persisted runs.
     exit_gate: Event schema/versioning and replay invariants required by H2 are deterministic and tested.
@@ -176,7 +176,7 @@ items:
   - order: 100
     id: PLN-LEDGER-001
     horizon: H1
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [EVT-LEDGER-001]
     objective: Implement Planning Ledger domain model and state machine.
     exit_gate: WorkItem, dependency, status, evidence, decision and provenance contracts are versioned and tested.
@@ -184,7 +184,7 @@ items:
   - order: 110
     id: PLN-LEDGER-002
     horizon: H1
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [PLN-LEDGER-001]
     objective: Persist the planning graph in-repository deterministically.
     exit_gate: Fresh checkout reconstructs an identical planning graph without interpreting narrative markdown.
@@ -192,7 +192,7 @@ items:
   - order: 120
     id: PLN-LEDGER-003
     horizon: H1
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-05: PLN-LEDGER-004 WIP; spine/timeline reconciled to v1.87.1
     depends_on: [PLN-LEDGER-002]
     objective: Bind semantic work items to cycle/run execution evidence and migrate active planning state.
     exit_gate: Existing active backlog is imported with provenance; cycle IDs remain execution-only identities.
@@ -200,7 +200,7 @@ items:
   - order: 130
     id: PLN-LEDGER-004
     horizon: H1
-    status: PROPOSED
+    status: ACTIVE # reconciled 2026-09-05: decision-plane projections WIP on feature/pln-ledger-004-decision-plane-projections
     depends_on: [PLN-LEDGER-003]
     objective: Expose deterministic roadmap status/next/blocked/show/graph projections.
     exit_gate: An agent can compute the same next work item from the ledger on repeated clean checkouts.
