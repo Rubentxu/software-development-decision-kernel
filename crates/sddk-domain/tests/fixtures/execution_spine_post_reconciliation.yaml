@@ -1,0 +1,73 @@
+# Pinned post-reconciliation spine fixture for PLN-LEDGER-004 determinism tests.
+# Generated from clean Storage instance with spine_import.
+# This fixture represents a minimal spine for testing decision-plane projections.
+#
+# Schema: EXECUTION-SPINE v2
+# Purpose: Deterministic golden-bytes reference for project_status and project_graph
+
+schema_version: 2
+plan_id: test-spine-post-reconciliation
+baseline:
+  release: v1.87.1
+  reconciled_at: 2026-09-05
+
+status_vocabulary:
+  terminal: [SHIPPED, ABSORBED, SUPERSEDED]
+  executable: [ACTIVE, READY, PARTIAL]
+  non_executable: [PROPOSED, BLOCKED]
+
+selection_rule:
+  - If exactly one item is ACTIVE, resume that item.
+  - If more than one item is ACTIVE, fail closed and reconcile planning state.
+  - If no item is ACTIVE, scan items by ascending order.
+  - Select the first non-terminal item whose dependencies are all terminal.
+  - If that item is PROPOSED, promote it to READY only when its acceptance contract is present.
+  - If that item is BLOCKED, stop the line and report the blocker; do not skip ahead.
+  - Bind the selected semantic work item to a concrete cycle/run ID only when execution starts.
+  - A cycle/run ID is evidence of execution, never the identity of the capability.
+  - On completion, attach evidence, move the item to SHIPPED or ABSORBED, then recompute next.
+
+cycle_binding:
+  identity: semantic_work_item_id
+  execution_instance: cycle_or_run_id
+  rule: one ACTIVE semantic work item at a time on the canonical spine
+
+horizons:
+  - { id: H0, name: Reconcile & Deterministic Foundations }
+  - { id: H1, name: Planning SSOT }
+
+items:
+  # Dependency chain: A -> B -> C -> D
+  # A is terminal (SHIPPED), B is terminal, C is ACTIVE, D is PROPOSED (waiting)
+
+  - order: 10
+    id: TEST-LEDGER-A
+    horizon: H0
+    status: SHIPPED # reconciled 2026-09-05: fixture setup
+    depends_on: []
+    objective: Terminal item A for dependency chain test.
+    exit_gate: Fixture initialization.
+
+  - order: 20
+    id: TEST-LEDGER-B
+    horizon: H0
+    status: SHIPPED # reconciled 2026-09-05: fixture setup
+    depends_on: [TEST-LEDGER-A]
+    objective: Terminal item B for dependency chain test.
+    exit_gate: Depends on A which is SHIPPED.
+
+  - order: 30
+    id: TEST-LEDGER-C
+    horizon: H1
+    status: ACTIVE # reconciled 2026-09-05: active item for next-item test
+    depends_on: [TEST-LEDGER-B]
+    objective: Active item C - should be selected as next item.
+    exit_gate: Depends on B which is SHIPPED, so C is executable.
+
+  - order: 40
+    id: TEST-LEDGER-D
+    horizon: H1
+    status: PROPOSED # post-reconciliation: waiting for C
+    depends_on: [TEST-LEDGER-C]
+    objective: Proposed item D - depends on ACTIVE C, should be blocked.
+    exit_gate: Missing - this is a PromotionBlocked test case.

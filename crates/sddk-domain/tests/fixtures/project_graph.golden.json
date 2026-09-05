@@ -1,0 +1,46 @@
+{
+  "nodes": [
+    {
+      "id": "TEST-LEDGER-A",
+      "title": "Terminal item A for dependency chain test.",
+      "status": "\"shipped\"",
+      "horizon": "H0",
+      "order": 10
+    },
+    {
+      "id": "TEST-LEDGER-B",
+      "title": "Terminal item B for dependency chain test.",
+      "status": "\"shipped\"",
+      "horizon": "H0",
+      "order": 20
+    },
+    {
+      "id": "TEST-LEDGER-C",
+      "title": "Active item C - should be selected as next item.",
+      "status": "\"active\"",
+      "horizon": "H1",
+      "order": 30
+    },
+    {
+      "id": "TEST-LEDGER-D",
+      "title": "Proposed item D - depends on ACTIVE C, should be blocked.",
+      "status": "\"draft\"",
+      "horizon": "H1",
+      "order": 40
+    }
+  ],
+  "edges": [
+    {
+      "from": "TEST-LEDGER-A",
+      "to": "TEST-LEDGER-B"
+    },
+    {
+      "from": "TEST-LEDGER-B",
+      "to": "TEST-LEDGER-C"
+    },
+    {
+      "from": "TEST-LEDGER-C",
+      "to": "TEST-LEDGER-D"
+    }
+  ]
+}
