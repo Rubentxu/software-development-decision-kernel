@@ -23,6 +23,7 @@ pub struct SpineParseError {
 
 /// Top-level spine document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionSpineV1 {
     /// Schema version; must be 2.
     pub schema_version: u32,
@@ -104,6 +105,7 @@ pub struct SpineHorizonDef {
 
 /// A single spine work item row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpineItemV1 {
     /// Execution order.
     pub order: u32,
@@ -213,6 +215,30 @@ pub fn parse_spine_yaml(bytes: &[u8]) -> Result<ExecutionSpineV1, SpineParseErro
             reason: "missing_schema_version".to_string(),
         });
     }
+
+    // Normalize horizon values: YAML uses H0/H1 but SpineHorizon uses snake_case (h0/h1).
+    // Convert any ": H" (followed by a digit) to ": h" to handle both item-level
+    // "horizon: H0" and horizons-array "id: H0" fields.
+    let spine_str = spine_str
+        .lines()
+        .map(|line| {
+            // Match patterns like "horizon: H0", "id: H0", "id: H10" etc.
+            // Replace ": H" followed by a digit with ": h"
+            let mut result = line.to_string();
+            // Keep replacing while we find matches (handles multiple per line)
+            while let Some(pos) = result.find(": H") {
+                // Check that the next char after " H" is a digit (byte check)
+                let bytes = result.as_bytes();
+                if pos + 3 < bytes.len() && bytes[pos + 3].is_ascii_digit() {
+                    result.replace_range(pos..pos + 3, ": h");
+                } else {
+                    break;
+                }
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     serde_saphyr::from_str(&spine_str).map_err(|e| {
         let location = e.location();

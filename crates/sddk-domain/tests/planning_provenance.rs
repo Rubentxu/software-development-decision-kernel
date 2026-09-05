@@ -16,6 +16,8 @@ use sddk_domain::planning::{
 /// A test double for `PlanningGraphRead` that returns pre-configured data.
 #[derive(Debug, Clone, Default)]
 struct FakePlanningGraphRead {
+    cas_root_id: String,
+    handle_id: String,
     work_items: HashMap<String, Vec<WorkItemRecord>>,
     edges: HashMap<String, Vec<DependencyEdgeRecord>>,
     evidence: HashMap<String, Vec<EvidenceAttachmentRecord>>,
@@ -74,6 +76,14 @@ impl PlanningGraphRead for FakePlanningGraphRead {
             .get(work_item_id)
             .cloned()
             .unwrap_or_default())
+    }
+
+    fn cas_root_id(&self) -> String {
+        self.cas_root_id.clone()
+    }
+
+    fn handle_id(&self) -> String {
+        self.handle_id.clone()
     }
 }
 

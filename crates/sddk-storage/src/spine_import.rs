@@ -10,6 +10,86 @@ use sddk_domain::planning::{DependencyEdgeKind, PlanningEvidenceKind, WorkItemSt
 use sddk_domain::spine::{SpineStatus, canonicalize_spine_bytes, parse_spine_yaml};
 
 use crate::{Storage, StorageError};
+use rusqlite::params;
+
+/// Well-known project ID used for all spine-imported items.
+/// This project is created automatically if it doesn't exist.
+const SPINE_IMPORT_PROJECT_ID: &str = "__spine_import__";
+
+/// Ensures the spine-import project and workspace exist, creating if necessary.
+fn ensure_spine_import_project_and_workspace(storage: &Storage) -> Result<(), SpineImportError> {
+    let workspace_id = "__spine_import_ws__";
+
+    // Check if project exists
+    let project_exists: bool = storage
+        .connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id = ?1)",
+            [SPINE_IMPORT_PROJECT_ID],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::Database)
+        .map_err(SpineImportError::Storage)?;
+
+    if !project_exists {
+        let _ = storage
+            .connection
+            .execute(
+                r#"INSERT INTO projects (project_id, display_name, scope, created_at)
+                   VALUES (?1, 'Spine Import Project', 'spine-import', datetime('now'))
+                   ON CONFLICT(project_id) DO NOTHING"#,
+                params![SPINE_IMPORT_PROJECT_ID],
+            )
+            .map_err(StorageError::Database)
+            .map_err(SpineImportError::Storage)?;
+    }
+
+    // Check if workspace exists
+    let workspace_exists: bool = storage
+        .connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspaces WHERE workspace_id = ?1)",
+            [workspace_id],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::Database)
+        .map_err(SpineImportError::Storage)?;
+
+    if !workspace_exists {
+        let _ = storage
+            .connection
+            .execute(
+                r#"INSERT INTO workspaces (workspace_id, project_id, canonical_path, created_at)
+                   VALUES (?1, ?2, 'spine-import', datetime('now'))
+                   ON CONFLICT(workspace_id) DO NOTHING"#,
+                params![workspace_id, SPINE_IMPORT_PROJECT_ID],
+            )
+            .map_err(StorageError::Database)
+            .map_err(SpineImportError::Storage)?;
+    }
+
+    Ok(())
+}
+
+/// Ensures a cycle row exists for the given cycle_id, creating it if necessary.
+/// Uses INSERT OR IGNORE so it's idempotent.
+fn ensure_cycle_exists(storage: &Storage, cycle_id: &str) -> Result<(), SpineImportError> {
+    let workspace_id = "__spine_import_ws__";
+    let manifest_json = "{}";
+
+    let _ = storage
+        .connection
+        .execute(
+            r#"INSERT OR IGNORE INTO cycles
+                   (cycle_id, project_id, workspace_id, status, phase, manifest_json, created_at, updated_at)
+               VALUES
+                   (?1, ?2, ?3, 'OPEN', 'build', ?4, datetime('now'), datetime('now'))"#,
+            params![cycle_id, SPINE_IMPORT_PROJECT_ID, workspace_id, manifest_json],
+        )
+        .map_err(StorageError::Database)
+        .map_err(SpineImportError::Storage)?;
+    Ok(())
+}
 
 /// Summary of a spine import operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,7 +192,15 @@ pub fn import_spine(
         }
     }
 
-    // Step 5: Import each spine item
+    // Step 5: Ensure the spine-import project and cycle rows exist for all spine items.
+    // The work_items_v1.cycle_id FK references cycles(cycle_id), so each spine item's
+    // cycle must be registered before the work item can be inserted.
+    ensure_spine_import_project_and_workspace(storage)?;
+    for item in &spine.items {
+        ensure_cycle_exists(storage, &item.id)?;
+    }
+
+    // Step 6: Import each spine item
     let mut imported: u32 = 0;
     let mut already_present: u32 = 0;
     let mut conflicts: u32 = 0;
@@ -120,6 +208,8 @@ pub fn import_spine(
     for item in &spine.items {
         let cycle_id = item.id.clone(); // Q5 S1: per-row cycle
         let work_item_id = item.id.clone(); // Q6: spine id is canonical identity
+        let expected_description = item.objective.clone();
+        let expected_status = map_spine_status(item.status)?;
 
         // Check if this work item already exists
         let existing = storage
@@ -127,25 +217,35 @@ pub fn import_spine(
             .map_err(StorageError::from)?;
 
         if let Some(existing_wi) = existing {
-            // Idempotency check: compare identity fields
-            // Q6: title should equal the spine id
-            if existing_wi.title == work_item_id && existing_wi.cycle_id == cycle_id {
+            // Idempotency check: compare all identity fields.
+            // Per Q6, title = spine id; per Q5, cycle_id = spine id.
+            // Conflict if description or status differs (Q8).
+            if existing_wi.title == work_item_id
+                && existing_wi.cycle_id == cycle_id
+                && existing_wi.description == expected_description
+                && existing_wi.status == expected_status
+            {
                 already_present += 1;
                 continue;
             } else {
                 // Conflict: existing work item differs from what spine says it should be
+                let field = if existing_wi.description != expected_description {
+                    "description"
+                } else {
+                    "status"
+                };
                 conflicts += 1;
                 return Err(SpineImportError::ImportConflict {
                     id: work_item_id.clone(),
-                    field: "title".to_string(),
-                    expected: work_item_id,
-                    actual: existing_wi.title,
+                    field: field.to_string(),
+                    expected: expected_description.clone(),
+                    actual: existing_wi.description,
                 });
             }
         }
 
         // Insert the work item
-        let status = map_spine_status(item.status)?;
+        let status = expected_status;
         let record = sddk_domain::WorkItemRecord {
             id: work_item_id.clone(),
             cycle_id: cycle_id.clone(),
