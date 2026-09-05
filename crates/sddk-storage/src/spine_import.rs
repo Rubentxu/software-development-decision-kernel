@@ -1,13 +1,14 @@
 //! Spine import pipeline for EXECUTION-SPINE.yaml.
 //!
 //! Implements PLN-LEDGER-003 §3.5 spine import per ADR-073 Q4 and spec PLN-LEDGER-003 §6.
+//! Extended in PLN-LEDGER-004 with spine metadata columns and backfill rule.
 
 use std::collections::HashSet;
 
 use sha2::{Digest, Sha256};
 
 use sddk_domain::planning::{DependencyEdgeKind, PlanningEvidenceKind, WorkItemStatus};
-use sddk_domain::spine::{SpineStatus, canonicalize_spine_bytes, parse_spine_yaml};
+use sddk_domain::spine::{SpineHorizon, SpineStatus, canonicalize_spine_bytes, parse_spine_yaml};
 
 use crate::{Storage, StorageError};
 use rusqlite::params;
@@ -98,6 +99,8 @@ pub struct ImportSummary {
     pub imported: u32,
     /// Number of rows already present and unchanged.
     pub already_present: u32,
+    /// Number of rows backfilled (re-import with NULL→populated spine columns).
+    pub backfilled: u32,
     /// Number of conflicts detected (re-import with diff).
     pub conflicts: u32,
 }
@@ -149,12 +152,25 @@ pub fn compute_spine_body_ref(canonical_bytes: &[u8]) -> sddk_domain::CasHash {
     format!("sha256:{:x}", digest)
 }
 
+/// Serializes a SpineHorizon to its lowercase snake_case string for storage.
+fn serialize_horizon(horizon: SpineHorizon) -> String {
+    // SpineHorizon uses serde(rename_all = "snake_case"), so "h0", "h1", etc.
+    serde_json::to_string(&horizon).unwrap().trim_matches('"').to_string()
+}
+
+/// Serializes a SpineStatus to its SCREAMING_SNAKE_CASE string for storage.
+fn serialize_spine_status(status: SpineStatus) -> String {
+    // SpineStatus uses serde(rename_all = "SCREAMING_SNAKE_CASE"), so "PROPOSED", etc.
+    serde_json::to_string(&status).unwrap().trim_matches('"').to_string()
+}
+
 /// Imports the EXECUTION-SPINE.yaml bytes into the provided storage.
 ///
 /// Per-row cycle (Q5 S1): each spine row produces one WorkItem with
 /// `id = spine.id` and `cycle_id = spine.id`.
 ///
 /// Idempotent: re-import of identical bytes reports `already_present=N, imported=0`.
+/// Backfill: re-import of existing rows with NULL spine columns populates them.
 /// Hard-error on mutated bytes: returns `SpineImportError::ImportConflict` per Q8.
 ///
 /// Each imported spine row produces exactly one `EvidenceAttachmentV1` with
@@ -203,6 +219,7 @@ pub fn import_spine(
     // Step 6: Import each spine item
     let mut imported: u32 = 0;
     let mut already_present: u32 = 0;
+    let mut backfilled: u32 = 0;
     let mut conflicts: u32 = 0;
 
     for item in &spine.items {
@@ -211,19 +228,65 @@ pub fn import_spine(
         let expected_description = item.objective.clone();
         let expected_status = map_spine_status(item.status)?;
 
+        // Spine metadata for this item
+        let spine_order = Some(item.order as i32);
+        let spine_horizon = Some(serialize_horizon(item.horizon));
+        let spine_status = Some(serialize_spine_status(item.status));
+        let exit_gate = Some(item.exit_gate.clone());
+
         // Check if this work item already exists
         let existing = storage.get_work_item(&work_item_id)?;
 
         if let Some(existing_wi) = existing {
-            // Idempotency check: compare all identity fields.
+            // Identity check: compare all identity fields.
             // Per Q6, title = spine id; per Q5, cycle_id = spine id.
-            // Conflict if description or status differs (Q8).
-            if existing_wi.title == work_item_id
+            let identity_match = existing_wi.title == work_item_id
                 && existing_wi.cycle_id == cycle_id
                 && existing_wi.description == expected_description
-                && existing_wi.status == expected_status
-            {
-                already_present += 1;
+                && existing_wi.status == expected_status;
+
+            if identity_match {
+                // Identity is the same — check if backfill is needed.
+                // Backfill rule: if spine columns are NULL in DB but populated in spine, backfill.
+                // Conflict rule: if any spine column is already populated AND differs from spine.
+                let needs_backfill = existing_wi.spine_order.is_none()
+                    || existing_wi.spine_horizon.is_none()
+                    || existing_wi.spine_status.is_none()
+                    || existing_wi.exit_gate.is_none();
+
+                let would_conflict = (existing_wi.spine_order.is_some()
+                    && existing_wi.spine_order != spine_order)
+                    || (existing_wi.spine_horizon.is_some()
+                        && existing_wi.spine_horizon != spine_horizon)
+                    || (existing_wi.spine_status.is_some()
+                        && existing_wi.spine_status != spine_status)
+                    || (existing_wi.exit_gate.is_some()
+                        && existing_wi.exit_gate != exit_gate);
+
+                if would_conflict {
+                    // Conflict: a non-NULL spine column differs
+                    conflicts += 1;
+                    return Err(SpineImportError::ImportConflict {
+                        id: work_item_id.clone(),
+                        field: "spine_metadata".to_string(),
+                        expected: format!("{:?}", (spine_order, &spine_horizon, &spine_status, &exit_gate)),
+                        actual: format!("{:?}", (existing_wi.spine_order, &existing_wi.spine_horizon, &existing_wi.spine_status, &existing_wi.exit_gate)),
+                    });
+                }
+
+                if needs_backfill {
+                    // Backfill the NULL spine columns
+                    storage.backfill_spine_columns(
+                        &work_item_id,
+                        spine_order.unwrap(),
+                        spine_horizon.as_deref().unwrap(),
+                        spine_status.as_deref().unwrap(),
+                        exit_gate.as_deref().unwrap(),
+                    )?;
+                    backfilled += 1;
+                } else {
+                    already_present += 1;
+                }
                 continue;
             } else {
                 // Conflict: existing work item differs from what spine says it should be
@@ -242,7 +305,7 @@ pub fn import_spine(
             }
         }
 
-        // Insert the work item
+        // Insert the work item with spine metadata
         let status = expected_status;
         let record = sddk_domain::WorkItemRecord {
             id: work_item_id.clone(),
@@ -255,6 +318,10 @@ pub fn import_spine(
             actor_ref_label: None,
             created_at: timestamp_now(),
             schema_version: sddk_domain::WORK_ITEM_SCHEMA_VERSION,
+            spine_order,
+            spine_horizon,
+            spine_status,
+            exit_gate,
         };
         storage.insert_work_item(&record)?;
 
@@ -296,6 +363,7 @@ pub fn import_spine(
     Ok(ImportSummary {
         imported,
         already_present,
+        backfilled,
         conflicts,
     })
 }
