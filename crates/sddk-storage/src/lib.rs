@@ -2643,31 +2643,7 @@ impl Storage {
         &self,
         cycle_id: &str,
     ) -> Result<sddk_domain::PlanningProvenanceChainV1> {
-        let work_items = self.list_work_items_by_cycle(cycle_id)?;
-        let work_item_ids: Vec<_> = work_items.iter().map(|w| w.id.clone()).collect();
-
-        let _edges = self.list_dependency_edges_by_cycle(cycle_id)?;
-
-        // Collect evidence refs from all work items in cycle
-        let mut all_evidence_refs: Vec<sddk_domain::CasHash> = Vec::new();
-        for wi in &work_item_ids {
-            let evidence = self.list_evidence_attachments_by_work_item(wi)?;
-            all_evidence_refs.extend(evidence.iter().map(|e| e.body_ref.clone()));
-        }
-
-        // Collect decision refs from all work items in cycle
-        let mut all_decision_refs: Vec<_> = Vec::new();
-        for wi in &work_item_ids {
-            let decisions = self.list_decision_records_by_work_item(wi)?;
-            all_decision_refs.extend(decisions.iter().map(|d| d.id.clone()));
-        }
-
-        Ok(sddk_domain::PlanningProvenanceChainV1::new(
-            cycle_id.to_string(),
-            work_item_ids,
-            all_evidence_refs,
-            all_decision_refs,
-        ))
+        self.collect_provenance_chain(cycle_id, None)
     }
 
     /// Builds a provenance chain for a cycle with schema version 2 producer metadata.
@@ -2679,6 +2655,17 @@ impl Storage {
     pub fn build_provenance_chain_v2(
         &self,
         cycle_id: &str,
+    ) -> Result<sddk_domain::PlanningProvenanceChainV1> {
+        self.collect_provenance_chain(cycle_id, Some(self.cas_root_id()))
+    }
+
+    /// Private helper: collects work items, evidence refs, and decision refs for a cycle,
+    /// then constructs a `PlanningProvenanceChainV1` using `new` (schema v1) when
+    /// `producer_cas_root_id` is `None`, or `new_v2` (schema v2) when `Some`.
+    fn collect_provenance_chain(
+        &self,
+        cycle_id: &str,
+        producer_cas_root_id: Option<String>,
     ) -> Result<sddk_domain::PlanningProvenanceChainV1> {
         let work_items = self.list_work_items_by_cycle(cycle_id)?;
         let work_item_ids: Vec<_> = work_items.iter().map(|w| w.id.clone()).collect();
@@ -2699,13 +2686,21 @@ impl Storage {
             all_decision_refs.extend(decisions.iter().map(|d| d.id.clone()));
         }
 
-        Ok(sddk_domain::PlanningProvenanceChainV1::new_v2(
-            cycle_id.to_string(),
-            work_item_ids,
-            all_evidence_refs,
-            all_decision_refs,
-            self.cas_root_id(),
-        ))
+        match producer_cas_root_id {
+            Some(cas_root_id) => Ok(sddk_domain::PlanningProvenanceChainV1::new_v2(
+                cycle_id.to_string(),
+                work_item_ids,
+                all_evidence_refs,
+                all_decision_refs,
+                cas_root_id,
+            )),
+            None => Ok(sddk_domain::PlanningProvenanceChainV1::new(
+                cycle_id.to_string(),
+                work_item_ids,
+                all_evidence_refs,
+                all_decision_refs,
+            )),
+        }
     }
 
     // ── CAS helpers ─────────────────────────────────────────────────────
