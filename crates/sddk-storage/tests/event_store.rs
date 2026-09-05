@@ -325,7 +325,8 @@ fn migration_5_creates_events_v1() {
     {
         // Run through MIGRATION_1..4 via Storage, which sets up the legacy schema.
         let storage = sddk_storage::Storage::open(&db_path).unwrap();
-        assert_eq!(storage.schema_version().unwrap(), 14); // MIGRATION_14 applied
+        // MIGRATION_15 applied (evidence_attachments_v1 + decision_records_v1, bumping from 14)
+        assert_eq!(storage.schema_version().unwrap(), 15);
         // Insert a minimal project so the FK on events_v1.project_id is satisfied.
         storage
             .insert_project(&sddk_domain::ProjectRecord {
