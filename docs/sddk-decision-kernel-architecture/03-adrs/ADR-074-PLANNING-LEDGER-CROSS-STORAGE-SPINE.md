@@ -240,4 +240,56 @@ The implementation MUST deliver ~58 new tests across four layers (per AC-PLN3-12
 - `crates/sddk-cli/tests/spine_import_cli.rs` — 4 CLI tests.
 - `crates/sddk-cli/tests/cycle_verify_references_cli.rs` — 2 CLI tests.
 
+---
+
+## 13. Decision-Plane Projection Contract
+
+The five roadmap projections form the decision-plane interface:
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `project_status` | `StatusProjection` | Horizon partition + active_item |
+| `project_next` | `NextProjection` | Selection rule (8 clauses); does NOT call `detect_cycle` |
+| `project_blocked` | `BlockedProjection` | Blocked vs PromotionBlocked; calls Kahn first |
+| `project_show` | `ShowProjection` | Per-item details with reverse edges |
+| `project_graph` | `String` | JSON/Dot/Mermaid; calls Kahn for cycle detection |
+
+### Edge direction convention
+
+In `DependencyEdgeSnapshot`:
+
+- `from_id` → `to_id` means "from blocks to"
+- When `B.depends_on = [A]`, the edge is `{from_id: B, to_id: A}` (B is blocked by A)
+- Kahn's algorithm: items with `in_degree=0` have NO INCOMING edges (nothing blocks them → can start)
+
+### Spine columns excluded from identity
+
+`WorkItemIdentityProjection` has exactly 7 fields (id, cycle_id, title, description, actor_ref, schema_version). The four spine metadata columns (`spine_order`, `spine_horizon`, `spine_status`, `exit_gate`) are on `WorkItemRecord` only, accessible via `RoadmapGraphRead::get_work_item_with_spine_metadata`.
+
+## 14. Spine Field Persistence
+
+MIGRATION_16 adds four additive NULL-able columns to `work_items_v1`:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `spine_order` | INTEGER NULL | Execution order from spine YAML |
+| `spine_horizon` | TEXT NULL | Spine horizon (h0–h12) |
+| `spine_status` | TEXT NULL | SCREAMING_SNAKE_CASE spine status at import |
+| `exit_gate` | TEXT NULL | Acceptance contract from spine YAML |
+
+Backfill rule: on re-import of an existing item, if spine columns are NULL in DB but populated in spine YAML → UPDATE. If any spine column is already populated AND differs → `Err(ImportConflict)`.
+
+These columns are NOT part of `WorkItemIdentityProjection` (per PLN-LEDGER-002 §8 invariant).
+
+## 15. CLI Namespace Clean-Up
+
+PLN-LEDGER-004 removed the legacy `sddk plan <name>` facade (AC-PLN4-13):
+
+- `DEPRECATION_WARNING` constant removed from `plan.rs`
+- `run_plan_legacy` function removed
+- `sddk plan --help` now lists `roadmap` as a subcommand
+- `sddk plan graph --cycle-id` (provenance-chain dump) unchanged
+
+New CLI surface: `sddk plan roadmap {status,next,blocked,show,graph}` routes to the five decision-plane projections via `&dyn RoadmapGraphRead`.
+
 (End of file — total 269 lines)
