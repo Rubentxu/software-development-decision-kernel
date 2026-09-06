@@ -61,7 +61,6 @@ pub trait RoadmapGraphRead {
         let work_items = self.list_work_items_roadmap()?;
         let edges = self.list_dependency_edges_roadmap()?;
 
-        // Bound cycles: REQ-DC4.5 / FIND-241031 / FIND-279767
         // This field is documented-reserved. The SQLite adapter currently returns empty.
         // A future reconciliation step will populate this from closed/released cycles.
         // Until then, execution_evidence in ShowProjection will be empty.
