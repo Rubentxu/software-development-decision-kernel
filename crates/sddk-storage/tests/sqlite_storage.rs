@@ -974,10 +974,10 @@ fn storage_migration_3_backfills_seq_default_one() {
         conn.pragma_update(None, "user_version", 2).unwrap();
     }
 
-    // Open with current code — MIGRATION_3..MIGRATION_15 all run (including MIGRATION_15)
+    // Open with current code — MIGRATION_3..MIGRATION_16 all run (including MIGRATION_16)
     let storage = Storage::open(&database_path).unwrap();
-    // MIGRATION_15 bumps to schema 15
-    assert_eq!(storage.schema_version().unwrap(), 15);
+    // MIGRATION_16 bumps to schema 16
+    assert_eq!(storage.schema_version().unwrap(), 16);
 
     // The pre-existing row now carries seq = 1
     let receipt = storage
@@ -1481,10 +1481,10 @@ fn legacy_receipt_without_version_columns_returns_none() {
         conn.pragma_update(None, "user_version", 6).unwrap();
     }
 
-    // Open with current code — MIGRATION_7..MIGRATION_15 all run (including MIGRATION_15)
+    // Open with current code — MIGRATION_7..MIGRATION_16 all run (including MIGRATION_16)
     let storage = Storage::open(&database_path).unwrap();
-    // MIGRATION_15 bumps to schema 15
-    assert_eq!(storage.schema_version().unwrap(), 15);
+    // MIGRATION_16 bumps to schema 16
+    assert_eq!(storage.schema_version().unwrap(), 16);
 
     // Read back the legacy receipt — new columns must be None
     let receipt = storage.get_capability_receipt("legacy-receipt-1").unwrap();
