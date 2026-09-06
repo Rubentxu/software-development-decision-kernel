@@ -222,6 +222,13 @@ impl DependencyResolutionService {
     /// # Returns
     /// * `Ok(())` if no cycles exist
     /// * `Err(DependencyResolutionError::CycleDetected)` if a cycle is found
+    ///
+    /// # See also
+    /// [`detect_cycle`](super::projections::detect_cycle) in `projections` — that function
+    /// uses the same algorithm but operates on `&[DependencyEdgeSnapshot]`
+    /// (from the roadmap snapshot) and returns `Result<(), Vec<WorkItemId>>` (the cycle path directly).
+    /// In contrast, this function works on `&[DependencyEdgeV1]` and returns
+    /// `DependencyResolutionError`. The input/error contracts differ.
     pub fn detect_cycles(edges: &[DependencyEdgeV1]) -> Result<(), DependencyResolutionError> {
         // Build adjacency list for Blocks edges only
         let mut in_degree: std::collections::HashMap<&WorkItemId, usize> =

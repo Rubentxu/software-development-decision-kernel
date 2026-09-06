@@ -177,6 +177,13 @@ pub enum DependencyEdgeKindSnapshot {
 /// # Algorithm
 /// Kahn's algorithm: remove all nodes with zero in-degree iteratively.
 /// If any nodes remain, they form a cycle.
+///
+/// # See also
+/// [`DependencyResolutionService::detect_cycles`](super::service::DependencyResolutionService::detect_cycles)
+/// — that function uses the same algorithm but operates on `&[DependencyEdgeV1]`
+/// (the domain's canonical edge type) and returns `DependencyResolutionError`.
+/// In contrast, this function works on `&[DependencyEdgeSnapshot]` and returns
+/// `Result<(), Vec<WorkItemId>>` (the cycle path directly). The input/error contracts differ.
 fn detect_cycle(
     items: &BTreeMap<WorkItemId, WorkItemSnapshot>,
     edges: &[DependencyEdgeSnapshot],

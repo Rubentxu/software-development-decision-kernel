@@ -61,9 +61,13 @@ pub trait RoadmapGraphRead {
         let work_items = self.list_work_items_roadmap()?;
         let edges = self.list_dependency_edges_roadmap()?;
 
-        // Collect bound cycles from the reconciliation block.
-        // Bound cycles are cycles that have been closed/released with items in the spine.
-        let bound_cycles: Vec<String> = Vec::new(); // TODO: populate from reconciliation data
+        // Bound cycles: REQ-DC4.5 / FIND-241031 / FIND-279767
+        // This field is documented-reserved. The SQLite adapter currently returns empty.
+        // A future reconciliation step will populate this from closed/released cycles.
+        // Until then, execution_evidence in ShowProjection will be empty.
+        // This is ACCEPTABLE for the PATCH: changing it would alter CLI-visible JSON (INV-PATCH).
+        // Changing this behavior requires a MINOR cycle with proper ADR.
+        let bound_cycles: Vec<String> = Vec::new();
 
         Ok(crate::planning::projections::RoadmapSnapshot {
             work_items: work_items
