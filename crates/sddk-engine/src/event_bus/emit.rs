@@ -746,10 +746,7 @@ pub fn emit_workflow_node_failed<S: EventStore>(
 
 // ── Planning Ledger event emission (PLN-LEDGER-001 / ADR-072) ─────────────────
 
-use sddk_domain::planning::{
-    DependencyEdgeKind,
-    WorkItemId, WorkItemStatus,
-};
+use sddk_domain::planning::{DependencyEdgeKind, WorkItemId, WorkItemStatus};
 
 /// Input for planning work item events.
 #[derive(Debug, Clone)]

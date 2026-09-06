@@ -12,10 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use sddk_domain::{
     GraphStore, NodeId, NodeRun, Operator as DomainOperator, OperatorId, TaskExecutor, WorkflowIR,
-    WorkflowRun,
-    operator_contract::{
-        default_output_schema,
-    },
+    WorkflowRun, operator_contract::default_output_schema,
 };
 
 // -- GraphStoreBox wrapper -----------------------------------------------------
