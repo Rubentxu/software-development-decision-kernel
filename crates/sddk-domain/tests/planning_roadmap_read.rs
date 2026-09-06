@@ -8,12 +8,12 @@
 
 use std::collections::BTreeMap;
 
+use sddk_domain::StorageError;
+use sddk_domain::planning::WorkItemStatus;
 use sddk_domain::planning::projections::{
     DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, RoadmapSnapshot, WorkItemSnapshot,
 };
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
-use sddk_domain::planning::WorkItemStatus;
-use sddk_domain::StorageError;
 
 // ── Fake implementation ────────────────────────────────────────────────────────
 
@@ -145,9 +145,7 @@ fn list_incoming_edges_returns_reverse() {
     }];
     let fake = FakeRoadmapGraphRead::new().with_edges(edges);
 
-    let incoming = fake
-        .list_incoming_edges_for("B")
-        .expect("must succeed");
+    let incoming = fake.list_incoming_edges_for("B").expect("must succeed");
     assert_eq!(incoming.len(), 1, "B should have one incoming edge from A");
     assert_eq!(incoming[0].from_id, "A");
 }
@@ -161,8 +159,13 @@ fn is_ledger_imported_reflects_items() {
         "empty roadmap is not imported"
     );
 
-    let with_items = FakeRoadmapGraphRead::new()
-        .with_items(vec![make_item("A", 10, "h0", "shipped", WorkItemStatus::Done)]);
+    let with_items = FakeRoadmapGraphRead::new().with_items(vec![make_item(
+        "A",
+        10,
+        "h0",
+        "shipped",
+        WorkItemStatus::Done,
+    )]);
     assert!(
         with_items.is_ledger_imported().expect("must succeed"),
         "non-empty roadmap is imported"

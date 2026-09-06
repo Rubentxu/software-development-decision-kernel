@@ -33,7 +33,7 @@ fn persists_canonical_records_across_reopen() {
         // MIGRATION_5 adds events_v1; MIGRATION_6 adds projection_checkpoints_v1
         // MIGRATION_7 adds agent/behavior_version_hash to capability_receipts
         // MIGRATION_15 adds evidence_attachments_v1 + decision_records_v1 (schema 15)
-        assert_eq!(storage.schema_version().unwrap(), 15);
+        assert_eq!(storage.schema_version().unwrap(), 16);
         storage.insert_project(&project_record()).unwrap();
         storage.insert_workspace(&workspace_record()).unwrap();
         storage.insert_cycle(&cycle).unwrap();

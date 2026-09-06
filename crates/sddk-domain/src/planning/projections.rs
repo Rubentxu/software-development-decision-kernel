@@ -17,7 +17,6 @@ use std::collections::{BTreeMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::planning::{CycleId, WorkItemId, WorkItemStatus};
-use crate::StorageError;
 
 // ── RoadmapProjectionError ─────────────────────────────────────────────────
 
@@ -51,11 +50,17 @@ pub enum RoadmapProjectionError {
 
     /// PROPOSED work item missing exit_gate cannot be promoted.
     #[error("promotion blocked: {item_id} missing {missing}")]
-    PromotionBlocked { item_id: WorkItemId, missing: &'static str },
+    PromotionBlocked {
+        item_id: WorkItemId,
+        missing: &'static str,
+    },
 
     /// BLOCKED item stops the line.
     #[error("line stopped: {blocker} is blocked")]
-    LineStopped { blocker: WorkItemId, reason: &'static str },
+    LineStopped {
+        blocker: WorkItemId,
+        reason: &'static str,
+    },
 
     /// Dependency cycle detected in the roadmap graph.
     ///
@@ -70,7 +75,19 @@ pub enum RoadmapProjectionError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpineHorizon {
-    H0, H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12,
+    H0,
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    H6,
+    H7,
+    H8,
+    H9,
+    H10,
+    H11,
+    H12,
 }
 
 impl SpineHorizon {
@@ -97,7 +114,10 @@ impl SpineHorizon {
 
 /// Terminal status vocabulary (per EXECUTION-SPINE.yaml baseline).
 fn is_terminal_status(status: &WorkItemStatus) -> bool {
-    matches!(status, WorkItemStatus::Done | WorkItemStatus::Superseded | WorkItemStatus::Cancelled)
+    matches!(
+        status,
+        WorkItemStatus::Done | WorkItemStatus::Superseded | WorkItemStatus::Cancelled
+    )
 }
 
 /// Returns true if the spine status is PROPOSED (promotion check applies).
@@ -171,10 +191,8 @@ pub fn detect_cycle(
     edges: &[DependencyEdgeSnapshot],
 ) -> Result<(), Vec<WorkItemId>> {
     // Build in-degree map
-    let mut in_degree: BTreeMap<WorkItemId, usize> = items
-        .keys()
-        .map(|id| (id.clone(), 0))
-        .collect();
+    let mut in_degree: BTreeMap<WorkItemId, usize> =
+        items.keys().map(|id| (id.clone(), 0)).collect();
 
     for edge in edges {
         if edge.kind == DependencyEdgeKindSnapshot::Blocks
@@ -201,12 +219,12 @@ pub fn detect_cycle(
 
         // Reduce in-degree of neighbors
         for edge in edges {
-            if edge.from_id == node_id {
-                if let Some(count) = in_degree.get_mut(&edge.to_id) {
-                    *count = count.saturating_sub(1);
-                    if *count == 0 {
-                        queue.push(edge.to_id.clone());
-                    }
+            if edge.from_id == node_id
+                && let Some(count) = in_degree.get_mut(&edge.to_id)
+            {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    queue.push(edge.to_id.clone());
                 }
             }
         }
@@ -298,7 +316,9 @@ pub struct HorizonStats {
 ///
 /// Returns `Err(LedgerNotImported)` if no items exist.
 /// Returns `Err(MultipleActiveWorkItems)` if >1 ACTIVE item found (fail-closed).
-pub fn project_status(snapshot: &RoadmapSnapshot) -> Result<StatusProjection, RoadmapProjectionError> {
+pub fn project_status(
+    snapshot: &RoadmapSnapshot,
+) -> Result<StatusProjection, RoadmapProjectionError> {
     if snapshot.work_items.is_empty() {
         return Err(RoadmapProjectionError::LedgerNotImported);
     }
@@ -312,9 +332,7 @@ pub fn project_status(snapshot: &RoadmapSnapshot) -> Result<StatusProjection, Ro
         .collect();
 
     if active_items.len() > 1 {
-        return Err(RoadmapProjectionError::MultipleActiveWorkItems {
-            ids: active_items,
-        });
+        return Err(RoadmapProjectionError::MultipleActiveWorkItems { ids: active_items });
     }
 
     let active_item = active_items.into_iter().next();
@@ -326,7 +344,10 @@ pub fn project_status(snapshot: &RoadmapSnapshot) -> Result<StatusProjection, Ro
     let mut non_executable_count = 0usize;
 
     for wi in snapshot.work_items.values() {
-        let horizon = wi.spine_horizon.clone().unwrap_or_else(|| "unknown".to_string());
+        let horizon = wi
+            .spine_horizon
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
 
         let stats = per_horizon.entry(horizon.clone()).or_insert(HorizonStats {
             total: 0,
@@ -462,7 +483,9 @@ pub fn project_next(snapshot: &RoadmapSnapshot) -> Result<NextProjection, Roadma
 
         // This item is eligible — check promotion conditions
         // Clause 5a: PROPOSED + exit_gate → promote to READY
-        if wi.status == WorkItemStatus::Draft && is_proposed_spine_status(wi.spine_status.as_deref()) {
+        if wi.status == WorkItemStatus::Draft
+            && is_proposed_spine_status(wi.spine_status.as_deref())
+        {
             if wi.exit_gate.is_some() && !wi.exit_gate.as_ref().unwrap().is_empty() {
                 return Ok(NextProjection {
                     item_id: wi.id.clone(),
@@ -566,15 +589,16 @@ pub fn project_blocked(
         }
 
         // Check for missing exit_gate on PROPOSED items
-        if wi.status == WorkItemStatus::Draft && is_proposed_spine_status(wi.spine_status.as_deref()) {
-            if wi.exit_gate.is_none() || wi.exit_gate.as_ref().unwrap().is_empty() {
-                promotion_blocked.push(PromotionBlockedItem {
-                    item_id: wi.id.clone(),
-                    spine_order: wi.spine_order.unwrap_or(0),
-                    missing: "exit_gate".to_string(),
-                });
-                continue;
-            }
+        if wi.status == WorkItemStatus::Draft
+            && is_proposed_spine_status(wi.spine_status.as_deref())
+            && (wi.exit_gate.is_none() || wi.exit_gate.as_ref().unwrap().is_empty())
+        {
+            promotion_blocked.push(PromotionBlockedItem {
+                item_id: wi.id.clone(),
+                spine_order: wi.spine_order.unwrap_or(0),
+                missing: "exit_gate".to_string(),
+            });
+            continue;
         }
 
         // Check for non-terminal blockers
@@ -641,12 +665,13 @@ pub fn project_show(
         });
     }
 
-    let wi = snapshot
-        .work_items
-        .get(work_item_id)
-        .ok_or(RoadmapProjectionError::UnknownWorkItem {
-            id: work_item_id.to_string(),
-        })?;
+    let wi =
+        snapshot
+            .work_items
+            .get(work_item_id)
+            .ok_or(RoadmapProjectionError::UnknownWorkItem {
+                id: work_item_id.to_string(),
+            })?;
 
     // Get outgoing edges (what this item depends on)
     let depends_on: Vec<WorkItemId> = snapshot
@@ -763,7 +788,10 @@ fn graph_to_json(snapshot: &RoadmapSnapshot) -> Result<String, RoadmapProjection
             id: wi.id.clone(),
             title: wi.title.clone(),
             status: serde_json::to_string(&wi.status).unwrap(),
-            horizon: wi.spine_horizon.clone().unwrap_or_else(|| "unknown".to_string()),
+            horizon: wi
+                .spine_horizon
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             order: wi.spine_order.unwrap_or(0),
         })
         .collect();
@@ -777,8 +805,7 @@ fn graph_to_json(snapshot: &RoadmapSnapshot) -> Result<String, RoadmapProjection
         .collect();
 
     let graph = GraphJson { nodes, edges };
-    serde_json::to_string_pretty(&graph)
-        .map_err(|e| RoadmapProjectionError::LedgerNotImported) // TODO: better error
+    serde_json::to_string_pretty(&graph).map_err(|e| RoadmapProjectionError::LedgerNotImported) // TODO: better error
 }
 
 /// Emits the graph as DOT format.

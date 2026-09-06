@@ -10,11 +10,8 @@ use sddk_domain::planning::WorkItemStatus;
 /// Scenario: spine PROPOSED + NULL exit_gate → PromotionBlocked.
 #[test]
 fn resolve_proposed_null_exit_gate_promotion_blocked() {
-    let result = WorkItemStatus::resolve_for_projection(
-        WorkItemStatus::Draft,
-        Some("proposed"),
-        None,
-    );
+    let result =
+        WorkItemStatus::resolve_for_projection(WorkItemStatus::Draft, Some("proposed"), None);
     assert_eq!(
         result,
         WorkItemStatus::PromotionBlocked,
@@ -25,11 +22,8 @@ fn resolve_proposed_null_exit_gate_promotion_blocked() {
 /// Scenario: spine PROPOSED + empty exit_gate → PromotionBlocked.
 #[test]
 fn resolve_proposed_empty_exit_gate_promotion_blocked() {
-    let result = WorkItemStatus::resolve_for_projection(
-        WorkItemStatus::Draft,
-        Some("proposed"),
-        Some(""),
-    );
+    let result =
+        WorkItemStatus::resolve_for_projection(WorkItemStatus::Draft, Some("proposed"), Some(""));
     assert_eq!(
         result,
         WorkItemStatus::PromotionBlocked,
@@ -55,11 +49,8 @@ fn resolve_proposed_with_exit_gate_draft() {
 /// Scenario: ACTIVE status is unaffected by resolve_for_projection.
 #[test]
 fn resolve_active_unchanged() {
-    let result = WorkItemStatus::resolve_for_projection(
-        WorkItemStatus::Active,
-        Some("active"),
-        None,
-    );
+    let result =
+        WorkItemStatus::resolve_for_projection(WorkItemStatus::Active, Some("active"), None);
     assert_eq!(
         result,
         WorkItemStatus::Active,
@@ -70,11 +61,7 @@ fn resolve_active_unchanged() {
 /// Scenario: non-spine item (spine_status = None) is not PromotionBlocked.
 #[test]
 fn resolve_non_spine_item_not_blocked() {
-    let result = WorkItemStatus::resolve_for_projection(
-        WorkItemStatus::Draft,
-        None,
-        None,
-    );
+    let result = WorkItemStatus::resolve_for_projection(WorkItemStatus::Draft, None, None);
     assert_eq!(
         result,
         WorkItemStatus::Draft,

@@ -5,8 +5,8 @@
 //! Extends `PlanningGraphRead` with roadmap-wide (cross-cycle) read methods.
 //! Object-safe: no associated types, no `Self` in generics.
 
-use crate::planning::projections::{DependencyEdgeSnapshot, WorkItemSnapshot};
 use crate::StorageError;
+use crate::planning::projections::{DependencyEdgeSnapshot, WorkItemSnapshot};
 
 // ── RoadmapGraphRead trait ─────────────────────────────────────────────────
 
@@ -55,7 +55,9 @@ pub trait RoadmapGraphRead {
     ///
     /// Collects all work items and edges roadmap-wide, plus bound cycles
     /// from the reconciliation block.
-    fn snapshot_roadmap(&self) -> Result<crate::planning::projections::RoadmapSnapshot, StorageError> {
+    fn snapshot_roadmap(
+        &self,
+    ) -> Result<crate::planning::projections::RoadmapSnapshot, StorageError> {
         let work_items = self.list_work_items_roadmap()?;
         let edges = self.list_dependency_edges_roadmap()?;
 

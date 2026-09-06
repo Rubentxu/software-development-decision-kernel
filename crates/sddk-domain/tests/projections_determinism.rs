@@ -10,16 +10,14 @@
 
 use std::fs;
 
-use sddk_domain::planning::projections::{
-    project_blocked, project_graph, project_next, project_show, project_status,
-    DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, GraphFormat, RoadmapSnapshot,
-    WorkItemSnapshot,
-};
 use sddk_domain::planning::WorkItemStatus;
-use sddk_domain::spine::{parse_spine_yaml, SpineStatus};
+use sddk_domain::planning::projections::{
+    DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, GraphFormat, RoadmapSnapshot,
+    WorkItemSnapshot, project_blocked, project_graph, project_next, project_show, project_status,
+};
+use sddk_domain::spine::{SpineStatus, parse_spine_yaml};
 
-const FIXTURE_PATH: &str =
-    "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
+const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
 const STATUS_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_status.golden.json";
 const GRAPH_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_graph.golden.json";
 
@@ -194,6 +192,5 @@ fn determinism_all_projections_succeed() {
     // project_graph all formats
     let _ = project_graph(&snap, GraphFormat::Json).expect("project_graph Json must succeed");
     let _ = project_graph(&snap, GraphFormat::Dot).expect("project_graph Dot must succeed");
-    let _ = project_graph(&snap, GraphFormat::Mermaid)
-        .expect("project_graph Mermaid must succeed");
+    let _ = project_graph(&snap, GraphFormat::Mermaid).expect("project_graph Mermaid must succeed");
 }

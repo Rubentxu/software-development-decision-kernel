@@ -9,16 +9,13 @@
 
 use std::fs;
 
-use sddk_domain::planning::projections::{
-    project_graph, project_status, GraphFormat,
-};
+use sddk_domain::planning::projections::{GraphFormat, project_graph, project_status};
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
-use sddk_storage::spine_import::import_spine;
 use sddk_storage::Storage;
+use sddk_storage::spine_import::import_spine;
 
 // Path to the pinned fixture (relative to sddk-storage crate root)
-const FIXTURE_PATH: &str =
-    "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
+const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
 const STATUS_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_status.golden.json";
 const GRAPH_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_graph.golden.json";
 
@@ -42,14 +39,18 @@ fn import_fixture() -> Storage {
 
 /// Helper: run project_status on storage and return JSON string.
 fn run_project_status(storage: &Storage) -> String {
-    let snapshot = storage.snapshot_roadmap().expect("failed to snapshot roadmap");
+    let snapshot = storage
+        .snapshot_roadmap()
+        .expect("failed to snapshot roadmap");
     let projection = project_status(&snapshot).expect("project_status failed");
     serde_json::to_string_pretty(&projection).expect("failed to serialize status projection")
 }
 
 /// Helper: run project_graph on storage and return JSON string.
 fn run_project_graph(storage: &Storage) -> String {
-    let snapshot = storage.snapshot_roadmap().expect("failed to snapshot roadmap");
+    let snapshot = storage
+        .snapshot_roadmap()
+        .expect("failed to snapshot roadmap");
     let graph = project_graph(&snapshot, GraphFormat::Json).expect("project_graph failed");
     graph
 }

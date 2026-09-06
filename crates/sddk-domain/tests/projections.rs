@@ -11,12 +11,12 @@
 
 use std::fs;
 
-use sddk_domain::planning::projections::{
-    project_blocked, project_graph, project_next, project_show, project_status,
-    DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, GraphFormat, NextPromotion,
-    RoadmapProjectionError, WorkItemSnapshot,
-};
 use sddk_domain::planning::WorkItemStatus;
+use sddk_domain::planning::projections::{
+    DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, GraphFormat, NextPromotion,
+    RoadmapProjectionError, WorkItemSnapshot, project_blocked, project_graph, project_next,
+    project_show, project_status,
+};
 
 const STATUS_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_status.golden.json";
 const GRAPH_GOLDEN_PATH: &str = "../sddk-domain/tests/fixtures/project_graph.golden.json";
@@ -28,10 +28,7 @@ fn make_snapshot(
     edges: Vec<DependencyEdgeSnapshot>,
 ) -> sddk_domain::planning::projections::RoadmapSnapshot {
     sddk_domain::planning::projections::RoadmapSnapshot {
-        work_items: items
-            .into_iter()
-            .map(|wi| (wi.id.clone(), wi))
-            .collect(),
+        work_items: items.into_iter().map(|wi| (wi.id.clone(), wi)).collect(),
         edges,
         bound_cycles: vec![],
     }
@@ -85,8 +82,7 @@ fn wi(
 /// Scenario: fresh post-reconciliation spine shows expected status partition.
 #[test]
 fn project_status_against_pinned_fixture_matches_golden() {
-    let golden =
-        fs::read_to_string(STATUS_GOLDEN_PATH).expect("golden file must exist");
+    let golden = fs::read_to_string(STATUS_GOLDEN_PATH).expect("golden file must exist");
     let golden_val: serde_json::Value =
         serde_json::from_str(&golden).expect("golden must be valid JSON");
 
@@ -176,7 +172,10 @@ fn project_status_zero_active_items_returns_none() {
 
     let snapshot = make_snapshot(vec![a, b], all_edges);
     let result = project_status(&snapshot).expect("project_status must succeed");
-    assert!(result.active_item.is_none(), "no active items → active_item is None");
+    assert!(
+        result.active_item.is_none(),
+        "no active items → active_item is None"
+    );
 }
 
 /// Scenario: 2 ACTIVE items → Err(MultipleActiveWorkItems).
@@ -215,7 +214,10 @@ fn project_status_multiple_active_items_fails_closed() {
 fn project_status_empty_snapshot_returns_not_imported() {
     let snapshot = make_snapshot(vec![], vec![]);
     let result = project_status(&snapshot);
-    assert!(matches!(result, Err(RoadmapProjectionError::LedgerNotImported)));
+    assert!(matches!(
+        result,
+        Err(RoadmapProjectionError::LedgerNotImported)
+    ));
 }
 
 /// Scenario: per-horizon partition is correct (H0=terminal, H1=mixed).
@@ -504,7 +506,10 @@ fn project_next_cycle_detected_via_blocked() {
     let snapshot = make_snapshot(vec![a, b], all_edges);
     // project_blocked calls detect_cycle before enumeration
     let result = project_blocked(&snapshot);
-    assert!(matches!(result, Err(RoadmapProjectionError::DependencyCycle { .. })));
+    assert!(matches!(
+        result,
+        Err(RoadmapProjectionError::DependencyCycle { .. })
+    ));
 }
 
 // ── AC-PLN4-07: project_blocked ────────────────────────────────────────────
@@ -670,7 +675,10 @@ fn project_blocked_sorted_by_spine_order() {
             .collect();
         let mut sorted = orders.clone();
         sorted.sort();
-        assert_eq!(orders, sorted, "promotion_blocked must be sorted by spine_order ASC");
+        assert_eq!(
+            orders, sorted,
+            "promotion_blocked must be sorted by spine_order ASC"
+        );
     }
 }
 
@@ -734,9 +742,14 @@ fn project_show_rejects_cycle_id() {
     );
 
     let snapshot = make_snapshot(vec![a], edges);
-    let result =
-        project_show(&snapshot, "p-63676b11dc0ef88f/pln-ledger-004-decision-plane-projections");
-    assert!(matches!(result, Err(RoadmapProjectionError::UnknownWorkItem { .. })));
+    let result = project_show(
+        &snapshot,
+        "p-63676b11dc0ef88f/pln-ledger-004-decision-plane-projections",
+    );
+    assert!(matches!(
+        result,
+        Err(RoadmapProjectionError::UnknownWorkItem { .. })
+    ));
 }
 
 /// Scenario: item with no reverse-deps.
@@ -808,8 +821,7 @@ fn project_graph_json_matches_golden() {
     let snapshot = make_snapshot(vec![a, b, c, d], all_edges);
     let result = project_graph(&snapshot, GraphFormat::Json).expect("project_graph must succeed");
 
-    let result_val: serde_json::Value =
-        serde_json::from_str(&result).expect("must be valid JSON");
+    let result_val: serde_json::Value = serde_json::from_str(&result).expect("must be valid JSON");
     let golden_val: serde_json::Value =
         serde_json::from_str(&golden).expect("golden must be valid JSON");
 
@@ -863,8 +875,8 @@ fn project_graph_mermaid_valid_syntax() {
     );
 
     let snapshot = make_snapshot(vec![a], edges);
-    let result = project_graph(&snapshot, GraphFormat::Mermaid)
-        .expect("project_graph must succeed");
+    let result =
+        project_graph(&snapshot, GraphFormat::Mermaid).expect("project_graph must succeed");
 
     let trimmed = result.trim();
     assert!(

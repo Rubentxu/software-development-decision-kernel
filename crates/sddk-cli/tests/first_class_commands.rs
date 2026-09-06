@@ -164,8 +164,9 @@ fn release_revalidate_help_exits_zero() {
 #[test]
 fn plan_no_deprecation_warning_constant() {
     let plan_rs = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plan.rs")
-    ).expect("read plan.rs");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plan.rs"),
+    )
+    .expect("read plan.rs");
     assert!(
         !plan_rs.contains("DEPRECATION_WARNING"),
         "DEPRECATION_WARNING constant must be removed from plan.rs"

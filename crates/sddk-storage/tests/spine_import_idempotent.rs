@@ -2,13 +2,13 @@
 //!
 //! Tests AC-PLN3-07, AC-PLN3-08, AC-PLN3-10, AC-PLN3-11, AC-PLN3-12, AC-PLN3-15.
 
+use rusqlite;
 use sddk_domain::planning::WorkItemStatus;
 use sddk_domain::spine::SpineStatus;
 use sddk_storage::Storage;
 use sddk_storage::spine_import::{
     SpineImportError, compute_spine_body_ref, import_spine, map_spine_status,
 };
-use rusqlite;
 use tempfile::TempDir;
 
 fn make_spine_yaml(items_yaml: &str) -> Vec<u8> {
@@ -46,16 +46,16 @@ fn make_spine_item_with_order(
     depends_on: [{}]
     objective: Test objective for {}
     exit_gate: Test gate"#,
-        order,
-        id,
-        horizon,
-        status,
-        deps,
-        id
+        order, id, horizon, status, deps, id
     )
 }
 
-fn make_spine_item_with_gate(id: &str, status: &str, depends_on: &[&str], exit_gate: &str) -> String {
+fn make_spine_item_with_gate(
+    id: &str,
+    status: &str,
+    depends_on: &[&str],
+    exit_gate: &str,
+) -> String {
     let deps = depends_on
         .iter()
         .map(|d| format!("\"{}\"", d))

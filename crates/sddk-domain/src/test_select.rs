@@ -119,7 +119,7 @@ impl ImpactPlannerV1 {
         let mut impacted_suts: BTreeSet<String> = BTreeSet::new();
         let mut unmapped_artifacts: BTreeSet<String> = BTreeSet::new();
         let mut unmapped_suts: BTreeSet<String> = BTreeSet::new();
-        let mut missing_relations: BTreeSet<TopologyEdgeKind> = BTreeSet::new();
+        let missing_relations: BTreeSet<TopologyEdgeKind> = BTreeSet::new();
 
         // Sort changed artifacts by path for deterministic ordering
         let mut sorted_artifacts: Vec<&ChangedArtifactV1> =
@@ -549,7 +549,7 @@ impl ImpactPlannerV1 {
     /// Converts a stage map into a `TestBatchV1` with deduplication and sorted test_ids.
     fn make_batch(
         &self,
-        mut stage_map: BTreeMap<String, Vec<ImpactReason>>,
+        stage_map: BTreeMap<String, Vec<ImpactReason>>,
         stage_num: u32,
     ) -> Vec<TestBatchV1> {
         if stage_map.is_empty() {
@@ -584,7 +584,7 @@ impl ImpactPlannerV1 {
         for (cap_id, mut test_groups) in cap_groups {
             // Deduplicate reasons per test (keep unique, sorted)
             for reasons in test_groups.values_mut() {
-                let mut unique: BTreeSet<ImpactReason> = reasons.drain(..).collect();
+                let unique: BTreeSet<ImpactReason> = reasons.drain(..).collect();
                 reasons.extend(unique.into_iter());
                 reasons.sort();
             }

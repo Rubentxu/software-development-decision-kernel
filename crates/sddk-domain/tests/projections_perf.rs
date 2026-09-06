@@ -9,11 +9,11 @@
 use std::fs;
 
 use sddk_domain::planning::projections::{
-    project_blocked, project_graph, project_next, project_status, GraphFormat,
+    GraphFormat, project_blocked, project_graph, project_next, project_status,
 };
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
-use sddk_storage::spine_import::import_spine;
 use sddk_storage::Storage;
+use sddk_storage::spine_import::import_spine;
 use tempfile::TempDir;
 
 const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
@@ -92,7 +92,11 @@ fn perf_matches_golden() {
 
     let graph = project_graph(&snap, GraphFormat::Json).expect("graph");
     let golden_graph = load_golden(GRAPH_GOLDEN_PATH);
-    assert_eq!(graph, golden_graph.trim(), "project_graph must match golden file");
+    assert_eq!(
+        graph,
+        golden_graph.trim(),
+        "project_graph must match golden file"
+    );
 }
 
 // ── Soft budget ─────────────────────────────────────────────────────────────────

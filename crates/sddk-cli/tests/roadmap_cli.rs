@@ -19,8 +19,7 @@ use tempfile::TempDir;
 // ── Test fixtures ──────────────────────────────────────────────────────────────
 
 /// Path to the pinned spine fixture.
-const FIXTURE_PATH: &str =
-    "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
+const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
 
 /// Load the pinned spine fixture as bytes.
 fn load_fixture() -> Vec<u8> {
@@ -64,7 +63,11 @@ fn build_adopted_storage() -> (TempDir, std::path::PathBuf) {
 }
 
 /// Run `sddk` binary as a subprocess with cwd=tmp_path and XDG_STATE_HOME=tmp_path.
-fn run_sddk(tmp_path: &std::path::Path, sddk_bin: &std::path::Path, args: &[&str]) -> std::process::Output {
+fn run_sddk(
+    tmp_path: &std::path::Path,
+    sddk_bin: &std::path::Path,
+    args: &[&str],
+) -> std::process::Output {
     Command::new(sddk_bin)
         .args(args)
         .current_dir(tmp_path)
@@ -80,7 +83,12 @@ fn run_sddk(tmp_path: &std::path::Path, sddk_bin: &std::path::Path, args: &[&str
 fn roadmap_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Dispatch: `sddk plan roadmap status --help` exits 0.
@@ -88,7 +96,12 @@ fn roadmap_help_exits_zero() {
 fn roadmap_status_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "status", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Dispatch: `sddk plan roadmap next --help` exits 0.
@@ -96,7 +109,12 @@ fn roadmap_status_help_exits_zero() {
 fn roadmap_next_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "next", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Dispatch: `sddk plan roadmap blocked --help` exits 0.
@@ -104,7 +122,12 @@ fn roadmap_next_help_exits_zero() {
 fn roadmap_blocked_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "blocked", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Dispatch: `sddk plan roadmap show --help` exits 0.
@@ -112,7 +135,12 @@ fn roadmap_blocked_help_exits_zero() {
 fn roadmap_show_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "show", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Dispatch: `sddk plan roadmap graph --help` exits 0.
@@ -120,7 +148,12 @@ fn roadmap_show_help_exits_zero() {
 fn roadmap_graph_help_exits_zero() {
     let (tmp, bin) = build_adopted_storage();
     let output = run_sddk(tmp.path(), &bin, &["plan", "roadmap", "graph", "--help"]);
-    assert_eq!(output.status.code(), Some(0), "help must exit 0: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "help must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 // ── AC-PLN4-12: functional tests ───────────────────────────────────────────────

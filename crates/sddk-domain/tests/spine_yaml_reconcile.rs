@@ -6,8 +6,8 @@
 //! - Items in both but spine metadata differs → backfill (if NULL) or conflict (if populated)
 //! - Dependency edges reconciled correctly
 
-use sddk_storage::spine_import::import_spine;
 use sddk_storage::Storage;
+use sddk_storage::spine_import::import_spine;
 use tempfile::TempDir;
 
 // ── Test helpers ───────────────────────────────────────────────────────────────
@@ -100,7 +100,10 @@ fn reconcile_yaml_has_fewer_items() {
             |row| row.get(0),
         )
         .expect("WI-002 must still exist");
-    assert_eq!(count, 1, "additive reconciliation: removed from YAML ≠ deleted from DB");
+    assert_eq!(
+        count, 1,
+        "additive reconciliation: removed from YAML ≠ deleted from DB"
+    );
 }
 
 /// Scenario: YAML unchanged → already_present (no new imports).
@@ -136,12 +139,14 @@ fn reconcile_horizon_backfill_from_null() {
             r#"INSERT INTO projects (project_id, display_name, remote_url, scope, created_at)
                VALUES ('__spine_import__', 'Spine Import', NULL, 'spine-import', 1234567890)"#,
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             r#"INSERT INTO workspaces (workspace_id, project_id, canonical_path, created_at)
                VALUES ('__spine_import_ws__', '__spine_import__', 'spine-import', 1234567890)"#,
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             r#"INSERT INTO cycles (cycle_id, project_id, workspace_id, status, phase, manifest_json, created_at, updated_at)
                VALUES ('WI-001', '__spine_import__', '__spine_import_ws__', 'OPEN', 'build', '{}', 1234567890, 1234567890)"#,
@@ -154,7 +159,8 @@ fn reconcile_horizon_backfill_from_null() {
                VALUES ('WI-001', 'WI-001', 'WI-001', 'Obj for WI-001', '"draft"', 1234567890, 1,
                        100, NULL, 'PROPOSED', 'Gate-WI-001')"#,
             [],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     // Import with H1 horizon → backfill NULL horizon

@@ -155,13 +155,19 @@ pub fn compute_spine_body_ref(canonical_bytes: &[u8]) -> sddk_domain::CasHash {
 /// Serializes a SpineHorizon to its lowercase snake_case string for storage.
 fn serialize_horizon(horizon: SpineHorizon) -> String {
     // SpineHorizon uses serde(rename_all = "snake_case"), so "h0", "h1", etc.
-    serde_json::to_string(&horizon).unwrap().trim_matches('"').to_string()
+    serde_json::to_string(&horizon)
+        .unwrap()
+        .trim_matches('"')
+        .to_string()
 }
 
 /// Serializes a SpineStatus to its SCREAMING_SNAKE_CASE string for storage.
 fn serialize_spine_status(status: SpineStatus) -> String {
     // SpineStatus uses serde(rename_all = "SCREAMING_SNAKE_CASE"), so "PROPOSED", etc.
-    serde_json::to_string(&status).unwrap().trim_matches('"').to_string()
+    serde_json::to_string(&status)
+        .unwrap()
+        .trim_matches('"')
+        .to_string()
 }
 
 /// Imports the EXECUTION-SPINE.yaml bytes into the provided storage.
@@ -260,8 +266,7 @@ pub fn import_spine(
                         && existing_wi.spine_horizon != spine_horizon)
                     || (existing_wi.spine_status.is_some()
                         && existing_wi.spine_status != spine_status)
-                    || (existing_wi.exit_gate.is_some()
-                        && existing_wi.exit_gate != exit_gate);
+                    || (existing_wi.exit_gate.is_some() && existing_wi.exit_gate != exit_gate);
 
                 if would_conflict {
                     // Conflict: a non-NULL spine column differs
@@ -269,20 +274,31 @@ pub fn import_spine(
                     return Err(SpineImportError::ImportConflict {
                         id: work_item_id.clone(),
                         field: "spine_metadata".to_string(),
-                        expected: format!("{:?}", (spine_order, &spine_horizon, &spine_status, &exit_gate)),
-                        actual: format!("{:?}", (existing_wi.spine_order, &existing_wi.spine_horizon, &existing_wi.spine_status, &existing_wi.exit_gate)),
+                        expected: format!(
+                            "{:?}",
+                            (spine_order, &spine_horizon, &spine_status, &exit_gate)
+                        ),
+                        actual: format!(
+                            "{:?}",
+                            (
+                                existing_wi.spine_order,
+                                &existing_wi.spine_horizon,
+                                &existing_wi.spine_status,
+                                &existing_wi.exit_gate
+                            )
+                        ),
                     });
                 }
 
                 if needs_backfill {
                     // Backfill the NULL spine columns
-                    storage.backfill_spine_columns(
-                        &work_item_id,
-                        spine_order.unwrap(),
-                        spine_horizon.as_deref().unwrap(),
-                        spine_status.as_deref().unwrap(),
-                        exit_gate.as_deref().unwrap(),
-                    )?;
+                    // spine_order/spine_horizon/spine_status/exit_gate are always Some here
+                    // (constructed as Some(...) just above)
+                    let order = *spine_order.as_ref().unwrap();
+                    let horizon = spine_horizon.as_deref().unwrap_or("");
+                    let status = spine_status.as_deref().unwrap_or("");
+                    let gate = exit_gate.as_deref().unwrap_or("");
+                    storage.backfill_spine_columns(&work_item_id, order, horizon, status, gate)?;
                     backfilled += 1;
                 } else {
                     already_present += 1;

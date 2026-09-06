@@ -2372,7 +2372,13 @@ impl Storage {
                 spine_status = ?3,
                 exit_gate = ?4
              WHERE id = ?5",
-            params![spine_order, spine_horizon, spine_status, exit_gate, work_item_id],
+            params![
+                spine_order,
+                spine_horizon,
+                spine_status,
+                exit_gate,
+                work_item_id
+            ],
         )?;
         Ok(())
     }
@@ -2956,31 +2962,40 @@ impl sddk_domain::PlanningGraphRead for Storage {
 impl sddk_domain::planning::roadmap_read::RoadmapGraphRead for Storage {
     fn list_work_items_roadmap(
         &self,
-    ) -> std::result::Result<Vec<sddk_domain::planning::projections::WorkItemSnapshot>, sddk_domain::StorageError>
-    {
+    ) -> std::result::Result<
+        Vec<sddk_domain::planning::projections::WorkItemSnapshot>,
+        sddk_domain::StorageError,
+    > {
         Storage::list_work_items_roadmap(self).map_err(sddk_domain::StorageError::from)
     }
 
     fn list_dependency_edges_roadmap(
         &self,
-    ) -> std::result::Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>, sddk_domain::StorageError>
-    {
+    ) -> std::result::Result<
+        Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>,
+        sddk_domain::StorageError,
+    > {
         Storage::list_dependency_edges_roadmap(self).map_err(sddk_domain::StorageError::from)
     }
 
     fn list_incoming_edges_for(
         &self,
         work_item_id: &str,
-    ) -> std::result::Result<Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>, sddk_domain::StorageError>
-    {
-        Storage::list_incoming_edges_for(self, work_item_id).map_err(sddk_domain::StorageError::from)
+    ) -> std::result::Result<
+        Vec<sddk_domain::planning::projections::DependencyEdgeSnapshot>,
+        sddk_domain::StorageError,
+    > {
+        Storage::list_incoming_edges_for(self, work_item_id)
+            .map_err(sddk_domain::StorageError::from)
     }
 
     fn get_work_item_with_spine_metadata(
         &self,
         work_item_id: &str,
-    ) -> std::result::Result<Option<sddk_domain::planning::projections::WorkItemSnapshot>, sddk_domain::StorageError>
-    {
+    ) -> std::result::Result<
+        Option<sddk_domain::planning::projections::WorkItemSnapshot>,
+        sddk_domain::StorageError,
+    > {
         Storage::get_work_item_with_spine_metadata(self, work_item_id)
             .map_err(sddk_domain::StorageError::from)
     }

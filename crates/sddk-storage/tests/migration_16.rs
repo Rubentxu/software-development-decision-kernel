@@ -74,9 +74,7 @@ fn migration_16_adds_four_null_columns() {
     let info: Vec<(String, String)> = conn
         .prepare("PRAGMA table_info(work_items_v1)")
         .unwrap()
-        .query_map([], |row| {
-            Ok((row.get(1)?, row.get(2)?))
-        })
+        .query_map([], |row| Ok((row.get(1)?, row.get(2)?)))
         .unwrap()
         .filter_map(|r| r.ok())
         .collect();
@@ -129,7 +127,10 @@ fn migration_16_import_populates_columns() {
 
     assert_eq!(row.0, 100, "spine_order must be 100");
     assert_eq!(row.1, "h1", "spine_horizon must be h1");
-    assert_eq!(row.2, "PROPOSED", "spine_status must be SCREAMING_SNAKE_CASE");
+    assert_eq!(
+        row.2, "PROPOSED",
+        "spine_status must be SCREAMING_SNAKE_CASE"
+    );
     assert_eq!(row.3, "Test gate", "exit_gate must be populated");
 }
 
@@ -177,7 +178,9 @@ fn migration_16_preserves_existing_rows() {
     let storage = Storage::open(&db_path).expect("must reopen with new schema");
 
     assert_eq!(
-        storage.schema_version().expect("schema_version must be queryable"),
+        storage
+            .schema_version()
+            .expect("schema_version must be queryable"),
         16,
         "schema version must be 16 after migration"
     );

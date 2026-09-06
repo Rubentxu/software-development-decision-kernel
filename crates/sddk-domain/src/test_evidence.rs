@@ -9,7 +9,6 @@
 //! - No filesystem or persistence dependency — EvidenceStoreV1 is an in-memory BTreeMap adapter.
 //! - Port implementor: `TestEvidenceRepository` from test_ports.rs.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::RwLock;
 

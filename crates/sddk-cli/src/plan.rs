@@ -14,16 +14,16 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use sddk_domain::planning::projections::{
+    BlockedProjection, GraphFormat, NextProjection, ShowProjection, StatusProjection,
+    project_blocked, project_graph, project_next, project_show, project_status,
+};
+use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::planning::{
     DECISION_RECORD_SCHEMA_VERSION, DecisionKind, DependencyEdgeKind, DependencyEdgeRecord,
     DependencyEdgeV1, EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
     PlanningEvidenceKind, WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
 };
-use sddk_domain::planning::projections::{
-    project_blocked, project_graph, project_next, project_show, project_status,
-    BlockedProjection, GraphFormat, NextProjection, ShowProjection, StatusProjection,
-};
-use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::{DependencyResolutionError, DependencyResolutionService};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -509,9 +509,8 @@ fn run_roadmap(command: RoadmapCommand, environment: &CliEnvironment) -> Command
 
 /// Render a value as JSON to stdout.
 fn render_json<T: serde::Serialize>(value: T) -> CommandOutput {
-    let json = serde_json::to_string_pretty(&value).unwrap_or_else(|e| {
-        format!("{{\"error\": \"serialization failed: {}\"", e)
-    });
+    let json = serde_json::to_string_pretty(&value)
+        .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"", e));
     CommandOutput {
         status: 0,
         stdout: json,

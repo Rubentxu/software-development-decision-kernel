@@ -8,8 +8,8 @@
 //! - Spine metadata populated but different → conflict
 
 use sddk_domain::spine::SpineStatus;
-use sddk_storage::spine_import::{import_spine, map_spine_status, ImportSummary};
 use sddk_storage::Storage;
+use sddk_storage::spine_import::{ImportSummary, import_spine, map_spine_status};
 use tempfile::TempDir;
 
 // ── Test helpers ───────────────────────────────────────────────────────────────
@@ -99,7 +99,10 @@ fn reconcile_removed_items_persist() {
         )
         .expect("query must succeed");
 
-    assert_eq!(count, 1, "WI-002 must persist after being removed from YAML");
+    assert_eq!(
+        count, 1,
+        "WI-002 must persist after being removed from YAML"
+    );
 }
 
 // ── AC-PLN4-04: spine metadata backfill and conflict ───────────────────────────
@@ -147,7 +150,10 @@ fn reconcile_backfill_null_columns() {
     // Import spine with the same item — should backfill the NULL columns
     let bytes = make_spine_yaml(&make_spine_item("WI-001", "PROPOSED", 100, "H1"));
     let result = import_spine(&bytes, &mut storage).expect("import must succeed");
-    assert_eq!(result.backfilled, 1, "NULL spine columns must be backfilled");
+    assert_eq!(
+        result.backfilled, 1,
+        "NULL spine columns must be backfilled"
+    );
 
     // Verify columns are now populated
     let conn = rusqlite::Connection::open(&db_path).unwrap();

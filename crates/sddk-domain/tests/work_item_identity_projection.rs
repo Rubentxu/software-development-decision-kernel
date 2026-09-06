@@ -35,7 +35,14 @@ fn identity_projection_excludes_spine_columns() {
     let json = serde_json::to_value(&projection).expect("must serialize");
     let obj = json.as_object().expect("must be object");
 
-    let expected_keys = vec!["id", "cycle_id", "title", "description", "actor_ref", "schema_version"];
+    let expected_keys = vec![
+        "id",
+        "cycle_id",
+        "title",
+        "description",
+        "actor_ref",
+        "schema_version",
+    ];
     let actual_keys: Vec<_> = obj.keys().collect();
 
     assert_eq!(
