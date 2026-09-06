@@ -17,9 +17,6 @@ use tempfile::TempDir;
 
 // ── Test fixtures ──────────────────────────────────────────────────────────────
 
-/// Path to the pinned spine fixture.
-const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
-
 /// Builds an adopted storage tree using the canonical XDG adoption flow.
 /// Returns (root_tempdir, sddk_binary_path).
 /// The canonical layout (with shared tempdir for all XDG vars):
@@ -43,8 +40,18 @@ fn build_adopted_storage() -> (TempDir, std::path::PathBuf) {
         .env("USER", "test-cli-actor")
         .current_dir(tmp.path())
         .args([
-            "adopt", "apply", "--root", tmp_str, "--scope", ".",
-            "--timestamp", "2026-09-06T00:00:00Z", "--actor", "test", "--format", "json",
+            "adopt",
+            "apply",
+            "--root",
+            tmp_str,
+            "--scope",
+            ".",
+            "--timestamp",
+            "2026-09-06T00:00:00Z",
+            "--actor",
+            "test",
+            "--format",
+            "json",
         ])
         .output()
         .expect("adopt apply");
@@ -66,7 +73,7 @@ fn build_adopted_storage() -> (TempDir, std::path::PathBuf) {
         .env("XDG_CACHE_HOME", tmp_str)
         .env("USER", "test-cli-actor")
         .current_dir(tmp.path())
-        .args(["plan", "import", "--spine", &spine_path.to_str().unwrap()])
+        .args(["plan", "import", "--spine", spine_path.to_str().unwrap()])
         .output()
         .expect("plan import");
     assert!(
