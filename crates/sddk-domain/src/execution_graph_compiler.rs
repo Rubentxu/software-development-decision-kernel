@@ -178,10 +178,8 @@ fn compute_max_depth(nodes: &BTreeMap<OperatorId, Operator>) -> u64 {
 
     // Find root nodes (operators never referenced by any other)
     let all_ids: BTreeSet<OperatorId> = nodes.keys().cloned().collect();
-    let referenced: BTreeSet<OperatorId> = nodes
-        .values()
-        .flat_map(|op| op.referenced_ids())
-        .collect();
+    let referenced: BTreeSet<OperatorId> =
+        nodes.values().flat_map(|op| op.referenced_ids()).collect();
     let roots: Vec<OperatorId> = all_ids.difference(&referenced).cloned().collect();
 
     let mut max_depth_found = 0u64;
@@ -203,7 +201,13 @@ fn compute_max_depth(nodes: &BTreeMap<OperatorId, Operator>) -> u64 {
         if let Some(op) = nodes.get(current) {
             for child_id in op.referenced_ids() {
                 if nodes.contains_key(&child_id) {
-                    dfs_depth(nodes, &child_id, visited, current_depth + 1, max_depth_found);
+                    dfs_depth(
+                        nodes,
+                        &child_id,
+                        visited,
+                        current_depth + 1,
+                        max_depth_found,
+                    );
                 }
             }
         }
@@ -342,7 +346,12 @@ pub fn compile_plan_to_revision(
     // Recipe: sha256(parent_digest_hex_or_root || plan_revision_id || compile_anchor)
     // Use raw 32-byte digest as 64 lowercase hex chars (no "sha256:" prefix)
     let parent_digest_hex = parent
-        .map(|p| p.digest.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+        .map(|p| {
+            p.digest
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        })
         .unwrap_or_else(|| "root".to_string());
 
     let mut sha = Sha256::new();

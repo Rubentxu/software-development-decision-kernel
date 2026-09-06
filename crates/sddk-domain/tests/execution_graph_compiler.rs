@@ -11,10 +11,12 @@
 
 use std::collections::BTreeMap;
 
-use sddk_domain::plan_revision::{NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1};
-use sddk_domain::workflow_ir::{Budgets, CapabilityId, NodeId, Operator, OperatorId, WorkflowIR};
 use sddk_domain::ExecutionGraphRevision;
 use sddk_domain::execution_graph_compiler::compile_plan_to_revision;
+use sddk_domain::plan_revision::{
+    NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1,
+};
+use sddk_domain::workflow_ir::{Budgets, CapabilityId, NodeId, Operator, OperatorId, WorkflowIR};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,8 +92,8 @@ fn valid_plan_compiles_happy_path() {
 fn chained_compile_increments_revision() {
     let plan = sample_plan_revision();
 
-    let parent = compile_plan_to_revision(&plan, None, "anchor-v1")
-        .expect("first compile should succeed");
+    let parent =
+        compile_plan_to_revision(&plan, None, "anchor-v1").expect("first compile should succeed");
 
     let child = compile_plan_to_revision(&plan, Some(&parent), "anchor-v1-chained")
         .expect("second compile should succeed");
@@ -120,10 +122,10 @@ fn chained_compile_increments_revision() {
 fn identical_input_byte_equal_output() {
     let plan = sample_plan_revision();
 
-    let r1 = compile_plan_to_revision(&plan, None, "anchor-v1")
-        .expect("first compile should succeed");
-    let r2 = compile_plan_to_revision(&plan, None, "anchor-v1")
-        .expect("second compile should succeed");
+    let r1 =
+        compile_plan_to_revision(&plan, None, "anchor-v1").expect("first compile should succeed");
+    let r2 =
+        compile_plan_to_revision(&plan, None, "anchor-v1").expect("second compile should succeed");
 
     let ser1 = serde_json::to_vec(&r1).expect("r1 must serialize");
     let ser2 = serde_json::to_vec(&r2).expect("r2 must serialize");
@@ -139,15 +141,16 @@ fn identical_input_byte_equal_output() {
 fn serde_round_trip_preserves_digest() {
     let plan = sample_plan_revision();
 
-    let r1 = compile_plan_to_revision(&plan, None, "anchor-v1")
-        .expect("compile should succeed");
+    let r1 = compile_plan_to_revision(&plan, None, "anchor-v1").expect("compile should succeed");
     let original_digest = r1.digest;
 
     let bytes = serde_json::to_vec(&r1).expect("must serialize");
-    let r2: ExecutionGraphRevision =
-        serde_json::from_slice(&bytes).expect("must deserialize");
+    let r2: ExecutionGraphRevision = serde_json::from_slice(&bytes).expect("must deserialize");
 
-    assert_eq!(r2.digest, original_digest, "round-tripped digest must be unchanged");
+    assert_eq!(
+        r2.digest, original_digest,
+        "round-tripped digest must be unchanged"
+    );
 }
 
 /// Scenario: different anchor yields different revision_id (REQ-DW-RUNTIME-001-Determinism, -Provenance-Identity).
@@ -155,16 +158,17 @@ fn serde_round_trip_preserves_digest() {
 fn different_anchor_yields_different_revision_id() {
     let plan = sample_plan_revision();
 
-    let r_a = compile_plan_to_revision(&plan, None, "anchor-a")
-        .expect("compile with anchor-a");
-    let r_b = compile_plan_to_revision(&plan, None, "anchor-b")
-        .expect("compile with anchor-b");
+    let r_a = compile_plan_to_revision(&plan, None, "anchor-a").expect("compile with anchor-a");
+    let r_b = compile_plan_to_revision(&plan, None, "anchor-b").expect("compile with anchor-b");
 
     assert_ne!(
         r_a.revision_id, r_b.revision_id,
         "different anchors must produce different revision_ids"
     );
-    assert_ne!(r_a.digest, r_b.digest, "different anchors must produce different digests");
+    assert_ne!(
+        r_a.digest, r_b.digest,
+        "different anchors must produce different digests"
+    );
 }
 
 /// Scenario: revision_id triple-binds identity (REQ-DW-RUNTIME-001-Provenance-Identity).
@@ -172,10 +176,9 @@ fn different_anchor_yields_different_revision_id() {
 fn revision_id_triple_binds_identity() {
     let plan = sample_plan_revision();
 
-    let parent = compile_plan_to_revision(&plan, None, "anchor-root")
-        .expect("parent compile");
-    let child = compile_plan_to_revision(&plan, Some(&parent), "anchor-child")
-        .expect("child compile");
+    let parent = compile_plan_to_revision(&plan, None, "anchor-root").expect("parent compile");
+    let child =
+        compile_plan_to_revision(&plan, Some(&parent), "anchor-child").expect("child compile");
 
     // revision_id must be 64 lowercase hex chars (sha256 output)
     let parent_rev_id_str = &parent.revision_id.0;
@@ -187,7 +190,9 @@ fn revision_id_triple_binds_identity() {
     );
     // Digits 0-9 are hex but not lowercase letters, so check differently
     assert!(
-        parent_rev_id_str.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        parent_rev_id_str
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "revision_id must be lowercase hex"
     );
     assert_ne!(
@@ -210,11 +215,26 @@ fn sequence_plan_revision() -> PlanRevisionV1 {
             version: "1.0.0".into(),
         },
         operators: BTreeMap::from([
-            (OperatorId("a".into()), Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() }),
-            (OperatorId("b".into()), Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() }),
-            (OperatorId("seq".into()), Operator::Sequence {
-                body: vec![OperatorId("a".into()), OperatorId("b".into())],
-            }),
+            (
+                OperatorId("a".into()),
+                Operator::Task {
+                    capability: CapabilityId("test.cap".into()),
+                    inputs: Default::default(),
+                },
+            ),
+            (
+                OperatorId("b".into()),
+                Operator::Task {
+                    capability: CapabilityId("test.cap".into()),
+                    inputs: Default::default(),
+                },
+            ),
+            (
+                OperatorId("seq".into()),
+                Operator::Sequence {
+                    body: vec![OperatorId("a".into()), OperatorId("b".into())],
+                },
+            ),
         ]),
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -237,12 +257,14 @@ fn sequence_plan_revision() -> PlanRevisionV1 {
 #[test]
 fn edge_relation_matches_operator_variant() {
     let plan = sequence_plan_revision();
-    let r = compile_plan_to_revision(&plan, None, "anchor-seq-v1")
-        .expect("compile should succeed");
+    let r = compile_plan_to_revision(&plan, None, "anchor-seq-v1").expect("compile should succeed");
 
     // Every edge from a Sequence operator must have relation == "sequence"
     // and from/to present in r.nodes.keys()
-    assert!(!r.edges.is_empty(), "edges must be synthesised from referenced_ids()");
+    assert!(
+        !r.edges.is_empty(),
+        "edges must be synthesised from referenced_ids()"
+    );
     for (edge_id, edge) in &r.edges {
         // Check from/to are in nodes
         assert!(
@@ -277,7 +299,10 @@ fn deterministic_btreemap_edge_set() {
     let r2 = compile_plan_to_revision(&plan, None, "anchor-seq-v1")
         .expect("second compile should succeed");
 
-    assert_eq!(r1.edges, r2.edges, "edges must be equal across identical compilations");
+    assert_eq!(
+        r1.edges, r2.edges,
+        "edges must be equal across identical compilations"
+    );
     // Also verify BTreeMap iteration order is identical
     let keys1: Vec<_> = r1.edges.keys().collect();
     let keys2: Vec<_> = r2.edges.keys().collect();
@@ -295,14 +320,20 @@ fn plan_with_n_nodes(n: usize) -> PlanRevisionV1 {
     for i in 0..n {
         operators.insert(
             OperatorId(format!("op{}", i)),
-            Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+            Operator::Task {
+                capability: CapabilityId("test.cap".into()),
+                inputs: Default::default(),
+            },
         );
     }
     let budgets = Budgets::hard_limits();
     let ir = WorkflowIR {
         ir_id: None,
         schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -326,14 +357,32 @@ fn plan_with_cycle() -> PlanRevisionV1 {
     use std::collections::BTreeMap;
     // a → b → c → a (all sequences, so the cycle is reachable)
     let operators = BTreeMap::from([
-        (OperatorId("a".into()), Operator::Sequence { body: vec![OperatorId("b".into())] }),
-        (OperatorId("b".into()), Operator::Sequence { body: vec![OperatorId("c".into())] }),
-        (OperatorId("c".into()), Operator::Sequence { body: vec![OperatorId("a".into())] }),
+        (
+            OperatorId("a".into()),
+            Operator::Sequence {
+                body: vec![OperatorId("b".into())],
+            },
+        ),
+        (
+            OperatorId("b".into()),
+            Operator::Sequence {
+                body: vec![OperatorId("c".into())],
+            },
+        ),
+        (
+            OperatorId("c".into()),
+            Operator::Sequence {
+                body: vec![OperatorId("a".into())],
+            },
+        ),
     ]);
     let ir = WorkflowIR {
         ir_id: None,
         schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -355,13 +404,19 @@ fn plan_with_cycle() -> PlanRevisionV1 {
 /// Helper: plan with an orphan reference: op "x" references "orphan" which does not exist.
 fn plan_with_orphan_reference() -> PlanRevisionV1 {
     use std::collections::BTreeMap;
-    let operators = BTreeMap::from([
-        (OperatorId("x".into()), Operator::Sequence { body: vec![OperatorId("orphan".into())] }),
-    ]);
+    let operators = BTreeMap::from([(
+        OperatorId("x".into()),
+        Operator::Sequence {
+            body: vec![OperatorId("orphan".into())],
+        },
+    )]);
     let ir = WorkflowIR {
         ir_id: None,
         schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -389,10 +444,19 @@ fn rejects_empty_plan() {
     let result = compile_plan_to_revision(&plan, None, "anchor");
     assert!(result.is_err(), "compile must reject empty plan");
     let err = result.unwrap_err();
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan),
-        "must be EmptyPlan variant, got: {:?}", err);
+    assert!(
+        matches!(
+            err,
+            sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan
+        ),
+        "must be EmptyPlan variant, got: {:?}",
+        err
+    );
     // No partial graph observable
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan));
+    assert!(matches!(
+        err,
+        sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan
+    ));
 }
 
 /// Scenario: node count overflow is rejected (REQ-DW-RUNTIME-001-Fail-Closed-Validation).
@@ -403,8 +467,14 @@ fn rejects_node_count_overflow() {
     let result = compile_plan_to_revision(&plan, None, "anchor");
     assert!(result.is_err(), "compile must reject node count overflow");
     let err = result.unwrap_err();
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::NodeCountExceeded { .. }),
-        "must be NodeCountExceeded, got: {:?}", err);
+    assert!(
+        matches!(
+            err,
+            sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::NodeCountExceeded { .. }
+        ),
+        "must be NodeCountExceeded, got: {:?}",
+        err
+    );
 }
 
 /// Scenario: depth overflow is rejected (REQ-DW-RUNTIME-001-Fail-Closed-Validation).
@@ -415,20 +485,34 @@ fn rejects_depth_overflow() {
     const DEPTH: usize = 65;
     let mut operators = BTreeMap::new();
     for i in 0..DEPTH {
-        let child = if i + 1 < DEPTH { Some(OperatorId(format!("op{}", i + 1))) } else { None };
+        let child = if i + 1 < DEPTH {
+            Some(OperatorId(format!("op{}", i + 1)))
+        } else {
+            None
+        };
         let op = match child {
             Some(c) => Operator::Sequence { body: vec![c] },
-            None => Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() },
+            None => Operator::Task {
+                capability: CapabilityId("test.cap".into()),
+                inputs: Default::default(),
+            },
         };
         operators.insert(OperatorId(format!("op{}", i)), op);
     }
     let ir = WorkflowIR {
-        ir_id: None, schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        ir_id: None,
+        schema_version: 1,
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
-        budgets: Budgets { max_depth: 64, ..Default::default() },
+        budgets: Budgets {
+            max_depth: 64,
+            ..Default::default()
+        },
         required_invariants: Default::default(),
         provenance: sddk_domain::Provenance {
             generated_by: "test-generator".into(),
@@ -444,8 +528,14 @@ fn rejects_depth_overflow() {
     let result = compile_plan_to_revision(&plan, None, "anchor");
     assert!(result.is_err(), "compile must reject depth overflow");
     let err = result.unwrap_err();
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::DepthExceeded { .. }),
-        "must be DepthExceeded, got: {:?}", err);
+    assert!(
+        matches!(
+            err,
+            sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::DepthExceeded { .. }
+        ),
+        "must be DepthExceeded, got: {:?}",
+        err
+    );
 }
 
 /// Scenario: cycle is rejected (REQ-DW-RUNTIME-001-Fail-Closed-Validation).
@@ -455,8 +545,14 @@ fn rejects_cycle() {
     let result = compile_plan_to_revision(&plan, None, "anchor");
     assert!(result.is_err(), "compile must reject cycle");
     let err = result.unwrap_err();
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::CycleDetected),
-        "must be CycleDetected, got: {:?}", err);
+    assert!(
+        matches!(
+            err,
+            sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::CycleDetected
+        ),
+        "must be CycleDetected, got: {:?}",
+        err
+    );
 }
 
 /// Scenario: orphan operator reference is rejected (REQ-DW-RUNTIME-001-Fail-Closed-Validation).
@@ -479,9 +575,11 @@ fn rejects_orphan_reference() {
 #[test]
 fn output_schema_version_is_always_one() {
     let plan = sample_plan_revision();
-    let r = compile_plan_to_revision(&plan, None, "anchor")
-        .expect("compile should succeed");
-    assert_eq!(r.schema_version, 1, "output schema_version must always be 1 (I-2)");
+    let r = compile_plan_to_revision(&plan, None, "anchor").expect("compile should succeed");
+    assert_eq!(
+        r.schema_version, 1,
+        "output schema_version must always be 1 (I-2)"
+    );
 }
 
 /// Scenario: invalid plan mutation is rejected (REQ-DW-RUNTIME-001-Fail-Closed-Validation).
@@ -489,12 +587,20 @@ fn output_schema_version_is_always_one() {
 fn rejects_invalid_plan_mutation() {
     // PlanMutation::StructureReplaced is not applicable to compilation
     use std::collections::BTreeMap;
-    let operators = BTreeMap::from([
-        (OperatorId("t1".into()), Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() }),
-    ]);
+    let operators = BTreeMap::from([(
+        OperatorId("t1".into()),
+        Operator::Task {
+            capability: CapabilityId("test.cap".into()),
+            inputs: Default::default(),
+        },
+    )]);
     let ir = WorkflowIR {
-        ir_id: None, schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        ir_id: None,
+        schema_version: 1,
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -518,7 +624,10 @@ fn rejects_invalid_plan_mutation() {
         normalized,
     };
     let result = compile_plan_to_revision(&plan, None, "anchor");
-    assert!(result.is_err(), "compile must reject StructureReplaced mutation");
+    assert!(
+        result.is_err(),
+        "compile must reject StructureReplaced mutation"
+    );
     let err = result.unwrap_err();
     assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::InvalidPlanMutation { .. }),
         "must be InvalidPlanMutation, got: {:?}", err);
@@ -532,8 +641,12 @@ fn rejects_empty_lineage() {
     use std::collections::BTreeMap;
     let operators = BTreeMap::new(); // empty
     let ir = WorkflowIR {
-        ir_id: None, schema_version: 1,
-        template_ref: sddk_domain::TemplateRef { id: "test.template".into(), version: "1.0.0".into() },
+        ir_id: None,
+        schema_version: 1,
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -553,6 +666,13 @@ fn rejects_empty_lineage() {
     let result = compile_plan_to_revision(&plan, None, "anchor");
     assert!(result.is_err(), "compile must reject empty lineage");
     let err = result.unwrap_err();
-    assert!(matches!(err, sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyLineage | sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan),
-        "must be EmptyLineage or EmptyPlan, got: {:?}", err);
+    assert!(
+        matches!(
+            err,
+            sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyLineage
+                | sddk_domain::execution_graph_compiler::ExecutionGraphCompileError::EmptyPlan
+        ),
+        "must be EmptyLineage or EmptyPlan, got: {:?}",
+        err
+    );
 }
