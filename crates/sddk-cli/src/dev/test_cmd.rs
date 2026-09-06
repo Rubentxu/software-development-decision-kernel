@@ -11,7 +11,7 @@ use std::process::Command;
 
 /// Arguments for `dev test`.
 #[derive(Debug, Clone, clap::Args)]
-pub(super) struct TestArgs {
+pub struct TestArgs {
     #[command(subcommand)]
     pub(super) command: TestCommand,
 }
