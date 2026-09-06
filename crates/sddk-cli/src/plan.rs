@@ -27,8 +27,8 @@ use sddk_domain::planning::{
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{CliEnvironment, CommandOutput, OutputFormat, Storage, failure};
 use crate::cycle::{RuntimeArgs, RuntimeContext};
+use crate::{CliEnvironment, CommandOutput, OutputFormat, Storage, failure};
 
 /// Opens Storage via the canonical RuntimeContext::open() resolver.
 ///
@@ -36,7 +36,10 @@ use crate::cycle::{RuntimeArgs, RuntimeContext};
 /// capability, etc.). This replaces the old walk-up walker that looked for
 /// `.sddk/adoption.json` at the project root — which does not exist for
 /// XDG-resolved adoptions.
-fn open_storage_for_plan(args: &RuntimeArgs, environment: &CliEnvironment) -> anyhow::Result<Storage> {
+fn open_storage_for_plan(
+    args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> anyhow::Result<Storage> {
     let context = RuntimeContext::open(args, environment, false)?;
     Ok(context.storage)
 }
@@ -85,14 +88,15 @@ pub(crate) struct PlanImportArgs {
 }
 
 /// Run `sddk plan import --spine <PATH>`.
-fn run_import(args: PlanImportArgs, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_import(
+    args: PlanImportArgs,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let mut storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
 
@@ -396,24 +400,37 @@ pub(crate) struct DecisionRecordArgs {
 // ── Runner functions ───────────────────────────────────────────────────────────
 
 /// Run the `plan` subcommand dispatcher.
-pub(crate) fn run_plan(command: PlanCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+pub(crate) fn run_plan(
+    command: PlanCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     match command {
         PlanCommand::WorkItem { command } => run_workitem(command, runtime_args, environment),
         PlanCommand::Dep { command } => run_dep(command, runtime_args, environment),
         PlanCommand::Evidence { command } => run_evidence(command, runtime_args, environment),
         PlanCommand::Decision { command } => run_decision(command, runtime_args, environment),
-        PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, runtime_args, environment),
+        PlanCommand::Graph { cycle_id, format } => {
+            run_graph(&cycle_id, format, runtime_args, environment)
+        }
         PlanCommand::Import(args) => run_import(args, runtime_args, environment),
         PlanCommand::Roadmap { command } => run_roadmap(command, runtime_args, environment),
     }
 }
 
 /// Run roadmap decision-plane projection subcommands.
-fn run_roadmap(command: RoadmapCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_roadmap(
+    command: RoadmapCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!("No adopted project found. Run 'sddk adopt' first: {}", e));
+            return failure(format!(
+                "No adopted project found. Run 'sddk adopt' first: {}",
+                e
+            ));
         }
     };
 
@@ -485,14 +502,15 @@ fn render_json<T: serde::Serialize>(value: T) -> CommandOutput {
 
 // ── WorkItem subcommand handler ───────────────────────────────────────────────
 
-fn run_workitem(command: WorkItemCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_workitem(
+    command: WorkItemCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -716,14 +734,15 @@ fn run_workitem(command: WorkItemCommand, runtime_args: &RuntimeArgs, environmen
 
 // ── Dep subcommand handler ────────────────────────────────────────────────────
 
-fn run_dep(command: DepCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_dep(
+    command: DepCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -814,14 +833,15 @@ fn run_dep(command: DepCommand, runtime_args: &RuntimeArgs, environment: &CliEnv
 
 // ── Evidence subcommand handler ────────────────────────────────────────────────
 
-fn run_evidence(command: EvidenceCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_evidence(
+    command: EvidenceCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let mut storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -902,14 +922,15 @@ fn run_evidence(command: EvidenceCommand, runtime_args: &RuntimeArgs, environmen
 
 // ── Decision subcommand handler ────────────────────────────────────────────────
 
-fn run_decision(command: DecisionCommand, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_decision(
+    command: DecisionCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -973,14 +994,16 @@ fn run_decision(command: DecisionCommand, runtime_args: &RuntimeArgs, environmen
 
 // ── Graph subcommand handler ──────────────────────────────────────────────────
 
-fn run_graph(cycle_id: &str, format: OutputFormat, runtime_args: &RuntimeArgs, environment: &CliEnvironment) -> CommandOutput {
+fn run_graph(
+    cycle_id: &str,
+    format: OutputFormat,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     let storage = match open_storage_for_plan(runtime_args, environment) {
         Ok(s) => s,
         Err(e) => {
-            return failure(format!(
-                "sddk plan requires an adopted project: {}",
-                e
-            ));
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match storage.build_provenance_chain(cycle_id) {
