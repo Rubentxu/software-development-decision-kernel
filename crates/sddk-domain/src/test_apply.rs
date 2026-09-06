@@ -1232,7 +1232,6 @@ mod tests {
     fn session_no_runner_commands() {
         // This test verifies that the ApplyVerificationSessionV1 struct and its methods
         // contain no runner command strings. This is a compile-time check via string search.
-        
 
         // Collect all string literals in this module
         let self_module_strings = [

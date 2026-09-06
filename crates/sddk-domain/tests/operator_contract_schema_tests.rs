@@ -7,8 +7,8 @@
 //! - REQ-OPOUT-005: items no longer appears as an output key
 
 use sddk_domain::operator_contract::{
-    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorInputSchema, OperatorOutputSchema,
-    SchemaDialect, default_input_schema, default_output_schema,
+    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorInputSchema, OperatorOutputSchema, SchemaDialect,
+    default_input_schema, default_output_schema,
 };
 use sddk_domain::{CapabilityId, GuardExpr, Operator as DomainOperator, OperatorId};
 
@@ -156,7 +156,6 @@ fn input_and_output_are_distinct_types() {
 /// This test serves as documentation and provides a compile-time anchor.
 #[test]
 fn static_fields_uses_btreemap() {
-    
     let variants = all_variants();
     for variant in &variants {
         let input = default_input_schema(variant);

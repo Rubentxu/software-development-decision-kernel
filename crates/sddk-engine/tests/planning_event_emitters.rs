@@ -7,9 +7,7 @@
 //! - Events are NOT in std_registry (ADR-071 compliance)
 
 use sddk_domain::event_registry::schemas::std_registry;
-use sddk_domain::{
-    ActorKind, EventStore,
-};
+use sddk_domain::{ActorKind, EventStore};
 use sddk_engine::authority::AuthorityContext;
 use sddk_engine::event_bus::emit::{
     DecisionRecordedInput, DependencyAddedInput, EvidenceAttachedInput, WorkItemCreatedInput,

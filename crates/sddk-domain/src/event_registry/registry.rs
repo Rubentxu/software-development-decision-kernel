@@ -84,11 +84,6 @@ impl EventSchemaRegistry {
 mod tests {
     use super::super::schemas::std_registry;
     use super::EventRegistryError;
-    
-    
-    
-
-        
 
     #[test]
     fn registry_resolves_known_types() {

@@ -15,17 +15,14 @@ use sddk_domain::{
     ActorKind, ActorRef, ControlPlane, EventStore as _, GateOutcomeStatus, GateReceiptNextSeqInput,
     GraphStore, Ledger,
 };
-use sddk_storage::{
-    SqliteEventStore, SqliteForkStore, SqliteGraphStore,
-    SqliteProjectionStore,
-};
+use sddk_storage::{SqliteEventStore, SqliteForkStore, SqliteGraphStore, SqliteProjectionStore};
 use serde_json::json;
 
 mod common;
 
 use common::{
-    mk_both_ledgers, mk_control_plane_with_project, mk_cycle, mk_event,
-    mk_registered_mem_ledger, mk_registered_sqlite_ledger,
+    mk_both_ledgers, mk_control_plane_with_project, mk_cycle, mk_event, mk_registered_mem_ledger,
+    mk_registered_sqlite_ledger,
 };
 
 /// Build a [`EventEnvelopeV1`] for the event_store_roundtrip test.

@@ -21,10 +21,7 @@ type StoredUnmapped = Option<(Vec<String>, Vec<String>, Vec<TopologyEdgeKind>)>;
 use sha2::{Digest, Sha256};
 
 #[cfg(test)]
-use crate::test_model::{
-    EdgeProvenanceV1, SutNodeV1,
-    TopologyEdgeV1, VerificationCapabilityV1,
-};
+use crate::test_model::{EdgeProvenanceV1, SutNodeV1, TopologyEdgeV1, VerificationCapabilityV1};
 
 #[allow(unused_imports)]
 // Used in test code via `use super::*;` - required by `#[cfg(test)]` functions.

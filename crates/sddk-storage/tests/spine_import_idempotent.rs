@@ -181,13 +181,15 @@ fn spine_import_objective_mutated_returns_conflict() {
     let bytes_original = make_spine_yaml(&make_spine_item("WI-001", "PROPOSED", &[]));
     import_spine(&bytes_original, &mut storage).unwrap();
 
-    let bytes_mutated = make_spine_yaml(r#"  - order: 1
+    let bytes_mutated = make_spine_yaml(
+        r#"  - order: 1
     id: WI-001
     horizon: H1
     status: PROPOSED
     depends_on: []
     objective: Mutated objective
-    exit_gate: Test gate"#);
+    exit_gate: Test gate"#,
+    );
 
     let result = import_spine(&bytes_mutated, &mut storage);
     assert!(result.is_err(), "mutated objective should return error");

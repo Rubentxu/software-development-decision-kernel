@@ -10,8 +10,8 @@
 //! - Registry is closed; unknown gate names fail to load
 
 use sddk_domain::models::gate_classification::{
-    GateClassificationError, GateKind, RecoveryAction, RecoveryHint,
-    WaiverAuthority, load_classifications,
+    GateClassificationError, GateKind, RecoveryAction, RecoveryHint, WaiverAuthority,
+    load_classifications,
 };
 use std::path::{Path, PathBuf};
 

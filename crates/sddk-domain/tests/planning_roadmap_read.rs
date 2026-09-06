@@ -6,7 +6,6 @@
 //! NOTE: The real `impl RoadmapGraphRead for &Storage` lives in sddk-storage.
 //! This module tests the trait contract using a fake implementation.
 
-
 use sddk_domain::StorageError;
 use sddk_domain::planning::WorkItemStatus;
 use sddk_domain::planning::projections::{

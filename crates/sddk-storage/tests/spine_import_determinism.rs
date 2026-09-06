@@ -51,7 +51,7 @@ fn run_project_graph(storage: &Storage) -> String {
     let snapshot = storage
         .snapshot_roadmap()
         .expect("failed to snapshot roadmap");
-    
+
     project_graph(&snapshot, GraphFormat::Json).expect("project_graph failed")
 }
 
