@@ -3,7 +3,7 @@
 //! These are `pub(crate)` so they are accessible from the integration tests
 //! in the parent directory but not exposed outside the test crate.
 
-use sddk_domain::{ActorKind, ActorRef, EntityRef, LedgerEventInput};
+use sddk_domain::LedgerEventInput;
 use sddk_domain::{
     ControlPlane, CycleManifest, CycleRecord, CycleStatus, Ledger, LedgerFactory, Phase,
 };

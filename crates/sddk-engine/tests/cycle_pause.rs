@@ -9,10 +9,9 @@
 //! - resume writes resume-receipt.json
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
 
 use sddk_domain::{
-    CycleManifest, CyclePath, CycleStatus, PauseReason, Phase, StorageError as DomainStorageError,
+    CycleManifest, CyclePath, CycleStatus, PauseReason, Phase,
 };
 use sddk_engine::{CycleStartInput, Engine, EventContext, authority::AuthorityContext};
 use sddk_storage::{ProjectRecord, Storage, WorkspaceRecord};

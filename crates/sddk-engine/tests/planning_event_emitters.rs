@@ -8,8 +8,7 @@
 
 use sddk_domain::event_registry::schemas::std_registry;
 use sddk_domain::{
-    ActorKind, ActorRef, CasHash, DecisionId, DecisionKind, DependencyEdgeKind, EventAppended,
-    EventEnvelopeV1, EventStore, EvidenceId, PlanningEvidenceKind, WorkItemId, WorkItemStatus,
+    ActorKind, EventStore,
 };
 use sddk_engine::authority::AuthorityContext;
 use sddk_engine::event_bus::emit::{

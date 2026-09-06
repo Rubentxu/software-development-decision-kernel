@@ -1952,7 +1952,7 @@ impl sddk_domain::SddkErrorCode for EngineError {
 #[cfg(test)]
 mod frontier_tests {
     use super::*;
-    use sddk_domain::{GateOutcomeStatus, GateReceipt};
+    use sddk_domain::GateOutcomeStatus;
     use sddk_testkit::InMemoryLedger;
     use std::collections::HashMap;
 

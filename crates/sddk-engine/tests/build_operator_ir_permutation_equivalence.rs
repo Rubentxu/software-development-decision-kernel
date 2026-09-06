@@ -53,39 +53,6 @@ fn extract_sequence_children_count(op: &Arc<dyn sddk_engine::operator::Operator>
     None
 }
 
-/// Extracts children count from Parallel debug format.
-fn extract_parallel_children_count(op: &Arc<dyn sddk_engine::operator::Operator>) -> Option<usize> {
-    let debug = format!("{:?}", op);
-    if debug.contains("Parallel") {
-        if let Some(start) = debug.find("children: [") {
-            let after = &debug[start + "children: [".len()..];
-            if let Some(end) = after.find(']') {
-                let inner = &after[..end];
-                if inner.trim().is_empty() {
-                    return Some(0);
-                }
-                return Some(inner.matches(',').count() + 1);
-            }
-        }
-    }
-    None
-}
-
-/// Extracts branches count from Choice debug format.
-fn extract_choice_branches_count(op: &Arc<dyn sddk_engine::operator::Operator>) -> Option<usize> {
-    let debug = format!("{:?}", op);
-    if debug.contains("Choice") {
-        if let Some(start) = debug.find("branches:") {
-            let after = &debug[start + "branches:".len()..];
-            // Just check if branches exist
-            if after.trim().starts_with("{") {
-                return Some(after.matches("kind:").count());
-            }
-        }
-    }
-    None
-}
-
 /// Scenario: two IRs with identical compute_content_hash but permuted BTreeMap insertion order
 /// produce observationally equivalent runtime trees (REQ-IRDT-HS-04, REQ-IRDT-DC-02).
 #[test]

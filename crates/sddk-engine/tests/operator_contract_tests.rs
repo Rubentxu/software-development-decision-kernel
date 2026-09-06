@@ -85,11 +85,10 @@ fn walk_files(root: &std::path::Path, extensions: &[&str], out: &mut Vec<std::pa
         let path = entry.path();
         if path.is_dir() {
             walk_files(&path, extensions, out);
-        } else if let Some(ext) = path.extension() {
-            if extensions.contains(&ext.to_str().unwrap_or("")) {
+        } else if let Some(ext) = path.extension()
+            && extensions.contains(&ext.to_str().unwrap_or("")) {
                 out.push(path);
             }
-        }
     }
 }
 

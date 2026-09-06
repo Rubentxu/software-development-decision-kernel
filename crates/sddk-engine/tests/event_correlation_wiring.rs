@@ -85,7 +85,7 @@ fn emit_outcome_event_wires_causation_and_correlation() {
     let input = make_outcome_input();
     let result = emit_outcome_event(&mut store, &input, TransitionOutcome::Succeeded);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("c-outcome-1", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -127,7 +127,7 @@ fn emit_approval_requested_wires_causation_and_correlation() {
     let input = make_approval_requested_input();
     let result = emit_approval_requested(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("c-approval-1", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -170,7 +170,7 @@ fn emit_approval_decision_wires_causation_and_correlation() {
     let input = make_approval_decision_input();
     let result = emit_approval_decision(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("c-approval-1", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -208,7 +208,7 @@ fn emit_workflow_run_started_wires_causation_and_correlation() {
     let input = make_workflow_run_input();
     let result = emit_workflow_run_started(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("run-001", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -234,7 +234,7 @@ fn emit_workflow_run_completed_wires_causation_and_correlation() {
     let input = make_workflow_run_input();
     let result = emit_workflow_run_completed(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("run-001", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -274,7 +274,7 @@ fn emit_workflow_node_running_wires_causation_and_correlation() {
     let input = make_workflow_node_input();
     let result = emit_workflow_node_running(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("run-001", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -300,7 +300,7 @@ fn emit_workflow_node_completed_wires_causation_and_correlation() {
     let input = make_workflow_node_input();
     let result = emit_workflow_node_completed(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("run-001", None, 10).unwrap();
     let env = events.first().unwrap();
@@ -327,7 +327,7 @@ fn emit_workflow_node_failed_wires_causation_and_correlation() {
     input.reason = Some("node failed intentionally".into());
     let result = emit_workflow_node_failed(&mut store, &input);
     assert!(result.is_ok());
-    let appended = result.unwrap();
+    let _appended = result.unwrap();
 
     let events = store.load_stream("run-001", None, 10).unwrap();
     let env = events.first().unwrap();

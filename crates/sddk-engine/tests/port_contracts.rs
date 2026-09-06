@@ -13,21 +13,19 @@ use sddk_domain::fork::{ForkInput, ForkStore, ReplayPolicy};
 use sddk_domain::metrics::MetricsRecord;
 use sddk_domain::{
     ActorKind, ActorRef, ControlPlane, EventStore as _, GateOutcomeStatus, GateReceiptNextSeqInput,
-    GraphStore, Ledger, LedgerFactory,
+    GraphStore, Ledger,
 };
 use sddk_storage::{
-    SqliteControlPlane, SqliteEventStore, SqliteForkStore, SqliteGraphStore, SqliteLedgerFactory,
+    SqliteEventStore, SqliteForkStore, SqliteGraphStore,
     SqliteProjectionStore,
 };
-use sddk_testkit::InMemoryLedger;
 use serde_json::json;
-use tempfile::TempDir;
 
 mod common;
 
 use common::{
-    mk_both_ledgers, mk_control_plane_with_project, mk_cycle, mk_event, mk_project,
-    mk_registered_mem_ledger, mk_registered_sqlite_ledger, mk_workspace,
+    mk_both_ledgers, mk_control_plane_with_project, mk_cycle, mk_event,
+    mk_registered_mem_ledger, mk_registered_sqlite_ledger,
 };
 
 /// Build a [`EventEnvelopeV1`] for the event_store_roundtrip test.
