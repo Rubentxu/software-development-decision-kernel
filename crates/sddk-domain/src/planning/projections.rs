@@ -103,49 +103,6 @@ pub enum RoadmapProjectionError {
     SerializeError(String),
 }
 
-// ── Spine metadata ───────────────────────────────────────────────────────────
-
-/// Spine horizon variants (H0..H12).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum SpineHorizon {
-    H0,
-    H1,
-    H2,
-    H3,
-    H4,
-    H5,
-    H6,
-    H7,
-    H8,
-    H9,
-    H10,
-    H11,
-    H12,
-}
-
-impl SpineHorizon {
-    /// Parses a string like "h0" or "H0" into SpineHorizon.
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "h0" => Some(SpineHorizon::H0),
-            "h1" => Some(SpineHorizon::H1),
-            "h2" => Some(SpineHorizon::H2),
-            "h3" => Some(SpineHorizon::H3),
-            "h4" => Some(SpineHorizon::H4),
-            "h5" => Some(SpineHorizon::H5),
-            "h6" => Some(SpineHorizon::H6),
-            "h7" => Some(SpineHorizon::H7),
-            "h8" => Some(SpineHorizon::H8),
-            "h9" => Some(SpineHorizon::H9),
-            "h10" => Some(SpineHorizon::H10),
-            "h11" => Some(SpineHorizon::H11),
-            "h12" => Some(SpineHorizon::H12),
-            _ => None,
-        }
-    }
-}
-
 /// Terminal status vocabulary (per EXECUTION-SPINE.yaml baseline).
 fn is_terminal_status(status: &WorkItemStatus) -> bool {
     matches!(
@@ -1002,14 +959,6 @@ mod tests {
         assert!(result.is_err());
         let path = result.unwrap_err();
         assert_eq!(path.len(), 3); // [A, B, A] or [B, A, B]
-    }
-
-    #[test]
-    fn spine_horizon_parse() {
-        assert_eq!(SpineHorizon::parse("h0"), Some(SpineHorizon::H0));
-        assert_eq!(SpineHorizon::parse("H1"), Some(SpineHorizon::H1));
-        assert_eq!(SpineHorizon::parse("h12"), Some(SpineHorizon::H12));
-        assert_eq!(SpineHorizon::parse("invalid"), None);
     }
 
     #[test]
