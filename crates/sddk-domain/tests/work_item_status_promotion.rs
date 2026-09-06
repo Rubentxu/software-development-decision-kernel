@@ -17,6 +17,10 @@ fn resolve_proposed_null_exit_gate_promotion_blocked() {
         WorkItemStatus::PromotionBlocked,
         "PROPOSED + NULL exit_gate must resolve to PromotionBlocked"
     );
+    assert!(
+        serde_json::to_string(&WorkItemStatus::PromotionBlocked).is_err(),
+        "PromotionBlocked must not be serializable (#[serde(skip_serializing)] invariant)"
+    );
 }
 
 /// Scenario: spine PROPOSED + empty exit_gate → PromotionBlocked.

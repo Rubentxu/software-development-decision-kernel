@@ -119,6 +119,10 @@ fn dyn_roadmap_graph_read_compiles() {
     let fake = FakeRoadmapGraphRead::new();
     // This must compile: proves object-safety
     let _: &dyn RoadmapGraphRead = &fake;
+    let snap = fake.snapshot_roadmap().expect("must succeed");
+    assert!(snap.bound_cycles.is_empty(),
+        "documented contract: SQLite adapter (and Fake) return empty bound_cycles; \
+         changing this requires a MINOR cycle + ADR per roadmap_read.rs:64");
 }
 
 /// Scenario: list_work_items_roadmap returns all items.
