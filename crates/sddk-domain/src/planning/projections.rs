@@ -22,7 +22,7 @@ use crate::planning::{CycleId, WorkItemId, WorkItemStatus};
 
 /// Errors from roadmap projections.
 ///
-/// Seven variants covering all failure modes from spec AC-PLN4-03/05/06/07/08:
+/// Eight variants covering all failure modes from spec AC-PLN4-03/05/06/07/08:
 /// - `LedgerNotImported`: no spine imported yet
 /// - `MultipleActiveWorkItems`: >1 ACTIVE item (fail-closed per selection_rule clause 2)
 /// - `SpineComplete`: all items are terminal
@@ -30,6 +30,7 @@ use crate::planning::{CycleId, WorkItemId, WorkItemStatus};
 /// - `PromotionBlocked`: PROPOSED item missing exit_gate
 /// - `LineStopped`: BLOCKED item blocks the line
 /// - `DependencyCycle`: cycle detected in dependency graph
+/// - `SerializeError`: JSON serialization failure
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RoadmapProjectionError {
     /// No spine has been imported yet.
@@ -67,6 +68,10 @@ pub enum RoadmapProjectionError {
     /// Path is in canonical form: [A, B, C, A] where A→B→C→A.
     #[error("dependency cycle: {path:?}")]
     DependencyCycle { path: Vec<WorkItemId> },
+
+    /// JSON serialization failure in graph emission.
+    #[error("serialization error: {0}")]
+    SerializeError(String),
 }
 
 // ── Spine metadata ───────────────────────────────────────────────────────────
@@ -805,7 +810,7 @@ fn graph_to_json(snapshot: &RoadmapSnapshot) -> Result<String, RoadmapProjection
         .collect();
 
     let graph = GraphJson { nodes, edges };
-    serde_json::to_string_pretty(&graph).map_err(|e| RoadmapProjectionError::LedgerNotImported) // TODO: better error
+    serde_json::to_string_pretty(&graph).map_err(|e| RoadmapProjectionError::SerializeError(e.to_string()))
 }
 
 /// Emits the graph as DOT format.
@@ -855,6 +860,16 @@ fn graph_to_mermaid(snapshot: &RoadmapSnapshot) -> Result<String, RoadmapProject
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serialize_error_variant_works() {
+        let err = RoadmapProjectionError::SerializeError("test error".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("test error"));
+        // Clone must work (thiserror derives Clone when all payloads are Clone)
+        let cloned = err.clone();
+        assert_eq!(format!("{}", cloned), msg);
+    }
 
     #[test]
     fn detect_cycle_empty() {
