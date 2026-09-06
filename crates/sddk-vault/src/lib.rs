@@ -8,9 +8,6 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all)]
 #![warn(missing_docs)]
-// Suppress E0602 unknown_lint warning from `cargo clippy --workspace --all-targets -- -D errors`
-// per AGENTS.md §2.5 / scripts/release.sh which uses -D errors flag.
-#![allow(unknown_lints)]
 
 mod export;
 mod graph;
