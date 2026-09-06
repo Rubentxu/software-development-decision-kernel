@@ -119,12 +119,6 @@ pub struct Edge {
     _private: (),
 }
 
-impl Edge {
-    fn placeholder() -> Self {
-        Self { _private: () }
-    }
-}
-
 impl NormalizedPlanV1 {
     /// Constructs a normalised plan from a [`WorkflowIR`].
     ///

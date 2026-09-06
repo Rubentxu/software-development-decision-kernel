@@ -373,23 +373,6 @@ impl ImpactPlannerV1 {
         owners_index.get(artifact_path).cloned()
     }
 
-    /// Classifies the boundary kind of a SUT node.
-    fn classify_boundary(&self, node_id: &str) -> ImpactReason {
-        let node = match self.topology.nodes.get(node_id) {
-            Some(n) => n,
-            None => return ImpactReason::DirectSourceTouch,
-        };
-
-        match node.kind {
-            SutKind::Schema => ImpactReason::SchemaChange,
-            SutKind::ConfigurationSurface => ImpactReason::ConfigurationChange,
-            SutKind::GeneratedArtifact => ImpactReason::GeneratedSurfaceChange,
-            SutKind::BuildUnit => ImpactReason::BuildOrWorkspaceChange,
-            SutKind::ContractBoundary => ImpactReason::PublicContractChange,
-            _ => ImpactReason::DirectSourceTouch,
-        }
-    }
-
     /// Stage 0: adds compile/typecheck/lint capabilities for the SUT kind.
     fn propagate_stage0(
         &self,
@@ -616,6 +599,7 @@ impl ImpactPlannerV1 {
     }
 
     /// Compute canonical hash of the plan for stability checking.
+    #[cfg(test)]
     fn compute_plan_hash(plan: &TestSelectionPlanV1) -> String {
         let json = plan.to_canonical_json();
         let digest = Sha256::digest(json.as_bytes());
@@ -696,7 +680,7 @@ impl TestImpactPlannerPort for ImpactPlannerV1 {
 
         // REQ-4: Fail-closed
         if prop.has_unmapped {
-            let insufficient = self.build_insufficient(
+            let _insufficient = self.build_insufficient(
                 prop.unmapped_artifacts.clone(),
                 prop.unmapped_suts.clone(),
                 prop.missing_relations.clone(),

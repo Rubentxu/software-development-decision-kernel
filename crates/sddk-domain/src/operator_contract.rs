@@ -414,11 +414,6 @@ impl From<&OperatorOutputSchema> for OperatorOutputSchemaProjection {
 
 // ── Default per-variant contracts ────────────────────────────────────────────
 
-/// JSON Schema document for a field accepting any JSON value.
-fn any_json_schema() -> serde_json::Value {
-    serde_json::json!({ "type": "any" })
-}
-
 /// JSON Schema document for an array of items.
 fn array_schema(items: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
@@ -445,17 +440,6 @@ fn bool_schema() -> serde_json::Value {
 /// JSON Schema document for an object (map) field.
 fn object_schema() -> serde_json::Value {
     serde_json::json!({ "type": "object" })
-}
-
-/// JSON Schema document for a required string field.
-fn required_string_schema() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "required": ["value"],
-        "properties": {
-            "value": { "type": "string" }
-        }
-    })
 }
 
 /// Constructs the default `OperatorInputSchema` for `Operator::Task`.

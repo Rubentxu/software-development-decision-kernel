@@ -19,7 +19,7 @@
 //! ## Changelog
 //! - **2026-09-03**: Initial implementation (TEST-APPLY-001).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::test_evidence::{
     EvidenceStoreV1, ReceiptIdentityV1, ReuseDecision, StaleReason, classify,
@@ -159,6 +159,7 @@ pub struct ApplyVerificationSessionV1 {
     /// Capability registry snapshot.
     registry: CapabilityRegistryV1,
     /// Optional explicit test mapping.
+    #[allow(dead_code)]
     map: Option<crate::test_ports::ProjectTestMapV1>,
     /// Whether strict TDD mode is enabled.
     strict_tdd: bool,

@@ -923,7 +923,7 @@ impl WorkItemRecord {
     /// They are accessible only through `RoadmapGraphRead::get_work_item_with_spine_metadata`.
     pub fn into_domain(self) -> WorkItemV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
-            (Some(kind), Some(id), label) => Some(ActorRef {
+            (Some(kind), Some(id), _label) => Some(ActorRef {
                 kind: match kind.as_str() {
                     "Human" => ActorKind::Human,
                     "Agent" => ActorKind::Agent,
@@ -1003,7 +1003,7 @@ impl DependencyEdgeRecord {
     /// Converts this record into a domain DependencyEdgeV1.
     pub fn into_domain(self) -> DependencyEdgeV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
-            (Some(kind), Some(id), label) => Some(ActorRef {
+            (Some(kind), Some(id), _label) => Some(ActorRef {
                 kind: match kind.as_str() {
                     "Human" => ActorKind::Human,
                     "Agent" => ActorKind::Agent,
@@ -1071,7 +1071,7 @@ impl EvidenceAttachmentRecord {
     /// Converts this record into a domain EvidenceAttachmentV1.
     pub fn into_domain(self) -> EvidenceAttachmentV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
-            (Some(kind), Some(id), label) => Some(ActorRef {
+            (Some(kind), Some(id), _label) => Some(ActorRef {
                 kind: match kind.as_str() {
                     "Human" => ActorKind::Human,
                     "Agent" => ActorKind::Agent,
@@ -1141,7 +1141,7 @@ impl DecisionRecordRecord {
     /// Converts this record into a domain DecisionRecordV1.
     pub fn into_domain(self) -> DecisionRecordV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
-            (Some(kind), Some(id), label) => Some(ActorRef {
+            (Some(kind), Some(id), _label) => Some(ActorRef {
                 kind: match kind.as_str() {
                     "Human" => ActorKind::Human,
                     "Agent" => ActorKind::Agent,
