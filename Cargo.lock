@@ -1742,8 +1742,6 @@ dependencies = [
  "jsonschema",
  "proptest",
  "regex",
- "rusqlite",
- "sddk-storage",
  "serde",
  "serde-saphyr",
  "serde_json",
