@@ -7,7 +7,7 @@
 # ships through GitHub Releases.
 #
 # Pipeline (each step is gated on the previous one succeeding):
-#   1. Preflight  — workspace green: fmt, clippy -D errors, tests
+#   1. Preflight  — workspace green: fmt, clippy -D warnings, tests
 #   2. Version    — read current version from Cargo.toml
 #   3. Build      — cargo build --release --bin sddk
 #   4. Manifest   — regenerate MANIFEST.sha256 from the bundle surface
@@ -111,7 +111,7 @@ ok "on main, clean tree, HEAD is a release commit"
 if [ "$SKIP_TESTS" = "0" ]; then
     step "1/13 — cargo fmt + clippy + test (workspace)"
     cargo fmt --all -- --check || die "cargo fmt failed"
-    cargo clippy --workspace --offline --all-targets -- -D errors \
+    cargo clippy --workspace --offline --all-targets -- -D warnings \
         || die "cargo clippy failed"
     cargo test --workspace --offline \
         || die "cargo test --workspace failed"

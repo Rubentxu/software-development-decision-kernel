@@ -8,7 +8,7 @@ ci:
 	cargo fmt --all -- --check
 	cargo build --release -p sddk-cli
 	cargo test --workspace
-	cargo clippy --workspace --all-targets -- -D errors
+	cargo clippy --workspace --all-targets -- -D warnings
 	@echo "=== sddk lint (local gate) ==="
 	cargo run --locked -q -p sddk-cli -- lint --root . --format json
 	@echo "=== ShellCheck (local gate) ==="

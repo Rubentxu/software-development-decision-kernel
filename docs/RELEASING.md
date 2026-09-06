@@ -42,7 +42,7 @@ which automates the 13 steps below.
 ```bash
 # 1. Workspace green (gates commit, AGENTS.md §5)
 cargo fmt --all -- --check
-cargo clippy --workspace --offline --all-targets -- -D errors
+cargo clippy --workspace --offline --all-targets -- -D warnings
 cargo test --workspace --offline
 
 # 2. Bump version (creates the chore(release) commit)

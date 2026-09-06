@@ -136,7 +136,7 @@ y se actualiza con `sddk dev install`.
 ```text
 [ ] cargo build --release -p sddk-cli
 [ ] cargo fmt --check
-[ ] cargo clippy --workspace --all-targets -- -D errors
+[ ] cargo clippy --workspace --all-targets -- -D warnings
 [ ] cargo test --workspace
 [ ] shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh
 ```
@@ -189,7 +189,7 @@ hagas un release a medias**.
 | # | Paso | Gate | Cómo se verifica |
 |---|------|------|------------------|
 | 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version` | `git log -1 --format=%s` matchea regex |
-| 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D errors`, `cargo test --workspace` | exit code 0 |
+| 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | exit code 0 |
 | 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
 | 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
 | 4 | Manifest | `$BIN dev manifest --root .` + `--verify` | `verify_manifest` sin mismatches (RDI) |
