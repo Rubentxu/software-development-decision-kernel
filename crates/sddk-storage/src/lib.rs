@@ -2851,7 +2851,10 @@ impl sddk_domain::planning::roadmap_read::RoadmapGraphRead for Storage {
             .map_err(StorageError::from)?;
         let mapped_rows = stmt.query_map(
             [],
-            |row| -> std::result::Result<sddk_domain::planning::projections::WorkItemSnapshot, rusqlite::Error> {
+            |row| -> std::result::Result<
+                sddk_domain::planning::projections::WorkItemSnapshot,
+                rusqlite::Error,
+            > {
                 let status_str: String = row.get(4)?;
                 let status = serde_json::from_str(&status_str).unwrap();
                 Ok(sddk_domain::planning::projections::WorkItemSnapshot {
@@ -2921,9 +2924,7 @@ impl sddk_domain::planning::roadmap_read::RoadmapGraphRead for Storage {
     > {
         let mut stmt = self
             .connection
-            .prepare(
-                "SELECT from_id, to_id, kind FROM work_item_dependencies_v1 WHERE to_id = ?1",
-            )
+            .prepare("SELECT from_id, to_id, kind FROM work_item_dependencies_v1 WHERE to_id = ?1")
             .map_err(StorageError::from)?;
         let mapped_rows = stmt.query_map(
             [work_item_id],

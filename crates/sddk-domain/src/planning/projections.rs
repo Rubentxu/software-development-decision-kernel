@@ -68,7 +68,10 @@ pub enum RoadmapProjectionError {
 
     /// More than one ACTIVE work item found (fail-closed per selection_rule clause 2).
     #[error("multiple active work items: {ids:?}")]
-    MultipleActiveWorkItems { ids: Vec<WorkItemId> },
+    MultipleActiveWorkItems {
+        /// IDs of the conflicting active work items.
+        ids: Vec<WorkItemId>,
+    },
 
     /// All work items are in terminal status (SHIPPED/ABSORBED/SUPERSEDED).
     #[error("spine is complete: all items are terminal")]
@@ -76,19 +79,26 @@ pub enum RoadmapProjectionError {
 
     /// Unknown work item id.
     #[error("unknown work item: {id}")]
-    UnknownWorkItem { id: WorkItemId },
+    UnknownWorkItem {
+        /// The unknown work item ID.
+        id: WorkItemId,
+    },
 
     /// PROPOSED work item missing exit_gate cannot be promoted.
     #[error("promotion blocked: {item_id} missing {missing}")]
     PromotionBlocked {
+        /// Work item missing a required field.
         item_id: WorkItemId,
+        /// Name of the missing required field.
         missing: &'static str,
     },
 
     /// BLOCKED item stops the line.
     #[error("line stopped: {blocker} is blocked")]
     LineStopped {
+        /// ID of the blocker work item.
         blocker: WorkItemId,
+        /// Why the blocker is blocked.
         reason: &'static str,
     },
 
@@ -96,7 +106,10 @@ pub enum RoadmapProjectionError {
     ///
     /// Path is in canonical form: [A, B, C, A] where A→B→C→A.
     #[error("dependency cycle: {path:?}")]
-    DependencyCycle { path: Vec<WorkItemId> },
+    DependencyCycle {
+        /// Cycle path in canonical form.
+        path: Vec<WorkItemId>,
+    },
 
     /// JSON serialization failure in graph emission.
     #[error("serialization error: {0}")]
@@ -134,15 +147,23 @@ pub struct RoadmapSnapshot {
 /// Single work item snapshot for projections.
 #[derive(Debug, Clone)]
 pub struct WorkItemSnapshot {
+    /// Work item identifier.
     pub id: WorkItemId,
+    /// Cycle this work item belongs to.
     pub cycle_id: CycleId,
+    /// Human-readable title.
     pub title: String,
+    /// Detailed description.
     pub description: String,
+    /// Current workflow status.
     pub status: WorkItemStatus,
     /// Spine metadata (populated from spine import).
     pub spine_order: Option<i32>,
+    /// Horizon label from spine (e.g., H1, H2).
     pub spine_horizon: Option<String>,
+    /// Spine status from spine import.
     pub spine_status: Option<String>,
+    /// Exit gate value from spine.
     pub exit_gate: Option<String>,
     /// Incoming dependency edges (items that depend on this one).
     pub blocks: Vec<WorkItemId>,
@@ -151,14 +172,20 @@ pub struct WorkItemSnapshot {
 /// Single dependency edge snapshot.
 #[derive(Debug, Clone)]
 pub struct DependencyEdgeSnapshot {
+    /// Source work item ID (the depender).
     pub from_id: WorkItemId,
+    /// Target work item ID (the dependee).
     pub to_id: WorkItemId,
+    /// Kind of dependency relationship.
     pub kind: DependencyEdgeKindSnapshot,
 }
 
+/// Snapshot of dependency edge kinds (stored in spine, reconciled on import).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DependencyEdgeKindSnapshot {
+    /// The from-item blocks progress of the to-item.
     Blocks,
+    /// The from-item blocks the to-item's closure (resolved on to-item done).
     BlocksOnClosure,
 }
 
@@ -385,8 +412,11 @@ pub fn project_status(
 /// Output of `project_next`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NextProjection {
+    /// The recommended next work item ID.
     pub item_id: WorkItemId,
+    /// Human-readable reason for the recommendation.
     pub reason: String,
+    /// Promotion action to apply to the item.
     pub promotion: NextPromotion,
 }
 
@@ -533,16 +563,22 @@ pub struct BlockedProjection {
 /// A blocked item with its blocker(s).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockedItem {
+    /// The blocked work item ID.
     pub item_id: WorkItemId,
+    /// Spine order of the blocked item.
     pub spine_order: i32,
+    /// IDs of the work items blocking this one.
     pub blockers: Vec<WorkItemId>,
 }
 
 /// A promotion-blocked item (missing exit_gate).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromotionBlockedItem {
+    /// The work item that cannot be promoted.
     pub item_id: WorkItemId,
+    /// Spine order of the item.
     pub spine_order: i32,
+    /// Name of the missing required field.
     pub missing: String,
 }
 
@@ -638,13 +674,21 @@ pub fn project_blocked(
 /// Output of `project_show`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShowProjection {
+    /// Work item ID.
     pub id: WorkItemId,
+    /// Spine order index.
     pub order: i32,
+    /// Horizon label.
     pub horizon: String,
+    /// Spine status string.
     pub spine_status: String,
+    /// Exit gate value, if set.
     pub exit_gate: Option<String>,
+    /// IDs of work items this item depends on.
     pub depends_on: Vec<WorkItemId>,
+    /// IDs of work items that depend on this item.
     pub blocks: Vec<WorkItemId>,
+    /// Cycle IDs providing execution evidence for this item.
     pub execution_evidence: Vec<CycleId>,
 }
 
@@ -803,7 +847,8 @@ fn graph_to_json(snapshot: &RoadmapSnapshot) -> Result<String, RoadmapProjection
         .collect();
 
     let graph = GraphJson { nodes, edges };
-    serde_json::to_string_pretty(&graph).map_err(|e| RoadmapProjectionError::SerializeError(e.to_string()))
+    serde_json::to_string_pretty(&graph)
+        .map_err(|e| RoadmapProjectionError::SerializeError(e.to_string()))
 }
 
 /// Emits the graph as DOT format.

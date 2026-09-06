@@ -11,29 +11,24 @@
 //! | `sddk plan decision record` | NEW |
 //! | `sddk plan graph` | NEW |
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
+use sddk_domain::DependencyResolutionService;
 use sddk_domain::planning::projections::{
-    BlockedProjection, GraphFormat, NextProjection, ShowProjection, StatusProjection,
-    project_blocked, project_graph, project_next, project_show, project_status,
+    GraphFormat, project_blocked, project_graph, project_next, project_show, project_status,
 };
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::planning::{
-    DECISION_RECORD_SCHEMA_VERSION, DecisionKind, DependencyEdgeKind, DependencyEdgeRecord,
-    DependencyEdgeV1, EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
-    PlanningEvidenceKind, WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
+    DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, PlanningEvidenceKind,
+    WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
 };
-use sddk_domain::{DependencyResolutionError, DependencyResolutionService};
 use serde::Deserialize;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
-    CliEnvironment, CommandOutput, OutputFormat, Storage,
-    cycle::{self, CyclePathArg, CycleStartArgs, RuntimeArgs},
-    failure,
-};
+use crate::{CliEnvironment, CommandOutput, OutputFormat, Storage, failure};
 
 /// Minimal adoption receipt fields needed to resolve the ledger path.
 /// We deserialize only the fields we need rather than depending on the full type.
@@ -752,7 +747,7 @@ fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> Comma
 // ── Dep subcommand handler ────────────────────────────────────────────────────
 
 fn run_dep(command: DepCommand, environment: &CliEnvironment) -> CommandOutput {
-    let mut storage = match open_storage_for_plan(environment) {
+    let storage = match open_storage_for_plan(environment) {
         Some(s) => s,
         None => {
             return failure(
