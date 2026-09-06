@@ -270,7 +270,6 @@ pub fn import_spine(
 
                 if would_conflict {
                     // Conflict: a non-NULL spine column differs
-                    conflicts += 1;
                     return Err(SpineImportError::ImportConflict {
                         id: work_item_id.clone(),
                         field: "spine_metadata".to_string(),
@@ -311,7 +310,6 @@ pub fn import_spine(
                 } else {
                     "status"
                 };
-                conflicts += 1;
                 return Err(SpineImportError::ImportConflict {
                     id: work_item_id.clone(),
                     field: field.to_string(),
