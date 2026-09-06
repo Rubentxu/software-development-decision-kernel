@@ -9,11 +9,10 @@
 
 use std::collections::BTreeMap;
 
-use sddk_domain::operator_contract::OperatorContractProjectionV1;
 use sddk_domain::plan_revision::{NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1};
-use sddk_domain::workflow_ir::{Budgets, CapabilityId, GuardExpr, Operator, OperatorId, Policy, WorkflowIR};
+use sddk_domain::workflow_ir::{Budgets, CapabilityId, Operator, OperatorId, WorkflowIR};
 use sddk_domain::ExecutionGraphRevision;
-use sddk_domain::execution_graph_compiler::{compile_plan_to_revision, ExecutionGraphCompileError};
+use sddk_domain::execution_graph_compiler::compile_plan_to_revision;
 use serde_json;
 
 // ---------------------------------------------------------------------------
@@ -178,17 +177,20 @@ fn revision_id_triple_binds_identity() {
         .expect("child compile");
 
     // revision_id must be 64 lowercase hex chars (sha256 output)
+    let parent_rev_id_str = &parent.revision_id.0;
+    let child_rev_id_str = &child.revision_id.0;
     assert_eq!(
-        parent.revision_id.chars().count(),
+        parent_rev_id_str.chars().count(),
         64,
         "revision_id must be 64 hex chars"
     );
+    // Digits 0-9 are hex but not lowercase letters, so check differently
     assert!(
-        parent.revision_id.chars().all(|c| c.is_ascii_hexdigit() && c.is_ascii_lowercase()),
+        parent_rev_id_str.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "revision_id must be lowercase hex"
     );
     assert_ne!(
-        parent.revision_id, child.revision_id,
+        parent_rev_id_str, child_rev_id_str,
         "parent and child revision_ids must differ"
     );
 }

@@ -10,6 +10,7 @@
 use sddk_domain::{
     channel::ReleaseChannel,
     cycle::{CycleStatus, Phase, RiskLevel},
+    execution_graph_compiler::ExecutionGraphCompileError,
     pack::PackRisk,
     rules::types::RuleSeverity,
     staleness::StalenessState,
@@ -99,4 +100,14 @@ fn node_run_error_reachable() {
 #[test]
 fn workflow_run_error_reachable() {
     let _ = WorkflowRunError::AlreadyTerminal;
+}
+
+// ── DW-RUNTIME-001 enums ────────────────────────────────────────────────────
+
+/// ExecutionGraphCompileError has exactly 8 variants (I-9).
+/// The `assert_variant_count_eq!` macro enforces this at compile time.
+#[test]
+fn execution_graph_compile_error_variant_count_is_8() {
+    use sddk_domain::execution_graph_compiler::ExecutionGraphCompileError;
+    let _ = ExecutionGraphCompileError::EmptyPlan;
 }

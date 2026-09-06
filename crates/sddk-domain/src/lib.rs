@@ -16,6 +16,7 @@ pub mod error;
 pub mod event_envelope;
 pub mod event_registry;
 pub mod evidence;
+pub mod execution_graph_compiler;
 pub mod execution_scope;
 pub mod fork;
 pub mod format;
