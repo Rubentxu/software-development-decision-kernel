@@ -327,14 +327,14 @@ impl GitExecutor {
             }
             Err(GitError::CommandFailed {
                 status: 128,
-                stderr,
+                stderr: _stderr,
                 ..
             }) if !marker_in_ancestor && !marker_at_root => Ok(false),
             Err(GitError::CommandFailed {
                 status: 128,
-                stderr,
+                stderr: _stderr,
                 ..
-            }) if !marker_at_root && is_not_a_git_repository(&stderr) => Ok(false),
+            }) if !marker_at_root && is_not_a_git_repository(&_stderr) => Ok(false),
             Err(GitError::Runner(_)) if !marker_in_ancestor && !marker_at_root => Ok(false),
             Err(e) => Err(e),
         }

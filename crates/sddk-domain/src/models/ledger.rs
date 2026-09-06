@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::event_envelope::{ActorKind, ActorRef};
+use crate::event_envelope::ActorRef;
 
 /// Data required to append one ledger event.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -111,6 +111,7 @@ pub struct LedgerVerification {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_envelope::ActorKind;
 
     // REQ-IRDT-RT-06: LedgerEvent JSON payloads round-trip byte-exactly.
     #[test]

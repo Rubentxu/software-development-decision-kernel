@@ -3,7 +3,6 @@
 use anyhow::Context;
 use clap::{Args, Subcommand};
 use sddk_domain::ports::SnapshotPort;
-use sddk_domain::replay::Snapshot;
 use serde::Serialize;
 
 use crate::{
@@ -399,6 +398,8 @@ struct ReplayOutput {
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+// Retained for future ReplayStatus expansion (Success + Fail states match CLI exit codes).
 enum ReplayStatus {
     Success,
     Fail { error: String },
@@ -411,7 +412,7 @@ fn run_replay(args: ReplayArgs, environment: &CliEnvironment) -> CommandOutput {
     let result = (|| -> anyhow::Result<ReplayOutput> {
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         let ledger_dir = context.paths.ledger.parent().unwrap();
-        let mut event_store = SqliteEventStore::open(ledger_dir)?;
+        let event_store = SqliteEventStore::open(ledger_dir)?;
 
         // Load snapshot
         let snapshot: sddk_domain::replay::Snapshot = event_store

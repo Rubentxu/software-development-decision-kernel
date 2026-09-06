@@ -30,6 +30,7 @@ use crate::test_model::{
 use crate::test_ports::{
     AdapterError, CapabilityRegistryV1, TestEvidenceRepository, TestImpactPlannerPort,
 };
+#[cfg(test)]
 use crate::test_select::ImpactPlannerV1;
 
 /// Schema version constant for the apply verification session.

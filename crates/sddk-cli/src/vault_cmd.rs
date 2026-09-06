@@ -222,7 +222,7 @@ fn apply_scope_downgrade(
                 // "project_id/cycle_id" → "project_id-cycle-id.md"
                 let Some(normalized) = normalize_cycle_target(&receipt.target) else {
                     // Unsafe target (traversal or malformed) — treat as missing receipt
-                    diagnostic
+                    let _ = diagnostic
                         .error_kind
                         .insert("RepairReceiptMissingOrInvalid".to_string());
                     return;
@@ -441,7 +441,7 @@ fn run_vault_export(args: VaultExportArgs, environment: &CliEnvironment) -> Comm
         // Resolve XDG paths for fail-closed validation (ADR-0082).
         // If XDG paths cannot be resolved (e.g., HOME not set in test environments),
         // we skip validation — the test environment is not a production security boundary.
-        let xdg_validation_ok = (|| -> anyhow::Result<()> {
+        let xdg_validation_ok = || -> anyhow::Result<()> {
             let root = crate::canonical_root(
                 args.runtime
                     .root
@@ -473,7 +473,7 @@ fn run_vault_export(args: VaultExportArgs, environment: &CliEnvironment) -> Comm
             crate::writer::validate_xdg_output(&args.output, &paths.project_data)
                 .map_err(|e| anyhow::anyhow!("STORAGE_WRITER_XDG_VIOLATION: {}", e))?;
             Ok(())
-        });
+        };
 
         // If XDG validation failed because paths could not be resolved (e.g., missing HOME
         // in test envs), skip validation — test environments are not production boundaries.

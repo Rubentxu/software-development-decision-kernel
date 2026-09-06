@@ -27,8 +27,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use sddk_gateway::GitExecutor;
 
 use crate::{
-    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, cycle, failure,
-    render_result,
+    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, render_result,
 };
 
 /// Schema identifier emitted at the top of every artifact.

@@ -108,23 +108,40 @@ pub struct ImportSummary {
 /// Errors from spine import.
 #[derive(Debug, thiserror::Error)]
 pub enum SpineImportError {
+    /// Failed to parse the spine YAML — contains malformed syntax or invalid structure.
     #[error("parse error: {0}")]
     ParseError(sddk_domain::spine::SpineParseError),
 
+    /// A work item depends on itself (self-loop in the dependency graph).
     #[error("self-loop: item {item_id} depends on itself")]
-    SelfLoop { item_id: String },
+    SelfLoop {
+        /// Identifier of the item that has a self-dependency.
+        item_id: String,
+    },
 
+    /// A work item depends on another item that does not exist in the spine.
     #[error("unknown dependency: item {item_id} depends on unknown {unknown}")]
-    UnknownDependency { item_id: String, unknown: String },
+    UnknownDependency {
+        /// Identifier of the item with the unknown dependency.
+        item_id: String,
+        /// Identifier of the unknown dependency.
+        unknown: String,
+    },
 
+    /// An existing work item differs from what the spine says it should be.
     #[error("import conflict: {id}.{field}: expected {expected:?}, got {actual:?}")]
     ImportConflict {
+        /// Identifier of the conflicting work item.
         id: String,
+        /// Field that conflicts (e.g., "description" or "status").
         field: String,
+        /// Expected value from the spine.
         expected: String,
+        /// Actual value in the existing work item.
         actual: String,
     },
 
+    /// Underlying storage operation failed.
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
 }
@@ -226,7 +243,7 @@ pub fn import_spine(
     let mut imported: u32 = 0;
     let mut already_present: u32 = 0;
     let mut backfilled: u32 = 0;
-    let mut conflicts: u32 = 0;
+    let conflicts: u32 = 0;
 
     for item in &spine.items {
         let cycle_id = item.id.clone(); // Q5 S1: per-row cycle

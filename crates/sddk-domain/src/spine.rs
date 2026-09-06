@@ -57,7 +57,9 @@ pub struct ExecutionSpineV1 {
 /// Baseline release info.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpineBaseline {
+    /// Release version string.
     pub release: String,
+    /// ISO-8601 timestamp of last reconciliation.
     #[serde(default)]
     pub reconciled_at: String,
 }
@@ -65,10 +67,13 @@ pub struct SpineBaseline {
 /// Status vocabulary.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpineStatusVocabulary {
+    /// Terminal (done) status values in this spine.
     #[serde(default)]
     pub terminal: Vec<String>,
+    /// Executable (in-progress) status values in this spine.
     #[serde(default)]
     pub executable: Vec<String>,
+    /// Non-executable (blocked/paused) status values in this spine.
     #[serde(default, rename = "non_executable")]
     pub non_executable: Vec<String>,
 }
@@ -90,8 +95,10 @@ pub struct SpineCycleBinding {
 /// Terminal goal from the spine.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpineTerminalGoal {
+    /// Goal identifier.
     #[serde(default)]
     pub id: String,
+    /// Goal completion condition expression.
     #[serde(default)]
     pub condition: String,
 }
@@ -99,7 +106,9 @@ pub struct SpineTerminalGoal {
 /// Horizon definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpineHorizonDef {
+    /// Horizon classification (H0–H12).
     pub id: SpineHorizon,
+    /// Human-readable name for this horizon.
     pub name: String,
 }
 
@@ -129,18 +138,31 @@ pub struct SpineItemV1 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpineHorizon {
+    /// Horizon 0 — immediate / current cycle.
     H0,
+    /// Horizon 1 — next 1–3 cycles.
     H1,
+    /// Horizon 2 — 3–10 cycles out.
     H2,
+    /// Horizon 3 — 10–30 cycles out.
     H3,
+    /// Horizon 4 — strategic window.
     H4,
+    /// Horizon 5 — exploratory.
     H5,
+    /// Horizon 6 — architectural.
     H6,
+    /// Horizon 7 — research.
     H7,
+    /// Horizon 8 — deprecated.
     H8,
+    /// Horizon 9 — backlog.
     H9,
+    /// Horizon 10 — icebox.
     H10,
+    /// Horizon 11 — rejected.
     H11,
+    /// Horizon 12 — shipped.
     H12,
 }
 
@@ -158,13 +180,21 @@ pub enum SpineHorizon {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SpineStatus {
+    /// Proposed — not yet started.
     Proposed,
+    /// Ready — cleared to start.
     Ready,
+    /// Active — in progress.
     Active,
+    /// Partial — partially complete.
     Partial,
+    /// Blocked — paused due to dependency.
     Blocked,
+    /// Shipped — completed and delivered.
     Shipped,
+    /// Absorbed — incorporated into another item.
     Absorbed,
+    /// Superseded — replaced by another item.
     Superseded,
 }
 

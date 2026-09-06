@@ -13,7 +13,6 @@ use sddk_engine::{
     RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
     authority::{AuthorityContext, infer_actor_kind},
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
-    frontier_for_state,
 };
 use sddk_storage::SqliteEventStore;
 use serde::Serialize;
@@ -47,6 +46,8 @@ pub(crate) enum InferenceError {
 
 /// One active cycle lease candidate for ambiguity resolution.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
+// Retained for future lease ambiguity resolution UI (owner + expiry displayed to user).
 pub(crate) struct CycleCandidate {
     pub cycle_id: String,
     pub owner: String,
@@ -55,6 +56,8 @@ pub(crate) struct CycleCandidate {
 
 /// Result of resolving cycle context from args + state.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
+// Fields retained for future RuntimeContext expansion; currently subset is used.
 pub(crate) struct ResolvedCycleContext {
     /// Fully resolved RuntimeArgs (all optionals filled).
     pub runtime: RuntimeArgs,
@@ -145,9 +148,9 @@ pub(crate) fn resolve_cycle_context(
     cycle_arg: Option<&str>,
 ) -> Result<ResolvedCycleContext, InferenceError> {
     // S2: explicit args win; nothing to infer if all explicit
-    let root_explicit = args.root.is_some();
-    let scope_explicit = args.scope.is_some();
-    let cycle_explicit = cycle_arg.is_some();
+    let _root_explicit = args.root.is_some();
+    let _scope_explicit = args.scope.is_some();
+    let _cycle_explicit = cycle_arg.is_some();
 
     if args.no_infer {
         let mut missing = Vec::new();
@@ -1856,7 +1859,7 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
                         .transitions
                         .iter()
                         .find(|t| t.id == entry.transition_id);
-                    let binding = transition.and_then(|t| t.implementation_binding.clone());
+                    let _binding = transition.and_then(|t| t.implementation_binding.clone());
                     Some(format!(
                         "sddk cycle transition --cycle {} --transition {} --lease-owner {} --fencing-token {}",
                         cycle_id,

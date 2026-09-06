@@ -832,7 +832,12 @@ pub enum CasError {
     NotFound(String),
     /// Hash mismatch — content does not match the requested hash.
     #[error("CAS hash mismatch: expected {expected}, computed {computed}")]
-    HashMismatch { expected: String, computed: String },
+    HashMismatch {
+        /// Expected hash (from the reference).
+        expected: String,
+        /// Computed hash (from the actual content).
+        computed: String,
+    },
     /// Storage I/O error.
     #[error("CAS storage error: {0}")]
     Storage(String),

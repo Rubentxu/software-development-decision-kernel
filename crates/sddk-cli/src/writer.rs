@@ -62,7 +62,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 /// `/home/user/.local/share/sddk/../../../etc/passwd` will be rejected.
 pub fn validate_xdg_output(output_path: &Path, xdg_data_dir: &Path) -> XdgResult<()> {
     // Canonicalize both paths to resolve symlinks and normalize
-    let canonical_xdg = xdg_data_dir.canonicalize().map_err(|e| XdgViolation {
+    let canonical_xdg = xdg_data_dir.canonicalize().map_err(|_e| XdgViolation {
         path: output_path.to_path_buf(),
         xdg_root: xdg_data_dir.to_path_buf(),
     })?;
@@ -97,6 +97,9 @@ pub fn validate_xdg_output(output_path: &Path, xdg_data_dir: &Path) -> XdgResult
 /// Trait for writers that validate output paths against XDG directories.
 ///
 /// Implementors must call `validate_xdg_output` before writing.
+#[allow(dead_code)]
+// Draft ADR-D foundation: trait is defined but not yet implemented.
+// Retained to anchor the ADR and prevent drift during research phase.
 pub trait WriterXdgFailClosed {
     /// The XDG data directory this writer uses as its root.
     fn xdg_data_dir(&self) -> &Path;

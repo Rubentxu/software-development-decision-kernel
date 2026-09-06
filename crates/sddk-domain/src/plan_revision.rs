@@ -434,7 +434,12 @@ impl PlanRevisionLineageV1 {
 pub enum PlanRevisionError {
     /// Unsupported schema version.
     #[error("unsupported schema version: got {got}, want {want}")]
-    UnsupportedSchemaVersion { got: u32, want: u32 },
+    UnsupportedSchemaVersion {
+        /// Schema version found in the payload.
+        got: u32,
+        /// Expected schema version.
+        want: u32,
+    },
 
     /// The mutation would not change the normalised plan identity.
     ///
@@ -446,7 +451,10 @@ pub enum PlanRevisionError {
 
     /// A required provenance field is empty.
     #[error("empty provenance field: {field}")]
-    EmptyProvenanceField { field: &'static str },
+    EmptyProvenanceField {
+        /// Name of the empty required field.
+        field: &'static str,
+    },
 
     /// Operation attempted on an empty lineage.
     #[error("empty lineage")]
@@ -471,6 +479,7 @@ crate::assert_variant_count_eq!(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "version", rename_all = "snake_case")]
 pub enum NormalizedPlan {
+    /// Version 1 of the normalised plan format.
     V1(NormalizedPlanV1),
 }
 

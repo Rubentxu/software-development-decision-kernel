@@ -443,6 +443,7 @@ pub type DecisionId = String;
 /// Error arising from invalid decision record construction.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum DecisionError {
+    /// Rationale field is empty — a decision record MUST have non-empty rationale.
     #[error("rationale must be non-empty")]
     EmptyRationale,
 }
@@ -700,8 +701,10 @@ impl PlanningProvenanceChainV1 {
 /// Error from provenance chain verification.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ProvenanceError {
+    /// cycle_id field is empty — provenance chain requires non-empty cycle identifier.
     #[error("cycle_id must be non-empty")]
     EmptyCycleId,
+    /// A referenced entity (work item, evidence, or decision) does not exist in the chain.
     #[error("dangling reference: {0}")]
     DanglingReference(String),
     /// Cross-storage drift detected: producer and verifier disagree on CAS root identity.
@@ -783,11 +786,17 @@ pub trait PlanningGraphRead {
 /// This is the canonical projection used for `compute_planning_graph_identity`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkItemIdentityProjection {
+    /// Unique work item identifier.
     pub id: WorkItemId,
+    /// Cycle this work item belongs to.
     pub cycle_id: CycleId,
+    /// Human-readable title.
     pub title: String,
+    /// Detailed description of the work objective.
     pub description: String,
+    /// Actor responsible for this item (if assigned).
     pub actor_ref: Option<ActorRef>,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
 }
 
@@ -796,9 +805,13 @@ pub struct WorkItemIdentityProjection {
 /// Excludes `actor_ref` which may change across replays.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyEdgeIdentityProjection {
+    /// Source work item of the dependency edge.
     pub from_id: WorkItemId,
+    /// Target work item of the dependency edge.
     pub to_id: WorkItemId,
+    /// Kind of dependency (e.g., blocks, supports).
     pub kind: DependencyEdgeKind,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
 }
 
@@ -896,15 +909,25 @@ pub fn compute_planning_graph_identity(
 /// These columns are NOT included in `WorkItemIdentityProjection` per PLN-LEDGER-002 §8 invariant.
 #[derive(Debug, Clone)]
 pub struct WorkItemRecord {
+    /// Unique work item identifier.
     pub id: WorkItemId,
+    /// Cycle this work item belongs to.
     pub cycle_id: CycleId,
+    /// Human-readable title.
     pub title: String,
+    /// Detailed description of the work objective.
     pub description: String,
+    /// Current workflow status.
     pub status: WorkItemStatus,
+    /// Actor kind (Human, Agent, System) — optional.
     pub actor_ref_kind: Option<String>,
+    /// Actor identifier — optional.
     pub actor_ref_id: Option<String>,
+    /// Actor label — optional.
     pub actor_ref_label: Option<String>,
+    /// Unix timestamp of creation.
     pub created_at: i64,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
     /// Spine execution order (populated during spine import).
     pub spine_order: Option<i32>,
@@ -990,12 +1013,19 @@ impl WorkItemRecord {
 /// SQL row representation for DependencyEdge persistence.
 #[derive(Debug, Clone)]
 pub struct DependencyEdgeRecord {
+    /// Source work item of the dependency edge.
     pub from_id: WorkItemId,
+    /// Target work item of the dependency edge.
     pub to_id: WorkItemId,
+    /// Kind of dependency (e.g., blocks, supports).
     pub kind: DependencyEdgeKind,
+    /// Actor kind (Human, Agent, System) — optional.
     pub actor_ref_kind: Option<String>,
+    /// Actor identifier — optional.
     pub actor_ref_id: Option<String>,
+    /// Actor label — optional.
     pub actor_ref_label: Option<String>,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
 }
 
@@ -1057,13 +1087,21 @@ impl DependencyEdgeRecord {
 /// SQL row representation for EvidenceAttachment persistence.
 #[derive(Debug, Clone)]
 pub struct EvidenceAttachmentRecord {
+    /// Unique evidence identifier.
     pub id: EvidenceId,
+    /// Work item this evidence is attached to.
     pub work_item_id: WorkItemId,
+    /// Kind of evidence (e.g., verification, artifact).
     pub kind: PlanningEvidenceKind,
+    /// CAS hash reference to the evidence body.
     pub body_ref: CasHash,
+    /// Actor kind (Human, Agent, System) — optional.
     pub actor_ref_kind: Option<String>,
+    /// Actor identifier — optional.
     pub actor_ref_id: Option<String>,
+    /// Actor label — optional.
     pub actor_ref_label: Option<String>,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
 }
 
@@ -1127,13 +1165,21 @@ impl EvidenceAttachmentRecord {
 /// SQL row representation for DecisionRecord persistence.
 #[derive(Debug, Clone)]
 pub struct DecisionRecordRecord {
+    /// Unique decision identifier.
     pub id: DecisionId,
+    /// Work item this decision is attached to.
     pub work_item_id: WorkItemId,
+    /// Kind of decision (e.g., requirement, architecture, approach).
     pub kind: DecisionKind,
+    /// Rationale explaining why this decision was made.
     pub rationale: String,
+    /// Actor kind (Human, Agent, System) — optional.
     pub actor_ref_kind: Option<String>,
+    /// Actor identifier — optional.
     pub actor_ref_id: Option<String>,
+    /// Actor label — optional.
     pub actor_ref_label: Option<String>,
+    /// Schema version for serialization compatibility.
     pub schema_version: u32,
 }
 

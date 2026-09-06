@@ -40,6 +40,7 @@ pub const OPERATOR_CONTRACT_SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SchemaDialect {
+    /// JSON Schema Draft-07 dialect (current default).
     JsonSchemaDraft07,
 }
 
@@ -285,60 +286,88 @@ pub struct TypedOperator {
 pub enum OperatorContractError {
     /// `OperatorSchema.version` does not equal `OPERATOR_CONTRACT_SCHEMA_VERSION`.
     #[error("unsupported schema version: got {got}, want {want}")]
-    UnsupportedSchemaVersion { got: u32, want: u32 },
+    UnsupportedSchemaVersion {
+        /// Schema version found in the payload.
+        got: u32,
+        /// Expected schema version.
+        want: u32,
+    },
 
     /// Operator variant name is not in the v1.29.0 closed set.
     ///
     /// Today this variant is unreachable (all 12 variants are known), but exists
     /// to keep the contract closed if H6 adds new operators.
     #[error("unknown operator variant: `{variant}`")]
-    UnknownOperatorVariant { variant: &'static str },
+    UnknownOperatorVariant {
+        /// The unknown variant name encountered.
+        variant: &'static str,
+    },
 
     /// Input payload violates the `OperatorInputSchema`.
     #[error("input contract violation for `{variant}` on field `{field}`: {reason}")]
     InputContractViolation {
+        /// Operator that emitted this violation.
         operator_id: OperatorId,
+        /// Operator variant name.
         variant: &'static str,
+        /// Field that violated the contract.
         field: String,
+        /// Human-readable reason for the violation.
         reason: &'static str,
     },
 
     /// Output payload violates the `OperatorOutputSchema`.
     #[error("output contract violation for `{variant}` on field `{field}`: {reason}")]
     OutputContractViolation {
+        /// Operator that emitted this violation.
         operator_id: OperatorId,
+        /// Operator variant name.
         variant: &'static str,
+        /// Field that violated the contract.
         field: String,
+        /// Human-readable reason for the violation.
         reason: &'static str,
     },
 
     /// A required field is absent from the input or output.
     #[error("missing required field `{field}` on `{variant}`")]
     MissingRequiredField {
+        /// Operator that emitted this violation.
         operator_id: OperatorId,
+        /// Operator variant name.
         variant: &'static str,
+        /// Name of the missing required field.
         field: String,
     },
 
     /// An extra field is present and `accepts_extra_fields` is `false`.
     #[error("extra field disallowed `{field}` on `{variant}`")]
     ExtraFieldDisallowed {
+        /// Operator that emitted this violation.
         operator_id: OperatorId,
+        /// Operator variant name.
         variant: &'static str,
+        /// Name of the disallowed extra field.
         field: String,
     },
 
     /// `OperatorSchema.source` does not equal the SHA-256 of `document`.
     #[error("schema source mismatch: expected `{expected}`, got `{actual}`")]
     SchemaSourceMismatch {
+        /// Operator that emitted this violation.
         operator_id: OperatorId,
+        /// Expected content hash.
         expected: crate::workflow_ir::ContentHash,
+        /// Actual content hash found.
         actual: crate::workflow_ir::ContentHash,
     },
 
     /// Dialect value is not in the closed `SchemaDialect` set.
     #[error("unknown schema dialect: `{dialect}`")]
-    SchemaDialectUnknown { dialect: String },
+    SchemaDialectUnknown {
+        /// The unknown dialect string encountered.
+        dialect: String,
+    },
 }
 
 // Compile-time guard: exactly 8 variants.
@@ -377,8 +406,11 @@ pub struct OperatorContractProjectionV1 {
 /// Omits `description` (non-semantic per REQ-OPLINE-002).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorInputSchemaProjection {
+    /// Fields with static (non-optional, non-dynamic) schemas.
     pub static_fields: BTreeMap<String, OperatorSchema>,
+    /// Names of required fields.
     pub required_fields: BTreeSet<String>,
+    /// Whether additional fields beyond those declared are accepted.
     pub accepts_extra_fields: bool,
 }
 
@@ -387,8 +419,11 @@ pub struct OperatorInputSchemaProjection {
 /// Omits `description` (non-semantic per REQ-OPLINE-002).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorOutputSchemaProjection {
+    /// Fields with static (non-optional, non-dynamic) schemas.
     pub static_fields: BTreeMap<String, OperatorSchema>,
+    /// Names of required fields.
     pub required_fields: BTreeSet<String>,
+    /// Whether additional fields beyond those declared are accepted.
     pub accepts_extra_fields: bool,
 }
 

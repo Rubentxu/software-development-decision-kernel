@@ -350,6 +350,8 @@ fn verify_local_preconditions(
 /// This is the mirror of `LocalReleaseInput` for BLOCKED cycles that bypass
 /// the normal release step and enter the vault archive route directly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[allow(dead_code)]
+// Defined for future vault closure route; currently unused but retained for API completeness.
 pub struct VaultClosureInput {
     /// Owning project identifier.
     pub project_id: String,
@@ -368,6 +370,8 @@ pub struct VaultClosureInput {
 /// These are checked by the CLI's `run_release_vault()` before emitting
 /// `vault-receipt.json`. This function provides a gateway-level mirror for
 /// orchestration contexts that need to validate before delegating to the CLI.
+#[allow(dead_code)]
+// Defined for future vault closure validation; currently unused but retained for API completeness.
 pub fn vault_release_preconditions(input: &VaultClosureInput) -> Result<(), ReleaseError> {
     // SAFETY INVARIANT: delivery_kind must be ManagedClosureDelivery
     if input.delivery_kind != "managed-closure-delivery" {

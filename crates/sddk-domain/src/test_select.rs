@@ -17,13 +17,21 @@ use std::sync::RwLock;
 /// `InsufficientMappingV1` on demand via `insufficient()`.
 type StoredUnmapped = Option<(Vec<String>, Vec<String>, Vec<TopologyEdgeKind>)>;
 
+#[cfg(test)]
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
 use crate::test_model::{
-    ActiveChangeSetV1, CapabilityKind, ChangeKind, ChangedArtifactV1, EdgeProvenanceV1,
-    ImpactReason, InsufficientMappingV1, MappingOutcome, PlanVerdict, ProjectTestTopologyV1,
-    SCHEMA_VERSION, SelectorGranularity, SutKind, SutNodeV1, TestBatchV1, TestSelectionPlanV1,
-    TopologyEdgeKind, TopologyEdgeV1, VerificationCapabilityV1,
+    EdgeProvenanceV1, MappingOutcome, SCHEMA_VERSION, SelectorGranularity, SutNodeV1,
+    TopologyEdgeV1, VerificationCapabilityV1,
+};
+
+#[allow(unused_imports)]
+// Used in test code via `use super::*;` - required by `#[cfg(test)]` functions.
+use crate::test_model::{
+    ActiveChangeSetV1, CapabilityKind, ChangeKind, ChangedArtifactV1, ImpactReason,
+    InsufficientMappingV1, PlanVerdict, ProjectTestTopologyV1, SutKind, TestBatchV1,
+    TestSelectionPlanV1, TopologyEdgeKind,
 };
 use crate::test_ports::{
     AdapterError, CapabilityRegistryV1, ProjectTestMapV1, TestImpactPlannerPort,
