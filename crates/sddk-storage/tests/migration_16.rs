@@ -8,8 +8,6 @@
 //!
 //! These columns are NOT part of WorkItemIdentityProjection (PLN-LEDGER-002 §8 invariant).
 
-use sddk_domain::planning::WorkItemStatus;
-use sddk_domain::spine::SpineStatus;
 use sddk_storage::Storage;
 use tempfile::TempDir;
 

@@ -8,8 +8,6 @@
 use sddk_storage::Storage;
 use tempfile::TempDir;
 
-const CREATED_AT: &str = "2026-09-05T00:00:00Z";
-
 /// Verifies a fresh DB lands at schema version 15 with both new tables.
 #[test]
 fn fresh_db_opens_at_schema_15() {

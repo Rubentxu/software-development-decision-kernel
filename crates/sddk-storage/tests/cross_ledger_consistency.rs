@@ -171,7 +171,7 @@ fn verify_cross_ledger_consistency_passes_when_aligned() {
 #[test]
 fn verify_cross_ledger_consistency_detects_orphan_in_events_v1() {
     let dir = TempDir::new().unwrap();
-    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
     let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
 
     storage.insert_project(&project_record()).unwrap();

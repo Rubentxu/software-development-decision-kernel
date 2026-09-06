@@ -75,7 +75,7 @@ fn evidence_attachment_cas_round_trip() {
     // Insert a work item
     let wi_record = WorkItemRecord {
         id: "wi-ev-test".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "evidence test item".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -148,7 +148,7 @@ fn evidence_insert_empty_body_rejected() {
     let cycle_id = setup_project_workspace_cycle(&mut storage, "empty");
     let wi_record = WorkItemRecord {
         id: "wi-empty".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "empty test".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -197,7 +197,7 @@ fn decision_record_insert_get_round_trip() {
     let cycle_id = setup_project_workspace_cycle(&mut storage, "decision");
     let wi_record = WorkItemRecord {
         id: "wi-decision".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "decision test".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -249,7 +249,7 @@ fn decision_record_list_by_work_item() {
     let cycle_id = setup_project_workspace_cycle(&mut storage, "list");
     let wi_record = WorkItemRecord {
         id: "wi-list".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "list test".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -298,7 +298,7 @@ fn build_provenance_chain_over_persisted_records() {
 
     let wi = WorkItemRecord {
         id: "wi-chain".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "chain test".into(),
         description: "desc".into(),
         status: WorkItemStatus::Active,
@@ -388,7 +388,7 @@ fn graph_identity_deterministic_across_re_lists() {
 
     let wi_a = WorkItemRecord {
         id: "wi-ida".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "Item A".into(),
         description: "desc a".into(),
         status: WorkItemStatus::Active,
@@ -404,7 +404,7 @@ fn graph_identity_deterministic_across_re_lists() {
     };
     let wi_b = WorkItemRecord {
         id: "wi-idb".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "Item B".into(),
         description: "desc b".into(),
         status: WorkItemStatus::Draft,
@@ -493,7 +493,7 @@ fn insert_dependency_edge_rejects_self_loop() {
     // Insert a work item
     let wi_record = WorkItemRecord {
         id: "wi-selfloop-test".into(),
-        cycle_id: cycle_id.into(),
+        cycle_id,
         title: "self-loop test".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -545,7 +545,7 @@ fn insert_dependency_edge_valid_edge_still_works() {
     // Insert two work items
     let wi_a = WorkItemRecord {
         id: "wi-valid-a".into(),
-        cycle_id: cycle_id.clone().into(),
+        cycle_id: cycle_id.clone(),
         title: "A".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,
@@ -561,7 +561,7 @@ fn insert_dependency_edge_valid_edge_still_works() {
     };
     let wi_b = WorkItemRecord {
         id: "wi-valid-b".into(),
-        cycle_id: cycle_id.into(),
+        cycle_id,
         title: "B".into(),
         description: "desc".into(),
         status: WorkItemStatus::Draft,

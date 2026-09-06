@@ -7,9 +7,8 @@
 //! - Spine metadata populated but same → already_present
 //! - Spine metadata populated but different → conflict
 
-use sddk_domain::spine::SpineStatus;
 use sddk_storage::Storage;
-use sddk_storage::spine_import::{ImportSummary, import_spine, map_spine_status};
+use sddk_storage::spine_import::import_spine;
 use tempfile::TempDir;
 
 // ── Test helpers ───────────────────────────────────────────────────────────────
