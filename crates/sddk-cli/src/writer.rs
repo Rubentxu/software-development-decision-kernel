@@ -164,7 +164,7 @@ mod tests {
         #[cfg(unix)]
         {
             if malicious.exists() || malicious.canonicalize().is_ok() {
-                let result = validate_xdg_output(&malicious, &xdg);
+                let _result = validate_xdg_output(&malicious, &xdg);
                 // The canonicalize will either fail (doesn't exist) or resolve
                 // through the symlink and should fail the prefix check
             }

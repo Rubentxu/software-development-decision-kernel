@@ -6,7 +6,7 @@
 //! - Paths outside XDG project data dir are rejected
 //! - Symlink traversal attacks are detected and rejected
 
-use sddk_cli::{Diagnostic, Severity};
+use sddk_cli::Severity;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;

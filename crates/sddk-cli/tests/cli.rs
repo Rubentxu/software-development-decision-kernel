@@ -14167,13 +14167,12 @@ fn find_ledger_sqlite(start: &std::path::Path) -> Option<std::path::PathBuf> {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let ft = entry.file_type().ok();
-                if ft.as_ref().map_or(false, |ty| ty.is_dir()) {
+                if ft.as_ref().is_some_and(|ty| ty.is_dir()) {
                     stack.push(entry.path());
                 } else if ft.is_some()
-                    && entry
+                    && (entry
                         .file_name()
-                        .to_str()
-                        .map_or(false, |n| n == "ledger.sqlite")
+                        .to_str() == Some("ledger.sqlite"))
                 {
                     return Some(entry.path());
                 }

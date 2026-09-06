@@ -7,7 +7,7 @@
 //! - invalid recovery action rejected
 //! - missing required fields rejected
 
-use sddk_cli::{Diagnostic, Severity, validate_classifications_registry};
+use sddk_cli::{Severity, validate_classifications_registry};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;

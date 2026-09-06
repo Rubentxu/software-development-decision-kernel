@@ -17,7 +17,6 @@ struct PlanFixture {
     state: TempDir,
     cache: TempDir,
     home: TempDir,
-    project_id: String,
     cycle_id: String,
 }
 
@@ -84,7 +83,7 @@ impl PlanFixture {
         );
         let adopt_json: serde_json::Value =
             serde_json::from_slice(&adopt.stdout).expect("adopt must return JSON project_id");
-        let project_id = adopt_json["project_id"]
+        let _project_id = adopt_json["project_id"]
             .as_str()
             .expect("project_id must be string")
             .to_string();
@@ -142,7 +141,6 @@ impl PlanFixture {
             state,
             cache,
             home,
-            project_id,
             cycle_id,
         }
     }
