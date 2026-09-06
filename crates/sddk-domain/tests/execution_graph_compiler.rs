@@ -6,11 +6,13 @@
 //! - Serde round-trip preserves digest
 //! - Different compile anchors yield different revision IDs
 //! - Provenance identity is triple-bound
+//! - Edge synthesis from Operator::referenced_ids()
+//! - Deterministic BTreeMap edge sets
 
 use std::collections::BTreeMap;
 
 use sddk_domain::plan_revision::{NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1};
-use sddk_domain::workflow_ir::{Budgets, CapabilityId, Operator, OperatorId, WorkflowIR};
+use sddk_domain::workflow_ir::{Budgets, CapabilityId, NodeId, Operator, OperatorId, WorkflowIR};
 use sddk_domain::ExecutionGraphRevision;
 use sddk_domain::execution_graph_compiler::compile_plan_to_revision;
 use serde_json;
@@ -193,4 +195,92 @@ fn revision_id_triple_binds_identity() {
         parent_rev_id_str, child_rev_id_str,
         "parent and child revision_ids must differ"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Edge Synthesis (S3)
+// ---------------------------------------------------------------------------
+
+/// Builds a plan with `Operator::Sequence { body: [a, b] }` so we get edges.
+fn sequence_plan_revision() -> PlanRevisionV1 {
+    let ir = WorkflowIR {
+        ir_id: None,
+        schema_version: 1,
+        template_ref: sddk_domain::TemplateRef {
+            id: "test.template".into(),
+            version: "1.0.0".into(),
+        },
+        operators: BTreeMap::from([
+            (OperatorId("a".into()), Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() }),
+            (OperatorId("b".into()), Operator::Task { capability: CapabilityId("test.cap".into()), inputs: Default::default() }),
+            (OperatorId("seq".into()), Operator::Sequence {
+                body: vec![OperatorId("a".into()), OperatorId("b".into())],
+            }),
+        ]),
+        guards: Default::default(),
+        expansion_permissions: Default::default(),
+        budgets: Budgets::default(),
+        required_invariants: Default::default(),
+        provenance: sddk_domain::Provenance {
+            generated_by: "test-generator".into(),
+            prompt_hash: "prompt-hash-abc".into(),
+            model_hash: "model-hash-xyz".into(),
+            policy_hash: "policy-hash-123".into(),
+        },
+    };
+    let provenance = PlanProvenanceV1::new("test-tool", "1.0.0").expect("valid provenance");
+    let normalized = NormalizedPlanV1::from_workflow_ir(&ir);
+    PlanRevisionV1::new(None, PlanMutation::Initial, provenance, normalized)
+        .expect("valid initial revision")
+}
+
+/// Scenario: edge relation matches operator variant (REQ-DW-RUNTIME-001-Edge-Synthesis).
+#[test]
+fn edge_relation_matches_operator_variant() {
+    let plan = sequence_plan_revision();
+    let r = compile_plan_to_revision(&plan, None, "anchor-seq-v1")
+        .expect("compile should succeed");
+
+    // Every edge from a Sequence operator must have relation == "sequence"
+    // and from/to present in r.nodes.keys()
+    assert!(!r.edges.is_empty(), "edges must be synthesised from referenced_ids()");
+    for (edge_id, edge) in &r.edges {
+        // Check from/to are in nodes
+        assert!(
+            r.nodes.contains_key(&NodeId(edge.from.clone())),
+            "edge from '{}' must be in nodes",
+            edge.from
+        );
+        assert!(
+            r.nodes.contains_key(&NodeId(edge.to.clone())),
+            "edge to '{}' must be in nodes",
+            edge.to
+        );
+        assert_eq!(
+            edge.relation, "sequence",
+            "edge from Sequence operator must have relation='sequence'"
+        );
+        // EdgeId.0 must be in the expected format: "{}->{}->{}"
+        assert!(
+            edge_id.0.contains("->"),
+            "edge_id must contain '->' separator"
+        );
+    }
+}
+
+/// Scenario: deterministic BTreeMap edge set (REQ-DW-RUNTIME-001-Edge-Synthesis, -Determinism).
+#[test]
+fn deterministic_btreemap_edge_set() {
+    let plan = sequence_plan_revision();
+
+    let r1 = compile_plan_to_revision(&plan, None, "anchor-seq-v1")
+        .expect("first compile should succeed");
+    let r2 = compile_plan_to_revision(&plan, None, "anchor-seq-v1")
+        .expect("second compile should succeed");
+
+    assert_eq!(r1.edges, r2.edges, "edges must be equal across identical compilations");
+    // Also verify BTreeMap iteration order is identical
+    let keys1: Vec<_> = r1.edges.keys().collect();
+    let keys2: Vec<_> = r2.edges.keys().collect();
+    assert_eq!(keys1, keys2, "edge key iteration order must be identical");
 }
