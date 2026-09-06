@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 
 #[cfg(test)]
 use crate::test_model::{
-    EdgeProvenanceV1, MappingOutcome, SCHEMA_VERSION, SelectorGranularity, SutNodeV1,
+    EdgeProvenanceV1, SutNodeV1,
     TopologyEdgeV1, VerificationCapabilityV1,
 };
 

@@ -112,7 +112,7 @@ fn make_work_item(id: &str, cycle_id: &str) -> WorkItemRecord {
 /// Scenario: Aligned CAS roots, identical chain
 #[test]
 fn cross_storage_aligned_cas_roots_identical_chain() {
-    let store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A").with_items(vec![
+    let _store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A").with_items(vec![
         make_work_item("WI-1", "C1"),
         make_work_item("WI-2", "C1"),
     ]);
@@ -141,7 +141,7 @@ fn cross_storage_aligned_cas_roots_identical_chain() {
 /// Scenario: Aligned CAS roots, v1 chain without producer stamp (backward compat)
 #[test]
 fn cross_storage_aligned_v1_chain_backward_compat() {
-    let store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A")
+    let _store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A")
         .with_items(vec![make_work_item("WI-1", "C1")]);
     let store_b = FakePlanningGraphRead::new("sha256:rootA", "handle-B")
         .with_items(vec![make_work_item("WI-1", "C1")]);
@@ -231,7 +231,7 @@ fn cross_storage_empty_chain_aligned_verifier() {
 /// Scenario: Producer stamp set, verifier's cas_root_id differs
 #[test]
 fn cross_storage_mismatched_cas_root_returns_drift() {
-    let store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A");
+    let _store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A");
     let store_b = FakePlanningGraphRead::new("sha256:rootB", "handle-B");
 
     let chain = PlanningProvenanceChainV1::new_v2(
@@ -246,7 +246,7 @@ fn cross_storage_mismatched_cas_root_returns_drift() {
         chain.verify_references_with_options(&store_b, &VerifyReferencesOptions::default());
     {
         let err = result.expect_err("should be CrossStorageDrift");
-        let drift = match err {
+        match err {
             ProvenanceError::CrossStorageDrift {
                 reason,
                 producer_cas_root_id,
@@ -265,7 +265,7 @@ fn cross_storage_mismatched_cas_root_returns_drift() {
 /// Scenario: Producer stamp absent, strict mode detects drift
 #[test]
 fn cross_storage_v1_strict_mode_detects_drift() {
-    let store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A");
+    let _store_a = FakePlanningGraphRead::new("sha256:rootA", "handle-A");
     let store_b = FakePlanningGraphRead::new("sha256:rootB", "handle-B");
 
     // v1 chain — no producer stamp

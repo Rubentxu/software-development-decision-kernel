@@ -19,7 +19,6 @@ struct FakePlanningGraphRead {
     cas_root_id: String,
     handle_id: String,
     work_items: HashMap<String, Vec<WorkItemRecord>>,
-    edges: HashMap<String, Vec<DependencyEdgeRecord>>,
     evidence: HashMap<String, Vec<EvidenceAttachmentRecord>>,
     decisions: HashMap<String, Vec<DecisionRecordRecord>>,
 }

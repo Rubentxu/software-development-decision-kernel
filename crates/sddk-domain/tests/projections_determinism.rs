@@ -10,7 +10,6 @@
 
 use std::fs;
 
-use sddk_domain::planning::WorkItemStatus;
 use sddk_domain::planning::projections::{
     DependencyEdgeKindSnapshot, DependencyEdgeSnapshot, GraphFormat, RoadmapSnapshot,
     WorkItemSnapshot, project_blocked, project_graph, project_next, project_show, project_status,

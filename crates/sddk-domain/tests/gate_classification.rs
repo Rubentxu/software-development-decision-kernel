@@ -10,7 +10,7 @@
 //! - Registry is closed; unknown gate names fail to load
 
 use sddk_domain::models::gate_classification::{
-    GateClassification, GateClassificationError, GateKind, RecoveryAction, RecoveryHint,
+    GateClassificationError, GateKind, RecoveryAction, RecoveryHint,
     WaiverAuthority, load_classifications,
 };
 use std::path::{Path, PathBuf};
@@ -164,7 +164,7 @@ fn load_classifications_waiver_authority_optional() {
     let classifications = load_classifications(&toml_path).unwrap();
 
     // Waiver authority is optional; Wave-1 gates may omit it
-    for (_gate_name, classification) in &classifications {
+    for classification in classifications.values() {
         if let Some(ref waiver) = classification.waiver_authority {
             assert!(
                 matches!(

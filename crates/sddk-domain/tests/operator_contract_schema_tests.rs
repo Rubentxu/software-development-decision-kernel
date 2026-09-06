@@ -7,7 +7,7 @@
 //! - REQ-OPOUT-005: items no longer appears as an output key
 
 use sddk_domain::operator_contract::{
-    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorInputSchema, OperatorOutputSchema, OperatorSchema,
+    OPERATOR_CONTRACT_SCHEMA_VERSION, OperatorInputSchema, OperatorOutputSchema,
     SchemaDialect, default_input_schema, default_output_schema,
 };
 use sddk_domain::{CapabilityId, GuardExpr, Operator as DomainOperator, OperatorId};
@@ -156,7 +156,7 @@ fn input_and_output_are_distinct_types() {
 /// This test serves as documentation and provides a compile-time anchor.
 #[test]
 fn static_fields_uses_btreemap() {
-    use std::collections::BTreeMap;
+    
     let variants = all_variants();
     for variant in &variants {
         let input = default_input_schema(variant);
@@ -165,14 +165,12 @@ fn static_fields_uses_btreemap() {
         let _ = &input.static_fields;
         let _ = &output.static_fields;
         // Verify they are indeed BTreeMaps by checking type at runtime via mem size
-        assert_eq!(
+        assert!(
             std::mem::size_of_val(&input.static_fields) > 0,
-            true,
             "input static_fields must be populated"
         );
-        assert_eq!(
+        assert!(
             std::mem::size_of_val(&output.static_fields) > 0,
-            true,
             "output static_fields must be populated"
         );
     }

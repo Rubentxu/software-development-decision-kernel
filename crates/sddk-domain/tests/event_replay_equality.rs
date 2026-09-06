@@ -5,7 +5,7 @@
 //! same snapshot position must yield bit-for-bit identical event chains.
 
 use sddk_domain::EventEnvelopeV1;
-use sddk_domain::event_envelope::{ActorKind, ActorRef, EntityRef};
+use sddk_domain::event_envelope::{ActorKind, ActorRef};
 use sddk_domain::graph::GraphProjection;
 use sddk_domain::replay::{ReplayEngine, Snapshot};
 use serde_json::json;

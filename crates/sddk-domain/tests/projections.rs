@@ -472,7 +472,7 @@ fn project_next_all_terminal_returns_spine_complete() {
 #[test]
 fn project_next_cycle_detected_via_blocked() {
     // Two PROPOSED items with no exit_gate, blocking each other
-    let (a, edges_a) = wi(
+    let (a, _edges_a) = wi(
         "A",
         10,
         "H0",
@@ -481,7 +481,7 @@ fn project_next_cycle_detected_via_blocked() {
         None,
         &["B"],
     );
-    let (b, edges_b) = wi(
+    let (b, _edges_b) = wi(
         "B",
         20,
         "H0",

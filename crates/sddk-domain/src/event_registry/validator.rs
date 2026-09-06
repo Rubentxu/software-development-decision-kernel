@@ -122,7 +122,7 @@ mod tests {
     use super::super::schemas::std_registry;
     use super::{CanonicalEventValidator, EventSchemaRegistry, EventValidatorError};
     use crate::event_envelope::{ActorKind, ActorRef, EventEnvelopeV1};
-    use crate::projections::{JournalProjection, Projection};
+    use crate::projections::Projection;
     use serde_json::json;
 
     fn valid_envelope(event_type: &str, payload: serde_json::Value) -> EventEnvelopeV1 {

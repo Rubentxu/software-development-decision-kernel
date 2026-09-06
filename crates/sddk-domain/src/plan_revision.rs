@@ -498,7 +498,7 @@ impl NormalizedPlan {
 mod tests {
     use super::*;
     use crate::workflow_ir::{
-        Budgets, CapabilityId, ExpansionPermission, Operator, OperatorId, Policy, Provenance,
+        Budgets, CapabilityId, ExpansionPermission, Operator, OperatorId, Provenance,
         SCHEMA_VERSION, TemplateRef, WorkflowIR,
     };
     use std::collections::BTreeMap;
@@ -765,7 +765,7 @@ mod tests {
         });
         let provenance = PlanProvenanceV1::new("test", "1.0.0").unwrap();
 
-        let lineage = PlanRevisionLineageV1::initial(&ir, provenance).unwrap();
+        let _lineage = PlanRevisionLineageV1::initial(&ir, provenance).unwrap();
         // The lineage itself is fine; derive with identical IR + Initial would mean
         // calling new() with Some(parent) + Initial which is caught by the constructor.
         // This is tested separately in the constructor test below.

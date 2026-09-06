@@ -5,7 +5,6 @@
 //! - Each variant carries meaningful context (operator_id, variant name, field)
 
 use sddk_domain::operator_contract::OperatorContractError;
-use serde_json;
 
 /// OperatorContractError has exactly 8 variants as specified in SPEC §V-2.
 /// The compile-time guard `assert_variant_count_eq!` in the module ensures this.

@@ -83,42 +83,12 @@ impl EventSchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::super::schemas::std_registry;
-    use super::{Arc, EventRegistryError, EventSchemaRegistry};
-    use crate::event_envelope::{ActorKind, ActorRef, EventEnvelopeV1};
-    use crate::projections::Projection;
-    use serde_json::json;
+    use super::EventRegistryError;
+    
+    
+    
 
-    fn valid_envelope(event_type: &str, payload: serde_json::Value) -> EventEnvelopeV1 {
-        let mut env = EventEnvelopeV1 {
-            event_id: "evt-test-1".into(),
-            event_type: event_type.into(),
-            schema_version: 1,
-            stream_id: "stream-test".into(),
-            sequence: 1,
-            project_id: "p-test".into(),
-            occurred_at: "2026-08-22T00:00:00Z".into(),
-            recorded_at: "2026-08-22T00:00:00Z".into(),
-            actor: ActorRef {
-                kind: ActorKind::System,
-                id: "test".into(),
-                definition_hash: None,
-                policy_hash: None,
-                model: None,
-            },
-            subjects: vec![],
-            payload,
-            evidence_refs: vec![],
-            content_hash: String::new(),
-            metadata: None,
-            causation_id: None,
-            correlation_id: None,
-            cycle_id: None,
-            frame_id: None,
-            fork_id: None,
-        };
-        env.content_hash = env.compute_content_hash();
-        env
-    }
+        
 
     #[test]
     fn registry_resolves_known_types() {

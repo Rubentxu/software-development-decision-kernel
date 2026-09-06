@@ -3,7 +3,7 @@
 //! Tests AC-PLN3-05 and AC-PLN3-06.
 
 use sddk_domain::spine::{
-    ExecutionSpineV1, SpineParseError, SpineStatus, canonicalize_spine_bytes, parse_spine_yaml,
+    SpineStatus, canonicalize_spine_bytes, parse_spine_yaml,
 };
 
 /// Scenario: Current EXECUTION-SPINE.yaml parses cleanly
@@ -81,7 +81,7 @@ items:
             yaml_status
         );
         let spine =
-            parse_spine_yaml(yaml.as_bytes()).expect(&format!("{yaml_status} should parse"));
+            parse_spine_yaml(yaml.as_bytes()).unwrap_or_else(|_| panic!("{yaml_status} should parse"));
         assert_eq!(
             spine.items[0].status, expected,
             "status {yaml_status} should map to {:?}",

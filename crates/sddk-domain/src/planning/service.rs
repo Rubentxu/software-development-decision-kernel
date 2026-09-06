@@ -349,25 +349,6 @@ impl DependencyResolutionService {
 mod tests {
     use super::*;
 
-    fn status_draft() -> WorkItemStatus {
-        WorkItemStatus::Draft
-    }
-    fn status_active() -> WorkItemStatus {
-        WorkItemStatus::Active
-    }
-    fn status_paused() -> WorkItemStatus {
-        WorkItemStatus::Paused
-    }
-    fn status_done() -> WorkItemStatus {
-        WorkItemStatus::Done
-    }
-    fn status_superseded() -> WorkItemStatus {
-        WorkItemStatus::Superseded
-    }
-    fn status_cancelled() -> WorkItemStatus {
-        WorkItemStatus::Cancelled
-    }
-
     fn make_work_item(id: &str) -> crate::planning::WorkItemV1 {
         crate::planning::WorkItemV1::new(
             id.into(),
