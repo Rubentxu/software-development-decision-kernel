@@ -36,7 +36,6 @@ pub use adoption::*;
 pub use cycle_replan::*;
 pub use cycle_supersede::*;
 pub use event_bus::*;
-pub use execution_controller::*;
 pub use fingerprint::*;
 pub use gate_evaluator::*;
 pub use gate_signing::*;
@@ -60,7 +59,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use sddk_domain::{
-    ActorKind, ActorRef, ArtifactRef, CycleLease, CycleManifest, CyclePath, CycleRecord,
+    ActorRef, ArtifactRef, CycleLease, CycleManifest, CyclePath, CycleRecord,
     CycleStatus, GateOutcomeStatus, GateReceipt, GateReceiptNextSeqInput, Ledger, LedgerEvent,
     LedgerEventInput, Phase, Requirement, StateRef, StorageError, Transition,
     WORKFLOW_SCHEMA_VERSION, WorkflowManifest, models::gate_receipt::validate_pass_evidence,

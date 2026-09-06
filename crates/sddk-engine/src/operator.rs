@@ -14,8 +14,7 @@ use sddk_domain::{
     GraphStore, NodeId, NodeRun, Operator as DomainOperator, OperatorId, TaskExecutor, WorkflowIR,
     WorkflowRun,
     operator_contract::{
-        OperatorInputSchema, OperatorOutputSchema, default_input_schema, default_output_schema,
-        variant_name,
+        default_output_schema,
     },
 };
 

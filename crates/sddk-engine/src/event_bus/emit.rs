@@ -9,7 +9,7 @@ use serde_json::json;
 use crate::TransitionOutcome;
 use crate::authority::{AuthorityContext, WritableSurface};
 
-use super::correlation::{with_causation, with_correlation_from_context, with_correlation_id};
+use super::correlation::{with_causation, with_correlation_id};
 use super::envelopes::{build_event_envelope, build_outcome_envelope};
 
 // ── Input types ────────────────────────────────────────────────────────────────
@@ -747,7 +747,7 @@ pub fn emit_workflow_node_failed<S: EventStore>(
 // ── Planning Ledger event emission (PLN-LEDGER-001 / ADR-072) ─────────────────
 
 use sddk_domain::planning::{
-    CasHash, DecisionId, DecisionKind, DependencyEdgeKind, EvidenceId, PlanningEvidenceKind,
+    DependencyEdgeKind,
     WorkItemId, WorkItemStatus,
 };
 
