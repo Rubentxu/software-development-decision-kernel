@@ -1,8 +1,8 @@
 schema_version: 2
 plan_id: sddk-canonical-evolution
 baseline:
-  release: v1.87.1
-  reconciled_at: 2026-09-05
+  release: v1.88.3
+  reconciled_at: 2026-09-06
 purpose: >-
   Machine-readable, dependency-ordered execution spine for SDDK. This file tells an
   agent exactly what to resume, what to start next, and what terminal state means.
@@ -200,7 +200,7 @@ items:
   - order: 130
     id: PLN-LEDGER-004
     horizon: H1
-    status: ACTIVE # reconciled 2026-09-05: decision-plane projections WIP on feature/pln-ledger-004-decision-plane-projections
+    status: SHIPPED # reconciled 2026-09-06: PLN-LEDGER-004 shipped; 8b0af0c test(domain): pin PromotionBlocked + bound_cycles contracts, 75bdbe4 refactor(domain+cli): hygiene; tags v1.88.0/v1.88.1/v1.88.2/v1.88.3
     depends_on: [PLN-LEDGER-003]
     objective: Expose deterministic roadmap status/next/blocked/show/graph projections.
     exit_gate: An agent can compute the same next work item from the ledger on repeated clean checkouts.

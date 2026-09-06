@@ -7,71 +7,105 @@
 //! - `sddk plan roadmap show --id <id>`
 //! - `sddk plan roadmap graph [--format json|dot|mermaid]`
 //!
-//! Functional tests spawn a subprocess with a custom CWD inside a temp dir
-//! that also contains `.sddk/adoption.json`, so the CLI's walk-up
-//! adoption lookup finds it immediately.
+//! Functional tests use the canonical XDG adoption flow: `sddk adopt apply`
+//! creates the receipt under XDG_DATA_HOME, and `sddk plan import --spine`
+//! populates the ledger.
 
-use std::fs;
 use std::process::Command;
 
 use tempfile::TempDir;
 
 // ── Test fixtures ──────────────────────────────────────────────────────────────
 
-/// Path to the pinned spine fixture.
-const FIXTURE_PATH: &str = "../sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml";
-
-/// Load the pinned spine fixture as bytes.
-fn load_fixture() -> Vec<u8> {
-    fs::read(FIXTURE_PATH).expect("failed to read spine fixture")
-}
-
-/// Build an adopted storage tree and return (TempDir, sddk binary path).
-/// The tree looks like:
-///   $tmp/.sddk/adoption.json        ← found by walk-up from cwd
-///   $tmp/sddk/projects/p-test/ledger.sqlite  ← found via XDG_STATE_HOME
+/// Builds an adopted storage tree using the canonical XDG adoption flow.
+/// Returns (root_tempdir, sddk_binary_path).
+/// The canonical layout (with shared tempdir for all XDG vars):
+///   <tmp>/.sddk/                    ← git repo root
+///   <tmp>/sddk/projects/<pid>/    ← XDG data + state dir
+///   <tmp>/sddk/projects/<pid>/workspaces/<wid>/adoption.json
+///   <tmp>/sddk/projects/<pid>/ledger.sqlite
 fn build_adopted_storage() -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().expect("temp dir");
-    let tmp_path = tmp.path();
+    let tmp_str = tmp.path().to_str().unwrap();
 
-    // Create adoption receipt at tmp root (CLI walks up from cwd to find this)
-    let sddk_dir = tmp_path.join(".sddk");
-    fs::create_dir_all(&sddk_dir).expect("create .sddk dir");
-    fs::write(
-        sddk_dir.join("adoption.json"),
-        serde_json::json!({
-            "project_id": "p-test",
-            "workspace_id": "ws-test"
-        })
-        .to_string(),
-    )
-    .expect("write adoption.json");
+    // Create minimal git repo
+    std::fs::create_dir_all(tmp.path().join(".git")).expect("create .git dir");
 
-    // Create ledger directory and import spine
-    let ledger_dir = tmp_path.join("sddk/projects/p-test/");
-    fs::create_dir_all(&ledger_dir).expect("create ledger dir");
-    let db_path = ledger_dir.join("ledger.sqlite");
-    let mut storage = sddk_storage::Storage::open(&db_path).expect("open storage");
-    let spine_bytes = load_fixture();
-    sddk_storage::spine_import::import_spine(&spine_bytes, &mut storage)
-        .expect("import spine fixture");
+    // Run sddk adopt apply — using the same dir for root and all XDG vars
+    let adopt = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .env("HOME", tmp_str)
+        .env("XDG_DATA_HOME", tmp_str)
+        .env("XDG_STATE_HOME", tmp_str)
+        .env("XDG_CACHE_HOME", tmp_str)
+        .env("USER", "test-cli-actor")
+        .current_dir(tmp.path())
+        .args([
+            "adopt",
+            "apply",
+            "--root",
+            tmp_str,
+            "--scope",
+            ".",
+            "--timestamp",
+            "2026-09-06T00:00:00Z",
+            "--actor",
+            "test",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("adopt apply");
+    assert!(
+        adopt.status.success(),
+        "adopt apply failed: {}",
+        String::from_utf8_lossy(&adopt.stderr)
+    );
 
-    // Find the sddk binary
-    let bin_path = env!("CARGO_BIN_EXE_sddk");
+    // Import the spine fixture
+    let manifest_dir = std::env!("CARGO_MANIFEST_DIR");
+    let spine_path = std::path::Path::new(manifest_dir)
+        .join("..")
+        .join("sddk-domain/tests/fixtures/execution_spine_post_reconciliation.yaml");
+    let import = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .env("HOME", tmp_str)
+        .env("XDG_DATA_HOME", tmp_str)
+        .env("XDG_STATE_HOME", tmp_str)
+        .env("XDG_CACHE_HOME", tmp_str)
+        .env("USER", "test-cli-actor")
+        .current_dir(tmp.path())
+        .args(["plan", "import", "--spine", spine_path.to_str().unwrap()])
+        .output()
+        .expect("plan import");
+    assert!(
+        import.status.success(),
+        "spine import failed: {}",
+        String::from_utf8_lossy(&import.stderr)
+    );
 
-    (tmp, bin_path.into())
+    (tmp, env!("CARGO_BIN_EXE_sddk").into())
 }
 
-/// Run `sddk` binary as a subprocess with cwd=tmp_path and XDG_STATE_HOME=tmp_path.
+/// Run `sddk` binary as a subprocess with all XDG vars pointing to tmp_path.
+///
+/// The binary needs XDG_DATA_HOME to locate the adoption receipt created by
+/// `build_adopted_storage()`.  The old broken `open_storage_for_plan` walked
+/// the filesystem from cwd (ignoring XDG), which accidentally worked in the
+/// test because cwd happened to contain the receipt.  The canonical resolver
+/// uses XDG paths, so all vars must be set consistently.
 fn run_sddk(
     tmp_path: &std::path::Path,
     sddk_bin: &std::path::Path,
     args: &[&str],
 ) -> std::process::Output {
+    let tmp_str = tmp_path.to_str().unwrap();
     Command::new(sddk_bin)
         .args(args)
         .current_dir(tmp_path)
-        .env("XDG_STATE_HOME", tmp_path.to_str().unwrap())
+        .env("HOME", tmp_str)
+        .env("XDG_DATA_HOME", tmp_str)
+        .env("XDG_STATE_HOME", tmp_str)
+        .env("XDG_CACHE_HOME", tmp_str)
+        .env("USER", "test-cli-actor")
         .output()
         .expect("failed to spawn sddk")
 }

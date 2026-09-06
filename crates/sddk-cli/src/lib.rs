@@ -320,6 +320,9 @@ enum Command {
         /// When absent, falls back to legacy `cycle start` with deprecation warning.
         #[command(subcommand)]
         command: Option<plan::PlanCommand>,
+        /// Runtime inference flags: --root, --scope, --no-infer, --remote, --fallback-seed.
+        #[command(flatten)]
+        runtime: crate::cycle::RuntimeArgs,
         /// Legacy: display name used to derive the stable cycle identifier.
         /// DEPRECATED — emits warning and delegates to `cycle start`.
         #[arg(long)]
@@ -674,13 +677,14 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::Status { cycle, format } => status::run_status(cycle, format, environment),
         Command::Plan {
             command,
+            runtime,
             name: _,
             path: _,
             branch: _,
             format: _,
         } => {
             if let Some(cmd) = command {
-                plan::run_plan(cmd, environment)
+                plan::run_plan(cmd, &runtime, environment)
             } else {
                 // No subcommand provided — show error
                 crate::failure("sddk plan requires a subcommand: workitem, dep, evidence, decision, graph, or roadmap. Use 'sddk plan --help' for more information.".to_string())

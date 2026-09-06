@@ -88,16 +88,6 @@ impl PlanFixture {
             .expect("project_id must be string")
             .to_string();
 
-        // sddk plan requires .sddk/adoption.json in the project root (not just XDG_DATA_HOME).
-        // Copy the receipt to the project root so plan commands can find it.
-        let receipt_path_from_adopt = adopt_json["receipt_path"]
-            .as_str()
-            .expect("receipt_path must be string");
-        let sddk_dir = root.path().join(".sddk");
-        std::fs::create_dir_all(&sddk_dir).unwrap();
-        let dest_receipt = sddk_dir.join("adoption.json");
-        std::fs::copy(receipt_path_from_adopt, &dest_receipt).unwrap();
-
         // Start cycle — use --actor (not --actor-id), --name (not --cycle-id)
         let cycle = run_sddk(
             &root_str,

@@ -24,51 +24,24 @@ use sddk_domain::planning::{
     EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, PlanningEvidenceKind,
     WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
 };
-use serde::Deserialize;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::cycle::{RuntimeArgs, RuntimeContext};
 use crate::{CliEnvironment, CommandOutput, OutputFormat, Storage, failure};
 
-/// Minimal adoption receipt fields needed to resolve the ledger path.
-/// We deserialize only the fields we need rather than depending on the full type.
-#[derive(Debug, Deserialize)]
-struct MinimalReceipt {
-    project_id: String,
-}
-
-/// Opens Storage from the project root, looking up the adoption receipt to find
-/// the ledger path. Returns `Some(Storage)` on success, `None` if no adopted project found.
-fn open_storage_for_plan(environment: &CliEnvironment) -> Option<Storage> {
-    // Walk up from cwd looking for .sddk/adoption.json
-    let cwd = std::env::current_dir().ok()?;
-    let mut dir = cwd.as_path();
-    loop {
-        let receipt_path = dir.join(".sddk").join("adoption.json");
-        if receipt_path.is_file() {
-            let bytes = std::fs::read(&receipt_path).ok()?;
-            let receipt: MinimalReceipt = serde_json::from_slice(&bytes).ok()?;
-            // The ledger is at <state_home>/sddk/projects/<project_id>/ledger.sqlite
-            let xdg = environment.xdg();
-            let state_home = xdg
-                .state_home
-                .as_deref()
-                .map(PathBuf::from)
-                .or_else(|| xdg.home.as_deref().map(|h| h.join(".local/state")))?;
-            let project_id = &receipt.project_id;
-            let ledger_path = state_home
-                .join("sddk/projects")
-                .join(project_id)
-                .join("ledger.sqlite");
-            if let Ok(storage) = Storage::open(&ledger_path) {
-                return Some(storage);
-            }
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => return None,
-        }
-    }
+/// Opens Storage via the canonical RuntimeContext::open() resolver.
+///
+/// Uses the same inference layer as all other lifecycle commands (cycle, ledger,
+/// capability, etc.). This replaces the old walk-up walker that looked for
+/// `.sddk/adoption.json` at the project root — which does not exist for
+/// XDG-resolved adoptions.
+fn open_storage_for_plan(
+    args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> anyhow::Result<Storage> {
+    let context = RuntimeContext::open(args, environment, false)?;
+    Ok(context.storage)
 }
 
 /// Parses an actor_id string like "Human:alice" or "agent:cli" into an ActorRef.
@@ -115,14 +88,15 @@ pub(crate) struct PlanImportArgs {
 }
 
 /// Run `sddk plan import --spine <PATH>`.
-fn run_import(args: PlanImportArgs, environment: &CliEnvironment) -> CommandOutput {
-    let mut storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_import(
+    args: PlanImportArgs,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let mut storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
 
@@ -426,24 +400,37 @@ pub(crate) struct DecisionRecordArgs {
 // ── Runner functions ───────────────────────────────────────────────────────────
 
 /// Run the `plan` subcommand dispatcher.
-pub(crate) fn run_plan(command: PlanCommand, environment: &CliEnvironment) -> CommandOutput {
+pub(crate) fn run_plan(
+    command: PlanCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
     match command {
-        PlanCommand::WorkItem { command } => run_workitem(command, environment),
-        PlanCommand::Dep { command } => run_dep(command, environment),
-        PlanCommand::Evidence { command } => run_evidence(command, environment),
-        PlanCommand::Decision { command } => run_decision(command, environment),
-        PlanCommand::Graph { cycle_id, format } => run_graph(&cycle_id, format, environment),
-        PlanCommand::Import(args) => run_import(args, environment),
-        PlanCommand::Roadmap { command } => run_roadmap(command, environment),
+        PlanCommand::WorkItem { command } => run_workitem(command, runtime_args, environment),
+        PlanCommand::Dep { command } => run_dep(command, runtime_args, environment),
+        PlanCommand::Evidence { command } => run_evidence(command, runtime_args, environment),
+        PlanCommand::Decision { command } => run_decision(command, runtime_args, environment),
+        PlanCommand::Graph { cycle_id, format } => {
+            run_graph(&cycle_id, format, runtime_args, environment)
+        }
+        PlanCommand::Import(args) => run_import(args, runtime_args, environment),
+        PlanCommand::Roadmap { command } => run_roadmap(command, runtime_args, environment),
     }
 }
 
 /// Run roadmap decision-plane projection subcommands.
-fn run_roadmap(command: RoadmapCommand, environment: &CliEnvironment) -> CommandOutput {
-    let storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure("No adopted project found. Run 'sddk adopt' first.".to_string());
+fn run_roadmap(
+    command: RoadmapCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!(
+                "No adopted project found. Run 'sddk adopt' first: {}",
+                e
+            ));
         }
     };
 
@@ -515,14 +502,15 @@ fn render_json<T: serde::Serialize>(value: T) -> CommandOutput {
 
 // ── WorkItem subcommand handler ───────────────────────────────────────────────
 
-fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> CommandOutput {
-    let storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_workitem(
+    command: WorkItemCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -746,14 +734,15 @@ fn run_workitem(command: WorkItemCommand, environment: &CliEnvironment) -> Comma
 
 // ── Dep subcommand handler ────────────────────────────────────────────────────
 
-fn run_dep(command: DepCommand, environment: &CliEnvironment) -> CommandOutput {
-    let storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_dep(
+    command: DepCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -844,14 +833,15 @@ fn run_dep(command: DepCommand, environment: &CliEnvironment) -> CommandOutput {
 
 // ── Evidence subcommand handler ────────────────────────────────────────────────
 
-fn run_evidence(command: EvidenceCommand, environment: &CliEnvironment) -> CommandOutput {
-    let mut storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_evidence(
+    command: EvidenceCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let mut storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -932,14 +922,15 @@ fn run_evidence(command: EvidenceCommand, environment: &CliEnvironment) -> Comma
 
 // ── Decision subcommand handler ────────────────────────────────────────────────
 
-fn run_decision(command: DecisionCommand, environment: &CliEnvironment) -> CommandOutput {
-    let storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_decision(
+    command: DecisionCommand,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match command {
@@ -1003,14 +994,16 @@ fn run_decision(command: DecisionCommand, environment: &CliEnvironment) -> Comma
 
 // ── Graph subcommand handler ──────────────────────────────────────────────────
 
-fn run_graph(cycle_id: &str, format: OutputFormat, environment: &CliEnvironment) -> CommandOutput {
-    let storage = match open_storage_for_plan(environment) {
-        Some(s) => s,
-        None => {
-            return failure(
-                "sddk plan requires an adopted project: no .sddk/adoption.json found in parent dirs"
-                    .to_string(),
-            );
+fn run_graph(
+    cycle_id: &str,
+    format: OutputFormat,
+    runtime_args: &RuntimeArgs,
+    environment: &CliEnvironment,
+) -> CommandOutput {
+    let storage = match open_storage_for_plan(runtime_args, environment) {
+        Ok(s) => s,
+        Err(e) => {
+            return failure(format!("sddk plan requires an adopted project: {}", e));
         }
     };
     match storage.build_provenance_chain(cycle_id) {
