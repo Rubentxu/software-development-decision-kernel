@@ -11,6 +11,35 @@
 //!
 //! Kahn's algorithm is used for cycle detection (consistent with
 //! `DependencyResolutionService` per ADR-073 §3.2).
+//!
+//! ## Public surface
+//!
+//! The following 19 items are `pub` and form the stable public API:
+//!
+//! | Item | Kind | Justification |
+//! |---|---|---|
+//! | `RoadmapProjectionError` | enum (a) | Error type; part of API contract |
+//! | `RoadmapSnapshot` | struct (a) | Input to all projection functions |
+//! | `WorkItemSnapshot` | struct (a) | Core data transfer type |
+//! | `DependencyEdgeSnapshot` | struct (a) | Core data transfer type |
+//! | `DependencyEdgeKindSnapshot` | enum (a) | Discriminant for edge direction |
+//! | `StatusProjection` | struct (b) | Return type of `project_status` |
+//! | `HorizonStats` | struct (b) | Sub-struct of `StatusProjection` |
+//! | `project_status` | fn (b) | Core projection; AC-PLN4-05 |
+//! | `NextProjection` | struct (b) | Return type of `project_next` |
+//! | `NextPromotion` | enum (b) | Promotion action variant |
+//! | `project_next` | fn (b) | Core projection; AC-PLN4-06 |
+//! | `BlockedProjection` | struct (b) | Return type of `project_blocked` |
+//! | `BlockedItem` | struct (b) | Sub-struct of `BlockedProjection` |
+//! | `PromotionBlockedItem` | struct (b) | Sub-struct of `BlockedProjection` |
+//! | `project_blocked` | fn (b) | Core projection; AC-PLN4-07 |
+//! | `ShowProjection` | struct (b) | Return type of `project_show` |
+//! | `project_show` | fn (b) | Core projection; AC-PLN4-08 |
+//! | `GraphFormat` | enum (b) | Format selector for `project_graph` |
+//! | `project_graph` | fn (b) | Core projection; AC-PLN4-09 |
+//!
+//! Justification classes: (a) data-type contract, (b) projection API, (c) internal algorithm,
+//! (d) test-only. Items not listed here are module-private.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -79,7 +108,7 @@ pub enum RoadmapProjectionError {
 /// Spine horizon variants (H0..H12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SpineHorizon {
+enum SpineHorizon {
     H0,
     H1,
     H2,
@@ -191,7 +220,7 @@ pub enum DependencyEdgeKindSnapshot {
 /// # Algorithm
 /// Kahn's algorithm: remove all nodes with zero in-degree iteratively.
 /// If any nodes remain, they form a cycle.
-pub fn detect_cycle(
+fn detect_cycle(
     items: &BTreeMap<WorkItemId, WorkItemSnapshot>,
     edges: &[DependencyEdgeSnapshot],
 ) -> Result<(), Vec<WorkItemId>> {
