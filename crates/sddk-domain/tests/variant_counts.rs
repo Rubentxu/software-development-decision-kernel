@@ -10,7 +10,6 @@
 use sddk_domain::{
     channel::ReleaseChannel,
     cycle::{CycleStatus, Phase, RiskLevel},
-    execution_graph_compiler::ExecutionGraphCompileError,
     pack::PackRisk,
     rules::types::RuleSeverity,
     staleness::StalenessState,
