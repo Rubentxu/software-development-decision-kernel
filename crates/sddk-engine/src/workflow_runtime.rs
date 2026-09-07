@@ -25,8 +25,7 @@ use crate::event_bus::{
 };
 use crate::execution_controller::ExecutionController;
 use crate::operator::{
-    ChildResult, Clock, NodeOutcome, OperatorContext, OperatorError,
-    build_operator,
+    ChildResult, Clock, NodeOutcome, OperatorContext, OperatorError, build_operator,
 };
 
 /// Result type for runtime operations.
@@ -185,7 +184,12 @@ pub struct WorkflowRuntime {
 impl WorkflowRuntime {
     /// Constructs a new runtime from an IR, store, and task executor.
     #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
-    pub fn new<S: AsGraphStoreBox>(ir: WorkflowIR, store: S, clock: Clock, executor: Arc<dyn TaskExecutor>) -> Self {
+    pub fn new<S: AsGraphStoreBox>(
+        ir: WorkflowIR,
+        store: S,
+        clock: Clock,
+        executor: Arc<dyn TaskExecutor>,
+    ) -> Self {
         let store = store.into_graph_store_box();
         // Legacy constructor: uses content-derived IDs (deterministic per IR).
         // TODO(dw-runtime-003): callers should migrate to from_compiled
@@ -384,6 +388,7 @@ impl WorkflowRuntime {
     ///
     /// Convenience constructor that wraps `new()` but takes only the IR,
     /// using a no-op executor and wall-clock.
+    #[allow(deprecated)]
     pub fn run_ir<S: AsGraphStoreBox>(ir: WorkflowIR, store: S) -> Self {
         let clock = Clock;
         let executor: Arc<dyn TaskExecutor> = Arc::new(sddk_domain::NoopTaskExecutor);
@@ -427,7 +432,10 @@ impl WorkflowRuntime {
                 // No existing run — first time execution
                 // REQ-WFR3-PERSIST-001: persist the run before record_node_run_for_run calls
                 if let Some(ref initial_revision) = self.initial_revision {
-                    self.store.lock().unwrap().record_run(&self.run, initial_revision)?;
+                    self.store
+                        .lock()
+                        .unwrap()
+                        .record_run(&self.run, initial_revision)?;
                 }
             }
             Err(_) => {
@@ -1040,37 +1048,39 @@ impl WorkflowRuntime {
                             // via ctx.store.record_attempt() with correct attempt_seq (0,1,2...).
                             // The runtime's attempt uses attempt_seq=0 which would conflict.
                             if !is_sequence {
-                                let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
-                                    attempt_id: sddk_domain::workflow_run::AttemptId(format!(
-                                        "tick-attempt-{}-{}",
-                                        self.run.run_id.0, op_id.0
-                                    )),
-                                    node_id: NodeId(op_id.0.clone()),
-                                    route: sddk_domain::Route {
-                                        provider: "runtime".to_string(),
-                                        model: "cycle16".to_string(),
-                                        host: "local".to_string(),
-                                    },
-                                    started_at: self.clock.now(),
-                                    ended_at: Some(self.clock.now()),
-                                    outcome: Some(attempt_outcome),
-                                    usage: sddk_domain::Usage {
-                                        tokens_in: 0,
-                                        tokens_out: 0,
-                                        cost_micros: 0,
-                                        wall_ms: 0,
-                                    },
-                                    context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
-                                        cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
-                                    },
-                                    idempotency_key: sddk_domain::IdempotencyKey {
-                                        project_id: "sddk".to_string(),
-                                        run_id: self.run.run_id.clone(),
+                                let _ = self.store.lock().unwrap().record_attempt(
+                                    &sddk_domain::Attempt {
+                                        attempt_id: sddk_domain::workflow_run::AttemptId(format!(
+                                            "tick-attempt-{}-{}",
+                                            self.run.run_id.0, op_id.0
+                                        )),
                                         node_id: NodeId(op_id.0.clone()),
-                                        attempt_seq: 0,
+                                        route: sddk_domain::Route {
+                                            provider: "runtime".to_string(),
+                                            model: "cycle16".to_string(),
+                                            host: "local".to_string(),
+                                        },
+                                        started_at: self.clock.now(),
+                                        ended_at: Some(self.clock.now()),
+                                        outcome: Some(attempt_outcome),
+                                        usage: sddk_domain::Usage {
+                                            tokens_in: 0,
+                                            tokens_out: 0,
+                                            cost_micros: 0,
+                                            wall_ms: 0,
+                                        },
+                                        context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
+                                            cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
+                                        },
+                                        idempotency_key: sddk_domain::IdempotencyKey {
+                                            project_id: "sddk".to_string(),
+                                            run_id: self.run.run_id.clone(),
+                                            node_id: NodeId(op_id.0.clone()),
+                                            attempt_seq: 0,
+                                        },
+                                        schema_version: 1,
                                     },
-                                    schema_version: 1,
-                                });
+                                );
                             }
                             outcome.outcomes.push((
                                 op_id.clone(),
@@ -1099,39 +1109,45 @@ impl WorkflowRuntime {
                                     );
                                 }
                             }
-                            let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
-                                attempt_id: sddk_domain::workflow_run::AttemptId(format!(
-                                    "tick-attempt-{}-{}",
-                                    self.run.run_id.0, op_id.0
-                                )),
-                                node_id: NodeId(op_id.0.clone()),
-                                route: sddk_domain::Route {
-                                    provider: "runtime".to_string(),
-                                    model: "cycle16".to_string(),
-                                    host: "local".to_string(),
-                                },
-                                started_at: self.clock.now(),
-                                ended_at: Some(self.clock.now()),
-                                outcome: Some(sddk_domain::workflow_run::AttemptOutcome::Failed {
-                                    error: format!("evaluation error: {}", e),
-                                }),
-                                usage: sddk_domain::Usage {
-                                    tokens_in: 0,
-                                    tokens_out: 0,
-                                    cost_micros: 0,
-                                    wall_ms: 0,
-                                },
-                                context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
-                                    cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
-                                },
-                                idempotency_key: sddk_domain::IdempotencyKey {
-                                    project_id: "sddk".to_string(),
-                                    run_id: self.run.run_id.clone(),
-                                    node_id: NodeId(op_id.0.clone()),
-                                    attempt_seq: 0,
-                                },
-                                schema_version: 1,
-                            });
+                            let _ =
+                                self.store
+                                    .lock()
+                                    .unwrap()
+                                    .record_attempt(&sddk_domain::Attempt {
+                                        attempt_id: sddk_domain::workflow_run::AttemptId(format!(
+                                            "tick-attempt-{}-{}",
+                                            self.run.run_id.0, op_id.0
+                                        )),
+                                        node_id: NodeId(op_id.0.clone()),
+                                        route: sddk_domain::Route {
+                                            provider: "runtime".to_string(),
+                                            model: "cycle16".to_string(),
+                                            host: "local".to_string(),
+                                        },
+                                        started_at: self.clock.now(),
+                                        ended_at: Some(self.clock.now()),
+                                        outcome: Some(
+                                            sddk_domain::workflow_run::AttemptOutcome::Failed {
+                                                error: format!("evaluation error: {}", e),
+                                            },
+                                        ),
+                                        usage: sddk_domain::Usage {
+                                            tokens_in: 0,
+                                            tokens_out: 0,
+                                            cost_micros: 0,
+                                            wall_ms: 0,
+                                        },
+                                        context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
+                                            cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
+                                        },
+                                        idempotency_key: sddk_domain::IdempotencyKey {
+                                            project_id: "sddk".to_string(),
+                                            run_id: self.run.run_id.clone(),
+                                            node_id: NodeId(op_id.0.clone()),
+                                            attempt_seq: 0,
+                                        },
+                                        schema_version: 1,
+                                    });
                             outcome.outcomes.push((
                                 op_id.clone(),
                                 NodeId(op_id.0.clone()),
@@ -1176,7 +1192,10 @@ impl WorkflowRuntime {
 
     /// Apply state transitions from outcomes and persist to store.
     /// REQ-WFR3-FAIL-001: propagates persistence errors to Failed state.
-    fn apply_outcomes_to_state(&mut self, outcomes: &[(OperatorId, NodeId, NodeOutcome)]) -> Result<()> {
+    fn apply_outcomes_to_state(
+        &mut self,
+        outcomes: &[(OperatorId, NodeId, NodeOutcome)],
+    ) -> Result<()> {
         for (op_id, node_run) in &mut self.nodes {
             let node_id = NodeId(op_id.0.clone());
             for (_op_id, _node_id, outcome) in outcomes {
@@ -1213,7 +1232,10 @@ impl WorkflowRuntime {
                         }
                     }
                     // REQ-WFR3-FAIL-001: use record_node_run_for_run with proper error propagation
-                    self.store.lock().unwrap().record_node_run_for_run(&self.run.run_id, node_run)?;
+                    self.store
+                        .lock()
+                        .unwrap()
+                        .record_node_run_for_run(&self.run.run_id, node_run)?;
                 }
             }
         }
@@ -1301,6 +1323,7 @@ impl WorkflowRuntime {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use sddk_domain::{GraphStore, NodeId, NoopTaskExecutor, WorkflowRunState};

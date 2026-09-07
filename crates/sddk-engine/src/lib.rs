@@ -17,8 +17,8 @@ pub mod cycle_supersede;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
-pub mod gate_evaluator;
 pub mod gate_error;
+pub mod gate_evaluator;
 pub mod gate_signing;
 pub mod inc_generator;
 pub mod operator;
@@ -38,12 +38,13 @@ pub use cycle_replan::*;
 pub use cycle_supersede::*;
 pub use event_bus::*;
 pub use fingerprint::*;
-pub use gate_evaluator::*;
 pub use gate_error::GateError;
+pub use gate_evaluator::*;
 pub use gate_signing::*;
 pub use inc_generator::*;
 pub use operator::{
-    Choice, Gate, Map, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel, Sequence, Task,
+    Choice, Gate, Map, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel, Sequence,
+    Task,
 };
 pub use pack_registry::*;
 pub use paths::*;

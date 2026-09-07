@@ -1,11 +1,13 @@
+#![allow(clippy::bool_assert_comparison, dead_code)]
+
 //! Tests for Choice guard evaluation (REQ-WFR3-CHOICE-001).
 //!
 //! Verifies the guard evaluation logic in Choice::evaluate_guard static method.
 //! The full runtime integration tests are blocked by a tick loop issue.
 
-use std::collections::BTreeMap;
 use sddk_engine::operator::{Choice, ChoiceGuardError};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 // ── Helper to call evaluate_guard ──────────────────────────────────────────────
 

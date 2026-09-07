@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! RED Tests for Operator::Map source evaluation + inputs injection (cycle-27)
 //!
 //! Map operator evaluates its `source` operator and fans out `body` across
@@ -161,8 +163,9 @@ fn make_ctx(
     run: Arc<WorkflowRun>,
     executor: Arc<dyn TaskExecutor>,
 ) -> OperatorContext {
-    let store: ScratchStore =
-        Arc::new(Mutex::new(Box::new(sddk_engine::operator::ScratchGraphStore)));
+    let store: ScratchStore = Arc::new(Mutex::new(Box::new(
+        sddk_engine::operator::ScratchGraphStore,
+    )));
     OperatorContext {
         node_run,
         ir,

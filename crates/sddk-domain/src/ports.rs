@@ -929,6 +929,104 @@ pub trait CasPort: Send + Sync {
     fn exists(&self, hash: &CasHash) -> Result<bool, CasError>;
 }
 
+// -- Blanket impl for Box<dyn GraphStore> ------------------------------------
+// Required because calling methods on Box<dyn Trait> uses trait default impls,
+// not the concrete type's impl. This explicitly forwards all methods to (**self).
+// This is ONLY needed for dyn Trait; Box<Concrete> works correctly via Deref.
+
+impl GraphStore for Box<dyn GraphStore + Send + Sync> {
+    fn save_state(&mut self, state: &crate::graph::GraphState) -> Result<(), StorageError> {
+        (**self).save_state(state)
+    }
+    fn load_state(&self) -> Result<Option<crate::graph::GraphState>, StorageError> {
+        (**self).load_state()
+    }
+    fn checkpoint(&self) -> Result<Option<crate::projections::Checkpoint>, StorageError> {
+        (**self).checkpoint()
+    }
+    fn record_ir_digest(&mut self, ir_hash: &str, ir_json: &str) -> Result<(), StorageError> {
+        (**self).record_ir_digest(ir_hash, ir_json)
+    }
+    fn record_graph_revision(
+        &mut self,
+        rev: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        (**self).record_graph_revision(rev)
+    }
+    fn record_graph_revision_for_run(
+        &mut self,
+        run_id: &crate::workflow_ir::RunId,
+        rev: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        (**self).record_graph_revision_for_run(run_id, rev)
+    }
+    fn load_node_attempts(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+        node_id: &crate::workflow_ir::NodeId,
+    ) -> Result<Vec<crate::workflow_run::Attempt>, StorageError> {
+        (**self).load_node_attempts(run_id, node_id)
+    }
+    fn attempt_count(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+        node_id: &crate::workflow_ir::NodeId,
+    ) -> Result<u32, StorageError> {
+        (**self).attempt_count(run_id, node_id)
+    }
+    fn save_revision(
+        &mut self,
+        rev: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        (**self).save_revision(rev)
+    }
+    fn load_revision(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+        rev_id: &crate::workflow_ir::RevisionId,
+    ) -> Result<Option<crate::graph::ExecutionGraphRevision>, StorageError> {
+        (**self).load_revision(run_id, rev_id)
+    }
+    fn latest_revision(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+    ) -> Result<Option<crate::graph::ExecutionGraphRevision>, StorageError> {
+        (**self).latest_revision(run_id)
+    }
+    fn record_node_run(&mut self, run: &crate::workflow_run::NodeRun) -> Result<(), StorageError> {
+        (**self).record_node_run(run)
+    }
+    fn record_node_run_for_run(
+        &mut self,
+        run_id: &crate::workflow_ir::RunId,
+        node_run: &crate::workflow_run::NodeRun,
+    ) -> Result<(), StorageError> {
+        (**self).record_node_run_for_run(run_id, node_run)
+    }
+    fn load_node_run(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+        node_id: &crate::workflow_ir::NodeId,
+    ) -> Result<Option<crate::workflow_run::NodeRun>, StorageError> {
+        (**self).load_node_run(run_id, node_id)
+    }
+    fn record_attempt(
+        &mut self,
+        attempt: &crate::workflow_run::Attempt,
+    ) -> Result<(), StorageError> {
+        (**self).record_attempt(attempt)
+    }
+    fn record_run(
+        &mut self,
+        run: &crate::WorkflowRun,
+        initial_revision: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        (**self).record_run(run, initial_revision)
+    }
+    fn load_run(&self, run_id: &crate::RunId) -> Result<Option<crate::WorkflowRun>, StorageError> {
+        (**self).load_run(run_id)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -949,64 +1047,5 @@ mod tests {
             GATE_RECEIPT_FIELD_COUNT, 14,
             "GATE_RECEIPT_FIELD_COUNT must be 14; update all 4 Ledger impls if this changes"
         );
-    }
-}
-
-// -- Blanket impl for Box<dyn GraphStore> ------------------------------------
-// Required because calling methods on Box<dyn Trait> uses trait default impls,
-// not the concrete type's impl. This explicitly forwards all methods to (**self).
-// This is ONLY needed for dyn Trait; Box<Concrete> works correctly via Deref.
-
-impl GraphStore for Box<dyn GraphStore + Send + Sync> {
-    fn save_state(&mut self, state: &crate::graph::GraphState) -> Result<(), StorageError> {
-        (**self).save_state(state)
-    }
-    fn load_state(&self) -> Result<Option<crate::graph::GraphState>, StorageError> {
-        (**self).load_state()
-    }
-    fn checkpoint(&self) -> Result<Option<crate::projections::Checkpoint>, StorageError> {
-        (**self).checkpoint()
-    }
-    fn record_ir_digest(&mut self, ir_hash: &str, ir_json: &str) -> Result<(), StorageError> {
-        (**self).record_ir_digest(ir_hash, ir_json)
-    }
-    fn record_graph_revision(&mut self, rev: &crate::graph::ExecutionGraphRevision) -> Result<(), StorageError> {
-        (**self).record_graph_revision(rev)
-    }
-    fn record_graph_revision_for_run(&mut self, run_id: &crate::workflow_ir::RunId, rev: &crate::graph::ExecutionGraphRevision) -> Result<(), StorageError> {
-        (**self).record_graph_revision_for_run(run_id, rev)
-    }
-    fn load_node_attempts(&self, run_id: &crate::workflow_ir::RunId, node_id: &crate::workflow_ir::NodeId) -> Result<Vec<crate::workflow_run::Attempt>, StorageError> {
-        (**self).load_node_attempts(run_id, node_id)
-    }
-    fn attempt_count(&self, run_id: &crate::workflow_ir::RunId, node_id: &crate::workflow_ir::NodeId) -> Result<u32, StorageError> {
-        (**self).attempt_count(run_id, node_id)
-    }
-    fn save_revision(&mut self, rev: &crate::graph::ExecutionGraphRevision) -> Result<(), StorageError> {
-        (**self).save_revision(rev)
-    }
-    fn load_revision(&self, run_id: &crate::workflow_ir::RunId, rev_id: &crate::workflow_ir::RevisionId) -> Result<Option<crate::graph::ExecutionGraphRevision>, StorageError> {
-        (**self).load_revision(run_id, rev_id)
-    }
-    fn latest_revision(&self, run_id: &crate::workflow_ir::RunId) -> Result<Option<crate::graph::ExecutionGraphRevision>, StorageError> {
-        (**self).latest_revision(run_id)
-    }
-    fn record_node_run(&mut self, run: &crate::workflow_run::NodeRun) -> Result<(), StorageError> {
-        (**self).record_node_run(run)
-    }
-    fn record_node_run_for_run(&mut self, run_id: &crate::workflow_ir::RunId, node_run: &crate::workflow_run::NodeRun) -> Result<(), StorageError> {
-        (**self).record_node_run_for_run(run_id, node_run)
-    }
-    fn load_node_run(&self, run_id: &crate::workflow_ir::RunId, node_id: &crate::workflow_ir::NodeId) -> Result<Option<crate::workflow_run::NodeRun>, StorageError> {
-        (**self).load_node_run(run_id, node_id)
-    }
-    fn record_attempt(&mut self, attempt: &crate::workflow_run::Attempt) -> Result<(), StorageError> {
-        (**self).record_attempt(attempt)
-    }
-    fn record_run(&mut self, run: &crate::WorkflowRun, initial_revision: &crate::graph::ExecutionGraphRevision) -> Result<(), StorageError> {
-        (**self).record_run(run, initial_revision)
-    }
-    fn load_run(&self, run_id: &crate::RunId) -> Result<Option<crate::WorkflowRun>, StorageError> {
-        (**self).load_run(run_id)
     }
 }

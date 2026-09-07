@@ -101,7 +101,9 @@ fn legacy_constructors_are_deprecated() {
                     if following.contains("pub fn new(") || following.contains("pub fn new<") {
                         new_has_deprecated = true;
                     }
-                    if following.contains("pub fn new_with_event_store(") || following.contains("pub fn new_with_event_store<") {
+                    if following.contains("pub fn new_with_event_store(")
+                        || following.contains("pub fn new_with_event_store<")
+                    {
                         new_with_event_store_has_deprecated = true;
                     }
                 }

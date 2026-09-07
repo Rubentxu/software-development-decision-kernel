@@ -33,7 +33,9 @@ impl SqliteProjectionStore {
             .map_err(|e| StorageError::Database(format!("open: {e}")))?;
         let mut conn = conn;
         crate::migrations::run_migrations(&mut conn)?;
-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
     }
 
     /// Opens an isolated in-memory database with all migrations applied.
@@ -43,7 +45,9 @@ impl SqliteProjectionStore {
             .map_err(|e| StorageError::Database(format!("open_in_memory: {e}")))?;
         let mut conn = conn;
         crate::migrations::run_migrations(&mut conn)?;
-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
     }
 
     /// Persists a checkpoint and its serialized state.

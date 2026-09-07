@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! Integration test for the canonical `sddk-a-min-sequence` workflow.
 //!
 //! This test verifies:

@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! Tests for WorkflowRuntime lifecycle — start → tick → complete transitions.
 //!
 //! These tests verify the WorkflowRuntime state machine:

@@ -3,10 +3,9 @@
 //! Validates that GateError has exactly 3 closed variants as required by
 //! REQ-WFR3-CLOSED-001.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use sddk_engine::{GateError, Operator};
 use sddk_domain::CapabilityId;
+use sddk_engine::{GateError, Operator};
+use std::sync::Arc;
 
 #[test]
 fn gate_error_has_three_variants() {
@@ -62,10 +61,13 @@ fn gate_operator_kind() {
 #[test]
 fn gate_evaluate_guard_true_literal() {
     // Gate with "true" condition should pass
-    let result = sddk_engine::Gate::new("true".to_string(), Arc::new(sddk_engine::Task {
-        capability: CapabilityId("test".to_string()),
-        inputs: Default::default(),
-    }));
+    let result = sddk_engine::Gate::new(
+        "true".to_string(),
+        Arc::new(sddk_engine::Task {
+            capability: CapabilityId("test".to_string()),
+            inputs: Default::default(),
+        }),
+    );
 
     // We can't call evaluate_guard directly as it's private, but we can verify
     // the Gate struct implements Operator

@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! DM-02: Budget enforcement — wall-clock budget fires BudgetExceeded.
 //!
 //! Verifies REQ-WF-RT-017: when wall-clock budget is exhausted at a tick

@@ -176,7 +176,9 @@ fn runtime_smoke_map_runs_through_one_tick() {
         schema_version: 1,
     }));
 
-    let store: ScratchStore = Arc::new(Mutex::new(Box::new(sddk_engine::operator::ScratchGraphStore)));
+    let store: ScratchStore = Arc::new(Mutex::new(Box::new(
+        sddk_engine::operator::ScratchGraphStore,
+    )));
 
     let mut ctx = OperatorContext {
         node_run: Arc::clone(&node_run),

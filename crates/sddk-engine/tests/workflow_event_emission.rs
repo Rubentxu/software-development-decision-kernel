@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! Tests for workflow event emission from WorkflowRuntime.
 //!
 //! These tests verify that WorkflowRuntime emits the 5 canonical workflow events:
@@ -257,10 +259,7 @@ fn make_test_ir() -> WorkflowIR {
 }
 
 /// Creates a runtime with a spy event store, returns (runtime, spy_events_accessor)
-fn make_runtime_with_spy() -> (
-    WorkflowRuntime,
-    impl Fn() -> Vec<EventEnvelopeV1>,
-) {
+fn make_runtime_with_spy() -> (WorkflowRuntime, impl Fn() -> Vec<EventEnvelopeV1>) {
     // Shared events vector
     let events = Arc::new(Mutex::new(Vec::new()));
     let events_for_accessor = events.clone();

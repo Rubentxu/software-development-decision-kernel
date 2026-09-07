@@ -57,60 +57,116 @@ impl sddk_domain::ports::GraphStore for MockStore {
     fn load_state(&self) -> Result<Option<sddk_domain::GraphState>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn checkpoint(&self) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
+    fn checkpoint(
+        &self,
+    ) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
         Ok(None)
     }
     fn record_ir_digest(&mut self, _: &str, _: &str) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn record_graph_revision(&mut self, _: &ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+    fn record_graph_revision(
+        &mut self,
+        _: &ExecutionGraphRevision,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
     fn load_node_attempts(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<Vec<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
-    fn attempt_count(&self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId) -> Result<u32, sddk_domain::StorageError> {
+    fn attempt_count(
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
+    ) -> Result<u32, sddk_domain::StorageError> {
         Ok(0)
     }
-    fn save_revision(&mut self, _: &ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+    fn save_revision(
+        &mut self,
+        _: &ExecutionGraphRevision,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn load_revision(&self, _: &RunId, _: &RevisionId) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
+    fn load_revision(
+        &self,
+        _: &RunId,
+        _: &RevisionId,
+    ) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn latest_revision(&self, _: &RunId) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
+    fn latest_revision(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn record_node_run(&mut self, _: &sddk_domain::workflow_run::NodeRun) -> Result<(), sddk_domain::StorageError> {
+    fn record_node_run(
+        &mut self,
+        _: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn record_node_run_for_run(&mut self, _: &RunId, _: &sddk_domain::workflow_run::NodeRun) -> Result<(), sddk_domain::StorageError> {
+    fn record_node_run_for_run(
+        &mut self,
+        _: &RunId,
+        _: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn record_attempt(&mut self, _: &sddk_domain::workflow_run::Attempt) -> Result<(), sddk_domain::StorageError> {
+    fn record_attempt(
+        &mut self,
+        _: &sddk_domain::workflow_run::Attempt,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn load_run(&self, _: &RunId) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, sddk_domain::StorageError> {
+    fn load_run(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn load_node_run(&self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId) -> Result<Option<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
+    fn load_node_run(
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
+    ) -> Result<Option<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn list_attempts(&self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId) -> Result<Vec<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
+    fn list_attempts(
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
+    ) -> Result<Vec<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
-    fn latest_attempt(&self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId) -> Result<Option<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
+    fn latest_attempt(
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
+    ) -> Result<Option<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn stream_node_runs(&self, _: &RunId) -> Result<Vec<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
+    fn stream_node_runs(
+        &self,
+        _: &RunId,
+    ) -> Result<Vec<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
-    fn record_run(&mut self, _: &sddk_domain::workflow_run::WorkflowRun, _: &ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+    fn record_run(
+        &mut self,
+        _: &sddk_domain::workflow_run::WorkflowRun,
+        _: &ExecutionGraphRevision,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn latest_workflow_run_state(&self, _: &RunId) -> Result<Option<WorkflowRunState>, sddk_domain::StorageError> {
+    fn latest_workflow_run_state(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<WorkflowRunState>, sddk_domain::StorageError> {
         Ok(None)
     }
 }
@@ -178,17 +234,24 @@ fn operator_context_no_longer_wires_scratch_store() {
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("workflow_runtime.rs");
-    let content = std::fs::read_to_string(&source_path)
-        .expect("failed to read workflow_runtime.rs");
+    let content =
+        std::fs::read_to_string(&source_path).expect("failed to read workflow_runtime.rs");
 
     // Check that the tick loop area (lines ~840-870) doesn't contain ScratchGraphStore
     let lines: Vec<&str> = content.lines().collect();
 
     // Look for the pattern in the tick loop area
-    let tick_loop_start = lines.iter().position(|l| l.contains("let store = Arc::new(Mutex::new(GraphStoreBox"));
-    let scratch_found = tick_loop_start.map(|start| {
-        lines[start..].iter().take(30).any(|l| l.contains("ScratchGraphStore"))
-    }).unwrap_or(false);
+    let tick_loop_start = lines
+        .iter()
+        .position(|l| l.contains("let store = Arc::new(Mutex::new(GraphStoreBox"));
+    let scratch_found = tick_loop_start
+        .map(|start| {
+            lines[start..]
+                .iter()
+                .take(30)
+                .any(|l| l.contains("ScratchGraphStore"))
+        })
+        .unwrap_or(false);
 
     assert!(
         !scratch_found,

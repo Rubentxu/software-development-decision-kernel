@@ -12,7 +12,10 @@ use std::sync::Arc;
 
 use sddk_domain::graph::ExecutionGraphRevision;
 use sddk_domain::workflow_ir::{Budgets, NodeId, RevisionId, RunId, TemplateRef, WorkflowIR};
-use sddk_domain::{CapabilityId, CorrelationId, GraphStore, NoopTaskExecutor, Operator, OperatorId, WorkflowRunState};
+use sddk_domain::{
+    CapabilityId, CorrelationId, GraphStore, NoopTaskExecutor, Operator, OperatorId,
+    WorkflowRunState,
+};
 use sddk_engine::operator::Clock;
 use sddk_engine::workflow_runtime::WorkflowRuntime;
 use sddk_storage::SqliteGraphStore;
@@ -24,9 +27,18 @@ fn build_sequence_ir() -> WorkflowIR {
     let mut operators = BTreeMap::new();
 
     // Three task children
-    let op_a = Operator::Task { capability: CapabilityId("a".into()), inputs: Default::default() };
-    let op_b = Operator::Task { capability: CapabilityId("b".into()), inputs: Default::default() };
-    let op_c = Operator::Task { capability: CapabilityId("c".into()), inputs: Default::default() };
+    let op_a = Operator::Task {
+        capability: CapabilityId("a".into()),
+        inputs: Default::default(),
+    };
+    let op_b = Operator::Task {
+        capability: CapabilityId("b".into()),
+        inputs: Default::default(),
+    };
+    let op_c = Operator::Task {
+        capability: CapabilityId("c".into()),
+        inputs: Default::default(),
+    };
 
     operators.insert(OperatorId("task-a".into()), op_a);
     operators.insert(OperatorId("task-b".into()), op_b);
@@ -45,7 +57,10 @@ fn build_sequence_ir() -> WorkflowIR {
     WorkflowIR {
         ir_id: None,
         schema_version: 1,
-        template_ref: TemplateRef { id: "seq-test".into(), version: "0.1.0".into() },
+        template_ref: TemplateRef {
+            id: "seq-test".into(),
+            version: "0.1.0".into(),
+        },
         operators,
         guards: Default::default(),
         expansion_permissions: Default::default(),
@@ -116,7 +131,9 @@ fn sequence_records_one_attempt_per_child() {
         budget: ir.budgets.clone(),
         schema_version: 1,
     };
-    store.record_run(&run, &compiled).expect("record_run failed");
+    store
+        .record_run(&run, &compiled)
+        .expect("record_run failed");
 
     let clock = Clock;
     let executor: Arc<dyn sddk_domain::TaskExecutor> = Arc::new(NoopTaskExecutor);
@@ -143,7 +160,9 @@ fn sequence_records_one_attempt_per_child() {
     // Verify attempts were recorded for the Sequence node
     let node_seq = NodeId("seq-root".into());
     let store2 = SqliteGraphStore::open(temp_dir.path()).expect("re-open store");
-    let attempts = store2.list_attempts(&run_id, &node_seq).expect("list_attempts");
+    let attempts = store2
+        .list_attempts(&run_id, &node_seq)
+        .expect("list_attempts");
 
     // We expect at least 3 attempts (one per child)
     assert!(
@@ -158,7 +177,11 @@ fn sequence_records_one_attempt_per_child() {
         .map(|a| a.idempotency_key.attempt_seq)
         .collect();
     seqs.sort();
-    assert_eq!(seqs, vec![0, 1, 2], "attempt_seq should be consecutive 0,1,2");
+    assert_eq!(
+        seqs,
+        vec![0, 1, 2],
+        "attempt_seq should be consecutive 0,1,2"
+    );
 }
 
 // ── sequence_idempotency_key_collision_is_rejected ───────────────────────────
@@ -191,7 +214,9 @@ fn sequence_idempotency_key_collision_is_rejected() {
         budget: ir.budgets.clone(),
         schema_version: 1,
     };
-    store.record_run(&run, &compiled).expect("record_run failed");
+    store
+        .record_run(&run, &compiled)
+        .expect("record_run failed");
 
     // Create an attempt with a known idempotency key
     let node_seq = NodeId("seq-root".into());
@@ -227,7 +252,9 @@ fn sequence_idempotency_key_collision_is_rejected() {
     };
 
     // First insert should succeed
-    store.record_attempt(&attempt).expect("first insert should succeed");
+    store
+        .record_attempt(&attempt)
+        .expect("first insert should succeed");
 
     // Duplicate with same idempotency key should fail
     let dup_attempt = sddk_domain::workflow_run::Attempt {
@@ -249,12 +276,10 @@ fn sequence_idempotency_key_collision_is_rejected() {
             cost_micros: 0,
             wall_ms: 0,
         },
-        context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
-            cid: "dup".into(),
-        },
+        context_capsule: sddk_domain::ContextCapsuleRef::Pointer { cid: "dup".into() },
         idempotency_key: sddk_domain::IdempotencyKey {
             project_id: "sddk".to_string(),
-            run_id: run_id,
+            run_id,
             node_id: NodeId("seq-root".into()),
             attempt_seq: 0, // Same attempt_seq = same idempotency key
         },

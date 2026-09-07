@@ -57,74 +57,116 @@ impl sddk_domain::ports::GraphStore for MockStore {
     fn load_state(&self) -> Result<Option<sddk_domain::GraphState>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn checkpoint(&self) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
+    fn checkpoint(
+        &self,
+    ) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
         Ok(None)
     }
     fn record_ir_digest(&mut self, _: &str, _: &str) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn record_graph_revision(&mut self, _: &ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+    fn record_graph_revision(
+        &mut self,
+        _: &ExecutionGraphRevision,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
     fn load_node_attempts(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<Vec<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
     fn attempt_count(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<u32, sddk_domain::StorageError> {
         Ok(0)
     }
-    fn save_revision(&mut self, _: &ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
-        Ok(())
-    }
-    fn load_revision(
-        &self, _: &RunId, _: &RevisionId,
-    ) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
-        Ok(None)
-    }
-    fn latest_revision(&self, _: &RunId) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
-        Ok(None)
-    }
-    fn record_node_run(&mut self, _: &sddk_domain::workflow_run::NodeRun) -> Result<(), sddk_domain::StorageError> {
-        Ok(())
-    }
-    fn record_node_run_for_run(
-        &mut self, _: &RunId, _: &sddk_domain::workflow_run::NodeRun,
+    fn save_revision(
+        &mut self,
+        _: &ExecutionGraphRevision,
     ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn record_attempt(&mut self, _: &sddk_domain::workflow_run::Attempt) -> Result<(), sddk_domain::StorageError> {
+    fn load_revision(
+        &self,
+        _: &RunId,
+        _: &RevisionId,
+    ) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
+        Ok(None)
+    }
+    fn latest_revision(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<ExecutionGraphRevision>, sddk_domain::StorageError> {
+        Ok(None)
+    }
+    fn record_node_run(
+        &mut self,
+        _: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn load_run(&self, _: &RunId) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, sddk_domain::StorageError> {
+    fn record_node_run_for_run(
+        &mut self,
+        _: &RunId,
+        _: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
+        Ok(())
+    }
+    fn record_attempt(
+        &mut self,
+        _: &sddk_domain::workflow_run::Attempt,
+    ) -> Result<(), sddk_domain::StorageError> {
+        Ok(())
+    }
+    fn load_run(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, sddk_domain::StorageError> {
         Ok(None)
     }
     fn load_node_run(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<Option<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
         Ok(None)
     }
     fn list_attempts(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<Vec<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
     fn latest_attempt(
-        &self, _: &RunId, _: &sddk_domain::workflow_ir::NodeId,
+        &self,
+        _: &RunId,
+        _: &sddk_domain::workflow_ir::NodeId,
     ) -> Result<Option<sddk_domain::workflow_run::Attempt>, sddk_domain::StorageError> {
         Ok(None)
     }
-    fn stream_node_runs(&self, _: &RunId) -> Result<Vec<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
+    fn stream_node_runs(
+        &self,
+        _: &RunId,
+    ) -> Result<Vec<sddk_domain::workflow_run::NodeRun>, sddk_domain::StorageError> {
         Ok(Vec::new())
     }
     fn record_run(
-        &mut self, _: &sddk_domain::workflow_run::WorkflowRun, _: &ExecutionGraphRevision,
+        &mut self,
+        _: &sddk_domain::workflow_run::WorkflowRun,
+        _: &ExecutionGraphRevision,
     ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
-    fn latest_workflow_run_state(&self, _: &RunId) -> Result<Option<WorkflowRunState>, sddk_domain::StorageError> {
+    fn latest_workflow_run_state(
+        &self,
+        _: &RunId,
+    ) -> Result<Option<WorkflowRunState>, sddk_domain::StorageError> {
         Ok(None)
     }
 }
@@ -170,13 +212,15 @@ fn from_compiled_assigns_run_id_and_graph_revision_deterministically() {
     // run_id must be derived deterministically
     let expected_run_id = RunId::derive(plan_revision_id, &correlation_id);
     assert_eq!(
-        runtime.run().run_id, expected_run_id,
+        runtime.run().run_id,
+        expected_run_id,
         "run_id must be RunId::derive(plan_revision_id, correlation_id)"
     );
 
     // graph_revision must match compiled_revision.revision_id
     assert_eq!(
-        runtime.run().graph_revision.0, compiled_revision.revision_id.0,
+        runtime.run().graph_revision.0,
+        compiled_revision.revision_id.0,
         "graph_revision must match compiled_revision.revision_id"
     );
 }
@@ -199,8 +243,7 @@ fn run_id_derivation_is_stable_across_processes() {
     assert_eq!(run_id_1, run_id_2, "RunId::derive must be deterministic");
 
     // Must match ^[0-9a-f]{64}$ — 64 hex chars
-    let is_hex_64 = run_id_1.0.len() == 64
-        && run_id_1.0.chars().all(|c| c.is_ascii_hexdigit());
+    let is_hex_64 = run_id_1.0.len() == 64 && run_id_1.0.chars().all(|c| c.is_ascii_hexdigit());
     assert!(
         is_hex_64,
         "run_id must be 64 hex chars, got: {}",

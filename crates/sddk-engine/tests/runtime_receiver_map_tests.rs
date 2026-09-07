@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! Integration tests for WorkflowRuntime receiver map (cycle-20 WU-2).
 //!
 //! Tests verify that `WorkflowRuntime.pending_parallel` is correctly initialized

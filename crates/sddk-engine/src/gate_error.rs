@@ -5,7 +5,6 @@
 //! - `GuardEvaluationFailed`: guard expression evaluation failed
 //! - `BoundedGateViolation`: gate violated budget bounds
 
-use std::fmt;
 use thiserror::Error;
 
 /// Errors from Gate operator evaluation.

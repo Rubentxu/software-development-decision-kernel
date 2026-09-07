@@ -1012,7 +1012,7 @@ impl RawAttemptRow {
             let parts: Vec<&str> = self.idempotency_key.rsplit(':').collect();
             let attempt_seq = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
             IdempotencyKey {
-                project_id: String::new(),  // Not easily parseable due to run_id colons
+                project_id: String::new(), // Not easily parseable due to run_id colons
                 run_id: RunId(self.run_id.clone()),
                 node_id: NodeId(self.node_id.clone()),
                 attempt_seq,
