@@ -909,21 +909,27 @@ impl Operator for Sequence {
         // Direct record_attempt ensures marker attempts are persisted with correct
         // attempt_seq (0, 1, 2...). IdempotencyConflict means the attempt was
         // already recorded — safe to ignore and continue.
+        //
+        // S6b UAT regression: SqliteGraphStore::record_attempt reports a duplicate
+        // marker as the TYPED `StorageError::IdempotencyConflict` (REQ-WFR4-PAR-003),
+        // not the legacy `StorageError::Other("...idempotency...")` string form. A
+        // restart replay of a run that crashed mid-flight re-records the already
+        // persisted markers (seq-tick-{node}-{step}); without tolerating the typed
+        // variant the replay failed the Sequence node instead of continuing.
         let record_result = ctx.store.lock().unwrap().record_attempt(&marker_attempt);
         match &record_result {
             Ok(_) => {}
+            Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
+                // Typed IdempotencyConflict: attempt already recorded, safe no-op.
+            }
+            Err(sddk_domain::StorageError::Other(msg)) if msg.contains("idempotency") => {
+                // Legacy string form (pre-FIND-729883 stores): same safe no-op.
+            }
             Err(domain_err) => {
-                match domain_err {
-                    sddk_domain::StorageError::Other(msg) if msg.contains("idempotency") => {
-                        // IdempotencyConflict: attempt already recorded, safe to continue
-                    }
-                    _ => {
-                        return Err(OperatorError::EvalFailed(format!(
-                            "Sequence record_attempt failed: {:?}",
-                            domain_err
-                        )));
-                    }
-                }
+                return Err(OperatorError::EvalFailed(format!(
+                    "Sequence record_attempt failed: {:?}",
+                    domain_err
+                )));
             }
         }
         // Also push to node_run.attempts for runtime state tracking
