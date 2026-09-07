@@ -140,15 +140,18 @@ fn spine_import_dependency_edges_idempotent() {
     import_spine(&bytes, &mut storage).unwrap();
     import_spine(&bytes, &mut storage).unwrap();
 
-    // Should have exactly one edge (WI-B depends on WI-A), not two
-    let edges = storage.list_dependency_edges_by_cycle("WI-B").unwrap();
+    // Should have exactly one edge (WI-B depends on WI-A), not two.
+    // Canonical direction: prerequisite WI-A (from) blocks dependent WI-B (to),
+    // so WI-B's incoming blocker edge is WI-A → WI-B. Each spine row is its own
+    // cycle, so count incoming edges to WI-B rather than by cycle.
+    let edges = storage.get_dependency_edges_to("WI-B").unwrap();
     assert_eq!(
         edges.len(),
         1,
-        "exactly one dependency edge for WI-B → WI-A"
+        "exactly one dependency edge for WI-A → WI-B"
     );
-    assert_eq!(edges[0].from_id, "WI-B");
-    assert_eq!(edges[0].to_id, "WI-A");
+    assert_eq!(edges[0].from_id, "WI-A");
+    assert_eq!(edges[0].to_id, "WI-B");
 }
 
 /// Scenario: Re-import preserves compute_graph_identity per cycle

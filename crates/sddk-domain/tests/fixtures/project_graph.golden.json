@@ -31,16 +31,16 @@
   ],
   "edges": [
     {
-      "from": "TEST-LEDGER-B",
-      "to": "TEST-LEDGER-A"
-    },
-    {
-      "from": "TEST-LEDGER-C",
+      "from": "TEST-LEDGER-A",
       "to": "TEST-LEDGER-B"
     },
     {
-      "from": "TEST-LEDGER-D",
+      "from": "TEST-LEDGER-B",
       "to": "TEST-LEDGER-C"
+    },
+    {
+      "from": "TEST-LEDGER-C",
+      "to": "TEST-LEDGER-D"
     }
   ]
 }

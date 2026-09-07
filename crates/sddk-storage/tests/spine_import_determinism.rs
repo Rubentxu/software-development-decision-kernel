@@ -9,7 +9,9 @@
 
 use std::fs;
 
-use sddk_domain::planning::projections::{GraphFormat, project_graph, project_status};
+use sddk_domain::planning::projections::{
+    GraphFormat, project_blocked, project_graph, project_next, project_status,
+};
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_storage::Storage;
 use sddk_storage::spine_import::import_spine;
@@ -153,4 +155,34 @@ fn determinism_output_matches_golden() {
         graph, golden_graph,
         "project_graph output must match golden file"
     );
+}
+
+/// Regression: spine import must preserve the canonical dependency direction
+/// (prerequisite blocks dependent). The import previously stored edges reversed,
+/// which silently inverted `project_next`/`project_blocked` semantics on a real
+/// imported spine (e.g. `roadmap next` skipped the true next work item).
+#[test]
+fn import_preserves_canonical_dependency_semantics() {
+    let storage = import_fixture();
+    let snapshot = storage
+        .snapshot_roadmap()
+        .expect("failed to snapshot roadmap");
+
+    // D depends on C, and C is ACTIVE (non-terminal), so D must be blocked by C.
+    let blocked = project_blocked(&snapshot).expect("project_blocked failed");
+    let d = blocked
+        .blocked
+        .iter()
+        .find(|b| b.item_id == "TEST-LEDGER-D")
+        .unwrap_or_else(|| panic!("TEST-LEDGER-D must be blocked by non-terminal C"));
+    assert_eq!(
+        d.blockers,
+        vec!["TEST-LEDGER-C".to_string()],
+        "D depends on C (active) so its only blocker is C"
+    );
+
+    // C is the single ACTIVE item → the line resumes it.
+    let next = project_next(&snapshot).expect("project_next failed");
+    assert_eq!(next.item_id, "TEST-LEDGER-C");
+    assert_eq!(next.reason, "resume_active");
 }

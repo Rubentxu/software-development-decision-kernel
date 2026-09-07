@@ -70,12 +70,13 @@ fn parse_yaml_to_snapshot(yaml: &str) -> RoadmapSnapshot {
 
         let blocks: Vec<String> = item.depends_on.clone();
 
-        // Add outgoing edges: from this item TO each item it depends on
-        // (this item blocks the items it depends on; they cannot proceed until this item ships)
+        // Add edges in canonical direction (matches import_spine and projections):
+        // a spine `item depends_on dep` means dep is item's prerequisite/blocker, so
+        // the edge is from_id = dep (prerequisite) -> to_id = item (dependent/blocked).
         for dep in &item.depends_on {
             edges.push(DependencyEdgeSnapshot {
-                from_id: item.id.clone(),
-                to_id: dep.clone(),
+                from_id: dep.clone(),
+                to_id: item.id.clone(),
                 kind: DependencyEdgeKindSnapshot::Blocks,
             });
         }

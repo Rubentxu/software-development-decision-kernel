@@ -356,11 +356,14 @@ pub fn import_spine(
         };
         storage.insert_work_item(&record)?;
 
-        // Insert dependency edges (kind = Blocks per ADR-073 Q2)
+        // Insert dependency edges (kind = Blocks per ADR-073 Q2).
+        // Canonical direction (matches domain/CLI contract and project_* projections):
+        // a spine `X depends_on Y` means Y is X's prerequisite, so the edge must be
+        // from_id = Y (prerequisite/blocker) -> to_id = X (dependent/blocked item).
         for dep_id in &item.depends_on {
             let edge = sddk_domain::DependencyEdgeRecord {
-                from_id: work_item_id.clone(),
-                to_id: dep_id.clone(),
+                from_id: dep_id.clone(),
+                to_id: work_item_id.clone(),
                 kind: DependencyEdgeKind::Blocks,
                 actor_ref_kind: None,
                 actor_ref_id: None,
