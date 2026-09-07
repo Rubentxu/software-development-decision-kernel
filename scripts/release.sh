@@ -41,15 +41,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# Isolate TMPDIR for the whole release run. Inherited TMPDIR values (e.g. agent
-# sandboxes such as ~/.jcode/scratch) can be shared/constrained and cause
-# intermittent `PermissionDenied` from tempfile under parallel test load — seen
-# as sddk-cli dev tests failing 11→99 depending on concurrency. We run with a
-# fresh per-run scratch under the repo `target/` dir (writable, on-disk),
-# removed on exit, so the test gate is deterministic regardless of the ambient
-# TMPDIR.
-mkdir -p "$ROOT/target"
-RELEASE_SCRATCH="$(mktemp -d "$ROOT/target/sddk-release-tmp.XXXXXX")"
+# Isolate TMPDIR for the whole release run so the test gate is deterministic
+# regardless of the ambient TMPDIR. The scratch MUST live OUTSIDE the repo
+# tree and OUTSIDE a symlinked home prefix:
+#   * Under `$ROOT/target` (inside the repo) tests create temp dirs that walk
+#     up and hit the repo's own git/sddk markers, breaking cycle/manifest
+#     walk-up tests.
+#   * Under a symlinked home (e.g. `/home -> /var/home`) the real path differs
+#     from the reported one, breaking XDG canonicalization in integration
+#     tests.
+# Earlier flakiness blamed the ambient scratch for `PermissionDenied` under
+# parallel load; the real cause was two test-isolation races in sddk-cli
+# (a global `chdir` in a cycle test and a `copy_tree` test chmod-ing the shared
+# temp root to read-only), now fixed in the test suite. We keep the isolation
+# for determinism but place it on a real, disk-backed path outside the repo.
+mkdir -p "${CARGO_TARGET_DIR:-$HOME}" 2>/dev/null || true
+SCRATCH_ROOT="$(readlink -f "${CARGO_TARGET_DIR:-$HOME}" 2>/dev/null || echo "$ROOT")"
+mkdir -p "$SCRATCH_ROOT"
+RELEASE_SCRATCH="$(mktemp -d "$SCRATCH_ROOT/sddk-release-tmp.XXXXXX")"
 export TMPDIR="$RELEASE_SCRATCH"
 cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
 trap cleanup_release_scratch EXIT

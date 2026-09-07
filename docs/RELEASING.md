@@ -190,20 +190,29 @@ rule; everything else is convention.
 ### Test-gate TMPDIR isolation (deterministic workspace gate)
 
 `cargo test --workspace` must run against an isolated, writable `TMPDIR`.
-`scripts/release.sh` already exports a fresh per-run scratch under `target/`
-and cleans it up on exit, so the canonical gate is safe regardless of the
-ambient `TMPDIR`.
+`scripts/release.sh` already exports a fresh per-run scratch and cleans it up on
+exit, so the canonical gate is deterministic regardless of the ambient `TMPDIR`.
 
-Running the gate with an inherited/constrained `TMPDIR` (e.g. an agent
-sandbox such as `~/.jcode/scratch`) causes intermittent `PermissionDenied`
-from `tempfile` under parallel test load — observed as `sddk-cli` dev tests
-failing anywhere from 11 to 99 depending on concurrency, with NO code
-regression (the full suite is green under `TMPDIR=/tmp` or an isolated
-scratch). If you run the gate by hand instead of through `release.sh`,
-isolate it first:
+The scratch must NOT live inside the repo tree (`$ROOT/target`): tests create
+temp dirs and walk up expecting not to land in a git/sddk project, and temp
+dirs under the repo hit its own markers and break cycle/manifest walk-up
+tests. It must also live on a real (non-symlinked) path: a symlinked home such
+as `/home -> /var/home` makes the reported path differ from the real one and
+breaks XDG canonicalization in integration tests. `release.sh` places its
+scratch on the real `CARGO_TARGET_DIR` (or real home) path for that reason.
+
+Earlier flakiness blamed an inherited/constrained `TMPDIR` (e.g. an agent
+sandbox such as `~/.jcode/scratch`) for intermittent `PermissionDenied` from
+`tempfile` under parallel load. Root-caused: the cause was two test-isolation
+races in the `sddk-cli` suite — a cycle test mutating the process-global CWD
+via `set_current_dir`, and a `copy_tree` test chmod-ing the shared temp root to
+read-only — both now fixed (cwd injection and a private chmod holder). If you
+run the gate by hand instead of through `release.sh`, isolate it on a real,
+non-project path first:
 
 ```bash
-TMPDIR="$(mktemp -d "$(pwd)/target/sddk-test.XXXXXX")" cargo test --workspace
+TMPDIR="$(mktemp -d "$(readlink -f "${CARGO_TARGET_DIR:-$HOME}")/sddk-test.XXXXXX")" \
+  cargo test --workspace
 ```
 
 ## MANIFEST regeneration
