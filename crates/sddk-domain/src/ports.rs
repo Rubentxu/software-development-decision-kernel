@@ -623,6 +623,24 @@ pub trait GraphStore {
         rev: &crate::graph::ExecutionGraphRevision,
     ) -> Result<(), StorageError>;
 
+    /// Records a graph revision with an explicit run_id binding.
+    ///
+    /// Unlike `record_graph_revision` which infers `run_id` from
+    /// `rev.nodes.keys().next()`, this method accepts an explicit `run_id`
+    /// parameter. This is the binding used by `record_run` to establish
+    /// the run↔revision relationship without modifying `ExecutionGraphRevision`.
+    ///
+    /// Default implementation delegates to `record_graph_revision` for
+    /// backward compatibility.
+    fn record_graph_revision_for_run(
+        &mut self,
+        run_id: &crate::workflow_ir::RunId,
+        rev: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        // Default: delegate to the inference path for backward compatibility
+        self.record_graph_revision(rev)
+    }
+
     /// Loads all attempts for a given node run.
     fn load_node_attempts(
         &self,
@@ -669,6 +687,24 @@ pub trait GraphStore {
     fn record_node_run(&mut self, _run: &crate::workflow_run::NodeRun) -> Result<(), StorageError> {
         Err(StorageError::Other(
             "record_node_run not implemented".into(),
+        ))
+    }
+
+    /// Records a node run with an explicit run_id binding.
+    ///
+    /// Unlike `record_node_run` which may infer the run_id from context, this method
+    /// accepts an explicit `run_id` parameter. This is necessary because `NodeRun` has no
+    /// `run_id` field and the PK of `node_runs_v1` is `(run_id, node_id)`.
+    ///
+    /// Default implementation delegates to `record_node_run`.
+    fn record_node_run_for_run(
+        &mut self,
+        _run_id: &crate::workflow_ir::RunId,
+        _node_run: &crate::workflow_run::NodeRun,
+    ) -> Result<(), StorageError> {
+        // Default: delegate to the legacy method (which returns NotImplemented)
+        Err(StorageError::Other(
+            "record_node_run_for_run not implemented".into(),
         ))
     }
 
@@ -734,6 +770,41 @@ pub trait GraphStore {
     ) -> Result<Vec<crate::workflow_run::NodeRun>, StorageError> {
         Err(StorageError::Other(
             "stream_node_runs not implemented".into(),
+        ))
+    }
+
+    // ── DW-RUNTIME-002: Workflow run persistence ─────────────────────────────
+
+    /// Records a workflow run atomically with its initial graph revision and lifecycle event.
+    ///
+    /// This method writes three rows in a single transaction:
+    /// 1. `workflow_runs_v1` — the run snapshot
+    /// 2. `execution_graph_revisions_v1` — the initial graph revision bound to this run
+    /// 3. `workflow_run_events_v1` — the initial lifecycle event
+    ///
+    /// On failure, all three writes are rolled back.
+    ///
+    /// Default implementation returns `Err(StorageError::Other("record_run not implemented"))`.
+    fn record_run(
+        &mut self,
+        _run: &crate::workflow_run::WorkflowRun,
+        _initial_revision: &crate::graph::ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Other("record_run not implemented".into()))
+    }
+
+    /// Returns the latest workflow run state for a run_id by querying the lifecycle event log.
+    ///
+    /// Queries `workflow_run_events_v1` for the most recent event by `(run_id, occurred_at DESC)`
+    /// and returns its `to_state`.
+    ///
+    /// Default implementation returns `Err(StorageError::Other("latest_workflow_run_state not implemented"))`.
+    fn latest_workflow_run_state(
+        &self,
+        _run_id: &crate::workflow_ir::RunId,
+    ) -> Result<Option<crate::workflow_run::WorkflowRunState>, StorageError> {
+        Err(StorageError::Other(
+            "latest_workflow_run_state not implemented".into(),
         ))
     }
 }

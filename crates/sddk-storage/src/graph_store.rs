@@ -312,6 +312,49 @@ impl GraphStore for SqliteGraphStore {
         Ok(())
     }
 
+    fn record_graph_revision_for_run(
+        &mut self,
+        run_id: &RunId,
+        rev: &ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        let rev_id = rev.revision_id.0.clone();
+        let parent_id = rev.parent.as_ref().map(|p| p.revision_id.0.clone());
+        let events_json = serde_json::to_string(&rev.events)
+            .map_err(|e| StorageError::Database(format!("events serialize: {e}")))?;
+        let nodes_json = serde_json::to_string(&rev.nodes)
+            .map_err(|e| StorageError::Database(format!("nodes serialize: {e}")))?;
+        let edges_json = serde_json::to_string(&rev.edges)
+            .map_err(|e| StorageError::Database(format!("edges serialize: {e}")))?;
+        let digest = format!(
+            "sha256:{}",
+            rev.digest
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        );
+
+        let conn = self.proj_store.conn_mut();
+        conn.execute(
+            "INSERT OR REPLACE INTO execution_graph_revisions_v1
+                (revision_id, run_id, revision, parent_revision_id,
+                 events_json, nodes_json, edges_json, digest, schema_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                rev_id,
+                run_id.0,
+                i64::try_from(rev.revision).unwrap_or(i64::MAX),
+                parent_id,
+                events_json,
+                nodes_json,
+                edges_json,
+                digest,
+                ExecutionGraphRevision::SCHEMA_VERSION as i64,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_graph_revision_for_run: {e}")))?;
+        Ok(())
+    }
+
     fn load_node_attempts(
         &self,
         run_id: &RunId,
@@ -421,6 +464,499 @@ impl GraphStore for SqliteGraphStore {
             None => Ok(None),
         }
     }
+
+    // ── DW-RUNTIME-002: Workflow run persistence ─────────────────────────────────
+
+    fn record_run(
+        &mut self,
+        run: &sddk_domain::workflow_run::WorkflowRun,
+        initial_revision: &ExecutionGraphRevision,
+    ) -> Result<(), StorageError> {
+        let conn = self.proj_store.conn_mut();
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| StorageError::Database(format!("transaction: {e}")))?;
+
+        // 1. Insert workflow_runs_v1 row
+        let inputs_json =
+            serde_json::to_string(&run.inputs).map_err(|e| StorageError::Database(format!("inputs serialize: {e}")))?;
+        let outputs_json = run
+            .outputs
+            .as_ref()
+            .map(|o| serde_json::to_string(o))
+            .transpose()
+            .map_err(|e| StorageError::Database(format!("outputs serialize: {e}")))?;
+        let budget_json =
+            serde_json::to_string(&run.budget).map_err(|e| StorageError::Database(format!("budget serialize: {e}")))?;
+        let state_str = match run.state {
+            sddk_domain::workflow_run::WorkflowRunState::Pending => "pending",
+            sddk_domain::workflow_run::WorkflowRunState::Running => "running",
+            sddk_domain::workflow_run::WorkflowRunState::Paused => "paused",
+            sddk_domain::workflow_run::WorkflowRunState::Completed => "completed",
+            sddk_domain::workflow_run::WorkflowRunState::Failed => "failed",
+            sddk_domain::workflow_run::WorkflowRunState::Cancelled => "cancelled",
+        };
+        // ContentHash is a type alias for String
+        let ir_hash_prefixed = if run.ir_hash.starts_with("sha256:") {
+            run.ir_hash.clone()
+        } else {
+            format!("sha256:{}", run.ir_hash)
+        };
+        let occurred_at = current_iso8601();
+
+        tx.execute(
+            r#"INSERT INTO workflow_runs_v1
+               (run_id, template_id, template_version, ir_hash, graph_revision_id, state,
+                inputs_json, outputs_json, correlation_id, budget_json, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
+            params![
+                run.run_id.0,
+                run.template_ref.id,
+                run.template_ref.version,
+                ir_hash_prefixed,
+                run.graph_revision.0,
+                state_str,
+                inputs_json,
+                outputs_json,
+                run.correlation_id.0,
+                budget_json,
+                &occurred_at,
+                &occurred_at,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_run (workflow_runs_v1): {e}")))?;
+
+        // 2. Insert execution_graph_revisions_v1 via record_graph_revision_for_run
+        let rev_id = initial_revision.revision_id.0.clone();
+        let parent_id = initial_revision
+            .parent
+            .as_ref()
+            .map(|p| p.revision_id.0.clone());
+        let events_json = serde_json::to_string(&initial_revision.events)
+            .map_err(|e| StorageError::Database(format!("events serialize: {e}")))?;
+        let nodes_json = serde_json::to_string(&initial_revision.nodes)
+            .map_err(|e| StorageError::Database(format!("nodes serialize: {e}")))?;
+        let edges_json = serde_json::to_string(&initial_revision.edges)
+            .map_err(|e| StorageError::Database(format!("edges serialize: {e}")))?;
+        let digest = format!(
+            "sha256:{}",
+            initial_revision
+                .digest
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        );
+
+        tx.execute(
+            "INSERT OR REPLACE INTO execution_graph_revisions_v1
+                (revision_id, run_id, revision, parent_revision_id,
+                 events_json, nodes_json, edges_json, digest, schema_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                rev_id,
+                run.run_id.0,
+                i64::try_from(initial_revision.revision).unwrap_or(i64::MAX),
+                parent_id,
+                events_json,
+                nodes_json,
+                edges_json,
+                digest,
+                ExecutionGraphRevision::SCHEMA_VERSION as i64,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_run (execution_graph_revisions_v1): {e}")))?;
+
+        // 3. Insert initial workflow_run_events_v1 event (from_state == to_state == run.state, actor_kind = 'system')
+        let event_id = format!("evt-run-{}", run.run_id.0);
+        tx.execute(
+            r#"INSERT INTO workflow_run_events_v1
+               (event_id, run_id, occurred_at, from_state, to_state, actor_kind, actor_id, reason)
+               VALUES (?1, ?2, ?3, ?4, ?5, 'system', 'engine', NULL)"#,
+            params![
+                event_id,
+                run.run_id.0,
+                &occurred_at,
+                state_str,
+                state_str,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_run (workflow_run_events_v1): {e}")))?;
+
+        tx.commit()
+            .map_err(|e| StorageError::Database(format!("transaction commit: {e}")))?;
+        Ok(())
+    }
+
+    fn latest_workflow_run_state(
+        &self,
+        run_id: &RunId,
+    ) -> Result<Option<sddk_domain::workflow_run::WorkflowRunState>, StorageError> {
+        let conn = self.proj_store.conn();
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT from_state, to_state FROM workflow_run_events_v1
+                 WHERE run_id = ?1
+                 ORDER BY occurred_at DESC
+                 LIMIT 1",
+                params![run_id.0],
+                |row| {
+                    let from_state: String = row.get(0)?;
+                    let to_state: String = row.get(1)?;
+                    Ok((from_state, to_state))
+                },
+            )
+            .optional()
+            .map_err(|e| StorageError::Database(format!("latest_workflow_run_state: {e}")))?;
+
+        match row {
+            Some((_, to_state)) => {
+                let state = match to_state.as_str() {
+                    "pending" => sddk_domain::workflow_run::WorkflowRunState::Pending,
+                    "running" => sddk_domain::workflow_run::WorkflowRunState::Running,
+                    "paused" => sddk_domain::workflow_run::WorkflowRunState::Paused,
+                    "completed" => sddk_domain::workflow_run::WorkflowRunState::Completed,
+                    "failed" => sddk_domain::workflow_run::WorkflowRunState::Failed,
+                    "cancelled" => sddk_domain::workflow_run::WorkflowRunState::Cancelled,
+                    _ => {
+                        return Err(StorageError::Database(format!(
+                            "unknown workflow state: {to_state}"
+                        )))
+                    }
+                };
+                Ok(Some(state))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn load_run(
+        &self,
+        run_id: &RunId,
+    ) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, StorageError> {
+        use sddk_domain::workflow_run::{CorrelationId, WorkflowRun, WorkflowRunState};
+        use sddk_domain::workflow_ir::{Budgets, TemplateRef};
+        use std::collections::BTreeMap;
+
+        let conn = self.proj_store.conn();
+        let row = conn
+            .query_row(
+                "SELECT run_id, template_id, template_version, ir_hash, graph_revision_id,
+                        state, inputs_json, outputs_json, correlation_id, budget_json,
+                        created_at, updated_at
+                 FROM workflow_runs_v1
+                 WHERE run_id = ?1",
+                params![run_id.0],
+                |row| {
+                    Ok(WorkflowRunRow {
+                        run_id: row.get(0)?,
+                        template_id: row.get(1)?,
+                        template_version: row.get(2)?,
+                        ir_hash: row.get(3)?,
+                        graph_revision_id: row.get(4)?,
+                        state: row.get(5)?,
+                        inputs_json: row.get(6)?,
+                        outputs_json: row.get(7)?,
+                        correlation_id: row.get(8)?,
+                        budget_json: row.get(9)?,
+                        created_at: row.get(10)?,
+                        updated_at: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| StorageError::Database(format!("load_run query: {e}")))?;
+
+        match row {
+            Some(r) => {
+                let state = match r.state.as_str() {
+                    "pending" => WorkflowRunState::Pending,
+                    "running" => WorkflowRunState::Running,
+                    "paused" => WorkflowRunState::Paused,
+                    "completed" => WorkflowRunState::Completed,
+                    "failed" => WorkflowRunState::Failed,
+                    "cancelled" => WorkflowRunState::Cancelled,
+                    _ => {
+                        return Err(StorageError::Database(format!("unknown state: {}", r.state)));
+                    }
+                };
+                let inputs: BTreeMap<String, serde_json::Value> =
+                    serde_json::from_str(&r.inputs_json).map_err(|e| {
+                        StorageError::Database(format!("inputs deserialize: {e}"))
+                    })?;
+                let outputs: Option<BTreeMap<String, serde_json::Value>> = r
+                    .outputs_json
+                    .as_ref()
+                    .map(|j| serde_json::from_str(j))
+                    .transpose()
+                    .map_err(|e| StorageError::Database(format!("outputs deserialize: {e}")))?;
+                let budget: Budgets = serde_json::from_str(&r.budget_json)
+                    .map_err(|e| StorageError::Database(format!("budget deserialize: {e}")))?;
+                // ContentHash is a type alias for String, so we use it directly
+                let ir_hash = r.ir_hash;
+
+                Ok(Some(WorkflowRun {
+                    run_id: RunId(r.run_id),
+                    template_ref: TemplateRef {
+                        id: r.template_id,
+                        version: r.template_version,
+                    },
+                    ir_hash,
+                    graph_revision: sddk_domain::workflow_ir::RevisionId(r.graph_revision_id),
+                    state,
+                    inputs,
+                    outputs,
+                    correlation_id: CorrelationId(r.correlation_id),
+                    budget,
+                    // workflow_runs_v1 doesn't have schema_version; default to 1
+                    schema_version: 1,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn record_node_run_for_run(
+        &mut self,
+        run_id: &RunId,
+        node_run: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), StorageError> {
+        let conn = self.proj_store.conn_mut();
+        let deps_json =
+            serde_json::to_string(&node_run.dependencies).map_err(|e| StorageError::Database(format!("deps serialize: {e}")))?;
+        let state_str = match node_run.state {
+            sddk_domain::workflow_run::NodeRunState::Pending => "pending",
+            sddk_domain::workflow_run::NodeRunState::Ready => "ready",
+            sddk_domain::workflow_run::NodeRunState::Running => "running",
+            sddk_domain::workflow_run::NodeRunState::Completed => "completed",
+            sddk_domain::workflow_run::NodeRunState::Failed => "failed",
+            sddk_domain::workflow_run::NodeRunState::Skipped => "skipped",
+        };
+        let last_attempt_id = node_run.attempts.last().map(|a| a.attempt_id.0.clone());
+
+        conn.execute(
+            r#"INSERT OR REPLACE INTO node_runs_v1
+               (run_id, node_id, state, dependencies_json, last_attempt_id)
+               VALUES (?1, ?2, ?3, ?4, ?5)"#,
+            params![
+                run_id.0,
+                node_run.node_id.0,
+                state_str,
+                deps_json,
+                last_attempt_id,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_node_run_for_run: {e}")))?;
+        Ok(())
+    }
+
+    fn record_node_run(
+        &mut self,
+        _node_run: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), StorageError> {
+        // This method cannot infer run_id from NodeRun alone,
+        // so we return an error directing callers to use record_node_run_for_run
+        Err(StorageError::Database(
+            "record_node_run requires run_id; use record_node_run_for_run instead".into(),
+        ))
+    }
+
+    fn record_attempt(
+        &mut self,
+        attempt: &sddk_domain::workflow_run::Attempt,
+    ) -> Result<(), StorageError> {
+        use sddk_domain::workflow_run::AttemptOutcome;
+
+        let conn = self.proj_store.conn_mut();
+        let route_json =
+            serde_json::to_string(&attempt.route).map_err(|e| StorageError::Database(format!("route serialize: {e}")))?;
+        let outcome_json = attempt
+            .outcome
+            .as_ref()
+            .map(|o| serde_json::to_string(o))
+            .transpose()
+            .map_err(|e| StorageError::Database(format!("outcome serialize: {e}")))?;
+        let usage_json =
+            serde_json::to_string(&attempt.usage).map_err(|e| StorageError::Database(format!("usage serialize: {e}")))?;
+        let capsule_json =
+            serde_json::to_string(&attempt.context_capsule).map_err(|e| StorageError::Database(format!("capsule serialize: {e}")))?;
+
+        // Use the run_id from the idempotency_key
+        let run_id = &attempt.idempotency_key.run_id;
+
+        let result = conn.execute(
+            r#"INSERT INTO attempts_v1
+               (attempt_id, run_id, node_id, route_json, started_at, ended_at,
+                outcome_json, usage_json, context_capsule_json, idempotency_key, schema_version)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+            params![
+                attempt.attempt_id.0,
+                run_id.0,
+                attempt.node_id.0,
+                route_json,
+                &attempt.started_at,
+                attempt.ended_at.as_deref(),
+                outcome_json,
+                usage_json,
+                capsule_json,
+                attempt.idempotency_key.as_str(),
+                attempt.schema_version as i64,
+            ],
+        );
+
+        // Map UNIQUE constraint violation to IdempotencyConflict
+        match result {
+            Ok(_) => Ok(()),
+            Err(rusqlite::Error::SqliteFailure(code, msg))
+                if code.code == rusqlite::ErrorCode::ConstraintViolation
+                    && msg.as_ref().map(|s| s.contains("UNIQUE")) == Some(true) =>
+            {
+                Err(sddk_domain::workflow_run::WorkflowRunPersistError::IdempotencyConflict {
+                    key: attempt.idempotency_key.as_str(),
+                }
+                .into())
+            }
+            Err(e) => Err(StorageError::Database(format!("record_attempt: {e}"))),
+        }
+    }
+
+    fn load_node_run(
+        &self,
+        run_id: &RunId,
+        node_id: &NodeId,
+    ) -> Result<Option<sddk_domain::workflow_run::NodeRun>, StorageError> {
+        use sddk_domain::workflow_run::{NodeRun, NodeRunState};
+        use std::collections::BTreeSet;
+
+        let conn = self.proj_store.conn();
+        let row = conn
+            .query_row(
+                "SELECT run_id, node_id, state, dependencies_json, last_attempt_id
+                 FROM node_runs_v1
+                 WHERE run_id = ?1 AND node_id = ?2",
+                params![run_id.0, node_id.0],
+                |row| {
+                    Ok(NodeRunRow {
+                        run_id: row.get(0)?,
+                        node_id: row.get(1)?,
+                        state: row.get(2)?,
+                        dependencies_json: row.get(3)?,
+                        last_attempt_id: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| StorageError::Database(format!("load_node_run: {e}")))?;
+
+        match row {
+            Some(r) => {
+                let state = match r.state.as_str() {
+                    "pending" => NodeRunState::Pending,
+                    "ready" => NodeRunState::Ready,
+                    "running" => NodeRunState::Running,
+                    "completed" => NodeRunState::Completed,
+                    "failed" => NodeRunState::Failed,
+                    "skipped" => NodeRunState::Skipped,
+                    _ => {
+                        return Err(StorageError::Database(format!("unknown node state: {}", r.state)));
+                    }
+                };
+                let dependencies: BTreeSet<NodeId> =
+                    serde_json::from_str(&r.dependencies_json).map_err(|e| {
+                        StorageError::Database(format!("dependencies deserialize: {e}"))
+                    })?;
+
+                // Load attempts for this node run
+                let attempts = self.load_node_attempts(run_id, node_id)?;
+
+                Ok(Some(NodeRun {
+                    node_id: NodeId(r.node_id),
+                    state,
+                    dependencies,
+                    attempts,
+                    expansion_permissions: Default::default(),
+                    schema_version: 1,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn list_attempts(
+        &self,
+        run_id: &RunId,
+        node_id: &NodeId,
+    ) -> Result<Vec<sddk_domain::workflow_run::Attempt>, StorageError> {
+        self.load_node_attempts(run_id, node_id)
+    }
+
+    fn latest_attempt(
+        &self,
+        run_id: &RunId,
+        node_id: &NodeId,
+    ) -> Result<Option<sddk_domain::workflow_run::Attempt>, StorageError> {
+        let attempts = self.load_node_attempts(run_id, node_id)?;
+        Ok(attempts.into_iter().last())
+    }
+
+    fn stream_node_runs(
+        &self,
+        run_id: &RunId,
+    ) -> Result<Vec<sddk_domain::workflow_run::NodeRun>, StorageError> {
+        use sddk_domain::workflow_run::NodeRunState;
+        use std::collections::BTreeSet;
+
+        let conn = self.proj_store.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT run_id, node_id, state, dependencies_json, last_attempt_id
+                 FROM node_runs_v1
+                 WHERE run_id = ?1",
+            )
+            .map_err(|e| StorageError::Database(format!("stream_node_runs prep: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![run_id.0], |row| {
+                Ok(NodeRunRow {
+                    run_id: row.get(0)?,
+                    node_id: row.get(1)?,
+                    state: row.get(2)?,
+                    dependencies_json: row.get(3)?,
+                    last_attempt_id: row.get(4)?,
+                })
+            })
+            .map_err(|e| StorageError::Database(format!("stream_node_runs query: {e}")))?;
+
+        let mut node_runs = Vec::new();
+        for row_result in rows {
+            let r = row_result.map_err(|e| StorageError::Database(format!("row: {e}")))?;
+            let state = match r.state.as_str() {
+                "pending" => NodeRunState::Pending,
+                "ready" => NodeRunState::Ready,
+                "running" => NodeRunState::Running,
+                "completed" => NodeRunState::Completed,
+                "failed" => NodeRunState::Failed,
+                "skipped" => NodeRunState::Skipped,
+                _ => continue, // Skip unknown states
+            };
+            let dependencies: BTreeSet<NodeId> =
+                serde_json::from_str(&r.dependencies_json).map_err(|e| {
+                    StorageError::Database(format!("dependencies deserialize: {e}"))
+                })?;
+
+            // Load attempts for each node
+            let attempts = self.load_node_attempts(run_id, &NodeId(r.node_id.clone()))?;
+
+            node_runs.push(sddk_domain::workflow_run::NodeRun {
+                node_id: NodeId(r.node_id),
+                state,
+                dependencies,
+                attempts,
+                expansion_permissions: Default::default(),
+                schema_version: 1,
+            });
+        }
+        Ok(node_runs)
+    }
 }
 
 /// RFC 3339 / ISO 8601 UTC timestamp.
@@ -489,6 +1025,31 @@ impl RawAttemptRow {
             schema_version: self.schema_version,
         })
     }
+}
+
+/// Raw row from workflow_runs_v1.
+struct WorkflowRunRow {
+    run_id: String,
+    template_id: String,
+    template_version: String,
+    ir_hash: String,
+    graph_revision_id: String,
+    state: String,
+    inputs_json: String,
+    outputs_json: Option<String>,
+    correlation_id: String,
+    budget_json: String,
+    created_at: String,
+    updated_at: String,
+}
+
+/// Raw row from node_runs_v1.
+struct NodeRunRow {
+    run_id: String,
+    node_id: String,
+    state: String,
+    dependencies_json: String,
+    last_attempt_id: Option<String>,
 }
 
 /// Raw row from execution_graph_revisions_v1.
