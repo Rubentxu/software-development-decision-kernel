@@ -503,3 +503,101 @@ crate::assert_variant_count_eq!(
         WorkflowRunError::AlreadyTerminal,
     ]
 );
+
+// ── WorkflowRunPersistError ─────────────────────────────────────────────────
+
+/// Errors from workflow-run persistence operations (REQ-WFR-ERR-001).
+///
+/// This is a closed 6-variant enum. The `assert_variant_count_eq!` macro
+/// enforces the variant count at compile time.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WorkflowRunPersistError {
+    /// Schema version mismatch.
+    #[error("unsupported schema version: got {got}, want {want}")]
+    UnsupportedSchemaVersion {
+        /// Actual schema version.
+        got: u32,
+        /// Expected schema version.
+        want: u32,
+    },
+    /// Invalid state transition attempted.
+    #[error("invalid state transition from {from} to {to}")]
+    InvalidStateTransition {
+        /// Source state.
+        from: String,
+        /// Target state.
+        to: String,
+    },
+    /// Run is already in a terminal state.
+    #[error("run already terminal: {state:?}")]
+    RunAlreadyTerminal {
+        /// The terminal state.
+        state: WorkflowRunState,
+    },
+    /// Run not found.
+    #[error("run not found: {run_id}")]
+    RunNotFound {
+        /// The missing run identifier.
+        run_id: RunId,
+    },
+    /// Idempotency key conflict.
+    #[error("idempotency conflict for key: {key}")]
+    IdempotencyConflict {
+        /// The conflicting idempotency key.
+        key: String,
+    },
+    /// Graph revision missing for the run.
+    #[error("graph revision missing for run {run_id}, expected: {expected}")]
+    GraphRevisionMissing {
+        /// The run identifier.
+        run_id: RunId,
+        /// The expected revision identifier.
+        expected: RevisionId,
+    },
+}
+
+// Compile-time guard: exactly 6 variants (REQ-WFR-ERR-001).
+crate::assert_variant_count_eq!(
+    WorkflowRunPersistError,
+    6,
+    [
+        WorkflowRunPersistError::UnsupportedSchemaVersion { .. },
+        WorkflowRunPersistError::InvalidStateTransition { .. },
+        WorkflowRunPersistError::RunAlreadyTerminal { .. },
+        WorkflowRunPersistError::RunNotFound { .. },
+        WorkflowRunPersistError::IdempotencyConflict { .. },
+        WorkflowRunPersistError::GraphRevisionMissing { .. },
+    ]
+);
+
+impl From<WorkflowRunPersistError> for crate::StorageError {
+    fn from(err: WorkflowRunPersistError) -> Self {
+        match err {
+            WorkflowRunPersistError::RunNotFound { run_id } => {
+                crate::StorageError::NotFound {
+                    entity: "workflow_run",
+                    id: run_id.0,
+                }
+            }
+            WorkflowRunPersistError::GraphRevisionMissing { run_id, .. } => {
+                crate::StorageError::NotFound {
+                    entity: "graph_revision",
+                    id: run_id.0,
+                }
+            }
+            // Database-level errors map to StorageError::Database
+            WorkflowRunPersistError::UnsupportedSchemaVersion { .. } => {
+                crate::StorageError::Database(err.to_string())
+            }
+            WorkflowRunPersistError::InvalidStateTransition { .. } => {
+                crate::StorageError::Database(err.to_string())
+            }
+            WorkflowRunPersistError::RunAlreadyTerminal { .. } => {
+                crate::StorageError::Database(err.to_string())
+            }
+            WorkflowRunPersistError::IdempotencyConflict { .. } => {
+                crate::StorageError::Database(err.to_string())
+            }
+        }
+    }
+}

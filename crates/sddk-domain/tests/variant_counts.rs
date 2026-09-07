@@ -110,3 +110,15 @@ fn execution_graph_compile_error_variant_count_is_8() {
     use sddk_domain::execution_graph_compiler::ExecutionGraphCompileError;
     let _ = ExecutionGraphCompileError::EmptyPlan;
 }
+
+// ── DW-RUNTIME-002 enums ────────────────────────────────────────────────────
+
+/// WorkflowRunPersistError has exactly 6 variants (REQ-WFR-ERR-001).
+/// The `assert_variant_count_eq!` macro enforces this at compile time.
+#[test]
+fn workflow_run_persist_error_variant_count_is_6() {
+    use sddk_domain::workflow_run::{RunId, WorkflowRunPersistError};
+    let _ = WorkflowRunPersistError::RunNotFound {
+        run_id: RunId("test".to_string()),
+    };
+}
