@@ -41,6 +41,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Isolate TMPDIR for the whole release run. Inherited TMPDIR values (e.g. agent
+# sandboxes such as ~/.jcode/scratch) can be shared/constrained and cause
+# intermittent `PermissionDenied` from tempfile under parallel test load — seen
+# as sddk-cli dev tests failing 11→99 depending on concurrency. We run with a
+# fresh per-run scratch under the repo `target/` dir (writable, on-disk),
+# removed on exit, so the test gate is deterministic regardless of the ambient
+# TMPDIR.
+mkdir -p "$ROOT/target"
+RELEASE_SCRATCH="$(mktemp -d "$ROOT/target/sddk-release-tmp.XXXXXX")"
+export TMPDIR="$RELEASE_SCRATCH"
+cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
+trap cleanup_release_scratch EXIT
+
 # --- args ---
 
 DRY_RUN=0
@@ -154,7 +167,7 @@ ok "MANIFEST.sha256 regenerated and verified"
 
 step "5/13 — bundle tarball"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" "$RELEASE_SCRATCH"' EXIT
 
 BUNDLE_TARBALL="$TMP/software-development-decision-kernel.tar.gz"
 tar czf "$BUNDLE_TARBALL" \
