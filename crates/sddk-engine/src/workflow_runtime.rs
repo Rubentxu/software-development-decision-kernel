@@ -179,6 +179,11 @@ pub struct WorkflowRuntime {
     pending_map: HashMap<MapKey, Arc<std::sync::Mutex<crate::operator::MapCheckpointState>>>,
     /// Bounded-execution controller — created lazily at the start of `execute()`.
     controller: Option<ExecutionController>,
+    /// Outputs produced by nodes that completed with `NodeOutcome::Succeeded`,
+    /// accumulated across ticks keyed by operator id. S6a exit gate: aggregated
+    /// into `run.outputs` when `execute()` reaches `AllComplete`.
+    /// Only nodes that yielded non-empty outputs are recorded.
+    completed_node_outputs: BTreeMap<OperatorId, BTreeMap<String, Value>>,
 }
 
 impl WorkflowRuntime {
@@ -235,6 +240,7 @@ impl WorkflowRuntime {
             pending_parallel: HashMap::new(),
             pending_map: HashMap::new(),
             controller: None,
+            completed_node_outputs: BTreeMap::new(),
         }
     }
 
@@ -291,6 +297,7 @@ impl WorkflowRuntime {
             pending_parallel: HashMap::new(),
             pending_map: HashMap::new(),
             controller: None,
+            completed_node_outputs: BTreeMap::new(),
         }
     }
 
@@ -378,6 +385,7 @@ impl WorkflowRuntime {
             pending_parallel: HashMap::new(),
             pending_map: HashMap::new(),
             controller: None,
+            completed_node_outputs: BTreeMap::new(),
         }
     }
 
@@ -418,9 +426,14 @@ impl WorkflowRuntime {
     /// - `workflow.node.running` / `workflow.node.completed` / `workflow.node.failed` per node
     /// - `workflow.run.completed` when the run reaches a terminal state
     pub fn execute(&mut self) -> Result<()> {
-        // Try to load an existing run for replay/resumption
-        // In cycle-16, this is a no-op since the default implementation returns NotImplemented
-        match self.store.lock().unwrap().load_run(&self.run.run_id) {
+        // Try to load an existing run for replay/resumption.
+        // NOTE: the load_run result is bound FIRST so the store MutexGuard from
+        // `self.store.lock()` is dropped before the branches below. Holding it in
+        // the match scrutinee keeps it alive across the whole match, so the
+        // `Ok(None)` branch's `record_run` re-lock of the same Mutex would
+        // self-deadlock on a first-time (not pre-inserted) run.
+        let loaded_run = self.store.lock().unwrap().load_run(&self.run.run_id);
+        match loaded_run {
             Ok(Some(_loaded_run)) => {
                 // Run exists — in cycle-17 this would resume from the loaded state
                 // For cycle-16, we just proceed (run is already in the state machine)
@@ -456,7 +469,18 @@ impl WorkflowRuntime {
         loop {
             match self.tick()? {
                 TickOutcome::AllComplete => {
-                    self.complete(Default::default())?;
+                    // S6a exit gate: aggregate completed terminal-node outputs
+                    // into run.outputs (REQ-EXIT-002). Each node that produced
+                    // outputs appears keyed by its operator id; a workflow whose
+                    // nodes produced none keeps an empty output map.
+                    let mut final_outputs: BTreeMap<String, Value> = BTreeMap::new();
+                    for (op_id, outputs) in &self.completed_node_outputs {
+                        final_outputs.insert(
+                            op_id.0.clone(),
+                            Value::Object(serde_json::Map::from_iter(outputs.clone())),
+                        );
+                    }
+                    self.complete(final_outputs)?;
                     break;
                 }
                 TickOutcome::Failed => {
@@ -1197,8 +1221,14 @@ impl WorkflowRuntime {
                         NodeOutcome::Running => {
                             node_run.state = NodeRunState::Running;
                         }
-                        NodeOutcome::Succeeded { .. } => {
+                        NodeOutcome::Succeeded { outputs, .. } => {
                             node_run.state = NodeRunState::Completed;
+                            // S6a exit gate: retain node outputs so the AllComplete
+                            // branch can aggregate them into run.outputs.
+                            if !outputs.is_empty() {
+                                self.completed_node_outputs
+                                    .insert(op_id.clone(), outputs.clone());
+                            }
                             // REQ-WFR3-SEQ-001: record each attempt when Sequence transitions to Completed.
                             // Sequence::evaluate pushes marker attempts to node_run.attempts during
                             // child evaluation; these must be persisted to attempts_v1 here.
