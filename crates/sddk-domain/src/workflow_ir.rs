@@ -34,9 +34,50 @@ pub struct IrId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevisionId(pub String);
 
+impl std::fmt::Display for RevisionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Run identifier (UUID v7).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RunId(pub String);
+
+impl std::fmt::Display for RunId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl RunId {
+    /// Derives a deterministic run identifier from a plan revision and correlation ID.
+    ///
+    /// Recipe: `sha256(plan_revision_id || ":" || correlation_id)` → 64 lowercase hex.
+    ///
+    /// This derivation is deterministic: identical `(plan_revision_id, correlation_id)`
+    /// pairs always produce the same `RunId`. No wall-clock, RNG, or UUIDv4 is used.
+    ///
+    /// # Arguments
+    ///
+    /// * `plan_revision_id` — the plan revision identifier
+    /// * `correlation_id` — the correlation identifier for cross-system tracing
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sddk_domain::workflow_run::CorrelationId;
+    /// use sddk_domain::workflow_ir::RunId;
+    ///
+    /// let run_id = RunId::derive("plan-rev-abc", &CorrelationId("corr-xyz".into()));
+    /// assert_eq!(run_id.0.len(), 64);
+    /// ```
+    pub fn derive(plan_revision_id: &str, correlation_id: &crate::workflow_run::CorrelationId) -> Self {
+        let input = format!("{}:{}", plan_revision_id, correlation_id.0);
+        let digest = Sha256::digest(input.as_bytes());
+        Self(format!("{:064x}", digest))
+    }
+}
 
 /// Node identifier (stable within an IR).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
