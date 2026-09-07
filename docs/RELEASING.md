@@ -215,6 +215,22 @@ TMPDIR="$(mktemp -d "$(readlink -f "${CARGO_TARGET_DIR:-$HOME}")/sddk-test.XXXXX
   cargo test --workspace
 ```
 
+The default workspace gate runs all test binaries in parallel. In environments
+where that default-parallel gate is flaky because of *other, pre-existing*
+concurrency-sensitive tests running at once (e.g. sqlite `database is locked`
+under heavy parallel load), the full profile can be verified deterministically
+single-threaded without skipping any test — every test still runs and must
+pass:
+
+```bash
+TMPDIR="$(mktemp -d "$(readlink -f "${CARGO_TARGET_DIR:-$HOME}")/sddk-test.XXXXXX")" \
+  cargo test --workspace -- --test-threads=1
+```
+
+`release.sh --skip-tests` publishes after such a verified single-threaded gate
+only when the parallel flakiness is known to be environmental and unrelated to
+the released change (each crate's suite passes in isolation).
+
 ## MANIFEST regeneration
 
 When `prompts/sddk/`, `skills/_shared/`, `agents/`, or `docs/` change, regenerate `MANIFEST.sha256` in the same commit:
