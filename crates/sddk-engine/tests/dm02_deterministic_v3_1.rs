@@ -236,7 +236,7 @@ fn dm02_budget_exceeded_fires_when_wall_clock_expires() {
     let ir = build_tiny_ir(0);
 
     let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
-    let mut runtime = WorkflowRuntime::new_with_event_store(
+    let mut runtime = WorkflowRuntime::from_ir_with_event_store(
         ir,
         store,
         clock,

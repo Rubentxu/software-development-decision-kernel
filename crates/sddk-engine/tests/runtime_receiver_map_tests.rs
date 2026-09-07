@@ -7,13 +7,10 @@
 //! correctly structured as (RunId, OperatorId).
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use sddk_domain::{
-    CapabilityId, GraphStore, NoopTaskExecutor, Operator, OperatorId, RunId, StorageError,
-    WorkflowIR,
+    CapabilityId, GraphStore, Operator, OperatorId, RunId, StorageError, WorkflowIR,
 };
-use sddk_engine::operator::Clock;
 use sddk_engine::workflow_runtime::WorkflowRuntime;
 
 /// INV-10 test: Attempt does NOT store the parallel receiver.
@@ -104,7 +101,7 @@ fn make_simple_ir() -> WorkflowIR {
 
 fn make_runtime() -> WorkflowRuntime {
     let ir = make_simple_ir();
-    WorkflowRuntime::new(ir, MockStore, Clock, Arc::new(NoopTaskExecutor))
+    WorkflowRuntime::run_ir(ir, MockStore)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────

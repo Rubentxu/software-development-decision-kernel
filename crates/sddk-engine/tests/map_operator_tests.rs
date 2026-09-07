@@ -1518,11 +1518,8 @@ fn map_source_outputs_snapshot_non_empty_on_concurrent_pending() {
 /// Uses make_runtime pattern from runtime_receiver_map_tests.rs.
 #[test]
 fn map_runtime_storage_pending_map_field_exists() {
-    use sddk_domain::{GraphStore, NoopTaskExecutor, StorageError, WorkflowIR};
-    use sddk_engine::operator::Clock;
+    use sddk_domain::{GraphStore, StorageError, WorkflowIR};
     use sddk_engine::workflow_runtime::WorkflowRuntime;
-    use std::collections::BTreeMap;
-    use std::sync::Arc;
 
     // Minimal MockStore implementation for this test
     struct MockStore;
@@ -1602,7 +1599,7 @@ fn map_runtime_storage_pending_map_field_exists() {
     };
 
     // Verify WorkflowRuntime::new compiles and returns a runtime with pending_map field
-    let _runtime = WorkflowRuntime::new(ir, MockStore, Clock, Arc::new(NoopTaskExecutor));
+    let _runtime = WorkflowRuntime::run_ir(ir, MockStore);
 }
 
 /// Scenario: MapKey is (RunId, OperatorId) — same shape as ParallelKey.

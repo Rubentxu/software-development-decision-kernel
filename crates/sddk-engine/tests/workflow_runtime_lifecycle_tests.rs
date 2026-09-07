@@ -9,11 +9,10 @@
 //! - fail() transitions to Failed
 //! - pause() / resume() / cancel() work correctly
 
-use sddk_domain::{GraphStore, NoopTaskExecutor, WorkflowIR, WorkflowRun, WorkflowRunState};
+use sddk_domain::{GraphStore, WorkflowIR, WorkflowRun, WorkflowRunState};
 use sddk_engine::operator::Clock;
 use sddk_engine::workflow_runtime::WorkflowRuntime;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 // Minimal mock GraphStore for testing
 struct MockStore;
@@ -95,7 +94,7 @@ fn start_then_tick_then_complete_transitions_state() {
     // Currently this will fail to compile because WorkflowRuntime doesn't exist yet.
     // Once T-4 is implemented, this test should pass.
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     // Create a minimal WorkflowIR
     let ir = WorkflowIR {
@@ -132,7 +131,7 @@ fn start_then_tick_then_complete_transitions_state() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     // start() should transition from Pending to Running
     let result = runtime.start();
     assert!(result.is_ok(), "start() should succeed, got: {:?}", result);
@@ -145,7 +144,7 @@ fn start_then_tick_then_complete_transitions_state() {
 #[test]
 fn complete_transitions_to_completed() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -180,7 +179,7 @@ fn complete_transitions_to_completed() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap();
 
     let outputs: BTreeMap<String, serde_json::Value> = Default::default();
@@ -197,7 +196,7 @@ fn complete_transitions_to_completed() {
 #[test]
 fn fail_transitions_to_failed() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -232,7 +231,7 @@ fn fail_transitions_to_failed() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap();
 
     let result = runtime.fail("test error".into());
@@ -244,7 +243,7 @@ fn fail_transitions_to_failed() {
 #[test]
 fn pause_resume_transitions() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -279,7 +278,7 @@ fn pause_resume_transitions() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap();
 
     let result = runtime.pause();
@@ -295,7 +294,7 @@ fn pause_resume_transitions() {
 #[test]
 fn cancel_transitions_to_cancelled() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -330,7 +329,7 @@ fn cancel_transitions_to_cancelled() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap();
 
     let result = runtime.cancel();
@@ -342,7 +341,7 @@ fn cancel_transitions_to_cancelled() {
 #[test]
 fn complete_on_terminal_is_idempotent() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -377,7 +376,7 @@ fn complete_on_terminal_is_idempotent() {
         schema_version: 1,
     };
 
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap();
     runtime.complete(Default::default()).unwrap();
 
@@ -390,7 +389,7 @@ fn complete_on_terminal_is_idempotent() {
 #[test]
 fn start_on_non_pending_returns_error() {
     let store = MockStore;
-    let clock = Clock;
+    let _clock = Clock;
 
     let ir = WorkflowIR {
         ir_id: None,
@@ -414,7 +413,7 @@ fn start_on_non_pending_returns_error() {
 
     // Note: WorkflowRuntime::new() always creates a Pending run.
     // To test start() on non-Pending, we first start() then try start() again.
-    let mut runtime = WorkflowRuntime::new(ir, store, clock, Arc::new(NoopTaskExecutor));
+    let mut runtime = WorkflowRuntime::run_ir(ir, store);
     runtime.start().unwrap(); // Now Running
     let result = runtime.start(); // Should fail - already Running
     assert!(result.is_err(), "start() on non-Pending should fail");
@@ -510,7 +509,7 @@ fn runtime_run_ir_constructor() {
 
     // run_ir() creates a Pending runtime
     assert_eq!(runtime.state(), &WorkflowRunState::Pending);
-    assert!(runtime.run().run_id.0.starts_with("legacy-run-"));
+    assert!(runtime.run().run_id.0.starts_with("test-run-"));
 }
 
 #[test]

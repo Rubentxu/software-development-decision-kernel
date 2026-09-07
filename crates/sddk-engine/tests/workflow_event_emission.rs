@@ -274,8 +274,8 @@ fn make_runtime_with_spy() -> (WorkflowRuntime, impl Fn() -> Vec<EventEnvelopeV1
     let clock = Clock;
     let ir = make_test_ir();
 
-    let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy_store;
-    let runtime = WorkflowRuntime::new_with_event_store(
+    let event_store: Arc<Mutex<dyn EventStore>> = spy_store;
+    let runtime = WorkflowRuntime::from_ir_with_event_store(
         ir,
         store,
         clock,

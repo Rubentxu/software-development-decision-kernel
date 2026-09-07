@@ -399,7 +399,7 @@ fn dm02_stress_harness() {
         let ir = build_min_sequence_ir();
 
         let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
-        let mut runtime = WorkflowRuntime::new_with_event_store(
+        let mut runtime = WorkflowRuntime::from_ir_with_event_store(
             ir,
             store,
             clock,
@@ -450,7 +450,7 @@ fn dm02_execute_completes_all_nodes() {
     let ir = build_min_sequence_ir();
 
     let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
-    let mut runtime = WorkflowRuntime::new_with_event_store(
+    let mut runtime = WorkflowRuntime::from_ir_with_event_store(
         ir,
         store,
         clock,
@@ -486,7 +486,7 @@ fn dm03_events_have_correct_stream_id() {
     let ir = build_min_sequence_ir();
 
     let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
-    let mut runtime = WorkflowRuntime::new_with_event_store(
+    let mut runtime = WorkflowRuntime::from_ir_with_event_store(
         ir,
         store,
         clock,
@@ -523,7 +523,7 @@ fn dm04_run_start_and_complete_events() {
     let ir = build_min_sequence_ir();
 
     let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
-    let mut runtime = WorkflowRuntime::new_with_event_store(
+    let mut runtime = WorkflowRuntime::from_ir_with_event_store(
         ir,
         store,
         clock,
@@ -593,7 +593,7 @@ fn dm05_task_operators_are_invoked() {
 
     let event_store: Arc<Mutex<Box<dyn EventStore>>> = spy;
     let mut runtime =
-        WorkflowRuntime::new_with_event_store(ir, store, clock, event_store, executor_for_run);
+        WorkflowRuntime::from_ir_with_event_store(ir, store, clock, event_store, executor_for_run);
 
     let result = runtime.execute();
     assert!(result.is_ok(), "execute() should succeed");
