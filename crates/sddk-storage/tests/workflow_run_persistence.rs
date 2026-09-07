@@ -18,7 +18,8 @@ use sddk_domain::{
 use sddk_storage::graph_store::SqliteGraphStore;
 
 /// Helper: creates a minimal ExecutionGraphRevision for testing.
-fn make_test_revision(run_id: &RunId, first_node_id: &NodeId) -> ExecutionGraphRevision {
+#[allow(dead_code)]
+fn make_test_revision(_run_id: &RunId, first_node_id: &NodeId) -> ExecutionGraphRevision {
     let mut nodes = BTreeMap::new();
     nodes.insert(first_node_id.clone(), NodeSnapshot {
         node_id: first_node_id.clone(),
@@ -65,6 +66,7 @@ fn make_test_run(run_id: RunId, graph_revision: &RevisionId) -> WorkflowRun {
 }
 
 /// Helper: creates a minimal NodeRun for testing.
+#[allow(dead_code)]
 fn make_test_node_run(node_id: NodeId) -> NodeRun {
     NodeRun {
         node_id,
@@ -133,7 +135,7 @@ fn record_run_atomic_with_event_log() {
     assert!(result.is_err(), "second record_run with same revision_id should fail");
 
     // Verify no duplicate run row
-    let all_runs = store.stream_node_runs(&run_id).expect("stream_node_runs failed");
+    let _all_runs = store.stream_node_runs(&run_id).expect("stream_node_runs failed");
     // The run should still exist, but no duplicate
     let loaded_run = store.load_run(&run_id).expect("load_run failed");
     assert!(loaded_run.is_some(), "original run should still exist after failed duplicate");

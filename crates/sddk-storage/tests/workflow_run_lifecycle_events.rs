@@ -5,7 +5,7 @@
 //! - workflow_runs_v1 snapshot remains non-updatable (MIGRATION_13 triggers)
 //! - lifecycle events cascade from run deletion
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::Connection;
 use std::path::Path;
 use tempfile::TempDir;
 
