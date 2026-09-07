@@ -64,10 +64,7 @@ fn line_has_forbidden_symbol(line: &str) -> Option<String> {
         return None;
     }
 
-    let forbidden = [
-        ("Uuid::new_v4", "Uuid::new_v4"),
-        ("HashMap<", "HashMap"),
-    ];
+    let forbidden = [("Uuid::new_v4", "Uuid::new_v4"), ("HashMap<", "HashMap")];
 
     for (symbol, display) in &forbidden {
         if trimmed.contains(symbol) {
@@ -123,8 +120,7 @@ fn scan_run_persistence_functions(content: &str) -> Vec<String> {
 #[test]
 fn graph_store_run_persistence_deterministic() {
     let path = graph_store_path();
-    let content = std::fs::read_to_string(&path)
-        .expect("failed to read graph_store.rs");
+    let content = std::fs::read_to_string(&path).expect("failed to read graph_store.rs");
     let violations = scan_run_persistence_functions(&content);
 
     assert!(

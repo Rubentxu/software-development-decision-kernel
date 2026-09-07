@@ -212,8 +212,10 @@ fn workflow_run_events_are_append_only() {
     );
 
     // DELETE should fail
-    let delete_result =
-        conn.execute("DELETE FROM workflow_run_events_v1 WHERE event_id = 'evt-1'", []);
+    let delete_result = conn.execute(
+        "DELETE FROM workflow_run_events_v1 WHERE event_id = 'evt-1'",
+        [],
+    );
     assert!(
         delete_result.is_err(),
         "DELETE on workflow_run_events_v1 should be rejected by trigger"
@@ -227,7 +229,10 @@ fn workflow_run_events_are_append_only() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(count, 1, "Event row should still exist after rejected UPDATE/DELETE");
+    assert_eq!(
+        count, 1,
+        "Event row should still exist after rejected UPDATE/DELETE"
+    );
 }
 
 /// Scenario: workflow_runs_v1 snapshot rejects UPDATE (MIGRATION_13 triggers)
@@ -347,8 +352,11 @@ fn lifecycle_events_cascade_from_run() {
     assert_eq!(count_before, 2, "Should have 2 events before delete");
 
     // Delete the run - should succeed because no append-only trigger
-    conn.execute("DELETE FROM workflow_runs_v1 WHERE run_id = 'run-cascade'", [])
-        .unwrap();
+    conn.execute(
+        "DELETE FROM workflow_runs_v1 WHERE run_id = 'run-cascade'",
+        [],
+    )
+    .unwrap();
 
     // Events should be cascade-deleted
     let count_after: i64 = conn
@@ -358,5 +366,8 @@ fn lifecycle_events_cascade_from_run() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(count_after, 0, "Events should be cascade-deleted when run is deleted");
+    assert_eq!(
+        count_after, 0,
+        "Events should be cascade-deleted when run is deleted"
+    );
 }

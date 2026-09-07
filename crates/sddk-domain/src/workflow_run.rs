@@ -573,12 +573,10 @@ crate::assert_variant_count_eq!(
 impl From<WorkflowRunPersistError> for crate::StorageError {
     fn from(err: WorkflowRunPersistError) -> Self {
         match err {
-            WorkflowRunPersistError::RunNotFound { run_id } => {
-                crate::StorageError::NotFound {
-                    entity: "workflow_run",
-                    id: run_id.0,
-                }
-            }
+            WorkflowRunPersistError::RunNotFound { run_id } => crate::StorageError::NotFound {
+                entity: "workflow_run",
+                id: run_id.0,
+            },
             WorkflowRunPersistError::GraphRevisionMissing { run_id, .. } => {
                 crate::StorageError::NotFound {
                     entity: "graph_revision",

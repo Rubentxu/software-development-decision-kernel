@@ -478,16 +478,16 @@ impl GraphStore for SqliteGraphStore {
             .map_err(|e| StorageError::Database(format!("transaction: {e}")))?;
 
         // 1. Insert workflow_runs_v1 row
-        let inputs_json =
-            serde_json::to_string(&run.inputs).map_err(|e| StorageError::Database(format!("inputs serialize: {e}")))?;
+        let inputs_json = serde_json::to_string(&run.inputs)
+            .map_err(|e| StorageError::Database(format!("inputs serialize: {e}")))?;
         let outputs_json = run
             .outputs
             .as_ref()
             .map(serde_json::to_string)
             .transpose()
             .map_err(|e| StorageError::Database(format!("outputs serialize: {e}")))?;
-        let budget_json =
-            serde_json::to_string(&run.budget).map_err(|e| StorageError::Database(format!("budget serialize: {e}")))?;
+        let budget_json = serde_json::to_string(&run.budget)
+            .map_err(|e| StorageError::Database(format!("budget serialize: {e}")))?;
         let state_str = match run.state {
             sddk_domain::workflow_run::WorkflowRunState::Pending => "pending",
             sddk_domain::workflow_run::WorkflowRunState::Running => "running",
@@ -564,7 +564,9 @@ impl GraphStore for SqliteGraphStore {
                 ExecutionGraphRevision::SCHEMA_VERSION as i64,
             ],
         )
-        .map_err(|e| StorageError::Database(format!("record_run (execution_graph_revisions_v1): {e}")))?;
+        .map_err(|e| {
+            StorageError::Database(format!("record_run (execution_graph_revisions_v1): {e}"))
+        })?;
 
         // 3. Insert initial workflow_run_events_v1 event (from_state == to_state == run.state, actor_kind = 'system')
         let event_id = format!("evt-run-{}", run.run_id.0);
@@ -572,13 +574,7 @@ impl GraphStore for SqliteGraphStore {
             r#"INSERT INTO workflow_run_events_v1
                (event_id, run_id, occurred_at, from_state, to_state, actor_kind, actor_id, reason)
                VALUES (?1, ?2, ?3, ?4, ?5, 'system', 'engine', NULL)"#,
-            params![
-                event_id,
-                run.run_id.0,
-                &occurred_at,
-                state_str,
-                state_str,
-            ],
+            params![event_id, run.run_id.0, &occurred_at, state_str, state_str,],
         )
         .map_err(|e| StorageError::Database(format!("record_run (workflow_run_events_v1): {e}")))?;
 
@@ -620,7 +616,7 @@ impl GraphStore for SqliteGraphStore {
                     _ => {
                         return Err(StorageError::Database(format!(
                             "unknown workflow state: {to_state}"
-                        )))
+                        )));
                     }
                 };
                 Ok(Some(state))
@@ -633,8 +629,8 @@ impl GraphStore for SqliteGraphStore {
         &self,
         run_id: &RunId,
     ) -> Result<Option<sddk_domain::workflow_run::WorkflowRun>, StorageError> {
-        use sddk_domain::workflow_run::{CorrelationId, WorkflowRun, WorkflowRunState};
         use sddk_domain::workflow_ir::{Budgets, TemplateRef};
+        use sddk_domain::workflow_run::{CorrelationId, WorkflowRun, WorkflowRunState};
         use std::collections::BTreeMap;
 
         let conn = self.proj_store.conn();
@@ -676,13 +672,15 @@ impl GraphStore for SqliteGraphStore {
                     "failed" => WorkflowRunState::Failed,
                     "cancelled" => WorkflowRunState::Cancelled,
                     _ => {
-                        return Err(StorageError::Database(format!("unknown state: {}", r.state)));
+                        return Err(StorageError::Database(format!(
+                            "unknown state: {}",
+                            r.state
+                        )));
                     }
                 };
                 let inputs: BTreeMap<String, serde_json::Value> =
-                    serde_json::from_str(&r.inputs_json).map_err(|e| {
-                        StorageError::Database(format!("inputs deserialize: {e}"))
-                    })?;
+                    serde_json::from_str(&r.inputs_json)
+                        .map_err(|e| StorageError::Database(format!("inputs deserialize: {e}")))?;
                 let outputs: Option<BTreeMap<String, serde_json::Value>> = r
                     .outputs_json
                     .as_ref()
@@ -721,8 +719,8 @@ impl GraphStore for SqliteGraphStore {
         node_run: &sddk_domain::workflow_run::NodeRun,
     ) -> Result<(), StorageError> {
         let conn = self.proj_store.conn_mut();
-        let deps_json =
-            serde_json::to_string(&node_run.dependencies).map_err(|e| StorageError::Database(format!("deps serialize: {e}")))?;
+        let deps_json = serde_json::to_string(&node_run.dependencies)
+            .map_err(|e| StorageError::Database(format!("deps serialize: {e}")))?;
         let state_str = match node_run.state {
             sddk_domain::workflow_run::NodeRunState::Pending => "pending",
             sddk_domain::workflow_run::NodeRunState::Ready => "ready",
@@ -764,20 +762,19 @@ impl GraphStore for SqliteGraphStore {
         &mut self,
         attempt: &sddk_domain::workflow_run::Attempt,
     ) -> Result<(), StorageError> {
-
         let conn = self.proj_store.conn_mut();
-        let route_json =
-            serde_json::to_string(&attempt.route).map_err(|e| StorageError::Database(format!("route serialize: {e}")))?;
+        let route_json = serde_json::to_string(&attempt.route)
+            .map_err(|e| StorageError::Database(format!("route serialize: {e}")))?;
         let outcome_json = attempt
             .outcome
             .as_ref()
             .map(serde_json::to_string)
             .transpose()
             .map_err(|e| StorageError::Database(format!("outcome serialize: {e}")))?;
-        let usage_json =
-            serde_json::to_string(&attempt.usage).map_err(|e| StorageError::Database(format!("usage serialize: {e}")))?;
-        let capsule_json =
-            serde_json::to_string(&attempt.context_capsule).map_err(|e| StorageError::Database(format!("capsule serialize: {e}")))?;
+        let usage_json = serde_json::to_string(&attempt.usage)
+            .map_err(|e| StorageError::Database(format!("usage serialize: {e}")))?;
+        let capsule_json = serde_json::to_string(&attempt.context_capsule)
+            .map_err(|e| StorageError::Database(format!("capsule serialize: {e}")))?;
 
         // Use the run_id from the idempotency_key
         let run_id = &attempt.idempotency_key.run_id;
@@ -809,10 +806,12 @@ impl GraphStore for SqliteGraphStore {
                 if code.code == rusqlite::ErrorCode::ConstraintViolation
                     && msg.as_ref().map(|s| s.contains("UNIQUE")) == Some(true) =>
             {
-                Err(sddk_domain::workflow_run::WorkflowRunPersistError::IdempotencyConflict {
-                    key: attempt.idempotency_key.as_str(),
-                }
-                .into())
+                Err(
+                    sddk_domain::workflow_run::WorkflowRunPersistError::IdempotencyConflict {
+                        key: attempt.idempotency_key.as_str(),
+                    }
+                    .into(),
+                )
             }
             Err(e) => Err(StorageError::Database(format!("record_attempt: {e}"))),
         }
@@ -856,11 +855,14 @@ impl GraphStore for SqliteGraphStore {
                     "failed" => NodeRunState::Failed,
                     "skipped" => NodeRunState::Skipped,
                     _ => {
-                        return Err(StorageError::Database(format!("unknown node state: {}", r.state)));
+                        return Err(StorageError::Database(format!(
+                            "unknown node state: {}",
+                            r.state
+                        )));
                     }
                 };
-                let dependencies: BTreeSet<NodeId> =
-                    serde_json::from_str(&r.dependencies_json).map_err(|e| {
+                let dependencies: BTreeSet<NodeId> = serde_json::from_str(&r.dependencies_json)
+                    .map_err(|e| {
                         StorageError::Database(format!("dependencies deserialize: {e}"))
                     })?;
 
@@ -937,10 +939,8 @@ impl GraphStore for SqliteGraphStore {
                 "skipped" => NodeRunState::Skipped,
                 _ => continue, // Skip unknown states
             };
-            let dependencies: BTreeSet<NodeId> =
-                serde_json::from_str(&r.dependencies_json).map_err(|e| {
-                    StorageError::Database(format!("dependencies deserialize: {e}"))
-                })?;
+            let dependencies: BTreeSet<NodeId> = serde_json::from_str(&r.dependencies_json)
+                .map_err(|e| StorageError::Database(format!("dependencies deserialize: {e}")))?;
 
             // Load attempts for each node
             let attempts = self.load_node_attempts(run_id, &NodeId(r.node_id.clone()))?;

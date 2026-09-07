@@ -23,7 +23,10 @@ fn run_id_derivation_is_deterministic() {
         "RunId must be exactly 64 hex characters"
     );
     assert!(
-        run_id1.0.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        run_id1
+            .0
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "RunId must be lowercase hex only"
     );
 }

@@ -12,7 +12,9 @@
 use std::path::Path;
 
 fn workflow_run_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("workflow_run.rs")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("workflow_run.rs")
 }
 
 type PathBuf = std::path::PathBuf;

@@ -27,8 +27,8 @@ type PathBuf = std::path::PathBuf;
 #[test]
 fn engine_run_identity_deferred_to_dw_runtime_003() {
     let source_path = workflow_runtime_path();
-    let content = std::fs::read_to_string(&source_path)
-        .expect("failed to read workflow_runtime.rs");
+    let content =
+        std::fs::read_to_string(&source_path).expect("failed to read workflow_runtime.rs");
 
     let lines: Vec<&str> = content.lines().collect();
 

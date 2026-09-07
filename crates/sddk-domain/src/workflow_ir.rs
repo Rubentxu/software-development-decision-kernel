@@ -72,7 +72,10 @@ impl RunId {
     /// let run_id = RunId::derive("plan-rev-abc", &CorrelationId("corr-xyz".into()));
     /// assert_eq!(run_id.0.len(), 64);
     /// ```
-    pub fn derive(plan_revision_id: &str, correlation_id: &crate::workflow_run::CorrelationId) -> Self {
+    pub fn derive(
+        plan_revision_id: &str,
+        correlation_id: &crate::workflow_run::CorrelationId,
+    ) -> Self {
         let input = format!("{}:{}", plan_revision_id, correlation_id.0);
         let digest = Sha256::digest(input.as_bytes());
         Self(format!("{:064x}", digest))

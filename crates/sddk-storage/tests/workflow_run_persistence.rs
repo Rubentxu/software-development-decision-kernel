@@ -6,26 +6,29 @@
 //! - record_graph_revision_for_run binds explicit run_id (not inferred)
 //! - legacy record_graph_revision still infers run_id from nodes.keys().next()
 
+use sddk_domain::{
+    GraphStore,
+    graph::{ExecutionGraphRevision, NodeSnapshot},
+    workflow_ir::{NodeId, RevisionId, RunId, TemplateRef},
+    workflow_run::{CorrelationId, NodeRun, NodeRunState, WorkflowRun, WorkflowRunState},
+};
+use sddk_storage::graph_store::SqliteGraphStore;
 use std::collections::BTreeMap;
 use std::path::Path;
 use tempfile::TempDir;
-use sddk_domain::{
-    graph::{ExecutionGraphRevision, NodeSnapshot},
-    workflow_ir::{RunId, NodeId, RevisionId, TemplateRef},
-    workflow_run::{WorkflowRun, WorkflowRunState, CorrelationId, NodeRun, NodeRunState},
-    GraphStore,
-};
-use sddk_storage::graph_store::SqliteGraphStore;
 
 /// Helper: creates a minimal ExecutionGraphRevision for testing.
 #[allow(dead_code)]
 fn make_test_revision(_run_id: &RunId, first_node_id: &NodeId) -> ExecutionGraphRevision {
     let mut nodes = BTreeMap::new();
-    nodes.insert(first_node_id.clone(), NodeSnapshot {
-        node_id: first_node_id.clone(),
-        state: "compiled".into(),
-        snapshot_at: "anchor-v1".into(),
-    });
+    nodes.insert(
+        first_node_id.clone(),
+        NodeSnapshot {
+            node_id: first_node_id.clone(),
+            state: "compiled".into(),
+            snapshot_at: "anchor-v1".into(),
+        },
+    );
     ExecutionGraphRevision {
         revision: 0,
         revision_id: RevisionId("rev-test-001".into()),
@@ -97,7 +100,9 @@ fn record_run_writes_all_three_rows() {
     let revision = make_test_revision(&run_id, &NodeId("node-1".into()));
     let run = make_test_run(run_id.clone(), &revision.revision_id);
 
-    store.record_run(&run, &revision).expect("record_run failed");
+    store
+        .record_run(&run, &revision)
+        .expect("record_run failed");
 
     // Verify workflow_runs_v1 row
     let loaded_run = store.load_run(&run_id).expect("load_run failed");
@@ -105,12 +110,22 @@ fn record_run_writes_all_three_rows() {
     assert_eq!(loaded_run.unwrap().run_id, run_id);
 
     // Verify execution_graph_revisions_v1 row
-    let loaded_rev = store.load_revision(&run_id, &revision.revision_id).expect("load_revision failed");
-    assert!(loaded_rev.is_some(), "execution_graph_revisions_v1 row should exist");
+    let loaded_rev = store
+        .load_revision(&run_id, &revision.revision_id)
+        .expect("load_revision failed");
+    assert!(
+        loaded_rev.is_some(),
+        "execution_graph_revisions_v1 row should exist"
+    );
 
     // Verify workflow_run_events_v1 row exists
-    let latest_state = store.latest_workflow_run_state(&run_id).expect("latest_workflow_run_state failed");
-    assert!(latest_state.is_some(), "workflow_run_events_v1 row should exist");
+    let latest_state = store
+        .latest_workflow_run_state(&run_id)
+        .expect("latest_workflow_run_state failed");
+    assert!(
+        latest_state.is_some(),
+        "workflow_run_events_v1 row should exist"
+    );
     assert_eq!(latest_state.unwrap(), WorkflowRunState::Pending);
 }
 
@@ -128,17 +143,27 @@ fn record_run_atomic_with_event_log() {
     let run = make_test_run(run_id.clone(), &revision.revision_id);
 
     // First call should succeed
-    store.record_run(&run, &revision).expect("first record_run failed");
+    store
+        .record_run(&run, &revision)
+        .expect("first record_run failed");
 
     // Second call with same revision should fail (duplicate PK)
     let result = store.record_run(&run, &revision);
-    assert!(result.is_err(), "second record_run with same revision_id should fail");
+    assert!(
+        result.is_err(),
+        "second record_run with same revision_id should fail"
+    );
 
     // Verify no duplicate run row
-    let _all_runs = store.stream_node_runs(&run_id).expect("stream_node_runs failed");
+    let _all_runs = store
+        .stream_node_runs(&run_id)
+        .expect("stream_node_runs failed");
     // The run should still exist, but no duplicate
     let loaded_run = store.load_run(&run_id).expect("load_run failed");
-    assert!(loaded_run.is_some(), "original run should still exist after failed duplicate");
+    assert!(
+        loaded_run.is_some(),
+        "original run should still exist after failed duplicate"
+    );
 }
 
 /// Scenario: explicit run_id overrides node-key inference
@@ -170,10 +195,14 @@ fn graph_revision_binds_explicit_run_id() {
     }
 
     // The first node key is "node-not-matching-run", but we pass explicit_run_id
-    store.record_graph_revision_for_run(&explicit_run_id, &revision).expect("record_graph_revision_for_run failed");
+    store
+        .record_graph_revision_for_run(&explicit_run_id, &revision)
+        .expect("record_graph_revision_for_run failed");
 
     // Verify the stored run_id matches the explicit one, not the node key
-    let loaded_rev = store.load_revision(&explicit_run_id, &revision.revision_id).expect("load_revision failed");
+    let loaded_rev = store
+        .load_revision(&explicit_run_id, &revision.revision_id)
+        .expect("load_revision failed");
     assert!(loaded_rev.is_some(), "revision should exist");
     let loaded_rev = loaded_rev.unwrap();
 
@@ -200,11 +229,14 @@ fn legacy_record_graph_revision_still_infers_run_id() {
     let inferred_run_id = RunId("inferred-run-id".into());
     let first_node_id = NodeId(inferred_run_id.0.clone()); // key is "inferred-run-id"
     let mut nodes = BTreeMap::new();
-    nodes.insert(first_node_id.clone(), NodeSnapshot {
-        node_id: first_node_id.clone(),
-        state: "compiled".into(),
-        snapshot_at: "anchor-v1".into(),
-    });
+    nodes.insert(
+        first_node_id.clone(),
+        NodeSnapshot {
+            node_id: first_node_id.clone(),
+            state: "compiled".into(),
+            snapshot_at: "anchor-v1".into(),
+        },
+    );
     let revision = ExecutionGraphRevision {
         revision: 0,
         revision_id: RevisionId("rev-inferred".into()),
@@ -230,9 +262,13 @@ fn legacy_record_graph_revision_still_infers_run_id() {
     }
 
     // Call record_graph_revision (the legacy method that infers run_id from nodes.keys().next())
-    store.record_graph_revision(&revision).expect("record_graph_revision failed");
+    store
+        .record_graph_revision(&revision)
+        .expect("record_graph_revision failed");
 
     // Verify the revision was stored and can be loaded
-    let loaded = store.load_revision(&inferred_run_id, &revision.revision_id).expect("load_revision failed");
+    let loaded = store
+        .load_revision(&inferred_run_id, &revision.revision_id)
+        .expect("load_revision failed");
     assert!(loaded.is_some(), "inferred revision should be loadable");
 }
