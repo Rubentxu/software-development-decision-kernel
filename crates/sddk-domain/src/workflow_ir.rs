@@ -486,6 +486,150 @@ pub enum Operator {
     },
 }
 
+// ── JoinStrategy ───────────────────────────────────────────────────────────────
+
+/// Join strategy for a Parallel operator.
+///
+/// H2 (current): only `All` is fully implemented.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JoinStrategy {
+    /// Wait for all branches to complete successfully.
+    All,
+    /// Wait for any branch to complete (H6, ADR-067).
+    #[non_exhaustive]
+    Any,
+    /// Wait for k branches to complete (H6, ADR-067).
+    #[non_exhaustive]
+    KOfN {
+        /// Number of branches to wait for.
+        k: u32,
+    },
+}
+
+impl JoinStrategy {
+    /// Validates this join strategy against the number of branches.
+    ///
+    /// Returns `Ok(())` if the strategy is valid for the given branch count.
+    pub fn validate(&self, branches: u32) -> Result<(), JoinStrategyError> {
+        match self {
+            JoinStrategy::All => Ok(()),
+            JoinStrategy::Any => {
+                // H2: Any is not yet stable — reject with typed error
+                Err(JoinStrategyError::NotStableForV1 {
+                    variant: "Any".into(),
+                })
+            }
+            JoinStrategy::KOfN { k } => {
+                if *k > branches {
+                    Err(JoinStrategyError::InvalidK { k: *k, branches })
+                } else {
+                    // H2: KOfN is not yet stable — reject unless k == branches (All behavior)
+                    if *k < branches {
+                        Err(JoinStrategyError::NotStableForV1 {
+                            variant: format!("KOfN {{ k: {} }}", k),
+                        })
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns the canonical string name for serialization.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JoinStrategy::All => "all",
+            JoinStrategy::Any => "any",
+            JoinStrategy::KOfN { k: _ } => "k_of_n",
+        }
+    }
+}
+
+/// Compile-time guard: exactly 3 variants.
+///
+/// Note: `KOfN` is `#[non_exhaustive]` so the match in the guard
+/// uses a wildcard. The guard still enforces the count.
+const _: () = {
+    const EXPECTED: usize = 3;
+    const ACTUAL: usize = {
+        let mut n: usize = 0;
+        // Stable variants
+        let _ = stringify!(JoinStrategy::All);
+        n += 1;
+        let _ = stringify!(JoinStrategy::Any);
+        n += 1;
+        // non_exhaustive — wildcard only
+        let _ = stringify!(JoinStrategy::KOfN { .. });
+        n += 1;
+        n
+    };
+    const PANIC_MSG: &str = concat!(
+        "variant count of `JoinStrategy` drifted from expected (got ",
+        stringify!(ACTUAL),
+        ", want ",
+        stringify!(EXPECTED),
+        ")"
+    );
+    assert!(ACTUAL == EXPECTED, "{}", PANIC_MSG);
+};
+
+// ── JoinStrategyError ──────────────────────────────────────────────────────────
+
+/// Errors from join strategy validation.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum JoinStrategyError {
+    /// The join strategy variant is not supported in this version.
+    #[error("unsupported join strategy: {found}")]
+    UnsupportedJoinStrategy {
+        /// The variant that was found.
+        found: String,
+    },
+
+    /// The k value exceeds the number of branches.
+    #[error("invalid k for KOfN: k={k} exceeds branches={branches}")]
+    InvalidK {
+        /// The k value that was provided.
+        k: u32,
+        /// The number of branches.
+        branches: u32,
+    },
+
+    /// The join strategy variant is not yet stable in H2.
+    #[error("join strategy {variant} is not stable in H2")]
+    NotStableForV1 {
+        /// The variant that is not stable.
+        variant: String,
+    },
+}
+
+crate::assert_variant_count_eq!(
+    JoinStrategyError,
+    3,
+    [
+        JoinStrategyError::UnsupportedJoinStrategy { .. },
+        JoinStrategyError::InvalidK { .. },
+        JoinStrategyError::NotStableForV1 { .. },
+    ]
+);
+
+impl From<JoinStrategyError> for crate::execution_graph_compiler::ExecutionGraphCompileError {
+    fn from(err: JoinStrategyError) -> Self {
+        match err {
+            JoinStrategyError::UnsupportedJoinStrategy { found } => Self::InvalidPlanMutation {
+                mutation: format!("unsupported join strategy: {}", found),
+            },
+            JoinStrategyError::InvalidK { k, branches } => Self::InvalidPlanMutation {
+                mutation: format!("invalid k for KOfN: k={} exceeds branches={}", k, branches),
+            },
+            JoinStrategyError::NotStableForV1 { variant } => Self::InvalidPlanMutation {
+                mutation: format!("join strategy {} is not stable in H2", variant),
+            },
+        }
+    }
+}
+
 impl Operator {
     /// Returns all operator IDs referenced by this operator (for cycle detection).
     pub fn referenced_ids(&self) -> Vec<OperatorId> {
