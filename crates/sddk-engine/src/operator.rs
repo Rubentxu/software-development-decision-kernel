@@ -1062,12 +1062,14 @@ pub(crate) fn build_attempt(
             error: e.to_string(),
         }),
     };
+    // REQ-WFR4-PAR-003 (Delta 1, F5): namespace node_id to child to prevent cross-Parallel collisions.
+    let child_node_id = NodeId(format!("{}.child.{}", node_id.0, child_index));
     sddk_domain::workflow_run::Attempt {
         attempt_id: sddk_domain::workflow_run::AttemptId(format!(
             "par-{}-child-{}",
             node_id.0, child_index
         )),
-        node_id: node_id.clone(),
+        node_id: child_node_id.clone(),
         route: sddk_domain::workflow_run::Route {
             provider: "cycle19".into(),
             model: "parallel".into(),
@@ -1085,11 +1087,11 @@ pub(crate) fn build_attempt(
         context_capsule: sddk_domain::workflow_run::ContextCapsuleRef::Pointer {
             cid: format!("par-{}-child-{}", node_id.0, child_index),
         },
+        // INV-8: attempt_seq == child_index — parent orders, not mpsc arrival
         idempotency_key: sddk_domain::workflow_run::IdempotencyKey {
             project_id: "sddk".into(),
             run_id: run_id.clone(),
-            node_id: node_id.clone(),
-            // INV-8: attempt_seq == child_index — parent orders, not mpsc arrival
+            node_id: child_node_id.clone(),
             attempt_seq: child_index as u32,
         },
         schema_version: 1,
@@ -1244,6 +1246,46 @@ impl Operator for Parallel {
                             // Real error — log but don't fail the parent
                             eprintln!(
                                 "parallel supervisor: record_attempt failed for child {}: {}",
+                                result.child_index, e
+                            );
+                        }
+                    }
+                    // REQ-WFR4-PAR-006 (Delta 2): persist per-child NodeRun with namespaced node_id.
+                    // After this, node_runs_v1 contains N+1 rows (1 parent + N children).
+                    let child_node_id =
+                        NodeId(format!("{}.child.{}", node_id.0, result.child_index));
+                    let child_state = match &attempt.outcome {
+                        Some(sddk_domain::workflow_run::AttemptOutcome::Succeeded { .. }) => {
+                            sddk_domain::workflow_run::NodeRunState::Completed
+                        }
+                        Some(sddk_domain::workflow_run::AttemptOutcome::Failed { .. }) => {
+                            sddk_domain::workflow_run::NodeRunState::Failed
+                        }
+                        Some(sddk_domain::workflow_run::AttemptOutcome::Pending { .. }) => {
+                            sddk_domain::workflow_run::NodeRunState::Pending
+                        }
+                        Some(sddk_domain::workflow_run::AttemptOutcome::Timeout)
+                        | Some(sddk_domain::workflow_run::AttemptOutcome::Cancelled) => {
+                            sddk_domain::workflow_run::NodeRunState::Failed
+                        }
+                        None => sddk_domain::workflow_run::NodeRunState::Pending,
+                    };
+                    let child_node_run = NodeRun {
+                        node_id: child_node_id,
+                        state: child_state,
+                        dependencies: Default::default(),
+                        attempts: vec![attempt.clone()],
+                        expansion_permissions: Default::default(),
+                        schema_version: 1,
+                    };
+                    match store_lock.record_node_run_for_run(&run.run_id, &child_node_run) {
+                        Ok(()) => {}
+                        Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
+                            // Already recorded (restart replay) — safe no-op
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "parallel supervisor: record_node_run_for_run failed for child {}: {}",
                                 result.child_index, e
                             );
                         }
