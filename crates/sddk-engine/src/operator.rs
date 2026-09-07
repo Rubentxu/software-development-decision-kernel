@@ -15,6 +15,8 @@ use sddk_domain::{
     WorkflowRun, operator_contract::default_output_schema,
 };
 
+use crate::gate_error::GateError;
+
 // -- GraphStoreBox wrapper -----------------------------------------------------
 
 /// Wraps `Box<dyn GraphStore + Send>` so it implements `GraphStore`.
@@ -1365,6 +1367,130 @@ impl Operator for Choice {
             node_id,
             outputs: Default::default(),
         })
+    }
+}
+
+// -- Gate operator -----------------------------------------------------------
+
+/// Gate operator: evaluates a guard expression to decide whether to execute body.
+///
+/// **DW-RUNTIME-003 semantics (H0):**
+/// - Evaluates `condition` against workflow run outputs
+/// - If guard passes: body is executed (deferred to cycle-17)
+/// - If guard fails: body is skipped and gate succeeds with empty outputs
+/// - If guard evaluation fails: gate returns Failed
+///
+/// In cycle-16, the Gate stub returns `NotImplementedInCycle16` error.
+/// This will be fully implemented in a future cycle.
+#[derive(Debug)]
+pub struct Gate {
+    /// Guard expression.
+    pub condition: String,
+    /// Body operator to execute if guard passes.
+    pub body: Arc<dyn Operator>,
+}
+
+impl Gate {
+    pub fn new(condition: String, body: Arc<dyn Operator>) -> Self {
+        Self { condition, body }
+    }
+
+    /// Evaluates the guard condition against run outputs.
+    ///
+    /// Supported formats:
+    /// - `"true"` → always pass
+    /// - `"false"` → always fail
+    /// - `"key==value"` or `"key=value"` → compare outputs[key] == value
+    /// - Unknown format → treated as "pass" (backward compatibility)
+    fn evaluate_guard(
+        guard: &str,
+        outputs: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, GateError> {
+        let guard = guard.trim();
+
+        // LiteralBool: "true" (case-insensitive)
+        if guard.eq_ignore_ascii_case("true") {
+            return Ok(true);
+        }
+
+        // LiteralBool: "false" (case-insensitive)
+        if guard.eq_ignore_ascii_case("false") {
+            return Ok(false);
+        }
+
+        // IdentifierEq: "key==value" or "key=value"
+        if let Some(eq_pos) = guard.find("==") {
+            let key = guard[..eq_pos].trim();
+            let value = guard[eq_pos + 2..].trim();
+            return Self::check_identifier_eq(key, value, outputs);
+        }
+        if let Some(eq_pos) = guard.find('=') {
+            // Avoid "==" which we already handled
+            let key = guard[..eq_pos].trim();
+            let value = guard[eq_pos + 1..].trim();
+            return Self::check_identifier_eq(key, value, outputs);
+        }
+
+        // Unknown guard format — treat as "pass" (backward compatibility)
+        Ok(true)
+    }
+
+    /// Checks if `outputs[key] == expected_value`.
+    fn check_identifier_eq(
+        key: &str,
+        expected: &str,
+        outputs: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, GateError> {
+        match outputs.get(key) {
+            Some(actual) => {
+                let expected_json = serde_json::Value::String(expected.to_string());
+                Ok(actual == &expected_json)
+            }
+            None => Ok(false),
+        }
+    }
+}
+
+impl Operator for Gate {
+    fn kind(&self) -> &'static str {
+        "Gate"
+    }
+
+    fn evaluate(&self, ctx: &mut OperatorContext) -> Result<NodeOutcome, OperatorError> {
+        use sddk_domain::NodeRunState;
+
+        let node_id = ctx.node_run.lock().unwrap().node_id.clone();
+
+        // Get workflow run outputs
+        let outputs = ctx.run.outputs.as_ref().cloned().unwrap_or_default();
+
+        // Evaluate the guard
+        match Self::evaluate_guard(&self.condition, &outputs) {
+            Ok(true) => {
+                // Guard passed — body execution deferred to cycle-17
+                // For now, return Succeeded indicating guard passed
+                ctx.node_run.lock().unwrap().state = NodeRunState::Completed;
+                Ok(NodeOutcome::Succeeded {
+                    node_id,
+                    outputs: Default::default(),
+                })
+            }
+            Ok(false) => {
+                // Guard failed — body skipped
+                ctx.node_run.lock().unwrap().state = NodeRunState::Completed;
+                Ok(NodeOutcome::Succeeded {
+                    node_id,
+                    outputs: Default::default(),
+                })
+            }
+            Err(e) => {
+                // Guard evaluation failed
+                Err(OperatorError::EvalFailed(format!(
+                    "gate guard evaluation failed: {}",
+                    e
+                )))
+            }
+        }
     }
 }
 
