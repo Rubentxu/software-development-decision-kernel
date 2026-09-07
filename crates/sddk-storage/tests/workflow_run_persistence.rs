@@ -379,3 +379,83 @@ fn node_reload_does_not_self_deadlock_on_persisted_rows() {
         .expect("stream_node_runs on reopen failed");
     assert_eq!(streamed2.len(), 1);
 }
+
+/// Scenario: event-sourced transition appends update latest_workflow_run_state.
+/// GIVEN a run recorded via record_run (initial Pending event)
+/// WHEN transitions Pending->Running and Running->Completed are appended
+/// THEN latest_workflow_run_state returns Completed, also after a store reopen.
+#[test]
+fn workflow_run_transition_appends_and_reconstructs_terminal_state() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path();
+    let mut store = open_test_store(dir);
+
+    let run_id = RunId("tr-roundtrip-001".into());
+    let revision = make_test_revision(&run_id, &NodeId("node-1".into()));
+    let run = make_test_run(run_id.clone(), &revision.revision_id);
+
+    store
+        .record_run(&run, &revision)
+        .expect("record_run failed");
+
+    store
+        .record_workflow_run_transition(
+            &run_id,
+            WorkflowRunState::Pending,
+            WorkflowRunState::Running,
+            Some("start"),
+        )
+        .expect("Pending->Running transition failed");
+    store
+        .record_workflow_run_transition(
+            &run_id,
+            WorkflowRunState::Running,
+            WorkflowRunState::Completed,
+            Some("all-complete"),
+        )
+        .expect("Running->Completed transition failed");
+
+    let latest = store
+        .latest_workflow_run_state(&run_id)
+        .expect("latest_workflow_run_state failed");
+    assert_eq!(latest, Some(WorkflowRunState::Completed));
+
+    // Persistence: a fresh store on the same dir sees the terminal state.
+    let reopened = open_test_store(dir);
+    let latest2 = reopened
+        .latest_workflow_run_state(&run_id)
+        .expect("latest on reopened store failed");
+    assert_eq!(latest2, Some(WorkflowRunState::Completed));
+}
+
+/// Scenario: dispatch through Box<dyn GraphStore + Send + Sync> (the runtime's
+/// exact store type) reaches the concrete SqliteGraphStore impl. Guards against a
+/// new trait method silently falling back to its default when the blanket-impl
+/// forwarding (ports.rs) is forgotten — the S6b dispatch regression.
+#[test]
+fn workflow_run_transition_dispatches_through_boxed_send_sync_store() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut store = open_test_store(temp_dir.path());
+
+    let run_id = RunId("tr-boxed-001".into());
+    let revision = make_test_revision(&run_id, &NodeId("node-1".into()));
+    let run = make_test_run(run_id.clone(), &revision.revision_id);
+
+    let mut boxed: Box<dyn GraphStore + Send + Sync> = Box::new(store);
+    boxed
+        .record_run(&run, &revision)
+        .expect("record_run failed");
+    boxed
+        .record_workflow_run_transition(
+            &run_id,
+            WorkflowRunState::Pending,
+            WorkflowRunState::Failed,
+            Some("boom"),
+        )
+        .expect("transition through boxed store must reach the concrete impl");
+
+    let latest = boxed
+        .latest_workflow_run_state(&run_id)
+        .expect("latest failed");
+    assert_eq!(latest, Some(WorkflowRunState::Failed));
+}

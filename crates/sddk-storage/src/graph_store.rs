@@ -593,7 +593,7 @@ impl GraphStore for SqliteGraphStore {
             .query_row(
                 "SELECT from_state, to_state FROM workflow_run_events_v1
                  WHERE run_id = ?1
-                 ORDER BY occurred_at DESC
+                 ORDER BY rowid DESC
                  LIMIT 1",
                 params![run_id.0],
                 |row| {
@@ -624,6 +624,57 @@ impl GraphStore for SqliteGraphStore {
             }
             None => Ok(None),
         }
+    }
+
+    fn record_workflow_run_transition(
+        &mut self,
+        run_id: &RunId,
+        from_state: sddk_domain::workflow_run::WorkflowRunState,
+        to_state: sddk_domain::workflow_run::WorkflowRunState,
+        reason: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let state_str = |s: &sddk_domain::workflow_run::WorkflowRunState| match s {
+            sddk_domain::workflow_run::WorkflowRunState::Pending => "pending",
+            sddk_domain::workflow_run::WorkflowRunState::Running => "running",
+            sddk_domain::workflow_run::WorkflowRunState::Paused => "paused",
+            sddk_domain::workflow_run::WorkflowRunState::Completed => "completed",
+            sddk_domain::workflow_run::WorkflowRunState::Failed => "failed",
+            sddk_domain::workflow_run::WorkflowRunState::Cancelled => "cancelled",
+        };
+        // Serialize appends per run under an Immediate transaction so concurrent
+        // writers cannot interleave: the sequence (and rowid) grows monotonically,
+        // guaranteeing `latest_workflow_run_state` (ORDER BY rowid DESC) returns the
+        // last committed transition deterministically.
+        let mut conn = self.proj_store.conn_mut();
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| StorageError::Database(format!("transition tx: {e}")))?;
+        let seq: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_run_events_v1 WHERE run_id = ?1",
+                params![run_id.0],
+                |row| row.get(0),
+            )
+            .map_err(|e| StorageError::Database(format!("transition count: {e}")))?;
+        let event_id = format!("evt-run-{}-tr-{}", run_id.0, seq);
+        let occurred_at = current_iso8601();
+        tx.execute(
+            r#"INSERT INTO workflow_run_events_v1
+               (event_id, run_id, occurred_at, from_state, to_state, actor_kind, actor_id, reason)
+               VALUES (?1, ?2, ?3, ?4, ?5, 'system', 'engine', ?6)"#,
+            params![
+                event_id,
+                run_id.0,
+                &occurred_at,
+                state_str(&from_state),
+                state_str(&to_state),
+                reason,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("record_workflow_run_transition: {e}")))?;
+        tx.commit()
+            .map_err(|e| StorageError::Database(format!("transition commit: {e}")))?;
+        Ok(())
     }
 
     fn load_run(

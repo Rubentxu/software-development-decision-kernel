@@ -795,8 +795,10 @@ pub trait GraphStore {
 
     /// Returns the latest workflow run state for a run_id by querying the lifecycle event log.
     ///
-    /// Queries `workflow_run_events_v1` for the most recent event by `(run_id, occurred_at DESC)`
-    /// and returns its `to_state`.
+    /// Queries `workflow_run_events_v1` for the most recent event by causal
+    /// (insertion) order and returns its `to_state`. Implementations order
+    /// deterministically (e.g. by rowid) so multiple transitions within the same
+    /// timestamp second still resolve to the last appended event.
     ///
     /// Default implementation returns `Err(StorageError::Other("latest_workflow_run_state not implemented"))`.
     fn latest_workflow_run_state(
@@ -805,6 +807,29 @@ pub trait GraphStore {
     ) -> Result<Option<crate::workflow_run::WorkflowRunState>, StorageError> {
         Err(StorageError::Other(
             "latest_workflow_run_state not implemented".into(),
+        ))
+    }
+
+    /// Appends a lifecycle transition event to a workflow run's event log.
+    ///
+    /// Event-sourced complement of `record_run` (which writes the initial event):
+    /// records that the run moved `from_state -> to_state`, so the run's current
+    /// state can be reconstructed from the log (`latest_workflow_run_state`) — the
+    /// basis for restart-survival after a process crash.
+    ///
+    /// Implementations must ensure the event is appended in causal order and that
+    /// `latest_workflow_run_state` returns this event's `to_state` once committed.
+    ///
+    /// Default implementation returns `Err(StorageError::Other("record_workflow_run_transition not implemented"))`.
+    fn record_workflow_run_transition(
+        &mut self,
+        _run_id: &crate::workflow_ir::RunId,
+        _from_state: crate::workflow_run::WorkflowRunState,
+        _to_state: crate::workflow_run::WorkflowRunState,
+        _reason: Option<&str>,
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Other(
+            "record_workflow_run_transition not implemented".into(),
         ))
     }
 }
@@ -1025,6 +1050,21 @@ impl GraphStore for Box<dyn GraphStore + Send + Sync> {
     }
     fn load_run(&self, run_id: &crate::RunId) -> Result<Option<crate::WorkflowRun>, StorageError> {
         (**self).load_run(run_id)
+    }
+    fn latest_workflow_run_state(
+        &self,
+        run_id: &crate::workflow_ir::RunId,
+    ) -> Result<Option<crate::workflow_run::WorkflowRunState>, StorageError> {
+        (**self).latest_workflow_run_state(run_id)
+    }
+    fn record_workflow_run_transition(
+        &mut self,
+        run_id: &crate::workflow_ir::RunId,
+        from_state: crate::workflow_run::WorkflowRunState,
+        to_state: crate::workflow_run::WorkflowRunState,
+        reason: Option<&str>,
+    ) -> Result<(), StorageError> {
+        (**self).record_workflow_run_transition(run_id, from_state, to_state, reason)
     }
 }
 #[cfg(test)]
