@@ -288,7 +288,10 @@ fn sequence_idempotency_key_collision_is_rejected() {
 
     let err = store.record_attempt(&dup_attempt);
     assert!(
-        matches!(err, Err(sddk_domain::StorageError::Database(_))),
+        matches!(
+            err,
+            Err(sddk_domain::StorageError::IdempotencyConflict { .. })
+        ),
         "duplicate idempotency key should be rejected, got: {:?}",
         err
     );

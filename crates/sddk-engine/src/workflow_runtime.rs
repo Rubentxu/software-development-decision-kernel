@@ -182,28 +182,28 @@ pub struct WorkflowRuntime {
 }
 
 impl WorkflowRuntime {
-    /// Constructs a new runtime from an IR, store, and task executor.
-    #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
-    pub fn new<S: AsGraphStoreBox>(
+    /// Creates a runtime from IR without compilation.
+    ///
+    /// This is for tests and internal usage that don't need the full compilation pipeline.
+    /// Production code MUST use `from_compiled`.
+    pub fn from_ir<S: AsGraphStoreBox>(
         ir: WorkflowIR,
         store: S,
         clock: Clock,
         executor: Arc<dyn TaskExecutor>,
     ) -> Self {
         let store = store.into_graph_store_box();
-        // Legacy constructor: uses content-derived IDs (deterministic per IR).
-        // TODO(dw-runtime-003): callers should migrate to from_compiled
         let ir_hash = ir.compute_content_hash();
-        let run_id = sddk_domain::RunId(format!("legacy-run-{}", &ir_hash[..32]));
+        let run_id = sddk_domain::RunId(format!("test-run-{}", &ir_hash[..16]));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
             ir_hash: ir_hash.clone(),
-            graph_revision: sddk_domain::RevisionId(format!("rev-legacy-{}", &ir_hash[..24])),
+            graph_revision: sddk_domain::RevisionId(format!("rev-test-{}", &ir_hash[..12])),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
-            correlation_id: sddk_domain::CorrelationId(format!("corr-legacy-{}", ir_hash)),
+            correlation_id: sddk_domain::CorrelationId(format!("corr-test-{}", ir_hash)),
             budget: ir.budgets.clone(),
             schema_version: 1,
         };
@@ -211,7 +211,6 @@ impl WorkflowRuntime {
         // Initialize node runs from the IR operators
         let mut nodes = BTreeMap::new();
         for op_id in ir.operators.keys() {
-            // For cycle-16, we use OperatorId as the node_id value
             let node_id = NodeId(op_id.0.clone());
             let node_run = NodeRun {
                 node_id,
@@ -239,9 +238,10 @@ impl WorkflowRuntime {
         }
     }
 
-    /// Constructs a new runtime from an IR, store, event store, and task executor.
-    #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
-    pub fn new_with_event_store<S: AsGraphStoreBox>(
+    /// Creates a runtime from IR with an event store.
+    ///
+    /// This is for tests that need to spy on events.
+    pub fn from_ir_with_event_store<S: AsGraphStoreBox>(
         ir: WorkflowIR,
         store: S,
         clock: Clock,
@@ -249,19 +249,17 @@ impl WorkflowRuntime {
         executor: Arc<dyn TaskExecutor>,
     ) -> Self {
         let store = store.into_graph_store_box();
-        // Legacy constructor: uses content-derived IDs (deterministic per IR).
-        // TODO(dw-runtime-003): callers should migrate to from_compiled
         let ir_hash = ir.compute_content_hash();
-        let run_id = sddk_domain::RunId(format!("legacy-run-{}", &ir_hash[..32]));
+        let run_id = sddk_domain::RunId(format!("test-run-{}", &ir_hash[..16]));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
             ir_hash: ir_hash.clone(),
-            graph_revision: sddk_domain::RevisionId(format!("rev-legacy-{}", &ir_hash[..24])),
+            graph_revision: sddk_domain::RevisionId(format!("rev-test-{}", &ir_hash[..12])),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
-            correlation_id: sddk_domain::CorrelationId(format!("corr-legacy-{}", ir_hash)),
+            correlation_id: sddk_domain::CorrelationId(format!("corr-test-{}", ir_hash)),
             budget: ir.budgets.clone(),
             schema_version: 1,
         };
@@ -269,7 +267,6 @@ impl WorkflowRuntime {
         // Initialize node runs from the IR operators
         let mut nodes = BTreeMap::new();
         for op_id in ir.operators.keys() {
-            // For cycle-16, we use OperatorId as the node_id value
             let node_id = NodeId(op_id.0.clone());
             let node_run = NodeRun {
                 node_id,
@@ -385,14 +382,14 @@ impl WorkflowRuntime {
     }
 
     /// Constructs a new runtime directly from a `WorkflowIR`, consuming the IR.
+    /// Convenience constructor — creates a runtime from IR using a no-op executor.
     ///
-    /// Convenience constructor that wraps `new()` but takes only the IR,
-    /// using a no-op executor and wall-clock.
-    #[allow(deprecated)]
+    /// This is a convenience for tests that don't need the full compilation pipeline.
+    /// Production code MUST use `from_compiled`.
     pub fn run_ir<S: AsGraphStoreBox>(ir: WorkflowIR, store: S) -> Self {
         let clock = Clock;
         let executor: Arc<dyn TaskExecutor> = Arc::new(sddk_domain::NoopTaskExecutor);
-        Self::new(ir, store, clock, executor)
+        Self::from_ir(ir, store, clock, executor)
     }
 
     /// Returns the current workflow run state.
@@ -1212,17 +1209,19 @@ impl WorkflowRuntime {
                             // REQ-WFR3-SEQ-001: record each attempt when Sequence transitions to Completed.
                             // Sequence::evaluate pushes marker attempts to node_run.attempts during
                             // child evaluation; these must be persisted to attempts_v1 here.
+                            // REQ-WFR4-PAR-003 (FIND-729883): typed IdempotencyConflict handling
+                            // instead of string matching.
                             let mut store = self.store.lock().unwrap();
                             for attempt in &node_run.attempts {
-                                if let Err(sddk_domain::StorageError::Database(msg)) =
-                                    store.record_attempt(attempt)
-                                {
-                                    // IdempotencyConflict means attempt already recorded — safe to ignore.
-                                    // Any other database error is a real problem and must propagate.
-                                    if !msg.contains("idempotency") {
-                                        return Err(RuntimeError::Storage(
-                                            sddk_domain::StorageError::Database(msg),
-                                        ));
+                                match store.record_attempt(attempt) {
+                                    Ok(()) => {}
+                                    Err(sddk_domain::StorageError::IdempotencyConflict {
+                                        ..
+                                    }) => {
+                                        // Already recorded — safe no-op
+                                    }
+                                    Err(e) => {
+                                        return Err(RuntimeError::Storage(e));
                                     }
                                 }
                             }
@@ -1323,10 +1322,9 @@ impl WorkflowRuntime {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
-    use sddk_domain::{GraphStore, NodeId, NoopTaskExecutor, WorkflowRunState};
+    use sddk_domain::{GraphStore, NodeId, WorkflowRunState};
     use std::result::Result as StdResult;
 
     // Minimal mock store for testing
@@ -1433,10 +1431,8 @@ mod tests {
     #[test]
     fn start_transitions_to_running() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         assert_eq!(runtime.run.state, WorkflowRunState::Pending);
         runtime.start().unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Running);
@@ -1445,10 +1441,8 @@ mod tests {
     #[test]
     fn start_on_non_pending_fails() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         let result = runtime.start();
         assert!(result.is_err());
@@ -1457,10 +1451,8 @@ mod tests {
     #[test]
     fn complete_transitions_to_completed() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.complete(Default::default()).unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Completed);
@@ -1469,10 +1461,8 @@ mod tests {
     #[test]
     fn complete_on_terminal_fails() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.complete(Default::default()).unwrap();
         let result = runtime.complete(Default::default());
@@ -1482,10 +1472,8 @@ mod tests {
     #[test]
     fn fail_transitions_to_failed() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.fail("test error".into()).unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Failed);
@@ -1494,10 +1482,8 @@ mod tests {
     #[test]
     fn pause_resume_cycle() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.pause().unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Paused);
@@ -1508,10 +1494,8 @@ mod tests {
     #[test]
     fn cancel_transitions_to_cancelled() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.cancel().unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Cancelled);
@@ -1524,10 +1508,8 @@ mod tests {
         // RED: tick() should reject being called when workflow is Pending.
         // The precondition is Running — Pending is not a valid tick state.
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         // Explicitly leave runtime in Pending state (do NOT call start())
         assert_eq!(runtime.run.state, WorkflowRunState::Pending);
         let result = runtime.tick();
@@ -1549,10 +1531,8 @@ mod tests {
         // RED: tick() should reject being called when workflow is Paused.
         // The precondition is Running — Paused is not a valid tick state.
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.pause().unwrap();
         assert_eq!(runtime.run.state, WorkflowRunState::Paused);
@@ -1575,10 +1555,8 @@ mod tests {
         // AlreadyTerminal should win over the Running precondition check.
         // This preserves the terminal AlreadyTerminal behavior.
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         runtime.complete(Default::default()).unwrap();
         assert!(runtime.run.state.is_terminal());
@@ -1595,10 +1573,8 @@ mod tests {
     #[test]
     fn tick_returns_outcome() {
         let store = MockStore;
-        let clock = Clock;
         let ir = make_ir();
-        let executor = Arc::new(NoopTaskExecutor);
-        let mut runtime = WorkflowRuntime::new(ir, store, clock, executor);
+        let mut runtime = WorkflowRuntime::run_ir(ir, store);
         runtime.start().unwrap();
         let outcome = runtime.tick().unwrap();
         assert!(matches!(outcome, TickOutcome::AllComplete));
