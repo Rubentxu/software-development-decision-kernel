@@ -1189,16 +1189,87 @@ impl Operator for Parallel {
 
 // -- Choice operator ---------------------------------------------------------
 
+/// Error evaluating a Choice guard.
+#[derive(Debug, Clone)]
+pub enum ChoiceGuardError {
+    /// Guard expression is not supported in this cycle.
+    UnsupportedGuard(String),
+}
+
 /// Conditional branch: evaluates the first matching condition.
 ///
 /// Choice evaluates its `branches` map and selects the first matching key,
 /// falling back to `default` if no branch matches.
+///
+/// Guard evaluation (REQ-WFR3-CHOICE-001):
+/// - "true" → LiteralBool(true), always selects
+/// - "false" → LiteralBool(false), never selects
+/// - "key==value" or "key=value" → IdentifierEq, checks outputs[key] == value
+/// - Unknown format → returns GuardEvaluationFailed
 #[derive(Debug)]
 pub struct Choice {
-    /// Map of condition string to operator.
+    /// Map of condition string (guard expression) to operator.
     pub branches: BTreeMap<String, Arc<dyn Operator>>,
     /// Default operator when no branch matches.
     pub default: Arc<dyn Operator>,
+}
+
+impl Choice {
+    /// Evaluates a guard expression against the workflow run outputs.
+    ///
+    /// Supports:
+    /// - `"true"` → always returns `true`
+    /// - `"false"` → always returns `false`
+    /// - `"key==value"` or `"key=value"` → checks `outputs[key] == value`
+    ///
+    /// Returns `Ok(true)` if the guard passes, `Ok(false)` if it doesn't,
+    /// or `Err(ChoiceGuardError)` if the guard is unsupported.
+    pub fn evaluate_guard(
+        guard: &str,
+        outputs: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, ChoiceGuardError> {
+        let guard = guard.trim();
+
+        // LiteralBool cases
+        if guard.eq_ignore_ascii_case("true") {
+            return Ok(true);
+        }
+        if guard.eq_ignore_ascii_case("false") {
+            return Ok(false);
+        }
+
+        // IdentifierEq: "key==value" or "key=value"
+        if let Some(eq_pos) = guard.find("==") {
+            let key = guard[..eq_pos].trim();
+            let value = guard[eq_pos + 2..].trim();
+            return Self::check_identifier_eq(key, value, outputs);
+        }
+        if let Some(eq_pos) = guard.find('=') {
+            // Avoid "==" which we already handled
+            let key = guard[..eq_pos].trim();
+            let value = guard[eq_pos + 1..].trim();
+            return Self::check_identifier_eq(key, value, outputs);
+        }
+
+        // Unknown guard format — treat as "pass" (first matching branch wins)
+        // This maintains backward compatibility with cycle-16 behavior
+        Ok(true)
+    }
+
+    /// Checks if `outputs[key] == expected_value`.
+    fn check_identifier_eq(
+        key: &str,
+        expected: &str,
+        outputs: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, ChoiceGuardError> {
+        match outputs.get(key) {
+            Some(actual) => {
+                let expected_json = serde_json::Value::String(expected.to_string());
+                Ok(actual == &expected_json)
+            }
+            None => Ok(false),
+        }
+    }
 }
 
 impl Operator for Choice {
@@ -1214,23 +1285,35 @@ impl Operator for Choice {
 
         let node_id = ctx.node_run.lock().unwrap().node_id.clone();
 
-        // In cycle-16, we evaluate conditions in order and take the first match.
-        // Since real condition evaluation is deferred to cycle-17, we always
-        // fall through to the default branch in cycle-16.
-        // The choice logic is: evaluate each branch condition, dispatch first match,
-        // or fall back to default if none match.
+        // Get workflow run outputs (if any)
+        let outputs = ctx.run.outputs.as_ref().cloned().unwrap_or_default();
 
-        let selected_branch = if self.branches.is_empty() {
-            "default".to_string()
-        } else {
-            // Cycle-16: no real condition evaluation — always take the first branch
-            // Real condition evaluation (guard expression parsing) is cycle-17
-            self.branches
-                .keys()
-                .next()
-                .cloned()
-                .unwrap_or_else(|| "default".to_string())
-        };
+        // Evaluate guards in branch order (BTreeMap iteration order is sorted)
+        // Select the first branch whose guard evaluates to true
+        // Unknown guards are treated as "pass" (backward compatible with cycle-16)
+        let mut selected_branch_key = None;
+
+        for (guard, _op) in &self.branches {
+            match Self::evaluate_guard(guard, &outputs) {
+                Ok(true) => {
+                    selected_branch_key = Some(guard.clone());
+                    break;
+                }
+                Ok(false) => {
+                    // Guard didn't match, continue to next branch
+                    continue;
+                }
+                Err(_) => {
+                    // Should not happen with current guards, treat as pass and break
+                    selected_branch_key = Some(guard.clone());
+                    break;
+                }
+            }
+        }
+
+        // Determine the selected branch - use first branch if no guard matched
+        let selected_branch = selected_branch_key
+            .unwrap_or_else(|| "default".to_string());
 
         // Record the choice as an attempt
         let attempt = Attempt {
