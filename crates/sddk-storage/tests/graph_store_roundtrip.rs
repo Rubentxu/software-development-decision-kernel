@@ -47,6 +47,7 @@ fn arb_revision() -> impl Strategy<Value = ExecutionGraphRevision> {
                         node_id,
                         state: format!("state-{i}"),
                         snapshot_at: "2026-08-19T12:00:00Z".to_string(),
+                        join_strategy: None,
                     },
                 );
             }

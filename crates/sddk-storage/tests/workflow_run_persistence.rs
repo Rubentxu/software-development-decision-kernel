@@ -27,6 +27,7 @@ fn make_test_revision(_run_id: &RunId, first_node_id: &NodeId) -> ExecutionGraph
             node_id: first_node_id.clone(),
             state: "compiled".into(),
             snapshot_at: "anchor-v1".into(),
+            join_strategy: None,
         },
     );
     ExecutionGraphRevision {
@@ -235,6 +236,7 @@ fn legacy_record_graph_revision_still_infers_run_id() {
             node_id: first_node_id.clone(),
             state: "compiled".into(),
             snapshot_at: "anchor-v1".into(),
+            join_strategy: None,
         },
     );
     let revision = ExecutionGraphRevision {
