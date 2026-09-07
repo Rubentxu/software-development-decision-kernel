@@ -97,10 +97,11 @@ fn legacy_constructors_are_deprecated() {
                 let idx = i + offset;
                 if idx < lines.len() {
                     let following = lines[idx];
-                    if following.contains("pub fn new(") {
+                    // Check for both non-generic `pub fn new(` and generic `pub fn new<S:...>(`
+                    if following.contains("pub fn new(") || following.contains("pub fn new<") {
                         new_has_deprecated = true;
                     }
-                    if following.contains("pub fn new_with_event_store(") {
+                    if following.contains("pub fn new_with_event_store(") || following.contains("pub fn new_with_event_store<") {
                         new_with_event_store_has_deprecated = true;
                     }
                 }

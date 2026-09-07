@@ -16,6 +16,7 @@ use crate::event_store::SqliteEventStore;
 use crate::projection_store::SqliteProjectionStore;
 
 /// SQLite-backed graph store using the projection checkpoint table.
+#[derive(Clone)]
 pub struct SqliteGraphStore {
     /// Projection store that owns the checkpoint persistence.
     proj_store: SqliteProjectionStore,
@@ -52,7 +53,7 @@ impl SqliteGraphStore {
     /// from the very consumer it serves. Documented as test-only via this
     /// rustdoc and `#[doc(hidden)]` so production callers do not reach for it.
     #[doc(hidden)]
-    pub fn proj_store_conn_mut(&mut self) -> &mut rusqlite::Connection {
+    pub fn proj_store_conn_mut(&mut self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
         self.proj_store.conn_mut()
     }
 
@@ -472,7 +473,7 @@ impl GraphStore for SqliteGraphStore {
         run: &sddk_domain::workflow_run::WorkflowRun,
         initial_revision: &ExecutionGraphRevision,
     ) -> Result<(), StorageError> {
-        let conn = self.proj_store.conn_mut();
+        let mut conn = self.proj_store.conn_mut();
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| StorageError::Database(format!("transaction: {e}")))?;

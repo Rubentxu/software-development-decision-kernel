@@ -322,6 +322,125 @@ where
     }
 }
 
+// -- DynGraphStoreRef: wraps &mut dyn GraphStore as GraphStore -----------------
+// Used by WorkflowRuntime tick loop to pass the real store to evaluate().
+
+/// Wrapper that implements `GraphStore` by delegating to a borrowed `&mut dyn GraphStore`.
+/// This allows the tick loop to pass a real store (not ScratchGraphStore) to evaluate().
+pub(crate) struct DynGraphStoreRef<'a> {
+    store: &'a mut (dyn GraphStore + Send + Sync),
+}
+
+impl GraphStore for DynGraphStoreRef<'_> {
+    fn save_state(&mut self, state: &sddk_domain::GraphState) -> Result<(), sddk_domain::StorageError> {
+        self.store.save_state(state)
+    }
+    fn load_state(&self) -> Result<Option<sddk_domain::GraphState>, sddk_domain::StorageError> {
+        self.store.load_state()
+    }
+    fn checkpoint(&self) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
+        self.store.checkpoint()
+    }
+    fn record_ir_digest(&mut self, ir_hash: &str, ir_json: &str) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_ir_digest(ir_hash, ir_json)
+    }
+    fn record_graph_revision(&mut self, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_graph_revision(rev)
+    }
+    fn record_graph_revision_for_run(&mut self, run_id: &sddk_domain::workflow_ir::RunId, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_graph_revision_for_run(run_id, rev)
+    }
+    fn load_node_attempts(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<Vec<sddk_domain::Attempt>, sddk_domain::StorageError> {
+        self.store.load_node_attempts(run_id, node_id)
+    }
+    fn attempt_count(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<u32, sddk_domain::StorageError> {
+        self.store.attempt_count(run_id, node_id)
+    }
+    fn save_revision(&mut self, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        self.store.save_revision(rev)
+    }
+    fn load_revision(&self, run_id: &sddk_domain::workflow_ir::RunId, rev_id: &sddk_domain::workflow_ir::RevisionId) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
+        self.store.load_revision(run_id, rev_id)
+    }
+    fn latest_revision(&self, run_id: &sddk_domain::workflow_ir::RunId) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
+        self.store.latest_revision(run_id)
+    }
+    fn record_node_run(&mut self, run: &sddk_domain::NodeRun) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_node_run(run)
+    }
+    fn record_node_run_for_run(&mut self, run_id: &sddk_domain::workflow_ir::RunId, node_run: &sddk_domain::NodeRun) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_node_run_for_run(run_id, node_run)
+    }
+    fn load_node_run(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<Option<sddk_domain::NodeRun>, sddk_domain::StorageError> {
+        self.store.load_node_run(run_id, node_id)
+    }
+    fn record_attempt(&mut self, attempt: &sddk_domain::Attempt) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_attempt(attempt)
+    }
+    fn record_run(&mut self, run: &sddk_domain::WorkflowRun, initial_revision: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        self.store.record_run(run, initial_revision)
+    }
+    fn load_run(&self, run_id: &sddk_domain::RunId) -> Result<Option<sddk_domain::WorkflowRun>, sddk_domain::StorageError> {
+        self.store.load_run(run_id)
+    }
+}
+
+// Explicit impl: Box<DynGraphStoreRef<'_>> implements GraphStore.
+// This mirrors the Box<ScratchGraphStore> workaround for coherence.
+impl GraphStore for Box<DynGraphStoreRef<'_>> {
+    fn save_state(&mut self, state: &sddk_domain::GraphState) -> Result<(), sddk_domain::StorageError> {
+        (**self).save_state(state)
+    }
+    fn load_state(&self) -> Result<Option<sddk_domain::GraphState>, sddk_domain::StorageError> {
+        (**self).load_state()
+    }
+    fn checkpoint(&self) -> Result<Option<sddk_domain::projections::Checkpoint>, sddk_domain::StorageError> {
+        (**self).checkpoint()
+    }
+    fn record_ir_digest(&mut self, ir_hash: &str, ir_json: &str) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_ir_digest(ir_hash, ir_json)
+    }
+    fn record_graph_revision(&mut self, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_graph_revision(rev)
+    }
+    fn record_graph_revision_for_run(&mut self, run_id: &sddk_domain::workflow_ir::RunId, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_graph_revision_for_run(run_id, rev)
+    }
+    fn load_node_attempts(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<Vec<sddk_domain::Attempt>, sddk_domain::StorageError> {
+        (**self).load_node_attempts(run_id, node_id)
+    }
+    fn attempt_count(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<u32, sddk_domain::StorageError> {
+        (**self).attempt_count(run_id, node_id)
+    }
+    fn save_revision(&mut self, rev: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        (**self).save_revision(rev)
+    }
+    fn load_revision(&self, run_id: &sddk_domain::workflow_ir::RunId, rev_id: &sddk_domain::workflow_ir::RevisionId) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
+        (**self).load_revision(run_id, rev_id)
+    }
+    fn latest_revision(&self, run_id: &sddk_domain::workflow_ir::RunId) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
+        (**self).latest_revision(run_id)
+    }
+    fn record_node_run(&mut self, run: &sddk_domain::NodeRun) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_node_run(run)
+    }
+    fn record_node_run_for_run(&mut self, run_id: &sddk_domain::workflow_ir::RunId, node_run: &sddk_domain::NodeRun) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_node_run_for_run(run_id, node_run)
+    }
+    fn load_node_run(&self, run_id: &sddk_domain::workflow_ir::RunId, node_id: &sddk_domain::workflow_ir::NodeId) -> Result<Option<sddk_domain::NodeRun>, sddk_domain::StorageError> {
+        (**self).load_node_run(run_id, node_id)
+    }
+    fn record_attempt(&mut self, attempt: &sddk_domain::Attempt) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_attempt(attempt)
+    }
+    fn record_run(&mut self, run: &sddk_domain::WorkflowRun, initial_revision: &sddk_domain::graph::ExecutionGraphRevision) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_run(run, initial_revision)
+    }
+    fn load_run(&self, run_id: &sddk_domain::RunId) -> Result<Option<sddk_domain::WorkflowRun>, sddk_domain::StorageError> {
+        (**self).load_run(run_id)
+    }
+}
+
 // -- Checkpoint types (forward-debt for cycle-20+ resumption) -----------------
 
 /// Cycle-19 forward-debt: resumable Parallel across ticks.

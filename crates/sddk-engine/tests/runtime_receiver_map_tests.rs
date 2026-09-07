@@ -100,7 +100,7 @@ fn make_simple_ir() -> WorkflowIR {
     }
 }
 
-fn make_runtime() -> WorkflowRuntime<MockStore> {
+fn make_runtime() -> WorkflowRuntime {
     let ir = make_simple_ir();
     WorkflowRuntime::new(ir, MockStore, Clock, Arc::new(NoopTaskExecutor))
 }

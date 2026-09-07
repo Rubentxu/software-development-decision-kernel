@@ -258,7 +258,7 @@ fn make_test_ir() -> WorkflowIR {
 
 /// Creates a runtime with a spy event store, returns (runtime, spy_events_accessor)
 fn make_runtime_with_spy() -> (
-    WorkflowRuntime<MockStore>,
+    WorkflowRuntime,
     impl Fn() -> Vec<EventEnvelopeV1>,
 ) {
     // Shared events vector

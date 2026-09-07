@@ -32,6 +32,20 @@ use crate::operator::{
 /// Result type for runtime operations.
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
+// ── Store conversion helper ────────────────────────────────────────────────────────
+//
+// Allows WorkflowRuntime constructors to accept both concrete stores (S: GraphStore)
+// and already-boxed stores (Box<dyn GraphStore + Send + Sync>).
+pub trait AsGraphStoreBox {
+    fn into_graph_store_box(self) -> Box<dyn GraphStore + Send + Sync>;
+}
+
+impl<S: GraphStore + Send + Sync + 'static> AsGraphStoreBox for S {
+    fn into_graph_store_box(self) -> Box<dyn GraphStore + Send + Sync> {
+        Box::new(self)
+    }
+}
+
 /// Runtime errors.
 #[derive(Debug, Clone, Error)]
 pub enum RuntimeError {
@@ -133,7 +147,7 @@ pub type MapKey = ParallelKey;
 ///
 /// Drives a `WorkflowRun` from `Pending` through to a terminal state
 /// (`Completed`, `Failed`, or `Cancelled`) by evaluating operators.
-pub struct WorkflowRuntime<R: RunStore> {
+pub struct WorkflowRuntime {
     // ── Core state ───────────────────────────────────────────────────────────
     /// The workflow IR this run was instantiated from.
     ir: WorkflowIR,
@@ -141,9 +155,10 @@ pub struct WorkflowRuntime<R: RunStore> {
     run: WorkflowRun,
     /// Node runs keyed by operator_id.
     nodes: BTreeMap<OperatorId, NodeRun>,
-    /// The graph store for persistence.
-    #[allow(dead_code)]
-    store: R,
+    /// The graph store for persistence (boxed as dyn GraphStore for erased type).
+    /// Wrapped in Arc<Mutex> so the tick loop can get a cheap Arc clone without
+    /// needing Clone on the inner type. The Mutex allows exclusive access.
+    store: Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>,
     /// Wall-clock source.
     #[allow(dead_code)]
     clock: Clock,
@@ -165,10 +180,11 @@ pub struct WorkflowRuntime<R: RunStore> {
     controller: Option<ExecutionController>,
 }
 
-impl<R: RunStore> WorkflowRuntime<R> {
+impl WorkflowRuntime {
     /// Constructs a new runtime from an IR, store, and task executor.
     #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
-    pub fn new(ir: WorkflowIR, store: R, clock: Clock, executor: Arc<dyn TaskExecutor>) -> Self {
+    pub fn new<S: AsGraphStoreBox>(ir: WorkflowIR, store: S, clock: Clock, executor: Arc<dyn TaskExecutor>) -> Self {
+        let store = store.into_graph_store_box();
         // Legacy constructor: uses content-derived IDs (deterministic per IR).
         // TODO(dw-runtime-003): callers should migrate to from_compiled
         let ir_hash = ir.compute_content_hash();
@@ -206,7 +222,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
             ir,
             run,
             nodes,
-            store,
+            store: Arc::new(Mutex::new(store)),
             clock,
             executor,
             event_store: None,
@@ -218,13 +234,14 @@ impl<R: RunStore> WorkflowRuntime<R> {
 
     /// Constructs a new runtime from an IR, store, event store, and task executor.
     #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
-    pub fn new_with_event_store(
+    pub fn new_with_event_store<S: AsGraphStoreBox>(
         ir: WorkflowIR,
-        store: R,
+        store: S,
         clock: Clock,
         event_store: Arc<Mutex<dyn EventStore>>,
         executor: Arc<dyn TaskExecutor>,
     ) -> Self {
+        let store = store.into_graph_store_box();
         // Legacy constructor: uses content-derived IDs (deterministic per IR).
         // TODO(dw-runtime-003): callers should migrate to from_compiled
         let ir_hash = ir.compute_content_hash();
@@ -262,7 +279,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
             ir,
             run,
             nodes,
-            store,
+            store: Arc::new(Mutex::new(store)),
             clock,
             executor,
             event_store: Some(event_store),
@@ -302,15 +319,16 @@ impl<R: RunStore> WorkflowRuntime<R> {
     ///     &compiled,
     /// );
     /// ```
-    pub fn from_compiled(
+    pub fn from_compiled<S: AsGraphStoreBox>(
         ir: WorkflowIR,
-        store: R,
+        store: S,
         clock: Clock,
         executor: Arc<dyn TaskExecutor>,
         plan_revision_id: &str,
         correlation_id: &sddk_domain::CorrelationId,
         compiled_revision: &sddk_domain::graph::ExecutionGraphRevision,
     ) -> Self {
+        let store = store.into_graph_store_box();
         // Deterministic identity per REQ-WFR3-RT-001 and REQ-WFR3-ID-001
         let run_id = sddk_domain::RunId::derive(plan_revision_id, correlation_id);
         let graph_revision = compiled_revision.revision_id.clone();
@@ -347,7 +365,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
             ir,
             run,
             nodes,
-            store,
+            store: Arc::new(Mutex::new(store)),
             clock,
             executor,
             event_store: None,
@@ -361,7 +379,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
     ///
     /// Convenience constructor that wraps `new()` but takes only the IR,
     /// using a no-op executor and wall-clock.
-    pub fn run_ir(ir: WorkflowIR, store: R) -> Self {
+    pub fn run_ir<S: AsGraphStoreBox>(ir: WorkflowIR, store: S) -> Self {
         let clock = Clock;
         let executor: Arc<dyn TaskExecutor> = Arc::new(sddk_domain::NoopTaskExecutor);
         Self::new(ir, store, clock, executor)
@@ -395,7 +413,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
     pub fn execute(&mut self) -> Result<()> {
         // Try to load an existing run for replay/resumption
         // In cycle-16, this is a no-op since the default implementation returns NotImplemented
-        match self.store.load_run(&self.run.run_id) {
+        match self.store.lock().unwrap().load_run(&self.run.run_id) {
             Ok(Some(_loaded_run)) => {
                 // Run exists — in cycle-17 this would resume from the loaded state
                 // For cycle-16, we just proceed (run is already in the state machine)
@@ -1007,7 +1025,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
                                 }
                             };
 
-                            let _ = self.store.record_attempt(&sddk_domain::Attempt {
+                            let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
                                 attempt_id: sddk_domain::workflow_run::AttemptId(format!(
                                     "tick-attempt-{}-{}",
                                     self.run.run_id.0, op_id.0
@@ -1065,7 +1083,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
                                     );
                                 }
                             }
-                            let _ = self.store.record_attempt(&sddk_domain::Attempt {
+                            let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
                                 attempt_id: sddk_domain::workflow_run::AttemptId(format!(
                                     "tick-attempt-{}-{}",
                                     self.run.run_id.0, op_id.0
@@ -1160,7 +1178,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
                             node_run.state = NodeRunState::Failed;
                         }
                     }
-                    let _ = self.store.record_node_run(node_run);
+                    let _ = self.store.lock().unwrap().record_node_run(node_run);
                 }
             }
         }

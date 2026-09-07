@@ -1,25 +1,29 @@
 //! Persists projection checkpoints to `projection_checkpoints_v1`.
 
 use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{OptionalExtension, params};
 
 use sddk_domain::{Checkpoint, ProjectionVersion, StorageError};
 
 /// SQLite-backed projection checkpoint store.
+/// Wraps `Arc<rusqlite::Connection>` to allow cheap cloning.
+/// All database operations are mutex-guarded through `conn()`.
+#[derive(Clone)]
 pub struct SqliteProjectionStore {
-    conn: rusqlite::Connection,
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl SqliteProjectionStore {
-    /// Borrows the underlying SQLite connection (read-only).
-    pub fn conn(&self) -> &rusqlite::Connection {
-        &self.conn
+    /// Acquires a read-only lock on the underlying SQLite connection.
+    pub fn conn(&self) -> MutexGuard<'_, rusqlite::Connection> {
+        self.conn.lock().unwrap()
     }
 
-    /// Borrows the underlying SQLite connection (mutable).
-    pub fn conn_mut(&mut self) -> &mut rusqlite::Connection {
-        &mut self.conn
+    /// Acquires a mutable lock on the underlying SQLite connection.
+    pub fn conn_mut(&mut self) -> MutexGuard<'_, rusqlite::Connection> {
+        self.conn.lock().unwrap()
     }
 
     /// Opens (or creates) a `ledger.sqlite` file at `$dir/ledger.sqlite` and
@@ -29,7 +33,7 @@ impl SqliteProjectionStore {
             .map_err(|e| StorageError::Database(format!("open: {e}")))?;
         let mut conn = conn;
         crate::migrations::run_migrations(&mut conn)?;
-        Ok(Self { conn })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
     /// Opens an isolated in-memory database with all migrations applied.
@@ -39,7 +43,7 @@ impl SqliteProjectionStore {
             .map_err(|e| StorageError::Database(format!("open_in_memory: {e}")))?;
         let mut conn = conn;
         crate::migrations::run_migrations(&mut conn)?;
-        Ok(Self { conn })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
     /// Persists a checkpoint and its serialized state.
@@ -51,21 +55,21 @@ impl SqliteProjectionStore {
         cp: &Checkpoint,
         state_json: &str,
     ) -> Result<(), StorageError> {
-        self.conn
-            .execute(
-                "INSERT OR REPLACE INTO projection_checkpoints_v1
-                 (projection_name, version, last_event_sequence, last_event_hash, state_json, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    cp.projection_name,
-                    i64::from(cp.version),
-                    i64::try_from(cp.last_event_sequence).unwrap_or(i64::MAX),
-                    cp.last_event_hash,
-                    state_json,
-                    cp.updated_at,
-                ],
-            )
-            .map_err(|e| StorageError::Database(format!("save_checkpoint: {e}")))?;
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO projection_checkpoints_v1
+             (projection_name, version, last_event_sequence, last_event_hash, state_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                cp.projection_name,
+                i64::from(cp.version),
+                i64::try_from(cp.last_event_sequence).unwrap_or(i64::MAX),
+                cp.last_event_hash,
+                state_json,
+                cp.updated_at,
+            ],
+        )
+        .map_err(|e| StorageError::Database(format!("save_checkpoint: {e}")))?;
         Ok(())
     }
 
@@ -75,8 +79,8 @@ impl SqliteProjectionStore {
         projection_name: &str,
         version: ProjectionVersion,
     ) -> Result<Option<(Checkpoint, String)>, StorageError> {
-        let mut stmt = self
-            .conn
+        let conn = self.conn();
+        let mut stmt = conn
             .prepare(
                 "SELECT projection_name, version, last_event_sequence, last_event_hash,
                         state_json, updated_at
@@ -110,13 +114,13 @@ impl SqliteProjectionStore {
         projection_name: &str,
         version: ProjectionVersion,
     ) -> Result<(), StorageError> {
-        self.conn
-            .execute(
-                "DELETE FROM projection_checkpoints_v1
-                 WHERE projection_name = ?1 AND version = ?2",
-                params![projection_name, i64::from(version)],
-            )
-            .map_err(|e| StorageError::Database(format!("delete_checkpoint: {e}")))?;
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM projection_checkpoints_v1
+             WHERE projection_name = ?1 AND version = ?2",
+            params![projection_name, i64::from(version)],
+        )
+        .map_err(|e| StorageError::Database(format!("delete_checkpoint: {e}")))?;
         Ok(())
     }
 }

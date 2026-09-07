@@ -508,7 +508,7 @@ fn runtime_run_ir_constructor() {
 
     // run_ir() creates a Pending runtime
     assert_eq!(runtime.state(), &WorkflowRunState::Pending);
-    assert!(runtime.run().run_id.0.starts_with("runtime-"));
+    assert!(runtime.run().run_id.0.starts_with("legacy-run-"));
 }
 
 #[test]
