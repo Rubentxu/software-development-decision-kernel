@@ -168,15 +168,18 @@ pub struct WorkflowRuntime<R: RunStore> {
 impl<R: RunStore> WorkflowRuntime<R> {
     /// Constructs a new runtime from an IR, store, and task executor.
     pub fn new(ir: WorkflowIR, store: R, clock: Clock, executor: Arc<dyn TaskExecutor>) -> Self {
+        // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
         let run_id = sddk_domain::RunId(format!("runtime-{}", uuid::Uuid::new_v4()));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
             ir_hash: ir.compute_content_hash(),
+            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
             graph_revision: sddk_domain::RevisionId(format!("rev-{}", uuid::Uuid::new_v4())),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
+            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
             correlation_id: sddk_domain::CorrelationId(format!("corr-{}", uuid::Uuid::new_v4())),
             budget: ir.budgets.clone(),
             schema_version: 1,
@@ -220,15 +223,18 @@ impl<R: RunStore> WorkflowRuntime<R> {
         event_store: Arc<Mutex<dyn EventStore>>,
         executor: Arc<dyn TaskExecutor>,
     ) -> Self {
+        // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
         let run_id = sddk_domain::RunId(format!("runtime-{}", uuid::Uuid::new_v4()));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
             ir_hash: ir.compute_content_hash(),
+            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
             graph_revision: sddk_domain::RevisionId(format!("rev-{}", uuid::Uuid::new_v4())),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
+            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
             correlation_id: sddk_domain::CorrelationId(format!("corr-{}", uuid::Uuid::new_v4())),
             budget: ir.budgets.clone(),
             schema_version: 1,

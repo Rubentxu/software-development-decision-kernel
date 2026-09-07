@@ -483,7 +483,7 @@ impl GraphStore for SqliteGraphStore {
         let outputs_json = run
             .outputs
             .as_ref()
-            .map(|o| serde_json::to_string(o))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| StorageError::Database(format!("outputs serialize: {e}")))?;
         let budget_json =
@@ -764,7 +764,6 @@ impl GraphStore for SqliteGraphStore {
         &mut self,
         attempt: &sddk_domain::workflow_run::Attempt,
     ) -> Result<(), StorageError> {
-        use sddk_domain::workflow_run::AttemptOutcome;
 
         let conn = self.proj_store.conn_mut();
         let route_json =
@@ -772,7 +771,7 @@ impl GraphStore for SqliteGraphStore {
         let outcome_json = attempt
             .outcome
             .as_ref()
-            .map(|o| serde_json::to_string(o))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| StorageError::Database(format!("outcome serialize: {e}")))?;
         let usage_json =
@@ -1028,6 +1027,7 @@ impl RawAttemptRow {
 }
 
 /// Raw row from workflow_runs_v1.
+#[allow(dead_code)]
 struct WorkflowRunRow {
     run_id: String,
     template_id: String,
@@ -1044,6 +1044,7 @@ struct WorkflowRunRow {
 }
 
 /// Raw row from node_runs_v1.
+#[allow(dead_code)]
 struct NodeRunRow {
     run_id: String,
     node_id: String,

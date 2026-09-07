@@ -634,7 +634,7 @@ pub trait GraphStore {
     /// backward compatibility.
     fn record_graph_revision_for_run(
         &mut self,
-        run_id: &crate::workflow_ir::RunId,
+        _run_id: &crate::workflow_ir::RunId,
         rev: &crate::graph::ExecutionGraphRevision,
     ) -> Result<(), StorageError> {
         // Default: delegate to the inference path for backward compatibility
