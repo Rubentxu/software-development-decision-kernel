@@ -826,12 +826,12 @@ impl GraphStore for SqliteGraphStore {
         use sddk_domain::workflow_run::{NodeRun, NodeRunState};
         use std::collections::BTreeSet;
 
-        let conn = self.proj_store.conn();
-        let row = conn
-            .query_row(
+        let row: Option<NodeRunRow> = {
+            let conn = self.proj_store.conn();
+            conn.query_row(
                 "SELECT run_id, node_id, state, dependencies_json, last_attempt_id
-                 FROM node_runs_v1
-                 WHERE run_id = ?1 AND node_id = ?2",
+                     FROM node_runs_v1
+                     WHERE run_id = ?1 AND node_id = ?2",
                 params![run_id.0, node_id.0],
                 |row| {
                     Ok(NodeRunRow {
@@ -844,7 +844,8 @@ impl GraphStore for SqliteGraphStore {
                 },
             )
             .optional()
-            .map_err(|e| StorageError::Database(format!("load_node_run: {e}")))?;
+            .map_err(|e| StorageError::Database(format!("load_node_run: {e}")))?
+        };
 
         match row {
             Some(r) => {
@@ -916,21 +917,31 @@ impl GraphStore for SqliteGraphStore {
             )
             .map_err(|e| StorageError::Database(format!("stream_node_runs prep: {e}")))?;
 
-        let rows = stmt
-            .query_map(params![run_id.0], |row| {
-                Ok(NodeRunRow {
-                    run_id: row.get(0)?,
-                    node_id: row.get(1)?,
-                    state: row.get(2)?,
-                    dependencies_json: row.get(3)?,
-                    last_attempt_id: row.get(4)?,
+        // Collect the raw rows into a Vec FIRST so the connection guard (held by
+        // `conn`, borrowed by `stmt`/the iterator) is released before the per-node
+        // loop below. Each iteration calls load_node_attempts, which re-locks the
+        // connection; iterating rows lazily keeps the guard alive across that call
+        // and self-deadlocks (same class as the execute() match-scrutinee bug).
+        let rows: Vec<NodeRunRow> = {
+            let iter = stmt
+                .query_map(params![run_id.0], |row| {
+                    Ok(NodeRunRow {
+                        run_id: row.get(0)?,
+                        node_id: row.get(1)?,
+                        state: row.get(2)?,
+                        dependencies_json: row.get(3)?,
+                        last_attempt_id: row.get(4)?,
+                    })
                 })
-            })
-            .map_err(|e| StorageError::Database(format!("stream_node_runs query: {e}")))?;
+                .map_err(|e| StorageError::Database(format!("stream_node_runs query: {e}")))?;
+            iter.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| StorageError::Database(format!("stream_node_runs rows: {e}")))?
+        };
+        drop(stmt);
+        drop(conn);
 
         let mut node_runs = Vec::new();
-        for row_result in rows {
-            let r = row_result.map_err(|e| StorageError::Database(format!("row: {e}")))?;
+        for r in rows {
             let state = match r.state.as_str() {
                 "pending" => NodeRunState::Pending,
                 "ready" => NodeRunState::Ready,

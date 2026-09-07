@@ -274,3 +274,108 @@ fn legacy_record_graph_revision_still_infers_run_id() {
         .expect("load_revision failed");
     assert!(loaded.is_some(), "inferred revision should be loadable");
 }
+
+/// Regression: load_node_run and stream_node_runs must not self-deadlock on the
+/// connection when the persisted run has node_runs_v1 rows. Both methods hold the
+/// SqliteProjectionStore connection (via `self.proj_store.conn()`) and, per row,
+/// call load_node_attempts, which re-locks that same connection. Collecting the
+/// raw rows eagerly (releasing the guard) before per-node attempt loading is the
+/// fix. Before it, this test hung forever on any non-empty node_runs_v1 table.
+#[test]
+fn node_reload_does_not_self_deadlock_on_persisted_rows() {
+    let dir = TempDir::new().expect("failed to create temp dir");
+    let run_id = RunId("rt-deadlock-001".into());
+    let node_id = NodeId("n1".into());
+    let mut store = open_test_store(dir.path());
+
+    let mut nodes = BTreeMap::new();
+    nodes.insert(
+        node_id.clone(),
+        NodeSnapshot {
+            node_id: node_id.clone(),
+            state: "completed".into(),
+            snapshot_at: "anchor-v1".into(),
+            join_strategy: None,
+        },
+    );
+    let revision = ExecutionGraphRevision {
+        revision: 0,
+        revision_id: RevisionId("rev-deadlock-001".into()),
+        parent: None,
+        events: BTreeMap::new(),
+        nodes,
+        edges: BTreeMap::new(),
+        digest: [0u8; 32],
+        schema_version: 1,
+    };
+    store
+        .record_run(
+            &make_test_run(run_id.clone(), &revision.revision_id),
+            &revision,
+        )
+        .expect("record_run failed");
+
+    let node_run = NodeRun {
+        node_id: node_id.clone(),
+        state: NodeRunState::Completed,
+        dependencies: Default::default(),
+        attempts: vec![],
+        expansion_permissions: Default::default(),
+        schema_version: 1,
+    };
+    store
+        .record_node_run_for_run(&run_id, &node_run)
+        .expect("record_node_run_for_run failed");
+
+    let attempt = sddk_domain::workflow_run::Attempt {
+        attempt_id: sddk_domain::workflow_run::AttemptId("a1".into()),
+        node_id: node_id.clone(),
+        route: sddk_domain::workflow_run::Route {
+            provider: "t".into(),
+            model: "t".into(),
+            host: "t".into(),
+        },
+        started_at: "1970-01-01T00:00:00Z".into(),
+        ended_at: None,
+        outcome: None,
+        usage: sddk_domain::workflow_run::Usage {
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_micros: 0,
+            wall_ms: 0,
+        },
+        context_capsule: sddk_domain::workflow_run::ContextCapsuleRef::Pointer { cid: "c".into() },
+        idempotency_key: sddk_domain::workflow_run::IdempotencyKey {
+            project_id: "sddk".into(),
+            run_id: run_id.clone(),
+            node_id: node_id.clone(),
+            attempt_seq: 0,
+        },
+        schema_version: 1,
+    };
+    store
+        .record_attempt(&attempt)
+        .expect("record_attempt failed");
+
+    // These two reads used to self-deadlock here (pre-fix). With the fix they
+    // return promptly.
+    let reloaded = store
+        .load_node_run(&run_id, &node_id)
+        .expect("load_node_run failed")
+        .expect("expected a node run");
+    assert_eq!(reloaded.node_id, node_id);
+
+    let streamed = store
+        .stream_node_runs(&run_id)
+        .expect("stream_node_runs failed");
+    assert_eq!(streamed.len(), 1);
+    assert_eq!(streamed[0].attempts.len(), 1);
+
+    // Cross-connection reopen must also read cleanly.
+    drop(store);
+    let store2 = open_test_store(dir.path());
+    let streamed2 = store2
+        .stream_node_runs(&run_id)
+        .expect("stream_node_runs on reopen failed");
+    assert_eq!(streamed2.len(), 1);
+}
