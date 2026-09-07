@@ -942,10 +942,22 @@ impl Operator for Sequence {
 
 // -- Parallel helper functions -------------------------------------------------
 
-/// Returns the effective concurrency limit, defaulting to 16 when the field is 0.
-/// Per REQ-WF-RT-010 §R-WF-RT-010.2.
-pub(crate) fn apply_default_max_concurrency(value: u32) -> u32 {
-    if value == 0 { 16 } else { value }
+/// Returns the effective concurrency limit.
+///
+/// - `0` → `min(branches_len, available_parallelism)`
+/// - `value > branches_len` → `branches_len` (cap)
+/// - otherwise → `value`
+pub(crate) fn apply_default_max_concurrency(value: u32, branches_len: usize) -> u32 {
+    if value == 0 {
+        let avail = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        std::cmp::min(branches_len, avail) as u32
+    } else if value > branches_len as u32 {
+        branches_len as u32
+    } else {
+        value
+    }
 }
 
 /// A blocking counting semaphore implemented over `Mutex<usize>` + `Condvar`.
@@ -1125,7 +1137,7 @@ impl Operator for Parallel {
             });
         }
 
-        let max_conc = apply_default_max_concurrency(self.max_concurrency);
+        let max_conc = apply_default_max_concurrency(self.max_concurrency, self.children.len());
 
         // -- Non-blocking path (cycle-20+ runtime): use pending_sender ----------
         if let Some(pending_sender) = ctx.pending_sender.take() {
@@ -1137,6 +1149,8 @@ impl Operator for Parallel {
             let clock = ctx.clock.clone();
             let executor = Arc::clone(&ctx.executor);
             let semaphore = Arc::new(CountingSemaphore::new(max_conc as usize));
+            // REQ-WFR4-PAR-003: capture the REAL store for per-child record_attempt
+            let store = Arc::clone(&ctx.store);
 
             std::thread::spawn(move || {
                 let (tx, rx) = std::sync::mpsc::channel::<ChildResult>();
@@ -1207,11 +1221,38 @@ impl Operator for Parallel {
                     let _ = h.join();
                 }
 
-                // Forward to runtime via pending_sender
-                for child_index in 0..children.len() {
-                    if let Some(result) = collected.remove(&child_index) {
-                        let _ = pending_sender.send(result);
+                // REQ-WFR4-PAR-003: persist per-child attempts BEFORE forwarding to runtime.
+                // Supervisor is the sole writer for Parallel per-child attempts.
+                // NOTE: we iterate .values() (no remove) so collected remains intact for forwarding.
+                for result in collected.values() {
+                    let attempt =
+                        build_attempt(&node_id, &run.run_id, result.child_index, result, &clock);
+                    // Push to node_run.attempts for replay-safety
+                    {
+                        let mut nr = node_run.lock().unwrap();
+                        nr.attempts.push(attempt.clone());
                     }
+                    // Persist via the real store (FIND-482479 closure).
+                    // IdempotencyConflict = already persisted (safe no-op).
+                    let mut store_lock = store.lock().unwrap();
+                    match store_lock.record_attempt(&attempt) {
+                        Ok(()) => {}
+                        Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
+                            // Already recorded — safe no-op
+                        }
+                        Err(e) => {
+                            // Real error — log but don't fail the parent
+                            eprintln!(
+                                "parallel supervisor: record_attempt failed for child {}: {}",
+                                result.child_index, e
+                            );
+                        }
+                    }
+                }
+
+                // Forward to runtime via pending_sender
+                for result in collected.into_values() {
+                    let _ = pending_sender.send(result);
                 }
             });
 
