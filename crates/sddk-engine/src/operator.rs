@@ -261,6 +261,14 @@ impl GraphStore for ScratchGraphStore {
     ) -> Result<(), sddk_domain::StorageError> {
         Ok(())
     }
+    fn record_attempt(
+        &mut self,
+        _attempt: &sddk_domain::Attempt,
+    ) -> Result<(), sddk_domain::StorageError> {
+        // ScratchGraphStore is a no-op store for per-child scratch evaluation.
+        // Real persistence happens via WorkflowRuntime's tick loop with a real store.
+        Ok(())
+    }
 }
 
 // Explicit impl: Box<ScratchGraphStore> implements GraphStore + Send (blanket impl not picked up by coherence)
@@ -334,6 +342,12 @@ where
         node_run: &sddk_domain::workflow_run::NodeRun,
     ) -> Result<(), sddk_domain::StorageError> {
         (**self).record_node_run_for_run(run_id, node_run)
+    }
+    fn record_attempt(
+        &mut self,
+        attempt: &sddk_domain::Attempt,
+    ) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_attempt(attempt)
     }
 }
 
@@ -764,14 +778,45 @@ impl Operator for Sequence {
             context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
                 cid: format!("seq-tick-{}-{}", node_id.0, completed_steps),
             },
-            idempotency_key: sddk_domain::IdempotencyKey {
-                project_id: "sddk".to_string(),
-                run_id: ctx.run.run_id.clone(),
-                node_id: node_id.clone(),
-                attempt_seq: completed_steps as u32,
+            // S3 fix: use cid (which is unique per marker) as project_id in idempotency_key.
+            // The cid is "seq-tick-{node_id}-{completed_steps}", unique per child evaluation.
+            // This ensures each marker has a unique idempotency_key string, bypassing the
+            // RunId colon issue. The UNIQUE constraint on idempotency_key will prevent duplicates.
+            idempotency_key: {
+                let cid = format!("seq-tick-{}-{}", node_id.0, completed_steps);
+                sddk_domain::IdempotencyKey {
+                    project_id: cid,
+                    run_id: ctx.run.run_id.clone(),
+                    node_id: node_id.clone(),
+                    attempt_seq: completed_steps as u32,
+                }
             },
             schema_version: 1,
         };
+        // cycle-43 fix (S3): call record_attempt directly via ctx.store instead of
+        // relying on Arc::try_unwrap sync in the runtime. The sync can fail, leaving
+        // marker attempts in the cloned Arc but not persisted to storage.
+        // Direct record_attempt ensures marker attempts are persisted with correct
+        // attempt_seq (0, 1, 2...). IdempotencyConflict means the attempt was
+        // already recorded — safe to ignore and continue.
+        let record_result = ctx.store.lock().unwrap().record_attempt(&marker_attempt);
+        match &record_result {
+            Ok(_) => {}
+            Err(domain_err) => {
+                match domain_err {
+                    sddk_domain::StorageError::Other(msg) if msg.contains("idempotency") => {
+                        // IdempotencyConflict: attempt already recorded, safe to continue
+                    }
+                    _ => {
+                        return Err(OperatorError::EvalFailed(format!(
+                            "Sequence record_attempt failed: {:?}",
+                            domain_err
+                        )))
+                    }
+                }
+            }
+        }
+        // Also push to node_run.attempts for runtime state tracking
         ctx.node_run.lock().unwrap().attempts.push(marker_attempt);
 
         if completed_steps + 1 >= num_children {
@@ -1194,8 +1239,10 @@ impl Operator for Parallel {
 /// Error evaluating a Choice guard.
 #[derive(Debug, Clone)]
 pub enum ChoiceGuardError {
-    /// Guard expression is not supported in this cycle.
-    UnsupportedGuard(String),
+    /// Guard expression format is not supported in this cycle.
+    UnsupportedGuardFormat(String),
+    /// Guard string is empty after trimming.
+    EmptyGuardString,
 }
 
 /// Conditional branch: evaluates the first matching condition.
@@ -1232,6 +1279,11 @@ impl Choice {
     ) -> Result<bool, ChoiceGuardError> {
         let guard = guard.trim();
 
+        // Empty guard string after trimming
+        if guard.is_empty() {
+            return Err(ChoiceGuardError::EmptyGuardString);
+        }
+
         // LiteralBool cases
         if guard.eq_ignore_ascii_case("true") {
             return Ok(true);
@@ -1253,8 +1305,8 @@ impl Choice {
             return Self::check_identifier_eq(key, value, outputs);
         }
 
-        // Unknown guard format — treat as "pass" (first matching branch wins)
-        // This maintains backward compatibility with cycle-16 behavior
+        // Unknown guard format — return Ok(true) for backward compatibility.
+        // Branch keys like "always-true" that aren't valid guard expressions are treated as "pass".
         Ok(true)
     }
 
@@ -1292,7 +1344,7 @@ impl Operator for Choice {
 
         // Evaluate guards in branch order (BTreeMap iteration order is sorted)
         // Select the first branch whose guard evaluates to true
-        // Unknown guards are treated as "pass" (backward compatible with cycle-16)
+        // REQ-WFR3-FAIL-001: guard errors propagate and fail the workflow
         let mut selected_branch_key = None;
 
         for (guard, _op) in &self.branches {
@@ -1305,10 +1357,12 @@ impl Operator for Choice {
                     // Guard didn't match, continue to next branch
                     continue;
                 }
-                Err(_) => {
-                    // Should not happen with current guards, treat as pass and break
-                    selected_branch_key = Some(guard.clone());
-                    break;
+                Err(guard_err) => {
+                    // REQ-WFR3-FAIL-001: propagate guard error to fail the workflow
+                    return Err(OperatorError::EvalFailed(format!(
+                        "Choice guard evaluation failed: {:?}",
+                        guard_err
+                    )));
                 }
             }
         }

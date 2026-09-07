@@ -948,6 +948,7 @@ impl WorkflowRuntime {
                     };
 
                     let is_parallel = matches!(ir_op, Operator::Parallel { .. });
+                    let is_sequence = matches!(ir_op, Operator::Sequence { .. });
 
                     let pending_sender = if is_parallel {
                         let (tx, rx) = mpsc::channel::<ChildResult>();
@@ -1034,37 +1035,43 @@ impl WorkflowRuntime {
                                 }
                             };
 
-                            let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
-                                attempt_id: sddk_domain::workflow_run::AttemptId(format!(
-                                    "tick-attempt-{}-{}",
-                                    self.run.run_id.0, op_id.0
-                                )),
-                                node_id: NodeId(op_id.0.clone()),
-                                route: sddk_domain::Route {
-                                    provider: "runtime".to_string(),
-                                    model: "cycle16".to_string(),
-                                    host: "local".to_string(),
-                                },
-                                started_at: self.clock.now(),
-                                ended_at: Some(self.clock.now()),
-                                outcome: Some(attempt_outcome),
-                                usage: sddk_domain::Usage {
-                                    tokens_in: 0,
-                                    tokens_out: 0,
-                                    cost_micros: 0,
-                                    wall_ms: 0,
-                                },
-                                context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
-                                    cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
-                                },
-                                idempotency_key: sddk_domain::IdempotencyKey {
-                                    project_id: "sddk".to_string(),
-                                    run_id: self.run.run_id.clone(),
+                            // S3 fix: skip runtime's record_attempt for Sequence nodes.
+                            // Sequence::evaluate records its own marker attempts directly
+                            // via ctx.store.record_attempt() with correct attempt_seq (0,1,2...).
+                            // The runtime's attempt uses attempt_seq=0 which would conflict.
+                            if !is_sequence {
+                                let _ = self.store.lock().unwrap().record_attempt(&sddk_domain::Attempt {
+                                    attempt_id: sddk_domain::workflow_run::AttemptId(format!(
+                                        "tick-attempt-{}-{}",
+                                        self.run.run_id.0, op_id.0
+                                    )),
                                     node_id: NodeId(op_id.0.clone()),
-                                    attempt_seq: 0,
-                                },
-                                schema_version: 1,
-                            });
+                                    route: sddk_domain::Route {
+                                        provider: "runtime".to_string(),
+                                        model: "cycle16".to_string(),
+                                        host: "local".to_string(),
+                                    },
+                                    started_at: self.clock.now(),
+                                    ended_at: Some(self.clock.now()),
+                                    outcome: Some(attempt_outcome),
+                                    usage: sddk_domain::Usage {
+                                        tokens_in: 0,
+                                        tokens_out: 0,
+                                        cost_micros: 0,
+                                        wall_ms: 0,
+                                    },
+                                    context_capsule: sddk_domain::ContextCapsuleRef::Pointer {
+                                        cid: format!("ctx-{}-{}", self.run.run_id.0, op_id.0),
+                                    },
+                                    idempotency_key: sddk_domain::IdempotencyKey {
+                                        project_id: "sddk".to_string(),
+                                        run_id: self.run.run_id.clone(),
+                                        node_id: NodeId(op_id.0.clone()),
+                                        attempt_seq: 0,
+                                    },
+                                    schema_version: 1,
+                                });
+                            }
                             outcome.outcomes.push((
                                 op_id.clone(),
                                 NodeId(op_id.0.clone()),
@@ -1183,6 +1190,23 @@ impl WorkflowRuntime {
                         }
                         NodeOutcome::Succeeded { .. } => {
                             node_run.state = NodeRunState::Completed;
+                            // REQ-WFR3-SEQ-001: record each attempt when Sequence transitions to Completed.
+                            // Sequence::evaluate pushes marker attempts to node_run.attempts during
+                            // child evaluation; these must be persisted to attempts_v1 here.
+                            let mut store = self.store.lock().unwrap();
+                            for attempt in &node_run.attempts {
+                                if let Err(sddk_domain::StorageError::Database(msg)) =
+                                    store.record_attempt(attempt)
+                                {
+                                    // IdempotencyConflict means attempt already recorded — safe to ignore.
+                                    // Any other database error is a real problem and must propagate.
+                                    if !msg.contains("idempotency") {
+                                        return Err(RuntimeError::Storage(
+                                            sddk_domain::StorageError::Database(msg),
+                                        ));
+                                    }
+                                }
+                            }
                         }
                         NodeOutcome::Failed { .. } => {
                             node_run.state = NodeRunState::Failed;

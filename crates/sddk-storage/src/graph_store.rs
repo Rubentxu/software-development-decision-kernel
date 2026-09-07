@@ -783,8 +783,8 @@ impl GraphStore for SqliteGraphStore {
         let result = conn.execute(
             r#"INSERT INTO attempts_v1
                (attempt_id, run_id, node_id, route_json, started_at, ended_at,
-                outcome_json, usage_json, context_capsule_json, idempotency_key, schema_version)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+                 outcome_json, usage_json, context_capsule_json, idempotency_key, schema_version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
             params![
                 attempt.attempt_id.0,
                 run_id.0,
@@ -1005,11 +1005,18 @@ impl RawAttemptRow {
             .map_err(|e| StorageError::Database(format!("usage deserialize: {e}")))?;
         let context_capsule: ContextCapsuleRef = serde_json::from_str(&self.capsule_json)
             .map_err(|e| StorageError::Database(format!("capsule deserialize: {e}")))?;
-        let idempotency_key = IdempotencyKey {
-            project_id: String::new(),
-            run_id: RunId(self.run_id.clone()),
-            node_id: NodeId(self.node_id.clone()),
-            attempt_seq: 0,
+        let idempotency_key: IdempotencyKey = {
+            // Parse attempt_seq from the stored string.
+            // The format is "project_id:run_id:node_id:attempt_seq" but run_id may contain ':'.
+            // Since attempt_seq is always the LAST component, extract it from the end.
+            let parts: Vec<&str> = self.idempotency_key.rsplit(':').collect();
+            let attempt_seq = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            IdempotencyKey {
+                project_id: String::new(),  // Not easily parseable due to run_id colons
+                run_id: RunId(self.run_id.clone()),
+                node_id: NodeId(self.node_id.clone()),
+                attempt_seq,
+            }
         };
         let _ = self.idempotency_key; // original string not currently needed
         Ok(Attempt {
