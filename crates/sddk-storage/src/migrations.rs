@@ -230,6 +230,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
+    if version < 17 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_17)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 17)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
     Ok(())
 }
 
@@ -760,4 +770,30 @@ ALTER TABLE work_items_v1 ADD COLUMN spine_order INTEGER;
 ALTER TABLE work_items_v1 ADD COLUMN spine_horizon TEXT;
 ALTER TABLE work_items_v1 ADD COLUMN spine_status TEXT;
 ALTER TABLE work_items_v1 ADD COLUMN exit_gate TEXT;
+"#;
+
+pub(crate) const MIGRATION_17: &str = r#"
+-- DW-RUNTIME-002: workflow_run_events_v1 append-only lifecycle event log (REQ-WFR-EV-001).
+-- Append-only event log for workflow run lifecycle transitions.
+-- MIGRATION_17 is purely additive: no DROP, no ALTER of existing tables.
+-- FK ON DELETE CASCADE ensures events are removed when the parent run is deleted.
+
+CREATE TABLE IF NOT EXISTS workflow_run_events_v1 (
+    event_id      TEXT NOT NULL PRIMARY KEY CHECK (event_id <> ''),
+    run_id        TEXT NOT NULL REFERENCES workflow_runs_v1(run_id) ON DELETE CASCADE,
+    occurred_at   TEXT NOT NULL,
+    from_state    TEXT NOT NULL CHECK (from_state IN ('pending','running','paused','completed','failed','cancelled')),
+    to_state      TEXT NOT NULL CHECK (to_state IN ('pending','running','paused','completed','failed','cancelled')),
+    actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('human','agent','system')),
+    actor_id      TEXT NOT NULL,
+    reason        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_run_events_v1_run
+    ON workflow_run_events_v1(run_id, occurred_at);
+CREATE TRIGGER IF NOT EXISTS workflow_run_events_v1_no_update
+    BEFORE UPDATE ON workflow_run_events_v1
+    BEGIN SELECT RAISE(ABORT, 'workflow_run_events_v1 is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS workflow_run_events_v1_no_delete
+    BEFORE DELETE ON workflow_run_events_v1
+    BEGIN SELECT RAISE(ABORT, 'workflow_run_events_v1 is append-only'); END;
 "#;
