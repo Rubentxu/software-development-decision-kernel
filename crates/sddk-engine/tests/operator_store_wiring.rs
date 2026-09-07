@@ -169,10 +169,8 @@ fn operator_context_store_is_real_sqlite_store() {
 /// WHEN crates/sddk-engine/src/workflow_runtime.rs:840-870 is greped
 /// THEN Box::new(ScratchGraphStore) does not appear
 ///
-/// TODO(dw-runtime-003): This test is temporarily ignored because real store wiring
-/// is blocked on a self-referential struct lifetime issue with DynGraphStoreRef.
-/// The tick loop currently uses ScratchGraphStore as a placeholder.
-#[ignore]
+/// REQ-WFR3-PERSIST-001: the tick loop must use Arc::clone(&self.store) to pass
+/// the real SqliteGraphStore, not a fresh ScratchGraphStore.
 #[test]
 fn operator_context_no_longer_wires_scratch_store() {
     use std::path::Path;

@@ -10,7 +10,7 @@ use sddk_domain::{
     CapabilityId, NodeId, NodeRun, NodeRunState, Operator as DomainOperator, OperatorId, TaskError,
     TaskExecutor, TaskOutput, WorkflowIR, WorkflowRun,
 };
-use sddk_engine::operator::{Clock, GraphStoreBox, Map, NodeOutcome, Operator, OperatorContext};
+use sddk_engine::operator::{Clock, Map, NodeOutcome, Operator, OperatorContext, ScratchStore};
 
 fn make_ir_with_source_and_body(
     source_id: OperatorId,
@@ -161,9 +161,8 @@ fn make_ctx(
     run: Arc<WorkflowRun>,
     executor: Arc<dyn TaskExecutor>,
 ) -> OperatorContext {
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(sddk_engine::operator::ScratchGraphStore),
-    }));
+    let store: ScratchStore =
+        Arc::new(Mutex::new(Box::new(sddk_engine::operator::ScratchGraphStore)));
     OperatorContext {
         node_run,
         ir,

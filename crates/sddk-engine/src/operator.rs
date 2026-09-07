@@ -112,8 +112,9 @@ impl Clock {
 
 // -- OperatorContext ---------------------------------------------------------
 
-/// Type alias for scratch store used in Parallel child contexts.
-type ScratchStore = Arc<Mutex<GraphStoreBox>>;
+/// Type alias for scratch store used in Parallel child contexts and tests.
+/// Public so test modules can construct the correct store type.
+pub type ScratchStore = Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>;
 
 /// Cycle context passed to `Operator::evaluate`.
 ///
@@ -121,20 +122,20 @@ type ScratchStore = Arc<Mutex<GraphStoreBox>>;
 /// - `node_run: Arc<Mutex<NodeRun>>` — shared with workflow_runtime for attempt writes.
 ///   Per child.evaluate Pure contract (operator.rs:309), children do NOT mutate node_run;
 ///   the Mutex is uncontended during parallel evaluate.
-/// - `store: Arc<Mutex<S>>` — graph store. For Parallel children, each child gets a
-///   per-thread `ScratchGraphStore` (cycle-19 scratch isolation preserved).
-///   `S` must implement `GraphStore + Send`.
+/// - `store: Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>` — graph store. For Parallel children,
+///   each child gets a per-thread `ScratchGraphStore` (cycle-19 scratch isolation preserved).
+///   Concrete type matches WorkflowRuntime.store exactly, enabling Arc::clone(&self.store).
 /// - `ir`, `run`, `clock`, `executor` — Arc-shared, immutable from child's perspective.
 /// - `pending_sender` — cycle-20 WU-4: Some(tx) when spawned by runtime receiver map.
-pub struct OperatorContext<S: GraphStore + Send = GraphStoreBox> {
+pub struct OperatorContext {
     /// The node run being evaluated.
     pub node_run: Arc<Mutex<NodeRun>>,
     /// The workflow IR this run was instantiated from.
     pub ir: Arc<WorkflowIR>,
     /// The workflow run record.
     pub run: Arc<WorkflowRun>,
-    /// The graph store for persistence.
-    pub store: Arc<Mutex<S>>,
+    /// The graph store for persistence — concrete Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>.
+    pub store: Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>,
     /// Wall-clock source.
     pub clock: Clock,
     /// Task executor for capability routing.
@@ -145,7 +146,7 @@ pub struct OperatorContext<S: GraphStore + Send = GraphStoreBox> {
     pub pending_sender: Option<std::sync::mpsc::Sender<ChildResult>>,
 }
 
-impl<S: GraphStore + Send> std::fmt::Debug for OperatorContext<S> {
+impl std::fmt::Debug for OperatorContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OperatorContext")
             .field("node_run", &self.node_run.lock().unwrap().node_id)
@@ -154,7 +155,7 @@ impl<S: GraphStore + Send> std::fmt::Debug for OperatorContext<S> {
     }
 }
 
-impl OperatorContext<GraphStoreBox> {
+impl OperatorContext {
     /// Construct an OperatorContext suitable for testing.
     ///
     /// Defaults:
@@ -175,9 +176,7 @@ impl OperatorContext<GraphStoreBox> {
             node_run,
             ir,
             run,
-            store: Arc::new(Mutex::new(GraphStoreBox {
-                inner: Box::new(ScratchGraphStore),
-            })),
+            store: Arc::new(Mutex::new(Box::new(ScratchGraphStore))),
             clock: Clock,
             executor: Arc::new(sddk_domain::NoopTaskExecutor),
             pending_sender: None,
@@ -253,6 +252,13 @@ impl GraphStore for ScratchGraphStore {
     ) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
         Ok(None)
     }
+    fn record_node_run_for_run(
+        &mut self,
+        _run_id: &sddk_domain::RunId,
+        _node_run: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
+        Ok(())
+    }
 }
 
 // Explicit impl: Box<ScratchGraphStore> implements GraphStore + Send (blanket impl not picked up by coherence)
@@ -319,6 +325,13 @@ where
         run_id: &sddk_domain::RunId,
     ) -> Result<Option<sddk_domain::graph::ExecutionGraphRevision>, sddk_domain::StorageError> {
         (**self).latest_revision(run_id)
+    }
+    fn record_node_run_for_run(
+        &mut self,
+        run_id: &sddk_domain::RunId,
+        node_run: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
+        (**self).record_node_run_for_run(run_id, node_run)
     }
 }
 
@@ -982,9 +995,7 @@ impl Operator for Parallel {
                     // Arc clone of parent node_run (read-only inside child per Pure contract).
                     let node_run = Arc::clone(&node_run);
                     // PER-CHILD scratch store (not shared with parent, not shared across children).
-                    let store: ScratchStore = Arc::new(Mutex::new(GraphStoreBox {
-                        inner: Box::new(ScratchGraphStore),
-                    }));
+                    let store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
 
                     // Build child context WITHOUT pending_sender (child reports to supervisor)
                     let mut child_ctx = OperatorContext {
@@ -1067,9 +1078,7 @@ impl Operator for Parallel {
             // Arc clone of parent node_run (read-only inside child per Pure contract).
             let node_run = Arc::clone(&ctx.node_run);
             // PER-CHILD scratch store (not shared with parent, not shared across children).
-            let store = Arc::new(Mutex::new(GraphStoreBox {
-                inner: Box::new(ScratchGraphStore),
-            }));
+            let store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
 
             let mut child_ctx = OperatorContext {
                 node_run,
@@ -1395,9 +1404,7 @@ impl Operator for Map {
         // Source gets fresh child ctx: Arc-cloned shared fields, own ScratchGraphStore,
         // pending_sender: None. Source MUST NOT mutate parent's node_run.state/attempts.
         // cycle-31: source is pre-resolved Arc<dyn Operator> — NO ctx.ir.operators.get() call.
-        let source_store: ScratchStore = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(ScratchGraphStore),
-        }));
+        let source_store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
         let mut source_ctx = OperatorContext {
             node_run: Arc::clone(&ctx.node_run),
             ir: Arc::clone(&ctx.ir),
@@ -1549,9 +1556,7 @@ impl Map {
             let body_op: Arc<dyn Operator> = Arc::new(iter_task);
 
             // Per-child scratch store (not shared with parent, not shared across children)
-            let store: ScratchStore = Arc::new(Mutex::new(GraphStoreBox {
-                inner: Box::new(ScratchGraphStore),
-            }));
+            let store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
             let node_run = Arc::clone(&ctx.node_run);
             let ir = Arc::clone(&ctx.ir);
             let run = Arc::clone(&ctx.run);
@@ -2596,9 +2601,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
         let clock = Clock;
 
         let mut ctx = OperatorContext {
@@ -2756,9 +2759,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
         let clock = Clock;
 
         let mut ctx = OperatorContext {
@@ -3338,9 +3339,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
 
         // Concurrent: all 3 children evaluated in one call, returns Succeeded
         let outcome = {
@@ -3502,9 +3501,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
 
         // Concurrent: all 4 children evaluated in one call, returns Succeeded
         let outcome = {
@@ -3675,9 +3672,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
         let executor = Arc::new(NoopTaskExecutor);
         let clock = Clock;
 
@@ -3835,9 +3830,7 @@ mod tests {
             schema_version: 1,
         };
 
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
         let executor = Arc::new(NoopTaskExecutor);
         let clock = Clock;
 
@@ -4016,9 +4009,7 @@ mod tests {
             expansion_permissions: Default::default(),
             schema_version: 1,
         }));
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(ScratchGraphStore),
-        }));
+let store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
         let arc_ir = Arc::new(ir);
         let arc_run = Arc::new(run);
         let executor: Arc<dyn TaskExecutor> = Arc::new(sddk_domain::NoopTaskExecutor);

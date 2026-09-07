@@ -187,6 +187,14 @@ impl GraphStore for MockStore {
         Ok(())
     }
 
+    fn record_node_run_for_run(
+        &mut self,
+        _run_id: &sddk_domain::workflow_ir::RunId,
+        _node_run: &sddk_domain::workflow_run::NodeRun,
+    ) -> Result<(), sddk_domain::StorageError> {
+        Ok(())
+    }
+
     fn record_attempt(
         &mut self,
         _attempt: &sddk_domain::workflow_run::Attempt,

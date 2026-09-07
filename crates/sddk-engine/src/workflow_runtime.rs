@@ -25,8 +25,8 @@ use crate::event_bus::{
 };
 use crate::execution_controller::ExecutionController;
 use crate::operator::{
-    ChildResult, Clock, GraphStoreBox, NodeOutcome, OperatorContext, OperatorError,
-    ScratchGraphStore, build_operator,
+    ChildResult, Clock, NodeOutcome, OperatorContext, OperatorError,
+    build_operator,
 };
 
 /// Result type for runtime operations.
@@ -585,7 +585,8 @@ impl WorkflowRuntime {
         spawn.merge(drain_parallel);
         spawn.merge(drain_map);
 
-        self.apply_outcomes_to_state(&spawn.outcomes);
+        // REQ-WFR3-FAIL-001: propagate persistence errors to Failed
+        self.apply_outcomes_to_state(&spawn.outcomes)?;
 
         // No-progress check after observable state changes (D3).
         if let Some(ref mut ctrl) = self.controller {
@@ -952,10 +953,9 @@ impl WorkflowRuntime {
                     let node_run_arc = Arc::new(Mutex::new(node_run_owned));
 
                     let executor = Arc::clone(&self.executor);
-                    let store = Arc::new(Mutex::new(GraphStoreBox {
-                        inner: Box::new(ScratchGraphStore),
-                    }));
-                    let mut ctx: OperatorContext = OperatorContext {
+                    // REQ-WFR3-PERSIST-001: use Arc::clone(&self.store) — the real SqliteGraphStore
+                    let store = Arc::clone(&self.store);
+                    let mut ctx = OperatorContext {
                         node_run: Arc::clone(&node_run_arc),
                         ir: Arc::new(self.ir.clone()),
                         run: Arc::new(self.run.clone()),
@@ -1159,7 +1159,8 @@ impl WorkflowRuntime {
     }
 
     /// Apply state transitions from outcomes and persist to store.
-    fn apply_outcomes_to_state(&mut self, outcomes: &[(OperatorId, NodeId, NodeOutcome)]) {
+    /// REQ-WFR3-FAIL-001: propagates persistence errors to Failed state.
+    fn apply_outcomes_to_state(&mut self, outcomes: &[(OperatorId, NodeId, NodeOutcome)]) -> Result<()> {
         for (op_id, node_run) in &mut self.nodes {
             let node_id = NodeId(op_id.0.clone());
             for (_op_id, _node_id, outcome) in outcomes {
@@ -1178,10 +1179,12 @@ impl WorkflowRuntime {
                             node_run.state = NodeRunState::Failed;
                         }
                     }
-                    let _ = self.store.lock().unwrap().record_node_run(node_run);
+                    // REQ-WFR3-FAIL-001: use record_node_run_for_run with proper error propagation
+                    self.store.lock().unwrap().record_node_run_for_run(&self.run.run_id, node_run)?;
                 }
             }
         }
+        Ok(())
     }
 
     /// Completes the workflow with outputs.

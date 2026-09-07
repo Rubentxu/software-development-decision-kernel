@@ -11,7 +11,7 @@ use sddk_domain::{
     CapabilityId, NodeId, NodeRun, NodeRunState, Operator as DomainOperator, OperatorId, TaskError,
     TaskExecutor, TaskOutput, WorkflowIR, WorkflowRun,
 };
-use sddk_engine::operator::{Clock, GraphStoreBox, NodeOutcome, OperatorContext};
+use sddk_engine::operator::{Clock, NodeOutcome, OperatorContext, ScratchStore};
 
 /// Fake executor that echoes inputs back as outputs (or returns configured source_outputs).
 #[derive(Clone)]
@@ -176,9 +176,7 @@ fn runtime_smoke_map_runs_through_one_tick() {
         schema_version: 1,
     }));
 
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(sddk_engine::operator::ScratchGraphStore),
-    }));
+    let store: ScratchStore = Arc::new(Mutex::new(Box::new(sddk_engine::operator::ScratchGraphStore)));
 
     let mut ctx = OperatorContext {
         node_run: Arc::clone(&node_run),

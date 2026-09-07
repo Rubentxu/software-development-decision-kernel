@@ -117,9 +117,9 @@ fn for_test_store_is_scratch_graph_store() {
 
     let _ctx = OperatorContext::for_test(Arc::clone(&node_run), Arc::clone(&ir), Arc::clone(&run));
 
-    // Verify store is a GraphStoreBox containing ScratchGraphStore
+    // Verify store is a Box<dyn GraphStore> containing ScratchGraphStore
     // The store compiles and works, which is sufficient for this test
-    let store = _ctx.store.lock().unwrap();
-    let _inner = &store.inner;
-    // If this compiles, the store is correctly typed
+    let _store = _ctx.store.lock().unwrap();
+    // If the above compiles, the store type is correct
+    // (Box<dyn GraphStore + Send + Sync> implements GraphStore through the boxed concrete type)
 }

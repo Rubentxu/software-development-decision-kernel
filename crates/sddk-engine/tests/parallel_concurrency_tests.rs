@@ -13,7 +13,7 @@ use sddk_domain::{
     WorkflowRun,
 };
 use sddk_engine::operator::{
-    Clock, GraphStoreBox, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel,
+    Clock, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel, ScratchStore,
 };
 
 // ── Test operators ────────────────────────────────────────────────────────────
@@ -183,9 +183,7 @@ macro_rules! eval {
     ($parallel:expr, $node_run:expr) => {{
         let ir = make_ir();
         let run = make_run();
-        let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-            inner: Box::new(MockStore),
-        }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
         let node_run_arc: Arc<Mutex<NodeRun>> = Arc::new(Mutex::new($node_run));
         let mut ctx = OperatorContext {
             node_run: Arc::clone(&node_run_arc),
@@ -690,9 +688,7 @@ fn parallel_spans_three_ticks_drain() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+    let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let node_run_arc: Arc<Mutex<NodeRun>> = Arc::new(Mutex::new(NodeRun {
         node_id: NodeId("parallel-node".into()),
         state: NodeRunState::Ready,
@@ -804,9 +800,7 @@ fn parallel_spans_three_ticks_drain() {
 
     let ir2 = make_ir();
     let run2 = make_run();
-    let store2: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+    let store2: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
 
     // Second evaluate: pending_sender = None (consumed on first evaluate)
     let mut ctx2 = OperatorContext {

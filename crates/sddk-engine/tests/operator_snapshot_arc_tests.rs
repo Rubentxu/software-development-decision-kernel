@@ -14,7 +14,7 @@ use sddk_domain::{
     WorkflowRun,
 };
 use sddk_engine::operator::{
-    Clock, GraphStoreBox, NodeOutcome, Operator, OperatorContext, Parallel,
+    Clock, NodeOutcome, Operator, OperatorContext, Parallel, ScratchStore,
 };
 
 // ── Test operators ────────────────────────────────────────────────────────────
@@ -156,9 +156,7 @@ fn parallel_no_box_leak_for_100_children() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -201,9 +199,7 @@ fn node_run_dropped_after_child_thread_joins() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -249,9 +245,7 @@ fn public_operator_context_api_unchanged() {
     }));
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -287,9 +281,7 @@ fn inv10_grep_gate_no_mutex_on_workflow_state() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -338,9 +330,7 @@ fn parallel_no_leak_5_children() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -381,9 +371,7 @@ fn parallel_no_leak_50_children() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -422,9 +410,7 @@ fn parallel_no_leak_1_child() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -470,9 +456,7 @@ fn parallel_arc_no_leak_100_children() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),
@@ -521,9 +505,7 @@ fn parallel_arc_no_leak_5_children() {
 
     let ir = make_ir();
     let run = make_run();
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(MockStore),
-    }));
+        let store: ScratchStore = Arc::new(Mutex::new(Box::new(MockStore)));
     let ctx = OperatorContext {
         node_run: Arc::clone(&node_run_arc),
         ir: Arc::new(ir),

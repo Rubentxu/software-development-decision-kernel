@@ -14,7 +14,7 @@ use sddk_domain::{
     TaskExecutor, TaskOutput, WorkflowIR, WorkflowRun,
 };
 use sddk_engine::operator::build_operator;
-use sddk_engine::operator::{Clock, GraphStoreBox, NodeOutcome, OperatorContext};
+use sddk_engine::operator::{Clock, NodeOutcome, OperatorContext, ScratchStore};
 
 /// Fake executor that returns configurable outputs.
 #[derive(Clone)]
@@ -136,9 +136,8 @@ fn make_ctx(
     run: Arc<WorkflowRun>,
     executor: Arc<dyn TaskExecutor>,
 ) -> OperatorContext {
-    let store: Arc<Mutex<GraphStoreBox>> = Arc::new(Mutex::new(GraphStoreBox {
-        inner: Box::new(sddk_engine::operator::ScratchGraphStore),
-    }));
+    let store: ScratchStore =
+        Arc::new(Mutex::new(Box::new(sddk_engine::operator::ScratchGraphStore)));
     OperatorContext {
         node_run,
         ir,
