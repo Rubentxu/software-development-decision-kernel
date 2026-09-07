@@ -187,6 +187,25 @@ The release gate IS the local pipeline — there is no CI gating step. The
 pre-push hook (`githooks/pre-push`) enforces the `chore(release)` commit
 rule; everything else is convention.
 
+### Test-gate TMPDIR isolation (deterministic workspace gate)
+
+`cargo test --workspace` must run against an isolated, writable `TMPDIR`.
+`scripts/release.sh` already exports a fresh per-run scratch under `target/`
+and cleans it up on exit, so the canonical gate is safe regardless of the
+ambient `TMPDIR`.
+
+Running the gate with an inherited/constrained `TMPDIR` (e.g. an agent
+sandbox such as `~/.jcode/scratch`) causes intermittent `PermissionDenied`
+from `tempfile` under parallel test load — observed as `sddk-cli` dev tests
+failing anywhere from 11 to 99 depending on concurrency, with NO code
+regression (the full suite is green under `TMPDIR=/tmp` or an isolated
+scratch). If you run the gate by hand instead of through `release.sh`,
+isolate it first:
+
+```bash
+TMPDIR="$(mktemp -d "$(pwd)/target/sddk-test.XXXXXX")" cargo test --workspace
+```
+
 ## MANIFEST regeneration
 
 When `prompts/sddk/`, `skills/_shared/`, `agents/`, or `docs/` change, regenerate `MANIFEST.sha256` in the same commit:
