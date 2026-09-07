@@ -159,6 +159,8 @@ pub struct WorkflowRuntime {
     /// Wrapped in Arc<Mutex> so the tick loop can get a cheap Arc clone without
     /// needing Clone on the inner type. The Mutex allows exclusive access.
     store: Arc<Mutex<Box<dyn GraphStore + Send + Sync>>>,
+    /// Initial execution graph revision (used for record_run in execute).
+    initial_revision: Option<sddk_domain::graph::ExecutionGraphRevision>,
     /// Wall-clock source.
     #[allow(dead_code)]
     clock: Clock,
@@ -223,6 +225,7 @@ impl WorkflowRuntime {
             run,
             nodes,
             store: Arc::new(Mutex::new(store)),
+            initial_revision: None,
             clock,
             executor,
             event_store: None,
@@ -280,6 +283,7 @@ impl WorkflowRuntime {
             run,
             nodes,
             store: Arc::new(Mutex::new(store)),
+            initial_revision: None,
             clock,
             executor,
             event_store: Some(event_store),
@@ -366,6 +370,7 @@ impl WorkflowRuntime {
             run,
             nodes,
             store: Arc::new(Mutex::new(store)),
+            initial_revision: Some(compiled_revision.clone()),
             clock,
             executor,
             event_store: None,
@@ -420,6 +425,10 @@ impl WorkflowRuntime {
             }
             Ok(None) => {
                 // No existing run — first time execution
+                // REQ-WFR3-PERSIST-001: persist the run before record_node_run_for_run calls
+                if let Some(ref initial_revision) = self.initial_revision {
+                    self.store.lock().unwrap().record_run(&self.run, initial_revision)?;
+                }
             }
             Err(_) => {
                 // Storage error — proceed anyway (cycle-16 default is not implemented)
