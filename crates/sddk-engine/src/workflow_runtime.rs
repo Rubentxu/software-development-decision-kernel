@@ -952,17 +952,10 @@ impl WorkflowRuntime {
                         }
                     };
 
-                    let is_parallel = matches!(ir_op, Operator::Parallel { .. });
                     let is_sequence = matches!(ir_op, Operator::Sequence { .. });
-
-                    let pending_sender = if is_parallel {
-                        let (tx, rx) = mpsc::channel::<ChildResult>();
-                        let rx_arc = Arc::new(Mutex::new(rx));
-                        self.pending_parallel.insert(key, rx_arc);
-                        Some(tx)
-                    } else {
-                        None
-                    };
+                    // Delta-4: Parallel operators now use the blocking path (pending_sender = None).
+                    // The non-blocking path had a sender-drop bug that prevented proper result collection.
+                    let pending_sender: Option<std::sync::mpsc::Sender<ChildResult>> = None;
 
                     let node_run_owned = node_run.clone();
                     let node_run_arc = Arc::new(Mutex::new(node_run_owned));
