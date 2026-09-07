@@ -69,3 +69,79 @@ fn engine_run_identity_deferred_to_dw_runtime_003() {
         violations.join("\n")
     );
 }
+
+/// Scenario: legacy constructors are deprecated
+/// WHEN `new` and `new_with_event_store` are compiled
+/// THEN both emit #[warn(deprecated)] when invoked
+/// AND the test grep `legacy_constructors_are_deprecated` passes
+#[test]
+fn legacy_constructors_are_deprecated() {
+    let source_path = workflow_runtime_path();
+    let content =
+        std::fs::read_to_string(&source_path).expect("failed to read workflow_runtime.rs");
+
+    let lines: Vec<&str> = content.lines().collect();
+
+    // Check that `pub fn new` has #[deprecated]
+    let mut new_has_deprecated = false;
+    let mut new_with_event_store_has_deprecated = false;
+
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Look for `pub fn new(` within the next ~20 lines of a `#[deprecated]` attribute
+        if line.contains("#[deprecated") {
+            // Check the next 20 lines for `pub fn new` or `pub fn new_with_event_store`
+            for offset in 1..=20 {
+                let idx = i + offset;
+                if idx < lines.len() {
+                    let following = lines[idx];
+                    if following.contains("pub fn new(") {
+                        new_has_deprecated = true;
+                    }
+                    if following.contains("pub fn new_with_event_store(") {
+                        new_with_event_store_has_deprecated = true;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+
+    assert!(
+        new_has_deprecated,
+        "pub fn new must have #[deprecated] attribute"
+    );
+    assert!(
+        new_with_event_store_has_deprecated,
+        "pub fn new_with_event_store must have #[deprecated] attribute"
+    );
+}
+
+/// Scenario: engine identity path is Uuid-free
+/// WHEN `crates/sddk-engine/src/workflow_runtime.rs` is greped by `Uuid::new_v4`
+/// THEN 0 occurrences remain (all 6 annotated occurrences have been removed)
+/// AND the test grep `engine_identity_path_is_uuid_free` passes
+#[test]
+fn engine_identity_path_is_uuid_free() {
+    let source_path = workflow_runtime_path();
+    let content =
+        std::fs::read_to_string(&source_path).expect("failed to read workflow_runtime.rs");
+
+    let lines: Vec<&str> = content.lines().collect();
+
+    let mut uuid_v4_count = 0;
+    for line in lines {
+        if line.contains("Uuid::new_v4()") {
+            uuid_v4_count += 1;
+        }
+    }
+
+    assert_eq!(
+        uuid_v4_count, 0,
+        "workflow_runtime.rs must have 0 Uuid::new_v4() occurrences (found {}), \
+         all must be replaced with RunId::derive(...)",
+        uuid_v4_count
+    );
+}

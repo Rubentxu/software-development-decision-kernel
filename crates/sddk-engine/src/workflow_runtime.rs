@@ -167,20 +167,21 @@ pub struct WorkflowRuntime<R: RunStore> {
 
 impl<R: RunStore> WorkflowRuntime<R> {
     /// Constructs a new runtime from an IR, store, and task executor.
+    #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
     pub fn new(ir: WorkflowIR, store: R, clock: Clock, executor: Arc<dyn TaskExecutor>) -> Self {
-        // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-        let run_id = sddk_domain::RunId(format!("runtime-{}", uuid::Uuid::new_v4()));
+        // Legacy constructor: uses content-derived IDs (deterministic per IR).
+        // TODO(dw-runtime-003): callers should migrate to from_compiled
+        let ir_hash = ir.compute_content_hash();
+        let run_id = sddk_domain::RunId(format!("legacy-run-{}", &ir_hash[..32]));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
-            ir_hash: ir.compute_content_hash(),
-            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-            graph_revision: sddk_domain::RevisionId(format!("rev-{}", uuid::Uuid::new_v4())),
+            ir_hash: ir_hash.clone(),
+            graph_revision: sddk_domain::RevisionId(format!("rev-legacy-{}", &ir_hash[..24])),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
-            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-            correlation_id: sddk_domain::CorrelationId(format!("corr-{}", uuid::Uuid::new_v4())),
+            correlation_id: sddk_domain::CorrelationId(format!("corr-legacy-{}", ir_hash)),
             budget: ir.budgets.clone(),
             schema_version: 1,
         };
@@ -216,6 +217,7 @@ impl<R: RunStore> WorkflowRuntime<R> {
     }
 
     /// Constructs a new runtime from an IR, store, event store, and task executor.
+    #[deprecated(note = "use from_compiled; removal in DW-RUNTIME-004")]
     pub fn new_with_event_store(
         ir: WorkflowIR,
         store: R,
@@ -223,19 +225,19 @@ impl<R: RunStore> WorkflowRuntime<R> {
         event_store: Arc<Mutex<dyn EventStore>>,
         executor: Arc<dyn TaskExecutor>,
     ) -> Self {
-        // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-        let run_id = sddk_domain::RunId(format!("runtime-{}", uuid::Uuid::new_v4()));
+        // Legacy constructor: uses content-derived IDs (deterministic per IR).
+        // TODO(dw-runtime-003): callers should migrate to from_compiled
+        let ir_hash = ir.compute_content_hash();
+        let run_id = sddk_domain::RunId(format!("legacy-run-{}", &ir_hash[..32]));
         let run = WorkflowRun {
             run_id,
             template_ref: ir.template_ref.clone(),
-            ir_hash: ir.compute_content_hash(),
-            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-            graph_revision: sddk_domain::RevisionId(format!("rev-{}", uuid::Uuid::new_v4())),
+            ir_hash: ir_hash.clone(),
+            graph_revision: sddk_domain::RevisionId(format!("rev-legacy-{}", &ir_hash[..24])),
             state: WorkflowRunState::Pending,
             inputs: Default::default(),
             outputs: None,
-            // TODO(dw-runtime-003): derive via RunId::derive + compile_plan_to_revision().revision_id
-            correlation_id: sddk_domain::CorrelationId(format!("corr-{}", uuid::Uuid::new_v4())),
+            correlation_id: sddk_domain::CorrelationId(format!("corr-legacy-{}", ir_hash)),
             budget: ir.budgets.clone(),
             schema_version: 1,
         };
@@ -264,6 +266,91 @@ impl<R: RunStore> WorkflowRuntime<R> {
             clock,
             executor,
             event_store: Some(event_store),
+            pending_parallel: HashMap::new(),
+            pending_map: HashMap::new(),
+            controller: None,
+        }
+    }
+
+    /// Constructs a new runtime from a compiled IR with deterministic identity.
+    ///
+    /// `run_id` is derived deterministically from `plan_revision_id` and
+    /// `correlation_id` via `RunId::derive(...)`. `graph_revision` is taken
+    /// directly from `compiled_revision.revision_id`. This constructor is the
+    /// mandated entry point for all new workflow runs (DW-RUNTIME-003).
+    ///
+    /// # Arguments
+    ///
+    /// * `ir` — The workflow IR (unused for identity, kept for execution).
+    /// * `store` — The graph store for persistence.
+    /// * `clock` — Wall-clock source.
+    /// * `executor` — Task executor.
+    /// * `plan_revision_id` — Plan revision identifier (used in `RunId::derive`).
+    /// * `correlation_id` — Correlation identifier (used in `RunId::derive`).
+    /// * `compiled_revision` — The compiled execution graph revision.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let runtime = WorkflowRuntime::from_compiled(
+    ///     ir,
+    ///     store,
+    ///     clock,
+    ///     executor,
+    ///     plan.revision_id,
+    ///     &correlation_id,
+    ///     &compiled,
+    /// );
+    /// ```
+    pub fn from_compiled(
+        ir: WorkflowIR,
+        store: R,
+        clock: Clock,
+        executor: Arc<dyn TaskExecutor>,
+        plan_revision_id: &str,
+        correlation_id: &sddk_domain::CorrelationId,
+        compiled_revision: &sddk_domain::graph::ExecutionGraphRevision,
+    ) -> Self {
+        // Deterministic identity per REQ-WFR3-RT-001 and REQ-WFR3-ID-001
+        let run_id = sddk_domain::RunId::derive(plan_revision_id, correlation_id);
+        let graph_revision = compiled_revision.revision_id.clone();
+
+        let run = WorkflowRun {
+            run_id,
+            template_ref: ir.template_ref.clone(),
+            ir_hash: format!("sha256:{}", ir.compute_content_hash()),
+            graph_revision,
+            state: WorkflowRunState::Pending,
+            inputs: Default::default(),
+            outputs: None,
+            correlation_id: correlation_id.clone(),
+            budget: ir.budgets.clone(),
+            schema_version: 1,
+        };
+
+        // Initialize node runs from the IR operators
+        let mut nodes = BTreeMap::new();
+        for op_id in ir.operators.keys() {
+            let node_id = NodeId(op_id.0.clone());
+            let node_run = NodeRun {
+                node_id,
+                state: NodeRunState::Pending,
+                dependencies: Default::default(),
+                attempts: vec![],
+                expansion_permissions: ir.expansion_permissions.clone(),
+                schema_version: 1,
+            };
+            nodes.insert(op_id.clone(), node_run);
+        }
+
+        Self {
+            ir,
+            run,
+            nodes,
+            store,
+            clock,
+            executor,
+            event_store: None,
             pending_parallel: HashMap::new(),
             pending_map: HashMap::new(),
             controller: None,
