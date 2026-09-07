@@ -3,6 +3,15 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.89.6] - 2026-09-07
+
+### Fixes
+  - fix(storage): evitar self-deadlock de conexión en load_node_run y stream_node_runs
+  - fix(scripts): aislar TMPDIR en release.sh para un gate de tests determinista
+
+### Other
+  - docs(release): documentar aislamiento de TMPDIR en el gate de tests
+
 ## [1.70.0] - 2026-09-02
 
 ### Features
