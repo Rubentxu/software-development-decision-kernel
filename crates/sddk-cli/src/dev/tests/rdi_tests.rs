@@ -67,6 +67,16 @@ fn create_bundle_without_manifest(root: &Path) {
 
 /// Helper: run release dist and return the dist directory.
 fn run_dist(source: &Path, prefix: &Path, skip_preflight: bool) -> crate::CommandOutput {
+    // run_release_dist stages at `<data_dir>/sddk/staging/{commit}` and does a
+    // remove_dir_all + recreate on it. When tests share the default data dir AND
+    // a fixed commit, every concurrent `dist` test writes to the SAME staging
+    // dir, racing each other and producing intermittent hash mismatches. Isolate
+    // the data dir per call so each dist stages in its own location.
+    let data_dir = temp_root("dist-data");
+    let env = CliEnvironment {
+        sddk_data_dir: Some(data_dir.clone()),
+        ..Default::default()
+    };
     let args = DistArgs {
         prefix: prefix.to_path_buf(),
         channel: "release".to_string(),
@@ -74,11 +84,10 @@ fn run_dist(source: &Path, prefix: &Path, skip_preflight: bool) -> crate::Comman
         commit: Some("abc123def456".to_string()),
         receipt: None,
         format: OutputFormat::Json,
-        sddk_data_dir: None,
+        sddk_data_dir: Some(data_dir),
         skip_manifest_preflight: skip_preflight,
         source: Some(source.to_path_buf()),
     };
-    let env = CliEnvironment::default();
     crate::release_cmd::run_release(ReleaseCommand::Dist(args), &env)
 }
 
