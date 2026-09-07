@@ -148,8 +148,13 @@ fn copy_tree_if_changed_preserves_identical_files() {
 fn copy_tree_failure_leaves_target_intact() {
     use std::os::unix::fs::PermissionsExt;
 
-    // Target pre-populated with keep.md
-    let target = temp_root("failure-target");
+    // Dedicated holder dir under the temp root. The parent we chmod to
+    // read-only MUST be private to this test. chmod-ing `temp_dir()` (the
+    // shared process TMPDIR) — which is what `target.parent()` resolves to
+    // when target sits directly under the temp root — races every concurrent
+    // test that creates a TempDir under it, failing them all with EACCES.
+    let holder = temp_root("failure-holder");
+    let target = holder.join("target");
     std::fs::create_dir_all(&target).unwrap();
     std::fs::write(target.join("keep.md"), "keep content").unwrap();
 
@@ -157,8 +162,8 @@ fn copy_tree_failure_leaves_target_intact() {
     let source = temp_root("failure-source");
     std::fs::write(source.join("x.md"), "x content").unwrap();
 
-    // Make target's parent read-only so staging creation inside it fails
-    let parent = target.parent().unwrap_or(&target);
+    // Make the private holder read-only so staging creation inside it fails
+    let parent = &holder;
     let original_mode = std::fs::metadata(parent).unwrap().permissions().mode();
 
     // Attempt to make parent read-only; if the filesystem doesn't support
@@ -169,8 +174,8 @@ fn copy_tree_failure_leaves_target_intact() {
             "SKIP copy_tree_failure_leaves_target_intact: \
              cannot set read-only permissions on this filesystem or as root"
         );
+        std::fs::remove_dir_all(&holder).ok();
         std::fs::remove_dir_all(&source).ok();
-        std::fs::remove_dir_all(&target).ok();
         return;
     }
 
@@ -184,8 +189,8 @@ fn copy_tree_failure_leaves_target_intact() {
             "SKIP copy_tree_failure_leaves_target_intact: \
              running as root, chmod 555 does not block writes"
         );
+        std::fs::remove_dir_all(&holder).ok();
         std::fs::remove_dir_all(&source).ok();
-        std::fs::remove_dir_all(&target).ok();
         return;
     }
     let _ = std::fs::remove_file(&test_file);
@@ -211,6 +216,6 @@ fn copy_tree_failure_leaves_target_intact() {
     // No residue siblings
     assert_no_residue(&target);
 
+    std::fs::remove_dir_all(&holder).ok();
     std::fs::remove_dir_all(&source).ok();
-    std::fs::remove_dir_all(&target).ok();
 }
