@@ -809,7 +809,7 @@ impl GraphStore for SqliteGraphStore {
             {
                 Err(
                     sddk_domain::workflow_run::WorkflowRunPersistError::IdempotencyConflict {
-                        key: attempt.idempotency_key.as_str(),
+                        key: attempt.idempotency_key.clone(),
                     }
                     .into(),
                 )

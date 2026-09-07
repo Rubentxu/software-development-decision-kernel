@@ -165,6 +165,12 @@ impl IdempotencyKey {
     }
 }
 
+impl std::fmt::Display for IdempotencyKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 // ── AttemptOutcome ─────────────────────────────────────────────────────────
 
 /// Outcome of an attempt.
@@ -541,10 +547,10 @@ pub enum WorkflowRunPersistError {
         run_id: RunId,
     },
     /// Idempotency key conflict.
-    #[error("idempotency conflict for key: {key}")]
+    #[error("idempotency conflict for attempt: {key}")]
     IdempotencyConflict {
         /// The conflicting idempotency key.
-        key: String,
+        key: IdempotencyKey,
     },
     /// Graph revision missing for the run.
     #[error("graph revision missing for run {run_id}, expected: {expected}")]
@@ -593,8 +599,8 @@ impl From<WorkflowRunPersistError> for crate::StorageError {
             WorkflowRunPersistError::RunAlreadyTerminal { .. } => {
                 crate::StorageError::Database(err.to_string())
             }
-            WorkflowRunPersistError::IdempotencyConflict { .. } => {
-                crate::StorageError::Database(err.to_string())
+            WorkflowRunPersistError::IdempotencyConflict { key } => {
+                crate::StorageError::IdempotencyConflict { key }
             }
         }
     }

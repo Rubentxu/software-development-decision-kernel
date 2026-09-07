@@ -1934,6 +1934,31 @@ impl From<StorageError> for sddk_domain::StorageError {
             StorageError::LeaseConflict {
                 cycle_id, owner, ..
             } => sddk_domain::StorageError::LeaseConflict { cycle_id, owner },
+            StorageError::IdempotencyConflict { key } => {
+                // Parse "project_id:run_id:node_id:attempt_seq" back to IdempotencyKey.
+                let parts: Vec<&str> = key.split(':').collect();
+                if parts.len() == 4 {
+                    let attempt_seq = parts[3].parse().unwrap_or(0);
+                    sddk_domain::StorageError::IdempotencyConflict {
+                        key: sddk_domain::workflow_run::IdempotencyKey {
+                            project_id: parts[0].to_string(),
+                            run_id: sddk_domain::workflow_ir::RunId(parts[1].to_string()),
+                            node_id: sddk_domain::workflow_ir::NodeId(parts[2].to_string()),
+                            attempt_seq,
+                        },
+                    }
+                } else {
+                    // Fallback for legacy/unexpected format
+                    sddk_domain::StorageError::IdempotencyConflict {
+                        key: sddk_domain::workflow_run::IdempotencyKey {
+                            project_id: key.clone(),
+                            run_id: sddk_domain::workflow_ir::RunId(String::new()),
+                            node_id: sddk_domain::workflow_ir::NodeId(String::new()),
+                            attempt_seq: 0,
+                        },
+                    }
+                }
+            }
             _ => sddk_domain::StorageError::Other(err.to_string()),
         }
     }

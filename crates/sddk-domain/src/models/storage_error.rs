@@ -8,6 +8,11 @@ pub enum StorageError {
     Database(String),
     #[error("lease conflict on {cycle_id} held by {owner}")]
     LeaseConflict { cycle_id: String, owner: String },
+    /// Idempotency key conflict — attempt already recorded (safe no-op).
+    #[error("idempotency conflict for attempt: {key}")]
+    IdempotencyConflict {
+        key: crate::workflow_run::IdempotencyKey,
+    },
     #[error("storage error: {0}")]
     Other(String),
 }
@@ -18,6 +23,7 @@ impl crate::SddkErrorCode for StorageError {
             Self::NotFound { .. } => "STORAGE_NOT_FOUND",
             Self::Database(_) => "STORAGE_DATABASE_ERROR",
             Self::LeaseConflict { .. } => "STORAGE_LEASE_CONFLICT",
+            Self::IdempotencyConflict { .. } => "STORAGE_IDEMPOTENCY_CONFLICT",
             Self::Other(_) => "STORAGE_ERROR",
         }
     }
@@ -39,6 +45,9 @@ impl crate::SddkErrorCode for StorageError {
                      then `sddk cycle lock release --cycle {}` to release it",
                     cycle_id, cycle_id
                 )
+            }
+            Self::IdempotencyConflict { .. } => {
+                "the attempt was already recorded — this is a safe no-op, not an error".into()
             }
             Self::Other(_) => "retry the operation; if the problem persists, check the logs".into(),
         }
