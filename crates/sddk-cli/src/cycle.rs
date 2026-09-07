@@ -147,6 +147,25 @@ pub(crate) fn resolve_cycle_context(
     environment: &CliEnvironment,
     cycle_arg: Option<&str>,
 ) -> Result<ResolvedCycleContext, InferenceError> {
+    // Resolve the ambient working directory for the inference path. We read it
+    // here (rather than inside the private core) so tests can exercise the
+    // root-less inference path against an arbitrary directory WITHOUT mutating
+    // the process-global CWD (`std::env::set_current_dir` is process-wide and
+    // races every concurrent test that reads `current_dir`).
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    resolve_cycle_context_with_cwd(args, environment, cycle_arg, &cwd)
+}
+
+/// Core cycle-context resolution over an explicit working directory.
+///
+/// `cwd` is only consulted on the root-less inference path (root unspecified,
+/// `no_infer = false`); explicit roots and `no_infer` never read it.
+fn resolve_cycle_context_with_cwd(
+    args: &RuntimeArgs,
+    environment: &CliEnvironment,
+    cycle_arg: Option<&str>,
+    cwd: &std::path::Path,
+) -> Result<ResolvedCycleContext, InferenceError> {
     // S2: explicit args win; nothing to infer if all explicit
     let _root_explicit = args.root.is_some();
     let _scope_explicit = args.scope.is_some();
@@ -191,10 +210,7 @@ pub(crate) fn resolve_cycle_context(
     let root = if let Some(ref r) = args.root {
         r.clone()
     } else {
-        let cwd = std::env::current_dir().map_err(|_| InferenceError::NoProjectContext {
-            cwd: ".".to_string(),
-        })?;
-        walk_up_for_project_marker(&cwd).ok_or_else(|| InferenceError::NoProjectContext {
+        walk_up_for_project_marker(cwd).ok_or_else(|| InferenceError::NoProjectContext {
             cwd: cwd.to_string_lossy().to_string(),
         })?
     };
@@ -2955,13 +2971,14 @@ mod tests {
 
     #[test]
     fn s4_no_project_context_returns_error_pointing_to_project_resolve() {
-        // Temp dir with NO .git, sddk, or AGENTS.md markers
+        // Temp dir with NO .git, sddk, or AGENTS.md markers. We exercise the
+        // root-less inference path against this directory by injecting it as the
+        // `cwd` of the private core, instead of mutating the process-global CWD
+        // via `std::env::set_current_dir`. chdir-ing from one test thread races
+        // every concurrent test that reads `current_dir` (all root-less cycle
+        // inference tests), corrupting their roots when tests run in parallel.
         let temp = tempfile::TempDir::new().unwrap();
         let empty_dir = temp.path();
-
-        // Change CWD to the empty temp dir so walk-up finds no markers
-        let old_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(empty_dir).unwrap();
 
         let env = make_env(empty_dir);
         let args = RuntimeArgs {
@@ -2972,10 +2989,9 @@ mod tests {
             no_infer: false,
         };
 
-        let result = resolve_cycle_context(&args, &env, None);
-
-        // Restore CWD
-        std::env::set_current_dir(&old_cwd).unwrap();
+        // root-less inference over `empty_dir`: walk-up must find no markers and
+        // report NoProjectContext guiding the user to project resolve / init.
+        let result = resolve_cycle_context_with_cwd(&args, &env, None, empty_dir);
 
         let err = result.expect_err("should fail with no project context");
 
