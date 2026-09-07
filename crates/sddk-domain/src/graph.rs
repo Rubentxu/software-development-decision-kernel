@@ -1294,6 +1294,10 @@ pub struct NodeSnapshot {
     pub state: String,
     /// Snapshot timestamp (RFC 3339).
     pub snapshot_at: String,
+    /// Join strategy for Parallel operators (H2: None means All).
+    /// None and Some(JoinStrategy::All) project to the same canonical representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join_strategy: Option<crate::workflow_ir::JoinStrategy>,
 }
 
 /// A frozen snapshot of an edge at a particular revision.

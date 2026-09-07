@@ -152,6 +152,7 @@ fn nodes_btreemap_order_does_not_affect_digest() {
                     node_id: NodeId(format!("node-{}", idx)),
                     state: "running".into(),
                     snapshot_at: "2026-08-19T10:00:00Z".into(),
+                    join_strategy: None,
                 },
             );
         }

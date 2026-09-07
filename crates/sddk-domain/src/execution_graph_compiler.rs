@@ -386,6 +386,10 @@ pub fn compile_plan_to_revision(
 }
 
 /// Synthesises [`NodeSnapshot`] entries for every operator in the plan (I-7).
+///
+/// For `Parallel` operators, the `join_strategy` field is set to `None` (canonical
+/// default of `All`). H6 (ADR-067) will introduce explicit join strategy support
+/// via the `Parallel::join_strategy` field in the Operator enum.
 fn synthesize_nodes(
     plan_nodes: &BTreeMap<OperatorId, Operator>,
     compile_anchor: &str,
@@ -397,6 +401,9 @@ fn synthesize_nodes(
                 node_id: NodeId(op_id.0.clone()),
                 state: "compiled".into(),
                 snapshot_at: compile_anchor.into(),
+                // None means All (canonical default, I-10).
+                // H6 will add explicit join_strategy to Parallel::Operator.
+                join_strategy: None,
             };
             (NodeId(op_id.0.clone()), snapshot)
         })
