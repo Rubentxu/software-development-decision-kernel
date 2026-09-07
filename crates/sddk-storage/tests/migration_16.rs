@@ -43,7 +43,7 @@ fn make_spine_item(id: &str, status: &str, order: u32, horizon: &str, exit_gate:
 
 // ── AC-PLN4-01: MIGRATION_16 scenarios ─────────────────────────────────────
 
-/// Scenario: fresh database has LATEST_SCHEMA_VERSION == 16.
+/// Scenario: fresh database has LATEST_SCHEMA_VERSION == 17.
 #[test]
 fn migration_16_schema_version_16() {
     let tmp = TempDir::new().unwrap();
@@ -54,8 +54,8 @@ fn migration_16_schema_version_16() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        16,
-        "LATEST_SCHEMA_VERSION must be 16"
+        17,
+        "LATEST_SCHEMA_VERSION must be 17"
     );
 }
 
@@ -172,15 +172,15 @@ fn migration_16_preserves_existing_rows() {
         .unwrap();
     }
 
-    // Open with MIGRATION_16 storage
+    // Open with MIGRATION_16 storage (which then applies through MIGRATION_17)
     let storage = Storage::open(&db_path).expect("must reopen with new schema");
 
     assert_eq!(
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        16,
-        "schema version must be 16 after migration"
+        17,
+        "schema version must be 17 after migration"
     );
 
     // Verify legacy row survived
