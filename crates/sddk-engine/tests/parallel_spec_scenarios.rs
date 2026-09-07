@@ -593,10 +593,13 @@ fn parallel_wfr4_par_003_e_namespace_prevents_cross_parallel_collision() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// S-PAR-004a: reconstructible after terminal state.
-/// NOTE: This test requires a proper IR with a Parallel operator and the non-blocking
-/// path bug to be fixed. Additionally, `complete()` does not persist the WorkflowRunState::Completed
-/// back to the store (separate bug). Currently ignored until these issues are resolved.
-#[ignore]
+///
+/// S6b restart-survival (Slice 1 storage + Slice 2 engine): `execute()` now
+/// appends `Running -> Completed` to the run's lifecycle event log via
+/// `record_workflow_run_transition`, so a reopened store reconstructs the
+/// terminal state from `latest_workflow_run_state`. Un-ignored once the
+/// event-sourced lifecycle persistence shipped (previously the run's
+/// `workflow_runs_v1.state` row was never updated after `record_run`).
 #[test]
 fn parallel_wfr4_par_004_a_reconstructible_after_terminal_state() {
     // Uses real SqliteGraphStore to verify persistence.

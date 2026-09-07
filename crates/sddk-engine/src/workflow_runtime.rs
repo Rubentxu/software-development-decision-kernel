@@ -421,6 +421,19 @@ impl WorkflowRuntime {
     /// This is the main entry point that runs the workflow from `Pending`
     /// to a terminal state, emitting canonical events at each lifecycle point.
     ///
+    /// S6b restart-survival: when the run is already persisted and the persisted
+    /// lifecycle log (`latest_workflow_run_state`) reports a TERMINAL state
+    /// (`Completed`/`Failed`/`Cancelled`), the run is NOT re-executed. Instead the
+    /// in-memory run is aligned with the persisted terminal state and
+    /// `Err(RuntimeError::AlreadyTerminal)` is returned so the caller can
+    /// distinguish "already finished" from a fresh execution.
+    ///
+    /// For persisted runs that execute to a terminal state here, each lifecycle
+    /// transition (`Pending -> Running`, `Running -> Completed`,
+    /// `Running -> Failed`) is appended to the run's event log via
+    /// `record_workflow_run_transition` (best-effort stores are skipped; see
+    /// `record_run_lifecycle_transition`).
+    ///
     /// Emits:
     /// - `workflow.run.started` at entry
     /// - `workflow.node.running` / `workflow.node.completed` / `workflow.node.failed` per node
@@ -432,11 +445,39 @@ impl WorkflowRuntime {
         // the match scrutinee keeps it alive across the whole match, so the
         // `Ok(None)` branch's `record_run` re-lock of the same Mutex would
         // self-deadlock on a first-time (not pre-inserted) run.
+        //
+        // S6b: `run_persisted` tracks whether this execute() drives a run that has
+        // a row in the store. Lifecycle transitions are only appended to the event
+        // log for persisted runs (no orphan events for in-memory-only runs).
         let loaded_run = self.store.lock().unwrap().load_run(&self.run.run_id);
+        let mut run_persisted = false;
         match loaded_run {
             Ok(Some(_loaded_run)) => {
-                // Run exists — in cycle-17 this would resume from the loaded state
-                // For cycle-16, we just proceed (run is already in the state machine)
+                // Run exists — S6b restart-survival guard: if the persisted
+                // lifecycle log already reports a TERMINAL state, do NOT re-run
+                // the workflow. Align the in-memory record with the persisted
+                // terminal state and cut short with a clear signal.
+                run_persisted = true;
+                match self
+                    .store
+                    .lock()
+                    .unwrap()
+                    .latest_workflow_run_state(&self.run.run_id)
+                {
+                    Ok(Some(persisted_state)) if persisted_state.is_terminal() => {
+                        // workflow_runs_v1.state is only written at record_run time;
+                        // the event log is the source of truth for lifecycle state.
+                        self.run.state = persisted_state.clone();
+                        return Err(RuntimeError::AlreadyTerminal {
+                            state: persisted_state,
+                        });
+                    }
+                    // Non-terminal or empty log → proceed. Err (_) → the store
+                    // lacks the capability (trait default) → proceed exactly as
+                    // pre-S6b so MockStores that don't override the method keep
+                    // working (best-effort, no propagation).
+                    Ok(_) | Err(_) => {}
+                }
             }
             Ok(None) => {
                 // No existing run — first time execution
@@ -446,6 +487,7 @@ impl WorkflowRuntime {
                         .lock()
                         .unwrap()
                         .record_run(&self.run, initial_revision)?;
+                    run_persisted = true;
                 }
             }
             Err(_) => {
@@ -458,6 +500,14 @@ impl WorkflowRuntime {
 
         // Transition to Running
         self.start()?;
+
+        // S6b: append Pending -> Running to the persisted run's lifecycle log.
+        self.record_run_lifecycle_transition(
+            WorkflowRunState::Pending,
+            WorkflowRunState::Running,
+            None,
+            run_persisted,
+        )?;
 
         // Lazily create the bounded-execution controller, capturing Instant::now()
         // at the start of execute() — the wall-budget timer starts here.
@@ -480,11 +530,29 @@ impl WorkflowRuntime {
                             Value::Object(serde_json::Map::from_iter(outputs.clone())),
                         );
                     }
+                    // Capture the pre-terminal in-memory state (Running) so the
+                    // event log records the real lifecycle edge, then complete.
+                    let from_state = self.run.state.clone();
                     self.complete(final_outputs)?;
+                    // S6b: append Running -> Completed to the persisted log.
+                    self.record_run_lifecycle_transition(
+                        from_state,
+                        WorkflowRunState::Completed,
+                        None,
+                        run_persisted,
+                    )?;
                     break;
                 }
                 TickOutcome::Failed => {
+                    let from_state = self.run.state.clone();
                     self.fail("node failed".into())?;
+                    // S6b: append Running -> Failed to the persisted log.
+                    self.record_run_lifecycle_transition(
+                        from_state,
+                        WorkflowRunState::Failed,
+                        Some("node failed"),
+                        run_persisted,
+                    )?;
                     break;
                 }
                 TickOutcome::Waiting | TickOutcome::Running => {
@@ -496,6 +564,37 @@ impl WorkflowRuntime {
         // Emit workflow.run.completed
         self.emit_run_completed()?;
 
+        Ok(())
+    }
+
+    /// S6b restart-survival: appends a lifecycle transition to a persisted run's
+    /// event log (`record_workflow_run_transition`).
+    ///
+    /// Policy — "persisted-run gate, fail-closed":
+    /// - Runs without a row in the store (`run_persisted == false`, e.g. stores
+    ///   whose `load_run` is the trait-default `Err`, or in-memory-only tests)
+    ///   never trigger the call, so stores that do not implement the method are
+    ///   untouched and existing MockStore-based tests keep their pre-S6b behavior.
+    /// - When the run IS persisted, a storage error is propagated (`?`), matching
+    ///   the existing `record_run` / `record_node_run_for_run` fail-closed
+    ///   discipline: the in-memory state machine can advance even if the event
+    ///   log lags, but the caller is told the log is incomplete.
+    fn record_run_lifecycle_transition(
+        &self,
+        from_state: WorkflowRunState,
+        to_state: WorkflowRunState,
+        reason: Option<&str>,
+        run_persisted: bool,
+    ) -> Result<()> {
+        if !run_persisted {
+            return Ok(());
+        }
+        self.store.lock().unwrap().record_workflow_run_transition(
+            &self.run.run_id,
+            from_state,
+            to_state,
+            reason,
+        )?;
         Ok(())
     }
 
