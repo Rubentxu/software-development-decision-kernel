@@ -208,7 +208,7 @@ items:
   - order: 140
     id: DW-RUNTIME-001
     horizon: H2
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-07: cycle p-63676b11dc0ef88f/dw-runtime-001-execution-graph-compiler; release v1.89.0; compiles PlanRevisionV1 -> deterministic frozen ExecutionGraphRevision with edges from referenced_ids and closed 8-variant validation; refs 45c4055, 952fb6f, 8bc2b29, 78cad4b
     depends_on: [PLN-LEDGER-004]
     objective: Compile NewWorkflowPlan into deterministic ExecutionGraphRevision.
     exit_gate: Valid plan compiles deterministically with stable revision/provenance identity.
@@ -216,7 +216,7 @@ items:
   - order: 150
     id: DW-RUNTIME-002
     horizon: H2
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-07: cycle p-63676b11dc0ef88f/dw-runtime-002-persist-workflow-run; release v1.89.1; MIGRATION_17 adds append-only workflow_run_events_v1, GraphStore port methods persist WorkflowRun, deterministic RunId from plan_revision_id+correlation_id, restart survival pinned; refs 79a173a, 5d47f6d, 076c297, 83d98f0
     depends_on: [DW-RUNTIME-001]
     objective: Persist WorkflowRun identity, graph revision and lifecycle.
     exit_gate: Run survives restart with equivalent persisted identity and provenance.
@@ -224,7 +224,7 @@ items:
   - order: 160
     id: DW-RUNTIME-003
     horizon: H2
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-07: cycle p-63676b11dc0ef88f/dw-runtime-003-sequence-conditional; release v1.89.2; non-generic WorkflowRuntime::from_compiled wired to SqliteGraphStore, executes Sequence + Conditional (Choice guard predicate over outputs, Gate stub, exit-gate/restart-survival stubs), attempt persistence; refs a33703e, bfce840, 4812cdf, 9e4baff, 95dfe64
     depends_on: [DW-RUNTIME-002]
     objective: Execute Sequence and Conditional nodes from persisted generated state.
     exit_gate: Bounded generated path executes without hard-coded workflow command sequences.
@@ -232,7 +232,7 @@ items:
   - order: 170
     id: DW-RUNTIME-004
     horizon: H2
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-07: cycle p-63676b11dc0ef88f/dw-runtime-004-bounded-parallel-execution (+ dw-runtime-004-correction); release v1.89.3; JoinStrategy/JoinStrategyError + join_strategy on NodeSnapshot, attempt persisted per child, typed IdempotencyConflict receipts, IdempotencyKey.node_id namespaced by parent+child_index, is_parallel branch removed, 23 nominal tests; refs 7d8cb2d, 6d3b567, 571fee3, 850a1ac, 3d74d47
     depends_on: [DW-RUNTIME-003]
     objective: Add bounded Parallel with durable node/run states, failures and receipts.
     exit_gate: Parallel execution is bounded, persisted and reconstructible.
