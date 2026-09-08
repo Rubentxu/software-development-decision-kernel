@@ -264,7 +264,7 @@ items:
   - order: 210
     id: DEC-PLANE-003
     horizon: H3
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-08: cycle p-63676b11dc0ef88f/dec-plane-003-typed-policy-evaluation; release v1.92.0; AdmissionRule extendido de {Allow,Deny} binario a {Allow,Deny,RequireApproval{approver_kind}} (P4=3-state verdict); nuevos tipos: DecisionVerdict, ApproverKind, DecisionReason (taxonomy cerrada #[non_exhaustive]), ProvenanceLink, ProvenanceStep, DecisionRecord, TypedActionSurfaceView; nuevo builder build_action_surface_view_typed con 7 DecisionRecords (uno por ActionKind) con reasons + provenance chain ordenada (P5, P6); TypedActionSurfaceView::available_actions es exactamente el subset Allow; build_action_surface_view_with_frontier contract preservado; AdmissionRule::Admit renombrado a Allow (semantica preservada); 7 nuevos tests engine (typed_policy_evaluation_tests.rs) todos verdes; workspace 0 failures, clippy -D warnings clean, fmt clean; refs 3826b67 (engine), 1014358 (bump)
     depends_on: [DEC-PLANE-002]
     objective: Add typed policy evaluation, explanation and decision provenance.
     exit_gate: Actions are classified allowed/denied/requires-approval with durable reasons.
