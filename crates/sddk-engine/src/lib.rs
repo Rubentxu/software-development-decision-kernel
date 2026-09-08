@@ -41,6 +41,7 @@ pub mod fingerprint;
 pub mod gate_error;
 pub mod gate_evaluator;
 pub mod gate_signing;
+pub mod generic_pack_contracts;
 pub mod human_decision;
 pub mod human_resume_view;
 pub mod inc_generator;
