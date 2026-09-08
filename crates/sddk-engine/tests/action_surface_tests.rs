@@ -4,7 +4,10 @@
 //! Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-CurrentRunView-Actions.md
 //! ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-075-CURRENT-RUN-VIEW-SHAPE.md
 
-use sddk_engine::{ActionKind, PolicySnapshot, RunOrigin, RunStateView, build_action_surface_view};
+#![allow(deprecated)]
+
+use sddk_engine::run_view::build_action_surface_view;
+use sddk_engine::{ActionKind, PolicySnapshot, RunOrigin, RunStateView};
 
 fn state_with_frontier(frontier: Vec<String>) -> RunStateView {
     RunStateView::for_test(

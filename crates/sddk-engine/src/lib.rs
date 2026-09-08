@@ -52,8 +52,9 @@ pub use paths::*;
 pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use run_view::{
-    ActionKind, ActionSurfaceView, AdmissionRule, PolicySnapshot, RunOrigin, RunStateView,
-    ViewError, build_action_surface_view, build_run_state_view,
+    ActionKind, ActionSurfaceView, AdmissionRule, DeclaredTransitionRef, FrontierEntryRef,
+    FrontierProjection, PolicySnapshot, RunOrigin, RunStateView, ViewError,
+    build_action_surface_view_with_frontier, build_run_state_view, empty_projection,
 };
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;

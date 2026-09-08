@@ -228,10 +228,26 @@ impl ActionSurfaceView {
 
 /// Build an `ActionSurfaceView` for the given `RunStateView` under `policy`.
 /// Eager: `available_actions` is fully populated at construction.
+///
+/// **Deprecated** since DEC-PLANE-002 (v1.91.0). This path uses the heuristic
+/// fallback (decisions encoded in `pending_decisions`, `frontier.is_empty()`,
+/// etc.) and does not derive from the persisted frontier.
+///
+/// Use [`build_action_surface_view_with_frontier`] instead. This signature is
+/// retained so existing callers and tests keep compiling during the migration
+/// window; new code MUST use the frontier variant.
+#[deprecated(
+    since = "1.91.0",
+    note = "use build_action_surface_view_with_frontier — heuristic path is a fallback only"
+)]
 pub fn build_action_surface_view(
     state: &RunStateView,
     policy: &PolicySnapshot,
 ) -> Result<ActionSurfaceView, ViewError> {
+    // Fallback: delegate to the frontier builder with an empty projection.
+    // The empty projection causes `project_frontier_to_actions` to emit only
+    // `Abort`, which is not the legacy behaviour. To preserve the heuristic
+    // behaviour we replicate it inline here.
     let mut actions = Vec::new();
     for kind in closed_taxonomy() {
         if !policy.admits(*kind) {
@@ -290,4 +306,233 @@ pub enum ViewError {
     PolicyNotFound(String),
     #[error("invariant violation: {0}")]
     Invariant(String),
+}
+
+// =========================================================================
+// DEC-PLANE-002 — Frontier projection
+// =========================================================================
+// Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-NextActionDerivation.md
+// ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-076-NEXT-ACTION-DERIVATION.md
+
+/// One entry in a `FrontierProjection` — the durable intersection of a
+/// declared transition with its gate receipts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontierEntryRef {
+    transition_id: String,
+    requires_met: bool,
+}
+
+impl FrontierEntryRef {
+    /// Test-only constructor.
+    pub fn for_test(transition_id: impl Into<String>, requires_met: bool) -> Self {
+        Self {
+            transition_id: transition_id.into(),
+            requires_met,
+        }
+    }
+
+    pub fn transition_id(&self) -> &str {
+        &self.transition_id
+    }
+
+    pub fn requires_met(&self) -> bool {
+        self.requires_met
+    }
+}
+
+/// Reference to a declared transition in the workflow manifest.
+///
+/// Only the fields needed by the projection rules are captured. The full
+/// transition (with `requires` body, gates, etc.) lives in
+/// `WorkflowManifest.transitions` and is loaded by the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredTransitionRef {
+    id: String,
+    from_status: String,
+    to_status: String,
+    from_phase: Option<String>,
+    pub has_approval_gate: bool,
+    pub has_escalation_gate: bool,
+    pub has_retry_policy: bool,
+    paths: Vec<String>,
+}
+
+impl DeclaredTransitionRef {
+    /// Test-only constructor.
+    #[allow(clippy::too_many_arguments)]
+    pub fn for_test(
+        id: impl Into<String>,
+        from_status: impl Into<String>,
+        to_status: impl Into<String>,
+        from_phase: Option<String>,
+        has_approval_gate: bool,
+        has_escalation_gate: bool,
+        has_retry_policy: bool,
+        paths: Vec<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            from_status: from_status.into(),
+            to_status: to_status.into(),
+            from_phase,
+            has_approval_gate,
+            has_escalation_gate,
+            has_retry_policy,
+            paths,
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn from_status(&self) -> &str {
+        &self.from_status
+    }
+    pub fn to_status(&self) -> &str {
+        &self.to_status
+    }
+    pub fn from_phase(&self) -> Option<&str> {
+        self.from_phase.as_deref()
+    }
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+}
+
+/// Durable projection of the persisted frontier onto the `ActionKind` taxonomy.
+///
+/// `entries` are the gate-satisfied frontier (already filtered by
+/// `frontier_for_state`). `declared_transitions` is the lookup index from
+/// transition_id to its declared shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontierProjection {
+    entries: Vec<FrontierEntryRef>,
+    declared_transitions: Vec<DeclaredTransitionRef>,
+}
+
+impl FrontierProjection {
+    /// Test-only constructor.
+    pub fn for_test(
+        entries: Vec<FrontierEntryRef>,
+        declared_transitions: Vec<DeclaredTransitionRef>,
+    ) -> Self {
+        Self {
+            entries,
+            declared_transitions,
+        }
+    }
+
+    pub fn entries(&self) -> &[FrontierEntryRef] {
+        &self.entries
+    }
+
+    pub fn declared_transitions(&self) -> &[DeclaredTransitionRef] {
+        &self.declared_transitions
+    }
+}
+
+/// Empty projection — sentinel for callers that want to exercise the
+/// fallback (heuristic) path through `build_action_surface_view`.
+pub fn empty_projection() -> FrontierProjection {
+    FrontierProjection::for_test(vec![], vec![])
+}
+
+/// Build an `ActionSurfaceView` for the given `RunStateView` under `policy`,
+/// with the authoritative frontier projection.
+///
+/// This is the recommended path. The projection rules are defined in
+/// `REQ-NextActionDerivation.md` §"Mapping contract".
+pub fn build_action_surface_view_with_frontier(
+    state: &RunStateView,
+    policy: &PolicySnapshot,
+    frontier: &FrontierProjection,
+) -> Result<ActionSurfaceView, ViewError> {
+    let projected = project_frontier_to_actions(frontier);
+    let mut actions = Vec::with_capacity(projected.len());
+    for kind in projected {
+        if !policy.admits(kind) {
+            continue;
+        }
+        actions.push(kind);
+    }
+    // Sort by discriminant for byte-stable determinism.
+    actions.sort_by_key(kind_discriminant);
+    Ok(ActionSurfaceView {
+        origin: state.origin(),
+        run_id: state.run_id().to_string(),
+        evaluated_at: state.evaluated_at(),
+        available_actions: actions,
+        policy_digest: policy.digest(),
+    })
+}
+
+/// Project a `FrontierProjection` onto the closed `ActionKind` taxonomy.
+///
+/// Implements the seven mapping rules from `REQ-NextActionDerivation.md`.
+/// `ActionKind::Abort` is unconditional and always included.
+fn project_frontier_to_actions(frontier: &FrontierProjection) -> Vec<ActionKind> {
+    let mut out: Vec<ActionKind> = Vec::with_capacity(7);
+    out.push(ActionKind::Abort);
+
+    let transitions_by_id: std::collections::HashMap<&str, &DeclaredTransitionRef> = frontier
+        .declared_transitions()
+        .iter()
+        .map(|t| (t.id(), t))
+        .collect();
+
+    let mut has_start = false;
+    let mut has_resume = false;
+    let mut has_approve = false;
+    let mut has_escalate = false;
+    let mut has_retry = false;
+    let mut has_reconcile = false;
+
+    for entry in frontier.entries() {
+        let transition = match transitions_by_id.get(entry.transition_id()) {
+            Some(t) => *t,
+            None => continue,
+        };
+        if transition.from_status() == "Pending" && transition.from_phase().is_none() {
+            has_start = true;
+        }
+        if entry.requires_met() && transition.from_status() == "Running" {
+            has_resume = true;
+        }
+        if transition.has_approval_gate {
+            has_approve = true;
+        }
+        if transition.has_escalation_gate {
+            has_escalate = true;
+        }
+        if entry.requires_met()
+            && transition.from_status() == "Failed"
+            && transition.has_retry_policy
+        {
+            has_retry = true;
+        }
+        if entry.requires_met() && transition.to_status() == "Drifted" {
+            has_reconcile = true;
+        }
+    }
+
+    if has_start {
+        out.push(ActionKind::Start);
+    }
+    if has_resume {
+        out.push(ActionKind::Resume);
+    }
+    if has_approve {
+        out.push(ActionKind::Approve);
+    }
+    if has_escalate {
+        out.push(ActionKind::Escalate);
+    }
+    if has_retry {
+        out.push(ActionKind::Retry);
+    }
+    if has_reconcile {
+        out.push(ActionKind::Reconcile);
+    }
+
+    out
 }
