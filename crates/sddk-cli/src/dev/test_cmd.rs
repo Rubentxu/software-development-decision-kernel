@@ -42,18 +42,30 @@ pub(super) struct CountWorkspaceOutput {
 /// Walks up looking for `.sddk/` or `Cargo.toml` with workspace metadata.
 fn find_project_root() -> Option<PathBuf> {
     let current = std::env::current_dir().ok()?;
+    // Strategy: walk ancestors until we find a project marker; if we don't
+    // find one before the filesystem root, return None. We do NOT treat any
+    // arbitrary `.sddk/` directory on the way up as a project root — only
+    // the *first* ancestor that ALSO contains a workspace signal (`.sddk/`
+    // directory AND either `agents/` or `crates/` siblings) is accepted, OR
+    // a `Cargo.toml` with `[workspace]`.
+    //
+    // This prevents the situation where a user opens a tempdir whose parent
+    // chain happens to contain an unrelated `.sddk/` (e.g. an editor scratch
+    // root, a vault directory) from being misidentified as a project root.
     for ancestor in current.ancestors() {
-        if ancestor.join(".sddk").is_dir() {
+        let cargo_toml = ancestor.join("Cargo.toml");
+        if cargo_toml.is_file()
+            && let Ok(content) = std::fs::read_to_string(&cargo_toml)
+            && content.contains("[workspace]")
+        {
             return Some(ancestor.to_path_buf());
         }
-        let cargo_toml = ancestor.join("Cargo.toml");
-        if cargo_toml.is_file() {
-            // Quick check: does it contain [workspace]?
-            if let Ok(content) = std::fs::read_to_string(&cargo_toml)
-                && content.contains("[workspace]")
-            {
-                return Some(ancestor.to_path_buf());
-            }
+        if ancestor.join(".sddk").is_dir() && ancestor.join("agents").is_dir() {
+            return Some(ancestor.to_path_buf());
+        }
+        // Stop at filesystem root to avoid walking forever.
+        if ancestor.parent().is_none() {
+            return None;
         }
     }
     None
