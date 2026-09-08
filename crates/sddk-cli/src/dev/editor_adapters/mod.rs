@@ -66,21 +66,25 @@ pub(super) struct EditorDirs {
 
 /// Symlink surface profile per editor: claude/codex own their agents dir
 /// natively, so the agents symlink surface is skipped for them (ADR-0019).
+/// `assets` is shipped in every bundle (agent-models config, UAT dashboard
+/// kit, explorer templates) and so is always symlinked (ADR-0127).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct LinkProfile {
     pub agents: bool,
     pub skills: bool,
     pub prompts: bool,
     pub workflows: bool,
+    pub assets: bool,
 }
 
 impl LinkProfile {
-    /// opencode/zcode: all four surfaces symlinked.
+    /// opencode/zcode: all five surfaces symlinked.
     pub(super) const ALL: Self = Self {
         agents: true,
         skills: true,
         prompts: true,
         workflows: true,
+        assets: true,
     };
 
     /// claude/codex: agents are adapter-owned native files, not symlinks.
@@ -89,6 +93,7 @@ impl LinkProfile {
         skills: true,
         prompts: true,
         workflows: true,
+        assets: true,
     };
 
     pub(super) fn for_editor(editor: LinkEditor) -> Self {
@@ -96,6 +101,50 @@ impl LinkProfile {
             LinkEditor::OpenCode | LinkEditor::ZCode => Self::ALL,
             LinkEditor::Claude | LinkEditor::Codex => Self::NATIVE_AGENTS,
             LinkEditor::All => Self::ALL,
+        }
+    }
+}
+
+// ── Tests (ADR-0127) ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_link_profile_includes_assets() {
+        let p = LinkProfile::ALL;
+        assert!(p.agents);
+        assert!(p.skills);
+        assert!(p.prompts);
+        assert!(p.workflows);
+        assert!(p.assets, "ADR-0127: ALL profile must enable assets linking");
+    }
+
+    #[test]
+    fn native_agents_profile_includes_assets() {
+        let p = LinkProfile::NATIVE_AGENTS;
+        assert!(
+            !p.agents,
+            "NATIVE_AGENTS skips agents (claude/codex own their own)"
+        );
+        assert!(p.skills);
+        assert!(p.prompts);
+        assert!(p.workflows);
+        assert!(p.assets, "ADR-0127: NATIVE_AGENTS still symlinks assets");
+    }
+
+    #[test]
+    fn for_editor_resolves_assets_enabled_for_all_branches() {
+        for editor in [
+            LinkEditor::OpenCode,
+            LinkEditor::ZCode,
+            LinkEditor::Claude,
+            LinkEditor::Codex,
+            LinkEditor::All,
+        ] {
+            let p = LinkProfile::for_editor(editor);
+            assert!(p.assets, "ADR-0127: editor {editor:?} must link assets");
         }
     }
 }

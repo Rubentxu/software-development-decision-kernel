@@ -144,6 +144,7 @@ fn link_editor(root: &Path, editor_dir: &Path, profile: LinkProfile) -> LinkRepo
         skills_linked: 0,
         prompts_linked: 0,
         workflows_linked: 0,
+        assets_linked: 0,
         stale_replaced: 0,
         pruned: 0,
         agents_registered: 0,
@@ -229,6 +230,30 @@ fn link_editor(root: &Path, editor_dir: &Path, profile: LinkProfile) -> LinkRepo
                         report.errors.push(format!("workflows/{name:?}: {error}"));
                     } else {
                         report.workflows_linked += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Symlink the framework `assets/` surface (agent-models config, UAT
+    // dashboard kit, explorer templates, agent TUI script). Walks the tree
+    // so deeply nested files (e.g. assets/uat-dashboard/kit/tokens.css)
+    // are exposed under editor_dir/assets/... with the same layout.
+    if profile.assets {
+        let assets_source = root.join("assets");
+        let assets_target = editor_dir.join("assets");
+        if assets_source.is_dir() {
+            for entry in walk_dir(&assets_source) {
+                if entry.is_file() {
+                    let relative = entry
+                        .strip_prefix(&assets_source)
+                        .unwrap_or(entry.as_path());
+                    let target = assets_target.join(relative);
+                    if let Err(error) = link_file(&entry, &target, &mut stale) {
+                        report.errors.push(format!("assets/{relative:?}: {error}"));
+                    } else {
+                        report.assets_linked += 1;
                     }
                 }
             }

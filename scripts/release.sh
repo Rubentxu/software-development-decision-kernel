@@ -39,6 +39,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$ROOT"
+REPO="${SDDK_REPO:-Rubentxu/software-development-decision-kernel}"
+SDDK_PREFIX="${SDDK_PREFIX:-$HOME/.local/bin}"
+SDDK_FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-$HOME/.local/share/sddk/framework}"
 cd "$ROOT"
 
 # Isolate TMPDIR for the whole release run so the test gate is deterministic
@@ -98,7 +102,7 @@ require() {
 
 # --- 0. preflight: tooling + git state ---
 
-step "0/13 — preflight"
+step "0/14 — preflight"
 require cargo
 require git
 require gh
@@ -131,7 +135,7 @@ ok "on main, clean tree, HEAD is a release commit"
 # --- 1. tests ---
 
 if [ "$SKIP_TESTS" = "0" ]; then
-    step "1/13 — cargo fmt + clippy + test (workspace)"
+    step "1/14 — cargo fmt + clippy + test (workspace)"
     cargo fmt --all -- --check || die "cargo fmt failed"
     cargo clippy --workspace --offline --all-targets -- -D warnings \
         || die "cargo clippy failed"
@@ -144,7 +148,7 @@ fi
 
 # --- 2. version ---
 
-step "2/13 — read version"
+step "2/14 — read version"
 VERSION="$(awk '/^\[workspace\.package\]/{flag=1; next} flag && /^version = /{print $3; exit}' Cargo.toml \
     | tr -d '\"')"
 TAG="v$VERSION"
@@ -153,7 +157,7 @@ ok "version: $VERSION → tag: $TAG"
 
 # --- 3. build ---
 
-step "3/13 — cargo build --release --bin sddk"
+step "3/14 — cargo build --release --bin sddk"
 cargo build --release --offline --bin sddk \
     || die "cargo build failed"
 # Locate the binary via cargo metadata so we respect CARGO_TARGET_DIR.
@@ -165,7 +169,7 @@ ok "binary: $BIN ($("$BIN" --version))"
 
 # --- 4. manifest ---
 
-step "4/13 — regenerate MANIFEST.sha256"
+step "4/14 — regenerate MANIFEST.sha256"
 "$BIN" dev manifest --root . --format text \
     || die "sddk dev manifest failed"
 "$BIN" dev manifest --verify --root . --format text \
@@ -174,7 +178,7 @@ ok "MANIFEST.sha256 regenerated and verified"
 
 # --- 5. bundle tarball ---
 
-step "5/13 — bundle tarball"
+step "5/14 — bundle tarball"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$RELEASE_SCRATCH"' EXIT
 
@@ -187,7 +191,7 @@ ok "bundle: $(basename "$BUNDLE_TARBALL") ($(stat -c%s "$BUNDLE_TARBALL") bytes)
 
 # --- 6. BUNDLE.toml ---
 
-step "6/13 — inject BUNDLE.toml (schema v2)"
+step "6/14 — inject BUNDLE.toml (schema v2)"
 BUNDLE_DIR="$TMP/bundle"
 mkdir -p "$BUNDLE_DIR"
 tar xzf "$BUNDLE_TARBALL" -C "$BUNDLE_DIR"
@@ -204,7 +208,7 @@ ok "BUNDLE.toml written (manifest_sha256=$MANIFEST_SHA)"
 
 # --- 7. unified tarball ---
 
-step "7/13 — unified tarball (bin/sddk + framework/)"
+step "7/14 — unified tarball (bin/sddk + framework/)"
 UNIFIED="$TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
 PACK="$TMP/pack"
 rm -rf "$PACK"
@@ -237,7 +241,7 @@ ok "unified: $(basename "$UNIFIED") ($(stat -c%s "$UNIFIED") bytes, exec bit + B
 
 # --- 8. checksums + sbom ---
 
-step "8/13 — sha256 + CHECKSUMS + sbom.json"
+step "8/14 — sha256 + CHECKSUMS + sbom.json"
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
 echo "$BIN_SHA  $(basename "$BIN")" > "$TMP/$(basename "$BIN").sha256"
 ( cd "$TMP" && sha256sum "$(basename "$UNIFIED")" "$(basename "$BUNDLE_TARBALL")" ) \
@@ -257,7 +261,7 @@ fi
 
 # --- 9. publish ---
 
-step "9/13 — gh release create $TAG"
+step "9/14 — gh release create $TAG"
 # Anchor the release to the current branch (not the tag SHA). `gh release
 # create --target` accepts a branch name or tag name; passing the raw SHA
 # of HEAD fails with HTTP 422 ("Release.target_commitish is invalid")
@@ -268,7 +272,7 @@ RELEASE_TARGET="$(git rev-parse --abbrev-ref HEAD)"
 ok "release target: $RELEASE_TARGET"
 RELEASE_ARGS=(
     "$TAG"
-    --repo Rubentxu/software-development-decision-kernel
+    --repo "$REPO"
     --target "$RELEASE_TARGET"
     --title "sddk $TAG"
     --notes "Release $TAG — published by scripts/release.sh."
@@ -288,10 +292,10 @@ ASSETS=(
     "$BUNDLE_TARBALL.sha256"
 )
 
-if gh release view "$TAG" --repo Rubentxu/software-development-decision-kernel \
+if gh release view "$TAG" --repo "$REPO" \
         >/dev/null 2>&1; then
     if [ "$FORCE" = "1" ]; then
-        gh release upload "$TAG" --repo Rubentxu/software-development-decision-kernel \
+        gh release upload "$TAG" --repo "$REPO" \
             --clobber "${ASSETS[@]}" \
             || die "gh release upload --clobber failed"
     else
@@ -310,12 +314,12 @@ fi
 
 # --- 10. install from real GH URL ---
 
-step "10/13 — install from GitHub Release URL"
+step "10/14 — install from GitHub Release URL"
 # Defense against GH CDN caching: the URL may serve a stale tarball for
 # up to a few minutes after upload. We poll the binary sha256 until it
 # matches what we just uploaded, with a 5-minute budget.
 EXPECTED_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
-URL_BIN="https://github.com/Rubentxu/software-development-decision-kernel/releases/download/$TAG/$(basename "$BIN")"
+URL_BIN="https://github.com/$REPO/releases/download/$TAG/$(basename "$BIN")"
 ATTEMPTS=30
 SLEEP_SECS=10
 for i in $(seq 1 "$ATTEMPTS"); do
@@ -340,7 +344,7 @@ bash scripts/install.sh --version "$TAG" --editor all \
 
 # --- 11. doctor ---
 
-step "11/13 — sddk dev doctor --prefix $SDDK_PREFIX"
+step "11/14 — sddk dev doctor --prefix $SDDK_PREFIX"
 DOCTOR_OUT="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format text)"
 echo "$DOCTOR_OUT" | grep -E "binary\.bundle_coherence|^all_present" \
     || die "doctor output missing expected checks"
@@ -352,15 +356,36 @@ ok "binary.bundle_coherence: present, all_present: true"
 
 # --- 12. prune ---
 
-step "12/13 — sddk dev update --prune-only --keep 1"
+step "12/14 — sddk dev update --prune-only --keep 1"
 "$SDDK_PREFIX/sddk" dev update --prune-only --keep 1 \
     --root "$SDDK_FRAMEWORK_DIR" --format text \
     || die "prune failed"
 ok "stale bundles pruned"
 
-# --- 13. final state ---
+# --- 13. re-install from distrib (smoke test the published artefact) ---
 
-step "13/13 — final state"
+step "13/14 — re-install from URL (distrib smoke test)"
+# After step 11 (install from real URL) and step 12 (prune stale bundles),
+# re-run install.sh --editor none against the same GH URL to confirm the
+# published artefact round-trips through `sddk dev install` + `dev use`
+# + `dev link` without any housekeeping needed. This is the same code
+# path that an external user would take after `gh release create`. We
+# pass --editor none to avoid relinking editors every release; the
+# doctor check at the end confirms the install was successful.
+SDDK_REPO="$REPO" \
+SDDK_VERSION="$TAG" \
+SDDK_BASE_URL="${SDDK_BASE_URL:-https://github.com/$REPO/releases}" \
+SDDK_EDITOR="none" \
+bash "$REPO_ROOT/scripts/install.sh" \
+    --version "$TAG" \
+    --prefix "$SDDK_PREFIX" \
+    --editor none \
+    || die "re-install from distrib failed; the published artefact is broken"
+ok "distrib round-trip OK (binary + bundle coherent after prune)"
+
+# --- 14. final state ---
+
+step "14/14 — final state"
 echo
 BIN_VER="$("$SDDK_PREFIX/sddk" --version 2>&1 | head -1)"
 BUNDLE_VER="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null \

@@ -14,6 +14,7 @@ pub(super) struct LinkReport {
     pub skills_linked: usize,
     pub prompts_linked: usize,
     pub workflows_linked: usize,
+    pub assets_linked: usize,
     pub stale_replaced: usize,
     pub pruned: usize,
     pub agents_registered: usize,
@@ -25,12 +26,13 @@ pub(super) struct LinkReport {
 
 pub(super) fn link_report_text(report: &LinkReport) -> String {
     format!(
-        "editor: {}\nagents: {}\nskills: {}\nprompts: {}\nworkflows: {}\nstale_replaced: {}\npruned: {}\nregistered: {}\nupdated_stale: {}\nskipped_existing: {}\nskipped_unresolved: {}\nerrors: {}\n",
+        "editor: {}\nagents: {}\nskills: {}\nprompts: {}\nworkflows: {}\nassets: {}\nstale_replaced: {}\npruned: {}\nregistered: {}\nupdated_stale: {}\nskipped_existing: {}\nskipped_unresolved: {}\nerrors: {}\n",
         report.editor,
         report.agents_linked,
         report.skills_linked,
         report.prompts_linked,
         report.workflows_linked,
+        report.assets_linked,
         report.stale_replaced,
         report.pruned,
         report.agents_registered,

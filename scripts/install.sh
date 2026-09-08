@@ -296,9 +296,14 @@ EOF
     fi
 
     # Verify the staged bundle against its (possibly regenerated) BUNDLE.toml
-    # before we touch any real directories.
-    "$STAGE_BIN" dev manifest --verify --root "$STAGE_BUNDLE" >/dev/null \
-        || echo "  warning: staged bundle does not verify against its MANIFEST (proceeding anyway)"
+    # before we touch any real directories. Fail-closed (ADR-0127): a
+    # legacy-path bundle that does not verify against its own MANIFEST is
+    # never installed; we surface the failure rather than ship a corrupt
+    # bundle.
+    if ! "$STAGE_BIN" dev manifest --verify --root "$STAGE_BUNDLE"; then
+        echo "error: staged bundle fails MANIFEST verification; refusing to install" >&2
+        exit 1
+    fi
 fi
 
 # ── Stage 2: verify BUNDLE.toml compatibility (pre-write preflight) ────────
