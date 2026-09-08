@@ -31,6 +31,7 @@ pub mod gate_signing;
 pub mod human_decision;
 pub mod human_resume_view;
 pub mod inc_generator;
+pub mod join_guard;
 pub mod operator;
 pub mod pack_registry;
 mod paths;
