@@ -27,6 +27,7 @@ pub mod fingerprint;
 pub mod gate_error;
 pub mod gate_evaluator;
 pub mod gate_signing;
+pub mod human_decision;
 pub mod inc_generator;
 pub mod operator;
 pub mod pack_registry;
@@ -83,6 +84,10 @@ pub use fingerprint::*;
 pub use gate_error::GateError;
 pub use gate_evaluator::*;
 pub use gate_signing::*;
+pub use human_decision::{
+    HumanDecision, HumanDecisionError, HumanDecisionOption, HumanDecisionPort,
+    HumanDecisionReceipt, HumanDecisionRequest, InMemoryHumanDecisionPort, validate_request,
+};
 pub use inc_generator::*;
 pub use operator::{
     Choice, Gate, Map, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel, Sequence,
