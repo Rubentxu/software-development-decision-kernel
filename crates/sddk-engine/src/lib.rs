@@ -14,6 +14,7 @@ pub mod agent_contribution_envelope;
 pub mod agent_host;
 pub mod agent_role_contract;
 pub mod authority;
+pub mod change_contract;
 pub mod circuit_breaker;
 pub mod cold_start;
 pub mod context_capsule;
