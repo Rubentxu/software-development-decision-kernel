@@ -20,6 +20,7 @@ pub mod circuit_breaker;
 pub mod cold_start;
 pub mod context_capsule;
 pub mod continuation_candidate;
+pub mod converge_verification;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
