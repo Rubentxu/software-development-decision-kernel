@@ -9,8 +9,8 @@ use std::process::ExitCode;
 use serde::Serialize;
 
 use sddk_engine::{
-    ActionKind, ActionSurfaceView, PolicySnapshot, RunOrigin, RunStateView, ViewError,
-    build_action_surface_view, build_run_state_view,
+    ActionKind, ActionSurfaceView, FrontierProjection, PolicySnapshot, RunOrigin, RunStateView,
+    ViewError, build_action_surface_view_with_frontier, build_run_state_view, empty_projection,
 };
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
@@ -98,16 +98,23 @@ pub(crate) fn run_run_view(
         }
     };
 
-    let surface = match build_action_surface_view(&state, &policy_snapshot) {
-        Ok(s) => s,
-        Err(e) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("action surface build failed: {e}"),
-            };
-        }
-    };
+    // DEC-PLANE-002: build a frontier projection from the CLI runtime.
+    // When a workflow manifest is present, the projection is authoritative.
+    // When absent, an empty projection is used (heuristic fallback in the
+    // engine layer emits only Abort, which is acceptable for ad-hoc views).
+    let projection = build_frontier_projection_from_cli(&run_id);
+
+    let surface =
+        match build_action_surface_view_with_frontier(&state, &policy_snapshot, &projection) {
+            Ok(s) => s,
+            Err(e) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("action surface build failed: {e}"),
+                };
+            }
+        };
 
     // Invariant: views must agree on origin/run_id/evaluated_at.
     if state.origin() != surface.origin()
@@ -215,4 +222,15 @@ fn action_kind_str(a: ActionKind) -> &'static str {
 #[allow(dead_code)]
 fn _exit_code_marker() -> ExitCode {
     ExitCode::SUCCESS
+}
+
+/// Build a `FrontierProjection` from the CLI runtime context.
+///
+/// DEC-PLANE-002: this is the bridge between the CLI's access to the
+/// workflow manifest + ledger and the engine's `*_with_frontier` builder.
+/// The current scaffold has no manifest access wired up, so it returns
+/// an empty projection. Future cycles will load the manifest via
+/// `RuntimeContext` and build the projection from `frontier_for_state`.
+fn build_frontier_projection_from_cli(_run_id: &str) -> FrontierProjection {
+    empty_projection()
 }
