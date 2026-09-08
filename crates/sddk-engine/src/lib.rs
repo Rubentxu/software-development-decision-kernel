@@ -12,6 +12,7 @@
 mod adoption;
 pub mod agent_host;
 pub mod authority;
+pub mod circuit_breaker;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
@@ -25,12 +26,14 @@ pub mod inc_generator;
 pub mod operator;
 pub mod pack_registry;
 mod paths;
+pub mod provider_router;
 pub mod receipt_writers;
 pub mod retry;
 pub mod rules;
 pub mod run_view;
 pub mod task_executor;
 pub mod tasks;
+pub mod telemetry;
 pub mod up_to_date;
 pub mod version;
 pub mod workflow_runtime;
@@ -39,6 +42,10 @@ pub use adoption::*;
 pub use agent_host::{
     AgentHost, AgentIdentity, AgentKind, DecisionReceipt, ExecuteDecisionError, ExecuteError,
     InMemoryLeaseStore, LeaseError, LeaseHandle, LeaseRecord, LeaseStore,
+};
+pub use circuit_breaker::{
+    CircuitBreakerStore, CircuitEntry, CircuitState, InMemoryCircuitBreakerStore, ProviderIdentity,
+    ProviderKind, refresh_open_to_half_open,
 };
 pub use cycle_replan::*;
 pub use cycle_supersede::*;
@@ -54,6 +61,11 @@ pub use operator::{
 };
 pub use pack_registry::*;
 pub use paths::*;
+pub use provider_router::{
+    Provider, ProviderError, ProviderFailure, ProviderFailureKind, ProviderOutput,
+    ProviderOutputKind, ProviderRouter, RouteAttempt, RouteError, RouterPolicy,
+    mock_identity as mock_provider_router_identity,
+};
 pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use run_view::{
@@ -68,6 +80,9 @@ pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
 pub use tasks::sha256::Sha256Task;
 pub use tasks::{FileWriteTask, HttpFetchTask, SleepTask};
+pub use telemetry::{
+    InMemoryTelemetrySink, NullTelemetrySink, ProviderResult, TelemetrySink, UsageRecord,
+};
 pub use up_to_date::{NotUpToDate, UpToDateVerdict, up_to_date};
 pub use version::version;
 pub use workflow_runtime::{RunStore, RuntimeError, TickOutcome, WorkflowRuntime};

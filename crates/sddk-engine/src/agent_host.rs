@@ -227,7 +227,7 @@ impl Drop for LeaseHandle {
 
 /// Per-decision execution receipt. `Serialize + Deserialize` so it can
 /// be persisted to the ledger as durable provenance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct DecisionReceipt {
     pub decision: DecisionRecord,
@@ -235,6 +235,11 @@ pub struct DecisionReceipt {
     pub executed_at_ms: i64,
     pub retries_used: u32,
     pub agent_id: String,
+    /// Provider chain executed for this decision. `Some` when the
+    /// decision was routed through a `ProviderRouter` (AGENT-HOST-002);
+    /// `None` for lease-only mutations or projection reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_route: Option<Vec<crate::provider_router::RouteAttempt>>,
 }
 
 /// Agent Host — owns identity, lease, fencing, retry.
@@ -373,6 +378,7 @@ impl AgentHost {
                 executed_at_ms,
                 retries_used,
                 agent_id: self.identity.id().to_string(),
+                provider_route: None,
             }),
             Err(ExecuteError::RetriesExhausted { .. }) => Err(ExecuteDecisionError::Execute(
                 format!("retries exhausted after {retries_used} retries"),
