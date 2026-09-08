@@ -258,12 +258,13 @@ fi
 # --- 9. publish ---
 
 step "9/13 — gh release create $TAG"
-# Resolve the release target against the current branch ref so the release
-# anchors to the bump commit (HEAD) rather than to whatever tag ref happens
-# to resolve first. We resolve `HEAD` through `git rev-parse` and rely on
-# `gh release create` to interpret it as the target_commitish (which it does
-# via branch inference when the SHA matches the current branch HEAD).
-RELEASE_TARGET="$(git rev-parse HEAD)"
+# Anchor the release to the current branch (not the tag SHA). `gh release
+# create --target` accepts a branch name or tag name; passing the raw SHA
+# of HEAD fails with HTTP 422 ("Release.target_commitish is invalid")
+# because that SHA has no ref yet. Using the current branch lets `gh`
+# resolve to HEAD automatically and avoids the manual `gh release edit
+# --target` repoint that v1.89.7 needed.
+RELEASE_TARGET="$(git rev-parse --abbrev-ref HEAD)"
 ok "release target: $RELEASE_TARGET"
 RELEASE_ARGS=(
     "$TAG"
