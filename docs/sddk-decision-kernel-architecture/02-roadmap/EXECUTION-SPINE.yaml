@@ -272,7 +272,7 @@ items:
   - order: 220
     id: DEC-PLANE-004
     horizon: H3
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-08: cycle p-63676b11dc0ef88f/dec-plane-004-cli-decision-plane-parity; release v1.93.0; nuevos helpers engine: ActionCommandContext, CommandBuildError (#[non_exhaustive]), ParityError (#[non_exhaustive] — CommandMismatch, UnexpectedCommand, MissingContext), DecisionRecord::for_test constructor; build_typed_action_command(decision, context) unico productor de strings 'sddk cycle transition ...'; check_decision_plane_parity(cli_command, decision, context) regression net; CLI sddk cycle next consume build_typed_action_command via ActionKind::Resume (canonical forward transition); format!() hardcoded en crates/sddk-cli/src/cycle.rs:1880 reemplazado; 9 nuevos tests engine (decision_plane_cli_parity_tests.rs) todos verdes; workspace 0 failures, clippy -D warnings clean, fmt clean; refs e545a56 (engine+cli), e9f8429 (bump)
     depends_on: [DEC-PLANE-003]
     objective: Make CLI/recovery surfaces consume the same Decision Plane contract.
     exit_gate: CLI semantic actions and recovery hints are parity-tested against the Decision Plane.
