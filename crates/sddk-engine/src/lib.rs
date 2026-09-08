@@ -25,6 +25,7 @@ pub mod decision_lab_baseline;
 pub mod decision_lab_experimental;
 pub mod durable_map_fanout;
 pub mod engineering_assurance;
+pub mod engineering_assurance_resolvers;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
