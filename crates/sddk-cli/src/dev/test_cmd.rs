@@ -64,9 +64,7 @@ fn find_project_root() -> Option<PathBuf> {
             return Some(ancestor.to_path_buf());
         }
         // Stop at filesystem root to avoid walking forever.
-        if ancestor.parent().is_none() {
-            return None;
-        }
+        ancestor.parent()?;
     }
     None
 }
