@@ -248,6 +248,18 @@ pub struct AgentHost {
     store: Arc<dyn LeaseStore>,
     clock: Arc<dyn Clock>,
     retry_policies: HashMap<ActionKind, RetryPolicy>,
+    /// Optional capsule store for cold-start recovery
+    /// (CTX-COMPILER-002). Defaults to a no-op store.
+    capsule_store: Arc<dyn crate::cold_start::CapsuleStore>,
+    /// Optional run-state-view bridge (CTX-COMPILER-002). Defaults to
+    /// an empty adapter.
+    rsv_inputs: Arc<dyn crate::cold_start::RunStateViewInputs>,
+    /// Optional persistence hook for cold-started capsules
+    /// (CTX-COMPILER-002). Defaults to no-op.
+    capsule_persistence: Arc<dyn crate::cold_start::CapsulePersistence>,
+    /// Compiler policy applied on cold-start
+    /// (CTX-COMPILER-002). Defaults to `CompilerPolicy::default()`.
+    compiler_policy: crate::context_capsule::CompilerPolicy,
 }
 
 impl AgentHost {
@@ -275,7 +287,61 @@ impl AgentHost {
             store,
             clock,
             retry_policies,
+            capsule_store: Arc::new(crate::cold_start::InMemoryCapsuleStore::new()),
+            rsv_inputs: Arc::new(crate::cold_start::InMemoryRunStateViewInputs::new()),
+            capsule_persistence: Arc::new(crate::cold_start::NullCapsulePersistence),
+            compiler_policy: crate::context_capsule::CompilerPolicy::default(),
         }
+    }
+
+    /// Replace the capsule store used for cold-start recovery
+    /// (CTX-COMPILER-002). Returns `self` for builder-style chaining.
+    pub fn with_capsule_store(mut self, store: Arc<dyn crate::cold_start::CapsuleStore>) -> Self {
+        self.capsule_store = store;
+        self
+    }
+
+    /// Replace the run-state-view bridge.
+    pub fn with_run_state_view_inputs(
+        mut self,
+        inputs: Arc<dyn crate::cold_start::RunStateViewInputs>,
+    ) -> Self {
+        self.rsv_inputs = inputs;
+        self
+    }
+
+    /// Replace the capsule persistence hook.
+    pub fn with_capsule_persistence(
+        mut self,
+        persistence: Arc<dyn crate::cold_start::CapsulePersistence>,
+    ) -> Self {
+        self.capsule_persistence = persistence;
+        self
+    }
+
+    /// Replace the compiler policy.
+    pub fn with_compiler_policy(mut self, policy: crate::context_capsule::CompilerPolicy) -> Self {
+        self.compiler_policy = policy;
+        self
+    }
+
+    /// Cold-start recovery — produces a `ContextCapsule` for a fresh
+    /// session from durable kernel state (CTX-COMPILER-002).
+    pub fn cold_start(
+        &self,
+        workflow_run: &str,
+        node_run: &str,
+    ) -> Result<crate::cold_start::ColdStartOutput, crate::cold_start::ColdStartError> {
+        let out = crate::cold_start::cold_start(
+            workflow_run,
+            node_run,
+            &*self.rsv_inputs,
+            &*self.capsule_store,
+            self.clock.clone(),
+            self.compiler_policy.clone(),
+        )?;
+        self.capsule_persistence.persist(&out.capsule);
+        Ok(out)
     }
 
     pub fn identity(&self) -> &AgentIdentity {

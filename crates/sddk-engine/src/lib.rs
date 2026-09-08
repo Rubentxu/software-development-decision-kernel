@@ -13,6 +13,7 @@ mod adoption;
 pub mod agent_host;
 pub mod authority;
 pub mod circuit_breaker;
+pub mod cold_start;
 pub mod context_capsule;
 pub mod cycle_pause;
 pub mod cycle_replan;
@@ -47,6 +48,11 @@ pub use agent_host::{
 pub use circuit_breaker::{
     CircuitBreakerStore, CircuitEntry, CircuitState, InMemoryCircuitBreakerStore, ProviderIdentity,
     ProviderKind, refresh_open_to_half_open,
+};
+pub use cold_start::{
+    CapsulePersistence, CapsuleStore, ColdStartError, ColdStartOutput, ColdStartSource,
+    InMemoryCapsuleStore, InMemoryRunStateViewInputs, NullCapsulePersistence,
+    RecordingCapsulePersistence, RunStateViewInputs, cold_start as cold_start_core,
 };
 pub use context_capsule::{
     ArtifactBundle, Assumption, CapsuleBudget, CapsuleDecisions, CapsuleError, CapsuleInputs,
