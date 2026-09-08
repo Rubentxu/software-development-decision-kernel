@@ -52,6 +52,7 @@ pub mod typed_child_output;
 pub mod typed_reduce_aggregator;
 pub mod up_to_date;
 pub mod version;
+pub mod workflow_metrics;
 pub mod workflow_runtime;
 
 pub use adoption::*;
