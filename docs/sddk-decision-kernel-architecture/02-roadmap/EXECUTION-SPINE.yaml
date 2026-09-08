@@ -248,7 +248,7 @@ items:
   - order: 190
     id: DEC-PLANE-001
     horizon: H3
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-08: cycle p-63676b11dc0ef88f/dec-plane-001-current-run-view; release v1.90.0; spec Boundary ajustada (sddk run-view en vez de `sddk run view` porque `sddk run` ya es facade --name <capability>; formato text|json en lugar de human|json); dos structs top-level (RunStateView + ActionSurfaceView, sin CurrentRunView agregador, opción P1=3); available_actions pre-calculado eager (P2=eager); refs 9cad5d1 (RED), 43406c1 (engine GREEN), d7560d1 (CLI GREEN), 148ff59 (fix pre-existentes), eec415a (fmt), d329e3d (release.sh fix branch name), 4a8e68a (bump)
     depends_on: [DW-RUNTIME-005]
     objective: Introduce CurrentRunView for declared and generated workflow state.
     exit_gate: One projection exposes frontier, blockers, pending decisions and available actions.
