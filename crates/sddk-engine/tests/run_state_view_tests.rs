@@ -3,7 +3,7 @@
 //! Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-CurrentRunView-Shape.md
 //! ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-075-CURRENT-RUN-VIEW-SHAPE.md
 
-use sddk_engine::{RunOrigin, RunStateView, build_run_state_view};
+use sddk_engine::{RunOrigin, build_run_state_view};
 
 #[test]
 fn run_state_view_for_declared_run_in_open_has_frontier() {
@@ -44,10 +44,7 @@ fn run_state_view_for_generated_run_with_pending_choice_has_decision() {
     assert_eq!(view.origin(), RunOrigin::Generated);
     assert!(view.frontier().is_empty());
     assert_eq!(view.blockers(), &["blocker-from-choice".to_string()]);
-    assert_eq!(
-        view.pending_decisions(),
-        &["decision-choice-1".to_string()]
-    );
+    assert_eq!(view.pending_decisions(), &["decision-choice-1".to_string()]);
 }
 
 #[test]

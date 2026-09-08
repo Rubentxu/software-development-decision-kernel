@@ -121,9 +121,8 @@ pub struct PolicySnapshot {
     admit: BTreeMap<ActionKind, AdmissionRule>,
 }
 
-impl PolicySnapshot {
-    /// Default policy: admit all variants (preconditions decide).
-    pub fn default() -> Self {
+impl Default for PolicySnapshot {
+    fn default() -> Self {
         let mut admit = BTreeMap::new();
         admit.insert(ActionKind::Start, AdmissionRule::Admit);
         admit.insert(ActionKind::Resume, AdmissionRule::Admit);
@@ -137,13 +136,23 @@ impl PolicySnapshot {
             admit,
         }
     }
+}
 
+impl PolicySnapshot {
     /// Test helper: policy that denies `Resume`.
     pub fn deny_resume() -> Self {
-        let mut p = Self::default();
-        p.id = "deny-resume".to_string();
-        p.admit.insert(ActionKind::Resume, AdmissionRule::Deny);
-        p
+        let mut admit = BTreeMap::new();
+        admit.insert(ActionKind::Start, AdmissionRule::Admit);
+        admit.insert(ActionKind::Resume, AdmissionRule::Deny);
+        admit.insert(ActionKind::Abort, AdmissionRule::Admit);
+        admit.insert(ActionKind::Approve, AdmissionRule::Admit);
+        admit.insert(ActionKind::Escalate, AdmissionRule::Admit);
+        admit.insert(ActionKind::Retry, AdmissionRule::Admit);
+        admit.insert(ActionKind::Reconcile, AdmissionRule::Admit);
+        Self {
+            id: "deny-resume".to_string(),
+            admit,
+        }
     }
 
     pub fn id(&self) -> &str {

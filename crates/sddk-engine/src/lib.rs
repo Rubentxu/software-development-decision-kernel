@@ -22,12 +22,12 @@ pub mod gate_evaluator;
 pub mod gate_signing;
 pub mod inc_generator;
 pub mod operator;
-pub mod run_view;
 pub mod pack_registry;
 mod paths;
 pub mod receipt_writers;
 pub mod retry;
 pub mod rules;
+pub mod run_view;
 pub mod task_executor;
 pub mod tasks;
 pub mod up_to_date;
@@ -49,12 +49,12 @@ pub use operator::{
 };
 pub use pack_registry::*;
 pub use paths::*;
+pub use receipt_writers::write_atomic;
+pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use run_view::{
     ActionKind, ActionSurfaceView, AdmissionRule, PolicySnapshot, RunOrigin, RunStateView,
     ViewError, build_action_surface_view, build_run_state_view,
 };
-pub use receipt_writers::write_atomic;
-pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
 pub use tasks::sha256::Sha256Task;

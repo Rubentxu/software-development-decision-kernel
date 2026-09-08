@@ -94,7 +94,7 @@ pub(crate) fn run_run_view(
                 status: 1,
                 stdout: String::new(),
                 stderr: format!("view build failed: {e}"),
-            }
+            };
         }
     };
 
@@ -105,7 +105,7 @@ pub(crate) fn run_run_view(
                 status: 1,
                 stdout: String::new(),
                 stderr: format!("action surface build failed: {e}"),
-            }
+            };
         }
     };
 

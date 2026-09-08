@@ -24,7 +24,7 @@ fn run(args: &[&str]) -> (i32, String, String) {
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).to_string(),
         String::from_utf8_lossy(&out.stderr).to_string(),
-    }
+    )
 }
 
 #[test]
