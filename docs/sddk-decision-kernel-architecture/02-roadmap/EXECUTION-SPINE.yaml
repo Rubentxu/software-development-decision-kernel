@@ -256,7 +256,7 @@ items:
   - order: 200
     id: DEC-PLANE-002
     horizon: H3
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-08: cycle p-63676b11dc0ef88f/dec-plane-002-next-action-derivation; release v1.91.0; P3-a (frontier projection with fallback); FrontierProjection + DeclaredTransitionRef + FrontierEntryRef nuevos tipos en run_view.rs; build_action_surface_view_with_frontier como camino autoritativo; build_action_surface_view marcado #[deprecated] (heuristic fallback); 10 nuevos tests engine (next_action_derivation_tests.rs) todos verdes; ActionSurfaceView::available_actions ordenado por discriminante para determinismo byte-stable; CLI run_view consume el builder nuevo via helper build_frontier_projection_from_cli (empty_projection por ahora; manifest loading deferred); refs 214bd98 (engine), eee3801 (CLI), 0ef90f9 (bump)
     depends_on: [DEC-PLANE-001]
     objective: Generalize next-action computation across declared and generated runs.
     exit_gate: Next legal actions derive from persisted frontier, not hard-coded CLI sequences.
