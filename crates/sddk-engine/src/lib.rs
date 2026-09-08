@@ -60,6 +60,7 @@ pub mod secretary_l0;
 pub mod secretary_l1;
 pub mod secretary_l2_replan;
 pub mod strategy_comparison;
+pub mod strategy_experiments;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
