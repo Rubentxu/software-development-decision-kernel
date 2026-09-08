@@ -222,6 +222,7 @@ impl SecretaryL1Engine {
     }
 
     /// Issue a proposal under a registered template.
+    #[allow(clippy::too_many_arguments)]
     pub fn propose(
         &self,
         now_ms: i64,
