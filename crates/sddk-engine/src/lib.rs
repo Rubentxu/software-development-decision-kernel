@@ -28,6 +28,7 @@ pub mod gate_error;
 pub mod gate_evaluator;
 pub mod gate_signing;
 pub mod human_decision;
+pub mod human_resume_view;
 pub mod inc_generator;
 pub mod operator;
 pub mod pack_registry;
@@ -88,6 +89,10 @@ pub use gate_signing::*;
 pub use human_decision::{
     HumanDecision, HumanDecisionError, HumanDecisionOption, HumanDecisionPort,
     HumanDecisionReceipt, HumanDecisionRequest, InMemoryHumanDecisionPort, validate_request,
+};
+pub use human_resume_view::{
+    DecisionSummary, HumanResumeError, HumanResumeValidator, InMemoryRehydrationStore,
+    RehydrationPlan, RehydrationStep, RehydrationStore, ResumeInfo,
 };
 pub use inc_generator::*;
 pub use operator::{
