@@ -53,6 +53,7 @@ pub mod operator;
 pub mod pack_agnosticity;
 pub mod pack_registry;
 mod paths;
+pub mod production_hardening;
 pub mod provider_router;
 pub mod receipt_writers;
 pub mod replay_proof;
