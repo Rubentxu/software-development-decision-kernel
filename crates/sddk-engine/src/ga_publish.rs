@@ -7,7 +7,7 @@
 //! Pattern: P-a (struct + trait + plain-data evaluator).
 
 use crate::generic_pack_contracts::RuntimeVersion;
-use crate::release_readiness::{ReleaseReadinessReport, ReadinessVerdict};
+use crate::release_readiness::{ReadinessVerdict, ReleaseReadinessReport};
 
 // ── Audit guard constant ────────────────────────────────────────────────
 
