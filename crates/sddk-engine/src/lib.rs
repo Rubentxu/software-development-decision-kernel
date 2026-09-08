@@ -35,6 +35,7 @@ mod paths;
 pub mod provider_router;
 pub mod receipt_writers;
 pub mod retry;
+pub mod risk_approval_policy;
 pub mod rules;
 pub mod run_view;
 pub mod task_executor;
@@ -102,6 +103,10 @@ pub use provider_router::{
 };
 pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
+pub use risk_approval_policy::{
+    ApprovalContext, ApprovalDecision, ApprovalEngine, ApprovalPolicy, ApprovalVerdict,
+    InMemoryPolicyStore, PolicyError, PolicyStore, RiskTier,
+};
 pub use run_view::{
     ActionCommandContext, ActionKind, ActionSurfaceView, AdmissionRule, ApproverKind,
     CommandBuildError, DecisionReason, DecisionRecord, DecisionVerdict, DeclaredTransitionRef,
