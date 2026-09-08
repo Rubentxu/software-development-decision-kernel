@@ -50,6 +50,7 @@ pub mod integrate_parity;
 pub mod join_guard;
 pub mod lab_promotion;
 pub mod operator;
+pub mod pack_agnosticity;
 pub mod pack_registry;
 mod paths;
 pub mod provider_router;
