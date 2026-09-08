@@ -258,9 +258,18 @@ fi
 # --- 9. publish ---
 
 step "9/13 — gh release create $TAG"
+# Anchor the release to the current HEAD (the bump commit we are releasing).
+# Without --target, gh infers the target from the local ref state at create
+# time, which during v1.89.7 anchored the release to the previous tag's
+# commit (cdc6f13) instead of the actual bump (17d63c3), forcing a manual
+# `gh release edit --target` repoint. Pinning to HEAD makes the release URL
+# deterministic and matches the tag we push right after this step.
+RELEASE_TARGET="$(git rev-parse HEAD)"
+ok "release target: $RELEASE_TARGET"
 RELEASE_ARGS=(
     "$TAG"
     --repo Rubentxu/software-development-decision-kernel
+    --target "$RELEASE_TARGET"
     --title "sddk $TAG"
     --notes "Release $TAG — published by scripts/release.sh."
 )
