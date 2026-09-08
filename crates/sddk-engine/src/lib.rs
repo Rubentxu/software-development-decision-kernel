@@ -17,6 +17,7 @@ pub mod authority;
 pub mod circuit_breaker;
 pub mod cold_start;
 pub mod context_capsule;
+pub mod continuation_candidate;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
@@ -70,6 +71,10 @@ pub use context_capsule::{
     CapsuleTarget, ChangeEntry, ChangeKind, CompilerPolicy, ContextCapsule, ContextCompiler,
     InMemoryCapsuleInputs, NegativeKnowledge, NegativeStatus, RecoveryState, Scope, StaleReason,
     StaleRef, StalenessReport,
+};
+pub use continuation_candidate::{
+    ContinuationCandidate, ContinuationKind, FrontierError, FrontierStore, FrontierValidator,
+    InMemoryFrontierStore, ResumeView, Reversibility,
 };
 pub use cycle_replan::*;
 pub use cycle_supersede::*;
