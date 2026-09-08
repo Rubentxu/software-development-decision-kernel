@@ -18,6 +18,7 @@ pub mod authority;
 pub mod build_work_graph;
 pub mod change_contract;
 pub mod circuit_breaker;
+pub mod cockpit_views;
 pub mod cold_start;
 pub mod context_capsule;
 pub mod continuation_candidate;
