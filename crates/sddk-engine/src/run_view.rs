@@ -940,3 +940,162 @@ fn run_origin_str(origin: RunOrigin) -> &'static str {
         RunOrigin::Generated => "generated",
     }
 }
+
+// =========================================================================
+// DEC-PLANE-004 — Decision Plane CLI parity
+// =========================================================================
+// Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-DecisionPlaneCLIParity.md
+// ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-078-DECISION-PLANE-CLI-PARITY.md
+
+/// Context required to assemble a CLI action command from a `DecisionRecord`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionCommandContext {
+    cycle_id: String,
+    lease_owner: String,
+    fencing_token: i64,
+    gate_name: Option<String>,
+    transition_id: Option<String>,
+}
+
+impl ActionCommandContext {
+    /// Test-only constructor.
+    pub fn for_test(
+        cycle_id: impl Into<String>,
+        lease_owner: impl Into<String>,
+        fencing_token: i64,
+        gate_name: Option<String>,
+        transition_id: Option<String>,
+    ) -> Self {
+        Self {
+            cycle_id: cycle_id.into(),
+            lease_owner: lease_owner.into(),
+            fencing_token,
+            gate_name,
+            transition_id,
+        }
+    }
+
+    pub fn cycle_id(&self) -> &str {
+        &self.cycle_id
+    }
+    pub fn lease_owner(&self) -> &str {
+        &self.lease_owner
+    }
+    pub fn fencing_token(&self) -> i64 {
+        self.fencing_token
+    }
+    pub fn gate_name(&self) -> Option<&str> {
+        self.gate_name.as_deref()
+    }
+    pub fn transition_id(&self) -> Option<&str> {
+        self.transition_id.as_deref()
+    }
+    /// Clear `transition_id` (used by tests to exercise the missing-context path).
+    pub fn clear_transition_id(&mut self) {
+        self.transition_id = None;
+    }
+}
+
+/// Errors produced by `build_typed_action_command`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum CommandBuildError {
+    #[error("missing required context field: {field}")]
+    MissingContext { field: String },
+}
+
+/// Errors produced by `check_decision_plane_parity`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ParityError {
+    #[error("command mismatch: expected `{expected}`, got `{actual}`")]
+    CommandMismatch { expected: String, actual: String },
+    #[error("unexpected command `{cli_command}` for decision kind `{decision_kind:?}`")]
+    UnexpectedCommand {
+        cli_command: String,
+        decision_kind: ActionKind,
+    },
+    #[error("missing required context field: {field}")]
+    MissingContext { field: String },
+}
+
+impl DecisionRecord {
+    /// Test-only constructor.
+    pub fn for_test(
+        kind: ActionKind,
+        verdict: DecisionVerdict,
+        reasons: Vec<DecisionReason>,
+        provenance: Vec<ProvenanceLink>,
+    ) -> Self {
+        Self {
+            kind,
+            verdict,
+            reasons,
+            provenance,
+        }
+    }
+}
+
+/// Build the CLI action command for a `DecisionRecord` under the given context.
+///
+/// Returns `None` when the verdict is not directly actionable (`Deny`,
+/// `RequireApproval`). Returns `Err(CommandBuildError::MissingContext)` when
+/// a required context field is missing.
+pub fn build_typed_action_command(
+    decision: &DecisionRecord,
+    context: &ActionCommandContext,
+) -> Result<Option<String>, CommandBuildError> {
+    if !matches!(decision.verdict, DecisionVerdict::Allow) {
+        return Ok(None);
+    }
+    let transition_id =
+        context
+            .transition_id
+            .as_deref()
+            .ok_or_else(|| CommandBuildError::MissingContext {
+                field: "transition_id".to_string(),
+            })?;
+
+    let gate_flag = match decision.kind {
+        ActionKind::Approve => Some("approval"),
+        ActionKind::Escalate => Some("escalation"),
+        _ => None,
+    };
+
+    let mut cmd = format!(
+        "sddk cycle transition --cycle {} --transition {} --lease-owner {} --fencing-token {}",
+        context.cycle_id, transition_id, context.lease_owner, context.fencing_token,
+    );
+    if let Some(gate) = gate_flag {
+        cmd.push_str(&format!(" --gate {gate}"));
+    }
+    Ok(Some(cmd))
+}
+
+/// Check that a CLI command matches the Decision Plane output for the
+/// given decision + context. Used as a regression net by CLI tests.
+pub fn check_decision_plane_parity(
+    cli_command: &str,
+    decision: &DecisionRecord,
+    context: &ActionCommandContext,
+) -> Result<(), ParityError> {
+    let expected = build_typed_action_command(decision, context).map_err(|e| match e {
+        CommandBuildError::MissingContext { field } => ParityError::MissingContext { field },
+    })?;
+    match expected {
+        Some(expected_cmd) => {
+            if cli_command == expected_cmd {
+                Ok(())
+            } else {
+                Err(ParityError::CommandMismatch {
+                    expected: expected_cmd,
+                    actual: cli_command.to_string(),
+                })
+            }
+        }
+        None => Err(ParityError::UnexpectedCommand {
+            cli_command: cli_command.to_string(),
+            decision_kind: decision.kind,
+        }),
+    }
+}

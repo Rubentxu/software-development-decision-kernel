@@ -1876,13 +1876,26 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
                         .iter()
                         .find(|t| t.id == entry.transition_id);
                     let _binding = transition.and_then(|t| t.implementation_binding.clone());
-                    Some(format!(
-                        "sddk cycle transition --cycle {} --transition {} --lease-owner {} --fencing-token {}",
-                        cycle_id,
-                        entry.transition_id,
-                        lease_owner,
-                        lease_token
-                    ))
+                    // DEC-PLANE-004: produce the CLI command via the typed
+                    // Decision Plane helper. The cycle CLI surfaces a single
+                    // actionable command per ready frontier entry, treated as
+                    // ActionKind::Resume (the canonical forward transition).
+                    let ctx = sddk_engine::ActionCommandContext::for_test(
+                        cycle_id.clone(),
+                        lease_owner.clone(),
+                        lease_token,
+                        None,
+                        Some(entry.transition_id.clone()),
+                    );
+                    let decision = sddk_engine::DecisionRecord::for_test(
+                        sddk_engine::ActionKind::Resume,
+                        sddk_engine::DecisionVerdict::Allow,
+                        vec![],
+                        vec![],
+                    );
+                    sddk_engine::build_typed_action_command(&decision, &ctx)
+                        .ok()
+                        .flatten()
                 } else {
                     None
                 };
@@ -1893,8 +1906,18 @@ fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandO
                     let unmet: Vec<String> = entry
                         .unmet_gates
                         .iter()
-                        .map(|g| format!("sddk cycle evaluate-gate --gate {} --cycle {} --transition {}", g, cycle_id, entry.transition_id))
-                        .chain(entry.unmet_requirements.iter().map(|r| format!("requirement: {}", r)))
+                        .map(|g| {
+                            format!(
+                                "sddk cycle evaluate-gate --gate {} --cycle {} --transition {}",
+                                g, cycle_id, entry.transition_id
+                            )
+                        })
+                        .chain(
+                            entry
+                                .unmet_requirements
+                                .iter()
+                                .map(|r| format!("requirement: {}", r)),
+                        )
                         .collect();
                     Some(if unmet.is_empty() {
                         "blocked — evaluate gate first".to_string()

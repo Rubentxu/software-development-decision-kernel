@@ -52,11 +52,12 @@ pub use paths::*;
 pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use run_view::{
-    ActionKind, ActionSurfaceView, AdmissionRule, ApproverKind, DecisionReason, DecisionRecord,
-    DecisionVerdict, DeclaredTransitionRef, FrontierEntryRef, FrontierProjection, PolicySnapshot,
-    ProvenanceLink, ProvenanceStep, RunOrigin, RunStateView, TypedActionSurfaceView, ViewError,
+    ActionCommandContext, ActionKind, ActionSurfaceView, AdmissionRule, ApproverKind,
+    CommandBuildError, DecisionReason, DecisionRecord, DecisionVerdict, DeclaredTransitionRef,
+    FrontierEntryRef, FrontierProjection, ParityError, PolicySnapshot, ProvenanceLink,
+    ProvenanceStep, RunOrigin, RunStateView, TypedActionSurfaceView, ViewError,
     build_action_surface_view_typed, build_action_surface_view_with_frontier, build_run_state_view,
-    empty_projection,
+    build_typed_action_command, check_decision_plane_parity, empty_projection,
 };
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
