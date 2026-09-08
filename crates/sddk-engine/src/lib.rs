@@ -65,6 +65,7 @@ pub mod typed_reduce_aggregator;
 pub mod uat_lifecycle;
 pub mod up_to_date;
 pub mod version;
+pub mod why_queries;
 pub mod workflow_metrics;
 pub mod workflow_runtime;
 
