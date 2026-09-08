@@ -45,6 +45,7 @@ pub mod run_view;
 pub mod secretary_l0;
 pub mod secretary_l1;
 pub mod secretary_l2_replan;
+pub mod strategy_comparison;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
