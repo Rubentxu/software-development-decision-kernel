@@ -41,6 +41,7 @@ pub mod human_resume_view;
 pub mod inc_generator;
 pub mod integrate_parity;
 pub mod join_guard;
+pub mod lab_promotion;
 pub mod operator;
 pub mod pack_registry;
 mod paths;
