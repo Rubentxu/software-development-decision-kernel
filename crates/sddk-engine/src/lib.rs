@@ -65,6 +65,7 @@ pub mod secretary_l1;
 pub mod secretary_l2_replan;
 pub mod strategy_comparison;
 pub mod strategy_experiments;
+pub mod supply_chain_artifacts;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
