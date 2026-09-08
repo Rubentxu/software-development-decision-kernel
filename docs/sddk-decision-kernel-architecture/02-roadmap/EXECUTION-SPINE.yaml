@@ -288,7 +288,7 @@ items:
   - order: 240
     id: AGENT-HOST-002
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED
     depends_on: [AGENT-HOST-001]
     objective: Add provider failure classification, health, failover and usage telemetry.
     exit_gate: Same semantic action survives supported provider failures with bounded, observable routing behavior.
