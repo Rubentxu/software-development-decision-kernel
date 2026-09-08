@@ -41,6 +41,7 @@ pub mod rules;
 pub mod run_view;
 pub mod secretary_l0;
 pub mod secretary_l1;
+pub mod secretary_l2_replan;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
@@ -129,6 +130,10 @@ pub use secretary_l0::{
 pub use secretary_l1::{
     BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
     SecretaryL1Error, SecretaryProposal,
+};
+pub use secretary_l2_replan::{
+    CognitiveDrainage, CognitiveInput, CognitiveRecommendation, CognitiveReplan,
+    CognitiveReplanVerdict, SecretaryL2Error, SecretaryL2ReplanEngine,
 };
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
