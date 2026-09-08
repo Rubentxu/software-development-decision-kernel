@@ -240,7 +240,7 @@ items:
   - order: 180
     id: DW-RUNTIME-005
     horizon: H2
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-08: cycle p-63676b11dc0ef88f/dw-runtime-005-restart-survival; release v1.89.7; exit gate real en execute() (REQ-EXIT-001/002, completed_node_outputs acumulado y poblado en AllComplete) + UAT determinista end-to-end sobre SqliteGraphStore file-backed (Sequence 5 Task leaves: stop mid-flight + replay equivalente, terminal-no-reejecucion Err(AlreadyTerminal), idempotencia de intentos), Self-deadlock pre-existente en execute() resuelto, Sequence replay tolera IdempotencyConflict tipado; refs 15ef8fd, db62c67, 8115186, ada4ae2, b6e2cd4
     depends_on: [DW-RUNTIME-004]
     objective: Close end-to-end replay and resume vertical slice.
     exit_gate: Persisted generated DAG can stop, resume and replay to equivalent state under UAT.
