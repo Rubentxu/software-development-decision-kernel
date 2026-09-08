@@ -304,7 +304,7 @@ items:
   - order: 260
     id: CTX-COMPILER-002
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED
     depends_on: [CTX-COMPILER-001]
     objective: Integrate CurrentRunView/recovery context into AgentHost cold-start behavior.
     exit_gate: Fresh agent session reconstructs required working context without relying on prior chat memory.
