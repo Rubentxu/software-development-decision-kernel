@@ -37,6 +37,7 @@ pub mod pack_registry;
 mod paths;
 pub mod provider_router;
 pub mod receipt_writers;
+pub mod replay_proof;
 pub mod retry;
 pub mod risk_approval_policy;
 pub mod rules;
