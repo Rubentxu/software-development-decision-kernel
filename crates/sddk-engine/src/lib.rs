@@ -24,6 +24,7 @@ pub mod cycle_supersede;
 pub mod decision_lab_baseline;
 pub mod decision_lab_experimental;
 pub mod durable_map_fanout;
+pub mod engineering_assurance;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
