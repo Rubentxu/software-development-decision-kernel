@@ -32,6 +32,7 @@ mod release_cmd;
 mod result_cmd;
 mod rules_cmd;
 mod run;
+mod run_view;
 mod ship;
 mod stale_cmd;
 mod status;
@@ -342,6 +343,21 @@ enum Command {
         /// Capability name.
         #[arg(long)]
         name: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// View a workflow run (DEC-PLANE-001). Emits RunStateView and
+    /// ActionSurfaceView.
+    RunView {
+        /// Run id.
+        run_id: String,
+        /// Build the view at a given event sequence (default: latest).
+        #[arg(long)]
+        as_of: Option<u64>,
+        /// Policy name (default: `default`).
+        #[arg(long, default_value = "default")]
+        policy: String,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -691,6 +707,12 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             }
         }
         Command::Run { name, format } => run::run_run(name, format, environment),
+        Command::RunView {
+            run_id,
+            as_of,
+            policy,
+            format,
+        } => run_view::run_run_view(run_id, as_of, policy, format, environment),
         Command::Ship { tag, cycle, format } => ship::run_ship(tag, cycle, format, environment),
         Command::Recover {
             cycle,
