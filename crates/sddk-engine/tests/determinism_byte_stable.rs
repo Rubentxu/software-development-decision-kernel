@@ -1,6 +1,6 @@
 //! Cross-build determinism test for DecisionRecord serialization.
 use sddk_engine::{
-    ActionKind, DecisionReason, DecisionVerdict, ProvenanceLink, ProvenanceStep, DecisionRecord,
+    ActionKind, DecisionReason, DecisionRecord, DecisionVerdict, ProvenanceLink, ProvenanceStep,
 };
 
 fn make() -> DecisionRecord {
