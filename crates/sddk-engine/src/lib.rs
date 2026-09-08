@@ -35,6 +35,7 @@ pub mod engineering_assurance;
 pub mod engineering_assurance_resolvers;
 pub mod event_bus;
 pub mod execution_controller;
+pub mod experience_episodes;
 pub mod fingerprint;
 pub mod gate_error;
 pub mod gate_evaluator;
