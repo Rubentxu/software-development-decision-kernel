@@ -10701,12 +10701,22 @@ impl CliFixture {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join(name);
         fs::create_dir_all(&root).unwrap();
+        // Canonicalize HOME, root and friends: when TMPDIR resolves to a
+        // symlinked location (e.g. /var/home -> /home) the sddk binary
+        // canonicalizes paths on emission, so the fixture must too or
+        // assertions on path strings will mismatch.
+        let canon = |p: PathBuf| fs::canonicalize(&p).unwrap_or(p);
+        let home = canon(directory.path().join("home"));
+        let root = canon(root);
+        let data = canon(directory.path().join("data"));
+        let state = canon(directory.path().join("state"));
+        let cache = canon(directory.path().join("cache"));
         Self {
             root,
-            data: directory.path().join("data"),
-            state: directory.path().join("state"),
-            cache: directory.path().join("cache"),
-            home: directory.path().join("home"),
+            data,
+            state,
+            cache,
+            home,
             _directory: directory,
         }
     }

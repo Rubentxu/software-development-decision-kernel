@@ -168,9 +168,13 @@ mod tests {
     #[test]
     fn resolves_inside_configured_root() {
         let directory = tempfile::tempdir().unwrap();
-        let fs = ScopedFs::new([directory.path().to_path_buf()]);
+        // Canonicalize: when TMPDIR resolves to a symlinked location
+        // (e.g. /var/home -> /home) `fs.resolve` canonicalizes the
+        // returned path, so the comparison anchor must match.
+        let directory_canon = std::fs::canonicalize(directory.path()).unwrap();
+        let fs = ScopedFs::new([directory_canon.clone()]);
         let resolved = fs.resolve(std::path::Path::new("nested/file.txt")).unwrap();
-        assert!(resolved.starts_with(directory.path()));
+        assert!(resolved.starts_with(&directory_canon));
     }
 
     #[test]

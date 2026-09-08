@@ -32,21 +32,34 @@ impl std::error::Error for XdgViolation {}
 /// Result type for XDG validation.
 pub type XdgResult<T> = Result<T, XdgViolation>;
 
-/// Normalizes a path by resolving `.` and `..` components without following symlinks.
-/// Unlike `canonicalize()`, this works on non-existent paths.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
+/// Walk `path` from the root toward the leaf, canonicalizing each component
+/// that exists on disk. For components that do not exist yet, keep the
+/// literal name and continue. Resolves symlinks on the existing prefix
+/// (so `/home/foo` becomes `/var/home/foo` when `/home` is a symlink)
+/// without requiring the leaf to exist — important for fail-closed XDG
+/// validation of output paths that the caller is about to create.
+fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
     for component in path.components() {
-        match component {
-            Component::CurDir => {}
+        let next = match component {
+            Component::CurDir => continue,
             Component::ParentDir => {
-                normalized.pop();
+                result.pop();
+                continue;
             }
-            Component::Normal(part) => normalized.push(part),
-            Component::RootDir | Component::Prefix(_) => return path.to_path_buf(),
+            Component::Normal(part) => result.join(part),
+            Component::RootDir | Component::Prefix(_) => {
+                result = component.as_os_str().to_owned().into();
+                continue;
+            }
+        };
+        if std::fs::metadata(&next).is_ok() {
+            result = std::fs::canonicalize(&next).unwrap_or(next);
+        } else {
+            result = next;
         }
     }
-    normalized
+    result
 }
 
 /// Validates that `output_path` is inside `xdg_data_dir`.
@@ -67,13 +80,14 @@ pub fn validate_xdg_output(output_path: &Path, xdg_data_dir: &Path) -> XdgResult
         xdg_root: xdg_data_dir.to_path_buf(),
     })?;
 
-    // Try canonicalize on output; if file doesn't exist yet, fall back to normalize
+    // Try canonicalize on output; if file doesn't exist yet, fall back to a
+    // progressive canonicalize that resolves symlinks for the longest existing
+    // prefix and appends the remaining components verbatim.
     let canonical_output = match output_path.canonicalize() {
         Ok(c) => c,
         Err(_) => {
-            // File doesn't exist — use normalize to check path prefix
-            let normalized = normalize_path(output_path);
-            if !normalized.starts_with(&canonical_xdg) {
+            let resolved = canonicalize_existing_prefix(output_path);
+            if !resolved.starts_with(&canonical_xdg) {
                 return Err(XdgViolation {
                     path: output_path.to_path_buf(),
                     xdg_root: xdg_data_dir.to_path_buf(),
