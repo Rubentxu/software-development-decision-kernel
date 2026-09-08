@@ -56,6 +56,7 @@ mod paths;
 pub mod production_hardening;
 pub mod provider_router;
 pub mod receipt_writers;
+pub mod release_readiness;
 pub mod replay_proof;
 pub mod retry;
 pub mod risk_approval_policy;
