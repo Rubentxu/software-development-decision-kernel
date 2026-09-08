@@ -280,7 +280,7 @@ items:
   - order: 230
     id: AGENT-HOST-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED
     depends_on: [DEC-PLANE-004]
     objective: Expose semantic AgentHost tools over the Decision Plane and planning/runtime contracts.
     exit_gate: Agent can inspect, plan and invoke admitted semantic actions without shell command discovery loops.
