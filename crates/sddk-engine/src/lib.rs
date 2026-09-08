@@ -11,6 +11,7 @@
 
 mod adoption;
 pub mod agent_host;
+pub mod agent_role_contract;
 pub mod authority;
 pub mod circuit_breaker;
 pub mod cold_start;
@@ -44,6 +45,10 @@ pub use adoption::*;
 pub use agent_host::{
     AgentHost, AgentIdentity, AgentKind, DecisionReceipt, ExecuteDecisionError, ExecuteError,
     InMemoryLeaseStore, LeaseError, LeaseHandle, LeaseRecord, LeaseStore,
+};
+pub use agent_role_contract::{
+    AgentRoleContract, InMemoryRoleRegistry, MutationAuthority, MutationKind, MutationRequest,
+    RoleError, RoleKind, RoleRegistry, RoleValidator,
 };
 pub use circuit_breaker::{
     CircuitBreakerStore, CircuitEntry, CircuitState, InMemoryCircuitBreakerStore, ProviderIdentity,
