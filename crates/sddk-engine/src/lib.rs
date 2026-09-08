@@ -64,6 +64,7 @@ pub mod run_view;
 pub mod secretary_l0;
 pub mod secretary_l1;
 pub mod secretary_l2_replan;
+pub mod security_upgrade_rollback;
 pub mod signed_gates;
 pub mod strategy_comparison;
 pub mod strategy_experiments;
