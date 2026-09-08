@@ -21,6 +21,7 @@ pub mod continuation_candidate;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
+pub mod durable_map_fanout;
 pub mod event_bus;
 pub mod execution_controller;
 pub mod fingerprint;
