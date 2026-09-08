@@ -435,7 +435,7 @@ fn workflow_run_transition_appends_and_reconstructs_terminal_state() {
 #[test]
 fn workflow_run_transition_dispatches_through_boxed_send_sync_store() {
     let temp_dir = TempDir::new().unwrap();
-    let mut store = open_test_store(temp_dir.path());
+    let store = open_test_store(temp_dir.path());
 
     let run_id = RunId("tr-boxed-001".into());
     let revision = make_test_revision(&run_id, &NodeId("node-1".into()));
