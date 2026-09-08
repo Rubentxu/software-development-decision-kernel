@@ -612,8 +612,11 @@ pub enum DecisionReason {
 }
 
 /// One step in the provenance chain (P5).
+///
+/// `#[non_exhaustive]` so future steps don't break downstream match arms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ProvenanceStep {
     PolicyAdmission,
     FrontierProjection,
