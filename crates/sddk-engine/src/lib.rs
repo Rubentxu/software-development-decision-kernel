@@ -34,6 +34,7 @@ pub mod durable_map_fanout;
 pub mod engineering_assurance;
 pub mod engineering_assurance_resolvers;
 pub mod event_bus;
+pub mod evidence_backed_promotion;
 pub mod execution_controller;
 pub mod experience_episodes;
 pub mod fingerprint;
