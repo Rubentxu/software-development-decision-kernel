@@ -12,6 +12,7 @@ use std::str::FromStr;
     Debug,
     Clone,
     Copy,
+    Default,
     PartialEq,
     Eq,
     PartialOrd,
@@ -23,6 +24,7 @@ use std::str::FromStr;
 )]
 #[serde(rename_all = "lowercase")]
 pub enum ModelTier {
+    #[default]
     Premium,
     Fast,
 }
@@ -97,6 +99,48 @@ impl IdeKey {
 pub struct AgentModelsConfig {
     tiers: BTreeMap<ModelTier, BTreeMap<IdeKey, String>>,
     agents: BTreeMap<String, AgentModelEntry>,
+    /// Voice profiles (system-prompt presets) keyed by name. Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    voice_profiles: Option<VoiceProfileSet>,
+}
+
+/// Default voice profile key (ADR-0129). Used when no override is set.
+#[allow(dead_code)]
+pub const DEFAULT_VOICE_PROFILE_KEY: &str = "bender_friendly";
+/// Alias profile key (retro-compat with HX-pack examples).
+#[allow(dead_code)]
+pub const WISECRACKING_ROBOT_ALIAS: &str = "wisecracking_robot";
+
+/// One voice profile (system-prompt preset).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VoiceProfile {
+    pub key: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mood: Option<String>,
+    pub tier_premium: String,
+    pub tier_fast: String,
+}
+
+/// Set of voice profiles plus canonical defaults. Sorted by key for
+/// deterministic iteration.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+pub struct VoiceProfileSet {
+    pub profiles: BTreeMap<String, VoiceProfile>,
+    pub default_voice: String,
+    pub default_tier: ModelTier,
+}
+
+/// Errors resolving a voice profile → system prompt.
+#[allow(dead_code)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum VoiceResolveError {
+    #[error("unknown voice profile `{key}`")]
+    UnknownProfile { key: String },
+    #[error("voice profile `{key}` has empty system prompt for tier `{tier:?}`")]
+    EmptySystemPrompt { key: String, tier: ModelTier },
 }
 
 /// Per-agent model configuration: tier + optional per-IDE overrides.
@@ -135,12 +179,36 @@ pub enum ModelsError {
 
 // ── Phase 1: raw tolerant shapes (agent + field names in errors) ──────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct RawConfig {
     #[serde(default)]
     tiers: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
     agents: HashMap<String, RawAgent>,
+    #[serde(default)]
+    voice_profiles: HashMap<String, RawVoiceProfile>,
+    #[serde(default)]
+    defaults: RawDefaults,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDefaults {
+    #[serde(default)]
+    voice: Option<String>,
+    #[serde(default)]
+    tier: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawVoiceProfile {
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    mood: Option<String>,
+    #[serde(default)]
+    tier_premium: Option<String>,
+    #[serde(default)]
+    tier_fast: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,7 +270,62 @@ impl AgentModelsConfig {
             }
             agents.insert(name, AgentModelEntry { tier, overrides });
         }
-        Ok(Self { tiers, agents })
+
+        // ── Voice profiles (additive; missing is OK) ───────────────────
+        let voice_profiles = if raw.voice_profiles.is_empty() && raw.defaults.voice.is_none() {
+            None
+        } else {
+            let mut profiles: BTreeMap<String, VoiceProfile> = BTreeMap::new();
+            for (key, raw_p) in raw.voice_profiles {
+                let tier_premium = raw_p.tier_premium.unwrap_or_default();
+                let tier_fast = raw_p.tier_fast.unwrap_or_default();
+                if key.trim().is_empty() {
+                    return Err(ModelsError::Parse(
+                        "voice_profiles entry has empty key".to_string(),
+                    ));
+                }
+                if tier_premium.trim().is_empty() && tier_fast.trim().is_empty() {
+                    return Err(ModelsError::Parse(format!(
+                        "voice_profiles[{}]: both tier_premium and tier_fast are empty",
+                        key
+                    )));
+                }
+                profiles.insert(
+                    key.clone(),
+                    VoiceProfile {
+                        key,
+                        label: raw_p.label.unwrap_or_default(),
+                        mood: raw_p.mood,
+                        tier_premium,
+                        tier_fast,
+                    },
+                );
+            }
+            let default_voice = raw
+                .defaults
+                .voice
+                .unwrap_or_else(|| DEFAULT_VOICE_PROFILE_KEY.to_string());
+            let default_tier = match raw.defaults.tier.as_deref() {
+                Some("fast") | Some("Fast") => ModelTier::Fast,
+                Some("premium") | Some("Premium") | None => ModelTier::Premium,
+                Some(other) => {
+                    return Err(ModelsError::Parse(format!(
+                        "defaults.tier must be premium|fast, got `{other}`"
+                    )));
+                }
+            };
+            Some(VoiceProfileSet {
+                profiles,
+                default_voice,
+                default_tier,
+            })
+        };
+
+        Ok(Self {
+            tiers,
+            agents,
+            voice_profiles,
+        })
     }
 
     /// Load from a file; absence is not an error (`Ok(None)`).
@@ -253,6 +376,99 @@ impl AgentModelsConfig {
 
     pub fn agents(&self) -> &BTreeMap<String, AgentModelEntry> {
         &self.agents
+    }
+
+    /// Returns the configured voice profile set, if any. `None` means
+    /// the YAML did not declare any voice profiles (legacy config).
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn voice_profiles(&self) -> Option<&VoiceProfileSet> {
+        self.voice_profiles.as_ref()
+    }
+
+    /// Key of the canonical default voice profile (always non-empty).
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn default_voice_key(&self) -> &str {
+        self.voice_profiles
+            .as_ref()
+            .map(|v| v.default_voice.as_str())
+            .unwrap_or(DEFAULT_VOICE_PROFILE_KEY)
+    }
+
+    /// Resolve the system-prompt preset for a given voice key + tier.
+    #[allow(dead_code)]
+    ///
+    /// Resolution rules:
+    /// 1. If the key exists in the set, return its preset for `tier`.
+    /// 2. `wisecracking_robot` resolves as alias of `bender_friendly`
+    ///    when the latter is present, else unknown.
+    /// 3. Otherwise: error [`VoiceResolveError::UnknownProfile`].
+    /// 4. If the resolved prompt is empty for the requested tier, error.
+    pub fn resolve_voice_prompt(
+        &self,
+        profile_key: &str,
+        tier: ModelTier,
+    ) -> Result<String, VoiceResolveError> {
+        let Some(set) = &self.voice_profiles else {
+            return Err(VoiceResolveError::UnknownProfile {
+                key: profile_key.to_owned(),
+            });
+        };
+        let key = if profile_key == WISECRACKING_ROBOT_ALIAS
+            && !set.profiles.contains_key(WISECRACKING_ROBOT_ALIAS)
+        {
+            DEFAULT_VOICE_PROFILE_KEY
+        } else {
+            profile_key
+        };
+        let Some(profile) = set.profiles.get(key) else {
+            return Err(VoiceResolveError::UnknownProfile {
+                key: profile_key.to_owned(),
+            });
+        };
+        let prompt = match tier {
+            ModelTier::Premium => &profile.tier_premium,
+            ModelTier::Fast => &profile.tier_fast,
+        };
+        if prompt.trim().is_empty() {
+            return Err(VoiceResolveError::EmptySystemPrompt {
+                key: profile.key.clone(),
+                tier,
+            });
+        }
+        Ok(prompt.clone())
+    }
+
+    /// List the keys of all configured voice profiles (sorted by
+    /// [`BTreeMap`] order, deterministic).
+    #[allow(dead_code)]
+    pub fn voice_profile_keys(&self) -> Vec<String> {
+        self.voice_profiles
+            .as_ref()
+            .map(|v| v.profiles.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Insert or replace a voice profile (used by `sddk voice set`).
+    #[allow(dead_code)]
+    pub fn upsert_voice_profile(&mut self, profile: VoiceProfile) -> Result<(), ModelsError> {
+        let set = self.voice_profiles.get_or_insert_with(|| VoiceProfileSet {
+            profiles: BTreeMap::new(),
+            default_voice: DEFAULT_VOICE_PROFILE_KEY.to_string(),
+            default_tier: ModelTier::Premium,
+        });
+        if profile.key.trim().is_empty() {
+            return Err(ModelsError::Parse("voice profile key is empty".into()));
+        }
+        if profile.tier_premium.trim().is_empty() && profile.tier_fast.trim().is_empty() {
+            return Err(ModelsError::Parse(format!(
+                "voice profile `{}`: both tier_premium and tier_fast empty",
+                profile.key
+            )));
+        }
+        set.profiles.insert(profile.key.clone(), profile);
+        Ok(())
     }
 
     pub fn tier_of(&self, agent: &str) -> Option<ModelTier> {

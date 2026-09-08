@@ -1,6 +1,8 @@
 //! Unit tests for agent-models schema, validation, and resolution (U1–U13).
 
-use super::{AgentModelsConfig, IdeKey, ModelResolution, ModelTier, ModelsError};
+use super::{
+    AgentModelsConfig, IdeKey, ModelResolution, ModelTier, ModelsError, VoiceResolveError,
+};
 
 fn sample_yaml() -> &'static str {
     r#"
@@ -204,4 +206,106 @@ fn asset_parses_and_covers_all_bundle_agents() {
         configured, stems,
         "agent-models.yaml must declare exactly one entry per bundle agent"
     );
+}
+
+// ── Voice profile tests (ADR-0129) ───────────────────────────────────────────
+
+fn voice_yaml() -> &'static str {
+    r#"
+tiers:
+  premium:
+    opencode: deepseek/deepseek-chat
+    zcode: deepseek/deepseek-chat
+  fast:
+    opencode: zai-coding-plan/glm-5-turbo
+agents:
+  orchestrator:
+    tier: premium
+
+voice_profiles:
+  bender_friendly:
+    label: "Bender (sarcástico, simpático)"
+    mood: "warm sarcasm"
+    tier_premium: "Bender work-safe. Cite file:line."
+    tier_fast:    "Bender work-safe short. Cite file."
+  concise:
+    label: "Concise"
+    tier_premium: "Reply terse."
+    tier_fast:    "Reply terse."
+  socratic:
+    label: "Socratic"
+    tier_premium: "Ask back."
+    tier_fast:    "Ask back."
+
+defaults:
+  voice: bender_friendly
+  tier: premium
+"#
+}
+
+#[test]
+fn voice_profiles_load_from_yaml() {
+    let cfg = AgentModelsConfig::from_yaml(voice_yaml()).expect("parse");
+    let profiles = cfg.voice_profiles().expect("voice set");
+    assert!(profiles.profiles.contains_key("bender_friendly"));
+    assert!(profiles.profiles.contains_key("concise"));
+    assert!(profiles.profiles.contains_key("socratic"));
+    assert_eq!(profiles.default_voice, "bender_friendly");
+    assert_eq!(profiles.default_tier, ModelTier::Premium);
+}
+
+#[test]
+fn voice_profile_resolution_by_tier() {
+    let cfg = AgentModelsConfig::from_yaml(voice_yaml()).expect("parse");
+    let premium = cfg
+        .resolve_voice_prompt("bender_friendly", ModelTier::Premium)
+        .unwrap();
+    let fast = cfg
+        .resolve_voice_prompt("bender_friendly", ModelTier::Fast)
+        .unwrap();
+    assert!(premium.contains("file:line"));
+    assert!(fast.contains("short"));
+}
+
+#[test]
+fn wisecracking_robot_aliases_to_bender_friendly() {
+    let cfg = AgentModelsConfig::from_yaml(voice_yaml()).expect("parse");
+    let via_alias = cfg
+        .resolve_voice_prompt("wisecracking_robot", ModelTier::Premium)
+        .unwrap();
+    let direct = cfg
+        .resolve_voice_prompt("bender_friendly", ModelTier::Premium)
+        .unwrap();
+    assert_eq!(via_alias, direct, "alias must return the same prompt");
+}
+
+#[test]
+fn unknown_voice_profile_errors() {
+    let cfg = AgentModelsConfig::from_yaml(voice_yaml()).expect("parse");
+    let r = cfg.resolve_voice_prompt("does_not_exist", ModelTier::Premium);
+    assert!(matches!(r, Err(VoiceResolveError::UnknownProfile { .. })));
+}
+
+#[test]
+fn missing_voice_profiles_block_returns_none() {
+    let yaml = r#"
+tiers:
+  premium:
+    opencode: foo
+agents:
+  orchestrator:
+    tier: premium
+"#;
+    let cfg = AgentModelsConfig::from_yaml(yaml).expect("parse");
+    assert!(cfg.voice_profiles().is_none());
+    assert_eq!(cfg.default_voice_key(), "bender_friendly");
+}
+
+#[test]
+fn voice_profile_keys_sorted_deterministically() {
+    let cfg = AgentModelsConfig::from_yaml(voice_yaml()).expect("parse");
+    let keys = cfg.voice_profile_keys();
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted, "BTreeMap iteration must be alphabetical");
 }
