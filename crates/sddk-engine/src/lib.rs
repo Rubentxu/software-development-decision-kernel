@@ -13,6 +13,7 @@ mod adoption;
 pub mod agent_host;
 pub mod authority;
 pub mod circuit_breaker;
+pub mod context_capsule;
 pub mod cycle_pause;
 pub mod cycle_replan;
 pub mod cycle_supersede;
@@ -46,6 +47,12 @@ pub use agent_host::{
 pub use circuit_breaker::{
     CircuitBreakerStore, CircuitEntry, CircuitState, InMemoryCircuitBreakerStore, ProviderIdentity,
     ProviderKind, refresh_open_to_half_open,
+};
+pub use context_capsule::{
+    ArtifactBundle, Assumption, CapsuleBudget, CapsuleDecisions, CapsuleError, CapsuleInputs,
+    CapsuleTarget, ChangeEntry, ChangeKind, CompilerPolicy, ContextCapsule, ContextCompiler,
+    InMemoryCapsuleInputs, NegativeKnowledge, NegativeStatus, RecoveryState, Scope, StaleReason,
+    StaleRef, StalenessReport,
 };
 pub use cycle_replan::*;
 pub use cycle_supersede::*;
