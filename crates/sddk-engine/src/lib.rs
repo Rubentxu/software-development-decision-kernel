@@ -40,6 +40,7 @@ pub mod risk_approval_policy;
 pub mod rules;
 pub mod run_view;
 pub mod secretary_l0;
+pub mod secretary_l1;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
@@ -124,6 +125,10 @@ pub use run_view::{
 pub use secretary_l0::{
     ReactiveEvent, ReactiveMatcher, ReactiveRule, ReactiveSignal, ReactiveTrigger,
     SecretaryL0Engine, SecretaryL0Error,
+};
+pub use secretary_l1::{
+    BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
+    SecretaryL1Error, SecretaryProposal,
 };
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
