@@ -69,6 +69,7 @@ pub mod telemetry;
 pub mod typed_child_output;
 pub mod typed_reduce_aggregator;
 pub mod uat_lifecycle;
+pub mod uat_pack;
 pub mod up_to_date;
 pub mod version;
 pub mod why_queries;
