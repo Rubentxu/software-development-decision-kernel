@@ -39,6 +39,7 @@ pub mod retry;
 pub mod risk_approval_policy;
 pub mod rules;
 pub mod run_view;
+pub mod secretary_l0;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
@@ -119,6 +120,10 @@ pub use run_view::{
     ProvenanceStep, RunOrigin, RunStateView, TypedActionSurfaceView, ViewError,
     build_action_surface_view_typed, build_action_surface_view_with_frontier, build_run_state_view,
     build_typed_action_command, check_decision_plane_parity, empty_projection,
+};
+pub use secretary_l0::{
+    ReactiveEvent, ReactiveMatcher, ReactiveRule, ReactiveSignal, ReactiveTrigger,
+    SecretaryL0Engine, SecretaryL0Error,
 };
 pub use task_executor::RealTaskExecutor;
 pub use tasks::sha256::Sha256Data;
