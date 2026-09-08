@@ -55,6 +55,7 @@ pub mod tasks;
 pub mod telemetry;
 pub mod typed_child_output;
 pub mod typed_reduce_aggregator;
+pub mod uat_lifecycle;
 pub mod up_to_date;
 pub mod version;
 pub mod workflow_metrics;
