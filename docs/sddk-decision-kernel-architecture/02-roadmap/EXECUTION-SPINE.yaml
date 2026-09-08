@@ -296,7 +296,7 @@ items:
   - order: 250
     id: CTX-COMPILER-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED
     depends_on: [AGENT-HOST-002]
     objective: Implement context capsules, deltas, staleness and negative-knowledge contracts.
     exit_gate: Context is explicit, bounded, provenance-aware and reconstructible.
