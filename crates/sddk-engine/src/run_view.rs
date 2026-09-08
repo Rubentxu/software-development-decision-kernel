@@ -106,12 +106,26 @@ pub enum ActionKind {
 }
 
 /// Admission rule per `ActionKind`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Three-state verdict (P4, ADR-077):
+/// - `Allow` — admit if preconditions hold (was `Admit` in DEC-PLANE-001).
+/// - `Deny` — never admit, even if preconditions hold.
+/// - `RequireApproval` — admit only after an approval of the given kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AdmissionRule {
-    /// Always admit if preconditions hold.
-    Admit,
-    /// Never admit, even if preconditions hold.
+    Allow,
     Deny,
+    RequireApproval { approver_kind: ApproverKind },
+}
+
+/// Kind of approver required when `AdmissionRule::RequireApproval` is in effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApproverKind {
+    Human,
+    Auto,
+    External,
 }
 
 /// Immutable policy snapshot used to compute `ActionSurfaceView`.
@@ -124,13 +138,9 @@ pub struct PolicySnapshot {
 impl Default for PolicySnapshot {
     fn default() -> Self {
         let mut admit = BTreeMap::new();
-        admit.insert(ActionKind::Start, AdmissionRule::Admit);
-        admit.insert(ActionKind::Resume, AdmissionRule::Admit);
-        admit.insert(ActionKind::Abort, AdmissionRule::Admit);
-        admit.insert(ActionKind::Approve, AdmissionRule::Admit);
-        admit.insert(ActionKind::Escalate, AdmissionRule::Admit);
-        admit.insert(ActionKind::Retry, AdmissionRule::Admit);
-        admit.insert(ActionKind::Reconcile, AdmissionRule::Admit);
+        for kind in closed_taxonomy() {
+            admit.insert(*kind, AdmissionRule::Allow);
+        }
         Self {
             id: "default".to_string(),
             admit,
@@ -142,13 +152,14 @@ impl PolicySnapshot {
     /// Test helper: policy that denies `Resume`.
     pub fn deny_resume() -> Self {
         let mut admit = BTreeMap::new();
-        admit.insert(ActionKind::Start, AdmissionRule::Admit);
-        admit.insert(ActionKind::Resume, AdmissionRule::Deny);
-        admit.insert(ActionKind::Abort, AdmissionRule::Admit);
-        admit.insert(ActionKind::Approve, AdmissionRule::Admit);
-        admit.insert(ActionKind::Escalate, AdmissionRule::Admit);
-        admit.insert(ActionKind::Retry, AdmissionRule::Admit);
-        admit.insert(ActionKind::Reconcile, AdmissionRule::Admit);
+        for kind in closed_taxonomy() {
+            let rule = if *kind == ActionKind::Resume {
+                AdmissionRule::Deny
+            } else {
+                AdmissionRule::Allow
+            };
+            admit.insert(*kind, rule);
+        }
         Self {
             id: "deny-resume".to_string(),
             admit,
@@ -159,8 +170,20 @@ impl PolicySnapshot {
         &self.id
     }
 
+    /// Test helper: insert or replace the rule for one `ActionKind`.
+    pub fn insert(&mut self, kind: ActionKind, rule: AdmissionRule) {
+        self.admit.insert(kind, rule);
+    }
+
     pub fn admits(&self, kind: ActionKind) -> bool {
-        matches!(self.admit.get(&kind), Some(AdmissionRule::Admit))
+        matches!(self.admit.get(&kind), Some(AdmissionRule::Allow))
+    }
+
+    pub fn admission_rule(&self, kind: ActionKind) -> AdmissionRule {
+        self.admit
+            .get(&kind)
+            .cloned()
+            .unwrap_or(AdmissionRule::Deny)
     }
 
     pub fn digest(&self) -> u64 {
@@ -176,8 +199,9 @@ impl PolicySnapshot {
             h ^= kind_byte;
             h = h.wrapping_mul(1099511628211);
             let rule_byte = match rule {
-                AdmissionRule::Admit => 1u8,
+                AdmissionRule::Allow => 1u8,
                 AdmissionRule::Deny => 2u8,
+                AdmissionRule::RequireApproval { .. } => 3u8,
             };
             h ^= rule_byte as u64;
             h = h.wrapping_mul(1099511628211);
@@ -535,4 +559,384 @@ fn project_frontier_to_actions(frontier: &FrontierProjection) -> Vec<ActionKind>
     }
 
     out
+}
+
+// =========================================================================
+// DEC-PLANE-003 — Typed policy evaluation
+// =========================================================================
+// Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-TypedPolicyEvaluation.md
+// ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-077-TYPED-POLICY-EVALUATION.md
+
+/// Three-state verdict for an action (P4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionVerdict {
+    Allow,
+    Deny,
+    RequireApproval { approver_kind: ApproverKind },
+}
+
+/// Closed taxonomy of reasons for a decision.
+///
+/// `#[non_exhaustive]` so future variants don't break downstream match
+/// arms. Consumers MUST include a wildcard arm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum DecisionReason {
+    FrontierEmpty,
+    BlockerUnresolved {
+        blocker_id: String,
+    },
+    PolicyDenied {
+        policy_id: String,
+        kind: ActionKind,
+    },
+    ApprovalRequired {
+        approver_kind: ApproverKind,
+    },
+    GateUnsatisfied {
+        gate_name: String,
+        transition_id: String,
+    },
+    RetryPolicyAbsent,
+    DriftNotDetected,
+    LifecycleMismatch {
+        expected: String,
+        actual: String,
+    },
+    FrontierProjectionMissing,
+    Closed {
+        reason: String,
+    },
+}
+
+/// One step in the provenance chain (P5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvenanceStep {
+    PolicyAdmission,
+    FrontierProjection,
+    GateReceipt,
+    LifecycleCheck,
+    ApprovalGate,
+}
+
+/// Ordered link in a decision's provenance chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ProvenanceLink {
+    step: ProvenanceStep,
+    reference: String,
+    evaluated_at: u64,
+}
+
+impl ProvenanceLink {
+    pub fn new(step: ProvenanceStep, reference: impl Into<String>, evaluated_at: u64) -> Self {
+        Self {
+            step,
+            reference: reference.into(),
+            evaluated_at,
+        }
+    }
+
+    pub fn step(&self) -> ProvenanceStep {
+        self.step
+    }
+    pub fn reference(&self) -> &str {
+        &self.reference
+    }
+    pub fn evaluated_at(&self) -> u64 {
+        self.evaluated_at
+    }
+    pub fn is_policy_admission(&self) -> bool {
+        self.step == ProvenanceStep::PolicyAdmission
+    }
+}
+
+/// Per-action evaluation result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DecisionRecord {
+    kind: ActionKind,
+    verdict: DecisionVerdict,
+    reasons: Vec<DecisionReason>,
+    provenance: Vec<ProvenanceLink>,
+}
+
+impl DecisionRecord {
+    pub fn kind(&self) -> ActionKind {
+        self.kind
+    }
+    pub fn verdict(&self) -> &DecisionVerdict {
+        &self.verdict
+    }
+    pub fn reasons(&self) -> &[DecisionReason] {
+        &self.reasons
+    }
+    pub fn provenance(&self) -> &[ProvenanceLink] {
+        &self.provenance
+    }
+}
+
+/// Full action surface with typed decisions (P6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct TypedActionSurfaceView {
+    origin: RunOrigin,
+    run_id: String,
+    evaluated_at: u64,
+    policy_digest: u64,
+    available_actions: Vec<ActionKind>,
+    decisions: Vec<DecisionRecord>,
+}
+
+impl TypedActionSurfaceView {
+    pub fn origin(&self) -> RunOrigin {
+        self.origin
+    }
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+    pub fn evaluated_at(&self) -> u64 {
+        self.evaluated_at
+    }
+    pub fn policy_digest(&self) -> u64 {
+        self.policy_digest
+    }
+    pub fn available_actions(&self) -> &[ActionKind] {
+        &self.available_actions
+    }
+    pub fn decisions(&self) -> &[DecisionRecord] {
+        &self.decisions
+    }
+}
+
+/// Test-only: discriminant helper exposed for cross-process determinism tests.
+pub fn kind_discriminant_for_test(kind: ActionKind) -> u64 {
+    kind_discriminant(&kind)
+}
+
+/// Build the typed action surface for a given run under a policy + frontier.
+///
+/// This is the canonical builder since DEC-PLANE-003. The legacy
+/// `build_action_surface_view_with_frontier` delegates here and projects
+/// the `Allow` subset.
+pub fn build_action_surface_view_typed(
+    state: &RunStateView,
+    policy: &PolicySnapshot,
+    frontier: &FrontierProjection,
+) -> Result<TypedActionSurfaceView, ViewError> {
+    let evaluated_at = state.evaluated_at();
+    let mut decisions = Vec::with_capacity(7);
+
+    for kind in closed_taxonomy() {
+        let (verdict, reasons, provenance) =
+            evaluate_action(*kind, state, policy, frontier, evaluated_at);
+        decisions.push(DecisionRecord {
+            kind: *kind,
+            verdict,
+            reasons,
+            provenance,
+        });
+    }
+
+    // decisions are already sorted because closed_taxonomy() is sorted by
+    // discriminant (Start=1..Reconcile=7).
+    let available_actions: Vec<ActionKind> = decisions
+        .iter()
+        .filter(|d| d.verdict == DecisionVerdict::Allow)
+        .map(|d| d.kind)
+        .collect();
+
+    Ok(TypedActionSurfaceView {
+        origin: state.origin(),
+        run_id: state.run_id().to_string(),
+        evaluated_at,
+        policy_digest: policy.digest(),
+        available_actions,
+        decisions,
+    })
+}
+
+fn evaluate_action(
+    kind: ActionKind,
+    state: &RunStateView,
+    policy: &PolicySnapshot,
+    frontier: &FrontierProjection,
+    evaluated_at: u64,
+) -> (DecisionVerdict, Vec<DecisionReason>, Vec<ProvenanceLink>) {
+    let mut reasons: Vec<DecisionReason> = Vec::new();
+    let mut provenance: Vec<ProvenanceLink> = Vec::new();
+
+    // Policy step is always the first provenance link (causality).
+    provenance.push(ProvenanceLink::new(
+        ProvenanceStep::PolicyAdmission,
+        policy.id(),
+        evaluated_at,
+    ));
+
+    // Frontier projection step (if relevant) comes next.
+    let frontier_includes = frontier_projection_includes(frontier, kind);
+    if frontier_includes.is_some() {
+        provenance.push(ProvenanceLink::new(
+            ProvenanceStep::FrontierProjection,
+            frontier_includes.unwrap_or_default(),
+            evaluated_at,
+        ));
+    }
+
+    // Build reasons from the frontier + state view.
+    match kind {
+        ActionKind::Abort => {
+            // Abort is always admissible (closed taxonomy invariant).
+            reasons.push(DecisionReason::Closed {
+                reason: "abort is unconditional".to_string(),
+            });
+        }
+        ActionKind::Start => {
+            if frontier.entries().is_empty() && frontier.declared_transitions().is_empty() {
+                reasons.push(DecisionReason::FrontierProjectionMissing);
+            } else {
+                reasons.push(DecisionReason::LifecycleMismatch {
+                    expected: "Pending".to_string(),
+                    actual: run_origin_str(state.origin()).to_string(),
+                });
+            }
+        }
+        ActionKind::Resume => {
+            if state.frontier().is_empty() {
+                reasons.push(DecisionReason::FrontierEmpty);
+            }
+            if !state.blockers().is_empty() {
+                for b in state.blockers() {
+                    reasons.push(DecisionReason::BlockerUnresolved {
+                        blocker_id: b.clone(),
+                    });
+                }
+            }
+            if reasons.is_empty() {
+                reasons.push(DecisionReason::Closed {
+                    reason: "resume preconditions hold".to_string(),
+                });
+            }
+        }
+        ActionKind::Approve => {
+            let has = state
+                .pending_decisions()
+                .iter()
+                .any(|d| d.starts_with("approval"));
+            if !has {
+                reasons.push(DecisionReason::FrontierEmpty);
+            } else {
+                reasons.push(DecisionReason::Closed {
+                    reason: "approval pending".to_string(),
+                });
+            }
+        }
+        ActionKind::Escalate => {
+            let has = state
+                .pending_decisions()
+                .iter()
+                .any(|d| d.starts_with("escalation"));
+            if !has {
+                reasons.push(DecisionReason::FrontierEmpty);
+            } else {
+                reasons.push(DecisionReason::Closed {
+                    reason: "escalation pending".to_string(),
+                });
+            }
+        }
+        ActionKind::Retry => {
+            reasons.push(DecisionReason::RetryPolicyAbsent);
+        }
+        ActionKind::Reconcile => {
+            reasons.push(DecisionReason::DriftNotDetected);
+        }
+    }
+
+    // Policy verdict step.
+    let verdict = match policy.admission_rule(kind) {
+        AdmissionRule::Allow => {
+            if matches!(kind, ActionKind::Abort) {
+                DecisionVerdict::Allow
+            } else if reasons.iter().any(is_blocking_reason) {
+                DecisionVerdict::Deny
+            } else {
+                DecisionVerdict::Allow
+            }
+        }
+        AdmissionRule::Deny => {
+            reasons.insert(
+                0,
+                DecisionReason::PolicyDenied {
+                    policy_id: policy.id().to_string(),
+                    kind,
+                },
+            );
+            DecisionVerdict::Deny
+        }
+        AdmissionRule::RequireApproval { approver_kind } => {
+            reasons.push(DecisionReason::ApprovalRequired { approver_kind });
+            DecisionVerdict::RequireApproval { approver_kind }
+        }
+    };
+
+    (verdict, reasons, provenance)
+}
+
+fn is_blocking_reason(r: &DecisionReason) -> bool {
+    matches!(
+        r,
+        DecisionReason::FrontierEmpty
+            | DecisionReason::BlockerUnresolved { .. }
+            | DecisionReason::GateUnsatisfied { .. }
+            | DecisionReason::RetryPolicyAbsent
+            | DecisionReason::DriftNotDetected
+            | DecisionReason::LifecycleMismatch { .. }
+            | DecisionReason::FrontierProjectionMissing
+    )
+}
+
+fn frontier_projection_includes(frontier: &FrontierProjection, kind: ActionKind) -> Option<String> {
+    if frontier.entries().is_empty() {
+        return None;
+    }
+    for entry in frontier.entries() {
+        let t = frontier
+            .declared_transitions()
+            .iter()
+            .find(|t| t.id() == entry.transition_id())?;
+        match kind {
+            ActionKind::Start if t.from_status() == "Pending" && t.from_phase().is_none() => {
+                return Some(entry.transition_id().to_string());
+            }
+            ActionKind::Resume if entry.requires_met() && t.from_status() == "Running" => {
+                return Some(entry.transition_id().to_string());
+            }
+            ActionKind::Approve if t.has_approval_gate => {
+                return Some(entry.transition_id().to_string());
+            }
+            ActionKind::Escalate if t.has_escalation_gate => {
+                return Some(entry.transition_id().to_string());
+            }
+            ActionKind::Retry
+                if entry.requires_met() && t.from_status() == "Failed" && t.has_retry_policy =>
+            {
+                return Some(entry.transition_id().to_string());
+            }
+            ActionKind::Reconcile if entry.requires_met() && t.to_status() == "Drifted" => {
+                return Some(entry.transition_id().to_string());
+            }
+            _ => continue,
+        }
+    }
+    None
+}
+
+fn run_origin_str(origin: RunOrigin) -> &'static str {
+    match origin {
+        RunOrigin::Declared => "declared",
+        RunOrigin::Generated => "generated",
+    }
 }
