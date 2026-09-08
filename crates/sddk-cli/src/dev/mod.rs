@@ -27,6 +27,7 @@ mod uninstall;
 mod update;
 mod use_cmd;
 pub(crate) mod verify;
+mod voice_cmd;
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
 
@@ -168,6 +169,8 @@ pub(super) enum DevCommand {
     Entropy(EntropyArgs),
     /// Reconcile IDE agent configs with bundle sources (dry-run by default).
     Reconcile(self::reconcile::ReconcileArgs),
+    /// Voice profile management (list/show/set overrides per agent).
+    Voice(self::voice_cmd::VoiceArgs),
     /// Test tooling (count-workspace).
     Test(self::test_cmd::TestArgs),
 }
@@ -429,6 +432,7 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
         DevCommand::Models(args) => self::models_cmd::run_dev_models(args, environment),
         DevCommand::Entropy(args) => self::entropy::run_dev_entropy(args, environment),
         DevCommand::Reconcile(args) => self::reconcile::run_dev_reconcile(args, environment),
+        DevCommand::Voice(args) => self::voice_cmd::run_voice(args, environment),
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
     }
 }

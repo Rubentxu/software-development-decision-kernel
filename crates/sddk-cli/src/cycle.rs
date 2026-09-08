@@ -12,6 +12,10 @@ use sddk_engine::{
     AdoptionPaths, CycleStartInput, Engine, EventContext, GateEvaluationInput, ReplanDelta,
     RestageTo, SupersedeReason, TransitionEvidence, TransitionOutcome, WorkflowLoadError,
     authority::{AuthorityContext, infer_actor_kind},
+    cycle_narrative::{
+        CycleNarrative, CycleNarrativeWriter, DefaultCycleNarrativeWriter, NarrativeAudience,
+        NarrativeTone,
+    },
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
 };
 use sddk_storage::SqliteEventStore;
@@ -368,7 +372,7 @@ fn resolve_cycle_context_with_cwd(
     })
 }
 
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Default, Args)]
 pub(crate) struct RuntimeArgs {
     /// Checkout or worktree root.
     /// When absent and `--no-infer` is not set, the cycle inference layer
@@ -498,6 +502,8 @@ pub(crate) enum CycleCommand {
     Resume(CycleResumeArgs),
     /// Print the XDG artifact directory for a cycle (created on demand).
     ArtifactsDir(CycleArtifactsDirArgs),
+    /// Render a deterministic markdown narrative for a cycle (operator view).
+    Narrative(CycleNarrativeArgs),
     /// Acquire, release, or inspect the exclusive cycle lease.
     #[command(subcommand)]
     Lock(CycleLockCommand),
@@ -520,6 +526,66 @@ pub(crate) struct CycleArtifactsDirArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleNarrativeArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Cycle identifier. When absent and `--no-infer` is not set, inferred
+    /// from the active lease.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// Audience axis (self|maintainer|stakeholder). Default: maintainer.
+    #[arg(long, value_enum, default_value_t = NarrativeArgAudience::Maintainer)]
+    pub(crate) audience: NarrativeArgAudience,
+    /// Tone axis (concise|explanatory|socratic). Default: explanatory.
+    #[arg(long, value_enum, default_value_t = NarrativeArgTone::Explanatory)]
+    pub(crate) tone: NarrativeArgTone,
+    /// Output file (default: stdout). When set, the rendered Markdown
+    /// is written here deterministically.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Override the cycle title (default: "Cycle {id}").
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+    /// Override the "what was done" sentence.
+    #[arg(long)]
+    pub(crate) what_was_done: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum NarrativeArgAudience {
+    Self_,
+    Maintainer,
+    Stakeholder,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum NarrativeArgTone {
+    Concise,
+    Explanatory,
+    Socratic,
+}
+
+impl From<NarrativeArgAudience> for NarrativeAudience {
+    fn from(v: NarrativeArgAudience) -> Self {
+        match v {
+            NarrativeArgAudience::Self_ => Self::SelfAuthor,
+            NarrativeArgAudience::Maintainer => Self::Maintainer,
+            NarrativeArgAudience::Stakeholder => Self::Stakeholder,
+        }
+    }
+}
+
+impl From<NarrativeArgTone> for NarrativeTone {
+    fn from(v: NarrativeArgTone) -> Self {
+        match v {
+            NarrativeArgTone::Concise => Self::Concise,
+            NarrativeArgTone::Explanatory => Self::Explanatory,
+            NarrativeArgTone::Socratic => Self::Socratic,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1044,6 +1110,7 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
         CycleCommand::Replan(args) => run_cycle_replan(args, environment),
         CycleCommand::ArtifactsDir(args) => run_cycle_artifacts_dir(args, environment),
         CycleCommand::EvaluateGate(args) => run_cycle_evaluate_gate(args, environment),
+        CycleCommand::Narrative(args) => run_cycle_narrative(args, environment),
         CycleCommand::Lock(command) => run_cycle_lock(command, environment),
         CycleCommand::Inventory(args) => {
             crate::inventory_cycle::run_cycle_inventory(args, environment)
@@ -1459,6 +1526,70 @@ struct ArtifactsDirOutput {
 
 fn artifacts_dir_text(output: &ArtifactsDirOutput) -> String {
     format!("{}\n", output.path.display())
+}
+
+fn run_cycle_narrative(args: CycleNarrativeArgs, _environment: &CliEnvironment) -> CommandOutput {
+    let cycle_id = args.cycle.clone().unwrap_or_else(|| "unknown".to_string());
+    let title = args
+        .title
+        .clone()
+        .unwrap_or_else(|| format!("Cycle {cycle_id}"));
+    let what_was_done = args
+        .what_was_done
+        .clone()
+        .unwrap_or_else(|| "Cycle completed.".to_string());
+    let generated_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
+
+    let audience: NarrativeAudience = args.audience.into();
+    let tone: NarrativeTone = args.tone.into();
+    let mut narrative = CycleNarrative::new(
+        cycle_id.clone(),
+        "H13 (Narration)",
+        "operator",
+        audience,
+        tone,
+        title,
+        what_was_done,
+        generated_at,
+    );
+    narrative.sort_suggestions();
+
+    let writer = DefaultCycleNarrativeWriter::new();
+    let rendered = match writer.write(&narrative, 500) {
+        Ok(s) => s,
+        Err(e) => return crate::failure(format!("narrative render failed: {e}")),
+    };
+
+    if let Some(path) = &args.output {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(path, &rendered) {
+            return crate::failure(format!("write {path:?} failed: {e}"));
+        }
+        return CommandOutput {
+            status: 0,
+            stdout: format!("wrote: {}\nbytes: {}\n", path.display(), rendered.len()),
+            stderr: String::new(),
+        };
+    }
+
+    CommandOutput {
+        status: 0,
+        stdout: rendered,
+        stderr: String::new(),
+    }
+}
+
+// Suppress unused-type-warning while SuggestionPriority/EffortEstimate
+// are imported as part of the narrative public API surface for future
+// CLI reuse (e.g. add flags that emit a suggestion list from the engine).
+#[allow(dead_code)]
+fn _narrative_unused() {
+    let _ = sddk_engine::cycle_narrative::SuggestionPriority::default();
+    let _ = sddk_engine::cycle_narrative::EffortEstimate::default();
 }
 
 fn run_cycle_lock(command: CycleLockCommand, environment: &CliEnvironment) -> CommandOutput {
@@ -3915,6 +4046,152 @@ mod tests {
         assert!(
             has_unmet,
             "at least one frontier entry should have requires_met: false, got: {}",
+            output.stdout
+        );
+    }
+
+    // ── S-NARRATIVE-CLI: narrative subcommand wiring ────────────────────
+
+    #[test]
+    fn s_narrative_cli_minimal_renders_to_stdout() {
+        let args = CycleNarrativeArgs {
+            runtime: Default::default(),
+            cycle: Some("narr-cli-min".to_string()),
+            audience: NarrativeArgAudience::Maintainer,
+            tone: NarrativeArgTone::Explanatory,
+            output: None,
+            title: None,
+            what_was_done: None,
+        };
+        let env = CliEnvironment::default();
+        let output = run_cycle_narrative(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("narr-cli-min"),
+            "stdout should contain cycle id, got: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("audience=maintainer"),
+            "stdout should mark audience=maintainer, got: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("tone=explanatory"),
+            "stdout should mark tone=explanatory, got: {}",
+            output.stdout
+        );
+    }
+
+    #[test]
+    fn s_narrative_cli_respects_audience_tone_variants() {
+        for (aud, label) in [
+            (NarrativeArgAudience::Self_, "audience=self"),
+            (NarrativeArgAudience::Maintainer, "audience=maintainer"),
+            (NarrativeArgAudience::Stakeholder, "audience=stakeholder"),
+        ] {
+            for (tone, tlabel) in [
+                (NarrativeArgTone::Concise, "tone=concise"),
+                (NarrativeArgTone::Explanatory, "tone=explanatory"),
+                (NarrativeArgTone::Socratic, "tone=socratic"),
+            ] {
+                let args = CycleNarrativeArgs {
+                    runtime: Default::default(),
+                    cycle: Some("variant".to_string()),
+                    audience: aud,
+                    tone,
+                    output: None,
+                    title: None,
+                    what_was_done: None,
+                };
+                let env = CliEnvironment::default();
+                let output = run_cycle_narrative(args, &env);
+                assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+                assert!(
+                    output.stdout.contains(label),
+                    "missing {label} in: {}",
+                    output.stdout
+                );
+                assert!(
+                    output.stdout.contains(tlabel),
+                    "missing {tlabel} in: {}",
+                    output.stdout
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn s_narrative_cli_uses_default_title_when_omitted() {
+        let args = CycleNarrativeArgs {
+            runtime: Default::default(),
+            cycle: Some("ttl-default".to_string()),
+            audience: NarrativeArgAudience::Maintainer,
+            tone: NarrativeArgTone::Concise,
+            output: None,
+            title: None,
+            what_was_done: Some("first sentence".to_string()),
+        };
+        let env = CliEnvironment::default();
+        let output = run_cycle_narrative(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("Cycle ttl-default"),
+            "default title missing, got: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("first sentence"),
+            "what_was_done override missing, got: {}",
+            output.stdout
+        );
+    }
+
+    #[test]
+    fn s_narrative_cli_writes_to_file_when_output_set() {
+        let tmp =
+            std::env::temp_dir().join(format!("sddk-narrative-test-{}.md", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        let args = CycleNarrativeArgs {
+            runtime: Default::default(),
+            cycle: Some("file-out".to_string()),
+            audience: NarrativeArgAudience::Stakeholder,
+            tone: NarrativeArgTone::Explanatory,
+            output: Some(tmp.clone()),
+            title: Some("File-out title".to_string()),
+            what_was_done: Some("Body sentence.".to_string()),
+        };
+        let env = CliEnvironment::default();
+        let output = run_cycle_narrative(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("wrote:") && output.stdout.contains("bytes:"),
+            "file mode stdout should say wrote/bytes, got: {}",
+            output.stdout
+        );
+        let body = std::fs::read_to_string(&tmp).expect("file written");
+        assert!(body.contains("File-out title"));
+        assert!(body.contains("file-out"));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn s_narrative_cli_falls_back_when_cycle_id_absent() {
+        let args = CycleNarrativeArgs {
+            runtime: Default::default(),
+            cycle: None,
+            audience: NarrativeArgAudience::Maintainer,
+            tone: NarrativeArgTone::Concise,
+            output: None,
+            title: None,
+            what_was_done: None,
+        };
+        let env = CliEnvironment::default();
+        let output = run_cycle_narrative(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("Cycle unknown"),
+            "fallback title missing, got: {}",
             output.stdout
         );
     }

@@ -291,6 +291,39 @@ pub struct CycleNarrative {
 }
 
 impl CycleNarrative {
+    /// Build a narrative from identity-bearing fields. Default-deny on
+    /// future expansion: callers SHOULD use this constructor rather than
+    /// a struct literal because the struct is `#[non_exhaustive]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: impl Into<String>,
+        horizon: impl Into<String>,
+        path: impl Into<String>,
+        audience: NarrativeAudience,
+        tone: NarrativeTone,
+        title: impl Into<String>,
+        what_was_done: impl Into<String>,
+        generated_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            cycle_id: cycle_id.into(),
+            horizon: horizon.into(),
+            path: path.into(),
+            audience,
+            tone,
+            title: title.into(),
+            what_was_done: what_was_done.into(),
+            why_it_matters: String::new(),
+            what_changed: Vec::new(),
+            what_to_validate: Vec::new(),
+            risk_caveats: Vec::new(),
+            next_step_suggestions: Vec::new(),
+            human_action_required: None,
+            generated_at: generated_at.into(),
+            cycle_digest: 0,
+        }
+    }
+
     /// Compute the canonical digest over identity fields.
     #[must_use]
     pub fn compute_digest(
