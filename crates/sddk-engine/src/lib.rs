@@ -10,6 +10,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 mod adoption;
+pub mod agent_host;
 pub mod authority;
 pub mod cycle_pause;
 pub mod cycle_replan;
@@ -35,6 +36,10 @@ pub mod version;
 pub mod workflow_runtime;
 
 pub use adoption::*;
+pub use agent_host::{
+    AgentHost, AgentIdentity, AgentKind, DecisionReceipt, ExecuteDecisionError, ExecuteError,
+    InMemoryLeaseStore, LeaseError, LeaseHandle, LeaseRecord, LeaseStore,
+};
 pub use cycle_replan::*;
 pub use cycle_supersede::*;
 pub use event_bus::*;
