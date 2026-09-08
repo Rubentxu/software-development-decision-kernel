@@ -9,6 +9,7 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
+pub mod active_graph;
 mod adoption;
 pub mod agent_contribution_envelope;
 pub mod agent_host;
