@@ -2107,3 +2107,125 @@ fn dmt_54_cherry_pick_appends_reflog_history_entry() {
         newest.reason
     );
 }
+
+#[test]
+fn dmt_55_revert_produces_commit_with_target_tree_and_single_parent() {
+    // R-M5 / S-M6. `revert(c2)` returns a commit whose `tree == c1.tree`
+    // (inverts c2 back to c1's snapshot) and whose `parents == [c2]`.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    // c2 uses a different snapshot so revert's tree-inversion is observable.
+    let tree_v2 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("d1".to_string(), MemoryId::from([0x42u8; 32]))],
+        )])))
+        .expect("tree v2");
+    assert_ne!(tree_v1, tree_v2, "v1/v2 trees must differ for DMT-55");
+    let c1 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    // main -> c2.
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c2_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main");
+
+    let new_id = store
+        .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
+        .expect("revert");
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    assert_eq!(
+        new_commit.parents,
+        vec![c2_id],
+        "DMT-55 single parent = reverted commit"
+    );
+    assert_eq!(
+        new_commit.tree, tree_v1,
+        "DMT-55 tree = c1's tree (snapshot before c2)"
+    );
+}
+
+#[test]
+fn dmt_56_revert_appends_reflog_history_entry() {
+    // S-M6 (post-condition). revert appends one reflog history entry
+    // whose reason contains "revert".
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let tree_v2 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("d2".to_string(), MemoryId::from([0x99u8; 32]))],
+        )])))
+        .expect("tree v2");
+    assert_ne!(tree_v1, tree_v2, "v1/v2 trees must differ for DMT-56");
+    let c1 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c2_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main");
+
+    let _new_id = store
+        .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
+        .expect("revert");
+    let history = store
+        .reflog_history(RefKind::Branch("main".into()))
+        .expect("history");
+    assert_eq!(history.len(), 2, "DMT-56 advance + revert entries");
+    let newest = history.first().expect("newest entry");
+    assert!(
+        newest.reason.to_lowercase().contains("revert"),
+        "DMT-56 newest reason MUST contain 'revert'; got {:?}",
+        newest.reason
+    );
+}
