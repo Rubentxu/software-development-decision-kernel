@@ -621,6 +621,31 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         unimplemented!("MemoryStore::reflog is not implemented by this store")
     }
 
+    /// Full persistent reflog history for `ref_kind`, sorted
+    /// descending by `seq` (newest first). R-M1 / S-M1. The vector
+    /// MAY be empty (refs never written). Surfaces `NotFound` when
+    /// the ref does not resolve.
+    fn reflog_history(
+        &self,
+        ref_kind: RefKind,
+    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+        let _ = ref_kind;
+        unimplemented!("MemoryStore::reflog_history is not implemented by this store")
+    }
+
+    /// 1-indexed lookup into the persistent reflog history for
+    /// `ref_kind`. `seq=1` is the oldest entry; `seq=N` is the newest.
+    /// R-M2 / S-M2..S-M4. Surfaces `NotFound` for unknown refs and
+    /// `LimitExceeded { op: "reflog_at", cap: N }` when `seq > N`.
+    fn reflog_at(
+        &self,
+        ref_kind: RefKind,
+        seq: u64,
+    ) -> Result<ReflogEntry, DecisionMemoryError> {
+        let _ = (ref_kind, seq);
+        unimplemented!("MemoryStore::reflog_at is not implemented by this store")
+    }
+
     /// Create a what-if ref pointing at `target`. R-T12 / S-T10.
     fn branch(&self, name: &str, target: MemoryId) -> Result<(), DecisionMemoryError> {
         let _ = (name, target);
@@ -783,7 +808,15 @@ pub struct InMemoryMemoryStore {
     trees: Mutex<BTreeMap<MemoryId, DecisionMemoryTree>>,
     commits: Mutex<BTreeMap<MemoryId, DecisionMemoryCommit>>,
     refs: Mutex<BTreeMap<String, MemoryRef>>,
+    /// Persistent reflog history per ref path (v1.150.0). Populated
+    /// as a side effect of every `write_ref_with_reflog` call.
+    /// Capped at 1024 entries per ref (FIFO eviction). R-M1 / R-M12.
+    ref_history: Mutex<BTreeMap<String, Vec<ReflogEntry>>>,
 }
+
+/// Operational cap on per-ref reflog history. Documented contract
+/// for v1.150.0; not enforced as a hard error. R-M12.
+pub const REFLOG_HISTORY_CAP: usize = 1024;
 
 impl InMemoryMemoryStore {
     pub fn new() -> Self {
@@ -841,12 +874,20 @@ impl MemoryStore for InMemoryMemoryStore {
         reason: &str,
     ) -> Result<(), DecisionMemoryError> {
         let path = kind.ref_path();
-        let (old_target, old_seq) = {
+        // old_target: previous ref target (if any).
+        let old_target = {
             let g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
-            let prev = g.get(&path).cloned();
-            (prev.as_ref().map(|r| r.id_bytes()), reflog.len() as u64)
+            g.get(&path).map(|r| r.id_bytes())
         };
-        let new_seq = old_seq + 1;
+        // Global seq for this ref: the next available seq number in
+        // the persistent history (per-ref FIFO).
+        let new_seq = {
+            let h = self
+                .ref_history
+                .lock()
+                .expect("InMemoryMemoryStore poisoned");
+            h.get(&path).map(|v| v.len() as u64 + 1).unwrap_or(1)
+        };
         let entry = ReflogEntry {
             seq: new_seq,
             ref_path: path.clone(),
@@ -857,8 +898,27 @@ impl MemoryStore for InMemoryMemoryStore {
             reason: reason.to_string(),
         };
         let r = MemoryRef::new(kind.clone(), hex_lower(&target), &entry.timestamp);
-        let mut g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
-        g.insert(path, r);
+        // Atomically update refs + persistent history under one lock
+        // acquisition window per field. We split the locks to avoid
+        // holding both at once (a deadlock risk vs. any future
+        // cross-field iteration). The contract here is single-threaded
+        // per ref.
+        {
+            let mut g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
+            g.insert(path.clone(), r);
+        }
+        {
+            let mut h = self
+                .ref_history
+                .lock()
+                .expect("InMemoryMemoryStore poisoned");
+            let bucket = h.entry(path).or_default();
+            if bucket.len() >= REFLOG_HISTORY_CAP {
+                // FIFO drop the oldest entry to honour the cap.
+                bucket.remove(0);
+            }
+            bucket.push(entry.clone());
+        }
         reflog.append_entry(entry);
         Ok(())
     }
@@ -1193,6 +1253,59 @@ impl MemoryStore for InMemoryMemoryStore {
         // configured.
         let _ = (scope, max);
         Ok(Vec::new())
+    }
+
+    fn reflog_history(
+        &self,
+        ref_kind: RefKind,
+    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+        // R-M1 / S-M1. Confirm the ref exists (NotFound otherwise),
+        // then return the persisted history sorted descending by seq.
+        let path = ref_kind.ref_path();
+        let _ = self.resolve_ref(&ref_kind).ok_or_else(|| DecisionMemoryError::NotFound {
+            kind: "ref",
+            id: path.clone(),
+        })?;
+        let h = self
+            .ref_history
+            .lock()
+            .expect("InMemoryMemoryStore poisoned");
+        let entries = h.get(&path).cloned().unwrap_or_default();
+        drop(h);
+        let mut entries = entries;
+        // Sort descending by seq (newest first); seqs are already
+        // unique per ref because write_ref_with_reflog monotonically
+        // increments them.
+        entries.sort_by(|a, b| b.seq.cmp(&a.seq));
+        Ok(entries)
+    }
+
+    fn reflog_at(
+        &self,
+        ref_kind: RefKind,
+        seq: u64,
+    ) -> Result<ReflogEntry, DecisionMemoryError> {
+        // R-M2 / S-M2..S-M4. NotFound on unknown ref; LimitExceeded
+        // when seq > N.
+        let path = ref_kind.ref_path();
+        let _ = self.resolve_ref(&ref_kind).ok_or_else(|| DecisionMemoryError::NotFound {
+            kind: "ref",
+            id: path.clone(),
+        })?;
+        let h = self
+            .ref_history
+            .lock()
+            .expect("InMemoryMemoryStore poisoned");
+        let entries = h.get(&path).cloned().unwrap_or_default();
+        let n = entries.len() as u64;
+        if seq < 1 || seq > n {
+            return Err(DecisionMemoryError::LimitExceeded {
+                op: "reflog_at",
+                cap: n as usize,
+            });
+        }
+        // 1-indexed: seq=1 is the oldest entry (index 0).
+        Ok(entries[(seq - 1) as usize].clone())
     }
 
     fn branch(&self, name: &str, target: MemoryId) -> Result<(), DecisionMemoryError> {

@@ -1811,3 +1811,173 @@ fn dmt_48_why_bridge_drops_unmapped_node_ids_without_erroring() {
         "DMT-48 bridge MUST include HEAD target in path"
     );
 }
+
+// ----------------- DMT-49..DMT-52: Reflog history persistence (v1.150.0) -----------------
+//
+// CDD-MEMORY-004 WU-1. Persistent per-ref reflog history in
+// InMemoryMemoryStore. The store gains a `ref_history` field
+// (BTreeMap<String, Vec<ReflogEntry>>) populated as a side effect
+// of every `write_ref_with_reflog` call. Two new MemoryStore ops
+// expose the history: `reflog_history(ref_kind)` (full descending
+// list) and `reflog_at(ref_kind, seq)` (1-indexed lookup).
+
+#[test]
+fn dmt_49_reflog_history_returns_descending_by_seq() {
+    // S-M1: after 3 rewrites, reflog_history returns entries in
+    // descending seq order (newest first).
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c1 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build on c1",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c3",
+        "build on c2",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    // Three rewrites of HEAD.
+    let mut log1 = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c1_id, &mut log1, "actor", "init")
+        .expect("write 1");
+    let mut log2 = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c2_id, &mut log2, "actor", "step 2")
+        .expect("write 2");
+    let mut log3 = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c3_id, &mut log3, "actor", "step 3")
+        .expect("write 3");
+
+    let history = store
+        .reflog_history(RefKind::Head)
+        .expect("reflog history");
+    assert_eq!(history.len(), 3, "DMT-49 expected 3 history entries");
+    // Descending by seq: entry 3 (newest) first, entry 1 last.
+    assert!(
+        history[0].seq > history[1].seq && history[1].seq > history[2].seq,
+        "DMT-49 history MUST be descending by seq; got {:?}",
+        history.iter().map(|e| e.seq).collect::<Vec<_>>()
+    );
+    assert_eq!(history[0].new_target, hex_lower(&c3_id));
+    assert_eq!(history[2].new_target, hex_lower(&c1_id));
+}
+
+#[test]
+fn dmt_50_reflog_at_returns_oldest_when_seq_is_one() {
+    // S-M2: reflog_at(ref, 1) returns the oldest entry.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c1 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    let mut log1 = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c1_id, &mut log1, "actor", "init")
+        .expect("write 1");
+    let mut log2 = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c2_id, &mut log2, "actor", "step 2")
+        .expect("write 2");
+
+    let oldest = store
+        .reflog_at(RefKind::Head, 1)
+        .expect("oldest entry");
+    assert_eq!(oldest.seq, 1);
+    assert_eq!(oldest.new_target, hex_lower(&c1_id));
+}
+
+#[test]
+fn dmt_51_reflog_at_returns_limit_exceeded_when_seq_out_of_bounds() {
+    // S-M3: reflog_at with seq > N returns LimitExceeded.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c1 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c1_id, &mut log, "actor", "init")
+        .expect("write");
+
+    let err = store
+        .reflog_at(RefKind::Head, 99)
+        .expect_err("out of bounds");
+    assert!(
+        matches!(
+            err,
+            DecisionMemoryError::LimitExceeded {
+                op: "reflog_at",
+                cap: 1,
+            }
+        ),
+        "DMT-51 expected LimitExceeded {{ op: \"reflog_at\", cap: 1 }}; got {err:?}"
+    );
+}
+
+#[test]
+fn dmt_52_reflog_at_unknown_ref_returns_not_found() {
+    // S-M4: reflog_at on an unresolvable ref returns NotFound.
+    let store = InMemoryMemoryStore::new();
+    let err = store
+        .reflog_at(RefKind::Tag("missing".into()), 1)
+        .expect_err("not found");
+    assert!(
+        matches!(
+            err,
+            DecisionMemoryError::NotFound {
+                kind: "ref",
+                ..
+            }
+        ),
+        "DMT-52 expected NotFound {{ kind: \"ref\", .. }}; got {err:?}"
+    );
+}
