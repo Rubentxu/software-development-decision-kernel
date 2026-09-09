@@ -100,11 +100,11 @@ impl DecisionMemoryBlob {
         // canonical object: {"kind":"blob","object_kind":"...","payload_ref":"..."}
         // Keys are sorted lexicographically.
         let mut out = Vec::new();
-        out.extend_from_slice(br#"{"kind":"blob","object_kind":""#);
+        out.extend_from_slice(br#"{"kind":"blob","object_kind":"#);
         push_json_string(&mut out, &self.object_kind);
-        out.extend_from_slice(br#""payload_ref":""#);
+        out.extend_from_slice(br#","payload_ref":"#);
         push_json_string(&mut out, &self.payload_ref);
-        out.extend_from_slice(br#""}"#);
+        out.extend_from_slice(br#"}"#);
         out
     }
 
@@ -152,6 +152,22 @@ impl DecisionMemoryTree {
         Ok(self)
     }
 
+    /// Verify that `self.id` matches `sha256(canonical_payload(self))`.
+    /// Returns `HashMismatch` if not.
+    pub fn verify_id(self) -> Result<Self, DecisionMemoryError> {
+        let bytes = self.canonical_payload_bytes();
+        let mut h = Sha256::new();
+        h.update(&bytes);
+        let expected: [u8; 32] = h.finalize().into();
+        if expected != self.id {
+            return Err(DecisionMemoryError::HashMismatch {
+                expected: hex_lower(&expected),
+                computed: hex_lower(&self.id),
+            });
+        }
+        Ok(self)
+    }
+
     pub fn canonical_payload_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(br#"{"kind":"tree","entries":{"#);
@@ -183,6 +199,13 @@ impl DecisionMemoryTree {
 
     pub fn id_hex(&self) -> String {
         hex_lower(&self.id)
+    }
+
+    /// Test-only escape hatch to deliberately break the hash (used
+    /// by DMT-20 to prove put_tree rejects mismatched ids).
+    #[doc(hidden)]
+    pub fn set_id_for_test(&mut self, id: MemoryId) {
+        self.id = id;
     }
 }
 
@@ -312,11 +335,27 @@ impl DecisionMemoryCommit {
         Ok(self)
     }
 
+    /// Verify that `self.id` matches `sha256(canonical_payload(self))`.
+    /// Returns `HashMismatch` if not.
+    pub fn verify_id(self) -> Result<Self, DecisionMemoryError> {
+        let bytes = self.canonical_payload_bytes();
+        let mut h = Sha256::new();
+        h.update(&bytes);
+        let expected: [u8; 32] = h.finalize().into();
+        if expected != self.id {
+            return Err(DecisionMemoryError::HashMismatch {
+                expected: hex_lower(&expected),
+                computed: hex_lower(&self.id),
+            });
+        }
+        Ok(self)
+    }
+
     pub fn canonical_payload_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend_from_slice(br#"{"author":{"actor_id":""#);
+        out.extend_from_slice(br#"{"author":{"actor_id":"#);
         push_json_string(&mut out, &self.author.actor_id);
-        out.extend_from_slice(br#""","actor_type":""#);
+        out.extend_from_slice(br#","actor_type":"#);
         push_json_string(&mut out, &self.author.actor_type);
         out.extend_from_slice(br#"""},"#);
         // cycle_run_id
@@ -334,9 +373,9 @@ impl DecisionMemoryCommit {
         push_optional_id(&mut out, self.merge_receipt_ref.as_ref());
         out.push(b',');
         // message
-        out.extend_from_slice(br#""message":""#);
+        out.extend_from_slice(br#""message":"#);
         push_json_string(&mut out, &self.message);
-        out.extend_from_slice(br#""","#);
+        out.push(b',');
         // parents
         out.extend_from_slice(br#""parents":["#);
         let mut first = true;
@@ -353,9 +392,9 @@ impl DecisionMemoryCommit {
         push_optional_string(&mut out, self.planning_revision.as_deref());
         out.push(b',');
         // project_id
-        out.extend_from_slice(br#""project_id":""#);
+        out.extend_from_slice(br#""project_id":"#);
         push_json_string(&mut out, &self.project_id);
-        out.extend_from_slice(br#""","#);
+        out.push(b',');
         // provenance_refs
         out.extend_from_slice(br#""provenance_refs":["#);
         let mut first = true;
@@ -368,21 +407,21 @@ impl DecisionMemoryCommit {
         }
         out.extend_from_slice(br#"],"#);
         // reason
-        out.extend_from_slice(br#""reason":""#);
+        out.extend_from_slice(br#""reason":"#);
         push_json_string(&mut out, &self.reason);
-        out.extend_from_slice(br#""","#);
+        out.push(b',');
         // subject_revision
         out.extend_from_slice(br#""subject_revision":"#);
         push_optional_string(&mut out, self.subject_revision.as_deref());
         out.push(b',');
         // timestamp
-        out.extend_from_slice(br#""timestamp":""#);
+        out.extend_from_slice(br#""timestamp":"#);
         push_json_string(&mut out, &self.timestamp);
-        out.extend_from_slice(br#""","#);
+        out.push(b',');
         // tree
-        out.extend_from_slice(br#""tree":""#);
+        out.extend_from_slice(br#""tree":"#);
         push_json_string(&mut out, &hex_lower(&self.tree));
-        out.extend_from_slice(br#""","#);
+        out.push(b',');
         // work_item_id
         out.extend_from_slice(br#""work_item_id":"#);
         push_optional_string(&mut out, self.work_item_id.as_deref());
@@ -396,6 +435,13 @@ impl DecisionMemoryCommit {
 
     pub fn id_hex(&self) -> String {
         hex_lower(&self.id)
+    }
+
+    /// Test-only escape hatch to deliberately break the hash (used
+    /// by DMT-20 to prove put_commit rejects mismatched ids).
+    #[doc(hidden)]
+    pub fn set_id_for_test(&mut self, id: MemoryId) {
+        self.id = id;
     }
 }
 
@@ -447,7 +493,7 @@ impl MemoryStore for InMemoryMemoryStore {
     }
 
     fn put_tree(&self, tree: DecisionMemoryTree) -> Result<MemoryId, DecisionMemoryError> {
-        let tree = tree.with_recomputed_id()?;
+        let tree = tree.verify_id()?;
         let id = tree.id;
         self.trees
             .lock()
@@ -457,7 +503,7 @@ impl MemoryStore for InMemoryMemoryStore {
     }
 
     fn put_commit(&self, commit: DecisionMemoryCommit) -> Result<MemoryId, DecisionMemoryError> {
-        let commit = commit.with_recomputed_id()?;
+        let commit = commit.verify_id()?;
         let id = commit.id;
         self.commits
             .lock()
