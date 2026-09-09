@@ -15,8 +15,8 @@ use std::sync::Arc;
 use sddk_engine::decision_memory::{
     DecisionMemoryAuthor, DecisionMemoryBlob, DecisionMemoryCommit, DecisionMemoryError,
     DecisionMemoryTree, InMemoryMemoryStore, MemoryId, MemoryRef, MemoryStore, RefAuthority,
-    RefKind, Reflog, ReflogEntry, ReflogScope, assert_canonical_authority, canonical_head,
-    classify_ref,
+    RefKind, Reflog, ReflogEntry, ReflogScope, ResetMode, assert_canonical_authority,
+    canonical_head, classify_ref,
 };
 
 // ----------------- helpers -----------------
@@ -2306,4 +2306,123 @@ fn dmt_57_amend_replaces_tree_and_preserves_parents() {
         new_id,
         "DMT-57 main advances to the amended commit"
     );
+}
+
+#[test]
+fn dmt_58_reset_hard_moves_head_and_preserves_dag() {
+    // R-M7 / S-M8. `reset(Head, c0, Hard)` moves HEAD to c0; original
+    // commits c1/c2/c3 are still in the DAG.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build1",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "build2",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-04T00:00:00Z",
+        "c3",
+        "build3",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    // HEAD -> c3, main -> c3.
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c3_id, &mut log, "actor", "advance")
+        .expect("write HEAD");
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c3_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main");
+
+    // Hard reset HEAD -> c0.
+    store
+        .reset(RefKind::Head, c0_id, ResetMode::Hard)
+        .expect("hard reset");
+
+    assert_eq!(
+        store.resolve_ref(&RefKind::Head).expect("HEAD resolves"),
+        c0_id,
+        "DMT-58 HEAD moved to c0"
+    );
+    // DAG preservation: c1/c2/c3 are still reachable.
+    assert!(store.get_commit(&c0_id).is_some(), "DMT-58 c0 in DAG");
+    assert!(store.get_commit(&c1_id).is_some(), "DMT-58 c1 in DAG");
+    assert!(store.get_commit(&c2_id).is_some(), "DMT-58 c2 in DAG");
+    assert!(store.get_commit(&c3_id).is_some(), "DMT-58 c3 in DAG");
+    // main ref is untouched (we reset HEAD, not main).
+    assert_eq!(
+        store
+            .resolve_ref(&RefKind::Branch("main".into()))
+            .expect("main still resolves"),
+        c3_id,
+        "DMT-58 main untouched"
+    );
+}
+
+#[test]
+fn dmt_59_reset_soft_returns_not_implemented() {
+    // R-M7 / S-M9. `reset(Head, c0, Soft)` returns
+    // `NotImplemented { op: "reset", message: "..." }`.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+
+    let err = store
+        .reset(RefKind::Head, c0_id, ResetMode::Soft)
+        .expect_err("soft reset is not implemented");
+    match err {
+        DecisionMemoryError::NotImplemented { op, message } => {
+            assert_eq!(op, "reset", "DMT-59 op name");
+            assert!(
+                !message.is_empty(),
+                "DMT-59 NotImplemented.message MUST be non-empty"
+            );
+        }
+        other => panic!("DMT-59 expected NotImplemented, got {other:?}"),
+    }
 }
