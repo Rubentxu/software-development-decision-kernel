@@ -1981,3 +1981,128 @@ fn dmt_52_reflog_at_unknown_ref_returns_not_found() {
         "DMT-52 expected NotFound {{ kind: \"ref\", .. }}; got {err:?}"
     );
 }
+
+// ----------------- DMT-53..DMT-54: cherry_pick (v1.150.0 WU-2) -----------------
+
+#[test]
+fn dmt_53_cherry_pick_creates_two_parent_commit_on_target_branch() {
+    // S-M5: cherry_pick(c3, Branch("main"), "replay c3") produces a
+    // new commit with parents [main_tip, c3] and advances the
+    // branch ref to it.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c1 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build on c1",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c3",
+        "build on c2",
+    );
+    let c3_id = store.put_commit(c3.clone()).expect("c3");
+
+    // main -> c2.
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c2_id,
+            &mut log,
+            "actor",
+            "init",
+        )
+        .expect("write main");
+
+    // cherry-pick c3 onto main.
+    let new_id = store
+        .cherry_pick(c3_id, RefKind::Branch("main".into()), "replay c3")
+        .expect("cherry pick");
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    assert_eq!(new_commit.parents.len(), 2, "DMT-53 two-parent merge commit");
+    assert_eq!(new_commit.parents[0], c2_id, "DMT-53 first parent = main tip");
+    assert_eq!(new_commit.parents[1], c3_id, "DMT-53 second parent = cherry-picked");
+    assert_eq!(new_commit.tree, c3.tree, "DMT-53 tree = cherry-picked commit's tree");
+    // main ref now points at the new commit.
+    assert_eq!(
+        store
+            .resolve_ref(&RefKind::Branch("main".into()))
+            .expect("main resolves"),
+        new_id,
+        "DMT-53 main ref advanced to cherry-pick result"
+    );
+}
+
+#[test]
+fn dmt_54_cherry_pick_appends_reflog_history_entry() {
+    // S-M5 (post-condition): cherry_pick appends one reflog history
+    // entry tagged "cherry-pick" on the target branch.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c1 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    // main -> c1.
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c1_id,
+            &mut log,
+            "actor",
+            "init",
+        )
+        .expect("write main");
+
+    let _new_id = store
+        .cherry_pick(c2_id, RefKind::Branch("main".into()), "pick c2")
+        .expect("cherry pick");
+    let history = store
+        .reflog_history(RefKind::Branch("main".into()))
+        .expect("history");
+    assert_eq!(history.len(), 2, "DMT-54 init + cherry-pick entries");
+    let newest = history.first().expect("newest entry");
+    assert!(
+        newest.reason.to_lowercase().contains("cherry-pick"),
+        "DMT-54 newest reason MUST contain 'cherry-pick'; got {:?}",
+        newest.reason
+    );
+}
