@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T18:36:00Z"
-generated_from: manual curation + M6.1 convention-first CLI surface
-cycle: p-63676b11dc0ef88f/m6-1-convention-first-cli
+generated_at: "2026-09-09T18:58:00Z"
+generated_from: manual curation + M6.2 target/task DAG registry
+cycle: p-63676b11dc0ef88f/m6-2-target-task-dag
 ordering: by SPEC then concept
-total_decisions: 55
+total_decisions: 58
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -96,6 +96,11 @@ convention_first_cli_unification_target:
   - { concept: FirstClassCLIRouters, existing: "crates/sddk-cli/src/{change,verify_cmd,audit_cmd}.rs", disposition: DELIVERED, target: "5 first-class verbs (change|verify|audit|config|introspect)", milestone: M6, confidence: high, status: delivered, notes: "Shadow routers bridge to plan/ledger/memory substrates. change→plan workitem create; verify→ledger verify+capability status; audit→memory reflog+ledger events. Five arch_lint markers gate regression." }
   - { concept: ConfigExplain, existing: "crates/sddk-cli/src/config_cmd.rs", disposition: DELIVERED, target: "sddk config explain (declarative precedence chain)", milestone: M6, confidence: high, status: delivered, notes: "Renders 4 precedence bands + 7 keys from a static table. Replaces ad-hoc inspection." }
 
+target_task_workflow_unification_target:
+  - { concept: Target, existing: "crates/sddk-engine/src/target_task/mod.rs", disposition: DELIVERED, target: "Target typed value (name + tasks)", milestone: M6, confidence: high, status: delivered, notes: "Named user intent distinct from domain Goal (per SPEC-009). 11-field Task contract. Carries a TaskDag of declared tasks." }
+  - { concept: TaskDAG, existing: "crates/sddk-engine/src/target_task/dag.rs", disposition: DELIVERED, target: "Kahn topological sort + cycle detection", milestone: M6, confidence: high, status: delivered, notes: "Fail-closed on duplicate task ids, unknown deps, and cycles (TargetTaskError::{DuplicateTaskId,UnknownDependency,CycleDetected})." }
+  - { concept: TargetRegistry, existing: "crates/sddk-engine/src/target_task/registry.rs", disposition: DELIVERED, target: "BTreeMap-backed lookup index", milestone: M6, confidence: high, status: delivered, notes: "with_builtins() seeds status|run|ship|recover. resolve(name) returns TargetResolution (dag: Option<TaskDag>, validation: String) — not Result — to keep the engine↔CLI envelope JSON-serializable." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -124,7 +129,7 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 55
+  total_decisions: 58
   keep: 14
   evolve: 6
   evolve_rename: 3
@@ -132,7 +137,7 @@ summary:
   migrate: 3
   split: 1
   internalize: 4
-  delivered: 25
+  delivered: 28
   planned: 10
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true

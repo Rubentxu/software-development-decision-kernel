@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T18:36:00Z"
-generated_by: "sddk-orchestrator (M6.1 convention-first CLI surface)"
-total_entries: 60
+generated_at: "2026-09-09T18:58:00Z"
+generated_by: "sddk-orchestrator (M6.2 target/task DAG registry)"
+total_entries: 70
 
 entries:
 
@@ -742,3 +742,33 @@ open_mappings:
     replaces: null
     target_milestone: delivered
     notes: "`sddk config explain` shipped v1.157.0. Renders precedence chain (4 sources, 7 keys) declaratively from a static table. JSON or Text output."
+
+  - module: crates/sddk-engine/src/target_task/registry
+    contract: arch-spec-009-target-task-workflow
+    primary_adr: ADR-010-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "TargetRegistry shipped v1.158.0. BTreeMap-backed lookup index over declared Targets. with_builtins() seeds status|run|ship|recover. resolve(name) returns TargetResolution (dag: Option<TaskDag>, validation: String) — never Result — to keep the engine↔CLI envelope serializable."
+
+  - module: crates/sddk-engine/src/target_task/dag
+    contract: arch-spec-009-target-task-workflow
+    primary_adr: ADR-010-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "TaskDag validation shipped v1.158.0. Kahn's-algorithm topological sort with cycle detection fail-closed (TargetTaskError::CycleDetected). Duplicate task ids and unknown deps fail-closed too."
+
+  - module: crates/sddk-engine/src/target_task/builtin
+    contract: arch-spec-009-target-task-workflow
+    primary_adr: ADR-010-TARGET-TASK-PORCELAIN
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Built-in targets shipped v1.158.0: status (3 tasks), run (5 tasks), ship (4 tasks), recover (3 tasks). All tasks are no-op stubs declaring the SPEC-009 11-field contract; real task bodies land in M6.3."

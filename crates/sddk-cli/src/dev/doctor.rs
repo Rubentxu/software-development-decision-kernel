@@ -2,7 +2,7 @@
 
 use crate::dev::arch_lint::{
     MarkerStatus, convention_first_cli_alignment_checks, decision_memory_cli_alignment_checks,
-    mirror_alignment_checks, semantic_graph_alignment_checks,
+    mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
@@ -461,6 +461,10 @@ pub(super) fn run_dev_doctor(
                 }
                 // M6.1: convention-first CLI surface markers.
                 for marker in convention_first_cli_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M6.2: target/task DAG registry markers.
+                for marker in target_task_dag_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

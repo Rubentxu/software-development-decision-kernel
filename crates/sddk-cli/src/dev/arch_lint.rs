@@ -136,6 +136,10 @@ const MARKER_CLI_SPEC_TABLE_CANONICAL: &str = "m6_1.cli_spec_table_canonical";
 const MARKER_CLI_FIRST_CLASS_ROUTERS: &str = "m6_1.cli_first_class_routers";
 const MARKER_CONFIG_EXPLAIN_DECLARATIVE: &str = "m6_1.config_explain_declarative";
 
+const MARKER_TARGET_TASK_REGISTRY: &str = "m6_2.target_task_registry";
+const MARKER_TARGET_DAG_TOPOLOGICAL: &str = "m6_2.target_dag_topological";
+const MARKER_TARGET_BUILTINS_RESOLVABLE: &str = "m6_2.target_builtins_resolvable";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -246,6 +250,33 @@ pub fn convention_first_cli_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
         MarkerStatus {
             id: MARKER_CONFIG_EXPLAIN_DECLARATIVE.to_string(),
             present: has_delivered_entry(yaml, "crates/sddk-cli/src/config_cmd"),
+        },
+    ]
+}
+
+/// M6.2 markers (Target/Task DAG registry, SPEC-M6.2).
+///
+/// Marker definitions:
+/// - `target_task_registry`: the `target_task/registry` module is delivered,
+///   confirming the lookup index for declared targets exists.
+/// - `target_dag_topological`: the `target_task/dag` module is delivered,
+///   confirming topological ordering and cycle detection are available.
+/// - `target_builtins_resolvable`: the `target_task/builtin` module is
+///   delivered, confirming the four canonical built-in targets
+///   (`status`, `run`, `ship`, `recover`) resolve cleanly.
+pub fn target_task_dag_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_TARGET_TASK_REGISTRY.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/registry"),
+        },
+        MarkerStatus {
+            id: MARKER_TARGET_DAG_TOPOLOGICAL.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/dag"),
+        },
+        MarkerStatus {
+            id: MARKER_TARGET_BUILTINS_RESOLVABLE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/builtin"),
         },
     ]
 }
@@ -612,5 +643,63 @@ entries:
             .find(|m| m.id == MARKER_CONFIG_EXPLAIN_DECLARATIVE)
             .expect("marker");
         assert!(c.present);
+    }
+
+    #[test]
+    fn m6_2_target_task_registry_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/registry
+    target_milestone: delivered
+"#;
+        let markers = target_task_dag_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_TARGET_TASK_REGISTRY)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_2_target_dag_topological_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/dag
+    target_milestone: delivered
+"#;
+        let markers = target_task_dag_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_TARGET_DAG_TOPOLOGICAL)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_2_target_builtins_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/builtin
+    target_milestone: delivered
+"#;
+        let markers = target_task_dag_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_TARGET_BUILTINS_RESOLVABLE)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_2_target_markers_absent_when_modules_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = target_task_dag_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
     }
 }
