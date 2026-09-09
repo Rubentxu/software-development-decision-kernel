@@ -2,7 +2,7 @@
 
 use crate::dev::arch_lint::{
     MarkerStatus, decision_memory_cli_alignment_checks, mirror_alignment_checks,
-    semantic_graph_alignment_checks,
+    semantic_graph_alignment_checks, unified_authority_runner_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
@@ -452,6 +452,10 @@ pub(super) fn run_dev_doctor(
                 }
                 // M4: decision memory CLI markers (arch-spec-004).
                 for marker in decision_memory_cli_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M5: unified authority runner markers (arch-spec-008).
+                for marker in unified_authority_runner_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

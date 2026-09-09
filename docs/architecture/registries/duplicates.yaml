@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T16:10:00Z"
-generated_from: manual curation + M4 decision memory CLI
-cycle: p-63676b11dc0ef88f/m4-decision-memory-cli
+generated_at: "2026-09-09T18:01:00Z"
+generated_from: manual curation + M5 unified authority runner
+cycle: p-63676b11dc0ef88f/m5-unified-authority-runner
 ordering: by SPEC then concept
-total_decisions: 48
+total_decisions: 52
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -85,6 +85,12 @@ decision_memory_cli_unification_target:
   - { concept: MemorySubcommandSurface, existing: "crates/sddk-cli/src/memory_cmd.rs", disposition: DELIVERED, target: "sddk memory CLI", milestone: M4, confidence: high, status: delivered, notes: "Three arch_lint markers (m4.memory_store_single_canonical, m4.memory_cli_spec_subset, m4.memory_diff_is_semantic) reference arch-spec-004." }
   - { concept: MemoryPromotion, existing: "MIGRATE candidates", disposition: PLANNED, target: "Memory promotion pipeline (raw text → typed memory object)", milestone: M4.x, confidence: medium, status: planned, notes: "Belongs to a follow-up cycle once the read API is in place; SPEC-004 §Promotion." }
 
+unified_authority_runner_unification_target:
+  - { concept: AuthorityContext_legacy, existing: "crates/sddk-engine/src/authority.rs", disposition: KEEP, target: "Compat mirror (strangler window)", milestone: M5, confidence: high, status: delivered, notes: "AuthorityContext::validate(WritableSurface) remains as defense-in-depth inside engine entry points. Removal belongs to M9." }
+  - { concept: AuthorityEngine_substrate, existing: "crates/sddk-engine/src/authority_engine.rs", disposition: DELIVERED, target: "AuthorityEngine trait + DefaultAuthorityEngine", milestone: M5, confidence: high, status: delivered, notes: "Substrate shipped before M5; admit/explain/policy_at/register_policy already 30 pub items, 19 inline + 8 integration tests." }
+  - { concept: AuthorityEngineRunner, existing: "crates/sddk-engine/src/authority_engine/runner.rs", disposition: DELIVERED, target: "admit_surface facade + default_policy_for_surface table", milestone: M5, confidence: high, status: delivered, notes: "12-surface policy table (4 High, 4 Medium, 2 Low, 2 Low-class). 6 inline tests in runner.rs + 8 integration scenarios in tests/authority_engine_runner.rs." }
+  - { concept: CycleCLI_pre_gates, existing: "crates/sddk-cli/src/cycle.rs (5 sites)", disposition: DELIVERED, target: "CLI pre-gates via AuthorityEngineRunner.admit_surface", milestone: M5, confidence: high, status: delivered, notes: "apply_transition, cycle_supersede, cycle_pause, cycle_resume, evaluate_gate each emit a RunnerVerdict pre-gate before delegating to engine functions." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -113,15 +119,15 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 48
-  keep: 13
+  total_decisions: 52
+  keep: 14
   evolve: 6
   evolve_rename: 3
   deprecate_runtime_meaning: 4
   migrate: 3
   split: 1
   internalize: 4
-  delivered: 19
+  delivered: 22
   planned: 10
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true

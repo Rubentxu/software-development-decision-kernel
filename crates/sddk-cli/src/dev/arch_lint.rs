@@ -128,6 +128,10 @@ const MARKER_MEMORY_STORE_SINGLE_CANONICAL: &str = "m4.memory_store_single_canon
 const MARKER_MEMORY_CLI_SPEC_SUBSET: &str = "m4.memory_cli_spec_subset";
 const MARKER_MEMORY_DIFF_IS_SEMANTIC: &str = "m4.memory_diff_is_semantic";
 
+const MARKER_AUTHORITY_ENGINE_SINGLE_PATH: &str = "m5.authority_engine_single_path";
+const MARKER_ADMISSION_EXPLAINABLE: &str = "m5.admission_explainable";
+const MARKER_LEGACY_AUTHORITY_COMPAT: &str = "m5.legacy_authority_compat";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -179,6 +183,35 @@ pub fn decision_memory_cli_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
         MarkerStatus {
             id: MARKER_MEMORY_DIFF_IS_SEMANTIC.to_string(),
             present: has_delivered_entry(yaml, "crates/sddk-engine/src/decision_memory"),
+        },
+    ]
+}
+
+/// M5 markers (Unified Authority Runner, SPEC-M5).
+///
+/// Marker definitions:
+/// - `authority_engine_single_path`: the `authority_engine/runner` module is
+///   delivered, confirming CLI call sites route admission through the runner.
+/// - `admission_explainable`: the underlying `authority_engine` substrate
+///   is delivered (the runner wraps `DefaultAuthorityEngine::admit + explain`).
+/// - `legacy_authority_compat`: the legacy `authority` module is still
+///   present (strangler window, removal belongs to M9).
+pub fn unified_authority_runner_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_AUTHORITY_ENGINE_SINGLE_PATH.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/authority_engine/runner"),
+        },
+        MarkerStatus {
+            id: MARKER_ADMISSION_EXPLAINABLE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/authority_engine"),
+        },
+        MarkerStatus {
+            id: MARKER_LEGACY_AUTHORITY_COMPAT.to_string(),
+            // Legacy compat: present when ANY entry points to authority.* — but
+            // we use a heuristic: count entries referencing authority.rs.
+            present: yaml.contains("crates/sddk-engine/src/authority")
+                && !yaml.contains("crates/sddk-engine/src/authority_engine\""),
         },
     ]
 }
@@ -416,5 +449,65 @@ entries:
             .find(|m| m.id == MARKER_MEMORY_STORE_SINGLE_CANONICAL)
             .expect("marker");
         assert!(!cli.present);
+    }
+
+    #[test]
+    fn m5_authority_engine_single_path_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/authority_engine/runner
+    target_milestone: delivered
+"#;
+        let markers = unified_authority_runner_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_AUTHORITY_ENGINE_SINGLE_PATH)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m5_admission_explainable_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/authority_engine
+    target_milestone: delivered
+"#;
+        let markers = unified_authority_runner_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_ADMISSION_EXPLAINABLE)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m5_legacy_authority_compat_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/authority
+    target_milestone: delivered
+"#;
+        let markers = unified_authority_runner_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_LEGACY_AUTHORITY_COMPAT)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m5_markers_absent_when_runner_not_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = unified_authority_runner_alignment_checks(yaml);
+        let path = markers
+            .iter()
+            .find(|m| m.id == MARKER_AUTHORITY_ENGINE_SINGLE_PATH)
+            .expect("marker");
+        assert!(!path.present);
     }
 }

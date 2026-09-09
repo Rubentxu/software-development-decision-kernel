@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T16:10:00Z"
-generated_by: "sddk-orchestrator (M4 decision memory CLI)"
-total_entries: 61
+generated_at: "2026-09-09T18:01:00Z"
+generated_by: "sddk-orchestrator (M5 unified authority runner)"
+total_entries: 64
 
 entries:
 
@@ -478,6 +478,36 @@ entries:
     replaces: null
     target_milestone: delivered
     notes: "sddk memory CLI shipped v1.155.0. Eight subcommands (status|log|tree|show|diff|merge-base|reflog|audit) wired 1:1 to MemoryStore trait methods over a deterministic InMemoryMemoryStore fixture. JSON + text renderings; unknown refs/oids fail closed."
+
+  - module: crates/sddk-engine/src/authority_engine/runner
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: full
+    state_class: Projection
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "AuthorityEngineRunner shipped v1.156.0. Wraps DefaultAuthorityEngine and exposes admit_surface(actor, surface, action, target_id, facts) -> RunnerVerdict. 12-surface policy table via default_policy_for_surface. Legacy AuthorityContext::validate remains as defense-in-depth compat mirror."
+
+  - module: crates/sddk-cli/src/cycle.rs (5 pre-gate sites)
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "M5 migration: 5 cycle CLI call sites (apply_transition, cycle_supersede, cycle_pause, cycle_resume, evaluate_gate) now pre-gate through AuthorityEngineRunner.admit_surface before invoking engine functions. Legacy AuthorityContext is preserved as compat mirror for engine-internal validate() calls."
+
+  - module: crates/sddk-cli/src/knowledge_ingest.rs (1 pre-gate site)
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "M5 migration: knowledge_ingest CLI pre-gates knowledge_graph_vault writes through AuthorityEngineRunner.admit_surface before the legacy AuthorityContext::validate. 1 call site migrated."
 
   - module: crates/sddk-engine/src/risk_approval_policy
     contract: arch-spec-008-authority-and-side-effects
