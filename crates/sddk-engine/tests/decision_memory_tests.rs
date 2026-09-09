@@ -444,6 +444,8 @@ fn dmt_reflog_entry_struct_round_trip() {
         actor: DecisionMemoryAuthor::new("agent", "coord-z").unwrap(),
         timestamp: "2026-09-09T00:00:00Z".to_string(),
         reason: "init".to_string(),
+        dropped: Vec::new(),
+        tombstone_for: Vec::new(),
     };
     let wire: Wire = serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
     assert_eq!(wire.seq, 1);

@@ -956,6 +956,8 @@ impl MemoryStore for InMemoryMemoryStore {
             actor: parse_actor(actor)?,
             timestamp: now_rfc3339(),
             reason: reason.to_string(),
+            dropped: Vec::new(),
+            tombstone_for: Vec::new(),
         };
         let r = MemoryRef::new(kind.clone(), hex_lower(&target), &entry.timestamp);
         // Atomically update refs + persistent history under one lock
@@ -1701,6 +1703,8 @@ impl MemoryStore for InMemoryMemoryStore {
             })?,
             timestamp: now_rfc3339(),
             reason: "delete".to_string(),
+            dropped: Vec::new(),
+            tombstone_for: Vec::new(),
         };
         {
             let mut h = self
@@ -2091,6 +2095,18 @@ pub struct ReflogEntry {
     pub actor: DecisionMemoryAuthor,
     pub timestamp: String,
     pub reason: String,
+    /// Hex-encoded MemoryIds of commits dropped by a Soft/Mixed
+    /// `reset` (v1.151.0). Empty for Hard `reset` and all other
+    /// write ops. Defaults to empty via `#[serde(default)]` so
+    /// pre-v1.151.0 entries deserialize unchanged.
+    #[serde(default)]
+    pub dropped: Vec<String>,
+    /// Hex-encoded MemoryIds of commits physically removed from
+    /// the store by a tombstone-GC `delete_ref` (v1.151.0). Empty
+    /// for all other write ops. Defaults to empty via
+    /// `#[serde(default)]`.
+    #[serde(default)]
+    pub tombstone_for: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -2122,6 +2138,8 @@ impl Reflog {
             actor,
             timestamp: timestamp.into(),
             reason: reason.into(),
+            dropped: Vec::new(),
+            tombstone_for: Vec::new(),
         };
         self.entries.push(entry);
         self.entries.last().expect("just pushed")
