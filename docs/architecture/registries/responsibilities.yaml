@@ -1,0 +1,511 @@
+---
+schema_version: v1
+generated_at: 2026-09-09
+generated_from: manual curation + crosswalk against EXECUTION-SPINE.yaml v1.151.3 baseline
+cycle: p-63676b11dc0ef88f/m0-inventory-baseline
+coverage_basis: "Curated; covers 8 crates and all M1-M9-relevant modules. Not exhaustive line-by-line."
+ordering: by module path (lexicographic)
+---
+
+# Responsibility Registry — M0 D1
+#
+# Each entry maps a Rust module path to:
+#   - contract: canonical SPEC contract (one of arch-spec-001..018 in docs/architecture/specs/)
+#   - primary_adr: ADR (repo-native or package ADR) that anchors the design decision
+#   - coverage: full | partial | minimal | none | planned
+#   - state_class: Fact | Object | Projection | Ephemeral
+#   - authority: who owns the canonical authority over this concept
+#   - replaces: legacy concept(s) this entry deprecates (or null)
+#   - target_milestone: M0..M9 phase that finalizes the contract (or "delivered")
+#
+# Schema-versioned. Idempotent regeneration requires maintaining entry order.
+
+schema_version: v1
+generated_at: "2026-09-09T14:23:00Z"
+generated_by: "sddk-orchestrator (manual curation + cargo metadata)"
+total_entries: 47
+
+entries:
+
+  # ==========================================================================
+  # sddk-domain — pure domain types, no I/O (foundation layer)
+  # ==========================================================================
+
+  - module: crates/sddk-domain/src/channel
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0095-FOUR-STATE-CLASSES
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-domain
+    replaces: null
+    target_milestone: M5
+    notes: "Cross-crate message channel. AuthorityEngine facade (M5) targets this surface."
+
+  - module: crates/sddk-domain/src/cycle
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: legacy CycleStatus enum (UatWaiting/ApprovalPending/Recovering)
+    target_milestone: M2
+    notes: "Cycle is a change container per package; slim cycle consolidation in M2."
+
+  - module: crates/sddk-domain/src/evidence
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0100-UNIVERSAL-EVIDENCE
+    coverage: full
+    state_class: Object
+    authority: sddk-domain
+    replaces: legacy EvidenceBundle + PlanningEvidenceKind
+    target_milestone: M1
+    notes: "Universal Evidence model adopted; CAS-content-addressed."
+
+  - module: crates/sddk-domain/src/execution_scope
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Typed/versioned ExecutionScope (DW-IR-001 shipped v1.71.0)."
+
+  - module: crates/sddk-domain/src/operator_contract
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Operator I/O contract substrate (DW-IR-004 shipped v1.87.1)."
+
+  - module: crates/sddk-domain/src/plan_revision
+    contract: arch-spec-003-revision-substrate
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "PlanRevision V1 + lineage (DW-IR-003 shipped v1.79.0)."
+
+  - module: crates/sddk-domain/src/spine
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Projection
+    authority: sddk-domain
+    replaces: legacy EXECUTION-SPINE.yaml spine-as-stringly
+    target_milestone: delivered
+    notes: "Execution spine used by typed planner."
+
+  - module: crates/sddk-domain/src/transition_ast
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Versioned Transition/Predicate AST (DW-IR-002 shipped v1.72.0)."
+
+  - module: crates/sddk-domain/src/workflow_ir
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Workflow IR + migration-safe contracts."
+
+  - module: crates/sddk-domain/src/workflow_run
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "WorkflowRun persistence + identity (DW-RUNTIME-002 shipped v1.89.1)."
+
+  - module: crates/sddk-domain/src/event_envelope
+    contract: arch-spec-011-observability-views
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: partial
+    state_class: Fact
+    authority: sddk-domain
+    replaces: legacy per-crate event records
+    target_milestone: M1
+    notes: "13 input structs ready; canonical EventLog target of M1."
+
+  - module: crates/sddk-domain/src/ports
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: partial
+    state_class: Object
+    authority: sddk-domain
+    replaces: null
+    target_milestone: delivered
+    notes: "Storage port traits (MemoryStore, EventStore, ProjectionStore)."
+
+  - module: crates/sddk-domain/src/context_read
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: partial
+    state_class: Projection
+    authority: sddk-domain
+    replaces: null
+    target_milestone: M3
+    notes: "Vault as knowledge source, not authority."
+
+  - module: crates/sddk-domain/src/identity
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0095-FOUR-STATE-CLASSES
+    coverage: full
+    state_class: Object
+    authority: sddk-domain
+    replaces: null
+    target_milestone: delivered
+    notes: "Canonical IDs (cycle_id, work_item_id, evidence_id, decision_id)."
+
+  - module: crates/sddk-domain/src/models
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0095-FOUR-STATE-CLASSES
+    coverage: full
+    state_class: Object
+    authority: sddk-domain
+    replaces: null
+    target_milestone: delivered
+    notes: "Subdirectory with persisted domain models."
+
+  # ==========================================================================
+  # sddk-storage — storage adapters + CAS (concrete I/O)
+  # ==========================================================================
+
+  - module: crates/sddk-storage/src/cas
+    contract: arch-spec-003-revision-substrate
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-storage
+    replaces: null
+    target_milestone: delivered
+    notes: "Content-Addressable Store (CAS) substrate; M1 target for canonical EventLog."
+
+  - module: crates/sddk-storage/src/event_store
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: partial
+    state_class: Fact
+    authority: sddk-storage
+    replaces: legacy per-crate event records
+    target_milestone: M1
+    notes: "Append-only event store; M1 unifies under canonical EventLog."
+
+  - module: crates/sddk-storage/src/graph_store
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: partial
+    state_class: Projection
+    authority: sddk-storage
+    replaces: null
+    target_milestone: delivered
+    notes: "Sqlite-backed GraphStore; semantic graph unification in M3."
+
+  - module: crates/sddk-storage/src/fork_store
+    contract: arch-spec-003-revision-substrate
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-storage
+    replaces: null
+    target_milestone: delivered
+    notes: "Fork storage for parallel branches."
+
+  - module: crates/sddk-storage/src/projection_store
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: partial
+    state_class: Projection
+    authority: sddk-storage
+    replaces: null
+    target_milestone: M3
+    notes: "Projection store; semantic graph unification target."
+
+  - module: crates/sddk-storage/src/spine_import
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-storage
+    replaces: null
+    target_milestone: delivered
+    notes: "Cross-storage spine import (PLN-LEDGER-003 shipped v1.88.0)."
+
+  - module: crates/sddk-storage/src/migrations
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-storage
+    replaces: null
+    target_milestone: delivered
+    notes: "Append-only migrations incl. MIGRATION_17 (workflow_run_events_v1)."
+
+  # ==========================================================================
+  # sddk-engine — runtime / kernel
+  # ==========================================================================
+
+  - module: crates/sddk-engine/src/decision_memory
+    contract: arch-spec-004-decision-memory
+    primary_adr: ADR-0097-COMMON-REVISION-SUBSTRATE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Git-like Decision Memory substrate; CDD-MEMORY-001..005 shipped v1.148..1.151.0."
+
+  - module: crates/sddk-engine/src/agent_role_contract
+    contract: arch-spec-007-agent-protocol-and-handoff
+    primary_adr: ADR-0106-TYPED-INSTRUCTION-COMPILATION
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "AgentRoleContract + RoleValidator (CDD-ROLE-001 shipped v1.98.0)."
+
+  - module: crates/sddk-engine/src/agent_contribution_envelope
+    contract: arch-spec-007-agent-protocol-and-handoff
+    primary_adr: ADR-0101-AGENT-OUTCOME-CONTRIBUTION-SYNTHESIS
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: legacy AgentResult
+    target_milestone: delivered
+    notes: "AgentContributionEnvelope substrate (CDD-HANDOFF-001 shipped v1.99.0)."
+
+  - module: crates/sddk-engine/src/orchestration_synthesis
+    contract: arch-spec-007-agent-protocol-and-handoff
+    primary_adr: ADR-0101-AGENT-OUTCOME-CONTRIBUTION-SYNTHESIS
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "OrchestrationSynthesisReceipt (CDD-HANDOFF-002 shipped v1.146.0)."
+
+  - module: crates/sddk-engine/src/cold_start
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Cold-start context reconstruction (CTX-COMPILER-002 shipped)."
+
+  - module: crates/sddk-engine/src/context_capsule
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Bounded, versioned ContextCapsule (CTX-COMPILER-001 shipped)."
+
+  - module: crates/sddk-engine/src/why_queries
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: partial
+    state_class: Projection
+    authority: sddk-engine
+    replaces: null
+    target_milestone: M8
+    notes: "WhyQueryKind + engine exist (3/4). sddk impact MISSING (M8 target)."
+
+  - module: crates/sddk-engine/src/active_graph
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: partial
+    state_class: Projection
+    authority: sddk-engine
+    replaces: null
+    target_milestone: M3
+    notes: "ActiveGraphProjection; M3 deprecates as authority."
+
+  - module: crates/sddk-engine/src/authority
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: partial
+    state_class: Fact
+    authority: sddk-engine
+    replaces: legacy Permission/Gate/Approval/Risk engines
+    target_milestone: M5
+    notes: "5 components exist; 0 unified facade. M5 target."
+
+  - module: crates/sddk-engine/src/risk_approval_policy
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Risk-sensitive approval policy (HX-DECISION-002 shipped v1.102.0)."
+
+  - module: crates/sddk-engine/src/decision_plane_gate
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0103-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Decision Plane gates (DEC-PLANE-003 shipped v1.92.0)."
+
+  - module: crates/sddk-engine/src/run_view
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0103-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Projection
+    authority: sddk-engine
+    replaces: legacy RunStateView + ActionSurfaceView
+    target_milestone: delivered
+    notes: "CurrentRunView + TypedActionSurfaceView (DEC-PLANE-001..004 shipped v1.90..1.93.0)."
+
+  - module: crates/sddk-engine/src/cycle_supersede
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Cycle supersede workflow (kernel-cycle-51 shipped v1.66.6)."
+
+  - module: crates/sddk-engine/src/cycle_pause
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Cycle pause/resume + CycleStatus::Paused (LF-PAUSE-001 shipped v1.70.0)."
+
+  - module: crates/sddk-engine/src/cycle_replan
+    contract: arch-spec-002-lifecycle-model
+    primary_adr: ADR-0096-SDLC-LIFECYCLE-SEMANTICS
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "In-place bounded replan; admission of phase changes."
+
+  # ==========================================================================
+  # sddk-vault — human knowledge source (M3 target: not authority)
+  # ==========================================================================
+
+  - module: crates/sddk-vault/src/lib
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: partial
+    state_class: Projection
+    authority: sddk-vault
+    replaces: null
+    target_milestone: M3
+    notes: "Vault as knowledge source. Wiki graph is internal projection, not authority."
+
+  - module: crates/sddk-vault/src/index
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: full
+    state_class: Projection
+    authority: sddk-vault
+    replaces: null
+    target_milestone: M3
+    notes: "FTS + retrieval index; not authoritative for runtime."
+
+  # ==========================================================================
+  # sddk-cli — facade (target/contract surface, M6/M7)
+  # ==========================================================================
+
+  - module: crates/sddk-cli/src/cli
+    contract: arch-spec-015-command-registry-and-agent-surface
+    primary_adr: ADR-0107-ONE-COMMAND-REGISTRY
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: M6
+    notes: "Current clap-derived surface. M6 produces typed CommandSpec; M7 derives AgentCommandSurface."
+
+  - module: crates/sddk-cli/src/lint
+    contract: arch-spec-011-observability-views
+    primary_adr: ADR-0107-ONE-COMMAND-REGISTRY
+    coverage: minimal
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: M9
+    notes: "Will be expanded by D6 (advisory lints); M9 makes them blocking."
+
+  # ==========================================================================
+  # sddk-gateway — provider adapters + execution entry (M7 target)
+  # ==========================================================================
+
+  - module: crates/sddk-gateway/src/lib
+    contract: arch-spec-017-agent-profiles-and-provider-adapters
+    primary_adr: ADR-0109-PROVIDER-INDEPENDENT-AGENT-PROFILES
+    coverage: partial
+    state_class: Ephemeral
+    authority: sddk-gateway
+    replaces: null
+    target_milestone: M7
+    notes: "ProviderAdapter leasing 4/5; ProviderAdapter struct MISSING (M7)."
+
+  # ==========================================================================
+  # sddk-testkit — testing utilities (no domain authority)
+  # ==========================================================================
+
+  - module: crates/sddk-testkit/src/lib
+    contract: arch-spec-012-configuration
+    primary_adr: ADR-0105-CONFIGURATION-CONVENTIONS
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-testkit
+    replaces: null
+    target_milestone: delivered
+    notes: "Test fixtures + UAT helpers; non-authoritative test surface."
+
+  # ==========================================================================
+  # sddk-pack-uat — UAT pack boundary (M11 target)
+  # ==========================================================================
+
+  - module: crates/sddk-pack-uat/src/lib
+    contract: arch-spec-010-pack-sdk
+    primary_adr: ADR-0104-PACK-EXTENSION-BOUNDARY
+    coverage: full
+    state_class: Projection
+    authority: sddk-pack-uat
+    replaces: null
+    target_milestone: delivered
+    notes: "UAT pack; MULTIPACK-002 already shipped (no kernel branch)."
+
+# Open mappings (TBD during M1+)
+open_mappings:
+  - "M1: CAS-content-addressed canonical EventLog target"
+  - "M2: Lifecycle slim Cycle + ExecutionFrontier rename"
+  - "M3: SemanticGraphProjection v2; ActiveGraph deprecation"
+  - "M5: AuthorityEngine facade (5 components → 1)"
+  - "M6: Pack SDK vNext + convention-first CLI"
+  - "M7: 12 contracts (AgentProfile, SkillDefinition, InstructionCompiler, CommandRegistry, AgentCommandSurface, ProviderAdapter, AgentExecutionReceiptV1, etc.)"
+  - "M8: WhyQueryEngine bridge to ExecutionOutcome + sddk impact"
+  - "M9: Remove compat debt; lints become blocking"
