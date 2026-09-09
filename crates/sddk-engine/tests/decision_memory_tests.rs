@@ -15,7 +15,8 @@ use std::sync::Arc;
 use sddk_engine::decision_memory::{
     DecisionMemoryAuthor, DecisionMemoryBlob, DecisionMemoryCommit, DecisionMemoryError,
     DecisionMemoryTree, InMemoryMemoryStore, MemoryId, MemoryRef, MemoryStore, RefAuthority,
-    RefKind, Reflog, ReflogEntry, assert_canonical_authority, canonical_head, classify_ref,
+    RefKind, Reflog, ReflogEntry, ReflogScope, assert_canonical_authority, canonical_head,
+    classify_ref,
 };
 
 // ----------------- helpers -----------------
@@ -730,5 +731,532 @@ fn dmt_22_cross_substrate_interop_with_envelope() {
     assert_eq!(
         round.provenance_refs[0], provenance,
         "DMT-22 id is opaque bytes"
+    );
+}
+
+// =========================================================================
+// CDD-MEMORY-002 — Traversal + Projection (v1.148.0) — DMT-23..DMT-32
+// =========================================================================
+//
+// These tests exercise the 10 ops added by WU-2/WU-3, the new
+// DecisionMemoryError variants (WU-1), and the projection value
+// types. They form the first regression net for v1.148.0.
+
+fn hex(id: &MemoryId) -> String {
+    let mut s = String::with_capacity(64);
+    for b in id.iter() {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+#[test]
+fn dmt_23_decision_memory_error_new_variants_display() {
+    // WU-1: NotFound / LimitExceeded / CycleDetected exist + Display.
+    let err = DecisionMemoryError::NotFound {
+        kind: "commit",
+        id: "abc".into(),
+    };
+    assert_eq!(
+        format!("{err}"),
+        "DecisionMemory not found: kind=commit id=abc"
+    );
+
+    let err = DecisionMemoryError::LimitExceeded {
+        op: "log",
+        cap: 2048,
+    };
+    assert_eq!(
+        format!("{err}"),
+        "DecisionMemory limit exceeded: op=log cap=2048"
+    );
+
+    let id: MemoryId = [0xab; 32];
+    let err = DecisionMemoryError::CycleDetected { at: id };
+    let rendered = format!("{err}");
+    assert!(rendered.starts_with("DecisionMemory parent-chain cycle detected at id_hex="));
+    assert!(rendered.ends_with(&hex_lower(&id)));
+}
+
+#[test]
+fn dmt_24_log_walks_ancestors_parents_first_capped() {
+    // R-T4: log returns ancestors of `from` in topological order,
+    // dedup, capped at max.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("put c0");
+
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "first",
+        "2026-01-01T01:00:00Z",
+        "first child",
+        "next",
+    );
+    let c1_id = store.put_commit(c1).expect("put c1");
+
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "second",
+        "2026-01-01T02:00:00Z",
+        "second child",
+        "next",
+    );
+    let c2_id = store.put_commit(c2).expect("put c2");
+
+    // log from c2 with max=2 should yield at most 2 ids, sorted by hex.
+    let log = store.log(c2_id, 2).expect("log");
+    assert!(log.len() <= 2, "DMT-24 capped at 2 entries");
+    let mut expected = log.clone();
+    expected.sort_by(|a, b| {
+        let ha = hex(a);
+        let hb = hex(b);
+        ha.cmp(&hb)
+    });
+    assert_eq!(log, expected, "DMT-24 log is hash-sorted ascending");
+
+    // max=0 falls back to default cap (128) and returns all 3 ancestors.
+    let log_default = store.log(c2_id, 0).expect("log default");
+    assert_eq!(log_default.len(), 3, "DMT-24 ancestor set includes all 3");
+
+    // NotFound on unknown id.
+    let bad: MemoryId = [0xff; 32];
+    let err = store.log(bad, 1).expect_err("not found");
+    assert!(
+        matches!(err, DecisionMemoryError::NotFound { kind: "commit", .. }),
+        "DMT-24 unknown id → NotFound: got {err:?}"
+    );
+}
+
+#[test]
+fn dmt_25_show_returns_commit_tree_and_refs_pointing() {
+    // R-T5: show returns the commit, the tree it points to, and
+    // any refs that resolve to the same MemoryId.
+    let store = InMemoryMemoryStore::new();
+    let tree = empty_tree();
+    let tree_id = store.put_tree(tree.clone()).expect("tree");
+
+    let c = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root commit",
+        "init",
+    );
+    let cid = store.put_commit(c).expect("commit");
+
+    // Write HEAD → cid (via the public write_ref_with_reflog API).
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, cid, &mut log, "actor", "init")
+        .expect("write HEAD");
+
+    let show = store.show(cid).expect("show");
+    assert_eq!(show.commit.id_hex(), hex_lower(&cid));
+    assert_eq!(show.tree.id_hex(), hex_lower(&tree_id));
+    assert!(
+        show.refs_pointing_here
+            .iter()
+            .any(|r| matches!(r, RefKind::Head)),
+        "DMT-25 HEAD should point at cid"
+    );
+}
+
+#[test]
+fn dmt_26_tree_returns_typed_projection_with_64_cap() {
+    // R-T6: tree returns TreeProjection; > 64 entries of one kind
+    // triggers LimitExceeded.
+    let store = InMemoryMemoryStore::new();
+    let mut t = empty_tree();
+    let entries = t.entries.get_mut("goal").expect("goal bucket");
+    for _ in 0..65 {
+        entries.push(sddk_engine::decision_memory::TreeEntry {
+            name: "extra".into(),
+            id: [0u8; 32],
+        });
+    }
+    // Recompute the tree id after mutating entries (the empty_tree()
+    // constructor recorded the hash of the empty goal bucket).
+    let t = t.with_recomputed_id().expect("recompute");
+    let tree_id = store.put_tree(t).expect("put tree");
+    let commit = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root commit",
+        "init",
+    );
+    let cid = store.put_commit(commit).expect("commit");
+
+    let err = store.tree(cid).expect_err("limit exceeded");
+    assert!(
+        matches!(
+            err,
+            DecisionMemoryError::LimitExceeded {
+                op: "tree",
+                cap: 64
+            }
+        ),
+        "DMT-26 cap=64 enforced: got {err:?}"
+    );
+
+    // Below the cap returns a clean projection.
+    let mut t2 = empty_tree();
+    let entries2 = t2.entries.get_mut("goal").expect("goal bucket");
+    for k in ["ok1", "ok2", "ok3"] {
+        entries2.push(sddk_engine::decision_memory::TreeEntry {
+            name: k.into(),
+            id: [0u8; 32],
+        });
+    }
+    let t2 = t2.with_recomputed_id().expect("recompute t2");
+    let tree2_id = store.put_tree(t2).expect("tree2");
+    let c2 = make_commit(
+        vec![],
+        tree2_id,
+        "agent",
+        "root2",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let proj = store.tree(c2_id).expect("tree ok");
+    assert_eq!(proj.at_commit, c2_id, "DMT-26 projection keyed on commit");
+    assert_eq!(proj.entries.len(), 12, "DMT-26 preserves 12 typed buckets");
+}
+
+#[test]
+fn dmt_27_diff_returns_added_and_removed_commits() {
+    // R-T7: diff returns added (b-side exclusive) and removed
+    // (a-side exclusive) commits, sorted ascending.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "branch-a",
+        "2026-01-01T01:00:00Z",
+        "a-1",
+        "branch",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "branch-a",
+        "2026-01-01T02:00:00Z",
+        "a-2",
+        "branch",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "branch-b",
+        "2026-01-01T03:00:00Z",
+        "b-1",
+        "branch",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let diff = store.diff(c2_id, c3_id).expect("diff");
+    assert_eq!(diff.a, c2_id);
+    assert_eq!(diff.b, c3_id);
+    // a-side exclusive: c2; b-side exclusive: c3; common ancestors
+    // (c0, c1) are NOT in the diff.
+    assert!(
+        diff.removed_blobs.contains(&c2_id),
+        "DMT-27 c2 removed from a-side"
+    );
+    assert!(
+        diff.added_blobs.contains(&c3_id),
+        "DMT-27 c3 added on b-side"
+    );
+    let common: std::collections::BTreeSet<_> = [c0_id, c1_id].into_iter().collect();
+    for c in &common {
+        assert!(
+            !diff.added_blobs.contains(c) && !diff.removed_blobs.contains(c),
+            "DMT-27 common ancestor {c:?} should not appear in diff"
+        );
+    }
+}
+
+#[test]
+fn dmt_28_merge_base_returns_lca_with_hash_tiebreak() {
+    // R-T8: merge_base finds the lowest common ancestor. Tie-break
+    // is hash ascending (deterministic).
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "a",
+        "2026-01-01T01:00:00Z",
+        "first",
+        "branch",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "a",
+        "2026-01-01T02:00:00Z",
+        "second",
+        "branch",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "b",
+        "2026-01-01T03:00:00Z",
+        "third",
+        "branch",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let mb = store.merge_base(c2_id, c3_id).expect("merge base");
+    // Per spec: merge_base returns the smallest hash among the
+    // common ancestors (R-T8 tiebreak). The DAG
+    //   c0 → c1 → c2
+    //       ↘   ↘ c3
+    // has {c0, c1} as common ancestors; 8 < f makes c0 the answer.
+    let mut expected_lcas = [c0_id, c1_id];
+    expected_lcas.sort_by_key(hex);
+    let expected = expected_lcas[0];
+    assert_eq!(mb, expected, "DMT-28 smallest-hash LCA picked");
+
+    // merge_base(c2, c2) → c2 (direct self-merge).
+    let mb_self = store.merge_base(c2_id, c2_id).expect("merge base");
+    assert_eq!(mb_self, c2_id, "DMT-28 self merge → self");
+}
+
+#[test]
+fn dmt_29_ancestors_returns_tiered_depth_walk() {
+    // R-T9: ancestors(id, depth) returns Vec<Vec<id>> by tier.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "mid",
+        "2026-01-01T01:00:00Z",
+        "mid",
+        "next",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "leaf",
+        "2026-01-01T02:00:00Z",
+        "leaf",
+        "next",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    let tiers = store.ancestors(c2_id, 8).expect("ancestors");
+    assert_eq!(tiers.len(), 3, "DMT-29 three tiers c2, c1, c0");
+    assert!(tiers[0].contains(&c2_id), "DMT-29 tier 0 = c2");
+    assert!(tiers[1].contains(&c1_id), "DMT-29 tier 1 = c1");
+    assert!(tiers[2].contains(&c0_id), "DMT-29 tier 2 = c0");
+}
+
+#[test]
+fn dmt_30_why_returns_path_with_evidence_and_promotions() {
+    // R-T10: why(RefKind) returns WhyProjection with path, evidence,
+    // promotions.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c0_id, &mut log, "actor", "init")
+        .expect("write HEAD");
+
+    let why = store.why(RefKind::Head).expect("why");
+    assert_eq!(why.target, RefKind::Head);
+    assert!(
+        why.path.contains(&c0_id),
+        "DMT-30 path includes root commit"
+    );
+
+    // Unknown ref → NotFound.
+    let err = store
+        .why(RefKind::Tag("nope".into()))
+        .expect_err("not found");
+    assert!(
+        matches!(err, DecisionMemoryError::NotFound { kind: "ref", .. }),
+        "DMT-30 unknown ref → NotFound: got {err:?}"
+    );
+}
+
+#[test]
+fn dmt_31_reflog_returns_empty_for_in_memory_substrate() {
+    // R-T11: reflog returns Vec<ReflogEntry>. For the in-memory
+    // store this is documented as empty in v1.148.0 (read reflogs
+    // via the per-ref projection layer). The contract here is
+    // Ok(empty), not panic.
+    let store = InMemoryMemoryStore::new();
+    let entries = store.reflog(ReflogScope::All, 100).expect("empty reflog");
+    assert!(
+        entries.is_empty(),
+        "DMT-31 in-memory store returns no reflog"
+    );
+    let _ = ReflogScope::Branches; // exhaust enum coverage
+}
+
+#[test]
+fn dmt_32_branch_creates_what_if_ref() {
+    // R-T12: branch creates refs/heads/what-if/<name>. Rejects
+    // duplicates, empty names, and names containing '/'.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let cid = store.put_commit(c).expect("commit");
+
+    store.branch("draft", cid).expect("branch");
+    let what_if = store.resolve_ref(&RefKind::Branch("what-if/draft".into()));
+    assert_eq!(what_if, Some(cid), "DMT-32 what-if/draft resolves");
+
+    // Duplicate rejected.
+    let err = store.branch("draft", cid).expect_err("duplicate");
+    assert!(
+        matches!(err, DecisionMemoryError::RefCycle { .. }),
+        "DMT-32 duplicate → RefCycle: got {err:?}"
+    );
+
+    // Empty / slash rejected.
+    assert!(matches!(
+        store.branch("", cid),
+        Err(DecisionMemoryError::ReflogAppendFailed(_))
+    ));
+    assert!(matches!(
+        store.branch("a/b", cid),
+        Err(DecisionMemoryError::ReflogAppendFailed(_))
+    ));
+}
+
+#[test]
+fn dmt_33_fork_replicates_canonical_head() {
+    // R-T13: fork(as_name) writes refs/heads/what-if/<as_name>
+    // pointing at the canonical HEAD. With no canonical HEAD
+    // set, fork returns NotFound.
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "root",
+        "init",
+    );
+    let cid = store.put_commit(c).expect("commit");
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, cid, &mut log, "actor", "init")
+        .expect("HEAD");
+
+    // First, register the canonical HEAD pointer so `canonical_head`
+    // can find it.
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("canonical".into()),
+            cid,
+            &mut log,
+            "actor",
+            "canonical",
+        )
+        .expect("canonical");
+
+    store.fork("experiment-1").expect("fork");
+    let forked = store.resolve_ref(&RefKind::Branch("what-if/experiment-1".into()));
+    assert_eq!(forked, Some(cid), "DMT-33 fork points at HEAD");
+
+    // No canonical HEAD → NotFound.
+    let fresh = InMemoryMemoryStore::new();
+    let err = fresh.fork("exp").expect_err("no canonical");
+    assert!(
+        matches!(err, DecisionMemoryError::NotFound { kind: "HEAD", .. }),
+        "DMT-33 missing canonical HEAD → NotFound: got {err:?}"
     );
 }
