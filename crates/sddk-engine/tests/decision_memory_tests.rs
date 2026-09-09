@@ -2426,3 +2426,158 @@ fn dmt_59_reset_soft_returns_not_implemented() {
         other => panic!("DMT-59 expected NotImplemented, got {other:?}"),
     }
 }
+
+#[test]
+fn dmt_60_delete_ref_succeeds_when_no_unique_commits() {
+    // R-M8 / S-M10. `delete_ref(Branch("feature"))` on a branch whose
+    // commits are reachable from another ref (main) succeeds: the
+    // ref is removed and a tombstone is written.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+
+    // main -> c1, feature -> c1 (same tip, so feature shares reachability).
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c1_id,
+            &mut log,
+            "actor",
+            "advance main",
+        )
+        .expect("write main");
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("feature".into()),
+            c1_id,
+            &mut log,
+            "actor",
+            "advance feature",
+        )
+        .expect("write feature");
+
+    store
+        .delete_ref(RefKind::Branch("feature".into()))
+        .expect("delete feature");
+    // feature ref is gone.
+    assert_eq!(
+        store.resolve_ref(&RefKind::Branch("feature".into())),
+        None,
+        "DMT-60 feature ref removed"
+    );
+    // main still resolves to c1.
+    assert_eq!(
+        store
+            .resolve_ref(&RefKind::Branch("main".into()))
+            .expect("main still resolves"),
+        c1_id,
+        "DMT-60 main untouched"
+    );
+}
+
+#[test]
+fn dmt_61_delete_ref_with_unique_commits_returns_ref_not_empty() {
+    // R-M8 / S-M11. `delete_ref(Branch("feature"))` on a branch with
+    // unique commits (c2 reachable only from feature) returns
+    // `RefNotEmpty { ref_kind, reachable: N }`.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "shared",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "feature-only",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    // main -> c1 (does NOT reach c2). feature -> c2 (reaches c2 uniquely).
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c1_id,
+            &mut log,
+            "actor",
+            "advance main",
+        )
+        .expect("write main");
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("feature".into()),
+            c2_id,
+            &mut log,
+            "actor",
+            "advance feature",
+        )
+        .expect("write feature");
+
+    let err = store
+        .delete_ref(RefKind::Branch("feature".into()))
+        .expect_err("feature has unique commits");
+    match err {
+        DecisionMemoryError::RefNotEmpty {
+            ref_kind,
+            reachable,
+        } => {
+            assert!(
+                ref_kind.contains("feature"),
+                "DMT-61 ref_kind contains 'feature'; got {ref_kind}"
+            );
+            assert!(
+                reachable >= 1,
+                "DMT-61 reachable >= 1 (c2 is unique); got {reachable}"
+            );
+        }
+        other => panic!("DMT-61 expected RefNotEmpty, got {other:?}"),
+    }
+    // feature ref still exists (delete was rejected).
+    assert!(
+        store
+            .resolve_ref(&RefKind::Branch("feature".into()))
+            .is_some(),
+        "DMT-61 feature ref still present after rejected delete"
+    );
+}
