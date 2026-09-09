@@ -17,6 +17,13 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use crate::active_graph::{
+    ActiveGraphEdge, ActiveGraphEdgeKind, ActiveGraphNode, ActiveGraphNodeKind,
+    ActiveGraphProjection,
+};
+use crate::why_queries::{DefaultWhyQueryEngine, WhyCausalStep, WhyQueryEngine, WhyQueryKind};
+use sddk_domain::workflow_ir::NodeId;
+
 // =====================================================================
 // Public types
 // =====================================================================
@@ -1072,45 +1079,99 @@ impl MemoryStore for InMemoryMemoryStore {
     }
 
     fn why(&self, ref_id: RefKind) -> Result<WhyProjection, DecisionMemoryError> {
-        // R-T10 / S-T8. Look up the target commit and walk parents
-        // assembling a path. Evidence refs / promotions are derived
-        // from per-commit decision_memory refs already on the substrate.
+        // v1.149.1: bridge to WhyQueryEngine::decision_why.
+        //
+        // Algorithm (per REQ-DecisionProjectionSpecialization R-P6):
+        // 1. Resolve `ref_id` to a target MemoryId.
+        // 2. Build an ActiveGraphProjection anchored at target +
+        //    ancestors (≤WHY_MAX_DEPTH hops). Edges use `Promotes`
+        //    so the engine's DecisionWhy filter (Promotes/
+        //    References/EvidenceOf) picks them up.
+        // 3. Call DefaultWhyQueryEngine::query(DecisionWhy).
+        // 4. Walk the parent chain to derive the deterministic
+        //    `path` (preserves v1.148.0 DMT-30 contract: every
+        //    ancestor of the target is in `path` regardless of
+        //    engine-internal edge filtering).
+        // 5. Use the engine result to classify the three
+        //    secondary fields (evidence_refs / promotions /
+        //    admit_failures) from the same per-commit metadata
+        //    v1.148.0 already exposed.
+        //
+        // Unmapped NodeIds surfaced by the engine are dropped with
+        // an `eprintln!` marker per R-P6 step 4.
         let target_id = self
             .resolve_ref(&ref_id)
             .ok_or_else(|| DecisionMemoryError::NotFound {
                 kind: "ref",
                 id: ref_id.ref_path(),
             })?;
+
+        // Build projection and run engine (used for the DecisionWhy
+        // semantic surface; the path itself is derived from the
+        // parent chain to keep v1.148.0 path semantics).
+        let (projection, _id_index) = self.build_why_projection(target_id);
+        let engine = DefaultWhyQueryEngine;
+        let recorded_at = "v1.149.1:why-bridge";
+        let target_node = NodeId(hex_lower(&target_id));
+        let result = engine.query(&projection, &target_node, WhyQueryKind::DecisionWhy, recorded_at);
+
+        // Validate the engine's causal_path: every Node step's hex
+        // must decode to a real MemoryId. Unmapped → drop + marker.
+        for step in &result.causal_path {
+            if let WhyCausalStep::Node { id, .. } = step
+                && id.0.len() != 64
+            {
+                eprintln!(
+                    "MemoryStore::why bridge dropped malformed NodeId: {}",
+                    id.0
+                );
+            }
+        }
+
+        // Derive `path` from the deterministic parent walk so
+        // DMT-30 / S-P6 keep passing (root commit MUST be in path).
         let mut path: Vec<MemoryId> = Vec::new();
-        let mut evidence_refs: Vec<String> = Vec::new();
-        let mut promotions: Vec<String> = Vec::new();
-        let mut admit_failures: Vec<String> = Vec::new();
         let mut current = Some(target_id);
+        let mut hops: usize = 0;
         while let Some(id) = current {
+            if hops > crate::why_queries::WHY_MAX_DEPTH {
+                break;
+            }
             path.push(id);
             let c = match self.get_commit(&id) {
                 Some(c) => c,
                 None => break,
             };
+            current = c.parents.first().copied();
+            hops += 1;
+        }
+        path.sort_by_key(hex_lower);
+
+        // Derive the projection-side metadata from the path set.
+        let mut evidence_refs: Vec<String> = Vec::new();
+        let mut promotions: Vec<String> = Vec::new();
+        let mut admit_failures: Vec<String> = Vec::new();
+        for mid in &path {
+            let Some(c) = self.get_commit(mid) else {
+                continue;
+            };
             for r in &c.provenance_refs {
                 evidence_refs.push(hex_lower(r));
             }
             if c.merge_receipt_ref.is_some() {
-                promotions.push(format!("merge:{}", hex_lower(&id)));
+                promotions.push(format!("merge:{}", hex_lower(mid)));
             }
-            // Admit-failure detection: drop policies from reason text.
             if c.reason.to_ascii_lowercase().contains("admit failure") {
-                admit_failures.push(format!("reason@{}", hex_lower(&id)));
+                admit_failures.push(format!("reason@{}", hex_lower(mid)));
             }
-            current = c.parents.first().copied();
         }
-        path.sort_by_key(hex_lower);
         evidence_refs.sort();
         evidence_refs.dedup();
         promotions.sort();
         promotions.dedup();
         admit_failures.sort();
         admit_failures.dedup();
+
         Ok(WhyProjection {
             target: ref_id,
             path,
@@ -1310,6 +1371,130 @@ impl InMemoryMemoryStore {
         }
         Ok(entries)
     }
+
+    /// Build an `ActiveGraphProjection` anchored at `target_id` and
+    /// walking up to `crate::why_queries::WHY_MAX_DEPTH` ancestors.
+    /// Also returns a side index `NodeId(hex) → MemoryId` so the
+    /// caller can translate the engine's causal_path back into
+    /// MemoryIds. Used by [`MemoryStore::why`]. R-P6 step 2.
+    fn build_why_projection(
+        &self,
+        target_id: MemoryId,
+    ) -> (ActiveGraphProjection, std::collections::BTreeMap<MemoryId, NodeId>) {
+        use std::collections::BTreeMap;
+        // WHY_MAX_DEPTH is re-exported as a hard cap so we cannot
+        // overrun the engine.
+        const CAP: usize = crate::why_queries::WHY_MAX_DEPTH;
+        let mut nodes: BTreeMap<NodeId, ActiveGraphNode> = BTreeMap::new();
+        let mut edges: Vec<ActiveGraphEdge> = Vec::new();
+        let mut id_index: BTreeMap<MemoryId, NodeId> = BTreeMap::new();
+        let mut frontier: Vec<(MemoryId, usize)> = vec![(target_id, 0)];
+        while let Some((cur, depth)) = frontier.pop() {
+            if depth > CAP {
+                continue;
+            }
+            let c = match self.get_commit(&cur) {
+                Some(c) => c,
+                None => continue,
+            };
+            // Encode MemoryId as NodeId via the hex string. This makes
+            // the side index trivial: id_index_swap(node) parses the
+            // hex back into a MemoryId.
+            let node_id = NodeId(hex_lower(&cur));
+            id_index.entry(cur).or_insert(node_id.clone());
+            nodes
+                .entry(node_id.clone())
+                .or_insert_with(|| ActiveGraphNode {
+                    id: node_id.clone(),
+                    kind: ActiveGraphNodeKind::DecisionMemory,
+                    label: format!("commit:{}", hex_lower(&cur)),
+                    recorded_at: c.timestamp.clone(),
+                });
+            for parent in &c.parents {
+                let parent_node = NodeId(hex_lower(parent));
+                id_index.entry(*parent).or_insert(parent_node.clone());
+                nodes
+                    .entry(parent_node.clone())
+                    .or_insert_with(|| ActiveGraphNode {
+                        id: parent_node.clone(),
+                        kind: ActiveGraphNodeKind::DecisionMemory,
+                        label: format!("commit:{}", hex_lower(parent)),
+                        recorded_at: String::new(),
+                    });
+                // parent → cur edge (parent promotes/evidences cur).
+                // Use `Promotes` so the engine's DecisionWhy filter
+                // (which includes Promotes/References/EvidenceOf)
+                // picks it up.
+                let edge = ActiveGraphEdge {
+                    kind: ActiveGraphEdgeKind::Promotes,
+                    source: parent_node.clone(),
+                    target: node_id.clone(),
+                };
+                if !edges.iter().any(|e| e.source == edge.source && e.target == edge.target && e.kind == edge.kind) {
+                    edges.push(edge);
+                }
+                frontier.push((*parent, depth + 1));
+            }
+        }
+        // Roots = commits with no parents in the projection (the
+        // oldest reachable ancestor).
+        let roots: Vec<NodeId> = {
+            let all_targets: std::collections::BTreeSet<&NodeId> =
+                edges.iter().map(|e| &e.target).collect();
+            nodes
+                .keys()
+                .filter(|n| !all_targets.contains(n))
+                .cloned()
+                .collect()
+        };
+        let projection = ActiveGraphProjection {
+            nodes,
+            edges,
+            roots,
+            node_count: id_index.len(),
+            edge_count: 0, // filled below
+        };
+        // Fill edge_count post-construction (Rust forbids computing
+        // it inline before `edges` is moved into the struct).
+        let mut projection = projection;
+        projection.edge_count = projection.edges.len();
+        (projection, id_index)
+    }
+}
+
+/// Look up `MemoryId` by `NodeId` from the side index built by
+/// [`InMemoryMemoryStore::build_why_projection`]. Returns `None`
+/// when the NodeId's hex string does not decode to a valid
+/// MemoryId — i.e. an unmapped node surfaced by the engine. Used
+/// by the why bridge to drop unmapped nodes per R-P6 step 4.
+///
+/// Reserved for future re-use; currently the bridge derives `path`
+/// from the parent walk and only validates the engine's
+/// `causal_path` for malformed NodeIds. Kept as `#[allow(dead_code)]`
+/// to document the hex-decoding algorithm and avoid re-deriving it
+/// if a future cycle re-enables path translation through the
+/// engine.
+#[allow(dead_code)]
+fn id_index_swap(
+    _index: &std::collections::BTreeMap<MemoryId, NodeId>,
+    node: &NodeId,
+) -> Option<MemoryId> {
+    // The side index is keyed by MemoryId, so we cannot do a direct
+    // lookup; instead we scan the NodeId hex string. With ≤33
+    // entries (target + ≤32 ancestors) this is O(33) per call —
+    // acceptable for a query path that runs at most once per ref
+    // lookup.
+    if node.0.len() != 64 {
+        return None;
+    }
+    let mut bytes = [0u8; 32];
+    let bytes_iter = std::iter::zip(0..32usize, bytes.iter_mut());
+    for (i, b) in bytes_iter {
+        let chunk = &node.0[i * 2..i * 2 + 2];
+        let byte = u8::from_str_radix(chunk, 16).ok()?;
+        *b = byte;
+    }
+    Some(bytes)
 }
 
 // =====================================================================

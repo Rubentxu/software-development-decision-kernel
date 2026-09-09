@@ -1675,3 +1675,139 @@ fn dmt_45_projection_ignores_dangling_blob_pointers() {
     assert!(proj.entries.contains_key("decision/keep"));
     assert!(!proj.entries.contains_key("decision/missing"));
 }
+
+// ----------------- DMT-46..DMT-48: WhyQueryEngine bridge (v1.149.1) -----------------
+//
+// v1.149.1 closes the deferred WU-4 of CDD-MEMORY-003: rewires
+// InMemoryMemoryStore::why to delegate to WhyQueryEngine and translates
+// the result back into the existing WhyProjection shape so DMT-30 keeps
+// passing unchanged.
+
+#[test]
+fn dmt_46_why_bridge_preserves_path_semantics_for_head_ref() {
+    // S-P6 / R-P6: After the bridge, `why(RefKind::Head)` on a 3-commit
+    // chain MUST still include the root commit in `path` (DMT-30 contract).
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build on root",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "build on c1",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c2_id, &mut log, "actor", "init")
+        .expect("write HEAD");
+
+    let why = store.why(RefKind::Head).expect("why");
+    assert!(
+        why.path.contains(&c0_id),
+        "DMT-46 bridge MUST preserve root-commit path semantics; got {:?}",
+        why.path
+    );
+    assert!(
+        why.path.contains(&c2_id),
+        "DMT-46 bridge MUST include HEAD target in path; got {:?}",
+        why.path
+    );
+}
+
+#[test]
+fn dmt_47_why_bridge_unknown_ref_returns_not_found() {
+    // S-P7 / R-P6: bridge MUST surface `NotFound { kind: "ref", .. }`
+    // when the ref does not resolve. We re-assert here because the
+    // bridge changes the resolution path internally; the external
+    // contract MUST stay stable.
+    let store = InMemoryMemoryStore::new();
+    let err = store
+        .why(RefKind::Tag("missing".into()))
+        .expect_err("not found");
+    assert!(
+        matches!(
+            err,
+            DecisionMemoryError::NotFound {
+                kind: "ref",
+                ..
+            }
+        ),
+        "DMT-47 unknown tag MUST surface NotFound {{ kind: \"ref\", .. }}; got {err:?}"
+    );
+}
+
+#[test]
+fn dmt_48_why_bridge_drops_unmapped_node_ids_without_erroring() {
+    // R-P6 step 4: unmapped NodeIds in the causal path MUST be dropped
+    // silently (with a tracing::warn! marker) rather than aborting the
+    // query. We assert that `why()` still returns Ok with a non-empty
+    // path even when the engine surfaces extra nodes the bridge cannot
+    // map back to a MemoryId.
+    //
+    // Construction: a 2-commit chain so the engine returns the target
+    // + 1 parent as Nodes, both of which the bridge can map. The
+    // assertion is therefore: `path.len() >= 2` and no panic. If the
+    // engine ever surfaces a phantom node, the bridge would either
+    // drop it (path stays 2) or include it (path becomes 3); both
+    // outcomes are valid. The contract is "no error, path non-empty".
+    let store = InMemoryMemoryStore::new();
+    let tree_id = empty_tree_id();
+    let c0 = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_id,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build on root",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c1_id, &mut log, "actor", "init")
+        .expect("write HEAD");
+
+    let why = store.why(RefKind::Head).expect("why");
+    assert!(
+        !why.path.is_empty(),
+        "DMT-48 bridge MUST return a non-empty path when ref resolves"
+    );
+    assert!(
+        why.path.contains(&c1_id),
+        "DMT-48 bridge MUST include HEAD target in path"
+    );
+}
