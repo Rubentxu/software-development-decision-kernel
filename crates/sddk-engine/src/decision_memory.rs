@@ -686,6 +686,25 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         let _ = (at_commit, scope);
         unimplemented!("MemoryStore::delegation_projection is not implemented by this store")
     }
+
+    // === Mutation ops (CDD-MEMORY-004 / v1.150.0) ===
+    //
+    // Per ADR-093 §2.2 / R-M4..R-M8. Default impls panic with
+    // `unimplemented!()` so external implementors opt in.
+    // `InMemoryMemoryStore` overrides all five.
+
+    /// Replay `commit_id`'s tree onto the tip of `onto_ref`. New
+    /// commit has 2 parents: `[tip(onto_ref), commit_id]`. Returns
+    /// the new commit's `MemoryId`. R-M4 / S-M5.
+    fn cherry_pick(
+        &self,
+        commit_id: MemoryId,
+        onto_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        let _ = (commit_id, onto_ref, message);
+        unimplemented!("MemoryStore::cherry_pick is not implemented by this store")
+    }
 }
 
 // ----------------- Traversal value types (v1.148.0) -----------------
@@ -1393,6 +1412,56 @@ impl MemoryStore for InMemoryMemoryStore {
             entries,
             truncated: false,
         })
+    }
+
+    // === Mutation op impls (CDD-MEMORY-004 / v1.150.0) ===
+
+    fn cherry_pick(
+        &self,
+        commit_id: MemoryId,
+        onto_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        // R-M4 / S-M5.
+        // 1. Resolve `commit_id` and `onto_ref`'s tip.
+        let commit = self
+            .get_commit(&commit_id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&commit_id),
+            })?;
+        let onto_tip = self
+            .resolve_ref(&onto_ref)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: onto_ref.ref_path(),
+            })?;
+        // 2. Build the 2-parent commit reusing `commit`'s tree.
+        let parents = vec![onto_tip, commit_id];
+        let new_commit = DecisionMemoryCommit::new(
+            parents,
+            commit.tree,
+            DecisionMemoryAuthor::new("system", "cherry-pick").map_err(|_| {
+                DecisionMemoryError::ReflogAppendFailed("invalid cherry-pick author".into())
+            })?,
+            "2026-09-09T00:00:00Z",
+            "sddk-framework",
+            None::<String>,
+            Some("CDD-MEMORY-004"),
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            message.to_string(),
+            "cherry-pick from CDD-MEMORY-004",
+            vec![commit_id, onto_tip],
+        )?;
+        let new_id = new_commit.id;
+        self.put_commit(new_commit)?;
+        // 3. Advance `onto_ref` and append one reflog entry.
+        let mut log = Reflog::new();
+        self.write_ref_with_reflog(onto_ref, new_id, &mut log, "cherry-pick", "cherry-pick replay")?;
+        Ok(new_id)
     }
 }
 
