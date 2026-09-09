@@ -1,6 +1,8 @@
 //! `dev doctor` — toolchain and environment prerequisite checker.
 
-use crate::dev::arch_lint::{MarkerStatus, mirror_alignment_checks};
+use crate::dev::arch_lint::{
+    MarkerStatus, mirror_alignment_checks, semantic_graph_alignment_checks,
+};
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
 use crate::dev::paths::resolve_active_framework_root;
@@ -440,6 +442,11 @@ pub(super) fn run_dev_doctor(
         match std::fs::read_to_string(&responsibilities_yaml_path) {
             Ok(text) => {
                 for marker in mirror_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M3: semantic graph + vault + context markers
+                // (arch-spec-005, arch-spec-006).
+                for marker in semantic_graph_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

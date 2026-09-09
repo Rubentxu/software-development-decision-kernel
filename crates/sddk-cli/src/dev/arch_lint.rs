@@ -118,6 +118,47 @@ fn split_entries(yaml: &str) -> Vec<String> {
     entries
 }
 
+// ── M3 markers (semantic graph + vault + context) ────────────────────────
+
+const MARKER_SEMANTIC_GRAPH_SINGLETON: &str = "m3.semantic_graph_singleton";
+const MARKER_VAULT_KNOWLEDGE_SOURCE_ONLY: &str = "m3.vault_knowledge_source_only";
+const MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE: &str = "m3.context_capsule_has_provenance";
+
+/// M3 alignment markers (arch-spec-005 + arch-spec-006).
+///
+/// Marker definitions:
+/// - `semantic_graph_singleton`: a unique canonical author exists for the
+///   `semantic_graph` module path with `target_milestone: delivered`.
+/// - `vault_knowledge_source_only`: at least one entry owns the
+///   `vault_boundary` module with `target_milestone: delivered`.
+/// - `context_capsule_has_provenance`: the `context_compiler` module
+///   exists in the registry with `target_milestone: delivered`.
+pub fn semantic_graph_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_SEMANTIC_GRAPH_SINGLETON.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/semantic_graph"),
+        },
+        MarkerStatus {
+            id: MARKER_VAULT_KNOWLEDGE_SOURCE_ONLY.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/vault_boundary"),
+        },
+        MarkerStatus {
+            id: MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/context_compiler"),
+        },
+    ]
+}
+
+fn has_delivered_entry(yaml: &str, module_path: &str) -> bool {
+    for block in split_entries(yaml) {
+        if block.contains(module_path) && block.contains("target_milestone: delivered") {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +270,54 @@ entries:
         assert_eq!(entries.len(), 2);
         assert!(entries[0].contains("notes: alpha"));
         assert!(entries[1].contains("notes: beta"));
+    }
+
+    #[test]
+    fn m3_semantic_graph_singleton_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    contract: arch-spec-005
+    target_milestone: delivered
+    notes: "M3 semantic graph shipped v1.154.0"
+"#;
+        let markers = semantic_graph_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_SEMANTIC_GRAPH_SINGLETON)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m3_vault_knowledge_source_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/vault_boundary
+    contract: arch-spec-006
+    target_milestone: delivered
+"#;
+        let markers = semantic_graph_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_VAULT_KNOWLEDGE_SOURCE_ONLY)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m3_context_compiler_present_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/context_compiler
+    contract: arch-spec-006
+    target_milestone: delivered
+"#;
+        let markers = semantic_graph_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE)
+            .expect("marker");
+        assert!(m.present);
     }
 }

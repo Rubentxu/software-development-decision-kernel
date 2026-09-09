@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T15:12:05Z"
-generated_from: manual curation + M1 canonical_event_log + cas_object_store + evidence
-cycle: p-63676b11dc0ef88f/m1-canonical-fact-log
+generated_at: "2026-09-09T15:32:08Z"
+generated_from: manual curation + M3 semantic_graph + vault + context_compiler
+cycle: p-63676b11dc0ef88f/m3-semantic-graph-vault
 ordering: by SPEC then concept
-total_decisions: 41
+total_decisions: 47
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -69,6 +69,16 @@ canonical_fact_log_unification_target:
   - { concept: EventStore_legacy, existing: "crates/sddk-engine/src/event_envelope.rs (incomplete)", disposition: COMPATIBILITY_MIRROR, target: "CanonicalEventLog", milestone: M1, confidence: high, status: in_progress, notes: "Legacy envelope/registry retained as compatibility mirror; reads continue to function but writes must go through CanonicalEventLog." }
   - { concept: EvidenceAttachmentV1_legacy, existing: "MIGRATE candidates", disposition: MIGRATE, target: "UniversalEvidence", milestone: M1, confidence: medium, status: planned, sensitive: true, notes: "R-001 [medium] sensitive — migration window per cycle. adapter From<EvidenceAttachmentV1> for EvidenceRef rounds-trips content losslessly." }
 
+semantic_graph_and_context_unification_target:
+  - { concept: NodeKind, existing: "crates/sddk-engine/src/semantic_kind.rs", disposition: DELIVERED, target: "NodeKind closed-set enum", milestone: M3, confidence: high, status: delivered, notes: "18 core families (arch-spec-005) + Extension. NamespacedKind validates lowercase ASCII segments." }
+  - { concept: RelationKind, existing: "crates/sddk-engine/src/semantic_kind.rs", disposition: DELIVERED, target: "RelationKind closed-set enum", milestone: M3, confidence: high, status: delivered, notes: "12 core kinds + Extension." }
+  - { concept: SemanticNode, existing: "crates/sddk-engine/src/semantic_node.rs", disposition: DELIVERED, target: "SemanticNode", milestone: M3, confidence: high, status: delivered, notes: "CAS-routed payloads > 4 KiB; relation key sha256(from||relKind||to)." }
+  - { concept: SemanticGraphProjection, existing: "crates/sddk-engine/src/semantic_graph.rs", disposition: DELIVERED, target: "SemanticGraphProjection port + InMemorySemanticGraph", milestone: M3, confidence: high, status: delivered, notes: "Rebuild from CanonicalEventLog is deterministic; graph_revision monotone." }
+  - { concept: ActiveGraph_legacy, existing: "crates/sddk-engine/src/active_graph.rs (typed view)", disposition: EVOLVE, target: "ActiveGraphView adapter", milestone: M3, confidence: high, status: delivered, notes: "ActiveGraph now derives from canonical SemanticGraphProjection via ActiveGraphView. Free-floating constructor retained as compatibility during strangler window." }
+  - { concept: VaultBoundary, existing: "crates/sddk-engine/src/vault_boundary.rs", disposition: DELIVERED, target: "Vault boundary", milestone: M3, confidence: high, status: delivered, notes: "mutates_canonical_decision is required-field; Authority callers rejected at write_entry. Vault stays knowledge source only." }
+  - { concept: ContextCompilerV2, existing: "crates/sddk-engine/src/context_compiler.rs", disposition: DELIVERED, target: "ContextCompiler + ContextCapsuleV2", milestone: M3, confidence: high, status: delivered, notes: "Provenance (BTreeSet-ordered) + Staleness (fact-log head diff). Unknown sources preserved." }
+  - { concept: WhyEngine, existing: "crates/sddk-engine/src/why_queries.rs", disposition: PLANNED, target: "Why engine over canonical SemanticGraph", milestone: M8, confidence: medium, status: planned, notes: "Reads from canonical graph (M3 substrate) plus memory (M4). 14-field ExplanationProof lives in M8." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -97,15 +107,15 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 41
+  total_decisions: 47
   keep: 13
-  evolve: 4
+  evolve: 5
   evolve_rename: 3
   deprecate_runtime_meaning: 4
   migrate: 3
   split: 1
   internalize: 4
-  delivered: 12
+  delivered: 18
   planned: 9
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true

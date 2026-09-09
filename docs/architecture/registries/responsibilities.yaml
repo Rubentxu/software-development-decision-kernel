@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T15:12:05Z"
-generated_by: "sddk-orchestrator (M1 fact log + CAS + Evidence)"
-total_entries: 55
+generated_at: "2026-09-09T15:32:08Z"
+generated_by: "sddk-orchestrator (M3 semantic_graph + vault + context)"
+total_entries: 60
 
 entries:
 
@@ -408,6 +408,66 @@ entries:
     replaces: null
     target_milestone: delivered
     notes: "Projector + ProjectorRegistry shipped v1.153.0. Required metadata: source_streams (non-empty), version (non-empty), rebuild (Full|Incremental). Fails closed when missing. project_can_serve_as_authority_evidence cross-check enforces CA-005."
+
+  - module: crates/sddk-engine/src/semantic_kind
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Closed-set NodeKind enum (18 core families + namespaced extension) + RelationKind enum (12 core kinds + extension) shipped v1.154.0. NamespacedKind rejects malformed input via lowercase ASCII + digit rules."
+
+  - module: crates/sddk-engine/src/semantic_node
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "SemanticNode + SemanticRelation + NodeId shipped v1.154.0. Payloads > 4 KiB route through CasRef; relation key sha256(from||relKind||to) for deterministic ordering; EvidenceRef (M1) reused as evidence attachment."
+
+  - module: crates/sddk-engine/src/semantic_graph
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: full
+    state_class: Projection
+    authority: sddk-engine
+    replaces: legacy ActiveGraphProjection (becomes typed view)
+    target_milestone: delivered
+    notes: "SemanticGraphProjection port + InMemorySemanticGraph shipped v1.154.0. Rebuild from CanonicalEventLog (M1) is deterministic; graph_revision monotone. canonical_bytes is the equality surface for tests."
+
+  - module: crates/sddk-engine/src/vault_boundary
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Vault boundary module shipped v1.154.0. VaultEntry.mutates_canonical_decision is required-field (default false); Authority callers rejected at write_entry. Vault stays a knowledge source only."
+
+  - module: crates/sddk-engine/src/context_compiler
+    contract: arch-spec-006-knowledge-vault-context
+    primary_adr: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: legacy context_capsule (becomes typed view via adapter)
+    target_milestone: delivered
+    notes: "ContextCompiler + ContextCapsuleV2 shipped v1.154.0. Composes 4 typed adapters + optional vault knowledge; emits provenance (BTreeSet-ordered adapter ids) + Staleness (fact-log head diff). Unknown sources preserved, never silently dropped."
+
+  - module: crates/sddk-engine/src/active_graph_view
+    contract: arch-spec-005-semantic-graph-and-why
+    primary_adr: ADR-0098-ONE-SEMANTIC-GRAPH
+    coverage: minimal
+    state_class: Projection
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "ActiveGraphView adapter shipped v1.154.0. Derives ActiveGraphProjection from canonical SemanticGraphProjection. ViewError::NoCanonicalAuthority fail-closed when no canonical projection is wired."
 
   - module: crates/sddk-engine/src/risk_approval_policy
     contract: arch-spec-008-authority-and-side-effects
