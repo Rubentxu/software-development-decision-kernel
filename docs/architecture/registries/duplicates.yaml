@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T14:51:24Z"
-generated_from: manual curation + M5 authority_engine delivery
-cycle: p-63676b11dc0ef88f/m5-authority-engine-facade
+generated_at: "2026-09-09T15:12:05Z"
+generated_from: manual curation + M1 canonical_event_log + cas_object_store + evidence
+cycle: p-63676b11dc0ef88f/m1-canonical-fact-log
 ordering: by SPEC then concept
-total_decisions: 36
+total_decisions: 41
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -59,6 +59,16 @@ authority_components_unification_target:
   - { concept: Risk, existing: "RiskApprovalPolicy + RiskCarryEntry", disposition: INTERNALIZE, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered }
   - { concept: AuthorityEngine_facade, existing: "crates/sddk-engine/src/authority_engine.rs", disposition: DELIVERED, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered, notes: "ActionKind (24), ActorKind (11), RiskBand, GateKind, ApproverKind, DenyReason (9), AdmissionDecision (Allow/Deny/RequireApproval), bridge.rs adapts legacy components as inputs/facts." }
 
+canonical_fact_log_unification_target:
+  - { concept: CanonicalEventLog, existing: "crates/sddk-engine/src/canonical_event_log.rs", disposition: DELIVERED, target: "CanonicalEventLog port", milestone: M1, confidence: high, status: delivered, notes: "FactEnvelopeV1 (schema_version 1.0.0), sha256-domain-separated FactId, append-only, MAX_INLINE_PAYLOAD_BYTES=4096 routes through CasRef. Compatibility mirrors: legacy EventStore + ad-hoc ledger tables (see legacy_event_ledger section)." }
+  - { concept: CasObjectStore, existing: "crates/sddk-engine/src/cas_object_store.rs", disposition: DELIVERED, target: "CasObjectStore", milestone: M1, confidence: high, status: delivered, notes: "sha256-keyed, deterministic dedupe, CasError::Missing typed error." }
+  - { concept: UniversalEvidence, existing: "crates/sddk-engine/src/evidence_ref.rs", disposition: DELIVERED, target: "EvidenceRef + EvidenceBundle", milestone: M1, confidence: high, status: delivered, notes: "Reused across planning/governance/authority receipts. Ordering key sha256(kind||locator||cas)." }
+  - { concept: PersistentStateClassLinter, existing: "crates/sddk-engine/src/state_class_lint.rs", disposition: DELIVERED, target: "StateClass ratchet", milestone: M1, confidence: high, status: delivered, notes: "Fact|Object|Projection|Ephemeral as required field; rejects empty id and class drift." }
+  - { concept: ProjectorRegistry, existing: "crates/sddk-engine/src/projector_registry.rs", disposition: DELIVERED, target: "ProjectorRegistry", milestone: M1, confidence: high, status: delivered, notes: "Required metadata: source_streams, version, rebuild. CA-005 cross-check via project_can_serve_as_authority_evidence." }
+  - { concept: ArchLintDoctorExtension, existing: "crates/sddk-cli/src/dev/arch_lint.rs", disposition: DELIVERED, target: "sddk dev doctor M1 markers", milestone: M1, confidence: high, status: delivered, notes: "Three markers emitted via DoctorCheck: canonical_event_log_singleton, compatibility_mirrors_marked, cas_index_consistency." }
+  - { concept: EventStore_legacy, existing: "crates/sddk-engine/src/event_envelope.rs (incomplete)", disposition: COMPATIBILITY_MIRROR, target: "CanonicalEventLog", milestone: M1, confidence: high, status: in_progress, notes: "Legacy envelope/registry retained as compatibility mirror; reads continue to function but writes must go through CanonicalEventLog." }
+  - { concept: EvidenceAttachmentV1_legacy, existing: "MIGRATE candidates", disposition: MIGRATE, target: "UniversalEvidence", milestone: M1, confidence: medium, status: planned, sensitive: true, notes: "R-001 [medium] sensitive — migration window per cycle. adapter From<EvidenceAttachmentV1> for EvidenceRef rounds-trips content losslessly." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -87,16 +97,16 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 36
+  total_decisions: 41
   keep: 13
   evolve: 4
   evolve_rename: 3
   deprecate_runtime_meaning: 4
-  migrate: 2
+  migrate: 3
   split: 1
   internalize: 4
-  delivered: 1
-  planned: 11
+  delivered: 12
+  planned: 9
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true
 

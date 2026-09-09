@@ -5,6 +5,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 mod agent_models;
+mod arch_lint;
 pub(super) mod bundle_manifest;
 mod check;
 mod check_arch;

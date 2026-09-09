@@ -1,5 +1,6 @@
 //! `dev doctor` — toolchain and environment prerequisite checker.
 
+use crate::dev::arch_lint::{MarkerStatus, mirror_alignment_checks};
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
 use crate::dev::paths::resolve_active_framework_root;
@@ -29,6 +30,15 @@ struct FrameworkCheck {
     name: String,
     status: String,
     detail: String,
+}
+
+/// Push a single arch-lint marker into the doctor checks vector as a
+/// `DoctorCheck`. Mapping: marker.id → `tool`, marker.present → `present`.
+fn push_marker(checks: &mut Vec<DoctorCheck>, marker: &MarkerStatus) {
+    checks.push(DoctorCheck {
+        tool: marker.id.clone(),
+        present: marker.present,
+    });
 }
 
 fn check_framework(root: &Path, editor_dir: &Path) -> Vec<FrameworkCheck> {
@@ -420,6 +430,31 @@ pub(super) fn run_dev_doctor(
                 }
             }
         }
+    }
+
+    // Arch lint: M1 alignment markers (arch-spec-001 CA-007). Reads
+    // responsibilities.yaml text and emits each marker as a doctor check.
+    let responsibilities_yaml_path =
+        root.join("docs/architecture/registries/responsibilities.yaml");
+    if responsibilities_yaml_path.is_file() {
+        match std::fs::read_to_string(&responsibilities_yaml_path) {
+            Ok(text) => {
+                for marker in mirror_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+            }
+            Err(_) => {
+                checks.push(DoctorCheck {
+                    tool: "m1.responsibilities_unreadable".into(),
+                    present: false,
+                });
+            }
+        }
+    } else {
+        checks.push(DoctorCheck {
+            tool: "m1.responsibilities_missing".into(),
+            present: false,
+        });
     }
 
     // `all_present` reflects only non-brevity checks (framework layout).

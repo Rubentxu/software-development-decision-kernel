@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T14:51:12Z"
-generated_by: "sddk-orchestrator (M5 authority_engine facade)"
-total_entries: 48
+generated_at: "2026-09-09T15:12:05Z"
+generated_by: "sddk-orchestrator (M1 fact log + CAS + Evidence)"
+total_entries: 55
 
 entries:
 
@@ -359,6 +359,56 @@ entries:
     target_milestone: delivered
     notes: "AuthorityEngine facade shipped v1.152.0. ActionKind (24), ActorKind (11), RiskBand, GateKind, ApproverKind, DenyReason (9), AdmissionDecision (Allow/Deny/RequireApproval), AuthorityEngine trait, DefaultAuthorityEngine impl, bridge.rs for legacy components."
 
+  - module: crates/sddk-engine/src/canonical_event_log
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: legacy EventStore / ad-hoc ledger tables (compatibility mirrors)
+    target_milestone: delivered
+    notes: "CanonicalEventLog port shipped v1.153.0. FactEnvelopeV1 (schema_version 1.0.0), FactId (sha256-domain-separated), InMemoryCanonicalEventLog reference impl, append-only invariant, MAX_INLINE_PAYLOAD_BYTES=4096 routes large payloads through CasRef."
+
+  - module: crates/sddk-engine/src/cas_object_store
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "CasObjectStore shipped v1.153.0. sha256 key, dedupe, CasError::Missing typed error."
+
+  - module: crates/sddk-engine/src/evidence_ref
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0100-UNIVERSAL-EVIDENCE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: legacy EvidenceAttachmentV1 (via From<EvidenceAttachmentV1>)
+    target_milestone: delivered
+    notes: "Universal EvidenceRef + EvidenceBundle shipped v1.153.0. Reused across planning/governance/authority receipts. Bundle ordering via sha256(kind||locator||cas) for determinism."
+
+  - module: crates/sddk-engine/src/state_class_lint
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0095-FOUR-STATE-CLASSES
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "PersistentModel registry + lint shipped v1.153.0. state_class is a required field at the type level; runtime validation rejects empty ids and class drift."
+
+  - module: crates/sddk-engine/src/projector_registry
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: full
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "Projector + ProjectorRegistry shipped v1.153.0. Required metadata: source_streams (non-empty), version (non-empty), rebuild (Full|Incremental). Fails closed when missing. project_can_serve_as_authority_evidence cross-check enforces CA-005."
+
   - module: crates/sddk-engine/src/risk_approval_policy
     contract: arch-spec-008-authority-and-side-effects
     primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
@@ -519,3 +569,26 @@ open_mappings:
   - "M7: 12 contracts (AgentProfile, SkillDefinition, InstructionCompiler, CommandRegistry, AgentCommandSurface, ProviderAdapter, AgentExecutionReceiptV1, etc.)"
   - "M8: WhyQueryEngine bridge to ExecutionOutcome + sddk impact"
   - "M9: Remove compat debt; lints become blocking"
+# Compatibility mirrors (M1 CA-007) — these legacy surfaces retain their
+# existing readers but new writes MUST go through the canonical entities
+# declared above. Doctor extension reports drift via m1.* markers.
+
+  - module: crates/sddk-engine/src/event_envelope
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: partial
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: M9
+    notes: "Legacy event envelope retained as compatibility mirror per arch-spec-001 CA-007. New writes route through CanonicalEventLog. Removal criteria: M9 'Remove compat debt' cycle."
+
+  - module: crates/sddk-engine/src/event_registry
+    contract: arch-spec-001-canonical-authority
+    primary_adr: ADR-0094-ONE-CANONICAL-FACT-LOG
+    coverage: partial
+    state_class: Fact
+    authority: sddk-engine
+    replaces: null
+    target_milestone: M9
+    notes: "Legacy event registry retained as compatibility mirror per arch-spec-001 CA-007. Removal criteria: M9."
