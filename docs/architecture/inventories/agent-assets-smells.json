@@ -1,0 +1,2107 @@
+{
+  "summary": {
+    "total_files_scanned": 309,
+    "files_with_smells": 32,
+    "smells_by_category": {
+      "deprecated_cli_names": 3,
+      "grants_permission": 18,
+      "prompt_workflow_transitions": 9,
+      "raw_ledger_reads": 1,
+      "vault_as_authority": 5
+    },
+    "files_per_category": {
+      "deprecated_cli_names": [
+        "agents/sddk-plan.md",
+        "agents/sddk-run.md",
+        "skills/_shared/cli-usage-contract.md"
+      ],
+      "grants_permission": [
+        "agents/auto-grill-internet-researcher.md",
+        "agents/auto-grill-ops-researcher.md",
+        "agents/auto-grill-security-researcher.md",
+        "agents/auto-grill-standards-researcher.md",
+        "agents/impeccable-primary.md",
+        "agents/sddk-run.md",
+        "agents/sddk-ship.md",
+        "agents/studio-doc-extractor.md",
+        "agents/studio-reverse-engineer.md",
+        "agents/test-pyramid-builder.md",
+        "prompts/sddk/phases/apply-strict-tdd.md",
+        "skills/chronos-mcp/SKILL.md",
+        "skills/deep-research/sub/deep-leverage-points-analyst/SKILL.md",
+        "skills/knowledge-graph/SKILL.md",
+        "skills/playwright-cli/references/playwright-tests.md",
+        "skills/playwright-cli/references/running-code.md",
+        "skills/playwright-cli/references/test-generation.md",
+        "skills/test-pyramid/SKILL.md"
+      ],
+      "prompt_workflow_transitions": [
+        "prompts/sddk/phases/apply.md",
+        "prompts/sddk/phases/archive.md",
+        "prompts/sddk/phases/design.md",
+        "prompts/sddk/phases/explore.md",
+        "prompts/sddk/phases/release.md",
+        "prompts/sddk/phases/spec.md",
+        "prompts/sddk/phases/tasks.md",
+        "prompts/sddk/phases/verify.md",
+        "skills/_shared/cli-usage-contract.md"
+      ],
+      "raw_ledger_reads": [
+        "prompts/sddk/decision-model.md"
+      ],
+      "vault_as_authority": [
+        "prompts/sddk/decision-model.md",
+        "prompts/sddk/document-catalog.md",
+        "prompts/sddk/orchestrator.md",
+        "skills/_shared/engram-convention.md",
+        "skills/knowledge-graph/SKILL.md"
+      ]
+    }
+  },
+  "inventory": {
+    "agents/debt-overeng-cluster.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/jd-judge-b.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-guide.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-archive.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-tasks.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-doc-extractor.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 11,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/debt-duplication-cluster.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-reporter.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-ship.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 15,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/sddk-adopt.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/deep-research-orchestrator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/ui-auditor.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/analytics-reporter.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/balance-advisor.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-reverse-engineer.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 11,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/debt-smells-cluster.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-release.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-judge.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-verify.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-page.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/orchestrator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-security-researcher.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 65,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 86,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/jd-fix-agent.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/book-orchestrator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-internet-researcher.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 49,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 71,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/impeccable-primary.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 130,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/debt-coupling-cluster.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-spec.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-status.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-init.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/architecture-critic.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-form-quality.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-debt-verify.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-orchestrator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-block.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-recover.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-reporter.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-propose.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-coherence.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-analyzer.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-runner.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-interviewer.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-ux-form.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-plan.md": {
+      "findings": [
+        {
+          "category": "deprecated_cli_names",
+          "message": "Plain 'sddk plan' is DEPRECATED; use sddk plan work-item / roadmap",
+          "match": "SDDK Plan",
+          "line": 9,
+          "confidence": "medium"
+        },
+        {
+          "category": "deprecated_cli_names",
+          "message": "Plain 'sddk plan' is DEPRECATED; use sddk plan work-item / roadmap",
+          "match": "sddk plan",
+          "line": 11,
+          "confidence": "medium"
+        },
+        {
+          "category": "deprecated_cli_names",
+          "message": "Plain 'sddk plan' is DEPRECATED; use sddk plan work-item / roadmap",
+          "match": "sddk plan",
+          "line": 26,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 3,
+      "categories": [
+        "deprecated_cli_names"
+      ]
+    },
+    "agents/sddk-apply.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-repo-docs-researcher.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-code-researcher.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/jd-judge-a.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/test-pyramid-builder.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 11,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 221,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Permission grant verb",
+          "match": "permission for",
+          "line": 221,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Permission grant verb",
+          "match": "permissions to",
+          "line": 237,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 4,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/auto-grill-user-proxy.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-loop-orchestrator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-contract-miner.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-explore.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/sddk-run.md": {
+      "findings": [
+        {
+          "category": "deprecated_cli_names",
+          "message": "Plain 'sddk plan' is DEPRECATED; use sddk plan work-item / roadmap",
+          "match": "SDDK plan",
+          "line": 3,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 15,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "deprecated_cli_names",
+        "grants_permission"
+      ]
+    },
+    "agents/auto-grill-skeptic.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-coverage-auditor.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-evidence-synthesizer.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-scribe.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/debt-architecture-cluster.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-standards-researcher.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 51,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 72,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/studio-token.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/analytics-judge.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/analytics-researcher.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-component.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-discovery.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/uat-planner.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/studio-validator.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "agents/auto-grill-ops-researcher.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 65,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 86,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "agents/sddk-design.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/BOOK-REPO-CONTEXT.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/BOOK-WORKFLOW.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/BOOK-SKILLS-INDEX.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/DEEP-RESEARCH-INDEX.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/security-reviewer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/frontend-evidence-loop/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-archive/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/ponytail-audit/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/minimax-mcp/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/judgment-day/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/issue-creation/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/audience-profiler/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/editorial-reviewer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-researcher/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/repository-knowledge-extractor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/uat-ux-form/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-pedagogy-justifier/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/reference-validator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/go-testing/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/rust-patterns/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-propose/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-cycle-resume/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-tasks/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-c4-likec4/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/editorial-voice-designer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/evidence-cross-validator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-debt-verify/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/uat-guided-mode/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/find-skills/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-example-verifier/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/diagram-architect/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/analogy-auditor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-release/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-init/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-project-initializer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-verify/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/entropy-sdd/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/skill-creator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/uat-traceability/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/curriculum-designer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/cognitive-doc-design/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/uat-evidence/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/knowledge-graph/SKILL.md": {
+      "findings": [
+        {
+          "category": "vault_as_authority",
+          "message": "Vault as canonical source",
+          "match": "vault as the **single source of truth",
+          "line": 17,
+          "confidence": "medium"
+        },
+        {
+          "category": "vault_as_authority",
+          "message": "Vault as canonical source",
+          "match": "VAULT/milestones/_active.md` is informational and never serialization authority",
+          "line": 223,
+          "confidence": "medium"
+        },
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 17,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 3,
+      "categories": [
+        "grants_permission",
+        "vault_as_authority"
+      ]
+    },
+    "skills/uat-dashboard/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/uat-discovery/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/auto-grill-loop/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chapter-writer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/branch-pr/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/persistence-contract.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/review-ledger-contract.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/sddk-phase-common.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/skill-resolver.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/_shared/engram-convention.md": {
+      "findings": [
+        {
+          "category": "vault_as_authority",
+          "message": "Vault as canonical source",
+          "match": "vault and XDG artifacts retain authority",
+          "line": 48,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "vault_as_authority"
+      ]
+    },
+    "skills/_shared/cli-usage-contract.md": {
+      "findings": [
+        {
+          "category": "deprecated_cli_names",
+          "message": "Plain 'sddk plan' is DEPRECATED; use sddk plan work-item / roadmap",
+          "match": "sddk plan",
+          "line": 433,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 254,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 277,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 296,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 315,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 334,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 353,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 372,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 392,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 9,
+      "categories": [
+        "deprecated_cli_names",
+        "prompt_workflow_transitions"
+      ]
+    },
+    "skills/uat-form-quality/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/hallucination-auditor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-design/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/layout-geometry-audit/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-explore/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chronos-sdd/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/research-strategist/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-memory-keeper/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/research-knowledge-curator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/comment-writer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/ponytail-debt/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/version-drift-detector/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/ui-audit-protocol/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/pedagogical-reviewer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/SKILL.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 111,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/accessibility-reviewer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-credibility-assessor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-integration-architect/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/zai-mcp/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/example-complexity-controller/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-builder/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-stack-detector/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-example-generator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chained-pr/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/cua-test-orchestrator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/cognicode-sdd/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/release-maintainer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-outline-architect/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/auto-grill/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/auto-grill/ADVERSARIAL-ENTROPY.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/auto-grill/OPPORTUNITY-SCORE.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/auto-grill/HTML-REPORT.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/work-unit-commits/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/skill-registry/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/evidence-manager/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-prose-coherence-checker/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/skill-improver/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/citation-manager/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/technical-reviewer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chronos-mcp/SKILL.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 233,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/sddk-apply/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chapter-planner/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-discovery-specialist/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-spec/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/exercise-designer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/exercise-designer/references/exercise-taxonomy.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-discovery-specialist/references/discovery-search-strategy.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/technical-reviewer/references/adversarial-checklist.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/citation-manager/references/csl-styles.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/skill-improver/references/skill-style-guide.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-prose-coherence-checker/references/divergence-examples.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/release-maintainer/references/maintenance-cadence.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chained-pr/references/chaining-details.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-example-generator/references/testable-headless-patterns.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-stack-detector/references/stack-recipes.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/example-complexity-controller/references/complexity-heuristics.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/request-mocking.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/element-attributes.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/session-management.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/tracing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/storage-state.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/playwright-tests.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 17,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/playwright-cli/references/video-recording.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/playwright-cli/references/test-generation.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You can use",
+          "line": 92,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/playwright-cli/references/running-code.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Permission grant verb",
+          "match": "permissions for",
+          "line": 58,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/playwright-cli/references/spec-driven-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/code-integration-architect/references/include-strategies.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-credibility-assessor/references/bias-signals.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/accessibility-reviewer/references/wcag-quick.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/quality-and-a11y.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/python-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/e2e-playwright.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/js-ts-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/skill-matrix.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/edge-case-grill.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/e2e-cypress.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/go-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/rust-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/references/stack-detection.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/assets/pyramid-checklist.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/assets/test-strategy-doc.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/test-pyramid/assets/grill-test-coverage.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/pedagogical-reviewer/references/pedagogy-heuristics.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/ui-audit-protocol/references/evidence-checklist.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/ui-audit-protocol/references/tooling-matrix.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/version-drift-detector/references/drift-sources.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/references/pipeline-r0-r6.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/references/index.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-software-research/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-strategist/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-evidence-triangulator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-system-archetypes-mapper/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-methodology-hub/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-pattern-extractor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-stocks-flows-diagrammer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-traps-detector/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-claim-extractor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-leverage-points-analyst/SKILL.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "You have",
+          "line": 115,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "skills/deep-research/sub/deep-coach-systems-thinking/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-feedback-loops-analyzer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-source-discovery-specialist/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-reference-validator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-domain-modeler/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-knowledge-graph-builder/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-source-credibility-assessor/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-knowledge-corpus-curator/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-paradigms-explorer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-scenarios-explorer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-historical-lineage-tracer/SKILL.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-knowledge-corpus-curator/references/decay-rates.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-source-discovery-specialist/references/source-types-by-domain.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-source-discovery-specialist/references/canonical-urls-systems-thinking.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-coach-systems-thinking/references/canonical-meadows-excerpts.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-coach-systems-thinking/references/meadows-in-practice.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/references/supported-domains.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/references/meadows-canon.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/references/deep-research-workflow.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/references/dual-output-contract.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-orchestrator/references/evidence-levels.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-evidence-triangulator/references/confidence-algorithm.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-strategist/references/claim-types.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/deep-research/sub/deep-research-strategist/references/evidence-levels.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/research-knowledge-curator/references/decay-rates.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-memory-keeper/references/session-checkpoint-protocol.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-memory-keeper/references/adr-template.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-memory-keeper/references/book-context-structure.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/research-strategist/references/evidence-levels.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/hallucination-auditor/references/red-flags.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/chapter-writer/references/writing-style.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/skill-creator/references/skill-style-guide.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-verify/references/multi-stack-validation.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/book-project-initializer/references/stack-asciidoc.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/analogy-auditor/references/analogy-templates.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/diagram-architect/references/notation-guide.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/evidence-cross-validator/references/confidence-scoring.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/evidence-cross-validator/references/conflict-resolution.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/editorial-voice-designer/references/archetype-recipes.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/sddk-c4-likec4/references/model-contract.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/go-testing/references/examples.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/reference-validator/references/wayback-protocol.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/repository-knowledge-extractor/references/extraction-tools.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/source-researcher/references/authority-ranking.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/editorial-reviewer/references/llm-tells.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/judgment-day/references/prompts-and-formats.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/frontend-evidence-loop/references/web-development-workflow.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "skills/security-reviewer/references/security-checklist.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/roadmap-template.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/lens-registry.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/orchestrator.md": {
+      "findings": [
+        {
+          "category": "vault_as_authority",
+          "message": "Vault described as memory",
+          "match": "vault artifacts outrank summaries and memory",
+          "line": 128,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "vault_as_authority"
+      ]
+    },
+    "prompts/sddk/change-scoped-testing.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/adr-template.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/status-query.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/lateral-thinking-optin.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/lateral-thinking.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/entropy-policy.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/mcw.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/document-catalog.md": {
+      "findings": [
+        {
+          "category": "vault_as_authority",
+          "message": "Vault as canonical source",
+          "match": "vault}` | Milestones, ADRs, requirements, cycle nodes, incidences, terms | Canon",
+          "line": 11,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "vault_as_authority"
+      ]
+    },
+    "prompts/sddk/escalation-policy.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/README.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/dynamic-workflow.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/metrics-schema.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/HTML-REPORT.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phase-contracts.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/next-tuning.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/arsenal.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/launch-plan-helper.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/decision-model.md": {
+      "findings": [
+        {
+          "category": "vault_as_authority",
+          "message": "Vault described as memory",
+          "match": "vault requirements/ADRs > current cycle artifacts > read-only product docs > Eng",
+          "line": 63,
+          "confidence": "medium"
+        },
+        {
+          "category": "vault_as_authority",
+          "message": "Vault as canonical source",
+          "match": "vault}` | Canonical",
+          "line": 58,
+          "confidence": "medium"
+        },
+        {
+          "category": "raw_ledger_reads",
+          "message": "Direct ledger sqlite access",
+          "match": "ledger.sqlite",
+          "line": 151,
+          "confidence": "medium"
+        },
+        {
+          "category": "raw_ledger_reads",
+          "message": "Direct ledger sqlite access",
+          "match": "ledger.sqlite",
+          "line": 152,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 4,
+      "categories": [
+        "raw_ledger_reads",
+        "vault_as_authority"
+      ]
+    },
+    "prompts/sddk/git-contract.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/propose.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/explore.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 124,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/apply-strict-tdd.md": {
+      "findings": [
+        {
+          "category": "grants_permission",
+          "message": "Implicit permission grant",
+          "match": "you have",
+          "line": 12,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "grants_permission"
+      ]
+    },
+    "prompts/sddk/phases/coherence.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/apply.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 472,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/archive.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 130,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 172,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/spec.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 202,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/debt-verify.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/init.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/verify.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 423,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/release.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 111,
+          "confidence": "medium"
+        },
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 186,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 2,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/design.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 176,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    },
+    "prompts/sddk/phases/strict-tdd-verify.md": {
+      "findings": [],
+      "smell_count": 0,
+      "categories": []
+    },
+    "prompts/sddk/phases/tasks.md": {
+      "findings": [
+        {
+          "category": "prompt_workflow_transitions",
+          "message": "Agent prompts should not invoke transitions directly",
+          "match": "sddk cycle transition",
+          "line": 209,
+          "confidence": "medium"
+        }
+      ],
+      "smell_count": 1,
+      "categories": [
+        "prompt_workflow_transitions"
+      ]
+    }
+  }
+}

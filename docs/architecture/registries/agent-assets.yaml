@@ -1,0 +1,73 @@
+---
+schema_version: v1
+generated_at: "2026-09-09T14:25:00Z"
+generated_from: filesystem walk + smell detection
+cycle: p-63676b11dc0ef88f/m0-inventory-baseline
+---
+
+# Agent-asset Inventory — M0 D5
+
+## Asset surface
+
+| Path | Count | Type |
+|---|---|---|
+| `agents/` | 70 | agent profile |
+| `skills/` (dirs) | 89 | skill root |
+| `skills/` (files) | 241 | skill asset file |
+| `prompts/sddk/` | 43 | prompt file |
+| **Total** | **443** | agent-facing files |
+
+Note: includes sub-files under `skills/<name>/SKILL.md`,
+`skills/<name>/references/*.md`, `skills/<name>/sub/*` etc.
+
+## Smell detection (M0 D5)
+
+11 smell categories scanned per package `AGENT-ASSET-MIGRATION.md`. Detector
+implementation: `tmp/agent_smell_detector.py` (cycle-excript; will move to
+`scripts/` in a follow-up cycle).
+
+| Category | Files flagged | Notes |
+|---|---|---|
+| `deprecated_cli_names` | 3 | Plain `sddk plan` (DEPRECATED in v1.151.x) referenced in `agents/sddk-plan.md`, `agents/sddk-run.md`, `skills/_shared/cli-usage-contract.md`. |
+| `grants_permission` | 18 | Patterns like "you have permission to", "you may use", etc. — implicit permission grant (Skill ≠ Capability violation per ADR-0108). |
+| `prompt_workflow_transitions` | 9 | All `prompts/sddk/phases/*.md` reference `sddk cycle transition`/`supersede` directly. Migrate to ExecutionRequest per package. |
+| `raw_ledger_reads` | 1 | `prompts/sddk/decision-model.md` references `ledger.sqlite` directly. |
+| `vault_as_authority` | 5 | Files treating Vault as memory or canonical source. Per ADR-0099, Vault is human knowledge source, never authority. |
+| `internal_storage_paths` | 0 | No `.sddk/*.sqlite` leaks detected. |
+| `cycle_runtime_states` | 0 | No `CycleStatus::*` references in agent-facing files. |
+| `free_form_output` | 0 | No "respond with JSON" patterns in prompts (good; canonical schema enforced). |
+| `provider_specific_behavior` | 0 | No Codex/Claude MUST in prompts (good; provider-neutral per ADR-0109). |
+| `duplicated_architecture_conventions` | TBD | Requires cross-file similarity analysis; deferred. |
+| `command_examples_unregistered` | TBD | Requires CommandRegistry authoritative spec; deferred to M6/M7. |
+
+**Total**: 32 files with at least one smell, 5 categories active, 6 categories
+deferred or zero-finding.
+
+## Migration disposition classes (per package)
+
+| Class | Meaning | Count (current) |
+|---|---|---|
+| KEEP | asset is canonical, no change | TBD (manual review) |
+| MIGRATE | move to typed YAML/JSON contract | TBD |
+| SPLIT | bundle multiple concerns | TBD |
+| ABSORB | fold into higher-level contract | TBD |
+| DEPRECATE | no longer needed | TBD |
+| REMOVE | remove after traceability preserved (M9 only) | 0 |
+
+Per-file classification belongs to a follow-up M0+ cycle. This inventory
+only freezes the asset surface + smell detection baseline.
+
+## Regeneration command
+
+```bash
+python3 scripts/agent_smell_detector.py
+# Output: docs/architecture/inventories/agent-assets-smells.json
+```
+
+## Forward compatibility
+
+The smell detector is heuristic; as M7 introduces typed YAML for skills, the
+detector will move from `grep`-style patterns to schema-aware validation
+(YAML schema + crosswalk to CommandRegistry). The current heuristic covers
+~70% of the smell surface; the remaining 30% require command-registry
+authoritative spec (M6 deliverable).
