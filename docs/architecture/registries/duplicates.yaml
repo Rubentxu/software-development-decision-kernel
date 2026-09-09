@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T14:24:00Z"
-generated_from: manual curation against DUPLICATE-CONCEPT-MAP-DRAFT.md (cycle planning dir)
-cycle: p-63676b11dc0ef88f/m0-inventory-baseline
+generated_at: "2026-09-09T14:51:24Z"
+generated_from: manual curation + M5 authority_engine delivery
+cycle: p-63676b11dc0ef88f/m5-authority-engine-facade
 ordering: by SPEC then concept
-total_decisions: 35
+total_decisions: 36
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -53,11 +53,11 @@ spec_005_semantic_graph_and_why:
   - { concept: "5 missing node families (goal, alternative, decision unified, evidence unified, dissent)", existing: MISSING, disposition: PLANNED, target: "node families added", milestone: M3, confidence: medium }
 
 authority_components_unification_target:
-  - { concept: Permission, existing: "WritableSurface + AuthorityContext", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
-  - { concept: Gate, existing: "DecisionPlaneGate + GateEvaluator", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
-  - { concept: Approval, existing: "ApprovalRequestedInput + DecisionInput", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
-  - { concept: Risk, existing: "RiskApprovalPolicy + RiskCarryEntry", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
-  - { concept: AuthorityEngine_facade, existing: MISSING, disposition: PLANNED, target: "AuthorityEngine facade", milestone: M5, confidence: high }
+  - { concept: Permission, existing: "WritableSurface + AuthorityContext", disposition: INTERNALIZE, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered }
+  - { concept: Gate, existing: "DecisionPlaneGate + GateEvaluator", disposition: INTERNALIZE, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered }
+  - { concept: Approval, existing: "ApprovalRequestedInput + DecisionInput", disposition: INTERNALIZE, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered }
+  - { concept: Risk, existing: "RiskApprovalPolicy + RiskCarryEntry", disposition: INTERNALIZE, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered }
+  - { concept: AuthorityEngine_facade, existing: "crates/sddk-engine/src/authority_engine.rs", disposition: DELIVERED, target: "AuthorityEngine facade", milestone: M5, confidence: high, status: delivered, notes: "ActionKind (24), ActorKind (11), RiskBand, GateKind, ApproverKind, DenyReason (9), AdmissionDecision (Allow/Deny/RequireApproval), bridge.rs adapts legacy components as inputs/facts." }
 
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
@@ -87,7 +87,7 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 35
+  total_decisions: 36
   keep: 13
   evolve: 4
   evolve_rename: 3
@@ -95,7 +95,8 @@ summary:
   migrate: 2
   split: 1
   internalize: 4
-  planned: 12
+  delivered: 1
+  planned: 11
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true
 

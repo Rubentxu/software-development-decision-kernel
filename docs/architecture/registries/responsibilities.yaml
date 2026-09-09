@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T14:23:00Z"
-generated_by: "sddk-orchestrator (manual curation + cargo metadata)"
-total_entries: 47
+generated_at: "2026-09-09T14:51:12Z"
+generated_by: "sddk-orchestrator (M5 authority_engine facade)"
+total_entries: 48
 
 entries:
 
@@ -346,8 +346,18 @@ entries:
     state_class: Fact
     authority: sddk-engine
     replaces: legacy Permission/Gate/Approval/Risk engines
-    target_milestone: M5
-    notes: "5 components exist; 0 unified facade. M5 target."
+    target_milestone: delivered
+    notes: "5 components exist; AuthorityEngine facade unifies them (M5)."
+
+  - module: crates/sddk-engine/src/authority_engine
+    contract: arch-spec-008-authority-and-side-effects
+    primary_adr: ADR-0102-UNIFIED-AUTHORITY-ENGINE
+    coverage: full
+    state_class: Object
+    authority: sddk-engine
+    replaces: legacy Permission/Gate/Approval/Risk engines (via bridge.rs)
+    target_milestone: delivered
+    notes: "AuthorityEngine facade shipped v1.152.0. ActionKind (24), ActorKind (11), RiskBand, GateKind, ApproverKind, DenyReason (9), AdmissionDecision (Allow/Deny/RequireApproval), AuthorityEngine trait, DefaultAuthorityEngine impl, bridge.rs for legacy components."
 
   - module: crates/sddk-engine/src/risk_approval_policy
     contract: arch-spec-008-authority-and-side-effects
