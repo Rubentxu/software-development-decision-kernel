@@ -52,6 +52,7 @@ pub mod integrate_parity;
 pub mod join_guard;
 pub mod lab_promotion;
 pub mod operator;
+pub mod orchestration_synthesis;
 pub mod pack_agnosticity;
 pub mod pack_registry;
 mod paths;
@@ -137,6 +138,11 @@ pub use inc_generator::*;
 pub use operator::{
     Choice, Gate, Map, NodeOutcome, Operator, OperatorContext, OperatorError, Parallel, Sequence,
     Task,
+};
+pub use orchestration_synthesis::{
+    ConflictEntry, ContributionRef, CoverageLossEntry, DissentEntry, EvidenceCarryEntry,
+    InMemorySynthesisStore, InformationLossGuard, OrchestrationSynthesisReceipt, RiskCarryEntry,
+    SynthesisBuilder, SynthesisError, SynthesisStore, SynthesisValidator,
 };
 pub use pack_registry::*;
 pub use paths::*;
