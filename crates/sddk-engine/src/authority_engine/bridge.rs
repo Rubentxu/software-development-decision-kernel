@@ -7,9 +7,33 @@
 // This module provides the conversion utilities.
 
 use crate::authority_engine::{
-    ActionKind, ActorKind, ApprovalRequirement, ApproverKind, Capability, Facts, PolicySnapshot,
-    RiskBand, infer_capability_from_surface, risk_band_from_policy_level,
+    ActionKind, ActorKind, ApprovalRequirement, ApproverKind, AuthorityEngineError, Capability,
+    Facts, PolicySnapshot, RiskBand, infer_capability_from_surface, risk_band_from_policy_level,
 };
+
+/// Default policy table for the 12 writable surfaces (ADR-069 §3 + ADR-072).
+///
+/// Returns a `PolicySnapshot` whose `risk_band` matches the SPEC-M5 surface
+/// classification: High band → cycle mutations and infra writes;
+/// Medium band → plan items and vault writes; Low band → append-only logs.
+pub fn default_policy_for_surface(surface: &str) -> Result<PolicySnapshot, AuthorityEngineError> {
+    let mut policy = PolicySnapshot::default_low_risk(surface);
+    let risk = match surface {
+        "cycle_state" | "gate_receipts" | "plan_revisions" | "transition_records"
+        | "framework_bundle" | "github_releases" => RiskBand::High,
+        "knowledge_graph_vault" | "plan_item" | "evidence_attachment" | "decision_record" => {
+            RiskBand::Medium
+        }
+        "ledger_events" | "dependency_edge" => RiskBand::Low,
+        other => {
+            return Err(AuthorityEngineError::InternalContractBug {
+                reason: format!("default_policy_for_surface: unknown surface '{other}'"),
+            });
+        }
+    };
+    policy.risk_band = risk;
+    Ok(policy)
+}
 
 /// Build a `PolicySnapshot` from existing risk approval policy level.
 pub fn policy_snapshot_from_risk_level(policy_id: &str, risk_level: &str) -> PolicySnapshot {
@@ -149,6 +173,59 @@ mod bridge_tests {
         assert!(f.decision_refs.is_empty());
         assert!(f.memory_refs.is_empty());
         assert!(f.cycle_refs.is_empty());
+    }
+
+    #[test]
+    fn default_policy_for_surface_known_surfaces_have_expected_bands() {
+        assert_eq!(
+            default_policy_for_surface("cycle_state").unwrap().risk_band,
+            RiskBand::High
+        );
+        assert_eq!(
+            default_policy_for_surface("knowledge_graph_vault")
+                .unwrap()
+                .risk_band,
+            RiskBand::Medium
+        );
+        assert_eq!(
+            default_policy_for_surface("ledger_events")
+                .unwrap()
+                .risk_band,
+            RiskBand::Low
+        );
+        assert_eq!(
+            default_policy_for_surface("plan_item").unwrap().risk_band,
+            RiskBand::Medium
+        );
+    }
+
+    #[test]
+    fn default_policy_for_surface_unknown_returns_internal_contract_bug() {
+        assert!(matches!(
+            default_policy_for_surface("does_not_exist"),
+            Err(AuthorityEngineError::InternalContractBug { .. })
+        ));
+    }
+
+    #[test]
+    fn default_policy_for_surface_covers_twelve_surfaces() {
+        let surfaces = [
+            "cycle_state",
+            "ledger_events",
+            "gate_receipts",
+            "plan_revisions",
+            "transition_records",
+            "framework_bundle",
+            "github_releases",
+            "knowledge_graph_vault",
+            "plan_item",
+            "dependency_edge",
+            "evidence_attachment",
+            "decision_record",
+        ];
+        for s in surfaces {
+            assert!(default_policy_for_surface(s).is_ok(), "missing surface {s}");
+        }
     }
 
     #[test]
