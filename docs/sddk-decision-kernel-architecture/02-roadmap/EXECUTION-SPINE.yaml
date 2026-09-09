@@ -344,7 +344,7 @@ items:
   - order: 268
     id: CDD-MEMORY-002
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycles p-63676b11dc0ef88f/cdd-memory-002-traversal (release v1.148.0, ref 2e7f303/ddc8a4d) + p-63676b11dc0ef88f/cdd-memory-003-projection-specialization (release v1.149.0, ref 791377b). Traversal surface: log/show/tree/diff/merge_base/ancestors/why/reflog/branch/fork ops + 6 projection types (MemoryShow, TreeProjection, MemoryDiff, RefMovement, WhyProjection, ReflogScope) + projection specialization (ProjectionScope, DecisionProjection, DelegationProjection, DecisionEntry, DelegationEntry, SessionCheckpointView, SessionDeltaView). Operational caps: log<=1024, ancestors<=1024, tree fan-out<=64/kind. decision_memory_tests 14 -> 47 cases (+33: DMT-02..DMT-45). cargo fmt + clippy -D warnings clean. WU-4 of CDD-MEMORY-003 (WhyQueryEngine bridge, R-P6/S-P6/S-P7) deferred to v1.149.1 patch per the 800-LoC budget cap documented in tasks.md; CDD-MEMORY-004 (reflog history persistence + branch mutation ops) is the next spine target per orientation handoff HANDOFF-2026-09-09-cdd-memory-004-orientation.md.
     depends_on: [CDD-MEMORY-001]
     objective: Add traversable Decision Memory history, branch/diff/merge-base and session-delta projections.
     exit_gate: Agent/user can log/show/tree/diff ancestry, resolve historical session checkpoints, compute merge-base/fork-point and inspect decision/delegation branches back to original evidence.
