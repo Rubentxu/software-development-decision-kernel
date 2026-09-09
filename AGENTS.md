@@ -227,11 +227,19 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
 
 - **Release & distribution:** `docs/RELEASING.md`
 - **Architecture model:** `docs/ARCHITECTURE-MODEL.md`
+- **Canonical architecture + roadmap:** `docs/architecture/README.md`
+  (current normative; supersedes `docs/sddk-decision-kernel-architecture/`,
+  `docs/sddk-2.0-architecture-consolidation/`, `docs/sddk-complete-evolution-2026-08-23/`,
+  `docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/` and others
+  listed in that entry point's "Repository historical packages (superseded)").
+- **Package source (verbatim, 72 docs):**
+  `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
 - **Scoped testing contract:** `prompts/sddk/change-scoped-testing.md`
-- **Scoped verification ADR:** `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`
+- **Scoped verification ADR:** `docs/architecture/adrs/ADR-0097-COMMON-REVISION-SUBSTRATE.md`
+  (formerly `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`,
+  now superseded; the canonical substrate ADR is ADR-0097).
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
 - **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
-- **Roadmap de arquitectura:** `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
 
 ---
 
