@@ -711,6 +711,20 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         let _ = (commit_id, target_ref, message);
         unimplemented!("MemoryStore::revert is not implemented by this store")
     }
+
+    /// Replace `commit_id`'s tree with `new_tree`, build a new
+    /// commit that preserves `commit_id`'s parents and message slot,
+    /// and advance `target_ref` to the new commit. R-M6 / S-M7.
+    fn amend(
+        &self,
+        commit_id: MemoryId,
+        new_tree: MemoryId,
+        target_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        let _ = (commit_id, new_tree, target_ref, message);
+        unimplemented!("MemoryStore::amend is not implemented by this store")
+    }
 }
 
 // ----------------- Traversal value types (v1.148.0) -----------------
@@ -1532,6 +1546,48 @@ impl MemoryStore for InMemoryMemoryStore {
         // 3. Advance `target_ref` and append one reflog entry.
         let mut log = Reflog::new();
         self.write_ref_with_reflog(target_ref, new_id, &mut log, "revert", "revert replay")?;
+        Ok(new_id)
+    }
+
+    fn amend(
+        &self,
+        commit_id: MemoryId,
+        new_tree: MemoryId,
+        target_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        // R-M6 / S-M7.
+        // 1. Resolve `commit_id`. Original is preserved (kept in DAG).
+        let commit = self
+            .get_commit(&commit_id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&commit_id),
+            })?;
+        // 2. Build a new commit with the SAME parents, new tree, new message.
+        let new_commit = DecisionMemoryCommit::new(
+            commit.parents.clone(),
+            new_tree,
+            DecisionMemoryAuthor::new("system", "amend").map_err(|_| {
+                DecisionMemoryError::ReflogAppendFailed("invalid amend author".into())
+            })?,
+            "2026-09-09T00:00:00Z",
+            "sddk-framework",
+            None::<String>,
+            Some("CDD-MEMORY-004"),
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            message.to_string(),
+            "amend from CDD-MEMORY-004",
+            vec![commit_id],
+        )?;
+        let new_id = new_commit.id;
+        self.put_commit(new_commit)?;
+        // 3. Advance `target_ref` and append one reflog entry.
+        let mut log = Reflog::new();
+        self.write_ref_with_reflog(target_ref, new_id, &mut log, "amend", "amend replay")?;
         Ok(new_id)
     }
 }
