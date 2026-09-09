@@ -1355,7 +1355,10 @@ fn dmt_39_projection_traits_compile_with_default_unimplemented() {
         Result<DecisionProjection, sddk_engine::decision_memory::DecisionMemoryError>,
         Result<DelegationProjection, sddk_engine::decision_memory::DecisionMemoryError>,
     ) {
-        (s.decision_projection(id, ProjectionScope::All), s.delegation_projection(id, ProjectionScope::All))
+        (
+            s.decision_projection(id, ProjectionScope::All),
+            s.delegation_projection(id, ProjectionScope::All),
+        )
     }
     let _ = _accepts::<sddk_engine::decision_memory::InMemoryMemoryStore>;
 }
@@ -1371,7 +1374,10 @@ fn make_projection_tree(
     decision_kinds: &[(&str, &str)],
     delegation_kinds: &[(&str, &str)],
     noise_kind: Option<&str>,
-) -> (sddk_engine::decision_memory::MemoryId, sddk_engine::decision_memory::MemoryId) {
+) -> (
+    sddk_engine::decision_memory::MemoryId,
+    sddk_engine::decision_memory::MemoryId,
+) {
     let mut t = empty_tree();
     let goal = t.entries.get_mut("goal").expect("goal bucket");
     let mut blob_ids: Vec<sddk_engine::decision_memory::MemoryId> = Vec::new();
@@ -1495,7 +1501,10 @@ fn dmt_41_delegation_projection_filters_by_kind_prefix() {
     let (cid, _tid) = make_projection_tree(
         &store,
         &[("decision/adopt", "p:1")],
-        &[("delegation/orchestrator", "o:1"), ("delegation/sddk-apply", "a:1")],
+        &[
+            ("delegation/orchestrator", "o:1"),
+            ("delegation/sddk-apply", "a:1"),
+        ],
         Some("session/checkpoint"),
     );
     let proj = store
@@ -1546,13 +1555,19 @@ fn dmt_43_projection_project_scoped_filters_commits() {
     );
 
     let hit = store
-        .decision_projection(cid_a, ProjectionScope::ProjectScoped("project-alpha".into()))
+        .decision_projection(
+            cid_a,
+            ProjectionScope::ProjectScoped("project-alpha".into()),
+        )
         .expect("alpha projection");
     assert_eq!(hit.entries.len(), 1, "alpha commit visible to alpha scope");
     assert_eq!(hit.entries["decision/adopt"][0].payload_ref, "alpha:1");
 
     let miss = store
-        .decision_projection(cid_a, ProjectionScope::ProjectScoped("project-bravo".into()))
+        .decision_projection(
+            cid_a,
+            ProjectionScope::ProjectScoped("project-bravo".into()),
+        )
         .expect("bravo projection");
     assert!(
         miss.entries.is_empty(),
@@ -1573,13 +1588,7 @@ fn dmt_44_projection_cycle_scoped_filters_commits() {
         "decision/why",
         "w:1",
     );
-    let cid_no_cycle = make_scoped_commit(
-        &store,
-        "sddk-framework",
-        None,
-        "decision/why",
-        "w:2",
-    );
+    let cid_no_cycle = make_scoped_commit(&store, "sddk-framework", None, "decision/why", "w:2");
 
     let hit = store
         .decision_projection(
@@ -1607,12 +1616,7 @@ fn dmt_45_projection_ignores_dangling_blob_pointers() {
     // holds MUST be skipped silently (no panic, no NotFound).
     use sddk_engine::decision_memory::ProjectionScope;
     let store = InMemoryMemoryStore::new();
-    let (cid, _tid) = make_projection_tree(
-        &store,
-        &[("decision/adopt", "p:1")],
-        &[],
-        None,
-    );
+    let (cid, _tid) = make_projection_tree(&store, &[("decision/adopt", "p:1")], &[], None);
     // Sanity: clean tree returns one entry.
     let clean = store
         .decision_projection(cid, ProjectionScope::All)
@@ -1749,13 +1753,7 @@ fn dmt_47_why_bridge_unknown_ref_returns_not_found() {
         .why(RefKind::Tag("missing".into()))
         .expect_err("not found");
     assert!(
-        matches!(
-            err,
-            DecisionMemoryError::NotFound {
-                kind: "ref",
-                ..
-            }
-        ),
+        matches!(err, DecisionMemoryError::NotFound { kind: "ref", .. }),
         "DMT-47 unknown tag MUST surface NotFound {{ kind: \"ref\", .. }}; got {err:?}"
     );
 }
@@ -1872,9 +1870,7 @@ fn dmt_49_reflog_history_returns_descending_by_seq() {
         .write_ref_with_reflog(RefKind::Head, c3_id, &mut log3, "actor", "step 3")
         .expect("write 3");
 
-    let history = store
-        .reflog_history(RefKind::Head)
-        .expect("reflog history");
+    let history = store.reflog_history(RefKind::Head).expect("reflog history");
     assert_eq!(history.len(), 3, "DMT-49 expected 3 history entries");
     // Descending by seq: entry 3 (newest) first, entry 1 last.
     assert!(
@@ -1921,9 +1917,7 @@ fn dmt_50_reflog_at_returns_oldest_when_seq_is_one() {
         .write_ref_with_reflog(RefKind::Head, c2_id, &mut log2, "actor", "step 2")
         .expect("write 2");
 
-    let oldest = store
-        .reflog_at(RefKind::Head, 1)
-        .expect("oldest entry");
+    let oldest = store.reflog_at(RefKind::Head, 1).expect("oldest entry");
     assert_eq!(oldest.seq, 1);
     assert_eq!(oldest.new_target, hex_lower(&c1_id));
 }
@@ -1971,13 +1965,7 @@ fn dmt_52_reflog_at_unknown_ref_returns_not_found() {
         .reflog_at(RefKind::Tag("missing".into()), 1)
         .expect_err("not found");
     assert!(
-        matches!(
-            err,
-            DecisionMemoryError::NotFound {
-                kind: "ref",
-                ..
-            }
-        ),
+        matches!(err, DecisionMemoryError::NotFound { kind: "ref", .. }),
         "DMT-52 expected NotFound {{ kind: \"ref\", .. }}; got {err:?}"
     );
 }
@@ -2039,10 +2027,23 @@ fn dmt_53_cherry_pick_creates_two_parent_commit_on_target_branch() {
         .cherry_pick(c3_id, RefKind::Branch("main".into()), "replay c3")
         .expect("cherry pick");
     let new_commit = store.get_commit(&new_id).expect("new commit");
-    assert_eq!(new_commit.parents.len(), 2, "DMT-53 two-parent merge commit");
-    assert_eq!(new_commit.parents[0], c2_id, "DMT-53 first parent = main tip");
-    assert_eq!(new_commit.parents[1], c3_id, "DMT-53 second parent = cherry-picked");
-    assert_eq!(new_commit.tree, c3.tree, "DMT-53 tree = cherry-picked commit's tree");
+    assert_eq!(
+        new_commit.parents.len(),
+        2,
+        "DMT-53 two-parent merge commit"
+    );
+    assert_eq!(
+        new_commit.parents[0], c2_id,
+        "DMT-53 first parent = main tip"
+    );
+    assert_eq!(
+        new_commit.parents[1], c3_id,
+        "DMT-53 second parent = cherry-picked"
+    );
+    assert_eq!(
+        new_commit.tree, c3.tree,
+        "DMT-53 tree = cherry-picked commit's tree"
+    );
     // main ref now points at the new commit.
     assert_eq!(
         store
