@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T18:58:00Z"
-generated_by: "sddk-orchestrator (M6.2 target/task DAG registry)"
-total_entries: 70
+generated_at: "2026-09-09T19:26:00Z"
+generated_by: "sddk-orchestrator (M6.3 DAG execution)"
+total_entries: 72
 
 entries:
 
@@ -772,3 +772,23 @@ open_mappings:
     replaces: null
     target_milestone: delivered
     notes: "Built-in targets shipped v1.158.0: status (3 tasks), run (5 tasks), ship (4 tasks), recover (3 tasks). All tasks are no-op stubs declaring the SPEC-009 11-field contract; real task bodies land in M6.3."
+
+  - module: crates/sddk-engine/src/target_task/executor
+    contract: arch-spec-009-target-task-workflow
+    primary_adr: ADR-010-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "DagExecutor shipped v1.159.0. Walks TaskDag in topological order with per-task authority gate derived from AuthorityRequirement. ExecutorConfig supports dry_run and allow_high_band. Halts on Denied or RequireApproval; downstream tasks become Skipped with explanation."
+
+  - module: crates/sddk-engine/src/target_task/outcome
+    contract: arch-spec-009-target-task-workflow
+    primary_adr: ADR-010-TARGET-TASK-PORCELAIN
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-engine
+    replaces: null
+    target_milestone: delivered
+    notes: "ExecutionReport and TaskOutcome shipped v1.159.0. Closed enums for TaskStatus and ExecutionStatus; serializable for the agent surface. Convenience counters executed_count / skipped_count / had_denial / had_halt."

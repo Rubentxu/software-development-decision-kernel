@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T18:58:00Z"
-generated_from: manual curation + M6.2 target/task DAG registry
-cycle: p-63676b11dc0ef88f/m6-2-target-task-dag
+generated_at: "2026-09-09T19:26:00Z"
+generated_from: manual curation + M6.3 DAG execution
+cycle: p-63676b11dc0ef88f/m6-3-dag-execution
 ordering: by SPEC then concept
-total_decisions: 58
+total_decisions: 60
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -101,6 +101,10 @@ target_task_workflow_unification_target:
   - { concept: TaskDAG, existing: "crates/sddk-engine/src/target_task/dag.rs", disposition: DELIVERED, target: "Kahn topological sort + cycle detection", milestone: M6, confidence: high, status: delivered, notes: "Fail-closed on duplicate task ids, unknown deps, and cycles (TargetTaskError::{DuplicateTaskId,UnknownDependency,CycleDetected})." }
   - { concept: TargetRegistry, existing: "crates/sddk-engine/src/target_task/registry.rs", disposition: DELIVERED, target: "BTreeMap-backed lookup index", milestone: M6, confidence: high, status: delivered, notes: "with_builtins() seeds status|run|ship|recover. resolve(name) returns TargetResolution (dag: Option<TaskDag>, validation: String) — not Result — to keep the engine↔CLI envelope JSON-serializable." }
 
+dag_execution_unification_target:
+  - { concept: DagExecutor, existing: "crates/sddk-engine/src/target_task/executor.rs", disposition: DELIVERED, target: "Topological walk + per-task authority gate", milestone: M6, confidence: high, status: delivered, notes: "Maps AuthorityRequirement → typed GateDecision locally (None=Allow, Read=Allow, Write=system→Allow/user:agent→RequireApproval/anonymous→Deny, Approval=RequireApproval unless --allow-high-band). Follow-up cycle will route through AuthorityEngineRunner.admit_surface." }
+  - { concept: ExecutionReport, existing: "crates/sddk-engine/src/target_task/outcome.rs", disposition: DELIVERED, target: "Closed-enum ExecutionStatus (Succeeded|Denied|Failed|DryRun) + Vec<TaskOutcome>", milestone: M6, confidence: high, status: delivered, notes: "Serializes to the agent-discoverable surface. Counters: executed_count, skipped_count, had_denial, had_halt. Constructors per status (Executed/Skipped/Denied/Failed)." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -129,7 +133,7 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 58
+  total_decisions: 60
   keep: 14
   evolve: 6
   evolve_rename: 3
@@ -137,7 +141,7 @@ summary:
   migrate: 3
   split: 1
   internalize: 4
-  delivered: 28
+  delivered: 30
   planned: 10
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true

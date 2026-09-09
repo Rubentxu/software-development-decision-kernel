@@ -140,6 +140,10 @@ const MARKER_TARGET_TASK_REGISTRY: &str = "m6_2.target_task_registry";
 const MARKER_TARGET_DAG_TOPOLOGICAL: &str = "m6_2.target_dag_topological";
 const MARKER_TARGET_BUILTINS_RESOLVABLE: &str = "m6_2.target_builtins_resolvable";
 
+const MARKER_DAG_EXECUTOR_DELIVERED: &str = "m6_3.dag_executor_delivered";
+const MARKER_DAG_OUTCOME_SERIALIZABLE: &str = "m6_3.dag_outcome_serializable";
+const MARKER_DAG_FIRST_CLASS_TYPED: &str = "m6_3.dag_first_class_typed";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -276,6 +280,36 @@ pub fn target_task_dag_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
         },
         MarkerStatus {
             id: MARKER_TARGET_BUILTINS_RESOLVABLE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/builtin"),
+        },
+    ]
+}
+
+/// M6.3 markers (DAG execution, SPEC-M6.3).
+///
+/// Marker definitions:
+/// - `dag_executor_delivered`: the `target_task/executor` module is
+///   delivered, confirming the per-task authority gate exists.
+/// - `dag_outcome_serializable`: the `target_task/outcome` module is
+///   delivered, confirming `ExecutionReport` and `TaskOutcome` are
+///   serializable for the agent surface.
+/// - `dag_first_class_typed`: the `change`/`verify`/`audit` typed
+///   DAGs are declared on the built-in `builtin` module.
+pub fn dag_execution_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_DAG_EXECUTOR_DELIVERED.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/executor"),
+        },
+        MarkerStatus {
+            id: MARKER_DAG_OUTCOME_SERIALIZABLE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/outcome"),
+        },
+        MarkerStatus {
+            id: MARKER_DAG_FIRST_CLASS_TYPED.to_string(),
+            // Same registry entry as M6.2 builtin marker; the typed
+            // change/verify/audit shipped in M6.3 live in the same
+            // module.
             present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/builtin"),
         },
     ]
@@ -698,6 +732,64 @@ entries:
     target_milestone: delivered
 "#;
         let markers = target_task_dag_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m6_3_dag_executor_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/executor
+    target_milestone: delivered
+"#;
+        let markers = dag_execution_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_DAG_EXECUTOR_DELIVERED)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_3_dag_outcome_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/outcome
+    target_milestone: delivered
+"#;
+        let markers = dag_execution_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_DAG_OUTCOME_SERIALIZABLE)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_3_dag_first_class_typed_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/target_task/builtin
+    target_milestone: delivered
+"#;
+        let markers = dag_execution_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_DAG_FIRST_CLASS_TYPED)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m6_3_dag_markers_absent_when_modules_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = dag_execution_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
