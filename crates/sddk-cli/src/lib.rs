@@ -41,6 +41,7 @@ mod run_view;
 mod ship;
 mod stale_cmd;
 mod status;
+mod target_cmd;
 mod telemetry;
 mod uat;
 mod uat_common;
@@ -441,6 +442,11 @@ enum Command {
         #[command(subcommand)]
         command: command_spec::IntrospectCommand,
     },
+    /// List and resolve Target/Task DAGs (M6.2).
+    Target {
+        #[command(subcommand)]
+        command: target_cmd::TargetCommand,
+    },
 }
 
 /// Completion subcommands; shell names are subcommands so
@@ -792,6 +798,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::Audit { since, format } => audit_cmd::run_audit(since, format, environment),
         Command::Config { command } => config_cmd::run_config(command, environment),
         Command::Introspect { command } => command_spec::run_introspect(command, environment),
+        Command::Target { command } => target_cmd::run_target(command, environment),
     }
 }
 

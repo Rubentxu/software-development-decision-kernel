@@ -85,6 +85,7 @@ pub mod state_class_lint;
 pub mod strategy_comparison;
 pub mod strategy_experiments;
 pub mod supply_chain_artifacts;
+pub mod target_task;
 pub mod task_executor;
 pub mod tasks;
 pub mod telemetry;
