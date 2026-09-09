@@ -119,6 +119,67 @@ engine, CI server or general-purpose agent framework.
 8. `../SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/07-AGENT-EXPERIENCE/OVERVIEW.md` (M7)
 9. `../SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-005-SEMANTIC-GRAPH-AND-WHY.md` (M8)
 
+## Repository-native surfaces (crosswalk)
+
+The package's `02-ADRS/` and `02-SPECS/` are mirrored into this entry point so
+the canonical architecture is reachable without traversing the package folder.
+Per SUPERSESSION.md ADR preservation rule, the package's original IDs are kept
+in each file's frontmatter (`package_local_id`); the repository-native ID is the
+authoritative one for new references.
+
+### Architecture ADRs (`adrs/`)
+
+| Repo-native ID | Title | Package ID |
+|---|---|---|
+| `ADR-0094` | One canonical fact log | `ADR-001` |
+| `ADR-0095` | Four state classes | `ADR-002` |
+| `ADR-0096` | SDLC lifecycle semantics | `ADR-003` |
+| `ADR-0097` | Common Revision substrate | `ADR-004` |
+| `ADR-0098` | One Semantic Graph | `ADR-005` |
+| `ADR-0099` | Vault as human knowledge source | `ADR-006` |
+| `ADR-0100` | Universal Evidence | `ADR-007` |
+| `ADR-0101` | Agent outcome contribution synthesis | `ADR-008` |
+| `ADR-0102` | Unified Authority Engine | `ADR-009` |
+| `ADR-0103` | Target/Task porcelain | `ADR-010` |
+| `ADR-0104` | Pack extension boundary | `ADR-011` |
+| `ADR-0105` | Configuration conventions | `ADR-012` |
+| `ADR-0106` | Typed instruction compilation | `ADR-013` |
+| `ADR-0107` | One Command Registry | `ADR-014` |
+| `ADR-0108` | Skill is not Capability | `ADR-015` |
+| `ADR-0109` | Provider-independent Agent Profiles | `ADR-016` |
+| `ADR-0110` | Agent execution provenance | `ADR-017` |
+
+Range ADR-0094..0110 was chosen because the previous repository surface
+(`docs/adr/`) ends at ADR-0080, leaving ADR-0094..0110 free and avoiding
+collision with the `docs/sddk-decision-kernel-architecture/03-adrs/` range
+(ADR-020..074). See [`adrs/ADR-0094-ONE-CANONICAL-FACT-LOG.md`](adrs/ADR-0094-ONE-CANONICAL-FACT-LOG.md)
+for the canonical example of the crosswalk frontmatter.
+
+### Architecture SPECs (`specs/`)
+
+| Repo-native ID | Title | Package ID |
+|---|---|---|
+| `arch-spec-001` | Canonical authority | `SPEC-001` |
+| `arch-spec-002` | Lifecycle model | `SPEC-002` |
+| `arch-spec-003` | Revision substrate | `SPEC-003` |
+| `arch-spec-004` | Decision Memory | `SPEC-004` |
+| `arch-spec-005` | Semantic Graph and why | `SPEC-005` |
+| `arch-spec-006` | Knowledge vault context | `SPEC-006` |
+| `arch-spec-007` | Agent protocol and handoff | `SPEC-007` |
+| `arch-spec-008` | Authority and side effects | `SPEC-008` |
+| `arch-spec-009` | Target task workflow | `SPEC-009` |
+| `arch-spec-010` | Pack SDK | `SPEC-010` |
+| `arch-spec-011` | Observability views | `SPEC-011` |
+| `arch-spec-012` | Configuration | `SPEC-012` |
+| `arch-spec-013` | Agent experience contract | `SPEC-013` |
+| `arch-spec-014` | Instruction compiler | `SPEC-014` |
+| `arch-spec-015` | Command registry and agent surface | `SPEC-015` |
+| `arch-spec-016` | Skill contract | `SPEC-016` |
+| `arch-spec-017` | Agent profiles and provider adapters | `SPEC-017` |
+| `arch-spec-018` | Agent execution provenance | `SPEC-018` |
+
+The `arch-spec-` prefix avoids collision with a future top-level `docs/specs/`.
+
 ## Repository historical packages (superseded)
 
 These folders contain previous design context. They remain available for
