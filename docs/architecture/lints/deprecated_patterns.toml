@@ -1,0 +1,120 @@
+# Deprecated patterns registry — M0 D6 (advisory)
+#
+# Five clippy-style lints that detect use of patterns that the package's
+# MIGRATION-AND-DEPRECATION.md marks for evolution or removal in M1-M9.
+#
+# All lints default to Allow in M0; enforcement happens in M9 after lints
+# have been validated on the live surface and accepted by users.
+
+schema_version: v1
+generated_at: "2026-09-09T14:26:00Z"
+cycle: p-63676b11dc0ef88f/m0-inventory-baseline
+enforcement_status: advisory (M0..M8); blocking (M9)
+
+lints:
+
+  - id: agent_result_used
+    severity: warn
+    default: allow
+    category: deprecated_patterns
+    description: >
+      Use of `AgentResult` (legacy aggregate) where the canonical `Contribution`
+      + `ExecutionOutcome` split applies (per ADR-0101 / SPEC-007).
+    detection: >
+      Find references to `AgentResult` in `crates/sddk-engine/src/**/*.rs`
+      and `crates/sddk-cli/src/**/*.rs`. Report location, not auto-fix.
+    replacement:
+      - "Use `Contribution` + `ExecutionOutcome` from crates/sddk-engine/src/agent_contribution_envelope.rs"
+      - "See ARCH-SPEC-007 in docs/architecture/specs/arch-spec-007-agent-protocol-and-handoff.md"
+    reference_adrs: [ADR-0101]
+    milestone_introduced: M0
+    milestone_enforces: M9
+    confidence: high
+
+  - id: evidence_kind_v1
+    severity: warn
+    default: allow
+    category: deprecated_patterns
+    description: >
+      Use of `PlanningEvidenceKind` (legacy enum) where the universal Evidence
+      model + relation/fact split applies (per ADR-0100 / SPEC-001).
+    detection: >
+      Find references to `PlanningEvidenceKind` in `crates/sddk-domain/src/**/*.rs`
+      and `crates/sddk-engine/src/**/*.rs`.
+    replacement:
+      - "Use EvidenceRef + WorkItem relation/fact per docs/architecture/registries/duplicates.yaml (legacy_evidence_migration)"
+      - "See ARCH-SPEC-001 in docs/architecture/specs/arch-spec-001-canonical-authority.md"
+    reference_adrs: [ADR-0100]
+    milestone_introduced: M0
+    milestone_enforces: M9
+    confidence: medium
+
+  - id: orchestration_synthesis_no_dissent
+    severity: warn
+    default: allow
+    category: deprecated_patterns
+    description: >
+      Construction of `OrchestrationSynthesisReceipt` without a Dissent entry
+      when contributions disagree (per ADR-0101 / SPEC-007).
+    detection: >
+      Find call sites of `OrchestrationSynthesisReceipt::new*` and verify
+      Dissent field is populated when disagreement is present in upstream
+      contributions.
+    replacement:
+      - "Always populate Dissent when contribution conflicts exist"
+      - "See crates/sddk-engine/src/orchestration_synthesis.rs"
+    reference_adrs: [ADR-0101]
+    milestone_introduced: M0
+    milestone_enforces: M9
+    confidence: medium
+
+  - id: execution_outcome_as_synthesis
+    severity: warn
+    default: allow
+    category: deprecated_patterns
+    description: >
+      Use of `ExecutionOutcome` as a drop-in replacement for synthesis
+      (per package's MIGRATION-AND-DEPRECATION.md: ExecutionOutcome +
+      Contribution are distinct).
+    detection: >
+      Find call sites that construct `ExecutionOutcome` with synthesis-like
+      fields (decisions, evidence, dissent) that should live in
+      `OrchestrationSynthesisReceipt`.
+    replacement:
+      - "Separate ExecutionOutcome (raw provider output) from OrchestrationSynthesisReceipt (consumed contributions + dissent)"
+    reference_adrs: [ADR-0101]
+    milestone_introduced: M0
+    milestone_enforces: M9
+    confidence: medium
+
+  - id: transition_outcome_used
+    severity: warn
+    default: allow
+    category: deprecated_patterns
+    description: >
+      Use of `TransitionOutcome` (legacy partial shape of ExecutionOutcome)
+      where the canonical `ExecutionOutcome` applies.
+    detection: >
+      Find references to `TransitionOutcome` in engine/runtime modules
+      and verify migration to `ExecutionOutcome`.
+    replacement:
+      - "Use ExecutionOutcome per arch-spec-013-agent-experience-contract.md (M7)"
+    reference_adrs: [ADR-0101, ADR-0096]
+    milestone_introduced: M0
+    milestone_enforces: M9
+    confidence: high
+
+implementation:
+  status: descriptive
+  module_path: null  # No Rust module created yet; M0 D6 is documentation only.
+  planned_module: "crates/sddk-cli/src/lint/deprecated_patterns.rs"
+  notes: |
+    The actual lint module is deferred to a follow-up M0+ cycle that wires
+    the registry into `sddk dev lint`. This file serves as the source of
+    truth for the lints; their detection rules and replacements are
+    documented here so they survive across cycles.
+
+acceptance_for_m9_enforcement:
+  - "All 5 lints have been validated on the live workspace surface with no false positives."
+  - "User sign-off per RISK-REGISTER R-001 has been collected."
+  - "M9 migration has reached the point where blocking enforcement is meaningful."
