@@ -328,7 +328,7 @@ items:
   - order: 265
     id: CDD-HANDOFF-002
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-handoff-002-substrate; release v1.146.0; Orchestration Synthesis Receipt substrate (OrchestrationSynthesisReceipt, ContributionRef, Risk/Evidence/Coverage/Dissent/Conflict entries, 6 closed-set InformationLossGuard + 8-variant SynthesisError, InformationLossGuard closed-set #[non_exhaustive], SynthesisStore, InMemorySynthesisStore, SynthesisValidator; 10/10 unit tests green; cargo fmt + clippy -D warnings clean); ref 99ab54c
     depends_on: [CDD-HANDOFF-001]
     objective: Add OrchestrationSynthesisReceipt, dissent preservation and information-loss guards.
     exit_gate: Coordinator/orchestrator synthesis records consumed and omitted contributions, conflicts, dissent and evidence; mandatory risk/evidence cannot disappear silently during compression.
