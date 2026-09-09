@@ -1526,7 +1526,7 @@ impl MemoryStore for InMemoryMemoryStore {
         target_ref: RefKind,
         message: &str,
     ) -> Result<MemoryId, DecisionMemoryError> {
-        // R-M5 / S-M6.
+        // R-M5 / R-M15 / S-M6.
         // 1. Resolve `commit_id`; needs at least one parent (root has none).
         let commit = self
             .get_commit(&commit_id)
@@ -1534,41 +1534,78 @@ impl MemoryStore for InMemoryMemoryStore {
                 kind: "commit",
                 id: hex_lower(&commit_id),
             })?;
-        let parent_id = commit.parents.first().ok_or_else(|| {
-            DecisionMemoryError::ReflogAppendFailed("cannot revert a root commit".into())
-        })?;
-        let parent_tree = self
-            .get_commit(parent_id)
+        if commit.parents.is_empty() {
+            return Err(DecisionMemoryError::ReflogAppendFailed(
+                "cannot revert a root commit".into(),
+            ));
+        }
+        // 2. Resolve `target_ref` to its tip (NotFound if missing).
+        let path = target_ref.ref_path();
+        let target_tip = self
+            .resolve_ref(&target_ref)
             .ok_or_else(|| DecisionMemoryError::NotFound {
-                kind: "commit",
-                id: hex_lower(parent_id),
-            })?
-            .tree;
-        // 2. Build the inverse commit: 1 parent = commit_id, tree = parent's tree.
-        let parents = vec![commit_id];
+                kind: "ref",
+                id: path.clone(),
+            })?;
+        // 3. Compute merge_base(target_tip, commit_id). Required for
+        // the 3-way merge.
+        let base_tip = self.merge_base(target_tip, commit_id)?;
+        // 4. Build the 3-way merged tree.
+        let (merged_tree, conflicts) = self.merge_trees_3way(
+            self.get_commit(&base_tip)
+                .ok_or_else(|| DecisionMemoryError::NotFound {
+                    kind: "commit",
+                    id: hex_lower(&base_tip),
+                })?
+                .tree,
+            self.get_commit(&target_tip)
+                .ok_or_else(|| DecisionMemoryError::NotFound {
+                    kind: "commit",
+                    id: hex_lower(&target_tip),
+                })?
+                .tree,
+            commit.tree,
+        )?;
+        // 5. Build the new commit. 2 parents: [target_tip, commit_id].
+        // Encode conflicts in the message (v1.151.0 limitation: the
+        // 3-way merge is heuristic; ours-wins on blob conflict).
+        let final_message = if conflicts.is_empty() {
+            message.to_string()
+        } else {
+            let prefix = format!(
+                "CONFLICTS: {}\n",
+                conflicts
+                    .iter()
+                    .map(|(k, n, h)| format!("{}.{}={}", k, n, hex_lower(h)))
+                    .collect::<Vec<_>>()
+                    .join(";")
+            );
+            format!("{prefix}{message}")
+        };
+        let parents = vec![target_tip, commit_id];
         let new_commit = DecisionMemoryCommit::new(
             parents,
-            parent_tree,
+            merged_tree,
             DecisionMemoryAuthor::new("system", "revert").map_err(|_| {
                 DecisionMemoryError::ReflogAppendFailed("invalid revert author".into())
             })?,
             "2026-09-09T00:00:00Z",
             "sddk-framework",
             None::<String>,
-            Some("CDD-MEMORY-004"),
+            Some("CDD-MEMORY-005"),
             None::<String>,
             None::<String>,
             None::<String>,
             None::<String>,
-            message.to_string(),
-            "revert from CDD-MEMORY-004",
+            final_message,
+            "revert from CDD-MEMORY-005",
             vec![commit_id],
         )?;
         let new_id = new_commit.id;
         self.put_commit(new_commit)?;
-        // 3. Advance `target_ref` and append one reflog entry.
+        // 6. Advance `target_ref` and append one reflog entry.
         let mut log = Reflog::new();
-        self.write_ref_with_reflog(target_ref, new_id, &mut log, "revert", "revert replay")?;
+        self.write_ref_with_reflog(target_ref, new_id, &mut log, "system", "revert")?;
         Ok(new_id)
     }
 
@@ -1922,6 +1959,118 @@ impl InMemoryMemoryStore {
             }
         }
         Ok(())
+    }
+}
+
+impl InMemoryMemoryStore {
+    /// 3-way merge of three trees (R-M15, v1.151.0).
+    ///
+    /// For each `(subtree_name, entry_name)` triple present in any
+    /// of base/ours/theirs, applies the 9-case algorithm from
+    /// `REQ-DecisionMemoryMutationPlus.md` §R-M15a:
+    /// - name only in base: drop (case 1)
+    /// - name only in ours: take ours (case 2)
+    /// - name only in theirs: take theirs (case 3)
+    /// - same id in ours+theirs: take the id (case 4)
+    /// - ours and theirs differ (blob): ours wins; theirs is
+    ///   recorded as a known conflict in the returned Vec (case 5)
+    /// - ours and theirs differ (sub-tree): recurse via
+    ///   `merge_trees_3way` (case 6; v1.151.0 limitation: the
+    ///   tree schema is flat, so sub-tree recursion is not
+    ///   exercised today — the helper is wired for future use)
+    /// - name in base+ours, not theirs: take ours (case 7)
+    /// - name in base+theirs, not ours: take theirs (case 8)
+    /// - all three: case 4/5/6 (case 9)
+    ///
+    /// Returns `(merged_tree_id, conflicts)` where conflicts is
+    /// a `Vec<(subtree_name, entry_name, theirs_id)>` recording
+    /// every case-5 conflict (caller can re-apply manually).
+    fn merge_trees_3way(
+        &self,
+        base_id: MemoryId,
+        ours_id: MemoryId,
+        theirs_id: MemoryId,
+    ) -> Result<(MemoryId, Vec<(String, String, MemoryId)>), DecisionMemoryError> {
+        // Helper: collect all entries across all subtrees into a
+        // flat map keyed by (subtree, name). For v1.151.0 the
+        // schema is flat (no sub-tree recursion); the second
+        // component of the key is the subtree name (e.g.
+        // "delegation", "evidence").
+        fn flatten(tree: &DecisionMemoryTree) -> BTreeMap<(String, String), MemoryId> {
+            let mut out: BTreeMap<(String, String), MemoryId> = BTreeMap::new();
+            for (sub, items) in tree.entries.iter() {
+                for entry in items {
+                    out.insert((sub.clone(), entry.name.clone()), entry.id);
+                }
+            }
+            out
+        }
+        // Resolve all three trees. Missing trees are treated as
+        // empty (defensive; should not happen for a valid revert).
+        let base_tree = self.get_tree(&base_id);
+        let ours_tree = self.get_tree(&ours_id);
+        let theirs_tree = self.get_tree(&theirs_id);
+        let base_map: BTreeMap<(String, String), MemoryId> = match base_tree {
+            Some(t) => flatten(&t),
+            None => BTreeMap::new(),
+        };
+        let ours_map: BTreeMap<(String, String), MemoryId> = match ours_tree {
+            Some(t) => flatten(&t),
+            None => BTreeMap::new(),
+        };
+        let theirs_map: BTreeMap<(String, String), MemoryId> = match theirs_tree {
+            Some(t) => flatten(&t),
+            None => BTreeMap::new(),
+        };
+        // Collect the union of keys (sorted for determinism).
+        let mut all_keys: std::collections::BTreeSet<(String, String)> =
+            std::collections::BTreeSet::new();
+        all_keys.extend(base_map.keys().cloned());
+        all_keys.extend(ours_map.keys().cloned());
+        all_keys.extend(theirs_map.keys().cloned());
+        // Build the merged entries grouped back by subtree.
+        let mut merged_entries: BTreeMap<String, Vec<TreeEntry>> = BTreeMap::new();
+        let mut conflicts: Vec<(String, String, MemoryId)> = Vec::new();
+        for key in all_keys {
+            let in_base = base_map.get(&key);
+            let in_ours = ours_map.get(&key);
+            let in_theirs = theirs_map.get(&key);
+            let picked = match (in_base, in_ours, in_theirs) {
+                // Case 1: only in base — drop.
+                (Some(_), None, None) => None,
+                // Case 2: only in ours — take ours.
+                (None, Some(&id), None) => Some(id),
+                // Case 3: only in theirs — take theirs.
+                (None, None, Some(&id)) => Some(id),
+                // Case 4/9: same id in ours and theirs.
+                (_, Some(&o), Some(&t)) if o == t => Some(o),
+                // Case 5: ours and theirs differ — ours wins; record theirs.
+                (_, Some(&o), Some(&t)) => {
+                    conflicts.push((key.0.clone(), key.1.clone(), t));
+                    Some(o)
+                }
+                // Case 7: in base + ours, not theirs — take ours.
+                (Some(_), Some(&o), None) => Some(o),
+                // Case 8: in base + theirs, not ours — take theirs.
+                (Some(_), None, Some(&t)) => Some(t),
+                // Unreachable: we iterate over the union of keys, so
+                // at least one of the three Option<&id> is Some.
+                (None, None, None) => unreachable!("key in union must be in at least one tree"),
+            };
+            if let Some(id) = picked {
+                merged_entries
+                    .entry(key.0.clone())
+                    .or_default()
+                    .push(TreeEntry {
+                        name: key.1.clone(),
+                        id,
+                    });
+            }
+        }
+        // Build the new tree via `DecisionMemoryTree::new` which
+        // recomputes the id via SHA-256.
+        let new_tree = DecisionMemoryTree::new(merged_entries)?;
+        Ok((new_tree.id, conflicts))
     }
 }
 

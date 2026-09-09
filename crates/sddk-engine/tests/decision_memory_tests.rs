@@ -2141,12 +2141,17 @@ fn dmt_54_cherry_pick_appends_reflog_history_entry() {
 }
 
 #[test]
-fn dmt_55_revert_produces_commit_with_target_tree_and_single_parent() {
-    // R-M5 / S-M6. `revert(c2)` returns a commit whose `tree == c1.tree`
-    // (inverts c2 back to c1's snapshot) and whose `parents == [c2]`.
+fn dmt_55_revert_produces_commit_with_two_parents_and_merged_tree() {
+    // R-M5 / R-M15 (v1.151.0). `revert(c2)` returns a commit whose
+    // `parents == [target_ref_tip, c2_id]` (2-parent merge shape).
+    // The merged tree is the 3-way merge of (base, ours=main_tip, theirs).
+    // When ours == theirs (main already at c2), case 4 applies and
+    // the merge equals theirs's tree for each entry. This test uses
+    // distinct trees in c1 vs c2 so the merge result is observable.
     let store = InMemoryMemoryStore::new();
     let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
-    // c2 uses a different snapshot so revert's tree-inversion is observable.
+    // c2 uses a tree with a different entry so the merge result
+    // differs from the base.
     let tree_v2 = store
         .put_tree(make_tree(BTreeMap::from([(
             "decisions".to_string(),
@@ -2191,14 +2196,17 @@ fn dmt_55_revert_produces_commit_with_target_tree_and_single_parent() {
         .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
         .expect("revert");
     let new_commit = store.get_commit(&new_id).expect("new commit");
+    // 2 parents: [target_ref_tip (= main tip = c2), commit_id (= c2)].
     assert_eq!(
         new_commit.parents,
-        vec![c2_id],
-        "DMT-55 single parent = reverted commit"
+        vec![c2_id, c2_id],
+        "DMT-55 two parents = [main_tip, commit_id]"
     );
+    // ours == theirs (both c2.tree = tree_v2): case 4 → merged
+    // tree equals theirs's tree for each entry.
     assert_eq!(
-        new_commit.tree, tree_v1,
-        "DMT-55 tree = c1's tree (snapshot before c2)"
+        new_commit.tree, tree_v2,
+        "DMT-55 merged tree equals theirs (ours == theirs case 4)"
     );
 }
 
