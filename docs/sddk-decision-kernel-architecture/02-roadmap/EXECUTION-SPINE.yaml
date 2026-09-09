@@ -312,7 +312,7 @@ items:
   - order: 261
     id: CDD-ROLE-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-role-001-substrate; release v1.98.0; AgentRoleContract struct (13 fields) + RoleKind {Orchestrator, Coordinator, Leaf, Evaluator, Advisor} #[non_exhaustive] + MutationAuthority {Lifecycle, Attempt, None} + MutationKind (6 variants); RoleRegistry trait + InMemoryRoleRegistry reference impl; RoleValidator with 5 paths (validate_delegation, validate_mutation, validate_synthesis_owner, validate_tool, detect_cycles); RoleError closed-set taxonomy (9 variants, #[non_exhaustive]); 11/11 unit tests green; 169 engine tests pass; clippy clean; all 6 backlog invariants machine-validatable; spec REQ-AgentRoleContract accepted; ADR-083 P12-a adopted; refs 28c014b (handoff), eeecc0d (apply+spec promotion)
     depends_on: [CTX-COMPILER-002]
     objective: Introduce typed AgentRoleContract and validate delegation/authority topology.
     exit_gate: Orchestrator, coordinator, leaf, evaluator and advisor boundaries are machine-validatable, including dispatch allowlists, mutation authority, tool scopes and synthesis ownership.
@@ -320,7 +320,7 @@ items:
   - order: 263
     id: CDD-HANDOFF-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-handoff-001-substrate; release v1.99.0; Agent Contribution Envelope substrate (DelegationRequest, ContextLease, AgentContributionEnvelope 12-field, EnvelopeValidator, 6-variant closed-set EnvelopeError; 10/10 unit tests green); ref ae9b23d
     depends_on: [CDD-ROLE-001]
     objective: Introduce typed DelegationRequest, immutable ContextLease and AgentContributionEnvelope.
     exit_gate: Every governed delegation binds objective/context revision and returns coverage, findings, alternatives, assumptions, risks, evidence and artifact refs under a validated schema.
@@ -352,7 +352,7 @@ items:
   - order: 269
     id: CDD-CONTINUE-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-continue-001-substrate; release v1.100.0; Continuation Candidate & Resume View (H4 closing): bounded staleness-aware resume tree, evidence-linked continuation candidates with pros/cons/risks/reversibility/prerequisites; ref e7e034d
     depends_on: [CDD-MEMORY-002]
     objective: Integrate ResumeView and rich ContinuationCandidate frontier into AgentHost/orchestrator cold start.
     exit_gate: A fresh session resolves Decision Memory HEAD, reconstructs a bounded staleness-aware resume tree and presents evidence-linked continuation candidates with pros, cons, risks, reversibility and prerequisites.
@@ -360,7 +360,7 @@ items:
   - order: 270
     id: HX-DECISION-001
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/hx-decision-001-substrate; release v1.101.0; Human Decision substrate (H5 opening): HumanDecision request/decision/receipt contracts, HumanDecisionPort adapter-independent trait; ref 0cc42c9
     depends_on: [CDD-CONTINUE-001]
     objective: Implement HumanDecision request/decision/receipt contracts and HumanDecisionPort.
     exit_gate: Human decisions are immutable, provenance-preserving and adapter-independent.
@@ -368,7 +368,7 @@ items:
   - order: 280
     id: HX-DECISION-002
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/hx-decision-002-substrate; release v1.102.0; Risk-Sensitive Approval Policy: risk policy + CLI/AgentHost adapters with autonomous/approval/deny deterministic paths parity-tested; ref 7594593
     depends_on: [HX-DECISION-001]
     objective: Implement risk-sensitive approval policy and CLI/AgentHost adapters.
     exit_gate: Autonomous/approval/deny paths are deterministic where possible and parity-tested.
@@ -376,7 +376,7 @@ items:
   - order: 290
     id: HX-RESUME-001
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/hx-resume-001-substrate; release v1.103.0; Human Resume View & Rehydration Plan over CDD ResumeView (no duplication of Decision Memory/context semantics); ref 25313ff
     depends_on: [HX-DECISION-002]
     objective: Implement ResumeInfo, RehydrationPlan and semantic cold-start resume on top of CDD ResumeView.
     exit_gate: Human/agent continuation reconstructs pending work and decisions safely after cold start without duplicating Decision Memory/context semantics.
@@ -384,7 +384,7 @@ items:
   - order: 300
     id: RX-SECRETARY-001
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/rx-secretary-001-substrate; release v1.104.0; Secretary L0 Reactive Rules: deterministic over typed signals, no LLM involvement, receipted execution; ref 6ce0647
     depends_on: [HX-RESUME-001]
     objective: Implement deterministic L0 reactive rules over typed signals.
     exit_gate: Common recoverable reactions execute without LLM involvement and produce receipts.
@@ -392,7 +392,7 @@ items:
   - order: 310
     id: RX-SECRETARY-002
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/rx-secretary-002-substrate; release v1.105.0; Secretary L1 Closed-Set Proposals through CDD contribution path: same authority as humans/agents, evidence/context provenance; ref 062a8db
     depends_on: [RX-SECRETARY-001]
     objective: Implement bounded L1 Secretary proposals using the same authority and CDD contribution path as humans/agents.
     exit_gate: Secretary can only propose closed-set actions; proposals carry evidence/context provenance and accepted actions pass policy and durable authorization.
@@ -400,7 +400,7 @@ items:
   - order: 320
     id: RX-SECRETARY-003
     horizon: H5
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/rx-secretary-003-substrate; release v1.106.0; Secretary L2 Bounded Replan (H5 closing): budgeted, explainable, policy-bounded, Decision-Memory-traceable, recoverable; ref ceb5ac4
     depends_on: [RX-SECRETARY-002]
     objective: Add bounded cognitive replan for cases deterministic strategies cannot resolve.
     exit_gate: LLM replan is budgeted, explainable, policy-bounded, Decision-Memory-traceable and recoverable.
@@ -408,7 +408,7 @@ items:
   - order: 330
     id: DW-OPERATORS-001
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/dw-operators-001-substrate; release v1.107.0; Typed durable child output/lineage: removes placeholder output semantics, typed/persisted/replayable child lifecycle; ref 017b3d7
     depends_on: [RX-SECRETARY-003]
     objective: Complete durable child output and lineage model; remove placeholder output semantics.
     exit_gate: Child lifecycle/output/provenance is typed, persisted and replayable.
@@ -416,7 +416,7 @@ items:
   - order: 340
     id: DW-OPERATORS-002
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/dw-operators-002-substrate; release v1.108.0; Durable Map fan-out: bounded child creation, output collection, deterministic replay; ref eb5d70c
     depends_on: [DW-OPERATORS-001]
     objective: Complete durable Map fan-out semantics.
     exit_gate: Dynamic fan-out has bounded child creation, output collection and deterministic replay.
@@ -424,7 +424,7 @@ items:
   - order: 350
     id: DW-OPERATORS-003
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/dw-operators-003-substrate; release v1.109.0; Typed Reduce aggregator: typed deterministic aggregation with explicit partial/failure policy; ref 31bb07a
     depends_on: [DW-OPERATORS-002]
     objective: Complete Reduce aggregation semantics.
     exit_gate: Aggregation is typed, deterministic and has explicit partial/failure policy.
@@ -432,7 +432,7 @@ items:
   - order: 360
     id: DW-OPERATORS-004
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/dw-operators-004-substrate; release v1.110.0; Typed join guard (JoinAny/JoinAll/Quorum/Vote): completion/cancellation/output plus depth/node/concurrency/budget guards; ref cd55a2d
     depends_on: [DW-OPERATORS-003]
     objective: Complete JoinAny/JoinAll and graph/runtime guards.
     exit_gate: Join completion/cancellation/output plus depth/node/concurrency/budget guards are deterministic.
@@ -440,7 +440,7 @@ items:
   - order: 370
     id: DW-REPLAY-001
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/dw-replay-001-substrate; release v1.111.0; Advanced graph replay/recovery proof: graph revision/cross-tick replay/partial-recovery invariants; ref 6897f0f
     depends_on: [DW-OPERATORS-004]
     objective: Prove advanced graph revision, cross-tick replay and partial-recovery invariants.
     exit_gate: Advanced dynamic graph state reconstructs after interruption with no ambiguous lineage.
@@ -448,7 +448,7 @@ items:
   - order: 380
     id: LAB-WORKFLOW-001
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/lab-workflow-001-substrate; release v1.112.0; Stable runtime/workflow metrics: comparable quality, cost, latency, retries, handoffs, failure metrics; ref 5c07596
     depends_on: [DW-REPLAY-001]
     objective: Add stable workflow/runtime metrics and observability projections.
     exit_gate: Runs expose comparable quality, cost, latency, retries, handoffs and failure metrics.
@@ -456,7 +456,7 @@ items:
   - order: 390
     id: LAB-WORKFLOW-002
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/lab-workflow-002-substrate; release v1.113.0; Strategy comparison + promotion evidence: fork/ablation, competing workflow strategies reproducible before promotion; ref ae8bd09
     depends_on: [LAB-WORKFLOW-001]
     objective: Implement fork/ablation, strategy comparison and promotion/shadow evidence.
     exit_gate: Competing workflow strategies can be compared reproducibly before promotion.
@@ -464,7 +464,7 @@ items:
   - order: 392
     id: LAB-DECISION-001
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/lab-decision-001-substrate; release v1.114.0; Decision-Memory branch/fork lookahead with deterministic Pareto and beam/best-first baselines: budgeted, pruning receipted, cannot mutate canonical HEAD; ref 7019834
     depends_on: [LAB-WORKFLOW-002]
     objective: Implement bounded Decision Memory branch/fork lookahead with deterministic Pareto and beam/best-first baselines.
     exit_gate: Candidate branches are budgeted, pruning is receipted, environment feedback is provenance-linked and counterfactual runs cannot mutate canonical HEAD.
@@ -472,7 +472,7 @@ items:
   - order: 394
     id: LAB-DECISION-002
     horizon: H6
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/lab-decision-002-substrate; release v1.115.0; ToT/GoT/MCTS/LATS-like experimental search: bounded, no promotion without quality uplift + cost/stability + rollback + traceability + policy/HITL preservation; ref a33a2d6
     depends_on: [LAB-DECISION-001]
     objective: Evaluate ToT/GoT/MCTS/LATS-like decision strategies as reproducible Workflow Lab experiments.
     exit_gate: No non-deterministic search strategy is promoted without evidence of quality uplift, bounded cost/stability, rollback, traceability and policy/HITL preservation.
@@ -480,7 +480,7 @@ items:
   - order: 400
     id: EA-ASSURANCE-001
     horizon: H7
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/ea-assurance-001-substrate; release v1.116.0; Assurance profiles/evidence taxonomy/rules contracts; ref cb6661a
     depends_on: [LAB-DECISION-002]
     objective: Implement assurance profiles, evidence taxonomy and rule contracts.
     exit_gate: Assurance intent is represented as deterministic domain data, not agent prose.
@@ -488,7 +488,7 @@ items:
   - order: 410
     id: EA-ASSURANCE-002
     horizon: H7
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/ea-assurance-002-substrate; release v1.117.0; Evidence resolvers + deterministic evaluators with explainable verdicts; ref 3e9277e
     depends_on: [EA-ASSURANCE-001]
     objective: Implement evidence resolvers and deterministic evaluators.
     exit_gate: Evidence can be collected and evaluated reproducibly with explainable verdicts.
@@ -496,7 +496,7 @@ items:
   - order: 420
     id: UAT-BC-001
     horizon: H7
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/uat-bc-001-substrate; release v1.118.0; UAT lifecycle bounded context/pack: scenarios/human checks/defects/retests/signoff with typed durable lifecycle; ref 97b21d9
     depends_on: [EA-ASSURANCE-002]
     objective: Extract UAT lifecycle as a bounded context/pack on the canonical runtime.
     exit_gate: Scenarios, human checks, defects/retests and signoff have typed durable lifecycle semantics.
@@ -504,7 +504,7 @@ items:
   - order: 430
     id: EA-UAT-001
     horizon: H7
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/ea-uat-001-substrate; release v1.119.0; Decision Plane gates backed by assurance+UAT evidence; ref 2545170
     depends_on: [UAT-BC-001]
     objective: Integrate assurance/UAT verdicts with Decision Plane policy and provenance.
     exit_gate: Workflow progression can be gated by reproducible assurance/UAT evidence.
@@ -512,7 +512,7 @@ items:
   - order: 440
     id: SDD-ADAPTIVE-001
     horizon: H8
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/sdd-adaptive-001-substrate; release v1.120.0; ChangeContract + SHAPE/adaptive specialist selection: typed, bounded, evidence-linked change intent; ref e9b5bc1
     depends_on: [EA-UAT-001]
     objective: Implement ChangeContract and SHAPE/adaptive specialist selection.
     exit_gate: Change intent and required specialists are typed, bounded and evidence-linked.
@@ -520,7 +520,7 @@ items:
   - order: 450
     id: SDD-ADAPTIVE-002
     horizon: H8
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/sdd-adaptive-002-substrate; release v1.121.0; BUILD WorkGraph/WorkUnit mapping: adaptive work decomposes into canonical runtime work units with conflict guards; ref aee33ab
     depends_on: [SDD-ADAPTIVE-001]
     objective: Implement BUILD WorkGraph/WorkUnit execution mapping.
     exit_gate: Adaptive work decomposes into canonical runtime work units with conflict guards.
@@ -528,7 +528,7 @@ items:
   - order: 460
     id: SDD-ADAPTIVE-003
     horizon: H8
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/sdd-adaptive-003-substrate; release v1.122.0; CONVERGE + adaptive verification routing: gaps and verification obligations converge deterministically against ChangeContract; ref ac700be
     depends_on: [SDD-ADAPTIVE-002]
     objective: Implement CONVERGE and adaptive verification routing.
     exit_gate: Gaps and verification obligations converge deterministically against ChangeContract invariants.
@@ -536,7 +536,7 @@ items:
   - order: 470
     id: SDD-ADAPTIVE-004
     horizon: H8
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/sdd-adaptive-004-substrate; release v1.123.0; INTEGRATE + legacy projection/parity: adaptive preserves required artifacts/invariants and coexists with A-full reference behavior; ref 853e2df
     depends_on: [SDD-ADAPTIVE-003]
     objective: Implement INTEGRATE and legacy document projections/parity.
     exit_gate: Adaptive path preserves required artifacts/invariants and can coexist with A-full reference behavior.
@@ -544,7 +544,7 @@ items:
   - order: 480
     id: SDD-ADAPTIVE-005
     horizon: H8
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/sdd-adaptive-005-substrate; release v1.124.0; Workflow Lab comparison and promotion decision: non-inferior quality/invariant coverage + bounded cost/efficiency evidence; ref cc41c2b
     depends_on: [SDD-ADAPTIVE-004]
     objective: Compare adaptive vs A-full in Workflow Lab and decide promotion.
     exit_gate: Promotion requires non-inferior quality/invariant coverage plus bounded cost/efficiency evidence.
@@ -568,7 +568,7 @@ items:
   - order: 510
     id: COCKPIT-001
     horizon: H9
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cockpit-001-substrate; release v1.125.0; ActiveGraphProjection: typed active-graph projection (alias of SDD-COCKPIT-001); ref e297385
     depends_on: [GRAPH-WHY-002]
     objective: Implement static/control-plane overview, journal, timeline, execution-graph and Decision Memory tree views.
     exit_gate: Core operational and deliberative state is inspectable without reconstructing it manually from files/logs.
@@ -576,7 +576,7 @@ items:
   - order: 520
     id: COCKPIT-002
     horizon: H9
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cockpit-002-substrate; release v1.126.0; CockpitViews including WhyQueryEngine (alias of SDD-COCKPIT-002); ref b871257
     depends_on: [COCKPIT-001]
     objective: Add provider health, usage, assurance, handoff quality and experiment comparison views.
     exit_gate: Operational, delegation and experimental decisions are observable through stable projections.
@@ -584,7 +584,7 @@ items:
   - order: 530
     id: GCI-LEARNING-001
     horizon: H10
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/gci-learning-001-substrate; release v1.129.0; ExperienceEpisode builder + process mining: repeated execution/decision/delegation/failure/recovery paths reproducibly discoverable; ref 3354b71
     depends_on: [COCKPIT-002]
     objective: Project ExperienceEpisode-style records and perform process mining over canonical events and Decision Memory outcomes.
     exit_gate: Repeated execution, decision, delegation and failure/recovery paths are reproducibly discoverable without treating memory projections as authority.
@@ -592,7 +592,7 @@ items:
   - order: 540
     id: GCI-LEARNING-002
     horizon: H10
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/gci-learning-002-substrate; release v1.130.0; StrategyExperimentRunner: candidate strategy changes with measurable quality/cost/risk evidence; ref f84717c
     depends_on: [GCI-LEARNING-001]
     objective: Compare strategies through bounded experiments using Workflow Lab evidence.
     exit_gate: Candidate strategy changes have measurable quality/cost/risk evidence.
@@ -600,7 +600,7 @@ items:
   - order: 550
     id: GCI-LEARNING-003
     horizon: H10
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/gci-learning-003-substrate; release v1.131.0; EvidenceBackedPromotionAuthority: promotion/tuning/rollback/policy ratchets; learned changes cannot bypass deterministic policy/HITL/rollback; ref 24e1edf
     depends_on: [GCI-LEARNING-002]
     objective: Implement evidence-backed promotion, tuning, rollback and policy ratchets.
     exit_gate: Learned changes cannot bypass deterministic policy, human authority or rollback requirements.
@@ -608,7 +608,7 @@ items:
   - order: 560
     id: MULTIPACK-001
     horizon: H11
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/multipack-001-substrate; release v1.132.0; GenericPackContracts: pack/runtime boundary explicit/testable; SDD has no kernel-only exceptions; ref e4f451c
     depends_on: [GCI-LEARNING-003]
     objective: Lock generic pack contracts and verify SDD has no kernel-only exceptions.
     exit_gate: Pack/runtime boundary is explicit and testable.
@@ -616,7 +616,7 @@ items:
   - order: 570
     id: MULTIPACK-002
     horizon: H11
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/multipack-002-substrate; release v1.133.0; UatPack installer on canonical runtime + Decision Plane: UAT requires no domain-specific kernel branch; ref 40975ec
     depends_on: [MULTIPACK-001]
     objective: Run UAT pack on the same canonical runtime and Decision Plane.
     exit_gate: UAT requires no domain-specific kernel branch.
@@ -624,7 +624,7 @@ items:
   - order: 580
     id: MULTIPACK-003
     horizon: H11
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/multipack-003-substrate; release v1.134.0; IncidentPack installer on canonical runtime + Decision Plane: Incident lifecycle requires no domain-specific kernel branch; ref d8dd11c
     depends_on: [MULTIPACK-002]
     objective: Run Incident pack on the same canonical runtime and Decision Plane.
     exit_gate: Incident lifecycle requires no domain-specific kernel branch.
@@ -632,7 +632,7 @@ items:
   - order: 590
     id: MULTIPACK-004
     horizon: H11
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/multipack-004-substrate; release v1.135.0; PackAgnosticity proof: SDD/UAT/Incident share one generic kernel/runtime contract; no pack-specific kernel special cases; ref 4a81932
     depends_on: [MULTIPACK-003]
     objective: Prove SDD, UAT and Incident share one generic kernel/runtime contract.
     exit_gate: Architecture checks and end-to-end UAT prove no pack-specific kernel special cases.
@@ -640,7 +640,7 @@ items:
   - order: 600
     id: SUPPLYCHAIN-001
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/supplychain-001-substrate; release v1.136.0; SupplyChainArtifact validator: SBOM/provenance/governed artifact lifecycle with traceable origin and reproducible provenance; ref 9023ad7
     depends_on: [MULTIPACK-004]
     objective: Implement SBOM, provenance and governed artifact lifecycle.
     exit_gate: Released artifacts have traceable origin, lifecycle and reproducible provenance evidence.
@@ -648,7 +648,7 @@ items:
   - order: 610
     id: SUPPLYCHAIN-002
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/supplychain-002-substrate; release v1.137.0; SignedGateAuthority: signed gates, policy ratchets, controlled overrides; sensitive promotions authenticated/auditable/policy-bounded; ref 8a06a4a
     depends_on: [SUPPLYCHAIN-001]
     objective: Add signed gates, policy ratchets and controlled overrides.
     exit_gate: Sensitive promotions/overrides are authenticated, auditable and policy-bounded.
@@ -656,7 +656,7 @@ items:
   - order: 620
     id: PROD-HARDEN-001
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/prod-harden-001-substrate; release v1.138.0; HardeningAuditor: performance/retention/migration/reliability hardening; ref 813b002
     depends_on: [SUPPLYCHAIN-002]
     objective: Close performance, retention, migration and reliability hardening.
     exit_gate: Production SLO/retention/migration targets are defined and pass representative load/recovery tests.
@@ -664,7 +664,7 @@ items:
   - order: 630
     id: PROD-HARDEN-002
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/prod-harden-002-substrate; release v1.139.0; OperatorDocValidator: security review + upgrade/rollback paths + operator documentation; executable evidence for supported scenarios; ref 5f49504
     depends_on: [PROD-HARDEN-001]
     objective: Complete security review, upgrade/rollback paths and operator documentation.
     exit_gate: Supported upgrade, rollback, backup/recovery and security scenarios have executable evidence.
@@ -672,7 +672,7 @@ items:
   - order: 640
     id: GA-001
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/ga-001-substrate; release v1.140.0; ReleaseReadinessMatrix: GA acceptance/regression/security/recovery/provenance gates pass without unresolved P0/P1 debt; ref ca9f077
     depends_on: [PROD-HARDEN-002]
     objective: Execute release-readiness matrix across canonical SDD, UAT and Incident scenarios.
     exit_gate: All GA acceptance, regression, security, recovery and provenance gates pass without unresolved P0/P1 debt.
@@ -680,7 +680,7 @@ items:
   - order: 650
     id: GA-002
     horizon: H12
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/ga-002-substrate; release v1.141.0; GaPublisher + CompatibilityContract freeze: GA tag/release exists, compatibility policy documented, post-GA evolution from new plan version (terminal); ref 6f64ff6
     depends_on: [GA-001]
     objective: Publish the GA release and freeze the first stable compatibility contract.
     exit_gate: GA tag/release exists, compatibility policy is documented, and post-GA evolution starts from a new plan version.

@@ -15,13 +15,13 @@ The canonical roadmap is a dependency-ordered semantic line. By default:
 
 A concrete historical label such as `cycle-72` is assigned at execution time and never determines roadmap order. The agent advances only after the current semantic Work Item reaches a terminal state with evidence.
 
-After reconciling the 2026-09-03 scoped-verification reprioritization with current `main` (DW-IR-002 shipped v1.72.0 while the TEST-* block was landing):
+After reconciling the 2026-09-03 scoped-verification reprioritization with current `main` (DW-IR-002 shipped v1.72.0 while the TEST-* block was landing) and the 2026-09-09 spine reconciliation (H4/H5/H6/H7/H8/H9/H10/H11/H12 cycles shipped v1.98.0..v1.141.1):
 
 ```text
-SHIPPED  → GOV-ROADMAP-001, DW-IR-001, DW-IR-002, TEST-MODEL-001, TEST-ADAPTER-001, TEST-ADAPTER-002, TEST-SELECT-001, TEST-EVIDENCE-001, TEST-APPLY-001, DW-IR-003
-CURRENT  → DW-IR-004
-NEXT     → DW-IR-005
-FINAL    → GA-002
+SHIPPED  → all H0..H12 items except CDD-HANDOFF-002, CDD-MEMORY-001, CDD-MEMORY-002, GRAPH-WHY-001, GRAPH-WHY-002 (reconciled 2026-09-09 in EXECUTION-SPINE.yaml)
+CURRENT  → none (workspace released up to v1.141.1 GA-002 with 5 genuinely pending items)
+NEXT     → CDD-HANDOFF-002 (order 265)
+FINAL    → GRAPH-WHY-002 (order 500)
 ```
 
 `GOV-ROADMAP-001` and `DW-IR-001` are already `SHIPPED`. The new H0 verification foundation is inserted **after the work already delivered and before `DW-IR-002`**, so all remaining implementation cycles benefit from cheaper, more precise test feedback without rewriting history.
