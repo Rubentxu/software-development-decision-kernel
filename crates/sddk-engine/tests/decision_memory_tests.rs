@@ -1332,3 +1332,30 @@ fn dmt_37_typed_view_round_trip_via_in_memory_store() {
         "DMT-37 id is stable across put/get (no re-hash)"
     );
 }
+
+#[test]
+fn dmt_38_projection_scope_defaults_to_all() {
+    use sddk_engine::decision_memory::ProjectionScope;
+    let s: ProjectionScope = Default::default();
+    assert_eq!(s, ProjectionScope::All);
+}
+
+#[test]
+fn dmt_39_projection_traits_compile_with_default_unimplemented() {
+    // Red→Green guarantee: any caller that has a `dyn MemoryStore` can
+    // still mention the new ops; the default impl must panic at runtime,
+    // which we don't trigger here (just trait dispatch).
+    use sddk_engine::decision_memory::{
+        DecisionProjection, DelegationProjection, MemoryStore, ProjectionScope,
+    };
+    fn _accepts<T: MemoryStore + ?Sized>(
+        s: &T,
+        id: sddk_engine::decision_memory::MemoryId,
+    ) -> (
+        Result<DecisionProjection, sddk_engine::decision_memory::DecisionMemoryError>,
+        Result<DelegationProjection, sddk_engine::decision_memory::DecisionMemoryError>,
+    ) {
+        (s.decision_projection(id, ProjectionScope::All), s.delegation_projection(id, ProjectionScope::All))
+    }
+    let _ = _accepts::<sddk_engine::decision_memory::InMemoryMemoryStore>;
+}

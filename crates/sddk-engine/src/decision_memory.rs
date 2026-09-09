@@ -626,6 +626,34 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         let _ = as_name;
         unimplemented!("MemoryStore::fork is not implemented by this store")
     }
+
+    // === Projection specialization ops (CDD-MEMORY-003 / v1.149.0) ===
+    //
+    // Per ADR-092 §2.2 / R-P3 / R-P4 / R-P8. Default impls panic
+    // with `unimplemented!()` so any external implementor is forced
+    // to provide them. `InMemoryMemoryStore` overrides both.
+
+    /// Filter blobs whose `object_kind` starts with `"decision/"`,
+    /// anchored at `at_commit`. R-P3 / S-P3.
+    fn decision_projection(
+        &self,
+        at_commit: MemoryId,
+        scope: ProjectionScope,
+    ) -> Result<DecisionProjection, DecisionMemoryError> {
+        let _ = (at_commit, scope);
+        unimplemented!("MemoryStore::decision_projection is not implemented by this store")
+    }
+
+    /// Filter blobs whose `object_kind` starts with `"delegation/"`,
+    /// anchored at `at_commit`. R-P4 / S-P9.
+    fn delegation_projection(
+        &self,
+        at_commit: MemoryId,
+        scope: ProjectionScope,
+    ) -> Result<DelegationProjection, DecisionMemoryError> {
+        let _ = (at_commit, scope);
+        unimplemented!("MemoryStore::delegation_projection is not implemented by this store")
+    }
 }
 
 // ----------------- Traversal value types (v1.148.0) -----------------
@@ -637,6 +665,60 @@ pub enum ReflogScope {
     Branches,
     Tags,
     Heads,
+}
+
+// ----------------- Projection specialization types (v1.149.0) -----------------
+//
+// Per ADR-092 §2.2 / R-P5: `ProjectionScope` narrows the projection
+// by anchor commit's `project_id` or `cycle_run_id` field.
+
+/// Narrows a projection to commits matching a project_id or
+/// cycle_run_id. `All` skips the narrowing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ProjectionScope {
+    #[default]
+    All,
+    ProjectScoped(String),
+    CycleScoped(String),
+}
+
+/// Entry in a `DecisionProjection` — a typed view over a single
+/// decision blob. The blob itself is referenced by id; callers can
+/// resolve via `MemoryStore::get_blob`. R-P3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecisionEntry {
+    pub kind: String,
+    pub id: MemoryId,
+    pub payload_ref: String,
+}
+
+/// Read-only filter over blobs whose `object_kind` starts with
+/// `decision/`. Anchored at a specific commit. R-P3 / S-P3.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DecisionProjection {
+    pub at_commit: MemoryId,
+    pub scope: ProjectionScope,
+    pub entries: BTreeMap<String, Vec<DecisionEntry>>,
+    pub truncated: bool,
+}
+
+/// Entry in a `DelegationProjection`. Same shape as `DecisionEntry`
+/// but anchored on `delegation/*` blobs. R-P4.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegationEntry {
+    pub kind: String,
+    pub id: MemoryId,
+    pub payload_ref: String,
+}
+
+/// Read-only filter over blobs whose `object_kind` starts with
+/// `delegation/`. Anchored at a specific commit. R-P4 / S-P9.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DelegationProjection {
+    pub at_commit: MemoryId,
+    pub scope: ProjectionScope,
+    pub entries: BTreeMap<String, Vec<DelegationEntry>>,
+    pub truncated: bool,
 }
 
 /// Show projection: commit + its tree + every ref pointing here.
