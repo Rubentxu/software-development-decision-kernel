@@ -1,0 +1,109 @@
+---
+schema_version: v1
+generated_at: "2026-09-09T14:24:00Z"
+generated_from: manual curation against DUPLICATE-CONCEPT-MAP-DRAFT.md (cycle planning dir)
+cycle: p-63676b11dc0ef88f/m0-inventory-baseline
+ordering: by SPEC then concept
+total_decisions: 35
+status: pending user sign-off per RISK-REGISTER R-001
+---
+
+# Duplicate Concept Map — M0 D4
+#
+# Maps concepts in arch-spec-001..018 to existing Rust anchors and assigns
+# a disposition per package's MIGRATION-AND-DEPRECATION.md policy.
+#
+# Disposition vocabulary (per package):
+#   KEEP       — existing anchor is canonical; no change.
+#   RENAME     — existing anchor renamed to target.
+#   EVOLVE     — existing anchor generalized to target.
+#   DEPRECATE  — existing anchor removed in favor of target.
+#   INTERNALIZE — existing anchor becomes internal to AuthorityEngine facade.
+#   MIGRATE    — existing data moved to new representation.
+#   SPLIT      — existing concept broken into several.
+#   PLANNED    — target is a future deliverable (M5+).
+#   REVIEW     — sensitive call requiring user sign-off.
+#
+# Confidence: high | medium | low.
+
+schema_version: v1
+
+spec_013_agent_experience_contract:
+  - { concept: AgentProfile, existing: "agents/AgentProfile (CLI commands) — agent contract, not struct", disposition: EVOLVE, target: "typed AgentProfile contract", milestone: M7, confidence: medium }
+  - { concept: SkillDefinition, existing: "implicit; agents/skills only as Markdown", disposition: DEPRECATE, target: "typed SkillDefinition contract", milestone: M7, confidence: medium }
+  - { concept: InstructionSource, existing: "monolith provider prompt", disposition: SPLIT, target: "KernelInvariantSet / PolicyInstructionSet / TaskContract / ProjectInstructionSet / AgentProfile / SelectedSkillSet / ContextualHints", milestone: M7, confidence: high }
+  - { concept: InstructionCompiler, existing: MISSING, disposition: PLANNED, target: "InstructionCompiler", milestone: M7, confidence: high }
+  - { concept: EffectiveInstructions, existing: "implicit (compiled in agent-loader)", disposition: EVOLVE, target: "EffectiveInstructions typed contract", milestone: M7, confidence: medium }
+  - { concept: CommandSpec, existing: "crates/sddk-cli/src/commands.rs::Command (rough)", disposition: EVOLVE, target: "CommandSpec per M7", milestone: M6, confidence: high }
+  - { concept: AgentCommandSurface, existing: "MISSING; partial in sddk help <subcmd>", disposition: PLANNED, target: "AgentCommandSurface per M7", milestone: M7, confidence: high }
+  - { concept: ContextCapsule, existing: "crates/sddk-engine/src/context_capsule*.rs", disposition: KEEP, target: "ContextCapsule (already structurally correct)", milestone: delivered, confidence: high }
+  - { concept: ExecutionRequest, existing: "MISSING (cf. CapabilityRequest partial)", disposition: EVOLVE, target: "ExecutionRequest", milestone: M7, confidence: medium }
+  - { concept: ExecutionOutcome, existing: "crates/sddk-engine/src/runtime/outcomes.rs::TransitionOutcome (partial)", disposition: EVOLVE, target: "ExecutionOutcome", milestone: M7, confidence: high }
+  - { concept: Contribution, existing: "AgentContributionEnvelope", disposition: EVOLVE, target: "Contribution (rename from AgentContributionEnvelope)", milestone: M7, confidence: high }
+  - { concept: AgentExecutionReceiptV1, existing: MISSING, disposition: PLANNED, target: "AgentExecutionReceiptV1 (14 fields)", milestone: M7, confidence: high }
+
+spec_005_semantic_graph_and_why:
+  - { concept: SemanticGraph, existing: "crates/sddk-engine/src/graph/*", disposition: KEEP, target: "SemanticGraph (already canonical)", milestone: delivered, confidence: high }
+  - { concept: WhyQueryKind, existing: "crates/sddk-engine/src/why.rs (4 enums)", disposition: KEEP, target: "WhyQueryKind", milestone: delivered, confidence: high }
+  - { concept: WhyCausalStep, existing: "crates/sddk-engine/src/why.rs", disposition: KEEP, target: "WhyCausalStep", milestone: delivered, confidence: high }
+  - { concept: WhyQueryResult, existing: "crates/sddk-engine/src/why.rs", disposition: KEEP, target: "WhyQueryResult", milestone: delivered, confidence: high }
+  - { concept: DefaultWhyQueryEngine, existing: "crates/sddk-engine/src/why.rs", disposition: KEEP, target: "DefaultWhyQueryEngine", milestone: delivered, confidence: high }
+  - { concept: ExplanationProof, existing: MISSING, disposition: PLANNED, target: "ExplanationProof (14 fields)", milestone: M8, confidence: high }
+  - { concept: "sddk impact <entity>", existing: MISSING, disposition: PLANNED, target: "sddk impact CLI", milestone: M8, confidence: high }
+  - { concept: "5 missing node families (goal, alternative, decision unified, evidence unified, dissent)", existing: MISSING, disposition: PLANNED, target: "node families added", milestone: M3, confidence: medium }
+
+authority_components_unification_target:
+  - { concept: Permission, existing: "WritableSurface + AuthorityContext", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
+  - { concept: Gate, existing: "DecisionPlaneGate + GateEvaluator", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
+  - { concept: Approval, existing: "ApprovalRequestedInput + DecisionInput", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
+  - { concept: Risk, existing: "RiskApprovalPolicy + RiskCarryEntry", disposition: INTERNALIZE, target: "AuthorityEngine facade (M5)", milestone: M5, confidence: high }
+  - { concept: AuthorityEngine_facade, existing: MISSING, disposition: PLANNED, target: "AuthorityEngine facade", milestone: M5, confidence: high }
+
+decision_memory_spine_done:
+  - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
+  - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
+  - { concept: ReflogEntry, existing: "shipped (dropped + tombstone_for fields)", disposition: KEEP, target: "ReflogEntry", milestone: delivered, confidence: high }
+  - { concept: MemoryId, existing: shipped, disposition: KEEP, target: "MemoryId", milestone: delivered, confidence: high }
+  - { concept: "merge_base / ancestors / heads", existing: shipped, disposition: KEEP, target: "merge_base / ancestors / heads", milestone: delivered, confidence: high }
+  - { concept: "revert / reset / delete_ref", existing: shipped, disposition: KEEP, target: "revert / reset / delete_ref", milestone: delivered, confidence: high }
+  - { concept: merge_trees_3way, existing: shipped, disposition: KEEP, target: "merge_trees_3way", milestone: delivered, confidence: high }
+
+cycle_status_runtime_meaning:
+  - { concept: CycleStatus_UatWaiting, existing: "crates/sddk-domain/src/cycle.rs", disposition: DEPRECATE, target: "run/gate facts + derived summary", milestone: M2, confidence: high, sensitive: true }
+  - { concept: CycleStatus_ApprovalPending, existing: "crates/sddk-domain/src/cycle.rs", disposition: DEPRECATE, target: "run/authority facts + derived summary", milestone: M2, confidence: high, sensitive: true }
+  - { concept: CycleStatus_Recovering, existing: "crates/sddk-domain/src/cycle.rs", disposition: DEPRECATE, target: "Run recovery state", milestone: M2, confidence: high, sensitive: true }
+  - { concept: CycleStatus_Remediating, existing: "crates/sddk-domain/src/cycle.rs", disposition: REVIEW, target: "derived delivery/run summary OR WorkItem", milestone: M2, confidence: medium, sensitive: true, note: "R-001 [high] requires explicit user sign-off." }
+
+naming_migrations:
+  - { from: ContinuationCandidate, to: ContinuationOption, why: "cleaner semantics", confidence: high, milestone: M2 }
+  - { from: FrontierProjection, to: ExecutionFrontier, why: "clearer", confidence: high, milestone: M2 }
+  - { from: FrontierEntry, to: "(keep, see ExecutionFrontier)", why: "n/a", confidence: medium, milestone: M2 }
+
+legacy_evidence_migration:
+  - { concept: PlanningEvidenceKind, target: "evidence metadata/relation", disposition: DEPRECATE, milestone: M1, confidence: medium, sensitive: true }
+  - { concept: EvidenceAttachmentV1, target: "EvidenceRef + WorkItem relation/fact", disposition: MIGRATE, milestone: M1, confidence: medium, sensitive: true }
+
+# ============================================================================
+# Summary statistics
+# ============================================================================
+summary:
+  total_decisions: 35
+  keep: 13
+  evolve: 4
+  evolve_rename: 3
+  deprecate_runtime_meaning: 4
+  migrate: 2
+  split: 1
+  internalize: 4
+  planned: 12
+  review: 1
+  sensitive_total: 7  # entries flagged sensitive: true
+
+# ============================================================================
+# User sign-off (R-001 acceptance)
+# ============================================================================
+user_signoff:
+  status: pending
+  path: "User reviews entries flagged sensitive: true and any REVIEW disposition"
+  cycle: "p-63676b11dc0ef88f/m0-inventory-baseline"
+  resolved_in: "next cycle checkpoint (T-4 step 4)"
