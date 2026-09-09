@@ -2428,9 +2428,10 @@ fn dmt_58_reset_hard_moves_head_and_preserves_dag() {
 }
 
 #[test]
-fn dmt_59_reset_soft_returns_not_implemented() {
-    // R-M7 / S-M9. `reset(Head, c0, Soft)` returns
-    // `NotImplemented { op: "reset", message: "..." }`.
+fn dmt_59_reset_soft_with_target_equals_tip_does_not_error() {
+    // R-M7 / R-M13 / S-M9 (v1.151.0). When target == current_tip the
+    // dropped set is empty and Soft reset succeeds without
+    // modifying the DAG or appending a `dropped`-bearing entry.
     let store = InMemoryMemoryStore::new();
     let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
     let c0 = make_commit(
@@ -2444,19 +2445,20 @@ fn dmt_59_reset_soft_returns_not_implemented() {
     );
     let c0_id = store.put_commit(c0).expect("c0");
 
-    let err = store
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c0_id, &mut log, "actor", "advance")
+        .expect("write HEAD");
+
+    // Soft reset Head -> c0 (no-op; target == current tip).
+    store
         .reset(RefKind::Head, c0_id, ResetMode::Soft)
-        .expect_err("soft reset is not implemented");
-    match err {
-        DecisionMemoryError::NotImplemented { op, message } => {
-            assert_eq!(op, "reset", "DMT-59 op name");
-            assert!(
-                !message.is_empty(),
-                "DMT-59 NotImplemented.message MUST be non-empty"
-            );
-        }
-        other => panic!("DMT-59 expected NotImplemented, got {other:?}"),
-    }
+        .expect("soft reset to current tip is a no-op, not an error");
+    assert_eq!(
+        store.resolve_ref(&RefKind::Head).expect("HEAD resolves"),
+        c0_id,
+        "DMT-59 HEAD still at c0"
+    );
 }
 
 #[test]

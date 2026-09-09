@@ -1620,7 +1620,7 @@ impl MemoryStore for InMemoryMemoryStore {
         target: MemoryId,
         mode: ResetMode,
     ) -> Result<(), DecisionMemoryError> {
-        // R-M7 / S-M8 / S-M9.
+        // R-M7 / R-M13 / S-M8 / S-M9.
         // 1. Resolve `target` (NotFound).
         if self.get_commit(&target).is_none() {
             return Err(DecisionMemoryError::NotFound {
@@ -1628,23 +1628,92 @@ impl MemoryStore for InMemoryMemoryStore {
                 id: hex_lower(&target),
             });
         }
-        // 2. Mode dispatch.
-        match mode {
-            ResetMode::Hard => {
-                // Move `ref_kind` to `target`; append a reflog entry.
-                let mut log = Reflog::new();
-                self.write_ref_with_reflog(ref_kind, target, &mut log, "reset", "reset:hard")?;
-                Ok(())
+        // 2. Resolve the current tip of `ref_kind` (NotFound).
+        let path = ref_kind.ref_path();
+        let current_tip = self.resolve_ref(&ref_kind).ok_or_else(|| {
+            DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: path.clone(),
             }
-            ResetMode::Soft => Err(DecisionMemoryError::NotImplemented {
-                op: "reset",
-                message: "Soft reset deferred to v1.151.0",
-            }),
-            ResetMode::Mixed => Err(DecisionMemoryError::NotImplemented {
-                op: "reset",
-                message: "Mixed reset deferred to v1.151.0",
-            }),
+        })?;
+        // 3. Compute the dropped set (commits reachable from
+        // `current_tip` but NOT from `target`, walking down the
+        // parent chain). Empty for Hard; populated for Soft/Mixed.
+        // For v1.151.0 only a linear ancestor walk is needed
+        // (ref history is linear; merged history is out of scope).
+        let dropped_hex: Vec<String> = match mode {
+            ResetMode::Hard => Vec::new(),
+            ResetMode::Soft | ResetMode::Mixed => {
+                let mut dropped: Vec<String> = Vec::new();
+                let mut cursor = current_tip;
+                // Stop when we reach `target` itself or any commit
+                // not present in the store (defensive).
+                while cursor != target {
+                    let Some(c) = self.get_commit(&cursor) else {
+                        break;
+                    };
+                    dropped.push(hex_lower(&cursor));
+                    let Some(parent) = c.parents.first() else {
+                        // Hit a root before reaching target: bail out
+                        // (defensive; should not happen for a valid reset).
+                        break;
+                    };
+                    cursor = *parent;
+                }
+                // Deterministic order: sort by hex string.
+                dropped.sort();
+                dropped
+            }
+        };
+        // 4. Move `ref_kind` to `target` via write_ref_with_reflog
+        // (which appends the standard `old_target`/`new_target` entry).
+        let mut log = Reflog::new();
+        self.write_ref_with_reflog(
+            ref_kind,
+            target,
+            &mut log,
+            "system",
+            match mode {
+                ResetMode::Hard => "reset:hard",
+                ResetMode::Soft => "reset:soft",
+                ResetMode::Mixed => "reset:mixed",
+            },
+        )?;
+        // 5. Append a second reflog history entry that carries the
+        // Soft/Mixed `dropped` field. We use the manual history
+        // append path (mirroring `delete_ref`) so we can populate
+        // the `dropped` Vec — `write_ref_with_reflog` builds its
+        // own entry with `dropped: Vec::new()`.
+        if !dropped_hex.is_empty() {
+            let mut entry = ReflogEntry {
+                seq: 0, // overwritten below with the persistent seq
+                ref_path: path.clone(),
+                old_target: Some(hex_lower(&current_tip)),
+                new_target: hex_lower(&target),
+                actor: parse_actor("system").map_err(|_| {
+                    DecisionMemoryError::ReflogAppendFailed("invalid reset author".into())
+                })?,
+                timestamp: now_rfc3339(),
+                reason: match mode {
+                    ResetMode::Soft => "reset:soft".to_string(),
+                    ResetMode::Mixed => "reset:mixed".to_string(),
+                    ResetMode::Hard => unreachable!("Hard has no dropped set"),
+                },
+                dropped: dropped_hex,
+                tombstone_for: Vec::new(),
+            };
+            let mut h = self
+                .ref_history
+                .lock()
+                .expect("InMemoryMemoryStore poisoned");
+            let bucket = h.entry(path.clone()).or_default();
+            if bucket.len() >= REFLOG_HISTORY_CAP {
+                bucket.remove(0);
+            }
+            entry.seq = bucket.len() as u64 + 1;
+            bucket.push(entry);
         }
+        Ok(())
     }
 
     fn delete_ref(&self, ref_kind: RefKind) -> Result<(), DecisionMemoryError> {
