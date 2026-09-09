@@ -313,6 +313,17 @@ pub(crate) fn run_import(args: KnowledgeImportArgs, environment: &CliEnvironment
             .or_else(|| environment.sddk_actor.clone())
             .unwrap_or_else(|| "anonymous".into());
         let actor_kind = infer_actor_kind(&actor);
+        // SPEC-M5: pre-gate via AuthorityEngineRunner before the legacy validate.
+        let authority_runner = sddk_engine::authority_engine::AuthorityEngineRunner::new();
+        let _verdict = authority_runner
+            .admit_surface(
+                &actor,
+                "knowledge_graph_vault",
+                sddk_engine::authority_engine::ActionKind::VaultIndex,
+                &args.plan,
+                sddk_engine::authority_engine::Facts::default(),
+            )
+            .map_err(|e| anyhow::anyhow!("runner denied knowledge_graph_vault: {e:?}"))?;
         let auth = AuthorityContext::for_cli(actor, actor_kind, None, None);
         auth.validate(sddk_engine::authority::WritableSurface::KnowledgeGraphVault)
             .map_err(|e| anyhow::anyhow!("authority check failed: {}", e))?;

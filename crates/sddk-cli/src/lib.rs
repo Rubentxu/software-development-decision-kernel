@@ -146,7 +146,7 @@ pub(crate) fn compose(
 #[command(
     name = "sddk",
     version,
-    about = "Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover"
+    about = "Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover, memory"
 )]
 pub struct Cli {
     #[command(subcommand)]
