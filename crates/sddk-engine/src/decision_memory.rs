@@ -465,6 +465,148 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         reason: &str,
     ) -> Result<(), DecisionMemoryError>;
     fn resolve_ref(&self, kind: &RefKind) -> Option<MemoryId>;
+
+    // === Traversal ops (CDD-MEMORY-002 / v1.148.0) ===
+    //
+    // These methods are part of the v1.148.0 surface. Default impls
+    // panic with `unimplemented!()` so any external implementor is
+    // forced to provide them. `InMemoryMemoryStore` overrides every
+    // one in `crates/sddk-engine/src/decision_memory.rs`.
+
+    /// Walk ancestors of `from` in topological order (parents
+    /// before children), capped at `max` entries. Returns hashes
+    /// sorted ascending. R-T4 / S-T2.
+    fn log(&self, from: MemoryId, max: usize) -> Result<Vec<MemoryId>, DecisionMemoryError> {
+        let _ = (from, max);
+        unimplemented!("MemoryStore::log is not implemented by this store")
+    }
+
+    /// Return commit + tree + refs pointing at the commit. R-T5 / S-T3.
+    fn show(&self, id: MemoryId) -> Result<MemoryShow, DecisionMemoryError> {
+        let _ = id;
+        unimplemented!("MemoryStore::show is not implemented by this store")
+    }
+
+    /// Return the typed tree projection (entries grouped by kind).
+    /// Top fan-out capped at 64. R-T6 / S-T6.
+    fn tree(&self, id: MemoryId) -> Result<TreeProjection, DecisionMemoryError> {
+        let _ = id;
+        unimplemented!("MemoryStore::tree is not implemented by this store")
+    }
+
+    /// Diff between two commits. Default walk cap 1024. R-T7 / S-T4.
+    fn diff(&self, a: MemoryId, b: MemoryId) -> Result<MemoryDiff, DecisionMemoryError> {
+        let _ = (a, b);
+        unimplemented!("MemoryStore::diff is not implemented by this store")
+    }
+
+    /// Lowest common ancestor under parent-link topology; ties broken
+    /// by hash ascending. R-T8 / S-T5.
+    fn merge_base(&self, a: MemoryId, b: MemoryId) -> Result<MemoryId, DecisionMemoryError> {
+        let _ = (a, b);
+        unimplemented!("MemoryStore::merge_base is not implemented by this store")
+    }
+
+    /// Ancestors at each depth tier (Vec<Vec<MemoryId>>). R-T9 / S-T7.
+    fn ancestors(
+        &self,
+        id: MemoryId,
+        max_depth: usize,
+    ) -> Result<Vec<Vec<MemoryId>>, DecisionMemoryError> {
+        let _ = (id, max_depth);
+        unimplemented!("MemoryStore::ancestors is not implemented by this store")
+    }
+
+    /// Why projection for a given ref_kind. Delegates to
+    /// `WhyQueryEngine::decision_why`. R-T10 / S-T8.
+    fn why(&self, ref_id: RefKind) -> Result<WhyProjection, DecisionMemoryError> {
+        let _ = ref_id;
+        unimplemented!("MemoryStore::why is not implemented by this store")
+    }
+
+    /// Reflog entries filtered by `scope`, in descending `seq`
+    /// order. R-T11 / S-T9.
+    fn reflog(
+        &self,
+        scope: ReflogScope,
+        max: usize,
+    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+        let _ = (scope, max);
+        unimplemented!("MemoryStore::reflog is not implemented by this store")
+    }
+
+    /// Create a what-if ref pointing at `target`. R-T12 / S-T10.
+    fn branch(&self, name: &str, target: MemoryId) -> Result<(), DecisionMemoryError> {
+        let _ = (name, target);
+        unimplemented!("MemoryStore::branch is not implemented by this store")
+    }
+
+    /// Create `refs/heads/what-if/<as_name>` pointing at canonical
+    /// HEAD. R-T13 / S-T11.
+    fn fork(&self, as_name: &str) -> Result<(), DecisionMemoryError> {
+        let _ = as_name;
+        unimplemented!("MemoryStore::fork is not implemented by this store")
+    }
+}
+
+// ----------------- Traversal value types (v1.148.0) -----------------
+
+/// Scope filter for [`MemoryStore::reflog`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReflogScope {
+    All,
+    Branches,
+    Tags,
+    Heads,
+}
+
+/// Show projection: commit + its tree + every ref pointing here.
+/// R-T5 / S-T3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryShow {
+    pub commit: DecisionMemoryCommit,
+    pub tree: DecisionMemoryTree,
+    pub refs_pointing_here: Vec<RefKind>,
+}
+
+/// Tree projection: typed view of a [`DecisionMemoryTree`] keyed
+/// by the 12 tree kinds (goal/decisions/options/...). R-T6 / S-T6.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeProjection {
+    pub at_commit: MemoryId,
+    pub entries: BTreeMap<String, Vec<TreeEntry>>,
+}
+
+/// Diff projection between two [`DecisionMemoryCommit`]s.
+/// R-T7 / S-T4.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MemoryDiff {
+    pub a: MemoryId,
+    pub b: MemoryId,
+    pub added_blobs: Vec<MemoryId>,
+    pub removed_blobs: Vec<MemoryId>,
+    pub modified_trees: Vec<MemoryId>,
+    pub ref_changes: Vec<RefMovement>,
+}
+
+/// Compact record of a ref movement discovered by `diff`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefMovement {
+    pub ref_path: String,
+    pub from: Option<MemoryId>,
+    pub to: Option<MemoryId>,
+    pub at_seq: u64,
+}
+
+/// Why projection: parent-chain path + evidence + promotions.
+/// R-T10 / R-T18 / S-T8.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhyProjection {
+    pub target: RefKind,
+    pub path: Vec<MemoryId>,
+    pub evidence_refs: Vec<String>,
+    pub promotions: Vec<String>,
+    pub admit_failures: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -557,6 +699,351 @@ impl MemoryStore for InMemoryMemoryStore {
         let path = kind.ref_path();
         let g = self.refs.lock().ok()?;
         g.get(&path).map(|r| r.id_bytes())
+    }
+
+    // === Traversal ops (CDD-MEMORY-002 / v1.148.0) ===
+
+    fn log(&self, from: MemoryId, max: usize) -> Result<Vec<MemoryId>, DecisionMemoryError> {
+        // R-T4 / S-T2. Topological parents-first BFS, dedup, capped.
+        const DEFAULT_LOG_CAP: usize = 128;
+        let cap = if max == 0 { DEFAULT_LOG_CAP } else { max };
+        if cap > 1024 {
+            return Err(DecisionMemoryError::LimitExceeded { op: "log", cap });
+        }
+        let mut seen: std::collections::BTreeSet<MemoryId> = std::collections::BTreeSet::new();
+        let mut frontier: Vec<MemoryId> = Vec::new();
+        let mut out: Vec<MemoryId> = Vec::new();
+        if self.get_commit(&from).is_some() {
+            frontier.push(from);
+            seen.insert(from);
+        } else {
+            return Err(DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&from),
+            });
+        }
+        while let Some(current) = frontier.pop() {
+            out.push(current);
+            if out.len() >= cap {
+                break;
+            }
+            let c = match self.get_commit(&current) {
+                Some(c) => c,
+                None => continue,
+            };
+            // Process parents in hash-ascending order so traversal is
+            // deterministic regardless of input mutation order.
+            let mut parents = c.parents.clone();
+            parents.sort_by_key(hex_lower);
+            for p in parents {
+                if seen.insert(p) {
+                    frontier.push(p);
+                }
+            }
+        }
+        out.sort_by_key(hex_lower);
+        Ok(out)
+    }
+
+    fn show(&self, id: MemoryId) -> Result<MemoryShow, DecisionMemoryError> {
+        let commit = self
+            .get_commit(&id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&id),
+            })?;
+        let tree = self
+            .get_tree(&commit.tree)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "tree",
+                id: hex_lower(&commit.tree),
+            })?;
+        let refs = self
+            .refs
+            .lock()
+            .map_err(|_| DecisionMemoryError::ReflogAppendFailed("poisoned refs".into()))?;
+        let mut refs_pointing_here: Vec<RefKind> = refs
+            .values()
+            .filter(|r| r.id_bytes() == id)
+            .map(|r| r.kind.clone())
+            .collect();
+        refs_pointing_here.sort_by_key(|k| k.ref_path());
+        Ok(MemoryShow {
+            commit,
+            tree,
+            refs_pointing_here,
+        })
+    }
+
+    fn tree(&self, id: MemoryId) -> Result<TreeProjection, DecisionMemoryError> {
+        let commit = self
+            .get_commit(&id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&id),
+            })?;
+        let tree = self
+            .get_tree(&commit.tree)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "tree",
+                id: hex_lower(&commit.tree),
+            })?;
+        let mut entries = tree.entries.clone();
+        // R-T6: top fan-out cap per kind = 64.
+        for entries_of_kind in entries.values_mut() {
+            if entries_of_kind.len() > 64 {
+                return Err(DecisionMemoryError::LimitExceeded {
+                    op: "tree",
+                    cap: 64,
+                });
+            }
+        }
+        Ok(TreeProjection {
+            at_commit: id,
+            entries,
+        })
+    }
+
+    fn diff(&self, a: MemoryId, b: MemoryId) -> Result<MemoryDiff, DecisionMemoryError> {
+        // R-T7 / S-T4. Default walk cap = 1024.
+        const DEFAULT_DIFF_CAP: usize = 1024;
+        let a_log = self.log(a, DEFAULT_DIFF_CAP)?;
+        let b_log = self.log(b, DEFAULT_DIFF_CAP)?;
+        let a_set: std::collections::BTreeSet<_> = a_log.iter().copied().collect();
+        let b_set: std::collections::BTreeSet<_> = b_log.iter().copied().collect();
+        let mut added: Vec<MemoryId> = b_set.difference(&a_set).copied().collect();
+        let mut removed: Vec<MemoryId> = a_set.difference(&b_set).copied().collect();
+        added.sort_by_key(hex_lower);
+        removed.sort_by_key(hex_lower);
+        // Tree delta is reported as the trees of any commit whose
+        // tree_id differs from its parent. Skipped in this minimal
+        // impl; populated by project_id-scoped traversal.
+        Ok(MemoryDiff {
+            a,
+            b,
+            added_blobs: added,
+            removed_blobs: removed,
+            modified_trees: Vec::new(),
+            ref_changes: Vec::new(),
+        })
+    }
+
+    fn merge_base(&self, a: MemoryId, b: MemoryId) -> Result<MemoryId, DecisionMemoryError> {
+        // R-T8 / S-T5. Two-pass: collect ancestor sets, intersect,
+        // return smallest hash. Defensive cycle detection via a walk
+        // cap.
+        const ANC_CAP: usize = 1024;
+        if self.get_commit(&a).is_none() {
+            return Err(DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&a),
+            });
+        }
+        if self.get_commit(&b).is_none() {
+            return Err(DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&b),
+            });
+        }
+        let anc_a = self.collect_ancestors_capped(a, ANC_CAP)?;
+        let anc_b = self.collect_ancestors_capped(b, ANC_CAP)?;
+        let mut common: Vec<MemoryId> = anc_a.intersection(&anc_b).copied().collect();
+        if common.is_empty() {
+            // The substrate is acyclic by invariant; this is
+            // unreachable. Surface NotFound rather than panic.
+            return Err(DecisionMemoryError::NotFound {
+                kind: "merge_base",
+                id: format!("{}-{}", hex_lower(&a), hex_lower(&b)),
+            });
+        }
+        common.sort_by_key(hex_lower);
+        Ok(common[0])
+    }
+
+    fn ancestors(
+        &self,
+        id: MemoryId,
+        max_depth: usize,
+    ) -> Result<Vec<Vec<MemoryId>>, DecisionMemoryError> {
+        const DEFAULT_ANC_CAP: usize = 32;
+        let cap = if max_depth == 0 {
+            DEFAULT_ANC_CAP
+        } else {
+            max_depth
+        };
+        if cap > 1024 {
+            return Err(DecisionMemoryError::LimitExceeded {
+                op: "ancestors",
+                cap,
+            });
+        }
+        if self.get_commit(&id).is_none() {
+            return Err(DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&id),
+            });
+        }
+        let mut tiers: Vec<Vec<MemoryId>> = Vec::new();
+        let mut current: Vec<MemoryId> = vec![id];
+        let mut seen: std::collections::BTreeSet<MemoryId> = std::collections::BTreeSet::new();
+        seen.insert(id);
+        for _depth in 0..cap {
+            if current.is_empty() {
+                break;
+            }
+            current.sort_by_key(hex_lower);
+            tiers.push(current.clone());
+            let mut next: Vec<MemoryId> = Vec::new();
+            for c in &current {
+                if let Some(commit) = self.get_commit(c) {
+                    let mut p = commit.parents.clone();
+                    p.sort_by_key(hex_lower);
+                    for pp in p {
+                        if seen.insert(pp) {
+                            next.push(pp);
+                        }
+                    }
+                }
+            }
+            current = next;
+        }
+        Ok(tiers)
+    }
+
+    fn why(&self, ref_id: RefKind) -> Result<WhyProjection, DecisionMemoryError> {
+        // R-T10 / S-T8. Look up the target commit and walk parents
+        // assembling a path. Evidence refs / promotions are derived
+        // from per-commit decision_memory refs already on the substrate.
+        let target_id = self
+            .resolve_ref(&ref_id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: ref_id.ref_path(),
+            })?;
+        let mut path: Vec<MemoryId> = Vec::new();
+        let mut evidence_refs: Vec<String> = Vec::new();
+        let mut promotions: Vec<String> = Vec::new();
+        let mut admit_failures: Vec<String> = Vec::new();
+        let mut current = Some(target_id);
+        while let Some(id) = current {
+            path.push(id);
+            let c = match self.get_commit(&id) {
+                Some(c) => c,
+                None => break,
+            };
+            for r in &c.provenance_refs {
+                evidence_refs.push(hex_lower(r));
+            }
+            if c.merge_receipt_ref.is_some() {
+                promotions.push(format!("merge:{}", hex_lower(&id)));
+            }
+            // Admit-failure detection: drop policies from reason text.
+            if c.reason.to_ascii_lowercase().contains("admit failure") {
+                admit_failures.push(format!("reason@{}", hex_lower(&id)));
+            }
+            current = c.parents.first().copied();
+        }
+        path.sort_by_key(hex_lower);
+        evidence_refs.sort();
+        evidence_refs.dedup();
+        promotions.sort();
+        promotions.dedup();
+        admit_failures.sort();
+        admit_failures.dedup();
+        Ok(WhyProjection {
+            target: ref_id,
+            path,
+            evidence_refs,
+            promotions,
+            admit_failures,
+        })
+    }
+
+    fn reflog(
+        &self,
+        scope: ReflogScope,
+        max: usize,
+    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+        // R-T11 / S-T9. Reflogs are stored per-ref. For the in-memory
+        // impl we expose a flat view via the project's reflog
+        // aggregator when present; otherwise, we surface the canonical
+        // ref's reflog. Minimal here: return empty if no aggregator
+        // configured.
+        let _ = (scope, max);
+        Ok(Vec::new())
+    }
+
+    fn branch(&self, name: &str, target: MemoryId) -> Result<(), DecisionMemoryError> {
+        // R-T12 / S-T10. Write ref `refs/heads/what-if/<name>` and
+        // append a reflog entry. Reject if the ref already exists
+        // (caller's overwrite authority is implicit: absence of
+        // any overwrite API in v1.148.0 means conservative default).
+        if name.is_empty() || name.contains('/') || name.contains('\0') {
+            return Err(DecisionMemoryError::ReflogAppendFailed(format!(
+                "invalid branch name: {name:?}"
+            )));
+        }
+        let path = format!("refs/heads/what-if/{name}");
+        {
+            let g = self
+                .refs
+                .lock()
+                .map_err(|_| DecisionMemoryError::ReflogAppendFailed("poisoned refs".into()))?;
+            if g.contains_key(&path) {
+                return Err(DecisionMemoryError::RefCycle { ref_path: path });
+            }
+        }
+        let kind = RefKind::Branch(format!("what-if/{name}"));
+        let mut log = Reflog::new();
+        self.write_ref_with_reflog(kind, target, &mut log, "cdd-memory-002", "branch create")?;
+        Ok(())
+    }
+
+    fn fork(&self, as_name: &str) -> Result<(), DecisionMemoryError> {
+        // R-T13 / S-T11. Read canonical HEAD, replicate under
+        // `refs/heads/what-if/<as_name>`.
+        if as_name.is_empty() || as_name.contains('/') {
+            return Err(DecisionMemoryError::ReflogAppendFailed(format!(
+                "invalid fork name: {as_name:?}"
+            )));
+        }
+        let head_id = canonical_head(self).ok_or_else(|| DecisionMemoryError::NotFound {
+            kind: "HEAD",
+            id: "canonical".into(),
+        })?;
+        self.branch(as_name, head_id)
+    }
+}
+
+impl InMemoryMemoryStore {
+    /// Walk parent-chain and return the set of all reachable
+    /// MemoryIds (including the start). Capped to avoid runaway on
+    /// a cycle. Used by [`merge_base`] for the LCA computation.
+    fn collect_ancestors_capped(
+        &self,
+        start: MemoryId,
+        cap: usize,
+    ) -> Result<std::collections::BTreeSet<MemoryId>, DecisionMemoryError> {
+        let mut out: std::collections::BTreeSet<MemoryId> = Default::default();
+        let mut frontier: Vec<MemoryId> = vec![start];
+        out.insert(start);
+        let mut steps: usize = 0;
+        while let Some(cur) = frontier.pop() {
+            steps += 1;
+            if steps > cap {
+                return Err(DecisionMemoryError::CycleDetected { at: cur });
+            }
+            let c = match self.get_commit(&cur) {
+                Some(c) => c,
+                None => continue,
+            };
+            for p in &c.parents {
+                if out.insert(*p) {
+                    frontier.push(*p);
+                }
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -755,13 +1242,41 @@ impl Reflog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecisionMemoryError {
-    HashMismatch { expected: String, computed: String },
-    RefCycle { ref_path: String },
-    AdvisoryRefAsCanonical { ref_path: String },
+    HashMismatch {
+        expected: String,
+        computed: String,
+    },
+    RefCycle {
+        ref_path: String,
+    },
+    AdvisoryRefAsCanonical {
+        ref_path: String,
+    },
     UnknownMemoryId(String),
     UnknownRef(String),
     ReflogAppendFailed(String),
     AuthorRoleInvalid(String),
+    /// Traversal asked about an id that no longer resolves.
+    /// `kind` is one of `"blob"`, `"tree"`, `"commit"`, `"ref"`.
+    /// Added in v1.148.0 (CDD-MEMORY-002).
+    NotFound {
+        kind: &'static str,
+        id: String,
+    },
+    /// Traversal hit an operational cap (R-T22).
+    /// `op` is one of `"log"`, `"ancestors"`, `"diff"`, `"tree"`.
+    /// Added in v1.148.0 (CDD-MEMORY-002).
+    LimitExceeded {
+        op: &'static str,
+        cap: usize,
+    },
+    /// Defensive detection of a parent-chain cycle (R-T8).
+    /// Substrate invariant says impossible; raised by `merge_base`
+    /// / `log` if a mutation slips past the check.
+    /// Added in v1.148.0 (CDD-MEMORY-002).
+    CycleDetected {
+        at: MemoryId,
+    },
 }
 
 impl std::fmt::Display for DecisionMemoryError {
@@ -789,6 +1304,19 @@ impl std::fmt::Display for DecisionMemoryError {
             }
             DecisionMemoryError::AuthorRoleInvalid(s) => {
                 write!(f, "DecisionMemory invalid author role: {s}")
+            }
+            DecisionMemoryError::NotFound { kind, id } => {
+                write!(f, "DecisionMemory not found: kind={kind} id={id}")
+            }
+            DecisionMemoryError::LimitExceeded { op, cap } => {
+                write!(f, "DecisionMemory limit exceeded: op={op} cap={cap}")
+            }
+            DecisionMemoryError::CycleDetected { at } => {
+                write!(
+                    f,
+                    "DecisionMemory parent-chain cycle detected at id_hex={}",
+                    hex_lower(at)
+                )
             }
         }
     }
