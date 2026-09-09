@@ -1,0 +1,32 @@
+# Crate dependency graph (M0 D3)
+# Generated from `cargo metadata --format-version 1 --no-deps`.
+# Internal crates only (8); external dependencies excluded.
+
+```mermaid
+graph LR
+  sddk_cli[sddk-cli]
+  sddk_domain[sddk-domain]
+  sddk_engine[sddk-engine]
+  sddk_gateway[sddk-gateway]
+  sddk_pack_uat[sddk-pack-uat]
+  sddk_storage[sddk-storage]
+  sddk_testkit[sddk-testkit]
+  sddk_vault[sddk-vault]
+  sddk_cli --> sddk_domain
+  sddk_cli --> sddk_engine
+  sddk_cli --> sddk_gateway
+  sddk_cli --> sddk_storage
+  sddk_cli --> sddk_testkit
+  sddk_cli --> sddk_vault
+  sddk_engine --> sddk_domain
+  sddk_engine --> sddk_storage
+  sddk_engine --> sddk_testkit
+  sddk_gateway --> sddk_domain
+  sddk_gateway --> sddk_engine
+  sddk_gateway --> sddk_storage
+  sddk_gateway --> sddk_testkit
+  sddk_pack_uat --> sddk_domain
+  sddk_storage --> sddk_domain
+  sddk_testkit --> sddk_domain
+```
+
