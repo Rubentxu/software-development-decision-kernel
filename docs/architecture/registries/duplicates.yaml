@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T19:26:00Z"
-generated_from: manual curation + M6.3 DAG execution
-cycle: p-63676b11dc0ef88f/m6-3-dag-execution
+generated_at: "2026-09-09T20:50:00Z"
+generated_from: manual curation + M7.1 Command Registry authority
+cycle: p-63676b11dc0ef88f/m7-1-command-registry-authority
 ordering: by SPEC then concept
-total_decisions: 60
+total_decisions: 63
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -130,11 +130,29 @@ legacy_evidence_migration:
   - { concept: EvidenceAttachmentV1, target: "EvidenceRef + WorkItem relation/fact", disposition: MIGRATE, milestone: M1, confidence: medium, sensitive: true }
 
 # ============================================================================
+# Command Registry Authority (M7.1) — SPEC-015 / ADR-014
+# ============================================================================
+# M7.1 promotes CommandSpec from a typed table to the single authoritative
+# source for everything an agent sees about a CLI command: stability,
+# side-effect class, required authority, machine-output schema, typed
+# examples, and related-link navigation. The aggregator
+# (AgentCommandSurface) is a Projection — derived from CommandSpec and
+# rebuildable. The cheat-sheet renderer is the first CLI command that
+# consumes the surface and emits both markdown and JSON.
+#
+# All three concepts are KEEP — there is no prior duplicate to
+# deprecate; this is net-new authority surface area added in v1.160.0.
+m7_1_command_registry_authority:
+  - { concept: ExtendedCommandSpec, target: "CommandSpec with full SPEC-015 field set", disposition: KEEP, milestone: M7.1, confidence: high, sensitive: false, source: "crates/sddk-cli/src/command_spec.rs" }
+  - { concept: AgentCommandSurface, target: "Aggregator projection over all_command_specs()", disposition: KEEP, milestone: M7.1, confidence: high, sensitive: false, source: "crates/sddk-cli/src/command_surface.rs" }
+  - { concept: CheatSheetRenderer, target: "Markdown/JSON renderer of AgentCommandSurface", disposition: KEEP, milestone: M7.1, confidence: high, sensitive: false, source: "crates/sddk-cli/src/cheat_sheet.rs" }
+
+# ============================================================================
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 60
-  keep: 14
+  total_decisions: 63
+  keep: 17
   evolve: 6
   evolve_rename: 3
   deprecate_runtime_meaning: 4

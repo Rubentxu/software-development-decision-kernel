@@ -144,6 +144,11 @@ const MARKER_DAG_EXECUTOR_DELIVERED: &str = "m6_3.dag_executor_delivered";
 const MARKER_DAG_OUTCOME_SERIALIZABLE: &str = "m6_3.dag_outcome_serializable";
 const MARKER_DAG_FIRST_CLASS_TYPED: &str = "m6_3.dag_first_class_typed";
 
+// M7.1 — Command Registry as Single Authority (SPEC-015 + ADR-014).
+const MARKER_M7_1_FULL_FIELDS: &str = "m7_1.command_spec_full_fields";
+const MARKER_M7_1_EXAMPLES_PUBLISHED: &str = "m7_1.examples_published_for_core_commands";
+const MARKER_M7_1_CHEAT_SHEET_PRESENT: &str = "m7_1.cheat_sheet_renderer_present";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -311,6 +316,35 @@ pub fn dag_execution_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
             // change/verify/audit shipped in M6.3 live in the same
             // module.
             present: has_delivered_entry(yaml, "crates/sddk-engine/src/target_task/builtin"),
+        },
+    ]
+}
+
+/// M7.1 alignment markers (SPEC-015 + ADR-014: Command Registry as
+/// Single Authority).
+///
+/// - `command_spec_full_fields`: the `command_spec` module is delivered
+///   and exposes the full SPEC-015 field set on `CommandSpec`
+///   (stability, side_effect_class, required_authority, outputs,
+///   preconditions, examples, related).
+/// - `examples_published_for_core_commands`: the `command_surface`
+///   aggregator is delivered and ships typed examples for the core
+///   target commands (list / resolve / run).
+/// - `cheat_sheet_renderer_present`: the `cheat_sheet` renderer is
+///   delivered and powers the `sddk agent-help agent` CLI command.
+pub fn m7_1_command_registry_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_M7_1_FULL_FIELDS.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/command_spec"),
+        },
+        MarkerStatus {
+            id: MARKER_M7_1_EXAMPLES_PUBLISHED.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/command_surface"),
+        },
+        MarkerStatus {
+            id: MARKER_M7_1_CHEAT_SHEET_PRESENT.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/cheat_sheet"),
         },
     ]
 }
@@ -790,6 +824,64 @@ entries:
     target_milestone: delivered
 "#;
         let markers = dag_execution_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_1_command_spec_full_fields_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/command_spec
+    target_milestone: delivered
+"#;
+        let markers = m7_1_command_registry_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_1_FULL_FIELDS)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_1_examples_published_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/command_surface
+    target_milestone: delivered
+"#;
+        let markers = m7_1_command_registry_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_1_EXAMPLES_PUBLISHED)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_1_cheat_sheet_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/cheat_sheet
+    target_milestone: delivered
+"#;
+        let markers = m7_1_command_registry_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_1_CHEAT_SHEET_PRESENT)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_1_command_registry_markers_absent_when_modules_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_1_command_registry_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
