@@ -56,24 +56,31 @@ shipped via git tag only):
 
 ## 3. GH Release status
 
-**Not created.** The git tag `v1.150.0` exists on origin and is what
-matters for `git clone --branch` consumers. The GH Release UI on
-https://github.com/Rubentxu/software-development-decision-kernel/releases
-does NOT have the v1.150.0 entry (no bundled assets uploaded).
+**Published.** `bash scripts/release.sh --skip-tests --force` ran the
+canonical end-to-end flow after the git tag was already in place:
 
-Implications:
-- `bash scripts/install.sh --version v1.150.0 --editor all` will fail
-  with curl 404 on `sddk-linux-x86_64-musl` (the install script
-  downloads GH Release assets).
-- Other developers who clone the repo at tag `v1.150.0` and run
-  `cargo install --path crates/sddk-cli` will get a coherent binary
-  + bundle because the CWD will be the repo (and `sddk dev install
-  --prefix ... --source .` works from there).
+```text
+url:  https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.150.0
+published: 2026-09-09T09:39:56Z
+assets:
+  - sddk                                 (binary, sha256 c8f5c6e4...)
+  - sddk.sha256
+  - sddk-v1.150.0-sddk-linux-x86_64-musl.tar.gz   (unified: bin/sddk + framework/)
+  - sddk-v1.150.0-sddk-linux-x86_64-musl.tar.gz.sha256
+  - CHECKSUMS
+  - sbom.json
+```
 
-**Recommended next cycle (CDD-MEMORY-005 candidate):** run
-`scripts/release.sh --force` (or `--skip-tests --skip-install`) to
-publish the v1.150.0 GH Release with bundled assets so future
-`install.sh` invocations from third parties work.
+Step 13 of the release flow re-installed from the real GH URL and
+verified `sddk 1.150.0` ran end-to-end (sha256 poll against the CDN,
+doctor, prune). The local `~/.local/share/sddk/framework/` is
+coherent at 1.150.0 with `current -> 1.150.0` and no stale
+versions retained.
+
+`bash scripts/install.sh --version v1.150.0 --editor all` from a
+fresh machine will now download the unified tarball, verify the
+sha256, extract `bin/sddk` (exec bit preserved), and lay out
+`framework/` at `BUNDLE.toml` schema v2.
 
 ## 4. Spec drift recorded
 
@@ -122,5 +129,5 @@ The natural follow-up cycle (CDD-MEMORY-005 candidate):
 1. Accept ADR-093 (currently a draft).
 2. Land Soft/Mixed reset + tombstone GC.
 3. Land parent-tree 3-way merge for true inverse reverts.
-4. Run `scripts/release.sh --force` for v1.151.0 to publish the
-   v1.150.0 GH Release assets retroactively (and v1.151.0 forward).
+4. Bump to v1.151.0 via `scripts/release.sh` (no `--force` needed,
+   the previous step's `chore(release)` commit will satisfy the gate).
