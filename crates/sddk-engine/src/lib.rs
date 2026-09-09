@@ -10,6 +10,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 pub mod active_graph;
+pub mod active_graph_view;
 mod adoption;
 pub mod agent_contribution_envelope;
 pub mod agent_host;
@@ -25,6 +26,7 @@ pub mod cockpit_observability;
 pub mod cockpit_views;
 pub mod cold_start;
 pub mod context_capsule;
+pub mod context_compiler;
 pub mod continuation_candidate;
 pub mod converge_verification;
 pub mod cycle_narrative;
@@ -75,6 +77,9 @@ pub mod secretary_l0;
 pub mod secretary_l1;
 pub mod secretary_l2_replan;
 pub mod security_upgrade_rollback;
+pub mod semantic_graph;
+pub mod semantic_kind;
+pub mod semantic_node;
 pub mod signed_gates;
 pub mod state_class_lint;
 pub mod strategy_comparison;
@@ -88,6 +93,7 @@ pub mod typed_reduce_aggregator;
 pub mod uat_lifecycle;
 pub mod uat_pack;
 pub mod up_to_date;
+pub mod vault_boundary;
 pub mod version;
 pub mod why_queries;
 pub mod workflow_metrics;
