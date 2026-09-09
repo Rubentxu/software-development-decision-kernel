@@ -3,8 +3,9 @@
 **Cycle:** `p-63676b11dc0ef88f-cdd-memory-005-mutation-extensions`
 **Target release:** v1.151.0
 **Started:** 2026-09-09
-**Status:** ORIENTATION (this handoff)
+**Status:** ORIENTATION → PROPOSE (this handoff)
 **Predecessor:** CDD-MEMORY-004 (v1.150.0, SHIPPED 2026-09-09)
+**ADR-093 status:** Accepted v1.150.0 (capacity-rationale backfill in this cycle)
 
 ---
 
