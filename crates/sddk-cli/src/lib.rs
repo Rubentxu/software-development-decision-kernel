@@ -23,6 +23,7 @@ mod knowledge_cmd;
 mod knowledge_ingest;
 mod ledger;
 mod lint;
+mod memory_cmd;
 mod metrics;
 mod pack_cmd;
 mod permission;
@@ -60,6 +61,7 @@ pub(crate) use cycle::{CycleCommand, RuntimeArgs, RuntimeContext};
 use dev::DevCommand;
 use git_cmd::GitCommand;
 use knowledge_cmd::KnowledgeCommand;
+use memory_cmd::MemoryCommand;
 use metrics::MetricsCommand;
 use pack_cmd::PackCommand;
 use permission::PermissionCommand;
@@ -289,6 +291,11 @@ enum Command {
     Fork {
         #[command(subcommand)]
         command: fork_cmd::ForkCommand,
+    },
+    /// Decision memory: status, log, tree, show, diff, merge-base, reflog, audit (SPEC-004).
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommand,
     },
     /// Render task-specific views over the reactive graph (SPEC-013).
     Explore {
@@ -686,6 +693,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::Rules { command } => rules_cmd::run_rules(command, environment),
         Command::Stale { command } => stale_cmd::run_stale(command, environment),
         Command::Fork { command } => fork_cmd::run_fork(command, environment),
+        Command::Memory { command } => memory_cmd::run_memory(command, environment),
         Command::Explore { command } => explore_cmd::run_explore(command, environment),
         Command::Completion { command } => run_completion(command),
         Command::Debt { command } => debt::run_debt(command, environment),

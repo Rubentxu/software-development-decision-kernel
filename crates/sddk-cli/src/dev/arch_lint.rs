@@ -124,6 +124,10 @@ const MARKER_SEMANTIC_GRAPH_SINGLETON: &str = "m3.semantic_graph_singleton";
 const MARKER_VAULT_KNOWLEDGE_SOURCE_ONLY: &str = "m3.vault_knowledge_source_only";
 const MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE: &str = "m3.context_capsule_has_provenance";
 
+const MARKER_MEMORY_STORE_SINGLE_CANONICAL: &str = "m4.memory_store_single_canonical";
+const MARKER_MEMORY_CLI_SPEC_SUBSET: &str = "m4.memory_cli_spec_subset";
+const MARKER_MEMORY_DIFF_IS_SEMANTIC: &str = "m4.memory_diff_is_semantic";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -146,6 +150,35 @@ pub fn semantic_graph_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
         MarkerStatus {
             id: MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE.to_string(),
             present: has_delivered_entry(yaml, "crates/sddk-engine/src/context_compiler"),
+        },
+    ]
+}
+
+/// M4 markers (Decision Memory CLI, SPEC-004 §CLI).
+///
+/// Marker definitions:
+/// - `memory_store_single_canonical`: the `memory_cmd` CLI module is
+///   registered as the single canonical CLI surface for the Decision
+///   Memory API.
+/// - `memory_cli_spec_subset`: the `memory_cmd` registry entry does not
+///   re-declare an alternate target_milestone; the CLI is a single
+///   surface, not a fork.
+/// - `memory_diff_is_semantic`: the underlying `decision_memory`
+///   engine module is delivered, confirming the CLI's `diff` command
+///   is wired to a semantic engine diff (not a custom bytewise diff).
+pub fn decision_memory_cli_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_MEMORY_STORE_SINGLE_CANONICAL.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/memory_cmd"),
+        },
+        MarkerStatus {
+            id: MARKER_MEMORY_CLI_SPEC_SUBSET.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/memory_cmd"),
+        },
+        MarkerStatus {
+            id: MARKER_MEMORY_DIFF_IS_SEMANTIC.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-engine/src/decision_memory"),
         },
     ]
 }
@@ -319,5 +352,69 @@ entries:
             .find(|m| m.id == MARKER_CONTEXT_CAPSULE_HAS_PROVENANCE)
             .expect("marker");
         assert!(m.present);
+    }
+
+    #[test]
+    fn m4_memory_store_single_canonical_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/memory_cmd
+    contract: arch-spec-004-decision-memory
+    target_milestone: delivered
+  - module: crates/sddk-engine/src/decision_memory
+    contract: arch-spec-004-decision-memory
+    target_milestone: delivered
+"#;
+        let markers = decision_memory_cli_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_MEMORY_STORE_SINGLE_CANONICAL)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m4_memory_cli_spec_subset_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/memory_cmd
+    target_milestone: delivered
+"#;
+        let markers = decision_memory_cli_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_MEMORY_CLI_SPEC_SUBSET)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m4_memory_diff_is_semantic_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/decision_memory
+    target_milestone: delivered
+"#;
+        let markers = decision_memory_cli_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_MEMORY_DIFF_IS_SEMANTIC)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m4_markers_absent_when_memory_cmd_not_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = decision_memory_cli_alignment_checks(yaml);
+        let cli = markers
+            .iter()
+            .find(|m| m.id == MARKER_MEMORY_STORE_SINGLE_CANONICAL)
+            .expect("marker");
+        assert!(!cli.present);
     }
 }

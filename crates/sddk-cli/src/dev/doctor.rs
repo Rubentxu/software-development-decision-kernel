@@ -1,7 +1,8 @@
 //! `dev doctor` — toolchain and environment prerequisite checker.
 
 use crate::dev::arch_lint::{
-    MarkerStatus, mirror_alignment_checks, semantic_graph_alignment_checks,
+    MarkerStatus, decision_memory_cli_alignment_checks, mirror_alignment_checks,
+    semantic_graph_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
@@ -447,6 +448,10 @@ pub(super) fn run_dev_doctor(
                 // M3: semantic graph + vault + context markers
                 // (arch-spec-005, arch-spec-006).
                 for marker in semantic_graph_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M4: decision memory CLI markers (arch-spec-004).
+                for marker in decision_memory_cli_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

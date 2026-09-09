@@ -1,4 +1,4 @@
-Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover
+Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover, memory
 
 Usage: sddk <COMMAND>
 
@@ -30,6 +30,7 @@ Commands:
   rules         Architecture-rule registry: evaluate rules against baseline JSON (SDDK2-003)
   stale         Staleness and impact queries over the reactive graph (SPEC-012)
   fork          Fork, replay, diff and promote controlled experiments (SPEC-009)
+  memory        Decision memory: status, log, tree, show, diff, merge-base, reflog, audit (SPEC-004)
   explore       Render task-specific views over the reactive graph (SPEC-013)
   completion    Generate or install shell completion scripts
   debt          Debt management: report generation, INC listing, INC backfill, gate evaluation
