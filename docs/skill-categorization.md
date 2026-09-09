@@ -1,3 +1,5 @@
+> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).
+
 # Skill Categorization — Taxonomía lógica
 
 ## Problema

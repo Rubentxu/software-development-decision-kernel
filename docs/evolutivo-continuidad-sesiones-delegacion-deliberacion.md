@@ -1,3 +1,5 @@
+> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).
+
 # Evolutivo — Continuidad de sesiones, delegación enriquecida y Decision Memory
 
 > **Estado:** propuesta integrada en la línea canónica SDDK

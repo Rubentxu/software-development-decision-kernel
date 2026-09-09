@@ -1,3 +1,5 @@
+> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).
+
 # Evolutivo: integración de roadmap para workflows generados
 
 > **Estado:** borrador de evaluación; no es la autoridad canónica del roadmap,

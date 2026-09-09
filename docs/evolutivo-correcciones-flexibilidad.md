@@ -8,6 +8,8 @@ future_scope: "Incorporación futura al framework como operación de ciclo (supe
 not_in_scope: "Este documento NO es requisito, ADR, ni código entregado por el ciclo phase-c-test-boundary-cleanup. Es backlog diferido para decisión futura."
 ---
 
+> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).
+
 # Ideas diferidas de recuperación del framework
 
 > **Principio rector:** Fail closed para seguridad; recover forward para proceso.

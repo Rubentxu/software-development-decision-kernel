@@ -1,3 +1,5 @@
+> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).
+
 # Architecture Model
 
 Inspired by `asdf-vm` (tool versions, shims per version, `path:` override).
