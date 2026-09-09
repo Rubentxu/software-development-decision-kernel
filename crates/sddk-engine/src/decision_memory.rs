@@ -725,6 +725,19 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         let _ = (commit_id, new_tree, target_ref, message);
         unimplemented!("MemoryStore::amend is not implemented by this store")
     }
+
+    /// Move `ref_kind` to `target`. v1.150.0 only supports Hard mode
+    /// (DAG preserved). Soft / Mixed return
+    /// `DecisionMemoryError::NotImplemented`. R-M7 / S-M8 / S-M9.
+    fn reset(
+        &self,
+        ref_kind: RefKind,
+        target: MemoryId,
+        mode: ResetMode,
+    ) -> Result<(), DecisionMemoryError> {
+        let _ = (ref_kind, target, mode);
+        unimplemented!("MemoryStore::reset is not implemented by this store")
+    }
 }
 
 // ----------------- Traversal value types (v1.148.0) -----------------
@@ -1590,6 +1603,39 @@ impl MemoryStore for InMemoryMemoryStore {
         self.write_ref_with_reflog(target_ref, new_id, &mut log, "amend", "amend replay")?;
         Ok(new_id)
     }
+
+    fn reset(
+        &self,
+        ref_kind: RefKind,
+        target: MemoryId,
+        mode: ResetMode,
+    ) -> Result<(), DecisionMemoryError> {
+        // R-M7 / S-M8 / S-M9.
+        // 1. Resolve `target` (NotFound).
+        if self.get_commit(&target).is_none() {
+            return Err(DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&target),
+            });
+        }
+        // 2. Mode dispatch.
+        match mode {
+            ResetMode::Hard => {
+                // Move `ref_kind` to `target`; append a reflog entry.
+                let mut log = Reflog::new();
+                self.write_ref_with_reflog(ref_kind, target, &mut log, "reset", "reset:hard")?;
+                Ok(())
+            }
+            ResetMode::Soft => Err(DecisionMemoryError::NotImplemented {
+                op: "reset",
+                message: "Soft reset deferred to v1.151.0",
+            }),
+            ResetMode::Mixed => Err(DecisionMemoryError::NotImplemented {
+                op: "reset",
+                message: "Mixed reset deferred to v1.151.0",
+            }),
+        }
+    }
 }
 
 impl InMemoryMemoryStore {
@@ -1830,6 +1876,20 @@ pub enum RefKind {
     Tag(String),
 }
 
+/// Mode for [`MemoryStore::reset`]. v1.150.0 (CDD-MEMORY-004) /
+/// R-M7. Only `Hard` is implemented; Soft / Mixed return
+/// `DecisionMemoryError::NotImplemented` and are deferred to v1.151.0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    /// Move the ref; preserve the DAG.
+    Hard,
+    /// Move the ref AND stage an inverse index for the dropped
+    /// commits. Deferred to v1.151.0.
+    Soft,
+    /// Move the ref AND reset the working tree. Deferred to v1.151.0.
+    Mixed,
+}
+
 impl RefKind {
     pub fn ref_path(&self) -> String {
         match self {
@@ -2045,6 +2105,19 @@ pub enum DecisionMemoryError {
     CycleDetected {
         at: MemoryId,
     },
+    /// Op is not implemented for this combination of args / mode.
+    /// Added in v1.150.0 (CDD-MEMORY-004). R-M9.
+    NotImplemented {
+        op: &'static str,
+        message: &'static str,
+    },
+    /// Branch ref deletion rejected because it still points at
+    /// reachable commits. Caller must move/reset the ref first.
+    /// Added in v1.150.0 (CDD-MEMORY-004). R-M8.
+    RefNotEmpty {
+        ref_kind: String,
+        reachable: usize,
+    },
 }
 
 impl std::fmt::Display for DecisionMemoryError {
@@ -2084,6 +2157,18 @@ impl std::fmt::Display for DecisionMemoryError {
                     f,
                     "DecisionMemory parent-chain cycle detected at id_hex={}",
                     hex_lower(at)
+                )
+            }
+            DecisionMemoryError::NotImplemented { op, message } => {
+                write!(f, "DecisionMemory op={op} not implemented: {message}")
+            }
+            DecisionMemoryError::RefNotEmpty {
+                ref_kind,
+                reachable,
+            } => {
+                write!(
+                    f,
+                    "DecisionMemory ref={ref_kind} not empty (reachable={reachable})"
                 )
             }
         }
