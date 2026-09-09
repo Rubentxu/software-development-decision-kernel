@@ -102,7 +102,9 @@ fn delivery_and_derived_partition_all_variants() {
         assert!(
             in_delivery ^ in_derived,
             "variant {:?} must be in DELIVERY xor DERIVED (delivery={}, derived={})",
-            v, in_delivery, in_derived
+            v,
+            in_delivery,
+            in_derived
         );
     }
 }
@@ -137,11 +139,26 @@ fn derived_variants_have_documented_migration_target() {
     // When M2 starts, removing a variant requires this table to be
     // updated to reflect the migration target (per ADR-003 amendment).
     let migration_targets = [
-        (CycleStatus::Blocked, "DEPRECATE → run gate/blocker facts + derived cycle summary"),
-        (CycleStatus::Remediating, "REVIEW → derived delivery/run summary or WorkItem"),
-        (CycleStatus::Recovering, "DEPRECATE runtime meaning → Run recovery state"),
-        (CycleStatus::UatWaiting, "DEPRECATE → run/gate facts + derived cycle summary"),
-        (CycleStatus::ApprovalPending, "DEPRECATE → run/authority facts + derived summary"),
+        (
+            CycleStatus::Blocked,
+            "DEPRECATE → run gate/blocker facts + derived cycle summary",
+        ),
+        (
+            CycleStatus::Remediating,
+            "REVIEW → derived delivery/run summary or WorkItem",
+        ),
+        (
+            CycleStatus::Recovering,
+            "DEPRECATE runtime meaning → Run recovery state",
+        ),
+        (
+            CycleStatus::UatWaiting,
+            "DEPRECATE → run/gate facts + derived cycle summary",
+        ),
+        (
+            CycleStatus::ApprovalPending,
+            "DEPRECATE → run/authority facts + derived summary",
+        ),
     ];
     assert_eq!(migration_targets.len(), DERIVED_VARIANTS.len());
     for (variant, target) in migration_targets.iter() {
@@ -151,9 +168,15 @@ fn derived_variants_have_documented_migration_target() {
             variant
         );
         // Smoke: target string is non-empty and references a known disposition verb.
-        assert!(!target.is_empty(), "migration target empty for {:?}", variant);
         assert!(
-            target.starts_with("DEPRECATE") || target.starts_with("REVIEW") || target.starts_with("KEEP"),
+            !target.is_empty(),
+            "migration target empty for {:?}",
+            variant
+        );
+        assert!(
+            target.starts_with("DEPRECATE")
+                || target.starts_with("REVIEW")
+                || target.starts_with("KEEP"),
             "migration target for {:?} uses unknown disposition: {}",
             variant,
             target
