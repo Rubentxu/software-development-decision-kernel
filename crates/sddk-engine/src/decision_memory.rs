@@ -1630,12 +1630,12 @@ impl MemoryStore for InMemoryMemoryStore {
         }
         // 2. Resolve the current tip of `ref_kind` (NotFound).
         let path = ref_kind.ref_path();
-        let current_tip = self.resolve_ref(&ref_kind).ok_or_else(|| {
-            DecisionMemoryError::NotFound {
-                kind: "ref",
-                id: path.clone(),
-            }
-        })?;
+        let current_tip =
+            self.resolve_ref(&ref_kind)
+                .ok_or_else(|| DecisionMemoryError::NotFound {
+                    kind: "ref",
+                    id: path.clone(),
+                })?;
         // 3. Compute the dropped set (commits reachable from
         // `current_tip` but NOT from `target`, walking down the
         // parent chain). Empty for Hard; populated for Soft/Mixed.

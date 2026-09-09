@@ -2462,6 +2462,169 @@ fn dmt_59_reset_soft_with_target_equals_tip_does_not_error() {
 }
 
 #[test]
+fn dmt_63_reset_soft_drops_intermediate_commits_and_records_them() {
+    // R-M13 (v1.151.0). Soft reset from HEAD=c3 to c1 records c2 and
+    // c3 in the dropped field of a second reflog history entry.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build1",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "build2",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-04T00:00:00Z",
+        "c3",
+        "build3",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c3_id, &mut log, "actor", "advance")
+        .expect("write HEAD");
+
+    // Soft reset HEAD -> c1.
+    store
+        .reset(RefKind::Head, c1_id, ResetMode::Soft)
+        .expect("soft reset succeeds");
+
+    assert_eq!(
+        store.resolve_ref(&RefKind::Head).expect("HEAD resolves"),
+        c1_id,
+        "DMT-63 HEAD moved to c1"
+    );
+    // DAG preserved: c1/c2/c3 still in the store.
+    assert!(store.get_commit(&c1_id).is_some(), "DMT-63 c1 in DAG");
+    assert!(store.get_commit(&c2_id).is_some(), "DMT-63 c2 in DAG");
+    assert!(store.get_commit(&c3_id).is_some(), "DMT-63 c3 in DAG");
+
+    // Reflog history: write_ref_with_reflog appends one entry for
+    // the ref advance, the soft-reset path appends one entry for
+    // the actual move, and then a third carrying the dropped set.
+    let history = store.reflog_history(RefKind::Head).expect("history");
+    assert_eq!(
+        history.len(),
+        3,
+        "DMT-63 history has 3 entries (advance + reset:hard-style move + reset:soft with dropped)"
+    );
+    let last = history.first().expect("first entry");
+    assert_eq!(last.reason, "reset:soft", "DMT-63 reason");
+    assert_eq!(
+        last.dropped,
+        vec![hex_lower(&c2_id), hex_lower(&c3_id)],
+        "DMT-63 dropped set is c2 + c3, sorted"
+    );
+}
+
+#[test]
+fn dmt_64_reset_mixed_is_soft_alias() {
+    // R-M13 (v1.151.0). Mixed reset produces identical state to Soft:
+    // same dropped set, same reflog history length, same reason
+    // (`reset:mixed` differs from `reset:soft` only in the label).
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build1",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "build2",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(RefKind::Head, c2_id, &mut log, "actor", "advance")
+        .expect("write HEAD");
+
+    // Mixed reset HEAD -> c0 (drops both c1 and c2).
+    store
+        .reset(RefKind::Head, c0_id, ResetMode::Mixed)
+        .expect("mixed reset succeeds");
+
+    assert_eq!(
+        store.resolve_ref(&RefKind::Head).expect("HEAD resolves"),
+        c0_id,
+        "DMT-64 HEAD moved to c0"
+    );
+    // DAG preserved.
+    assert!(store.get_commit(&c0_id).is_some(), "DMT-64 c0 in DAG");
+    assert!(store.get_commit(&c1_id).is_some(), "DMT-64 c1 in DAG");
+    assert!(store.get_commit(&c2_id).is_some(), "DMT-64 c2 in DAG");
+
+    let history = store.reflog_history(RefKind::Head).expect("history");
+    assert_eq!(
+        history.len(),
+        3,
+        "DMT-64 history has 3 entries (advance + reset:hard-style move + reset:mixed with dropped)"
+    );
+    let last = history.first().expect("first entry");
+    assert_eq!(last.reason, "reset:mixed", "DMT-64 reason label");
+    // Mixed alias: same dropped set as Soft would produce.
+    // The impl walks parent chain (current_tip → target) and sorts
+    // by hex ascending. We assert set membership (any order) to keep
+    // the test resilient to content-addressing changes.
+    let mut expected_dropped = vec![hex_lower(&c1_id), hex_lower(&c2_id)];
+    expected_dropped.sort();
+    assert_eq!(
+        last.dropped, expected_dropped,
+        "DMT-64 dropped set contains both c1 and c2"
+    );
+}
+
+#[test]
 fn dmt_60_delete_ref_succeeds_when_no_unique_commits() {
     // R-M8 / S-M10. `delete_ref(Branch("feature"))` on a branch whose
     // commits are reachable from another ref (main) succeeds: the
