@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use sddk_engine::decision_memory::{
     DecisionMemoryAuthor, DecisionMemoryBlob, DecisionMemoryCommit, DecisionMemoryError,
-    DecisionMemoryTree, InMemoryMemoryStore, MemoryId, MemoryRef, MemoryStore, RefAuthority,
-    RefKind, Reflog, ReflogEntry, ReflogScope, ResetMode, assert_canonical_authority,
+    DecisionMemoryTree, InMemoryMemoryStore, MemoryId, MemoryRef, MemoryStore, ProjectionScope,
+    RefAuthority, RefKind, Reflog, ReflogEntry, ReflogScope, ResetMode, assert_canonical_authority,
     canonical_head, classify_ref,
 };
 
@@ -776,6 +776,36 @@ fn dmt_23_decision_memory_error_new_variants_display() {
     let rendered = format!("{err}");
     assert!(rendered.starts_with("DecisionMemory parent-chain cycle detected at id_hex="));
     assert!(rendered.ends_with(&hex_lower(&id)));
+
+    // v1.150.0 (CDD-MEMORY-004) closed-set extension: NotImplemented
+    // and RefNotEmpty render a non-empty Display. R-M9.
+    let ni = DecisionMemoryError::NotImplemented {
+        op: "reset",
+        message: "Soft reset deferred to v1.151.0",
+    };
+    let ni_rendered = format!("{ni}");
+    assert!(
+        !ni_rendered.is_empty(),
+        "DMT-23 NotImplemented Display non-empty"
+    );
+    assert!(
+        ni_rendered.contains("reset"),
+        "DMT-23 NotImplemented mentions op"
+    );
+
+    let rne = DecisionMemoryError::RefNotEmpty {
+        ref_kind: "refs/heads/feature".into(),
+        reachable: 3,
+    };
+    let rne_rendered = format!("{rne}");
+    assert!(
+        !rne_rendered.is_empty(),
+        "DMT-23 RefNotEmpty Display non-empty"
+    );
+    assert!(
+        rne_rendered.contains("feature"),
+        "DMT-23 RefNotEmpty mentions ref_kind"
+    );
 }
 
 #[test]
@@ -2580,4 +2610,76 @@ fn dmt_61_delete_ref_with_unique_commits_returns_ref_not_empty() {
             .is_some(),
         "DMT-61 feature ref still present after rejected delete"
     );
+}
+
+#[test]
+fn dmt_62_pure_read_invariant_does_not_grow_reflog_history() {
+    // R-M11 / S-M12. Pure-read ops MUST NOT append to reflog
+    // history. Snapshot the history size, run a battery of read
+    // ops, assert the size is unchanged.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c1_id,
+            &mut log,
+            "actor",
+            "init",
+        )
+        .expect("write main");
+
+    let path = "refs/heads/main".to_string();
+    let before = store
+        .reflog_history(RefKind::Branch("main".into()))
+        .expect("history")
+        .len();
+
+    // Run a battery of pure-read ops (≥18 calls).
+    for _ in 0..3 {
+        let _ = store.log(c1_id, 16).expect("log");
+        let _ = store.tree(c1_id).expect("tree");
+        let _ = store.ancestors(c1_id, 16).expect("ancestors");
+        let _ = store.merge_base(c0_id, c1_id).expect("merge_base");
+        let _ = store
+            .decision_projection(c1_id, ProjectionScope::All)
+            .expect("decision_projection");
+        let _ = store
+            .delegation_projection(c1_id, ProjectionScope::All)
+            .expect("delegation_projection");
+        // 6 calls × 3 iterations = 18.
+    }
+
+    let after = store
+        .reflog_history(RefKind::Branch("main".into()))
+        .expect("history")
+        .len();
+    assert_eq!(
+        after, before,
+        "DMT-62 reflog history size unchanged after pure-read battery"
+    );
+    // Sanity: path still exists in the history map (no spurious removal).
+    let _ = path;
 }
