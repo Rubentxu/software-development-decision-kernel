@@ -18,9 +18,9 @@ A concrete historical label such as `cycle-72` is assigned at execution time and
 After reconciling the 2026-09-03 scoped-verification reprioritization with current `main` (DW-IR-002 shipped v1.72.0 while the TEST-* block was landing) and the 2026-09-09 spine reconciliation (H4/H5/H6/H7/H8/H9/H10/H11/H12 cycles shipped v1.98.0..v1.141.1):
 
 ```text
-SHIPPED  → all H0..H12 items except CDD-MEMORY-001, CDD-MEMORY-002, GRAPH-WHY-001, GRAPH-WHY-002 (reconciled 2026-09-09 in EXECUTION-SPINE.yaml; CDD-HANDOFF-002 promoted 2026-09-09 to SHIPPED at v1.146.0, ref 99ab54c)
-CURRENT  → none (workspace released up to v1.146.0 with 4 genuinely pending items)
-NEXT     → CDD-MEMORY-001 (order 267)
+SHIPPED  → all H0..H12 items except CDD-MEMORY-002, GRAPH-WHY-001, GRAPH-WHY-002 (reconciled 2026-09-09 in EXECUTION-SPINE.yaml; CDD-HANDOFF-002 → v1.146.0 ref 99ab54c, CDD-MEMORY-001 → v1.147.0 ref d6f5581)
+CURRENT  → none (workspace released up to v1.147.0 with 3 genuinely pending items)
+NEXT     → CDD-MEMORY-002 (order 268)
 FINAL    → GRAPH-WHY-002 (order 500)
 ```
 

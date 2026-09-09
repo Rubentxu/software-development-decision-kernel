@@ -336,7 +336,7 @@ items:
   - order: 267
     id: CDD-MEMORY-001
     horizon: H4
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-memory-001-substrate; release v1.147.0; Decision Memory substrate (DecisionMemoryBlob/Tree/Commit 3 immutable types + canonical sha256 hashing + MemoryStore trait + InMemoryMemoryStore + MemoryRef/RefKind/RefAuthority + canonical_head helper + assert_canonical_authority guard + append-only Reflog + DecisionMemoryError 7-variant closed enum; 14 unit scenarios green; cargo fmt + clippy -D warnings clean); ref d6f5581
     depends_on: [CDD-HANDOFF-002]
     objective: Implement Git-like content-addressed Decision Memory object and ref model.
     exit_gate: Immutable MemoryCommit/Tree/Blob objects support parents, canonical serialization/hash, refs, HEAD, tags and append-only reflog while advisory branches have no runtime authority.

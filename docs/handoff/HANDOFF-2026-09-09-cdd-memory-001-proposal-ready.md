@@ -1,6 +1,6 @@
-# CDD-MEMORY-001 — Decision Memory Object and Ref Model (Proposal ready)
+# CDD-MEMORY-001 — Decision Memory Object and Ref Model (CLOSED 2026-09-09)
 
-- status: PROPOSAL READY
+- status: CLOSED (apply commit `d6f5581`; spine reconcile commit `TBD`; release v1.147.0)
 - cycle: CDD-MEMORY-001 (order 267, horizon H4 — CDD Handoff)
 - depends on: CDD-HANDOFF-002 (v1.146.0, SHIPPED at v1.146.0 on 2026-09-09)
 - ADR: `~/.sddk-knowledge/sddk-framework/adrs/drafts/ADR-087-DECISION-MEMORY-OBJECT-REF-MODEL.md` (proposed, P14-a)
