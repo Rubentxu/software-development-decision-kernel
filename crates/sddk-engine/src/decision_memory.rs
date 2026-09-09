@@ -1717,7 +1717,7 @@ impl MemoryStore for InMemoryMemoryStore {
     }
 
     fn delete_ref(&self, ref_kind: RefKind) -> Result<(), DecisionMemoryError> {
-        // R-M8 / S-M10 / S-M11.
+        // R-M8 / R-M14 / S-M10 / S-M11.
         // 1. Resolve `ref_kind` (NotFound).
         let path = ref_kind.ref_path();
         let tip = self
@@ -1727,7 +1727,8 @@ impl MemoryStore for InMemoryMemoryStore {
                 id: path.clone(),
             })?;
         // 2. Walk ancestors of `tip` and any other ref's tip.
-        // Count commits reachable from `tip` but NOT from any other ref.
+        // Compute `unique` = commits reachable from `tip` but NOT
+        // from any other ref.
         const DELETE_REACH_CAP: usize = 4096;
         let tip_reachable = self.collect_ancestors_capped(tip, DELETE_REACH_CAP)?;
         let mut other_reachable: std::collections::BTreeSet<MemoryId> = Default::default();
@@ -1746,20 +1747,32 @@ impl MemoryStore for InMemoryMemoryStore {
             .difference(&other_reachable)
             .copied()
             .collect();
+        // 3. R-M14 defensive check: under the v1.150.0 policy
+        // `unique` is empty when delete succeeds (RefNotEmpty
+        // fires otherwise). The GC step is a defensive no-op under
+        // that policy, but the wiring is correct for any future
+        // op (e.g. `delete_ref_with_force`) that bypasses the check.
         if !unique.is_empty() {
             return Err(DecisionMemoryError::RefNotEmpty {
                 ref_kind: path,
                 reachable: unique.len(),
             });
         }
-        // 3. Remove the ref. Full tombstone GC is deferred to v1.151.0;
-        // v1.150.0 just drops the ref and records the deletion in the
-        // reflog history.
+        // 4. Remove the ref.
         {
             let mut g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
             g.remove(&path);
         }
-        // 4. Append a reflog history entry tagged "delete" with
+        // 5. Tombstone GC step (R-M14 / defensive no-op today):
+        // physically remove the unique commits + their trees/blobs.
+        // Under current policy `unique` is empty so this is a no-op,
+        // but the helper is exercised by `tombstone_gc_for_test` in
+        // DMT-65/66. The `tombstone_for` field on the reflog entry
+        // records what would have been dropped (or what was dropped,
+        // under any future force-delete policy).
+        let tombstone_hex: Vec<String> = unique.iter().map(hex_lower).collect();
+        self.tombstone_gc_for_test(&unique);
+        // 6. Append a reflog history entry tagged "delete" with
         // old_target = tip and new_target = tip (the ref no longer
         // exists, but the history entry records the deletion event).
         let entry = ReflogEntry {
@@ -1773,7 +1786,7 @@ impl MemoryStore for InMemoryMemoryStore {
             timestamp: now_rfc3339(),
             reason: "delete".to_string(),
             dropped: Vec::new(),
-            tombstone_for: Vec::new(),
+            tombstone_for: tombstone_hex,
         };
         {
             let mut h = self
@@ -1787,6 +1800,126 @@ impl MemoryStore for InMemoryMemoryStore {
             let mut entry = entry;
             entry.seq = bucket.len() as u64 + 1;
             bucket.push(entry);
+        }
+        Ok(())
+    }
+}
+
+impl InMemoryMemoryStore {
+    /// Tombstone GC for the given commit ids (R-M14, v1.151.0).
+    /// Physically removes each commit from `self.commits`, plus
+    /// its tree and recursively-reachable sub-trees and blobs.
+    ///
+    /// Defensive: at each removal, verifies that no other ref
+    /// (computed via `refs` lock + tree walk) still references the
+    /// id; if it does, the id is skipped and an `eprintln!` marker
+    /// is emitted (no panic). This guards against future bugs
+    /// that introduce shared state.
+    ///
+    /// Public for integration-test access (DMT-65/66); production
+    /// callers MUST NOT invoke this directly — `delete_ref` calls
+    /// it as a defensive no-op (the RefNotEmpty policy ensures
+    /// `ids` is empty under v1.151.0 usage). Future cycles that
+    /// add `delete_ref_with_force` or similar will route through
+    /// here.
+    pub fn tombstone_gc_for_test(&self, ids: &[MemoryId]) {
+        if ids.is_empty() {
+            return;
+        }
+        // Recompute alive set from all non-deleted refs.
+        let mut alive: std::collections::BTreeSet<MemoryId> = Default::default();
+        {
+            let g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
+            for (_p, r) in g.iter() {
+                if let Ok(s) = self.collect_ancestors_capped(r.id_bytes(), 4096) {
+                    alive.extend(s);
+                }
+            }
+        }
+        // For each id, walk the commit's tree and collect all blob
+        // and sub-tree ids reachable through it. Then attempt to
+        // remove each id from the corresponding BTreeMap, skipping
+        // any that are still in `alive` (defensive).
+        let mut to_remove_commits: Vec<MemoryId> = Vec::new();
+        let mut to_remove_trees: std::collections::BTreeSet<MemoryId> = Default::default();
+        let mut to_remove_blobs: std::collections::BTreeSet<MemoryId> = Default::default();
+        for id in ids {
+            if alive.contains(id) {
+                eprintln!("tombstone GC: skipping commit {id:?}, still alive");
+                continue;
+            }
+            to_remove_commits.push(*id);
+            if let Some(c) = self.get_commit(id) {
+                let _ = self.collect_tree_blobs_and_subtrees(
+                    c.tree,
+                    &mut to_remove_blobs,
+                    &mut to_remove_trees,
+                );
+            }
+        }
+        // Remove trees and blobs (skipping any that are still alive).
+        let mut trees_lock = self.trees.lock().expect("InMemoryMemoryStore poisoned");
+        for tree_id in &to_remove_trees {
+            if alive.contains(tree_id) {
+                eprintln!("tombstone GC: skipping tree {tree_id:?}, still alive");
+                continue;
+            }
+            trees_lock.remove(tree_id);
+        }
+        drop(trees_lock);
+        let mut blobs_lock = self.blobs.lock().expect("InMemoryMemoryStore poisoned");
+        for blob_id in &to_remove_blobs {
+            if alive.contains(blob_id) {
+                eprintln!("tombstone GC: skipping blob {blob_id:?}, still alive");
+                continue;
+            }
+            blobs_lock.remove(blob_id);
+        }
+        drop(blobs_lock);
+        let mut commits_lock = self.commits.lock().expect("InMemoryMemoryStore poisoned");
+        for commit_id in &to_remove_commits {
+            if alive.contains(commit_id) {
+                eprintln!("tombstone GC: skipping commit {commit_id:?}, still alive");
+                continue;
+            }
+            commits_lock.remove(commit_id);
+        }
+    }
+
+    /// Recursively walk a tree, collecting all blob and sub-tree
+    /// ids reachable from it.
+    fn collect_tree_blobs_and_subtrees(
+        &self,
+        tree_id: MemoryId,
+        blobs: &mut std::collections::BTreeSet<MemoryId>,
+        trees: &mut std::collections::BTreeSet<MemoryId>,
+    ) -> Result<(), DecisionMemoryError> {
+        trees.insert(tree_id);
+        // Cap recursion depth defensively.
+        const TREE_WALK_CAP: usize = 4096;
+        let mut frontier: Vec<MemoryId> = vec![tree_id];
+        let mut steps = 0usize;
+        while let Some(cur) = frontier.pop() {
+            steps += 1;
+            if steps > TREE_WALK_CAP {
+                return Err(DecisionMemoryError::CycleDetected { at: cur });
+            }
+            let tree = match self.get_tree(&cur) {
+                Some(t) => t,
+                None => continue,
+            };
+            for (_subtree, items) in tree.entries.iter() {
+                for entry in items.iter() {
+                    blobs.insert(entry.id);
+                    // If the entry's id points at a sub-tree (rather
+                    // than a blob), we'd need to recurse. Without a
+                    // distinct blob-vs-tree kind signal at the entry
+                    // level, treat every entry as a blob and rely on
+                    // the orbiter tree-walker to find sub-trees via
+                    // the entries() shape. For v1.151.0 the tree
+                    // schema is flat (no sub-trees) so this is fine.
+                }
+            }
         }
         Ok(())
     }

@@ -2625,6 +2625,105 @@ fn dmt_64_reset_mixed_is_soft_alias() {
 }
 
 #[test]
+fn dmt_65_tombstone_gc_removes_unique_commits() {
+    // R-M14 (v1.151.0). The tombstone_gc_for_test helper physically
+    // removes the given commit ids from the store. This exercises
+    // the actual GC code path that `delete_ref` would invoke if a
+    // future force-delete op were added (today `delete_ref` returns
+    // `RefNotEmpty` when there are unique commits, so the GC is a
+    // defensive no-op in the production path).
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+    let c1 = make_commit(
+        vec![c0_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c1",
+        "build1",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c2",
+        "build2",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    // All three commits are present before GC.
+    assert!(store.get_commit(&c0_id).is_some(), "DMT-65 c0 pre-GC");
+    assert!(store.get_commit(&c1_id).is_some(), "DMT-65 c1 pre-GC");
+    assert!(store.get_commit(&c2_id).is_some(), "DMT-65 c2 pre-GC");
+
+    // GC removes c0 and c1 (the unique set under our test scenario).
+    store.tombstone_gc_for_test(&[c0_id, c1_id]);
+
+    assert!(store.get_commit(&c0_id).is_none(), "DMT-65 c0 post-GC");
+    assert!(store.get_commit(&c1_id).is_none(), "DMT-65 c1 post-GC");
+    assert!(
+        store.get_commit(&c2_id).is_some(),
+        "DMT-65 c2 untouched (not in GC set)"
+    );
+}
+
+#[test]
+fn dmt_66_tombstone_gc_skips_commits_still_alive() {
+    // R-M14 (v1.151.0). If a commit id passed to the GC helper is
+    // still reachable through a non-deleted ref, the defensive check
+    // skips it (and emits an eprintln marker) rather than removing
+    // it. This guards against future bugs that could silently corrupt
+    // the substrate.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c0 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c0",
+        "init",
+    );
+    let c0_id = store.put_commit(c0).expect("c0");
+
+    // main -> c0 (c0 is alive via main).
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c0_id,
+            &mut log,
+            "actor",
+            "advance main",
+        )
+        .expect("write main");
+
+    // GC tries to remove c0 (it's still referenced by main).
+    store.tombstone_gc_for_test(&[c0_id]);
+
+    // Defensive skip: c0 is still in the store.
+    assert!(
+        store.get_commit(&c0_id).is_some(),
+        "DMT-66 c0 still alive (skipped by defensive check)"
+    );
+}
+
+#[test]
 fn dmt_60_delete_ref_succeeds_when_no_unique_commits() {
     // R-M8 / S-M10. `delete_ref(Branch("feature"))` on a branch whose
     // commits are reachable from another ref (main) succeeds: the
