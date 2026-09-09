@@ -625,10 +625,7 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
     /// descending by `seq` (newest first). R-M1 / S-M1. The vector
     /// MAY be empty (refs never written). Surfaces `NotFound` when
     /// the ref does not resolve.
-    fn reflog_history(
-        &self,
-        ref_kind: RefKind,
-    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+    fn reflog_history(&self, ref_kind: RefKind) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
         let _ = ref_kind;
         unimplemented!("MemoryStore::reflog_history is not implemented by this store")
     }
@@ -637,11 +634,7 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
     /// `ref_kind`. `seq=1` is the oldest entry; `seq=N` is the newest.
     /// R-M2 / S-M2..S-M4. Surfaces `NotFound` for unknown refs and
     /// `LimitExceeded { op: "reflog_at", cap: N }` when `seq > N`.
-    fn reflog_at(
-        &self,
-        ref_kind: RefKind,
-        seq: u64,
-    ) -> Result<ReflogEntry, DecisionMemoryError> {
+    fn reflog_at(&self, ref_kind: RefKind, seq: u64) -> Result<ReflogEntry, DecisionMemoryError> {
         let _ = (ref_kind, seq);
         unimplemented!("MemoryStore::reflog_at is not implemented by this store")
     }
@@ -704,6 +697,19 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
     ) -> Result<MemoryId, DecisionMemoryError> {
         let _ = (commit_id, onto_ref, message);
         unimplemented!("MemoryStore::cherry_pick is not implemented by this store")
+    }
+
+    /// Produce a new commit that inverts `commit_id` (tree snapshot
+    /// before `commit_id`'s change) and advance `target_ref` to it.
+    /// Returns the new commit's `MemoryId`. R-M5 / S-M6.
+    fn revert(
+        &self,
+        commit_id: MemoryId,
+        target_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        let _ = (commit_id, target_ref, message);
+        unimplemented!("MemoryStore::revert is not implemented by this store")
     }
 }
 
@@ -1192,7 +1198,12 @@ impl MemoryStore for InMemoryMemoryStore {
         let engine = DefaultWhyQueryEngine;
         let recorded_at = "v1.149.1:why-bridge";
         let target_node = NodeId(hex_lower(&target_id));
-        let result = engine.query(&projection, &target_node, WhyQueryKind::DecisionWhy, recorded_at);
+        let result = engine.query(
+            &projection,
+            &target_node,
+            WhyQueryKind::DecisionWhy,
+            recorded_at,
+        );
 
         // Validate the engine's causal_path: every Node step's hex
         // must decode to a real MemoryId. Unmapped → drop + marker.
@@ -1200,10 +1211,7 @@ impl MemoryStore for InMemoryMemoryStore {
             if let WhyCausalStep::Node { id, .. } = step
                 && id.0.len() != 64
             {
-                eprintln!(
-                    "MemoryStore::why bridge dropped malformed NodeId: {}",
-                    id.0
-                );
+                eprintln!("MemoryStore::why bridge dropped malformed NodeId: {}", id.0);
             }
         }
 
@@ -1274,17 +1282,16 @@ impl MemoryStore for InMemoryMemoryStore {
         Ok(Vec::new())
     }
 
-    fn reflog_history(
-        &self,
-        ref_kind: RefKind,
-    ) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
+    fn reflog_history(&self, ref_kind: RefKind) -> Result<Vec<ReflogEntry>, DecisionMemoryError> {
         // R-M1 / S-M1. Confirm the ref exists (NotFound otherwise),
         // then return the persisted history sorted descending by seq.
         let path = ref_kind.ref_path();
-        let _ = self.resolve_ref(&ref_kind).ok_or_else(|| DecisionMemoryError::NotFound {
-            kind: "ref",
-            id: path.clone(),
-        })?;
+        let _ = self
+            .resolve_ref(&ref_kind)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: path.clone(),
+            })?;
         let h = self
             .ref_history
             .lock()
@@ -1299,18 +1306,16 @@ impl MemoryStore for InMemoryMemoryStore {
         Ok(entries)
     }
 
-    fn reflog_at(
-        &self,
-        ref_kind: RefKind,
-        seq: u64,
-    ) -> Result<ReflogEntry, DecisionMemoryError> {
+    fn reflog_at(&self, ref_kind: RefKind, seq: u64) -> Result<ReflogEntry, DecisionMemoryError> {
         // R-M2 / S-M2..S-M4. NotFound on unknown ref; LimitExceeded
         // when seq > N.
         let path = ref_kind.ref_path();
-        let _ = self.resolve_ref(&ref_kind).ok_or_else(|| DecisionMemoryError::NotFound {
-            kind: "ref",
-            id: path.clone(),
-        })?;
+        let _ = self
+            .resolve_ref(&ref_kind)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: path.clone(),
+            })?;
         let h = self
             .ref_history
             .lock()
@@ -1385,7 +1390,11 @@ impl MemoryStore for InMemoryMemoryStore {
             at_commit,
             &scope,
             "decision/",
-            |kind, id, payload_ref| DecisionEntry { kind, id, payload_ref },
+            |kind, id, payload_ref| DecisionEntry {
+                kind,
+                id,
+                payload_ref,
+            },
         )?;
         Ok(DecisionProjection {
             at_commit,
@@ -1404,7 +1413,11 @@ impl MemoryStore for InMemoryMemoryStore {
             at_commit,
             &scope,
             "delegation/",
-            |kind, id, payload_ref| DelegationEntry { kind, id, payload_ref },
+            |kind, id, payload_ref| DelegationEntry {
+                kind,
+                id,
+                payload_ref,
+            },
         )?;
         Ok(DelegationProjection {
             at_commit,
@@ -1430,12 +1443,12 @@ impl MemoryStore for InMemoryMemoryStore {
                 kind: "commit",
                 id: hex_lower(&commit_id),
             })?;
-        let onto_tip = self
-            .resolve_ref(&onto_ref)
-            .ok_or_else(|| DecisionMemoryError::NotFound {
-                kind: "ref",
-                id: onto_ref.ref_path(),
-            })?;
+        let onto_tip =
+            self.resolve_ref(&onto_ref)
+                .ok_or_else(|| DecisionMemoryError::NotFound {
+                    kind: "ref",
+                    id: onto_ref.ref_path(),
+                })?;
         // 2. Build the 2-parent commit reusing `commit`'s tree.
         let parents = vec![onto_tip, commit_id];
         let new_commit = DecisionMemoryCommit::new(
@@ -1460,7 +1473,65 @@ impl MemoryStore for InMemoryMemoryStore {
         self.put_commit(new_commit)?;
         // 3. Advance `onto_ref` and append one reflog entry.
         let mut log = Reflog::new();
-        self.write_ref_with_reflog(onto_ref, new_id, &mut log, "cherry-pick", "cherry-pick replay")?;
+        self.write_ref_with_reflog(
+            onto_ref,
+            new_id,
+            &mut log,
+            "cherry-pick",
+            "cherry-pick replay",
+        )?;
+        Ok(new_id)
+    }
+
+    fn revert(
+        &self,
+        commit_id: MemoryId,
+        target_ref: RefKind,
+        message: &str,
+    ) -> Result<MemoryId, DecisionMemoryError> {
+        // R-M5 / S-M6.
+        // 1. Resolve `commit_id`; needs at least one parent (root has none).
+        let commit = self
+            .get_commit(&commit_id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&commit_id),
+            })?;
+        let parent_id = commit.parents.first().ok_or_else(|| {
+            DecisionMemoryError::ReflogAppendFailed("cannot revert a root commit".into())
+        })?;
+        let parent_tree = self
+            .get_commit(parent_id)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(parent_id),
+            })?
+            .tree;
+        // 2. Build the inverse commit: 1 parent = commit_id, tree = parent's tree.
+        let parents = vec![commit_id];
+        let new_commit = DecisionMemoryCommit::new(
+            parents,
+            parent_tree,
+            DecisionMemoryAuthor::new("system", "revert").map_err(|_| {
+                DecisionMemoryError::ReflogAppendFailed("invalid revert author".into())
+            })?,
+            "2026-09-09T00:00:00Z",
+            "sddk-framework",
+            None::<String>,
+            Some("CDD-MEMORY-004"),
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            message.to_string(),
+            "revert from CDD-MEMORY-004",
+            vec![commit_id],
+        )?;
+        let new_id = new_commit.id;
+        self.put_commit(new_commit)?;
+        // 3. Advance `target_ref` and append one reflog entry.
+        let mut log = Reflog::new();
+        self.write_ref_with_reflog(target_ref, new_id, &mut log, "revert", "revert replay")?;
         Ok(new_id)
     }
 }
@@ -1548,7 +1619,11 @@ impl InMemoryMemoryStore {
                 entries
                     .entry(blob.object_kind.clone())
                     .or_default()
-                    .push(build(blob.object_kind.clone(), entry.id, blob.payload_ref.clone()));
+                    .push(build(
+                        blob.object_kind.clone(),
+                        entry.id,
+                        blob.payload_ref.clone(),
+                    ));
             }
         }
         Ok(entries)
@@ -1562,7 +1637,10 @@ impl InMemoryMemoryStore {
     fn build_why_projection(
         &self,
         target_id: MemoryId,
-    ) -> (ActiveGraphProjection, std::collections::BTreeMap<MemoryId, NodeId>) {
+    ) -> (
+        ActiveGraphProjection,
+        std::collections::BTreeMap<MemoryId, NodeId>,
+    ) {
         use std::collections::BTreeMap;
         // WHY_MAX_DEPTH is re-exported as a hard cap so we cannot
         // overrun the engine.
@@ -1612,7 +1690,9 @@ impl InMemoryMemoryStore {
                     source: parent_node.clone(),
                     target: node_id.clone(),
                 };
-                if !edges.iter().any(|e| e.source == edge.source && e.target == edge.target && e.kind == edge.kind) {
+                if !edges.iter().any(|e| {
+                    e.source == edge.source && e.target == edge.target && e.kind == edge.kind
+                }) {
                     edges.push(edge);
                 }
                 frontier.push((*parent, depth + 1));
