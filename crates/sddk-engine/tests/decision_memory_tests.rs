@@ -2229,3 +2229,81 @@ fn dmt_56_revert_appends_reflog_history_entry() {
         newest.reason
     );
 }
+
+#[test]
+fn dmt_57_amend_replaces_tree_and_preserves_parents() {
+    // R-M6 / S-M7. `amend(c2, new_tree, target_ref, "corrected")` produces
+    // a new commit whose `parents == c2.parents` and `tree == new_tree`;
+    // `target_ref` advances to the new commit; original c2 stays in the
+    // DAG (preserved by id).
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let tree_v2 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("d1".to_string(), MemoryId::from([0xa1u8; 32]))],
+        )])))
+        .expect("tree v2");
+    let new_tree = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("d1-corrected".to_string(), MemoryId::from([0xb2u8; 32]))],
+        )])))
+        .expect("new tree");
+    let c1 = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_v2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "build",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+
+    // main -> c2.
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c2_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main");
+
+    let new_id = store
+        .amend(c2_id, new_tree, RefKind::Branch("main".into()), "corrected")
+        .expect("amend");
+    // new commit has same parents as c2.
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    let c2_commit = store.get_commit(&c2_id).expect("c2 commit");
+    assert_eq!(
+        new_commit.parents, c2_commit.parents,
+        "DMT-57 parents preserved"
+    );
+    assert_eq!(new_commit.tree, new_tree, "DMT-57 tree = new_tree");
+    assert_ne!(new_id, c2_id, "DMT-57 amend produces a different commit id");
+    // original c2 is still in the DAG (preserved).
+    let c2_after = store.get_commit(&c2_id).expect("c2 still in DAG");
+    assert_eq!(c2_after.tree, tree_v2, "DMT-57 original c2.tree preserved");
+    // main advances to the new commit.
+    assert_eq!(
+        store
+            .resolve_ref(&RefKind::Branch("main".into()))
+            .expect("main resolves"),
+        new_id,
+        "DMT-57 main advances to the amended commit"
+    );
+}
