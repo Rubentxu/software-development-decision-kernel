@@ -1,8 +1,9 @@
 //! `dev doctor` — toolchain and environment prerequisite checker.
 
 use crate::dev::arch_lint::{
-    MarkerStatus, decision_memory_cli_alignment_checks, mirror_alignment_checks,
-    semantic_graph_alignment_checks, unified_authority_runner_alignment_checks,
+    MarkerStatus, convention_first_cli_alignment_checks, decision_memory_cli_alignment_checks,
+    mirror_alignment_checks, semantic_graph_alignment_checks,
+    unified_authority_runner_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
@@ -456,6 +457,10 @@ pub(super) fn run_dev_doctor(
                 }
                 // M5: unified authority runner markers (arch-spec-008).
                 for marker in unified_authority_runner_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M6.1: convention-first CLI surface markers.
+                for marker in convention_first_cli_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

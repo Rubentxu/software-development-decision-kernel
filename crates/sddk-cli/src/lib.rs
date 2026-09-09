@@ -7,7 +7,11 @@
 mod analytics;
 mod approval;
 mod artifact;
+pub mod audit_cmd;
 mod capability;
+pub mod change;
+pub mod command_spec;
+pub mod config_cmd;
 mod cycle;
 mod debt;
 mod dev;
@@ -46,6 +50,7 @@ mod uat_generate;
 mod uat_quality;
 mod uat_serve;
 mod vault_cmd;
+pub mod verify_cmd;
 mod writer;
 
 use std::ffi::{OsStr, OsString};
@@ -393,6 +398,49 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Create a planning work item in a cycle (M6.1 facade). Delegates to `plan workitem create`.
+    Change {
+        /// Cycle identifier.
+        #[arg(long)]
+        cycle_id: String,
+        /// Work item title.
+        #[arg(long)]
+        title: String,
+        /// Work item description.
+        #[arg(long)]
+        description: String,
+        /// Actor id.
+        #[arg(long)]
+        actor: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Verify ledger continuity and capability policy snapshot (M6.1 facade).
+    Verify {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Audit memory reflog plus ledger events (M6.1 facade).
+    Audit {
+        /// Optional RFC3339 filter (currently a no-op — kept for forward compat).
+        #[arg(long)]
+        since: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Inspect configuration precedence chain (M6.1).
+    Config {
+        #[command(subcommand)]
+        command: config_cmd::ConfigCommand,
+    },
+    /// Enumerate commands and their typed specs (M6.1).
+    Introspect {
+        #[command(subcommand)]
+        command: command_spec::IntrospectCommand,
+    },
 }
 
 /// Completion subcommands; shell names are subcommands so
@@ -526,9 +574,15 @@ struct VersionArgs {
     format: OutputFormat,
 }
 
+/// Output format selector for first-class CLI commands.
+///
+/// `Text` produces a human-friendly rendering with section headers;
+/// `Json` produces a machine-readable envelope suitable for agents.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum OutputFormat {
+pub enum OutputFormat {
+    /// Human-friendly text rendering.
     Text,
+    /// Machine-readable JSON envelope.
     Json,
 }
 
@@ -727,6 +781,17 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             dry_run,
             format,
         } => recover::run_recover(cycle, dry_run, format, environment),
+        Command::Change {
+            cycle_id,
+            title,
+            description,
+            actor,
+            format,
+        } => change::run_change(cycle_id, title, description, actor, format, environment),
+        Command::Verify { format } => verify_cmd::run_verify(format, environment),
+        Command::Audit { since, format } => audit_cmd::run_audit(since, format, environment),
+        Command::Config { command } => config_cmd::run_config(command, environment),
+        Command::Introspect { command } => command_spec::run_introspect(command, environment),
     }
 }
 

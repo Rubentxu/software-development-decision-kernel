@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T18:01:00Z"
-generated_by: "sddk-orchestrator (M5 unified authority runner)"
-total_entries: 64
+generated_at: "2026-09-09T18:36:00Z"
+generated_by: "sddk-orchestrator (M6.1 convention-first CLI surface)"
+total_entries: 60
 
 entries:
 
@@ -692,3 +692,53 @@ open_mappings:
     replaces: null
     target_milestone: M9
     notes: "Legacy event registry retained as compatibility mirror per arch-spec-001 CA-007. Removal criteria: M9."
+
+  - module: crates/sddk-cli/src/command_spec
+    contract: arch-spec-013-cli-convention-first
+    primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "Typed CommandSpec table shipped v1.157.0. Hand-curated from the Command enum (44 entries). all_command_specs() exposes name/about/output_format/args/has_subcommands/cycle_phase/spec_ref. Agents enumerate via `sddk introspect commands --format json`."
+
+  - module: crates/sddk-cli/src/change
+    contract: arch-spec-013-cli-convention-first
+    primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "First-class `sddk change` router shipped v1.157.0. Shadow-routes to `plan workitem create` for spec coverage. Required --title/--description/--cycle-id; --actor and --format optional."
+
+  - module: crates/sddk-cli/src/verify_cmd
+    contract: arch-spec-013-cli-convention-first
+    primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "First-class `sddk verify` router shipped v1.157.0. Stitches `ledger verify` and `capability status` into a single JSON or Text envelope. No required args."
+
+  - module: crates/sddk-cli/src/audit_cmd
+    contract: arch-spec-013-cli-convention-first
+    primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "First-class `sddk audit` router shipped v1.157.0. Stitches `memory reflog` and `ledger events` into a single audit surface. --since flag reserved for forward compat (currently no-op; ledger events accepts no since filter)."
+
+  - module: crates/sddk-cli/src/config_cmd
+    contract: arch-spec-013-cli-convention-first
+    primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "`sddk config explain` shipped v1.157.0. Renders precedence chain (4 sources, 7 keys) declaratively from a static table. JSON or Text output."

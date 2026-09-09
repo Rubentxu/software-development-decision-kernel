@@ -132,6 +132,10 @@ const MARKER_AUTHORITY_ENGINE_SINGLE_PATH: &str = "m5.authority_engine_single_pa
 const MARKER_ADMISSION_EXPLAINABLE: &str = "m5.admission_explainable";
 const MARKER_LEGACY_AUTHORITY_COMPAT: &str = "m5.legacy_authority_compat";
 
+const MARKER_CLI_SPEC_TABLE_CANONICAL: &str = "m6_1.cli_spec_table_canonical";
+const MARKER_CLI_FIRST_CLASS_ROUTERS: &str = "m6_1.cli_first_class_routers";
+const MARKER_CONFIG_EXPLAIN_DECLARATIVE: &str = "m6_1.config_explain_declarative";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -212,6 +216,36 @@ pub fn unified_authority_runner_alignment_checks(yaml: &str) -> Vec<MarkerStatus
             // we use a heuristic: count entries referencing authority.rs.
             present: yaml.contains("crates/sddk-engine/src/authority")
                 && !yaml.contains("crates/sddk-engine/src/authority_engine\""),
+        },
+    ]
+}
+
+/// M6.1 markers (Convention-first CLI surface, SPEC-M6.1).
+///
+/// Marker definitions:
+/// - `cli_spec_table_canonical`: the `command_spec` module is delivered,
+///   confirming agents can introspect the CLI without runtime clap parsing.
+/// - `cli_first_class_routers`: the `change`, `verify`, and `audit` router
+///   modules are delivered as first-class verbs (no longer buried under
+///   legacy surfaces).
+/// - `config_explain_declarative`: the `config_cmd` module is delivered,
+///   confirming the precedence chain is rendered from a declarative
+///   table rather than ad-hoc inspection.
+pub fn convention_first_cli_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![
+        MarkerStatus {
+            id: MARKER_CLI_SPEC_TABLE_CANONICAL.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/command_spec"),
+        },
+        MarkerStatus {
+            id: MARKER_CLI_FIRST_CLASS_ROUTERS.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/change")
+                && has_delivered_entry(yaml, "crates/sddk-cli/src/verify_cmd")
+                && has_delivered_entry(yaml, "crates/sddk-cli/src/audit_cmd"),
+        },
+        MarkerStatus {
+            id: MARKER_CONFIG_EXPLAIN_DECLARATIVE.to_string(),
+            present: has_delivered_entry(yaml, "crates/sddk-cli/src/config_cmd"),
         },
     ]
 }
@@ -509,5 +543,74 @@ entries:
             .find(|m| m.id == MARKER_AUTHORITY_ENGINE_SINGLE_PATH)
             .expect("marker");
         assert!(!path.present);
+    }
+
+    #[test]
+    fn m6_1_spec_table_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/command_spec
+    target_milestone: delivered
+"#;
+        let markers = convention_first_cli_alignment_checks(yaml);
+        let spec = markers
+            .iter()
+            .find(|m| m.id == MARKER_CLI_SPEC_TABLE_CANONICAL)
+            .expect("marker");
+        assert!(spec.present);
+    }
+
+    #[test]
+    fn m6_1_first_class_routers_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/change
+    target_milestone: delivered
+  - module: crates/sddk-cli/src/verify_cmd
+    target_milestone: delivered
+  - module: crates/sddk-cli/src/audit_cmd
+    target_milestone: delivered
+"#;
+        let markers = convention_first_cli_alignment_checks(yaml);
+        let r = markers
+            .iter()
+            .find(|m| m.id == MARKER_CLI_FIRST_CLASS_ROUTERS)
+            .expect("marker");
+        assert!(r.present);
+    }
+
+    #[test]
+    fn m6_1_routers_marker_absent_when_partial() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/change
+    target_milestone: delivered
+  - module: crates/sddk-cli/src/verify_cmd
+    target_milestone: delivered
+"#;
+        let markers = convention_first_cli_alignment_checks(yaml);
+        let r = markers
+            .iter()
+            .find(|m| m.id == MARKER_CLI_FIRST_CLASS_ROUTERS)
+            .expect("marker");
+        assert!(
+            !r.present,
+            "audit missing → first-class routers marker must fail"
+        );
+    }
+
+    #[test]
+    fn m6_1_config_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/config_cmd
+    target_milestone: delivered
+"#;
+        let markers = convention_first_cli_alignment_checks(yaml);
+        let c = markers
+            .iter()
+            .find(|m| m.id == MARKER_CONFIG_EXPLAIN_DECLARATIVE)
+            .expect("marker");
+        assert!(c.present);
     }
 }

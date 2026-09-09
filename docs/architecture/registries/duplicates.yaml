@@ -1,10 +1,10 @@
 ---
 schema_version: v1
-generated_at: "2026-09-09T18:01:00Z"
-generated_from: manual curation + M5 unified authority runner
-cycle: p-63676b11dc0ef88f/m5-unified-authority-runner
+generated_at: "2026-09-09T18:36:00Z"
+generated_from: manual curation + M6.1 convention-first CLI surface
+cycle: p-63676b11dc0ef88f/m6-1-convention-first-cli
 ordering: by SPEC then concept
-total_decisions: 52
+total_decisions: 55
 status: pending user sign-off per RISK-REGISTER R-001
 ---
 
@@ -91,6 +91,11 @@ unified_authority_runner_unification_target:
   - { concept: AuthorityEngineRunner, existing: "crates/sddk-engine/src/authority_engine/runner.rs", disposition: DELIVERED, target: "admit_surface facade + default_policy_for_surface table", milestone: M5, confidence: high, status: delivered, notes: "12-surface policy table (4 High, 4 Medium, 2 Low, 2 Low-class). 6 inline tests in runner.rs + 8 integration scenarios in tests/authority_engine_runner.rs." }
   - { concept: CycleCLI_pre_gates, existing: "crates/sddk-cli/src/cycle.rs (5 sites)", disposition: DELIVERED, target: "CLI pre-gates via AuthorityEngineRunner.admit_surface", milestone: M5, confidence: high, status: delivered, notes: "apply_transition, cycle_supersede, cycle_pause, cycle_resume, evaluate_gate each emit a RunnerVerdict pre-gate before delegating to engine functions." }
 
+convention_first_cli_unification_target:
+  - { concept: CommandSpec_table, existing: "crates/sddk-cli/src/command_spec.rs", disposition: DELIVERED, target: "all_command_specs() typed registry", milestone: M6, confidence: high, status: delivered, notes: "44 hand-curated CommandSpec entries. Agents enumerate via `sddk introspect commands --format json` without runtime clap parsing. M6.1 ships the table; M7 closes the loop with AgentCommandSurface." }
+  - { concept: FirstClassCLIRouters, existing: "crates/sddk-cli/src/{change,verify_cmd,audit_cmd}.rs", disposition: DELIVERED, target: "5 first-class verbs (change|verify|audit|config|introspect)", milestone: M6, confidence: high, status: delivered, notes: "Shadow routers bridge to plan/ledger/memory substrates. change→plan workitem create; verify→ledger verify+capability status; audit→memory reflog+ledger events. Five arch_lint markers gate regression." }
+  - { concept: ConfigExplain, existing: "crates/sddk-cli/src/config_cmd.rs", disposition: DELIVERED, target: "sddk config explain (declarative precedence chain)", milestone: M6, confidence: high, status: delivered, notes: "Renders 4 precedence bands + 7 keys from a static table. Replaces ad-hoc inspection." }
+
 decision_memory_spine_done:
   - { concept: DecisionMemoryCommit, existing: shipped, disposition: KEEP, target: "DecisionMemoryCommit", milestone: delivered, confidence: high }
   - { concept: DecisionMemoryTree, existing: shipped, disposition: KEEP, target: "DecisionMemoryTree", milestone: delivered, confidence: high }
@@ -119,7 +124,7 @@ legacy_evidence_migration:
 # Summary statistics
 # ============================================================================
 summary:
-  total_decisions: 52
+  total_decisions: 55
   keep: 14
   evolve: 6
   evolve_rename: 3
@@ -127,7 +132,7 @@ summary:
   migrate: 3
   split: 1
   internalize: 4
-  delivered: 22
+  delivered: 25
   planned: 10
   review: 1
   sensitive_total: 7  # entries flagged sensitive: true
