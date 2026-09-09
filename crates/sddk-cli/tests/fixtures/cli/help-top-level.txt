@@ -40,6 +40,12 @@ Commands:
   run-view      View a workflow run (DEC-PLANE-001). Emits RunStateView and ActionSurfaceView
   ship          Plan a release (dry-run). Delegates to `release plan --dry-run`
   recover       Rebuild a cycle from ledger events (dry-run). Delegates to `cycle rebuild --dry-run`
+  change        Create a planning work item in a cycle (M6.1 facade). Delegates to `plan workitem create`
+  verify        Verify ledger continuity and capability policy snapshot (M6.1 facade)
+  audit         Audit memory reflog plus ledger events (M6.1 facade)
+  config        Inspect configuration precedence chain (M6.1)
+  introspect    Enumerate commands and their typed specs (M6.1)
+  target        List and resolve Target/Task DAGs (M6.2)
   help          Print this message or the help of the given subcommand(s)
 
 Options:

@@ -127,12 +127,14 @@ fn sc_m6_2_5_unknown_target_returns_resolution_with_no_dag() {
 }
 
 // SC-M6.2-6: All built-in targets resolve without cycles and the registry
-// carries exactly the four canonical names.
+// carries exactly the seven canonical names.
 #[test]
 fn sc_m6_2_6_builtins_resolve_cleanly() {
     let r = TargetRegistry::with_builtins();
-    assert_eq!(r.len(), 4);
-    for name in ["status", "run", "ship", "recover"] {
+    assert_eq!(r.len(), 7);
+    for name in [
+        "status", "run", "ship", "recover", "change", "verify", "audit",
+    ] {
         let res = r.resolve(name);
         let dag = res.dag.expect("built-in target should resolve");
         // Ordering invariant: deps appear before dependents.
@@ -157,13 +159,19 @@ fn sc_m6_2_6_builtins_resolve_cleanly() {
     }
 }
 
-// SC-M6.2-7: `builtin_targets()` returns exactly 4 targets.
+// SC-M6.2-7: `builtin_targets()` returns exactly 7 targets (status, run,
+// ship, recover, change, verify, audit).
 #[test]
-fn sc_m6_2_7_builtin_count_is_four() {
+fn sc_m6_2_7_builtin_count_is_seven() {
     let targets = builtin_targets();
-    assert_eq!(targets.len(), 4);
+    assert_eq!(targets.len(), 7);
     let names: Vec<&str> = targets.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, vec!["status", "run", "ship", "recover"]);
+    assert_eq!(
+        names,
+        vec![
+            "status", "run", "ship", "recover", "change", "verify", "audit"
+        ]
+    );
 }
 
 // SC-M6.2-8: Duplicate task id within a target fails with `DuplicateTaskId`.

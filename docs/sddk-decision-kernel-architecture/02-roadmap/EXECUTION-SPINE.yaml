@@ -686,7 +686,7 @@ items:
     exit_gate: GA tag/release exists, compatibility policy is documented, and post-GA evolution starts from a new plan version.
   - order: 660
     id: CDD-MEMORY-004
-    horizon: H13 # post-GA maintenance
+    horizon: H12 # post-GA maintenance
     status: SHIPPED # reconciled 2026-09-09: cycle p-63676b11dc0ef88f/cdd-memory-004-reflog-history-and-mutation; release v1.150.0; reflog history persistence (REFLOG_HISTORY_CAP=1024 FIFO, reflog_history + reflog_at queries) + branch mutation ops (cherry_pick / revert / amend / reset[Hard-only] / delete_ref) + ResetMode enum + 2 error variants (NotImplemented, RefNotEmpty); spec drift: revert/amend extended with target_ref: RefKind (no implicit HEAD in the trait surface); ref d9033e5..34dcdb7 (15 commits, +1400/-44 LoC under 1500-LoC budget cap); decision_memory_tests 49 -> 64 cases (+15: DMT-49..DMT-62). WU-4 of CDD-MEMORY-003 (reflog persistence) closed in this cycle alongside the planned mutation ops. Soft/Mixed reset, tombstone GC, parent-tree 3-way merge deferred to v1.151.0 (CDD-MEMORY-005 candidate). 15 commits incl. 2 chore(release) for v1.150.0 bump + Cargo.lock refresh. cargo fmt + clippy -D warnings clean.
     depends_on: [GA-002]
     objective: Extend the Decision Memory substrate with reflog history persistence and git-like branch mutation ops (cherry_pick / revert / amend / reset / delete_ref), preserving the immutable DAG.

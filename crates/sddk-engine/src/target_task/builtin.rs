@@ -219,6 +219,93 @@ pub fn recover_target() -> Target {
     }
 }
 
+/// Target: `change` — create a planning work item (M6.3 typed DAG).
+///
+/// Wraps the M6.1 shadow router `change` with a typed DAG so the
+/// engine and CLI converge on the same shape.
+pub fn change_target() -> Target {
+    Target {
+        name: "change".into(),
+        about: "Create a planning work item in a cycle".into(),
+        tasks: vec![
+            stub_task(
+                "context.resolve",
+                &[],
+                super::SideEffectClass::Read,
+                AuthorityRequirement::Read,
+                Determinism::Deterministic,
+                EvidenceContract::OneFact,
+                MemoryEffect::None,
+            ),
+            stub_task(
+                "plan.workitem.create",
+                &["context.resolve"],
+                super::SideEffectClass::Write,
+                AuthorityRequirement::Write,
+                Determinism::Deterministic,
+                EvidenceContract::FullReceipt,
+                MemoryEffect::AppendFact,
+            ),
+        ],
+    }
+}
+
+/// Target: `verify` — cross-cutting verification (M6.3 typed DAG).
+pub fn verify_target() -> Target {
+    Target {
+        name: "verify".into(),
+        about: "Verify ledger continuity and capability policy snapshot".into(),
+        tasks: vec![
+            stub_task(
+                "ledger.verify",
+                &[],
+                super::SideEffectClass::Read,
+                AuthorityRequirement::Read,
+                Determinism::Deterministic,
+                EvidenceContract::OneFact,
+                MemoryEffect::None,
+            ),
+            stub_task(
+                "capability.status",
+                &["ledger.verify"],
+                super::SideEffectClass::Read,
+                AuthorityRequirement::Read,
+                Determinism::ExternallyInfluenced,
+                EvidenceContract::OneFact,
+                MemoryEffect::None,
+            ),
+        ],
+    }
+}
+
+/// Target: `audit` — cross-cutting audit (M6.3 typed DAG).
+pub fn audit_target() -> Target {
+    Target {
+        name: "audit".into(),
+        about: "Audit memory reflog + ledger events".into(),
+        tasks: vec![
+            stub_task(
+                "memory.reflog",
+                &[],
+                super::SideEffectClass::Read,
+                AuthorityRequirement::Read,
+                Determinism::ExternallyInfluenced,
+                EvidenceContract::OneFact,
+                MemoryEffect::None,
+            ),
+            stub_task(
+                "ledger.events",
+                &["memory.reflog"],
+                super::SideEffectClass::Read,
+                AuthorityRequirement::Read,
+                Determinism::ExternallyInfluenced,
+                EvidenceContract::OneFact,
+                MemoryEffect::None,
+            ),
+        ],
+    }
+}
+
 /// All built-in targets, in declaration order.
 pub fn builtin_targets() -> Vec<Target> {
     vec![
@@ -226,6 +313,9 @@ pub fn builtin_targets() -> Vec<Target> {
         run_target(),
         ship_target(),
         recover_target(),
+        change_target(),
+        verify_target(),
+        audit_target(),
     ]
 }
 

@@ -32,6 +32,24 @@ pub enum TargetCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         format: OutputFormat,
     },
+    /// Execute a target through the DAG executor (M6.3).
+    Run {
+        /// Target name.
+        #[arg(long)]
+        name: String,
+        /// Actor id (default "system").
+        #[arg(long, default_value = "system")]
+        actor: String,
+        /// Dry-run: skip task bodies.
+        #[arg(long)]
+        dry_run: bool,
+        /// Allow high-band tasks without approval (CI fixture).
+        #[arg(long)]
+        allow_high_band: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +73,13 @@ pub(crate) fn run_target(command: TargetCommand, environment: &CliEnvironment) -
     match command {
         TargetCommand::List { format } => render_target_list(&registry, format),
         TargetCommand::Resolve { name, format } => render_target_resolve(&registry, &name, format),
+        TargetCommand::Run {
+            name,
+            actor,
+            dry_run,
+            allow_high_band,
+            format,
+        } => render_target_run(&registry, &name, &actor, dry_run, allow_high_band, format),
     }
 }
 
@@ -138,6 +163,55 @@ fn render_target_resolve(
             }
             CommandOutput {
                 status: if has_dag { 0 } else { 1 },
+                stdout: out,
+                stderr: String::new(),
+            }
+        }
+    }
+}
+
+fn render_target_run(
+    registry: &sddk_engine::target_task::registry::TargetRegistry,
+    name: &str,
+    actor: &str,
+    dry_run: bool,
+    allow_high_band: bool,
+    format: OutputFormat,
+) -> CommandOutput {
+    let executor = sddk_engine::target_task::executor::DagExecutor::new(
+        sddk_engine::target_task::executor::ExecutorConfig {
+            dry_run,
+            allow_high_band,
+        },
+    );
+    let report = executor.run(registry, name, actor);
+    let succeeded = matches!(
+        report.status,
+        sddk_engine::target_task::outcome::ExecutionStatus::Succeeded
+            | sddk_engine::target_task::outcome::ExecutionStatus::DryRun
+    );
+    match format {
+        OutputFormat::Json => {
+            let stdout = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".into());
+            CommandOutput {
+                status: if succeeded { 0 } else { 1 },
+                stdout,
+                stderr: String::new(),
+            }
+        }
+        OutputFormat::Text => {
+            let mut out = String::new();
+            out.push_str(&format!("Target: {}\n", report.target));
+            out.push_str(&format!("Status: {:?}\n", report.status));
+            out.push_str(&format!("Dry-run: {}\n", report.dry_run));
+            for t in &report.tasks {
+                out.push_str(&format!(
+                    "  {:<22} status={:?} note={}\n",
+                    t.task_id, t.status, t.note
+                ));
+            }
+            CommandOutput {
+                status: if succeeded { 0 } else { 1 },
                 stdout: out,
                 stderr: String::new(),
             }

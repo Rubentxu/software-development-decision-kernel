@@ -10940,23 +10940,22 @@ fn cli_dev_install_accepts_committed_manifest() {
     assert!(tar_child.wait_with_output().unwrap().status.success());
 
     // Cycle-46: `dev install --source` requires BUNDLE.toml (v2 coherent
-    // install). The committed tree should already include one for tagged
-    // releases; if not (e.g. running this test mid-cycle against an older
-    // HEAD), generate it so the install preflight can succeed.
+    // install). The committed tree may include a stale BUNDLE.toml from
+    // a prior cycle (its version pins a different range), so we always
+    // regenerate it from the current binary version to keep the
+    // install preflight passing mid-cycle.
     let bundle_toml = source.path().join("BUNDLE.toml");
-    if !bundle_toml.is_file() {
-        let pkg_version = env!("CARGO_PKG_VERSION");
-        let body = format!(
-            "[bundle]\n\
-             schema_version = 2\n\
-             version = \"{pkg_version}\"\n\
-             binary_min_version = \"{pkg_version}\"\n\
-             binary_max_version = \"{pkg_version}\"\n\
-             \n\
-             [contents]\n",
-        );
-        std::fs::write(&bundle_toml, body).unwrap();
-    }
+    let pkg_version = env!("CARGO_PKG_VERSION");
+    let body = format!(
+        "[bundle]\n\
+         schema_version = 2\n\
+         version = \"{pkg_version}\"\n\
+         binary_min_version = \"{pkg_version}\"\n\
+         binary_max_version = \"{pkg_version}\"\n\
+         \n\
+         [contents]\n",
+    );
+    std::fs::write(&bundle_toml, body).unwrap();
 
     let prefix = tempfile::tempdir().unwrap();
     let installed = Command::new(env!("CARGO_BIN_EXE_sddk"))

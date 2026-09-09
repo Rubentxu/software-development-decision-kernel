@@ -164,12 +164,15 @@ mod tests {
     }
 
     #[test]
-    fn with_builtins_populates_four_targets() {
+    fn with_builtins_populates_seven_targets() {
         let r = TargetRegistry::with_builtins();
-        assert_eq!(r.len(), 4);
+        assert_eq!(r.len(), 7);
         assert!(r.get("status").is_some());
         assert!(r.get("run").is_some());
         assert!(r.get("ship").is_some());
         assert!(r.get("recover").is_some());
+        assert!(r.get("change").is_some());
+        assert!(r.get("verify").is_some());
+        assert!(r.get("audit").is_some());
     }
 }

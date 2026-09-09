@@ -22,6 +22,8 @@
 
 pub mod builtin;
 pub mod dag;
+pub mod executor;
+pub mod outcome;
 pub mod registry;
 
 use std::collections::BTreeMap;
