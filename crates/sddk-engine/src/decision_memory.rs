@@ -1174,6 +1174,52 @@ impl MemoryStore for InMemoryMemoryStore {
         })?;
         self.branch(as_name, head_id)
     }
+
+    // === Projection specialization impls (CDD-MEMORY-003 / v1.149.0) ===
+    //
+    // Both impls share the same shape: load the commit + tree at
+    // `at_commit`, walk every TreeEntry, resolve the blob, filter
+    // by `object_kind.starts_with(prefix)`, group by kind, and
+    // apply the scope filter (project_id / cycle_run_id) over the
+    // commit. R-P3 / R-P4 / R-P5 / R-P8.
+
+    fn decision_projection(
+        &self,
+        at_commit: MemoryId,
+        scope: ProjectionScope,
+    ) -> Result<DecisionProjection, DecisionMemoryError> {
+        let entries = self.run_projection::<DecisionEntry>(
+            at_commit,
+            &scope,
+            "decision/",
+            |kind, id, payload_ref| DecisionEntry { kind, id, payload_ref },
+        )?;
+        Ok(DecisionProjection {
+            at_commit,
+            scope,
+            entries,
+            truncated: false,
+        })
+    }
+
+    fn delegation_projection(
+        &self,
+        at_commit: MemoryId,
+        scope: ProjectionScope,
+    ) -> Result<DelegationProjection, DecisionMemoryError> {
+        let entries = self.run_projection::<DelegationEntry>(
+            at_commit,
+            &scope,
+            "delegation/",
+            |kind, id, payload_ref| DelegationEntry { kind, id, payload_ref },
+        )?;
+        Ok(DelegationProjection {
+            at_commit,
+            scope,
+            entries,
+            truncated: false,
+        })
+    }
 }
 
 impl InMemoryMemoryStore {
@@ -1205,6 +1251,64 @@ impl InMemoryMemoryStore {
             }
         }
         Ok(out)
+    }
+
+    /// Shared core for `decision_projection` / `delegation_projection`.
+    /// Loads the commit, resolves the tree, walks every entry,
+    /// resolves the blob, applies the `object_kind` prefix filter,
+    /// groups surviving entries by kind, and applies the
+    /// `ProjectionScope` over the commit. Generic over the entry
+    /// shape so both projections share one implementation. R-P3 /
+    /// R-P4 / R-P5 / R-P8.
+    fn run_projection<E>(
+        &self,
+        at_commit: MemoryId,
+        scope: &ProjectionScope,
+        kind_prefix: &str,
+        build: impl Fn(String, MemoryId, String) -> E,
+    ) -> Result<BTreeMap<String, Vec<E>>, DecisionMemoryError>
+    where
+        E: 'static,
+    {
+        // Anchor commit must exist.
+        let commit = self
+            .get_commit(&at_commit)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "commit",
+                id: hex_lower(&at_commit),
+            })?;
+
+        // Apply the scope filter to the commit itself.
+        let scope_ok = match scope {
+            ProjectionScope::All => true,
+            ProjectionScope::ProjectScoped(p) => &commit.project_id == p,
+            ProjectionScope::CycleScoped(c) => commit.cycle_run_id.as_deref() == Some(c.as_str()),
+        };
+        if !scope_ok {
+            return Ok(BTreeMap::new());
+        }
+
+        // Anchor tree must exist; the existing `tree()` traversal
+        // already enforces the per-kind fan-out cap (64). We reuse
+        // it rather than duplicate the cap rule.
+        let tree = self.tree(at_commit)?;
+        let mut entries: BTreeMap<String, Vec<E>> = BTreeMap::new();
+        for (_subtree, items) in tree.entries.iter() {
+            for entry in items.iter() {
+                let blob = match self.get_blob(&entry.id) {
+                    Some(b) => b,
+                    None => continue, // dangling pointer; skip silently
+                };
+                if !blob.object_kind.starts_with(kind_prefix) {
+                    continue;
+                }
+                entries
+                    .entry(blob.object_kind.clone())
+                    .or_default()
+                    .push(build(blob.object_kind.clone(), entry.id, blob.payload_ref.clone()));
+            }
+        }
+        Ok(entries)
     }
 }
 

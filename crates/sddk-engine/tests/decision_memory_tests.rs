@@ -1359,3 +1359,319 @@ fn dmt_39_projection_traits_compile_with_default_unimplemented() {
     }
     let _ = _accepts::<sddk_engine::decision_memory::InMemoryMemoryStore>;
 }
+
+// ----------------- DMT-40..DMT-45: Projection specialization (v1.149.0) -----------------
+//
+// Helper: build a tree where the `goal` subtree contains two
+// decision/* blobs and one delegation/* blob, anchored at a commit
+// with project_id="sddk-framework" and cycle_run_id="CDD-MEMORY-003".
+
+fn make_projection_tree(
+    store: &InMemoryMemoryStore,
+    decision_kinds: &[(&str, &str)],
+    delegation_kinds: &[(&str, &str)],
+    noise_kind: Option<&str>,
+) -> (sddk_engine::decision_memory::MemoryId, sddk_engine::decision_memory::MemoryId) {
+    let mut t = empty_tree();
+    let goal = t.entries.get_mut("goal").expect("goal bucket");
+    let mut blob_ids: Vec<sddk_engine::decision_memory::MemoryId> = Vec::new();
+    for (kind, payload) in decision_kinds {
+        let b = make_blob(kind, payload);
+        let bid = store.put_blob(b).expect("put decision blob");
+        blob_ids.push(bid);
+        goal.push(sddk_engine::decision_memory::TreeEntry {
+            name: (*kind).into(),
+            id: bid,
+        });
+    }
+    for (kind, payload) in delegation_kinds {
+        let b = make_blob(kind, payload);
+        let bid = store.put_blob(b).expect("put delegation blob");
+        blob_ids.push(bid);
+        goal.push(sddk_engine::decision_memory::TreeEntry {
+            name: (*kind).into(),
+            id: bid,
+        });
+    }
+    if let Some(kind) = noise_kind {
+        let b = make_blob(kind, "noise");
+        let bid = store.put_blob(b).expect("put noise blob");
+        blob_ids.push(bid);
+        goal.push(sddk_engine::decision_memory::TreeEntry {
+            name: kind.into(),
+            id: bid,
+        });
+    }
+    let t = t.with_recomputed_id().expect("recompute");
+    let tree_id = store.put_tree(t).expect("put tree");
+    let commit = make_commit(
+        vec![],
+        tree_id,
+        "agent",
+        "root",
+        "2026-09-09T00:00:00Z",
+        "projection seed",
+        "cdd-memory-003 seed",
+    );
+    let cid = store.put_commit(commit).expect("put commit");
+    // Touch the unused vec to keep the compiler quiet on the helper
+    // shape; the ids are reachable through tree entries already.
+    let _ = blob_ids;
+    (cid, tree_id)
+}
+
+fn make_scoped_commit(
+    store: &InMemoryMemoryStore,
+    project_id: &str,
+    cycle_run_id: Option<&str>,
+    blob_kind: &str,
+    blob_payload: &str,
+) -> sddk_engine::decision_memory::MemoryId {
+    let mut t = empty_tree();
+    let b = make_blob(blob_kind, blob_payload);
+    let bid = store.put_blob(b).expect("put blob");
+    t.entries
+        .get_mut("goal")
+        .expect("goal bucket")
+        .push(sddk_engine::decision_memory::TreeEntry {
+            name: blob_kind.into(),
+            id: bid,
+        });
+    let t = t.with_recomputed_id().expect("recompute");
+    let tree_id = store.put_tree(t).expect("put tree");
+    let commit = DecisionMemoryCommit::new(
+        vec![],
+        tree_id,
+        DecisionMemoryAuthor::new("agent", "root").expect("author"),
+        "2026-09-09T00:00:00Z",
+        project_id,
+        None::<String>,
+        cycle_run_id,
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        "scoped seed",
+        "cdd-memory-003 scope seed",
+        vec![],
+    )
+    .expect("commit construction");
+    store.put_commit(commit).expect("put commit")
+}
+
+#[test]
+fn dmt_40_decision_projection_filters_by_kind_prefix() {
+    // R-P3 / S-P3: returns only blobs whose object_kind starts with
+    // "decision/".
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let (cid, _tid) = make_projection_tree(
+        &store,
+        &[("decision/adopt", "p:1"), ("decision/why", "p:2")],
+        &[("delegation/orchestrator", "p:3")],
+        Some("session/checkpoint"),
+    );
+    let proj = store
+        .decision_projection(cid, ProjectionScope::All)
+        .expect("decision projection");
+    assert_eq!(proj.at_commit, cid);
+    assert!(!proj.truncated);
+    let kinds: Vec<&String> = proj.entries.keys().collect();
+    assert_eq!(kinds.len(), 2, "expected 2 decision kinds, got {kinds:?}");
+    assert!(kinds.contains(&&"decision/adopt".to_string()));
+    assert!(kinds.contains(&&"decision/why".to_string()));
+    let adopt = &proj.entries["decision/adopt"];
+    assert_eq!(adopt.len(), 1);
+    assert_eq!(adopt[0].kind, "decision/adopt");
+    assert_eq!(adopt[0].payload_ref, "p:1");
+}
+
+#[test]
+fn dmt_41_delegation_projection_filters_by_kind_prefix() {
+    // R-P4 / S-P9: returns only blobs whose object_kind starts with
+    // "delegation/".
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let (cid, _tid) = make_projection_tree(
+        &store,
+        &[("decision/adopt", "p:1")],
+        &[("delegation/orchestrator", "o:1"), ("delegation/sddk-apply", "a:1")],
+        Some("session/checkpoint"),
+    );
+    let proj = store
+        .delegation_projection(cid, ProjectionScope::All)
+        .expect("delegation projection");
+    let kinds: Vec<&String> = proj.entries.keys().collect();
+    assert_eq!(kinds.len(), 2, "expected 2 delegation kinds, got {kinds:?}");
+    assert!(kinds.contains(&&"delegation/orchestrator".to_string()));
+    assert!(kinds.contains(&&"delegation/sddk-apply".to_string()));
+    let orch = &proj.entries["delegation/orchestrator"];
+    assert_eq!(orch[0].payload_ref, "o:1");
+}
+
+#[test]
+fn dmt_42_projection_unknown_commit_returns_not_found() {
+    // R-P8: unknown `at_commit` MUST surface NotFound.
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let bogus_id = [0xAAu8; 32];
+    let err = store
+        .decision_projection(bogus_id, ProjectionScope::All)
+        .expect_err("unknown commit");
+    assert!(
+        matches!(err, DecisionMemoryError::NotFound { kind: "commit", .. }),
+        "DMT-42 expected NotFound {{ commit }}, got {err:?}"
+    );
+}
+
+#[test]
+fn dmt_43_projection_project_scoped_filters_commits() {
+    // R-P5: ProjectionScope::ProjectScoped matches by commit's
+    // project_id; mismatching project_id yields an empty projection.
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let cid_a = make_scoped_commit(
+        &store,
+        "project-alpha",
+        Some("cycle-x"),
+        "decision/adopt",
+        "alpha:1",
+    );
+    let _cid_b = make_scoped_commit(
+        &store,
+        "project-bravo",
+        Some("cycle-x"),
+        "decision/adopt",
+        "bravo:1",
+    );
+
+    let hit = store
+        .decision_projection(cid_a, ProjectionScope::ProjectScoped("project-alpha".into()))
+        .expect("alpha projection");
+    assert_eq!(hit.entries.len(), 1, "alpha commit visible to alpha scope");
+    assert_eq!(hit.entries["decision/adopt"][0].payload_ref, "alpha:1");
+
+    let miss = store
+        .decision_projection(cid_a, ProjectionScope::ProjectScoped("project-bravo".into()))
+        .expect("bravo projection");
+    assert!(
+        miss.entries.is_empty(),
+        "DMT-43 mismatched project_id MUST yield empty projection"
+    );
+}
+
+#[test]
+fn dmt_44_projection_cycle_scoped_filters_commits() {
+    // R-P5: ProjectionScope::CycleScoped matches by commit's
+    // cycle_run_id; commit without a cycle_run_id MUST NOT match.
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let cid_with_cycle = make_scoped_commit(
+        &store,
+        "sddk-framework",
+        Some("CDD-MEMORY-003"),
+        "decision/why",
+        "w:1",
+    );
+    let cid_no_cycle = make_scoped_commit(
+        &store,
+        "sddk-framework",
+        None,
+        "decision/why",
+        "w:2",
+    );
+
+    let hit = store
+        .decision_projection(
+            cid_with_cycle,
+            ProjectionScope::CycleScoped("CDD-MEMORY-003".into()),
+        )
+        .expect("cycle hit");
+    assert_eq!(hit.entries["decision/why"][0].payload_ref, "w:1");
+
+    let miss = store
+        .decision_projection(
+            cid_no_cycle,
+            ProjectionScope::CycleScoped("CDD-MEMORY-003".into()),
+        )
+        .expect("no-cycle commit miss");
+    assert!(
+        miss.entries.is_empty(),
+        "DMT-44 commit with no cycle_run_id MUST NOT match a cycle scope"
+    );
+}
+
+#[test]
+fn dmt_45_projection_ignores_dangling_blob_pointers() {
+    // R-P8: tree entries that point to a blob id the store no longer
+    // holds MUST be skipped silently (no panic, no NotFound).
+    use sddk_engine::decision_memory::ProjectionScope;
+    let store = InMemoryMemoryStore::new();
+    let (cid, _tid) = make_projection_tree(
+        &store,
+        &[("decision/adopt", "p:1")],
+        &[],
+        None,
+    );
+    // Sanity: clean tree returns one entry.
+    let clean = store
+        .decision_projection(cid, ProjectionScope::All)
+        .expect("clean projection");
+    assert_eq!(clean.entries.len(), 1);
+
+    // Now corrupt the underlying blob map: drop the blob so the tree
+    // entry points to a dangling id. We re-insert a fresh store
+    // chain by building a new tree that points to a blob we never
+    // add, then anchoring a commit at it.
+    let mut t = empty_tree();
+    let dangling_blob = make_blob("decision/missing", "absent");
+    let _missing_id = store.put_blob(dangling_blob).expect("blob stored");
+    // Remove it again so the entry becomes dangling.
+    // (No remove API on MemoryStore; instead, point at a fabricated
+    // id that we never insert.)
+    let fake_id = [0x77u8; 32];
+    t.entries
+        .get_mut("goal")
+        .expect("goal bucket")
+        .push(sddk_engine::decision_memory::TreeEntry {
+            name: "decision/missing".into(),
+            id: fake_id,
+        });
+    // Also keep the real entry pointing at the existing blob so we
+    // can confirm the real entry still resolves.
+    let real_b = make_blob("decision/keep", "k:1");
+    let real_id = store.put_blob(real_b).expect("real blob");
+    t.entries
+        .get_mut("goal")
+        .expect("goal bucket")
+        .push(sddk_engine::decision_memory::TreeEntry {
+            name: "decision/keep".into(),
+            id: real_id,
+        });
+    let t = t.with_recomputed_id().expect("recompute");
+    let tree_id = store.put_tree(t).expect("put tree");
+    let commit = make_commit(
+        vec![cid],
+        tree_id,
+        "agent",
+        "root",
+        "2026-09-09T00:00:01Z",
+        "dangling seed",
+        "cdd-memory-003 dangling",
+    );
+    let cid_d = store.put_commit(commit).expect("put commit");
+
+    let proj = store
+        .decision_projection(cid_d, ProjectionScope::All)
+        .expect("dangling projection");
+    // Only the real kind survives; the dangling kind is dropped
+    // silently.
+    assert_eq!(
+        proj.entries.len(),
+        1,
+        "DMT-45 dangling entry MUST be skipped silently, got {:?}",
+        proj.entries.keys().collect::<Vec<_>>()
+    );
+    assert!(proj.entries.contains_key("decision/keep"));
+    assert!(!proj.entries.contains_key("decision/missing"));
+}
