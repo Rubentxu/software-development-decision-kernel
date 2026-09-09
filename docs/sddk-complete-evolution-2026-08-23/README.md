@@ -1,3 +1,10 @@
+> **Historical / superseded.** This document records the 2026-08-23
+> bundled evolution history. Current normative architecture and roadmap
+> are linked from
+> [`docs/architecture/README.md`](../../architecture/README.md).
+
+---
+
 # SDDK Evolution Bundle
 
 This ZIP contains the **complete proposal history** plus the consolidated current target.

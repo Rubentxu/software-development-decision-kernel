@@ -1,3 +1,10 @@
+> **Historical / superseded.** This document records previous design
+> context (pre-canonical ADR-020..074 home). Current normative architecture
+> and roadmap are linked from
+> [`docs/architecture/README.md`](../../architecture/README.md).
+
+---
+
 # SDDK — Software Development Decision Kernel
 
 > **Event-sourced reactive software-engineering control plane for human + agent workflows.**

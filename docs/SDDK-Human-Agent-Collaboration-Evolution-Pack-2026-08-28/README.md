@@ -1,3 +1,13 @@
+> **Historical / superseded.** This document records the
+> Human-Agent Collaboration (HX0..HX7) evolution line. Current normative
+> architecture and roadmap are linked from
+> [`docs/architecture/README.md`](../../architecture/README.md).
+>
+> Note: HX concepts are partially folded into M7 (Agent Experience
+> Contract) of the new canonical package.
+
+---
+
 # SDDK Human-Agent Collaboration Evolution Pack
 
 **Fecha:** 2026-08-28  

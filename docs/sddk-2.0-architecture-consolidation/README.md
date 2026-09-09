@@ -1,3 +1,10 @@
+> **Historical / superseded.** This document records the 2026-08-11
+> v1.9.1 baseline consolidation. Current normative architecture and
+> roadmap are linked from
+> [`docs/architecture/README.md`](../../architecture/README.md).
+
+---
+
 # SDDK 2.0 — Architecture Consolidation Package
 
 **Baseline repository:** `Rubentxu/software-development-decision-kernel`  

@@ -1,3 +1,10 @@
+> **Historical / superseded.** This document records the
+> stabilization phase plan. Current normative architecture and roadmap
+> are linked from
+> [`docs/architecture/README.md`](../../architecture/README.md).
+
+---
+
 # SDDK v3.6 Stabilization Package
 
 Paquete de diseño y ejecución para transformar SDDK Framework en un motor de desarrollo dirigido por especificaciones, determinista, trazable y compatible con una base de conocimiento tipo Obsidian.

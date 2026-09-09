@@ -85,6 +85,75 @@ y se actualiza con `sddk dev install`.
 - Tras `TEST-APPLY-001`, inventar manualmente el test scope cuando SDDK ofrece plan
   semántico es una violación de protocolo.
 
+### 2.7. Semantic ownership (canonical authority per concept)
+
+> Adopted from `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
+> (ADR-001..005, SPEC-001..006). Cycle
+> `p-63676b11dc0ef88f-architecture-adoption-m0-supersession`.
+
+- **Una autoridad canónica por concepto.** Cada dominio tiene un único
+  origen de verdad (e.g. una sola fact log, una sola Evidence model, un
+  solo Semantic Graph, un solo Revision substrate).
+- **Cuatro clases de estado.** Todo dato durable cae en exactamente una:
+  *Fact* (evento append-only), *Object* (entidad con identidad durable),
+  *Projection* (derivado reconstruible) o *Ephemeral* (runtime, no durable).
+- **El Vault es fuente humana**, nunca autoridad del runtime. Proyecciones
+  reconstruyen al runtime; el runtime no lee del Vault como autoridad.
+- **Cadena explícita Goal → WorkItem → WorkflowDefinition → ExecutablePlan
+  → Run.** Saltar niveles o reincorporar definiciones implícitas en los
+  prompts es no conforme.
+
+### 2.8. Agent Experience (prompt text ≠ architecture)
+
+> Adopted from
+> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-013..018`
+> (M7 milestones) y
+> `07-AGENT-EXPERIENCE/OVERVIEW.md`.
+
+- **El texto de prompt nunca es arquitectura.** Las `EffectiveInstructions`
+  se compilan desde contratos tipados y versionados.
+- **Skill ≠ Capability.** Una skill es un patrón de invocación; una
+  capability es un permiso de side effect. Mezclar el significado rompe
+  autoridad.
+- **CLI docs desde una sola fuente** (`CommandRegistry`). Ningún agente
+  escribe su propia tabla de comandos.
+- **Ejemplos deben ser ejecutables.** Validación en compile-time o en el
+  registry; nunca texto suelto en prompts.
+- **Conocer un comando ≠ poder ejecutarlo.** Distinción entre `Skill`
+  (declara) y `Capability` (admite).
+
+### 2.9. Extension discipline (single architecture-decision surface)
+
+> Adopted from
+> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/`
+> (ADR-008, ADR-009, ADR-011).
+
+- **Una surface canónica de ADRs** por proyecto: las decisiones de diseño
+  de SDDK-framework viven en `docs/adr/` o
+  `docs/sddk-decision-kernel-architecture/03-adrs/` o
+  `~/.sddk-knowledge/<project>/adrs/`, no se mezclan.
+- **ADRs históricos permanecen.** Al integrar un paquete, *mapea* sus IDs
+  locales a la numeración nativa del repositorio, no renumeres la historia.
+- **Una sola surface canónica por concepto extensible:** Pack extension
+  boundary, Configuration conventions, etc., están definidas por una ADR
+  única y el resto se ajusta a ella.
+
+### 2.10. Consolidation rule (exactly one current roadmap)
+
+> Adopted from
+> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/05-INTEGRATION/SUPERSESSION.md`.
+
+- **Exactamente un documento es "Current Roadmap".** Por defecto es
+  `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/ROADMAP.md`.
+- **Paquetes antiguos reciben banner `Historical / superseded`** en su
+  README, apuntando a
+  [`docs/architecture/README.md`](docs/architecture/README.md).
+- **Adopción incompleta mientras convivan roadmaps.** Antes de importar
+  un WorkItem de un paquete histórico, reconcilia con el actual.
+- **Migración strangler, no flag-day.** Nueva autoridad sobre concepto
+  compartido primero, adapter de compatibilidad durante ventana,
+  remoción sólo al cerrar la ventana.
+
 ---
 
 ## 4. Reglas de oro
