@@ -1,6 +1,6 @@
-# CDD-HANDOFF-002 — Orchestration Synthesis Receipt Substrate (Proposal ready)
+# CDD-HANDOFF-002 — Orchestration Synthesis Receipt Substrate (CLOSED 2026-09-09)
 
-- status: PROPOSAL READY
+- status: CLOSED (apply commit `99ab54c`; spine reconcile `ab23d3e`; release v1.146.0)
 - cycle: CDD-HANDOFF-002 (order 265, horizon H4 — CDD Handoff)
 - depends on: CDD-HANDOFF-001 (v1.99.0, SHIPPED)
 - ADR: `~/.sddk-knowledge/sddk-framework/adrs/ADR-086-ORCHESTRATION-SYNTHESIS-RECEIPT.md` (proposed, P14-a)
@@ -124,7 +124,8 @@ dissent preservation and information-loss guards."*
   2026-09-09)
 - Local workspace: clean (housekeeping commits 38e598d + da490f5
   pushed to origin/main)
-- Binary: `sddk 1.145.2`
+- Binary: `sddk 1.146.0`
+- Status: **CLOSED 2026-09-09** (apply commit `99ab54c`, spine reconcile commit `ab23d3e`, release commit bumps workspace v1.145.2 → v1.146.0). All 10 unit scenarios GREEN; cargo fmt + cargo clippy -D warnings clean for sddk-engine. ADR-086 and REQ spec promoted `proposed` → `accepted` in `~/.sddk-knowledge/sddk-framework/`. CDD-HANDOFF-002 order 265 moved from PROPOSED → SHIPPED with inline evidence. Remaining genuinely pending items (4): CDD-MEMORY-001/002, GRAPH-WHY-001/002.
 
 ## Path
 
