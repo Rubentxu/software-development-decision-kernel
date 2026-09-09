@@ -21,9 +21,9 @@ ordering: by module path (lexicographic)
 # Schema-versioned. Idempotent regeneration requires maintaining entry order.
 
 schema_version: v1
-generated_at: "2026-09-09T15:32:08Z"
-generated_by: "sddk-orchestrator (M3 semantic_graph + vault + context)"
-total_entries: 60
+generated_at: "2026-09-09T16:10:00Z"
+generated_by: "sddk-orchestrator (M4 decision memory CLI)"
+total_entries: 61
 
 entries:
 
@@ -468,6 +468,16 @@ entries:
     replaces: null
     target_milestone: delivered
     notes: "ActiveGraphView adapter shipped v1.154.0. Derives ActiveGraphProjection from canonical SemanticGraphProjection. ViewError::NoCanonicalAuthority fail-closed when no canonical projection is wired."
+
+  - module: crates/sddk-cli/src/memory_cmd
+    contract: arch-spec-004-decision-memory
+    primary_adr: ADR-0097-DECISION-MEMORY-SUBSTRATE
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "sddk memory CLI shipped v1.155.0. Eight subcommands (status|log|tree|show|diff|merge-base|reflog|audit) wired 1:1 to MemoryStore trait methods over a deterministic InMemoryMemoryStore fixture. JSON + text renderings; unknown refs/oids fail closed."
 
   - module: crates/sddk-engine/src/risk_approval_policy
     contract: arch-spec-008-authority-and-side-effects
