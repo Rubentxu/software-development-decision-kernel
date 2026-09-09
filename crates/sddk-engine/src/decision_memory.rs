@@ -738,6 +738,14 @@ pub trait MemoryStore: Send + Sync + std::fmt::Debug {
         let _ = (ref_kind, target, mode);
         unimplemented!("MemoryStore::reset is not implemented by this store")
     }
+
+    /// Soft-delete `ref_kind`. Refuses if `ref_kind`'s tip has
+    /// commits NOT reachable from any other ref. R-M8 / S-M10 /
+    /// S-M11.
+    fn delete_ref(&self, ref_kind: RefKind) -> Result<(), DecisionMemoryError> {
+        let _ = ref_kind;
+        unimplemented!("MemoryStore::delete_ref is not implemented by this store")
+    }
 }
 
 // ----------------- Traversal value types (v1.148.0) -----------------
@@ -1635,6 +1643,79 @@ impl MemoryStore for InMemoryMemoryStore {
                 message: "Mixed reset deferred to v1.151.0",
             }),
         }
+    }
+
+    fn delete_ref(&self, ref_kind: RefKind) -> Result<(), DecisionMemoryError> {
+        // R-M8 / S-M10 / S-M11.
+        // 1. Resolve `ref_kind` (NotFound).
+        let path = ref_kind.ref_path();
+        let tip = self
+            .resolve_ref(&ref_kind)
+            .ok_or_else(|| DecisionMemoryError::NotFound {
+                kind: "ref",
+                id: path.clone(),
+            })?;
+        // 2. Walk ancestors of `tip` and any other ref's tip.
+        // Count commits reachable from `tip` but NOT from any other ref.
+        const DELETE_REACH_CAP: usize = 4096;
+        let tip_reachable = self.collect_ancestors_capped(tip, DELETE_REACH_CAP)?;
+        let mut other_reachable: std::collections::BTreeSet<MemoryId> = Default::default();
+        {
+            let g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
+            for (other_path, other_ref) in g.iter() {
+                if other_path == &path {
+                    continue;
+                }
+                let other_tip = other_ref.id_bytes();
+                let s = self.collect_ancestors_capped(other_tip, DELETE_REACH_CAP)?;
+                other_reachable.extend(s);
+            }
+        }
+        let unique: Vec<MemoryId> = tip_reachable
+            .difference(&other_reachable)
+            .copied()
+            .collect();
+        if !unique.is_empty() {
+            return Err(DecisionMemoryError::RefNotEmpty {
+                ref_kind: path,
+                reachable: unique.len(),
+            });
+        }
+        // 3. Remove the ref. Full tombstone GC is deferred to v1.151.0;
+        // v1.150.0 just drops the ref and records the deletion in the
+        // reflog history.
+        {
+            let mut g = self.refs.lock().expect("InMemoryMemoryStore poisoned");
+            g.remove(&path);
+        }
+        // 4. Append a reflog history entry tagged "delete" with
+        // old_target = tip and new_target = tip (the ref no longer
+        // exists, but the history entry records the deletion event).
+        let entry = ReflogEntry {
+            seq: 0, // overwritten below with the persistent seq
+            ref_path: path.clone(),
+            old_target: Some(hex_lower(&tip)),
+            new_target: hex_lower(&tip),
+            actor: parse_actor("system").map_err(|_| {
+                DecisionMemoryError::ReflogAppendFailed("invalid delete author".into())
+            })?,
+            timestamp: now_rfc3339(),
+            reason: "delete".to_string(),
+        };
+        {
+            let mut h = self
+                .ref_history
+                .lock()
+                .expect("InMemoryMemoryStore poisoned");
+            let bucket = h.entry(path.clone()).or_default();
+            if bucket.len() >= REFLOG_HISTORY_CAP {
+                bucket.remove(0);
+            }
+            let mut entry = entry;
+            entry.seq = bucket.len() as u64 + 1;
+            bucket.push(entry);
+        }
+        Ok(())
     }
 }
 
