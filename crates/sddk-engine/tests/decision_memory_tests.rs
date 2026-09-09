@@ -1260,3 +1260,75 @@ fn dmt_33_fork_replicates_canonical_head() {
         "DMT-33 missing canonical HEAD → NotFound: got {err:?}"
     );
 }
+
+// =========================================================================
+// CDD-MEMORY-003 — Projection Specialization (v1.149.0) — DMT-34..DMT-37
+// =========================================================================
+//
+// WU-1: typed views over DecisionMemoryBlob.
+
+#[test]
+fn dmt_34_as_session_checkpoint_returns_some_for_checkpoint_blob() {
+    // R-P1 / S-P1: as_session_checkpoint() returns Some when
+    // object_kind matches, with id/payload_ref/object_kind preserved.
+    let blob = make_blob("session/checkpoint", "sha256:abc123");
+    let view = blob
+        .as_session_checkpoint()
+        .expect("DMT-34 should return Some for checkpoint blob");
+    assert_eq!(view.id(), blob.id, "DMT-34 view.id() matches blob.id");
+    assert_eq!(view.payload_ref(), "sha256:abc123");
+    assert_eq!(view.object_kind(), "session/checkpoint");
+    assert_eq!(view.into_inner(), &blob);
+}
+
+#[test]
+fn dmt_35_as_session_checkpoint_returns_none_for_non_checkpoint_blob() {
+    // S-P2: as_session_checkpoint() returns None for any other
+    // object_kind. No panic, no error.
+    let blob = make_blob("decision/abc", "sha256:def456");
+    assert!(
+        blob.as_session_checkpoint().is_none(),
+        "DMT-35 non-checkpoint blob → None"
+    );
+
+    let delta_blob = make_blob("session/delta", "sha256:ghi789");
+    assert!(
+        delta_blob.as_session_checkpoint().is_none(),
+        "DMT-35 delta blob is not a checkpoint"
+    );
+}
+
+#[test]
+fn dmt_36_as_session_delta_returns_some_for_delta_blob() {
+    // R-P2: as_session_delta() returns Some when object_kind matches.
+    let blob = make_blob("session/delta", "sha256:delta1");
+    let view = blob
+        .as_session_delta()
+        .expect("DMT-36 should return Some for delta blob");
+    assert_eq!(view.id(), blob.id);
+    assert_eq!(view.payload_ref(), "sha256:delta1");
+    assert_eq!(view.object_kind(), "session/delta");
+
+    // Not a delta blob → None.
+    let other = make_blob("session/checkpoint", "sha256:ckpt1");
+    assert!(other.as_session_delta().is_none());
+}
+
+#[test]
+fn dmt_37_typed_view_round_trip_via_in_memory_store() {
+    // The id of a typed-view blob MUST be stable across
+    // store round-trip (no re-hash, no re-id). Per R-P1.
+    let store = InMemoryMemoryStore::new();
+    let blob = make_blob("session/checkpoint", "sha256:rt1");
+    let original_id = blob.id;
+    let stored_id = store.put_blob(blob).expect("put_blob");
+    let round = store.get_blob(&stored_id).expect("round-trip");
+    let view = round
+        .as_session_checkpoint()
+        .expect("round-trip is still checkpoint");
+    assert_eq!(view.id(), stored_id, "DMT-37 stored id matches");
+    assert_eq!(
+        stored_id, original_id,
+        "DMT-37 id is stable across put/get (no re-hash)"
+    );
+}

@@ -117,6 +117,85 @@ impl DecisionMemoryBlob {
     pub fn set_id(&mut self, id: MemoryId) {
         self.id = id;
     }
+
+    /// Borrowed typed view when `object_kind == "session/checkpoint"`.
+    /// Returns `None` for any other `object_kind` — never panics.
+    /// Per ADR-092 / R-P1 / S-P1.
+    pub fn as_session_checkpoint(&self) -> Option<SessionCheckpointView<'_>> {
+        if self.object_kind == "session/checkpoint" {
+            Some(SessionCheckpointView { blob: self })
+        } else {
+            None
+        }
+    }
+
+    /// Borrowed typed view when `object_kind == "session/delta"`.
+    /// Returns `None` for any other `object_kind` — never panics.
+    /// Per ADR-092 / R-P2.
+    pub fn as_session_delta(&self) -> Option<SessionDeltaView<'_>> {
+        if self.object_kind == "session/delta" {
+            Some(SessionDeltaView { blob: self })
+        } else {
+            None
+        }
+    }
+}
+
+/// Borrowed typed view over a `DecisionMemoryBlob` whose
+/// `object_kind == "session/checkpoint"`. The blob is the source of
+/// truth for the id; the view exposes ergonomic accessors only.
+/// Per ADR-092 §2.1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionCheckpointView<'a> {
+    blob: &'a DecisionMemoryBlob,
+}
+
+impl<'a> SessionCheckpointView<'a> {
+    /// Payload reference (e.g. `sha256:...`).
+    pub fn payload_ref(&self) -> &str {
+        &self.blob.payload_ref
+    }
+
+    /// Stable content id; matches the underlying blob's id.
+    pub fn id(&self) -> MemoryId {
+        self.blob.id
+    }
+
+    /// The discriminator string (`"session/checkpoint"`).
+    pub fn object_kind(&self) -> &str {
+        &self.blob.object_kind
+    }
+
+    /// Borrow back the underlying blob.
+    pub fn into_inner(self) -> &'a DecisionMemoryBlob {
+        self.blob
+    }
+}
+
+/// Borrowed typed view over a `DecisionMemoryBlob` whose
+/// `object_kind == "session/delta"`. Same shape as
+/// `SessionCheckpointView`. Per ADR-092 §2.1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionDeltaView<'a> {
+    blob: &'a DecisionMemoryBlob,
+}
+
+impl<'a> SessionDeltaView<'a> {
+    pub fn payload_ref(&self) -> &str {
+        &self.blob.payload_ref
+    }
+
+    pub fn id(&self) -> MemoryId {
+        self.blob.id
+    }
+
+    pub fn object_kind(&self) -> &str {
+        &self.blob.object_kind
+    }
+
+    pub fn into_inner(self) -> &'a DecisionMemoryBlob {
+        self.blob
+    }
 }
 
 /// Per-subtree entry: name plus target sha256.
