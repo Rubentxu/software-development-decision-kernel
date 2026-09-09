@@ -10,7 +10,9 @@ mod artifact;
 pub mod audit_cmd;
 mod capability;
 pub mod change;
+pub mod cheat_sheet;
 pub mod command_spec;
+pub mod command_surface;
 pub mod config_cmd;
 mod cycle;
 mod debt;
@@ -163,6 +165,11 @@ pub struct Cli {
 enum Command {
     /// Show the resolved framework version for the current directory.
     Version(VersionArgs),
+    /// M7.1 — render the agent-facing command cheat sheet (SPEC-015).
+    AgentHelp {
+        #[command(subcommand)]
+        command: HelpCommand,
+    },
     /// Resolve deterministic project and workspace identity.
     Project {
         #[command(subcommand)]
@@ -580,6 +587,29 @@ struct VersionArgs {
     format: OutputFormat,
 }
 
+/// M7.1 — `sddk help agent` subcommand (SPEC-015 + ADR-014).
+#[derive(Debug, Clone, Subcommand)]
+pub enum HelpCommand {
+    /// Render the agent-facing cheat sheet (text or JSON).
+    Agent {
+        /// Restrict the surface to a single target (e.g., "verify", "ship").
+        #[arg(long)]
+        target: Option<String>,
+        /// Agent profile tag (default | read_only | approver).
+        #[arg(long, default_value = "default")]
+        profile: String,
+        /// Include Deprecated commands (off by default).
+        #[arg(long, default_value_t = false)]
+        include_deprecated: bool,
+        /// Include Experimental commands (off by default).
+        #[arg(long, default_value_t = false)]
+        include_experimental: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+}
+
 /// Output format selector for first-class CLI commands.
 ///
 /// `Text` produces a human-friendly rendering with section headers;
@@ -681,6 +711,7 @@ pub fn run(cli: Cli) -> CommandOutput {
 pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOutput {
     match cli.command {
         Command::Version(args) => run_version(args, environment),
+        Command::AgentHelp { command } => run_help(command),
         Command::Project {
             command: ProjectCommand::Resolve(args),
         } => run_project_resolve(args),
@@ -1102,6 +1133,45 @@ struct VersionResolution {
 
 /// Resolves the framework version for a directory, asdf-style:
 /// `$PWD/.sddk-versions` → parents → `$SDDK_DATA_DIR/framework/current`.
+/// Dispatcher for `sddk help agent` (SPEC-015 + ADR-014).
+fn run_help(command: HelpCommand) -> CommandOutput {
+    use crate::cheat_sheet::{render_json, render_text};
+    use crate::command_spec::{AgentProfileTag, SurfaceFilter};
+    use crate::command_surface::surface_with_filter;
+
+    match command {
+        HelpCommand::Agent {
+            target,
+            profile,
+            include_deprecated,
+            include_experimental,
+            format,
+        } => {
+            let profile_tag = match profile.as_str() {
+                "read_only" => AgentProfileTag::ReadOnly,
+                "approver" => AgentProfileTag::Approver,
+                _ => AgentProfileTag::Default,
+            };
+            let surface = surface_with_filter(SurfaceFilter {
+                target,
+                profile: profile_tag,
+                include_deprecated,
+                include_experimental,
+                ..Default::default()
+            });
+            let stdout = match format {
+                OutputFormat::Text => render_text(&surface),
+                OutputFormat::Json => render_json(&surface),
+            };
+            CommandOutput {
+                status: 0,
+                stdout,
+                stderr: String::new(),
+            }
+        }
+    }
+}
+
 fn run_version(args: VersionArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<VersionResolution> {

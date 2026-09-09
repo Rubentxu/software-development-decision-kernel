@@ -11,9 +11,184 @@
 #![allow(missing_docs)]
 
 use clap::Subcommand;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
+
+// ============================================================================
+// M7.1 — closed-set enums for the FULL SPEC-015 field set
+// ============================================================================
+
+/// Stability classification for a command (SPEC-015).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stability {
+    /// Stable API: backward-compatible, fixture-tested.
+    #[default]
+    Stable,
+    /// Experimental: opt-in, may break; rendered when SDDK_AGENT_EXPERIMENTAL=1.
+    Experimental,
+    /// Deprecated: still callable but warned; hidden from agent surface by default.
+    Deprecated,
+}
+
+/// Side-effect classification for a command (SPEC-015, ADR-014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SideEffectClass {
+    /// Pure: no observable effect, deterministic.
+    #[default]
+    Pure,
+    /// Read: reads state, no mutation.
+    Read,
+    /// Governed: mutates state under typed authority/approval gates.
+    Governed,
+    /// Destructive: irreversible state change (e.g., git push --force).
+    Destructive,
+}
+
+/// Authority requirement for a command (SPEC-015 + ADR-009).
+///
+/// Reuses the same vocabulary as `sddk_engine::target_task::AuthorityRequirement`
+/// without coupling the CLI to the engine module; the values are
+/// deterministically equivalent and the integration layer (M7.2) will join them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorityRequirement {
+    /// No authority required (pure/read for system actor).
+    #[default]
+    None,
+    /// Read access only.
+    Read,
+    /// Write access (system actor admitted, user/agent require approval).
+    Write,
+    /// Explicit approval required.
+    Approval,
+}
+
+/// Output contract for a command (SPEC-015: outputs.{human, machine}).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct OutputContract {
+    /// Human output format kind.
+    pub human: OutputFormatKind,
+    /// Machine schema name (e.g., "ExecutionReportV1", "TargetListV1").
+    pub machine: String,
+}
+
+/// Sandbox mode for executable examples (SPEC-015 example integrity).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxMode {
+    /// Dry-run: command receives --dry-run or equivalent; no mutation.
+    DryRun,
+    /// Fixture: command runs against a captured fixture in tests/.
+    Fixture,
+    /// Live: command runs against real state (only for Pure/Read).
+    Live,
+}
+
+/// Sandbox envelope for executable examples.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SandboxSpec {
+    /// Mode selector.
+    pub mode: SandboxMode,
+    /// Optional env-var overrides.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env: Vec<(String, String)>,
+}
+
+impl Default for SandboxSpec {
+    fn default() -> Self {
+        Self {
+            mode: SandboxMode::DryRun,
+            env: Vec::new(),
+        }
+    }
+}
+
+/// Invocation contract for an example.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct InvocationSpec {
+    /// argv (without the leading `sddk` program name).
+    pub argv: Vec<String>,
+    /// Output format to parse.
+    pub format: OutputFormatKind,
+}
+
+/// Expected outcome for an example.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ExpectedSpec {
+    /// Exit status (0 = success).
+    pub status: i32,
+    /// Substrings that must appear in the output (case-sensitive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub output_contains: Vec<String>,
+    /// Optional machine-output kind discriminator (e.g., "command_specs").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_kind: Option<String>,
+}
+
+/// Typed example (SPEC-015 + ADR-014 "examples become executable contract tests").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ExampleSpec {
+    /// Stable id (e.g., "target.list.json", "target.run.ship.dry_run").
+    pub id: String,
+    /// Human description of what the example demonstrates.
+    pub description: String,
+    /// Exact command string (for human rendering).
+    pub command: String,
+    /// Preconditions (project must be adopted, actor must be `system`, etc.).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preconditions: Vec<String>,
+    /// How to invoke the example (argv + format).
+    pub invocation: InvocationSpec,
+    /// Expected outcome (status + output assertions).
+    pub expected: ExpectedSpec,
+    /// Sandbox mode and env.
+    #[serde(default)]
+    pub sandbox: SandboxSpec,
+    /// Which stabilities the example is published under.
+    pub scope: Vec<Stability>,
+}
+
+/// Agent profile tag (placeholder until M7.4 delivers full AgentProfile).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentProfileTag {
+    /// Default agent profile (most permissive).
+    #[default]
+    Default,
+    /// Read-only agent (cannot mutate).
+    ReadOnly,
+    /// Approver agent (can approve gated commands).
+    Approver,
+}
+
+/// Surface filter for AgentCommandSurface aggregation.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SurfaceFilter {
+    /// Restrict by target (e.g., "verify").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Restrict by minimum stability (e.g., Experimental excluded by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_stability: Option<Stability>,
+    /// When true, include Deprecated commands.
+    #[serde(default)]
+    pub include_deprecated: bool,
+    /// When true, include Experimental commands (default false).
+    #[serde(default)]
+    pub include_experimental: bool,
+    /// Agent profile tag.
+    #[serde(default)]
+    pub profile: AgentProfileTag,
+}
 
 #[derive(Debug, Subcommand)]
 pub enum IntrospectCommand {
@@ -28,19 +203,21 @@ pub enum IntrospectCommand {
     },
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ArgKind {
+    #[default]
     Flag,
     Option,
     Positional,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ValueType {
+    #[default]
     String,
     Int,
     Bool,
@@ -48,7 +225,7 @@ pub enum ValueType {
     Enum(Vec<String>),
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArgSpec {
     pub name: String,
     pub kind: ArgKind,
@@ -58,15 +235,17 @@ pub struct ArgSpec {
     pub help: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormatKind {
+    #[default]
     Text,
     Json,
     Both,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub struct CommandSpec {
     pub name: String,
     pub about: String,
@@ -75,6 +254,30 @@ pub struct CommandSpec {
     pub has_subcommands: bool,
     pub cycle_phase: Option<String>,
     pub spec_ref: Option<String>,
+    /// M7.1 — exact syntax (e.g., `sddk target run [options]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub syntax: Option<String>,
+    /// M7.1 — stability classification.
+    #[serde(default)]
+    pub stability: Stability,
+    /// M7.1 — side-effect class.
+    #[serde(default)]
+    pub side_effect_class: SideEffectClass,
+    /// M7.1 — required authority class.
+    #[serde(default)]
+    pub required_authority: AuthorityRequirement,
+    /// M7.1 — output contract (human + machine schema name).
+    #[serde(default)]
+    pub outputs: OutputContract,
+    /// M7.1 — preconditions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preconditions: Vec<String>,
+    /// M7.1 — typed examples (ADR-014 executable contract tests).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<ExampleSpec>,
+    /// M7.1 — related commands (by name).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related: Vec<String>,
 }
 
 /// Return the canonical CommandSpec list for the entire CLI surface.
@@ -553,7 +756,301 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
             None,
         ),
+        // M7.1 — explicit entries that publish examples and override defaults.
+        // These are appended after the legacy entries to keep the diff minimal;
+        // a future cycle will consolidate the registry to a single source.
+        spec_target_list_with_examples(),
+        spec_target_resolve_with_examples(),
+        spec_target_run_with_examples(),
     ]
+}
+
+// ============================================================================
+// M7.1 — command overrides with examples + non-trivial defaults
+// ============================================================================
+
+fn spec_target_list_with_examples() -> CommandSpec {
+    spec(
+        "target list",
+        "List all built-in and registered targets (M6.2)",
+        OutputFormatKind::Both,
+        vec![arg(
+            "format",
+            ArgKind::Option,
+            ValueType::Enum(vec!["text".into(), "json".into()]),
+            false,
+            Some("text".into()),
+            "Output format",
+        )],
+        false,
+        None,
+        None,
+    )
+    .with_syntax("sddk target list [--format text|json]")
+    .with_side_effect(SideEffectClass::Pure)
+    .with_outputs(OutputFormatKind::Both, "TargetListV1")
+    .with_precondition("project adopted")
+    .with_related("target resolve")
+    .with_related("target run")
+    .with_related("introspect commands")
+    .with_example(ExampleSpec {
+        id: "target.list.text".into(),
+        description: "List all targets as a human-readable table.".into(),
+        command: "sddk target list --format text".into(),
+        preconditions: vec!["project adopted".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "list".to_string(),
+                "--format".to_string(),
+                "text".to_string(),
+            ],
+            format: OutputFormatKind::Text,
+        },
+        expected: ExpectedSpec {
+            status: 0,
+            output_contains: vec![
+                "status".into(),
+                "run".into(),
+                "ship".into(),
+                "recover".into(),
+                "change".into(),
+                "verify".into(),
+                "audit".into(),
+            ],
+            output_kind: None,
+        },
+        sandbox: SandboxSpec::default(),
+        scope: vec![Stability::Stable],
+    })
+    .with_example(ExampleSpec {
+        id: "target.list.json".into(),
+        description: "List all targets as a JSON envelope.".into(),
+        command: "sddk target list --format json".into(),
+        preconditions: vec!["project adopted".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "list".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+            ],
+            format: OutputFormatKind::Json,
+        },
+        expected: ExpectedSpec {
+            status: 0,
+            output_contains: vec!["\"targets\"".into(), "run".into(), "ship".into()],
+            output_kind: Some("target_list".into()),
+        },
+        sandbox: SandboxSpec::default(),
+        scope: vec![Stability::Stable],
+    })
+}
+
+fn spec_target_resolve_with_examples() -> CommandSpec {
+    spec(
+        "target resolve",
+        "Resolve a target name to its TaskDag and validation report (M6.2)",
+        OutputFormatKind::Both,
+        vec![
+            arg(
+                "name",
+                ArgKind::Option,
+                ValueType::String,
+                false,
+                None,
+                "Target name (status | run | ship | recover | change | verify | audit)",
+            ),
+            arg(
+                "format",
+                ArgKind::Option,
+                ValueType::Enum(vec!["text".into(), "json".into()]),
+                false,
+                Some("text".into()),
+                "Output format",
+            ),
+        ],
+        false,
+        None,
+        None,
+    )
+    .with_syntax("sddk target resolve --name <name> [--format text|json]")
+    .with_side_effect(SideEffectClass::Pure)
+    .with_outputs(OutputFormatKind::Both, "TargetResolutionV1")
+    .with_precondition("project adopted")
+    .with_related("target list")
+    .with_related("target run")
+    .with_example(ExampleSpec {
+        id: "target.resolve.run.text".into(),
+        description: "Show the TaskDag for the `run` target in text form.".into(),
+        command: "sddk target resolve --name run --format text".into(),
+        preconditions: vec!["project adopted".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "resolve".to_string(),
+                "--name".to_string(),
+                "run".to_string(),
+                "--format".to_string(),
+                "text".to_string(),
+            ],
+            format: OutputFormatKind::Text,
+        },
+        expected: ExpectedSpec {
+            status: 0,
+            output_contains: vec![
+                "context.resolve".into(),
+                "ledger.snapshot".into(),
+                "render".into(),
+            ],
+            output_kind: None,
+        },
+        sandbox: SandboxSpec::default(),
+        scope: vec![Stability::Stable],
+    })
+    .with_example(ExampleSpec {
+        id: "target.resolve.unknown.error".into(),
+        description: "Resolve an unknown target — fails closed.".into(),
+        command: "sddk target resolve --name ghost --format json".into(),
+        preconditions: vec!["project adopted".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "resolve".to_string(),
+                "--name".to_string(),
+                "ghost".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+            ],
+            format: OutputFormatKind::Json,
+        },
+        expected: ExpectedSpec {
+            status: 1,
+            output_contains: vec!["unknown target".into(), "ghost".into()],
+            output_kind: None,
+        },
+        sandbox: SandboxSpec {
+            mode: SandboxMode::Fixture,
+            env: Vec::new(),
+        },
+        scope: vec![Stability::Stable],
+    })
+}
+
+fn spec_target_run_with_examples() -> CommandSpec {
+    spec(
+        "target run",
+        "Execute a target DAG with per-task authority gating (M6.3)",
+        OutputFormatKind::Both,
+        vec![
+            arg(
+                "name",
+                ArgKind::Option,
+                ValueType::String,
+                false,
+                None,
+                "Target name",
+            ),
+            arg(
+                "actor",
+                ArgKind::Option,
+                ValueType::String,
+                false,
+                Some("system".into()),
+                "Actor (system | user:* | agent:*)",
+            ),
+            arg(
+                "dry_run",
+                ArgKind::Flag,
+                ValueType::Bool,
+                false,
+                Some("false".into()),
+                "When true, skip task bodies (emit Skipped outcomes)",
+            ),
+            arg(
+                "allow_high_band",
+                ArgKind::Flag,
+                ValueType::Bool,
+                false,
+                Some("false".into()),
+                "Bypass RequireApproval gates",
+            ),
+            arg(
+                "format",
+                ArgKind::Option,
+                ValueType::Enum(vec!["text".into(), "json".into()]),
+                false,
+                Some("json".into()),
+                "Output format",
+            ),
+        ],
+        false,
+        None,
+        None,
+    )
+    .with_syntax("sddk target run --name <name> [--actor X] [--dry-run] [--allow-high-band] [--format text|json]")
+    .with_side_effect(SideEffectClass::Governed)
+    .with_authority(AuthorityRequirement::Write)
+    .with_outputs(OutputFormatKind::Both, "ExecutionReportV1")
+    .with_precondition("project adopted")
+    .with_related("target list")
+    .with_related("target resolve")
+    .with_example(ExampleSpec {
+        id: "target.run.status.dry_run".into(),
+        description: "Dry-run the status target as `system`. Tasks emit Skipped.".into(),
+        command: "sddk target run --name status --actor system --dry-run --format json".into(),
+        preconditions: vec!["project adopted".into(), "actor is `system`".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "run".to_string(),
+                "--name".to_string(),
+                "status".to_string(),
+                "--actor".to_string(),
+                "system".to_string(),
+                "--dry-run".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+            ],
+            format: OutputFormatKind::Json,
+        },
+        expected: ExpectedSpec {
+            status: 0,
+            output_contains: vec!["\"status\":\"dry_run\"".into(), "context.resolve".into()],
+            output_kind: Some("execution_report".into()),
+        },
+        sandbox: SandboxSpec::default(),
+        scope: vec![Stability::Stable],
+    })
+    .with_example(ExampleSpec {
+        id: "target.run.ship.user_denied".into(),
+        description: "Ship target halts on Write gate for a user actor.".into(),
+        command: "sddk target run --name ship --actor user:alice --format json".into(),
+        preconditions: vec!["project adopted".into(), "actor is `user:alice`".into()],
+        invocation: InvocationSpec {
+            argv: vec![
+                "target".to_string(),
+                "run".to_string(),
+                "--name".to_string(),
+                "ship".to_string(),
+                "--actor".to_string(),
+                "user:alice".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+            ],
+            format: OutputFormatKind::Json,
+        },
+        expected: ExpectedSpec {
+            status: 0, // CLI exits 0; status field is "denied"
+            output_contains: vec!["\"status\":\"denied\"".into(), "awaiting approval".into()],
+            output_kind: Some("execution_report".into()),
+        },
+        sandbox: SandboxSpec {
+            mode: SandboxMode::Fixture,
+            env: Vec::new(),
+        },
+        scope: vec![Stability::Stable],
+    })
 }
 
 fn spec(
@@ -565,6 +1062,7 @@ fn spec(
     cycle_phase: Option<&str>,
     spec_ref: Option<&str>,
 ) -> CommandSpec {
+    let machine = machine_schema_name(name);
     CommandSpec {
         name: name.to_string(),
         about: about.to_string(),
@@ -573,7 +1071,90 @@ fn spec(
         has_subcommands,
         cycle_phase: cycle_phase.map(String::from),
         spec_ref: spec_ref.map(String::from),
+        syntax: None,
+        stability: Stability::Stable,
+        side_effect_class: SideEffectClass::Pure,
+        required_authority: AuthorityRequirement::None,
+        outputs: OutputContract {
+            human: output_format,
+            machine,
+        },
+        preconditions: Vec::new(),
+        examples: Vec::new(),
+        related: Vec::new(),
     }
+}
+
+/// Mutable builder extension for `CommandSpec` to override defaults after
+/// construction. Used by the small set of commands that publish examples or
+/// override the default `side_effect_class` / `required_authority`.
+impl CommandSpec {
+    pub fn with_stability(mut self, stability: Stability) -> Self {
+        self.stability = stability;
+        self
+    }
+
+    pub fn with_side_effect(mut self, side_effect_class: SideEffectClass) -> Self {
+        self.side_effect_class = side_effect_class;
+        self
+    }
+
+    pub fn with_authority(mut self, required_authority: AuthorityRequirement) -> Self {
+        self.required_authority = required_authority;
+        self
+    }
+
+    pub fn with_syntax(mut self, syntax: &str) -> Self {
+        self.syntax = Some(syntax.to_string());
+        self
+    }
+
+    pub fn with_outputs(mut self, human: OutputFormatKind, machine: &str) -> Self {
+        self.outputs = OutputContract {
+            human,
+            machine: machine.to_string(),
+        };
+        self
+    }
+
+    pub fn with_precondition(mut self, pre: &str) -> Self {
+        self.preconditions.push(pre.to_string());
+        self
+    }
+
+    pub fn with_related(mut self, related: &str) -> Self {
+        self.related.push(related.to_string());
+        self
+    }
+
+    pub fn with_example(mut self, example: ExampleSpec) -> Self {
+        self.examples.push(example);
+        self
+    }
+}
+
+/// Infer the machine schema name for a given command (used as default
+/// when a command does not declare one). Convention: `<NameInPascal>ReportV1`
+/// or `<NameInPascal>ListV1` depending on whether the command surfaces a
+/// single resource or a list.
+fn machine_schema_name(name: &str) -> String {
+    let parts: Vec<&str> = name.split_whitespace().collect();
+    let pascal: String = parts
+        .iter()
+        .map(|p| {
+            let mut chars = p.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect();
+    let suffix = if pascal.ends_with("s") || name.contains("list") {
+        "ListV1"
+    } else {
+        "ReportV1"
+    };
+    format!("{pascal}{suffix}")
 }
 
 fn arg(
@@ -734,5 +1315,118 @@ mod tests {
             .collect();
         assert!(required.contains(&"title"));
         assert!(required.contains(&"description"));
+    }
+
+    // M7.1 — closed-set enums for Stability, SideEffectClass, AuthorityRequirement,
+    // OutputContractKind, ExampleSandbox, AgentProfileTag. Each must serialize to
+    // snake_case and roundtrip through JSON without losing discriminants.
+
+    #[test]
+    fn stability_serializes_snake_case_and_roundtrips() {
+        for s in [
+            Stability::Stable,
+            Stability::Experimental,
+            Stability::Deprecated,
+        ] {
+            let j = serde_json::to_string(&s).unwrap();
+            let back: Stability = serde_json::from_str(&j).unwrap();
+            assert_eq!(back, s);
+        }
+        assert_eq!(
+            serde_json::to_string(&Stability::Stable).unwrap(),
+            "\"stable\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Stability::Experimental).unwrap(),
+            "\"experimental\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Stability::Deprecated).unwrap(),
+            "\"deprecated\""
+        );
+    }
+
+    #[test]
+    fn side_effect_class_serializes_snake_case_and_roundtrips() {
+        for c in [
+            SideEffectClass::Pure,
+            SideEffectClass::Read,
+            SideEffectClass::Governed,
+            SideEffectClass::Destructive,
+        ] {
+            let j = serde_json::to_string(&c).unwrap();
+            let back: SideEffectClass = serde_json::from_str(&j).unwrap();
+            assert_eq!(back, c);
+        }
+    }
+
+    #[test]
+    fn output_contract_serializes_with_human_and_machine() {
+        let oc = OutputContract {
+            human: OutputFormatKind::Both,
+            machine: "ExecutionReportV1".into(),
+        };
+        let j = serde_json::to_string(&oc).unwrap();
+        assert!(j.contains("\"human\":\"both\""));
+        assert!(j.contains("\"machine\":\"ExecutionReportV1\""));
+        let back: OutputContract = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, oc);
+    }
+
+    #[test]
+    fn example_spec_default_is_dry_run_sandbox() {
+        let ex = ExampleSpec {
+            id: "demo".into(),
+            description: "demo command".into(),
+            command: "sddk version".into(),
+            preconditions: vec![],
+            invocation: InvocationSpec {
+                argv: vec!["sddk".to_string(), "version".to_string()],
+                format: OutputFormatKind::Text,
+            },
+            expected: ExpectedSpec {
+                status: 0,
+                output_contains: vec!["sddk".into()],
+                output_kind: None,
+            },
+            sandbox: SandboxSpec::default(),
+            scope: vec![Stability::Stable],
+        };
+        assert_eq!(ex.sandbox.mode, SandboxMode::DryRun);
+    }
+
+    #[test]
+    fn command_spec_carries_new_fields() {
+        let s = all_command_specs()
+            .into_iter()
+            .find(|s| s.name == "version")
+            .expect("version spec");
+        // Stability, side-effect class, authority must be populated.
+        assert_eq!(s.stability, Stability::Stable);
+        assert_eq!(s.side_effect_class, SideEffectClass::Pure);
+        assert_eq!(s.required_authority, AuthorityRequirement::None);
+        // Outputs must include both human + machine fields.
+        assert_eq!(s.outputs.human, OutputFormatKind::Text);
+        assert!(!s.outputs.machine.is_empty());
+        // Defaults for related/preconditions are empty.
+        assert!(s.related.is_empty());
+    }
+
+    #[test]
+    fn target_run_publishes_examples() {
+        let s = all_command_specs()
+            .into_iter()
+            .find(|s| s.name == "target run")
+            .expect("target run spec");
+        assert!(
+            s.examples.len() >= 2,
+            "target run needs ≥2 examples, has {}",
+            s.examples.len()
+        );
+        // First example should be a happy-path dry-run
+        assert!(
+            s.examples[0].sandbox.mode == SandboxMode::DryRun
+                || s.examples[0].sandbox.mode == SandboxMode::Fixture
+        );
     }
 }

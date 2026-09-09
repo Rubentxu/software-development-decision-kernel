@@ -4,6 +4,7 @@ Usage: sddk <COMMAND>
 
 Commands:
   version       Show the resolved framework version for the current directory
+  agent-help    M7.1 — render the agent-facing command cheat sheet (SPEC-015)
   project       Resolve deterministic project and workspace identity
   adopt         Plan, apply, inspect, or repair project adoption
   lint          Validate repository contracts and generated workflow documentation
