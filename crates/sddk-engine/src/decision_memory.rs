@@ -1541,12 +1541,12 @@ impl MemoryStore for InMemoryMemoryStore {
         }
         // 2. Resolve `target_ref` to its tip (NotFound if missing).
         let path = target_ref.ref_path();
-        let target_tip = self
-            .resolve_ref(&target_ref)
-            .ok_or_else(|| DecisionMemoryError::NotFound {
-                kind: "ref",
-                id: path.clone(),
-            })?;
+        let target_tip =
+            self.resolve_ref(&target_ref)
+                .ok_or_else(|| DecisionMemoryError::NotFound {
+                    kind: "ref",
+                    id: path.clone(),
+                })?;
         // 3. Compute merge_base(target_tip, commit_id). Required for
         // the 3-way merge.
         let base_tip = self.merge_base(target_tip, commit_id)?;
@@ -1985,6 +1985,7 @@ impl InMemoryMemoryStore {
     /// Returns `(merged_tree_id, conflicts)` where conflicts is
     /// a `Vec<(subtree_name, entry_name, theirs_id)>` recording
     /// every case-5 conflict (caller can re-apply manually).
+    #[allow(clippy::type_complexity)]
     fn merge_trees_3way(
         &self,
         base_id: MemoryId,
@@ -2068,9 +2069,12 @@ impl InMemoryMemoryStore {
             }
         }
         // Build the new tree via `DecisionMemoryTree::new` which
-        // recomputes the id via SHA-256.
+        // recomputes the id via SHA-256. Then put the tree in the
+        // store so future `get_tree` lookups succeed.
         let new_tree = DecisionMemoryTree::new(merged_entries)?;
-        Ok((new_tree.id, conflicts))
+        let new_tree_id = new_tree.id;
+        self.put_tree(new_tree)?;
+        Ok((new_tree_id, conflicts))
     }
 }
 

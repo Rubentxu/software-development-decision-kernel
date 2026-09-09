@@ -2732,6 +2732,379 @@ fn dmt_66_tombstone_gc_skips_commits_still_alive() {
 }
 
 #[test]
+fn dmt_67_revert_with_no_change_since_reverted_commit_yields_trivial_merge() {
+    // R-M15 (v1.151.0). When ours (target_ref_tip.tree) and theirs
+    // (commit_id.tree) agree on every entry, the merged tree equals
+    // both (case 4 across the board). This is the trivial-merge
+    // scenario and complements DMT-55 by verifying it across a more
+    // tree-rich commit chain (introduces a risks subtree that doesn't
+    // change, to verify other-subtree preservation).
+    //
+    // NOTE: REQ §R-M15a case 1 (only in base → drop) is unreachable
+    // via the revert API under realistic commit shapes, because
+    // merge_base returns the LCA which never has an entry that's
+    // also absent from both ours and theirs when theirs is the
+    // commit being reverted. We document this limitation here and
+    // rely on DMT-55 for case-4 verification.
+    let store = InMemoryMemoryStore::new();
+    let blob_x = MemoryId::from([0xAAu8; 32]);
+    let blob_q = MemoryId::from([0xDDu8; 32]);
+    let tree_c1 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_x)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+        ])))
+        .expect("tree c1");
+    // c2.tree == c1.tree (no changes — making `theirs == base`).
+    let tree_c2 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_x)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+        ])))
+        .expect("tree c2");
+    // c3.tree == c1.tree (no changes — making `ours == base == theirs`).
+    let tree_c3 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_x)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+        ])))
+        .expect("tree c3");
+    let c1 = make_commit(
+        vec![],
+        tree_c1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_c2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "no-op",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_c3,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c3",
+        "no-op",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c3_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main -> c3");
+
+    let new_id = store
+        .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
+        .expect("revert c2");
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    let merged = store.get_tree(&new_commit.tree).expect("merged tree");
+    // Both subtrees preserved with original entries.
+    let decisions = merged.entries.get("decisions").expect("decisions");
+    let foo = decisions
+        .iter()
+        .find(|e| e.name == "foo")
+        .expect("foo entry");
+    assert_eq!(foo.id, blob_x, "DMT-67 foo preserved (case 4)");
+    let questions = merged.entries.get("questions").expect("questions");
+    let q = questions.iter().find(|e| e.name == "q").expect("q entry");
+    assert_eq!(
+        q.id, blob_q,
+        "DMT-67 questions subtree preserved across the merge"
+    );
+}
+
+#[test]
+fn dmt_68_revert_preserves_concurrent_ours_change() {
+    // R-M15 / case 5 (v1.151.0). Ours and theirs modify the same entry
+    // `foo` to different blobs. Ours wins; theirs is recorded as a
+    // known conflict in the commit message.
+    let store = InMemoryMemoryStore::new();
+    let blob_x = MemoryId::from([0xAAu8; 32]);
+    let blob_y = MemoryId::from([0xBBu8; 32]); // c2's value for foo (theirs)
+    let blob_z = MemoryId::from([0xCCu8; 32]); // c3's value for foo (ours)
+    let tree_c1 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("foo".to_string(), blob_x)],
+        )])))
+        .expect("tree c1");
+    let tree_c2 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("foo".to_string(), blob_y)], // c2 changes foo: x -> y
+        )])))
+        .expect("tree c2");
+    let tree_c3 = store
+        .put_tree(make_tree(BTreeMap::from([(
+            "decisions".to_string(),
+            vec![("foo".to_string(), blob_z)], // c3 changes foo: y -> z
+        )])))
+        .expect("tree c3");
+    let c1 = make_commit(
+        vec![],
+        tree_c1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_c2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "change foo to y",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_c3,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c3",
+        "change foo to z",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c3_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main -> c3");
+
+    // Revert c2. merge_base(c3, c2) = c2 (since c2 is c3's parent);
+    // ours = c3.tree (foo -> z); theirs = c2.tree (foo -> y).
+    // For `foo`: ours=blob_z, theirs=blob_y, differ → case 5,
+    // ours wins (blob_z), theirs (blob_y) recorded as conflict.
+    let new_id = store
+        .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
+        .expect("revert c2");
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    let merged = store.get_tree(&new_commit.tree).expect("merged tree");
+    let decisions = merged.entries.get("decisions").expect("decisions");
+    let foo = decisions
+        .iter()
+        .find(|e| e.name == "foo")
+        .expect("foo entry");
+    assert_eq!(
+        foo.id, blob_z,
+        "DMT-68 ours wins: foo = blob_z (c3's value)"
+    );
+    // Message must contain CONFLICTS prefix listing theirs.
+    assert!(
+        new_commit.message.starts_with("CONFLICTS:"),
+        "DMT-68 message encodes conflicts: {}",
+        new_commit.message
+    );
+    assert!(
+        new_commit.message.contains(&hex_lower(&blob_y)),
+        "DMT-68 conflict list includes theirs blob_y"
+    );
+}
+
+#[test]
+fn dmt_69_revert_preserves_other_subtrees_unchanged() {
+    // R-M15 (v1.151.0). The revert affects only the entries touched
+    // by `commit_id`. Other entries in other subtrees that ours
+    // changed are preserved (case 7/8 depending on shape).
+    let store = InMemoryMemoryStore::new();
+    let blob_x = MemoryId::from([0xAAu8; 32]);
+    let blob_y = MemoryId::from([0xBBu8; 32]);
+    let blob_q = MemoryId::from([0xDDu8; 32]);
+    // c1.tree = {decisions.foo -> x, questions.q -> q}.
+    let tree_c1 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_x)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+        ])))
+        .expect("tree c1");
+    // c2.tree = {decisions.foo -> y, questions.q -> q} (foo changed).
+    let tree_c2 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_y)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+        ])))
+        .expect("tree c2");
+    // c3.tree = {decisions.foo -> y, questions.q -> q, risks.r -> blob_x} (new entry).
+    let tree_c3 = store
+        .put_tree(make_tree(BTreeMap::from([
+            ("decisions".to_string(), vec![("foo".to_string(), blob_y)]),
+            ("questions".to_string(), vec![("q".to_string(), blob_q)]),
+            ("risks".to_string(), vec![("r".to_string(), blob_x)]),
+        ])))
+        .expect("tree c3");
+    let c1 = make_commit(
+        vec![],
+        tree_c1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c1",
+        "init",
+    );
+    let c1_id = store.put_commit(c1).expect("c1");
+    let c2 = make_commit(
+        vec![c1_id],
+        tree_c2,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c2",
+        "change foo",
+    );
+    let c2_id = store.put_commit(c2).expect("c2");
+    let c3 = make_commit(
+        vec![c2_id],
+        tree_c3,
+        "agent",
+        "root",
+        "2026-01-03T00:00:00Z",
+        "c3",
+        "add risk",
+    );
+    let c3_id = store.put_commit(c3).expect("c3");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("main".into()),
+            c3_id,
+            &mut log,
+            "actor",
+            "advance",
+        )
+        .expect("write main -> c3");
+
+    // Revert c2. merge_base(c3, c2) = c2. ours = c3, theirs = c2, base = c2.
+    // For `foo`: in base+theirs, not ours → case 8 → theirs (blob_y).
+    // For `q`: in base+ours+theirs, all = blob_q → case 4 → blob_q.
+    // For `r`: only in ours → case 2 → ours (blob_x).
+    let new_id = store
+        .revert(c2_id, RefKind::Branch("main".into()), "revert c2")
+        .expect("revert c2");
+    let new_commit = store.get_commit(&new_id).expect("new commit");
+    let merged = store.get_tree(&new_commit.tree).expect("merged tree");
+    let decisions = merged.entries.get("decisions").expect("decisions");
+    let foo = decisions
+        .iter()
+        .find(|e| e.name == "foo")
+        .expect("foo entry");
+    assert_eq!(
+        foo.id, blob_y,
+        "DMT-69 foo = theirs (c2's blob_y) via case 8"
+    );
+    let questions = merged.entries.get("questions").expect("questions");
+    let q = questions.iter().find(|e| e.name == "q").expect("q entry");
+    assert_eq!(q.id, blob_q, "DMT-69 q unchanged (case 4, all agree)");
+    let risks = merged.entries.get("risks").expect("risks");
+    let r = risks.iter().find(|e| e.name == "r").expect("r entry");
+    assert_eq!(
+        r.id, blob_x,
+        "DMT-69 r preserved (case 2, only ours has it)"
+    );
+}
+
+#[test]
+fn dmt_70_revert_with_no_common_ancestor_returns_not_found() {
+    // R-M15 (v1.151.0). Two commits with no shared ancestor trigger
+    // NotFound from merge_base; revert surfaces this.
+    //
+    // Setup: c_a is a root. c_b has a "ghost" parent (an id that is
+    // never put into the store); collect_ancestors_capped silently
+    // skips missing commits (None => continue), so c_b's ancestor set
+    // is {c_b, ghost} which has no intersection with c_a's {c_a}.
+    // merge_base returns NotFound{kind:"merge_base"}.
+    //
+    // Per REQ §R-M15: `commit_id` must not be a root. We give c_b a
+    // parent so it is not a root, while still being unrelated to c_a.
+    let store = InMemoryMemoryStore::new();
+    let tree_v1 = store.put_tree(empty_tree()).expect("tree v1");
+    let c_a = make_commit(
+        vec![],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-01T00:00:00Z",
+        "c_a",
+        "unrelated root A",
+    );
+    let c_a_id = store.put_commit(c_a).expect("c_a");
+    let ghost_parent = MemoryId::from([0xCCu8; 32]);
+    let c_b = make_commit(
+        vec![ghost_parent],
+        tree_v1,
+        "agent",
+        "root",
+        "2026-01-02T00:00:00Z",
+        "c_b",
+        "unrelated with ghost parent",
+    );
+    let c_b_id = store.put_commit(c_b).expect("c_b");
+
+    let mut log = Reflog::new();
+    store
+        .write_ref_with_reflog(
+            RefKind::Branch("a".into()),
+            c_a_id,
+            &mut log,
+            "actor",
+            "advance a",
+        )
+        .expect("write a -> c_a");
+
+    // Revert c_b onto branch `a`. merge_base(c_a, c_b) = NotFound
+    // (no common ancestor).
+    let err = store
+        .revert(c_b_id, RefKind::Branch("a".into()), "revert c_b")
+        .expect_err("expected NotFound");
+    match err {
+        DecisionMemoryError::NotFound { kind, .. } => {
+            assert_eq!(
+                kind, "merge_base",
+                "DMT-70 NotFound kind = merge_base (from LCA walk); got {kind}"
+            );
+        }
+        other => panic!("DMT-70 expected NotFound, got {other:?}"),
+    }
+    // a branch untouched (no write succeeded).
+    assert_eq!(
+        store
+            .resolve_ref(&RefKind::Branch("a".into()))
+            .expect("a still resolves"),
+        c_a_id,
+        "DMT-70 branch a still at c_a"
+    );
+}
+
+#[test]
 fn dmt_60_delete_ref_succeeds_when_no_unique_commits() {
     // R-M8 / S-M10. `delete_ref(Branch("feature"))` on a branch whose
     // commits are reachable from another ref (main) succeeds: the
