@@ -781,6 +781,17 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
     ]
 }
 
+/// Look up a top-level `CommandSpec` by its `name` field. Returns `None`
+/// if no spec matches. Used by the M7.7 CLI runner admission gate to
+/// resolve the spec for the command about to be executed.
+///
+/// Only top-level commands are indexed (no sub-commands like
+/// `cycle start`). The runner walks sub-commands manually if they need
+/// their own gates.
+pub fn find_spec_by_name(name: &str) -> Option<CommandSpec> {
+    all_command_specs().into_iter().find(|s| s.name == name)
+}
+
 // ============================================================================
 // M7.1 — command overrides with examples + non-trivial defaults
 // ============================================================================

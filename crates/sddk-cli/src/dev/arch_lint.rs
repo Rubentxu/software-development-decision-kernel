@@ -171,6 +171,9 @@ const MARKER_M7_5_INSTRUCTION_COMPILER: &str = "m7_5.instruction_compiler_delive
 // M7.6 — AgentExecutionReceipt (SPEC-018).
 const MARKER_M7_6_EXECUTION_RECEIPT: &str = "m7_6.agent_execution_receipt_delivered";
 
+// M7.7 — Skill registry disk bridge + runtime admission gate.
+const MARKER_M7_7_SKILL_REGISTRY_BRIDGE: &str = "m7_7.skill_registry_bridge_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -488,6 +491,21 @@ pub fn m7_6_execution_receipt_alignment_checks(yaml: &str) -> Vec<MarkerStatus> 
     vec![MarkerStatus {
         id: MARKER_M7_6_EXECUTION_RECEIPT.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/execution_receipt"),
+    }]
+}
+
+/// M7.7 — Skill registry disk bridge + runtime admission gate.
+///
+/// Closes the deferred #2 from M7.3: the CLI runner now calls
+/// `SkillRegistry::admits_command` before dispatching each command,
+/// using a registry loaded from `~/.local/share/sddk/framework/skills/`
+/// (and project/user-level overrides). The bridge is a separate module
+/// (`skill_registry_bridge`) so it is independently testable and can be
+/// reused by other consumers (e.g. `sddk dev doctor --verbose`).
+pub fn m7_7_skill_registry_bridge_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_7_SKILL_REGISTRY_BRIDGE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/skill_registry_bridge"),
     }]
 }
 
@@ -1248,6 +1266,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_6_execution_receipt_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_7_skill_registry_bridge_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/skill_registry_bridge
+    target_milestone: delivered
+"#;
+        let markers = m7_7_skill_registry_bridge_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_7_SKILL_REGISTRY_BRIDGE)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m7_7_skill_registry_bridge_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_7_skill_registry_bridge_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

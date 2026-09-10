@@ -24,6 +24,7 @@ pub mod examples_walker;
 pub mod execution_receipt;
 pub mod instruction_compiler;
 pub mod skill_definition;
+pub mod skill_registry_bridge;
 
 mod docs;
 mod explore_cmd;
@@ -717,6 +718,14 @@ pub fn run(cli: Cli) -> CommandOutput {
 
 /// Executes an already parsed command with explicit process environment values.
 pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOutput {
+    // M7.7 — runtime admission gate. Wire the gate at the dispatch
+    // boundary so every command execution passes through it before the
+    // matched arm runs. Only three top-level commands carry
+    // `required_skill` placeholders today (`lint`, `cycle`, `release`),
+    // so we dispatch the gate by command-name, not by post-parse state.
+    if let Some(blocked) = enforce_command_admission(&cli, environment) {
+        return blocked;
+    }
     match cli.command {
         Command::Version(args) => run_version(args, environment),
         Command::AgentHelp { command } => run_help(command),
@@ -1667,6 +1676,90 @@ pub(crate) fn failure_envelope(error: &anyhow::Error) -> CommandOutput {
         status: 1,
         stdout: String::new(),
         stderr,
+    }
+}
+
+// ── M7.7 — Runtime admission gate ─────────────────────────────────────────────
+
+/// Resolve the top-level command name from a parsed `Cli` so the
+/// admission gate can look up the matching `CommandSpec`. Returns
+/// `None` for commands that should bypass the gate (help, completion,
+/// version, facade commands).
+fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
+    use Command::*;
+    Some(match &cli.command {
+        Version(_) => "version",
+        // help always passes
+        AgentHelp { .. } => return None,
+        Project { .. } => "project",
+        Adopt { .. } => "adopt",
+        Lint { .. } => "lint",
+        Generate { .. } => "generate",
+        Cycle { .. } => "cycle",
+        Ledger { .. } => "ledger",
+        Capability { .. } => "capability",
+        Git { .. } => "git",
+        Artifact { .. } => "artifact",
+        Permission { .. } => "permission",
+        Validate { .. } => "validate",
+        AgentResult { .. } => "agent-result",
+        Release { .. } => "release",
+        Vault { .. } => "vault",
+        Knowledge { .. } => "knowledge",
+        Dev { .. } => "dev",
+        Pack { .. } => "pack",
+        Graph { .. } => "graph",
+        Metrics { .. } => "metrics",
+        Analytics { .. } => "analytics",
+        Telemetry { .. } => "telemetry",
+        Uat { .. } => "uat",
+        Approval { .. } => "approval",
+        Rules { .. } => "rules",
+        Stale { .. } => "stale",
+        Fork { .. } => "fork",
+        Memory { .. } => "memory",
+        Explore { .. } => "explore",
+        // shells always pass
+        Completion { .. } => return None,
+        Debt { .. } => "debt",
+        // facade commands — bypass gate (route to canonical commands).
+        Status { .. }
+        | Plan { .. }
+        | Run { .. }
+        | RunView { .. }
+        | Ship { .. }
+        | Recover { .. }
+        | Change { .. }
+        | Verify { .. }
+        | Audit { .. }
+        | Config { .. }
+        | Introspect { .. }
+        | Target { .. } => return None,
+    })
+}
+
+/// M7.7 — enforce runtime skill admission before dispatching to the
+/// command's executor. Returns `Some(CommandOutput)` only when the gate
+/// refuses execution (missing required skill that is not a known
+/// placeholder). Help/completion/version always pass through.
+fn enforce_command_admission(cli: &Cli, environment: &CliEnvironment) -> Option<CommandOutput> {
+    let name = cli_top_level_name(cli)?;
+    let spec = crate::command_spec::find_spec_by_name(name)?;
+    if spec.required_skills.is_empty() {
+        return None;
+    }
+    match crate::skill_registry_bridge::gate_command_for_environment(&spec, environment) {
+        Ok(blocked) => blocked,
+        Err(error) => {
+            // Gate itself failed (IO, no framework installed, parse
+            // error). Fail open with a stderr warning — blocking the
+            // entire CLI on a missing skill bundle would be worse than
+            // missing the audit.
+            eprintln!(
+                "sddk: skill admission gate unavailable ({error}); running {name} without gate."
+            );
+            None
+        }
     }
 }
 

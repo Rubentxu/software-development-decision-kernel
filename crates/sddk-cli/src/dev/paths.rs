@@ -35,7 +35,7 @@ pub(super) fn framework_dir(environment: &CliEnvironment) -> anyhow::Result<Path
 
 /// Resolve the active framework root: `current` symlink target, else the
 /// latest installed version, else the data dir (empty).
-pub(super) fn resolve_active_framework_root(
+pub(crate) fn resolve_active_framework_root(
     environment: &CliEnvironment,
 ) -> anyhow::Result<PathBuf> {
     let dir = framework_dir(environment)?;

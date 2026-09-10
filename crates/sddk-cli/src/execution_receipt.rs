@@ -266,10 +266,10 @@ impl AgentExecutionReceipt {
                 });
             }
         }
-        if let Some(f) = &self.finished_at {
-            if !looks_like_rfc3339(f) {
-                return Err(ReceiptError::FinishedAtNotRfc3339 { value: f.clone() });
-            }
+        if let Some(f) = &self.finished_at
+            && !looks_like_rfc3339(f)
+        {
+            return Err(ReceiptError::FinishedAtNotRfc3339 { value: f.clone() });
         }
         Ok(())
     }
@@ -538,7 +538,9 @@ mod tests {
             ae_version: 1,
             ..Default::default()
         };
-        InstructionCompiler::new().compile(&inputs).expect("compile")
+        InstructionCompiler::new()
+            .compile(&inputs)
+            .expect("compile")
     }
 
     fn fixture_skill() -> SkillDefinition {
@@ -568,13 +570,10 @@ mod tests {
     fn builder_pulls_effective_hash_from_m75_producer() {
         let eff = fixture_effective();
         let expected_hash = eff.content_hash.clone();
-        let r = AgentExecutionReceiptBuilder::new(
-            "01J0EXEC0",
-            "cycle-49-m7-6",
-            "2026-09-10T12:00:00Z",
-        )
-        .build(&eff, &[])
-        .expect("build");
+        let r =
+            AgentExecutionReceiptBuilder::new("01J0EXEC0", "cycle-49-m7-6", "2026-09-10T12:00:00Z")
+                .build(&eff, &[])
+                .expect("build");
         assert_eq!(r.effective_instructions_hash, expected_hash);
         assert!(r.selected_skill_refs.is_empty());
     }
@@ -585,13 +584,10 @@ mod tests {
         let skill = fixture_skill();
         let expected_token = skill.ref_token();
         let expected_hash = skill.content_hash();
-        let r = AgentExecutionReceiptBuilder::new(
-            "01J0EXEC1",
-            "cycle-49-m7-6",
-            "2026-09-10T12:00:00Z",
-        )
-        .build(&eff, std::slice::from_ref(&skill))
-        .expect("build");
+        let r =
+            AgentExecutionReceiptBuilder::new("01J0EXEC1", "cycle-49-m7-6", "2026-09-10T12:00:00Z")
+                .build(&eff, std::slice::from_ref(&skill))
+                .expect("build");
         assert_eq!(r.selected_skill_refs.len(), 1);
         assert_eq!(r.selected_skill_refs[0].ref_token, expected_token);
         assert_eq!(r.selected_skill_refs[0].content_hash, expected_hash);
@@ -600,8 +596,8 @@ mod tests {
     #[test]
     fn validate_rejects_empty_execution_id() {
         let eff = fixture_effective();
-        let r = AgentExecutionReceiptBuilder::new("", "run", "2026-09-10T12:00:00Z")
-            .build(&eff, &[]);
+        let r =
+            AgentExecutionReceiptBuilder::new("", "run", "2026-09-10T12:00:00Z").build(&eff, &[]);
         assert!(matches!(r, Err(ReceiptError::EmptyExecutionId)));
     }
 
@@ -621,7 +617,10 @@ mod tests {
             .expect("build");
         bad.effective_instructions_hash = "not-hex".into();
         let v = bad.validate();
-        assert!(matches!(v, Err(ReceiptError::InvalidEffectiveInstructionsHash { .. })));
+        assert!(matches!(
+            v,
+            Err(ReceiptError::InvalidEffectiveInstructionsHash { .. })
+        ));
     }
 
     #[test]
@@ -733,7 +732,11 @@ mod tests {
 
     #[test]
     fn replay_class_serialization_round_trip() {
-        for c in [ReplayClass::Deterministic, ReplayClass::RecordedIo, ReplayClass::Nondeterministic] {
+        for c in [
+            ReplayClass::Deterministic,
+            ReplayClass::RecordedIo,
+            ReplayClass::Nondeterministic,
+        ] {
             let j = serde_json::to_string(&c).unwrap();
             let back: ReplayClass = serde_json::from_str(&j).unwrap();
             assert_eq!(back, c);
@@ -748,9 +751,9 @@ mod tests {
         assert!(is_valid_ref_token("core.foo@v1"));
         assert!(is_valid_ref_token("a.b.c@v123"));
         assert!(!is_valid_ref_token("no-dot"));
-        assert!(!is_valid_ref_token("foo.bar"));       // no @v
-        assert!(!is_valid_ref_token("foo.bar@v"));     // empty version
-        assert!(!is_valid_ref_token("foo.bar@vX"));    // non-digit
+        assert!(!is_valid_ref_token("foo.bar")); // no @v
+        assert!(!is_valid_ref_token("foo.bar@v")); // empty version
+        assert!(!is_valid_ref_token("foo.bar@vX")); // non-digit
     }
 
     #[test]
