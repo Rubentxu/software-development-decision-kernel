@@ -22,6 +22,7 @@ use crate::{CliEnvironment, CommandOutput, OutputFormat};
 /// Stability classification for a command (SPEC-015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Stability {
     /// Stable API: backward-compatible, fixture-tested.
     #[default]
@@ -35,6 +36,7 @@ pub enum Stability {
 /// Side-effect classification for a command (SPEC-015, ADR-014).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SideEffectClass {
     /// Pure: no observable effect, deterministic.
     #[default]
@@ -54,6 +56,7 @@ pub enum SideEffectClass {
 /// deterministically equivalent and the integration layer (M7.2) will join them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AuthorityRequirement {
     /// No authority required (pure/read for system actor).
     #[default]
@@ -79,6 +82,7 @@ pub struct OutputContract {
 /// Sandbox mode for executable examples (SPEC-015 example integrity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SandboxMode {
     /// Dry-run: command receives --dry-run or equivalent; no mutation.
     DryRun,
@@ -159,6 +163,7 @@ pub struct ExampleSpec {
 /// Agent profile tag (placeholder until M7.4 delivers full AgentProfile).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AgentProfileTag {
     /// Default agent profile (most permissive).
     #[default]
@@ -1089,6 +1094,23 @@ fn spec(
 /// construction. Used by the small set of commands that publish examples or
 /// override the default `side_effect_class` / `required_authority`.
 impl CommandSpec {
+    /// Build a minimal `CommandSpec` from `name` and `about`. All other
+    /// fields take the defaults (Stable / Pure / None / inferred machine
+    /// schema name / no args / no subcommands / no cycle phase / no
+    /// examples). Used by integration tests and the M7.1B walker to
+    /// build ad-hoc surfaces without going through `all_command_specs()`.
+    pub fn new(name: &str, about: &str) -> Self {
+        spec(
+            name,
+            about,
+            OutputFormatKind::Text,
+            Vec::new(),
+            false,
+            None,
+            None,
+        )
+    }
+
     pub fn with_stability(mut self, stability: Stability) -> Self {
         self.stability = stability;
         self

@@ -4,6 +4,7 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod agent_surface_golden;
 mod analytics;
 mod approval;
 mod artifact;
@@ -17,6 +18,7 @@ pub mod config_cmd;
 mod cycle;
 mod debt;
 mod dev;
+pub mod examples_walker;
 
 mod docs;
 mod explore_cmd;

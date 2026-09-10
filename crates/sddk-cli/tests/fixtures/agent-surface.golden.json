@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "total": 45,
+  "entries": [
+    {
+      "name": "version",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "VersionReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "project",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ProjectReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "adopt",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "AdoptReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "lint",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "LintReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "generate",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "GenerateReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "cycle",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "CycleReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "ledger",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "LedgerReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "capability",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "CapabilityReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "git",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "GitReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "artifact",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ArtifactReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "permission",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "PermissionReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "validate",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ValidateReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "release",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ReleaseReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "vault",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "VaultReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "knowledge",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "KnowledgeReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "dev",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "DevReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "pack",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "PackReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "graph",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "GraphReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "metrics",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "MetricsListV1",
+      "examples_n": 0
+    },
+    {
+      "name": "analytics",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "AnalyticsListV1",
+      "examples_n": 0
+    },
+    {
+      "name": "telemetry",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "TelemetryReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "uat",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "UatReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "approval",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ApprovalReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "rules",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "RulesListV1",
+      "examples_n": 0
+    },
+    {
+      "name": "stale",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "StaleReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "fork",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ForkReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "memory",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "MemoryReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "explore",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ExploreReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "completion",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "CompletionReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "debt",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "DebtReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "status",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "StatusListV1",
+      "examples_n": 0
+    },
+    {
+      "name": "plan",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "PlanReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "run",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "RunReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "ship",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ShipReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "recover",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "RecoverReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "change",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ChangeReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "verify",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "VerifyReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "audit",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "AuditReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "config",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ConfigReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "docs",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "DocsListV1",
+      "examples_n": 0
+    },
+    {
+      "name": "inventory",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "InventoryReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "introspect",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "IntrospectReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "target list",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "TargetListV1",
+      "examples_n": 2
+    },
+    {
+      "name": "target resolve",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "TargetResolutionV1",
+      "examples_n": 2
+    },
+    {
+      "name": "target run",
+      "stability": "stable",
+      "side_effect_class": "governed",
+      "required_authority": "write",
+      "machine": "ExecutionReportV1",
+      "examples_n": 2
+    }
+  ]
+}

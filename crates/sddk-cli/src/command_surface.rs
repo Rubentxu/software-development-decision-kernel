@@ -30,23 +30,56 @@ pub struct CommandSurfaceEntry {
     pub skip_reason: Option<String>,
 }
 
+impl CommandSurfaceEntry {
+    /// Construct an entry with explicit reachability metadata.
+    pub fn new(spec: CommandSpec, reachable: bool, skip_reason: Option<String>) -> Self {
+        Self {
+            spec,
+            reachable,
+            skip_reason,
+        }
+    }
+}
+
 /// Agent-facing command surface.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AgentCommandSurface {
     /// Agent profile tag used for filtering.
+    #[serde(default)]
     pub profile: AgentProfileTag,
     /// Target filter (when applied).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
     /// Echo of the filter that produced this surface (for the agent's debug).
+    #[serde(default)]
     pub filter: SurfaceFilter,
     /// Number of commands that passed the filter (reachable + skipped).
+    #[serde(default)]
     pub total: usize,
     /// Number of commands that were reachable after the filter.
+    #[serde(default)]
     pub reachable_count: usize,
     /// Per-command entries (reachable + skipped, in registry order).
+    #[serde(default)]
     pub commands: Vec<CommandSurfaceEntry>,
+}
+
+impl AgentCommandSurface {
+    /// Append a single entry to the surface, keeping `total` and
+    /// `reachable_count` in sync.
+    pub fn push(&mut self, entry: CommandSurfaceEntry) {
+        if entry.reachable {
+            self.reachable_count += 1;
+        }
+        self.total += 1;
+        self.commands.push(entry);
+    }
+
+    /// Borrow the command entries in registry order.
+    pub fn commands(&self) -> &[CommandSurfaceEntry] {
+        &self.commands
+    }
 }
 
 /// Build the agent surface from the canonical command registry.
@@ -100,6 +133,7 @@ fn classify(spec: &CommandSpec, filter: &SurfaceFilter) -> Option<String> {
     }
 
     // 2. Stability filter
+    #[allow(unreachable_patterns)]
     match spec.stability {
         Stability::Deprecated => {
             if !filter.include_deprecated {
@@ -112,6 +146,13 @@ fn classify(spec: &CommandSpec, filter: &SurfaceFilter) -> Option<String> {
             }
         }
         Stability::Stable => {}
+        _ => {
+            // Reserved for future stability variants. By default, unknown
+            // stabilities are gated behind include_* flags.
+            if !filter.include_experimental && !filter.include_deprecated {
+                return Some("unknown stability: opt-in flag not set".into());
+            }
+        }
     }
 
     // 3. Profile-based side-effect gate

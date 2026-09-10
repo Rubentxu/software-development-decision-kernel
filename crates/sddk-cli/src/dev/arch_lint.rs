@@ -149,6 +149,9 @@ const MARKER_M7_1_FULL_FIELDS: &str = "m7_1.command_spec_full_fields";
 const MARKER_M7_1_EXAMPLES_PUBLISHED: &str = "m7_1.examples_published_for_core_commands";
 const MARKER_M7_1_CHEAT_SHEET_PRESENT: &str = "m7_1.cheat_sheet_renderer_present";
 
+// M7.1B — Examples Wiring (closes A2 / A6 / A7-partial).
+const MARKER_M7_1B_EXAMPLES_WALKED: &str = "m7_1b.examples_walked_against_runtime";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -347,6 +350,19 @@ pub fn m7_1_command_registry_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
             present: has_delivered_entry(yaml, "crates/sddk-cli/src/cheat_sheet"),
         },
     ]
+}
+
+/// M7.1B alignment markers (Examples Wiring — A2/A6/A7-partial closure).
+///
+/// - `examples_walked_against_runtime`: the `examples_walker` module is
+///   delivered and exposes `walk_examples()` that walks every
+///   `ExampleSpec` against a pluggable `Walker` closure, returning a
+///   deterministic `ExampleWalkReport`.
+pub fn m7_1b_examples_wiring_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_1B_EXAMPLES_WALKED.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/examples_walker"),
+    }]
 }
 
 fn has_delivered_entry(yaml: &str, module_path: &str) -> bool {
@@ -882,6 +898,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_1_command_registry_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_1b_examples_walker_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/examples_walker
+    target_milestone: delivered
+"#;
+        let markers = m7_1b_examples_wiring_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_1B_EXAMPLES_WALKED)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_1b_examples_walker_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_1b_examples_wiring_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
