@@ -155,6 +155,9 @@ const MARKER_M7_1B_EXAMPLES_WALKED: &str = "m7_1b.examples_walked_against_runtim
 // M7.1C — Live in-process walker (cli_walker over crate::run_from).
 const MARKER_M7_1C_LIVE_WALKER: &str = "m7_1c.live_walker_in_process";
 
+// M7.2 — Surface Integration Layer (programmatic provider-adapter payload).
+const MARKER_M7_2_SURFACE_INTEGRATION: &str = "m7_2.surface_integration_layer_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -381,6 +384,21 @@ pub fn m7_1c_live_walker_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M7_1C_LIVE_WALKER.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/examples_walker"),
+    }]
+}
+
+/// M7.2 alignment markers (Surface Integration Layer).
+///
+/// - `surface_integration_layer_delivered`: the `surface_integration`
+///   module is delivered and exposes `surface_for_provider` plus the
+///   three provider renderers (OpenAI, Anthropic, generic). Verifying
+///   the actual payload shapes is the responsibility of inline tests
+///   in `surface_integration::tests`; this marker is the registry
+///   gate the release flow enforces.
+pub fn m7_2_surface_integration_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_2_SURFACE_INTEGRATION.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/surface_integration"),
     }]
 }
 
@@ -973,6 +991,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_1c_live_walker_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_2_surface_integration_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/surface_integration
+    target_milestone: delivered
+"#;
+        let markers = m7_2_surface_integration_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_2_SURFACE_INTEGRATION)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_2_surface_integration_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_2_surface_integration_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

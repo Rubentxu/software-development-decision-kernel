@@ -88,7 +88,7 @@ engine, CI server or general-purpose agent framework.
 | **M4** | Decision Memory extension (substrate DONE in CDD-MEMORY-001..005) | partial |
 | **M5** | Agent protocol + AuthorityEngine facade | pending |
 | **M6** | Packs + Targets + Tasks + CLI convention-first | pending |
-| **M7** | Agent Experience Contract (**NEW**) | partial — M7.1 (v1.160.0) + M7.1B (v1.161.0) shipped |
+| **M7** | Agent Experience Contract (**NEW**) | partial — M7.1 (v1.160.0) + M7.1B (v1.161.0) + M7.1C (v1.162.0) + M7.2 (v1.163.0) shipped |
 | **M8** | WHY engine + causal explanation | pending |
 | **M9** | Remove compat debt | pending |
 

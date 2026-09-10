@@ -45,6 +45,7 @@ mod run_view;
 mod ship;
 mod stale_cmd;
 mod status;
+pub mod surface_integration;
 mod target_cmd;
 mod telemetry;
 mod uat;

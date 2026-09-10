@@ -743,6 +743,16 @@ open_mappings:
     target_milestone: delivered
     notes: "Locked JSON snapshot of the AgentCommandSurface shipped v1.161.0 (M7.1B, closes A6 from M7.1 archive). current() builds a GoldenSurface (schema_version=1) over the live registry with the locked subset: name + stability + side_effect_class + required_authority + machine schema name + examples_n (body intentionally excluded — walker handles body-level conformance). current_json() is deterministic byte-for-byte. GOLDEN_PATH = tests/fixtures/agent-surface.golden.json. matches_fixture() returns Ok when current_json() == the on-disk fixture; otherwise Err(diff_summary). UPDATE_SNAPSHOTS=1 in the test env rewrites the fixture. State-class Projection: the golden is a derived view, regenerable from the registry without state loss."
 
+  - module: crates/sddk-cli/src/surface_integration
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Projection
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "Programmatic surface for provider adapters shipped v1.163.0 (M7.2, closes the integration-layer gap deferred by M7.1 archive). surface_for_provider(&AgentCommandSurface) -> Vec<ToolDescriptor> returns one descriptor per reachable entry that has at least one published example (no example = no tool, because the example contract is the proof of executability). ToolDescriptor carries the provider-safe name (snake_case derived from command), description, command, stability/side_effect_class/required_authority as lowercase strings, machine schema name, and the typed examples. Three provider renderers: render_openai_tools (function-calling shape: {type: function, function: {name, description, parameters}} plus x-sddk metadata), render_anthropic_tools (input_schema shape: {name, description, input_schema} plus x-sddk metadata), render_generic_tools (provider-neutral shape with full examples inline). All payloads are deterministic byte-for-byte. parameters / input_schema are always empty objects — SDDK commands are invoked by exact argv per ExampleSpec::invocation::argv, and per-command ArgSpec JSON-Schema population is deferred to M7.4. State-class Projection: derived from AgentCommandSurface, regenerable without state loss."
+
   - module: crates/sddk-cli/src/change
     contract: arch-spec-013-cli-convention-first
     primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE
