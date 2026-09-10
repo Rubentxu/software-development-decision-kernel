@@ -743,6 +743,26 @@ open_mappings:
     target_milestone: delivered
     notes: "Locked JSON snapshot of the AgentCommandSurface shipped v1.161.0 (M7.1B, closes A6 from M7.1 archive). current() builds a GoldenSurface (schema_version=1) over the live registry with the locked subset: name + stability + side_effect_class + required_authority + machine schema name + examples_n (body intentionally excluded — walker handles body-level conformance). current_json() is deterministic byte-for-byte. GOLDEN_PATH = tests/fixtures/agent-surface.golden.json. matches_fixture() returns Ok when current_json() == the on-disk fixture; otherwise Err(diff_summary). UPDATE_SNAPSHOTS=1 in the test env rewrites the fixture. State-class Projection: the golden is a derived view, regenerable from the registry without state loss."
 
+  - module: crates/sddk-cli/src/agent_profile
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "Full AgentProfile model shipped v1.164.0 (M7.4, closes the M7.1 archive deferred full-profile model). AgentProfile struct carries name + description + allowed_stabilities (ceiling) + allowed_side_effects (ceiling) + required_authority (ceiling) + allowed_targets (allowlist; empty = no restriction). AgentProfile::admits(&CommandSpec) is the canonical gate. Four canonical constructors shipped: default_profile() (most permissive; all stabilities except Deprecated, all side-effects up to Destructive, Admin authority, all targets), read_only_profile() (Pure/Read side-effects only, Read authority), approver_profile() (default plus Admin authority for gated approvals), ci_bot_profile() (Stable only, Pure/Read/Governed, Write authority, allowlist {verify, audit, status}). AgentProfileTag (M7.1 placeholder) is preserved as a backwards-compatible derived view via From<&AgentProfile>. all_profiles() returns the canonical set."
+
+  - module: crates/sddk-cli/src/arg_schema
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Projection
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "ArgSpec → JSON Schema (draft-07) derivation shipped v1.164.0 (M7.4, closes the M7.2 deferred gap on parameters/input_schema). arg_specs_to_json_schema(&[ArgSpec]) -> Value emits {type: object, properties, required}. command_spec_to_json_schema(&CommandSpec) wraps it with $id (sddk://commands/<name>), $schema, title and description. Mapping: ArgKind::Flag → boolean, ArgKind::Option → typed by ValueType (String/Int/Bool/Path/Enum), ArgKind::Positional → string. Path ValueType adds format:path. Enum ValueType emits an enum constraint. surface_integration::render_openai_tools and render_anthropic_tools now populate parameters/input_schema with this derivation (instead of the M7.2 {} placeholder), so provider adapters receive the typed contract of every command. State-class Projection: derived from CommandSpec, regenerable without state loss."
+
   - module: crates/sddk-cli/src/surface_integration
     contract: arch-spec-015-agent-experience-contract
     primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY

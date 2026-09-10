@@ -158,6 +158,10 @@ const MARKER_M7_1C_LIVE_WALKER: &str = "m7_1c.live_walker_in_process";
 // M7.2 — Surface Integration Layer (programmatic provider-adapter payload).
 const MARKER_M7_2_SURFACE_INTEGRATION: &str = "m7_2.surface_integration_layer_delivered";
 
+// M7.4 — Full AgentProfile + per-command ArgSpec JSON-Schema derivation.
+const MARKER_M7_4_AGENT_PROFILE: &str = "m7_4.agent_profile_full_model_delivered";
+const MARKER_M7_4_ARG_SCHEMA: &str = "m7_4.arg_spec_json_schema_derivation_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -399,6 +403,33 @@ pub fn m7_2_surface_integration_alignment_checks(yaml: &str) -> Vec<MarkerStatus
     vec![MarkerStatus {
         id: MARKER_M7_2_SURFACE_INTEGRATION.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/surface_integration"),
+    }]
+}
+
+/// M7.4 alignment markers (Full AgentProfile model).
+///
+/// - `agent_profile_full_model_delivered`: the `agent_profile` module
+///   is delivered with the full AgentProfile struct (allowed_stabilities,
+///   allowed_side_effects, required_authority ceiling, allowed_targets)
+///   plus the canonical profile constructors (default, read_only,
+///   approver, ci_bot).
+pub fn m7_4_agent_profile_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_4_AGENT_PROFILE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/agent_profile"),
+    }]
+}
+
+/// M7.4 alignment markers (ArgSpec JSON-Schema derivation).
+///
+/// - `arg_spec_json_schema_derivation_delivered`: the `arg_schema` module
+///   is delivered with `arg_specs_to_json_schema` and
+///   `command_spec_to_json_schema` (JSON Schema draft-07), closing the
+///   M7.2 deferred gap on `parameters` / `input_schema`.
+pub fn m7_4_arg_schema_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_4_ARG_SCHEMA.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/arg_schema"),
     }]
 }
 
@@ -1019,6 +1050,62 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_2_surface_integration_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_4_agent_profile_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/agent_profile
+    target_milestone: delivered
+"#;
+        let markers = m7_4_agent_profile_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_4_AGENT_PROFILE)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_4_agent_profile_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_4_agent_profile_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_4_arg_schema_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/arg_schema
+    target_milestone: delivered
+"#;
+        let markers = m7_4_arg_schema_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_4_ARG_SCHEMA)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_4_arg_schema_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_4_arg_schema_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

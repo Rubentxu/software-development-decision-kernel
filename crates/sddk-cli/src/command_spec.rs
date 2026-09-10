@@ -1139,6 +1139,11 @@ impl CommandSpec {
         self
     }
 
+    pub fn with_args(mut self, args: Vec<ArgSpec>) -> Self {
+        self.args = args;
+        self
+    }
+
     pub fn with_precondition(mut self, pre: &str) -> Self {
         self.preconditions.push(pre.to_string());
         self

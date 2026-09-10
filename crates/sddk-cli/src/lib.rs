@@ -4,9 +4,11 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod agent_profile;
 pub mod agent_surface_golden;
 mod analytics;
 mod approval;
+pub mod arg_schema;
 mod artifact;
 pub mod audit_cmd;
 mod capability;

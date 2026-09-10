@@ -4,9 +4,9 @@ use crate::dev::arch_lint::{
     MarkerStatus, convention_first_cli_alignment_checks, dag_execution_alignment_checks,
     decision_memory_cli_alignment_checks, m7_1_command_registry_alignment_checks,
     m7_1b_examples_wiring_alignment_checks, m7_1c_live_walker_alignment_checks,
-    m7_2_surface_integration_alignment_checks, mirror_alignment_checks,
-    semantic_graph_alignment_checks, target_task_dag_alignment_checks,
-    unified_authority_runner_alignment_checks,
+    m7_2_surface_integration_alignment_checks, m7_4_agent_profile_alignment_checks,
+    m7_4_arg_schema_alignment_checks, mirror_alignment_checks, semantic_graph_alignment_checks,
+    target_task_dag_alignment_checks, unified_authority_runner_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
@@ -488,6 +488,14 @@ pub(super) fn run_dev_doctor(
                 }
                 // M7.2: Surface Integration Layer marker.
                 for marker in m7_2_surface_integration_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M7.4: Full AgentProfile model marker.
+                for marker in m7_4_agent_profile_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M7.4: ArgSpec JSON-Schema derivation marker.
+                for marker in m7_4_arg_schema_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

@@ -29,6 +29,7 @@
 //! be safely exposed to a model — the example contract is the proof of
 //! executability.
 
+use crate::arg_schema::command_spec_to_json_schema;
 use crate::command_spec::ExampleSpec;
 use crate::command_surface::{AgentCommandSurface, CommandSurfaceEntry};
 use serde::{Deserialize, Serialize};
@@ -158,25 +159,34 @@ fn provider_safe_name(command_name: &str) -> String {
 /// }
 /// ```
 ///
-/// `parameters` is always an empty object schema: SDDK commands are
-/// invoked by exact argv (per `ExampleSpec::invocation::argv`) and do
-/// not currently expose a JSON-Schema for free-form arguments. Adapters
-/// are expected to populate `parameters` from per-command ArgSpec if
-/// they need a richer contract (deferred to M7.4).
+/// `parameters` is derived from `CommandSpec::args` via
+/// `arg_schema::command_spec_to_json_schema` (M7.4). For commands with
+/// no declared args, the fallback is `{ "type": "object", "properties":
+/// {}, "required": [] }` (preserves the M7.2 contract). Adapters can
+/// use the schema to constrain the model — for example, requiring
+/// `--target verify` as an enum string.
 pub fn render_openai_tools(surface: &AgentCommandSurface) -> serde_json::Value {
+    let mut name_to_schema = serde_json::Map::new();
+    for entry in surface.commands() {
+        if entry.reachable && !entry.spec.examples.is_empty() {
+            name_to_schema.insert(
+                provider_safe_name(&entry.spec.name),
+                command_spec_to_json_schema(&entry.spec),
+            );
+        }
+    }
     let tools: Vec<serde_json::Value> = surface_for_provider(surface)
         .iter()
         .map(|t| {
+            let parameters = name_to_schema.get(&t.name).cloned().unwrap_or_else(
+                || serde_json::json!({ "type": "object", "properties": {}, "required": [] }),
+            );
             serde_json::json!({
                 "type": "function",
                 "function": {
                     "name": t.name,
                     "description": t.description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
+                    "parameters": parameters,
                 },
                 "x-sddk": {
                     "command": t.command,
@@ -206,17 +216,25 @@ pub fn render_openai_tools(surface: &AgentCommandSurface) -> serde_json::Value {
 /// }
 /// ```
 pub fn render_anthropic_tools(surface: &AgentCommandSurface) -> serde_json::Value {
+    let mut name_to_schema = serde_json::Map::new();
+    for entry in surface.commands() {
+        if entry.reachable && !entry.spec.examples.is_empty() {
+            name_to_schema.insert(
+                provider_safe_name(&entry.spec.name),
+                command_spec_to_json_schema(&entry.spec),
+            );
+        }
+    }
     let tools: Vec<serde_json::Value> = surface_for_provider(surface)
         .iter()
         .map(|t| {
+            let input_schema = name_to_schema.get(&t.name).cloned().unwrap_or_else(
+                || serde_json::json!({ "type": "object", "properties": {}, "required": [] }),
+            );
             serde_json::json!({
                 "name": t.name,
                 "description": t.description,
-                "input_schema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                },
+                "input_schema": input_schema,
                 "x-sddk": {
                     "command": t.command,
                     "stability": t.stability,
