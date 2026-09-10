@@ -139,8 +139,9 @@ pub fn read_only_profile() -> AgentProfile {
 pub fn approver_profile() -> AgentProfile {
     AgentProfile {
         name: "approver".to_string(),
-        description: "Approver agent — default surface plus Approval authority for gated approvals."
-            .to_string(),
+        description:
+            "Approver agent — default surface plus Approval authority for gated approvals."
+                .to_string(),
         allowed_stabilities: vec![Stability::Stable, Stability::Experimental],
         allowed_side_effects: vec![
             SideEffectClass::Pure,
