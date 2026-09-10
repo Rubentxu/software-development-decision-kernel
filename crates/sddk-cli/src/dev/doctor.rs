@@ -11,6 +11,7 @@ use crate::dev::arch_lint::{
     m8_0_active_graph_surface_alignment_checks, m8_1_why_queries_surface_alignment_checks,
     m8_2_cockpit_views_surface_alignment_checks, m8_3_cockpit_observability_surface_alignment_checks,
     m8_4_active_graph_input_auto_derived_alignment_checks,
+    m8_5_commit_parents_section_parsed_alignment_checks,
     mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
@@ -542,6 +543,10 @@ pub(super) fn run_dev_doctor(
                 }
                 // M8.4: ActiveGraphInput auto-derived marker.
                 for marker in m8_4_active_graph_input_auto_derived_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M8.5: parent_of edges from `## Commit parents` marker.
+                for marker in m8_5_commit_parents_section_parsed_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

@@ -213,6 +213,17 @@ const MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE: &str = "m8_3.cockpit_observabil
 // per the "honest derivation" contract documented in `derive_active_graph_input_from_manifest`.
 const MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED: &str = "m8_4.active_graph_input_auto_derived";
 
+// M8.5 — `parent_of` edges from an explicit `## Commit parents` section in
+// the cycle archive manifest. Extends the M8.4 derivation contract: a
+// bullet like ``- `child` → `parent` (note)`` under that heading produces
+// a `workflow_edges` entry, but only when both SHAs appear in the known
+// commit list. Manifests without the section stay backward-compatible
+// (empty `parent_edges`, same as M8.4). Lives in the same `cockpit` module
+// because the parser reuses `parse_section_bullets_for` and the same
+// honest-derivation rules.
+const MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED: &str =
+    "m8_5.commit_parents_section_parsed";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -654,6 +665,27 @@ pub fn m8_3_cockpit_observability_surface_alignment_checks(yaml: &str) -> Vec<Ma
 pub fn m8_4_active_graph_input_auto_derived_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
+    }]
+}
+
+/// M8.5 alignment check (`parent_of` edges from `## Commit parents`).
+///
+/// Marker definition:
+/// - `m8_5.commit_parents_section_parsed`: the
+///   `crates/sddk-cli/src/dev/cockpit` module exposes a
+///   `parse_parent_edge_bullet` helper + a `## Commit parents` section
+///   walker in `parse_commit_rows` that turns bullets like
+///   ``- `<child>` → `<parent>` (note)`` into `workflow_edges` entries
+///   (filtered to known-SHA pairs). Manifests without the section stay
+///   backward-compatible. Gates on the same surface module path as
+///   M8.2 / M8.3 / M8.4 because the parsing is a strict extension of
+///   the same `derive_active_graph_input_from_manifest` pure parser.
+pub fn m8_5_commit_parents_section_parsed_alignment_checks(
+    yaml: &str,
+) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
     }]
 }
@@ -1611,6 +1643,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m8_4_active_graph_input_auto_derived_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_5_commit_parents_section_parsed_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_5_commit_parents_section_parsed_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m8_5_commit_parents_section_parsed_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/cockpit_views
+    target_milestone: delivered
+"#;
+        let markers = m8_5_commit_parents_section_parsed_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

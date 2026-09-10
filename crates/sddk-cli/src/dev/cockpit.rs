@@ -454,6 +454,19 @@ fn parse_commit_rows(text: &str) -> ParsedManifest {
             .unwrap_or_else(|| "<unknown>".to_string());
         out.memory_refs.push((label, target));
     });
+    // Parent edges come from an explicit "## Commit parents" section if
+    // the manifest provides one (M8.5 convention). The parser only emits
+    // edges whose both SHAs appear in the known commit list — anything
+    // else is dropped silently to preserve the "honest derivation"
+    // contract from M8.4. Manifests without this section still parse
+    // cleanly with empty `parent_edges` (backward compatible).
+    parse_section_bullets_for(text, "Commit parents", &mut |bullet: &str| {
+        // Bullet shape: "- `<child>` → `<parent>` (note)"
+        // The arrow can be `→`, `->`, or `=>`; the note is optional.
+        if let Some((child, parent)) = parse_parent_edge_bullet(bullet, &out.shas) {
+            out.parent_edges.push((child, parent));
+        }
+    });
     // Parent edges are inferred from the cycle's own commit history.
     // The manifest only lists commit SHAs; parent relations are not
     // explicit. To stay honest, we leave parent_edges empty unless
@@ -522,6 +535,60 @@ fn parse_bridge_bullet(bullet: &str, known_shas: &[String]) -> Option<(String, S
         }
     }
     None
+}
+
+/// Parse a "Commit parents" bullet into `(child, parent)` SHAs.
+///
+/// Bullet shape:
+///   - ` `<child>` → `<parent>` (note)`       (Unicode arrow)
+///   - ` `<child>` -> `<parent>` (note)`       (ASCII arrow)
+///   - ` `<child>` => `<parent>` (note)`       (fat arrow)
+///   - ` `<child>` → <parent>` (no note)
+///
+/// Honest contract: both SHAs must appear in `known_shas` (the manifest's
+/// commit list). If either side is missing or not in the commit list,
+/// the bullet is dropped silently — the manifest is the only authority
+/// for `parent_of` edges in M8.5; we never fabricate.
+fn parse_parent_edge_bullet(bullet: &str, known_shas: &[String]) -> Option<(String, String)> {
+    // Strip leading bullet marker.
+    let body = bullet
+        .trim_start_matches("- ")
+        .trim_start_matches("* ")
+        .trim();
+    // Find an arrow token. We accept three shapes for ergonomics.
+    let arrow = [" → ", " -> ", " => "]
+        .iter()
+        .find(|a| body.contains(*a))
+        .copied()?;
+    let mut split = body.splitn(2, arrow);
+    let left = split.next()?.trim().trim_matches('`').trim();
+    let right = split.next()?.trim().trim_matches('`').trim();
+    // The note (in parentheses) is optional — strip it after backtick
+    // trimming so trailing backticks inside the note don't pollute the
+    // SHA (e.g. ``def5678` (release commit)``).
+    let right = right
+        .split_once(" (")
+        .map(|(head, _)| head.trim().trim_matches('`').trim())
+        .unwrap_or(right);
+    // Both SHAs must look like a SHA and be in the known list.
+    if !is_sha_like(left) || !is_sha_like(right) {
+        return None;
+    }
+    if !known_shas.iter().any(|k| k == left)
+        || !known_shas.iter().any(|k| k == right)
+    {
+        return None;
+    }
+    Some((left.to_string(), right.to_string()))
+}
+
+/// True if `s` is a 7–40 char ASCII hex token (the same shape
+/// `parse_table_row_sha` accepts). Pulled out so the parent-edge
+/// parser and the table-row parser agree on what "looks like a SHA"
+/// means.
+fn is_sha_like(s: &str) -> bool {
+    let len = s.len();
+    (7..=40).contains(&len) && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Deterministic RFC-3339 UTC timestamp truncated to seconds (same
@@ -1100,6 +1167,9 @@ mod tests {
          |-----|------|---------|\n\
          | abc1234 | feat(uat) | first commit |\n\
          | def5678 | chore(release) | bump version |\n\n\
+         ## Commit parents\n\n\
+         - `abc1234` → `def5678` (release commit)\n\
+         - `def5678` -> `fed4321` (forward port; sha not in commits, must be dropped)\n\n\
          ## Bridges\n\n\
          - M8.0 — built on abc1234 (v1.166.5)\n\
          - M8.3 — extends def5678 (v1.166.8)\n\n\
@@ -1176,6 +1246,86 @@ mod tests {
         let (label, target) = &input.memory_refs[0];
         assert!(label.starts_with("M9"), "label should start with M9");
         assert_eq!(target.0, "abc1234", "deferred refs the first commit");
+    }
+
+    // ── M8.5 — Commit parents section tests ────────────────────────
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_emits_parent_edges_from_commit_parents_section() {
+        // The fixture has `abc1234 → def5678` in the Commit parents
+        // section. Both SHAs are in the known commits, so this must
+        // produce exactly one parent_of edge.
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        assert_eq!(
+            input.workflow_edges.len(),
+            1,
+            "exactly one parent edge should survive the known-SHA filter, got {:?}",
+            input.workflow_edges
+        );
+        let (child, parent) = &input.workflow_edges[0];
+        assert_eq!(child.0, "abc1234", "child SHA must be the left side of the arrow");
+        assert_eq!(parent.0, "def5678", "parent SHA must be the right side of the arrow");
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_drops_parent_edges_with_unknown_shas() {
+        // The fixture has `def5678 -> fed4321` where fed4321 is NOT in
+        // the known commits list. That edge must be silently dropped —
+        // we never fabricate parent_of edges from SHAs the manifest
+        // does not acknowledge.
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        for (child, parent) in &input.workflow_edges {
+            assert_ne!(
+                child.0, "def5678",
+                "edge whose parent is unknown must be dropped, got {:?}",
+                input.workflow_edges
+            );
+            assert_ne!(parent.0, "fed4321");
+        }
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_backward_compatible_without_parents_section() {
+        // Manifests without a `## Commit parents` section must still
+        // parse cleanly with empty parent_edges (M8.4 behavior).
+        let text = "## Commits\n\n| abc1234 | feat(uat) |\n| def5678 | fix |\n";
+        let input = derive_active_graph_input_from_manifest(text);
+        assert_eq!(input.workflow_nodes.len(), 2);
+        assert!(
+            input.workflow_edges.is_empty(),
+            "manifest without Commit parents section must yield empty parent_edges, got {:?}",
+            input.workflow_edges
+        );
+    }
+
+    #[test]
+    fn parse_parent_edge_bullet_accepts_unicode_arrow_ascii_arrow_fat_arrow() {
+        let shas = vec!["abc1234".to_string(), "def5678".to_string()];
+        assert_eq!(
+            parse_parent_edge_bullet("- `abc1234` → `def5678`", &shas),
+            Some(("abc1234".to_string(), "def5678".to_string()))
+        );
+        assert_eq!(
+            parse_parent_edge_bullet("- `abc1234` -> `def5678`", &shas),
+            Some(("abc1234".to_string(), "def5678".to_string()))
+        );
+        assert_eq!(
+            parse_parent_edge_bullet("- `abc1234` => `def5678` (note)", &shas),
+            Some(("abc1234".to_string(), "def5678".to_string()))
+        );
+        // Missing SHA in known_shas — must return None.
+        let small = vec!["abc1234".to_string()];
+        assert_eq!(parse_parent_edge_bullet("- `abc1234` → `def5678`", &small), None);
+        // Not a SHA — must return None.
+        assert_eq!(
+            parse_parent_edge_bullet("- `not-a-sha` → `def5678`", &shas),
+            None
+        );
+        // No arrow — must return None.
+        assert_eq!(
+            parse_parent_edge_bullet("- `abc1234` to `def5678`", &shas),
+            None
+        );
     }
 
     #[test]
