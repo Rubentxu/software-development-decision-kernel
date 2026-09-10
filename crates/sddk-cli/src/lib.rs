@@ -21,6 +21,7 @@ mod cycle;
 mod debt;
 mod dev;
 pub mod examples_walker;
+pub mod skill_definition;
 
 mod docs;
 mod explore_cmd;

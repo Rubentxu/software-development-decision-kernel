@@ -283,6 +283,14 @@ pub struct CommandSpec {
     /// M7.1 — related commands (by name).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<String>,
+    /// M7.3 — namespaced skill ids this command depends on at admission
+    /// time. Format: `id@version` (e.g. `core.architecture-review@v1`).
+    /// The runtime admits the command only when every required skill is
+    /// loaded into the active `SkillRegistry`. Declaring a skill here is
+    /// a *requirement*, not a permission grant: the Authority engine
+    /// (`AgentProfile::admits`) still owns the actual side-effect gate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_skills: Vec<String>,
 }
 
 /// Return the canonical CommandSpec list for the entire CLI surface.
@@ -1087,6 +1095,7 @@ fn spec(
         preconditions: Vec::new(),
         examples: Vec::new(),
         related: Vec::new(),
+        required_skills: Vec::new(),
     }
 }
 
@@ -1156,6 +1165,12 @@ impl CommandSpec {
 
     pub fn with_example(mut self, example: ExampleSpec) -> Self {
         self.examples.push(example);
+        self
+    }
+
+    /// M7.3 — declare a `id@version` skill requirement for this command.
+    pub fn with_required_skill(mut self, ref_token: &str) -> Self {
+        self.required_skills.push(ref_token.to_string());
         self
     }
 }

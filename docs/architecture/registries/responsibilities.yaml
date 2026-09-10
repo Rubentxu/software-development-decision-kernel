@@ -773,6 +773,16 @@ open_mappings:
     target_milestone: delivered
     notes: "Programmatic surface for provider adapters shipped v1.163.0 (M7.2, closes the integration-layer gap deferred by M7.1 archive). surface_for_provider(&AgentCommandSurface) -> Vec<ToolDescriptor> returns one descriptor per reachable entry that has at least one published example (no example = no tool, because the example contract is the proof of executability). ToolDescriptor carries the provider-safe name (snake_case derived from command), description, command, stability/side_effect_class/required_authority as lowercase strings, machine schema name, and the typed examples. Three provider renderers: render_openai_tools (function-calling shape: {type: function, function: {name, description, parameters}} plus x-sddk metadata), render_anthropic_tools (input_schema shape: {name, description, input_schema} plus x-sddk metadata), render_generic_tools (provider-neutral shape with full examples inline). All payloads are deterministic byte-for-byte. parameters / input_schema are always empty objects — SDDK commands are invoked by exact argv per ExampleSpec::invocation::argv, and per-command ArgSpec JSON-Schema population is deferred to M7.4. State-class Projection: derived from AgentCommandSurface, regenerable without state loss."
 
+  - module: crates/sddk-cli/src/skill_definition
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Projection
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "SkillDefinition contract shipped v1.165.0 (M7.3, SPEC-016 Skill Contract). Typed SkillDefinition / AppliesWhen / SkillOutput / CapabilityRequirement / EvidenceContract / CompatRange structs with serde. Fail-closed validation: unnamespaced id (must contain '.') → UnnamespacedId; version < 1 → InvalidVersion; empty task_kinds → EmptyTaskKinds; empty outputs.contract → EmptyOutputContract; inverted compat range (min > max) → InvertedCompatRange; wildcard capability (any of '*' / 'all' in required or optional) → WildcardCapability (Skill != Capability invariant); empty instruction_fragments + > 8 required capabilities → MonolithicPromptPattern (proxy for monolithic prompt with embedded architecture). SkillRegistry::register / select_for(task_kind, context_keys) / manifest_json. Selection is sorted by (id, version) for determinism. SkillDefinition::content_hash() returns a stable DefaultHasher hex over canonical JSON (sorted object keys via BTreeMap) so two skills with identical fields produce the same hash regardless of serialization order. SkillDefinition::ref_token() returns id@version for SPEC-018 AgentExecutionReceipt provenance. SkillRegistry::admits_command(&CommandSpec) -> SkillAdmitOutcome (Satisfied | SatisfiedBy(refs) | Missing {required, available}) wires the new CommandSpec::required_skills field. CommandSpec::with_required_skill(id@version) is the builder. Skill != Capability enforced structurally: SkillRegistry exposes no grant method. M7.3 unblocks SPEC-014 (InstructionCompiler consumes SelectedSkillSet) and SPEC-018 (AgentExecutionReceipt carries selected_skill_refs/hash)."
+
   - module: crates/sddk-cli/src/change
     contract: arch-spec-013-cli-convention-first
     primary_adr: ADR-0103-CONVENTION-FIRST-CLI-SURFACE

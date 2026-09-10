@@ -162,6 +162,9 @@ const MARKER_M7_2_SURFACE_INTEGRATION: &str = "m7_2.surface_integration_layer_de
 const MARKER_M7_4_AGENT_PROFILE: &str = "m7_4.agent_profile_full_model_delivered";
 const MARKER_M7_4_ARG_SCHEMA: &str = "m7_4.arg_spec_json_schema_derivation_delivered";
 
+// M7.3 — SkillDefinition contract (SPEC-016).
+const MARKER_M7_3_SKILL_DEFINITION: &str = "m7_3.skill_definition_contract_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -430,6 +433,20 @@ pub fn m7_4_arg_schema_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M7_4_ARG_SCHEMA.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/arg_schema"),
+    }]
+}
+
+/// M7.3 alignment markers (SkillDefinition contract, SPEC-016).
+///
+/// - `skill_definition_contract_delivered`: the `skill_definition` module
+///   is delivered with the typed `SkillDefinition` / `SkillRegistry`
+///   pair, fail-closed validation of the SPEC-016 anti-patterns
+///   (Skill ≠ Capability), content hashing for `AgentExecutionReceipt`
+///   provenance, and `CommandSpec::required_skills` wiring.
+pub fn m7_3_skill_definition_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_3_SKILL_DEFINITION.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/skill_definition"),
     }]
 }
 
@@ -1106,6 +1123,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_4_arg_schema_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_3_skill_definition_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/skill_definition
+    target_milestone: delivered
+"#;
+        let markers = m7_3_skill_definition_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_3_SKILL_DEFINITION)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m7_3_skill_definition_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_3_skill_definition_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
