@@ -193,6 +193,16 @@ const MARKER_M8_1_WHY_QUERIES_SURFACE: &str = "m8_1.why_queries_surface_delivere
 // M8.3.
 const MARKER_M8_2_COCKPIT_VIEWS_SURFACE: &str = "m8_2.cockpit_views_surface_delivered";
 
+// M8.3 — `sddk dev cockpit obs` operator surface for the H9 Cockpit
+// Observability engine (`crates/sddk-engine/src/cockpit_observability`,
+// COCKPIT-002). Exposes the five operational views (providers / usage /
+// assurance / handoff / experiments) as a sibling CLI subcommand in the
+// same `crates/sddk-cli/src/dev/cockpit` module. Lives in the same
+// surface module as M8.2 — adds a `CockpitCommand::Obs` variant rather
+// than a new CLI module, because both surfaces share `load_input()`,
+// `CockpitViewRow`, and the text/JSON rendering pipeline.
+const MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE: &str = "m8_3.cockpit_observability_surface_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -594,6 +604,25 @@ pub fn m8_1_why_queries_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus
 pub fn m8_2_cockpit_views_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_2_COCKPIT_VIEWS_SURFACE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
+    }]
+}
+
+/// M8.3 alignment check (`sddk dev cockpit obs`).
+///
+/// Marker definition:
+/// - `m8_3.cockpit_observability_surface_delivered`: the same
+///   `crates/sddk-cli/src/dev/cockpit` module owns a `run_dev_cockpit_obs`
+///   runner that dispatches `providers` / `usage` / `assurance` / `handoff`
+///   / `experiments` against the engine `DefaultCockpitObservabilityBuilder`.
+///   The corresponding engine module
+///   (`crates/sddk-engine/src/cockpit_observability`) is already shipped
+///   as part of COCKPIT-002. M8.3 shares the surface module with M8.2;
+///   the marker key is distinct (`m8_3.cockpit_observability_*` vs
+///   `m8_2.cockpit_views_*`) so each milestone has its own gate.
+pub fn m8_3_cockpit_observability_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
     }]
 }
@@ -1495,6 +1524,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m8_2_cockpit_views_surface_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_3_cockpit_observability_surface_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_3_cockpit_observability_surface_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m8_3_cockpit_observability_surface_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/cockpit_observability
+    target_milestone: delivered
+"#;
+        let markers = m8_3_cockpit_observability_surface_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
