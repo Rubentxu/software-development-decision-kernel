@@ -1,5 +1,6 @@
 //! Developer tooling: environment doctor, gates, and atomic install/verify.
 
+use self::graph::GraphArgs;
 use self::projection::ProjectionArgs;
 use self::skills::SkillsArgs;
 use clap::{Args, Subcommand, ValueEnum};
@@ -16,6 +17,7 @@ mod doctor;
 mod editor_adapters;
 mod entropy;
 mod framework_check;
+pub(super) mod graph;
 mod install;
 mod link;
 pub(crate) mod manifest;
@@ -178,6 +180,11 @@ pub(super) enum DevCommand {
     /// gate consults (list loaded skills, verify declared required
     /// skills against the bundle).
     Skills(SkillsArgs),
+    /// Inspect the M8 (H9 Active Graph & Cockpit) engine projection:
+    /// list nodes, list typed edges, or emit the full `ActiveGraphProjection`
+    /// as JSON. Closes the M8.0 surface — the engine module was already
+    /// shipped but had no operator-facing entry point.
+    Graph(GraphArgs),
     /// Test tooling (count-workspace).
     Test(self::test_cmd::TestArgs),
 }
@@ -446,6 +453,17 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
             }
             crate::dev::skills::SkillsCommand::Verify(verify_args) => {
                 self::skills::run_dev_skills_verify(verify_args, environment)
+            }
+        },
+        DevCommand::Graph(args) => match args.command {
+            crate::dev::graph::GraphCommand::List(list_args) => {
+                self::graph::run_dev_graph_list(list_args, environment)
+            }
+            crate::dev::graph::GraphCommand::Edges(edges_args) => {
+                self::graph::run_dev_graph_edges(edges_args, environment)
+            }
+            crate::dev::graph::GraphCommand::Projection(projection_args) => {
+                self::graph::run_dev_graph_projection(projection_args, environment)
             }
         },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),

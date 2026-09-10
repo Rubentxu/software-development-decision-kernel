@@ -177,6 +177,10 @@ const MARKER_M7_7_SKILL_REGISTRY_BRIDGE: &str = "m7_7.skill_registry_bridge_deli
 // M8 — Default SkillRegistry surface (`sddk dev skills list/verify`).
 const MARKER_M7_8_SKILLS_SURFACE: &str = "m7_8.skills_surface_delivered";
 
+// M8.0 — `sddk dev graph list/edges/projection` operator surface for
+// the H9 Active Graph & Cockpit engine (`crates/sddk-engine/src/active_graph`).
+const MARKER_M8_0_ACTIVE_GRAPH_SURFACE: &str = "m8_0.active_graph_surface_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -529,6 +533,23 @@ pub fn m7_8_skills_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M7_8_SKILLS_SURFACE.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/skills"),
+    }]
+}
+
+/// M8.0 alignment check (`sddk dev graph list/edges/projection`).
+///
+/// Marker definition:
+/// - `m8_0.active_graph_surface_delivered`: a unique canonical author exists
+///   for the `crates/sddk-cli/src/dev/graph` module path with
+///   `target_milestone: delivered`. The corresponding engine module
+///   (`crates/sddk-engine/src/active_graph`) is already shipped as part of
+///   the H9 Active Graph & Cockpit horizon (GR-WHY-001 typed causal
+///   projection). M8.0 exposes that projection via the CLI without
+///   changing the engine contract.
+pub fn m8_0_active_graph_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_0_ACTIVE_GRAPH_SURFACE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/graph"),
     }]
 }
 
@@ -1345,6 +1366,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_8_skills_surface_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_0_active_graph_surface_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/graph
+    target_milestone: delivered
+"#;
+        let markers = m8_0_active_graph_surface_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_0_ACTIVE_GRAPH_SURFACE)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m8_0_active_graph_surface_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/active_graph
+    target_milestone: delivered
+"#;
+        let markers = m8_0_active_graph_surface_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
