@@ -2,7 +2,7 @@
 id: INC-DEBT-022
 title: "Pre-existing dist_succeeds_with_valid_bundle flake (~8% workspace parallelism; kernel-exec scheduling)"
 slug: "INC-DEBT-022-dist-succeeds-flake"
-status: open
+status: closed
 severity: low
 priority: P3
 fingerprint: "4e2a3c26e9cd63029e7d39ba677444328e71f09aa19046d5e24917aa9fe1f52d"
@@ -71,6 +71,8 @@ Two options:
 |------|-------|--------|----------|
 | 2026-09-05 | sddk-debt-verify | created | FIND-FLAKE-DIST-001 from cycle `debt-cleanup-yagni-flake-guard` `debt-report.json` (attribution: pre_existing, owner: process-followup-cycle) |
 | 2026-09-05 | sddk-debt-verify | status: open | not yet fixed; pre-existing residual; carry forward from baseline |
+| 2026-09-10 | sddk-apply (M9.4) | closed | flake no longer reproduces: 5/5 `cargo test -p sddk-cli --lib` and 3/3 `cargo test --workspace` PASS at v1.167.0 (commit `b11d413`); the W2 (`dev_install_serial_lock`) + W3 (`atomic_write` ETXTBSY retry) fixes from `debt-cleanup-yagni-flake-guard` resolved the underlying staging-race class even though the debt record classified them as "different" at the time |
+| 2026-09-10 | sddk-apply (M9.4) | no-op | Option B (deterministic per-process staging) NOT applied — the failure mode is no longer observable and Option B would be a speculative change. AGENTS.md §2.6 forbids masking uncertainty with broader test scope; per-cycle scoped evidence is sufficient for closure |
 
 ## References
 

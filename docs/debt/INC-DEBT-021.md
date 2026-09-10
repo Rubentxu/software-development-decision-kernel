@@ -2,7 +2,7 @@
 id: INC-DEBT-021
 title: "Pre-existing clippy baseline tolerated by TEST-SELECT-001 acceptance"
 slug: "INC-DEBT-021-preexisting-clippy-baseline-gate-classification-and-test-select-deps"
-status: open
+status: closed
 severity: low
 priority: P2
 fingerprint: "f3a7b2e9c5d1f8a4b6e3c9d2a5f7b1e8c4d6a9b3e5f1c8d2a4b7e6f9c3d1a5b8"
@@ -66,6 +66,8 @@ Two options:
 |------|-------|--------|----------|
 | 2026-09-03 | sddk-debt-verify | created | FIND-baseline-for_kv_map from cycle TEST-SELECT-001 `debt-report.json` (attribution: pre_existing) |
 | 2026-09-03 | sddk-debt-verify | status: open | not yet fixed; carried forward from baseline `ad28b0f` |
+| 2026-09-10 | sddk-apply (M9.3) | closed | `cargo clippy --workspace --all-targets -- -D clippy::all` exits 0; the only named `gate_classification.rs:167` was already refactored to `classifications.values()` in a prior cycle; the schema `cycle_id` pattern widened to admit product cycles per the debt record's own follow-up |
+| 2026-09-10 | sddk-apply (M9.3) | schema follow-up | `docs/debt/debt-report.schema.json:11` cycle_id pattern widened from `^p-[a-f0-9]{16}/kernel-cycle-[0-9]+[a-z]?-[a-z0-9-]+$` to `^p-[a-f0-9]{16}/[a-z0-9][a-z0-9-]*$` (per `## Follow-up (schema gap)` section) |
 
 ## References
 

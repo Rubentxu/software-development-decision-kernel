@@ -8,7 +8,7 @@
   "required": ["schema_version", "cycle_id", "generated_at", "findings"],
   "properties": {
     "schema_version": { "type": "string", "enum": ["1.0.0", "1.1.0"] },
-    "cycle_id": { "type": "string", "pattern": "^p-[a-f0-9]{16}/kernel-cycle-[0-9]+[a-z]?-[a-z0-9-]+$" },
+    "cycle_id": { "type": "string", "pattern": "^p-[a-f0-9]{16}/[a-z0-9][a-z0-9-]*$" },
     "generated_at": { "type": "string", "format": "date-time" },
     "findings": {
       "type": "array",
