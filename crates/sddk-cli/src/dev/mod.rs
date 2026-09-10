@@ -1,6 +1,7 @@
 //! Developer tooling: environment doctor, gates, and atomic install/verify.
 
 use self::projection::ProjectionArgs;
+use self::skills::SkillsArgs;
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +24,7 @@ pub(crate) mod paths;
 pub(crate) mod projection;
 mod reconcile;
 mod registry;
+pub(super) mod skills;
 pub(crate) mod test_cmd;
 mod uninstall;
 mod update;
@@ -172,6 +174,10 @@ pub(super) enum DevCommand {
     Reconcile(self::reconcile::ReconcileArgs),
     /// Voice profile management (list/show/set overrides per agent).
     Voice(self::voice_cmd::VoiceArgs),
+    /// Inspect the runtime skill registry that the M7.7 CLI runner
+    /// gate consults (list loaded skills, verify declared required
+    /// skills against the bundle).
+    Skills(SkillsArgs),
     /// Test tooling (count-workspace).
     Test(self::test_cmd::TestArgs),
 }
@@ -434,6 +440,14 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
         DevCommand::Entropy(args) => self::entropy::run_dev_entropy(args, environment),
         DevCommand::Reconcile(args) => self::reconcile::run_dev_reconcile(args, environment),
         DevCommand::Voice(args) => self::voice_cmd::run_voice(args, environment),
+        DevCommand::Skills(args) => match args.command {
+            crate::dev::skills::SkillsCommand::List(list_args) => {
+                self::skills::run_dev_skills_list(list_args, environment)
+            }
+            crate::dev::skills::SkillsCommand::Verify(verify_args) => {
+                self::skills::run_dev_skills_verify(verify_args, environment)
+            }
+        },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
     }
 }

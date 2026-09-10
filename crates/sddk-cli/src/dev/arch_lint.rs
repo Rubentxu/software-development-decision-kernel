@@ -174,6 +174,9 @@ const MARKER_M7_6_EXECUTION_RECEIPT: &str = "m7_6.agent_execution_receipt_delive
 // M7.7 — Skill registry disk bridge + runtime admission gate.
 const MARKER_M7_7_SKILL_REGISTRY_BRIDGE: &str = "m7_7.skill_registry_bridge_delivered";
 
+// M8 — Default SkillRegistry surface (`sddk dev skills list/verify`).
+const MARKER_M7_8_SKILLS_SURFACE: &str = "m7_8.skills_surface_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -506,6 +509,26 @@ pub fn m7_7_skill_registry_bridge_alignment_checks(yaml: &str) -> Vec<MarkerStat
     vec![MarkerStatus {
         id: MARKER_M7_7_SKILL_REGISTRY_BRIDGE.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/skill_registry_bridge"),
+    }]
+}
+
+/// M8 — `sddk dev skills list/verify` surface.
+///
+/// Ships the operator-facing counterpart of the M7.7 gate: a CLI
+/// subcommand that surfaces the loaded skill registry so users can see
+/// why the gate warned and which skills are actually available. Two
+/// subcommands — `list` enumerates every loaded skill (with scope,
+/// id, version, ref_token, source path), `verify` walks every
+/// `CommandSpec` with declared `required_skill`s and reports whether
+/// each is admitted, missing, or matches a known M7.5 contractual
+/// placeholder. Closes the deferred #3 from M7.3 in a minimal but
+/// honest form: the registry is *inspectable* but the three M7.5
+/// placeholders (`core.contract-review@v1`, `core.workflow-orchestration
+/// @v1`, `core.release-planning@v1`) are still not real on-disk skills.
+pub fn m7_8_skills_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_8_SKILLS_SURFACE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/skills"),
     }]
 }
 
@@ -1294,6 +1317,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_7_skill_registry_bridge_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_8_skills_surface_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/skills
+    target_milestone: delivered
+"#;
+        let markers = m7_8_skills_surface_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_8_SKILLS_SURFACE)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m7_8_skills_surface_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_8_skills_surface_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

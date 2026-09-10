@@ -88,7 +88,7 @@ engine, CI server or general-purpose agent framework.
 | **M4** | Decision Memory extension (substrate DONE in CDD-MEMORY-001..005) | partial |
 | **M5** | Agent protocol + AuthorityEngine facade | pending |
 | **M6** | Packs + Targets + Tasks + CLI convention-first | pending |
-| **M7** | Agent Experience Contract (**NEW**) | partial — M7.1 (v1.160.0) + M7.1B (v1.161.0) + M7.1C (v1.162.0) + M7.2 (v1.163.0) + M7.4 (v1.164.0) + M7.3 (v1.165.0) + M7.5 (v1.166.0) + M7.6 (v1.166.2) shipped + AGENTS.md governance merged (v1.166.1) + M7.7 runtime admission wire (v1.166.3); default SkillRegistry population still M8 |
+| **M7** | Agent Experience Contract (**NEW**) | partial — M7.1 (v1.160.0) + M7.1B (v1.161.0) + M7.1C (v1.162.0) + M7.2 (v1.163.0) + M7.4 (v1.164.0) + M7.3 (v1.165.0) + M7.5 (v1.166.0) + M7.6 (v1.166.2) shipped + AGENTS.md governance merged (v1.166.1) + M7.7 runtime admission wire (v1.166.3) + M7.8 operator surface `sddk dev skills list/verify` (v1.166.4); placeholder-to-real skills still M9+ |
 | **M8** | WHY engine + causal explanation | pending |
 | **M9** | Remove compat debt | pending |
 
