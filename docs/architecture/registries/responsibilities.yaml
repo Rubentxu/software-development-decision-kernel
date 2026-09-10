@@ -700,8 +700,8 @@ open_mappings:
     state_class: Ephemeral
     authority: sddk-cli
     replaces: null
-    target_milestone: M7.1
-    notes: "Typed CommandSpec table extended in M7.1 (v1.160.0) with the full SPEC-015 field set: syntax, stability (Stable|Experimental|Deprecated), side_effect_class (Pure|Read|Governed|Destructive), required_authority (None|Read|Write|Admin), outputs {human, machine schema name}, preconditions, examples (typed with sandbox/invocation/expected), and related links. New enums: Stability, SideEffectClass, AuthorityRequirement, SandboxMode, AgentProfileTag. spec() defaults to Stable/Pure/None and infers the machine schema name (e.g. ExecutionReportV1, TargetListV1). Builder methods with_* support override-after-default. Hand-curated from the Command enum. Agents enumerate via `sddk introspect commands --format json`."
+    target_milestone: delivered
+    notes: "Typed CommandSpec table extended in M7.1 (v1.160.0) with the full SPEC-015 field set: syntax, stability (Stable|Experimental|Deprecated), side_effect_class (Pure|Read|Governed|Destructive), required_authority (None|Read|Write|Admin), outputs {human, machine schema name}, preconditions, examples (typed with sandbox/invocation/expected), and related links. New enums: Stability, SideEffectClass, AuthorityRequirement, SandboxMode, AgentProfileTag. spec() defaults to Stable/Pure/None and infers the machine schema name (e.g. ExecutionReportV1, TargetListV1). Builder methods with_* support override-after-default. Hand-curated from the Command enum. Agents enumerate via `sddk introspect commands --format json`. M7.1B (v1.161.0) hardened the contract: #[non_exhaustive] applied to the five public enums so future variants are non-breaking; CommandSpec::new(name, about) added as a minimal constructor used by integration tests and the M7.1B examples_walker (avoid forcing callers to enumerate all defaults via spec())."
 
   - module: crates/sddk-cli/src/command_surface
     contract: arch-spec-015-agent-experience-contract
@@ -710,8 +710,8 @@ open_mappings:
     state_class: Projection
     authority: sddk-cli
     replaces: null
-    target_milestone: M7.1
-    notes: "AgentCommandSurface aggregator shipped v1.160.0 (M7.1). surface_with_filter() walks all_command_specs() and applies SurfaceFilter {target, profile, include_deprecated, include_experimental}. classify() applies target filter first (fail-closed), then stability gate, then profile-based side-effect gate (ReadOnly profile blocks Governed/Destructive). command_matches_target() uses exact-name / first-token / substring / related-link heuristics. surface_for_target() is a convenience wrapper for the common agent path. The Projection state-class is deliberate: the surface is a derived view over the CommandSpec collection and can be rebuilt without state loss."
+    target_milestone: delivered
+    notes: "AgentCommandSurface aggregator shipped v1.160.0 (M7.1). surface_with_filter() walks all_command_specs() and applies SurfaceFilter {target, profile, include_deprecated, include_experimental}. classify() applies target filter first (fail-closed), then stability gate, then profile-based side-effect gate (ReadOnly profile blocks Governed/Destructive). command_matches_target() uses exact-name / first-token / substring / related-link heuristics. surface_for_target() is a convenience wrapper for the common agent path. The Projection state-class is deliberate: the surface is a derived view over the CommandSpec collection and can be rebuilt without state loss. M7.1B (v1.161.0) added: #[derive(Default)] for ergonomic construction in tests, push(entry) and commands() helpers that keep total/reachable_count in sync, serde #[serde(default)] on every field so partial deserialisation (e.g. from future schema_version=2) is tolerant, and a residual `_ =>` arm on the stability gate so unknown stability variants are gated behind opt-in flags instead of breaking the classifier."
 
   - module: crates/sddk-cli/src/cheat_sheet
     contract: arch-spec-015-agent-experience-contract
@@ -720,8 +720,28 @@ open_mappings:
     state_class: Ephemeral
     authority: sddk-cli
     replaces: null
-    target_milestone: M7.1
+    target_milestone: delivered
     notes: "Cheat-sheet renderer shipped v1.160.0 (M7.1). render_text() produces deterministic markdown with sections: Syntax / Purpose / Stability / Side-effect / Authority / Preconditions / Examples / Related. render_json() serializes the AgentCommandSurface verbatim (no decoration). CLI dispatcher sddk agent-help agent [--target X] [--profile Y] [--include-deprecated] [--include-experimental] [--format text|json] bridges clap args to SurfaceFilter and the renderer."
+
+  - module: crates/sddk-cli/src/examples_walker
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Ephemeral
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "Runtime walker for published ExampleSpec entries shipped v1.161.0 (M7.1B, closes A2 from M7.1 archive). walk_examples(&AgentCommandSurface, &Walker) returns Vec<ExampleWalkReport> in deterministic surface order. Each report carries command, example_idx, example_id, invocation_argv, expected_status, observed_status, sha256 of observed stdout (observed_output_digest), mismatches, and a convenience pass flag. Walker is a type alias `Fn(&[String]) -> (i32, String)` so tests inject hermetic closures without spawning subprocesses. cli_walker is a stub returning argv echoed + status 0; the live subprocess walker is deferred to M7.1C. The walker is paired with agent_surface_golden.rs (this same milestone, schema_version=1, 45 entries locked) for A6 closure. M7.1C (v1.162.0) replaces the argv-echo stub with the in-process `crate::run_from` entry point: cli_walker now captures CommandOutput {status, stdout, stderr} and joins stdout+stderr (newline-separated) so output_contains needles can match either stream. The walker remains hermetic (no subprocess spawn) and reuses CliEnvironment::current. Live subprocess walker remains deferred to M7.1D."
+
+  - module: crates/sddk-cli/src/agent_surface_golden
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Projection
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "Locked JSON snapshot of the AgentCommandSurface shipped v1.161.0 (M7.1B, closes A6 from M7.1 archive). current() builds a GoldenSurface (schema_version=1) over the live registry with the locked subset: name + stability + side_effect_class + required_authority + machine schema name + examples_n (body intentionally excluded — walker handles body-level conformance). current_json() is deterministic byte-for-byte. GOLDEN_PATH = tests/fixtures/agent-surface.golden.json. matches_fixture() returns Ok when current_json() == the on-disk fixture; otherwise Err(diff_summary). UPDATE_SNAPSHOTS=1 in the test env rewrites the fixture. State-class Projection: the golden is a derived view, regenerable from the registry without state loss."
 
   - module: crates/sddk-cli/src/change
     contract: arch-spec-013-cli-convention-first

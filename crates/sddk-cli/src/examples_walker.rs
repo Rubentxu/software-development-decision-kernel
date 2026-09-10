@@ -158,18 +158,35 @@ fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Real walker: invokes the in-process `Cli::run` (or its equivalent)
-/// with the example argv. Returns `(status, stdout)`.
+/// Real walker: invokes the in-process `crate::run_from` with the example
+/// argv and captures `CommandOutput`. Returns `(status, stdout+stderr)`.
 ///
-/// This is the public hook a future M7.1C will swap for a subprocess
-/// walker; for now it delegates to a stub that the CLI tests
-/// already exercise through snapshot fixtures.
+/// M7.1C replaces the previous argv-echo stub with the in-process entry
+/// point. The walker is hermetic (no subprocess spawn), fast enough to
+/// walk every published example in <1s, and reuses `CliEnvironment::current`
+/// the same way `sddk` does at runtime. stdout and stderr are joined
+/// (newline-separated) so `output_contains` needles can match either
+/// stream, mirroring what a subprocess walker would observe.
+///
+/// Side-effects: examples with `SandboxMode::DryRun` are honoured by the
+/// CLI and will not mutate filesystem. Examples that publish a non-DryRun
+/// sandbox are *not* rejected here — that is a contract responsibility of
+/// the command's `ExampleSpec` author. This walker only walks what it is
+/// handed.
+///
+/// M7.1D (deferred) will introduce a subprocess walker behind a feature
+/// flag for users who need to validate the actual `main.rs` entry point
+/// (signal handling, argv parsing). For M7.1C the in-process walker is
+/// the canonical walker.
 pub fn cli_walker(argv: &[String]) -> (i32, String) {
-    // Stub: returns the argv echoed + a synthetic success status.
-    // The full live integration is `#[ignore]`-gated and tested via
-    // `walk_live_examples_pass` (see tests module).
-    let echoed = argv.join(" ");
-    (0, format!("[cli_walker stub] argv={}\n", echoed))
+    let output = crate::run_from(argv.iter().cloned());
+    let combined = match (output.stdout.is_empty(), output.stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => output.stdout,
+        (true, false) => output.stderr,
+        (false, false) => format!("{}\n{}", output.stdout, output.stderr),
+    };
+    (output.status, combined)
 }
 
 #[cfg(test)]
@@ -333,9 +350,76 @@ mod tests {
     }
 
     #[test]
-    fn cli_walker_returns_zero_status_and_echoes_argv() {
-        let (status, out) = cli_walker(&["x".to_string(), "y".to_string()]);
-        assert_eq!(status, 0);
-        assert!(out.contains("x y"));
+    fn cli_walker_runs_help_command_in_process() {
+        // `sddk --help` is a stable, hermetic invocation. clap returns
+        // exit status 2 (the documented "success" code for --help /
+        // --version, distinct from real errors) and emits a recognisable
+        // marker in stdout. This exercises the full in-process path
+        // (Cli::try_parse_from → run_with_environment → clap's help
+        // renderer) without mutating any state.
+        let (status, out) = cli_walker(&["--help".to_string()]);
+        // clap convention: 0 = real success, 2 = help/version rendered.
+        assert!(
+            status == 0 || status == 2,
+            "expected status 0 or 2 from --help, got {}",
+            status
+        );
+        assert!(
+            out.contains("Usage:") || out.contains("usage:") || out.contains("sddk"),
+            "expected help output to mention Usage or sddk, got: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn cli_walker_returns_nonzero_on_unknown_command() {
+        // An unparseable argv should produce a non-zero status and surface
+        // an error message on the combined stream.
+        let (status, out) = cli_walker(&["__definitely_not_a_command__".to_string()]);
+        assert_ne!(status, 0);
+        assert!(
+            !out.is_empty(),
+            "expected an error message in combined output, got empty"
+        );
+    }
+
+    #[test]
+    fn cli_walker_joins_stdout_and_stderr() {
+        // `sddk --version` writes to stdout. The combined stream should
+        // contain the version line. We do not assert against stderr being
+        // present (it may be empty for this command) — only that stdout
+        // content is preserved end-to-end. clap returns status 2 for
+        // --version (success-by-convention, distinct from real errors).
+        let (status, out) = cli_walker(&["--version".to_string()]);
+        assert!(
+            status == 0 || status == 2,
+            "expected status 0 or 2 from --version, got {}",
+            status
+        );
+        // The version banner includes "sddk" plus a semver triple.
+        assert!(
+            out.contains("sddk") && out.contains('.'),
+            "expected version banner with semver, got: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn cli_walker_in_process_matches_run_from() {
+        // The walker must be a thin wrapper over `crate::run_from`: the
+        // returned tuple must equal what `run_from` returns when stdout
+        // and stderr are joined by the same rule.
+        use crate::run_from;
+        let argv = ["--version".to_string()];
+        let output = run_from(argv.iter().cloned());
+        let expected_combined = match (output.stdout.is_empty(), output.stderr.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => output.stdout.clone(),
+            (true, false) => output.stderr.clone(),
+            (false, false) => format!("{}\n{}", output.stdout, output.stderr),
+        };
+        let (status, out) = cli_walker(&argv);
+        assert_eq!(status, output.status);
+        assert_eq!(out, expected_combined);
     }
 }

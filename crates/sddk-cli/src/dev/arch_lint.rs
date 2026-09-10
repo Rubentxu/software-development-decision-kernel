@@ -152,6 +152,9 @@ const MARKER_M7_1_CHEAT_SHEET_PRESENT: &str = "m7_1.cheat_sheet_renderer_present
 // M7.1B — Examples Wiring (closes A2 / A6 / A7-partial).
 const MARKER_M7_1B_EXAMPLES_WALKED: &str = "m7_1b.examples_walked_against_runtime";
 
+// M7.1C — Live in-process walker (cli_walker over crate::run_from).
+const MARKER_M7_1C_LIVE_WALKER: &str = "m7_1c.live_walker_in_process";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -361,6 +364,22 @@ pub fn m7_1_command_registry_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
 pub fn m7_1b_examples_wiring_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M7_1B_EXAMPLES_WALKED.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/examples_walker"),
+    }]
+}
+
+/// M7.1C alignment markers (Live in-process walker).
+///
+/// - `live_walker_in_process`: the `examples_walker` module is delivered
+///   AND its `cli_walker` function delegates to `crate::run_from` (the
+///   in-process CLI entry point), not a stub. We approximate this with
+///   `has_delivered_entry` against `crates/sddk-cli/src/examples_walker`
+///   because the registration of the module as delivered is the gate the
+///   release flow enforces; the actual in-process delegation is verified
+///   by inline tests in `examples_walker::tests`.
+pub fn m7_1c_live_walker_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_1C_LIVE_WALKER.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/examples_walker"),
     }]
 }
@@ -926,6 +945,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_1b_examples_wiring_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_1c_live_walker_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/examples_walker
+    target_milestone: delivered
+"#;
+        let markers = m7_1c_live_walker_alignment_checks(yaml);
+        let m = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_1C_LIVE_WALKER)
+            .expect("marker");
+        assert!(m.present);
+    }
+
+    #[test]
+    fn m7_1c_live_walker_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_1c_live_walker_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
