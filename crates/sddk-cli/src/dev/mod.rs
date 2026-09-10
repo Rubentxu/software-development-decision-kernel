@@ -465,6 +465,9 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
             crate::dev::graph::GraphCommand::Projection(projection_args) => {
                 self::graph::run_dev_graph_projection(projection_args, environment)
             }
+            crate::dev::graph::GraphCommand::Why(why_args) => {
+                self::graph::run_dev_graph_why(why_args, environment)
+            }
         },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
     }

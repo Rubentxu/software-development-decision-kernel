@@ -45,6 +45,9 @@ use sddk_engine::active_graph::{
     ActiveGraphEdge, ActiveGraphEdgeKind, ActiveGraphInput, ActiveGraphNode, ActiveGraphNodeKind,
     ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
 };
+use sddk_engine::why_queries::{
+    DefaultWhyQueryEngine, WhyCausalStep, WhyQueryEngine, WhyQueryKind, WhyQueryResult,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
@@ -63,6 +66,9 @@ pub(crate) enum GraphCommand {
     Edges(GraphEdgesArgs),
     /// Emit the full `ActiveGraphProjection` (nodes + edges + roots + counts) as JSON.
     Projection(GraphProjectionArgs),
+    /// Run a `why`-family causal query against the projected active graph:
+    /// returns the inbound causal closure, summary, and `truncated` flag.
+    Why(GraphWhyArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -101,6 +107,45 @@ pub(crate) struct GraphProjectionArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct GraphWhyArgs {
+    /// Target node id to explain (e.g. `wf-1`, `run:m7-cycle-001`).
+    #[arg(long)]
+    pub target: String,
+    /// Which why-verb to run.
+    ///
+    /// - `why`: walk the full inbound causal closure (BFS up to
+    ///   `WHY_MAX_DEPTH` hops, sorted canonically).
+    /// - `debt-why`: filter inbound to `gates` + `evidence_of` edges only.
+    /// - `decision-why`: filter inbound to `promotes` + `references` +
+    ///   `evidence_of` edges only.
+    #[arg(long, value_enum, default_value_t = WhyKindArg::Why)]
+    pub kind: WhyKindArg,
+    /// Read `ActiveGraphInput` from a JSON file at this path.
+    #[arg(long)]
+    pub from_input: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum WhyKindArg {
+    Why,
+    DebtWhy,
+    DecisionWhy,
+}
+
+impl WhyKindArg {
+    fn to_engine(self) -> WhyQueryKind {
+        match self {
+            Self::Why => WhyQueryKind::Why,
+            Self::DebtWhy => WhyQueryKind::DebtWhy,
+            Self::DecisionWhy => WhyQueryKind::DecisionWhy,
+        }
+    }
 }
 
 // ── Value enums (clap-compatible subset of engine kinds) ─────────────────
@@ -563,6 +608,194 @@ pub(crate) fn run_dev_graph_projection(
     }
 }
 
+// ── Why queries ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WhyStepRow {
+    kind: String,
+    /// For a `node` step this is the node id; for an `edge` step this is
+    /// `source→target` (for human display only — prefer `source`/`target`).
+    id: String,
+    /// Set for `node` steps: the closed-set node kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node_kind: Option<String>,
+    /// Set for `edge` steps: the closed-set edge kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edge_kind: Option<String>,
+    /// Set for `edge` steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    /// Set for `edge` steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<String>,
+}
+
+impl WhyStepRow {
+    fn from_step(step: &WhyCausalStep) -> Self {
+        match step {
+            WhyCausalStep::Node { id, kind, .. } => Self {
+                kind: "node".to_string(),
+                id: id.0.clone(),
+                node_kind: Some(kind.label().to_string()),
+                edge_kind: None,
+                source: None,
+                target: None,
+            },
+            WhyCausalStep::Edge {
+                kind,
+                source,
+                target,
+            } => Self {
+                kind: "edge".to_string(),
+                id: format!("{}→{}", source.0, target.0),
+                node_kind: None,
+                edge_kind: Some(kind.label().to_string()),
+                source: Some(source.0.clone()),
+                target: Some(target.0.clone()),
+            },
+            // `WhyCausalStep` is `#[non_exhaustive]`; future variants
+            // (e.g. Truncated marker) will land here. The fallback
+            // preserves round-tripping via the textual `id` only.
+            _ => Self {
+                kind: "unknown".to_string(),
+                id: format!("{step:?}"),
+                node_kind: None,
+                edge_kind: None,
+                source: None,
+                target: None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WhyReport {
+    kind: String,
+    target: String,
+    matched: bool,
+    truncated: bool,
+    summary: String,
+    causal_path: Vec<WhyStepRow>,
+    step_count: usize,
+    generated_at: String,
+    source: String,
+}
+
+pub(crate) fn run_dev_graph_why(args: GraphWhyArgs, _env: &CliEnvironment) -> CommandOutput {
+    let (input, source) = match load_input(args.from_input.as_ref()) {
+        Ok(pair) => pair,
+        Err(error) => {
+            return CommandOutput {
+                status: 1,
+                stdout: String::new(),
+                stderr: format!("graph why: {error}"),
+            };
+        }
+    };
+    let projection = project(input);
+    let target = NodeId(args.target.clone());
+    let engine = DefaultWhyQueryEngine;
+    let result: WhyQueryResult = engine.query(
+        &projection,
+        &target,
+        args.kind.to_engine(),
+        &now_rfc3339_seconds(),
+    );
+    let step_rows: Vec<WhyStepRow> = result
+        .causal_path
+        .iter()
+        .map(WhyStepRow::from_step)
+        .collect();
+    let step_count = step_rows.len();
+
+    match args.format {
+        OutputFormat::Text => render_why_text(&result, &source, step_rows),
+        OutputFormat::Json => render_why_json(&result, &source, step_rows, step_count),
+    }
+}
+
+fn render_why_text(
+    result: &WhyQueryResult,
+    source: &str,
+    step_rows: Vec<WhyStepRow>,
+) -> CommandOutput {
+    let mut out = String::new();
+    out.push_str("=== sddk dev graph why ===\n\n");
+    out.push_str(&format!("kind:        {}\n", result.kind.label()));
+    out.push_str(&format!("target:      {}\n", result.target.0));
+    out.push_str(&format!("matched:     {}\n", result.matched));
+    out.push_str(&format!("truncated:   {}\n", result.truncated));
+    out.push_str(&format!("generated:   {}\n", result.generated_at));
+    out.push_str(&format!("source:      {source}\n"));
+    out.push_str(&format!("step_count:  {}\n", result.causal_path.len()));
+    out.push('\n');
+    if !result.matched {
+        out.push_str(
+            "(target not found in projection — run `sddk dev graph list` to inspect nodes)\n",
+        );
+    } else if result.causal_path.is_empty() {
+        out.push_str("(no causal predecessors within kind scope — target is a root)\n");
+    } else {
+        out.push_str("causal_path:\n");
+        for step in &step_rows {
+            match step.kind.as_str() {
+                "node" => {
+                    out.push_str(&format!("  node    {}\n", step.id));
+                }
+                "edge" => {
+                    out.push_str(&format!(
+                        "  edge    {} --{}--> {}\n",
+                        step.source.as_deref().unwrap_or("?"),
+                        step.edge_kind.as_deref().unwrap_or("?"),
+                        step.target.as_deref().unwrap_or("?"),
+                    ));
+                }
+                _ => {
+                    out.push_str(&format!("  ?       {}\n", step.id));
+                }
+            }
+        }
+    }
+    out.push('\n');
+    out.push_str(&format!("summary: {}\n", result.summary));
+    CommandOutput {
+        status: 0,
+        stdout: out,
+        stderr: String::new(),
+    }
+}
+
+fn render_why_json(
+    result: &WhyQueryResult,
+    source: &str,
+    step_rows: Vec<WhyStepRow>,
+    step_count: usize,
+) -> CommandOutput {
+    let report = WhyReport {
+        kind: result.kind.label().to_string(),
+        target: result.target.0.clone(),
+        matched: result.matched,
+        truncated: result.truncated,
+        summary: result.summary.clone(),
+        causal_path: step_rows,
+        step_count,
+        generated_at: result.generated_at.clone(),
+        source: source.to_string(),
+    };
+    match serde_json::to_string_pretty(&report) {
+        Ok(json) => CommandOutput {
+            status: 0,
+            stdout: format!("{json}\n"),
+            stderr: String::new(),
+        },
+        Err(error) => CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: format!("graph why: failed to serialize: {error}"),
+        },
+    }
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -721,5 +954,189 @@ mod tests {
         assert_eq!(date_parts.len(), 3);
         assert_eq!(parts[1].len(), 9); // HH:MM:SSZ
         assert!(parts[1].ends_with('Z'));
+    }
+
+    // ── M8.1 why-query tests ─────────────────────────────────────────
+
+    fn fixture_with_evidence_and_promotion() -> ActiveGraphInput {
+        let mut input = ActiveGraphInput::default();
+        input.workflow_nodes = vec![
+            NodeId("wf-apply".to_string()),
+            NodeId("wf-spec".to_string()),
+        ];
+        input.workflow_edges = vec![(
+            NodeId("wf-spec".to_string()),
+            NodeId("wf-apply".to_string()),
+        )];
+        input.evidence_links = vec![(
+            "verifier-passed".to_string(),
+            NodeId("wf-apply".to_string()),
+        )];
+        input.lab_promotions = vec![("gate-1".to_string(), NodeId("wf-apply".to_string()), true)];
+        input
+    }
+
+    #[test]
+    fn why_kind_arg_to_engine_maps_all_three_variants() {
+        assert!(matches!(
+            WhyKindArg::Why.to_engine(),
+            sddk_engine::why_queries::WhyQueryKind::Why
+        ));
+        assert!(matches!(
+            WhyKindArg::DebtWhy.to_engine(),
+            sddk_engine::why_queries::WhyQueryKind::DebtWhy
+        ));
+        assert!(matches!(
+            WhyKindArg::DecisionWhy.to_engine(),
+            sddk_engine::why_queries::WhyQueryKind::DecisionWhy
+        ));
+    }
+
+    #[test]
+    fn why_query_engine_walks_full_inbound_closure() {
+        let projection = project(fixture_with_evidence_and_promotion());
+        let engine = DefaultWhyQueryEngine;
+        let result = engine.query(
+            &projection,
+            &NodeId("wf-apply".to_string()),
+            sddk_engine::why_queries::WhyQueryKind::Why,
+            "t0",
+        );
+        assert!(result.matched);
+        assert!(!result.truncated);
+        assert!(!result.causal_path.is_empty());
+        // `why` walks all inbound edges: parent_of + evidence_of + promotes
+        let edge_kinds: std::collections::BTreeSet<String> = result
+            .causal_path
+            .iter()
+            .filter_map(|step| match step {
+                WhyCausalStep::Edge { kind, .. } => Some(kind.label().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(edge_kinds.contains("parent_of"));
+        assert!(edge_kinds.contains("evidence_of"));
+        assert!(edge_kinds.contains("promotes"));
+    }
+
+    #[test]
+    fn why_query_engine_debt_why_filters_to_evidence_and_gates_only() {
+        let projection = project(fixture_with_evidence_and_promotion());
+        let engine = DefaultWhyQueryEngine;
+        let result = engine.query(
+            &projection,
+            &NodeId("wf-apply".to_string()),
+            sddk_engine::why_queries::WhyQueryKind::DebtWhy,
+            "t0",
+        );
+        let edge_kinds: std::collections::BTreeSet<String> = result
+            .causal_path
+            .iter()
+            .filter_map(|step| match step {
+                WhyCausalStep::Edge { kind, .. } => Some(kind.label().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(edge_kinds.contains("evidence_of"));
+        assert!(!edge_kinds.contains("parent_of"));
+        assert!(!edge_kinds.contains("promotes"));
+    }
+
+    #[test]
+    fn why_query_engine_decision_why_includes_evidence_references_promotes() {
+        let projection = project(fixture_with_evidence_and_promotion());
+        let engine = DefaultWhyQueryEngine;
+        let result = engine.query(
+            &projection,
+            &NodeId("wf-apply".to_string()),
+            sddk_engine::why_queries::WhyQueryKind::DecisionWhy,
+            "t0",
+        );
+        let edge_kinds: std::collections::BTreeSet<String> = result
+            .causal_path
+            .iter()
+            .filter_map(|step| match step {
+                WhyCausalStep::Edge { kind, .. } => Some(kind.label().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(edge_kinds.contains("evidence_of"));
+        assert!(edge_kinds.contains("promotes"));
+        assert!(!edge_kinds.contains("parent_of"));
+    }
+
+    #[test]
+    fn why_query_returns_unknown_target_for_missing_node() {
+        let projection = project(ActiveGraphInput::default());
+        let engine = DefaultWhyQueryEngine;
+        let result = engine.query(
+            &projection,
+            &NodeId("ghost".to_string()),
+            sddk_engine::why_queries::WhyQueryKind::Why,
+            "t0",
+        );
+        assert!(!result.matched);
+        assert!(result.causal_path.is_empty());
+        assert_eq!(result.summary, "unknown target");
+    }
+
+    #[test]
+    fn why_step_row_serializes_node_with_node_kind_and_skips_edge_fields() {
+        let step = WhyCausalStep::Node {
+            id: NodeId("wf-1".to_string()),
+            kind: ActiveGraphNodeKind::Workflow,
+            label: "workflow:wf-1".to_string(),
+        };
+        let row = WhyStepRow::from_step(&step);
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"kind\":\"node\""));
+        assert!(json.contains("\"node_kind\":\"workflow\""));
+        assert!(!json.contains("\"edge_kind\""));
+        assert!(!json.contains("\"source\""));
+        assert!(!json.contains("\"target\""));
+    }
+
+    #[test]
+    fn why_step_row_serializes_edge_with_source_and_target_skips_node_kind() {
+        let step = WhyCausalStep::Edge {
+            kind: ActiveGraphEdgeKind::ParentOf,
+            source: NodeId("a".to_string()),
+            target: NodeId("b".to_string()),
+        };
+        let row = WhyStepRow::from_step(&step);
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"kind\":\"edge\""));
+        assert!(json.contains("\"edge_kind\":\"parent_of\""));
+        assert!(json.contains("\"source\":\"a\""));
+        assert!(json.contains("\"target\":\"b\""));
+        assert!(!json.contains("\"node_kind\""));
+    }
+
+    #[test]
+    fn why_report_round_trips_via_serde() {
+        let report = WhyReport {
+            kind: "why".to_string(),
+            target: "wf-1".to_string(),
+            matched: true,
+            truncated: false,
+            summary: "why wf-1: 2 node(s), 1 edge(s)".to_string(),
+            causal_path: vec![WhyStepRow {
+                kind: "node".to_string(),
+                id: "wf-1".to_string(),
+                node_kind: Some("workflow".to_string()),
+                edge_kind: None,
+                source: None,
+                target: None,
+            }],
+            step_count: 1,
+            generated_at: "2026-09-10T00:00:00Z".to_string(),
+            source: "<empty-default>".to_string(),
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let back: WhyReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.kind, "why");
+        assert_eq!(back.target, "wf-1");
+        assert!(back.matched);
+        assert_eq!(back.step_count, 1);
     }
 }

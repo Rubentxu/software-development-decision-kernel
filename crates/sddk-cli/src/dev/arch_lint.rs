@@ -181,6 +181,11 @@ const MARKER_M7_8_SKILLS_SURFACE: &str = "m7_8.skills_surface_delivered";
 // the H9 Active Graph & Cockpit engine (`crates/sddk-engine/src/active_graph`).
 const MARKER_M8_0_ACTIVE_GRAPH_SURFACE: &str = "m8_0.active_graph_surface_delivered";
 
+// M8.1 — `sddk dev graph why` causal query surface for the H9 WHY engine
+// (`crates/sddk-engine/src/why_queries`). Exposes the three why-verbs
+// (why / debt-why / decision-why) as CLI subcommands.
+const MARKER_M8_1_WHY_QUERIES_SURFACE: &str = "m8_1.why_queries_surface_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -549,6 +554,21 @@ pub fn m7_8_skills_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
 pub fn m8_0_active_graph_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_0_ACTIVE_GRAPH_SURFACE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/graph"),
+    }]
+}
+
+/// M8.1 alignment check (`sddk dev graph why`).
+///
+/// Marker definition:
+/// - `m8_1.why_queries_surface_delivered`: the `crates/sddk-cli/src/dev/graph`
+///   module owns a `run_dev_graph_why` runner that dispatches `why` /
+///   `debt-why` / `decision-why` against the engine `DefaultWhyQueryEngine`.
+///   The corresponding engine module (`crates/sddk-engine/src/why_queries`)
+///   is already shipped as part of GRAPH-WHY-002.
+pub fn m8_1_why_queries_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_1_WHY_QUERIES_SURFACE.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/graph"),
     }]
 }
@@ -1394,6 +1414,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m8_0_active_graph_surface_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_1_why_queries_surface_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/graph
+    target_milestone: delivered
+"#;
+        let markers = m8_1_why_queries_surface_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_1_WHY_QUERIES_SURFACE)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m8_1_why_queries_surface_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/why_queries
+    target_milestone: delivered
+"#;
+        let markers = m8_1_why_queries_surface_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
