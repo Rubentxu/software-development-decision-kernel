@@ -165,6 +165,9 @@ const MARKER_M7_4_ARG_SCHEMA: &str = "m7_4.arg_spec_json_schema_derivation_deliv
 // M7.3 — SkillDefinition contract (SPEC-016).
 const MARKER_M7_3_SKILL_DEFINITION: &str = "m7_3.skill_definition_contract_delivered";
 
+// M7.5 — InstructionCompiler + EffectiveInstructions (SPEC-014).
+const MARKER_M7_5_INSTRUCTION_COMPILER: &str = "m7_5.instruction_compiler_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -447,6 +450,22 @@ pub fn m7_3_skill_definition_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M7_3_SKILL_DEFINITION.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/skill_definition"),
+    }]
+}
+
+/// M7.5 alignment markers (InstructionCompiler + EffectiveInstructions).
+///
+/// - `instruction_compiler_delivered`: the `instruction_compiler` module
+///   is delivered with the typed `InstructionCompiler` /
+///   `EffectiveInstructions` pair, fail-closed conflict detection
+///   (`InvariantViolation`, `PolicyNarrowingViolation`,
+///   `TaskMissing`), canonical-JSON content hashing for
+///   `AgentExecutionReceipt` provenance, and the `ref_token()`
+///   formatter.
+pub fn m7_5_instruction_compiler_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_5_INSTRUCTION_COMPILER.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/instruction_compiler"),
     }]
 }
 
@@ -1151,6 +1170,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_3_skill_definition_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_5_instruction_compiler_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/instruction_compiler
+    target_milestone: delivered
+"#;
+        let markers = m7_5_instruction_compiler_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_5_INSTRUCTION_COMPILER)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m7_5_instruction_compiler_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_5_instruction_compiler_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

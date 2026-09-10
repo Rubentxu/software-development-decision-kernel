@@ -331,7 +331,8 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             false,
             None,
             None,
-        ),
+        )
+        .with_required_skill("core.contract-review@v1"),
         spec(
             "generate",
             "Generate deterministic repository documentation",
@@ -349,7 +350,8 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             true,
             None,
             Some("arch-spec-005"),
-        ),
+        )
+        .with_required_skill("core.workflow-orchestration@v1"),
         spec(
             "ledger",
             "Verify the causal ledger and list its events",
@@ -412,7 +414,8 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             true,
             None,
             None,
-        ),
+        )
+        .with_required_skill("core.release-planning@v1"),
         spec(
             "vault",
             "Index, validate, search, and export knowledge vaults",

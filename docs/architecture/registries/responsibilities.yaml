@@ -872,3 +872,13 @@ open_mappings:
     replaces: null
     target_milestone: delivered
     notes: "ExecutionReport and TaskOutcome shipped v1.159.0. Closed enums for TaskStatus and ExecutionStatus; serializable for the agent surface. Convenience counters executed_count / skipped_count / had_denial / had_halt."
+
+  - module: crates/sddk-cli/src/instruction_compiler
+    contract: arch-spec-015-agent-experience-contract
+    primary_adr: ADR-014-COMMAND-REGISTRY-SINGLE-AUTHORITY
+    coverage: full
+    state_class: Projection
+    authority: sddk-cli
+    replaces: null
+    target_milestone: delivered
+    notes: "InstructionCompiler + EffectiveInstructions shipped v1.166.0 (M7.5, SPEC-014 Instruction Compiler). Typed CompileInputs covering all 7 SPEC-014 sources: KernelInvariantSet, PolicyInstructionSet, TaskContract, ProjectInstructionSet, AgentProfile (passed through to runtime admission gate, not compiled into instructions), SelectedSkillSet, ContextualHints. EffectiveInstructions carries ordered sections (deterministic by strength desc + semantic_key asc), diagnostics.rejected list, ae_version, and content_hash (DefaultHasher over canonical JSON with sorted BTreeMap keys). Fail-closed conflict detection: InstructionConflict::{InvariantViolation, PolicyNarrowingViolation, TaskMissing}. Composition semantics: invariants non-overridable; policies narrowable only (widening attempts fail); task requirements must be satisfied by some accepted fragment (skill instructions cannot satisfy requirements per Skill != Capability); project instructions normalized to canonical keys; skill instructions appended under their id@version header; hints kept under advisory strength and never contribute to conflict count. Duplicate suppression by semantic_key keeps the strongest and emits RejectionReason::DuplicateSuppressed for the loser. EffectiveInstructions::ref_token() returns effective@v<ae_version> for SPEC-018 AgentExecutionReceipt provenance. By_semantic_key / from_skill lookup helpers. Three live CommandSpecs (lint, cycle, release) now declare with_required_skill to exercise the runtime admission gate. M7.5 unblocks SPEC-018 (AgentExecutionReceipt now has effective_instructions_hash to record) and closes the M7.3 deferred wiring (3 deferred items merged into this cycle)."
