@@ -9,6 +9,7 @@ use crate::dev::arch_lint::{
     m7_5_instruction_compiler_alignment_checks, m7_6_execution_receipt_alignment_checks,
     m7_7_skill_registry_bridge_alignment_checks, m7_8_skills_surface_alignment_checks,
     m8_0_active_graph_surface_alignment_checks, m8_1_why_queries_surface_alignment_checks,
+    m8_2_cockpit_views_surface_alignment_checks,
     mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
@@ -528,6 +529,10 @@ pub(super) fn run_dev_doctor(
                 }
                 // M8.1: Why-queries surface marker.
                 for marker in m8_1_why_queries_surface_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M8.2: Cockpit-views surface marker.
+                for marker in m8_2_cockpit_views_surface_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

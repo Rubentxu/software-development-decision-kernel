@@ -1,5 +1,6 @@
 //! Developer tooling: environment doctor, gates, and atomic install/verify.
 
+use self::cockpit::CockpitArgs;
 use self::graph::GraphArgs;
 use self::projection::ProjectionArgs;
 use self::skills::SkillsArgs;
@@ -14,6 +15,7 @@ mod check_arch;
 mod comments_check;
 pub(crate) mod common;
 mod doctor;
+pub(super) mod cockpit;
 mod editor_adapters;
 mod entropy;
 mod framework_check;
@@ -185,6 +187,10 @@ pub(super) enum DevCommand {
     /// as JSON. Closes the M8.0 surface — the engine module was already
     /// shipped but had no operator-facing entry point.
     Graph(GraphArgs),
+    /// Inspect the M8 (H9 Cockpit Views) engine: render structural /
+    /// temporal views (overview, journal, timeline, execution) over
+    /// the projected active graph. Closes the M8.2 surface.
+    Cockpit(CockpitArgs),
     /// Test tooling (count-workspace).
     Test(self::test_cmd::TestArgs),
 }
@@ -467,6 +473,11 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
             }
             crate::dev::graph::GraphCommand::Why(why_args) => {
                 self::graph::run_dev_graph_why(why_args, environment)
+            }
+        },
+        DevCommand::Cockpit(args) => match args.command {
+            crate::dev::cockpit::CockpitCommand::View(view_args) => {
+                self::cockpit::run_dev_cockpit_view(view_args, environment)
             }
         },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
