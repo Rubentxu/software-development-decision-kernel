@@ -10,6 +10,7 @@
 //! `BTreeMap`/`BTreeSet`.
 
 use sddk_domain::workflow_ir::NodeId;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 // ── Audit guard constants ────────────────────────────────────────────────
@@ -27,7 +28,7 @@ pub const PROVENANCE_SOURCE_KIND_COUNT: usize = 3;
 
 /// Closed-set taxonomy of nodes that may appear in an active graph.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ActiveGraphNodeKind {
     Workflow,
     WorkflowRun,
@@ -62,7 +63,7 @@ impl ActiveGraphNodeKind {
 
 /// Closed-set taxonomy of typed relations between nodes.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ActiveGraphEdgeKind {
     /// Workflow parent → child.
     ParentOf,
@@ -97,7 +98,7 @@ impl ActiveGraphEdgeKind {
 
 /// One node in the projected graph.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveGraphNode {
     pub id: NodeId,
     pub kind: ActiveGraphNodeKind,
@@ -112,7 +113,7 @@ pub struct ActiveGraphNode {
 
 /// One typed edge in the projected graph.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveGraphEdge {
     pub kind: ActiveGraphEdgeKind,
     pub source: NodeId,
@@ -134,7 +135,7 @@ pub struct ActiveGraphEdge {
 /// contract is "an operator can re-locate the source by hand from
 /// the locator alone".
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProvenanceRef {
     pub source_kind: ProvenanceSourceKind,
     pub source_locator: String,
@@ -156,7 +157,7 @@ impl ProvenanceRef {
 
 /// Closed-set taxonomy of where a node or edge came from.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ProvenanceSourceKind {
     /// A live cycle's archive manifest at
     /// `~/.sddk-knowledge/<project>/cycles/<id>/archive-manifest.md`

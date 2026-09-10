@@ -37,6 +37,7 @@ use sddk_engine::active_graph::{
     ActiveGraphInput, ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
     ProvenanceRef, ProvenanceSourceKind,
 };
+use sddk_engine::active_graph_drift::{DefaultDriftEngine, DriftEngine};
 use sddk_engine::cockpit_observability::{
     CockpitObservabilityBuilder, CockpitObservabilityKind, DefaultCockpitObservabilityBuilder,
 };
@@ -63,6 +64,12 @@ pub(crate) enum CockpitCommand {
     /// projected active graph (providers, usage, assurance, handoff,
     /// experiments).
     Obs(CockpitObsArgs),
+    /// Compute drift between two active graph projections (M8.7).
+    /// Emits added / removed / changed nodes and edges with
+    /// field-level attribution. Sources can be archive manifests
+    /// (`--cycle-a` / `--cycle-b`) or `ActiveGraphInput` JSON
+    /// files (`--input-a` / `--input-b`).
+    Diff(CockpitDiffArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -158,6 +165,29 @@ impl CockpitObsKindArg {
             Self::Experiments => CockpitObservabilityKind::Experiments,
         }
     }
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CockpitDiffArgs {
+    /// Cycle id for projection A.
+    ///
+    /// Reads `~/.sddk-knowledge/sddk-framework/cycles/<cycle-a>/archive-manifest.md`.
+    #[arg(long, conflicts_with = "input_a")]
+    pub cycle_a: Option<String>,
+    /// Cycle id for projection B.
+    #[arg(long, conflicts_with = "input_b")]
+    pub cycle_b: Option<String>,
+    /// Path to an `ActiveGraphInput` JSON file for projection A.
+    /// Cannot be combined with `--cycle-a`.
+    #[arg(long)]
+    pub input_a: Option<PathBuf>,
+    /// Path to an `ActiveGraphInput` JSON file for projection B.
+    /// Cannot be combined with `--cycle-b`.
+    #[arg(long)]
+    pub input_b: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
 }
 
 // ── JSON envelope ────────────────────────────────────────────────────────
@@ -834,6 +864,260 @@ pub(crate) fn run_dev_cockpit_obs(
                 stderr: format!("cockpit obs: failed to serialize: {error}"),
             },
         },
+    }
+}
+
+/// Run `sddk dev cockpit diff` — M8.7 cross-input drift detection.
+///
+/// Resolves two `ActiveGraphProjection`s (one from a cycle, one from
+/// either another cycle or an input JSON file), runs
+/// `DefaultDriftEngine::diff`, and emits a `DriftRow` JSON envelope
+/// or a human-readable text rendering.
+pub(crate) fn run_dev_cockpit_diff(
+    args: CockpitDiffArgs,
+    env: &CliEnvironment,
+) -> CommandOutput {
+    // Validate the pairing up front.
+    if args.cycle_a.is_none() && args.input_a.is_none() {
+        return CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: "cockpit diff: either --cycle-a or --input-a is required".to_string(),
+        };
+    }
+    if args.cycle_b.is_none() && args.input_b.is_none() {
+        return CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: "cockpit diff: either --cycle-b or --input-b is required".to_string(),
+        };
+    }
+
+    // Resolve projection A.
+    let (input_a, source_a) = match resolve_diff_side(
+        args.cycle_a.as_deref(),
+        args.input_a.as_ref(),
+        env,
+        "a",
+    ) {
+        Ok(pair) => pair,
+        Err(error) => {
+            return CommandOutput {
+                status: 1,
+                stdout: String::new(),
+                stderr: format!("cockpit diff: {error}"),
+            };
+        }
+    };
+    // Resolve projection B.
+    let (input_b, source_b) = match resolve_diff_side(
+        args.cycle_b.as_deref(),
+        args.input_b.as_ref(),
+        env,
+        "b",
+    ) {
+        Ok(pair) => pair,
+        Err(error) => {
+            return CommandOutput {
+                status: 1,
+                stdout: String::new(),
+                stderr: format!("cockpit diff: {error}"),
+            };
+        }
+    };
+
+    let projection_a = project(input_a);
+    let projection_b = project(input_b);
+    let engine = DefaultDriftEngine;
+    let report = engine.diff(&projection_a, &projection_b);
+    let row = DriftRow::from_report(&report, &source_a, &source_b);
+
+    match args.format {
+        OutputFormat::Text => render_diff_text(&row),
+        OutputFormat::Json => match serde_json::to_string_pretty(&row) {
+            Ok(json) => CommandOutput {
+                status: 0,
+                stdout: format!("{json}\n"),
+                stderr: String::new(),
+            },
+            Err(error) => CommandOutput {
+                status: 1,
+                stdout: String::new(),
+                stderr: format!("cockpit diff: failed to serialize: {error}"),
+            },
+        },
+    }
+}
+
+/// Resolve one side of a drift comparison. Prefers `cycle` when set
+/// (consistent with `view`/`obs`); falls back to `input`.
+fn resolve_diff_side(
+    cycle: Option<&str>,
+    input: Option<&PathBuf>,
+    env: &CliEnvironment,
+    side: &str,
+) -> anyhow::Result<(ActiveGraphInput, String)> {
+    if let Some(cycle_id) = cycle {
+        return load_input_from_cycle(cycle_id, env)
+            .map(|(input, src)| (input, format!("cycle[{side}]={cycle_id} ({src})")));
+    }
+    load_input(input).map(|(input, src)| (input, format!("input[{side}]={src}")))
+}
+
+/// JSON envelope for the drift command. Mirrors the engine's
+/// `DriftReport` shape, plus source labels for traceability.
+#[derive(Debug, Serialize, Deserialize)]
+struct DriftRow {
+    source_a: String,
+    source_b: String,
+    summary: DriftSummaryRow,
+    node_deltas: Vec<DriftNodeRow>,
+    edge_deltas: Vec<DriftEdgeRow>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DriftSummaryRow {
+    nodes_added: usize,
+    nodes_removed: usize,
+    nodes_changed: usize,
+    edges_added: usize,
+    edges_removed: usize,
+    edges_changed: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DriftNodeRow {
+    kind: String,
+    node_id: String,
+    before_label: Option<String>,
+    after_label: Option<String>,
+    changed_fields: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DriftEdgeRow {
+    kind: String,
+    sort_key: String,
+    changed_fields: Vec<String>,
+}
+
+impl DriftRow {
+    fn from_report(
+        report: &sddk_engine::active_graph_drift::DriftReport,
+        source_a: &str,
+        source_b: &str,
+    ) -> Self {
+        let node_deltas: Vec<DriftNodeRow> = report
+            .node_deltas
+            .iter()
+            .map(|d| DriftNodeRow {
+                kind: d.kind.label().to_string(),
+                node_id: d.node_id.0.clone(),
+                before_label: d.before.as_ref().map(|n| n.label.clone()),
+                after_label: d.after.as_ref().map(|n| n.label.clone()),
+                changed_fields: d.changed_fields.clone(),
+            })
+            .collect();
+        let edge_deltas: Vec<DriftEdgeRow> = report
+            .edge_deltas
+            .iter()
+            .map(|d| DriftEdgeRow {
+                kind: d.kind.label().to_string(),
+                sort_key: format!("{:?}:{:?}→{:?}", d.sort_key.0, d.sort_key.1, d.sort_key.2),
+                changed_fields: d.changed_fields.clone(),
+            })
+            .collect();
+        Self {
+            source_a: source_a.to_string(),
+            source_b: source_b.to_string(),
+            summary: DriftSummaryRow {
+                nodes_added: report.summary.nodes_added,
+                nodes_removed: report.summary.nodes_removed,
+                nodes_changed: report.summary.nodes_changed,
+                edges_added: report.summary.edges_added,
+                edges_removed: report.summary.edges_removed,
+                edges_changed: report.summary.edges_changed,
+            },
+            node_deltas,
+            edge_deltas,
+        }
+    }
+}
+
+fn render_diff_text(row: &DriftRow) -> CommandOutput {
+    let mut out = String::new();
+    out.push_str("sddk dev cockpit diff\n");
+    out.push_str("=====================\n");
+    out.push_str(&format!("A: {}\n", row.source_a));
+    out.push_str(&format!("B: {}\n", row.source_b));
+    out.push('\n');
+    out.push_str("Summary\n");
+    out.push_str("-------\n");
+    out.push_str(&format!(
+        "nodes: +{} / -{} / ~{}\n",
+        row.summary.nodes_added, row.summary.nodes_removed, row.summary.nodes_changed
+    ));
+    out.push_str(&format!(
+        "edges: +{} / -{} / ~{}\n",
+        row.summary.edges_added, row.summary.edges_removed, row.summary.edges_changed
+    ));
+    out.push('\n');
+
+    if row.node_deltas.is_empty() && row.edge_deltas.is_empty() {
+        out.push_str("No drift detected.\n");
+    } else {
+        if !row.node_deltas.is_empty() {
+            out.push_str("Node drift\n");
+            out.push_str("----------\n");
+            for d in &row.node_deltas {
+                match d.kind.as_str() {
+                    "added" => {
+                        out.push_str(&format!(
+                            "+ node {} [label={}]\n",
+                            d.node_id,
+                            d.after_label.as_deref().unwrap_or("?")
+                        ));
+                    }
+                    "removed" => {
+                        out.push_str(&format!(
+                            "- node {} [label={}]\n",
+                            d.node_id,
+                            d.before_label.as_deref().unwrap_or("?")
+                        ));
+                    }
+                    "changed" => {
+                        out.push_str(&format!(
+                            "~ node {} fields={:?} [{} → {}]\n",
+                            d.node_id,
+                            d.changed_fields,
+                            d.before_label.as_deref().unwrap_or("?"),
+                            d.after_label.as_deref().unwrap_or("?"),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            out.push('\n');
+        }
+        if !row.edge_deltas.is_empty() {
+            out.push_str("Edge drift\n");
+            out.push_str("----------\n");
+            for d in &row.edge_deltas {
+                match d.kind.as_str() {
+                    "added" => out.push_str(&format!("+ edge {}\n", d.sort_key)),
+                    "removed" => out.push_str(&format!("- edge {}\n", d.sort_key)),
+                    "changed" => {
+                        out.push_str(&format!("~ edge {} fields={:?}\n", d.sort_key, d.changed_fields));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    CommandOutput {
+        status: 0,
+        stdout: out,
+        stderr: String::new(),
     }
 }
 
@@ -1564,5 +1848,157 @@ mod tests {
         // line_idx must be 1-based and monotonically increasing.
         assert!(hits[0].1 >= 1);
         assert!(hits[1].1 > hits[0].1);
+    }
+
+    // ── M8.7 — cross-input drift detection ────────────────────────────
+
+    #[test]
+    fn diff_from_two_cycle_manifests_emits_no_drift_when_identical() {
+        // Both sides are the same fixture manifest ⇒ zero deltas.
+        let env = test_env();
+        let fixture_path_a = write_fixture_to_tmp(
+            "diff-a-",
+            r#"{"workflow_nodes":["abc1234","def5678"]}"#,
+        );
+        let fixture_path_b = write_fixture_to_tmp(
+            "diff-b-",
+            r#"{"workflow_nodes":["abc1234","def5678"]}"#,
+        );
+        let args = CockpitDiffArgs {
+            cycle_a: None,
+            cycle_b: None,
+            input_a: Some(fixture_path_a.clone()),
+            input_b: Some(fixture_path_b.clone()),
+            format: OutputFormat::Text,
+        };
+        let output = run_dev_cockpit_diff(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("No drift detected"),
+            "stdout must show 'No drift detected' for identical inputs, got:\n{}",
+            output.stdout
+        );
+        cleanup_tmp(&fixture_path_a);
+        cleanup_tmp(&fixture_path_b);
+    }
+
+    #[test]
+    fn diff_from_two_cycle_manifests_reports_added_nodes() {
+        let env = test_env();
+        let a = write_fixture_to_tmp(
+            "diff-a-",
+            r#"{"workflow_nodes":["abc1234"]}"#,
+        );
+        let b = write_fixture_to_tmp(
+            "diff-b-",
+            r#"{"workflow_nodes":["abc1234","new1234"]}"#,
+        );
+        let args = CockpitDiffArgs {
+            cycle_a: None,
+            cycle_b: None,
+            input_a: Some(a.clone()),
+            input_b: Some(b.clone()),
+            format: OutputFormat::Text,
+        };
+        let output = run_dev_cockpit_diff(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert!(
+            output.stdout.contains("nodes: +1 / -0 / ~0"),
+            "stdout must show +1/-0/~0 summary, got:\n{}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains("new1234"),
+            "stdout must name the added node, got:\n{}",
+            output.stdout
+        );
+        cleanup_tmp(&a);
+        cleanup_tmp(&b);
+    }
+
+    #[test]
+    fn diff_requires_at_least_one_source_per_side() {
+        let env = test_env();
+        // Both sides empty → fail-fast.
+        let args = CockpitDiffArgs {
+            cycle_a: None,
+            cycle_b: None,
+            input_a: None,
+            input_b: None,
+            format: OutputFormat::Text,
+        };
+        let output = run_dev_cockpit_diff(args, &env);
+        assert_eq!(output.status, 1);
+        assert!(
+            output.stderr.contains("--cycle-a or --input-a"),
+            "stderr must explain missing A, got: {}",
+            output.stderr
+        );
+        // A set, B missing → fail-fast.
+        let a = write_fixture_to_tmp("diff-a-", r#"{"workflow_nodes":["a"]}"#);
+        let args = CockpitDiffArgs {
+            cycle_a: None,
+            cycle_b: None,
+            input_a: Some(a.clone()),
+            input_b: None,
+            format: OutputFormat::Text,
+        };
+        let output = run_dev_cockpit_diff(args, &env);
+        assert_eq!(output.status, 1);
+        assert!(
+            output.stderr.contains("--cycle-b or --input-b"),
+            "stderr must explain missing B, got: {}",
+            output.stderr
+        );
+        cleanup_tmp(&a);
+    }
+
+    #[test]
+    fn diff_json_envelope_shape_is_stable() {
+        let env = test_env();
+        let a = write_fixture_to_tmp("diff-a-", r#"{"workflow_nodes":["abc"]}"#);
+        let b = write_fixture_to_tmp(
+            "diff-b-",
+            r#"{"workflow_nodes":["abc","new"]}"#,
+        );
+        let args = CockpitDiffArgs {
+            cycle_a: None,
+            cycle_b: None,
+            input_a: Some(a.clone()),
+            input_b: Some(b.clone()),
+            format: OutputFormat::Json,
+        };
+        let output = run_dev_cockpit_diff(args, &env);
+        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&output.stdout).expect("stdout must be valid JSON");
+        assert!(parsed["source_a"].is_string());
+        assert!(parsed["source_b"].is_string());
+        assert_eq!(parsed["summary"]["nodes_added"], 1);
+        assert_eq!(parsed["summary"]["nodes_removed"], 0);
+        assert_eq!(parsed["summary"]["nodes_changed"], 0);
+        assert_eq!(parsed["summary"]["edges_added"], 0);
+        assert_eq!(parsed["summary"]["edges_removed"], 0);
+        assert_eq!(parsed["summary"]["edges_changed"], 0);
+        assert_eq!(parsed["node_deltas"][0]["kind"], "added");
+        assert_eq!(parsed["node_deltas"][0]["node_id"], "new");
+        cleanup_tmp(&a);
+        cleanup_tmp(&b);
+    }
+
+    /// Helper: write a small JSON fixture to a tmp file under `/tmp`
+    /// and return its path. Caller must call `cleanup_tmp` to remove.
+    fn write_fixture_to_tmp(prefix: &str, body: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!("{prefix}{nonce}.json"));
+        std::fs::write(&path, body).expect("write tmp fixture");
+        path
+    }
+
+    fn cleanup_tmp(path: &PathBuf) {
+        let _ = std::fs::remove_file(path);
     }
 }

@@ -235,6 +235,14 @@ const MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED: &str =
 const MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH: &str =
     "m8_6.provenance_threaded_through_graph";
 
+// M8.7 — Cross-input drift detection over two `ActiveGraphProjection`s.
+// The engine owns the comparator (`sddk_engine::active_graph_drift`)
+// and the CLI exposes it via `sddk dev cockpit diff --cycle-a/--cycle-b`
+// (or `--input-a`/`--input-b`). Drift is a graph-level operation so
+// it gates on a single surface module: `dev/cockpit`.
+const MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION: &str =
+    "m8_7.cross_input_drift_detection";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -717,6 +725,23 @@ pub fn m8_6_provenance_threaded_through_graph_alignment_checks(
         id: MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit")
             && has_delivered_entry(yaml, "crates/sddk-cli/src/dev/graph"),
+    }]
+}
+
+/// M8.7 alignment check (cross-input drift detection).
+///
+/// Marker definition:
+/// - `m8_7.cross_input_drift_detection`: the comparator surface
+///   `crates/sddk-cli/src/dev/cockpit` delivers the `cockpit diff`
+///   subcommand backed by `sddk_engine::active_graph_drift`. Drift
+///   is a graph-level operation, so it gates on the cockpit surface
+///   only — there is no second CLI module to coordinate with.
+pub fn m8_7_cross_input_drift_detection_alignment_checks(
+    yaml: &str,
+) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
     }]
 }
 
@@ -1738,6 +1763,41 @@ entries:
             assert!(
                 !m.present,
                 "marker {} must be absent when graph emitter is missing",
+                m.id
+            );
+        }
+    }
+
+    #[test]
+    fn m8_7_cross_input_drift_detection_marker_present_when_cockpit_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_7_cross_input_drift_detection_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION)
+            .expect("marker present");
+        assert!(
+            marker.present,
+            "cockpit surface delivered ⇒ drift detection marker present"
+        );
+    }
+
+    #[test]
+    fn m8_7_cross_input_drift_detection_marker_absent_when_cockpit_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/graph
+    target_milestone: delivered
+"#;
+        let markers = m8_7_cross_input_drift_detection_alignment_checks(yaml);
+        for m in &markers {
+            assert!(
+                !m.present,
+                "marker {} must be absent when cockpit surface is missing",
                 m.id
             );
         }

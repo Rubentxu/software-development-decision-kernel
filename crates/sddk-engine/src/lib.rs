@@ -10,6 +10,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 pub mod active_graph;
+pub mod active_graph_drift;
 pub mod active_graph_view;
 mod adoption;
 pub mod agent_contribution_envelope;
