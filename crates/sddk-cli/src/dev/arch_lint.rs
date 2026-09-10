@@ -168,6 +168,9 @@ const MARKER_M7_3_SKILL_DEFINITION: &str = "m7_3.skill_definition_contract_deliv
 // M7.5 — InstructionCompiler + EffectiveInstructions (SPEC-014).
 const MARKER_M7_5_INSTRUCTION_COMPILER: &str = "m7_5.instruction_compiler_delivered";
 
+// M7.6 — AgentExecutionReceipt (SPEC-018).
+const MARKER_M7_6_EXECUTION_RECEIPT: &str = "m7_6.agent_execution_receipt_delivered";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -466,6 +469,25 @@ pub fn m7_5_instruction_compiler_alignment_checks(yaml: &str) -> Vec<MarkerStatu
     vec![MarkerStatus {
         id: MARKER_M7_5_INSTRUCTION_COMPILER.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/instruction_compiler"),
+    }]
+}
+
+/// M7.6 alignment markers (AgentExecutionReceipt).
+///
+/// - `agent_execution_receipt_delivered`: the `execution_receipt` module
+///   is delivered with the typed `AgentExecutionReceipt` envelope,
+///   `ReplayClass` enum, `ProviderUsage` struct, `ValidationWarning`
+///   for deferred producers, fail-closed `validate()` (rejects empty
+///   ids, non-hex hashes, invalid skill ref_tokens, non-RFC3339
+///   timestamps), canonical-JSON content hashing, and a typed
+///   `AgentExecutionReceiptBuilder` that wires
+///   `effective_instructions_hash` from M7.5
+///   (`EffectiveInstructions::content_hash`) and `selected_skill_refs`
+///   from M7.3 (`SkillDefinition::ref_token` + `content_hash`).
+pub fn m7_6_execution_receipt_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M7_6_EXECUTION_RECEIPT.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/execution_receipt"),
     }]
 }
 
@@ -1198,6 +1220,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m7_5_instruction_compiler_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m7_6_execution_receipt_marker_recognised() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/execution_receipt
+    target_milestone: delivered
+"#;
+        let markers = m7_6_execution_receipt_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M7_6_EXECUTION_RECEIPT)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m7_6_execution_receipt_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/semantic_graph
+    target_milestone: delivered
+"#;
+        let markers = m7_6_execution_receipt_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }
