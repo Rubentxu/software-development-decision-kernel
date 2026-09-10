@@ -12,6 +12,7 @@ use crate::dev::arch_lint::{
     m8_2_cockpit_views_surface_alignment_checks, m8_3_cockpit_observability_surface_alignment_checks,
     m8_4_active_graph_input_auto_derived_alignment_checks,
     m8_5_commit_parents_section_parsed_alignment_checks,
+    m8_6_provenance_threaded_through_graph_alignment_checks,
     mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
@@ -547,6 +548,12 @@ pub(super) fn run_dev_doctor(
                 }
                 // M8.5: parent_of edges from `## Commit parents` marker.
                 for marker in m8_5_commit_parents_section_parsed_alignment_checks(&text) {
+                    push_marker(&mut checks, &marker);
+                }
+                // M8.6: per-node + per-edge provenance threaded marker.
+                for marker in
+                    m8_6_provenance_threaded_through_graph_alignment_checks(&text)
+                {
                     push_marker(&mut checks, &marker);
                 }
             }

@@ -35,6 +35,7 @@ use anyhow::Context;
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_engine::active_graph::{
     ActiveGraphInput, ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
+    ProvenanceRef, ProvenanceSourceKind,
 };
 use sddk_engine::cockpit_observability::{
     CockpitObservabilityBuilder, CockpitObservabilityKind, DefaultCockpitObservabilityBuilder,
@@ -386,6 +387,33 @@ fn derive_active_graph_input_from_manifest(text: &str) -> ActiveGraphInput {
         // commit's short SHA so observability views can group by cycle.
         input.workflow_run_id = Some(first_sha.chars().take(7).collect());
     }
+    // M8.6 — populate per-node + per-edge provenance. The first
+    // occurrence of each SHA wins (BTreeMap insert keeps it), so
+    // bullet-driven entries (which arrive after the table row in
+    // parse order) only fill gaps. This keeps the locator closest to
+    // the canonical "table row" for workflow_nodes that appear there.
+    for (sha, locator) in &commits.sha_provenance {
+        input
+            .node_provenance
+            .entry(NodeId(sha.clone()))
+            .or_insert_with(|| {
+                ProvenanceRef::new(
+                    ProvenanceSourceKind::CycleManifest,
+                    locator.clone(),
+                )
+            });
+    }
+    for ((child, parent), locator) in &commits.edge_provenance {
+        input
+            .edge_provenance
+            .entry((NodeId(child.clone()), NodeId(parent.clone())))
+            .or_insert_with(|| {
+                ProvenanceRef::new(
+                    ProvenanceSourceKind::CycleManifest,
+                    locator.clone(),
+                )
+            });
+    }
     input
 }
 
@@ -396,6 +424,15 @@ struct ParsedManifest {
     parent_edges: Vec<(String, String)>,
     evidence_edges: Vec<(String, String)>,
     memory_refs: Vec<(String, String)>,
+    /// M8.6 — per-SHA provenance (`Commits:row_N` locator) so the
+    /// projection can attribute every workflow node back to its
+    /// byte position in the manifest. Recorded as we encounter the
+    /// SHA in the Commits table — never inferred.
+    sha_provenance: Vec<(String, String)>,
+    /// M8.6 — per-edge provenance (`Commit_parents:bullet_N`
+    /// locator) so the projection can attribute every parent_of edge
+    /// back to its bullet.
+    edge_provenance: Vec<((String, String), String)>,
 }
 
 /// Parse the manifest into workflow_nodes, parent_edges, evidence_edges
@@ -404,13 +441,19 @@ struct ParsedManifest {
 fn parse_commit_rows(text: &str) -> ParsedManifest {
     let mut out = ParsedManifest::default();
     let mut in_commits = false;
-    for line in text.lines() {
+    let mut commits_section: &str = "";
+    // M8.6 — count rows in the Commits table so we can attach a stable
+    // locator (`Commits:row_N`) to each SHA we record.
+    let mut commit_row_idx: usize = 0;
+    for (idx, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         // Detect the "## Commits" section header. M8.2/M8.3 manifests
         // use exactly this heading; if a future cycle uses a different
         // header the parser degrades to empty (no fabrication).
         if trimmed.starts_with("## ") && trimmed.to_ascii_lowercase().contains("commit") {
             in_commits = true;
+            commits_section = trimmed.trim_start_matches("## ").trim();
+            commit_row_idx = 0;
             continue;
         }
         if trimmed.starts_with("## ") {
@@ -425,48 +468,78 @@ fn parse_commit_rows(text: &str) -> ParsedManifest {
         if let Some(sha) = parse_table_row_sha(trimmed)
             && !out.shas.contains(&sha)
         {
-            out.shas.push(sha);
+            out.shas.push(sha.clone());
+            commit_row_idx += 1;
+            out.sha_provenance.push((
+                sha,
+                format!("{commits_section}:row_{commit_row_idx}@line_{}", idx + 1),
+            ));
         }
     }
     // Parent edges + evidence + memory refs come from explicit
     // "Bridges" / "Deferred items" sections if present. We look for
     // bullet lists under those headings.
-    parse_section_bullets_for(text, "Bridges", &mut |bullet: &str| {
-        // Bridge shape: "- M8.x — ..." or "- <source> → <target>"
-        // We treat each bridge as an evidence edge keyed by the cycle
-        // id (source) and the first SHA in the bridge target.
-        if let Some((label, sha)) = parse_bridge_bullet(bullet, &out.shas) {
-            out.evidence_edges.push((label, sha));
-        }
-    });
-    parse_section_bullets_for(text, "Deferred items", &mut |bullet: &str| {
-        // Deferred bullet shape: "- M9 — ..."
-        let label = bullet
-            .trim_start_matches("- ")
-            .trim_start_matches("* ")
-            .chars()
-            .take(64)
-            .collect::<String>();
-        let target = out
-            .shas
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "<unknown>".to_string());
-        out.memory_refs.push((label, target));
-    });
+    parse_section_bullets_for_with_locator(
+        text,
+        "Bridges",
+        &mut |bullet: &str, line_idx: usize, section: &str| {
+            // Bridge shape: "- M8.x — ..." or "- <source> → <target>"
+            // We treat each bridge as an evidence edge keyed by the cycle
+            // id (source) and the first SHA in the bridge target.
+            if let Some((label, sha)) = parse_bridge_bullet(bullet, &out.shas) {
+                let locator = format!("{section}:bullet@line_{line_idx}");
+                // Record provenance for the evidence node (target SHA).
+                out.sha_provenance
+                    .push((sha.clone(), locator.clone()));
+                out.evidence_edges.push((label, sha));
+                let _ = locator;
+            }
+        },
+    );
+    parse_section_bullets_for_with_locator(
+        text,
+        "Deferred items",
+        &mut |bullet: &str, line_idx: usize, section: &str| {
+            // Deferred bullet shape: "- M9 — ..."
+            let label = bullet
+                .trim_start_matches("- ")
+                .trim_start_matches("* ")
+                .chars()
+                .take(64)
+                .collect::<String>();
+            let target = out
+                .shas
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "<unknown>".to_string());
+            let locator = format!("{section}:bullet@line_{line_idx}");
+            // The first commit SHA gets an additional provenance
+            // pointer so memory_ref targets are also attributable.
+            out.sha_provenance.push((target.clone(), locator));
+            out.memory_refs.push((label, target));
+        },
+    );
     // Parent edges come from an explicit "## Commit parents" section if
     // the manifest provides one (M8.5 convention). The parser only emits
     // edges whose both SHAs appear in the known commit list — anything
     // else is dropped silently to preserve the "honest derivation"
     // contract from M8.4. Manifests without this section still parse
     // cleanly with empty `parent_edges` (backward compatible).
-    parse_section_bullets_for(text, "Commit parents", &mut |bullet: &str| {
-        // Bullet shape: "- `<child>` → `<parent>` (note)"
-        // The arrow can be `→`, `->`, or `=>`; the note is optional.
-        if let Some((child, parent)) = parse_parent_edge_bullet(bullet, &out.shas) {
-            out.parent_edges.push((child, parent));
-        }
-    });
+    parse_section_bullets_for_with_locator(
+        text,
+        "Commit parents",
+        &mut |bullet: &str, line_idx: usize, section: &str| {
+            // Bullet shape: "- `<child>` → `<parent>` (note)"
+            // The arrow can be `→`, `->`, or `=>`; the note is optional.
+            if let Some((child, parent)) = parse_parent_edge_bullet(bullet, &out.shas) {
+                let locator = format!("{section}:bullet@line_{line_idx}");
+                out.sha_provenance.push((child.clone(), locator.clone()));
+                out.sha_provenance.push((parent.clone(), locator.clone()));
+                out.parent_edges.push((child.clone(), parent.clone()));
+                out.edge_provenance.push(((child, parent), locator));
+            }
+        },
+    );
     // Parent edges are inferred from the cycle's own commit history.
     // The manifest only lists commit SHAs; parent relations are not
     // explicit. To stay honest, we leave parent_edges empty unless
@@ -498,6 +571,12 @@ fn parse_table_row_sha(line: &str) -> Option<String> {
 /// callers can pass closures that capture references of any lifetime
 /// (the simpler `FnMut(&str)` signature fights the borrow checker
 /// when the same helper is invoked twice with closures over `out`).
+///
+/// Retained for M8.4/M8.5 fixture authors and external callers; the
+/// M8.6 cycle-aware parser uses
+/// [`parse_section_bullets_for_with_locator`] instead because it
+/// also reports the source line index.
+#[allow(dead_code)]
 fn parse_section_bullets_for<'a, F: for<'b> FnMut(&'b str)>(
     text: &'a str,
     heading: &str,
@@ -513,6 +592,37 @@ fn parse_section_bullets_for<'a, F: for<'b> FnMut(&'b str)>(
         }
         if in_section && (trimmed.starts_with("- ") || trimmed.starts_with("* ")) {
             cb(trimmed);
+        }
+    }
+}
+
+/// Same as [`parse_section_bullets_for`] but also passes the 1-based
+/// line index and the canonical section name so callers can record
+/// per-bullet provenance (M8.6 contract). `section_locator` is the
+/// raw heading text with the `## ` prefix stripped; callers compose
+/// it into a stable locator like `Commits:row_3`.
+///
+/// `line_idx` is the byte-line index in the original `text`, not a
+/// character offset — that matches what every other CLI surface in
+/// this crate reports as "line".
+fn parse_section_bullets_for_with_locator<'a, F: for<'b> FnMut(&'b str, usize, &'b str)>(
+    text: &'a str,
+    heading: &str,
+    mut cb: F,
+) {
+    let mut in_section = false;
+    let mut section_locator: &str = "";
+    for (idx, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            section_locator = trimmed.trim_start_matches("## ").trim();
+            in_section = section_locator
+                .to_ascii_lowercase()
+                .starts_with(&heading.to_ascii_lowercase());
+            continue;
+        }
+        if in_section && (trimmed.starts_with("- ") || trimmed.starts_with("* ")) {
+            cb(trimmed, idx + 1, section_locator);
         }
     }
 }
@@ -1368,5 +1478,91 @@ mod tests {
             sddk_actor: None,
             user: None,
         }
+    }
+
+    // ── M8.6 — per-node + per-edge provenance recording ──────────────
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_records_node_provenance_for_table_rows() {
+        // The fixture has two SHAs in the Commits table. The parser
+        // must record a `ProvenanceRef` for each, anchored to the
+        // Commits section + the table-row index + the byte-line number.
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        let commit1 = input
+            .node_provenance
+            .get(&NodeId("abc1234".to_string()))
+            .expect("abc1234 must have provenance");
+        assert_eq!(commit1.source_kind, ProvenanceSourceKind::CycleManifest);
+        assert!(
+            commit1.source_locator.contains("row_1"),
+            "first SHA must be at row_1, got {:?}",
+            commit1.source_locator
+        );
+        assert!(
+            commit1.source_locator.contains("line_"),
+            "locator must include the byte-line number for audit, got {:?}",
+            commit1.source_locator
+        );
+        let commit2 = input
+            .node_provenance
+            .get(&NodeId("def5678".to_string()))
+            .expect("def5678 must have provenance");
+        assert!(
+            commit2.source_locator.contains("row_2"),
+            "second SHA must be at row_2, got {:?}",
+            commit2.source_locator
+        );
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_records_edge_provenance_for_commit_parents() {
+        // The fixture has one valid parent edge (`abc1234 → def5678`).
+        // It must appear in `edge_provenance` keyed by `(child, parent)`
+        // and pointing at the `Commit parents` section.
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        let edge_prov = input
+            .edge_provenance
+            .get(&(
+                NodeId("abc1234".to_string()),
+                NodeId("def5678".to_string()),
+            ))
+            .expect("parent_of edge must have provenance");
+        assert_eq!(edge_prov.source_kind, ProvenanceSourceKind::CycleManifest);
+        assert!(
+            edge_prov.source_locator.contains("Commit parents"),
+            "edge provenance must point at the Commit parents section, got {:?}",
+            edge_prov.source_locator
+        );
+        assert!(
+            edge_prov.source_locator.contains("line_"),
+            "edge locator must include the byte-line number, got {:?}",
+            edge_prov.source_locator
+        );
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_provenance_is_none_for_inputs_without_manifest() {
+        // Empty input ⇒ no provenance maps populated (backward compat).
+        let input = derive_active_graph_input_from_manifest("");
+        assert!(input.node_provenance.is_empty());
+        assert!(input.edge_provenance.is_empty());
+    }
+
+    #[test]
+    fn parse_section_bullets_for_with_locator_reports_line_idx_and_section_name() {
+        let text = "## Section A\n\n- alpha\n- beta\n\n## Section B\n\n- gamma\n";
+        let mut hits: Vec<(String, usize, String)> = Vec::new();
+        let mut cb = |bullet: &str, line_idx: usize, section: &str| {
+            hits.push((bullet.to_string(), line_idx, section.to_string()));
+        };
+        parse_section_bullets_for_with_locator(text, "Section A", &mut cb);
+        assert_eq!(hits.len(), 2, "Section A has 2 bullets, got {hits:?}");
+        assert_eq!(hits[0].0, "- alpha");
+        assert_eq!(hits[0].2, "Section A");
+        assert_eq!(hits[1].0, "- beta");
+        assert_eq!(hits[1].2, "Section A");
+        // line_idx must be 1-based and monotonically increasing.
+        assert!(hits[0].1 >= 1);
+        assert!(hits[1].1 > hits[0].1);
     }
 }

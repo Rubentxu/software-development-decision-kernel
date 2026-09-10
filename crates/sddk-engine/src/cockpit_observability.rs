@@ -321,6 +321,8 @@ mod tests {
             runbook_labels: vec![],
             human_decision_labels: vec![],
             delegations: vec![(NodeId("orch".to_string()), NodeId("worker".to_string()))],
+            node_provenance: BTreeMap::new(),
+            edge_provenance: BTreeMap::new(),
         };
         projector().project(&input, "t0")
     }

@@ -43,7 +43,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::workflow_ir::NodeId;
 use sddk_engine::active_graph::{
     ActiveGraphEdge, ActiveGraphEdgeKind, ActiveGraphInput, ActiveGraphNode, ActiveGraphNodeKind,
-    ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
+    ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector, ProvenanceRef,
 };
 use sddk_engine::why_queries::{
     DefaultWhyQueryEngine, WhyCausalStep, WhyQueryEngine, WhyQueryKind, WhyQueryResult,
@@ -217,6 +217,11 @@ struct NodeRow {
     kind: String,
     label: String,
     recorded_at: String,
+    /// M8.6 — optional source attribution. `null` for nodes whose
+    /// upstream `ActiveGraphInput` did not record provenance (legacy
+    /// fixtures, plain struct literals).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    provenance: Option<ProvenanceRow>,
 }
 
 impl NodeRow {
@@ -226,6 +231,25 @@ impl NodeRow {
             kind: node.kind.label().to_string(),
             label: node.label.clone(),
             recorded_at: node.recorded_at.clone(),
+            provenance: node.provenance.as_ref().map(ProvenanceRow::from_ref),
+        }
+    }
+}
+
+/// Serializable shape of `sddk_engine::active_graph::ProvenanceRef`.
+/// Kept separate from the engine type so the JSON contract is owned
+/// by the CLI surface (per ADR-0010 — projection layer).
+#[derive(Debug, Serialize, Deserialize)]
+struct ProvenanceRow {
+    source_kind: String,
+    source_locator: String,
+}
+
+impl ProvenanceRow {
+    fn from_ref(r: &ProvenanceRef) -> Self {
+        Self {
+            source_kind: r.source_kind.label().to_string(),
+            source_locator: r.source_locator.clone(),
         }
     }
 }
@@ -235,6 +259,10 @@ struct EdgeRow {
     kind: String,
     source: String,
     target: String,
+    /// M8.6 — optional source attribution for the edge. Same shape
+    /// contract as `NodeRow::provenance`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    provenance: Option<ProvenanceRow>,
 }
 
 impl EdgeRow {
@@ -243,6 +271,7 @@ impl EdgeRow {
             kind: edge.kind.label().to_string(),
             source: edge.source.0.clone(),
             target: edge.target.0.clone(),
+            provenance: edge.provenance.as_ref().map(ProvenanceRow::from_ref),
         }
     }
 }

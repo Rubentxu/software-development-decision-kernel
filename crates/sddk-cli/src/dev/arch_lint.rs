@@ -224,6 +224,17 @@ const MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED: &str = "m8_4.active_graph_inp
 const MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED: &str =
     "m8_5.commit_parents_section_parsed";
 
+// M8.6 — Per-node and per-edge provenance metadata carried through the
+// `ActiveGraphInput` ↔ `ActiveGraphProjection` pipeline so every
+// projected entity is attributable back to the byte that produced it.
+// Lives in the engine (`sddk_engine::active_graph::{ProvenanceRef,
+// ProvenanceSourceKind}`); wired into the CLI projection in
+// `dev/cockpit.rs` and `dev/graph.rs` (`NodeRow::provenance` +
+// `EdgeRow::provenance` with `skip_serializing_if = "Option::is_none"`
+// so JSON stays backward-compatible when no provenance is recorded).
+const MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH: &str =
+    "m8_6.provenance_threaded_through_graph";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -687,6 +698,25 @@ pub fn m8_5_commit_parents_section_parsed_alignment_checks(
     vec![MarkerStatus {
         id: MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
+    }]
+}
+
+/// M8.6 alignment check (per-node + per-edge provenance).
+///
+/// Marker definition:
+/// - `m8_6.provenance_threaded_through_graph`: both
+///   `crates/sddk-cli/src/dev/cockpit` AND `crates/sddk-cli/src/dev/graph`
+///   participate in the provenance contract (the cockpit parser mints
+///   the `ProvenanceRef`s; the graph emitter serializes them). The
+///   marker gates on both surface modules being delivered because the
+///   data flow is two-sided.
+pub fn m8_6_provenance_threaded_through_graph_alignment_checks(
+    yaml: &str,
+) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit")
+            && has_delivered_entry(yaml, "crates/sddk-cli/src/dev/graph"),
     }]
 }
 
@@ -1673,6 +1703,43 @@ entries:
         let markers = m8_5_commit_parents_section_parsed_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_6_provenance_threaded_through_graph_marker_present_when_both_modules_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+  - module: crates/sddk-cli/src/dev/graph
+    target_milestone: delivered
+"#;
+        let markers = m8_6_provenance_threaded_through_graph_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH)
+            .expect("marker present");
+        assert!(
+            marker.present,
+            "both cockpit + graph modules delivered ⇒ marker present"
+        );
+    }
+
+    #[test]
+    fn m8_6_provenance_threaded_through_graph_marker_absent_when_only_cockpit_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_6_provenance_threaded_through_graph_alignment_checks(yaml);
+        for m in &markers {
+            assert!(
+                !m.present,
+                "marker {} must be absent when graph emitter is missing",
+                m.id
+            );
         }
     }
 }

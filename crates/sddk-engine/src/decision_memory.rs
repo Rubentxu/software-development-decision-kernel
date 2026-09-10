@@ -2211,6 +2211,7 @@ impl InMemoryMemoryStore {
                     kind: ActiveGraphNodeKind::DecisionMemory,
                     label: format!("commit:{}", hex_lower(&cur)),
                     recorded_at: c.timestamp.clone(),
+                    provenance: None,
                 });
             for parent in &c.parents {
                 let parent_node = NodeId(hex_lower(parent));
@@ -2222,6 +2223,7 @@ impl InMemoryMemoryStore {
                         kind: ActiveGraphNodeKind::DecisionMemory,
                         label: format!("commit:{}", hex_lower(parent)),
                         recorded_at: String::new(),
+                        provenance: None,
                     });
                 // parent → cur edge (parent promotes/evidences cur).
                 // Use `Promotes` so the engine's DecisionWhy filter
@@ -2231,6 +2233,7 @@ impl InMemoryMemoryStore {
                     kind: ActiveGraphEdgeKind::Promotes,
                     source: parent_node.clone(),
                     target: node_id.clone(),
+                    provenance: None,
                 };
                 if !edges.iter().any(|e| {
                     e.source == edge.source && e.target == edge.target && e.kind == edge.kind
