@@ -203,6 +203,16 @@ const MARKER_M8_2_COCKPIT_VIEWS_SURFACE: &str = "m8_2.cockpit_views_surface_deli
 // `CockpitViewRow`, and the text/JSON rendering pipeline.
 const MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE: &str = "m8_3.cockpit_observability_surface_delivered";
 
+// M8.4 — Auto-derive `ActiveGraphInput` from a cycle's archive manifest
+// via `sddk dev cockpit {view,obs} --from-cycle <cycle-id>`. Reads the
+// manifest at `~/.sddk-knowledge/sddk-framework/cycles/<cycle-id>/archive-manifest.md`
+// and produces a projection only from what the manifest honestly exposes
+// (commit SHAs as workflow_nodes, bridges with known SHAs as evidence_of
+// edges, deferred items as memory_refs). No `git rev-parse`, no
+// inference — anything the manifest does not state is silently dropped
+// per the "honest derivation" contract documented in `derive_active_graph_input_from_manifest`.
+const MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED: &str = "m8_4.active_graph_input_auto_derived";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -623,6 +633,27 @@ pub fn m8_2_cockpit_views_surface_alignment_checks(yaml: &str) -> Vec<MarkerStat
 pub fn m8_3_cockpit_observability_surface_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
+    }]
+}
+
+/// M8.4 alignment check (`sddk dev cockpit --from-cycle`).
+///
+/// Marker definition:
+/// - `m8_4.active_graph_input_auto_derived`: the
+///   `crates/sddk-cli/src/dev/cockpit` module exposes a
+///   `derive_active_graph_input_from_manifest` pure parser + a
+///   `load_input_from_cycle` filesystem helper + a `resolve_input`
+///   dispatcher (with `--from-cycle` taking precedence over
+///   `--from-input`) that lets `sddk dev cockpit {view,obs}` work
+///   against a live cycle's archive manifest without hand-feeding a
+///   JSON fixture. The marker gates on the surface module path
+///   (same as M8.2 / M8.3) rather than a separate module, because the
+///   cycle-aware input loading is an extension of the existing
+///   cockpit surface, not a new operator surface.
+pub fn m8_4_active_graph_input_auto_derived_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
     }]
 }
@@ -1552,6 +1583,34 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m8_3_cockpit_observability_surface_alignment_checks(yaml);
+        for m in &markers {
+            assert!(!m.present, "marker {} should be absent", m.id);
+        }
+    }
+
+    #[test]
+    fn m8_4_active_graph_input_auto_derived_marker_present_when_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_4_active_graph_input_auto_derived_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED)
+            .expect("marker present");
+        assert!(marker.present);
+    }
+
+    #[test]
+    fn m8_4_active_graph_input_auto_derived_marker_absent_when_module_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-engine/src/active_graph
+    target_milestone: delivered
+"#;
+        let markers = m8_4_active_graph_input_auto_derived_alignment_checks(yaml);
         for m in &markers {
             assert!(!m.present, "marker {} should be absent", m.id);
         }

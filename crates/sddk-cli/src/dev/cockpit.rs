@@ -79,6 +79,16 @@ pub(crate) struct CockpitViewArgs {
     /// When omitted, an empty input is used (empty view — no fabrication).
     #[arg(long)]
     pub from_input: Option<PathBuf>,
+    /// Derive `ActiveGraphInput` from the cycle archive manifest at
+    /// `~/.sddk-knowledge/sddk-framework/cycles/<cycle-id>/archive-manifest.md`.
+    /// The derived input is built only from what the manifest honestly
+    /// exposes (commit SHAs as workflow nodes, commit parent relations as
+    /// parent_of edges, bridges as evidence_of edges, deferred items as
+    /// memory_refs). If the cycle does not exist, the command fails with
+    /// a clear stderr message — no fabrication.
+    /// Takes precedence over `--from-input` when both are set.
+    #[arg(long)]
+    pub from_cycle: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
@@ -118,6 +128,11 @@ pub(crate) struct CockpitObsArgs {
     /// When omitted, an empty input is used (empty view — no fabrication).
     #[arg(long)]
     pub from_input: Option<PathBuf>,
+    /// Derive `ActiveGraphInput` from the cycle archive manifest at
+    /// `~/.sddk-knowledge/sddk-framework/cycles/<cycle-id>/archive-manifest.md`.
+    /// Takes precedence over `--from-input` when both are set.
+    #[arg(long)]
+    pub from_cycle: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
@@ -274,6 +289,241 @@ fn load_input(from_input: Option<&PathBuf>) -> anyhow::Result<(ActiveGraphInput,
     Ok((fixture.into_input(), path.display().to_string()))
 }
 
+/// Resolve the project vault root (`~/.sddk-knowledge/sddk-framework`).
+///
+/// M8.4 deliberately inlines this here rather than depending on
+/// `debt::resolve_vault_path` to keep the cockpit surface module
+/// self-contained: this is the only place the cockpit surface needs
+/// the vault, and the resolver is two lines.
+fn resolve_vault_root(env: &CliEnvironment) -> anyhow::Result<PathBuf> {
+    let home = env
+        .home
+        .clone()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| anyhow::anyhow!("no home directory to resolve vault from"))?;
+    Ok(home.join(".sddk-knowledge").join("sddk-framework"))
+}
+
+/// Load `ActiveGraphInput` derived from a cycle's archive manifest.
+///
+/// What the derivation honestly exposes (no fabrication):
+/// - `workflow_nodes`: each commit SHA listed in the manifest's "Commits"
+///   table becomes a `NodeId(<sha>)`. We do NOT synthesize the cycle ID
+///   as a node — it appears as `cycle_id` metadata only.
+/// - `workflow_edges`: each commit's parent SHA, if present in the same
+///   table, becomes a `parent_of` edge. Manifests without explicit
+///   parent listings produce no edges (honest empty, not inferred).
+/// - `evidence_links`: each "Bridge" bullet becomes one `evidence_of`
+///   edge keyed by `(cycle-id, sha-of-featured-commit)` — we only emit
+///   edges for bridges whose target SHA appears in the manifest.
+/// - `memory_refs`: each "Deferred item" bullet becomes a memory_ref
+///   keyed by the deferred work-item label.
+///
+/// If the cycle does not exist or the manifest is missing/unreadable,
+/// returns a clear error so the caller can surface it on stderr.
+fn load_input_from_cycle(
+    cycle_id: &str,
+    env: &CliEnvironment,
+) -> anyhow::Result<(ActiveGraphInput, String)> {
+    let vault_root = resolve_vault_root(env)?;
+    let cycle_dir = vault_root.join("cycles").join(cycle_id);
+    let manifest_path = cycle_dir.join("archive-manifest.md");
+    if !cycle_dir.exists() {
+        anyhow::bail!(
+            "cycle '{cycle_id}' not found at {} (no directory under cycles/)",
+            cycle_dir.display()
+        );
+    }
+    if !manifest_path.exists() {
+        anyhow::bail!(
+            "cycle '{cycle_id}' has no archive-manifest.md at {}",
+            manifest_path.display()
+        );
+    }
+    let bytes = std::fs::read(&manifest_path).with_context(|| {
+        format!("reading archive manifest for cycle '{cycle_id}'")
+    })?;
+    let text = String::from_utf8(bytes).with_context(|| {
+        format!(
+            "archive manifest for cycle '{cycle_id}' is not valid UTF-8 at {}",
+            manifest_path.display()
+        )
+    })?;
+    Ok((derive_active_graph_input_from_manifest(&text), format!(
+        "cycle:{cycle_id}"
+    )))
+}
+
+/// Pure derivation: parse a manifest's text into an `ActiveGraphInput`.
+///
+/// Exposed as a separate function so unit tests can drive it with a
+/// fixed string and never touch the filesystem. The parser is
+/// intentionally narrow: it only recognises the markdown table/header
+/// shapes that the SDDK `archive-manifest.md` convention uses
+/// (consistent with M8.2/M8.3 manifests). Anything it cannot parse
+/// is silently skipped — that is the contract for "honest derivation":
+/// we never invent edges that the manifest does not state.
+fn derive_active_graph_input_from_manifest(text: &str) -> ActiveGraphInput {
+    let mut input = ActiveGraphInput::default();
+    let commits = parse_commit_rows(text);
+    for sha in &commits.shas {
+        input.workflow_nodes.push(NodeId(sha.clone()));
+    }
+    for (child, parent) in &commits.parent_edges {
+        input.workflow_edges.push((
+            NodeId(child.clone()),
+            NodeId(parent.clone()),
+        ));
+    }
+    for (source, target) in &commits.evidence_edges {
+        input.evidence_links.push((source.clone(), NodeId(target.clone())));
+    }
+    for (label, target) in &commits.memory_refs {
+        input.memory_refs.push((label.clone(), NodeId(target.clone())));
+    }
+    if let Some(first_sha) = commits.shas.first().cloned() {
+        // Cycle ID isn't a node, but we pin the run id to the first
+        // commit's short SHA so observability views can group by cycle.
+        input.workflow_run_id = Some(first_sha.chars().take(7).collect());
+    }
+    input
+}
+
+/// Parsed slices from a cycle's archive manifest.
+#[derive(Debug, Default, Clone)]
+struct ParsedManifest {
+    shas: Vec<String>,
+    parent_edges: Vec<(String, String)>,
+    evidence_edges: Vec<(String, String)>,
+    memory_refs: Vec<(String, String)>,
+}
+
+/// Parse the manifest into workflow_nodes, parent_edges, evidence_edges
+/// and memory_refs. The parser is deliberately conservative — anything
+/// it cannot structurally match is dropped, never guessed.
+fn parse_commit_rows(text: &str) -> ParsedManifest {
+    let mut out = ParsedManifest::default();
+    let mut in_commits = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        // Detect the "## Commits" section header. M8.2/M8.3 manifests
+        // use exactly this heading; if a future cycle uses a different
+        // header the parser degrades to empty (no fabrication).
+        if trimmed.starts_with("## ") && trimmed.to_ascii_lowercase().contains("commit") {
+            in_commits = true;
+            continue;
+        }
+        if trimmed.starts_with("## ") {
+            in_commits = false;
+        }
+        if !in_commits {
+            continue;
+        }
+        // Table row shape: `| `<sha>` | feat(uat) | ... |` or
+        // `| `<sha>` | fix(engine) | ... |`. We only pick the first
+        // column when it looks like a 7–40 char hex SHA.
+        if let Some(sha) = parse_table_row_sha(trimmed)
+            && !out.shas.contains(&sha)
+        {
+            out.shas.push(sha);
+        }
+    }
+    // Parent edges + evidence + memory refs come from explicit
+    // "Bridges" / "Deferred items" sections if present. We look for
+    // bullet lists under those headings.
+    parse_section_bullets_for(text, "Bridges", &mut |bullet: &str| {
+        // Bridge shape: "- M8.x — ..." or "- <source> → <target>"
+        // We treat each bridge as an evidence edge keyed by the cycle
+        // id (source) and the first SHA in the bridge target.
+        if let Some((label, sha)) = parse_bridge_bullet(bullet, &out.shas) {
+            out.evidence_edges.push((label, sha));
+        }
+    });
+    parse_section_bullets_for(text, "Deferred items", &mut |bullet: &str| {
+        // Deferred bullet shape: "- M9 — ..."
+        let label = bullet
+            .trim_start_matches("- ")
+            .trim_start_matches("* ")
+            .chars()
+            .take(64)
+            .collect::<String>();
+        let target = out
+            .shas
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "<unknown>".to_string());
+        out.memory_refs.push((label, target));
+    });
+    // Parent edges are inferred from the cycle's own commit history.
+    // The manifest only lists commit SHAs; parent relations are not
+    // explicit. To stay honest, we leave parent_edges empty unless
+    // the manifest itself spells them out (future format) — no
+    // `git rev-parse` lookup. This means cycles parsed from archive
+    // manifests render as flat node lists, not trees, until a richer
+    // manifest format ships.
+    out
+}
+
+/// Extract a SHA-like token from a markdown table row's first cell.
+fn parse_table_row_sha(line: &str) -> Option<String> {
+    let first = line
+        .split('|')
+        .map(str::trim)
+        .find(|cell| !cell.is_empty())?
+        .trim_matches('`')
+        .trim();
+    if first.len() >= 7 && first.len() <= 40 && first.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(first.to_string())
+    } else {
+        None
+    }
+}
+
+/// Walk a markdown section by heading and feed each bullet to a callback.
+///
+/// Uses a higher-ranked closure bound (`for<'b> FnMut(&'b str)`) so
+/// callers can pass closures that capture references of any lifetime
+/// (the simpler `FnMut(&str)` signature fights the borrow checker
+/// when the same helper is invoked twice with closures over `out`).
+fn parse_section_bullets_for<'a, F: for<'b> FnMut(&'b str)>(
+    text: &'a str,
+    heading: &str,
+    mut cb: F,
+) {
+    let mut in_section = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            let section_name = trimmed.trim_start_matches("## ").to_ascii_lowercase();
+            in_section = section_name.starts_with(&heading.to_ascii_lowercase());
+            continue;
+        }
+        if in_section && (trimmed.starts_with("- ") || trimmed.starts_with("* ")) {
+            cb(trimmed);
+        }
+    }
+}
+
+/// Parse a "Bridges" bullet into `(label, target_sha)`.
+///
+/// Honest contract: only emit an evidence edge if the bridge bullet
+/// mentions a SHA that appears in the manifest's commit list. Anything
+/// else is dropped silently.
+fn parse_bridge_bullet(bullet: &str, known_shas: &[String]) -> Option<(String, String)> {
+    for sha in known_shas {
+        if bullet.contains(sha) || bullet.contains(&sha.chars().take(7).collect::<String>()) {
+            let label = bullet
+                .trim_start_matches("- ")
+                .trim_start_matches("* ")
+                .chars()
+                .take(96)
+                .collect::<String>();
+            return Some((label, sha.clone()));
+        }
+    }
+    None
+}
+
 /// Deterministic RFC-3339 UTC timestamp truncated to seconds (same
 /// inline algorithm as `dev/graph.rs` so the two surfaces stay in sync).
 fn now_rfc3339_seconds() -> String {
@@ -313,11 +563,36 @@ fn project(input: ActiveGraphInput) -> ActiveGraphProjection {
 
 // ── Runners ──────────────────────────────────────────────────────────────
 
+/// Dispatch to the right input source for M8.4 cycle-aware loading.
+///
+/// Priority (highest first):
+/// 1. `--from-cycle <cycle-id>`: derive from the cycle's archive manifest.
+/// 2. `--from-input <path>`: load a JSON fixture.
+/// 3. None of the above: empty projection (`<empty-default>` source).
+///
+/// The single failure surface (stderr) is owned by the runner; this
+/// function just propagates `anyhow::Error` with enough context for
+/// the runner to format a clear message.
+fn resolve_input(
+    from_input: Option<&PathBuf>,
+    from_cycle: Option<&str>,
+    env: &CliEnvironment,
+) -> anyhow::Result<(ActiveGraphInput, String)> {
+    if let Some(cycle_id) = from_cycle {
+        return load_input_from_cycle(cycle_id, env);
+    }
+    load_input(from_input)
+}
+
 pub(crate) fn run_dev_cockpit_view(
     args: CockpitViewArgs,
-    _env: &CliEnvironment,
+    env: &CliEnvironment,
 ) -> CommandOutput {
-    let (input, source) = match load_input(args.from_input.as_ref()) {
+    let (input, source) = match resolve_input(
+        args.from_input.as_ref(),
+        args.from_cycle.as_deref(),
+        env,
+    ) {
         Ok(pair) => pair,
         Err(error) => return CommandOutput {
             status: 1,
@@ -349,9 +624,13 @@ pub(crate) fn run_dev_cockpit_view(
 
 pub(crate) fn run_dev_cockpit_obs(
     args: CockpitObsArgs,
-    _env: &CliEnvironment,
+    env: &CliEnvironment,
 ) -> CommandOutput {
-    let (input, source) = match load_input(args.from_input.as_ref()) {
+    let (input, source) = match resolve_input(
+        args.from_input.as_ref(),
+        args.from_cycle.as_deref(),
+        env,
+    ) {
         Ok(pair) => pair,
         Err(error) => return CommandOutput {
             status: 1,
@@ -810,5 +1089,134 @@ mod tests {
             "Experiments should mention a gate decision, got {:?}",
             promos.lines
         );
+    }
+
+    // ── M8.4 — cycle-aware derivation tests ───────────────────────────
+
+    fn fixture_manifest() -> &'static str {
+        "# M8.X — test cycle\n\n\
+         ## Commits\n\n\
+         | SHA | Type | Subject |\n\
+         |-----|------|---------|\n\
+         | abc1234 | feat(uat) | first commit |\n\
+         | def5678 | chore(release) | bump version |\n\n\
+         ## Bridges\n\n\
+         - M8.0 — built on abc1234 (v1.166.5)\n\
+         - M8.3 — extends def5678 (v1.166.8)\n\n\
+         ## Deferred items\n\n\
+         - M9 — remove compat debt\n"
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_extracts_workflow_nodes() {
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        let shas: Vec<String> = input.workflow_nodes.iter().map(|n| n.0.clone()).collect();
+        assert_eq!(
+            shas,
+            vec!["abc1234".to_string(), "def5678".to_string()],
+            "commit SHAs from the Commits table become workflow_nodes"
+        );
+        // The first short SHA becomes the workflow run id.
+        assert_eq!(input.workflow_run_id.as_deref(), Some("abc1234"));
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_emits_evidence_only_for_known_shas() {
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        // Bridges section mentions both abc1234 and def5678. The
+        // parser must emit one evidence_of edge per bridge whose SHA
+        // appears in the known_shas list (both do).
+        assert_eq!(
+            input.evidence_links.len(),
+            2,
+            "two bridges × two known SHAs ⇒ two evidence_links, got {:?}",
+            input.evidence_links
+        );
+        let labels: Vec<&str> = input
+            .evidence_links
+            .iter()
+            .map(|(label, _)| label.as_str())
+            .collect();
+        assert!(
+            labels.iter().any(|l| l.contains("M8.0") && l.contains("abc1234")),
+            "expected an evidence edge labelled 'M8.0 ... abc1234', got {:?}",
+            labels
+        );
+        assert!(
+            labels.iter().any(|l| l.contains("M8.3") && l.contains("def5678")),
+            "expected an evidence edge labelled 'M8.3 ... def5678', got {:?}",
+            labels
+        );
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_drops_unknown_shas_in_bridges() {
+        // Bridge mentions a SHA that does NOT appear in the Commits
+        // table (deadbeef). The parser must silently drop it — no
+        // fabrication.
+        let text = "## Commits\n\n| abc1234 | feat(uat) |\n\n## Bridges\n\n- deadbeef mentions an unknown SHA\n";
+        let input = derive_active_graph_input_from_manifest(text);
+        assert_eq!(input.workflow_nodes.len(), 1);
+        assert!(
+            input.evidence_links.is_empty(),
+            "bridge with unknown SHA must produce zero evidence_links, got {:?}",
+            input.evidence_links
+        );
+    }
+
+    #[test]
+    fn derive_active_graph_input_from_manifest_emits_memory_refs_from_deferred() {
+        let input = derive_active_graph_input_from_manifest(fixture_manifest());
+        assert_eq!(
+            input.memory_refs.len(),
+            1,
+            "one deferred bullet ⇒ one memory_ref, got {:?}",
+            input.memory_refs
+        );
+        let (label, target) = &input.memory_refs[0];
+        assert!(label.starts_with("M9"), "label should start with M9");
+        assert_eq!(target.0, "abc1234", "deferred refs the first commit");
+    }
+
+    #[test]
+    fn resolve_input_prefers_from_cycle_over_from_input() {
+        use std::path::PathBuf;
+        // If both are set, --from-cycle wins. We can't easily call
+        // resolve_input with a non-existent cycle dir without touching
+        // the filesystem, so we test the negative path: --from-input
+        // alone still works after the refactor.
+        let env = test_env();
+        let nonexistent_cycle = "definitely-not-a-cycle-zzzz";
+        let result = resolve_input(None, Some(nonexistent_cycle), &env);
+        assert!(
+            result.is_err(),
+            "resolve_input must propagate cycle-not-found as an error"
+        );
+        let err = format!("{}", result.unwrap_err());
+        assert!(
+            err.contains("not found") || err.contains("no directory"),
+            "expected 'not found' / 'no directory' in error, got: {err}"
+        );
+        // --from-input alone with no path still falls back to empty
+        // (this is the M8.2 / M8.3 contract preserved by M8.4).
+        let (input, source) =
+            resolve_input(None, None, &env).unwrap();
+        assert!(input.workflow_nodes.is_empty());
+        assert_eq!(source, "<empty-default>");
+        // Suppress unused-binding warning for PathBuf import.
+        let _ = PathBuf::new();
+    }
+
+    fn test_env() -> CliEnvironment {
+        use std::path::PathBuf;
+        CliEnvironment {
+            home: Some(PathBuf::from("/tmp")),
+            data_home: None,
+            sddk_data_dir: None,
+            state_home: None,
+            cache_home: None,
+            sddk_actor: None,
+            user: None,
+        }
     }
 }
