@@ -139,6 +139,7 @@ fn supersede_requires_lease_fence() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(result.is_err());
@@ -178,6 +179,7 @@ fn supersede_requires_exactly_one_of_successor_or_reason() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(result.is_err());
@@ -201,6 +203,7 @@ fn supersede_requires_exactly_one_of_successor_or_reason() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(result.is_err());
@@ -237,6 +240,7 @@ fn supersede_self_is_forbidden() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(result.is_err());
@@ -272,6 +276,7 @@ fn supersede_appends_requested_and_applied_events() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(
@@ -323,6 +328,7 @@ fn supersede_reason_scope_invalid() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(
@@ -351,6 +357,7 @@ fn supersede_reason_goal_replaced() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(
@@ -379,6 +386,7 @@ fn supersede_reason_external_obsolete() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
     assert!(
@@ -419,6 +427,7 @@ fn supersede_releases_lease_atomically() {
         Path::new("/tmp"),
         "lease-owner",
         1, // must match the fencing_token computed by acquire_cycle_lease
+        0,
         &auth(),
     );
     assert!(
@@ -475,6 +484,7 @@ fn supersede_receipt_writes_lease_owner_from_caller_arg() {
             receipt_dir.path(),
             "alice", // lease_owner passed as "alice"
             1,
+            0,
             &auth(),
         )
         .unwrap();
@@ -523,6 +533,7 @@ fn supersede_receipt_writes_fencing_token_used() {
             receipt_dir.path(),
             "test-actor",
             1, // fencing_token — must match what acquire_cycle_lease computed internally
+            0,
             &auth(),
         )
         .unwrap();
@@ -577,6 +588,7 @@ fn supersede_rejects_nonexistent_successor_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
 
@@ -649,6 +661,7 @@ fn supersede_rejects_empty_evidence_refs_before_state_mutation() {
         Path::new("/tmp"),
         "test-actor",
         1,
+        0,
         &auth(),
     );
 
@@ -721,6 +734,7 @@ fn supersede_preserves_ledger_event_digests() {
             Path::new("/tmp"),
             "test-actor",
             1,
+            0,
             &auth(),
         )
         .unwrap();
@@ -762,5 +776,50 @@ fn supersede_preserves_ledger_event_digests() {
     assert!(
         new_event_types.contains(&"cycle.supersede.applied"),
         "new event must include cycle.supersede.applied"
+    );
+}
+
+// ── INC-DEBT-019 regression test (M9.2) ─────────────────────────────────
+//
+// Engine::cycle_supersede MUST NOT dereference SystemTime::now()
+// internally. It must take now_ms from the caller so tests and
+// golden-replay paths can be deterministic. This test exercises a
+// "freeze time at 0" scenario: lease acquired with expires_at = i64::MAX
+// and now_ms = 0 passed explicitly to cycle_supersede. The supersede
+// must succeed because lease.verify_cycle_lease(..., now_ms = 0)
+// compares against expires_at = i64::MAX which is in-window.
+#[test]
+fn cycle_supersede_is_deterministic_with_explicit_now_ms() {
+    use sddk_engine::SupersedeReason;
+    let (_dir, mut engine) = setup();
+    let manifest = start_cycle(&mut engine, "evt-start-det");
+    engine
+        .acquire_cycle_lease(
+            &manifest.cycle_id,
+            "test-actor",
+            1,
+            i64::MAX, // lease valid for all time ⇒ now_ms = 0 is in-window
+        )
+        .expect("acquire lease");
+    let auth = AuthorityContext::for_test(sddk_domain::ActorKind::Agent, "test-runtime");
+    let receipt_dir = tempfile::tempdir().unwrap();
+    let result = engine.cycle_supersede(
+        &manifest.cycle_id,
+        None,
+        Some(SupersedeReason::ScopeInvalid),
+        &["evidence".into()],
+        "test-actor",
+        "cmd-supersede-det",
+        "evt-supersede-det",
+        TIMESTAMP,
+        receipt_dir.path(),
+        "test-actor",
+        1,
+        0, // ← now_ms = 0 — pinned, deterministic
+        &auth,
+    );
+    assert!(
+        result.is_ok(),
+        "cycle_supersede with explicit now_ms=0 must succeed (lease window includes 0): {result:?}"
     );
 }

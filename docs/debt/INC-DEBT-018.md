@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-018
 title: "SPEC-SUPERSEDE-001 §2 ledger-event count drift: impl N+3 vs spec N+2"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "9b3e7f1a4d2c5e8b0a6f3d1c2e9b4f7a5d3c8b1e2f6a4d9c3b7e1f2a8c5d4b9e"
@@ -30,6 +30,7 @@ Cluster: CL-CC-02 (coupling cluster, spec-impl drift).
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-02 | sddk-archive | created | FIND-000002 from debt-report cycle-51 |
+| 2026-09-10 | sddk-apply (M9.1) | closed | AGENTS.md §9 documents invariant; `supersede_preserves_ledger_event_digests` already pins N+3 |
 
 ## References
 
@@ -43,3 +44,18 @@ Cluster: CL-CC-02 (coupling cluster, spec-impl drift).
 1. Update SPEC-SUPERSEDE-001 §2 ledger appendix to document the 3-event invariant (`requested → lease.released → applied`)
 2. Update AGENTS.md §9 cycle supersede workflow to record the same
 3. Add a contract test that fails if a future change reintroduces only 2 events
+
+## Resolution (M9.1, v1.167.0)
+
+- SPEC-SUPERSEDE-001 §5 already documented the 3-event invariant after
+  cycle-51 finalization (no further edit needed; verified by re-reading
+  the spec).
+- AGENTS.md §9 "Cycle supersede workflow" gained a "Ledger event
+  invariant (3 events, GAP-BUG-1)" subsection that documents the
+  `requested → lease.released → applied` ordering and points to the
+  pinning test `supersede_preserves_ledger_event_digests`.
+- The existing contract test
+  `crates/sddk-engine/tests/cycle_supersede.rs::supersede_preserves_ledger_event_digests`
+  already asserts `N+3` and the presence of `lease.released` between
+  the two supersede events; no new test needed (the existing one is
+  the contract test that fails closed if a future change reverts to N+2).

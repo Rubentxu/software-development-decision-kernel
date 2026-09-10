@@ -344,6 +344,25 @@ sddk cycle supersede \
 Opcional con `--reason` (scope_invalid | goal_replaced | external_obsolete)
 en lugar de `--successor` — exactamente uno de los dos.
 
+### Ledger event invariant (3 events, GAP-BUG-1)
+
+Un supersede atómico **siempre** emite **3 eventos** en el ledger (no 2):
+
+1. `cycle.supersede.requested` — primer evento, con `successor_cycle_id`,
+   `reason`, `evidence_refs`, `lease_owner`, `fencing_token`.
+2. `lease.released` — efecto secundario de GAP-BUG-1 (lease release
+   atómico dentro de `update_cycle_with_event(..., release_lease_on_phase_change=true)`).
+3. `cycle.supersede.applied` — evento final, marca el supersede como
+   persistente.
+
+El orden importa: `lease.released` aparece entre `requested` y `applied`.
+Este invariante está pinado por el test
+`supersede_preserves_ledger_event_digests` en
+`crates/sddk-engine/tests/cycle_supersede.rs` (N+3, asserted).
+
+Ver `docs/sddk-decision-kernel-architecture/04-specs/SPEC-SUPERSEDE-001.md`
+§5 ("Ledger invariants preserved") para el contrato completo.
+
 ### Reglas de validación
 
 | Check | Nivel | Código de error | Mensaje |

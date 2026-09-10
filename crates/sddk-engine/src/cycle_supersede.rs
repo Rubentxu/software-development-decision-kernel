@@ -67,6 +67,11 @@ impl<L: sddk_domain::Ledger> Engine<L> {
     /// * `receipt_path` — directory where `supersede-receipt.json` is written
     /// * `lease_owner` — owner string used when acquiring the lease
     /// * `fencing_token` — fencing token used when acquiring the lease
+    /// * `now_ms` — caller-supplied wall-clock time in milliseconds since
+    ///   UNIX epoch. Pass `0` for non-lease-gated operations; for
+    ///   production paths, compute it once at the composition root
+    ///   (`Engine::cycle_supersede` MUST NOT dereference `SystemTime::now()`
+    ///   itself — see INC-DEBT-019, hidden-coupling cluster CL-CC-01).
     /// * `auth` — authority context (validates actor_kind against CycleState surface)
     #[allow(clippy::too_many_arguments)]
     pub fn cycle_supersede(
@@ -82,14 +87,13 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         receipt_path: &Path,
         lease_owner: &str,
         fencing_token: i64,
+        now_ms: i64,
         auth: &AuthorityContext,
     ) -> Result<EventReceipt, EngineError> {
         auth.validate(crate::authority::WritableSurface::CycleState)?;
-        // Validate lease fence (fail-closed: no lease = LeaseConflict)
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(i64::MAX);
+        // Validate lease fence (fail-closed: no lease = LeaseConflict).
+        // `now_ms` comes from the caller so this function stays
+        // deterministic for tests (golden replays, repro paths).
         let lease_result =
             self.ledger
                 .verify_cycle_lease(cycle_id, lease_owner, fencing_token, now_ms);

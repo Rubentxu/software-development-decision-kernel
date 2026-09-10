@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-019
 title: "SystemTime::now() hidden coupling in Engine::cycle_supersede breaks determinism"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "4c7a1e2fb918ce3f4d8a92b1c0e3f7a25d3b9e4f1c8a27d0b5e6f1a3c8b4d1f2"
@@ -30,6 +30,7 @@ Cluster: CL-CC-01 (coupling cluster, time-randomness).
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-02 | sddk-archive | created | FIND-000001 from debt-report cycle-51 |
+| 2026-09-10 | sddk-apply (M9.2) | closed | `cycle_supersede` now takes `now_ms: i64`; CLI computes via `sddk_cli::now_ms_since_epoch()`; new test `cycle_supersede_is_deterministic_with_explicit_now_ms` |
 
 ## References
 

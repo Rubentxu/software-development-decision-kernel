@@ -270,6 +270,7 @@ fn pause_from_terminal_forbidden() {
             &receipt_dir,
             "alice",
             1,
+            0,
             &auth(),
         )
         .unwrap();
@@ -583,6 +584,7 @@ fn supersede_from_paused_records_prior_status() {
             &receipt_dir,
             "alice",
             1,
+            0,
             &auth(),
         )
         .unwrap();

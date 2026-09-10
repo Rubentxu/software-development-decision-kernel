@@ -98,6 +98,20 @@ use sddk_engine::{
 /// Re-exports `Storage` so that `cycle.rs` can use it via `crate::Storage`
 /// without a direct `use sddk_storage::Storage` import (ARCH003 edge elimination).
 pub use sddk_storage::Storage;
+
+/// Wall-clock milliseconds since the UNIX epoch, computed once at the
+/// CLI composition root. Engine code MUST call this instead of
+/// dereferencing `SystemTime::now()` directly so that production paths
+/// and test paths can both be made deterministic (golden replays,
+/// repro harnesses) by injecting a fixed value at this boundary.
+/// Closes INC-DEBT-019 (CL-CC-01: hidden time-randomness coupling).
+pub fn now_ms_since_epoch() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(i64::MAX)
+}
 use serde::Serialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;

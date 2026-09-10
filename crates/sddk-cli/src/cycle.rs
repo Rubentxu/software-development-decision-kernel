@@ -1798,6 +1798,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
             &context.paths.cycle_artifacts,
             &args.lease_owner,
             args.fencing_token,
+            crate::now_ms_since_epoch(),
             &auth,
         )?;
 
