@@ -373,3 +373,37 @@ en lugar de `--successor` — exactamente uno de los dos.
 - `InMemoryLedger::acquire_cycle_lease` hardcodea `fencing_token=1` — tests deben usar `1`
 - Receipt se escribe en `<cycle-artifacts>/<cycle-id>/supersede-receipt.json`
 - Ellease se libera atómicamente en `update_cycle_with_event(..., release_lease_on_phase_change=true)`
+
+---
+Objetivos a alcanzar en esta aplicación, de lo más importante es la separación entre conocimiento, Alignment y Verification y Gobernanza.
+
+Knowledge
+────────────────────────
+qué sabemos
+por qué
+desde cuándo
+qué está stale
+qué evidencia lo soporta
+
+Software Alignment
+────────────────────────
+qué tensiones vemos
+qué parece desalineado
+qué tradeoffs existen
+qué podría mejorarse
+según qué lens
+
+Verification
+────────────────────────
+cuándo evaluar
+qué scope evaluar
+cuánto profundizar
+qué evidence falta
+qué receipt deja verify/deb-verify
+
+Governance
+────────────────────────
+qué está permitido
+qué es obligatorio
+qué bloquea
+qué waiver existe
