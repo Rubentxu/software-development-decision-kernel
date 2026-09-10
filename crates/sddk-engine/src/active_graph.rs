@@ -192,7 +192,7 @@ impl ActiveGraphEdge {
 
 /// Output of an active-graph projection.
 #[non_exhaustive]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveGraphProjection {
     /// Every projected node, sorted by `NodeId`.
     pub nodes: BTreeMap<NodeId, ActiveGraphNode>,

@@ -243,6 +243,15 @@ const MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH: &str =
 const MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION: &str =
     "m8_7.cross_input_drift_detection";
 
+// M8.8 — Stable projection digest (`sddk dev cockpit digest`).
+// The engine owns the digest (`sddk_engine::active_graph_digest`)
+// and the CLI exposes it as a third cockpit subcommand with two
+// kinds (`strict` / `content`). The digest is a cheap equality
+// check that catches any structural or provenance change; pair it
+// with `cockpit diff` for the rare case where digests differ.
+const MARKER_M8_8_STABLE_PROJECTION_DIGEST: &str =
+    "m8_8.stable_projection_digest";
+
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
 /// Marker definitions:
@@ -741,6 +750,23 @@ pub fn m8_7_cross_input_drift_detection_alignment_checks(
 ) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION.to_string(),
+        present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
+    }]
+}
+
+/// M8.8 alignment check (stable projection digest).
+///
+/// Marker definition:
+/// - `m8_8.stable_projection_digest`: the digester surface
+///   `crates/sddk-cli/src/dev/cockpit` delivers the `cockpit digest`
+///   subcommand backed by `sddk_engine::active_graph_digest`. Like
+///   M8.7, the digest is a graph-level operation so it gates on the
+///   cockpit surface only.
+pub fn m8_8_stable_projection_digest_alignment_checks(
+    yaml: &str,
+) -> Vec<MarkerStatus> {
+    vec![MarkerStatus {
+        id: MARKER_M8_8_STABLE_PROJECTION_DIGEST.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
     }]
 }
@@ -1794,6 +1820,41 @@ entries:
     target_milestone: delivered
 "#;
         let markers = m8_7_cross_input_drift_detection_alignment_checks(yaml);
+        for m in &markers {
+            assert!(
+                !m.present,
+                "marker {} must be absent when cockpit surface is missing",
+                m.id
+            );
+        }
+    }
+
+    #[test]
+    fn m8_8_stable_projection_digest_marker_present_when_cockpit_registered() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/cockpit
+    target_milestone: delivered
+"#;
+        let markers = m8_8_stable_projection_digest_alignment_checks(yaml);
+        let marker = markers
+            .iter()
+            .find(|m| m.id == MARKER_M8_8_STABLE_PROJECTION_DIGEST)
+            .expect("marker present");
+        assert!(
+            marker.present,
+            "cockpit surface delivered ⇒ digest marker present"
+        );
+    }
+
+    #[test]
+    fn m8_8_stable_projection_digest_marker_absent_when_cockpit_missing() {
+        let yaml = r#"
+entries:
+  - module: crates/sddk-cli/src/dev/graph
+    target_milestone: delivered
+"#;
+        let markers = m8_8_stable_projection_digest_alignment_checks(yaml);
         for m in &markers {
             assert!(
                 !m.present,

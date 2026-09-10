@@ -14,6 +14,7 @@ use crate::dev::arch_lint::{
     m8_5_commit_parents_section_parsed_alignment_checks,
     m8_6_provenance_threaded_through_graph_alignment_checks,
     m8_7_cross_input_drift_detection_alignment_checks,
+    m8_8_stable_projection_digest_alignment_checks,
     mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
@@ -560,6 +561,12 @@ pub(super) fn run_dev_doctor(
                 // M8.7: cross-input drift detection surface marker.
                 for marker in
                     m8_7_cross_input_drift_detection_alignment_checks(&text)
+                {
+                    push_marker(&mut checks, &marker);
+                }
+                // M8.8: stable projection digest surface marker.
+                for marker in
+                    m8_8_stable_projection_digest_alignment_checks(&text)
                 {
                     push_marker(&mut checks, &marker);
                 }

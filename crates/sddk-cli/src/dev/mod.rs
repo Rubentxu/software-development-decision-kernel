@@ -485,6 +485,9 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
             crate::dev::cockpit::CockpitCommand::Diff(diff_args) => {
                 self::cockpit::run_dev_cockpit_diff(diff_args, environment)
             }
+            crate::dev::cockpit::CockpitCommand::Digest(digest_args) => {
+                self::cockpit::run_dev_cockpit_digest(digest_args, environment)
+            }
         },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
     }
