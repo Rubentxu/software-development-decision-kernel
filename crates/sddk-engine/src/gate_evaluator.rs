@@ -8,6 +8,9 @@ use sddk_domain::DebtReport;
 
 /// Outcome of a gate evaluation (without persistence).
 #[derive(Debug, Clone, PartialEq, Eq)]
+// Internal variant-only enum: doc comments on each variant are self-evident
+// (`Passed { notes }` and `Failed { offending_ids, notes }`); per-variant docs
+// would add noise without clarifying the public API beyond the type-level doc.
 #[allow(missing_docs)]
 pub enum GateOutcome {
     Passed {

@@ -232,6 +232,9 @@ pub struct AdapterRequest {
 
 /// Adapter-level errors that are translated into `RunnerError` by `dispatch()`.
 #[derive(Debug, Clone)]
+// Each variant carries a self-describing field set (`family + searched`,
+// `path + reason`, `String`); variant-level docs already in place above
+// each variant, so the type-level doc above is sufficient.
 #[allow(missing_docs)]
 pub enum AdapterError {
     /// No safe executable candidate could be found for this family.
@@ -247,6 +250,8 @@ pub enum AdapterError {
 
 /// Adapter request that carries the resolved program/args/env for execution.
 #[derive(Debug, Clone)]
+// POD struct with two public fields (`spec`, `last_candidate`); field names
+// are self-documenting and the type-level doc above describes the role.
 #[allow(missing_docs)]
 pub struct ResolvedSpec {
     pub spec: RunSpec,
