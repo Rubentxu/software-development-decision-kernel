@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use sddk_cli::skill_registry_bridge::{parse_skill_md, SkillScope};
+use sddk_cli::skill_registry_bridge::{SkillScope, parse_skill_md};
 
 fn write_skill(dir: &std::path::Path, name: &str, description: &str, version: &str) -> PathBuf {
     let skill_dir = dir.join("dummy");
@@ -39,8 +39,7 @@ fn write_skill(dir: &std::path::Path, name: &str, description: &str, version: &s
 fn m79_dotted_name_framework_scope_preserves_id() {
     let tmp = tempdir();
     let path = write_skill(&tmp, "core.workflow-orchestration", "core skill", "1");
-    let loaded =
-        parse_skill_md(&path, SkillScope::Framework).expect("dotted name must parse");
+    let loaded = parse_skill_md(&path, SkillScope::Framework).expect("dotted name must parse");
     assert_eq!(loaded.definition.id, "core.workflow-orchestration");
     assert_eq!(loaded.definition.version, 1);
     assert_eq!(loaded.scope, SkillScope::Framework);
@@ -86,7 +85,10 @@ fn m79_dotted_name_with_scope_prefix_is_skipped() {
 
     let path3 = write_skill(&tmp, "project.bar", "would collide", "1");
     let loaded3 = parse_skill_md(&path3, SkillScope::Project);
-    assert!(loaded3.is_none(), "project-prefix collision must be skipped");
+    assert!(
+        loaded3.is_none(),
+        "project-prefix collision must be skipped"
+    );
 }
 
 #[test]
