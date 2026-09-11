@@ -201,7 +201,8 @@ const MARKER_M8_2_COCKPIT_VIEWS_SURFACE: &str = "m8_2.cockpit_views_surface_deli
 // surface module as M8.2 — adds a `CockpitCommand::Obs` variant rather
 // than a new CLI module, because both surfaces share `load_input()`,
 // `CockpitViewRow`, and the text/JSON rendering pipeline.
-const MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE: &str = "m8_3.cockpit_observability_surface_delivered";
+const MARKER_M8_3_COCKPIT_OBSERVABILITY_SURFACE: &str =
+    "m8_3.cockpit_observability_surface_delivered";
 
 // M8.4 — Auto-derive `ActiveGraphInput` from a cycle's archive manifest
 // via `sddk dev cockpit {view,obs} --from-cycle <cycle-id>`. Reads the
@@ -221,8 +222,7 @@ const MARKER_M8_4_ACTIVE_GRAPH_INPUT_AUTO_DERIVED: &str = "m8_4.active_graph_inp
 // (empty `parent_edges`, same as M8.4). Lives in the same `cockpit` module
 // because the parser reuses `parse_section_bullets_for` and the same
 // honest-derivation rules.
-const MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED: &str =
-    "m8_5.commit_parents_section_parsed";
+const MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED: &str = "m8_5.commit_parents_section_parsed";
 
 // M8.6 — Per-node and per-edge provenance metadata carried through the
 // `ActiveGraphInput` ↔ `ActiveGraphProjection` pipeline so every
@@ -240,8 +240,7 @@ const MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH: &str =
 // and the CLI exposes it via `sddk dev cockpit diff --cycle-a/--cycle-b`
 // (or `--input-a`/`--input-b`). Drift is a graph-level operation so
 // it gates on a single surface module: `dev/cockpit`.
-const MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION: &str =
-    "m8_7.cross_input_drift_detection";
+const MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION: &str = "m8_7.cross_input_drift_detection";
 
 // M8.8 — Stable projection digest (`sddk dev cockpit digest`).
 // The engine owns the digest (`sddk_engine::active_graph_digest`)
@@ -249,8 +248,7 @@ const MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION: &str =
 // kinds (`strict` / `content`). The digest is a cheap equality
 // check that catches any structural or provenance change; pair it
 // with `cockpit diff` for the rare case where digests differ.
-const MARKER_M8_8_STABLE_PROJECTION_DIGEST: &str =
-    "m8_8.stable_projection_digest";
+const MARKER_M8_8_STABLE_PROJECTION_DIGEST: &str = "m8_8.stable_projection_digest";
 
 /// M3 alignment markers (arch-spec-005 + arch-spec-006).
 ///
@@ -709,9 +707,7 @@ pub fn m8_4_active_graph_input_auto_derived_alignment_checks(yaml: &str) -> Vec<
 ///   backward-compatible. Gates on the same surface module path as
 ///   M8.2 / M8.3 / M8.4 because the parsing is a strict extension of
 ///   the same `derive_active_graph_input_from_manifest` pure parser.
-pub fn m8_5_commit_parents_section_parsed_alignment_checks(
-    yaml: &str,
-) -> Vec<MarkerStatus> {
+pub fn m8_5_commit_parents_section_parsed_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_5_COMMIT_PARENTS_SECTION_PARSED.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
@@ -727,9 +723,7 @@ pub fn m8_5_commit_parents_section_parsed_alignment_checks(
 ///   the `ProvenanceRef`s; the graph emitter serializes them). The
 ///   marker gates on both surface modules being delivered because the
 ///   data flow is two-sided.
-pub fn m8_6_provenance_threaded_through_graph_alignment_checks(
-    yaml: &str,
-) -> Vec<MarkerStatus> {
+pub fn m8_6_provenance_threaded_through_graph_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_6_PROVENANCE_THREADED_THROUGH_GRAPH.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit")
@@ -745,9 +739,7 @@ pub fn m8_6_provenance_threaded_through_graph_alignment_checks(
 ///   subcommand backed by `sddk_engine::active_graph_drift`. Drift
 ///   is a graph-level operation, so it gates on the cockpit surface
 ///   only — there is no second CLI module to coordinate with.
-pub fn m8_7_cross_input_drift_detection_alignment_checks(
-    yaml: &str,
-) -> Vec<MarkerStatus> {
+pub fn m8_7_cross_input_drift_detection_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_7_CROSS_INPUT_DRIFT_DETECTION.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),
@@ -762,9 +754,7 @@ pub fn m8_7_cross_input_drift_detection_alignment_checks(
 ///   subcommand backed by `sddk_engine::active_graph_digest`. Like
 ///   M8.7, the digest is a graph-level operation so it gates on the
 ///   cockpit surface only.
-pub fn m8_8_stable_projection_digest_alignment_checks(
-    yaml: &str,
-) -> Vec<MarkerStatus> {
+pub fn m8_8_stable_projection_digest_alignment_checks(yaml: &str) -> Vec<MarkerStatus> {
     vec![MarkerStatus {
         id: MARKER_M8_8_STABLE_PROJECTION_DIGEST.to_string(),
         present: has_delivered_entry(yaml, "crates/sddk-cli/src/dev/cockpit"),

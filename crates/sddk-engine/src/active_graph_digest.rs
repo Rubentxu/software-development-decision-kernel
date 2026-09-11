@@ -141,10 +141,7 @@ pub fn digest_projection_content(projection: &ActiveGraphProjection) -> Projecti
 /// Subset projection used for the `Content` digest — drops `recorded_at`
 /// from every node so timestamp drift doesn't pollute the hash.
 #[derive(serde::Serialize)]
-struct ProjectionForContentDigest<
-    'a,
-    N: serde::Serialize = ActiveGraphNodeWithoutTimestamp<'a>,
-> {
+struct ProjectionForContentDigest<'a, N: serde::Serialize = ActiveGraphNodeWithoutTimestamp<'a>> {
     nodes: &'a std::collections::BTreeMap<sddk_domain::workflow_ir::NodeId, N>,
     edges: &'a Vec<crate::active_graph::ActiveGraphEdge>,
     roots: &'a Vec<sddk_domain::workflow_ir::NodeId>,
@@ -315,8 +312,7 @@ mod tests {
     #[test]
     fn digest_kind_count_matches_variants() {
         assert_eq!(
-            PROJECTION_DIGEST_KIND_COUNT,
-            2,
+            PROJECTION_DIGEST_KIND_COUNT, 2,
             "PROJECTION_DIGEST_KIND_COUNT must match DigestKind variant count"
         );
     }

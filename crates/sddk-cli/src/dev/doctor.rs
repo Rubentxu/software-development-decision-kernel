@@ -9,13 +9,14 @@ use crate::dev::arch_lint::{
     m7_5_instruction_compiler_alignment_checks, m7_6_execution_receipt_alignment_checks,
     m7_7_skill_registry_bridge_alignment_checks, m7_8_skills_surface_alignment_checks,
     m8_0_active_graph_surface_alignment_checks, m8_1_why_queries_surface_alignment_checks,
-    m8_2_cockpit_views_surface_alignment_checks, m8_3_cockpit_observability_surface_alignment_checks,
+    m8_2_cockpit_views_surface_alignment_checks,
+    m8_3_cockpit_observability_surface_alignment_checks,
     m8_4_active_graph_input_auto_derived_alignment_checks,
     m8_5_commit_parents_section_parsed_alignment_checks,
     m8_6_provenance_threaded_through_graph_alignment_checks,
     m8_7_cross_input_drift_detection_alignment_checks,
-    m8_8_stable_projection_digest_alignment_checks,
-    mirror_alignment_checks, semantic_graph_alignment_checks, target_task_dag_alignment_checks,
+    m8_8_stable_projection_digest_alignment_checks, mirror_alignment_checks,
+    semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
 use crate::dev::common::{read_receipt, tool_version};
@@ -553,21 +554,15 @@ pub(super) fn run_dev_doctor(
                     push_marker(&mut checks, &marker);
                 }
                 // M8.6: per-node + per-edge provenance threaded marker.
-                for marker in
-                    m8_6_provenance_threaded_through_graph_alignment_checks(&text)
-                {
+                for marker in m8_6_provenance_threaded_through_graph_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
                 // M8.7: cross-input drift detection surface marker.
-                for marker in
-                    m8_7_cross_input_drift_detection_alignment_checks(&text)
-                {
+                for marker in m8_7_cross_input_drift_detection_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
                 // M8.8: stable projection digest surface marker.
-                for marker in
-                    m8_8_stable_projection_digest_alignment_checks(&text)
-                {
+                for marker in m8_8_stable_projection_digest_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
                 }
             }

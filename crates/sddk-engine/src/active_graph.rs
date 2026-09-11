@@ -279,7 +279,10 @@ impl ActiveGraphProjector for DefaultActiveGraphProjector {
         // `(source, target)`. The same lookup happens for edges whose
         // direction the projector preserves (e.g. parent_of, evidence_of).
         let edge_prov = |src: &NodeId, dst: &NodeId| {
-            input.edge_provenance.get(&(src.clone(), dst.clone())).cloned()
+            input
+                .edge_provenance
+                .get(&(src.clone(), dst.clone()))
+                .cloned()
         };
 
         // Workflow nodes
@@ -394,10 +397,7 @@ impl ActiveGraphProjector for DefaultActiveGraphProjector {
                 kind: ActiveGraphEdgeKind::EvidenceOf,
                 source: id,
                 target: gated.clone(),
-                provenance: edge_prov(
-                    &NodeId(format!("evidence:{evidence_label}")),
-                    gated,
-                ),
+                provenance: edge_prov(&NodeId(format!("evidence:{evidence_label}")), gated),
             });
         }
 
@@ -733,13 +733,19 @@ mod tests {
         let p = projector().project(&input, "t0");
         let commit_node = p.nodes.get(&NodeId("commit-1".to_string())).unwrap();
         assert_eq!(
-            commit_node.provenance.as_ref().map(|p| p.source_locator.as_str()),
+            commit_node
+                .provenance
+                .as_ref()
+                .map(|p| p.source_locator.as_str()),
             Some("Commits:row_1"),
             "node provenance must be copied into the projected node"
         );
         let run_node = p.nodes.get(&NodeId("run:run-7".to_string())).unwrap();
         assert_eq!(
-            run_node.provenance.as_ref().map(|p| p.source_locator.as_str()),
+            run_node
+                .provenance
+                .as_ref()
+                .map(|p| p.source_locator.as_str()),
             Some("Releases:line_5")
         );
     }
@@ -762,10 +768,9 @@ mod tests {
         let mut input = ActiveGraphInput::default();
         input.workflow_nodes.push(NodeId("child".to_string()));
         input.workflow_nodes.push(NodeId("parent".to_string()));
-        input.workflow_edges.push((
-            NodeId("child".to_string()),
-            NodeId("parent".to_string()),
-        ));
+        input
+            .workflow_edges
+            .push((NodeId("child".to_string()), NodeId("parent".to_string())));
         input.edge_provenance.insert(
             (NodeId("child".to_string()), NodeId("parent".to_string())),
             ProvenanceRef {
@@ -790,9 +795,15 @@ mod tests {
     fn provenance_source_kind_label_is_stable() {
         // The label() method is the audit contract — locked-down so a
         // rename does not silently break downstream JSON consumers.
-        assert_eq!(ProvenanceSourceKind::CycleManifest.label(), "cycle_manifest");
+        assert_eq!(
+            ProvenanceSourceKind::CycleManifest.label(),
+            "cycle_manifest"
+        );
         assert_eq!(ProvenanceSourceKind::InputFixture.label(), "input_fixture");
-        assert_eq!(ProvenanceSourceKind::InputDocument.label(), "input_document");
+        assert_eq!(
+            ProvenanceSourceKind::InputDocument.label(),
+            "input_document"
+        );
         assert_eq!(PROVENANCE_SOURCE_KIND_COUNT, 3);
     }
 }

@@ -33,6 +33,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Args, Subcommand, ValueEnum};
+use sddk_domain::workflow_ir::NodeId;
 use sddk_engine::active_graph::{
     ActiveGraphInput, ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
     ProvenanceRef, ProvenanceSourceKind,
@@ -44,7 +45,6 @@ use sddk_engine::cockpit_observability::{
 use sddk_engine::cockpit_views::{
     CockpitSection, CockpitView, CockpitViewBuilder, CockpitViewKind, DefaultCockpitViewBuilder,
 };
-use sddk_domain::workflow_ir::NodeId;
 use serde::{Deserialize, Serialize};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
@@ -422,18 +422,18 @@ fn load_input_from_cycle(
             manifest_path.display()
         );
     }
-    let bytes = std::fs::read(&manifest_path).with_context(|| {
-        format!("reading archive manifest for cycle '{cycle_id}'")
-    })?;
+    let bytes = std::fs::read(&manifest_path)
+        .with_context(|| format!("reading archive manifest for cycle '{cycle_id}'"))?;
     let text = String::from_utf8(bytes).with_context(|| {
         format!(
             "archive manifest for cycle '{cycle_id}' is not valid UTF-8 at {}",
             manifest_path.display()
         )
     })?;
-    Ok((derive_active_graph_input_from_manifest(&text), format!(
-        "cycle:{cycle_id}"
-    )))
+    Ok((
+        derive_active_graph_input_from_manifest(&text),
+        format!("cycle:{cycle_id}"),
+    ))
 }
 
 /// Pure derivation: parse a manifest's text into an `ActiveGraphInput`.
@@ -452,16 +452,19 @@ fn derive_active_graph_input_from_manifest(text: &str) -> ActiveGraphInput {
         input.workflow_nodes.push(NodeId(sha.clone()));
     }
     for (child, parent) in &commits.parent_edges {
-        input.workflow_edges.push((
-            NodeId(child.clone()),
-            NodeId(parent.clone()),
-        ));
+        input
+            .workflow_edges
+            .push((NodeId(child.clone()), NodeId(parent.clone())));
     }
     for (source, target) in &commits.evidence_edges {
-        input.evidence_links.push((source.clone(), NodeId(target.clone())));
+        input
+            .evidence_links
+            .push((source.clone(), NodeId(target.clone())));
     }
     for (label, target) in &commits.memory_refs {
-        input.memory_refs.push((label.clone(), NodeId(target.clone())));
+        input
+            .memory_refs
+            .push((label.clone(), NodeId(target.clone())));
     }
     if let Some(first_sha) = commits.shas.first().cloned() {
         // Cycle ID isn't a node, but we pin the run id to the first
@@ -478,10 +481,7 @@ fn derive_active_graph_input_from_manifest(text: &str) -> ActiveGraphInput {
             .node_provenance
             .entry(NodeId(sha.clone()))
             .or_insert_with(|| {
-                ProvenanceRef::new(
-                    ProvenanceSourceKind::CycleManifest,
-                    locator.clone(),
-                )
+                ProvenanceRef::new(ProvenanceSourceKind::CycleManifest, locator.clone())
             });
     }
     for ((child, parent), locator) in &commits.edge_provenance {
@@ -489,10 +489,7 @@ fn derive_active_graph_input_from_manifest(text: &str) -> ActiveGraphInput {
             .edge_provenance
             .entry((NodeId(child.clone()), NodeId(parent.clone())))
             .or_insert_with(|| {
-                ProvenanceRef::new(
-                    ProvenanceSourceKind::CycleManifest,
-                    locator.clone(),
-                )
+                ProvenanceRef::new(ProvenanceSourceKind::CycleManifest, locator.clone())
             });
     }
     input
@@ -570,8 +567,7 @@ fn parse_commit_rows(text: &str) -> ParsedManifest {
             if let Some((label, sha)) = parse_bridge_bullet(bullet, &out.shas) {
                 let locator = format!("{section}:bullet@line_{line_idx}");
                 // Record provenance for the evidence node (target SHA).
-                out.sha_provenance
-                    .push((sha.clone(), locator.clone()));
+                out.sha_provenance.push((sha.clone(), locator.clone()));
                 out.evidence_edges.push((label, sha));
                 let _ = locator;
             }
@@ -765,9 +761,7 @@ fn parse_parent_edge_bullet(bullet: &str, known_shas: &[String]) -> Option<(Stri
     if !is_sha_like(left) || !is_sha_like(right) {
         return None;
     }
-    if !known_shas.iter().any(|k| k == left)
-        || !known_shas.iter().any(|k| k == right)
-    {
+    if !known_shas.iter().any(|k| k == left) || !known_shas.iter().any(|k| k == right) {
         return None;
     }
     Some((left.to_string(), right.to_string()))
@@ -842,25 +836,22 @@ fn resolve_input(
     load_input(from_input)
 }
 
-pub(crate) fn run_dev_cockpit_view(
-    args: CockpitViewArgs,
-    env: &CliEnvironment,
-) -> CommandOutput {
-    let (input, source) = match resolve_input(
-        args.from_input.as_ref(),
-        args.from_cycle.as_deref(),
-        env,
-    ) {
-        Ok(pair) => pair,
-        Err(error) => return CommandOutput {
-            status: 1,
-            stdout: String::new(),
-            stderr: format!("cockpit view: {error}"),
-        },
-    };
+pub(crate) fn run_dev_cockpit_view(args: CockpitViewArgs, env: &CliEnvironment) -> CommandOutput {
+    let (input, source) =
+        match resolve_input(args.from_input.as_ref(), args.from_cycle.as_deref(), env) {
+            Ok(pair) => pair,
+            Err(error) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("cockpit view: {error}"),
+                };
+            }
+        };
     let projection = project(input);
     let builder = DefaultCockpitViewBuilder;
-    let view: CockpitView = builder.build(&projection, args.kind.to_engine(), &now_rfc3339_seconds());
+    let view: CockpitView =
+        builder.build(&projection, args.kind.to_engine(), &now_rfc3339_seconds());
     let row = CockpitViewRow::from_view(&view, &source);
 
     match args.format {
@@ -880,25 +871,22 @@ pub(crate) fn run_dev_cockpit_view(
     }
 }
 
-pub(crate) fn run_dev_cockpit_obs(
-    args: CockpitObsArgs,
-    env: &CliEnvironment,
-) -> CommandOutput {
-    let (input, source) = match resolve_input(
-        args.from_input.as_ref(),
-        args.from_cycle.as_deref(),
-        env,
-    ) {
-        Ok(pair) => pair,
-        Err(error) => return CommandOutput {
-            status: 1,
-            stdout: String::new(),
-            stderr: format!("cockpit obs: {error}"),
-        },
-    };
+pub(crate) fn run_dev_cockpit_obs(args: CockpitObsArgs, env: &CliEnvironment) -> CommandOutput {
+    let (input, source) =
+        match resolve_input(args.from_input.as_ref(), args.from_cycle.as_deref(), env) {
+            Ok(pair) => pair,
+            Err(error) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("cockpit obs: {error}"),
+                };
+            }
+        };
     let projection = project(input);
     let builder = DefaultCockpitObservabilityBuilder;
-    let view: CockpitView = builder.build(&projection, args.kind.to_engine(), &now_rfc3339_seconds());
+    let view: CockpitView =
+        builder.build(&projection, args.kind.to_engine(), &now_rfc3339_seconds());
     let row = CockpitViewRow::from_view(&view, &source);
 
     match args.format {
@@ -924,10 +912,7 @@ pub(crate) fn run_dev_cockpit_obs(
 /// either another cycle or an input JSON file), runs
 /// `DefaultDriftEngine::diff`, and emits a `DriftRow` JSON envelope
 /// or a human-readable text rendering.
-pub(crate) fn run_dev_cockpit_diff(
-    args: CockpitDiffArgs,
-    env: &CliEnvironment,
-) -> CommandOutput {
+pub(crate) fn run_dev_cockpit_diff(args: CockpitDiffArgs, env: &CliEnvironment) -> CommandOutput {
     // Validate the pairing up front.
     if args.cycle_a.is_none() && args.input_a.is_none() {
         return CommandOutput {
@@ -945,37 +930,29 @@ pub(crate) fn run_dev_cockpit_diff(
     }
 
     // Resolve projection A.
-    let (input_a, source_a) = match resolve_diff_side(
-        args.cycle_a.as_deref(),
-        args.input_a.as_ref(),
-        env,
-        "a",
-    ) {
-        Ok(pair) => pair,
-        Err(error) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("cockpit diff: {error}"),
-            };
-        }
-    };
+    let (input_a, source_a) =
+        match resolve_diff_side(args.cycle_a.as_deref(), args.input_a.as_ref(), env, "a") {
+            Ok(pair) => pair,
+            Err(error) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("cockpit diff: {error}"),
+                };
+            }
+        };
     // Resolve projection B.
-    let (input_b, source_b) = match resolve_diff_side(
-        args.cycle_b.as_deref(),
-        args.input_b.as_ref(),
-        env,
-        "b",
-    ) {
-        Ok(pair) => pair,
-        Err(error) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("cockpit diff: {error}"),
-            };
-        }
-    };
+    let (input_b, source_b) =
+        match resolve_diff_side(args.cycle_b.as_deref(), args.input_b.as_ref(), env, "b") {
+            Ok(pair) => pair,
+            Err(error) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("cockpit diff: {error}"),
+                };
+            }
+        };
 
     let projection_a = project(input_a);
     let projection_b = project(input_b);
@@ -1113,20 +1090,17 @@ pub(crate) fn run_dev_cockpit_digest(
         };
     }
 
-    let (input, source) = match resolve_digest_source(
-        args.cycle.as_deref(),
-        args.input.as_ref(),
-        env,
-    ) {
-        Ok(pair) => pair,
-        Err(error) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("cockpit digest: {error}"),
-            };
-        }
-    };
+    let (input, source) =
+        match resolve_digest_source(args.cycle.as_deref(), args.input.as_ref(), env) {
+            Ok(pair) => pair,
+            Err(error) => {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: format!("cockpit digest: {error}"),
+                };
+            }
+        };
 
     let projection = project(input);
     let kind = args.kind.to_engine();
@@ -1246,7 +1220,10 @@ fn render_diff_text(row: &DriftRow) -> CommandOutput {
                     "added" => out.push_str(&format!("+ edge {}\n", d.sort_key)),
                     "removed" => out.push_str(&format!("- edge {}\n", d.sort_key)),
                     "changed" => {
-                        out.push_str(&format!("~ edge {} fields={:?}\n", d.sort_key, d.changed_fields));
+                        out.push_str(&format!(
+                            "~ edge {} fields={:?}\n",
+                            d.sort_key, d.changed_fields
+                        ));
                     }
                     _ => {}
                 }
@@ -1302,13 +1279,19 @@ mod tests {
 
     fn fixture_workflow_with_evidence() -> ActiveGraphInput {
         let mut input = ActiveGraphInput::default();
-        input.workflow_nodes = vec![NodeId("wf-explore".to_string()), NodeId("wf-apply".to_string())];
+        input.workflow_nodes = vec![
+            NodeId("wf-explore".to_string()),
+            NodeId("wf-apply".to_string()),
+        ];
         input.workflow_edges = vec![(
             NodeId("wf-explore".to_string()),
             NodeId("wf-apply".to_string()),
         )];
         input.workflow_run_id = Some("run-001".to_string());
-        input.evidence_links = vec![("verifier-passed".to_string(), NodeId("wf-apply".to_string()))];
+        input.evidence_links = vec![(
+            "verifier-passed".to_string(),
+            NodeId("wf-apply".to_string()),
+        )];
         input
     }
 
@@ -1351,7 +1334,11 @@ mod tests {
         ] {
             let view = builder.build(&projection, kind, "t0");
             assert_eq!(view.kind, kind);
-            assert!(!view.title.is_empty(), "kind={:?} should have a title", kind);
+            assert!(
+                !view.title.is_empty(),
+                "kind={:?} should have a title",
+                kind
+            );
             assert!(
                 !view.sections.is_empty(),
                 "kind={:?} should have at least one section",
@@ -1378,11 +1365,16 @@ mod tests {
         let projection = project(fixture_workflow_with_evidence());
         let builder = DefaultCockpitViewBuilder;
         let view = builder.build(&projection, CockpitViewKind::Overview, "t0");
-        assert!(!view.sections.is_empty(), "overview must report at least one section");
+        assert!(
+            !view.sections.is_empty(),
+            "overview must report at least one section"
+        );
         let flat: String = view
             .sections
             .iter()
-            .flat_map(|s| std::iter::once(s.heading.as_str()).chain(s.lines.iter().map(String::as_str)))
+            .flat_map(|s| {
+                std::iter::once(s.heading.as_str()).chain(s.lines.iter().map(String::as_str))
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
@@ -1539,7 +1531,11 @@ mod tests {
             CockpitObservabilityKind::Experiments,
         ] {
             let view = builder.build(&projection, kind, "t0");
-            assert!(!view.title.is_empty(), "kind={:?} should have a title", kind);
+            assert!(
+                !view.title.is_empty(),
+                "kind={:?} should have a title",
+                kind
+            );
             assert_eq!(
                 view.sections.len(),
                 1,
@@ -1567,21 +1563,12 @@ mod tests {
         // - 1 WorkflowLab (Experiments.Labs)
         // - 1 promote + 1 gate (Experiments.Promotion Decisions + Usage)
         let mut input = ActiveGraphInput::default();
-        input.workflow_nodes = vec![
-            NodeId("wf".to_string()),
-            NodeId("leaf".to_string()),
-        ];
-        input.workflow_edges = vec![(
-            NodeId("wf".to_string()),
-            NodeId("leaf".to_string()),
-        )];
+        input.workflow_nodes = vec![NodeId("wf".to_string()), NodeId("leaf".to_string())];
+        input.workflow_edges = vec![(NodeId("wf".to_string()), NodeId("leaf".to_string()))];
         input.workflow_run_id = Some("r1".to_string());
         input.assurance_labels = vec!["a1".to_string()];
         input.evidence_links = vec![("a1".to_string(), NodeId("leaf".to_string()))];
-        input.delegations = vec![(
-            NodeId("orch".to_string()),
-            NodeId("worker".to_string()),
-        )];
+        input.delegations = vec![(NodeId("orch".to_string()), NodeId("worker".to_string()))];
         input.workflow_lab_labels = vec!["lab1".to_string()];
         input.lab_promotions = vec![
             ("g1".to_string(), NodeId("leaf".to_string()), false),
@@ -1600,7 +1587,10 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(flat.contains("r1"), "Providers should mention run r1: {flat}");
+        assert!(
+            flat.contains("r1"),
+            "Providers should mention run r1: {flat}"
+        );
         assert!(
             flat.contains("a1"),
             "Providers should mention assurance a1: {flat}"
@@ -1741,12 +1731,16 @@ mod tests {
             .map(|(label, _)| label.as_str())
             .collect();
         assert!(
-            labels.iter().any(|l| l.contains("M8.0") && l.contains("abc1234")),
+            labels
+                .iter()
+                .any(|l| l.contains("M8.0") && l.contains("abc1234")),
             "expected an evidence edge labelled 'M8.0 ... abc1234', got {:?}",
             labels
         );
         assert!(
-            labels.iter().any(|l| l.contains("M8.3") && l.contains("def5678")),
+            labels
+                .iter()
+                .any(|l| l.contains("M8.3") && l.contains("def5678")),
             "expected an evidence edge labelled 'M8.3 ... def5678', got {:?}",
             labels
         );
@@ -1796,8 +1790,14 @@ mod tests {
             input.workflow_edges
         );
         let (child, parent) = &input.workflow_edges[0];
-        assert_eq!(child.0, "abc1234", "child SHA must be the left side of the arrow");
-        assert_eq!(parent.0, "def5678", "parent SHA must be the right side of the arrow");
+        assert_eq!(
+            child.0, "abc1234",
+            "child SHA must be the left side of the arrow"
+        );
+        assert_eq!(
+            parent.0, "def5678",
+            "parent SHA must be the right side of the arrow"
+        );
     }
 
     #[test]
@@ -1848,7 +1848,10 @@ mod tests {
         );
         // Missing SHA in known_shas — must return None.
         let small = vec!["abc1234".to_string()];
-        assert_eq!(parse_parent_edge_bullet("- `abc1234` → `def5678`", &small), None);
+        assert_eq!(
+            parse_parent_edge_bullet("- `abc1234` → `def5678`", &small),
+            None
+        );
         // Not a SHA — must return None.
         assert_eq!(
             parse_parent_edge_bullet("- `not-a-sha` → `def5678`", &shas),
@@ -1882,8 +1885,7 @@ mod tests {
         );
         // --from-input alone with no path still falls back to empty
         // (this is the M8.2 / M8.3 contract preserved by M8.4).
-        let (input, source) =
-            resolve_input(None, None, &env).unwrap();
+        let (input, source) = resolve_input(None, None, &env).unwrap();
         assert!(input.workflow_nodes.is_empty());
         assert_eq!(source, "<empty-default>");
         // Suppress unused-binding warning for PathBuf import.
@@ -1945,10 +1947,7 @@ mod tests {
         let input = derive_active_graph_input_from_manifest(fixture_manifest());
         let edge_prov = input
             .edge_provenance
-            .get(&(
-                NodeId("abc1234".to_string()),
-                NodeId("def5678".to_string()),
-            ))
+            .get(&(NodeId("abc1234".to_string()), NodeId("def5678".to_string())))
             .expect("parent_of edge must have provenance");
         assert_eq!(edge_prov.source_kind, ProvenanceSourceKind::CycleManifest);
         assert!(
@@ -1995,14 +1994,10 @@ mod tests {
     fn diff_from_two_cycle_manifests_emits_no_drift_when_identical() {
         // Both sides are the same fixture manifest ⇒ zero deltas.
         let env = test_env();
-        let fixture_path_a = write_fixture_to_tmp(
-            "diff-a-",
-            r#"{"workflow_nodes":["abc1234","def5678"]}"#,
-        );
-        let fixture_path_b = write_fixture_to_tmp(
-            "diff-b-",
-            r#"{"workflow_nodes":["abc1234","def5678"]}"#,
-        );
+        let fixture_path_a =
+            write_fixture_to_tmp("diff-a-", r#"{"workflow_nodes":["abc1234","def5678"]}"#);
+        let fixture_path_b =
+            write_fixture_to_tmp("diff-b-", r#"{"workflow_nodes":["abc1234","def5678"]}"#);
         let args = CockpitDiffArgs {
             cycle_a: None,
             cycle_b: None,
@@ -2024,14 +2019,8 @@ mod tests {
     #[test]
     fn diff_from_two_cycle_manifests_reports_added_nodes() {
         let env = test_env();
-        let a = write_fixture_to_tmp(
-            "diff-a-",
-            r#"{"workflow_nodes":["abc1234"]}"#,
-        );
-        let b = write_fixture_to_tmp(
-            "diff-b-",
-            r#"{"workflow_nodes":["abc1234","new1234"]}"#,
-        );
+        let a = write_fixture_to_tmp("diff-a-", r#"{"workflow_nodes":["abc1234"]}"#);
+        let b = write_fixture_to_tmp("diff-b-", r#"{"workflow_nodes":["abc1234","new1234"]}"#);
         let args = CockpitDiffArgs {
             cycle_a: None,
             cycle_b: None,
@@ -2096,10 +2085,7 @@ mod tests {
     fn diff_json_envelope_shape_is_stable() {
         let env = test_env();
         let a = write_fixture_to_tmp("diff-a-", r#"{"workflow_nodes":["abc"]}"#);
-        let b = write_fixture_to_tmp(
-            "diff-b-",
-            r#"{"workflow_nodes":["abc","new"]}"#,
-        );
+        let b = write_fixture_to_tmp("diff-b-", r#"{"workflow_nodes":["abc","new"]}"#);
         let args = CockpitDiffArgs {
             cycle_a: None,
             cycle_b: None,
@@ -2146,10 +2132,7 @@ mod tests {
     #[test]
     fn digest_emits_sha256_hex_for_text_format() {
         let env = test_env();
-        let path = write_fixture_to_tmp(
-            "digest-a-",
-            r#"{"workflow_nodes":["abc1234","def5678"]}"#,
-        );
+        let path = write_fixture_to_tmp("digest-a-", r#"{"workflow_nodes":["abc1234","def5678"]}"#);
         let args = CockpitDigestArgs {
             cycle: None,
             input: Some(path.clone()),
@@ -2204,14 +2187,8 @@ mod tests {
         // different inputs because the CLI doesn't expose recorded_at
         // directly.
         let env = test_env();
-        let p1 = write_fixture_to_tmp(
-            "digest-strict-1-",
-            r#"{"workflow_nodes":["a","b"]}"#,
-        );
-        let p2 = write_fixture_to_tmp(
-            "digest-strict-2-",
-            r#"{"workflow_nodes":["a","b","c"]}"#,
-        );
+        let p1 = write_fixture_to_tmp("digest-strict-1-", r#"{"workflow_nodes":["a","b"]}"#);
+        let p2 = write_fixture_to_tmp("digest-strict-2-", r#"{"workflow_nodes":["a","b","c"]}"#);
         let args_strict_a = CockpitDigestArgs {
             cycle: None,
             input: Some(p1.clone()),
@@ -2256,10 +2233,7 @@ mod tests {
     #[test]
     fn digest_json_envelope_shape_is_stable() {
         let env = test_env();
-        let path = write_fixture_to_tmp(
-            "digest-json-",
-            r#"{"workflow_nodes":["m8_8"]}"#,
-        );
+        let path = write_fixture_to_tmp("digest-json-", r#"{"workflow_nodes":["m8_8"]}"#);
         let args = CockpitDigestArgs {
             cycle: None,
             input: Some(path.clone()),

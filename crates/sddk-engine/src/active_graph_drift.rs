@@ -136,10 +136,7 @@ impl DriftEngine for DefaultDriftEngine {
 /// Free-function variant, used directly by tests and any caller that
 /// does not need trait-object dispatch.
 #[must_use]
-pub fn diff_projections(
-    a: &ActiveGraphProjection,
-    b: &ActiveGraphProjection,
-) -> DriftReport {
+pub fn diff_projections(a: &ActiveGraphProjection, b: &ActiveGraphProjection) -> DriftReport {
     let mut node_deltas: Vec<NodeDelta> = Vec::new();
     let mut edge_deltas: Vec<EdgeDelta> = Vec::new();
     let mut summary = DriftSummary::default();
@@ -310,8 +307,8 @@ mod tests {
         }
     }
 
-    use crate::active_graph::ActiveGraphNodeKind;
     use crate::active_graph::ActiveGraphEdgeKind;
+    use crate::active_graph::ActiveGraphNodeKind;
     use std::collections::BTreeMap;
 
     fn empty_projection() -> ActiveGraphProjection {
@@ -385,7 +382,10 @@ mod tests {
         let mut n1 = node("m8_7", "M8.7 old", ActiveGraphNodeKind::Workflow);
         let n2 = node("m8_7", "M8.7 new", ActiveGraphNodeKind::Workflow);
         n1.provenance = Some(prov("Commits:row_1"));
-        let n2 = ActiveGraphNode { provenance: Some(prov("Commits:row_2")), ..n2 };
+        let n2 = ActiveGraphNode {
+            provenance: Some(prov("Commits:row_2")),
+            ..n2
+        };
         let a = proj_with_nodes(vec![n1]);
         let b = proj_with_nodes(vec![n2]);
         let report = diff_projections(&a, &b);
