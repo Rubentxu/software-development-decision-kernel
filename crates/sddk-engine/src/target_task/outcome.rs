@@ -146,6 +146,14 @@ impl TaskOutcome {
             note: note.into(),
         }
     }
+
+    pub(crate) fn failed(task_id: impl Into<String>, note: impl Into<String>) -> Self {
+        Self {
+            task_id: task_id.into(),
+            status: TaskStatus::Failed,
+            note: note.into(),
+        }
+    }
 }
 
 // Re-export TargetTaskError so callers do not need to import the

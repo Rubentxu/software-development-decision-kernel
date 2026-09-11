@@ -22,6 +22,7 @@
 
 #![allow(missing_docs)]
 
+use super::handlers::{HandlerOutcome, HandlerRegistry};
 #[cfg(test)]
 use super::outcome::TaskStatus;
 use super::outcome::{ExecutionReport, ExecutionStatus, TaskOutcome};
@@ -66,28 +67,54 @@ impl DagExecutor {
     ///
     /// Returns `ExecutionReport::unresolved` when the target name is
     /// not registered or the DAG fails validation.
+    ///
+    /// When `handlers` is `Some`, tasks with `has_body: true` dispatch to
+    /// their registered handler; a missing handler for a declared body is
+    /// reported as `failed` (host defect), never as silent success.
+    pub fn run_with_handlers(
+        &self,
+        registry: &TargetRegistry,
+        target_name: &str,
+        actor: &str,
+        handlers: Option<&mut HandlerRegistry>,
+    ) -> ExecutionReport {
+        let resolution = registry.resolve(target_name);
+        if let Some(dag) = resolution.dag {
+            self.walk_with_handlers(&dag, actor, handlers)
+        } else {
+            ExecutionReport::unresolved(target_name, resolution.validation)
+        }
+    }
+
+    /// Resolve a target and execute it without host handlers (stub walk).
     pub fn run(
         &self,
         registry: &TargetRegistry,
         target_name: &str,
         actor: &str,
     ) -> ExecutionReport {
-        let resolution = registry.resolve(target_name);
-        if let Some(dag) = resolution.dag {
-            self.walk(&dag, actor)
-        } else {
-            ExecutionReport::unresolved(target_name, resolution.validation)
-        }
+        self.run_with_handlers(registry, target_name, actor, None)
     }
 
-    /// Walk an already-resolved DAG.
+    /// Walk an already-resolved DAG without handlers.
     pub fn walk(&self, dag: &TaskDag, actor: &str) -> ExecutionReport {
+        self.walk_with_handlers(dag, actor, None)
+    }
+
+    /// Walk an already-resolved DAG, dispatching wired bodies to handlers.
+    pub fn walk_with_handlers(
+        &self,
+        dag: &TaskDag,
+        actor: &str,
+        mut handlers: Option<&mut HandlerRegistry>,
+    ) -> ExecutionReport {
         let mut tasks: Vec<TaskOutcome> = Vec::with_capacity(dag.order.len());
         let mut status = if self.config.dry_run {
             ExecutionStatus::DryRun
         } else {
             ExecutionStatus::Succeeded
         };
+        let mut ctx = super::handlers::HandlerContext::default();
 
         for task_id in &dag.order {
             let task = dag.by_id.get(task_id).expect("task in dag");
@@ -116,10 +143,46 @@ impl DagExecutor {
                             status = ExecutionStatus::Degraded;
                         }
                     } else {
-                        tasks.push(TaskOutcome::executed(
-                            task_id,
-                            format!("executed: {explanation}"),
-                        ));
+                        // M6.3: dispatch the wired body to its handler.
+                        let handler = handlers.as_deref_mut().and_then(|h| h.get_mut(task_id));
+                        match handler {
+                            Some(h) => match h.execute(&mut ctx) {
+                                HandlerOutcome::Ok(note) => {
+                                    ctx.values.insert((*task_id).clone(), note.clone());
+                                    tasks.push(TaskOutcome::executed(
+                                        task_id,
+                                        format!("executed: {note}"),
+                                    ));
+                                }
+                                HandlerOutcome::Err(note) => {
+                                    tasks.push(TaskOutcome::failed(task_id, note.clone()));
+                                    status = ExecutionStatus::Failed;
+                                    let halt_at =
+                                        dag.order.iter().position(|x| x == task_id).unwrap();
+                                    for downstream in &dag.order[halt_at + 1..] {
+                                        tasks.push(TaskOutcome::skipped(
+                                            downstream,
+                                            "upstream failed",
+                                        ));
+                                    }
+                                    break;
+                                }
+                            },
+                            None => {
+                                // Declared body but no host handler: a
+                                // host defect, never silent success.
+                                tasks.push(TaskOutcome::failed(
+                                    task_id,
+                                    "wired body has no host handler registered",
+                                ));
+                                status = ExecutionStatus::Failed;
+                                let halt_at = dag.order.iter().position(|x| x == task_id).unwrap();
+                                for downstream in &dag.order[halt_at + 1..] {
+                                    tasks.push(TaskOutcome::skipped(downstream, "upstream failed"));
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
                 GateDecision::RequireApproval { explanation } => {
@@ -300,9 +363,10 @@ mod tests {
     }
 
     #[test]
-    fn wired_task_with_real_body_reports_executed() {
-        // A task with has_body = true still produces a normal executed
-        // receipt — the stub gate only fires for unwired declarations.
+    fn wired_task_without_any_handler_reports_host_defect() {
+        // M6.3 honesty contract: has_body=true without a registered handler
+        // is a host defect — fail loudly, never fabricate success. (Pre-M6.3
+        // this walk still reported executed; that loophole is closed.)
         let mut registry = TargetRegistry::new();
         let mut target = crate::target_task::builtin::status_target();
         for t in &mut target.tasks {
@@ -311,8 +375,10 @@ mod tests {
         registry.register(target);
         let exec = DagExecutor::new(ExecutorConfig::default());
         let report = exec.run(&registry, "status", "system");
-        assert_eq!(report.status, ExecutionStatus::Succeeded);
-        assert_eq!(report.executed_count(), 3);
+        assert_eq!(report.status, ExecutionStatus::Failed);
+        assert_eq!(report.executed_count(), 0);
+        assert!(report.tasks[0].status == TaskStatus::Failed);
+        assert!(report.tasks[0].note.contains("no host handler"));
     }
 
     #[test]
@@ -462,5 +528,117 @@ mod tests {
         };
         let out = promote_approval_to_allow(d, "bypass");
         assert!(matches!(out, GateDecision::Allow { .. }));
+    }
+
+    // ---- M6.3: handler dispatch (run_with_handlers) ----
+
+    use crate::target_task::handlers::{
+        HandlerContext, HandlerOutcome, HandlerRegistry, TaskHandler,
+    };
+
+    struct StaticHandler(&'static str);
+
+    impl TaskHandler for StaticHandler {
+        fn execute(&mut self, _ctx: &mut HandlerContext) -> HandlerOutcome {
+            if self.0.is_empty() {
+                HandlerOutcome::Err("injected failure".into())
+            } else {
+                HandlerOutcome::Ok(self.0.to_string())
+            }
+        }
+    }
+
+    fn wired_two_task_target() -> crate::target_task::Target {
+        let mut t = minimal_target("wired", &["a", "b"]);
+        t.tasks[1].depends_on = vec!["a".into()];
+        for task in &mut t.tasks {
+            task.has_body = true;
+        }
+        t
+    }
+
+    #[test]
+    fn handler_ok_path_executes_all_wired_tasks() {
+        let mut registry = TargetRegistry::new();
+        registry.register(wired_two_task_target());
+        let mut handlers = HandlerRegistry::new();
+        for id in ["a", "b"] {
+            handlers.register(id, Box::new(StaticHandler("ok")));
+        }
+        let ex = DagExecutor::new(ExecutorConfig::default());
+        let report = ex.run_with_handlers(&registry, "wired", "system", Some(&mut handlers));
+        assert_eq!(report.status, ExecutionStatus::Succeeded);
+        assert_eq!(report.executed_count(), 2);
+        assert!(
+            report
+                .tasks
+                .iter()
+                .all(|t| t.status == TaskStatus::Executed)
+        );
+    }
+
+    #[test]
+    fn handler_err_fails_task_and_skips_downstream() {
+        let mut registry = TargetRegistry::new();
+        registry.register(wired_two_task_target());
+        let mut handlers = HandlerRegistry::new();
+        handlers.register("a", Box::new(StaticHandler("")));
+        handlers.register("b", Box::new(StaticHandler("ok")));
+        let ex = DagExecutor::new(ExecutorConfig::default());
+        let report = ex.run_with_handlers(&registry, "wired", "system", Some(&mut handlers));
+        assert_eq!(report.status, ExecutionStatus::Failed);
+        let a = report.tasks.iter().find(|t| t.task_id == "a").unwrap();
+        let b = report.tasks.iter().find(|t| t.task_id == "b").unwrap();
+        assert_eq!(a.status, TaskStatus::Failed);
+        assert_eq!(b.status, TaskStatus::Skipped);
+        assert!(b.note.contains("upstream failed"));
+    }
+
+    #[test]
+    fn wired_task_without_handler_fails_as_host_defect() {
+        // Honesty contract: a task claiming has_body=true but with no
+        // registered handler must fail loudly, never report success.
+        let mut registry = TargetRegistry::new();
+        registry.register(wired_two_task_target());
+        let mut handlers = HandlerRegistry::new();
+        handlers.register("a", Box::new(StaticHandler("ok")));
+        // "b" intentionally missing.
+        let ex = DagExecutor::new(ExecutorConfig::default());
+        let report = ex.run_with_handlers(&registry, "wired", "system", Some(&mut handlers));
+        assert_eq!(report.status, ExecutionStatus::Failed);
+        let b = report.tasks.iter().find(|t| t.task_id == "b").unwrap();
+        assert_eq!(b.status, TaskStatus::Failed);
+        assert!(b.note.contains("no host handler"));
+    }
+
+    #[test]
+    fn handler_context_threads_values_between_tasks() {
+        struct WriterHandler;
+        struct ReaderHandler;
+
+        impl TaskHandler for WriterHandler {
+            fn execute(&mut self, ctx: &mut HandlerContext) -> HandlerOutcome {
+                ctx.values.insert("cycle_id".into(), "p-x/cycle-y".into());
+                HandlerOutcome::Ok("wrote".into())
+            }
+        }
+
+        impl TaskHandler for ReaderHandler {
+            fn execute(&mut self, ctx: &mut HandlerContext) -> HandlerOutcome {
+                match ctx.values.get("cycle_id") {
+                    Some(v) if v == "p-x/cycle-y" => HandlerOutcome::Ok("read".into()),
+                    _ => HandlerOutcome::Err("context value missing".into()),
+                }
+            }
+        }
+
+        let mut registry = TargetRegistry::new();
+        registry.register(wired_two_task_target());
+        let mut handlers = HandlerRegistry::new();
+        handlers.register("a", Box::new(WriterHandler));
+        handlers.register("b", Box::new(ReaderHandler));
+        let ex = DagExecutor::new(ExecutorConfig::default());
+        let report = ex.run_with_handlers(&registry, "wired", "system", Some(&mut handlers));
+        assert_eq!(report.status, ExecutionStatus::Succeeded);
     }
 }
