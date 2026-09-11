@@ -53,6 +53,7 @@ mod stale_cmd;
 mod status;
 pub mod surface_integration;
 mod target_cmd;
+mod target_handlers;
 mod telemetry;
 mod uat;
 mod uat_common;

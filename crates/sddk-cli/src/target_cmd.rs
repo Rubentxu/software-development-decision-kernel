@@ -46,6 +46,15 @@ pub enum TargetCommand {
         /// Allow high-band tasks without approval (CI fixture).
         #[arg(long)]
         allow_high_band: bool,
+        /// Work-item title (required for the `change` target).
+        #[arg(long)]
+        title: Option<String>,
+        /// Work-item description (required for the `change` target).
+        #[arg(long)]
+        description: Option<String>,
+        /// Work-item actor override (defaults to `agent:cli`).
+        #[arg(long)]
+        work_item_actor: Option<String>,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         format: OutputFormat,
@@ -68,18 +77,135 @@ pub struct TargetListReport {
 
 /// Run the `target` subcommand dispatcher.
 pub(crate) fn run_target(command: TargetCommand, environment: &CliEnvironment) -> CommandOutput {
-    let _ = environment;
-    let registry = sddk_engine::target_task::registry::TargetRegistry::with_builtins();
     match command {
-        TargetCommand::List { format } => render_target_list(&registry, format),
-        TargetCommand::Resolve { name, format } => render_target_resolve(&registry, &name, format),
+        TargetCommand::List { format } => {
+            let registry = sddk_engine::target_task::registry::TargetRegistry::with_builtins();
+            render_target_list(&registry, format)
+        }
+        TargetCommand::Resolve { name, format } => {
+            let registry = sddk_engine::target_task::registry::TargetRegistry::with_builtins();
+            render_target_resolve(&registry, &name, format)
+        }
         TargetCommand::Run {
             name,
             actor,
             dry_run,
             allow_high_band,
+            title,
+            description,
+            work_item_actor,
             format,
-        } => render_target_run(&registry, &name, &actor, dry_run, allow_high_band, format),
+        } => run_target_cmd(
+            &name,
+            &actor,
+            dry_run,
+            allow_high_band,
+            title,
+            description,
+            work_item_actor,
+            environment,
+            format,
+        ),
+    }
+}
+
+/// Execute a target. The `change` target is the first wired target (M6.3):
+/// its tasks flip to `has_body: true` at this layer and dispatch to the CLI
+/// handlers; all other targets keep the SP-07 honest stub semantics.
+#[allow(clippy::too_many_arguments)]
+fn run_target_cmd(
+    name: &str,
+    actor: &str,
+    dry_run: bool,
+    allow_high_band: bool,
+    title: Option<String>,
+    description: Option<String>,
+    work_item_actor: Option<String>,
+    environment: &CliEnvironment,
+    format: OutputFormat,
+) -> CommandOutput {
+    if name == "change" {
+        if dry_run {
+            // Dry-run keeps stub semantics (no side effects, honest report).
+        } else {
+            let (Some(title), Some(description)) = (title, description) else {
+                return CommandOutput {
+                    status: 1,
+                    stdout: String::new(),
+                    stderr: "target run change requires --title and --description".into(),
+                };
+            };
+            // Clone the built-in change target and flip its tasks to wired
+            // bodies: the engine builtin stays has_body=false (other hosts),
+            // the CLI host owns the wiring.
+            let mut registry = sddk_engine::target_task::registry::TargetRegistry::with_builtins();
+            let mut change = registry.get("change").expect("builtin").clone();
+            for task in &mut change.tasks {
+                task.has_body = true;
+            }
+            registry.register(change);
+            let mut handlers = crate::target_handlers::change_handlers(
+                environment,
+                title,
+                description,
+                work_item_actor,
+            );
+            let executor = sddk_engine::target_task::executor::DagExecutor::new(
+                sddk_engine::target_task::executor::ExecutorConfig {
+                    dry_run,
+                    allow_high_band,
+                },
+            );
+            let report = executor.run_with_handlers(&registry, name, actor, Some(&mut handlers));
+            return render_execution_report(&report, format);
+        }
+    }
+    let registry = sddk_engine::target_task::registry::TargetRegistry::with_builtins();
+    let executor = sddk_engine::target_task::executor::DagExecutor::new(
+        sddk_engine::target_task::executor::ExecutorConfig {
+            dry_run,
+            allow_high_band,
+        },
+    );
+    let report = executor.run(&registry, name, actor);
+    render_execution_report(&report, format)
+}
+
+fn render_execution_report(
+    report: &sddk_engine::target_task::outcome::ExecutionReport,
+    format: OutputFormat,
+) -> CommandOutput {
+    let succeeded = matches!(
+        report.status,
+        sddk_engine::target_task::outcome::ExecutionStatus::Succeeded
+            | sddk_engine::target_task::outcome::ExecutionStatus::DryRun
+    );
+    match format {
+        OutputFormat::Json => {
+            let stdout = serde_json::to_string_pretty(report).unwrap_or_else(|_| "{}".into());
+            CommandOutput {
+                status: if succeeded { 0 } else { 1 },
+                stdout,
+                stderr: String::new(),
+            }
+        }
+        OutputFormat::Text => {
+            let mut out = String::new();
+            out.push_str(&format!("Target: {}\n", report.target));
+            out.push_str(&format!("Status: {:?}\n", report.status));
+            out.push_str(&format!("Dry-run: {}\n", report.dry_run));
+            for t in &report.tasks {
+                out.push_str(&format!(
+                    "  {:<22} status={:?} note={}\n",
+                    t.task_id, t.status, t.note
+                ));
+            }
+            CommandOutput {
+                status: if succeeded { 0 } else { 1 },
+                stdout: out,
+                stderr: String::new(),
+            }
+        }
     }
 }
 
@@ -163,55 +289,6 @@ fn render_target_resolve(
             }
             CommandOutput {
                 status: if has_dag { 0 } else { 1 },
-                stdout: out,
-                stderr: String::new(),
-            }
-        }
-    }
-}
-
-fn render_target_run(
-    registry: &sddk_engine::target_task::registry::TargetRegistry,
-    name: &str,
-    actor: &str,
-    dry_run: bool,
-    allow_high_band: bool,
-    format: OutputFormat,
-) -> CommandOutput {
-    let executor = sddk_engine::target_task::executor::DagExecutor::new(
-        sddk_engine::target_task::executor::ExecutorConfig {
-            dry_run,
-            allow_high_band,
-        },
-    );
-    let report = executor.run(registry, name, actor);
-    let succeeded = matches!(
-        report.status,
-        sddk_engine::target_task::outcome::ExecutionStatus::Succeeded
-            | sddk_engine::target_task::outcome::ExecutionStatus::DryRun
-    );
-    match format {
-        OutputFormat::Json => {
-            let stdout = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".into());
-            CommandOutput {
-                status: if succeeded { 0 } else { 1 },
-                stdout,
-                stderr: String::new(),
-            }
-        }
-        OutputFormat::Text => {
-            let mut out = String::new();
-            out.push_str(&format!("Target: {}\n", report.target));
-            out.push_str(&format!("Status: {:?}\n", report.status));
-            out.push_str(&format!("Dry-run: {}\n", report.dry_run));
-            for t in &report.tasks {
-                out.push_str(&format!(
-                    "  {:<22} status={:?} note={}\n",
-                    t.task_id, t.status, t.note
-                ));
-            }
-            CommandOutput {
-                status: if succeeded { 0 } else { 1 },
                 stdout: out,
                 stderr: String::new(),
             }
