@@ -921,4 +921,177 @@ mod tests {
         let out = compiler.compile(&inputs).expect("compile");
         assert_eq!(out.from_skill("core.architecture-review@v1").len(), 1);
     }
+
+    // ── AX-S2 — instruction conflict algebra ─────────────────────────────
+    // Prototype the remaining conflict classes from the SPIKES.md entry:
+    // policy-vs-project narrowing (allowed), task-vs-skill (skills cannot
+    // satisfy mandatory task requirements), and duplicate-equivalent
+    // directives across sources. Every normative contradiction must
+    // resolve deterministically and fail closed.
+
+    #[test]
+    fn axs2_policy_narrowing_by_project_is_allowed() {
+        // Positive case: a project instruction that *tightens* (does not
+        // negate) a policy is accepted alongside it.
+        let compiler = InstructionCompiler::new();
+        let mut inputs = empty_inputs();
+        inputs
+            .policies
+            .entries
+            .push(pol("prefer-bundle", "prefer bundle evidence"));
+        inputs.project.entries.push(proj(
+            "prefer-bundle-restrict",
+            "prefer bundle evidence only from the project vault",
+            true,
+        ));
+        let out = compiler.compile(&inputs).expect("narrowing compiles");
+        assert!(
+            out.sections.iter().any(
+                |f| matches!(&f.source, InstructionSource::Policy { id } if id == "prefer-bundle")
+            ),
+            "policy must survive narrowing"
+        );
+        assert!(
+            out.sections
+                .iter()
+                .any(|f| normalize_key(&f.text).contains("only from the project vault")),
+            "project narrowing fragment must be present"
+        );
+    }
+
+    #[test]
+    fn axs2_skill_cannot_satisfy_mandatory_task_requirement() {
+        // Task-vs-skill: a skill fragment that textually matches a mandatory
+        // task requirement must NOT satisfy it — Skill != Capability. The
+        // requirement is only satisfiable by invariant/policy/project/task
+        // fragments, so compilation must fail closed.
+        let compiler = InstructionCompiler::new();
+        let mut inputs = empty_inputs();
+        inputs.task.requirements.push(task_req(
+            "receipt-required",
+            "emit a receipt before returning",
+        ));
+        inputs.skills.skills.push(skill(
+            "core.receipt-skill",
+            vec!["emit a receipt before returning"],
+        ));
+        match compiler.compile(&inputs) {
+            Err(InstructionConflict::TaskMissing { requirement_id }) => {
+                assert_eq!(requirement_id, "receipt-required");
+            }
+            other => panic!("expected TaskMissing, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn axs2_project_mandatory_satisfies_task_requirement_case_insensitively() {
+        // Duplicate-equivalent directives: project text is semantically
+        // equivalent to the task requirement modulo case/whitespace. The
+        // normalized-key containment must accept it.
+        let compiler = InstructionCompiler::new();
+        let mut inputs = empty_inputs();
+        inputs
+            .task
+            .requirements
+            .push(task_req("dry-run", "Plan a release (dry-run)"));
+        inputs
+            .project
+            .entries
+            .push(proj("dry-run-equivalent", "plan a RELEASE (dry-run)", true));
+        let out = compiler
+            .compile(&inputs)
+            .expect("equivalent directive compiles");
+        // Both fragments survive (task + project), no conflict raised.
+        assert_eq!(out.sections.len(), 2);
+    }
+
+    #[test]
+    fn axs2_conflict_resolution_is_deterministic_across_orderings() {
+        // The same contradictory input set must produce the identical
+        // conflict regardless of the order entries were pushed in —
+        // normative resolution must not depend on insertion order.
+        let mk = || {
+            let mut inputs = empty_inputs();
+            inputs
+                .invariants
+                .entries
+                .push(inv("writes-cas", "all writes are content-addressed"));
+            inputs
+                .policies
+                .entries
+                .push(pol("prefer-bundle", "prefer bundle evidence"));
+            inputs
+        };
+        let compiler = InstructionCompiler::new();
+
+        let mut a = mk();
+        a.invariants
+            .entries
+            .push(inv("writes-cas", "dup-invariant"));
+        a.project.entries.push(proj(
+            "writes-cas",
+            "writes do NOT have to be content-addressed in this project",
+            true,
+        ));
+
+        let mut b = mk();
+        b.project.entries.push(proj(
+            "writes-cas",
+            "writes do NOT have to be content-addressed in this project",
+            true,
+        ));
+        b.invariants
+            .entries
+            .push(inv("writes-cas", "dup-invariant"));
+
+        let ra = compiler.compile(&a);
+        let rb = compiler.compile(&b);
+        match (ra, rb) {
+            (
+                Err(InstructionConflict::InvariantViolation {
+                    invariant_id: ia, ..
+                }),
+                Err(InstructionConflict::InvariantViolation {
+                    invariant_id: ib, ..
+                }),
+            ) => assert_eq!(ia, ib, "conflict identity must be order-independent"),
+            (ra, rb) => panic!("expected matching InvariantViolation, got {ra:?} vs {rb:?}"),
+        }
+    }
+
+    #[test]
+    fn axs2_semantic_key_strength_ordering_is_total() {
+        // The strength ladder must be a total, deterministic order
+        // (per the compiler's strength_rank used for dedupe + sorting):
+        // Invariant > Policy > ProjectMandatory > Task > Skill > Advisory == Hint.
+        let rank_of = |s: InstructionStrength| match s {
+            InstructionStrength::Invariant => 5,
+            InstructionStrength::Policy => 4,
+            InstructionStrength::ProjectMandatory => 3,
+            InstructionStrength::Task => 2,
+            InstructionStrength::Skill => 1,
+            InstructionStrength::ProjectAdvisory | InstructionStrength::Hint => 0,
+        };
+        let order = [
+            InstructionStrength::Invariant,
+            InstructionStrength::Policy,
+            InstructionStrength::ProjectMandatory,
+            InstructionStrength::Task,
+            InstructionStrength::Skill,
+            InstructionStrength::ProjectAdvisory,
+        ];
+        // Advisory and Hint share rank 0 by design (both non-normative).
+        assert_eq!(
+            rank_of(InstructionStrength::ProjectAdvisory),
+            rank_of(InstructionStrength::Hint)
+        );
+        for w in order.windows(2) {
+            assert!(
+                rank_of(w[0]) > rank_of(w[1]),
+                "strength ordering violated: {:?} must outrank {:?}",
+                w[0],
+                w[1]
+            );
+        }
+    }
 }

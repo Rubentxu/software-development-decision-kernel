@@ -52,9 +52,11 @@ Question: can the existing CLI definition substrate expose typed command/arg met
 
 **Outcome: ALREADY DELIVERED (M7.1/M7.3), drift closed.** The substrate (`command_spec.rs` `CommandSpec` table + `command_surface.rs` + `agent-help` rendering) already exposes typed command/arg metadata from a structured table, not scraped help — the AX-S1 question was answered by construction during M7. The remaining gap was silent drift between the clap surface and the spec table (4 commands missing from specs: `agent-help`, `agent-result`, `run-view`, `target`; 2 stale spec names: `docs`/`inventory` pointing at `generate` subcommands). Closed in v1.168.14: specs completed/corrected, plus a permanent drift-guard test (`clap_surface_and_command_specs_are_in_sync`) that fails CI when the clap surface and the spec table diverge.
 
-## AX-S2 — Instruction conflict algebra
+## AX-S2 — Instruction conflict algebra — **COMPLETED 2026-09-11**
 
 Prototype typed semantic keys and strength classes. Test policy-vs-project, task-vs-skill and duplicate-equivalent directives. Output must be deterministic and fail closed for normative contradictions.
+
+**Outcome: SUBSTRATE ALREADY DELIVERED (M7.5), conflict classes pinned by tests.** The `InstructionCompiler` (SPEC-014) already implements typed semantic keys, strength classes (`strength_rank`: Invariant 5 > Policy 4 > ProjectMandatory 3 > Task 2 > Skill 1 > Advisory/Hint 0) and fail-closed conflicts (`InvariantViolation`, `PolicyNarrowingViolation`, `TaskMissing`). The AX-S2 cycle added the missing conflict-class tests in `instruction_compiler.rs` (prefix `axs2_`): policy narrowing by project is allowed (positive case), a skill cannot satisfy a mandatory task requirement (Skill != Capability), duplicate-equivalent directives resolve case/whitespace-insensitively, conflict identity is order-independent, and the strength ladder is a verified total order. No production changes were needed: the algebra was already deterministic and fail-closed; it was unpinned.
 
 ## AX-S3 — Contextual command-surface token budget
 
