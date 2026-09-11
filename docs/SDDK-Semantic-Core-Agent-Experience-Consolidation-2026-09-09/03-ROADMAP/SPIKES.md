@@ -46,9 +46,11 @@ Prototype `change` and `verify` Targets over existing commands. Compare number o
 **Outcome:** Target surface wins on mechanics (1 command vs 2, no `--cycle-id` threading) but the spike exposed a false-success defect — stub targets reported `succeeded`/`executed` without performing work. Fixed in-cycle: honest `not_implemented`/`degraded` reporting shipped. `verify` is already target-equivalent via the `sddk verify` facade. Full findings: `docs/architecture/spikes/SP-07-cli-target-ergonomics.md`. Remaining: M6.3 wires real `change` task bodies (`has_body: true`).
 
 
-## AX-S1 — CommandRegistry generation from current CLI definition
+## AX-S1 — CommandRegistry generation from current CLI definition — **COMPLETED 2026-09-11**
 
 Question: can the existing CLI definition substrate expose typed command/arg metadata without parsing rendered help? Prototype extraction/generation, stable command IDs, machine schemas and example fixtures. Reject any design whose source of truth is scraped help text.
+
+**Outcome: ALREADY DELIVERED (M7.1/M7.3), drift closed.** The substrate (`command_spec.rs` `CommandSpec` table + `command_surface.rs` + `agent-help` rendering) already exposes typed command/arg metadata from a structured table, not scraped help — the AX-S1 question was answered by construction during M7. The remaining gap was silent drift between the clap surface and the spec table (4 commands missing from specs: `agent-help`, `agent-result`, `run-view`, `target`; 2 stale spec names: `docs`/`inventory` pointing at `generate` subcommands). Closed in v1.168.14: specs completed/corrected, plus a permanent drift-guard test (`clap_surface_and_command_specs_are_in_sync`) that fails CI when the clap surface and the spec table diverge.
 
 ## AX-S2 — Instruction conflict algebra
 

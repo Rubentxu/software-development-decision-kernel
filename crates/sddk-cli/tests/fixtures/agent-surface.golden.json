@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 45,
+  "total": 49,
   "entries": [
     {
       "name": "version",
@@ -315,19 +315,19 @@
       "examples_n": 0
     },
     {
-      "name": "docs",
+      "name": "generate docs",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "DocsListV1",
+      "machine": "GenerateDocsListV1",
       "examples_n": 0
     },
     {
-      "name": "inventory",
+      "name": "generate inventory",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "InventoryReportV1",
+      "machine": "GenerateInventoryReportV1",
       "examples_n": 0
     },
     {
@@ -361,6 +361,38 @@
       "required_authority": "write",
       "machine": "ExecutionReportV1",
       "examples_n": 2
+    },
+    {
+      "name": "agent-help",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "Agent-helpReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "agent-result",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "Agent-resultReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "run-view",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "Run-viewReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "target",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "TargetReportV1",
+      "examples_n": 0
     }
   ]
 }

@@ -181,3 +181,43 @@ fn sc_m6_1_8_spec_table_is_well_formed() {
         "spec table must include the 5 new M6.1 routers plus existing surface"
     );
 }
+
+#[test]
+fn clap_surface_and_command_specs_are_in_sync() {
+    use clap::CommandFactory;
+    use std::collections::BTreeSet;
+
+    let cli = sddk_cli::Cli::command();
+    let clap_top: BTreeSet<String> = cli
+        .get_subcommands()
+        .filter(|c| c.get_name() != "help")
+        .map(|c| c.get_name().to_owned())
+        .collect();
+
+    // Real command paths: top-level plus one-level nested "parent child".
+    let mut real: BTreeSet<String> = clap_top.clone();
+    for cmd in cli.get_subcommands() {
+        if cmd.has_subcommands() {
+            for sub in cmd.get_subcommands() {
+                real.insert(format!("{} {}", cmd.get_name(), sub.get_name()));
+            }
+        }
+    }
+
+    let spec_names: BTreeSet<String> = all_command_specs().into_iter().map(|s| s.name).collect();
+
+    // (1) Every top-level clap command must have a CommandSpec (the spec
+    // table intentionally indexes only top-level commands; nested paths
+    // are covered by their parent's has_subcommands entry).
+    let missing: Vec<&String> = clap_top.difference(&spec_names).collect();
+    // (2) Every spec must name a real command path.
+    let extra: Vec<&String> = spec_names.difference(&real).collect();
+    assert!(
+        missing.is_empty(),
+        "clap commands without a CommandSpec: {missing:?}"
+    );
+    assert!(
+        extra.is_empty(),
+        "CommandSpecs without a clap command: {extra:?}"
+    );
+}
