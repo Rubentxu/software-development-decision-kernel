@@ -54,7 +54,7 @@ fn start_cycle(engine: &mut Engine<Storage>, event_id: &str) -> CycleManifest {
     };
     let plan = engine.plan_cycle_start(input).unwrap();
     engine
-        .apply_cycle_start(&plan, &context(event_id, "command-a"))
+        .apply_cycle_start(&plan, &context(event_id, "command-a"), &auth())
         .unwrap()
         .manifest
 }
@@ -218,4 +218,11 @@ fn replan_without_lease_returns_lease_conflict() {
     // Stub returns ReplanLimitExceeded even without a lease.
     // In full implementation, should return LeaseConflict.
     assert!(result.is_err());
+}
+
+fn auth() -> sddk_engine::authority::AuthorityContext {
+    sddk_engine::authority::AuthorityContext::for_test(
+        sddk_domain::ActorKind::System,
+        "test-system",
+    )
 }

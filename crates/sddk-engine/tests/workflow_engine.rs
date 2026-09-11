@@ -107,7 +107,7 @@ fn reduced_path_transitions_are_path_scoped() {
     let start = engine.plan_cycle_start(input).unwrap();
     assert_eq!(start.state_after().phase, Phase::Build);
     let cycle = engine
-        .apply_cycle_start(&start, &context("event-b-direct-create"))
+        .apply_cycle_start(&start, &context("event-b-direct-create"), &auth())
         .unwrap()
         .manifest;
 
@@ -499,7 +499,7 @@ fn start_cycle(engine: &mut Engine<Storage>, event_id: &str) -> CycleManifest {
     assert_eq!(plan.state_after().status, CycleStatus::Open);
     assert_eq!(plan.state_after().phase, Phase::Explore);
     engine
-        .apply_cycle_start(&plan, &context(event_id))
+        .apply_cycle_start(&plan, &context(event_id), &auth())
         .unwrap()
         .manifest
 }

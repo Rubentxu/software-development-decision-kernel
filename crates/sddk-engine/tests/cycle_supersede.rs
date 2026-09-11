@@ -60,7 +60,7 @@ fn start_cycle(engine: &mut Engine<Storage>, event_id: &str) -> CycleManifest {
     };
     let plan = engine.plan_cycle_start(input).unwrap();
     engine
-        .apply_cycle_start(&plan, &context(event_id, "command-a"))
+        .apply_cycle_start(&plan, &context(event_id, "command-a"), &auth())
         .unwrap()
         .manifest
 }

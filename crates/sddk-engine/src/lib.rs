@@ -1235,7 +1235,9 @@ impl<L: Ledger> Engine<L> {
         &mut self,
         plan: &CycleStartPlan,
         context: &EventContext,
+        auth: &crate::authority::AuthorityContext,
     ) -> Result<CycleStartResult, EngineError> {
+        auth.validate(crate::authority::WritableSurface::CycleState)?;
         if self.plan_cycle_start(plan.input.clone())? != *plan {
             return Err(EngineError::InvalidPlan);
         }

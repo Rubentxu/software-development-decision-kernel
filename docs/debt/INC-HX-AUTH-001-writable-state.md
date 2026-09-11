@@ -36,6 +36,7 @@ This is severity **high** because it degrades core functionality without workaro
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; ADR-069 §3 |
+| 2026-09-11 | orchestrator (v1.168.22) | partial close: `apply_cycle_start` now authority-gated (CycleState surface) — previously unwired gate receipts + transition records were already gated; remaining surfaces tracked under ARCH-HEX-001 | `Engine::apply_cycle_start` validates via `WRITABLE_SURFACE_MATRIX`; test `apply_cycle_start_is_gated_and_plan_validation_unchanged` |
 
 ## References
 

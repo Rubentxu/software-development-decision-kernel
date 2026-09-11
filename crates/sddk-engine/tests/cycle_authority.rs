@@ -64,7 +64,7 @@ fn start_cycle(engine: &mut Engine<Storage>, event_id: &str) -> CycleManifest {
     };
     let plan = engine.plan_cycle_start(input).unwrap();
     engine
-        .apply_cycle_start(&plan, &context(event_id, "command-a"))
+        .apply_cycle_start(&plan, &context(event_id, "command-a"), &auth())
         .unwrap()
         .manifest
 }
@@ -880,4 +880,38 @@ fn engine_transition_with_waived_gate_receipt_proceeds() {
     engine
         .apply_transition(&plan, &context("evt-3", "command-c"), &auth())
         .unwrap();
+}
+
+#[test]
+fn apply_cycle_start_is_gated_and_plan_validation_unchanged() {
+    // ARCH-HEX-001 slice: apply_cycle_start is now an authority-gated
+    // CycleState write (compile-time enforced by the &AuthorityContext
+    // parameter). This pins the positive path: a properly-constructed
+    // context still starts the cycle, and the surface matrix itself
+    // remains fail-closed for a restricted surface (GateReceipts
+    // rejects Human/Agent kinds).
+    let (_storage, mut engine) = setup();
+    let input = CycleStartInput {
+        manifest: manifest_for_path(CyclePath::AFull),
+        requirements: cycle_start_requirements(),
+    };
+    let plan = engine.plan_cycle_start(input).expect("plan ok");
+    let manifest = engine
+        .apply_cycle_start(&plan, &context("evt-auth-1", "cmd-auth-1"), &auth())
+        .expect("admitted context must start the cycle")
+        .manifest;
+    assert!(manifest.cycle_id.starts_with("cycle-"));
+
+    // Fail-closed matrix check on a restricted surface.
+    let human = AuthorityContext::for_test(sddk_domain::ActorKind::Human, "user:x");
+    assert!(
+        human
+            .validate(sddk_engine::authority::WritableSurface::GateReceipts)
+            .is_err()
+    );
+    let sys = AuthorityContext::for_test(sddk_domain::ActorKind::System, "system");
+    assert!(
+        sys.validate(sddk_engine::authority::WritableSurface::GateReceipts)
+            .is_ok()
+    );
 }

@@ -1189,6 +1189,12 @@ fn run_cycle_start(args: CycleStartArgs, environment: &CliEnvironment) -> Comman
         let plan = context.engine.plan_cycle_start(input)?;
         let timestamp = args.timestamp.clone().unwrap_or_else(default_timestamp);
         let command_id = format!("cycle.start-{}", Uuid::new_v4().hyphenated());
+        let auth = AuthorityContext::for_cli(
+            args.actor.clone().unwrap_or_else(|| "system".into()),
+            infer_actor_kind(args.actor.as_deref().unwrap_or("system")),
+            None,
+            None,
+        );
         let started = context.engine.apply_cycle_start(
             &plan,
             &event_context(
@@ -1198,6 +1204,7 @@ fn run_cycle_start(args: CycleStartArgs, environment: &CliEnvironment) -> Comman
                 environment,
                 &timestamp,
             ),
+            &auth,
         )?;
         let lease = match &args.lease_owner {
             Some(owner) => {
