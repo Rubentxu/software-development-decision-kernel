@@ -116,9 +116,10 @@ pub struct DeprecatedPatternsArgs {
     #[arg(long)]
     pub registry: Option<PathBuf>,
     /// If set, exit non-zero when any lint with `default: deny` finds hits.
-    /// In v1.168.8 all five M0 D6 lints are `default: allow`, so this flag
-    /// is a forward-compatibility stub for the ARCH-LINT-M9.1 follow-up
-    /// cycle.
+    /// Since v1.168.12 (ARCH-LINT-M9.1) `agent_result_used` is `default:
+    /// deny` with zero production hits, so `--enforce` is meaningful and
+    /// passes on a clean workspace. Further promotions land as their
+    /// replacement ADRs (ADR-0100/0101) are accepted and built.
     #[arg(long)]
     pub enforce: bool,
     /// Output format (`text` or `json`).
@@ -503,5 +504,33 @@ paths = ["crates/**/*.rs"]
         let r = load_registry(&p).unwrap();
         let err = collect_hits(tmp.path(), &r.lints[0]).unwrap_err();
         assert!(err.contains("invalid regex"), "got: {err}");
+    }
+
+    #[test]
+    fn live_registry_agent_result_used_is_deny_and_clean() {
+        // ARCH-LINT-M9.1 promotion guard: `agent_result_used` is the one
+        // promoted lint. It must stay `default: deny` AND produce zero
+        // hits against the live workspace (the spike corpus and converter
+        // surface are excluded). If this test fails with hits, someone
+        // reintroduced the legacy aggregate into production code.
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest
+            .ancestors()
+            .nth(2)
+            .expect("crate lives two levels under workspace root")
+            .to_path_buf();
+        let registry_path = workspace_root.join("docs/architecture/lints/deprecated_patterns.toml");
+        let registry = load_registry(&registry_path).expect("live registry must parse");
+        let lint = registry
+            .lints
+            .iter()
+            .find(|l| l.id == "agent_result_used")
+            .expect("agent_result_used lint must exist");
+        assert_eq!(lint.default.as_deref(), Some("deny"));
+        let hits = collect_hits(&workspace_root, lint).unwrap();
+        assert!(
+            hits.is_empty(),
+            "agent_result_used is deny but found hits: {hits:?}"
+        );
     }
 }

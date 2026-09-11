@@ -22,13 +22,13 @@
 schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
-last_extended_at = "2026-09-11T13:27:00Z"
-enforcement_status = "advisory (M0..M8); blocking deferred (M9 follow-up)"
+last_extended_at = "2026-09-11T15:59:00Z"
+enforcement_status = "agent_result_used: deny (M9.1, v1.168.12); remaining four: advisory — replacement ADRs (ADR-0100/0101) still proposed"
 
 [[lints]]
 id = "agent_result_used"
 severity = "warn"
-default = "allow"
+default = "deny"
 category = "deprecated_patterns"
 description = """
 Use of `AgentResult` (legacy aggregate) where the canonical `Contribution`
@@ -53,6 +53,10 @@ paths = [
 exclude_paths = [
     "crates/sddk-cli/src/lib.rs",
     "crates/sddk-cli/src/result_cmd.rs",
+    # Spike SP-06 is a retrieval-evaluation knowledge corpus: it cites the
+    # legacy name *because* recovery questions ask about the deprecation.
+    # Citations there are intentional content, not production uses.
+    "crates/sddk-engine/src/spike_sp06.rs",
 ]
 replacement = [
     "Use `Contribution` + `ExecutionOutcome` from crates/sddk-engine/src/agent_contribution_envelope.rs",
@@ -197,3 +201,27 @@ ARCH-LINT-M9.1 follow-up cycle (no fixed release).
 validation_per_lint = "For each of the 5 lints, confirm that all current hits in the workspace are in legacy/deprecated code paths (no false positives on production code). Document the audit per-lint."
 migration_completion = "For each lint, the replacement path must be fully wired and tested (e.g. `Contribution` + `ExecutionOutcome` must be the only canonical way to emit agent output, with no remaining legacy `AgentResult` writes)."
 user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flipping any lint from `default: allow` to `default: deny`."
+
+# ARCH-LINT-M9.1 per-lint audit (v1.168.12, 2026-09-11):
+#
+# agent_result_used — PROMOTED to `default: deny`.
+#   Audit: the only engine-tree hits were in spike_sp06.rs, a retrieval-
+#   evaluation knowledge corpus that cites the legacy name intentionally
+#   (recovery questions ask about the deprecation itself). Excluded as
+#   content, not code. CLI hits are the deliberate converter surface
+#   (result_cmd.rs, already excluded). The sddk-domain `AgentResult`
+#   struct is outside this lint's scan scope and remains the converter's
+#   input type by design. Production engine/cli code has zero uses.
+#   Sign-off: user granted continuous auto-mode authorization
+#   ("continuamos segun tus recomendaciones... en modo auto").
+#
+# evidence_kind_v1 (18 hits), transition_outcome_used (24),
+# orchestration_synthesis_no_dissent (19) — REMAIN `allow` (advisory).
+#   Rationale: their canonical replacements (universal Evidence model /
+#   EvidenceRef migration per ADR-0100; ExecutionOutcome+Contribution per
+#   ADR-0101) are `status: proposed` and NOT yet implemented in code.
+#   Migration completion is impossible before those ADRs are accepted and
+#   built. Promotion is blocked on construction, not on audit.
+#
+# execution_outcome_as_synthesis — remains `allow`; 0 hits today, but its
+#   heuristic is medium-confidence and its subject type does not exist yet.
