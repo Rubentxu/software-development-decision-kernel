@@ -70,6 +70,8 @@ Run one reviewer profile/task/fixture through two adapters (real or fake-compati
 
 **Outcome: PORT VIABLE, PROFILE ALREADY CLEAN.** Defined the `InstructionsRenderer` port and two fake adapters (sectioned vs flat); both render byte-different prompts with identical semantic fingerprints and preserved fragment order — zero production changes needed. `AgentProfile` carries no provider transport data (pinned by test). Provider transport metadata (model, budget, temperature) belongs in adapter constructors. Port is promotion-ready when a second real provider arrives; until then no abstraction is warranted (extension discipline). Findings: `docs/architecture/spikes/AX-S4-provider-adapter-portability.md`. Harness: `crates/sddk-cli/src/spike_axs4.rs` (4 pinned tests).
 
-## AX-S5 — Agent asset static scanner
+## AX-S5 — Agent asset static scanner — **COMPLETED 2026-09-11**
 
 Prototype detection of deprecated commands, raw store/table references, authority language, duplicated prompt fragments and unregistered examples in Markdown/YAML/Rust literals. Keep advisory until false-positive rate is acceptable.
+
+**Outcome: VIABLE, FP RATE 0 ON CURRENT CORPUS.** Five deterministic detectors built and measured over 91 assets. Rules 1-3+5: zero hits (regression-prevention value, advisory-clean now). Rule 4 found the only true positive: the Common Finding Contract envelope is copy-pasted across the 5 debt-*-cluster agents and shared by mcw.md/metrics-schema.md — pointing device for a debt-cluster consolidation cycle, not for suppression. Recommended: promote rules 1-3+5 to an advisory `sddk dev lint` check in a follow-up. Findings: `docs/architecture/spikes/AX-S5-agent-asset-static-scanner.md`. Harness: `crates/sddk-cli/src/spike_axs5.rs` (6 pinned tests).
