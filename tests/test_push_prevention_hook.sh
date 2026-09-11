@@ -3,9 +3,11 @@
 # INC: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION (CL-APPLY-PUSH-DISCIPLINE cluster)
 #
 # Scenarios tested:
-# (a) push WITHOUT release commit to main → rejected with INC identifier
-# (b) push WITH chore(release): bump version commit to main → accepted
+# (a) push WITHOUT release commit AND WITHOUT Cargo.toml version bump → rejected
+# (b) push WITH chore(release): bump version commit → accepted
 # (c) push to non-main branch → accepted unconditionally
+# (d) NEW (post Option-3 fix): push WITH Cargo.toml version bump but no marker → accepted
+#     (semantic check path; closes INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT Option 3)
 #
 # No network access required (local-path remotes only), tempfile-isolated.
 
@@ -172,6 +174,51 @@ if [[ "$MAIN_SHA_AFTER" != "$ORIGIN_MAIN_SHA" ]]; then
 fi
 
 echo "PASS: origin/main advanced correctly"
+
+echo ""
+echo "--- Scenario (d): push to main WITH Cargo.toml version bump (no marker) → accepted ---"
+
+# Reset to a known state: new clone so origin/main is at scenario-(b)'s tip
+SCEN_D_DIR=$(mktemp -d)
+git clone "file://$ORIGIN_DIR" "$SCEN_D_DIR/clone" >/dev/null 2>&1
+cd "$SCEN_D_DIR/clone"
+git config user.email "test@example.com"
+git config user.name "Test User"
+git config core.hooksPath "$REPO_ROOT/githooks"
+
+# Add a Cargo.toml with [workspace.package] version = "1.0.0"
+cat > Cargo.toml <<'EOF'
+[workspace]
+members = []
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+EOF
+git add Cargo.toml
+git commit -m "chore(release): bump version 0.0.1 -> 1.0.0" >/dev/null
+git push origin main >/dev/null 2>&1
+
+# Now bump version WITHOUT a release marker
+sed -i 's/version = "1.0.0"/version = "1.1.0"/' Cargo.toml
+git add Cargo.toml
+git commit -m "feat(uat): some feature that bumps version semantically" >/dev/null
+
+# Push — should succeed via semantic check (no marker subject)
+if git push origin main 2>&1; then
+    echo "PASS: main push with Cargo.toml version bump accepted (semantic check)"
+else
+    echo "FAIL: main push with Cargo.toml version bump was rejected (semantic check broken?)"
+    cd "$REPO_ROOT"
+    chmod -R u+rw "$SCEN_D_DIR" 2>/dev/null || true
+    rm -rf "$SCEN_D_DIR"
+    exit 1
+fi
+
+# Cleanup scenario-d workdir
+cd "$REPO_ROOT"
+chmod -R u+rw "$SCEN_D_DIR" 2>/dev/null || true
+rm -rf "$SCEN_D_DIR"
 
 echo ""
 echo "=== All contract test scenarios passed ==="
