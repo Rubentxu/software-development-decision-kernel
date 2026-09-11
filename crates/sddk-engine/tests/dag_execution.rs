@@ -38,7 +38,10 @@ fn sc_m6_3_1_status_dry_run_admits_all_tasks() {
 fn sc_m6_3_2_run_target_executes_in_topo_order() {
     let r = registry();
     let report = executor(false, false).run(&r, "run", "system");
-    assert_eq!(report.status, ExecutionStatus::Succeeded);
+    // SP-07 honesty: builtin tasks are declaration stubs; the run is
+    // admitted (topo order intact) but honestly Degraded, not a
+    // phantom success.
+    assert_eq!(report.status, ExecutionStatus::Degraded);
     let names: Vec<&str> = report.tasks.iter().map(|t| t.task_id.as_str()).collect();
     assert_eq!(
         names,
@@ -51,7 +54,8 @@ fn sc_m6_3_2_run_target_executes_in_topo_order() {
         ]
     );
     for t in &report.tasks {
-        assert_eq!(t.status, TaskStatus::Executed);
+        assert_eq!(t.status, TaskStatus::NotImplemented);
+        assert!(t.note.contains("no task body wired"));
     }
 }
 
@@ -69,18 +73,20 @@ fn sc_m6_3_3_ship_target_halts_at_publish_under_system_actor() {
         .expect("publish task");
     assert_eq!(publish.status, TaskStatus::Skipped);
     assert!(publish.note.contains("awaiting approval"));
-    // Earlier tasks executed.
+    // Earlier tasks admitted but honest stubs (SP-07).
     let manifest = &report.tasks[0];
     assert_eq!(manifest.task_id, "manifest.verify");
-    assert_eq!(manifest.status, TaskStatus::Executed);
+    assert_eq!(manifest.status, TaskStatus::NotImplemented);
 }
 
 #[test]
 fn sc_m6_3_3b_allow_high_band_lets_ship_target_succeed() {
     let r = registry();
     let report = executor(false, true).run(&r, "ship", "system");
-    assert_eq!(report.status, ExecutionStatus::Succeeded);
-    assert_eq!(report.executed_count(), 4);
+    // SP-07: approval bypassed, but stub bodies degrade honestly.
+    assert_eq!(report.status, ExecutionStatus::Degraded);
+    assert_eq!(report.executed_count(), 0);
+    assert_eq!(report.tasks.len(), 4);
 }
 
 // Regression: allow_high_band must bypass RequireApproval for user actors
@@ -90,10 +96,12 @@ fn sc_m6_3_3b_allow_high_band_lets_ship_target_succeed() {
 fn sc_m6_3_3c_allow_high_band_bypasses_user_write_approval() {
     let r = registry();
     let report = executor(false, true).run(&r, "ship", "user:alice");
-    assert_eq!(report.status, ExecutionStatus::Succeeded);
-    assert_eq!(report.executed_count(), 4);
+    // SP-07: the approval bypass still works (no Denied), but stub
+    // bodies degrade honestly instead of phantom-success.
+    assert_eq!(report.status, ExecutionStatus::Degraded);
+    assert_eq!(report.executed_count(), 0);
     for t in &report.tasks {
-        assert_eq!(t.status, TaskStatus::Executed);
+        assert_eq!(t.status, TaskStatus::NotImplemented);
     }
 }
 
@@ -126,9 +134,17 @@ fn sc_m6_3_5_ship_dry_run_has_no_denial() {
 fn sc_m6_3_6_execution_counters_are_accurate() {
     let r = registry();
     let report = executor(false, false).run(&r, "ship", "system");
-    // 3 executed (manifest, build, bundle), 1 skipped (publish).
-    assert_eq!(report.executed_count(), 3);
+    // 3 admitted stubs (not_implemented), 1 skipped (publish gate).
+    assert_eq!(report.executed_count(), 0);
     assert_eq!(report.skipped_count(), 1);
+    assert_eq!(
+        report
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::NotImplemented)
+            .count(),
+        3
+    );
     assert!(report.had_halt());
 }
 
@@ -138,13 +154,14 @@ fn change_verify_audit_targets_execute_with_system_actor() {
     let r = registry();
     for target in ["change", "verify", "audit"] {
         let report = executor(false, false).run(&r, target, "system");
-        // All tasks use Read or Write; system actor admits all.
+        // All tasks use Read or Write; system actor admits all, but
+        // builtin stub bodies degrade honestly (SP-07).
         assert_eq!(
             report.status,
-            ExecutionStatus::Succeeded,
-            "target {target} should succeed: {:?}",
+            ExecutionStatus::Degraded,
+            "target {target} should degrade honestly: {:?}",
             report
         );
-        assert!(report.executed_count() >= 1);
+        assert!(!report.tasks.is_empty());
     }
 }
