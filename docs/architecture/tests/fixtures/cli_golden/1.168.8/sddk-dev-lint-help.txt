@@ -1,0 +1,10 @@
+Architecture lint registry executors (M0 D6 / M9 enforcement infrastructure)
+
+Usage: sddk dev lint <COMMAND>
+
+Commands:
+  deprecated-patterns  Execute the deprecated-patterns registry against the live workspace
+  help                 Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

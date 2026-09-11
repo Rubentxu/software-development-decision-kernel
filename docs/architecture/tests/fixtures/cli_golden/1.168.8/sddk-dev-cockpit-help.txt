@@ -1,0 +1,14 @@
+Inspect the M8 (H9 Cockpit Views) engine: render structural / temporal views (overview, journal, timeline, execution) over the projected active graph. Closes the M8.2 surface
+
+Usage: sddk dev cockpit <COMMAND>
+
+Commands:
+  view        Render a structural/temporal Cockpit view over the projected active graph (overview, journal, timeline, execution)
+  obs         Render an operational Cockpit observability view over the projected active graph (providers, usage, assurance, handoff, experiments)
+  diff        Compute drift between two active graph projections (M8.7). Emits added / removed / changed nodes and edges with field-level attribution. Sources can be archive manifests (`--cycle-a` / `--cycle-b`) or `ActiveGraphInput` JSON files (`--input-a` / `--input-b`)
+  diff-watch  Tail drift between two active graph projections in real time (M9+ interactive drift sessions). Re-reads inputs on each tick and emits a new `DriftRow` JSON envelope whenever the content-only projection digest changes (ignoring per-tick `recorded_at` noise). Same sources as `Diff`
+  digest      Compute a stable SHA-256 digest of the active graph projection (M8.8). Two kinds: `strict` (default — includes `recorded_at`, so any timestamp drift produces a different hash) and `content` (ignores `recorded_at`, only structural content participates). Sources can be an archive manifest (`--cycle`) or an `ActiveGraphInput` JSON file (`--input`)
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

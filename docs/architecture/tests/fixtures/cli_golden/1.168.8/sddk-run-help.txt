@@ -1,0 +1,19 @@
+Execute a capability. Delegates to `capability run`
+
+Usage: sddk run [OPTIONS] --name <NAME>
+
+Options:
+      --name <NAME>
+          Capability name
+
+      --format <FORMAT>
+          Output format
+
+          Possible values:
+          - text: Human-friendly text rendering
+          - json: Machine-readable JSON envelope
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

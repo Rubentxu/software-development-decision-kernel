@@ -1,0 +1,17 @@
+Verify the causal ledger and list its events
+
+Usage: sddk ledger <COMMAND>
+
+Commands:
+  verify               Verify sequence continuity, predecessor links, and event hashes
+  verify-chain         Verify stream hash chain integrity (Phase 2 SHOULD)
+  backfill-chain       Backfill chain_hash for pre-MIGRATION_10 events
+  events               List ledger events, optionally scoped to one command frame
+  export               Export ledger events as newline-delimited JSON (JSONL) to a file
+  replay               Replay events from a named snapshot, optionally verifying chain hashes
+  verify-cross-ledger  Verify bidirectional consistency between events_v1 and ledger_events
+  watch                Tail the ledger in real time (M9.5 live-mode streaming)
+  help                 Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

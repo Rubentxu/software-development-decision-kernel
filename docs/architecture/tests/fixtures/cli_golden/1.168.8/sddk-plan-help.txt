@@ -1,0 +1,52 @@
+Plan a new cycle from a goal (DEPRECATED: use `sddk plan workitem` instead)
+
+Usage: sddk plan [OPTIONS] [COMMAND]
+
+Commands:
+  work-item  Manage planning work items
+  dep        Manage planning dependencies between work items
+  evidence   Attach evidence to a work item
+  decision   Record a decision for a work item
+  graph      Show the planning graph identity and provenance chain for a cycle
+  import     Import the EXECUTION-SPINE.yaml into the planning ledger
+  roadmap    Roadmap decision-plane projections (status, next, blocked, show, graph)
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --root <ROOT>
+          Checkout or worktree root. When absent and `--no-infer` is not set, the cycle inference layer walks up from cwd searching for a project marker (sddk manifest, .git, AGENTS.md). When `no_infer` is true, this must be provided explicitly
+
+      --scope <SCOPE>
+          Required monorepo scope, using `.` for the repository root. When absent and `--no-infer` is not set, inferred from the resolved root
+
+      --remote <REMOTE>
+          Explicit remote URL instead of read-only Git discovery
+
+      --fallback-seed <FALLBACK_SEED>
+          Stable UUID for a repository without a remote
+
+      --no-infer
+          Opt out of context inference. When set, `--root` and `--scope` must be passed explicitly and `--cycle` is a required argument on cycle commands
+
+      --name <NAME>
+          Legacy: display name used to derive the stable cycle identifier. DEPRECATED — emits warning and delegates to `cycle start`
+
+      --path <PATH>
+          Legacy: workflow path applied to the cycle
+          
+          [possible values: a-min, a-lite, a-full, b-direct]
+
+      --branch <BRANCH>
+          Legacy: git branch associated with the cycle
+
+      --format <FORMAT>
+          Output format
+
+          Possible values:
+          - text: Human-friendly text rendering
+          - json: Machine-readable JSON envelope
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

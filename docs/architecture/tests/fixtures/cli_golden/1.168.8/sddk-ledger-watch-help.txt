@@ -1,0 +1,62 @@
+Tail the ledger in real time (M9.5 live-mode streaming).
+
+Polls `list_events_after` in a loop and emits one event per line (NDJSON when `--format json|ndjson`, pretty text otherwise). Exits cleanly after `--max-events` events, on SIGINT (Ctrl-C), or after `--idle-timeout-ms` of no new events (default: never).
+
+Usage: sddk ledger watch [OPTIONS]
+
+Options:
+      --root <ROOT>
+          Checkout or worktree root. When absent and `--no-infer` is not set, the cycle inference layer walks up from cwd searching for a project marker (sddk manifest, .git, AGENTS.md). When `no_infer` is true, this must be provided explicitly
+
+      --scope <SCOPE>
+          Required monorepo scope, using `.` for the repository root. When absent and `--no-infer` is not set, inferred from the resolved root
+
+      --remote <REMOTE>
+          Explicit remote URL instead of read-only Git discovery
+
+      --fallback-seed <FALLBACK_SEED>
+          Stable UUID for a repository without a remote
+
+      --no-infer
+          Opt out of context inference. When set, `--root` and `--scope` must be passed explicitly and `--cycle` is a required argument on cycle commands
+
+      --from-sequence <FROM_SEQUENCE>
+          Start tailing after this ledger sequence. Default 0 (emit everything from the beginning). Use `--from-tail` instead to start after the current latest sequence (ignore existing events)
+          
+          [default: 0]
+
+      --from-tail
+          Start tailing strictly after the current latest sequence. Useful for live-streaming new events without re-emitting historical ones
+
+      --frame <FRAME>
+          Restrict to events sharing one command frame
+
+      --cycle <CYCLE>
+          Restrict to events for one cycle
+
+      --interval-ms <INTERVAL_MS>
+          Poll interval in milliseconds
+          
+          [default: 500]
+
+      --max-events <MAX_EVENTS>
+          Cap on events emitted before exiting (0 = unlimited)
+          
+          [default: 0]
+
+      --idle-timeout-ms <IDLE_TIMEOUT_MS>
+          Exit after this many milliseconds with no new events (0 = never)
+          
+          [default: 0]
+
+      --format <FORMAT>
+          Output format: `text` (pretty per-line), `json` or `ndjson` (one JSON object per line, no pretty-printing)
+
+          Possible values:
+          - text: Human-friendly text rendering
+          - json: Machine-readable JSON envelope
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')

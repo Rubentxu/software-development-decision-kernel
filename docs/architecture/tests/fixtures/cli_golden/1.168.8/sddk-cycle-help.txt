@@ -1,0 +1,24 @@
+Plan and apply workflow cycles under the local authority
+
+Usage: sddk cycle <COMMAND>
+
+Commands:
+  start              Create a cycle through the declared `cycle.start` transition
+  status             Show the current cycle snapshot and lease
+  transition         Apply one declared transition with caller evidence
+  evaluate-gate      Authorize and persist one gate evaluation receipt
+  rebuild            Restore a missing cycle snapshot from its ledger events
+  supersede          Close a cycle with a successor or a reason
+  replan             Bounded in-place revision of a cycle
+  pause              Pause a cycle, releasing the lease
+  resume             Resume a paused cycle, re-acquiring a fresh lease
+  artifacts-dir      Print the XDG artifact directory for a cycle (created on demand)
+  narrative          Render a deterministic markdown narrative for a cycle (operator view)
+  lock               Acquire, release, or inspect the exclusive cycle lease
+  inventory          Build the cycle-scoped files inventory artifact (`sddk.inventory/v1`)
+  next               Print the frontier of legal transitions from the current cycle state
+  verify-references  Verify the provenance chain for a cycle (supports cross-storage drift detection)
+  help               Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

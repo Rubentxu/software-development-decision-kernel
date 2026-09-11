@@ -1,0 +1,29 @@
+Developer tooling: doctor, gates, and atomic install/verify
+
+Usage: sddk dev <COMMAND>
+
+Commands:
+  doctor              Check the toolchain and environment prerequisites
+  check               Run repository quality gates (fmt, clippy, tests)
+  install             Install this binary atomically into a prefix with a receipt
+  verify              Verify an installed prefix against its receipt
+  uninstall           Remove an installed prefix only when it matches its receipt
+  link                Symlink the framework assets (agents/skills/prompts/workflows) into an editor
+  use                 Select the active framework bundle version (asdf-style `use`)
+  manifest            Generate or verify MANIFEST.sha256 — per-file content hashes of the framework surfaces (agents, skills, prompts, workflows, assets)
+  check-architecture  Evaluate architecture rules against the live workspace baseline
+  update              Install a framework release bundle (download, verify checksum + internal MANIFEST.sha256, extract). Never touches git — source checkouts are managed by the developer (`git pull` + `dev link`)
+  projection          Projection rebuild and inspection tooling
+  models              Manage agent-models.yaml (list/set/validate) and locate the TUI
+  entropy             Multidimensional architecture health report (LOC, coupling, fan-in/out)
+  reconcile           Reconcile IDE agent configs with bundle sources (dry-run by default)
+  voice               Voice profile management (list/show/set overrides per agent)
+  skills              Inspect the runtime skill registry that the M7.7 CLI runner gate consults (list loaded skills, verify declared required skills against the bundle)
+  graph               Inspect the M8 (H9 Active Graph & Cockpit) engine projection: list nodes, list typed edges, or emit the full `ActiveGraphProjection` as JSON. Closes the M8.0 surface — the engine module was already shipped but had no operator-facing entry point
+  cockpit             Inspect the M8 (H9 Cockpit Views) engine: render structural / temporal views (overview, journal, timeline, execution) over the projected active graph. Closes the M8.2 surface
+  test                Test tooling (count-workspace)
+  lint                Architecture lint registry executors (M0 D6 / M9 enforcement infrastructure)
+  help                Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
