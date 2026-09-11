@@ -2,8 +2,9 @@
 id: INC-DEBT-020
 title: "prune re-apunta current a dev-link rompiendo bundle_coherence"
 slug: "INC-DEBT-020-prune-reapunta-current-a-dev-link-rompiendo-bundle-coherence"
-status: resolved
+status: closed
 resolved_by: kernel-cycle-53-frontier-advisor (v1.68.0)
+resolved_at: 2026-09-02
 resolved_by_commits:
   - "4df6240 fix(cli): prune re-apunta current a la versión más nueva (INC-DEBT-020)"
   - "f76ba5f test(cli): regresión prune — current symlink post-condición (INC-DEBT-020)"
@@ -16,6 +17,7 @@ fingerprint_aliases: []
 cluster_id: CL-20
 created: 2026-09-02
 created_by: sddk-archive
+closed_at: 2026-09-02
 closed_by: sddk-archive (cycle-53 archive)
 owner: next-tooling-cycle
 affected_versions: ["1.67.0"]

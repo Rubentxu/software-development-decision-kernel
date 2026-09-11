@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-017
 title: "sddk-storage acquire_cycle_lease lacks pre-existence check (FK fires STORAGE_DATABASE for own-project missing cycles)"
-status: resolved
+status: closed
 severity: medium
 priority: P2
 fingerprint: "6b4c9a5f3d8e2c1a4b7d9e0f5a3c8b1e"
@@ -11,6 +11,8 @@ created: 2026-09-01
 created_by: sddk-verify (p-63676b11dc0ef88f/gap6-foreign-cycle-typed-error)
 resolved_by: p-63676b11dc0ef88f/storage-cycle-lease-pre-existence-check
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/storage-cycle-lease-pre-existence-check
 owner: unassigned
 ---
 

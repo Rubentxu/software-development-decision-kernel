@@ -1,7 +1,7 @@
 ---
 id: INC-001-cli-call-budget-stale
 title: "Golden dataset test asserted stale 6-column CLI call-budgets row"
-status: resolved
+status: closed
 severity: medium
 priority: P2
 fingerprint: "7c8a1f4d9e2b0a3c"
@@ -10,7 +10,7 @@ cluster_id: CL-37
 created: 2026-08-24
 created_by: sddk-archive (cycle-19, ADR-0060 follow-up)
 owner: orchestrator
-closed: 2026-08-28
+closed_at: 2026-08-28
 closed_by: sddk-debt-verify (cycle p-52b95ef55999f9de/kernel-cli-agent-information-flow)
 ---
 

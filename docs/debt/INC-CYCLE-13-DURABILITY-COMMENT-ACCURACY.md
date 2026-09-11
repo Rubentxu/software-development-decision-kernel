@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-13-DURABILITY-COMMENT-ACCURACY
 title: "Weak // durability-required: comment on adoption.rs same_basename_different_remotes test"
-status: resolved
+status: closed
 severity: low
 priority: P3
 fingerprint: "4cc2dbe418749e4e"
@@ -12,6 +12,8 @@ created_by: sddk-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 ---
 
 # INC-CYCLE-13-DURABILITY-COMMENT-ACCURACY — weak durability comment on one adoption test

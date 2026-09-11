@@ -3,10 +3,11 @@
 - **id**: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
 - **cluster**: CL-APPLY-PUSH-DISCIPLINE
 - **occurrence**: 4th (cycle-14, cycle-16, kernel-cli-agent-information-flow, this one)
-- **status**: open
+- **status**: closed
 - **severity**: critical
 - **priority**: P0
 - **created**: 2026-08-28
+- **closed_at**: 2026-08-28 (cycle p-52b95ef55999f9de/mechanical-push-prevention)
 - **cycle_id**: p-52b95ef55999f9de/phase-b-matrix-lint-codes
 
 ## What happened

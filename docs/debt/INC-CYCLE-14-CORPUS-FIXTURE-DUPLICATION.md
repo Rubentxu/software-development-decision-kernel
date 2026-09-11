@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION
 title: "corpus_replay_through_validator inlines EventEnvelopeV1 construction duplicating valid_envelope fixture"
-status: resolved
+status: closed
 severity: low
 priority: P3
 fingerprint: "126823680682cdbc"
@@ -12,6 +12,8 @@ created_by: sddk-debt-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 ---
 
 # INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION — corpus test duplicates envelope-builder fixture

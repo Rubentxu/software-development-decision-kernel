@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-SEVERITY-SPEC-DRIFT
 title: "JournalProjection severity policy diverges from SPEC-027 categories (pack/runtime collapsed into default)"
-status: resolved
+status: closed
 severity: low
 priority: P3
 fingerprint: "2060c4f2b969e014"
@@ -12,6 +12,8 @@ created_by: sddk-debt-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 ---
 
 # INC-CYCLE-14-SEVERITY-SPEC-DRIFT — severity_for_event_type ↔ SPEC-027 drift

@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT
 title: "Apply envelope reported 636 workspace tests when actual is 1076"
-status: resolved
+status: closed
 severity: medium
 priority: P2
 fingerprint: "67e91b05600e2991"
@@ -12,6 +12,8 @@ created_by: sddk-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
 ---
 
 # INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT — apply envelope test count misrepresentation

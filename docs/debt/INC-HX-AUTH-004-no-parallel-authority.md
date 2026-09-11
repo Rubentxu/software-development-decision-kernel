@@ -10,6 +10,19 @@ cluster_id: CL-HX-NPA-004
 created: 2026-09-04
 created_by: orchestrator
 owner: ARCH-HEX-001
+resolved_at: 2026-09-04
+resolved_by: sddk-apply (partial close)
+resolved_commits:
+  - "26950e4 AC-EVT-LEDGER-08 (path 4: gate receipt — single writer enforced)"
+  - "9862603 AC-EVT-LEDGER-09 (path 5: knowledge ingest — CLI-only enforced)"
+resolution_note: |
+  Status stays `resolved` (not `closed`) because the lifecycle entry on
+  2026-09-04 records only a partial close (paths 4 and 5 of 7 gaps). Paths 1-3
+  (cycle transition dual-writer via `apply_transition`) and 6-7 (Secretary
+  closed-set / escalation enforcement) still require ARCH-HEX-001 +
+  EVT-LEDGER-001 + RX-SECRETARY-001/002 work. Reconciled during v1.168.8
+  INC hygiene to add explicit `resolved_at`/`resolved_by`/`resolved_commits`.
+last_updated: 2026-09-11
 ---
 
 # INC-HX-AUTH-004 — no-parallel-authority invariant not enforced at runtime

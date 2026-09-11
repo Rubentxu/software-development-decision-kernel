@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-13-LOC-OVERAGE
 title: "Cycle-13 port_contracts.rs LOC overage vs spec AC M13-002 budget"
-status: resolved
+status: closed
 severity: medium
 priority: P2
 fingerprint: "e6c644d1e8ce5f17"
@@ -12,6 +12,8 @@ created_by: sddk-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-13-debt-sweep-correction
 ---
 
 # INC-CYCLE-13-LOC-OVERAGE — port_contracts.rs LOC overage

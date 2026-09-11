@@ -1,7 +1,7 @@
 ---
 id: INC-CYCLE-14-HELPER-DOC-GAP
 title: "Correlation/causation helpers are pub fn with 0 production callers; rustdoc lacks deferred-wiring note"
-status: resolved
+status: closed
 severity: low
 priority: P3
 fingerprint: "a8954ad16336955b"
@@ -12,6 +12,8 @@ created_by: sddk-debt-verify
 owner: orchestrator
 resolved_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 resolved_at: 2026-09-01
+closed_at: 2026-09-01
+closed_by: p-63676b11dc0ef88f/cycle-50-housekeeping-p3
 ---
 
 # INC-CYCLE-14-HELPER-DOC-GAP — pub correlation/causation helpers lack deferred-wiring rustdoc note

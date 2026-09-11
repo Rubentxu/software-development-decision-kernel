@@ -10,6 +10,19 @@ cluster_id: CL-HX-PR-003
 created: 2026-09-04
 created_by: orchestrator
 owner: EVT-LEDGER-001
+resolved_at: 2026-09-04
+resolved_by: sddk-apply (EVT-LEDGER-001 cycle)
+resolved_commits:
+  - "0a18982 actor_ref widening (additive) for LedgerEvent, GateReceipt, JournalEntry, EventContext"
+  - "c63167d EVT-LEDGER-001 closure commit"
+resolution_note: |
+  Status stays `resolved` (not `closed`) because the lifecycle entry on
+  2026-09-04 records only the additive `actor_ref` widening; the canonical
+  ActorRef 5-field contract from ADR-069 §5 still requires schema migration
+  work tracked under EVT-LEDGER-001 (order 90, H0). Reconciled during
+  v1.168.8 INC hygiene to add explicit `resolved_at`/`resolved_by`
+  frontmatter fields that were missing.
+last_updated: 2026-09-11
 ---
 
 # INC-HX-AUTH-003 — LedgerEvent / GateReceipt / JournalEntry / EventContext lose actor_kind at engine boundary

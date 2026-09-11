@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-002
 title: "forced-Human default in emit_approval_decision masks caller identity"
-status: resolved
+status: open
 severity: critical
 priority: P0
 fingerprint: "hx-auth-002-approval-forced-human"
@@ -10,6 +10,14 @@ cluster_id: CL-HX-AP-002
 created: 2026-09-04
 created_by: orchestrator
 owner: ARCH-HEX-001
+resolution_note: |
+  Status reconciled from `resolved` (incorrectly applied without lifecycle evidence)
+  back to `open` during v1.168.8 INC hygiene. The original `created` lifecycle
+  entry (2026-09-04) has no `sddk-apply resolved` follow-up; `emit.rs:259` still
+  hardcodes `kind: ActorKind::Human` per the `emit_approval_decision_forces_human`
+  baseline regression test. ARCH-HEX-001 (order 80, H0) is the canonical remediation
+  owner. Severity remains **critical** because it breaches the security boundary.
+last_updated: 2026-09-11
 ---
 
 # INC-HX-AUTH-002 — forced-Human default in emit_approval_decision masks caller identity

@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-001
 title: "writable-state surfaces lack explicit authority declaration"
-status: resolved
+status: open
 severity: high
 priority: P1
 fingerprint: "hx-auth-001-writable-state-8surface"
@@ -10,6 +10,13 @@ cluster_id: CL-HX-WS-001
 created: 2026-09-04
 created_by: orchestrator
 owner: ARCH-HEX-001
+resolution_note: |
+  Status reconciled from `resolved` (incorrectly applied without lifecycle evidence)
+  back to `open` during v1.168.8 INC hygiene. The original `created` lifecycle
+  entry (2026-09-04) has no `sddk-apply resolved` follow-up; the eight writable
+  surfaces enumerated in ADR-069 §3 still lack runtime authority declaration
+  enforcement. ARCH-HEX-001 (order 80, H0) is the canonical remediation owner.
+last_updated: 2026-09-11
 ---
 
 # INC-HX-AUTH-001 — writable-state surfaces lack explicit authority declaration
