@@ -1127,16 +1127,12 @@ pub(crate) fn node_outcome_to_attempt_outcome(
     running_error_msg: &str,
 ) -> sddk_domain::workflow_run::AttemptOutcome {
     match outcome {
-        NodeOutcome::Succeeded { .. } => {
-            sddk_domain::workflow_run::AttemptOutcome::Succeeded {
-                outputs: Default::default(),
-            }
-        }
-        NodeOutcome::Failed { reason, .. } => {
-            sddk_domain::workflow_run::AttemptOutcome::Failed {
-                error: reason.clone(),
-            }
-        }
+        NodeOutcome::Succeeded { .. } => sddk_domain::workflow_run::AttemptOutcome::Succeeded {
+            outputs: Default::default(),
+        },
+        NodeOutcome::Failed { reason, .. } => sddk_domain::workflow_run::AttemptOutcome::Failed {
+            error: reason.clone(),
+        },
         NodeOutcome::Pending { .. } => sddk_domain::workflow_run::AttemptOutcome::Pending {
             resume_token: pending_resume_token.unwrap_or(0),
             attempt_seq,
@@ -4647,8 +4643,7 @@ mod tests {
 
     #[test]
     fn node_outcome_to_attempt_outcome_running_as_pending() {
-        let out =
-            node_outcome_to_attempt_outcome(&NodeOutcome::Running, 5, None, true, "ignored");
+        let out = node_outcome_to_attempt_outcome(&NodeOutcome::Running, 5, None, true, "ignored");
         match out {
             sddk_domain::workflow_run::AttemptOutcome::Pending {
                 resume_token,

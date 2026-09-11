@@ -707,10 +707,7 @@ impl Storage {
              FROM ledger_events WHERE sequence > ?1
              ORDER BY sequence ASC LIMIT ?2",
         )?;
-        let rows = statement.query_map(
-            rusqlite::params![after_sequence, limit],
-            event_from_row,
-        )?;
+        let rows = statement.query_map(rusqlite::params![after_sequence, limit], event_from_row)?;
         rows.map(|row| row.map_err(StorageError::from)).collect()
     }
 

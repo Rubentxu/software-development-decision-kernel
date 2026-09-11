@@ -1130,8 +1130,7 @@ impl WorkflowRuntime {
                                         token: _,
                                     } = checkpoint
                                     {
-                                        let map_key =
-                                            (self.run.run_id.clone(), op_id.clone());
+                                        let map_key = (self.run.run_id.clone(), op_id.clone());
                                         // Wrap in Mutex for mutable access during drain
                                         self.pending_map.insert(
                                             map_key,
