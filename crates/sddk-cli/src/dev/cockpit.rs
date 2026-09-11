@@ -38,6 +38,7 @@ use sddk_engine::active_graph::{
     ActiveGraphInput, ActiveGraphProjection, ActiveGraphProjector, DefaultActiveGraphProjector,
     ProvenanceRef, ProvenanceSourceKind,
 };
+use sddk_engine::active_graph_digest::digest_projection_content;
 use sddk_engine::active_graph_drift::{DefaultDriftEngine, DriftEngine};
 use sddk_engine::cockpit_observability::{
     CockpitObservabilityBuilder, CockpitObservabilityKind, DefaultCockpitObservabilityBuilder,
@@ -70,6 +71,12 @@ pub(crate) enum CockpitCommand {
     /// (`--cycle-a` / `--cycle-b`) or `ActiveGraphInput` JSON
     /// files (`--input-a` / `--input-b`).
     Diff(CockpitDiffArgs),
+    /// Tail drift between two active graph projections in real time
+    /// (M9+ interactive drift sessions). Re-reads inputs on each tick
+    /// and emits a new `DriftRow` JSON envelope whenever the
+    /// content-only projection digest changes (ignoring per-tick
+    /// `recorded_at` noise). Same sources as `Diff`.
+    DiffWatch(CockpitDiffWatchArgs),
     /// Compute a stable SHA-256 digest of the active graph
     /// projection (M8.8). Two kinds: `strict` (default — includes
     /// `recorded_at`, so any timestamp drift produces a different
@@ -193,6 +200,44 @@ pub(crate) struct CockpitDiffArgs {
     #[arg(long)]
     pub input_b: Option<PathBuf>,
     /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CockpitDiffWatchArgs {
+    /// Cycle id for projection A (re-read on each tick).
+    #[arg(long, conflicts_with = "input_a")]
+    pub cycle_a: Option<String>,
+    /// Cycle id for projection B (re-read on each tick).
+    #[arg(long, conflicts_with = "input_b")]
+    pub cycle_b: Option<String>,
+    /// Path to an `ActiveGraphInput` JSON file for projection A (re-read on each tick).
+    #[arg(long)]
+    pub input_a: Option<PathBuf>,
+    /// Path to an `ActiveGraphInput` JSON file for projection B (re-read on each tick).
+    #[arg(long)]
+    pub input_b: Option<PathBuf>,
+    /// Skip the initial drift row on startup; only emit when a NEW
+    /// drift appears after the first tick. Equivalent to a tail-follow
+    /// for the comparison.
+    #[arg(long)]
+    pub from_tail: bool,
+    /// Poll interval in milliseconds.
+    #[arg(long, default_value_t = 500)]
+    pub interval_ms: u64,
+    /// Cap on drift rows emitted before exiting (0 = unlimited).
+    #[arg(long, default_value_t = 0)]
+    pub max_events: u64,
+    /// Exit after this many milliseconds of no new drift (0 = never).
+    #[arg(long, default_value_t = 0)]
+    pub idle_timeout_ms: u64,
+    /// Maximum ticks before exiting, regardless of activity. Safety
+    /// bound for pathological inputs (0 = unlimited).
+    #[arg(long, default_value_t = 0)]
+    pub max_ticks: u64,
+    /// Output format: `text` (pretty per-line) or `json` (one JSON
+    /// envelope per line, no pretty-printing).
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
 }
@@ -973,6 +1018,182 @@ pub(crate) fn run_dev_cockpit_diff(args: CockpitDiffArgs, env: &CliEnvironment) 
                 stdout: String::new(),
                 stderr: format!("cockpit diff: failed to serialize: {error}"),
             },
+        },
+    }
+}
+
+/// Run `sddk dev cockpit diff --watch` (M9+ interactive drift sessions).
+///
+/// Re-reads both inputs on every tick (cycle manifests or JSON files),
+/// re-projects each, computes the content-only projection digest for
+/// A and B, and emits a `DriftRow` JSON envelope whenever EITHER
+/// digest changes since the previous emission. This deliberately
+/// ignores per-tick `recorded_at` noise so that callers watching two
+/// stable files do not see phantom drift rows on every poll.
+///
+/// Exit conditions (in order):
+///   * `--max-events` reached (0 = unlimited)
+///   * `--idle-timeout-ms` elapsed with no new drift (0 = never)
+///   * `--max-ticks` reached (0 = unlimited)
+///   * 5-minute hard safety bound (never returns silently to the caller)
+pub(crate) fn run_dev_cockpit_diff_watch(
+    args: CockpitDiffWatchArgs,
+    env: &CliEnvironment,
+) -> CommandOutput {
+    use std::fmt::Write as _;
+
+    let mut stdout = String::new();
+    let format = args.format;
+
+    let result: anyhow::Result<u64> = (|| -> anyhow::Result<u64> {
+        // Validate pairing up front.
+        if args.cycle_a.is_none() && args.input_a.is_none() {
+            anyhow::bail!("cockpit diff-watch: either --cycle-a or --input-a is required");
+        }
+        if args.cycle_b.is_none() && args.input_b.is_none() {
+            anyhow::bail!("cockpit diff-watch: either --cycle-b or --input-b is required");
+        }
+
+        let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
+        let max_events = args.max_events;
+        let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
+        let max_ticks = args.max_ticks;
+        let from_tail = args.from_tail;
+        let started = std::time::Instant::now();
+        let mut last_activity = std::time::Instant::now();
+        let mut last_digest_a: Option<String> = None;
+        let mut last_digest_b: Option<String> = None;
+        let mut emitted: u64 = 0;
+        let mut ticks: u64 = 0;
+
+        // Re-read on every tick. If a file disappears or is malformed
+        // mid-session, surface the error on stderr-like line (in json
+        // mode) or skip the tick (in text mode). For now we propagate
+        // as an error and exit — the caller can re-run.
+        loop {
+            ticks = ticks.saturating_add(1);
+
+            // Resolve side A — re-reads from disk.
+            let (input_a, source_a) =
+                match resolve_diff_side(args.cycle_a.as_deref(), args.input_a.as_ref(), env, "a") {
+                    Ok(pair) => pair,
+                    Err(error) => {
+                        return Err(error.context("cockpit diff-watch: resolving side a"));
+                    }
+                };
+            // Resolve side B — re-reads from disk.
+            let (input_b, source_b) =
+                match resolve_diff_side(args.cycle_b.as_deref(), args.input_b.as_ref(), env, "b") {
+                    Ok(pair) => pair,
+                    Err(error) => {
+                        return Err(error.context("cockpit diff-watch: resolving side b"));
+                    }
+                };
+
+            let projection_a = project(input_a);
+            let projection_b = project(input_b);
+            let digest_a = digest_projection_content(&projection_a).hex;
+            let digest_b = digest_projection_content(&projection_b).hex;
+
+            let drift_changed = match (&last_digest_a, &last_digest_b) {
+                (None, None) => true, // first tick: emit baseline drift
+                (Some(prev_a), Some(prev_b)) => &digest_a != prev_a || &digest_b != prev_b,
+                _ => unreachable!("digest state invariant"),
+            };
+
+            if drift_changed && !(from_tail && ticks == 1) {
+                let report = DefaultDriftEngine.diff(&projection_a, &projection_b);
+                let row = DriftRow::from_report(&report, &source_a, &source_b);
+
+                match format {
+                    OutputFormat::Json => {
+                        // One JSON object per line (NDJSON).
+                        let json = serde_json::to_string(&row)
+                            .context("serializing DriftRow to NDJSON")?;
+                        writeln!(stdout, "{json}").expect("writing to String never fails");
+                    }
+                    OutputFormat::Text => {
+                        // Compact one-liner summary followed by the
+                        // full text rendering on next lines.
+                        writeln!(
+                            stdout,
+                            "[tick {}] drift detected: nodes +{}/-{}/~{}  edges +{}/-{}/~{}",
+                            ticks,
+                            row.summary.nodes_added,
+                            row.summary.nodes_removed,
+                            row.summary.nodes_changed,
+                            row.summary.edges_added,
+                            row.summary.edges_removed,
+                            row.summary.edges_changed,
+                        )
+                        .expect("writing to String never fails");
+                        // Append the full block rendering indented with
+                        // a leading marker line so consumers can split.
+                        let inner = render_diff_text(&row);
+                        for line in inner.stdout.lines() {
+                            writeln!(stdout, "  {line}").expect("writing to String never fails");
+                        }
+                    }
+                }
+
+                last_digest_a = Some(digest_a);
+                last_digest_b = Some(digest_b);
+                last_activity = std::time::Instant::now();
+                emitted = emitted.saturating_add(1);
+
+                if max_events > 0 && emitted >= max_events {
+                    return Ok(emitted);
+                }
+            } else {
+                // Persist digest state even on quiet ticks so we can
+                // detect a change later. Skip the initial tick under
+                // --from-tail so the first comparison becomes the
+                // baseline.
+                last_digest_a = Some(digest_a);
+                last_digest_b = Some(digest_b);
+            }
+
+            // Exit conditions.
+            if max_ticks > 0 && ticks >= max_ticks {
+                break;
+            }
+            if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                break;
+            }
+            std::thread::sleep(interval);
+            if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                break;
+            }
+
+            // Hard safety bound: never loop forever in pathological
+            // cases (e.g. test harness without an idle timeout).
+            if started.elapsed() > std::time::Duration::from_secs(300) {
+                anyhow::bail!("cockpit diff-watch exceeded 5 minute safety bound");
+            }
+        }
+        Ok(emitted)
+    })();
+
+    match result {
+        Ok(count) => {
+            match format {
+                OutputFormat::Json => {
+                    let _ = writeln!(stdout, "{{\"__watch_complete\":true,\"emitted\":{count}}}");
+                }
+                OutputFormat::Text => {
+                    let _ = writeln!(stdout, "[watch] emitted {count} drift rows, exiting");
+                }
+            }
+            CommandOutput {
+                status: 0,
+                stdout,
+                stderr: String::new(),
+            }
+        }
+        Err(error) => CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: format!("cockpit diff-watch: {error:#}\n"),
         },
     }
 }
