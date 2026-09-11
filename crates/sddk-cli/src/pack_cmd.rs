@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::{PackDiagnostic, load_pack_manifest, validate_pack_manifest};
 use sddk_domain::{resolve_project_identity, stable_workspace_id};
 use sddk_engine::pack_registry::{PackRegistry, RegistryEntry, VerifyReport};
@@ -26,6 +26,8 @@ pub(crate) enum PackCommand {
     Enable(PackEnableArgs),
     /// Disable a pack (idempotent).
     Disable(PackDisableArgs),
+    /// Scaffold a new pack skeleton (SDK author onboarding).
+    Scaffold(PackScaffoldArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -126,6 +128,219 @@ pub(crate) fn run_pack(command: PackCommand, environment: &CliEnvironment) -> Co
             environment,
             false,
         ),
+        PackCommand::Scaffold(args) => run_pack_scaffold(args),
+    }
+}
+
+/// Scaffold arguments: a new pack skeleton for third-party authors
+/// (pack SDK onboarding; DEFERRED-IDEAS trigger is >=3 independent
+/// packs — scaffold lowers the authoring barrier).
+#[derive(Debug, Clone, Args)]
+pub(crate) struct PackScaffoldArgs {
+    /// Stable pack identifier (e.g. sddk-pack-mything).
+    #[arg(long)]
+    pub(crate) id: String,
+    /// Pack category (SPEC-006 §2).
+    #[arg(long, value_enum, default_value_t = ScaffoldCategory::Domain)]
+    pub(crate) category: ScaffoldCategory,
+    /// Output directory for the pack skeleton.
+    #[arg(long)]
+    pub(crate) out: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Scaffold-time category mirror (clap ValueEnum lives in the CLI crate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub(crate) enum ScaffoldCategory {
+    Core,
+    Infrastructure,
+    #[default]
+    Domain,
+    Bridge,
+    Bundle,
+}
+
+/// Renders the scaffold manifest TOML. Declared inline so the skeleton is
+/// generated from the same crate that owns the pack model — a single
+/// source for what a valid v2 manifest looks like.
+fn scaffold_manifest_toml(id: &str, category: &str, description: &str) -> String {
+    format!(
+        r#"[pack]
+id = "{id}"
+version = "0.1.0"
+schema_version = 2
+compatibility = ">=1.91"
+risk = "medium"
+consequence = "modifies"
+category = "{category}"
+description = "{description}"
+
+[dependencies]
+requires = ["sddk-core"]
+integrates_with = []
+conflicts_with = []
+
+[provides]
+capabilities = ["{id}.example"]
+event_schemas = []
+view_types = []
+
+[[commands]]
+name = "{id}"
+surface = ["{id}"]
+
+[capabilities]
+"{id}.example.write" = "modifies"
+
+[fixtures]
+paths = ["fixtures/example.yaml"]
+
+[artifacts]
+paths = []
+"#
+    )
+}
+
+/// Creates the pack skeleton: manifest.toml + fixtures/example.yaml.
+/// Refuses to overwrite an existing manifest (author safety).
+fn run_pack_scaffold(args: PackScaffoldArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<ScaffoldOutput> {
+        let manifest_path = args.out.join("manifest.toml");
+        if manifest_path.exists() {
+            anyhow::bail!("refusing to overwrite existing {}", manifest_path.display());
+        }
+        std::fs::create_dir_all(args.out.join("fixtures"))?;
+        let description = format!(
+            "{category} pack scaffolded by `sddk pack scaffold` (edit me)",
+            category = args.category_str()
+        );
+        std::fs::write(
+            &manifest_path,
+            scaffold_manifest_toml(&args.id, args.category_str(), &description),
+        )?;
+        std::fs::write(
+            args.out.join("fixtures/example.yaml"),
+            "# Example fixture: replace with pack-specific scenarios.
+example: true
+",
+        )?;
+        // Self-check: the generated manifest must parse against the pack
+        // model the linter will apply. Scaffold output that fails its own
+        // validation is a generator bug — fail loudly.
+        let parsed = sddk_domain::load_pack_manifest(&manifest_path)
+            .map_err(|e| anyhow::anyhow!("generated manifest failed to parse: {e}"))?;
+        let diagnostics = sddk_domain::validate_pack_manifest(&parsed);
+        if !diagnostics.is_empty() {
+            anyhow::bail!(
+                "generated manifest failed validation: {}",
+                diagnostics
+                    .iter()
+                    .map(|d| d.code.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        Ok(ScaffoldOutput {
+            id: args.id,
+            path: manifest_path.display().to_string(),
+        })
+    })();
+    render_scaffold_result(result, format)
+}
+
+impl PackScaffoldArgs {
+    fn category_str(&self) -> &'static str {
+        match self.category {
+            ScaffoldCategory::Core => "core",
+            ScaffoldCategory::Infrastructure => "infrastructure",
+            ScaffoldCategory::Domain => "domain",
+            ScaffoldCategory::Bridge => "bridge",
+            ScaffoldCategory::Bundle => "bundle",
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct ScaffoldOutput {
+    id: String,
+    path: String,
+}
+
+#[cfg(test)]
+mod scaffold_tests {
+    use super::*;
+
+    #[test]
+    fn scaffold_generates_self_validating_manifest() {
+        let dir = std::env::temp_dir().join(format!("sddk-scaffold-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let args = PackScaffoldArgs {
+            id: "sddk-pack-demo".into(),
+            category: ScaffoldCategory::Domain,
+            out: dir.join("demo"),
+            format: OutputFormat::Json,
+        };
+        let out = run_pack_scaffold(args);
+        assert_eq!(out.status, 0, "scaffold failed: {}", out.stderr);
+        assert!(dir.join("demo").join("manifest.toml").exists());
+        assert!(
+            dir.join("demo")
+                .join("fixtures")
+                .join("example.yaml")
+                .exists()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scaffold_refuses_overwrite() {
+        let dir = std::env::temp_dir().join(format!("sddk-scaffold-ow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("demo")).unwrap();
+        std::fs::write(dir.join("demo").join("manifest.toml"), "[pack]").unwrap();
+        let args = PackScaffoldArgs {
+            id: "sddk-pack-demo".into(),
+            category: ScaffoldCategory::Domain,
+            out: dir.join("demo"),
+            format: OutputFormat::Text,
+        };
+        let out = run_pack_scaffold(args);
+        assert_ne!(out.status, 0);
+        assert!(out.stderr.contains("refusing to overwrite"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn render_scaffold_result(
+    result: anyhow::Result<ScaffoldOutput>,
+    format: OutputFormat,
+) -> CommandOutput {
+    match result {
+        Ok(output) => match format {
+            OutputFormat::Json => CommandOutput {
+                status: 0,
+                stdout: serde_json::to_string_pretty(&output).unwrap_or_default(),
+                stderr: String::new(),
+            },
+            OutputFormat::Text => CommandOutput {
+                status: 0,
+                stdout: format!(
+                    "scaffolded pack '{}' at {}
+next: edit manifest.toml, then run `sddk pack validate --manifest <path>`",
+                    output.id, output.path
+                ),
+                stderr: String::new(),
+            },
+        },
+        Err(error) => CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: format!("scaffold failed: {error}"),
+        },
     }
 }
 
