@@ -26,6 +26,7 @@ pub mod instruction_compiler;
 pub mod skill_definition;
 pub mod skill_registry_bridge;
 pub mod spike_axs3;
+pub mod spike_axs4;
 
 mod docs;
 mod explore_cmd;

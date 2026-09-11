@@ -64,9 +64,11 @@ Measure global CLI contract vs task-specific surfaces for common `change`, `veri
 
 **Outcome: MINIMAL HEURISTIC WINS — keep depth-0 surfaces.** Task-specific surfaces cost 8-40 tokens vs 1073 for the global contract (96-99% reduction); the existing `command_matches_target` heuristic already delivers them. The real frontier is the `related` graph: the four facade specs have no `related` edges to their delegate commands, so depth-1 expansion adds nothing today. Recommendation adopted: keep minimal surfaces; enrich facade `related` edges lazily when a real workflow needs cross-command discovery. Measurements and revisit triggers: `docs/architecture/spikes/AX-S3-command-surface-token-budget.md`. Harness: `crates/sddk-cli/src/spike_axs3.rs` (4 pinned tests).
 
-## AX-S4 — Provider adapter portability
+## AX-S4 — Provider adapter portability — **COMPLETED 2026-09-11**
 
 Run one reviewer profile/task/fixture through two adapters (real or fake-compatible) using identical semantic contracts. Identify provider-specific data that truly belongs outside AgentProfile.
+
+**Outcome: PORT VIABLE, PROFILE ALREADY CLEAN.** Defined the `InstructionsRenderer` port and two fake adapters (sectioned vs flat); both render byte-different prompts with identical semantic fingerprints and preserved fragment order — zero production changes needed. `AgentProfile` carries no provider transport data (pinned by test). Provider transport metadata (model, budget, temperature) belongs in adapter constructors. Port is promotion-ready when a second real provider arrives; until then no abstraction is warranted (extension discipline). Findings: `docs/architecture/spikes/AX-S4-provider-adapter-portability.md`. Harness: `crates/sddk-cli/src/spike_axs4.rs` (4 pinned tests).
 
 ## AX-S5 — Agent asset static scanner
 
