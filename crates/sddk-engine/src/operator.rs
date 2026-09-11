@@ -804,6 +804,20 @@ impl Operator for Task {
 /// A Sequence with children [A, B, C] will:
 /// - Evaluate A until it succeeds, then B, then C.
 /// - If any child fails, the sequence terminates with that failure.
+///
+/// # State-mutation contract (cycle-43, INC-012)
+///
+/// Unlike `Task` and `Parallel`, Sequence **mutates `ctx.node_run.attempts`**
+/// by pushing a marker attempt after each child evaluation. This is required
+/// because Sequence's progress is derived from `attempts.len()` (see the
+/// `completed_steps` read on the first line of `evaluate` below). Without
+/// the marker, the runtime's per-tick attempt recording does not fire for
+/// Sequence children (the runtime records attempts only at the dispatch
+/// site, not at the operator), and Sequence would loop on child[0] forever.
+///
+/// Other operators (Task, Choice, Map source) preserve the pure-return
+/// invariant — they do not mutate `ctx.node_run`. Sequence is the sole
+/// exception. See ADR-0065 + INC-012.
 #[derive(Debug)]
 pub struct Sequence {
     /// Ordered list of child operators.
