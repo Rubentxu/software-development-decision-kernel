@@ -929,6 +929,47 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
         ),
     ]
+    .into_iter()
+    .map(enrich_related_edges)
+    .collect()
+}
+
+/// AX-S3 follow-up (v1.168.21): the `related` graph was nearly empty
+/// (only target/introspect edges), so the depth-1 expansion in the
+/// token-budget analysis added nothing. This table enriches lifecycle
+/// commands with their natural workflow neighbors — the edges an agent
+/// task surface would gain at relatedness depth 1. Kept as data (not
+/// chained `.with_related` calls across 40 spec sites) so the graph is
+/// auditable and symmetric by construction (enrichment is idempotent
+/// and dedupes).
+fn enrich_related_edges(mut s: CommandSpec) -> CommandSpec {
+    let edges: &[(&str, &[&str])] = &[
+        ("status", &["cycle", "ledger", "recover"]),
+        ("plan", &["change", "status", "cycle"]),
+        ("change", &["plan", "verify", "status"]),
+        ("verify", &["audit", "debt", "status"]),
+        ("ship", &["release", "verify", "status"]),
+        ("recover", &["ledger", "status", "cycle"]),
+        ("audit", &["verify", "debt", "uat"]),
+        ("debt", &["verify", "audit"]),
+        ("release", &["ship", "artifact", "lint"]),
+        ("cycle", &["status", "plan", "ledger"]),
+        ("ledger", &["recover", "cycle", "capability"]),
+        ("artifact", &["release", "validate"]),
+        ("uat", &["verify", "audit"]),
+        ("introspect", &["agent-help", "lint", "generate"]),
+        ("agent-help", &["introspect", "lint"]),
+    ];
+    for (from, rels) in edges {
+        if s.name == *from {
+            for r in *rels {
+                if !s.related.iter().any(|e| e == r) {
+                    s.related.push((*r).to_string());
+                }
+            }
+        }
+    }
+    s
 }
 
 /// Look up a top-level `CommandSpec` by its `name` field. Returns `None`

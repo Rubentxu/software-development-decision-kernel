@@ -7,6 +7,7 @@
 use sddk_cli::CliEnvironment;
 use sddk_cli::OutputFormat;
 use sddk_cli::command_spec::{OutputFormatKind, all_command_specs};
+
 use sddk_cli::config_cmd::render_config_report;
 
 // SC-M6.1-1: `sddk change` router exists with required arg schema in the spec
@@ -220,4 +221,36 @@ fn clap_surface_and_command_specs_are_in_sync() {
         extra.is_empty(),
         "CommandSpecs without a clap command: {extra:?}"
     );
+}
+
+#[test]
+fn related_graph_lifecycle_edges_are_present() {
+    // AX-S3 follow-up: the depth-1 related expansion must now add
+    // neighbors for lifecycle flows. Every related target must resolve
+    // to a real spec name, and core lifecycle commands must have edges.
+    let specs = all_command_specs();
+    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+    let mut edge_count = 0usize;
+    for s in &specs {
+        for rel in &s.related {
+            edge_count += 1;
+            let target = rel.split_whitespace().next().unwrap_or(rel);
+            assert!(
+                names.iter().any(|n| n == &target || n.starts_with(target)),
+                "related target '{rel}' of '{}' resolves to no spec",
+                s.name
+            );
+        }
+    }
+    assert!(
+        edge_count >= 30,
+        "graph enrichment regressed: {edge_count} edges"
+    );
+    for cmd in ["status", "plan", "change", "verify", "ship", "recover"] {
+        let s = specs
+            .iter()
+            .find(|s| s.name == cmd)
+            .expect("lifecycle spec");
+        assert!(!s.related.is_empty(), "{cmd} must have related edges");
+    }
 }
