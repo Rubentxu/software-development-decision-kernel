@@ -25,6 +25,7 @@ fn minimal_task(id: &str) -> Task {
         retry_policy: RetryPolicy::NoRetry,
         evidence_contract: EvidenceContract::None,
         memory_effects: MemoryEffect::None,
+        has_body: true,
     }
 }
 
@@ -199,5 +200,6 @@ fn minimal_task_with_deps(id: &str, deps: &[&str]) -> Task {
         retry_policy: RetryPolicy::NoRetry,
         evidence_contract: EvidenceContract::None,
         memory_effects: MemoryEffect::None,
+        has_body: true,
     }
 }

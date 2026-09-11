@@ -41,6 +41,10 @@ fn stub_task(
         retry_policy: super::RetryPolicy::Bounded { max_attempts: 3 },
         evidence_contract: evidence,
         memory_effects: memory,
+        // SP-07: built-in targets declare intent, not wired bodies. The
+        // executor must report `not_implemented` / `degraded` until M6.3
+        // wires real task bodies — never a fabricated `executed`.
+        has_body: false,
     }
 }
 

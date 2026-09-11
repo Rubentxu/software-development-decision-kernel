@@ -39,9 +39,11 @@ representation gaps. Full findings and revisit triggers:
 `docs/architecture/spikes/SP-06-context-retrieval-evaluation.md`.
 Reproducible harness: `crates/sddk-engine/src/spike_sp06.rs`.
 
-## SP-07 CLI target ergonomics
+## SP-07 CLI target ergonomics — **COMPLETED 2026-09-11**
 
 Prototype `change` and `verify` Targets over existing commands. Compare number of commands/flags and error recovery versus current manual flow.
+
+**Outcome:** Target surface wins on mechanics (1 command vs 2, no `--cycle-id` threading) but the spike exposed a false-success defect — stub targets reported `succeeded`/`executed` without performing work. Fixed in-cycle: honest `not_implemented`/`degraded` reporting shipped. `verify` is already target-equivalent via the `sddk verify` facade. Full findings: `docs/architecture/spikes/SP-07-cli-target-ergonomics.md`. Remaining: M6.3 wires real `change` task bodies (`has_body: true`).
 
 
 ## AX-S1 — CommandRegistry generation from current CLI definition

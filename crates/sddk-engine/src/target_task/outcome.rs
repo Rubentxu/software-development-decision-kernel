@@ -33,6 +33,9 @@ pub enum TaskStatus {
     Denied,
     /// Task body returned an error.
     Failed,
+    /// Task is a declaration stub with no wired body (SP-07): reported
+    /// honestly instead of a fabricated `executed`.
+    NotImplemented,
 }
 
 /// Top-level aggregate status of a walk.
@@ -47,6 +50,9 @@ pub enum ExecutionStatus {
     Failed,
     /// No execution took place; only admission was evaluated.
     DryRun,
+    /// Walk completed but at least one task was an unimplemented stub
+    /// (SP-07): the target did NOT deliver its intent.
+    Degraded,
 }
 
 /// Aggregate report produced by `DagExecutor`.
@@ -129,6 +135,14 @@ impl TaskOutcome {
         Self {
             task_id: task_id.into(),
             status: TaskStatus::Denied,
+            note: note.into(),
+        }
+    }
+
+    pub(crate) fn not_implemented(task_id: impl Into<String>, note: impl Into<String>) -> Self {
+        Self {
+            task_id: task_id.into(),
+            status: TaskStatus::NotImplemented,
             note: note.into(),
         }
     }

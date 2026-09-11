@@ -161,6 +161,10 @@ pub struct Task {
     pub evidence_contract: EvidenceContract,
     /// Memory effect declaration.
     pub memory_effects: MemoryEffect,
+    /// Whether a real task body is wired for this task. `false` marks a
+    /// declaration stub: the executor reports `not_implemented` instead of
+    /// a fabricated `executed` receipt (SP-07 false-success fix).
+    pub has_body: bool,
 }
 
 /// A named user intent per SPEC-009 / ADR-010.
@@ -240,6 +244,7 @@ mod tests {
             retry_policy: RetryPolicy::NoRetry,
             evidence_contract: EvidenceContract::None,
             memory_effects: MemoryEffect::None,
+            has_body: false,
         }
     }
 
@@ -257,6 +262,7 @@ mod tests {
             retry_policy: RetryPolicy::Bounded { max_attempts: 3 },
             evidence_contract: EvidenceContract::FullReceipt,
             memory_effects: MemoryEffect::AppendFact,
+            has_body: false,
         };
         assert_eq!(t.id, "build");
         assert_eq!(t.depends_on, vec!["resolve"]);

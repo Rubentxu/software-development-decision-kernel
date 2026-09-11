@@ -120,6 +120,7 @@ mod tests {
             retry_policy: RetryPolicy::NoRetry,
             evidence_contract: EvidenceContract::None,
             memory_effects: MemoryEffect::None,
+            has_body: false,
         }
     }
 

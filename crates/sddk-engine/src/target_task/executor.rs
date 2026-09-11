@@ -22,6 +22,8 @@
 
 #![allow(missing_docs)]
 
+#[cfg(test)]
+use super::outcome::TaskStatus;
 use super::outcome::{ExecutionReport, ExecutionStatus, TaskOutcome};
 use super::registry::TargetRegistry;
 use super::{AuthorityRequirement, TaskDag};
@@ -101,6 +103,18 @@ impl DagExecutor {
                             task_id,
                             format!("admitted (dry-run): {explanation}"),
                         ));
+                    } else if !task.has_body {
+                        // SP-07 false-success fix: a declaration stub must
+                        // never produce an `executed` receipt. Report the
+                        // missing body honestly and degrade the target
+                        // status so callers do not trust phantom work.
+                        tasks.push(TaskOutcome::not_implemented(
+                            task_id,
+                            "declaration stub: no task body wired (see target_task::builtin)",
+                        ));
+                        if status == ExecutionStatus::Succeeded {
+                            status = ExecutionStatus::Degraded;
+                        }
                     } else {
                         tasks.push(TaskOutcome::executed(
                             task_id,
@@ -241,6 +255,7 @@ mod tests {
                     retry_policy: crate::target_task::RetryPolicy::NoRetry,
                     evidence_contract: EvidenceContract::None,
                     memory_effects: MemoryEffect::None,
+                    has_body: false,
                 })
                 .collect(),
         }
@@ -266,12 +281,56 @@ mod tests {
     }
 
     #[test]
+    fn stub_tasks_report_not_implemented_and_degrade_target() {
+        // SP-07 false-success regression: a target whose tasks are all
+        // declaration stubs must never report `succeeded` / `executed`.
+        let exec = DagExecutor::new(ExecutorConfig::default());
+        let mut registry = TargetRegistry::new();
+        registry.register(status_target());
+        let report = exec.run(&registry, "status", "system");
+        assert_eq!(report.status, ExecutionStatus::Degraded);
+        assert_eq!(report.executed_count(), 0);
+        assert!(
+            report
+                .tasks
+                .iter()
+                .all(|t| t.status == TaskStatus::NotImplemented)
+        );
+        assert!(report.tasks[0].note.contains("no task body wired"));
+    }
+
+    #[test]
+    fn wired_task_with_real_body_reports_executed() {
+        // A task with has_body = true still produces a normal executed
+        // receipt — the stub gate only fires for unwired declarations.
+        let mut registry = TargetRegistry::new();
+        let mut target = crate::target_task::builtin::status_target();
+        for t in &mut target.tasks {
+            t.has_body = true;
+        }
+        registry.register(target);
+        let exec = DagExecutor::new(ExecutorConfig::default());
+        let report = exec.run(&registry, "status", "system");
+        assert_eq!(report.status, ExecutionStatus::Succeeded);
+        assert_eq!(report.executed_count(), 3);
+    }
+
+    #[test]
     fn status_target_with_system_actor_executes_cleanly() {
         let registry = TargetRegistry::with_builtins();
         let ex = DagExecutor::new(ExecutorConfig::default());
         let report = ex.run(&registry, "status", "system");
-        assert_eq!(report.status, ExecutionStatus::Succeeded);
-        assert_eq!(report.executed_count(), 3);
+        // SP-07: stub tasks report not_implemented; target is degraded.
+        assert_eq!(report.status, ExecutionStatus::Degraded);
+        assert_eq!(report.executed_count(), 0);
+        assert_eq!(
+            report
+                .tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::NotImplemented)
+                .count(),
+            3
+        );
     }
 
     #[test]
@@ -316,8 +375,17 @@ mod tests {
             allow_high_band: true,
         });
         let report = ex.run(&registry, "ship", "system");
-        assert_eq!(report.status, ExecutionStatus::Succeeded);
-        assert_eq!(report.executed_count(), 4);
+        // SP-07: stub tasks report not_implemented; target is degraded.
+        assert_eq!(report.status, ExecutionStatus::Degraded);
+        assert_eq!(report.executed_count(), 0);
+        assert_eq!(
+            report
+                .tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::NotImplemented)
+                .count(),
+            4
+        );
     }
 
     #[test]
