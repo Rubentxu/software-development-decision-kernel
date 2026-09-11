@@ -1119,42 +1119,45 @@ impl WorkflowRuntime {
                                 }
                             }
 
-                            let attempt_outcome = match &outcome_val {
-                                NodeOutcome::Succeeded { .. } => {
-                                    sddk_domain::workflow_run::AttemptOutcome::Succeeded {
-                                        outputs: Default::default(),
-                                    }
-                                }
-                                NodeOutcome::Failed { reason, .. } => {
-                                    sddk_domain::workflow_run::AttemptOutcome::Failed {
-                                        error: reason.clone(),
-                                    }
-                                }
+                            // INC-015: extract checkpoint side-effects (MapChannel
+                            // state registration) and resume_token, then delegate
+                            // the NodeOutcome → AttemptOutcome mapping to the
+                            // shared helper in `crate::operator`.
+                            let pending_resume_token = match &outcome_val {
                                 NodeOutcome::Pending { checkpoint } => {
-                                    // cycle-32: Check if this is a MapChannel checkpoint
                                     if let crate::operator::CheckpointHandle::MapChannel {
                                         state,
                                         token: _,
                                     } = checkpoint
                                     {
-                                        let map_key = (self.run.run_id.clone(), op_id.clone());
+                                        let map_key =
+                                            (self.run.run_id.clone(), op_id.clone());
                                         // Wrap in Mutex for mutable access during drain
                                         self.pending_map.insert(
                                             map_key,
                                             Arc::new(std::sync::Mutex::new((**state).clone())),
                                         );
                                     }
-                                    sddk_domain::workflow_run::AttemptOutcome::Pending {
-                                        resume_token: 0,
-                                        attempt_seq: 0,
+                                    match checkpoint {
+                                        crate::operator::CheckpointHandle::Channel {
+                                            resume_token,
+                                        } => Some(*resume_token),
+                                        crate::operator::CheckpointHandle::MapChannel {
+                                            token,
+                                            ..
+                                        } => Some(*token),
+                                        crate::operator::CheckpointHandle::None => None,
                                     }
                                 }
-                                NodeOutcome::Running => {
-                                    sddk_domain::workflow_run::AttemptOutcome::Failed {
-                                        error: "unexpected Running outcome".into(),
-                                    }
-                                }
+                                _ => None,
                             };
+                            let attempt_outcome = crate::operator::node_outcome_to_attempt_outcome(
+                                &outcome_val,
+                                0,
+                                pending_resume_token,
+                                false,
+                                "unexpected Running outcome",
+                            );
 
                             // S3 fix: skip runtime's record_attempt for Sequence nodes.
                             // Sequence::evaluate records its own marker attempts directly

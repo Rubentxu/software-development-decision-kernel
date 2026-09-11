@@ -861,24 +861,13 @@ impl Operator for Sequence {
             },
             started_at: ctx.clock.now(),
             ended_at: Some(ctx.clock.now()),
-            outcome: Some(match &child_outcome {
-                NodeOutcome::Succeeded { .. } => {
-                    sddk_domain::workflow_run::AttemptOutcome::Succeeded {
-                        outputs: Default::default(),
-                    }
-                }
-                NodeOutcome::Failed { reason, .. } => {
-                    sddk_domain::workflow_run::AttemptOutcome::Failed {
-                        error: reason.clone(),
-                    }
-                }
-                NodeOutcome::Pending { .. } | NodeOutcome::Running => {
-                    sddk_domain::workflow_run::AttemptOutcome::Pending {
-                        resume_token: 0,
-                        attempt_seq: completed_steps as u32,
-                    }
-                }
-            }),
+            outcome: Some(node_outcome_to_attempt_outcome(
+                &child_outcome,
+                completed_steps as u32,
+                None,
+                true,
+                "sequence: unexpected Running",
+            )),
             usage: sddk_domain::Usage {
                 tokens_in: 0,
                 tokens_out: 0,
@@ -1033,32 +1022,25 @@ pub(crate) fn build_attempt(
     let started_at = result.started_at.clone();
     let ended_at = Some(result.ended_at.clone());
     let outcome = match &result.outcome {
-        Ok(NodeOutcome::Succeeded { outputs, .. }) => {
-            Some(sddk_domain::workflow_run::AttemptOutcome::Succeeded {
-                outputs: outputs.clone(),
-            })
-        }
-        Ok(NodeOutcome::Failed { reason, .. }) => {
-            Some(sddk_domain::workflow_run::AttemptOutcome::Failed {
-                error: reason.clone(),
-            })
-        }
-        Ok(NodeOutcome::Pending { checkpoint }) => {
-            // cycle-20: Pending is a first-class outcome.
-            // Extract resume_token from checkpoint; default to 0 if None.
-            let resume_token = match checkpoint {
-                CheckpointHandle::Channel { resume_token } => *resume_token,
-                CheckpointHandle::MapChannel { token, .. } => *token,
-                CheckpointHandle::None => 0u64,
+        Ok(node_outcome) => {
+            // INC-015: extract checkpoint-derived resume_token if any, then delegate
+            // the NodeOutcome → AttemptOutcome mapping to the shared helper.
+            let pending_resume_token = match node_outcome {
+                NodeOutcome::Pending { checkpoint } => match checkpoint {
+                    CheckpointHandle::Channel { resume_token } => Some(*resume_token),
+                    CheckpointHandle::MapChannel { token, .. } => Some(*token),
+                    CheckpointHandle::None => None,
+                },
+                _ => None,
             };
-            Some(sddk_domain::workflow_run::AttemptOutcome::Pending {
-                resume_token,
-                attempt_seq: child_index as u32,
-            })
+            Some(node_outcome_to_attempt_outcome(
+                node_outcome,
+                child_index as u32,
+                pending_resume_token,
+                false,
+                "parallel child returned Running",
+            ))
         }
-        Ok(NodeOutcome::Running) => Some(sddk_domain::workflow_run::AttemptOutcome::Failed {
-            error: "parallel child returned Running".into(),
-        }),
         Err(OperatorError::ChildPanicked { child_index: _ }) => {
             Some(sddk_domain::workflow_run::AttemptOutcome::Failed {
                 error: format!("child {} panicked", child_index),
@@ -1101,6 +1083,59 @@ pub(crate) fn build_attempt(
             attempt_seq: child_index as u32,
         },
         schema_version: 1,
+    }
+}
+
+/// Maps a `NodeOutcome` to the corresponding `AttemptOutcome`.
+///
+/// `running_is_pending = true` collapses `NodeOutcome::Running` into
+/// `AttemptOutcome::Pending` (used by Sequence, where `Running` is
+/// not an error but an in-progress step). When `false` (default for
+/// Parallel / Runtime dispatch), `Running` is treated as a malformed
+/// outcome and surfaces as `AttemptOutcome::Failed` with `running_error_msg`.
+///
+/// `pending_resume_token` injects a checkpoint-derived token into the
+/// `AttemptOutcome::Pending` variant. Pass `None` when the caller has
+/// no checkpoint to honor (Pending collapses to `resume_token: 0`).
+///
+/// `attempt_seq` is the deterministic parent-assigned sequence number
+/// (child_index for Parallel, completed_steps for Sequence, 0 for
+/// runtime dispatch).
+///
+/// INC-015: replaces 3 inline copies of the Succeeded/Failed/Pending/
+/// Running mapping previously spread across `build_attempt`, the
+/// Sequence marker attempt, and the runtime gated-dispatch result.
+pub(crate) fn node_outcome_to_attempt_outcome(
+    outcome: &NodeOutcome,
+    attempt_seq: u32,
+    pending_resume_token: Option<u64>,
+    running_is_pending: bool,
+    running_error_msg: &str,
+) -> sddk_domain::workflow_run::AttemptOutcome {
+    match outcome {
+        NodeOutcome::Succeeded { .. } => {
+            sddk_domain::workflow_run::AttemptOutcome::Succeeded {
+                outputs: Default::default(),
+            }
+        }
+        NodeOutcome::Failed { reason, .. } => {
+            sddk_domain::workflow_run::AttemptOutcome::Failed {
+                error: reason.clone(),
+            }
+        }
+        NodeOutcome::Pending { .. } => sddk_domain::workflow_run::AttemptOutcome::Pending {
+            resume_token: pending_resume_token.unwrap_or(0),
+            attempt_seq,
+        },
+        NodeOutcome::Running if running_is_pending => {
+            sddk_domain::workflow_run::AttemptOutcome::Pending {
+                resume_token: 0,
+                attempt_seq,
+            }
+        }
+        NodeOutcome::Running => sddk_domain::workflow_run::AttemptOutcome::Failed {
+            error: running_error_msg.to_string(),
+        },
     }
 }
 
@@ -4490,5 +4525,125 @@ mod tests {
         // node_run and store are Arc-wrapped
         assert!(Arc::ptr_eq(&ctx.node_run, &node_run));
         assert!(Arc::ptr_eq(&ctx.store, &store));
+    }
+
+    // INC-015: shared NodeOutcome → AttemptOutcome mapping helper.
+    // Covers the 4 variants × 2 running_is_pending × 2 pending_resume_token
+    // combinations the helper supports.
+    #[test]
+    fn node_outcome_to_attempt_outcome_succeeded() {
+        let out = node_outcome_to_attempt_outcome(
+            &NodeOutcome::Succeeded {
+                node_id: sddk_domain::NodeId("n1".into()),
+                outputs: Default::default(),
+            },
+            0,
+            None,
+            false,
+            "ignored",
+        );
+        assert!(matches!(
+            out,
+            sddk_domain::workflow_run::AttemptOutcome::Succeeded { .. }
+        ));
+    }
+
+    #[test]
+    fn node_outcome_to_attempt_outcome_failed() {
+        let out = node_outcome_to_attempt_outcome(
+            &NodeOutcome::Failed {
+                node_id: sddk_domain::NodeId("n1".into()),
+                reason: "boom".into(),
+            },
+            0,
+            None,
+            false,
+            "ignored",
+        );
+        match out {
+            sddk_domain::workflow_run::AttemptOutcome::Failed { error } => {
+                assert_eq!(error, "boom");
+            }
+            _ => panic!("expected Failed"),
+        }
+    }
+
+    #[test]
+    fn node_outcome_to_attempt_outcome_pending_with_token() {
+        let out = node_outcome_to_attempt_outcome(
+            &NodeOutcome::Pending {
+                checkpoint: CheckpointHandle::Channel { resume_token: 42 },
+            },
+            7,
+            Some(42),
+            false,
+            "ignored",
+        );
+        match out {
+            sddk_domain::workflow_run::AttemptOutcome::Pending {
+                resume_token,
+                attempt_seq,
+            } => {
+                assert_eq!(resume_token, 42);
+                assert_eq!(attempt_seq, 7);
+            }
+            _ => panic!("expected Pending"),
+        }
+    }
+
+    #[test]
+    fn node_outcome_to_attempt_outcome_pending_no_token() {
+        let out = node_outcome_to_attempt_outcome(
+            &NodeOutcome::Pending {
+                checkpoint: CheckpointHandle::None,
+            },
+            3,
+            None,
+            false,
+            "ignored",
+        );
+        match out {
+            sddk_domain::workflow_run::AttemptOutcome::Pending {
+                resume_token,
+                attempt_seq,
+            } => {
+                assert_eq!(resume_token, 0);
+                assert_eq!(attempt_seq, 3);
+            }
+            _ => panic!("expected Pending"),
+        }
+    }
+
+    #[test]
+    fn node_outcome_to_attempt_outcome_running_as_failed() {
+        let out = node_outcome_to_attempt_outcome(
+            &NodeOutcome::Running,
+            0,
+            None,
+            false,
+            "parallel child returned Running",
+        );
+        match out {
+            sddk_domain::workflow_run::AttemptOutcome::Failed { error } => {
+                assert_eq!(error, "parallel child returned Running");
+            }
+            _ => panic!("expected Failed"),
+        }
+    }
+
+    #[test]
+    fn node_outcome_to_attempt_outcome_running_as_pending() {
+        let out =
+            node_outcome_to_attempt_outcome(&NodeOutcome::Running, 5, None, true, "ignored");
+        match out {
+            sddk_domain::workflow_run::AttemptOutcome::Pending {
+                resume_token,
+                attempt_seq,
+            } => {
+                assert_eq!(resume_token, 0);
+                assert_eq!(attempt_seq, 5);
+            }
+            _ => panic!("expected Pending"),
+        }
     }
 }
