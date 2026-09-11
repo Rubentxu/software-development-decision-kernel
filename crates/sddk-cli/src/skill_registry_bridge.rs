@@ -192,8 +192,31 @@ pub fn parse_skill_md(path: &Path, scope: SkillScope) -> Option<LoadedSkill> {
     let version = parse_version(&fm.version);
     let description = fm.description.unwrap_or_default();
 
-    // Scope-prefixed id passes `UnnamespacedId` validation.
-    let id = format!("{}.{}", scope.prefix(), name);
+    // Dotted-name branch: when the frontmatter `name` already contains
+    // at least one `.`, treat it as the fully-namespaced id token. The
+    // `SkillScope` is still recorded on the `LoadedSkill` (and used by
+    // `load_registry` for precedence dedupe) but does NOT participate in
+    // the id. This is the M7.9 extension that lets `core.<...>@v1`
+    // placeholders declared on `CommandSpec`s resolve to real ids.
+    //
+    // Un-dotted names preserve the historical behavior verbatim:
+    // id = `<scope>.<name>`, so the 174 existing `framework.<name>@v1`
+    // skills continue to round-trip identically.
+    //
+    // Defensive guard: a name whose first segment equals a known
+    // `SkillScope::prefix()` (`framework`, `user`, `project`) would
+    // otherwise double-wrap (`framework.framework.<name>`). Such names
+    // are skipped silently — consistent with the existing
+    // malformed-frontmatter handling.
+    let id = if name.contains('.') {
+        let first_segment = name.split('.').next().unwrap_or("");
+        if matches!(first_segment, "framework" | "user" | "project") {
+            return None;
+        }
+        name.clone()
+    } else {
+        format!("{}.{}", scope.prefix(), name)
+    };
 
     // instruction_fragments: a single fragment derived from the
     // description so the skill carries a textual contribution.
