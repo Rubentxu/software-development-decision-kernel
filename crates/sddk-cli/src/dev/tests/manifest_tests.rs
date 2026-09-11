@@ -78,6 +78,7 @@ fn install_fails_on_manifest_mismatch_and_leaves_prefix_clean() {
     let prefix = temp_root("mismatch-prefix");
 
     let args = InstallArgs {
+        actor: None,
         prefix: prefix.clone(),
         channel: "dev".to_owned(),
         timestamp: None,
@@ -368,6 +369,7 @@ fn manifest_covers_agent_models_yaml_and_install_ships_it() {
 
     let prefix = temp_root("agent-models-prefix");
     let args = InstallArgs {
+        actor: None,
         prefix: prefix.clone(),
         channel: "dev".to_owned(),
         timestamp: None,
@@ -431,6 +433,7 @@ fn install_migrates_legacy_v1_receipt_to_v2_when_source_has_bundle_toml() {
     .unwrap();
 
     let args = InstallArgs {
+        actor: None,
         prefix: prefix.clone(),
         channel: "dev".to_owned(),
         timestamp: Some("2026-08-31T00:00:00Z".to_owned()),
@@ -464,4 +467,47 @@ fn install_migrates_legacy_v1_receipt_to_v2_when_source_has_bundle_toml() {
 
     std::fs::remove_dir_all(&source).ok();
     std::fs::remove_dir_all(&prefix).ok();
+}
+
+#[test]
+fn install_rejects_agent_actor_on_framework_bundle_surface() {
+    // ARCH-HEX-001 slice: FrameworkBundle is System-only (ADR-069 §3).
+    // An agent: prefixed actor must be rejected fail-closed BEFORE any
+    // prefix mutation.
+    let prefix = temp_root("auth-agent-prefix");
+    let args = InstallArgs {
+        actor: Some("agent:orchestrator".into()),
+        prefix: prefix.clone(),
+        channel: "dev".to_owned(),
+        timestamp: None,
+        commit: None,
+        source: None,
+        release_receipt: None,
+        format: OutputFormat::Json,
+    };
+    let result = run_dev_install(args);
+    assert_ne!(result.status, 0, "agent actor must be rejected");
+    assert!(result.stderr.contains("authority"));
+    // No binary was written to the prefix.
+    assert!(!prefix.join("bin").join("sddk").exists());
+    assert!(!prefix.join("sddk").exists());
+}
+
+#[test]
+fn install_admits_plain_actor_as_system_on_bundle_surface() {
+    // Plain ids infer System per the v1.81.x prefix contract; the gate
+    // must admit them and proceed to the install receipt.
+    let prefix = temp_root("auth-system-prefix");
+    let args = InstallArgs {
+        actor: Some("rubentxu".into()),
+        prefix: prefix.clone(),
+        channel: "dev".to_owned(),
+        timestamp: None,
+        commit: None,
+        source: None,
+        release_receipt: None,
+        format: OutputFormat::Json,
+    };
+    let result = run_dev_install(args);
+    assert_eq!(result.status, 0, "plain actor is System: {}", result.stderr);
 }

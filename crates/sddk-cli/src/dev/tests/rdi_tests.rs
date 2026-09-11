@@ -372,6 +372,7 @@ fn install_fails_on_absent_manifest_source() {
     let prefix = temp_root("no-manifest-prefix");
 
     let args = InstallArgs {
+        actor: None,
         prefix: prefix.clone(),
         channel: "dev".to_string(),
         timestamp: None,

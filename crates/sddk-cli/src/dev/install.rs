@@ -21,6 +21,22 @@ use sha2::Digest;
 pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<super::InstallReceipt> {
+        // ARCH-HEX-001 slice: FrameworkBundle is a System-only writable
+        // surface (WRITABLE_SURFACE_MATRIX, ADR-069 §3). Fail closed on
+        // agent/human-kind actors before any prefix mutation.
+        let actor = args
+            .actor
+            .clone()
+            .or_else(|| std::env::var("SDDK_ACTOR").ok())
+            .unwrap_or_else(|| "system".into());
+        let auth = sddk_engine::authority::AuthorityContext::for_cli(
+            actor.clone(),
+            sddk_engine::authority::infer_actor_kind(&actor),
+            None,
+            None,
+        );
+        auth.validate(sddk_engine::authority::WritableSurface::FrameworkBundle)
+            .map_err(|e| anyhow::anyhow!("authority check failed: {}", e))?;
         // FAIL-CLOSED: when --source is provided, verify the source MANIFEST
         // BEFORE any writes to the prefix. A tampered source cannot corrupt an
         // existing installation.

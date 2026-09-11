@@ -294,6 +294,12 @@ pub(super) struct InstallArgs {
     /// Installation prefix directory.
     #[arg(long)]
     pub(super) prefix: std::path::PathBuf,
+    /// Explicit actor for the FrameworkBundle write (ADR-069 §3: the
+    /// bundle surface is System-only; agent:/user: prefixed ids are
+    /// rejected fail-closed). Plain ids infer System per the v1.81.x
+    /// prefix contract ("CLI on behalf of a human releaser").
+    #[arg(long)]
+    pub(super) actor: Option<String>,
     /// Release channel.
     #[arg(long, default_value = "dev")]
     pub(super) channel: String,
