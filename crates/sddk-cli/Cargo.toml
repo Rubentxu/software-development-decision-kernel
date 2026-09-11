@@ -25,6 +25,7 @@ clap = { workspace = true }
 clap_complete = { workspace = true }
 regex = { workspace = true }
 walkdir = { workspace = true }
+glob = "0.3"
 uuid = { workspace = true }
 time = { workspace = true }
 sddk-domain = { path = "../sddk-domain" }

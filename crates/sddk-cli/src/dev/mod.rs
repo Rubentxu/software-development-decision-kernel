@@ -22,6 +22,9 @@ mod framework_check;
 pub(super) mod graph;
 mod install;
 mod link;
+pub(super) mod lint {
+    pub(super) mod deprecated_patterns;
+}
 pub(crate) mod manifest;
 mod models_cmd;
 pub(crate) mod paths;
@@ -193,6 +196,22 @@ pub(super) enum DevCommand {
     Cockpit(CockpitArgs),
     /// Test tooling (count-workspace).
     Test(self::test_cmd::TestArgs),
+    /// Architecture lint registry executors (M0 D6 / M9 enforcement infrastructure).
+    Lint(LintArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct LintArgs {
+    #[command(subcommand)]
+    pub(super) command: LintCommand,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub(super) enum LintCommand {
+    /// Execute the deprecated-patterns registry against the live workspace.
+    DeprecatedPatterns(
+        self::lint::deprecated_patterns::DeprecatedPatternsArgs,
+    ),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -493,6 +512,11 @@ pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> Comm
             }
         },
         DevCommand::Test(args) => self::test_cmd::run_test(args, environment),
+        DevCommand::Lint(args) => match args.command {
+            LintCommand::DeprecatedPatterns(args) => {
+                self::lint::deprecated_patterns::run_deprecated_patterns_lint(args)
+            }
+        },
     }
 }
 
