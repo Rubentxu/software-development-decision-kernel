@@ -110,11 +110,7 @@ fn open_test_store(env: &WatchTestEnv) -> sddk_storage::Storage {
 /// `(project_id, cycle_id) REFERENCES cycles`, and we don't need to spin
 /// up a cycle manifest for these streaming tests. The project_id FK is
 /// satisfied by [`seed_project`].
-fn make_input(
-    project_id: &str,
-    event_type: &str,
-    payload: serde_json::Value,
-) -> LedgerEventInput {
+fn make_input(project_id: &str, event_type: &str, payload: serde_json::Value) -> LedgerEventInput {
     LedgerEventInput {
         event_id: format!("e-{event_type}-{}", chrono_like_id()),
         project_id: project_id.to_string(),
@@ -283,7 +279,7 @@ fn watch_from_tail_ignores_pre_existing_events() {
 /// and lets `--max-events` trigger a clean exit.
 #[test]
 fn watch_emits_newly_appended_events() {
-    let (env, run) = watch_test_setup();
+    let (env, _run) = watch_test_setup();
 
     // Use a short poll interval and an explicit `--max-events` cap so the
     // process exits as soon as the events arrive (no need for kill).
@@ -298,7 +294,7 @@ fn watch_emits_newly_appended_events() {
     // outside its transaction) and both try to CREATE TABLE gate_receipts.
     seed_project(&env);
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_sddk"))
+    let child = Command::new(env!("CARGO_BIN_EXE_sddk"))
         .args([
             "ledger",
             "watch",

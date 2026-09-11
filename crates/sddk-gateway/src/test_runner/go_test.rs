@@ -34,10 +34,12 @@ impl TestRunnerAdapter for GoTestAdapter {
 
     fn resolve(&self, req: &AdapterRequest) -> Result<ResolvedSpec, AdapterError> {
         let program = "go";
-        toolchain::accept_direct_program(program).map_err(|_| AdapterError::ToolchainMissing {
-            family: TestFamily::GoTest,
-            searched: vec![Path::new(program).to_path_buf()],
-        })?;
+        if !toolchain::accept_direct_program(program) {
+            return Err(AdapterError::ToolchainMissing {
+                family: TestFamily::GoTest,
+                searched: vec![Path::new(program).to_path_buf()],
+            });
+        }
 
         let spec = RunSpec {
             program: program.to_owned(),

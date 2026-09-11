@@ -22,16 +22,19 @@ impl GradleTestAdapter {
         #[cfg(unix)]
         {
             let gradlew = Path::new("./gradlew");
-            if let Ok(path) = toolchain::resolve_posix_exec(gradlew) {
-                return Ok((path.to_string_lossy().into_owned(), path));
+            if toolchain::resolve_posix_exec(gradlew).is_some() {
+                return Ok((
+                    gradlew.to_string_lossy().into_owned(),
+                    gradlew.to_path_buf(),
+                ));
             }
             let gradle = Path::new("gradle");
-            toolchain::accept_direct_program("gradle").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("gradle") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::GradleTest,
                     searched: vec![gradle.to_path_buf(), gradlew.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("gradle".to_owned(), gradle.to_path_buf()))
         }
 
@@ -39,24 +42,24 @@ impl GradleTestAdapter {
         #[cfg(windows)]
         {
             let gradle = Path::new("gradle");
-            toolchain::accept_direct_program("gradle").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("gradle") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::GradleTest,
                     searched: vec![gradle.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("gradle".to_owned(), gradle.to_path_buf()))
         }
 
         #[cfg(not(any(unix, windows)))]
         {
             let gradle = Path::new("gradle");
-            toolchain::accept_direct_program("gradle").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("gradle") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::GradleTest,
                     searched: vec![gradle.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("gradle".to_owned(), gradle.to_path_buf()))
         }
     }

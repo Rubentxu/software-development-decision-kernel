@@ -22,16 +22,16 @@ impl MavenTestAdapter {
         #[cfg(unix)]
         {
             let mvnw = Path::new("./mvnw");
-            if let Ok(path) = toolchain::resolve_posix_exec(mvnw) {
-                return Ok((path.to_string_lossy().into_owned(), path));
+            if toolchain::resolve_posix_exec(mvnw).is_some() {
+                return Ok((mvnw.to_string_lossy().into_owned(), mvnw.to_path_buf()));
             }
             let mvn = Path::new("mvn");
-            toolchain::accept_direct_program("mvn").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("mvn") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::MavenTest,
                     searched: vec![mvn.to_path_buf(), mvnw.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("mvn".to_owned(), mvn.to_path_buf()))
         }
 
@@ -39,24 +39,24 @@ impl MavenTestAdapter {
         #[cfg(windows)]
         {
             let mvn = Path::new("mvn");
-            toolchain::accept_direct_program("mvn").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("mvn") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::MavenTest,
                     searched: vec![mvn.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("mvn".to_owned(), mvn.to_path_buf()))
         }
 
         #[cfg(not(any(unix, windows)))]
         {
             let mvn = Path::new("mvn");
-            toolchain::accept_direct_program("mvn").map_err(|_| {
-                AdapterError::ToolchainMissing {
+            if !toolchain::accept_direct_program("mvn") {
+                return Err(AdapterError::ToolchainMissing {
                     family: TestFamily::MavenTest,
                     searched: vec![mvn.to_path_buf()],
-                }
-            })?;
+                });
+            }
             Ok(("mvn".to_owned(), mvn.to_path_buf()))
         }
     }

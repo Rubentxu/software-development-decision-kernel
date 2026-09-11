@@ -27,9 +27,8 @@ use sddk_gateway::{RunOutcome, RunSpec, run};
 
 // Public facade: test_runner types (pub only — no pub(crate) access from integration tests)
 use sddk_gateway::test_runner::{
-    detect_accept_direct_program, detect_forbidden_shells, detect_is_shell,
-    detect_is_windows_batch, detect_secret_like, AdapterError, AdapterRequest, ResolvedSpec,
-    TestFamily,
+    AdapterError, AdapterRequest, ResolvedSpec, TestFamily, detect_accept_direct_program,
+    detect_forbidden_shells, detect_is_shell, detect_is_windows_batch, detect_secret_like,
 };
 
 // ─── S1: declared family produces exactly one bounded invocation ─────────────────
@@ -214,13 +213,14 @@ fn s5_shell_interpreters_identifiable() {
 fn s6_posix_shebang_wrapper_as_direct_program() {
     // mvnw with clean extension → accepted as direct program (not shell).
     // INC-019: `detect_accept_direct_program` rejects shells; verify with the facade.
+    // M7-9 hygiene (v1.168.7): the facade returns `bool`, not `Result<(), ()>`.
     let wrapper_path = "./mvnw";
     assert!(
         !detect_is_windows_batch(std::path::Path::new(wrapper_path)),
         "mvnw should have clean extension (no cmd/bat/ps1)"
     );
     assert!(
-        detect_accept_direct_program(wrapper_path).is_ok(),
+        detect_accept_direct_program(wrapper_path),
         "mvnw should be accepted as a direct program"
     );
 

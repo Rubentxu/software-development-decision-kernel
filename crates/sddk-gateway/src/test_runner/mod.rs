@@ -32,6 +32,8 @@ pub(crate) mod pytest;
 #[doc(hidden)]
 pub use env_allowlist::is_secret_like as detect_secret_like;
 #[doc(hidden)]
+pub use toolchain::accept_direct_program as detect_accept_direct_program;
+#[doc(hidden)]
 pub use toolchain::forbidden_shells as detect_forbidden_shells;
 #[doc(hidden)]
 pub use toolchain::is_shell as detect_is_shell;
@@ -39,8 +41,6 @@ pub use toolchain::is_shell as detect_is_shell;
 pub use toolchain::is_windows_batch as detect_is_windows_batch;
 #[doc(hidden)]
 pub use toolchain::resolve_posix_exec as resolve_posix_shebang;
-#[doc(hidden)]
-pub use toolchain::accept_direct_program as detect_accept_direct_program;
 
 /// Base environment keys forwarded to every child (explicit list, NO wildcards).
 pub(crate) mod env_allowlist {
@@ -152,42 +152,56 @@ pub(crate) mod toolchain {
 
     /// Attempts to resolve `candidate` to a safe executable.
     ///
-    /// Returns `Ok(path)` when the file is usable as a direct program:
+    /// Returns `Some(path)` when the file is usable as a direct program:
     /// - POSIX: executable and extension is NOT `.cmd/.bat/.ps1`.
     /// - Windows: extension is NOT `.cmd/.bat/.ps1`.
     ///
-    /// Returns `Err(())` when the path is not usable.
+    /// Returns `None` when the path is not usable (missing, not
+    /// executable, or carries a Windows batch extension).
+    ///
     /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
-    pub fn resolve_posix_exec(candidate: &Path) -> Result<PathBuf, ()> {
+    /// M7-9 hygiene (v1.168.7): returned `Option<PathBuf>` instead of
+    /// `Result<PathBuf, ()>` to silence `clippy::result_unit_err` —
+    /// the `()` carried no information for any caller.
+    pub fn resolve_posix_exec(candidate: &Path) -> Option<PathBuf> {
         if !candidate.exists() {
-            return Err(());
+            return None;
         }
 
         // Windows batch files MUST be rejected — Rust Command routes them through cmd.exe.
         if cfg!(windows) && is_windows_batch(candidate) {
-            return Err(());
+            return None;
         }
 
         // On POSIX, check the file is executable.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let meta = std::fs::metadata(candidate).map_err(|_| ())?;
+            let meta = std::fs::metadata(candidate).ok()?;
             let mode = meta.permissions().mode();
             if mode & 0o111 == 0 {
-                return Err(()); // not executable
+                return None; // not executable
             }
         }
 
-        Ok(candidate.to_path_buf())
+        Some(candidate.to_path_buf())
     }
 
     /// Checks whether the given program name or path is acceptable as a direct
     /// `RunSpec.program` (no shell involved).
+    ///
+    /// Returns `true` when acceptable, `false` when the program name
+    /// matches a forbidden shell or carries a Windows batch
+    /// extension.
+    ///
     /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
-    pub fn accept_direct_program(program: &str) -> Result<(), ()> {
+    /// M7-9 hygiene (v1.168.7): returned `bool` instead of
+    /// `Result<(), ()>` to silence `clippy::result_unit_err` — the
+    /// `()` carried no information for any caller (each did
+    /// `map_err(|_| ...)` and discarded it).
+    pub fn accept_direct_program(program: &str) -> bool {
         if is_shell(program) {
-            return Err(());
+            return false;
         }
         let path = Path::new(program);
         if path
@@ -196,9 +210,9 @@ pub(crate) mod toolchain {
             .map(|e| matches!(e.to_lowercase().as_str(), "cmd" | "bat" | "ps1"))
             .unwrap_or(false)
         {
-            return Err(());
+            return false;
         }
-        Ok(())
+        true
     }
 
     #[cfg(test)]

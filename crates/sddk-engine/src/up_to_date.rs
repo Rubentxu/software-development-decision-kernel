@@ -156,6 +156,18 @@ mod tests {
         ) -> Result<Vec<sddk_domain::LedgerEvent>, sddk_domain::StorageError> {
             Ok(vec![])
         }
+        fn list_events_after(
+            &self,
+            _after_sequence: i64,
+            _limit: i64,
+        ) -> Result<Vec<sddk_domain::LedgerEvent>, sddk_domain::StorageError> {
+            // M7-9 hygiene (v1.168.7): `list_events_after` was added to the
+            // `Ledger` port in M9.5 (v1.168.4) for `sddk ledger watch`.
+            // The up-to-date tests don't exercise event tails, so the stub
+            // returns no events; the new port method must be present so the
+            // `impl Ledger for FakeLedger` block satisfies the trait.
+            Ok(vec![])
+        }
         fn insert_cycle_with_event(
             &mut self,
             _: &sddk_domain::CycleRecord,

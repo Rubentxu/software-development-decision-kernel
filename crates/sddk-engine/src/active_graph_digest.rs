@@ -174,11 +174,15 @@ fn hex_lower(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::active_graph::{
-        ActiveGraphEdge, ActiveGraphEdgeKind, ActiveGraphNode, ActiveGraphNodeKind,
-        DefaultActiveGraphProjector, ProvenanceRef, ProvenanceSourceKind,
+        ActiveGraphEdge, ActiveGraphEdgeKind, ActiveGraphNode, ActiveGraphNodeKind, ProvenanceRef,
+        ProvenanceSourceKind,
     };
     use sddk_domain::workflow_ir::NodeId;
-    use std::collections::BTreeMap;
+    // `DefaultActiveGraphProjector` is intentionally re-imported inside the
+    // specific test that uses it (`projection_built_via_projector_is_digestable`)
+    // so the dependency on that type stays local and obvious. Likewise
+    // `BTreeMap` is referenced via the fully-qualified `std::collections::BTreeMap`
+    // path elsewhere in this file, so a bare import here would be unused.
 
     fn nid(s: &str) -> NodeId {
         NodeId(s.to_string())

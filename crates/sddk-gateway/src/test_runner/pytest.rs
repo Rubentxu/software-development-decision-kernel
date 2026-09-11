@@ -29,10 +29,12 @@ impl TestRunnerAdapter for PytestAdapter {
 
     fn resolve(&self, req: &AdapterRequest) -> Result<ResolvedSpec, AdapterError> {
         let program = "pytest";
-        toolchain::accept_direct_program(program).map_err(|_| AdapterError::ToolchainMissing {
-            family: TestFamily::Pytest,
-            searched: vec![Path::new(program).to_path_buf()],
-        })?;
+        if !toolchain::accept_direct_program(program) {
+            return Err(AdapterError::ToolchainMissing {
+                family: TestFamily::Pytest,
+                searched: vec![Path::new(program).to_path_buf()],
+            });
+        }
 
         let spec = RunSpec {
             program: program.to_owned(),
