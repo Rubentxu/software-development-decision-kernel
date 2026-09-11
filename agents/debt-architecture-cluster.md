@@ -127,17 +127,12 @@ Launch `task(subagent_type="balance-advisor")`. Emits Khononov-style critique: c
 
 ## Output Contract
 
+Emit the shared `cluster_run` envelope defined in
+`prompts/sddk/contracts/debt-cluster-envelope.md` (single source; do not
+restate it here) with `cluster: debt-architecture-cluster` and this cluster-specific
+`details` block:
+
 ```yaml
-cluster_run:
-  cluster: debt-architecture-cluster
-  status: completed | failed | timed_out
-  attempts: 1..3
-  analyzer: {name, version}
-  subject_sha: {head_commit}
-  started_at: {RFC3339}
-  finished_at: {RFC3339}
-  findings: [Common Finding]
-  errors: [{code, message}]
   details:
     design_quality_band: excellent|good|poor|critical
     band_justification: {evidence-bound sentence}
@@ -150,8 +145,9 @@ cluster_run:
     khononov_critique: {}
 ```
 
-Do not emit a cluster verdict. The parent coordinator applies the sole Decision
-Contract after validating and deduplicating all Common Findings.
+Do not emit a cluster verdict. The parent coordinator owns the only Decision
+Contract.
+
 
 ## References
 

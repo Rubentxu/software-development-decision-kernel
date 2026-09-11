@@ -86,17 +86,12 @@ Aggregate `loc_reducible` across all findings. Cross-reference with smells clust
 
 ## Output Contract
 
+Emit the shared `cluster_run` envelope defined in
+`prompts/sddk/contracts/debt-cluster-envelope.md` (single source; do not
+restate it here) with `cluster: debt-duplication-cluster` and this cluster-specific
+`details` block:
+
 ```yaml
-cluster_run:
-  cluster: debt-duplication-cluster
-  status: completed | failed | timed_out
-  attempts: 1..3
-  analyzer: {name, version}
-  subject_sha: {head_commit}
-  started_at: {RFC3339}
-  finished_at: {RFC3339}
-  findings: [Common Finding]
-  errors: [{code, message}]
   details:
     total_clusters: {n}
     total_dead_code: {n}
@@ -105,6 +100,7 @@ cluster_run:
 
 Do not emit a cluster verdict. The parent coordinator owns the only Decision
 Contract.
+
 
 ## References
 

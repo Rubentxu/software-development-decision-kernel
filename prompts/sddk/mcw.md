@@ -308,21 +308,11 @@ mem_save(
 
 ### Step 4.4 — Print Result Contract + Next-Cycle Ready
 
+Use the canonical cycle-closure banner defined in
+`prompts/sddk/metrics-schema.md` ("At the end of each cycle" block) — single
+source, do not restate it here — followed by:
+
 ```
-✓ Cycle {goal_pattern} closed
-  Path: {path} (C{x}, jurisprudence: {n} hits)
-  Verdict: {verdict} {first_pass_badge}
-  Lead time: {h}h  |  Cost: ${usd}  |  Tokens: {n}
-  Spec coverage: {passing}/{total} scenarios ({pct}%)
-  main @ {tag} ({sha})
-  Bottleneck: {phase} ({reason})
-  Saved as jurisprudence: {topic_key} {if reusable}
-
-  vs rolling {window}:
-    - first_pass_success_rate: {value} ({delta})
-    - median_lead_time: {value}h ({delta})
-    - top_bottleneck_phase: {phase} ({you_too|new})
-
 Ready for next cycle.
 ```
 
