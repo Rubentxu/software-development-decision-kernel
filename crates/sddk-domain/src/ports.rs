@@ -153,6 +153,23 @@ pub trait Ledger {
     /// Used by telemetry ingest to derive metrics for cycles that have no
     /// metrics.jsonl entry.
     fn load_all_ledger_events(&self) -> Result<Vec<LedgerEvent>, StorageError>;
+
+    /// Lists ledger events strictly after `after_sequence`, in ascending
+    /// sequence order, capped at `limit` rows.
+    ///
+    /// M9.5 live-mode streaming foundation: `sddk ledger watch` polls this
+    /// in a loop so consumers can tail the ledger without re-reading the
+    /// full event history on every tick. Implementations MUST:
+    /// - return events where `sequence > after_sequence` (strict greater-than);
+    /// - order ascending by `sequence`;
+    /// - cap at `limit` (use `i64::MAX` for "no cap");
+    /// - be safe to call concurrently with `append_event` (read-after-write
+    ///   visibility is the SQLite WAL default; other backends must mirror).
+    fn list_events_after(
+        &self,
+        after_sequence: i64,
+        limit: i64,
+    ) -> Result<Vec<LedgerEvent>, StorageError>;
 }
 
 // ── Ledger factory ───────────────────────────────────────────────────────────

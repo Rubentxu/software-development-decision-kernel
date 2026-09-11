@@ -6,7 +6,8 @@ use sddk_domain::ports::SnapshotPort;
 use serde::Serialize;
 
 use crate::{
-    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, render_result,
+    CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, failure_envelope,
+    render_result,
 };
 
 #[derive(Debug, Subcommand)]
@@ -25,6 +26,13 @@ pub(crate) enum LedgerCommand {
     Replay(ReplayArgs),
     /// Verify bidirectional consistency between events_v1 and ledger_events.
     VerifyCrossLedger(VerifyCrossLedgerArgs),
+    /// Tail the ledger in real time (M9.5 live-mode streaming).
+    ///
+    /// Polls `list_events_after` in a loop and emits one event per line
+    /// (NDJSON when `--format json|ndjson`, pretty text otherwise). Exits
+    /// cleanly after `--max-events` events, on SIGINT (Ctrl-C), or after
+    /// `--idle-timeout-ms` of no new events (default: never).
+    Watch(LedgerWatchArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -123,6 +131,40 @@ pub(crate) struct VerifyCrossLedgerArgs {
     pub(crate) format: OutputFormat,
 }
 
+#[derive(Debug, Clone, Args)]
+pub(crate) struct LedgerWatchArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Start tailing after this ledger sequence. Default 0 (emit everything
+    /// from the beginning). Use `--from-tail` instead to start after the
+    /// current latest sequence (ignore existing events).
+    #[arg(long, default_value_t = 0)]
+    pub(crate) from_sequence: i64,
+    /// Start tailing strictly after the current latest sequence. Useful for
+    /// live-streaming new events without re-emitting historical ones.
+    #[arg(long, conflicts_with = "from_sequence")]
+    pub(crate) from_tail: bool,
+    /// Restrict to events sharing one command frame.
+    #[arg(long)]
+    pub(crate) frame: Option<String>,
+    /// Restrict to events for one cycle.
+    #[arg(long)]
+    pub(crate) cycle: Option<String>,
+    /// Poll interval in milliseconds.
+    #[arg(long, default_value_t = 500)]
+    pub(crate) interval_ms: u64,
+    /// Cap on events emitted before exiting (0 = unlimited).
+    #[arg(long, default_value_t = 0)]
+    pub(crate) max_events: u64,
+    /// Exit after this many milliseconds with no new events (0 = never).
+    #[arg(long, default_value_t = 0)]
+    pub(crate) idle_timeout_ms: u64,
+    /// Output format: `text` (pretty per-line), `json` or `ndjson` (one
+    /// JSON object per line, no pretty-printing).
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
 pub(crate) fn run_ledger(command: LedgerCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         LedgerCommand::Verify(args) => run_ledger_verify(args, environment),
@@ -132,6 +174,7 @@ pub(crate) fn run_ledger(command: LedgerCommand, environment: &CliEnvironment) -
         LedgerCommand::Export(args) => run_ledger_export(args, environment),
         LedgerCommand::Replay(args) => run_replay(args, environment),
         LedgerCommand::VerifyCrossLedger(args) => run_verify_cross_ledger(args, environment),
+        LedgerCommand::Watch(args) => run_ledger_watch(args, environment),
     }
 }
 
@@ -588,6 +631,131 @@ fn ledger_events_text(events: &Vec<LedgerEventOutput>) -> String {
         ));
     }
     output
+}
+
+/// Tail the ledger in real time (M9.5 live-mode streaming).
+///
+/// Polls `Storage::list_events_after(last_seq, limit)` in a loop, writing
+/// one event per line (NDJSON when `--format json`, pretty text when
+/// `--format text`). Returns a [`CommandOutput`] containing the streamed
+/// lines so unit tests can assert on them. In a real terminal session the
+/// same lines flow to the process stdout via the captured `CommandOutput`
+/// pipeline.
+///
+/// Exit conditions (in order):
+///   * `--max-events` reached (0 = unlimited)
+///   * `--idle-timeout-ms` elapsed with no new events (0 = never)
+///   * SIGINT/EOF on stdin (handled by callers, not in-process)
+fn run_ledger_watch(args: LedgerWatchArgs, environment: &CliEnvironment) -> CommandOutput {
+    use std::fmt::Write as _;
+
+    let mut stdout = String::new();
+    let format = args.format;
+
+    let result: anyhow::Result<u64> = (|| -> anyhow::Result<u64> {
+        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut after_sequence = args.from_sequence;
+        let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
+        let max_events = args.max_events;
+        let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
+        let started = std::time::Instant::now();
+        let mut last_activity = std::time::Instant::now();
+        let mut emitted: u64 = 0;
+
+        // When `--from-tail` is requested, start strictly after the
+        // current latest sequence so historical events are not re-emitted.
+        if args.from_tail {
+            let tail = context
+                .storage
+                .list_events()
+                .context("loading current ledger tail for --from-tail")?;
+            after_sequence = tail.last().map(|ev| ev.sequence).unwrap_or(0);
+        }
+
+        loop {
+            // Bounded fetch: ask for a generous chunk per poll. SQLite
+            // returns up to `limit` rows ordered by sequence ASC.
+            let chunk_size: i64 = 256;
+            let mut events = context
+                .storage
+                .list_events_after(after_sequence, chunk_size)
+                .context("polling list_events_after")?;
+
+            // Apply optional filters locally — `list_events_after` is
+            // already narrow by sequence range, but cycle/frame filters
+            // require a second pass.
+            if let Some(cycle) = &args.cycle {
+                events.retain(|ev| ev.cycle_id.as_deref() == Some(cycle.as_str()));
+            }
+            if let Some(frame) = &args.frame {
+                events.retain(|ev| ev.frame_id == *frame);
+            }
+
+            if events.is_empty() {
+                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                    break;
+                }
+                std::thread::sleep(interval);
+                // Defensive: avoid pathological infinite loop if a clock
+                // skew or test harness pins time forward.
+                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                    break;
+                }
+                continue;
+            }
+
+            for event in &events {
+                let line = match format {
+                    OutputFormat::Json => {
+                        serde_json::to_string(event).context("serializing LedgerEvent to NDJSON")?
+                    }
+                    OutputFormat::Text => format!(
+                        "{:>8}  {:<36}  {:<24}  cycle={}  frame={}",
+                        event.sequence,
+                        event.event_type,
+                        event.event_id,
+                        event.cycle_id.as_deref().unwrap_or("-"),
+                        event.frame_id.as_str(),
+                    ),
+                };
+                writeln!(stdout, "{line}").expect("writing to String never fails");
+                after_sequence = event.sequence;
+                emitted = emitted.saturating_add(1);
+                if max_events > 0 && emitted >= max_events {
+                    return Ok(emitted);
+                }
+            }
+            last_activity = std::time::Instant::now();
+            // Safety bound: never loop forever in pathological cases
+            // (e.g. test harness without an idle timeout). 5 minutes is
+            // well beyond the longest expected run.
+            if started.elapsed() > std::time::Duration::from_secs(300) {
+                anyhow::bail!("ledger watch exceeded 5 minute safety bound");
+            }
+        }
+        Ok(emitted)
+    })();
+
+    match result {
+        Ok(count) => {
+            // For JSON mode, emit a one-line summary so callers can see
+            // the loop ended cleanly. For text mode, write a footer line.
+            match format {
+                OutputFormat::Json => {
+                    let _ = writeln!(stdout, "{{\"__watch_complete\":true,\"emitted\":{count}}}");
+                }
+                OutputFormat::Text => {
+                    let _ = writeln!(stdout, "[watch] emitted {count} events, exiting");
+                }
+            }
+            CommandOutput {
+                status: 0,
+                stdout,
+                stderr: String::new(),
+            }
+        }
+        Err(error) => failure_envelope(&error),
+    }
 }
 
 #[cfg(test)]

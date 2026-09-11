@@ -695,6 +695,25 @@ impl Storage {
         rows.map(|row| row.map_err(StorageError::from)).collect()
     }
 
+    /// Lists ledger events strictly after `after_sequence`, ascending order,
+    /// capped at `limit` rows. M9.5 live-mode streaming foundation
+    /// (`sddk ledger watch`).
+    pub fn list_events_after(&self, after_sequence: i64, limit: i64) -> Result<Vec<LedgerEvent>> {
+        let mut statement = self.connection.prepare(
+            "SELECT sequence, event_id, project_id, cycle_id, frame_id,
+                    command_id, actor, event_type, occurred_at,
+                    state_before_json, state_after_json, payload_json,
+                    previous_hash, event_hash
+             FROM ledger_events WHERE sequence > ?1
+             ORDER BY sequence ASC LIMIT ?2",
+        )?;
+        let rows = statement.query_map(
+            rusqlite::params![after_sequence, limit],
+            event_from_row,
+        )?;
+        rows.map(|row| row.map_err(StorageError::from)).collect()
+    }
+
     /// Deletes only the materialized cycle snapshot, preserving its ledger events.
     ///
     /// This is a destructive repair primitive used by rebuild workflows and
@@ -2143,6 +2162,14 @@ impl sddk_domain::Ledger for Storage {
     ) -> std::result::Result<Vec<LedgerEvent>, sddk_domain::StorageError> {
         Storage::load_all_ledger_events(self).map_err(|e| e.into())
     }
+
+    fn list_events_after(
+        &self,
+        after_sequence: i64,
+        limit: i64,
+    ) -> std::result::Result<Vec<LedgerEvent>, sddk_domain::StorageError> {
+        Storage::list_events_after(self, after_sequence, limit).map_err(|e| e.into())
+    }
 }
 
 /// `LedgerFactory` for the concrete SQLite-backed [`Storage`].
@@ -3062,5 +3089,82 @@ mod cycle_project_mismatch_tests {
             recovery.contains("sddk adopt status"),
             "recovery should mention 'sddk adopt status': {recovery}"
         );
+    }
+}
+
+#[cfg(test)]
+mod list_events_after_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Helper to build a minimal `LedgerEventInput` for tests.
+    fn make_input(project_id: &str, event_type: &str) -> LedgerEventInput {
+        LedgerEventInput {
+            event_id: format!("e-{event_type}"),
+            project_id: project_id.to_string(),
+            cycle_id: None,
+            frame_id: "f-1".to_string(),
+            command_id: "cmd-1".to_string(),
+            actor: "test".to_string(),
+            actor_ref: None,
+            event_type: event_type.to_string(),
+            occurred_at: "2026-09-11T10:00:00Z".to_string(),
+            state_before: None,
+            state_after: None,
+            payload: json!({}),
+            causation_id: None,
+            correlation_id: None,
+        }
+    }
+
+    /// `list_events_after(after, limit)` returns rows with sequence > after
+    /// ordered ascending, truncated to `limit`.
+    #[test]
+    fn list_events_after_returns_strictly_newer_events_ascending() {
+        // Storage::open takes a SQLite *file* path (not a directory) and
+        // creates parent directories if needed. Use a file path inside a
+        // fresh tempdir.
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("ledger.sqlite");
+        let mut store = Storage::open(&db_path).unwrap();
+
+        // Project row needed for FK.
+        store
+            .insert_project(&sddk_domain::ProjectRecord {
+                project_id: "p-test".into(),
+                display_name: "test".into(),
+                remote_url: None,
+                scope: ".".into(),
+                created_at: "2026-09-11T10:00:00Z".into(),
+            })
+            .unwrap();
+
+        let mut last_seq = 0;
+        for event_type in ["a", "b", "c", "d"] {
+            let appended = store
+                .append_event(&make_input("p-test", event_type))
+                .unwrap();
+            last_seq = appended.sequence;
+        }
+        assert_eq!(last_seq, 4);
+
+        // after_sequence = 1 → expect events 2, 3, 4.
+        let events = Storage::list_events_after(&store, 1, 100).unwrap();
+        let sequences: Vec<i64> = events.iter().map(|e| e.sequence).collect();
+        assert_eq!(sequences, vec![2, 3, 4]);
+
+        // limit = 2 → expect only the first 2 of the strictly-newer set.
+        let limited = Storage::list_events_after(&store, 1, 2).unwrap();
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].sequence, 2);
+        assert_eq!(limited[1].sequence, 3);
+
+        // after_sequence past the head → empty result.
+        let none = Storage::list_events_after(&store, 99, 100).unwrap();
+        assert!(none.is_empty());
+
+        // after_sequence = 0 → all events from the start.
+        let all = Storage::list_events_after(&store, 0, 100).unwrap();
+        assert_eq!(all.len(), 4);
     }
 }

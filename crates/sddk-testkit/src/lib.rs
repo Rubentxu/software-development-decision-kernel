@@ -401,6 +401,18 @@ impl sddk_domain::Ledger for InMemoryLedger {
         events.sort_by_key(|ev| ev.sequence);
         Ok(events)
     }
+
+    fn list_events_after(
+        &self,
+        after_sequence: i64,
+        limit: i64,
+    ) -> Sr<Vec<sddk_domain::LedgerEvent>> {
+        let mut events = self.events.read().unwrap().clone();
+        events.retain(|ev| ev.sequence > after_sequence);
+        events.sort_by_key(|ev| ev.sequence);
+        events.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+        Ok(events)
+    }
 }
 
 // ── Test builders ─────────────────────────────────────────────────────────────
