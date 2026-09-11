@@ -58,6 +58,21 @@ instruction_fragments:
 - compatibility range with Agent Experience contract;
 - deterministic selection metadata where possible.
 
+### Namespaced id: dotted-name convention (M7.9 clarification)
+
+A Skill id MUST be namespaced (contain at least one `.`). The
+canonical form is `<author-or-org>.<area>.<verb>`, e.g.
+`core.workflow-orchestration`. SKILL.md frontmatter `name` values
+that already contain a `.` are preserved verbatim as the
+`SkillDefinition::id` token; the `SkillScope` (`framework`,
+`user`, `project`) is recorded as metadata used by
+`load_registry` for precedence dedupe but does NOT participate
+in the id. SKILL.md frontmatter `name` values without a `.` are
+wrapped with the scope prefix at parse time (the historical
+default). A name whose first segment equals a scope label
+(`framework.foo`, `user.foo`, `project.foo`) is rejected by
+the parser to prevent double-wrapping.
+
 ## Packs
 
 Packs may register Skills through Pack SDK. They cannot use Skill loading as a backdoor to register privileged executable code outside normal Task/Capability contracts.
