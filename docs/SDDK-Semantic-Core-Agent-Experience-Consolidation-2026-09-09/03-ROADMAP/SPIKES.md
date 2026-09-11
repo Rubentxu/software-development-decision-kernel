@@ -27,10 +27,17 @@ Output: state transition crosswalk and migration fixture.
 Question: can existing permission/gate/risk/approval components be composed behind one application service before invasive refactoring?  
 Output: one governed capability migrated end-to-end.
 
-## SP-06 Context retrieval evaluation
+## SP-06 Context retrieval evaluation — **COMPLETED 2026-09-11**
 
 Question: does graph/exact/FTS ranking provide sufficient context quality before adding embeddings?  
 Dataset: 20–30 real recovery questions; measure recall, noise and token budget.
+
+**Outcome: DEFER embeddings.** Keyword ranking alone reaches 93.8% recall@3
+(95.8% with per-doc aliases); graph expansion adds +4.2pp at recall@5 with
++2pp noise. The residual misses are cheap synonym gaps, not semantic
+representation gaps. Full findings and revisit triggers:
+`docs/architecture/spikes/SP-06-context-retrieval-evaluation.md`.
+Reproducible harness: `crates/sddk-engine/src/spike_sp06.rs`.
 
 ## SP-07 CLI target ergonomics
 
