@@ -552,7 +552,7 @@ items:
   - order: 490
     id: GRAPH-WHY-001
     horizon: H9
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-11: cycle p-63676b11dc0ef88f/m8-0-graph-surface; release v1.166.5; ActiveGraph typed causal projection surface (sddk dev graph list/edges/projection); engine module crates/sddk-engine/src/active_graph.rs (588 LoC); ref 797395e
     depends_on: [SDD-ADAPTIVE-005]
     objective: Build typed active-graph projections from canonical events, artifacts, evidence and Decision Memory.
     exit_gate: Requirements, evidence, decisions, memory branches, delegations, runs, debt and lineage have queryable typed relations.
@@ -560,7 +560,7 @@ items:
   - order: 500
     id: GRAPH-WHY-002
     horizon: H9
-    status: PROPOSED
+    status: SHIPPED # reconciled 2026-09-11: cycle p-63676b11dc0ef88f/m8-1-why-queries-surface; release v1.166.6; causal why/debt-why/decision-why queries (sddk dev graph why); engine module crates/sddk-engine/src/why_queries.rs (574 LoC); ref b9d0e79
     depends_on: [GRAPH-WHY-001]
     objective: Expose causal why/debt-why/decision-why queries through the minimal facade.
     exit_gate: User/agent can explain why a state, decision or debt item exists using provenance-linked paths to original evidence/contributions.
