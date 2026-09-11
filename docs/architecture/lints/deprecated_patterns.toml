@@ -225,3 +225,114 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #
 # execution_outcome_as_synthesis — remains `allow`; 0 hits today, but its
 #   heuristic is medium-confidence and its subject type does not exist yet.
+
+# ---------------------------------------------------------------------------
+# AX-S5 promotion (v1.168.20): agent-asset hygiene lints.
+# Findings measured in docs/architecture/spikes/AX-S5-agent-asset-static-scanner.md:
+# zero hits on the current corpus — these are regression-prevention checks,
+# kept advisory (default: allow) per the spike's disposition.
+# ---------------------------------------------------------------------------
+
+[[lints]]
+id = "asset_deprecated_namespace"
+severity = "warn"
+default = "allow"
+category = "agent_assets"
+description = """
+Legacy namespace spelling in agent-facing assets. AGENTS.md 2.0 normalizes
+"SDD-kernel" to SDDK; agent/prose assets must use the active surface.
+"""
+detection = """
+Regex line scan over Markdown assets under agents/ and prompts/.
+"""
+pattern = "SDD-kernel|sddk-kernel"
+paths = [
+    "agents/**/*.md",
+    "prompts/**/*.md",
+]
+replacement = ["Use the active namespace name `SDDK` (AGENTS.md section 2.0)"]
+reference_adrs = []
+milestone_introduced = "AX-S5"
+milestone_enforces = ""
+confidence = "high"
+
+[[lints]]
+id = "asset_raw_store_reference"
+severity = "warn"
+default = "allow"
+category = "agent_assets"
+description = """
+Raw store/table reference in agent-facing prose. Agents reason over typed
+contracts and projections; prose that points at SQL or store internals
+breaks the vault/runtime separation (semantic ownership, SPEC-002).
+"""
+detection = """
+Regex line scan over Markdown assets under agents/ and prompts/.
+"""
+pattern = "INSERT INTO|SELECT \\* FROM|CREATE TABLE|sqlite://"
+paths = [
+    "agents/**/*.md",
+    "prompts/**/*.md",
+]
+replacement = [
+    "Reference the typed contract or projection instead of store internals",
+]
+reference_adrs = []
+milestone_introduced = "AX-S5"
+milestone_enforces = ""
+confidence = "high"
+
+[[lints]]
+id = "asset_authority_language"
+severity = "warn"
+default = "allow"
+category = "agent_assets"
+description = """
+Capability-bypassing authority language. Prose cannot grant side-effect
+permissions; capabilities gate them (SPEC-013..018). Phrases that instruct
+an agent to bypass invariants or skip verification are contract violations.
+"""
+detection = """
+Case-insensitive regex line scan over Markdown assets under agents/ and prompts/.
+"""
+pattern = "(?i)you are authorized to bypass|ignore the invariant|skip verification|override the kernel invariant"
+paths = [
+    "agents/**/*.md",
+    "prompts/**/*.md",
+]
+replacement = [
+    "State the requirement through the capability/skill model, not bypass language",
+]
+reference_adrs = []
+milestone_introduced = "AX-S5"
+milestone_enforces = ""
+confidence = "high"
+
+[[lints]]
+id = "asset_unregistered_cli_example"
+severity = "warn"
+default = "allow"
+category = "agent_assets"
+description = """
+`sddk <cmd>` example whose command is not in the canonical surface
+(single source: crates/sddk-cli/src/command_spec.rs, clap-pinned since
+AX-S1). Stale command examples in agent assets mislead executors.
+"""
+detection = """
+Regex line scan for `sddk <word>` over Markdown assets where the word
+starts with a letter unused by any registered top-level command (the
+regex engine has no lookahead; first-letter sieve + confidence: medium).
+Full-surface validation stays in the command_spec clap guard.
+"""
+pattern = "sddk +[befjmnosqwxz]"
+paths = [
+    "agents/**/*.md",
+    "prompts/**/*.md",
+]
+replacement = [
+    "Use a registered command (see `sddk agent-help` / command_spec.rs)",
+]
+reference_adrs = []
+milestone_introduced = "AX-S5"
+milestone_enforces = ""
+confidence = "medium"

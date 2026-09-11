@@ -35,5 +35,5 @@ Five deterministic detectors, each returning file/line/snippet findings:
 
 ## Revisit triggers
 
-- Promoting the scanner into `sddk dev lint` (needs FS-walking wrapper + advisory output mode).
+- ~~Promoting the scanner into `sddk dev lint`~~ **DONE v1.168.20**: rules 1-3+5 promoted as advisory lints `asset_deprecated_namespace`, `asset_raw_store_reference`, `asset_authority_language`, `asset_unregistered_cli_example` in `docs/architecture/lints/deprecated_patterns.toml` (regex engine has no lookahead: rule 5 uses a first-letter sieve, confidence medium; full-surface validation stays in the command_spec clap guard). Guard test `live_registry_asset_lints_are_advisory_and_clean` pins advisory + zero hits. Rule 4 (duplicated fragments) remains a spike-only pointing device; the envelope half was consolidated in v1.168.19.
 - Debt-cluster envelope consolidation cycle (rule 4 output is the worklist).

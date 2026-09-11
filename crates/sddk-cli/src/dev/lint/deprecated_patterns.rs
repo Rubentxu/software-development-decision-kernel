@@ -507,6 +507,41 @@ paths = ["crates/**/*.rs"]
     }
 
     #[test]
+    fn live_registry_asset_lints_are_advisory_and_clean() {
+        // AX-S5 promotion guard: the four agent-asset hygiene lints must
+        // stay advisory (default: allow) and produce zero hits against the
+        // live corpus (agents/ + prompts/). A hit means asset prose drifted;
+        // a mode flip to deny requires a deliberate decision.
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest
+            .ancestors()
+            .nth(2)
+            .expect("crate lives two levels under workspace root")
+            .to_path_buf();
+        let registry_path = workspace_root.join("docs/architecture/lints/deprecated_patterns.toml");
+        let registry = load_registry(&registry_path).expect("live registry must parse");
+        for id in [
+            "asset_deprecated_namespace",
+            "asset_raw_store_reference",
+            "asset_authority_language",
+            "asset_unregistered_cli_example",
+        ] {
+            let lint = registry
+                .lints
+                .iter()
+                .find(|l| l.id == id)
+                .unwrap_or_else(|| panic!("{id} must exist"));
+            assert_eq!(
+                lint.default.as_deref(),
+                Some("allow"),
+                "{id} must stay advisory"
+            );
+            let hits = collect_hits(&workspace_root, lint).unwrap();
+            assert!(hits.is_empty(), "{id} advisory but found hits: {hits:?}");
+        }
+    }
+
+    #[test]
     fn live_registry_agent_result_used_is_deny_and_clean() {
         // ARCH-LINT-M9.1 promotion guard: `agent_result_used` is the one
         // promoted lint. It must stay `default: deny` AND produce zero
