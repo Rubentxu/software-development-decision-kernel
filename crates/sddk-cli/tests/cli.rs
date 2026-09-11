@@ -14135,7 +14135,9 @@ fn cli_incidence_dka_orphan_review_phase_exists() {
         "INC must have correct id frontmatter"
     );
     assert!(
-        content.contains("status: open") || content.contains("status: resolved"),
+        content.contains("status: open")
+            || content.contains("status: resolved")
+            || content.contains("status: closed"),
         "INC must have a status field"
     );
     assert!(
@@ -14160,7 +14162,9 @@ fn cli_incidence_dka_managed_closure_vault_route_exists() {
         "INC must have correct id frontmatter"
     );
     assert!(
-        content.contains("status: open") || content.contains("status: resolved"),
+        content.contains("status: open")
+            || content.contains("status: resolved")
+            || content.contains("status: closed"),
         "INC must have a status field"
     );
     assert!(
