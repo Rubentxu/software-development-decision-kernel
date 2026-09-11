@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
+use sddk_engine::version::ensure_version_lockstep;
 use sddk_gateway::{
     CapabilityGateway, CapabilityPolicy, GitExecutor, GitHubForge, LocalReleaseInput,
     LocalReleaseOutcome, LocalReleasePreconditions, PermissionPolicy, ReleasePlanInput,
@@ -18,92 +19,10 @@ use crate::{
     uat::ReleaseTypeArg,
 };
 
-/// Typed error for version lockstep failures — names both workspace and tag versions.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct VersionLockstepError {
-    pub workspace_version: String,
-    pub tag_version: String,
-    pub message: String,
-}
-
-impl std::fmt::Display for VersionLockstepError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for VersionLockstepError {}
-
-/// Ensure the release tag matches the workspace Cargo.toml version (lockstep rule).
-///
-/// The lockstep rule: `version tag == workspace Cargo.toml version`.
-/// Tags use the "v" prefix (e.g. "v1.42.5") while Cargo.toml uses plain "1.42.5".
-///
-/// Returns `Ok(())` if the tag matches. Returns `Err(VersionLockstepError)` naming
-/// BOTH workspace and tag versions on mismatch.
-pub fn ensure_version_lockstep(
-    root: &std::path::Path,
-    tag: &str,
-) -> Result<(), VersionLockstepError> {
-    // Read the workspace version from the root Cargo.toml
-    let cargo_toml = root.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml).map_err(|e| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag.to_string(),
-        message: format!(
-            "VERSION LOCKSTEP ERROR: could not read {}: {e}",
-            cargo_toml.display()
-        ),
-    })?;
-    // Extract `version = "X.Y.Z"` from [workspace] or [workspace.package] section
-    let workspace_version = {
-        let mut in_workspace = false;
-        let mut version = None;
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with('[') {
-                in_workspace = trimmed.starts_with("[workspace");
-            } else if in_workspace
-                && let Some(v) = trimmed.strip_prefix("version").and_then(|rest| {
-                    let rest = rest.trim();
-                    if !rest.starts_with('=') {
-                        return None;
-                    }
-                    let rest = rest[1..].trim();
-                    rest.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
-                })
-            {
-                version = Some(v.to_string());
-                break;
-            }
-        }
-        version
-    }
-    .ok_or_else(|| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag.to_string(),
-        message: format!(
-            "VERSION LOCKSTEP ERROR: could not find `version` in [workspace] or [workspace.package] section of {}",
-            cargo_toml.display()
-        ),
-    })?;
-
-    let tag_version = tag.strip_prefix('v').unwrap_or(tag).to_string();
-    if workspace_version != tag_version {
-        let msg = format!(
-            "VERSION LOCKSTEP FAILED: workspace={} vs tag={}. \
-             Release planning refused until the lockstep rule is satisfied.",
-            workspace_version, tag_version
-        );
-        return Err(VersionLockstepError {
-            workspace_version,
-            tag_version,
-            message: msg,
-        });
-    }
-    Ok(())
-}
+// Version lockstep rule lives in `sddk_engine::version` per INC-024. The CLI
+// layer imports the engine helper rather than re-implementing the Cargo.toml
+// read + workspace/tag matching locally. This reduces `release_cmd.rs` LOC
+// and centralizes the rule so future callers (daemon, CI gate) reuse it.
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ReleaseCommand {
