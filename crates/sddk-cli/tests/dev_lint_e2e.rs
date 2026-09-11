@@ -38,8 +38,10 @@ fn dev_lint_deprecated_patterns_help_exits_zero() {
         "--help should exit 0\nstderr: {stderr}"
     );
     assert!(
-        stderr.contains("deprecated-patterns") || stderr.contains("deprecated_patterns") ||
-        stdout.contains("deprecated-patterns") || stdout.contains("deprecated_patterns"),
+        stderr.contains("deprecated-patterns")
+            || stderr.contains("deprecated_patterns")
+            || stdout.contains("deprecated-patterns")
+            || stdout.contains("deprecated_patterns"),
         "help text should mention the registry name\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
@@ -110,8 +112,7 @@ fn dev_lint_deprecated_patterns_json_format_flag_accepted() {
     );
     // The error should be about the registry, not about an unknown flag.
     assert!(
-        !stderr.contains("unexpected argument")
-            && !stderr.contains("invalid value"),
+        !stderr.contains("unexpected argument") && !stderr.contains("invalid value"),
         "the --format json flag should be accepted (parse ok)\nstderr: {stderr}"
     );
 }

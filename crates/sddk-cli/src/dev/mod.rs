@@ -209,9 +209,7 @@ pub(super) struct LintArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub(super) enum LintCommand {
     /// Execute the deprecated-patterns registry against the live workspace.
-    DeprecatedPatterns(
-        self::lint::deprecated_patterns::DeprecatedPatternsArgs,
-    ),
+    DeprecatedPatterns(self::lint::deprecated_patterns::DeprecatedPatternsArgs),
 }
 
 #[derive(Debug, Clone, Args)]
