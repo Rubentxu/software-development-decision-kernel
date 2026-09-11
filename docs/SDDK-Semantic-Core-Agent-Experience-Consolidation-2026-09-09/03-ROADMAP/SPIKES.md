@@ -58,9 +58,11 @@ Prototype typed semantic keys and strength classes. Test policy-vs-project, task
 
 **Outcome: SUBSTRATE ALREADY DELIVERED (M7.5), conflict classes pinned by tests.** The `InstructionCompiler` (SPEC-014) already implements typed semantic keys, strength classes (`strength_rank`: Invariant 5 > Policy 4 > ProjectMandatory 3 > Task 2 > Skill 1 > Advisory/Hint 0) and fail-closed conflicts (`InvariantViolation`, `PolicyNarrowingViolation`, `TaskMissing`). The AX-S2 cycle added the missing conflict-class tests in `instruction_compiler.rs` (prefix `axs2_`): policy narrowing by project is allowed (positive case), a skill cannot satisfy a mandatory task requirement (Skill != Capability), duplicate-equivalent directives resolve case/whitespace-insensitively, conflict identity is order-independent, and the strength ladder is a verified total order. No production changes were needed: the algebra was already deterministic and fail-closed; it was unpinned.
 
-## AX-S3 — Contextual command-surface token budget
+## AX-S3 — Contextual command-surface token budget — **COMPLETED 2026-09-11**
 
 Measure global CLI contract vs task-specific surfaces for common `change`, `verify`, `ship` and recovery agents. Select minimal surface heuristics that preserve task success while reducing irrelevant commands.
+
+**Outcome: MINIMAL HEURISTIC WINS — keep depth-0 surfaces.** Task-specific surfaces cost 8-40 tokens vs 1073 for the global contract (96-99% reduction); the existing `command_matches_target` heuristic already delivers them. The real frontier is the `related` graph: the four facade specs have no `related` edges to their delegate commands, so depth-1 expansion adds nothing today. Recommendation adopted: keep minimal surfaces; enrich facade `related` edges lazily when a real workflow needs cross-command discovery. Measurements and revisit triggers: `docs/architecture/spikes/AX-S3-command-surface-token-budget.md`. Harness: `crates/sddk-cli/src/spike_axs3.rs` (4 pinned tests).
 
 ## AX-S4 — Provider adapter portability
 
