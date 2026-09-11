@@ -26,7 +26,11 @@ use std::path::PathBuf;
 use sddk_gateway::{RunOutcome, RunSpec, run};
 
 // Public facade: test_runner types (pub only — no pub(crate) access from integration tests)
-use sddk_gateway::test_runner::{AdapterError, AdapterRequest, ResolvedSpec, TestFamily};
+use sddk_gateway::test_runner::{
+    detect_accept_direct_program, detect_forbidden_shells, detect_is_shell,
+    detect_is_windows_batch, detect_secret_like, AdapterError, AdapterRequest, ResolvedSpec,
+    TestFamily,
+};
 
 // ─── S1: declared family produces exactly one bounded invocation ─────────────────
 
@@ -145,21 +149,16 @@ fn s3_wrapper_unusable_error() {
 /// that the toolchain is_shell facade would reject cmd.exe-style names.
 #[test]
 fn s4_windows_batch_extensions_identifiable() {
-    // The toolchain module (pub(crate)) handles this; we verify the
-    // PathBuf extension pattern that the resolver uses internally.
+    // INC-019: use the thin pub facade (`detect_is_windows_batch`) instead of
+    // re-implementing the extension check inline.
     let batch_paths = [
         PathBuf::from("/tmp/mvn.cmd"),
         PathBuf::from("/tmp/gradlew.bat"),
         PathBuf::from("/tmp/test.ps1"),
     ];
-    for p in batch_paths {
-        let ext = p.extension().and_then(|e| e.to_str());
-        let is_windows_batch = ext
-            .map(|e| e.to_lowercase())
-            .map(|lower| matches!(lower.as_str(), "cmd" | "bat" | "ps1"))
-            .unwrap_or(false);
+    for p in &batch_paths {
         assert!(
-            is_windows_batch,
+            detect_is_windows_batch(p),
             "{:?} should be identifiable as Windows batch",
             p
         );
@@ -171,14 +170,9 @@ fn s4_windows_batch_extensions_identifiable() {
         PathBuf::from("/tmp/gradlew"),
         PathBuf::from("/tmp/go-test"),
     ];
-    for p in clean_paths {
-        let ext = p.extension().and_then(|e| e.to_str());
-        let is_windows_batch = ext
-            .map(|e| e.to_lowercase())
-            .map(|lower| matches!(lower.as_str(), "cmd" | "bat" | "ps1"))
-            .unwrap_or(false);
+    for p in &clean_paths {
         assert!(
-            !is_windows_batch,
+            !detect_is_windows_batch(p),
             "{:?} should NOT be identifiable as Windows batch",
             p
         );
@@ -191,24 +185,23 @@ fn s4_windows_batch_extensions_identifiable() {
 /// shell set is correctly configured via the toolchain module's public constants.
 #[test]
 fn s5_shell_interpreters_identifiable() {
-    let shells = ["sh", "bash", "zsh", "cmd.exe", "powershell", "pwsh"];
+    // INC-019: use `detect_forbidden_shells` (returns &['sh', 'bash', ...]) and
+    // `detect_is_shell` (returns bool) instead of hardcoding the list inline.
+    let forbidden = detect_forbidden_shells();
     let non_shells = ["cargo", "pytest", "node", "go", "mvn", "gradle", "javac"];
 
-    for shell in shells {
-        // is_shell is pub(crate) — we test the property via PathBuf construction
-        let is_shell = matches!(
-            shell,
-            "sh" | "bash" | "zsh" | "cmd.exe" | "powershell" | "pwsh"
+    for shell in forbidden {
+        assert!(
+            detect_is_shell(shell),
+            "{shell} should be a known shell (in forbidden list)"
         );
-        assert!(is_shell, "{shell} should be a known shell");
     }
 
     for non_shell in non_shells {
-        let is_shell = matches!(
-            non_shell,
-            "sh" | "bash" | "zsh" | "cmd.exe" | "powershell" | "pwsh"
+        assert!(
+            !detect_is_shell(non_shell),
+            "{non_shell} should NOT be a known shell"
         );
-        assert!(!is_shell, "{non_shell} should NOT be a known shell");
     }
 }
 
@@ -219,17 +212,17 @@ fn s5_shell_interpreters_identifiable() {
 /// produces a valid RunSpec (program field set to the wrapper path).
 #[test]
 fn s6_posix_shebang_wrapper_as_direct_program() {
-    // mvnw with clean extension → accepted as direct program (not shell)
+    // mvnw with clean extension → accepted as direct program (not shell).
+    // INC-019: `detect_accept_direct_program` rejects shells; verify with the facade.
     let wrapper_path = "./mvnw";
-    // Verify extension is clean (not cmd/bat/ps1)
-    let ext = std::path::Path::new(wrapper_path)
-        .extension()
-        .and_then(|e| e.to_str());
-    let is_windows_batch = ext
-        .map(|e| e.to_lowercase())
-        .map(|lower| matches!(lower.as_str(), "cmd" | "bat" | "ps1"))
-        .unwrap_or(false);
-    assert!(!is_windows_batch, "mvnw should have clean extension");
+    assert!(
+        !detect_is_windows_batch(std::path::Path::new(wrapper_path)),
+        "mvnw should have clean extension (no cmd/bat/ps1)"
+    );
+    assert!(
+        detect_accept_direct_program(wrapper_path).is_ok(),
+        "mvnw should be accepted as a direct program"
+    );
 
     // A direct program RunSpec is valid — no shell involved
     let spec = RunSpec {
@@ -249,7 +242,7 @@ fn s6_posix_shebang_wrapper_as_direct_program() {
 /// Integration test verifies the naming convention that drives env filtering.
 #[test]
 fn s7_secret_like_keys_identifiable() {
-    // Secret-like: *_TOKEN, *_SECRET, *_KEY, or exact GITHUB_TOKEN
+    // INC-019: use `detect_secret_like` instead of re-implementing the suffix check.
     let secret_like = [
         "GITHUB_TOKEN",
         "AWS_SECRET_ACCESS_KEY",
@@ -261,19 +254,11 @@ fn s7_secret_like_keys_identifiable() {
     let non_secret = ["PATH", "HOME", "USER", "LANG", "TMPDIR", "CI", "CARGO_HOME"];
 
     for key in secret_like {
-        let is_secret = key == "GITHUB_TOKEN"
-            || key.ends_with("_TOKEN")
-            || key.ends_with("_SECRET")
-            || key.ends_with("_KEY");
-        assert!(is_secret, "{key} should be secret-like");
+        assert!(detect_secret_like(key), "{key} should be secret-like");
     }
 
     for key in non_secret {
-        let is_secret = key == "GITHUB_TOKEN"
-            || key.ends_with("_TOKEN")
-            || key.ends_with("_SECRET")
-            || key.ends_with("_KEY");
-        assert!(!is_secret, "{key} should NOT be secret-like");
+        assert!(!detect_secret_like(key), "{key} should NOT be secret-like");
     }
 }
 
@@ -282,15 +267,15 @@ fn s7_secret_like_keys_identifiable() {
 fn s7_base_env_keys_are_non_secret() {
     // These are the BASE keys from env_allowlist::BASE — they are all
     // system identifiers, none contain secret-like suffixes.
+    // INC-019: `detect_secret_like` is the canonical helper.
     let base_keys = [
         "PATH", "HOME", "USER", "USERNAME", "LANG", "LC_ALL", "TZ", "TMPDIR", "TEMP", "CI",
     ];
     for key in base_keys {
-        let is_secret = key == "GITHUB_TOKEN"
-            || key.ends_with("_TOKEN")
-            || key.ends_with("_SECRET")
-            || key.ends_with("_KEY");
-        assert!(!is_secret, "BASE key {key} should NOT be secret-like");
+        assert!(
+            !detect_secret_like(key),
+            "BASE key {key} should NOT be secret-like"
+        );
     }
 }
 

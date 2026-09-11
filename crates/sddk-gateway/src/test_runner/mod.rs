@@ -24,6 +24,24 @@ pub(crate) mod jest;
 pub(crate) mod maven_test;
 pub(crate) mod pytest;
 
+// INC-019: thin pub re-exports so external integration tests in
+// `tests/bounded_runner_contract.rs` (compiled as a separate crate) can
+// assert against the actual detection helpers instead of re-implementing
+// them inline. `#[doc(hidden)]` keeps these out of the public docs since
+// they are test-support surfaces, not user-facing APIs.
+#[doc(hidden)]
+pub use env_allowlist::is_secret_like as detect_secret_like;
+#[doc(hidden)]
+pub use toolchain::forbidden_shells as detect_forbidden_shells;
+#[doc(hidden)]
+pub use toolchain::is_shell as detect_is_shell;
+#[doc(hidden)]
+pub use toolchain::is_windows_batch as detect_is_windows_batch;
+#[doc(hidden)]
+pub use toolchain::resolve_posix_exec as resolve_posix_shebang;
+#[doc(hidden)]
+pub use toolchain::accept_direct_program as detect_accept_direct_program;
+
 /// Base environment keys forwarded to every child (explicit list, NO wildcards).
 pub(crate) mod env_allowlist {
     use std::collections::BTreeMap;
@@ -39,7 +57,9 @@ pub(crate) mod env_allowlist {
     }
 
     /// Returns true when `key` looks like a secret (matches a suffix or is `GITHUB_TOKEN`).
-    pub(crate) fn is_secret_like(key: &str) -> bool {
+    /// INC-019: `pub` (not `pub(crate)`) so the thin test-facade in mod.rs can re-export it
+    /// for external integration tests; user-facing API is `mod.rs::detect_secret_like` (#[doc(hidden)]).
+    pub fn is_secret_like(key: &str) -> bool {
         key == "GITHUB_TOKEN"
             || secret_like_suffixes()
                 .iter()
@@ -110,17 +130,20 @@ pub(crate) mod toolchain {
     use std::path::{Path, PathBuf};
 
     /// Shell executables that are NEVER used as `RunSpec.program`.
-    pub(crate) fn forbidden_shells() -> &'static [&'static str] {
+    /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
+    pub fn forbidden_shells() -> &'static [&'static str] {
         &["sh", "bash", "zsh", "cmd.exe", "powershell", "pwsh"]
     }
 
     /// Returns true when `program` is a forbidden shell.
-    pub(crate) fn is_shell(program: &str) -> bool {
+    /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
+    pub fn is_shell(program: &str) -> bool {
         forbidden_shells().contains(&program)
     }
 
     /// Returns true when `path` has a forbidden Windows batch extension.
-    fn is_windows_batch(path: &Path) -> bool {
+    /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
+    pub fn is_windows_batch(path: &Path) -> bool {
         path.extension()
             .and_then(|e| e.to_str())
             .map(|e| matches!(e.to_lowercase().as_str(), "cmd" | "bat" | "ps1"))
@@ -134,7 +157,8 @@ pub(crate) mod toolchain {
     /// - Windows: extension is NOT `.cmd/.bat/.ps1`.
     ///
     /// Returns `Err(())` when the path is not usable.
-    pub(crate) fn resolve_posix_exec(candidate: &Path) -> Result<PathBuf, ()> {
+    /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
+    pub fn resolve_posix_exec(candidate: &Path) -> Result<PathBuf, ()> {
         if !candidate.exists() {
             return Err(());
         }
@@ -160,7 +184,8 @@ pub(crate) mod toolchain {
 
     /// Checks whether the given program name or path is acceptable as a direct
     /// `RunSpec.program` (no shell involved).
-    pub(crate) fn accept_direct_program(program: &str) -> Result<(), ()> {
+    /// INC-019: `pub` so the thin test-facade in mod.rs can re-export it.
+    pub fn accept_direct_program(program: &str) -> Result<(), ()> {
         if is_shell(program) {
             return Err(());
         }
