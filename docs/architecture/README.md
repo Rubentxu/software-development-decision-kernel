@@ -217,3 +217,20 @@ explicit reconciliation — they do not have authority on their own.
 - **Cycle dir**: `~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-semantic-core-agent-experience-adoption/`
 - **Planning artifacts**: 9 (~1726 lines total) covering M0/M7/M8
   planning notes, CLI crosswalk, engine crosswalk, LAUNCH-READY.
+
+---
+
+## Trailing audit note — appended 2026-09-12 (M9.5: ADR promotion process)
+
+At v1.168.31 (post-M9 row disclosure), 17 ADRs in `docs/architecture/adrs/` carried `status: proposed` with zero accepted. The cycle `p-63676b11dc0ef88f/adr-promotion-m0-meta-and-batch-1` (this audit) introduces the documented promotion process and ships the first batch:
+
+1. **ADR-0001-ADR-PROMOTION-PROCESS** (new meta-ADR, `status: accepted`) — defines the three-state lifecycle `proposed → accepted → released` with frontmatter invariants in §3.4 (`accepted_at` + `accepted_by_cycle` for binding states; `released_at` + `released_in_milestone` for released state). The pin test `tests/test_adr_promotion_format.sh` (added in this cycle) enforces §3.4; §3.5 is satisfied by the test's existence.
+2. **ADR-0096-SDLC-LIFECYCLE-SEMANTICS** (promoted `proposed → accepted`) — implementation evidence: `crates/sddk-engine/src/planning/` (Goal/WorkItem), `workflow_runtime.rs` (WorkflowDefinition + Run), `execution_frontier.rs` (ExecutablePlan), `docs/architecture/specs/arch-spec-002-lifecycle-model.md`. Risk register: no impact (lifecycle chain is purely additive, no replacement).
+3. **ADR-0101-AGENT-OUTCOME-CONTRIBUTION-SYNTHESIS** (promoted `proposed → accepted`) — implementation evidence: `OrchestrationSynthesisReceipt` at `crates/sddk-engine/src/orchestration_synthesis.rs:205`, `ContributionRef` at line 138, `ExecutionOutcome` via `TransitionOutcome`, `agent_result_used` lint at zero hits (deprecation complete). Risk register: lint `execution_outcome_as_synthesis` stays `default: allow` until ADR-0101 is paired with a follow-up that pins the `SynthesisReceipt.disposition` field.
+4. **ADR-0100-UNIVERSAL-EVIDENCE** (kept `status: proposed`, honest disclosure) — partial implementation: `EvidenceRef` + `Supports` + `Gates` relations exist in `CoreRelationKind`; `Verifies` and `ObservedFor` relations are absent. Promotion blocked on construction, not on audit. Per ADR-0001 §3.2 criterion 1. The `evidence_kind_v1` lint stays `default: allow`.
+
+**Pin test:** `tests/test_adr_promotion_format.sh` — checks every ADR with `status: accepted` carries the required frontmatter fields; also asserts `accepted_count >= 1` to prevent silent rollback to "all proposed". Wired into `scripts/release.sh` step 1b alongside the other shell contract tests.
+
+**Effect on the lint block in the M9 row above:** this batch unblocks 2 of the 4 advisory lints that depend on ADR-0096/0101 acceptance. The remaining 2 (governed by ADR-0096's downstream acceptance of "execution_outcome_as_synthesis" + ADR-0100's missing relations) stay `default: allow`. Promotion of those lints to `deny` is the next batch's work, not this one's.
+
+**Audit trail:** the cycle archive at `~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-adr-promotion-m0-meta-and-batch-1/` documents the per-lint / per-ADR evidence in detail.
