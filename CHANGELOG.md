@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.168.28] - 2026-09-12
+
+### Features
+  - feat(spec): derive related-command depth-2 from depth-1 table (AX-S3 D2)
+
+### Other
+  - docs: session handoff 2026-09-12 (ARCH-HEX-001 closure v1.168.27)
+
 ## [1.168.27] - 2026-09-12
 
 ### Features
