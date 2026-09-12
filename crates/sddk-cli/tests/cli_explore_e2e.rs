@@ -76,6 +76,7 @@ fn explore_test_setup() -> (ExploreTestEnv, impl Fn(&[&str]) -> std::process::Ou
                     definition_hash: None,
                     policy_hash: None,
                     model: None,
+                    role: None,
                 },
                 subjects: subjects
                     .into_iter()

@@ -80,6 +80,7 @@ fn stale_test_setup() -> (StaleTestEnv, impl Fn(&[&str]) -> std::process::Output
                     definition_hash: None,
                     policy_hash: None,
                     model: None,
+                    role: None,
                 },
                 subjects: subjects
                     .into_iter()

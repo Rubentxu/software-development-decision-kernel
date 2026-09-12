@@ -108,6 +108,7 @@ fn write_planning_event_to_event_store(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload,

@@ -54,6 +54,11 @@ pub struct ActorRef {
     /// Optional model identifier (for agent actors).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Optional role qualifier within the kind (e.g. `secretary` for Agent
+    /// actors bound to the Secretary closed-set, per ADR-069/ADR-0073 and
+    /// EVT-LEDGER-001 schema widening).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// Kind of actor that initiated an event.
@@ -207,6 +212,7 @@ mod tests {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             },
             subjects: vec![],
             payload: json!({}),

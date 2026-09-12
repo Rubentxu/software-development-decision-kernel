@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-003
 title: "LedgerEvent / GateReceipt / JournalEntry / EventContext lose actor_kind at engine boundary"
-status: resolved
+status: closed
 severity: high
 priority: P1
 fingerprint: "hx-auth-003-provenance-loss-4types"
@@ -16,13 +16,16 @@ resolved_commits:
   - "0a18982 actor_ref widening (additive) for LedgerEvent, GateReceipt, JournalEntry, EventContext"
   - "c63167d EVT-LEDGER-001 closure commit"
 resolution_note: |
-  Status stays `resolved` (not `closed`) because the lifecycle entry on
-  2026-09-04 records only the additive `actor_ref` widening; the canonical
-  ActorRef 5-field contract from ADR-069 §5 still requires schema migration
-  work tracked under EVT-LEDGER-001 (order 90, H0). Reconciled during
-  v1.168.8 INC hygiene to add explicit `resolved_at`/`resolved_by`
-  frontmatter fields that were missing.
-last_updated: 2026-09-11
+  Closed at v1.168.48 (EVT-LEDGER-001 closure): ActorRef gained the sixth
+  canonical field `role: Option<String>` (additive, `#[serde(default)]`
+  keeps the pre-widening corpus deserializable). All ActorRef literal
+  construction sites across domain/engine/storage/cli were updated; the
+  baseline pin test flipped from `actor_ref_carries_five_required_fields`
+  to `actor_ref_carries_six_required_fields` plus a legacy-deserialization
+  regression test. This unblocks the ADR-0073 `role=secretary` runtime
+  binding (paths 6-7 of INC-HX-AUTH-004). Reconciled during v1.168.8 INC
+  hygiene to add explicit `resolved_at`/`resolved_by` frontmatter.
+last_updated: 2026-09-12
 ---
 
 # INC-HX-AUTH-003 — LedgerEvent / GateReceipt / JournalEntry / EventContext lose actor_kind at engine boundary
@@ -50,6 +53,7 @@ This is severity **high** because provenance — the ability to trace who perfor
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; ADR-069 §5; INC-HX-AUTH-003 |
 | 2026-09-04 | sddk-apply | resolved: actor_ref widened (additive) in LedgerEvent, GateReceipt, JournalEntry, EventContext | commits 0a18982, c63167d (EVT-LEDGER-001 cycle) |
+| 2026-09-12 | orchestrator | closed: EVT-LEDGER-001 role field added to ActorRef (6-field contract); baseline test flipped; legacy-deser pin added | this cycle's diff (roadmap-sweep) |
 
 ## References
 

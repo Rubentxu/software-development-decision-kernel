@@ -335,6 +335,7 @@ pub fn emit_approval_requested<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "cycle".into(),
@@ -418,6 +419,7 @@ pub fn emit_approval_decision<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "cycle".into(),
@@ -511,6 +513,7 @@ pub fn emit_workflow_run_started<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_run".into(),
@@ -560,6 +563,7 @@ pub fn emit_workflow_run_completed<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_run".into(),
@@ -612,6 +616,7 @@ pub fn emit_workflow_node_running<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_node".into(),
@@ -664,6 +669,7 @@ pub fn emit_workflow_node_completed<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_node".into(),
@@ -717,6 +723,7 @@ pub fn emit_workflow_node_failed<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_node".into(),
@@ -827,6 +834,7 @@ pub fn emit_planning_work_item_drafted<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -884,6 +892,7 @@ pub fn emit_planning_work_item_activated<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -941,6 +950,7 @@ pub fn emit_planning_work_item_paused<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -998,6 +1008,7 @@ pub fn emit_planning_work_item_resumed<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -1055,6 +1066,7 @@ pub fn emit_planning_work_item_completed<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -1112,6 +1124,7 @@ pub fn emit_planning_work_item_superseded<S: EventStore>(
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
         subjects: vec![sddk_domain::EntityRef {
             kind: "work_item".into(),
@@ -1172,6 +1185,7 @@ pub fn emit_work_item_created<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "work_item".into(),
@@ -1231,6 +1245,7 @@ pub fn emit_work_item_transitioned<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "work_item".into(),
@@ -1293,6 +1308,7 @@ pub fn emit_dependency_added<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![
             EntityRef {
@@ -1361,6 +1377,7 @@ pub fn emit_evidence_attached<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "work_item".into(),
@@ -1421,6 +1438,7 @@ pub fn emit_decision_recorded<S: EventStore>(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "work_item".into(),

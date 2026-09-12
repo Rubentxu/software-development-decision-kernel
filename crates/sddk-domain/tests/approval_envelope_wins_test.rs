@@ -52,6 +52,7 @@ fn make_event_with_actor(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload,

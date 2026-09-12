@@ -104,6 +104,7 @@ fn ledger_event_input_actor_ref_roundtrips() {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         }),
         event_type: "workflow.phase.entered".into(),
         occurred_at: "2026-09-01T10:00:00Z".into(),

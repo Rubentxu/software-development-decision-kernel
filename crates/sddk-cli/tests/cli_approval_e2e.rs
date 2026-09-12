@@ -54,6 +54,7 @@ fn make_event(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload,

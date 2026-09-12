@@ -220,6 +220,7 @@ mod tests {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             },
             subjects: vec![],
             payload,

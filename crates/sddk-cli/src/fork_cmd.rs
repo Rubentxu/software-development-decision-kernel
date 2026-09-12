@@ -283,6 +283,7 @@ fn kernel_to_envelope(event: &sddk_domain::LedgerEvent) -> sddk_domain::EventEnv
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload: event.payload.clone(),

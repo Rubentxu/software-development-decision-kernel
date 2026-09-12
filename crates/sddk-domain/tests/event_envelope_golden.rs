@@ -88,6 +88,7 @@ fn build_event_1() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "uat_scenario".into(),
@@ -132,6 +133,7 @@ fn build_event_2() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "uat_check".into(),
@@ -175,6 +177,7 @@ fn build_event_3() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "release_candidate".into(),
@@ -286,6 +289,7 @@ fn build_ir_compiled_event() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_template".into(),
@@ -330,6 +334,7 @@ fn build_run_started_event() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_run".into(),
@@ -378,6 +383,7 @@ fn build_run_cancelled_event() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "workflow_run".into(),
@@ -418,6 +424,7 @@ fn build_graph_revision_accepted_event() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![
             EntityRef {

@@ -188,6 +188,7 @@ fn kernel_envelope_to_v1(event: &sddk_domain::LedgerEvent) -> sddk_domain::Event
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![sddk_domain::EntityRef {
             kind: "cycle".into(),
@@ -1223,6 +1224,7 @@ mod tests {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             },
             subjects,
             payload: json!({}),
@@ -1376,6 +1378,7 @@ mod tests {
                     definition_hash: None,
                     policy_hash: None,
                     model: None,
+                    role: None,
                 },
                 subjects: vec![subject("cycle", "c-1")],
                 payload: serde_json::json!({}),

@@ -129,6 +129,7 @@ mod tests {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
             event_type: "test.event".to_string(),
             occurred_at: "2026-09-04T12:00:00Z".to_string(),

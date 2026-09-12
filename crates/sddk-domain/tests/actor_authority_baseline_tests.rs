@@ -45,25 +45,40 @@ fn actor_kind_closed_set_is_three_variants() {
 
 // ── AC-HX-AUTH-04 / REQ-AUTH-PR-01 ───────────────────────────────────────────
 
-/// Asserts `ActorRef` struct carries exactly the five required fields:
-/// kind, id, definition_hash, policy_hash, model.
-/// The `role` field does not exist yet (deferred to EVT-LEDGER-001).
+/// Asserts `ActorRef` struct carries the six required fields:
+/// kind, id, definition_hash, policy_hash, model, role.
+/// The `role` field was added by EVT-LEDGER-001 (schema widening, additive:
+/// `#[serde(default)]` keeps the pre-widening corpus deserializable).
 #[test]
-fn actor_ref_carries_five_required_fields() {
+fn actor_ref_carries_six_required_fields() {
     let actor = ActorRef {
         kind: ActorKind::Human,
         id: "user:test".into(),
         definition_hash: Some("def-hash".into()),
         policy_hash: Some("policy-hash".into()),
         model: Some("gpt-4".into()),
+        role: Some("secretary".into()),
     };
-    // Access all five fields to prove they exist
+    // Access all six fields to prove they exist
     let _ = actor.kind;
     let _ = actor.id;
     let _ = actor.definition_hash;
     let _ = actor.policy_hash;
     let _ = actor.model;
-    // No `role` field exists on ActorRef in A-min
+    let _ = actor.role;
+}
+
+/// EVT-LEDGER-001 backward-compat pin: an ActorRef JSON object without the
+/// `role` field still deserializes (`#[serde(default)]`), preserving replay
+/// of the pre-widening events corpus.
+#[test]
+fn actor_ref_deserializes_without_role_field() {
+    let legacy = r#"{"kind":"human","id":"user:alice"}"#;
+    let actor: ActorRef = serde_json::from_str(legacy).expect("legacy ActorRef must parse");
+    assert_eq!(actor.kind, ActorKind::Human);
+    assert_eq!(actor.id, "user:alice");
+    assert_eq!(actor.role, None);
+    assert_eq!(actor.model, None);
 }
 
 // ── REQ-AUTH-PR-02 / CLI prefix heuristic ─────────────────────────────────────

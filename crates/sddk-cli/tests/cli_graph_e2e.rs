@@ -79,6 +79,7 @@ fn graph_test_setup() -> (GraphTestEnv, impl Fn(&[&str]) -> std::process::Output
                     definition_hash: None,
                     policy_hash: None,
                     model: None,
+                    role: None,
                 },
                 subjects: subjects
                     .into_iter()

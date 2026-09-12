@@ -38,6 +38,7 @@ fn envelope_with_n_subjects(n: usize) -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects,
         payload: json!({"key": "value"}),

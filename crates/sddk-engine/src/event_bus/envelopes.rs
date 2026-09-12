@@ -36,6 +36,7 @@ pub fn build_outcome_envelope(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "cycle".into(),
@@ -90,6 +91,7 @@ pub fn build_event_envelope(
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "cycle".into(),

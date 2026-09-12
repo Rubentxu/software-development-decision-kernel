@@ -956,6 +956,7 @@ impl WorkItemRecord {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
             _ => None,
         };
@@ -1043,6 +1044,7 @@ impl DependencyEdgeRecord {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
             _ => None,
         };
@@ -1119,6 +1121,7 @@ impl EvidenceAttachmentRecord {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
             _ => None,
         };
@@ -1197,6 +1200,7 @@ impl DecisionRecordRecord {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             }),
             _ => None,
         };

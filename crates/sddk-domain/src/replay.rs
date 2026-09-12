@@ -190,6 +190,7 @@ mod tests {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             },
             subjects,
             payload: if event_type == "workflow.phase.entered" {

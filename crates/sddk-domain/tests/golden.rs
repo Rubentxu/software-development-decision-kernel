@@ -94,6 +94,7 @@ fn apply_case(case: &GoldenCase) -> (usize, usize, sddk_domain::GraphState) {
                 definition_hash: None,
                 policy_hash: None,
                 model: None,
+                role: None,
             },
             subjects: event
                 .subjects

@@ -106,6 +106,7 @@ fn make_event(stream: &str, event_type: &str, seq: u64, content_hash: &str) -> E
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload,

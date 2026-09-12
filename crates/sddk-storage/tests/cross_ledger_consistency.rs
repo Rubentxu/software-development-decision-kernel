@@ -45,6 +45,7 @@ fn minimal_envelope(event_id: &str, stream_id: &str, project_id: &str) -> EventE
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload: serde_json::json!({}),

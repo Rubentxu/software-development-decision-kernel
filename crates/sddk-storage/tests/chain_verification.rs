@@ -54,6 +54,7 @@ fn insert_event_with_chain(
         definition_hash: None,
         policy_hash: None,
         model: None,
+        role: None,
     })
     .unwrap();
     let subjects_json = serde_json::to_string::<Vec<EntityRef>>(&vec![]).unwrap();
@@ -354,6 +355,7 @@ fn append_returns_correct_chain_hash() {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![EntityRef {
             kind: "capability".into(),
@@ -403,6 +405,7 @@ fn append_returns_correct_chain_hash() {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![],
         payload: serde_json::Value::Null,

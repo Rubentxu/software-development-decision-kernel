@@ -42,6 +42,7 @@ fn make_test_envelope() -> EventEnvelopeV1 {
             definition_hash: None,
             policy_hash: None,
             model: None,
+            role: None,
         },
         subjects: vec![sddk_domain::EntityRef {
             kind: "cycle".into(),
