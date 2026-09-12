@@ -22,6 +22,7 @@ Commands:
   scenario-context  
   history           
   run               Execute a scripted/automated scenario via its `automation.ref` and emit a baseline `uat-session.yaml` for the ingest/report pipeline
+  disagreement      Record a human-vs-machine disagreement (REQ-RF-022 learning loop): appends an append-only local dataset used to estimate machine FP/FN
   review            Build the Human Review Queue (REQ-RF-022) from a plan + report: required (P0/policy), oracle conflicts, low confidence, and the deterministic sample of machine-PASS scenarios
   assess            Evaluate semantic oracles (visual_ai / llm_rubric) of a scenario against its captured evidence using a local VLM/LLM (Fara)
   batch             Execute all automatable scenarios of a plan in sequence and aggregate the resulting sessions into a report. Manual scenarios are skipped with a note
