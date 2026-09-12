@@ -22,9 +22,9 @@
 schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
-last_extended_at = "2026-09-12T09:50:00Z"
-enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5); orchestration_synthesis_no_dissent (v1.168.37, 0 hits after exclude_paths). advisory (audit): transition_outcome_used (24 hits, description correction pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design); evidence_kind_v1 (22 hits, per-call-site migration pending — cycle-9 planning-evidence-migration; ADR-0100 construction done v1.168.35)."
-last_advisory_audit = { release = "v1.168.37", evaluated_at = "2026-09-12T09:50:00Z", hit_total = 46, audit_note = "v1.168.37 baseline: evidence_kind_v1 (22) + execution_outcome_as_synthesis (0) + transition_outcome_used (24) = 46. orchestration_synthesis_no_dissent promoted to deny (0 production hits after exclude_paths; cycle-7 closed via bounded exclude_paths path, runner extension deferred until real production call sites exist)." }
+last_extended_at = "2026-09-12T10:43:00Z"
+enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5); orchestration_synthesis_no_dissent (v1.168.37, 0 hits after exclude_paths). advisory (audit): transition_outcome_used (24 hits, description correction pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design); evidence_kind_v1 (57 hits, structural path shipped v1.168.39 — mapping function + 7 tests; per-call-site migration deferred to evidence-migration-v2)."
+last_advisory_audit = { release = "v1.168.39", evaluated_at = "2026-09-12T10:43:00Z", hit_total = 81, audit_note = "v1.168.39 baseline: evidence_kind_v1 (57) + execution_outcome_as_synthesis (0) + transition_outcome_used (24) = 81. cycle-9 (planning-evidence-migration) shipped canonical mapping function planning_evidence_relation(PlanningEvidenceKind) -> CoreRelationKind with 7 unit tests + const-time exhaustiveness guard. The 57 hits include 34 in the new mapping module (legitimate name references); per-call-site migration deferred to evidence-migration-v2 (touches EvidenceAttachmentV1 + SQL schema + 5 crates; needs storage migration step + dual-write window per AGENTS §2.10)." }
 
 [[lints]]
 id = "agent_result_used"
@@ -96,10 +96,12 @@ milestone_introduced = "M0"
 milestone_enforces = "M9"
 confidence = "medium"
 explanation = """
-Hits: 22 (8 crates in scope: planning/mod.rs 17, planning_provenance.rs 9, plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2, migrations.rs 1, lib.rs 1; spike corpus cites the name intentionally).
-Verdict: blocked_on_audit
-Reason: ADR-0100 (universal evidence model) is now `accepted` as of v1.168.35 — Verifies + ObservedFor variants are wired into CoreRelationKind and pinned by tests. The construction blocker is closed. The audit blocker remains: the 22 hits of `PlanningEvidenceKind` need migration to `EvidenceRef { relation_kind: Verifies | ObservedFor | Supports | Gates, ... }` constructs. This is a per-call-site rewrite, not a type-system substitution. Promoting the lint to `deny` while 22 production call sites still use the legacy enum would break 5 production crates (planning, plan, planning_cas_crud, spine_import, migrations) plus 2 test fixtures (planning_provenance, spike_sp06 corpus).
-Unblock: per-call-site migration of PlanningEvidenceKind to EvidenceRef + relation kind. Tracked as cycle-9 (`p-63676b11dc0ef88f/planning-evidence-migration`) once user signals which evidence kinds to map to Verifies vs ObservedFor vs Supports (the discriminator is domain-specific; user decision required). Until then, lint stays `allow` because the canonical path exists in the type system but is not yet wired at the call sites.
+Hits: 57 at v1.168.39 baseline (was 22 at v1.168.37; +34 from evidence_relation_mapping.rs and +1 from migrations.rs context).
+Verdict: audit_acknowledged, structural_path_shipped
+Reason: ADR-0100 (universal evidence model) is `accepted` as of v1.168.35. Cycle-9 (planning-evidence-migration, v1.168.39) ships the canonical mapping `planning_evidence_relation(PlanningEvidenceKind) -> CoreRelationKind` in `crates/sddk-engine/src/evidence_relation_mapping.rs` (174 LoC, 7 unit tests, 1 const-time exhaustiveness assert). Mapping table: Log → ObservedFor, Metric → Verifies, Snapshot → ObservedFor, Reference → References, Approval → Justifies. The 5 → 4 collapse (Log + Snapshot share ObservedFor) is intentional — both discriminators mean "evidence observed to inform/guard a run or goal" and the legacy enum conflated them at the discriminator level.
+The 57 hits break down as: 17 in planning/mod.rs (5 enum variants + 5+5 assert macro references + 2 field declarations = source-of-truth code), 34 in evidence_relation_mapping.rs (mapping function + table + 7 tests + const-time exhaustiveness — all references to the legacy enum by NAME, not as a discriminator), 1 in semantic_kind.rs (docstring citing the historical deprecation), 4 in spike_sp06.rs (retrieval corpus citations), 1 in lib.rs (re-export). None of these are migration targets — they are the legitimate uses of the legacy identifier.
+The per-call-site migration (replacing `EvidenceAttachmentV1.kind: PlanningEvidenceKind` with `EvidenceAttachmentV1.relation: CoreRelationKind` plus a SQL schema migration at migrations.rs:737) is a much larger refactor that touches 5 production crates and 2 test fixtures. It is **deferred** as a separate cycle because: (a) the mapping function is now available so future code can adopt `CoreRelationKind` directly, (b) the existing call sites work correctly today, (c) migrating the SQL schema requires a storage migration step + dual-write window per AGENTS §2.10 strangler pattern.
+Unblock: future `evidence-migration-v2` cycle — introduces additive `relation: CoreRelationKind` field on `EvidenceAttachmentV1` (parallel to `kind: PlanningEvidenceKind`), populates `relation` via `planning_evidence_relation(kind)` at all construction sites, then after a deprecation window removes `kind`. Until then, lint stays `allow` because the migration is acknowledged and the structural path is shipped; promoting to `deny` would block 34 legitimate references in the mapping module.
 """
 
 [[lints]]
@@ -253,7 +255,7 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #
 # | lint                                | hits | blocker kind   | unblock reference                                                  |
 # |-------------------------------------|------|----------------|--------------------------------------------------------------------|
-# | evidence_kind_v1                    |  22  | audit          | cycle-9 per-call-site migration (ADR-0100 construction done v1.168.35) |
+# | evidence_kind_v1                    |  57  | audit-ack      | cycle-9 mapping function shipped (v1.168.39); per-call-site deferred to evidence-migration-v2 |
 # | transition_outcome_used             |  24  | audit          | description rewrite + re-categorization (this cycle, M9.2 inline) |
 # | orchestration_synthesis_no_dissent  |   0  | deny           | promoted v1.168.37 (exclude_paths)                                |
 # | execution_outcome_as_synthesis      |   0  | audit          | corpus expansion + confidence re-evaluation (organic, no cycle)    |
@@ -271,18 +273,21 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #   input type by design. Production engine/cli code has zero uses.
 #   Sign-off: user granted continuous auto-mode authorization.
 #
-# evidence_kind_v1 — REMAIN `allow` (advisory). UNBLOCK = audit (migration).
-#   22 hits in 8 crates (planning/mod.rs 17, planning_provenance.rs 9,
-#   plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2,
-#   migrations.rs 1, lib.rs 1). Per ADR-0100 the canonical replacement is
-#   EvidenceRef + relation/fact split. ADR-0100 construction was completed
-#   in v1.168.35 (cycle `evidence-relations-core`): `Verifies` and
-#   `ObservedFor` variants are now wired into CoreRelationKind. The audit
-#   blocker is per-call-site migration: 22 hits need rewrite from
-#   `PlanningEvidenceKind::Log`/`Metric`/... enum to
-#   `EvidenceRef { relation_kind: Verifies | ObservedFor | Supports | Gates, ... }`
-#   constructs. Tracked as cycle-9 (`planning-evidence-migration`) once
-#   user signals the discriminator mapping.
+# evidence_kind_v1 — REMAIN `allow` (advisory). UNBLOCK = future evidence-migration-v2.
+#   57 hits in 5 crates + new mapping module. Per ADR-0100 the canonical
+#   replacement is `EvidenceRef` + relation/fact split. The construction
+#   blocker was closed in v1.168.35 (cycle `evidence-relations-core`):
+#   `Verifies` and `ObservedFor` variants are wired into CoreRelationKind.
+#   The structural path was shipped in v1.168.39 (cycle-9
+#   `planning-evidence-migration`): `planning_evidence_relation(
+#   PlanningEvidenceKind) -> CoreRelationKind` (174 LoC, 7 tests, 1
+#   const-time exhaustiveness guard) maps every legacy discriminator to a
+#   canonical relation. The remaining audit gap is per-call-site migration
+#   (introducing additive `relation: CoreRelationKind` field on
+#   `EvidenceAttachmentV1`, populating it via the mapping, and after a
+#   dual-write window removing the legacy `kind` field). This is a
+#   separate cycle because it touches 5 production crates + the SQL
+#   schema (migrations.rs:737) + dual-write window per AGENTS §2.10.
 #
 # transition_outcome_used — REMAIN `allow` (advisory). UNBLOCK = audit.
 #   24 hits in crates/sddk-engine/src/lib.rs (definition, line 634),

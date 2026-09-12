@@ -45,6 +45,7 @@ pub mod engineering_assurance_resolvers;
 pub mod event_bus;
 pub mod evidence_backed_promotion;
 pub mod evidence_ref;
+pub mod evidence_relation_mapping;
 pub mod execution_controller;
 pub mod experience_episodes;
 pub mod fingerprint;
