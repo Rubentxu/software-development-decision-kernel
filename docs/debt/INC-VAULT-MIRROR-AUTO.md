@@ -1,7 +1,7 @@
 ---
 id: INC-VAULT-MIRROR-AUTO
 title: "vault ADR mirrors are only synced via manual operator invocation of mirror_adrs_to_vault.py"
-status: open
+status: closed
 severity: low
 priority: P3
 fingerprint: "release-003-vault-mirror-auto-trigger"
@@ -12,8 +12,8 @@ cluster_id: CL-RELEASE-PIPELINE-INTEGRITY
 created: 2026-09-12
 created_by: orchestrator
 owner: release-pipeline
-closed_at: null
-closed_by: null
+closed_at: 2026-09-12
+closed_by: orchestrator (commit 46fbe17 — released as v1.168.42)
 resolution_note: null
 last_updated: 2026-09-12
 ---
