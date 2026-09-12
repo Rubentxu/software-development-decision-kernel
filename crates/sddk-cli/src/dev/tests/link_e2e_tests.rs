@@ -61,27 +61,53 @@ fn link_all_registers_four_editors() {
         assert_eq!(report["agents_registered"], 3, "{report}");
         assert!(report["errors"].as_array().unwrap().is_empty(), "{report}");
     }
-    for editor in ["opencode", "zcode"] {
-        let config: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(tmp.path().join(editor).join(format!("{editor}.json")))
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(config["agent"].as_object().unwrap().len(), 3);
-        assert_eq!(
-            config["agent"]["orchestrator"]["model"],
-            "deepseek/deepseek-chat"
-        );
-    }
+    let config: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tmp.path().join("opencode/opencode.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(config["agent"].as_object().unwrap().len(), 3);
+    assert_eq!(
+        config["agent"]["orchestrator"]["model"],
+        "deepseek/deepseek-chat"
+    );
+    // zcode: native sub-agent files + primary-agent command, no agent map.
+    assert!(!tmp.path().join("zcode/zcode.json").exists());
+    let zcode_foo = std::fs::read_to_string(tmp.path().join("zcode/agents/sddk-foo.md")).unwrap();
+    assert!(zcode_foo.contains("name: sddk-foo\n"), "{zcode_foo}");
+    assert!(
+        zcode_foo.contains("model: zai-coding-plan/glm-5-turbo\n"),
+        "{zcode_foo}"
+    );
+    let zcode_orchestrator =
+        std::fs::read_to_string(tmp.path().join("zcode/commands/orchestrator.md")).unwrap();
+    assert!(
+        zcode_orchestrator.contains("description: Team coordinator\n"),
+        "{zcode_orchestrator}"
+    );
+    assert!(
+        zcode_orchestrator.contains("source: sddk\n"),
+        "{zcode_orchestrator}"
+    );
+    assert!(
+        zcode_orchestrator.contains("model: deepseek/deepseek-chat\n"),
+        "{zcode_orchestrator}"
+    );
+    assert!(tmp.path().join("zcode/agents/gentle-bar.md").is_file());
     assert!(tmp.path().join("claude/agents/orchestrator.md").is_file());
     assert!(tmp.path().join("claude/agents/sddk-foo.md").is_file());
     assert!(tmp.path().join("claude/agents/gentle-bar.md").is_file());
     assert!(tmp.path().join("codex/agents/orchestrator.toml").is_file());
     assert!(tmp.path().join("codex/agents/sddk-foo.toml").is_file());
     assert!(tmp.path().join("codex/agents/gentle-bar.toml").is_file());
-    // claude/codex agents are native files, not symlinks.
+    // claude/codex/zcode agents are native files, not symlinks.
     assert!(
         !std::fs::symlink_metadata(tmp.path().join("claude/agents/orchestrator.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        !std::fs::symlink_metadata(tmp.path().join("zcode/agents/sddk-foo.md"))
             .unwrap()
             .file_type()
             .is_symlink()
@@ -155,24 +181,26 @@ fn link_preserves_user_deepseek() {
 fn link_prune_bounded() {
     let (tmp, environment) = link_fixture(Some(FIXTURE_YAML));
     let root = tmp.path().join("root");
-    // opencode/zcode: stale + user JSON entries.
-    for editor in ["opencode", "zcode"] {
-        let dir = tmp.path().join(editor);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join(format!("{editor}.json")),
-            serde_json::to_string_pretty(&serde_json::json!({
-                "$schema": "https://opencode.ai/config.json",
-                "agent": {
-                    "sddk-zombie": {"description": "stale", "mode": "subagent", "model": "x"},
-                    "my-agent": {"description": "user", "mode": "primary", "model": "y"}
-                },
-                "mcp": {}
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-    }
+    // opencode: stale + user JSON entries (zcode no longer reads an agent map).
+    let dir = tmp.path().join("opencode");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("opencode.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "$schema": "https://opencode.ai/config.json",
+            "agent": {
+                "sddk-zombie": {"description": "stale", "mode": "subagent", "model": "x"},
+                "my-agent": {"description": "user", "mode": "primary", "model": "y"}
+            },
+            "mcp": {}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    // zcode: stale + user native files (agents dir is adapter-owned).
+    std::fs::create_dir_all(tmp.path().join("zcode/agents")).unwrap();
+    std::fs::write(tmp.path().join("zcode/agents/sddk-zombie.md"), "stale").unwrap();
+    std::fs::write(tmp.path().join("zcode/agents/my-agent.md"), "user").unwrap();
     // claude/codex: stale + user native files.
     std::fs::create_dir_all(tmp.path().join("claude/agents")).unwrap();
     std::fs::write(tmp.path().join("claude/agents/sddk-zombie.md"), "stale").unwrap();
@@ -183,21 +211,20 @@ fn link_prune_bounded() {
 
     let output = run_dev_link(args_all(&root, tmp.path(), LinkEditor::All), &environment);
     assert_eq!(output.status, 0, "{}", output.stderr);
-    for editor in ["opencode", "zcode"] {
-        let config: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(tmp.path().join(editor).join(format!("{editor}.json")))
-                .unwrap(),
-        )
-        .unwrap();
-        assert!(
-            config["agent"].get("sddk-zombie").is_none(),
-            "{editor} zombie pruned"
-        );
-        assert_eq!(
-            config["agent"]["my-agent"]["model"], "y",
-            "{editor} user kept"
-        );
-    }
+    let config: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tmp.path().join("opencode/opencode.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        config["agent"].get("sddk-zombie").is_none(),
+        "opencode zombie pruned"
+    );
+    assert_eq!(
+        config["agent"]["my-agent"]["model"], "y",
+        "opencode user kept"
+    );
+    assert!(!tmp.path().join("zcode/agents/sddk-zombie.md").exists());
+    assert!(tmp.path().join("zcode/agents/my-agent.md").exists());
     assert!(!tmp.path().join("claude/agents/sddk-zombie.md").exists());
     assert!(tmp.path().join("claude/agents/my-agent.md").exists());
     assert!(!tmp.path().join("codex/agents/sddk-zombie.toml").exists());
@@ -314,9 +341,10 @@ fn link_no_hardcoded_fallback() {
     // No editor file may contain a minimax model id.
     let mut haystacks = vec![
         std::fs::read_to_string(tmp.path().join("opencode/opencode.json")).unwrap(),
-        std::fs::read_to_string(tmp.path().join("zcode/zcode.json")).unwrap(),
+        std::fs::read_to_string(tmp.path().join("zcode/agents/sddk-foo.md")).unwrap(),
     ];
     for file in [
+        "zcode/commands/orchestrator.md",
         "claude/agents/orchestrator.md",
         "claude/agents/sddk-foo.md",
         "codex/agents/orchestrator.toml",

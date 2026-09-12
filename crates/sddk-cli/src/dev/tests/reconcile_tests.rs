@@ -776,11 +776,12 @@ fn editor_capabilities_opencode() {
 #[test]
 fn editor_capabilities_zcode() {
     let caps = EditorCapabilities::for_ide(IdeKey::Zcode);
-    assert!(caps.supports_mode);
-    assert!(caps.supports_hidden);
-    assert!(caps.supports_prompt_ref);
-    assert!(!caps.supports_tools);
-    assert!(caps.model_validator.is_none());
+    assert!(!caps.supports_mode);
+    assert!(!caps.supports_hidden);
+    assert!(!caps.supports_prompt_ref);
+    assert!(caps.supports_tools);
+    // zcode has a model validator (provider/model ids only, ADR-0081)
+    assert!(caps.model_validator.is_some());
 }
 
 #[test]

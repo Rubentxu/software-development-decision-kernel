@@ -1,7 +1,7 @@
 //! `dev uninstall` — remove an installed prefix or editor assets.
 
 use crate::dev::common::{RECEIPT_FILE, framework_agent_names, read_receipt};
-use crate::dev::editor_adapters::is_framework_namespaced;
+use crate::dev::editor_adapters::{is_framework_namespaced, is_sddk_command};
 use crate::{CommandOutput, render_result};
 use sha2::Digest;
 use std::path::{Path, PathBuf};
@@ -149,6 +149,91 @@ fn uninstall_native_editor(
 
 // ── Public subcommand ──────────────────────────────────────────────────────────
 
+/// zcode: remove sddk-owned native agent files (including agent-map era
+/// symlinks), marker-generated primary-agent command files, agent-map entries
+/// left in `zcode.json` by pre-ADR-0081 installs, and framework symlinks.
+/// User files are never touched (ADR-0018 namespace bounds + command marker).
+fn uninstall_zcode(root: &Path, editor_dir: &Path) -> anyhow::Result<UninstallReport> {
+    let mut report = UninstallReport {
+        editor: editor_dir.to_string_lossy().into_owned(),
+        entries_removed: 0,
+        symlinks_removed: 0,
+        files_kept: 0,
+        errors: Vec::new(),
+    };
+
+    // 1. Native agent files under agents/ (sddk-owned names only).
+    let agents_dir = editor_dir.join("agents");
+    if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                report.files_kept += 1;
+                continue;
+            }
+            let stem = path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if crate::dev::editor_adapters::is_sddk_owned(&stem) {
+                if std::fs::remove_file(&path).is_ok() {
+                    report.entries_removed += 1;
+                } else {
+                    report
+                        .errors
+                        .push(format!("{}: cannot remove", path.display()));
+                }
+            } else {
+                report.files_kept += 1;
+            }
+        }
+    }
+
+    // 2. Generated command files (only those carrying the sddk marker).
+    let commands_dir = editor_dir.join("commands");
+    if let Ok(entries) = std::fs::read_dir(&commands_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                report.files_kept += 1;
+                continue;
+            }
+            if is_sddk_command(&path) {
+                if std::fs::remove_file(&path).is_ok() {
+                    report.entries_removed += 1;
+                } else {
+                    report
+                        .errors
+                        .push(format!("{}: cannot remove", path.display()));
+                }
+            } else {
+                report.files_kept += 1;
+            }
+        }
+    }
+
+    // 3. Legacy agent-map entries in zcode.json (pre-ADR-0081 installs).
+    let config_path = editor_dir.join("zcode.json");
+    if config_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&config_path)
+        && let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&content)
+        && let Some(agents) = config.get_mut("agent").and_then(|v| v.as_object_mut())
+    {
+        let framework = framework_agent_names(root);
+        let before = agents.len();
+        agents.retain(|name, _| !framework.iter().any(|f| f == name));
+        report.entries_removed += before - agents.len();
+        if before != agents.len() {
+            let serialized = serde_json::to_string_pretty(&config)?;
+            std::fs::write(&config_path, serialized)?;
+        }
+    }
+
+    // 4. Framework symlinks (agents included: old installs symlinked them).
+    uninstall_symlink_surfaces(root, editor_dir, &mut report, true);
+    Ok(report)
+}
+
 pub(super) fn run_dev_uninstall(args: super::UninstallArgs) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<String> {
@@ -198,7 +283,7 @@ pub(super) fn run_dev_uninstall(args: super::UninstallArgs) -> CommandOutput {
                 ));
             }
             if matches!(editor, super::LinkEditor::ZCode | super::LinkEditor::All) {
-                let report = uninstall_editor(&root, &zcode_dir, "zcode.json")?;
+                let report = uninstall_zcode(&root, &zcode_dir)?;
                 output.push_str(&format!(
                     "zcode: {} entries, {} symlinks removed, {} kept\n",
                     report.entries_removed, report.symlinks_removed, report.files_kept

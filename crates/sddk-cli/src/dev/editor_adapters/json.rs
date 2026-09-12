@@ -1,6 +1,9 @@
-//! JSON agent-map registration core shared by opencode and zcode (ADR-0019).
-//! Both editors store agents in `<dir>/<editor>.json` → `agent` map with the
-//! same entry schema; the core is parameterized by `IdeKey`.
+//! JSON agent-map registration core for opencode (ADR-0019).
+//!
+//! ZCode previously shared this module (its `zcode.json` mirrored the
+//! opencode schema), but the ZCode desktop app never reads an agent map from
+//! `zcode.json` — it discovers native `agents/<name>.md` files instead
+//! (ADR-0081), so ZCode registration lives in `zcode.rs` now.
 
 use super::reconcile::{
     EditorCapabilities, ExistingEntry, FieldDiff, ReconcileAdapter, ReconcileContext,
@@ -17,11 +20,6 @@ pub struct OpenCodeAdapter {
     pub dir: PathBuf,
 }
 
-/// ZCode registration: `zcode.json` — mirrors the opencode schema.
-pub struct ZCodeAdapter {
-    pub dir: PathBuf,
-}
-
 impl super::EditorAdapter for OpenCodeAdapter {
     fn editor_name(&self) -> &'static str {
         "opencode"
@@ -31,21 +29,6 @@ impl super::EditorAdapter for OpenCodeAdapter {
         upsert_json_agents(
             &self.dir.join("opencode.json"),
             IdeKey::Opencode,
-            &super::PRIMARY_AGENTS,
-            ctx,
-        )
-    }
-}
-
-impl super::EditorAdapter for ZCodeAdapter {
-    fn editor_name(&self) -> &'static str {
-        "zcode"
-    }
-
-    fn register(&self, ctx: &RegistrationContext<'_>) -> AdapterReport {
-        upsert_json_agents(
-            &self.dir.join("zcode.json"),
-            IdeKey::Zcode,
             &super::PRIMARY_AGENTS,
             ctx,
         )
@@ -69,24 +52,6 @@ impl ReconcileAdapter for OpenCodeAdapter {
 
     fn reconcile(&self, ctx: &ReconcileContext<'_>, apply: bool) -> ReconcileReport {
         reconcile_json(self.dir.join("opencode.json"), IdeKey::Opencode, ctx, apply)
-    }
-}
-
-impl ReconcileAdapter for ZCodeAdapter {
-    fn editor_name(&self) -> &'static str {
-        "zcode"
-    }
-
-    fn capabilities(&self) -> EditorCapabilities {
-        EditorCapabilities::for_ide(IdeKey::Zcode)
-    }
-
-    fn read_existing(&self, name: &str) -> Option<ExistingEntry> {
-        read_json_existing(&self.dir.join("zcode.json"), name)
-    }
-
-    fn reconcile(&self, ctx: &ReconcileContext<'_>, apply: bool) -> ReconcileReport {
-        reconcile_json(self.dir.join("zcode.json"), IdeKey::Zcode, ctx, apply)
     }
 }
 
