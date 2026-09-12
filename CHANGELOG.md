@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.168.31] - 2026-09-12
+
+### Other
+  - docs(arch): update M9 row to reflect v1.168.29 ARCH-LINT-AX-S5 promotion state
+
 ## [1.168.30] - 2026-09-12
 
 ### Other
