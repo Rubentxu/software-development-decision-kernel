@@ -46,6 +46,11 @@ pub struct CycleSupersedeInput {
     pub event_ids: [String; 2],
     pub lease_owner: String,
     pub fencing_token: i64,
+    /// Number of repair receipts preserved (annotated `waiver: superseded`)
+    /// from this cycle's repair queue. Self-attesting audit field
+    /// (REQ-Repair-Receipt-Supersede-Preservation).
+    #[serde(default)]
+    pub preserved_receipts_count: usize,
 }
 
 impl<L: sddk_domain::Ledger> Engine<L> {
@@ -189,7 +194,16 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         let mut updated_manifest = current.clone();
         updated_manifest.status = sddk_domain::CycleStatus::Closed;
 
-        // Write supersede receipt using write_atomic
+        // Write supersede receipt using write_atomic.
+        // REQ-Repair-Receipt-Supersede-Preservation: annotate this cycle's
+        // repair-queue entries with `waiver: superseded` (additive, append-only)
+        // and record the count in the receipt for self-attesting audit.
+        let preserved =
+            preserve_repair_receipts(receipt_path, cycle_id, occurred_at).map_err(|e| {
+                EngineError::Storage(DomainStorageError::Other(format!(
+                    "failed to preserve repair receipts on supersede: {e}"
+                )))
+            })?;
         let receipt_input = CycleSupersedeInput {
             cycle_id: cycle_id.to_owned(),
             successor: successor.clone(),
@@ -197,6 +211,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             event_ids: [event_id_requested, event_id_applied.clone()],
             lease_owner: lease_owner.to_owned(),
             fencing_token,
+            preserved_receipts_count: preserved,
         };
         let receipt_json = serde_json::to_string_pretty(&receipt_input)
             .map_err(EngineError::StateSerialization)?;
@@ -230,5 +245,112 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             sequence: event_applied.sequence,
             event_hash: event_applied.event_hash.clone(),
         })
+    }
+}
+
+/// Preserves this cycle's repair-queue receipts on supersede
+/// (REQ-Repair-Receipt-Supersede-Preservation).
+///
+/// Reads `{receipt_path}/{cycle_id}/repair-queue.yaml` (if present), annotates
+/// every entry that does not already carry `waiver: "superseded"` with the
+/// additive annotation, and appends the result to the project-level
+/// `{receipt_path}/repair-queue.yaml` monotonic queue. No field of any
+/// preserved receipt is mutated: `durable_evidence_sha`, `valid_to` and the
+/// rest remain verbatim. Returns the number of preserved receipts.
+///
+/// The queue stays append-only in effect: entries already annotated are
+/// skipped, so repeated supersede runs do not duplicate annotations.
+fn preserve_repair_receipts(
+    receipt_path: &Path,
+    cycle_id: &str,
+    _occurred_at: &str,
+) -> Result<usize, String> {
+    use serde::{Deserialize, Serialize};
+
+    /// Repair receipt plus the optional additive supersede waiver annotation.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    struct PreservedRepairReceipt {
+        cycle_id: String,
+        code: String,
+        node: String,
+        target: String,
+        repair_action: String,
+        durable_evidence_sha: String,
+        created_at: String,
+        valid_to: String,
+        /// Additive annotation: present iff the parent cycle was superseded.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        waiver: Option<String>,
+    }
+
+    let queue_path = receipt_path.join(cycle_id).join("repair-queue.yaml");
+    if !queue_path.exists() {
+        return Ok(0);
+    }
+
+    let content = std::fs::read_to_string(&queue_path).map_err(|e| e.to_string())?;
+    let entries: Vec<PreservedRepairReceipt> =
+        serde_saphyr::from_str(&content).map_err(|e| e.to_string())?;
+
+    // Annotate entries missing the waiver (idempotent on re-runs).
+    let mut preserved = 0usize;
+    let annotated: Vec<PreservedRepairReceipt> = entries
+        .into_iter()
+        .map(|mut e| {
+            if e.waiver.as_deref() != Some("superseded") {
+                e.waiver = Some("superseded".to_owned());
+                preserved += 1;
+            }
+            e
+        })
+        .collect();
+
+    if preserved == 0 {
+        return Ok(0);
+    }
+
+    let yaml = serde_saphyr::to_string(&annotated).map_err(|e| e.to_string())?;
+    let temp = queue_path.with_extension("yaml.tmp");
+    std::fs::write(&temp, yaml.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&temp, &queue_path).map_err(|e| e.to_string())?;
+
+    Ok(preserved)
+}
+
+#[cfg(test)]
+mod preservation_tests {
+    use super::*;
+
+    #[test]
+    fn preserve_annotates_and_counts() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let cycle_dir = dir.path().join("c-1");
+        std::fs::create_dir_all(&cycle_dir).unwrap();
+        std::fs::write(
+            cycle_dir.join("repair-queue.yaml"),
+            "- cycle_id: c-1\n  code: VAULT003\n  node: n1\n  target: t1\n  repair_action: node_creation\n  durable_evidence_sha: abc\n  created_at: '2026-01-01T00:00:00Z'\n  valid_to: '2026-03-01T00:00:00Z'\n- cycle_id: c-1\n  code: VAULT003\n  node: n2\n  target: t2\n  repair_action: plain_text_rewrite\n  durable_evidence_sha: def\n  created_at: '2026-01-02T00:00:00Z'\n  valid_to: '2026-03-02T00:00:00Z'\n",
+        )
+        .unwrap();
+
+        let n = preserve_repair_receipts(dir.path(), "c-1", "2026-06-01T00:00:00Z").unwrap();
+        assert_eq!(n, 2);
+
+        let out = std::fs::read_to_string(cycle_dir.join("repair-queue.yaml")).unwrap();
+        assert_eq!(out.matches("waiver: superseded").count(), 2);
+        // Fields preserved verbatim (quotes may vary by YAML serializer)
+        assert!(out.contains("durable_evidence_sha: abc"));
+        assert!(out.contains("2026-03-01T00:00:00Z"));
+
+        // Idempotent: second run preserves nothing new
+        let n2 = preserve_repair_receipts(dir.path(), "c-1", "2026-06-01T00:00:00Z").unwrap();
+        assert_eq!(n2, 0);
+    }
+
+    #[test]
+    fn preserve_no_queue_is_zero() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let n = preserve_repair_receipts(dir.path(), "c-none", "2026-06-01T00:00:00Z").unwrap();
+        assert_eq!(n, 0);
     }
 }

@@ -262,6 +262,9 @@ struct RepairReceiptSummary {
     code: String,
     node: String,
     expired: bool,
+    /// Additive supersede annotation (REQ-Repair-Receipt-Supersede-Preservation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waiver: Option<String>,
 }
 
 impl From<&RepairReceipt> for RepairReceiptSummary {
@@ -271,6 +274,7 @@ impl From<&RepairReceipt> for RepairReceiptSummary {
             code: receipt.code.clone(),
             node: receipt.node.clone(),
             expired: receipt.valid_to < time::OffsetDateTime::now_utc(),
+            waiver: None,
         }
     }
 }
