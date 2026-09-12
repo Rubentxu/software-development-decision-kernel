@@ -8,6 +8,7 @@ use serde_json::json;
 
 use crate::TransitionOutcome;
 use crate::authority::{AuthorityContext, WritableSurface};
+use crate::secretary_closed_set::validate_secretary_event;
 
 use super::correlation::{with_causation, with_correlation_id};
 use super::envelopes::{build_event_envelope, build_outcome_envelope};
@@ -239,6 +240,8 @@ pub fn emit_phase_event<S: EventStore>(
         with_correlation_id(&mut exited_env, corr);
     }
     exited_env.content_hash = exited_env.compute_content_hash();
+    validate_secretary_event(&exited_env.actor, &exited_env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     let from_result = store.append(&exited_env)?;
 
     let entered_id = format!("{}-entered-{}", input.event_id_prefix, input.cycle_id);
@@ -255,6 +258,8 @@ pub fn emit_phase_event<S: EventStore>(
         with_correlation_id(&mut entered_env, corr);
     }
     entered_env.content_hash = entered_env.compute_content_hash();
+    validate_secretary_event(&entered_env.actor, &entered_env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     let to_result = store.append(&entered_env)?;
 
     Ok((from_result, to_result))
@@ -284,6 +289,8 @@ pub fn emit_outcome_event<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -360,6 +367,8 @@ pub fn emit_approval_requested<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -444,6 +453,8 @@ pub fn emit_approval_decision<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -538,6 +549,8 @@ pub fn emit_workflow_run_started<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -588,6 +601,8 @@ pub fn emit_workflow_run_completed<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -641,6 +656,8 @@ pub fn emit_workflow_node_running<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -694,6 +711,8 @@ pub fn emit_workflow_node_completed<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -748,6 +767,8 @@ pub fn emit_workflow_node_failed<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -859,6 +880,8 @@ pub fn emit_planning_work_item_drafted<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -917,6 +940,8 @@ pub fn emit_planning_work_item_activated<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -975,6 +1000,8 @@ pub fn emit_planning_work_item_paused<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1033,6 +1060,8 @@ pub fn emit_planning_work_item_resumed<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1091,6 +1120,8 @@ pub fn emit_planning_work_item_completed<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1149,6 +1180,8 @@ pub fn emit_planning_work_item_superseded<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1210,6 +1243,8 @@ pub fn emit_work_item_created<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1270,6 +1305,8 @@ pub fn emit_work_item_transitioned<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1341,6 +1378,8 @@ pub fn emit_dependency_added<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1402,6 +1441,8 @@ pub fn emit_evidence_attached<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 
@@ -1463,6 +1504,8 @@ pub fn emit_decision_recorded<S: EventStore>(
         with_correlation_id(&mut env, corr);
     }
     env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
     store.append(&env)
 }
 

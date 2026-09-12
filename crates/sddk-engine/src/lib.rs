@@ -77,6 +77,7 @@ pub mod revision_substrate;
 pub mod risk_approval_policy;
 pub mod rules;
 pub mod run_view;
+pub mod secretary_closed_set;
 pub mod secretary_l0;
 pub mod secretary_l1;
 pub mod secretary_l2_replan;
@@ -183,6 +184,10 @@ pub use run_view::{
     ProvenanceStep, RunOrigin, RunStateView, TypedActionSurfaceView, ViewError,
     build_action_surface_view_typed, build_action_surface_view_with_frontier, build_run_state_view,
     build_typed_action_command, check_decision_plane_parity, empty_projection,
+};
+pub use secretary_closed_set::{
+    SECRETARY_PROHIBITED_PREFIXES, SecretaryClosedSetError, is_escalation_required,
+    is_prohibited_event_type, is_secretary, validate_secretary_event,
 };
 pub use secretary_l0::{
     ReactiveEvent, ReactiveMatcher, ReactiveRule, ReactiveSignal, ReactiveTrigger,

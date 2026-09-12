@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-004
 title: "no-parallel-authority invariant not enforced at runtime"
-status: resolved
+status: closed
 severity: high
 priority: P1
 fingerprint: "hx-auth-004-no-parallel-authority-7gap"
@@ -16,13 +16,17 @@ resolved_commits:
   - "26950e4 AC-EVT-LEDGER-08 (path 4: gate receipt — single writer enforced)"
   - "9862603 AC-EVT-LEDGER-09 (path 5: knowledge ingest — CLI-only enforced)"
 resolution_note: |
-  Status stays `resolved` (not `closed`) because the lifecycle entry on
-  2026-09-04 records only a partial close (paths 4 and 5 of 7 gaps). Paths 1-3
-  (cycle transition dual-writer via `apply_transition`) and 6-7 (Secretary
-  closed-set / escalation enforcement) still require ARCH-HEX-001 +
-  EVT-LEDGER-001 + RX-SECRETARY-001/002 work. Reconciled during v1.168.8
-  INC hygiene to add explicit `resolved_at`/`resolved_by`/`resolved_commits`.
-last_updated: 2026-09-11
+  Closed at v1.168.48 (roadmap-sweep cycle). Paths 1-3 were closed by
+  ARCH-HEX-001 slices 1-3 (v1.168.22..v1.168.27: apply_cycle_start, dev
+  install, GH Releases receipt — all surfaces authority-gated, transition
+  path requires AuthorityContext per apply_transition signature). Paths 6-7
+  closed by the stage-1 Secretary closed-set validator
+  (`crates/sddk-engine/src/secretary_closed_set.rs`): ADR-0073 prohibited
+  prefixes (release.*/gate.*/lease.*/receipt.*) now fail closed at every
+  event-bus emit call site for actors bound `role=secretary` (EVT-LEDGER-001
+  role field), and non-closed-set state mutations require
+  `escalation.requested`. Closed-set widens only via explicit ADR.
+last_updated: 2026-09-12
 ---
 
 # INC-HX-AUTH-004 — no-parallel-authority invariant not enforced at runtime
@@ -53,6 +57,7 @@ This is severity **high** because it means the system's authority model is not e
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; ADR-069 §6; INC-HX-AUTH-004 |
 | 2026-09-04 | sddk-apply | partial close: path 4 (gate receipt) and path 5 (knowledge ingest) | commit 26950e4 (AC-EVT-LEDGER-08), commit 9862603 (AC-EVT-LEDGER-09) |
+| 2026-09-12 | orchestrator | closed: paths 6-7 via secretary_closed_set stage-1 validator (prohibited prefixes fail-closed + escalation.requested enforcement); paths 1-3 previously closed by ARCH-HEX-001 slices 1-3 | v1.168.48 diff; HANDOFF-2026-09-12-arch-hex-001-closure.md |
 
 ## References
 
