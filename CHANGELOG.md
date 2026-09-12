@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.168.27] - 2026-09-12
+
+### Features
+  - feat(authority): script-side GH Releases actor tracking (ARCH-HEX-001 slice 3)
+
 ## [1.89.6] - 2026-09-07
 
 ### Fixes
