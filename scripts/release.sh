@@ -164,8 +164,9 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_advisory_lint_explanations.sh \
             tests/test_deny_lint_zero_hits.sh \
             tests/test_vault_adr_mirror_coverage.sh \
+            tests/test_release_tag_anchoring.sh \
             || die "shellcheck failed"
-        ok "shellcheck clean (scope: release-receipt + 6 cross-crate/M9+ tests)"
+        ok "shellcheck clean (scope: release-receipt + 7 cross-crate/M9+ tests)"
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
@@ -174,7 +175,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_adr_promotion_format.sh \
              tests/test_advisory_lint_explanations.sh \
              tests/test_deny_lint_zero_hits.sh \
-             tests/test_vault_adr_mirror_coverage.sh; do
+             tests/test_vault_adr_mirror_coverage.sh \
+             tests/test_release_tag_anchoring.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"
@@ -186,6 +188,52 @@ if [ "$SKIP_TESTS" = "0" ]; then
     ok "shell contract tests green"
 else
     warn "skipping step 1 (tests) — assumed already run"
+fi
+
+# --- 1c. publish sync: ensure origin/main is at HEAD before step 9 ---
+#
+# INC-RELEASE-TAG-FIX: step 9 (gh release create --target main) resolves
+# `main` to the commit at the tip of origin/main. The release flow's
+# previous commits (feat + ceremonial + bump) are local-only and must be
+# pushed before publish, otherwise the tag points to a stale commit and
+# requires manual repointing. This step pushes HEAD to origin/main
+# non-interactively (the pre-push hook enforces the bump predicate) and
+# fails closed if origin/main has advanced concurrently — the operator
+# must merge before re-running.
+#
+# Behaviour:
+#   1. git fetch origin main → see the current remote tip.
+#   2. If origin/main == HEAD → nothing to do, fast path.
+#   3. If origin/main behind HEAD → git push origin main (pre-push hook
+#      enforces bump-commit + version-bump predicate; no need to repeat
+#      that check here).
+#   4. If origin/main ahead of HEAD → refuse to release, instruct the
+#      operator to merge origin/main into HEAD and re-run.
+#
+# The --skip-tests flag does not skip this step: pushing is part of the
+# release contract, not the test gate.
+
+step "1c/14 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"
+git fetch origin main --quiet \
+    || die "git fetch origin main failed — cannot verify remote state"
+LOCAL_HEAD="$(git rev-parse HEAD)"
+REMOTE_MAIN="$(git rev-parse origin/main)"
+
+if [ "$LOCAL_HEAD" = "$REMOTE_MAIN" ]; then
+    ok "HEAD already at origin/main ($LOCAL_HEAD) — no push needed"
+elif git merge-base --is-ancestor "$REMOTE_MAIN" "$LOCAL_HEAD"; then
+    # origin/main is behind HEAD → fast-forward push.
+    # The pre-push hook (githooks/pre-push) is automatically invoked by
+    # `git push` and rejects non-release commits to main. We rely on
+    # that gate; do not duplicate the predicate here.
+    if git push origin main >/dev/null 2>&1; then
+        ok "pushed HEAD to origin/main: $LOCAL_HEAD"
+    else
+        die "git push origin main failed — pre-push hook rejected the push; ensure HEAD is chore(release): bump version"
+    fi
+else
+    # origin/main is ahead of HEAD → concurrent advance. Fail closed.
+    die "origin/main ($REMOTE_MAIN) is ahead of HEAD ($LOCAL_HEAD); merge origin/main into HEAD and re-run"
 fi
 
 # --- 2. version ---
