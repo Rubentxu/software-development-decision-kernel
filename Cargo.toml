@@ -13,7 +13,7 @@ members = [
 exclude = ["docs/sddk-stabilization-plan"]
 
 [workspace.package]
-version = "1.168.42"
+version = "1.168.47"
 edition = "2024"
 authors = ["SDDK Team"]
 license = "MIT"
