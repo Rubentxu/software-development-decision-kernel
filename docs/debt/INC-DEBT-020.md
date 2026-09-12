@@ -99,6 +99,7 @@ robusta y no cambia el comportamiento de prune en el caso normal.
 |------|-------|--------|----------|
 | 2026-09-02 | sddk-archive | created | cycle-52 release step 12 doctor output |
 | 2026-09-02 | sddk-archive | status: open | not yet fixed |
+| 2026-09-12 | orchestrator (sweep m13) | status: open → closed (retroactive annotation) | frontmatter ya decía closed; la fila lifecycle quedaba inconsistente con el cierre de cycle-53 |
 | 2026-09-02 | sddk-archive | status: resolved | cycle-53 archive — v1.68.0 dogfooded |
 
 ## Closure Evidence
