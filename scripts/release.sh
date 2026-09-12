@@ -142,6 +142,38 @@ if [ "$SKIP_TESTS" = "0" ]; then
     cargo test --workspace --offline \
         || die "cargo test --workspace failed"
     ok "workspace green"
+
+    step "1b/14 — shell contract tests (tests/test_*.sh)"
+    # The shell contract tests pin invariants that cargo cannot cover
+    # (githooks/pre-push behavior, release-receipt authority gate, the
+    # cross-crate lockstep between scripts/release-receipt.sh and the
+    # engine's infer_actor_kind). They run sequentially; each is
+    # expected to exit 0 with its own banner. shellcheck is run first
+    # as a static gate; the dynamic tests follow.
+    if command -v shellcheck >/dev/null 2>&1; then
+        # Scope the static gate to scripts/tests authored or extended by
+        # this repository's M9+ contracts; legacy tests in
+        # tests/test_vault_coherence_alignment.sh have pre-existing
+        # SC2034/SC2329 warnings outside our gate (they're exercised by
+        # their own dynamic tests, not by shellcheck).
+        shellcheck --severity=warning scripts/release-receipt.sh \
+            tests/test_release_receipt_authority.sh \
+            tests/test_authority_helper_lockstep.sh \
+            || die "shellcheck failed"
+        ok "shellcheck clean (scope: release-receipt + 2 cross-crate tests)"
+    else
+        warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
+    fi
+    for t in tests/test_release_receipt_authority.sh tests/test_authority_helper_lockstep.sh; do
+        if [ -x "$t" ]; then
+            bash "$t" >/dev/null \
+                || die "shell test failed: $t (run manually for details)"
+            ok "shell test: $(basename "$t")"
+        else
+            warn "shell test not executable, skipping: $t"
+        fi
+    done
+    ok "shell contract tests green"
 else
     warn "skipping step 1 (tests) — assumed already run"
 fi
