@@ -24,7 +24,7 @@ pub use control_plane::{ProjectStatusRow, SCHEMA_V1, SqliteControlPlane};
 pub use event_store::SqliteEventStore;
 pub use fork_store::SqliteForkStore;
 pub use graph_store::SqliteGraphStore;
-pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore};
+pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore, SqliteBacklogStoreOwned};
 pub use projection_store::SqliteProjectionStore;
 pub use rebuild::rebuild;
 

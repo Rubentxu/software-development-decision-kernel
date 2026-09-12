@@ -57,6 +57,7 @@ pub mod workflow_run;
 pub use channel::*;
 pub use context_read::*;
 pub use cycle::*;
+pub use backlog::{format_rfc3339_from_secs, generate_ulid, now_rfc3339, BacklogEventLogEntry};
 pub use delivery_kind::*;
 pub use error::*;
 pub use event_envelope::*;

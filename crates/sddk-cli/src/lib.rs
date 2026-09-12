@@ -11,6 +11,7 @@ mod approval;
 pub mod arg_schema;
 mod artifact;
 pub mod audit_cmd;
+mod backlog;
 mod capability;
 pub mod change;
 pub mod cheat_sheet;
@@ -270,6 +271,13 @@ enum Command {
     Vault {
         #[command(subcommand)]
         command: VaultCommand,
+    },
+    /// Backlog ledger: capture, triage, list, and show items
+    /// (cycle 2/4 — REQ-Backlog-Item-Capture,
+    /// REQ-Backlog-Item-Triage-Priority).
+    Backlog {
+        #[command(subcommand)]
+        command: backlog::BacklogCommand,
     },
     /// Resolve the canonical knowledge vault path and profile.
     Knowledge {
@@ -807,6 +815,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::AgentResult { command } => result_cmd::run_agent_result(command, environment),
         Command::Release { command } => release_cmd::run_release(command, environment),
         Command::Vault { command } => vault_cmd::run_vault(command, environment),
+        Command::Backlog { command } => backlog::run_backlog(command, environment),
         Command::Knowledge { command } => knowledge_cmd::run_knowledge(command, environment),
         Command::Dev { command } => dev::run_dev(command, environment),
         Command::Pack { command } => pack_cmd::run_pack(command, environment),
@@ -1723,6 +1732,7 @@ fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
         AgentResult { .. } => "agent-result",
         Release { .. } => "release",
         Vault { .. } => "vault",
+        Backlog { .. } => "backlog",
         Knowledge { .. } => "knowledge",
         Dev { .. } => "dev",
         Pack { .. } => "pack",

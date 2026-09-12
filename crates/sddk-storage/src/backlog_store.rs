@@ -15,7 +15,8 @@
 //! `roadmap render`) will all read from and write to.
 
 use sddk_domain::backlog::{
-    BacklogError, BacklogItemId, BacklogItemRow, BacklogPriority, BacklogStatus,
+    BacklogError, BacklogEventLogEntry, BacklogItemId, BacklogItemRow, BacklogPriority,
+    BacklogStatus,
 };
 
 // Local helper: convert a rusqlite error into a BacklogError::Storage.
@@ -200,6 +201,18 @@ pub trait BacklogStore {
     /// Appends one event to the ledger and materialises the resulting
     /// item state in a single transaction. Returns the new event_id.
     fn append_event(&mut self, event: &BacklogEvent) -> Result<i64, BacklogError>;
+
+    /// Returns the chronological event log for one item
+    /// (empty vec if the item has no events — including the
+    /// case where the item id itself doesn't exist).
+    ///
+    /// Used by `sddk backlog show <id>` to render the full audit
+    /// trail and by the cycle 3/4 rendering engine to replay events
+    /// into the BACKLOG / ROADMAP projections.
+    fn events(
+        &mut self,
+        id: &BacklogItemId,
+    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError>;
 }
 
 /// SQLite-backed implementation of [`BacklogStore`].
@@ -207,8 +220,23 @@ pub trait BacklogStore {
 /// The connection is borrowed mutably (not owned) to match the existing
 /// precedent of `SqliteGraphStore` and `Storage::open` callers: the
 /// caller manages the connection lifecycle and transaction scope.
+///
+/// Cycle 2/4 adds [`SqliteBacklogStoreOwned`] for CLI use cases that
+/// don't have a pre-existing connection to borrow.
 pub struct SqliteBacklogStore<'a> {
     conn: &'a mut rusqlite::Connection,
+}
+
+/// SQLite-backed implementation of [`BacklogStore`] that owns its
+/// `rusqlite::Connection`. Used by CLI subcommands (`sddk backlog
+/// capture|triage|list|show`) which open a fresh connection from the
+/// project ledger path and don't need to share that connection with
+/// other storage adapters.
+///
+/// Internally delegates to a borrowed [`SqliteBacklogStore`] so all
+/// query / mutation logic stays in one place.
+pub struct SqliteBacklogStoreOwned {
+    conn: rusqlite::Connection,
 }
 
 /// Raw row extracted from the SQL query, used to keep
@@ -392,6 +420,87 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
         let event_id = tx.last_insert_rowid();
         tx.commit().map_err(sqlite_err)?;
         Ok(event_id)
+    }
+
+    fn events(
+        &mut self,
+        id: &BacklogItemId,
+    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT event_id, event_type, schema_version, recorded_at, actor_ref, payload_json \
+             FROM backlog_item_events_v1 \
+             WHERE item_id = ?1 \
+             ORDER BY recorded_at ASC, event_id ASC",
+        ).map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map(rusqlite::params![id], |row| {
+                let payload_str: String = row.get(5)?;
+                let payload: serde_json::Value =
+                    serde_json::from_str(&payload_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                Ok(BacklogEventLogEntry {
+                    event_id: row.get(0)?,
+                    event_type: row.get(1)?,
+                    schema_version: row.get(2)?,
+                    emitted_at: row.get(3)?,
+                    actor_ref: row
+                        .get::<_, Option<String>>(4)?
+                        .unwrap_or_default(),
+                    payload,
+                })
+            })
+            .map_err(sqlite_err)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(sqlite_err)?);
+        }
+        Ok(out)
+    }
+}
+
+impl SqliteBacklogStoreOwned {
+    /// Opens (or creates) `<dir>/ledger.sqlite` and applies pending
+    /// migrations. Used by the CLI commands introduced in cycle 2/4.
+    pub fn open(dir: &std::path::Path) -> Result<Self, BacklogError> {
+        use crate::migrations::run_migrations;
+        let db_path = dir.join("ledger.sqlite");
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(sqlite_err)?;
+        run_migrations(&mut conn).map_err(|e| BacklogError::Storage(e.to_string()))?;
+        Ok(Self { conn })
+    }
+
+    /// Opens an isolated in-memory database (CLI tests / smoke tests).
+    pub fn open_in_memory() -> Result<Self, BacklogError> {
+        use crate::migrations::run_migrations;
+        let mut conn = rusqlite::Connection::open_in_memory().map_err(sqlite_err)?;
+        run_migrations(&mut conn).map_err(|e| BacklogError::Storage(e.to_string()))?;
+        Ok(Self { conn })
+    }
+}
+
+impl BacklogStore for SqliteBacklogStoreOwned {
+    fn live_items(&mut self) -> Result<Vec<BacklogItemRow>, BacklogError> {
+        SqliteBacklogStore::new(&mut self.conn).live_items()
+    }
+
+    fn item(&mut self, id: &BacklogItemId) -> Result<Option<BacklogItemRow>, BacklogError> {
+        SqliteBacklogStore::new(&mut self.conn).item(id)
+    }
+
+    fn append_event(&mut self, event: &BacklogEvent) -> Result<i64, BacklogError> {
+        SqliteBacklogStore::new(&mut self.conn).append_event(event)
+    }
+
+    fn events(
+        &mut self,
+        id: &BacklogItemId,
+    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
+        SqliteBacklogStore::new(&mut self.conn).events(id)
     }
 }
 
@@ -636,5 +745,85 @@ mod tests {
         let mut conn = fresh_db();
         let mut store = SqliteBacklogStore::new(&mut conn);
         assert!(store.item(&"B-nonexistent".to_string()).unwrap().is_none());
+    }
+
+    // ── Cycle 2/4 additions ──────────────────────────────────────────────
+
+    #[test]
+    fn events_returns_chronological_log() {
+        let mut conn = fresh_db();
+        let mut store = SqliteBacklogStore::new(&mut conn);
+        store.append_event(&reg_event("B-100", "first")).unwrap();
+        store
+            .append_event(&BacklogEvent::Triaged {
+                item_id: "B-100".to_string(),
+                priority: BacklogPriority::P1,
+                priority_version: 1,
+                valid_from: "2026-09-12T12:00:00Z".to_string(),
+                valid_to: "9999-12-31T23:59:59Z".to_string(),
+                actor_ref: Some("test".to_string()),
+            })
+            .unwrap();
+        store
+            .append_event(&BacklogEvent::Triaged {
+                item_id: "B-100".to_string(),
+                priority: BacklogPriority::P0,
+                priority_version: 2,
+                valid_from: "2026-09-12T13:00:00Z".to_string(),
+                valid_to: "9999-12-31T23:59:59Z".to_string(),
+                actor_ref: Some("test".to_string()),
+            })
+            .unwrap();
+        let log = store.events(&"B-100".to_string()).unwrap();
+        assert_eq!(log.len(), 3, "expected 3 events, got {}", log.len());
+        assert_eq!(log[0].event_type, "backlog.item.registered");
+        assert_eq!(log[1].event_type, "backlog.item.triaged");
+        assert_eq!(log[2].event_type, "backlog.item.triaged");
+        assert_eq!(log[2].payload["priority_version"], 2);
+    }
+
+    #[test]
+    fn events_for_unknown_item_returns_empty() {
+        let mut conn = fresh_db();
+        let mut store = SqliteBacklogStore::new(&mut conn);
+        let log = store.events(&"B-ghost".to_string()).unwrap();
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn open_in_memory_owned_round_trip() {
+        let mut owned = SqliteBacklogStoreOwned::open_in_memory().unwrap();
+        let id = "B-200".to_string();
+        owned.append_event(&reg_event(&id, "owned")).unwrap();
+        let row = owned.item(&id).unwrap().unwrap();
+        assert_eq!(row.summary, "owned");
+    }
+
+    #[test]
+    fn open_owned_creates_ledger_if_missing() {
+        let dir = std::env::temp_dir().join("sddk-backlog-test-open-owned");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut owned = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        let id = "B-300".to_string();
+        owned.append_event(&reg_event(&id, "fresh")).unwrap();
+        let row = owned.item(&id).unwrap().unwrap();
+        assert_eq!(row.summary, "fresh");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_owned_is_idempotent() {
+        let dir = std::env::temp_dir().join("sddk-backlog-test-open-idempotent");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // First open creates and applies migrations.
+        let mut a = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        a.append_event(&reg_event("B-A", "first")).unwrap();
+        // Second open on same dir must not fail (idempotent migrations).
+        let mut b = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        let row = b.item(&"B-A".to_string()).unwrap().unwrap();
+        assert_eq!(row.summary, "first");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
