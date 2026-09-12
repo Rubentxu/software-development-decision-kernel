@@ -2,10 +2,24 @@
 id: ADR-0098-ONE-SEMANTIC-GRAPH
 package_local_id: ADR-005
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-005-ONE-SEMANTIC-GRAPH.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-engine/src/semantic_graph.rs:29 — pub trait SemanticGraphProjection + InMemorySemanticGraph impl (line 69)"
+  - "docs/architecture/specs/arch-spec-005-semantic-graph-and-why.md"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0098 — ONE-SEMANTIC-GRAPH

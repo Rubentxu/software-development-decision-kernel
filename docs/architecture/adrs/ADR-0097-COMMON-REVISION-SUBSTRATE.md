@@ -6,6 +6,10 @@ status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+deferred_until: "Generic Revision<T> type and CAS-Ref abstraction implemented as cross-domain substrate"
+deferred_reason: |
+  CAS primitive (crates/sddk-storage/src/cas_object_store.rs) exists. However, the spec calls for a common Revision<T> = { oid, parents[], payload_ref, provenance, metadata } with Ref = { namespace, name, expected_old?, new_oid } and compare-and-swap updates, implemented as a cross-domain substrate. The shipped revisions are domain-specialized: GraphRevision is u64-only (crates/sddk-engine/src/semantic_graph.rs), PlanRevisionV1 (crates/sddk-domain/src/plan_revision.rs:298) and ExecutionGraphRevision (crates/sddk-domain/src/graph.rs:1241) each carry their own lineage without sharing a generic envelope. Promotion blocked on construction, not on audit. Per ADR-0001 §3.2 criterion 1.
+
 ---
 
 # ADR-0097 — COMMON-REVISION-SUBSTRATE

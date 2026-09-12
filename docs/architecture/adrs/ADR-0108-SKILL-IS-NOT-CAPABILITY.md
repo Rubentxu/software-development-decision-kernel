@@ -2,10 +2,24 @@
 id: ADR-0108-SKILL-IS-NOT-CAPABILITY
 package_local_id: ADR-015
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-015-SKILL-IS-NOT-CAPABILITY.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-cli/src/skill_definition.rs:55 — SkillDefinition, :116 — CapabilityRequirement"
+  - "tests enforce Skill != Capability (no grant method)"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0108 — SKILL-IS-NOT-CAPABILITY

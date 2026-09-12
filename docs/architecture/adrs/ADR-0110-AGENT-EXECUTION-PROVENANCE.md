@@ -2,10 +2,24 @@
 id: ADR-0110-AGENT-EXECUTION-PROVENANCE
 package_local_id: ADR-017
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-017-AGENT-EXECUTION-PROVENANCE.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-cli/src/execution_receipt.rs:156 — AgentExecutionReceipt, :333 — AgentExecutionReceiptBuilder"
+  - "M7.6 spec pins required provenance fields"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0110 — AGENT-EXECUTION-PROVENANCE

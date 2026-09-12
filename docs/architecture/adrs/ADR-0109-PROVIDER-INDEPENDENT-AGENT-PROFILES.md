@@ -2,10 +2,24 @@
 id: ADR-0109-PROVIDER-INDEPENDENT-AGENT-PROFILES
 package_local_id: ADR-016
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-016-PROVIDER-INDEPENDENT-AGENT-PROFILES.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-cli/src/agent_profile.rs:45 — AgentProfile"
+  - "AX-S4 spike confirms profile carries no provider transport data"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0109 — PROVIDER-INDEPENDENT-AGENT-PROFILES

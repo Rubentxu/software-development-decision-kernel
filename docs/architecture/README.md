@@ -234,3 +234,55 @@ At v1.168.31 (post-M9 row disclosure), 17 ADRs in `docs/architecture/adrs/` carr
 **Effect on the lint block in the M9 row above:** this batch unblocks 2 of the 4 advisory lints that depend on ADR-0096/0101 acceptance. The remaining 2 (governed by ADR-0096's downstream acceptance of "execution_outcome_as_synthesis" + ADR-0100's missing relations) stay `default: allow`. Promotion of those lints to `deny` is the next batch's work, not this one's.
 
 **Audit trail:** the cycle archive at `~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-adr-promotion-m0-meta-and-batch-1/` documents the per-lint / per-ADR evidence in detail.
+
+---
+
+## Trailing audit note — appended 2026-09-12 (M9.6: ADR promotion batch 2)
+
+Cycle `p-63676b11dc0ef88f/adr-promotion-batch-2` ships 13 more ADR promotions (the remaining 14 package ADRs minus 1 deferred, minus the 3 already-accepted from batch 1). State transition:
+
+- **Before this batch:** 14 ADRs `proposed`, 3 ADRs `accepted` (per batch 1: ADR-0001, ADR-0096, ADR-0101).
+- **After this batch:** 2 ADRs `proposed` (ADR-0097, ADR-0100 — both with `deferred_until`), 16 ADRs `accepted`.
+
+### Promoted this cycle (13 ADRs, all `proposed → accepted` per ADR-0001 §3.2)
+
+| ADR | Evidence (file:line) |
+|---|---|
+| ADR-0094 (CanonicalEventLog) | `crates/sddk-engine/src/canonical_event_log.rs:222` (trait + InMemory impl) |
+| ADR-0095 (Four state classes) | `crates/sddk-engine/src/state_class_lint.rs:16` (StateClass enum) |
+| ADR-0098 (One semantic graph) | `crates/sddk-engine/src/semantic_graph.rs:29` (SemanticGraphProjection trait + impl) |
+| ADR-0099 (Vault as human knowledge source) | `crates/sddk-engine/src/vault_boundary.rs` + `crates/sddk-cli/src/context_compiler.rs:65` (ContextAdapter, read-only) |
+| ADR-0102 (Unified authority engine) | `crates/sddk-engine/src/authority_engine.rs:216` (ActionProposal), `:264` (AdmissionDecision), `authority_engine/runner.rs:32` (AuthorityEngineRunner) |
+| ADR-0103 (Target/Task porcelain) | `crates/sddk-engine/src/target_task/mod.rs:142` (Task), `:173` (Target) + DagExecutor |
+| ADR-0104 (Pack extension boundary) | `crates/sddk-engine/src/pack_registry.rs:95` (PackRegistry) + `generic_pack_contracts.rs:111` (PackManifest) |
+| ADR-0105 (Configuration conventions) | `crates/sddk-cli/src/config_cmd.rs` (M6.1 `sddk config explain`) + `arch_lint.rs` (precedence enforcement) |
+| ADR-0106 (Typed instruction compilation) | `crates/sddk-cli/src/instruction_compiler.rs:301` (EffectiveInstructions) + `:348` (InstructionCompiler) |
+| ADR-0107 (One command registry) | `crates/sddk-cli/src/command_spec.rs:254` (CommandSpec) + AX-S1 drift guard test |
+| ADR-0108 (Skill != Capability) | `crates/sddk-cli/src/skill_definition.rs:55` (SkillDefinition) + `:116` (CapabilityRequirement); no grant method |
+| ADR-0109 (Provider-independent agent profiles) | `crates/sddk-cli/src/agent_profile.rs:45` (AgentProfile); AX-S4 confirms no provider transport data |
+| ADR-0110 (Agent execution provenance) | `crates/sddk-cli/src/execution_receipt.rs:156` (AgentExecutionReceipt) + `:333` (AgentExecutionReceiptBuilder) |
+
+### Deferred (honest disclosure per ADR-0001 §3.2 criterion 1)
+
+- **ADR-0097 (Common Revision substrate)** — kept `proposed`. The CAS primitive (`crates/sddk-storage/src/cas_object_store.rs`) exists, but the spec calls for a common `Revision<T>` envelope with CAS `Ref` updates implemented as a cross-domain substrate. Shipped revisions are domain-specialized (`GraphRevision` is u64-only at `crates/sddk-engine/src/semantic_graph.rs`; `PlanRevisionV1` at `crates/sddk-domain/src/plan_revision.rs:298`; `ExecutionGraphRevision` at `crates/sddk-domain/src/graph.rs:1241`). Promotion blocked on construction, not on audit.
+- **ADR-0100 (Universal Evidence)** — kept `proposed` (carried over from batch 1). `Verifies` and `ObservedFor` relations absent from `CoreRelationKind`.
+
+### Pin test status
+
+`tests/test_adr_promotion_format.sh` after this batch: `checked: 18 ADR files; violations: 0; accepted ADRs: 16` (was 3 after batch 1). The test passed clean — no frontmatter formatting issues. `accepted_count >= 1` anti-rollback guard still holds.
+
+### Effect on the lint block in the M9 row above
+
+No new lint promotions to `deny` result from this batch (the 4 advisory lints are gated on ADR-0100/0101/0096 follow-ups, none of which are satisfied by these promotions). The 5 of 9 lints in `default: deny` count from the M9 row above remains accurate; the 4 advisory lints stay `default: allow` until ADR-0100 relations are built and the SynthesisReceipt.disposition field is pinned.
+
+### Audit trail
+
+Cycle archive at `~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-adr-promotion-batch-2/` documents the per-ADR evidence in detail. The Python script that produced the frontmatter changes is preserved as `scripts/promote_adrs.py` (added in this cycle) — idempotent, can be re-run for batch 3..N.
+
+### Remaining open threads
+
+- **ADR-0097**: requires the common `Revision<T>` + CAS `Ref` envelope to be implemented as a cross-domain substrate. ~30-50 LoC engine work + tests.
+- **ADR-0100**: requires `Verifies` and `ObservedFor` relations in `CoreRelationKind`. ~20-30 LoC engine work + tests.
+- **Lint `execution_outcome_as_synthesis`**: requires `SynthesisReceipt.disposition` field to be pinned in a follow-up to ADR-0101.
+- **Lint `transition_outcome_used`**: requires the `TransitionOutcome` field to be structurally validated in the synthesis receipt.
+- **Vault mirror nodes** (per ADR-0001 §3.6): the 13 newly accepted ADRs need minimal mirror nodes in `~/.sddk-knowledge/sddk-framework/adrs/` so vault-side queries reflect the repo truth. Stub-friendly pattern.

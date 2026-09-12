@@ -2,10 +2,24 @@
 id: ADR-0103-TARGET-TASK-PORCELAIN
 package_local_id: ADR-010
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-010-TARGET-TASK-PORCELAIN.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-engine/src/target_task/mod.rs:142 — pub struct Task, :173 — pub struct Target"
+  - "crates/sddk-engine/src/target_task/executor.rs — DagExecutor"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0103 — TARGET-TASK-PORCELAIN

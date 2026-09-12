@@ -2,10 +2,24 @@
 id: ADR-0102-UNIFIED-AUTHORITY-ENGINE
 package_local_id: ADR-009
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-009-UNIFIED-AUTHORITY-ENGINE.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-engine/src/authority_engine.rs:216 — ActionProposal, :264 — AdmissionDecision, runner.rs:32 — AuthorityEngineRunner"
+  - "docs/architecture/specs/arch-spec-008-authority-and-side-effects.md"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0102 — UNIFIED-AUTHORITY-ENGINE

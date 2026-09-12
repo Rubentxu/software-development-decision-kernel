@@ -2,10 +2,25 @@
 id: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
 package_local_id: ADR-006
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-006-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-engine/src/vault_boundary.rs — T-04 boundary tests reject authority call-sites (line 181)"
+  - "crates/sddk-cli/src/context_compiler.rs:65 — vault_knowledge as ContextAdapter (read-only)"
+  - "crates/sddk-vault/src/parser.rs:33 — parse_vault"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0099 — VAULT-AS-HUMAN-KNOWLEDGE-SOURCE

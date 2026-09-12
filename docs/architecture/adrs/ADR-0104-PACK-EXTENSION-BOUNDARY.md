@@ -2,10 +2,24 @@
 id: ADR-0104-PACK-EXTENSION-BOUNDARY
 package_local_id: ADR-011
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-011-PACK-EXTENSION-BOUNDARY.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
+accepted_at: 2026-09-12
+accepted_by_cycle: "p-63676b11dc0ef88f/adr-promotion-batch-2"
+
+implementation_evidence:
+  - "crates/sddk-engine/src/pack_registry.rs:95 — PackRegistry, generic_pack_contracts.rs:111 — PackManifest"
+  - "tests enforce packs cannot write storage tables (per registry)"
+
+
+superseded_by: []
+related_adrs:
+  - "ADR-0001-ADR-PROMOTION-PROCESS"
+  - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+stale_after: 2027-09-12
+
 ---
 
 # ADR-0104 — PACK-EXTENSION-BOUNDARY
