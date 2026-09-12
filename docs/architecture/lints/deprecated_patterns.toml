@@ -23,8 +23,8 @@ schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
 last_extended_at = "2026-09-12T08:44:00Z"
-enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5). advisory (audit): transition_outcome_used (24 hits, description correction pending); orchestration_synthesis_no_dissent (19 hits, runner extension pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design). advisory (construction): evidence_kind_v1 (22 hits, ADR-0100 pending — see cycle-5 evidence-relations)."
-last_advisory_audit = { release = "v1.168.34", evaluated_at = "2026-09-12T07:55:00Z", hit_total = 65, audit_note = "v1.168.34 baseline captured before ARCH-LINT-M9.2 split; hit_total = 22+19+0+24 = 65 across 4 advisory lints (evidence_kind_v1 + orchestration_synthesis_no_dissent + execution_outcome_as_synthesis + transition_outcome_used). Rationale per lint in [[lints]].explanation blocks below." }
+enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5). advisory (audit): transition_outcome_used (24 hits, description correction pending); orchestration_synthesis_no_dissent (19 hits, runner extension pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design); evidence_kind_v1 (22 hits, per-call-site migration pending — cycle-9 planning-evidence-migration; ADR-0100 construction done v1.168.35)."
+last_advisory_audit = { release = "v1.168.35", evaluated_at = "2026-09-12T08:55:00Z", hit_total = 65, audit_note = "v1.168.35 baseline: evidence_kind_v1 (22) + orchestration_synthesis_no_dissent (19) + execution_outcome_as_synthesis (0) + transition_outcome_used (24) = 65. evidence_kind_v1 construction blocker closed (ADR-0100 accepted); per-call-site migration is the new audit blocker (cycle-9)." }
 
 [[lints]]
 id = "agent_result_used"
@@ -97,9 +97,9 @@ milestone_enforces = "M9"
 confidence = "medium"
 explanation = """
 Hits: 22 (8 crates in scope: planning/mod.rs 17, planning_provenance.rs 9, plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2, migrations.rs 1, lib.rs 1; spike corpus cites the name intentionally).
-Verdict: blocked_on_construction
-Reason: canonical replacement (EvidenceRef + Verifies/ObservedFor relations per ADR-0100 / SPEC-001) is `status: proposed`. The CoreRelationKind enum at crates/sddk-engine/src/semantic_kind.rs has Supports + Gates but lacks Verifies + ObservedFor. Migration of the 22 hits is impossible before those relations are built and pinned.
-Unblock: cycle-5 (`p-63676b11dc0ef88f/evidence-relations`) builds Verifies + ObservedFor variants in CoreRelationKind + pins by test; ADR-0100 then promotes to `accepted`; lint re-audit then promotes to `deny`.
+Verdict: blocked_on_audit
+Reason: ADR-0100 (universal evidence model) is now `accepted` as of v1.168.35 — Verifies + ObservedFor variants are wired into CoreRelationKind and pinned by tests. The construction blocker is closed. The audit blocker remains: the 22 hits of `PlanningEvidenceKind` need migration to `EvidenceRef { relation_kind: Verifies | ObservedFor | Supports | Gates, ... }` constructs. This is a per-call-site rewrite, not a type-system substitution. Promoting the lint to `deny` while 22 production call sites still use the legacy enum would break 5 production crates (planning, plan, planning_cas_crud, spine_import, migrations) plus 2 test fixtures (planning_provenance, spike_sp06 corpus).
+Unblock: per-call-site migration of PlanningEvidenceKind to EvidenceRef + relation kind. Tracked as cycle-9 (`p-63676b11dc0ef88f/planning-evidence-migration`) once user signals which evidence kinds to map to Verifies vs ObservedFor vs Supports (the discriminator is domain-specific; user decision required). Until then, lint stays `allow` because the canonical path exists in the type system but is not yet wired at the call sites.
 """
 
 [[lints]]
@@ -237,7 +237,7 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #
 # | lint                                | hits | blocker kind   | unblock reference                                                  |
 # |-------------------------------------|------|----------------|--------------------------------------------------------------------|
-# | evidence_kind_v1                    |  22  | construction   | ADR-0100 + cycle-5 evidence-relations                              |
+# | evidence_kind_v1                    |  22  | audit          | cycle-9 per-call-site migration (ADR-0100 construction done v1.168.35) |
 # | transition_outcome_used             |  24  | audit          | description rewrite + re-categorization (this cycle, M9.2 inline) |
 # | orchestration_synthesis_no_dissent  |  19  | audit          | cycle-7 runner extension (walk to set_dissent/put)                 |
 # | execution_outcome_as_synthesis      |   0  | audit          | corpus expansion + confidence re-evaluation (organic, no cycle)    |
@@ -255,15 +255,18 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #   input type by design. Production engine/cli code has zero uses.
 #   Sign-off: user granted continuous auto-mode authorization.
 #
-# evidence_kind_v1 — REMAIN `allow` (advisory). UNBLOCK = construction.
+# evidence_kind_v1 — REMAIN `allow` (advisory). UNBLOCK = audit (migration).
 #   22 hits in 8 crates (planning/mod.rs 17, planning_provenance.rs 9,
 #   plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2,
 #   migrations.rs 1, lib.rs 1). Per ADR-0100 the canonical replacement is
-#   EvidenceRef + relation/fact split, but the CoreRelationKind enum currently
-#   lacks the `Verifies` and `ObservedFor` variants required by SPEC-001.
-#   Migration is impossible before those relations are built and pinned
-#   (cycle-5 evidence-relations). Until then, the lint cannot migrate
-#   hits and cannot promote to `deny`.
+#   EvidenceRef + relation/fact split. ADR-0100 construction was completed
+#   in v1.168.35 (cycle `evidence-relations-core`): `Verifies` and
+#   `ObservedFor` variants are now wired into CoreRelationKind. The audit
+#   blocker is per-call-site migration: 22 hits need rewrite from
+#   `PlanningEvidenceKind::Log`/`Metric`/... enum to
+#   `EvidenceRef { relation_kind: Verifies | ObservedFor | Supports | Gates, ... }`
+#   constructs. Tracked as cycle-9 (`planning-evidence-migration`) once
+#   user signals the discriminator mapping.
 #
 # transition_outcome_used — REMAIN `allow` (advisory). UNBLOCK = audit.
 #   24 hits in crates/sddk-engine/src/lib.rs (definition, line 634),

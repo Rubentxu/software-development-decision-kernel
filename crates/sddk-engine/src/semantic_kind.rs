@@ -78,7 +78,12 @@ impl CoreNodeKind {
     }
 }
 
-/// The 12 core relation kinds listed in arch-spec-005.
+/// The 14 core relation kinds listed in arch-spec-005 plus the two
+/// evidence-model relations added in v1.168.35: `Verifies` (an Evidence
+/// confirms a Decision, Assumption, or Contribution) and `ObservedFor`
+/// (an Evidence was collected specifically for a Risk, Goal, or Run).
+/// Per ADR-0100, these replace the legacy `PlanningEvidenceKind` enum
+/// (which was a closed-set discriminator instead of a typed graph edge).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoreRelationKind {
     DependsOn,
@@ -93,10 +98,17 @@ pub enum CoreRelationKind {
     Gates,
     References,
     Affects,
+    /// Evidence → Decision/Assumption/Contribution. The evidence confirms
+    /// the target holds (e.g. a UAT scenario verifies an acceptance criterion).
+    Verifies,
+    /// Evidence → Risk/Goal/Run. The evidence was collected specifically
+    /// to inform or guard the target (e.g. a regression run observed a
+    /// risk mitigation).
+    ObservedFor,
 }
 
 impl CoreRelationKind {
-    pub const ALL: [CoreRelationKind; 12] = [
+    pub const ALL: [CoreRelationKind; 14] = [
         CoreRelationKind::DependsOn,
         CoreRelationKind::CausedBy,
         CoreRelationKind::Supports,
@@ -109,6 +121,8 @@ impl CoreRelationKind {
         CoreRelationKind::Gates,
         CoreRelationKind::References,
         CoreRelationKind::Affects,
+        CoreRelationKind::Verifies,
+        CoreRelationKind::ObservedFor,
     ];
 
     pub fn domain_tag(&self) -> &'static str {
@@ -125,6 +139,8 @@ impl CoreRelationKind {
             CoreRelationKind::Gates => "gates",
             CoreRelationKind::References => "references",
             CoreRelationKind::Affects => "affects",
+            CoreRelationKind::Verifies => "verifies",
+            CoreRelationKind::ObservedFor => "observed_for",
         }
     }
 }
@@ -318,5 +334,59 @@ mod tests {
     fn parse_recognises_known_relation_core() {
         let kind = RelationKind::parse("depends_on").unwrap();
         assert_eq!(kind, RelationKind::Core(CoreRelationKind::DependsOn));
+    }
+
+    #[test]
+    fn parse_recognises_evidence_relations() {
+        // Verifies + ObservedFor (added v1.168.35 per ADR-0100): the
+        // universal Evidence model uses these two relations to attach
+        // EvidenceRef to Decisions/Assumptions/Contributions (Verifies)
+        // and Risks/Goals/Runs (ObservedFor). They MUST round-trip
+        // through the closed-set parser as Core variants, not fall
+        // through to the NamespacedKind extension.
+        let verifies = RelationKind::parse("verifies").unwrap();
+        assert_eq!(
+            verifies,
+            RelationKind::Core(CoreRelationKind::Verifies),
+            "verifies must parse as core relation, not extension"
+        );
+        let observed = RelationKind::parse("observed_for").unwrap();
+        assert_eq!(
+            observed,
+            RelationKind::Core(CoreRelationKind::ObservedFor),
+            "observed_for must parse as core relation, not extension"
+        );
+    }
+
+    #[test]
+    fn core_relation_kinds_have_14_entries_after_evidence_relations() {
+        // Pin the count so a future addition must update both this test
+        // AND the doc comment line 81. Without this pin, adding a relation
+        // silently is too easy.
+        assert_eq!(
+            CoreRelationKind::ALL.len(),
+            14,
+            "expected 14 core relation kinds (12 original + Verifies + ObservedFor)"
+        );
+    }
+
+    #[test]
+    fn evidence_relations_have_canonical_tags() {
+        // Domain tags must be lowercase snake_case and unique across the
+        // ALL array. Verifies → "verifies"; ObservedFor → "observed_for".
+        assert_eq!(CoreRelationKind::Verifies.domain_tag(), "verifies");
+        assert_eq!(CoreRelationKind::ObservedFor.domain_tag(), "observed_for");
+        // No collision with the 12 original tags (would panic in
+        // core_relation_kinds_have_distinct_tags anyway, but be explicit).
+        let tags: Vec<&str> = CoreRelationKind::ALL
+            .iter()
+            .map(|c| c.domain_tag())
+            .collect();
+        let unique: std::collections::BTreeSet<&str> = tags.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            tags.len(),
+            "evidence relation tags must be distinct from existing 12"
+        );
     }
 }

@@ -2,16 +2,23 @@
 id: ADR-0100-UNIVERSAL-EVIDENCE
 package_local_id: ADR-007
 package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-007-UNIVERSAL-EVIDENCE.md
-status: proposed
+status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
 adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
-deferred_until: "EvidenceRef Verifies + ObservedFor relations built and pinned by tests"
-deferred_reason: "Partial implementation: `EvidenceRef` + `Supports` + `Gates` relations exist in `crates/sddk-engine/src/semantic_kind.rs::CoreRelationKind`; `Verifies` and `ObservedFor` relations are absent. Promotion blocked on construction, not audit. Per ADR-0001 §3.2 criterion 1."
+accepted_at: 2026-09-12
+accepted_by_cycle: p-63676b11dc0ef88f/evidence-relations-core
+implementation_evidence:
+  - "crates/sddk-engine/src/semantic_kind.rs:83 — `pub enum CoreRelationKind` includes `Verifies` (Evidence → Decision/Assumption/Contribution) and `ObservedFor` (Evidence → Risk/Goal/Run) per ADR-0100"
+  - "crates/sddk-engine/src/semantic_kind.rs:99 — `CoreRelationKind::ALL` array extended to 14 entries (was 12)"
+  - "crates/sddk-engine/src/semantic_kind.rs:339 — pin test `parse_recognises_evidence_relations` asserts both relations round-trip through `RelationKind::parse` as Core variants, not as NamespacedKind extension"
+  - "crates/sddk-engine/src/semantic_kind.rs:358 — pin test `core_relation_kinds_have_14_entries_after_evidence_relations` enforces the count so future additions are explicit"
+  - "crates/sddk-engine/src/semantic_kind.rs:371 — pin test `evidence_relations_have_canonical_tags` enforces `Verifies → \"verifies\"` and `ObservedFor → \"observed_for\"` snake_case tags"
 superseded_by: []
 related_adrs:
   - "ADR-0001-ADR-PROMOTION-PROCESS"
   - "ADR-0096-SDLC-LIFECYCLE-SEMANTICS"
+  - "ADR-0095-FOUR-STATE-CLASSES"
 stale_after: 2027-09-12
 ---
 
@@ -19,7 +26,16 @@ stale_after: 2027-09-12
 
 > **Mirror of package ADR `ADR-007`.** Repository-native numbering is `ADR-0100-UNIVERSAL-EVIDENCE` (range ADR-0094..0110). Per SUPERSESSION.md, the package's original ADR ID is preserved in `package_local_id` and the canonical content is copied verbatim into this file.
 
-> **Status:** proposed (2026-09-12 review). Promotion deferred per `deferred_until` frontmatter. The ADR's `evidence_kind_v1` lint counterpart in `deprecated_patterns.toml` stays `default: allow` until this ADR is accepted.
+## Promotion (2026-09-12 review)
+
+Promoted from `proposed` to `accepted` by cycle `p-63676b11dc0ef88f/evidence-relations-core` (v1.168.35). The construction gap that blocked the previous `deferred_until` ("EvidenceRef Verifies + ObservedFor relations built and pinned by tests") is now closed:
+
+- `CoreRelationKind::Verifies` and `CoreRelationKind::ObservedFor` added as closed-set variants in `crates/sddk-engine/src/semantic_kind.rs`
+- `CoreRelationKind::ALL` extended from 12 to 14
+- `domain_tag` returns lowercase snake_case (`verifies`, `observed_for`)
+- `RelationKind::parse("verifies")` and `parse("observed_for")` route through the closed-set parser (not the NamespacedKind extension), pinning them as first-class core relations
+
+This unlocks `evidence_kind_v1` lint promotion: the canonical EvidenceRef + `Verifies`/`ObservedFor` substitution is now implementable. Cycle 7 (`synthesis-dissent-runner-extension`) is the remaining gate for that lint; the Evidence relation construction is the first half of the unblock.
 
 ## Crosswalk
 
