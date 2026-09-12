@@ -23,7 +23,8 @@ schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
 last_extended_at = "2026-09-12T08:44:00Z"
-enforcement_status = "agent_result_used: deny (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language: deny (v1.168.29, ARCH-LINT-AX-S5 promotion); remaining: advisory — replacement ADRs (ADR-0100/0101) still proposed or first-letter regex unsafe-by-design"
+enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5). advisory (audit): transition_outcome_used (24 hits, description correction pending); orchestration_synthesis_no_dissent (19 hits, runner extension pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design). advisory (construction): evidence_kind_v1 (22 hits, ADR-0100 pending — see cycle-5 evidence-relations)."
+last_advisory_audit = { release = "v1.168.34", evaluated_at = "2026-09-12T07:55:00Z", hit_total = 65, audit_note = "v1.168.34 baseline captured before ARCH-LINT-M9.2 split; hit_total = 22+19+0+24 = 65 across 4 advisory lints (evidence_kind_v1 + orchestration_synthesis_no_dissent + execution_outcome_as_synthesis + transition_outcome_used). Rationale per lint in [[lints]].explanation blocks below." }
 
 [[lints]]
 id = "agent_result_used"
@@ -94,6 +95,12 @@ reference_adrs = ["ADR-0100"]
 milestone_introduced = "M0"
 milestone_enforces = "M9"
 confidence = "medium"
+explanation = """
+Hits: 22 (8 crates in scope: planning/mod.rs 17, planning_provenance.rs 9, plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2, migrations.rs 1, lib.rs 1; spike corpus cites the name intentionally).
+Verdict: blocked_on_construction
+Reason: canonical replacement (EvidenceRef + Verifies/ObservedFor relations per ADR-0100 / SPEC-001) is `status: proposed`. The CoreRelationKind enum at crates/sddk-engine/src/semantic_kind.rs has Supports + Gates but lacks Verifies + ObservedFor. Migration of the 22 hits is impossible before those relations are built and pinned.
+Unblock: cycle-5 (`p-63676b11dc0ef88f/evidence-relations`) builds Verifies + ObservedFor variants in CoreRelationKind + pins by test; ADR-0100 then promotes to `accepted`; lint re-audit then promotes to `deny`.
+"""
 
 [[lints]]
 id = "orchestration_synthesis_no_dissent"
@@ -123,6 +130,12 @@ replacement = [
 reference_adrs = ["ADR-0101"]
 milestone_introduced = "M0"
 milestone_enforces = "M9"
+explanation = """
+Hits: 19 (1 in crates/sddk-engine/src/orchestration_synthesis.rs:745, 18 in crates/sddk-engine/tests/orchestration_synthesis_tests.rs).
+Verdict: blocked_on_audit
+Reason: the lint runner's MVP detection counts `OrchestrationSynthesisReceipt::new` call sites only — it does NOT audit whether the caller subsequently populates `set_dissent(...)` before `put(...)`. The 19 hits are split between 1 production caller and 18 test fixtures, all of which legitimately construct the receipt (tests assert no-dissent and dissent-populated paths both work). Promoting to `deny` would block the dissent-populated tests.
+Unblock: extend the runner to walk from each `::new(...)` call site to the next `set_dissent`/`put` and emit a hit only when the receipt is `put`-en without dissent on conflicting contributions. Track as cycle-7 (`p-63676b11dc0ef88f/synthesis-dissent-runner-extension`). ADR-0101 is already accepted (v1.168.32); the gate is runner extension, not ADR promotion.
+"""
 confidence = "medium"
 
 [[lints]]
@@ -151,6 +164,12 @@ replacement = [
 reference_adrs = ["ADR-0101"]
 milestone_introduced = "M0"
 milestone_enforces = "M9"
+explanation = """
+Hits: 0 (no struct-literal `ExecutionOutcome {` constructions found in any crate at v1.168.33 baseline).
+Verdict: blocked_on_audit
+Reason: heuristic is medium-confidence; the regex `ExecutionOutcome\\s*\\{` matches struct literals but `ExecutionOutcome` is also returned by name in `match` arms, printed via `{outcome:?}`, and exposed in test fixtures. Promoting to `deny` on a medium-confidence heuristic would create false-positive risk on any future code that uses `ExecutionOutcome` legitimately as a return type or match target. The 0-hit baseline is the right reason to keep this lint advisory: there is no current production misuse to block.
+Unblock: re-audit against a larger corpus (e.g. AX-S6 2nd provider arrival) and re-evaluate `confidence`. If hits remain 0 and the usage surface grows, promote to `deny` with a narrower regex that excludes `match` arms and `Debug` formatting. No cycle is scheduled for this expansion; it follows organic usage growth.
+"""
 confidence = "medium"
 
 [[lints]]
@@ -179,6 +198,12 @@ reference_adrs = ["ADR-0101", "ADR-0096"]
 milestone_introduced = "M0"
 milestone_enforces = "M9"
 confidence = "high"
+explanation = """
+Hits: 24 (definition at crates/sddk-engine/src/lib.rs:634; consumers in crates/sddk-cli/src/cycle.rs and crates/sddk-engine/src/event_bus/).
+Verdict: blocked_on_audit
+Reason: the lint description claims `TransitionOutcome` is "legacy partial shape of ExecutionOutcome" — this is INCORRECT. `TransitionOutcome` (Succeeded/Failed) is the gate-evaluation outcome for declared cycle transitions; `ExecutionOutcome` is the provider raw-output aggregation for agent contributions. They are ORTHOGONAL types with no shared lineage. Production code that uses `TransitionOutcome` is NOT legacy code that should be migrated to `ExecutionOutcome`. Promoting to `deny` would block legitimate cycle-state machinery.
+Unblock: description rewrite (this cycle's ARCH-LINT-M9.2 audit already corrects it inline in this `explanation` block) + re-categorization as `category = "state_machine"` (not `deprecated_patterns`). Track as a follow-up to this cycle in the next archive manifest. No construction work is required; the audit conclusion is already in this registry.
+"""
 
 [implementation]
 status = "shipped"
@@ -202,9 +227,25 @@ validation_per_lint = "For each of the 5 lints, confirm that all current hits in
 migration_completion = "For each lint, the replacement path must be fully wired and tested (e.g. `Contribution` + `ExecutionOutcome` must be the only canonical way to emit agent output, with no remaining legacy `AgentResult` writes)."
 user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flipping any lint from `default: allow` to `default: deny`."
 
-# ARCH-LINT-M9.1 per-lint audit (v1.168.12, 2026-09-11):
+# ARCH-LINT-M9.2 per-lint advisory audit (v1.168.34, 2026-09-12):
+# 
+# Supersedes ARCH-LINT-M9.1 (v1.168.12) which grouped all 4 advisory lints
+# as "blocked on construction". The M9.2 audit splits them by blocker kind
+# and proves that 3 of the 4 are correctly audit-blocked, not construction-
+# blocked. Per-lint audit detail lives in each [[lints]].explanation field
+# above; the table below is the index.
 #
-# agent_result_used — PROMOTED to `default: deny`.
+# | lint                                | hits | blocker kind   | unblock reference                                                  |
+# |-------------------------------------|------|----------------|--------------------------------------------------------------------|
+# | evidence_kind_v1                    |  22  | construction   | ADR-0100 + cycle-5 evidence-relations                              |
+# | transition_outcome_used             |  24  | audit          | description rewrite + re-categorization (this cycle, M9.2 inline) |
+# | orchestration_synthesis_no_dissent  |  19  | audit          | cycle-7 runner extension (walk to set_dissent/put)                 |
+# | execution_outcome_as_synthesis      |   0  | audit          | corpus expansion + confidence re-evaluation (organic, no cycle)    |
+# | asset_unregistered_cli_example      |   0  | audit          | regex unsafe-by-design; full-surface via AX-S1 pin                 |
+#
+# Construction-status detailed notes (preserved from M9.1):
+#
+# agent_result_used — PROMOTED to `default: deny` (M9.1).
 #   Audit: the only engine-tree hits were in spike_sp06.rs, a retrieval-
 #   evaluation knowledge corpus that cites the legacy name intentionally
 #   (recovery questions ask about the deprecation itself). Excluded as
@@ -212,19 +253,38 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #   (result_cmd.rs, already excluded). The sddk-domain `AgentResult`
 #   struct is outside this lint's scan scope and remains the converter's
 #   input type by design. Production engine/cli code has zero uses.
-#   Sign-off: user granted continuous auto-mode authorization
-#   ("continuamos segun tus recomendaciones... en modo auto").
+#   Sign-off: user granted continuous auto-mode authorization.
 #
-# evidence_kind_v1 (18 hits), transition_outcome_used (24),
-# orchestration_synthesis_no_dissent (19) — REMAIN `allow` (advisory).
-#   Rationale: their canonical replacements (universal Evidence model /
-#   EvidenceRef migration per ADR-0100; ExecutionOutcome+Contribution per
-#   ADR-0101) are `status: proposed` and NOT yet implemented in code.
-#   Migration completion is impossible before those ADRs are accepted and
-#   built. Promotion is blocked on construction, not on audit.
+# evidence_kind_v1 — REMAIN `allow` (advisory). UNBLOCK = construction.
+#   22 hits in 8 crates (planning/mod.rs 17, planning_provenance.rs 9,
+#   plan.rs 6, planning_cas_crud.rs 5, spike_sp06.rs 4, spine_import.rs 2,
+#   migrations.rs 1, lib.rs 1). Per ADR-0100 the canonical replacement is
+#   EvidenceRef + relation/fact split, but the CoreRelationKind enum currently
+#   lacks the `Verifies` and `ObservedFor` variants required by SPEC-001.
+#   Migration is impossible before those relations are built and pinned
+#   (cycle-5 evidence-relations). Until then, the lint cannot migrate
+#   hits and cannot promote to `deny`.
 #
-# execution_outcome_as_synthesis — remains `allow`; 0 hits today, but its
-#   heuristic is medium-confidence and its subject type does not exist yet.
+# transition_outcome_used — REMAIN `allow` (advisory). UNBLOCK = audit.
+#   24 hits in crates/sddk-engine/src/lib.rs (definition, line 634),
+#   crates/sddk-cli/src/cycle.rs (consumers), crates/sddk-engine/src/event_bus/.
+#   The M9.1 audit incorrectly assumed `TransitionOutcome` was a legacy
+#   partial shape of `ExecutionOutcome`. The M9.2 audit proves they are
+#   orthogonal: TransitionOutcome is the gate-evaluation outcome for
+#   declared cycle transitions; ExecutionOutcome is the provider
+#   raw-output aggregation. Promoting this lint to `deny` would block
+#   legitimate cycle-state machinery. The description is INACCURATE;
+#   the explanation block above documents the correction.
+#
+# orchestration_synthesis_no_dissent — REMAIN `allow` (advisory). UNBLOCK = audit.
+#   19 hits in crates/sddk-engine/src/orchestration_synthesis.rs:745
+#   (1 production caller) and crates/sddk-engine/tests/orchestration_synthesis_tests.rs
+#   (18 test fixtures). The MVP runner only counts constructor calls;
+#   the dissent-population audit (walk from ::new to set_dissent/put) is
+#   a follow-up. ADR-0101 is already accepted (v1.168.32); the gate is
+#   runner extension, not ADR promotion.
+#
+# execution_outcome_as_synthesis — REMAINS `allow` (advisory). UNBLOCK = audit.
 
 # ---------------------------------------------------------------------------
 # AX-S5 promotion (v1.168.20): agent-asset hygiene lints.
@@ -348,6 +408,12 @@ reference_adrs = []
 milestone_introduced = "AX-S5"
 milestone_enforces = ""
 confidence = "medium"
+explanation = """
+Hits: 0 at v1.168.34 baseline (no `sddk <b/e/f/j/m/n/o/s/q/w/x/z>` examples in agents/ or prompts/ that match the sieve alphabet).
+Verdict: blocked_on_audit
+Reason: the regex `sddk +[befjmnosqwxz]` is a first-letter sieve without lookahead. It is unsafe-by-design against legitimate commands that share a first letter with the sieve alphabet — `sddk memory`, `sddk metrics`, `sddk status`, `sddk ship`, `sddk fork`, `sddk stale`, `sddk explore` are all real commands in the v1.168.34 CLI surface. Promoting to `deny` would guarantee false positives on any future agent asset that legitimately uses one of these commands.
+Unblock: keep this lint advisory permanently. Full-surface validation against the clap registry is the responsibility of `live_registry_command_specs_are_in_sync` (AX-S1 pin) which checks every `sddk <cmd>` example against the actual command_spec.rs surface. If the AX-S1 pin ever catches drift, it points at the asset; this lint stays advisory as a redundant backup that is not safe to enforce.
+"""
 
 # ARCH-LINT-AX-S5 audit (v1.168.29, 2026-09-12): three of the four AX-S5
 # agent-asset hygiene lints are PROMOTED to `default: deny`. Per-lint

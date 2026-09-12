@@ -12,10 +12,18 @@
 //! Enforcement modes (exit code semantics):
 //! - advisory (default): exit 0 regardless of hits, the user inspects text output.
 //! - `--enforce`: exit non-zero if any lint with `default: deny` reports
-//!   hits. **In v1.168.8 none of the 5 lints are `default: deny`**, so
-//!   `--enforce` is a no-op today; the flag exists for forward-compatibility
-//!   with the ARCH-LINT-M9.1 follow-up cycle that will promote individual
-//!   lints to `deny` after per-lint validation.
+//!   hits. At v1.168.34 four lints are `default: deny` and reported with
+//!   0 hits against the live workspace: `agent_result_used` (M9.1, v1.168.12)
+//!   and the three AX-S5 agent-asset hygiene lints (v1.168.29). The five
+//!   `default: allow` advisory lints split by blocker kind: 1 is construction-
+//!   blocked (`evidence_kind_v1`, gated on ADR-0100 + cycle-5 evidence-
+//!   relations) and 4 are audit-blocked (`transition_outcome_used` description
+//!   rewrite, `orchestration_synthesis_no_dissent` runner extension,
+//!   `execution_outcome_as_synthesis` corpus expansion, `asset_unregistered_cli_example`
+//!   regex unsafe-by-design). Per-lint rationale lives in each [[lints]].explanation
+//!   block of `deprecated_patterns.toml`. See header table (ARCH-LINT-M9.2).
+//!   `--enforce` is meaningful and passes on a clean workspace today; the
+//!   flag stays for forward-compatibility with future promotion cycles.
 //!
 //! Implementation notes:
 //! - Glob expansion uses `glob::glob_with` for cross-platform behaviour.
