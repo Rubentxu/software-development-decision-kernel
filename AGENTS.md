@@ -239,6 +239,7 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
   (formerly `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`,
   now superseded; the canonical substrate ADR is ADR-0097).
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
+- **Handoff más reciente:** `docs/handoff/HANDOFF-2026-09-12-roadmap-sweep-closeout-release-1.168.60.md`
 - **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
 
 ---
