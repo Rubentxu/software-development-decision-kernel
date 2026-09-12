@@ -72,6 +72,7 @@ pub mod receipt_writers;
 pub mod release_readiness;
 pub mod replay_proof;
 pub mod retry;
+pub mod revision_substrate;
 pub mod risk_approval_policy;
 pub mod rules;
 pub mod run_view;
