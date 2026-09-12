@@ -507,11 +507,25 @@ paths = ["crates/**/*.rs"]
     }
 
     #[test]
-    fn live_registry_asset_lints_are_advisory_and_clean() {
-        // AX-S5 promotion guard: the four agent-asset hygiene lints must
-        // stay advisory (default: allow) and produce zero hits against the
-        // live corpus (agents/ + prompts/). A hit means asset prose drifted;
-        // a mode flip to deny requires a deliberate decision.
+    fn live_registry_asset_lints_are_promoted_or_advisory_and_clean() {
+        // ARCH-LINT-AX-S5 promotion guard (v1.168.29): three of the four
+        // AX-S5 agent-asset hygiene lints are now `default: deny`
+        // (asset_deprecated_namespace, asset_raw_store_reference,
+        // asset_authority_language) — they pass all three acceptance
+        // criteria from [acceptance_for_m9_blocking_enforcement]:
+        // validation_per_lint (0 hits, no legacy paths), migration
+        // completion (convention only, no replacement code), and
+        // user_signoff (continuous auto-mode authorization).
+        //
+        // asset_unregistered_cli_example remains `default: allow` because
+        // its first-letter-sieve regex is unsafe against legitimate
+        // commands (memory/metrics/status/ship/fork/stale/explore).
+        // Full-surface validation stays the responsibility of the AX-S1
+        // `live_registry_command_specs_are_in_sync` pin.
+        //
+        // Every lint must produce ZERO hits against the live corpus
+        // (agents/ + prompts/); a hit under deny is a CI blocker, a hit
+        // under allow is a regression.
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let workspace_root = manifest
             .ancestors()
@@ -520,11 +534,12 @@ paths = ["crates/**/*.rs"]
             .to_path_buf();
         let registry_path = workspace_root.join("docs/architecture/lints/deprecated_patterns.toml");
         let registry = load_registry(&registry_path).expect("live registry must parse");
+
+        // Three promoted lints: deny + zero hits.
         for id in [
             "asset_deprecated_namespace",
             "asset_raw_store_reference",
             "asset_authority_language",
-            "asset_unregistered_cli_example",
         ] {
             let lint = registry
                 .lints
@@ -533,12 +548,33 @@ paths = ["crates/**/*.rs"]
                 .unwrap_or_else(|| panic!("{id} must exist"));
             assert_eq!(
                 lint.default.as_deref(),
-                Some("allow"),
-                "{id} must stay advisory"
+                Some("deny"),
+                "{id} promoted to deny in v1.168.29"
             );
             let hits = collect_hits(&workspace_root, lint).unwrap();
-            assert!(hits.is_empty(), "{id} advisory but found hits: {hits:?}");
+            assert!(
+                hits.is_empty(),
+                "{id} deny but found hits: {hits:?} — corpus regressed"
+            );
         }
+
+        // One advisory lint: allow + zero hits (regression guard).
+        let advisory_id = "asset_unregistered_cli_example";
+        let advisory = registry
+            .lints
+            .iter()
+            .find(|l| l.id == advisory_id)
+            .unwrap_or_else(|| panic!("{advisory_id} must exist"));
+        assert_eq!(
+            advisory.default.as_deref(),
+            Some("allow"),
+            "{advisory_id} stays advisory per ARCH-LINT-AX-S5 (unsafe regex)"
+        );
+        let advisory_hits = collect_hits(&workspace_root, advisory).unwrap();
+        assert!(
+            advisory_hits.is_empty(),
+            "{advisory_id} advisory but found hits: {advisory_hits:?}"
+        );
     }
 
     #[test]

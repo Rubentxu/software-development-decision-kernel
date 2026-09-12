@@ -22,8 +22,8 @@
 schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
-last_extended_at = "2026-09-11T15:59:00Z"
-enforcement_status = "agent_result_used: deny (M9.1, v1.168.12); remaining four: advisory — replacement ADRs (ADR-0100/0101) still proposed"
+last_extended_at = "2026-09-12T08:44:00Z"
+enforcement_status = "agent_result_used: deny (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language: deny (v1.168.29, ARCH-LINT-AX-S5 promotion); remaining: advisory — replacement ADRs (ADR-0100/0101) still proposed or first-letter regex unsafe-by-design"
 
 [[lints]]
 id = "agent_result_used"
@@ -236,7 +236,7 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 [[lints]]
 id = "asset_deprecated_namespace"
 severity = "warn"
-default = "allow"
+default = "deny"
 category = "agent_assets"
 description = """
 Legacy namespace spelling in agent-facing assets. AGENTS.md 2.0 normalizes
@@ -259,7 +259,7 @@ confidence = "high"
 [[lints]]
 id = "asset_raw_store_reference"
 severity = "warn"
-default = "allow"
+default = "deny"
 category = "agent_assets"
 description = """
 Raw store/table reference in agent-facing prose. Agents reason over typed
@@ -285,7 +285,7 @@ confidence = "high"
 [[lints]]
 id = "asset_authority_language"
 severity = "warn"
-default = "allow"
+default = "deny"
 category = "agent_assets"
 description = """
 Capability-bypassing authority language. Prose cannot grant side-effect
@@ -323,6 +323,18 @@ Regex line scan for `sddk <word>` over Markdown assets where the word
 starts with a letter unused by any registered top-level command (the
 regex engine has no lookahead; first-letter sieve + confidence: medium).
 Full-surface validation stays in the command_spec clap guard.
+
+ARCH-LINT-AX-S5 audit (v1.168.29): this lint stays `default: allow`
+because its first-letter-sieve regex has documented false-positive
+risk against legitimate commands that share a first letter with the
+sieve alphabet (e.g. `sddk memory`, `sddk metrics`, `sddk status`,
+`sddk ship`, `sddk fork`, `sddk stale`, `sddk explore` — all real
+commands in the current CLI surface). The current corpus has 0 hits,
+but the regex is unsafe-by-design; promoting to `deny` would
+guarantee false positives on any future asset that legitimately uses
+`sddk memory` etc. Full-surface validation stays the responsibility
+of `live_registry_command_specs_are_in_sync` (AX-S1 pin) which checks
+every example against the actual clap surface.
 """
 pattern = "sddk +[befjmnosqwxz]"
 paths = [
@@ -336,3 +348,35 @@ reference_adrs = []
 milestone_introduced = "AX-S5"
 milestone_enforces = ""
 confidence = "medium"
+
+# ARCH-LINT-AX-S5 audit (v1.168.29, 2026-09-12): three of the four AX-S5
+# agent-asset hygiene lints are PROMOTED to `default: deny`. Per-lint
+# rationale:
+#
+# asset_deprecated_namespace — PROMOTED to `default: deny`.
+#   Audit: 0 hits against the live corpus (agents/ + prompts/, scanned via
+#   `sddk dev lint deprecated-patterns`). Regex is deterministic (literal
+#   `SDD-kernel|sddk-kernel`); no false-positive risk. Migration is a
+#   convention (use the active namespace) and the corpus already complies.
+#   Validation_per_lint ✅, migration_completion ✅ (prose convention only,
+#   no replacement code needed), user_signoff ✅ (continuous auto-mode).
+#
+# asset_raw_store_reference — PROMOTED to `default: deny`.
+#   Audit: 0 hits. Regex matches literal SQL/storage keywords; deterministic
+#   and false-positive-resistant (those keywords never appear in healthy
+#   agent prose). Same convention-only migration argument as above.
+#
+# asset_authority_language — PROMOTED to `default: deny`.
+#   Audit: 0 hits. Regex matches bypass-language phrases that should never
+#   appear in capability-mediated prose (SPEC-013..018). Deterministic;
+#   false-positive risk is zero by construction (no legitimate asset would
+#   say "ignore the invariant").
+#
+# asset_unregistered_cli_example — REMAINS `default: allow` (advisory).
+#   Audit: 0 hits today, but the regex is first-letter-sieve without
+#   lookahead and matches legitimate commands (`sddk memory`, `sddk metrics`,
+#   `sddk status`, `sddk ship`, `sddk fork`, `sddk stale`, `sddk explore`).
+#   Promoting to `deny` would guarantee false positives on any future asset
+#   using these commands. Full-surface validation stays the responsibility
+#   of `live_registry_command_specs_are_in_sync` (AX-S1 pin) which checks
+#   every example against the actual clap surface.
