@@ -163,8 +163,9 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_adr_promotion_format.sh \
             tests/test_advisory_lint_explanations.sh \
             tests/test_deny_lint_zero_hits.sh \
+            tests/test_vault_adr_mirror_coverage.sh \
             || die "shellcheck failed"
-        ok "shellcheck clean (scope: release-receipt + 5 cross-crate/M9+ tests)"
+        ok "shellcheck clean (scope: release-receipt + 6 cross-crate/M9+ tests)"
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
@@ -172,7 +173,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_authority_helper_lockstep.sh \
              tests/test_adr_promotion_format.sh \
              tests/test_advisory_lint_explanations.sh \
-             tests/test_deny_lint_zero_hits.sh; do
+             tests/test_deny_lint_zero_hits.sh \
+             tests/test_vault_adr_mirror_coverage.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"
