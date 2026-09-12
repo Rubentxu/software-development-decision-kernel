@@ -1,7 +1,7 @@
 ---
 id: INC-RELEASE-TAG-FIX
 title: "release script step 9 anchors tag to stale origin/main, requiring manual repointing"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "release-002-step9-tag-anchoring"
@@ -12,9 +12,32 @@ cluster_id: CL-RELEASE-PIPELINE-INTEGRITY
 created: 2026-09-12
 created_by: orchestrator
 owner: release-pipeline
-closed_at: null
-closed_by: null
-resolution_note: null
+closed_at: 2026-09-12
+closed_by: orchestrator (commit a86e85d "feat(release): sync HEAD to origin/main before publish (closes INC-RELEASE-TAG-FIX)" — released as v1.168.41)
+resolution_note: |
+  Closed at v1.168.41 by adding step 1c/14 to scripts/release.sh. The
+  step fetches origin/main, then either fast-forwards origin (the
+  pre-push hook enforces the bump predicate), or fails closed if
+  origin/main has advanced concurrently. Step 1c lives outside the
+  SKIP_TESTS guard — pushing is part of the release contract, not the
+  test gate. New pin test tests/test_release_tag_anchoring.sh (174 LoC)
+  verifies five invariants: (a) step 1c ordering between 1b and 2, (b)
+  pushes the branch (no tag, no --force), (c) outside SKIP_TESTS guard,
+  (d) does not duplicate the pre-push bump predicate, (e) fail-closes
+  via merge-base ancestor check.
+
+  Verified end-to-end at v1.168.41 release:
+    - Step 1c pushed HEAD (6ff895b) to origin/main before step 9.
+    - gh release create v1.168.41 --target main resolved to 6ff895b.
+    - Tag v1.168.41 → 6ff895b (matches HEAD, no manual repointing
+      required — the entire point of the fix).
+    - Local binary 1.168.41, doctor all_present: true.
+
+  Known caveat documented: the fix assumes the operator does not amend
+  HEAD after step 1c pushes. In the current release flow, step 3 (cargo
+  build) does not commit, so step 1c's push is still authoritative when
+  step 9 runs. If the flow changes to commit during the build phase,
+  step 1c would need a re-push or a pre-publish invariant.
 last_updated: 2026-09-12
 ---
 
