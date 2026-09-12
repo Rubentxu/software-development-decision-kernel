@@ -469,6 +469,69 @@ pub struct UatDisagreement {
     pub recorded_at: String,
 }
 
+/// Aggregates disagreement records into empirical metrics (REQ-RF-022
+/// learning loop). Pure function: no I/O.
+///
+/// Classification:
+/// - machine `Pass` + human `Rejected` => machine false positive.
+/// - machine `Fail` + human `Accepted` => machine false negative.
+/// - `Uncertain`/`Conflicting` verdicts count toward `total` and
+///   `by_category` only (no reliable ground truth on either side).
+pub fn aggregate_disagreement_metrics(records: &[UatDisagreement]) -> UatDisagreementMetrics {
+    let mut m = UatDisagreementMetrics {
+        total: records.len() as u32,
+        ..UatDisagreementMetrics::default()
+    };
+    let mut machine_pass = 0u32;
+    let mut machine_fail = 0u32;
+    for r in records {
+        *m.by_category.entry(r.reason_category.clone()).or_default() += 1;
+        match r.machine_verdict {
+            UatOracleVerdict::Pass => {
+                machine_pass += 1;
+                if r.human_verdict == UatAcceptanceStatus::Rejected {
+                    m.false_positives += 1;
+                }
+            }
+            UatOracleVerdict::Fail => {
+                machine_fail += 1;
+                if r.human_verdict == UatAcceptanceStatus::Accepted {
+                    m.false_negatives += 1;
+                }
+            }
+            UatOracleVerdict::Uncertain | UatOracleVerdict::Conflicting => {}
+        }
+    }
+    if machine_pass > 0 {
+        m.fp_rate = Some(m.false_positives as f64 / machine_pass as f64);
+    }
+    if machine_fail > 0 {
+        m.fn_rate = Some(m.false_negatives as f64 / machine_fail as f64);
+    }
+    m
+}
+
+/// Validates one disagreement record. Returns human-readable errors.
+pub fn validate_disagreement(record: &UatDisagreement) -> Vec<String> {
+    let mut errors = Vec::new();
+    if record.scenario_id.trim().is_empty() {
+        errors.push("scenario_id is required".to_owned());
+    }
+    if record.reason_category.trim().is_empty() {
+        errors.push("reason_category is required".to_owned());
+    }
+    if !(0.0..=1.0).contains(&record.machine_confidence) {
+        errors.push(format!(
+            "machine_confidence {} outside 0..=1",
+            record.machine_confidence
+        ));
+    }
+    if record.recorded_at.trim().is_empty() {
+        errors.push("recorded_at is required".to_owned());
+    }
+    errors
+}
+
 /// Construye la Human Review Queue desde el plan + el report agregado.
 ///
 /// Reglas (REQ-RF-022):
@@ -1689,6 +1752,29 @@ pub struct UatReportSummary {
     #[serde(default)]
     /// Total human minutes spent across sessions.
     pub uat_duration_minutes: u32,
+    /// Human-vs-machine disagreement records aggregated into this report
+    /// (REQ-RF-022 learning loop). Absent when no dataset exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disagreement_metrics: Option<UatDisagreementMetrics>,
+}
+
+/// Empirical accuracy metrics derived from the local `UatDisagreement`
+/// dataset (REQ-RF-022). Advisory: small samples are noisy by design.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct UatDisagreementMetrics {
+    /// Total disagreement records evaluated.
+    pub total: u32,
+    /// Machine PASS rejected by a human (machine false positive).
+    pub false_positives: u32,
+    /// Machine FAIL overturned by a human (machine false negative).
+    pub false_negatives: u32,
+    /// false_positives / records with machine verdict Pass.
+    pub fp_rate: Option<f64>,
+    /// false_negatives / records with machine verdict Fail.
+    pub fn_rate: Option<f64>,
+    /// Disagreements by reason category.
+    pub by_category: std::collections::BTreeMap<String, u32>,
 }
 
 /// Per-feature rollup: coverage + scenario statuses (traceability view).
@@ -3811,6 +3897,7 @@ features:
                 defects: 0,
                 ux_issues: 0,
                 uat_duration_minutes: 0,
+                disagreement_metrics: None,
             },
             features: vec![UatFeatureRollup {
                 id: "F-01".into(),
@@ -4454,5 +4541,81 @@ items:
         let errors = validate_form_dsl(&spec);
         assert!(!errors.is_empty());
         assert!(errors.iter().any(|e| e.contains("nonexistent-item")));
+    }
+}
+
+#[cfg(test)]
+mod disagreement_tests {
+    use super::*;
+
+    fn rec(mv: UatOracleVerdict, hv: UatAcceptanceStatus, cat: &str) -> UatDisagreement {
+        UatDisagreement {
+            scenario_id: "s-1".into(),
+            machine_verdict: mv,
+            machine_confidence: 0.9,
+            human_verdict: hv,
+            reason_category: cat.into(),
+            explanation: String::new(),
+            evidence_refs: vec![],
+            recorded_at: "2026-09-12T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn disagreement_metrics_classifies_fp_fn() {
+        let records = vec![
+            rec(
+                UatOracleVerdict::Pass,
+                UatAcceptanceStatus::Rejected,
+                "false_positive",
+            ),
+            rec(
+                UatOracleVerdict::Pass,
+                UatAcceptanceStatus::Rejected,
+                "usability",
+            ),
+            rec(
+                UatOracleVerdict::Pass,
+                UatAcceptanceStatus::Accepted,
+                "other",
+            ),
+            rec(
+                UatOracleVerdict::Fail,
+                UatAcceptanceStatus::Accepted,
+                "false_negative",
+            ),
+            rec(UatOracleVerdict::Fail, UatAcceptanceStatus::Rejected, "bug"),
+            rec(
+                UatOracleVerdict::Uncertain,
+                UatAcceptanceStatus::Accepted,
+                "other",
+            ),
+        ];
+        let m = aggregate_disagreement_metrics(&records);
+        assert_eq!(m.total, 6);
+        assert_eq!(m.false_positives, 2);
+        assert_eq!(m.false_negatives, 1);
+        assert_eq!(m.fp_rate, Some(2.0 / 3.0));
+        assert_eq!(m.fn_rate, Some(1.0 / 2.0));
+        assert_eq!(m.by_category.get("false_positive"), Some(&1));
+        assert_eq!(m.by_category.get("usability"), Some(&1));
+    }
+
+    #[test]
+    fn disagreement_metrics_empty_has_no_rates() {
+        let m = aggregate_disagreement_metrics(&[]);
+        assert_eq!(m.total, 0);
+        assert_eq!(m.fp_rate, None);
+        assert_eq!(m.fn_rate, None);
+    }
+
+    #[test]
+    fn disagreement_validation_rejects_bad_fields() {
+        let mut r = rec(UatOracleVerdict::Pass, UatAcceptanceStatus::Rejected, "bug");
+        assert!(validate_disagreement(&r).is_empty());
+        r.machine_confidence = 1.5;
+        r.scenario_id = "  ".into();
+        let errors = validate_disagreement(&r);
+        assert_eq!(errors.len(), 2);
     }
 }

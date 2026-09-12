@@ -78,6 +78,9 @@ pub(crate) enum UatCommand {
     /// Execute a scripted/automated scenario via its `automation.ref` and
     /// emit a baseline `uat-session.yaml` for the ingest/report pipeline.
     Run(UatRunArgs),
+    /// Record a human-vs-machine disagreement (REQ-RF-022 learning loop):
+    /// appends an append-only local dataset used to estimate machine FP/FN.
+    Disagreement(UatDisagreementArgs),
     /// Build the Human Review Queue (REQ-RF-022) from a plan + report:
     /// required (P0/policy), oracle conflicts, low confidence, and the
     /// deterministic sample of machine-PASS scenarios.
@@ -202,6 +205,10 @@ pub(crate) struct UatReportArgs {
     /// Output YAML path.
     #[arg(long)]
     pub(crate) output: Option<PathBuf>,
+    /// Project identifier (defaults to the current adoption's `project_id`).
+    /// Used to locate the disagreement dataset (REQ-RF-022).
+    #[arg(long)]
+    pub(crate) project: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -567,6 +574,42 @@ pub(crate) struct UatReviewArgs {
     pub(crate) format: OutputFormat,
 }
 
+/// Args for the `uat disagreement` command (REQ-RF-022 learning loop).
+#[derive(Debug, Clone, Args)]
+pub(crate) struct UatDisagreementArgs {
+    /// Scenario id the disagreement refers to.
+    #[arg(long)]
+    pub(crate) scenario: String,
+    /// Machine verdict: pass | fail | uncertain | conflicting.
+    #[arg(long)]
+    pub(crate) machine_verdict: String,
+    /// Machine confidence 0..1.
+    #[arg(long, default_value_t = 1.0)]
+    pub(crate) machine_confidence: f64,
+    /// Human verdict: accepted | rejected | conditional | pending.
+    #[arg(long)]
+    pub(crate) human_verdict: String,
+    /// Reason category (usability, bug, spec_drift, false_positive,
+    /// false_negative, other).
+    #[arg(long)]
+    pub(crate) reason_category: String,
+    /// Free-text explanation from the human.
+    #[arg(long, default_value = "")]
+    pub(crate) explanation: String,
+    /// Evidence references (sha256 or path); repeatable.
+    #[arg(long)]
+    pub(crate) evidence: Vec<String>,
+    /// Candidate release tag this scenario belongs to.
+    #[arg(long)]
+    pub(crate) release: String,
+    /// Project identifier (defaults to the current adoption's `project_id`).
+    #[arg(long)]
+    pub(crate) project: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
 #[derive(Debug, Clone, Args)]
 pub(crate) struct UatRunArgs {
     /// Plan YAML containing the scenario.
@@ -685,7 +728,7 @@ pub(crate) fn run_uat(command: UatCommand, environment: &crate::CliEnvironment) 
         UatCommand::Dashboard(args) => run_uat_dashboard(args, environment),
         UatCommand::Open(args) => run_uat_open(args, environment),
         UatCommand::Ingest(args) => run_uat_ingest(args, environment),
-        UatCommand::Report(args) => run_uat_report(args),
+        UatCommand::Report(args) => run_uat_report(args, environment),
         UatCommand::Status(args) => run_uat_status(args),
         UatCommand::Failures(args) => run_uat_failures(args),
         UatCommand::Config(args) => run_uat_config(args, environment),
@@ -700,6 +743,7 @@ pub(crate) fn run_uat(command: UatCommand, environment: &crate::CliEnvironment) 
         UatCommand::History(args) => run_uat_history(args),
         UatCommand::Run(args) => run_uat_run(args),
         UatCommand::Review(args) => run_uat_review(args),
+        UatCommand::Disagreement(args) => run_uat_disagreement(args, environment),
         UatCommand::Assess(args) => run_uat_assess(args),
         UatCommand::Batch(args) => run_uat_batch(args),
         UatCommand::Quality(args) => run_uat_quality(args),
@@ -1870,7 +1914,7 @@ fn config_action_str(action: sddk_domain::ReleaseGateAction) -> &'static str {
     }
 }
 
-fn run_uat_report(args: UatReportArgs) -> CommandOutput {
+fn run_uat_report(args: UatReportArgs, environment: &crate::CliEnvironment) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<PathBuf> {
         let plan_raw = std::fs::read_to_string(&args.plan)
@@ -1903,7 +1947,11 @@ fn run_uat_report(args: UatReportArgs) -> CommandOutput {
             sessions.push(session);
         }
 
-        let report = aggregate_report(&plan, &sessions);
+        let mut report = aggregate_report(&plan, &sessions);
+        // REQ-RF-022 learning loop: embed empirical FP/FN metrics when a
+        // disagreement dataset exists. Best-effort — never blocks reporting.
+        report.summary.disagreement_metrics =
+            load_disagreement_metrics(environment, args.project.as_deref());
         let path = args
             .output
             .unwrap_or_else(|| PathBuf::from(format!("uat-report-{}.yaml", args.release)));
@@ -2160,12 +2208,36 @@ fn aggregate_report(plan: &UatPlan, sessions: &[UatSession]) -> UatReport {
             defects,
             ux_issues,
             uat_duration_minutes: total_minutes,
+            disagreement_metrics: None,
         },
         features,
         verdict,
         not_ready_blockers,
         acceptance_blockers,
     }
+}
+
+/// Loads the local disagreement dataset (if any) and computes metrics for
+/// embedding into a report (REQ-RF-022 learning loop). Best-effort: a missing
+/// or malformed dataset yields `None` rather than failing the report.
+fn load_disagreement_metrics(
+    environment: &crate::CliEnvironment,
+    project: Option<&str>,
+) -> Option<sddk_domain::UatDisagreementMetrics> {
+    let project_id = resolve_project_id(project, environment).ok()?;
+    let xdg = xdg_from_env(environment);
+    let dataset_path = sddk_engine::uat_storage_root(&xdg, &project_id)
+        .ok()?
+        .join("disagreements.yaml");
+    if !dataset_path.exists() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(&dataset_path).ok()?;
+    let records: Vec<sddk_domain::UatDisagreement> = serde_saphyr::from_str(&raw).ok()?;
+    if records.is_empty() {
+        return None;
+    }
+    Some(sddk_domain::aggregate_disagreement_metrics(&records))
 }
 
 #[cfg(test)]
@@ -3644,6 +3716,95 @@ fn run_uat_assess(args: UatAssessArgs) -> CommandOutput {
         },
         Err(e) => crate::failure_envelope(&e),
     }
+}
+
+/// Execute the `uat disagreement` command (REQ-RF-022 learning loop):
+/// appends a `UatDisagreement` record to the project's append-only local
+/// dataset (`<uat-storage-root>/disagreements.yaml`) and prints the running
+/// FP/FN estimate.
+fn run_uat_disagreement(
+    args: UatDisagreementArgs,
+    environment: &crate::CliEnvironment,
+) -> CommandOutput {
+    let format = args.format;
+    let result: anyhow::Result<String> = (|| -> anyhow::Result<String> {
+        // Parse verdicts (closed-set, fail-closed on unknown values).
+        let machine_verdict = match args.machine_verdict.to_lowercase().as_str() {
+            "pass" => sddk_domain::UatOracleVerdict::Pass,
+            "fail" => sddk_domain::UatOracleVerdict::Fail,
+            "uncertain" => sddk_domain::UatOracleVerdict::Uncertain,
+            "conflicting" => sddk_domain::UatOracleVerdict::Conflicting,
+            other => anyhow::bail!(
+                "invalid --machine-verdict '{other}' (pass|fail|uncertain|conflicting)"
+            ),
+        };
+        let human_verdict = match args.human_verdict.to_lowercase().as_str() {
+            "accepted" => sddk_domain::UatAcceptanceStatus::Accepted,
+            "rejected" => sddk_domain::UatAcceptanceStatus::Rejected,
+            "conditional" => sddk_domain::UatAcceptanceStatus::Conditional,
+            "pending" => sddk_domain::UatAcceptanceStatus::Pending,
+            other => anyhow::bail!(
+                "invalid --human-verdict '{other}' (accepted|rejected|conditional|pending)"
+            ),
+        };
+
+        let record = sddk_domain::UatDisagreement {
+            scenario_id: args.scenario.clone(),
+            machine_verdict,
+            machine_confidence: args.machine_confidence,
+            human_verdict,
+            reason_category: args.reason_category.clone(),
+            explanation: args.explanation.clone(),
+            evidence_refs: args.evidence.clone(),
+            recorded_at: now_rfc3339(),
+        };
+        let errors = sddk_domain::validate_disagreement(&record);
+        if !errors.is_empty() {
+            anyhow::bail!("invalid disagreement record: {}", errors.join("; "));
+        }
+
+        // Append-only dataset in the project's XDG uat storage root.
+        let project_id = resolve_project_id(args.project.as_deref(), environment)?;
+        let xdg = xdg_from_env(environment);
+        let dataset_path = sddk_engine::uat_storage_root(&xdg, &project_id)
+            .map_err(|e| anyhow::anyhow!("cannot resolve storage root: {e}"))?
+            .join("disagreements.yaml");
+
+        let mut records: Vec<sddk_domain::UatDisagreement> = if dataset_path.exists() {
+            let raw = std::fs::read_to_string(&dataset_path)?;
+            serde_saphyr::from_str(&raw)
+                .map_err(|e| anyhow::anyhow!("invalid dataset {}: {e}", dataset_path.display()))?
+        } else {
+            Vec::new()
+        };
+        records.push(record);
+
+        // Atomic rewrite (temp + rename) — dataset stays small; append-only
+        // semantics are per-record, and rewrites never drop prior records.
+        let yaml = serde_saphyr::to_string(&records)
+            .map_err(|e| anyhow::anyhow!("serialization failed: {e}"))?;
+        let tmp = dataset_path.with_extension("yaml.tmp");
+        std::fs::create_dir_all(dataset_path.parent().unwrap())?;
+        std::fs::write(&tmp, yaml)?;
+        std::fs::rename(&tmp, &dataset_path)?;
+
+        // Running estimate for immediate feedback.
+        let m = sddk_domain::aggregate_disagreement_metrics(&records);
+        Ok(format!(
+            "disagreement recorded (dataset: {})\ntotal: {}  fp: {}  fn: {}  fp_rate: {}  fn_rate: {}",
+            dataset_path.display(),
+            m.total,
+            m.false_positives,
+            m.false_negatives,
+            m.fp_rate
+                .map(|v| format!("{v:.3}"))
+                .unwrap_or_else(|| "n/a".into()),
+            m.fn_rate
+                .map(|v| format!("{v:.3}"))
+                .unwrap_or_else(|| "n/a".into()),
+        ))
+    })();
+    render_result(result, format, |s| s.clone())
 }
 
 fn run_uat_review(args: UatReviewArgs) -> CommandOutput {
