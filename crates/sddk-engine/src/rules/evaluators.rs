@@ -18,21 +18,99 @@ pub const EVALUATOR_VERSION: &str = "0.1.0";
 
 /// Evaluates every registered rule against the baseline (Phase 1).
 ///
-/// Waiver precedence: if a waiver exists and `baseline.ref_.head_anchor <=
-/// w.granted_until_sha`, the evaluation is overridden to `Waived`.
-/// Expired waivers (head_anchor > granted_until_sha) result in `NotApplicable`
-/// to preserve Phase 0 backward compatibility with existing waivers in the registry.
+/// Waiver precedence: if a waiver exists and is still active for the
+/// baseline's `head_anchor` (decided by the injected
+/// [`WaiverExpiryResolver`], INC-DEBT-018), the evaluation is overridden to
+/// `Waived`. Expired waivers result in `NotApplicable` to preserve Phase 0
+/// backward compatibility with existing waivers in the registry.
+/// Builds the production waiver-expiry resolver: real git ancestry.
+///
+/// A waiver is active when `granted_until_sha` is an ancestor of (or equal
+/// to) `head_anchor` in the repository at `repo_root`, determined via
+/// `git merge-base --is-ancestor`. Falls back to lexicographic comparison
+/// when the resolved SHA is unknown to git (`unknown`, short-vs-long SHA
+/// resolution failure) so evaluation never silently waives on bad data.
+/// See INC-DEBT-018.
+#[must_use]
+pub fn git_ancestry_resolver(repo_root: &std::path::Path) -> sddk_domain::WaiverExpiryResolver {
+    let root = repo_root.to_path_buf();
+    std::sync::Arc::new(move |head: &str, until: &str| {
+        if head == until {
+            return true;
+        }
+        // Resolve both anchors to full SHAs; if either is not a git object
+        // (e.g. "unknown"), fall back to lexicographic compare.
+        let (full_head, full_until) =
+            match (git_rev_parse(&root, head), git_rev_parse(&root, until)) {
+                (Some(h), Some(u)) => (h, u),
+                _ => return head <= until,
+            };
+        if full_head == full_until {
+            return true;
+        }
+        git_is_ancestor(&root, &full_until, &full_head)
+    })
+}
+
+fn git_rev_parse(repo_root: &std::path::Path, rev: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{rev}^{{commit}}"),
+        ])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    } else {
+        None
+    }
+}
+
+fn git_is_ancestor(repo_root: &std::path::Path, ancestor: &str, descendant: &str) -> bool {
+    std::process::Command::new("git")
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .current_dir(repo_root)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 pub fn evaluate_all(
     registry: &RuleRegistry,
     baseline: &Baseline,
     evaluated_at: &str,
+) -> Vec<RuleEvaluation> {
+    // Legacy lexicographic resolver (head_anchor <= granted_until_sha).
+    let resolver: sddk_domain::WaiverExpiryResolver =
+        std::sync::Arc::new(|head: &str, until: &str| head <= until);
+    evaluate_all_with_resolver(registry, baseline, evaluated_at, resolver)
+}
+
+/// Like [`evaluate_all`], but the waiver-expiry decision comes from the
+/// injected resolver. Production callers inject git-ancestry semantics
+/// (`merge-base --is-ancestor`); tests and no-git environments fall back to
+/// the lexicographic comparison of [`evaluate_all`].
+pub fn evaluate_all_with_resolver(
+    registry: &RuleRegistry,
+    baseline: &Baseline,
+    evaluated_at: &str,
+    resolver: sddk_domain::WaiverExpiryResolver,
 ) -> Vec<RuleEvaluation> {
     registry
         .iter()
         .map(|rule| {
             // ── Waiver pre-check ──────────────────────────────────────────────
             if let Some(w) = registry.waiver_for(&rule.id) {
-                if baseline.ref_.head_anchor <= w.granted_until_sha {
+                let head = baseline.ref_.head_anchor.as_str();
+                let until = w.granted_until_sha.as_str();
+                // Sentinel "9999…" never expires regardless of resolver semantics.
+                let active =
+                    until == sddk_domain::WAIVER_NO_EXPIRY_SENTINEL || resolver(head, until);
+                if active {
                     return RuleEvaluation {
                         rule_id: rule.id.clone(),
                         status: RuleStatus::Waived,

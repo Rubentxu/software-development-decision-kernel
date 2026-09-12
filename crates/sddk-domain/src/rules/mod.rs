@@ -6,7 +6,7 @@ pub mod types;
 pub use registry::{RegistryError, RuleRegistry};
 pub use types::{
     ArchitectureRule, BaselineRef, EvaluatorKind, RuleEvaluation, RuleSeverity, RuleStatus,
-    RuleTarget, Waiver,
+    RuleTarget, WAIVER_NO_EXPIRY_SENTINEL, Waiver, WaiverExpiryResolver,
 };
 /// Current schema version for `architecture-rules.yaml` files.
 ///

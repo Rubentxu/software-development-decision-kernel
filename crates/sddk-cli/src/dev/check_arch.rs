@@ -18,7 +18,7 @@
 
 use crate::CommandOutput;
 use sddk_domain::{RuleRegistry, RuleSeverity, RuleStatus};
-use sddk_engine::rules::{BaselineConsumer, evaluate_all};
+use sddk_engine::rules::{BaselineConsumer, evaluate_all_with_resolver, git_ancestry_resolver};
 use serde::Serialize;
 
 /// Architecture check result rendered as a single table row.
@@ -90,7 +90,10 @@ pub(super) fn run_check_architecture(args: super::CheckArchitectureArgs) -> Comm
     };
 
     // ── Evaluate ────────────────────────────────────────────────────────────
-    let evaluations = evaluate_all(&registry, &baseline, &now);
+    // INC-DEBT-018: decide waiver expiry by real git ancestry, not lexicographic
+    // SHA compare (a fixed granted_until_sha expired on every commit otherwise).
+    let resolver = git_ancestry_resolver(root);
+    let evaluations = evaluate_all_with_resolver(&registry, &baseline, &now, resolver);
 
     // ── Render tabular output ──────────────────────────────────────────────
     let mut rows: Vec<ArchCheckRow> = Vec::new();

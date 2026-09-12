@@ -128,9 +128,10 @@ pub struct ArchitectureRule {
 /// A time-limited, human-granted exception to an architecture rule.
 ///
 /// Waivers are recorded in `architecture-rules.yaml` and evaluated against the
-/// `head_anchor` of the baseline. A waiver is active only when the baseline's
-/// head anchor is less than or equal to `granted_until_sha`; once the baseline
-/// advances past that SHA the waiver expires and the rule resumes its normal status.
+/// `head_anchor` of the baseline. Whether a waiver is still active is decided
+/// by the [`WaiverExpiryResolver`] injected into `evaluate_all` (INC-DEBT-018):
+/// real git ancestry when a repository is available, lexicographic fallback
+/// otherwise. The sentinel value `9999…` (40 nines) means "never expires".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Waiver {
     /// Unique identifier for this waiver (e.g. `"WV-0001"`).
@@ -151,6 +152,23 @@ pub struct Waiver {
     #[serde(default)]
     pub scope: BTreeMap<String, Vec<String>>,
 }
+
+/// Sentinel `granted_until_sha` value meaning "this waiver never expires".
+pub const WAIVER_NO_EXPIRY_SENTINEL: &str = "9999999999999999999999999999999999999999";
+
+/// Decides whether a waiver is still active for a given baseline head anchor.
+///
+/// Receives `(head_anchor, granted_until_sha)` and returns `true` when the
+/// waiver is active. Implementations:
+///
+/// - **Git ancestry** (production, injected by the CLI): active when
+///   `granted_until_sha` is an ancestor of (or equal to) `head_anchor`, or
+///   when `granted_until_sha` equals [`WAIVER_NO_EXPIRY_SENTINEL`]. See
+///   INC-DEBT-018: lexicographic SHA comparison expires waivers on unrelated
+///   commits and breaks the sentinel.
+/// - **Lexicographic fallback** (tests / no-git environments): the legacy
+///   `head_anchor <= granted_until_sha` string compare.
+pub type WaiverExpiryResolver = std::sync::Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
 
 /// Immutable reference to a captured baseline state used for rule evaluation.
 ///

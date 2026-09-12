@@ -3,7 +3,7 @@
 use crate::{CliEnvironment, CommandOutput, failure};
 use clap::{Args, Subcommand};
 use sddk_domain::{ARCHITECTURE_RULES_SCHEMA_VERSION, RuleEvaluation, RuleRegistry};
-use sddk_engine::rules::{BaselineConsumer, EVALUATOR_VERSION, evaluate_all};
+use sddk_engine::rules::{BaselineConsumer, EVALUATOR_VERSION, evaluate_all_with_resolver};
 use serde::Serialize;
 use std::path::PathBuf;
 use time::OffsetDateTime;
@@ -154,7 +154,9 @@ fn run_rules_check(args: RulesCheckArgs, environment: &CliEnvironment) -> Comman
         Err(e) => return failure(e.to_string()),
     };
     let evaluated_at = now_rfc3339();
-    let evaluations = evaluate_all(&registry, &baseline, &evaluated_at);
+    // INC-DEBT-018: decide waiver expiry by real git ancestry, not lexicographic SHA compare.
+    let resolver = sddk_engine::rules::git_ancestry_resolver(std::path::Path::new("."));
+    let evaluations = evaluate_all_with_resolver(&registry, &baseline, &evaluated_at, resolver);
     let output = EvaluationOutput {
         schema_version: ARCHITECTURE_RULES_SCHEMA_VERSION,
         evaluator_version: EVALUATOR_VERSION,

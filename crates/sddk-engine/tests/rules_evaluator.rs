@@ -358,3 +358,90 @@ waivers:
     );
     assert_eq!(r.waiver_id.as_deref(), Some("WV-0001"));
 }
+
+// ── INC-DEBT-018: git-ancestry waiver expiry resolver ─────────────────────────
+
+mod resolver {
+    use super::*;
+    use sddk_engine::rules::{evaluate_all_with_resolver, git_ancestry_resolver};
+    use std::sync::Arc;
+
+    const YAML: &str = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH001
+    severity: error
+    rule: engine_must_not_depend_on_storage
+    target: dependency_graph
+waivers:
+  - id: WV-TEST
+    rule_id: ARCH001
+    reason: "resolver semantics test"
+    granted_until_sha: "%SHA%"
+    granted_by: "test"
+    granted_at: "2026-09-12T00:00:00Z"
+"#;
+
+    fn registry_with_until(until: &str) -> sddk_domain::RuleRegistry {
+        let yaml = YAML.replace("%SHA%", until);
+        sddk_domain::RuleRegistry::from_yaml_str(&yaml).expect("parse succeeds")
+    }
+
+    fn status_with(until: &str, resolver: sddk_domain::WaiverExpiryResolver) -> RuleStatus {
+        let registry = registry_with_until(until);
+        let baseline = make_baseline(vec![("crates/sddk-engine/src/lib.rs", 23, "sddk-storage")]);
+        let results = evaluate_all_with_resolver(&registry, &baseline, "t", resolver);
+        results[0].status
+    }
+
+    #[test]
+    fn lexicographic_fallback_preserves_legacy_behavior() {
+        let resolver: sddk_domain::WaiverExpiryResolver =
+            Arc::new(|head: &str, until: &str| head <= until);
+        // head "1dd72d0" > "00001111" → expired
+        assert_eq!(
+            status_with("00001111", resolver.clone()),
+            RuleStatus::NotApplicable
+        );
+        // head "1dd72d0" <= "fffffffff" → active
+        assert_eq!(status_with("fffffffff", resolver), RuleStatus::Waived);
+    }
+
+    #[test]
+    fn sentinel_never_expires_regardless_of_resolver() {
+        // Even a resolver that says "always expired" must honor the sentinel.
+        let resolver: sddk_domain::WaiverExpiryResolver = Arc::new(|_h, _u| false);
+        assert_eq!(
+            status_with("9999999999999999999999999999999999999999", resolver),
+            RuleStatus::Waived
+        );
+    }
+
+    #[test]
+    fn ancestry_resolver_falls_back_when_sha_unknown() {
+        // Neither anchor is a git object → lexicographic fallback: head
+        // "1dd72d0" vs "fffffffff" → lex active (Waived), vs "0000000" → expired.
+        let resolver = git_ancestry_resolver(&PathBuf::from("."));
+        assert_eq!(
+            status_with("fffffffff", resolver.clone()),
+            RuleStatus::Waived
+        );
+        assert_eq!(status_with("0000000", resolver), RuleStatus::NotApplicable);
+    }
+
+    #[test]
+    fn ancestry_resolver_treats_descendant_head_as_active() {
+        // This test file runs inside the sddk-framework repo; HEAD is a
+        // descendant of the initial commit. Use the initial commit as the
+        // granted SHA: ancestry says ACTIVE, lexicographic said expired.
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let first = std::process::Command::new("git")
+            .args(["rev-list", "--max-parents=0", "HEAD"])
+            .current_dir(&root)
+            .output()
+            .expect("git available");
+        let first_sha = String::from_utf8_lossy(&first.stdout).trim().to_owned();
+        assert!(!first_sha.is_empty(), "need root commit");
+        let resolver = git_ancestry_resolver(&root);
+        assert_eq!(status_with(&first_sha, resolver), RuleStatus::Waived);
+    }
+}
