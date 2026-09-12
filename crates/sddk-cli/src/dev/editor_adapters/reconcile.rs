@@ -49,11 +49,14 @@ impl EditorCapabilities {
                 model_validator: None,
             },
             IdeKey::Zcode => EditorCapabilities {
-                supports_mode: true,
-                supports_hidden: true,
-                supports_prompt_ref: true,
-                supports_tools: false,
-                model_validator: None,
+                // ZCode has no mode/hidden/{file:} prompt references
+                // (ADR-0081); sub-agents are native md files with an optional
+                // tools allowlist.
+                supports_mode: false,
+                supports_hidden: false,
+                supports_prompt_ref: false,
+                supports_tools: true,
+                model_validator: Some(zcode_model_valid),
             },
             IdeKey::Claude => EditorCapabilities {
                 supports_mode: false,
@@ -76,6 +79,11 @@ impl EditorCapabilities {
 /// Claude Code model vocabulary validation.
 fn claude_model_valid(model: &str) -> bool {
     matches!(model, "sonnet" | "opus" | "haiku" | "inherit") || model.contains('/')
+}
+
+/// ZCode model vocabulary validation: full `provider/model` ids only.
+fn zcode_model_valid(model: &str) -> bool {
+    model.contains('/')
 }
 
 // ── ReconcileTarget ───────────────────────────────────────────────────────────

@@ -282,49 +282,6 @@ fn json_prunes_framework_orphan_only() {
     assert_eq!(config["agent"]["my-agent"]["description"], "user");
 }
 
-// I5 — zcode mirrors opencode: same agent set, same schema.
-#[test]
-fn zcode_mirrors_opencode_schema() {
-    let fixture = test_fixtures::build();
-    let dir = temp_config_dir();
-    let opencode_path = dir.path().join("opencode.json");
-    let zcode_path = dir.path().join("zcode.json");
-    let context = ctx(&fixture, Some(&fixture.models));
-    let opencode_report = upsert_json_agents(
-        &opencode_path,
-        IdeKey::Opencode,
-        &super::super::PRIMARY_AGENTS,
-        &context,
-    );
-    let zcode_report = upsert_json_agents(
-        &zcode_path,
-        IdeKey::Zcode,
-        &super::super::PRIMARY_AGENTS,
-        &context,
-    );
-    assert_eq!(opencode_report.registered, 3);
-    assert_eq!(zcode_report.registered, 3);
-    let opencode: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&opencode_path).unwrap()).unwrap();
-    let zcode: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&zcode_path).unwrap()).unwrap();
-    let opencode_agents = opencode["agent"].as_object().unwrap();
-    let zcode_agents = zcode["agent"].as_object().unwrap();
-    assert_eq!(opencode_agents.len(), zcode_agents.len());
-    for (name, entry) in opencode_agents {
-        let mirror = &zcode_agents[name];
-        for key in ["description", "mode", "hidden", "prompt"] {
-            assert_eq!(
-                entry[key], mirror[key],
-                "agent {name} key {key} must mirror"
-            );
-        }
-        // Model may legitimately differ (per-IDE overrides) but the key
-        // must exist in both — same schema.
-        assert!(entry.get("model").is_some() && mirror.get("model").is_some());
-    }
-}
-
 // I12 — ConfigAbsent: entries written without a `model` key.
 #[test]
 fn config_absent_omits_model_key() {

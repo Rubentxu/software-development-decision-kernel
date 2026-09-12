@@ -12,10 +12,13 @@ mod codex;
 mod json;
 pub(super) mod reconcile;
 pub(crate) use reconcile::renames_builder;
+mod zcode;
 
 pub(super) use claude::ClaudeAdapter;
 pub(super) use codex::CodexAdapter;
-pub(super) use json::{OpenCodeAdapter, ZCodeAdapter};
+pub(super) use json::OpenCodeAdapter;
+pub(super) use zcode::ZCodeAdapter;
+pub(super) use zcode::is_sddk_command;
 
 /// Agents marked "primary" (visible by default) in editor configs.
 pub(super) const PRIMARY_AGENTS: [&str; 2] = ["orchestrator", "book-orchestrator"];
@@ -64,10 +67,10 @@ pub(super) struct EditorDirs {
     pub codex: PathBuf,
 }
 
-/// Symlink surface profile per editor: claude/codex own their agents dir
-/// natively, so the agents symlink surface is skipped for them (ADR-0019).
-/// `assets` is shipped in every bundle (agent-models config, UAT dashboard
-/// kit, explorer templates) and so is always symlinked (ADR-0127).
+/// Symlink surface profile per editor: claude/codex/zcode own their agents dir
+/// natively, so the agents symlink surface is skipped for them (ADR-0019,
+/// ADR-0081). `assets` is shipped in every bundle (agent-models config, UAT
+/// dashboard kit, explorer templates) and so is always symlinked (ADR-0127).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct LinkProfile {
     pub agents: bool,
@@ -78,7 +81,7 @@ pub(super) struct LinkProfile {
 }
 
 impl LinkProfile {
-    /// opencode/zcode: all five surfaces symlinked.
+    /// opencode: all five surfaces symlinked.
     pub(super) const ALL: Self = Self {
         agents: true,
         skills: true,
@@ -87,7 +90,7 @@ impl LinkProfile {
         assets: true,
     };
 
-    /// claude/codex: agents are adapter-owned native files, not symlinks.
+    /// claude/codex/zcode: agents are adapter-owned native files, not symlinks.
     pub(super) const NATIVE_AGENTS: Self = Self {
         agents: false,
         skills: true,
@@ -98,8 +101,8 @@ impl LinkProfile {
 
     pub(super) fn for_editor(editor: LinkEditor) -> Self {
         match editor {
-            LinkEditor::OpenCode | LinkEditor::ZCode => Self::ALL,
-            LinkEditor::Claude | LinkEditor::Codex => Self::NATIVE_AGENTS,
+            LinkEditor::OpenCode => Self::ALL,
+            LinkEditor::ZCode | LinkEditor::Claude | LinkEditor::Codex => Self::NATIVE_AGENTS,
             LinkEditor::All => Self::ALL,
         }
     }

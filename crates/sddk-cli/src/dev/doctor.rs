@@ -59,7 +59,7 @@ fn push_marker(checks: &mut Vec<DoctorCheck>, marker: &MarkerStatus) {
     });
 }
 
-fn check_framework(root: &Path, editor_dir: &Path) -> Vec<FrameworkCheck> {
+fn check_framework(root: &Path, editor_dir: &Path, agents_symlinked: bool) -> Vec<FrameworkCheck> {
     let mut checks = Vec::new();
 
     // Broken symlinks in editor agents.
@@ -88,8 +88,57 @@ fn check_framework(root: &Path, editor_dir: &Path) -> Vec<FrameworkCheck> {
         });
     }
 
-    // Stale copies: regular files where a symlink is expected AND the repo has
-    // a matching asset (local-only agents are legitimate, not stale).
+    // Stale copies (symlinked-agents editors only): regular files where a
+    // symlink is expected AND the repo has a matching asset (local-only
+    // agents are legitimate, not stale). Native-agents editors (claude/codex/
+    // zcode, ADR-0081) own their agent files, so the check does not apply;
+    // instead their sub-agent files must carry the REQUIRED `name:` marker.
+    if !agents_symlinked {
+        let mut missing_name: Vec<String> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_regular_md = std::fs::symlink_metadata(&path)
+                    .map(|m| m.is_file())
+                    .unwrap_or(false)
+                    && path.extension().and_then(|e| e.to_str()) == Some("md");
+                if !is_regular_md {
+                    continue;
+                }
+                let has_name = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|content| {
+                        content.strip_prefix("---").and_then(|rest| {
+                            rest.split_once("---").map(|(block, _)| block.to_owned())
+                        })
+                    })
+                    .is_some_and(|block| {
+                        block.lines().any(|line| line.trim().starts_with("name:"))
+                    });
+                if !has_name {
+                    missing_name.push(entry.file_name().to_string_lossy().into_owned());
+                }
+            }
+        }
+        checks.push(FrameworkCheck {
+            name: "agent_name_frontmatter".into(),
+            status: if missing_name.is_empty() {
+                "PASS"
+            } else {
+                "WARN"
+            }
+            .into(),
+            detail: if missing_name.is_empty() {
+                "all agent files carry name frontmatter".into()
+            } else {
+                format!(
+                    "missing name: {} (run dev link to migrate)",
+                    missing_name.join(", ")
+                )
+            },
+        });
+        return checks;
+    }
     let mut stale: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&agents_dir) {
         for entry in entries.flatten() {
@@ -190,11 +239,14 @@ pub(super) fn run_dev_doctor(
     let opencode_dir = home.join(".config/opencode");
     let zcode_dir = home.join(".zcode");
     let mut framework_warnings = 0usize;
-    for (label, editor_dir) in [("opencode", opencode_dir), ("zcode", zcode_dir)] {
+    for (label, editor_dir, agents_symlinked) in [
+        ("opencode", opencode_dir, true),
+        ("zcode", zcode_dir, false),
+    ] {
         if !editor_dir.is_dir() {
             continue;
         }
-        for check in check_framework(&root, &editor_dir) {
+        for check in check_framework(&root, &editor_dir, agents_symlinked) {
             if check.status != "PASS" {
                 framework_warnings += 1;
             }
