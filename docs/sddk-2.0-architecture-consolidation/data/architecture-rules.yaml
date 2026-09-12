@@ -76,8 +76,11 @@ waivers:
   - id: WV-0015-ARCH003-composition-root
     rule_id: ARCH003
     reason: "Two composition-root edges in sddk-cli survive the cli-depersistence cycle (SDDK2-103): (a) use sddk_storage::SqliteControlPlane in lib.rs compose() to construct the adapter injected into Box<dyn ControlPlane>, (b) pub use sddk_storage::Storage re-export to satisfy Engine<Storage> wiring without leaking the concrete type into every CLI module. The downcast fallback in failure_envelope is also covered so error envelopes stay actionable while Storage inherent methods still return the concrete StorageError type. See docs/adr/ADR-0015-arch003-composition-root-waiver.md."
-    granted_until_sha: 522e5b95bad8e3d89ca053a3aaf27a9b63f2229f
+    granted_until_sha: 7f037b5556e89789dd6c3836ffc24f3940cef6da
     granted_by: orchestrator + sddk-apply
+    # 2026-09-12 (REQ-M13-003 re-bump, roadmap sweep m11): the two composition-root
+    # edges persist unchanged (use sddk_storage::{SqliteControlPlane, SqliteLedgerFactory}
+    # in lib.rs compose() + pub use sddk_storage::Storage re-export).
     granted_at: '2026-08-17T11:05:00Z'
   - id: WV-0026-ARCH008-legacy-compat-seam
     rule_id: ARCH008
