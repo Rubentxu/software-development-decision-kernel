@@ -148,14 +148,18 @@ fn register_subagent(
     let target = agents_dir.join(format!("{}.md", agent.name));
     if let Ok(meta) = std::fs::symlink_metadata(&target) {
         // Native files carry the REQUIRED `name` frontmatter and are left
-        // untouched (first-time-only). Symlinks and `name`-less stale writes
-        // from the agent-map era are replaced when sddk owns the name.
+        // untouched (first-time-only). Symlinks are always ours to replace
+        // (users never symlink into the framework's namespace), while
+        // `name`-less stale regular files count as ours only for sddk-owned
+        // names — most bundle agents lack the sddk- prefix (debt-*, uat-*,
+        // studio-*, jd-*…), so ownership cannot hinge on the prefix alone.
         let native = meta.is_file()
             && std::fs::read_to_string(&target)
                 .ok()
                 .and_then(|content| frontmatter(&content))
                 .is_some_and(|fm| fm.contains_key("name"));
-        if native || !is_sddk_owned(&agent.name) {
+        let ours = meta.is_symlink() || is_sddk_owned(&agent.name);
+        if native || !ours {
             report.skipped_existing += 1;
             return;
         }
@@ -180,6 +184,27 @@ fn prune_stale_artifacts(
     report: &mut AdapterReport,
 ) {
     let bundle_names: HashSet<&str> = ctx.agents.iter().map(|a| a.name.as_str()).collect();
+    let root_canon = std::fs::canonicalize(ctx.root).unwrap_or_else(|_| ctx.root.to_path_buf());
+    // A symlink under agents/ that resolves into the framework root is ours
+    // regardless of the agent name (most bundle agents lack the sddk- prefix).
+    let links_into_framework = |path: &Path| -> bool {
+        path.is_symlink()
+            && std::fs::read_link(path)
+                .ok()
+                .map(|target| {
+                    let absolute = if target.is_absolute() {
+                        target
+                    } else {
+                        path.parent()
+                            .map(|parent| parent.join(&target))
+                            .unwrap_or(target)
+                    };
+                    std::fs::canonicalize(absolute)
+                        .map(|resolved| resolved.starts_with(&root_canon))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+    };
     if let Ok(entries) = std::fs::read_dir(agents_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -189,7 +214,8 @@ fn prune_stale_artifacts(
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            if is_sddk_owned(stem) && !bundle_names.contains(stem) {
+            let ours = is_sddk_owned(stem) || links_into_framework(&path);
+            if ours && !bundle_names.contains(stem) {
                 match std::fs::remove_file(&path) {
                     Ok(()) => report.pruned += 1,
                     Err(error) => report
