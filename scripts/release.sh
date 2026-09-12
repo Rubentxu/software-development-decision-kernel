@@ -270,12 +270,42 @@ step "9/14 — gh release create $TAG"
 # --target` repoint that v1.89.7 needed.
 RELEASE_TARGET="$(git rev-parse --abbrev-ref HEAD)"
 ok "release target: $RELEASE_TARGET"
+
+# ARCH-HEX-001 slice 3: GitHub Releases is a System-only writable surface
+# (ADR-069 §3, row 7). Emit an actor-kind authority receipt via
+# scripts/release-receipt.sh and fail-closed if the actor is not System.
+# The helper applies the locked v1.81.x prefix heuristic
+# (crates/sddk-engine/src/authority.rs::infer_actor_kind) and writes a
+# JSON receipt that downstream tooling can consume. Same shape as the
+# engine-side checks introduced in v1.168.22 (apply_cycle_start) and
+# v1.168.24 (sddk dev install).
+RECEIPT_PATH="$TMP/gh-release-receipt.json"
+RECEIPT_ACTOR="${SDDK_ACTOR:-system}"
+bash "$ROOT/scripts/release-receipt.sh" \
+    --actor-id "$RECEIPT_ACTOR" \
+    --tag "$TAG" \
+    --out "$RECEIPT_PATH" \
+    || die "github_releases authority check failed (actor_kind must be System); refusing to publish"
+ok "github_releases receipt: $RECEIPT_PATH (actor=$RECEIPT_ACTOR)"
+
+RECEIPT_SUMMARY="$(python3 -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+ak = data["actor_kind"]
+aid = data["actor_id"]
+sv = data["schema_version"]
+print("actor_kind=" + ak + " actor_id=" + aid + " schema_version=" + str(sv))
+' "$RECEIPT_PATH")"
+
 RELEASE_ARGS=(
     "$TAG"
     --repo "$REPO"
     --target "$RELEASE_TARGET"
     --title "sddk $TAG"
-    --notes "Release $TAG — published by scripts/release.sh."
+    --notes "Release $TAG — published by scripts/release.sh.
+
+ARCH-HEX-001 receipt: ${RECEIPT_SUMMARY}"
 )
 # Note: --clobber is NOT supported on `gh release create` in gh <2.99 (only on `upload`).
 # We pass --clobber to `gh release upload` below, which is the path that actually needs it.
@@ -290,6 +320,7 @@ ASSETS=(
     "$UNIFIED.sha256"
     "$BUNDLE_TARBALL"
     "$BUNDLE_TARBALL.sha256"
+    "$RECEIPT_PATH"
 )
 
 if gh release view "$TAG" --repo "$REPO" \

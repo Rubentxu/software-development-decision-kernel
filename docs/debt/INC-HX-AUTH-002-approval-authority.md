@@ -1,7 +1,7 @@
 ---
 id: INC-HX-AUTH-002
 title: "forced-Human default in emit_approval_decision masks caller identity"
-status: open
+status: closed
 severity: critical
 priority: P0
 fingerprint: "hx-auth-002-approval-forced-human"
@@ -10,14 +10,29 @@ cluster_id: CL-HX-AP-002
 created: 2026-09-04
 created_by: orchestrator
 owner: ARCH-HEX-001
+closed_at: 2026-09-12
+closed_by: sddk-archive (v1.168.27 ARCH-HEX-001 reconciliation)
 resolution_note: |
-  Status reconciled from `resolved` (incorrectly applied without lifecycle evidence)
-  back to `open` during v1.168.8 INC hygiene. The original `created` lifecycle
-  entry (2026-09-04) has no `sddk-apply resolved` follow-up; `emit.rs:259` still
-  hardcodes `kind: ActorKind::Human` per the `emit_approval_decision_forces_human`
-  baseline regression test. ARCH-HEX-001 (order 80, H0) is the canonical remediation
-  owner. Severity remains **critical** because it breaches the security boundary.
-last_updated: 2026-09-11
+  Closed after evidence-driven reconciliation. The original INC's claim that
+  `emit.rs:259` hardcodes `kind: ActorKind::Human` in every
+  `emit_approval_decision` call no longer holds: in the current
+  `crates/sddk-engine/src/event_bus/emit.rs`, `emit_approval_decision` builds
+  the `ActorRef` from `ApprovalDecisionInput.actor_kind` (caller-supplied),
+  and the function-level validator (lines 379-386) explicitly rejects Agent
+  actors and admits Human + System, fail-closed. The actor-kind is no longer
+  forced at the engine boundary. Three regression-pin tests in
+  `crates/sddk-engine/tests/event_authority.rs` lock the admit/reject
+  semantics (`emit_approval_decision_accepts_human`,
+  `emit_approval_decision_accepts_system`,
+  `emit_approval_decision_rejects_agent`). The CLI caller in
+  `crates/sddk-cli/src/approval.rs::run_approval_decision` constructs the
+  input via `infer_actor_kind(args.actor)` so the user-supplied --actor id
+  drives the decision rather than a hardcoded constant. The forced-Human
+  behavior was eliminated as part of the wider ARCH-HEX-001 engine-side
+  authority enforcement (ADR-070, see v1.168.22 and v1.168.24). The original
+  baseline regression test `emit_approval_decision_forces_human` named in
+  this INC was retired when its invariant flipped.
+last_updated: 2026-09-12
 ---
 
 # INC-HX-AUTH-002 — forced-Human default in emit_approval_decision masks caller identity
@@ -37,6 +52,7 @@ This is severity **critical** because it breaches the security boundary: approva
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-04 | orchestrator | created | HX-AUTHORITY-001 cycle; emit.rs:259; INC-HX-AUTH-002 |
+| 2026-09-12 | orchestrator (v1.168.27) | closed: caller-supplied actor_kind now flows through to `EventEnvelopeV1.actor.kind`; function-level validator rejects Agent; three regression-pin tests lock admit/reject in `crates/sddk-engine/tests/event_authority.rs`. The `emit_approval_decision_forces_human` baseline was retired when its invariant flipped during the wider ARCH-HEX-001 engine-side authority enforcement. | `emit_approval_decision_accepts_human`, `emit_approval_decision_accepts_system`, `emit_approval_decision_rejects_agent`; ADR-070 |
 
 ## References
 
