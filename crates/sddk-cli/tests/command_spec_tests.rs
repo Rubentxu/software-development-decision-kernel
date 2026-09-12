@@ -6,7 +6,7 @@
 
 use sddk_cli::CliEnvironment;
 use sddk_cli::OutputFormat;
-use sddk_cli::command_spec::{OutputFormatKind, all_command_specs};
+use sddk_cli::command_spec::{OutputFormatKind, all_command_specs, related_at_depth};
 
 use sddk_cli::config_cmd::render_config_report;
 
@@ -252,5 +252,70 @@ fn related_graph_lifecycle_edges_are_present() {
             .find(|s| s.name == cmd)
             .expect("lifecycle spec");
         assert!(!s.related.is_empty(), "{cmd} must have related edges");
+    }
+}
+
+// SC-AX-S3-D2-1: depth-2 neighborhood of `self` is a strict superset of
+// `self.related` (depth-1), excluding `self` itself. This pins the contract
+// that depth-2 enrichment adds information without ever dropping depth-1.
+#[test]
+fn sc_ax_s3_d2_1_depth2_superset_of_depth1() {
+    let specs = all_command_specs();
+    for s in &specs {
+        let d1 = related_at_depth(s, 1, &specs);
+        let d2 = related_at_depth(s, 2, &specs);
+        for r in &d1 {
+            assert!(
+                d2.contains(r),
+                "depth-2 of '{}' must contain depth-1 neighbor '{}'",
+                s.name,
+                r
+            );
+        }
+        assert!(
+            !d2.contains(&s.name),
+            "depth-2 of '{}' must not include itself",
+            s.name
+        );
+    }
+}
+
+// SC-AX-S3-D2-2: the aggregated depth-2 graph (sum of unique depth-2
+// neighborhood members across all specs) must contain at least 60 unique
+// (from, rel) pairs — a regression pin against table-shrink edits.
+#[test]
+fn sc_ax_s3_d2_2_depth2_graph_has_min_60_unique_edges() {
+    let specs = all_command_specs();
+    let mut unique: std::collections::BTreeSet<(String, String)> =
+        std::collections::BTreeSet::new();
+    for s in &specs {
+        let d2 = related_at_depth(s, 2, &specs);
+        for r in &d2 {
+            unique.insert((s.name.clone(), r.clone()));
+        }
+    }
+    assert!(
+        unique.len() >= 60,
+        "depth-2 graph shrunk: {} unique (from,rel) pairs (min 60)",
+        unique.len()
+    );
+}
+
+// SC-AX-S3-D2-3: every depth-2 neighbor must resolve to a real spec name.
+// Same defensiveness contract as the depth-1 pin, extended to depth-2.
+#[test]
+fn sc_ax_s3_d2_3_depth2_resolves_to_real_spec_names() {
+    let specs = all_command_specs();
+    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+    for s in &specs {
+        let d2 = related_at_depth(s, 2, &specs);
+        for r in &d2 {
+            let target = r.split_whitespace().next().unwrap_or(r);
+            assert!(
+                names.iter().any(|n| n == &target || n.starts_with(target)),
+                "depth-2 target '{r}' of '{}' resolves to no spec",
+                s.name
+            );
+        }
     }
 }

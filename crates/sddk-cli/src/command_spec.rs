@@ -972,6 +972,46 @@ fn enrich_related_edges(mut s: CommandSpec) -> CommandSpec {
     s
 }
 
+/// AX-S3 depth-2 follow-up (v1.168.28): derive the depth-2 neighborhood of
+/// `self.related` from the spec list. Pure function (no struct mutation),
+/// kept separate from `enrich_related_edges` so the wire-format JSON shape
+/// stays stable: depth-1 lives in `CommandSpec.related`; depth-2 is
+/// derivable on demand from any consumer that has the full spec list.
+///
+/// `depth == 1` returns `self.related` (depth-1 baseline, already curated).
+/// `depth == 2` returns `self.related` ∪ the `related` of every depth-1
+/// neighbor (excluding `self.name` and any already-present depth-1 entry).
+/// `depth == 0` returns `vec![self.name.clone()]` (singleton). Other
+/// depths are not defined and return `Vec::new()`.
+///
+/// The function never panics on unknown depth-1 neighbor names — they are
+/// silently filtered (defensive against typos in the curation table).
+pub fn related_at_depth(spec: &CommandSpec, depth: u8, all: &[CommandSpec]) -> Vec<String> {
+    match depth {
+        0 => return vec![spec.name.clone()],
+        1 => return spec.related.clone(),
+        2 => {}
+        _ => return Vec::new(),
+    }
+    // depth 2
+    let mut seen: std::collections::BTreeSet<String> = spec.related.iter().cloned().collect();
+    // Walk depth-1 neighbors, harvest their depth-1 neighbors (skip self).
+    let by_name: std::collections::HashMap<&str, &CommandSpec> =
+        all.iter().map(|s| (s.name.as_str(), s)).collect();
+    for neighbor in &spec.related {
+        let Some(nb) = by_name.get(neighbor.as_str()) else {
+            continue; // unknown neighbor: skip defensively (table typo guard)
+        };
+        for hop in &nb.related {
+            if hop == &spec.name {
+                continue; // never include self
+            }
+            seen.insert(hop.clone());
+        }
+    }
+    seen.into_iter().collect()
+}
+
 /// Look up a top-level `CommandSpec` by its `name` field. Returns `None`
 /// if no spec matches. Used by the M7.7 CLI runner admission gate to
 /// resolve the spec for the command about to be executed.
