@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.168.29] - 2026-09-12
+
+### Features
+  - feat(lint): promote 3 of 4 AX-S5 asset_* lints to default: deny (ARCH-LINT-AX-S5)
+
 ## [1.168.28] - 2026-09-12
 
 ### Features
