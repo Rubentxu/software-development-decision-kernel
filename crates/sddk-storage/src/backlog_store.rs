@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn m18_constraint_rejects_invalid_priority() {
-        let mut conn = fresh_db();
+        let conn = fresh_db();
         let result = conn.execute(
             "INSERT INTO backlog_items_v1 (item_id, origin_cycle_id, origin_phase, summary, current_priority, current_status, captured_at) \
              VALUES ('B-X', 'c', 'p', 's', 'P9', 'registered', '2026-09-12T12:00:00Z')",

@@ -19,6 +19,7 @@ Commands:
   agent-result  Convert legacy agent output into structured results
   release       Plan and apply local Git releases or optional forge integrations
   vault         Index, validate, search, and export knowledge vaults
+  backlog       Backlog ledger: capture, triage, list, and show items (cycle 2/4 — REQ-Backlog-Item-Capture, REQ-Backlog-Item-Triage-Priority)
   knowledge     Resolve the canonical knowledge vault path and profile
   dev           Developer tooling: doctor, gates, and atomic install/verify
   pack          Validate declarative pack manifests
