@@ -426,6 +426,15 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
         ),
         spec(
+            "backlog",
+            "Backlog ledger: capture, triage, list, show, promote, discard, and render items",
+            OutputFormatKind::Both,
+            vec![],
+            true,
+            None,
+            None,
+        ),
+        spec(
             "knowledge",
             "Resolve the canonical knowledge vault path and profile",
             OutputFormatKind::Text,

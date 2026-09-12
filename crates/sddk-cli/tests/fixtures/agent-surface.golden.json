@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 49,
+  "total": 50,
   "entries": [
     {
       "name": "version",
@@ -112,6 +112,14 @@
       "side_effect_class": "pure",
       "required_authority": "none",
       "machine": "VaultReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "backlog",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "BacklogReportV1",
       "examples_n": 0
     },
     {

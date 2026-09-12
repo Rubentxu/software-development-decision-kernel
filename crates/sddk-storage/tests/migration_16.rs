@@ -54,8 +54,8 @@ fn migration_16_schema_version_16() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        17,
-        "LATEST_SCHEMA_VERSION must be 17"
+        18,
+        "LATEST_SCHEMA_VERSION must be 18 (MIGRATION_18 backlog tables)"
     );
 }
 
@@ -179,7 +179,7 @@ fn migration_16_preserves_existing_rows() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        17,
+        18,
         "schema version must be 17 after migration"
     );
 

@@ -325,8 +325,8 @@ fn migration_5_creates_events_v1() {
     {
         // Run through MIGRATION_1..4 via Storage, which sets up the legacy schema.
         let storage = sddk_storage::Storage::open(&db_path).unwrap();
-        // MIGRATION_17 applied (workflow_run_events_v1 table, bumping from 16)
-        assert_eq!(storage.schema_version().unwrap(), 17);
+        // MIGRATION_18 applied (backlog tables, bumping from 17)
+        assert_eq!(storage.schema_version().unwrap(), 18); // MIGRATION_18 (backlog tables, cycle backlog-ledger-substrate)
         // Insert a minimal project so the FK on events_v1.project_id is satisfied.
         storage
             .insert_project(&sddk_domain::ProjectRecord {

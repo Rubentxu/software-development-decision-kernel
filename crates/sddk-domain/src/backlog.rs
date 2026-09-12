@@ -215,6 +215,22 @@ pub enum BacklogError {
         "backlog origin evidence required (origin_cycle_id and origin_phase must be non-empty)"
     )]
     OriginEvidenceRequired,
+    /// Promote/discard called on an item already discarded (terminal
+    /// state; REQ-Backlog-Item-Promote-Discard scenario 2).
+    #[error("backlog item already discarded: {0}")]
+    AlreadyDiscarded(BacklogItemId),
+    /// Promote called on an item already promoted to a cycle
+    /// (re-promotion to a second cycle is forbidden).
+    #[error("backlog item already promoted: {0}")]
+    AlreadyPromoted(BacklogItemId),
+    /// Discard called with a reason outside the closed set
+    /// {superseded, wontfix, duplicate}.
+    #[error("invalid discard reason: {0}; expected one of superseded|wontfix|duplicate")]
+    InvalidDiscardReason(String),
+    /// Render/promote called on an item that never had a triage
+    /// (priority is a mandatory renderer column per the projection spec).
+    #[error("backlog item is not triaged: {0}")]
+    NotTriaged(BacklogItemId),
 }
 
 /// One row of the chronological event log for a backlog item.

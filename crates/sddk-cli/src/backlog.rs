@@ -8,15 +8,14 @@
 //! - `sddk backlog list` — list live items.
 //! - `sddk backlog show <item-id>` — show one item with its full event log.
 //!
-//! Promotes REQ-Backlog-Item-Capture and REQ-Backlog-Item-Triage-Priority
-//! from "engine substrate accepted" to "fully implemented (engine + CLI)".
-//!
-//! `promote`, `discard`, and `render` are deferred to cycles 3/4.
+//! Promotes REQ-Backlog-Item-Promote-Discard and
+//! REQ-Backlog-Roadmap-Projection from "engine substrate accepted" to
+//! "fully implemented (engine + CLI)" (cycle 3/4).
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::backlog::{
     BacklogError, BacklogEventLogEntry, BacklogItemId, BacklogItemRow, BacklogPriority,
-    generate_ulid, now_rfc3339,
+    BacklogRenderKind, generate_ulid, now_rfc3339,
 };
 use sddk_storage::{BacklogEvent, BacklogStore, SqliteBacklogStoreOwned};
 use serde::Serialize;
@@ -34,6 +33,30 @@ pub(crate) enum BacklogCommand {
     List(BacklogListArgs),
     /// Show a single item with its full event log.
     Show(BacklogShowArgs),
+    /// Promote a triaged item into a target cycle (terminal state).
+    Promote(BacklogPromoteArgs),
+    /// Discard a triaged item with a closed-set reason (terminal state).
+    Discard(BacklogDiscardArgs),
+    /// Render BACKLOG.md / ROADMAP.md as a ledger-derived projection.
+    Render(BacklogRenderArgs),
+}
+
+/// Closed-set discard reasons (REQ-Backlog-Item-Promote-Discard).
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum CliDiscardReason {
+    Superseded,
+    Wontfix,
+    Duplicate,
+}
+
+impl From<CliDiscardReason> for String {
+    fn from(r: CliDiscardReason) -> Self {
+        match r {
+            CliDiscardReason::Superseded => "superseded".to_string(),
+            CliDiscardReason::Wontfix => "wontfix".to_string(),
+            CliDiscardReason::Duplicate => "duplicate".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -118,12 +141,78 @@ pub(crate) struct BacklogShowArgs {
     pub(crate) format: OutputFormat,
 }
 
+#[derive(Debug, Clone, Args)]
+pub(crate) struct BacklogPromoteArgs {
+    /// Existing triaged item id.
+    #[arg(long)]
+    pub(crate) item_id: BacklogItemId,
+    /// Target cycle id to adopt the item into.
+    #[arg(long)]
+    pub(crate) to_cycle: String,
+    /// Actor responsible for the promotion.
+    #[arg(long)]
+    pub(crate) actor_ref: String,
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct BacklogDiscardArgs {
+    /// Existing triaged item id.
+    #[arg(long)]
+    pub(crate) item_id: BacklogItemId,
+    /// Closed-set reason (superseded|wontfix|duplicate).
+    #[arg(long, value_enum)]
+    pub(crate) reason: CliDiscardReason,
+    /// Actor responsible for the discard.
+    #[arg(long)]
+    pub(crate) actor_ref: String,
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct BacklogRenderArgs {
+    /// What to render (backlog or roadmap).
+    #[arg(long, value_enum, default_value_t = CliRenderKind::Backlog)]
+    pub(crate) kind: CliRenderKind,
+    /// Output path (default: BACKLOG.md / ROADMAP.md in the workspace root).
+    #[arg(long)]
+    pub(crate) output: Option<String>,
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum CliRenderKind {
+    Backlog,
+    Roadmap,
+}
+
+impl From<CliRenderKind> for BacklogRenderKind {
+    fn from(k: CliRenderKind) -> Self {
+        match k {
+            CliRenderKind::Backlog => Self::Backlog,
+            CliRenderKind::Roadmap => Self::Roadmap,
+        }
+    }
+}
+
 pub(crate) fn run_backlog(command: BacklogCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         BacklogCommand::Capture(args) => run_backlog_capture(args, environment),
         BacklogCommand::Triage(args) => run_backlog_triage(args, environment),
         BacklogCommand::List(args) => run_backlog_list(args, environment),
         BacklogCommand::Show(args) => run_backlog_show(args, environment),
+        BacklogCommand::Promote(args) => run_backlog_promote(args, environment),
+        BacklogCommand::Discard(args) => run_backlog_discard(args, environment),
+        BacklogCommand::Render(args) => run_backlog_render(args, environment),
     }
 }
 
@@ -358,5 +447,270 @@ fn run_backlog_show(args: BacklogShowArgs, environment: &CliEnvironment) -> Comm
     match result {
         Ok(out) => render_result(Ok(out), format, show_text),
         Err(e) => failure(e.to_string()),
+    }
+}
+
+/// Loads the current item row and enforces the terminal-state contract:
+/// the item MUST exist and MUST NOT be already promoted or discarded
+/// (REQ-Backlog-Item-Promote-Discard scenarios 1-2).
+fn require_transitionable(
+    store: &mut SqliteBacklogStoreOwned,
+    item_id: &BacklogItemId,
+) -> anyhow::Result<BacklogItemRow> {
+    let row = store
+        .item(item_id)
+        .map_err(|e| anyhow::anyhow!("backlog item lookup failed: {e}"))?
+        .ok_or_else(|| BacklogError::ItemNotFound(item_id.clone()))?;
+    match row.current_status {
+        sddk_domain::backlog::BacklogStatus::Promoted => {
+            Err(BacklogError::AlreadyPromoted(item_id.clone()).into())
+        }
+        sddk_domain::backlog::BacklogStatus::Discarded => {
+            Err(BacklogError::AlreadyDiscarded(item_id.clone()).into())
+        }
+        _ => Ok(row),
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct PromoteOutput {
+    item_id: BacklogItemId,
+    event_id: i64,
+    target_id: String,
+    promoted_at: String,
+}
+
+fn promote_text(o: &PromoteOutput) -> String {
+    format!(
+        "item_id: {}\nevent_id: {}\ntarget_id: {}\npromoted_at: {}\n",
+        o.item_id, o.event_id, o.target_id, o.promoted_at
+    )
+}
+
+fn run_backlog_promote(args: BacklogPromoteArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<PromoteOutput> {
+        if args.to_cycle.is_empty() {
+            return Err(BacklogError::OriginEvidenceRequired.into());
+        }
+        let mut store = open_store(&args.runtime, environment)?;
+        require_transitionable(&mut store, &args.item_id)?;
+        let promoted_at = now_rfc3339();
+        let event = BacklogEvent::Promoted {
+            item_id: args.item_id.clone(),
+            target_kind: "cycle".to_string(),
+            target_id: args.to_cycle.clone(),
+            promoted_at: promoted_at.clone(),
+            actor_ref: Some(args.actor_ref),
+        };
+        let event_id = store
+            .append_event(&event)
+            .map_err(|e| anyhow::anyhow!("backlog promote failed: {e}"))?;
+        Ok(PromoteOutput {
+            item_id: args.item_id,
+            event_id,
+            target_id: args.to_cycle,
+            promoted_at,
+        })
+    })();
+    match result {
+        Ok(out) => render_result(Ok(out), format, promote_text),
+        Err(e) => failure(e.to_string()),
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct DiscardOutput {
+    item_id: BacklogItemId,
+    event_id: i64,
+    reason: String,
+    discarded_at: String,
+}
+
+fn discard_text(o: &DiscardOutput) -> String {
+    format!(
+        "item_id: {}\nevent_id: {}\nreason: {}\ndiscarded_at: {}\n",
+        o.item_id, o.event_id, o.reason, o.discarded_at
+    )
+}
+
+fn run_backlog_discard(args: BacklogDiscardArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<DiscardOutput> {
+        let mut store = open_store(&args.runtime, environment)?;
+        require_transitionable(&mut store, &args.item_id)?;
+        let reason: String = args.reason.into();
+        let discarded_at = now_rfc3339();
+        let event = BacklogEvent::Discarded {
+            item_id: args.item_id.clone(),
+            reason: reason.clone(),
+            discarded_at: discarded_at.clone(),
+            actor_ref: Some(args.actor_ref),
+        };
+        let event_id = store
+            .append_event(&event)
+            .map_err(|e| anyhow::anyhow!("backlog discard failed: {e}"))?;
+        Ok(DiscardOutput {
+            item_id: args.item_id,
+            event_id,
+            reason,
+            discarded_at,
+        })
+    })();
+    match result {
+        Ok(out) => render_result(Ok(out), format, discard_text),
+        Err(e) => failure(e.to_string()),
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct RenderOutput {
+    kind: String,
+    output_path: String,
+    rendered_items: usize,
+    sha256: String,
+}
+
+fn render_text(o: &RenderOutput) -> String {
+    format!(
+        "kind: {}\noutput_path: {}\nrendered_items: {}\nsha256: {}\n",
+        o.kind, o.output_path, o.rendered_items, o.sha256
+    )
+}
+
+/// Deterministic markdown projection of the live backlog items
+/// (REQ-Backlog-Roadmap-Projection): sorted by (priority, item_id),
+/// one wikilink entry per live item, byte-identical for the same
+/// ledger head.
+fn render_projection(kind: BacklogRenderKind, items: &[BacklogItemRow]) -> String {
+    let title = match kind {
+        BacklogRenderKind::Backlog => "# BACKLOG",
+        BacklogRenderKind::Roadmap => "# ROADMAP",
+    };
+    let mut s = String::new();
+    s.push_str(title);
+    s.push_str("\n\n> Ledger-derived projection. Hand-edits are overwritten on next render.\n\n");
+    let mut sorted: Vec<&BacklogItemRow> = items.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.current_priority
+            .map(|p| p as u8)
+            .cmp(&b.current_priority.map(|p| p as u8))
+            .then_with(|| a.item_id.cmp(&b.item_id))
+    });
+    for r in sorted {
+        let prio = r
+            .current_priority
+            .map(|p| format!("{:?}", p))
+            .unwrap_or_else(|| "-".to_string());
+        s.push_str(&format!(
+            "- [[{}]] {} — priority {} · status {:?} · origin `{}`\n",
+            r.item_id, r.summary, prio, r.current_status, r.origin_cycle_id
+        ));
+    }
+    s
+}
+
+fn run_backlog_render(args: BacklogRenderArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<RenderOutput> {
+        use sha2::{Digest, Sha256};
+        let mut store = open_store(&args.runtime, environment)?;
+        let items = store
+            .live_items()
+            .map_err(|e| anyhow::anyhow!("backlog render failed: {e}"))?;
+        let kind: BacklogRenderKind = args.kind.into();
+        let markdown = render_projection(kind, &items);
+        let bytes = markdown.as_bytes();
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let sha256 = format!("sha256:{:x}", hasher.finalize());
+        let output_path = args.output.clone().unwrap_or_else(|| match kind {
+            BacklogRenderKind::Backlog => "BACKLOG.md".to_string(),
+            BacklogRenderKind::Roadmap => "ROADMAP.md".to_string(),
+        });
+        std::fs::write(&output_path, bytes)
+            .map_err(|e| anyhow::anyhow!("backlog render write failed: {e}"))?;
+        Ok(RenderOutput {
+            kind: format!("{:?}", kind).to_lowercase(),
+            output_path,
+            rendered_items: items.len(),
+            sha256,
+        })
+    })();
+    match result {
+        Ok(out) => render_result(Ok(out), format, render_text),
+        Err(e) => failure(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sddk_domain::backlog::BacklogStatus;
+
+    fn row(id: &str, prio: Option<BacklogPriority>, status: BacklogStatus) -> BacklogItemRow {
+        BacklogItemRow {
+            item_id: id.to_string(),
+            origin_cycle_id: "p-x/c1".to_string(),
+            origin_phase: "explore".to_string(),
+            summary: format!("summary of {id}"),
+            current_priority: prio,
+            current_status: status,
+            captured_at: "2026-09-12T00:00:00Z".to_string(),
+            emitted_event_count: 2,
+        }
+    }
+
+    #[test]
+    fn render_includes_live_items_and_excludes_none_here() {
+        let items = vec![
+            row("B-002", Some(BacklogPriority::P1), BacklogStatus::Triaged),
+            row(
+                "B-001",
+                Some(BacklogPriority::P0),
+                BacklogStatus::Registered,
+            ),
+        ];
+        let md = render_projection(BacklogRenderKind::Backlog, &items);
+        assert!(md.contains("# BACKLOG"));
+        assert!(md.contains("[[B-001]]"));
+        assert!(md.contains("[[B-002]]"));
+        // priority sort: P0 (B-001) before P1 (B-002)
+        let b1 = md.find("[[B-001]]").unwrap();
+        let b2 = md.find("[[B-002]]").unwrap();
+        assert!(b1 < b2);
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let items = vec![row(
+            "B-001",
+            Some(BacklogPriority::P2),
+            BacklogStatus::Triaged,
+        )];
+        let a = render_projection(BacklogRenderKind::Backlog, &items);
+        let b = render_projection(BacklogRenderKind::Backlog, &items);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn roadmap_kind_renders_roadmap_title() {
+        let items = vec![row(
+            "B-001",
+            Some(BacklogPriority::P1),
+            BacklogStatus::Triaged,
+        )];
+        let md = render_projection(BacklogRenderKind::Roadmap, &items);
+        assert!(md.starts_with("# ROADMAP"));
+    }
+
+    #[test]
+    fn empty_items_render_header_only() {
+        let md = render_projection(BacklogRenderKind::Backlog, &[]);
+        assert!(md.contains("# BACKLOG"));
+        assert!(!md.contains("[["));
     }
 }
