@@ -25,7 +25,7 @@
 4. **Regression-guard** by `tests/test_deny_lint_zero_hits.sh`
    (wired into `scripts/release.sh` step 1b).
 
-## Current state (v1.168.37)
+## Current state (v1.168.40)
 
 | Lint ID | Default | Hits | Blocker |
 |---|---|---|---|
@@ -34,8 +34,8 @@
 | `asset_raw_store_reference` | deny | 0 | — |
 | `asset_authority_language` | deny | 0 | — |
 | `orchestration_synthesis_no_dissent` | deny | 0 | — (v1.168.37) |
-| `evidence_kind_v1` | allow | 22 | cycle-9 per-call-site migration (ADR-0100 construction closed v1.168.35) |
-| `transition_outcome_used` | allow | 24 | description correction + re-categorization |
+| `evidence_kind_v1` | allow | 57 | cycle-9 mapping function shipped; per-call-site deferred to evidence-migration-v2 |
+| `transition_outcome_used` | allow | 24 | M9.2 audit closed (v1.168.40); re-categorized `state_machine`; regression guard for cycle state machine |
 | `execution_outcome_as_synthesis` | allow | 0 | corpus expansion (organic, no dedicated cycle) |
 | `asset_unregistered_cli_example` | allow | 0 | regex unsafe-by-design (first-letter-sieve allows legitimate commands) |
 

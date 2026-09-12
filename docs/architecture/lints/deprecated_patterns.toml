@@ -22,9 +22,9 @@
 schema_version = "v1"
 generated_at = "2026-09-09T14:26:00Z"
 cycle = "p-63676b11dc0ef88f/m0-inventory-baseline"
-last_extended_at = "2026-09-12T10:43:00Z"
-enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5); orchestration_synthesis_no_dissent (v1.168.37, 0 hits after exclude_paths). advisory (audit): transition_outcome_used (24 hits, description correction pending); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design); evidence_kind_v1 (57 hits, structural path shipped v1.168.39 — mapping function + 7 tests; per-call-site migration deferred to evidence-migration-v2)."
-last_advisory_audit = { release = "v1.168.39", evaluated_at = "2026-09-12T10:43:00Z", hit_total = 81, audit_note = "v1.168.39 baseline: evidence_kind_v1 (57) + execution_outcome_as_synthesis (0) + transition_outcome_used (24) = 81. cycle-9 (planning-evidence-migration) shipped canonical mapping function planning_evidence_relation(PlanningEvidenceKind) -> CoreRelationKind with 7 unit tests + const-time exhaustiveness guard. The 57 hits include 34 in the new mapping module (legitimate name references); per-call-site migration deferred to evidence-migration-v2 (touches EvidenceAttachmentV1 + SQL schema + 5 crates; needs storage migration step + dual-write window per AGENTS §2.10)." }
+last_extended_at = "2026-09-12T11:12:00Z"
+enforcement_status = "deny: agent_result_used (M9.1, v1.168.12); asset_deprecated_namespace/asset_raw_store_reference/asset_authority_language (v1.168.29, ARCH-LINT-AX-S5); orchestration_synthesis_no_dissent (v1.168.37, 0 hits after exclude_paths). advisory (regression guard): transition_outcome_used (24 hits, M9.2 audit closed v1.168.40 — re-categorized state_machine); execution_outcome_as_synthesis (0 hits, corpus expansion pending); asset_unregistered_cli_example (regex unsafe-by-design); evidence_kind_v1 (57 hits, structural path shipped v1.168.39 — mapping function + 7 tests; per-call-site migration deferred to evidence-migration-v2)."
+last_advisory_audit = { release = "v1.168.40", evaluated_at = "2026-09-12T11:12:00Z", hit_total = 81, audit_note = "v1.168.40 baseline: evidence_kind_v1 (57) + execution_outcome_as_synthesis (0) + transition_outcome_used (24) = 81. cycle-10 (transition-outcome-m9-2-closeout) closed the M9.2 audit blocker for transition_outcome_used: description rewritten to reflect gate-evaluation semantics; category re-categorized from deprecated_patterns to state_machine; confidence dropped from high to low. Lint stays default: allow as a regression guard for the cycle state machine. cycle-10 also consolidates the PR #4 (zcode-native-agents) integration in HANDOFF-2026-09-12-zcode-pr4-integration.md (doctor all_present: true; 11/11 zcode adapter tests pass including register_migrates_agent_map_era_artifacts regression test)." }
 
 [[lints]]
 id = "agent_result_used"
@@ -194,14 +194,27 @@ confidence = "medium"
 id = "transition_outcome_used"
 severity = "warn"
 default = "allow"
-category = "deprecated_patterns"
+category = "state_machine"
 description = """
-Use of `TransitionOutcome` (legacy partial shape of ExecutionOutcome)
-where the canonical `ExecutionOutcome` applies.
+Use of `TransitionOutcome` (gate-evaluation outcome for declared cycle
+transitions). This is NOT a deprecated pattern — `TransitionOutcome`
+(`Succeeded`/`Failed`) is the authoritative outcome of cycle state-machine
+transitions, orthogonal to `ExecutionOutcome` (which is the provider
+raw-output aggregation for agent contributions per ADR-0101). Both types
+are co-current and serve distinct purposes: `TransitionOutcome` is emitted
+by the cycle gate evaluator (`Engine::cycle_step` / `Engine::cycle_supersede`);
+`ExecutionOutcome` is emitted by the agent execution path
+(`agent_result_used` → `OrchestrationSynthesisReceipt`). They are not
+interchangeable; promoting this lint to `deny` would block legitimate
+cycle-state machinery. This lint functions as a regression guard to ensure
+no future change accidentally migrates `TransitionOutcome` to
+`ExecutionOutcome` (which would lose the gate-evaluation semantics).
 """
 detection = """
-Find references to `TransitionOutcome` in engine/runtime modules
-and verify migration to `ExecutionOutcome`.
+Find references to `TransitionOutcome` in engine/runtime modules and
+classify: definition site, consumer sites (gate evaluator, event bus,
+CLI renderer). All current sites are legitimate uses of the state-machine
+primitive.
 """
 pattern = "\\bTransitionOutcome\\b"
 paths = [
@@ -210,17 +223,22 @@ paths = [
 ]
 exclude_paths = []
 replacement = [
-    "Use ExecutionOutcome per arch-spec-013-agent-experience-contract.md (M7)",
+    "No replacement: TransitionOutcome is the authoritative gate-evaluation outcome for declared cycle transitions (see ADR-0096 §3 SDLC Lifecycle Semantics).",
 ]
-reference_adrs = ["ADR-0101", "ADR-0096"]
+reference_adrs = ["ADR-0096", "ADR-0101"]
 milestone_introduced = "M0"
 milestone_enforces = "M9"
-confidence = "high"
+confidence = "low"
 explanation = """
-Hits: 24 (definition at crates/sddk-engine/src/lib.rs:634; consumers in crates/sddk-cli/src/cycle.rs and crates/sddk-engine/src/event_bus/).
-Verdict: blocked_on_audit
-Reason: the lint description claims `TransitionOutcome` is "legacy partial shape of ExecutionOutcome" — this is INCORRECT. `TransitionOutcome` (Succeeded/Failed) is the gate-evaluation outcome for declared cycle transitions; `ExecutionOutcome` is the provider raw-output aggregation for agent contributions. They are ORTHOGONAL types with no shared lineage. Production code that uses `TransitionOutcome` is NOT legacy code that should be migrated to `ExecutionOutcome`. Promoting to `deny` would block legitimate cycle-state machinery.
-Unblock: description rewrite (this cycle's ARCH-LINT-M9.2 audit already corrects it inline in this `explanation` block) + re-categorization as `category = "state_machine"` (not `deprecated_patterns`). Track as a follow-up to this cycle in the next archive manifest. No construction work is required; the audit conclusion is already in this registry.
+Hits: 24 (definition at crates/sddk-engine/src/lib.rs:634 + 7 consumers; consumers in crates/sddk-cli/src/cycle.rs:6 + crates/sddk-engine/src/event_bus/emit.rs:4 + crates/sddk-engine/src/event_bus/envelopes.rs:6 + crates/sddk-engine/src/lib.rs:8).
+Verdict: audit_cleared, regression_guard
+Reason: cycle-10 (transition-outcome-m9-2-closeout, v1.168.40) closed the M9.2 audit blocker identified in cycle-4 (v1.168.34). The original M9.1 audit (v1.168.12) misclassified `TransitionOutcome` as a "legacy partial shape of `ExecutionOutcome`" — that classification was INCORRECT. The M9.2 audit (this cycle) confirms `TransitionOutcome` and `ExecutionOutcome` are ORTHOGONAL types with distinct semantics: TransitionOutcome is the gate-evaluation outcome (2 variants: Succeeded/Failed) emitted by `Engine::cycle_step` / `Engine::cycle_supersede` / event_bus/emit.rs / event_bus/envelopes.rs; ExecutionOutcome is the provider raw-output aggregation (3+ variants) for agent contributions per ADR-0101, used by `OrchestrationSynthesisReceipt` and the synthesis pipeline.
+Three corrections applied this cycle:
+1. Description rewritten to reflect the actual semantics (gate-evaluation outcome, not legacy partial shape).
+2. Category re-categorized from `deprecated_patterns` to `state_machine` — TransitionOutcome is a state-machine primitive, not a deprecation candidate.
+3. Confidence dropped from `high` to `low` — the lint is a regression guard, not a problem to fix. High confidence was misleading because the issue that made it `high` (the wrong description) is now corrected.
+The replacement field no longer says "use ExecutionOutcome" (which would be wrong) — it documents that no replacement exists because TransitionOutcome is authoritative.
+Unblock: this cycle is the unblock. Lint stays `default: allow` because it functions as a regression guard for the cycle state machine. Promoting to `deny` would block 24 legitimate uses including the definition site at lib.rs:636 (the lint's own regex would match the definition). Cycle-4's archive-manifest recorded this M9.2 close-out as the unblock path; this cycle executes it.
 """
 
 [implementation]
@@ -256,7 +274,7 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 # | lint                                | hits | blocker kind   | unblock reference                                                  |
 # |-------------------------------------|------|----------------|--------------------------------------------------------------------|
 # | evidence_kind_v1                    |  57  | audit-ack      | cycle-9 mapping function shipped (v1.168.39); per-call-site deferred to evidence-migration-v2 |
-# | transition_outcome_used             |  24  | audit          | description rewrite + re-categorization (this cycle, M9.2 inline) |
+# | transition_outcome_used             |  24  | regression     | M9.2 audit closed (cycle-10); re-categorized state_machine; stays allow |
 # | orchestration_synthesis_no_dissent  |   0  | deny           | promoted v1.168.37 (exclude_paths)                                |
 # | execution_outcome_as_synthesis      |   0  | audit          | corpus expansion + confidence re-evaluation (organic, no cycle)    |
 # | asset_unregistered_cli_example      |   0  | audit          | regex unsafe-by-design; full-surface via AX-S1 pin                 |
@@ -289,16 +307,24 @@ user_signoff = "RISK-REGISTER R-001: user sign-off must be collected before flip
 #   separate cycle because it touches 5 production crates + the SQL
 #   schema (migrations.rs:737) + dual-write window per AGENTS §2.10.
 #
-# transition_outcome_used — REMAIN `allow` (advisory). UNBLOCK = audit.
-#   24 hits in crates/sddk-engine/src/lib.rs (definition, line 634),
-#   crates/sddk-cli/src/cycle.rs (consumers), crates/sddk-engine/src/event_bus/.
-#   The M9.1 audit incorrectly assumed `TransitionOutcome` was a legacy
-#   partial shape of `ExecutionOutcome`. The M9.2 audit proves they are
-#   orthogonal: TransitionOutcome is the gate-evaluation outcome for
-#   declared cycle transitions; ExecutionOutcome is the provider
-#   raw-output aggregation. Promoting this lint to `deny` would block
-#   legitimate cycle-state machinery. The description is INACCURATE;
-#   the explanation block above documents the correction.
+# transition_outcome_used — M9.2 audit closed (v1.168.40, cycle-10
+#   transition-outcome-m9-2-closeout). UNBLOCK = audit_complete.
+#   REMAIN `default: allow` (advisory regression guard). 24 hits in
+#   crates/sddk-engine/src/lib.rs (definition, line 636), crates/sddk-cli/src/cycle.rs
+#   (consumer for rendering), crates/sddk-engine/src/event_bus/emit.rs +
+#   event_bus/envelopes.rs (event serialization for transition events).
+#   M9.2 audit (cycle-10) confirms `TransitionOutcome` (`Succeeded`/`Failed`)
+#   is the authoritative gate-evaluation outcome for declared cycle
+#   transitions per ADR-0096 §3 SDLC Lifecycle Semantics; `ExecutionOutcome`
+#   is the orthogonal provider raw-output aggregation for agent contributions
+#   per ADR-0101. Three corrections applied: (1) description rewritten to
+#   reflect actual gate-evaluation semantics; (2) category re-categorized
+#   from `deprecated_patterns` to `state_machine`; (3) confidence dropped
+#   from `high` to `low` (regression guard, not a problem to fix). The lint
+#   stays `allow` because promoting to `deny` would block 24 legitimate
+#   uses including the definition site at lib.rs:636 — the lint's own
+#   regex would match the definition. The M9.1 audit's misclassification
+#   (cycle-4 audit correction) is now fully resolved at the registry level.
 #
 # orchestration_synthesis_no_dissent — PROMOTED to `default: deny` (v1.168.37,
 #   cycle-7 closed via bounded exclude_paths path). Previously 19 hits, all
