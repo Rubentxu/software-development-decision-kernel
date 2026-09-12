@@ -1849,11 +1849,9 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
             serde_json::from_str(&args.evidence_refs).unwrap_or_default();
 
         let restage_to: RestageTo = args.restage_to.into();
-        let restage_to_display = format!("{:?}", restage_to);
+        let restage_to_display = restage_to.as_str().to_owned();
 
-        // Note: cycle_replan is a stub that returns ReplanLimitExceeded.
-        // When implemented, this will return Ok(()) on success.
-        context.engine.cycle_replan(
+        let receipt = context.engine.cycle_replan(
             &cycle_id,
             restage_to,
             &delta,
@@ -1867,12 +1865,10 @@ fn run_cycle_replan(args: CycleReplanArgs, environment: &CliEnvironment) -> Comm
             args.fencing_token,
         )?;
 
-        // Load updated cycle to get sequence (only reached if cycle_replan succeeds)
-        let _record = context.storage.get_cycle(&cycle_id)?;
         Ok(CycleReplanOutput {
             cycle_id,
             restage_to: restage_to_display,
-            sequence: 0, // Placeholder until cycle_replan returns sequence info
+            sequence: receipt.sequence,
         })
     })();
     render_result(result, format, cycle_replan_text)

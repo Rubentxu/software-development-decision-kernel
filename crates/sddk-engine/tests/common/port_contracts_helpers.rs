@@ -58,6 +58,7 @@ pub(crate) fn mk_cycle(id: &str) -> CycleRecord {
             pause_at: None,
             review_at: None,
             last_pause_reason: None,
+            replan_count: 0,
         },
         created_at: TS.into(),
         updated_at: TS.into(),

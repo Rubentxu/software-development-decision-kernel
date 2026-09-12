@@ -157,6 +157,7 @@ fn manifest_for_path(path: CyclePath) -> CycleManifest {
         pause_at: None,
         review_at: None,
         last_pause_reason: None,
+        replan_count: 0,
     }
 }
 

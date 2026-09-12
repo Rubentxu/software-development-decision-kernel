@@ -2355,6 +2355,7 @@ mod frontier_tests {
             pause_at: None,
             review_at: None,
             last_pause_reason: None,
+            replan_count: 0,
         }
     }
 

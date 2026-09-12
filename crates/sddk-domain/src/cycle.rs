@@ -206,6 +206,9 @@ pub struct CycleManifest {
     /// Reason for the last pause.
     #[serde(default)]
     pub last_pause_reason: Option<PauseReason>,
+    /// Number of successful in-place replans (REQ-Cycle-Replan-Bounded-Counter).
+    #[serde(default)]
+    pub replan_count: u32,
 }
 
 impl CycleManifest {
@@ -240,6 +243,7 @@ impl CycleManifest {
             pause_at: None,
             review_at: None,
             last_pause_reason: None,
+            replan_count: 0,
         }
     }
 }
