@@ -106,7 +106,8 @@ mod tests {
     #[test]
     fn registry_len_matches_expected_count() {
         let registry = std_registry();
-        // We register 22 event types (17 original + 5 workflow events added in cycle-16)
-        assert_eq!(registry.len(), 22);
+        // We register 26 event types (22 prior + 4 backlog ledger events added in
+        // cycle p-63676b11dc0ef88f/backlog-ledger-substrate).
+        assert_eq!(registry.len(), 26);
     }
 }

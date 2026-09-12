@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 17;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 18;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -237,6 +237,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
         tx.execute_batch(MIGRATION_17)
             .map_err(super::StorageError::Database)?;
         tx.pragma_update(None, "user_version", 17)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
+    if version < 18 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_18)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 18)
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
@@ -796,4 +806,60 @@ CREATE TRIGGER IF NOT EXISTS workflow_run_events_v1_no_update
 CREATE TRIGGER IF NOT EXISTS workflow_run_events_v1_no_delete
     BEFORE DELETE ON workflow_run_events_v1
     BEGIN SELECT RAISE(ABORT, 'workflow_run_events_v1 is append-only'); END;
+"#;
+
+pub(crate) const MIGRATION_18: &str = r#"
+-- Backlog Ledger substrate (cycle p-63676b11dc0ef88f/backlog-ledger-substrate).
+-- Implements the engine-side persistence for REQ-Backlog-Item-Capture,
+-- REQ-Backlog-Item-Triage-Priority, REQ-Backlog-Item-Promote-Discard,
+-- REQ-Backlog-Roadmap-Projection.
+-- MIGRATION_18 is purely additive: no DROP, no ALTER of existing tables.
+-- Object state per ADR-0095 (BacklogItemRow) is materialised in
+-- backlog_items_v1; Fact log per ADR-0094 (one canonical fact log)
+-- lives in backlog_item_events_v1 (append-only).
+
+CREATE TABLE IF NOT EXISTS backlog_items_v1 (
+    item_id              TEXT NOT NULL PRIMARY KEY CHECK (item_id <> ''),
+    origin_cycle_id      TEXT NOT NULL,
+    origin_phase         TEXT NOT NULL,
+    summary              TEXT NOT NULL,
+    current_priority     TEXT,
+    current_status       TEXT NOT NULL,
+    captured_at          TEXT NOT NULL,
+    emitted_event_count  INTEGER NOT NULL DEFAULT 1,
+    CHECK (current_status IN ('registered','triaged','promoted','discarded')),
+    CHECK (current_priority IS NULL OR current_priority IN ('P0','P1','P2','P3'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlog_items_v1_status
+    ON backlog_items_v1(current_status);
+CREATE INDEX IF NOT EXISTS idx_backlog_items_v1_origin
+    ON backlog_items_v1(origin_cycle_id);
+
+CREATE TABLE IF NOT EXISTS backlog_item_events_v1 (
+    event_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id              TEXT NOT NULL REFERENCES backlog_items_v1(item_id) ON DELETE CASCADE,
+    event_type           TEXT NOT NULL,
+    schema_version       INTEGER NOT NULL,
+    payload_json         TEXT NOT NULL,
+    valid_from           TEXT NOT NULL,
+    valid_to             TEXT NOT NULL DEFAULT '9999-12-31T23:59:59Z',
+    actor_ref            TEXT,
+    causation_id         INTEGER,
+    correlation_id       TEXT,
+    recorded_at          TEXT NOT NULL,
+    CHECK (event_type IN ('backlog.item.registered','backlog.item.triaged','backlog.item.promoted','backlog.item.discarded'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlog_item_events_v1_item
+    ON backlog_item_events_v1(item_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_backlog_item_events_v1_valid
+    ON backlog_item_events_v1(item_id, valid_from) WHERE valid_to = '9999-12-31T23:59:59Z';
+
+CREATE TRIGGER IF NOT EXISTS backlog_item_events_v1_no_update
+    BEFORE UPDATE ON backlog_item_events_v1
+    BEGIN SELECT RAISE(ABORT, 'backlog_item_events_v1 is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS backlog_item_events_v1_no_delete
+    BEFORE DELETE ON backlog_item_events_v1
+    BEGIN SELECT RAISE(ABORT, 'backlog_item_events_v1 is append-only'); END;
 "#;

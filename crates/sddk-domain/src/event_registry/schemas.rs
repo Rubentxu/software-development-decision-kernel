@@ -47,6 +47,12 @@ pub fn std_registry() -> Arc<EventSchemaRegistry> {
     // ── Lease events ───────────────────────────────────────────────────────
     registry.register(LeaseReleasedSchema);
 
+    // ── Backlog Ledger events (cycle p-63676b11dc0ef88f/backlog-ledger-substrate) ──
+    registry.register(BacklogItemRegisteredSchema);
+    registry.register(BacklogItemTriagedSchema);
+    registry.register(BacklogItemPromotedSchema);
+    registry.register(BacklogItemDiscardedSchema);
+
     Arc::new(registry)
 }
 
@@ -301,5 +307,73 @@ schema_struct!(
     "lease released — payload must contain 'cycle_id' (string) and 'released_at_ms' (i64)",
     |p: &serde_json::Value| {
         is_object(p) && has_string_field(p, "cycle_id") && p.get("released_at_ms").is_some()
+    }
+);
+
+// ── Backlog Ledger events (cycle p-63676b11dc0ef88f/backlog-ledger-substrate) ──
+//
+// Implements REQ-Backlog-Item-Capture, REQ-Backlog-Item-Triage-Priority,
+// REQ-Backlog-Item-Promote-Discard, REQ-Backlog-Roadmap-Projection.
+// All four are closed-set validated at parse time (ADR-0080-cycle-pause
+// precedent).
+
+schema_struct!(
+    BacklogItemRegisteredSchema,
+    "backlog.item.registered",
+    1,
+    "backlog item registered — payload must contain item_id (string), origin_cycle_id (string), origin_phase (string), origin_artifacts (array), summary (string), captured_at (string)",
+    |p: &serde_json::Value| {
+        is_object(p)
+            && has_string_field(p, "item_id")
+            && has_string_field(p, "origin_cycle_id")
+            && has_string_field(p, "origin_phase")
+            && has_string_field(p, "summary")
+            && has_string_field(p, "captured_at")
+            && p.get("origin_artifacts").is_some_and(|v| v.is_array())
+    }
+);
+
+schema_struct!(
+    BacklogItemTriagedSchema,
+    "backlog.item.triaged",
+    1,
+    "backlog item triaged — payload must contain item_id (string), priority (string in {P0,P1,P2,P3}), priority_version (number), valid_from (string)",
+    |p: &serde_json::Value| {
+        let priority_ok = p
+            .get("priority")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| matches!(s, "P0" | "P1" | "P2" | "P3"));
+        is_object(p)
+            && has_string_field(p, "item_id")
+            && priority_ok
+            && p.get("priority_version").is_some_and(|v| v.is_number())
+            && has_string_field(p, "valid_from")
+    }
+);
+
+schema_struct!(
+    BacklogItemPromotedSchema,
+    "backlog.item.promoted",
+    1,
+    "backlog item promoted — payload must contain item_id (string), target_kind (string), target_id (string), promoted_at (string)",
+    |p: &serde_json::Value| {
+        is_object(p)
+            && has_string_field(p, "item_id")
+            && has_string_field(p, "target_kind")
+            && has_string_field(p, "target_id")
+            && has_string_field(p, "promoted_at")
+    }
+);
+
+schema_struct!(
+    BacklogItemDiscardedSchema,
+    "backlog.item.discarded",
+    1,
+    "backlog item discarded — payload must contain item_id (string), reason (string), discarded_at (string)",
+    |p: &serde_json::Value| {
+        is_object(p)
+            && has_string_field(p, "item_id")
+            && has_string_field(p, "reason")
+            && has_string_field(p, "discarded_at")
     }
 );

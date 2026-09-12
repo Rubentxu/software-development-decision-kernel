@@ -27,6 +27,7 @@ pub mod legacy;
 pub mod macros;
 pub mod metrics;
 pub mod models;
+pub mod backlog;
 pub mod operator_contract;
 pub mod pack;
 pub mod plan_revision;
