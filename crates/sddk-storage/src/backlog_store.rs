@@ -209,10 +209,7 @@ pub trait BacklogStore {
     /// Used by `sddk backlog show <id>` to render the full audit
     /// trail and by the cycle 3/4 rendering engine to replay events
     /// into the BACKLOG / ROADMAP projections.
-    fn events(
-        &mut self,
-        id: &BacklogItemId,
-    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError>;
+    fn events(&mut self, id: &BacklogItemId) -> Result<Vec<BacklogEventLogEntry>, BacklogError>;
 }
 
 /// SQLite-backed implementation of [`BacklogStore`].
@@ -285,18 +282,20 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
              WHERE current_status IN ('registered', 'triaged') \
              ORDER BY item_id ASC",
         ).map_err(sqlite_err)?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, i64>(7)?,
-            ))
-        }).map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, i64>(7)?,
+                ))
+            })
+            .map_err(sqlite_err)?;
         let mut out = Vec::new();
         for r in rows {
             let (id, oc, op, sm, cp, cs, ca, ec) = r.map_err(sqlite_err)?;
@@ -346,7 +345,10 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
 
     fn append_event(&mut self, event: &BacklogEvent) -> Result<i64, BacklogError> {
         use rusqlite::TransactionBehavior;
-        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sqlite_err)?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(sqlite_err)?;
         let payload_json = serde_json::to_string(&event.payload_json()?)?;
         // 1) Materialise item state FIRST so the FK from backlog_item_events_v1
         //    to backlog_items_v1 is satisfied when we insert the event row.
@@ -361,7 +363,9 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
                     captured_at,
                     ..
                 } = event
-                else { unreachable!() };
+                else {
+                    unreachable!()
+                };
                 tx.execute(
                     "INSERT INTO backlog_items_v1 \
                         (item_id, origin_cycle_id, origin_phase, summary, current_priority, current_status, captured_at, emitted_event_count) \
@@ -371,8 +375,12 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
                 ).map_err(sqlite_err)?;
             }
             BacklogEvent::Triaged { .. } => {
-                let BacklogEvent::Triaged { item_id, priority, .. } = event
-                else { unreachable!() };
+                let BacklogEvent::Triaged {
+                    item_id, priority, ..
+                } = event
+                else {
+                    unreachable!()
+                };
                 let priority_str = priority.to_string();
                 tx.execute(
                     "UPDATE backlog_items_v1 \
@@ -382,8 +390,9 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
                 ).map_err(sqlite_err)?;
             }
             BacklogEvent::Promoted { .. } => {
-                let BacklogEvent::Promoted { item_id, .. } = event
-                else { unreachable!() };
+                let BacklogEvent::Promoted { item_id, .. } = event else {
+                    unreachable!()
+                };
                 tx.execute(
                     "UPDATE backlog_items_v1 \
                      SET current_status = 'promoted', emitted_event_count = emitted_event_count + 1 \
@@ -392,8 +401,9 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
                 ).map_err(sqlite_err)?;
             }
             BacklogEvent::Discarded { .. } => {
-                let BacklogEvent::Discarded { item_id, .. } = event
-                else { unreachable!() };
+                let BacklogEvent::Discarded { item_id, .. } = event else {
+                    unreachable!()
+                };
                 tx.execute(
                     "UPDATE backlog_items_v1 \
                      SET current_status = 'discarded', emitted_event_count = emitted_event_count + 1 \
@@ -422,16 +432,16 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
         Ok(event_id)
     }
 
-    fn events(
-        &mut self,
-        id: &BacklogItemId,
-    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT event_id, event_type, schema_version, recorded_at, actor_ref, payload_json \
+    fn events(&mut self, id: &BacklogItemId) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT event_id, event_type, schema_version, recorded_at, actor_ref, payload_json \
              FROM backlog_item_events_v1 \
              WHERE item_id = ?1 \
              ORDER BY recorded_at ASC, event_id ASC",
-        ).map_err(sqlite_err)?;
+            )
+            .map_err(sqlite_err)?;
         let rows = stmt
             .query_map(rusqlite::params![id], |row| {
                 let payload_str: String = row.get(5)?;
@@ -448,9 +458,7 @@ impl<'a> BacklogStore for SqliteBacklogStore<'a> {
                     event_type: row.get(1)?,
                     schema_version: row.get(2)?,
                     emitted_at: row.get(3)?,
-                    actor_ref: row
-                        .get::<_, Option<String>>(4)?
-                        .unwrap_or_default(),
+                    actor_ref: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                     payload,
                 })
             })
@@ -496,10 +504,7 @@ impl BacklogStore for SqliteBacklogStoreOwned {
         SqliteBacklogStore::new(&mut self.conn).append_event(event)
     }
 
-    fn events(
-        &mut self,
-        id: &BacklogItemId,
-    ) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
+    fn events(&mut self, id: &BacklogItemId) -> Result<Vec<BacklogEventLogEntry>, BacklogError> {
         SqliteBacklogStore::new(&mut self.conn).events(id)
     }
 }
@@ -710,8 +715,10 @@ mod tests {
         store.append_event(&reg_event("B-002", "b")).unwrap();
         let a = store.live_items().unwrap();
         let b = store.live_items().unwrap();
-        assert_eq!(a.iter().map(|r| &r.item_id).collect::<Vec<_>>(),
-                   b.iter().map(|r| &r.item_id).collect::<Vec<_>>());
+        assert_eq!(
+            a.iter().map(|r| &r.item_id).collect::<Vec<_>>(),
+            b.iter().map(|r| &r.item_id).collect::<Vec<_>>()
+        );
         assert_eq!(a[0].item_id, "B-001");
         assert_eq!(a[1].item_id, "B-002");
         assert_eq!(a[2].item_id, "B-003");
@@ -724,7 +731,9 @@ mod tests {
         // Re-run on a separate connection
         let conn2 = rusqlite::Connection::open_in_memory().unwrap();
         // can't share mem db across connections, so this is enough
-        let v: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0)).unwrap();
+        let v: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
         assert_eq!(v, 18);
         let _ = conn2;
     }

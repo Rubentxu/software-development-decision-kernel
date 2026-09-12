@@ -14,18 +14,15 @@
 //! `promote`, `discard`, and `render` are deferred to cycles 3/4.
 
 use clap::{Args, Subcommand, ValueEnum};
-use sddk_domain::{
-    backlog::{
-        generate_ulid, now_rfc3339, BacklogError, BacklogEventLogEntry, BacklogItemId,
-        BacklogItemRow, BacklogPriority,
-    },
-    format_rfc3339_from_secs,
+use sddk_domain::backlog::{
+    generate_ulid, now_rfc3339, BacklogError, BacklogEventLogEntry, BacklogItemId, BacklogItemRow,
+    BacklogPriority,
 };
 use sddk_storage::{BacklogEvent, BacklogStore, SqliteBacklogStoreOwned};
 use serde::Serialize;
 
 use crate::cycle::RuntimeArgs;
-use crate::{failure, render_result, CliEnvironment, CommandOutput, OutputFormat};
+use crate::{CliEnvironment, CommandOutput, OutputFormat, failure, render_result};
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum BacklogCommand {
@@ -121,10 +118,7 @@ pub(crate) struct BacklogShowArgs {
     pub(crate) format: OutputFormat,
 }
 
-pub(crate) fn run_backlog(
-    command: BacklogCommand,
-    environment: &CliEnvironment,
-) -> CommandOutput {
+pub(crate) fn run_backlog(command: BacklogCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
         BacklogCommand::Capture(args) => run_backlog_capture(args, environment),
         BacklogCommand::Triage(args) => run_backlog_triage(args, environment),
@@ -218,10 +212,7 @@ fn run_backlog_triage(args: BacklogTriageArgs, environment: &CliEnvironment) -> 
             return Err(BacklogError::ItemNotFound(args.item_id.clone()).into());
         }
         let priority: BacklogPriority = args.priority.into();
-        let valid_from = args
-            .valid_from
-            .clone()
-            .unwrap_or_else(now_rfc3339);
+        let valid_from = args.valid_from.clone().unwrap_or_else(now_rfc3339);
         let event = BacklogEvent::Triaged {
             item_id: args.item_id.clone(),
             priority,
@@ -258,7 +249,9 @@ fn list_text(o: &ListOutput) -> String {
         return "(no live backlog items)\n".to_string();
     }
     let mut s = String::new();
-    s.push_str("item_id | origin_cycle_id | origin_phase | priority | status | captured_at | events\n");
+    s.push_str(
+        "item_id | origin_cycle_id | origin_phase | priority | status | captured_at | events\n",
+    );
     s.push_str("--- | --- | --- | --- | --- | --- | ---\n");
     for r in &o.items {
         let prio = r
@@ -303,7 +296,10 @@ struct ShowOutput {
 
 fn show_text(o: &ShowOutput) -> String {
     match &o.item {
-        None => format!("item not found: no events returned ({} event log rows)\n", o.events.len()),
+        None => format!(
+            "item not found: no events returned ({} event log rows)\n",
+            o.events.len()
+        ),
         Some(row) => {
             let mut s = String::new();
             s.push_str("=== item ===\n");
@@ -319,7 +315,10 @@ fn show_text(o: &ShowOutput) -> String {
             ));
             s.push_str(&format!("current_status: {:?}\n", row.current_status));
             s.push_str(&format!("captured_at: {}\n", row.captured_at));
-            s.push_str(&format!("emitted_event_count: {}\n", row.emitted_event_count));
+            s.push_str(&format!(
+                "emitted_event_count: {}\n",
+                row.emitted_event_count
+            ));
             s.push_str("\n=== event log ===\n");
             for (i, ev) in o.events.iter().enumerate() {
                 s.push_str(&format!(
@@ -328,7 +327,11 @@ fn show_text(o: &ShowOutput) -> String {
                     ev.event_type,
                     ev.schema_version,
                     ev.emitted_at,
-                    if ev.actor_ref.is_empty() { "-" } else { &ev.actor_ref },
+                    if ev.actor_ref.is_empty() {
+                        "-"
+                    } else {
+                        &ev.actor_ref
+                    },
                     ev.payload
                 ));
             }
@@ -357,7 +360,3 @@ fn run_backlog_show(args: BacklogShowArgs, environment: &CliEnvironment) -> Comm
         Err(e) => failure(e.to_string()),
     }
 }
-
-// Suppress unused-import warning when no test below uses this helper.
-#[allow(dead_code)]
-const _FMT_HELPER: fn(u64) -> String = format_rfc3339_from_secs;

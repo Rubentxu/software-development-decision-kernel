@@ -7,6 +7,7 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod backlog;
 pub mod channel;
 pub mod compiler;
 pub mod context_read;
@@ -27,7 +28,6 @@ pub mod legacy;
 pub mod macros;
 pub mod metrics;
 pub mod models;
-pub mod backlog;
 pub mod operator_contract;
 pub mod pack;
 pub mod plan_revision;
@@ -54,10 +54,10 @@ pub mod workflow;
 pub mod workflow_ir;
 pub mod workflow_run;
 
+pub use backlog::{BacklogEventLogEntry, format_rfc3339_from_secs, generate_ulid, now_rfc3339};
 pub use channel::*;
 pub use context_read::*;
 pub use cycle::*;
-pub use backlog::{format_rfc3339_from_secs, generate_ulid, now_rfc3339, BacklogEventLogEntry};
 pub use delivery_kind::*;
 pub use error::*;
 pub use event_envelope::*;

@@ -211,7 +211,9 @@ pub enum BacklogError {
     EmptySummary,
     /// Capture called with empty origin evidence
     /// (either `origin_cycle_id` or `origin_phase` blank).
-    #[error("backlog origin evidence required (origin_cycle_id and origin_phase must be non-empty)")]
+    #[error(
+        "backlog origin evidence required (origin_cycle_id and origin_phase must be non-empty)"
+    )]
     OriginEvidenceRequired,
 }
 
@@ -267,8 +269,8 @@ pub fn generate_ulid() -> String {
         ^ (tick.rotate_left(13) as u128)
         ^ ((now as u128).rotate_left(21));
 
-    let mut bits: u128 = ((now as u128 & 0xFFFF_FFFF_FFFF) << 80)
-        | (rand80 & 0xFFFF_FFFF_FFFF_FFFF_FFFF);
+    let mut bits: u128 =
+        ((now as u128 & 0xFFFF_FFFF_FFFF) << 80) | (rand80 & 0xFFFF_FFFF_FFFF_FFFF_FFFF);
     let mut out = [0u8; 26];
     for i in (0..26).rev() {
         out[i] = CROCKFORD[(bits & 0x1F) as usize];
@@ -327,7 +329,12 @@ mod tests {
 
     #[test]
     fn backlog_priority_round_trip() {
-        for p in [BacklogPriority::P0, BacklogPriority::P1, BacklogPriority::P2, BacklogPriority::P3] {
+        for p in [
+            BacklogPriority::P0,
+            BacklogPriority::P1,
+            BacklogPriority::P2,
+            BacklogPriority::P3,
+        ] {
             let s = serde_json::to_string(&p).unwrap();
             let back: BacklogPriority = serde_json::from_str(&s).unwrap();
             assert_eq!(p, back);
@@ -342,7 +349,10 @@ mod tests {
 
     #[test]
     fn backlog_priority_fromstr() {
-        assert_eq!("P0".parse::<BacklogPriority>().unwrap(), BacklogPriority::P0);
+        assert_eq!(
+            "P0".parse::<BacklogPriority>().unwrap(),
+            BacklogPriority::P0
+        );
         assert!("P9".parse::<BacklogPriority>().is_err());
     }
 
@@ -376,10 +386,22 @@ mod tests {
 
     #[test]
     fn backlog_status_fromstr() {
-        assert_eq!("registered".parse::<BacklogStatus>().unwrap(), BacklogStatus::Registered);
-        assert_eq!("triaged".parse::<BacklogStatus>().unwrap(), BacklogStatus::Triaged);
-        assert_eq!("promoted".parse::<BacklogStatus>().unwrap(), BacklogStatus::Promoted);
-        assert_eq!("discarded".parse::<BacklogStatus>().unwrap(), BacklogStatus::Discarded);
+        assert_eq!(
+            "registered".parse::<BacklogStatus>().unwrap(),
+            BacklogStatus::Registered
+        );
+        assert_eq!(
+            "triaged".parse::<BacklogStatus>().unwrap(),
+            BacklogStatus::Triaged
+        );
+        assert_eq!(
+            "promoted".parse::<BacklogStatus>().unwrap(),
+            BacklogStatus::Promoted
+        );
+        assert_eq!(
+            "discarded".parse::<BacklogStatus>().unwrap(),
+            BacklogStatus::Discarded
+        );
         assert!("bogus".parse::<BacklogStatus>().is_err());
     }
 
@@ -394,8 +416,14 @@ mod tests {
 
     #[test]
     fn backlog_render_kind_fromstr() {
-        assert_eq!("backlog".parse::<BacklogRenderKind>().unwrap(), BacklogRenderKind::Backlog);
-        assert_eq!("roadmap".parse::<BacklogRenderKind>().unwrap(), BacklogRenderKind::Roadmap);
+        assert_eq!(
+            "backlog".parse::<BacklogRenderKind>().unwrap(),
+            BacklogRenderKind::Backlog
+        );
+        assert_eq!(
+            "roadmap".parse::<BacklogRenderKind>().unwrap(),
+            BacklogRenderKind::Roadmap
+        );
         assert!("other".parse::<BacklogRenderKind>().is_err());
     }
 

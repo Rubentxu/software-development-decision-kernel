@@ -8,23 +8,23 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod backlog_store;
 pub mod cas;
 pub mod control_plane;
 pub mod event_store;
 pub mod fork_store;
 pub mod graph_store;
-pub mod backlog_store;
 mod migrations;
 mod models;
 pub mod projection_store;
 pub mod rebuild;
 pub mod spine_import;
+pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore, SqliteBacklogStoreOwned};
 pub use cas::FilesystemCas;
 pub use control_plane::{ProjectStatusRow, SCHEMA_V1, SqliteControlPlane};
 pub use event_store::SqliteEventStore;
 pub use fork_store::SqliteForkStore;
 pub use graph_store::SqliteGraphStore;
-pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore, SqliteBacklogStoreOwned};
 pub use projection_store::SqliteProjectionStore;
 pub use rebuild::rebuild;
 
