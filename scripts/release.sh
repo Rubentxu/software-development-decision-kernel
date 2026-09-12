@@ -165,8 +165,9 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_deny_lint_zero_hits.sh \
             tests/test_vault_adr_mirror_coverage.sh \
             tests/test_release_tag_anchoring.sh \
+            tests/test_vault_mirror_auto.sh \
             || die "shellcheck failed"
-        ok "shellcheck clean (scope: release-receipt + 7 cross-crate/M9+ tests)"
+        ok "shellcheck clean (scope: release-receipt + 8 cross-crate/M9+ tests)"
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
@@ -176,7 +177,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_advisory_lint_explanations.sh \
              tests/test_deny_lint_zero_hits.sh \
              tests/test_vault_adr_mirror_coverage.sh \
-             tests/test_release_tag_anchoring.sh; do
+             tests/test_release_tag_anchoring.sh \
+             tests/test_vault_mirror_auto.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"
@@ -340,6 +342,32 @@ cat > "$TMP/sbom.json" <<EOF
 {"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[{"type":"application","name":"sddk","version":"$VERSION","purl":"pkg:generic/sddk@$VERSION"}]}
 EOF
 ok "checksums + sbom ready (binary sha256: ${BIN_SHA:0:16}…)"
+
+# --- 8b. vault ADR mirror sync (best-effort, fail-soft) ---
+#
+# INC-VAULT-MIRROR-AUTO: vault mirrors at
+# ~/.sddk-knowledge/sddk-framework/adrs/ must stay in sync with the
+# accepted ADRs in docs/architecture/adrs/. Without this step the
+# operator must invoke `python3 scripts/mirror_adrs_to_vault.py` manually
+# after each release — easy to forget, drifts the human-knowledge source
+# from the runtime authority.
+#
+# The mirror script is idempotent (skips existing mirrors) and the
+# vault is human knowledge per AGENTS §2.7 (the repo ADR remains
+# canonical). Therefore this step is best-effort:
+#   - exit 0 → log counts as ok
+#   - non-zero exit → log as warn, do NOT abort the release; the bump
+#     commit is the canonical record and is already published
+#
+# Always executed (also under --skip-tests and --dry-run) — vault sync
+# is part of the release contract, not the test gate.
+
+step "8b/14 — vault ADR mirror sync (closes INC-VAULT-MIRROR-AUTO)"
+if MIRROR_OUT="$(python3 "$ROOT/scripts/mirror_adrs_to_vault.py" 2>&1)"; then
+    ok "vault mirror sync: $(echo "$MIRROR_OUT" | tr '\n' ' ')"
+else
+    warn "vault mirror sync failed (non-fatal — repo ADR is canonical): $MIRROR_OUT"
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
     ok "dry-run: stopping before gh release create"
