@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.168.30] - 2026-09-12
+
+### Other
+  - test(shell): cross-crate pin for scripts/release-receipt.sh vs engine::infer_actor_kind
+
 ## [1.168.29] - 2026-09-12
 
 ### Features
