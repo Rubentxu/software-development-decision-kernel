@@ -99,14 +99,17 @@ fn register_migrates_agent_map_era_artifacts() {
     let dir = tempfile::tempdir().unwrap();
     let agents = dir.path().join("agents");
     std::fs::create_dir_all(&agents).unwrap();
-    std::os::unix::fs::symlink(
-        "/nonexistent/framework/agents/sddk-foo.md",
+    // Prefixed bundle agent: stale name-less write is replaced.
+    std::fs::write(
         agents.join("sddk-foo.md"),
+        "---\ndescription: Foo explorer\n---\nold body\n",
     )
     .unwrap();
-    std::fs::write(
+    // NON-prefixed bundle agent (regression: `gentle-bar` has no sddk-
+    // prefix, ownership cannot hinge on is_sddk_owned) — symlink is replaced.
+    std::os::unix::fs::symlink(
+        "/nonexistent/framework/agents/gentle-bar.md",
         agents.join("gentle-bar.md"),
-        "---\ndescription: Bar reviewer\n---\nold body\n",
     )
     .unwrap();
     std::os::unix::fs::symlink(
@@ -121,11 +124,11 @@ fn register_migrates_agent_map_era_artifacts() {
 
     let foo = std::fs::read_to_string(agents.join("sddk-foo.md")).unwrap();
     assert!(foo.contains("name: sddk-foo\n"), "{foo}");
+    assert!(!foo.contains("old body"), "{foo}");
     let bar = std::fs::read_to_string(agents.join("gentle-bar.md")).unwrap();
     assert!(bar.contains("name: gentle-bar\n"), "{bar}");
-    assert!(!bar.contains("old body"), "{bar}");
     assert!(
-        !std::fs::symlink_metadata(agents.join("sddk-foo.md"))
+        !std::fs::symlink_metadata(agents.join("gentle-bar.md"))
             .unwrap()
             .file_type()
             .is_symlink()
