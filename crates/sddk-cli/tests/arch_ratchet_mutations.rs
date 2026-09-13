@@ -274,10 +274,7 @@ fn load_validated_allowlist(root: &Path) -> AllowlistDoc {
     // starts with, so it is verified by construction), and every item must
     // mention the remaining 7 mandatory field keys.
     let item_count = raw.matches("symbol/path:").count();
-    let items: Vec<&str> = raw
-        .split("symbol/path:")
-        .skip(1)
-        .collect();
+    let items: Vec<&str> = raw.split("symbol/path:").skip(1).collect();
     assert!(
         !items.is_empty() && items.len() == item_count,
         "allowlist must declare at least one entry"
@@ -341,11 +338,7 @@ fn scan_for_undeclared_readers(root: &Path, allowlisted: &[String]) -> Vec<PathB
 fn legacy_reads_only_via_readonly_decoder_allowlist() {
     let root = workspace_root();
     let doc = load_validated_allowlist(&root);
-    let allowlisted: Vec<String> = doc
-        .entries
-        .iter()
-        .map(|e| e.symbol_path.clone())
-        .collect();
+    let allowlisted: Vec<String> = doc.entries.iter().map(|e| e.symbol_path.clone()).collect();
 
     // 1. Every reader of the legacy table is declared in the allowlist.
     let undeclared = scan_for_undeclared_readers(&root, &allowlisted);
@@ -612,7 +605,13 @@ pub fn rogue_evidence() -> &'static str {{
     .expect("write violating file");
     let violating = std::fs::read_to_string(&rogue).expect("read violating file");
     assert!(
-        conf09_file_offends(&rogue, &root, &violating, &CONF09_TYPE_ALLOWLIST, CONF09_TYPE_FRAGMENT),
+        conf09_file_offends(
+            &rogue,
+            &root,
+            &violating,
+            &CONF09_TYPE_ALLOWLIST,
+            CONF09_TYPE_FRAGMENT
+        ),
         "type ratchet must detect the injected reference"
     );
 
@@ -649,7 +648,13 @@ pub fn rogue_construction() -> u8 {{
         CONF09_TYPE_FRAGMENT, CONF09_TYPE_FRAGMENT
     );
     assert!(
-        !conf09_file_offends(&rogue, &root, &comment_only, &CONF09_TYPE_ALLOWLIST, CONF09_TYPE_FRAGMENT),
+        !conf09_file_offends(
+            &rogue,
+            &root,
+            &comment_only,
+            &CONF09_TYPE_ALLOWLIST,
+            CONF09_TYPE_FRAGMENT
+        ),
         "comment mentions must not trip the type ratchet"
     );
     assert!(
@@ -676,6 +681,121 @@ pub fn rogue_construction() -> u8 {{
             "allowlisted compat file '{rel}' must not offend"
         );
     }
+
+    let _ = std::fs::remove_dir_all(&sandbox);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// conf09b — WU-C3 cycle/run lifecycle cutover (DELTA-CONF-004)
+//
+// Runtime-derived cycle statuses (Remediating, Recovering, UatWaiting,
+// ApprovalPending) are DECODE-ONLY since the cutover: production code must
+// not persist them as canonical Cycle truth. Truth for wait/remediation/
+// recovery lives in Run/Authority facts (approval events, gate receipts,
+// transition ledger); the runtime label is derived (cycle_summary).
+//
+// Ratchets:
+//   1. conf09b_no_new_runtime_status_references — production code may not
+//      reference the runtime-derived variants outside the decode-only compat
+//      set (variant definition, pause compatibility, wire helpers).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fragment assembled so this file never contains it contiguously
+/// (self-flag avoidance).
+const CONF09B_FRAGMENT: &str = concat!("CycleStatus", "::Rem", "ediating");
+
+/// Closed decode-only compat set for runtime-derived status references.
+/// cycle.rs defines the variants (wire decode); cycle_pause.rs accepts them
+/// as legacy pause sources; storage_error.rs/lib.rs (engine/storage) name
+/// the guard errors; the cutover test pins the partition.
+const CONF09B_ALLOWLIST: [&str; 10] = [
+    "crates/sddk-domain/src/cycle.rs",
+    "crates/sddk-domain/src/workflow.rs",
+    "crates/sddk-engine/src/cycle_pause.rs",
+    "crates/sddk-domain/src/models/storage_error.rs",
+    "crates/sddk-engine/src/lib.rs",
+    "crates/sddk-storage/src/lib.rs",
+    "crates/sddk-domain/tests/sp04_cycle_status_slimming.rs",
+    "crates/sddk-domain/tests/workflow_yaml.rs",
+    "crates/sddk-engine/tests/runtime_cycle_status_cutover.rs",
+    "crates/sddk-cli/tests/arch_ratchet_mutations.rs",
+];
+
+/// RATCHET (WU-C3, DELTA-CONF-004): runtime-derived cycle statuses are only
+/// referenced from the closed decode-only compat set; production write paths
+/// (workflow manifest validation, storage guards, derived summary) carry the
+/// cutover, so no new `CycleStatus::<runtime>` references may appear.
+#[test]
+fn conf09b_no_new_runtime_status_references() {
+    let root = workspace_root();
+
+    let offenders = scan_for_conf09_offenders(&root, &CONF09B_ALLOWLIST, CONF09B_FRAGMENT);
+    assert!(
+        offenders.is_empty(),
+        "WU-C3 ratchet violated: runtime-derived cycle status referenced \
+         outside the decode-only compat set. Wait/remediation/recovery truth \
+         belongs to Run/Authority facts; derive the runtime label via \
+         sddk_engine::cycle_summary::derive_cycle_summary instead of naming \
+         the variant. To extend the compat set, update CONF09B_ALLOWLIST with \
+         justification. Offending files: {offenders:?}"
+    );
+
+    // Positive control: the scan visited the crate tree.
+    let mut sources = Vec::new();
+    rust_sources(&root.join("crates"), &mut sources);
+    assert!(
+        sources.len() > 100,
+        "scanner must cover the crate tree, found only {} files",
+        sources.len()
+    );
+
+    // Positive control: the compat definition file really contains the
+    // fragment, so the allowlist entry is load-bearing.
+    let domain = root.join("crates/sddk-domain/src/cycle.rs");
+    let content = std::fs::read_to_string(&domain).expect("read cycle.rs");
+    assert!(
+        strip_rust_comments(&content).contains(CONF09B_FRAGMENT),
+        "cycle.rs must contain the runtime variant reference for this \
+         allowlist entry to be meaningful"
+    );
+
+    // Mutation injection: a rogue reference in a synthetic file (outside the
+    // scanned tree) must offend the classifier.
+    let sandbox = std::env::temp_dir().join(MUTATION_SANDBOX_DIR);
+    std::fs::create_dir_all(&sandbox).expect("create sandbox");
+    let rogue = sandbox.join("rogue_runtime_status.rs");
+    std::fs::write(
+        &rogue,
+        format!("pub fn rogue() -> {} {{ todo!() }}\n", CONF09B_FRAGMENT),
+    )
+    .expect("write violating file");
+    let violating = std::fs::read_to_string(&rogue).expect("read violating file");
+    assert!(
+        conf09_file_offends(
+            &rogue,
+            &root,
+            &violating,
+            &CONF09B_ALLOWLIST,
+            CONF09B_FRAGMENT
+        ),
+        "ratchet must detect the injected runtime status reference"
+    );
+
+    // Comment-only mentions never offend.
+    let comment_only = format!(
+        "// mentions {} in a comment only\npub fn f() {{}}\n",
+        CONF09B_FRAGMENT
+    );
+    assert!(
+        !conf09_file_offends(
+            &rogue,
+            &root,
+            &comment_only,
+            &CONF09B_ALLOWLIST,
+            CONF09B_FRAGMENT
+        ),
+        "comment mentions must not trip the ratchet"
+    );
 
     let _ = std::fs::remove_dir_all(&sandbox);
 }

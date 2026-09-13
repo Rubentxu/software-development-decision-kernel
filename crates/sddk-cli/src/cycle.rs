@@ -16,6 +16,7 @@ use sddk_engine::{
         CycleNarrative, CycleNarrativeWriter, DefaultCycleNarrativeWriter, NarrativeAudience,
         NarrativeTone,
     },
+    cycle_summary::derive_cycle_summary,
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
 };
 use sddk_storage::SqliteEventStore;
@@ -1247,6 +1248,20 @@ fn run_cycle_status(args: CycleStatusArgs, environment: &CliEnvironment) -> Comm
             .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
         let record = context.storage.get_cycle(cycle_id)?;
         let lease = context.storage.get_cycle_lease(cycle_id).ok();
+        // WU-C3 cutover: derive the runtime summary from ledger facts
+        // (read-only projection; scenario 5 of DELTA-CONF-004). Failures
+        // degrade to no summary rather than blocking the status read.
+        let runtime_summary =
+            derive_cycle_summary(&context.storage, cycle_id)
+                .ok()
+                .map(|summary| CycleRuntimeSummaryOutput {
+                    derived_state: summary.derived_state,
+                    approval_waiting: summary.approval_waiting,
+                    approval_waiting_on: summary.approval_waiting_on,
+                    uat_waiting: summary.uat_waiting,
+                    remediating: summary.remediating,
+                    remediation_rounds: summary.remediation_rounds,
+                });
         Ok(CycleStatusOutput {
             cycle_id: record.manifest.cycle_id,
             status: wire(&record.manifest.status),
@@ -1255,6 +1270,7 @@ fn run_cycle_status(args: CycleStatusArgs, environment: &CliEnvironment) -> Comm
             updated_at: record.updated_at,
             artifacts: record.manifest.artifacts.len(),
             lease: lease.map(Into::into),
+            runtime_summary,
         })
     })();
     render_result(result, format, cycle_status_text)
@@ -2294,6 +2310,25 @@ struct CycleStatusOutput {
     updated_at: String,
     artifacts: usize,
     lease: Option<LeaseOutput>,
+    /// WU-C3 cutover: runtime-derived summary computed from ledger facts
+    /// (approval waits, UAT waits, remediation rounds). `None` when no
+    /// derived runtime state applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_summary: Option<CycleRuntimeSummaryOutput>,
+}
+
+/// Serializable projection of the derived runtime summary (DELTA-CONF-004
+/// scenario 5). Never persisted on the Cycle record; computed on demand.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CycleRuntimeSummaryOutput {
+    derived_state: String,
+    approval_waiting: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    approval_waiting_on: Vec<String>,
+    uat_waiting: bool,
+    remediating: bool,
+    remediation_rounds: u32,
 }
 
 #[derive(Serialize)]
@@ -2419,14 +2454,32 @@ fn cycle_start_text(output: &CycleStartOutput) -> String {
 }
 
 fn cycle_status_text(output: &CycleStatusOutput) -> String {
+    // WU-C3 cutover (DELTA-CONF-004 scenario 7): the persisted (delivery)
+    // status renders unchanged; the derived runtime summary renders alongside
+    // it so legacy and new views stay coherent.
+    let runtime = output
+        .runtime_summary
+        .as_ref()
+        .map(|summary| {
+            if summary.derived_state.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "runtime_state: {}\nremediation_rounds: {}\n",
+                    summary.derived_state, summary.remediation_rounds
+                )
+            }
+        })
+        .unwrap_or_default();
     format!(
-        "cycle_id: {}\nstatus: {}\nphase: {}\npath: {}\nupdated_at: {}\nartifacts: {}\n{}",
+        "cycle_id: {}\nstatus: {}\nphase: {}\npath: {}\nupdated_at: {}\nartifacts: {}\n{}{}",
         output.cycle_id,
         output.status,
         output.phase,
         output.path,
         output.updated_at,
         output.artifacts,
+        runtime,
         output
             .lease
             .as_ref()

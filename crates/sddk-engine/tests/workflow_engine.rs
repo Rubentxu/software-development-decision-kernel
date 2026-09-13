@@ -323,13 +323,16 @@ fn failed_verification_uses_declared_remediation_target() {
         .unwrap();
     assert_eq!(plan.outcome(), TransitionOutcome::Failed);
     assert_eq!(plan.failed_gates(), ["tests-pass"]);
-    assert_eq!(plan.state_after().status, CycleStatus::Remediating);
+    // WU-C3 cutover: the failure target is delivery-level OPEN/verify (the
+    // cycle stays open); the "remediating" runtime label is derived from the
+    // failed transition fact on the ledger, never persisted as Cycle status.
+    assert_eq!(plan.state_after().status, CycleStatus::Open);
     assert_eq!(plan.state_after().phase, Phase::Verify);
     let applied = engine
         .apply_transition(&plan, &context("event-remediation"), &auth())
         .unwrap();
     assert_eq!(applied.outcome, TransitionOutcome::Failed);
-    assert_eq!(applied.manifest.status, CycleStatus::Remediating);
+    assert_eq!(applied.manifest.status, CycleStatus::Open);
 }
 
 #[test]

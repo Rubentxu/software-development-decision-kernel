@@ -439,11 +439,9 @@ mod tests {
     use super::*;
 
     fn create_test_manifest() -> WorkflowManifest {
-        let statuses = vec![
-            CycleStatus::Open,
-            CycleStatus::Blocked,
-            CycleStatus::Remediating,
-        ];
+        // WU-C3 cutover: delivery-level statuses only (runtime-derived
+        // statuses are decode-only; see CycleStatus::is_runtime_derived).
+        let statuses = vec![CycleStatus::Open, CycleStatus::Blocked];
         let phases = vec![Phase::Explore, Phase::Specify, Phase::Design];
         let transitions = vec![
             Transition {

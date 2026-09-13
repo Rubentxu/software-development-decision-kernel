@@ -15,6 +15,21 @@ pub enum StorageError {
     },
     #[error("storage error: {0}")]
     Other(String),
+    /// A production write attempted to persist a RUNTIME-DERIVED cycle
+    /// status as canonical Cycle truth (WU-C3 cutover, DELTA-CONF-004).
+    /// These statuses are decode-only: wait/remediation/recovery detail
+    /// belongs to Run/Authority facts (approval events, gate receipts,
+    /// transition ledger), not to the `cycles` snapshot.
+    #[error(
+        "runtime-derived cycle status {status:?} cannot be written to the \
+         cycle record (decode-only since the cycle/run lifecycle cutover, \
+         DELTA-CONF-004); record the wait/remediation/recovery fact on the \
+         ledger instead"
+    )]
+    RuntimeStatusWriteForbidden {
+        /// The offending runtime-derived status.
+        status: crate::CycleStatus,
+    },
 }
 
 impl crate::SddkErrorCode for StorageError {
@@ -25,6 +40,7 @@ impl crate::SddkErrorCode for StorageError {
             Self::LeaseConflict { .. } => "STORAGE_LEASE_CONFLICT",
             Self::IdempotencyConflict { .. } => "STORAGE_IDEMPOTENCY_CONFLICT",
             Self::Other(_) => "STORAGE_ERROR",
+            Self::RuntimeStatusWriteForbidden { .. } => "STORAGE_RUNTIME_STATUS_FORBIDDEN",
         }
     }
     fn recovery(&self) -> String {
@@ -50,6 +66,10 @@ impl crate::SddkErrorCode for StorageError {
                 "the attempt was already recorded — this is a safe no-op, not an error".into()
             }
             Self::Other(_) => "retry the operation; if the problem persists, check the logs".into(),
+            Self::RuntimeStatusWriteForbidden { status } => format!(
+                "{status:?} is derived from ledger facts — do not write it to the cycle \
+                 record; surface it via the derived cycle runtime summary instead"
+            ),
         }
     }
 }

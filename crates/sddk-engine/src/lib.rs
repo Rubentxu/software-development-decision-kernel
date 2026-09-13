@@ -34,6 +34,7 @@ pub mod converge_verification;
 pub mod cycle_narrative;
 pub mod cycle_pause;
 pub mod cycle_replan;
+pub mod cycle_summary;
 pub mod cycle_supersede;
 pub mod decision_lab_baseline;
 pub mod decision_lab_experimental;
@@ -287,6 +288,29 @@ pub fn validate_workflow(manifest: &WorkflowManifest) -> Result<(), WorkflowVali
                 return Err(WorkflowValidationError::UnknownTransitionPath {
                     transition_id: transition.id.clone(),
                     path: path.clone(),
+                });
+            }
+        }
+
+        for state_ref in [
+            ("to", Some(&transition.to)),
+            ("from", transition.from.as_ref()),
+            ("on_failure", transition.on_failure.as_ref()),
+        ] {
+            let (field, state_ref) = state_ref;
+            let Some(state_ref) = state_ref else {
+                continue;
+            };
+            // WU-C3 cutover (DELTA-CONF-004): runtime-derived statuses are
+            // decode-only compat. A manifest that keeps them as reachable FSM
+            // targets would steer `apply_transition` into persisting them as
+            // canonical Cycle truth — rejected here with a typed error that
+            // names the transition, field and variant.
+            if state_ref.status.is_runtime_derived() {
+                return Err(WorkflowValidationError::RuntimeStatusInManifest {
+                    transition_id: transition.id.clone(),
+                    field,
+                    status: state_ref.status,
                 });
             }
         }
@@ -582,6 +606,27 @@ pub enum WorkflowValidationError {
     AmbiguousPathCycleStart {
         /// Path with ambiguous creation transitions.
         path: String,
+    },
+    /// A workflow manifest declares a RUNTIME-DERIVED cycle status
+    /// (WU-C3 cutover, DELTA-CONF-004). These statuses are decode-only
+    /// compat: wait/remediation/recovery truth lives in Run/Authority facts
+    /// (approval events, gate receipts, transition ledger), never in the
+    /// canonical Cycle record. A manifest that declares them as reachable
+    /// FSM states would steer `apply_transition` into persisting them.
+    #[error(
+        "workflow declares runtime-derived status {status:?} on transition \
+         {transition_id} field {field}; runtime-derived statuses are \
+         decode-only since the cycle/run lifecycle cutover — remediation, \
+         UAT-wait, approval-wait and recovery truth belongs to Run/Authority \
+         facts, not to the Cycle record (DELTA-CONF-004)"
+    )]
+    RuntimeStatusInManifest {
+        /// Transition containing the reference.
+        transition_id: String,
+        /// State field containing the reference.
+        field: &'static str,
+        /// Runtime-derived status found.
+        status: CycleStatus,
     },
 }
 

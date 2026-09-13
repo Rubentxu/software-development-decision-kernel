@@ -142,6 +142,21 @@ pub enum StorageError {
         /// Legacy event type that was rejected.
         event_type: String,
     },
+    /// A production write attempted to persist a RUNTIME-DERIVED cycle
+    /// status as canonical Cycle truth (WU-C3 cutover, DELTA-CONF-004).
+    /// These statuses are decode-only: wait/remediation/recovery detail
+    /// belongs to Run/Authority facts (approval events, gate receipts,
+    /// transition ledger), not to the `cycles` snapshot.
+    #[error(
+        "runtime-derived cycle status {status:?} cannot be written to the \
+         cycle record (decode-only since the cycle/run lifecycle cutover, \
+         DELTA-CONF-004); record the wait/remediation/recovery fact on the \
+         ledger instead"
+    )]
+    RuntimeStatusWriteForbidden {
+        /// The offending runtime-derived status.
+        status: sddk_domain::CycleStatus,
+    },
     /// Existing identity data disagrees with an idempotent registration request.
     #[error("adoption registration conflicts with existing {entity}: {id}")]
     RegistrationConflict {
@@ -594,6 +609,13 @@ impl Storage {
     /// Runtime code should normally prefer [`Storage::insert_cycle_with_event`]
     /// so the initial state and causal event are committed atomically.
     pub fn insert_cycle(&self, cycle: &CycleRecord) -> Result<()> {
+        // WU-C3 cutover (DELTA-CONF-004): runtime-derived statuses are
+        // decode-only; reject writes of derived state as canonical truth.
+        if cycle.manifest.status.is_runtime_derived() {
+            return Err(StorageError::RuntimeStatusWriteForbidden {
+                status: cycle.manifest.status,
+            });
+        }
         insert_cycle_on(&self.connection, cycle)
     }
 
@@ -617,6 +639,13 @@ impl Storage {
         event: &LedgerEventInput,
     ) -> Result<LedgerEvent> {
         ensure_event_scope(&cycle.manifest, event)?;
+        // WU-C3 cutover (DELTA-CONF-004): runtime-derived statuses are
+        // decode-only; reject writes of derived state as canonical truth.
+        if cycle.manifest.status.is_runtime_derived() {
+            return Err(StorageError::RuntimeStatusWriteForbidden {
+                status: cycle.manifest.status,
+            });
+        }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -667,6 +696,13 @@ impl Storage {
         release_lease_on_phase_change: bool,
     ) -> Result<LedgerEvent> {
         ensure_event_scope(manifest, event)?;
+        // WU-C3 cutover (DELTA-CONF-004): runtime-derived statuses are
+        // decode-only; reject writes of derived state as canonical truth.
+        if manifest.status.is_runtime_derived() {
+            return Err(StorageError::RuntimeStatusWriteForbidden {
+                status: manifest.status,
+            });
+        }
         // WU-C1.3: emit the causal event BEFORE mutating the snapshot. The
         // canonical append is the guard: a duplicate event_id with divergent
         // content fails here and leaves the `cycles` row untouched, which
@@ -2281,6 +2317,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::InvalidLease => "STORAGE_INVALID_LEASE",
             Self::EventScopeMismatch => "STORAGE_EVENT_SCOPE_MISMATCH",
             Self::LegacyDomainWriteForbidden { .. } => "STORAGE_LEGACY_DOMAIN_WRITE_FORBIDDEN",
+            Self::RuntimeStatusWriteForbidden { .. } => "STORAGE_RUNTIME_STATUS_FORBIDDEN",
             Self::RegistrationConflict { .. } => "STORAGE_REGISTRATION_CONFLICT",
             Self::SchemaVersion { .. } => "STORAGE_SCHEMA_VERSION",
             Self::LedgerIntegrity { .. } => "STORAGE_LEDGER_INTEGRITY",
@@ -2322,6 +2359,10 @@ impl sddk_domain::SddkErrorCode for StorageError {
                  table is read-only for domain events (C1.4 read-only window)"
                     .into()
             }
+            Self::RuntimeStatusWriteForbidden { status } => format!(
+                "{status:?} is derived from ledger facts — do not write it to the cycle \
+                 record; surface it via the derived cycle runtime summary instead"
+            ),
             Self::RegistrationConflict { .. } => {
                 "keep the existing identity data consistent".into()
             }
@@ -3046,7 +3087,13 @@ impl Storage {
                     row.get(7)?,
                     row.get(8)?,
                 )
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
                 let record = sddk_domain::EvidenceAttachmentRecord {
                     relation: relation_col.or(record.relation),
                     ..record
@@ -3095,7 +3142,13 @@ impl Storage {
                 row.get(7)?,
                 row.get(8)?,
             )
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
             Ok(sddk_domain::EvidenceAttachmentRecord {
                 relation: relation_col.or(record.relation),
                 ..record

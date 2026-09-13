@@ -29,8 +29,11 @@ fn test_workflow_yaml_deserialization() {
             .statuses
             .contains(&sddk_domain::cycle::CycleStatus::Blocked)
     );
+    // WU-C3 cutover: runtime-derived statuses (Remediating, Recovering,
+    // UatWaiting, ApprovalPending) are decode-only and no longer declared
+    // in the canonical workflow manifest.
     assert!(
-        manifest
+        !manifest
             .statuses
             .contains(&sddk_domain::cycle::CycleStatus::Remediating)
     );
@@ -55,7 +58,7 @@ fn test_workflow_yaml_deserialization() {
             .contains(&sddk_domain::cycle::CycleStatus::Abandoned)
     );
     assert!(
-        manifest
+        !manifest
             .statuses
             .contains(&sddk_domain::cycle::CycleStatus::Recovering)
     );
@@ -153,11 +156,12 @@ fn test_workflow_yaml_deserialization() {
         ["A-min", "A-lite", "A-full", "B-direct"],
         "phase.build.remediate must cover all four delivery paths"
     );
-    // Verify from.status == REMEDIATING
+    // WU-C3 cutover: remediation is no longer a Cycle status; the source is
+    // OPEN/build and the remediation round is a failed transition fact.
     assert_eq!(
         build_remediate.from.as_ref().unwrap().status,
-        sddk_domain::cycle::CycleStatus::Remediating,
-        "phase.build.remediate.from.status must be REMEDIATING"
+        sddk_domain::cycle::CycleStatus::Open,
+        "phase.build.remediate.from.status must be OPEN after the WU-C3 cutover"
     );
     // Verify from.phase == Build
     assert_eq!(

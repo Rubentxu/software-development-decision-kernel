@@ -373,7 +373,13 @@ pub(crate) fn derive_from_events(events: &[sddk_domain::LedgerEvent]) -> Derived
         {
             verify_verdict = verdict;
         }
-        if status == Some("REMEDIATING") {
+        // WU-C3 cutover: REMEDIATING is a decode-only legacy status. Post-
+        // cutover remediation rounds are failed transition outcomes; the
+        // legacy wire literal still counts for pre-cutover corpora.
+        let legacy_remediation = status == Some("REMEDIATING");
+        let failed_transition = event.event_type == "cycle.transitioned"
+            && event.payload.get("outcome").and_then(|v| v.as_str()) == Some("failed");
+        if legacy_remediation || failed_transition {
             correction_cycles = correction_cycles.saturating_add(1);
             verify_verdict = "FAIL".to_owned();
         } else if status == Some("RELEASED") {

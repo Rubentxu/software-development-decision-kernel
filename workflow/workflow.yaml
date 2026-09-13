@@ -7,14 +7,10 @@ workflow:
 statuses:
   - OPEN
   - BLOCKED
-  - REMEDIATING
   - RELEASE_PENDING
   - RELEASED
   - CLOSED
   - ABANDONED
-  - RECOVERING
-  - UAT_WAITING
-  - APPROVAL_PENDING
   - PAUSED
 
 phases:
@@ -272,7 +268,7 @@ transitions:
     paths:
       - A-full
     on_failure:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     produces:
       - verification-report
@@ -298,7 +294,7 @@ transitions:
     paths:
       - A-min
     on_failure:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     produces:
       - verification-report
@@ -324,7 +320,7 @@ transitions:
     paths:
       - A-lite
     on_failure:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     produces:
       - verification-report
@@ -346,14 +342,17 @@ transitions:
     paths:
       - B-direct
     on_failure:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     produces:
       - verification-report
 
+  # WU-C3 cutover: remediation is no longer a Cycle status. The cycle stays
+  # OPEN and the remediation round is recorded as a failed transition fact;
+  # the runtime "remediating" label is derived from the ledger (cycle_summary).
   - id: phase.verify.remediate
     from:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     to:
       status: OPEN
@@ -370,7 +369,7 @@ transitions:
 
   - id: phase.build.remediate
     from:
-      status: REMEDIATING
+      status: OPEN
       phase: build
     to:
       status: OPEN
@@ -390,7 +389,7 @@ transitions:
       status: OPEN
       phase: verify
     to:
-      status: UAT_WAITING
+      status: OPEN
       phase: uat
     requires:
       - kind: gate
@@ -405,7 +404,7 @@ transitions:
 
   - id: phase.uat.complete
     from:
-      status: UAT_WAITING
+      status: OPEN
       phase: uat
     to:
       status: RELEASE_PENDING
@@ -418,7 +417,7 @@ transitions:
     paths:
       - A-full
     on_failure:
-      status: REMEDIATING
+      status: OPEN
       phase: verify
     produces:
       - uat-report
@@ -444,15 +443,17 @@ transitions:
       - release-receipt
 
   # ── Release Recovery ─────────────────────────────────────────────────────────
-  # Fail-closed recovery route: RELEASE_PENDING/release → REMEDIATING/build.
+  # Fail-closed recovery route: RELEASE_PENDING/release → OPEN/build.
   # Requires typed release-failure-evidence artifact and explicit gate receipt.
   # This is the ONLY authorized path out of RELEASE_PENDING when preconditions fail.
+  # WU-C3 cutover: the "recovering" runtime detail is derived from this
+  # transition's ledger facts, not persisted as a Cycle status.
   - id: release.recover
     from:
       status: RELEASE_PENDING
       phase: release
     to:
-      status: REMEDIATING
+      status: OPEN
       phase: build
     requires:
       - kind: artifact
@@ -515,13 +516,16 @@ transitions:
       - archive-manifest
 
   # ── Approval transitions ─────────────────────────────────────────────────────
+  # WU-C3 cutover: approval-wait is no longer a Cycle status. requested/resolved
+  # keep the cycle OPEN and record the fact on the ledger; the runtime
+  # "approval-waiting" label is derived from approval.capability.* events.
   # build phase
   - id: phase.build.approval.requested
     from:
       status: OPEN
       phase: build
     to:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: build
     requires:
       - kind: gate
@@ -538,7 +542,7 @@ transitions:
 
   - id: phase.build.approval.resolved
     from:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: build
     to:
       status: OPEN
@@ -562,7 +566,7 @@ transitions:
       status: OPEN
       phase: uat
     to:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: uat
     requires:
       - kind: gate
@@ -577,7 +581,7 @@ transitions:
 
   - id: phase.uat.approval.resolved
     from:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: uat
     to:
       status: OPEN
@@ -599,7 +603,7 @@ transitions:
       status: OPEN
       phase: release
     to:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: release
     requires:
       - kind: gate
@@ -614,7 +618,7 @@ transitions:
 
   - id: phase.release.approval.resolved
     from:
-      status: APPROVAL_PENDING
+      status: OPEN
       phase: release
     to:
       status: OPEN
@@ -670,37 +674,11 @@ transitions:
     requires: []
     produces: []
 
-  - id: cycle.pause.from_remediating
-    from:
-      status: REMEDIATING
-    to:
-      status: PAUSED
-    requires: []
-    produces: []
-
-  - id: cycle.pause.from_uat_waiting
-    from:
-      status: UAT_WAITING
-    to:
-      status: PAUSED
-    requires: []
-    produces: []
-
-  - id: cycle.pause.from_approval_pending
-    from:
-      status: APPROVAL_PENDING
-    to:
-      status: PAUSED
-    requires: []
-    produces: []
-
-  - id: cycle.pause.from_recovering
-    from:
-      status: RECOVERING
-    to:
-      status: PAUSED
-    requires: []
-    produces: []
+  # WU-C3 cutover: the pause.from_remediating / from_uat_waiting /
+  # from_approval_pending / from_recovering transitions were removed — those
+  # source statuses are decode-only now. Engine::cycle_pause (the real
+  # enforcement path) still pauses from OPEN/BLOCKED/RELEASE_PENDING and
+  # derives wait/remediation/recovery detail from ledger facts.
 
   # ─────────────────────────────────────────────────────────────────────────────
   # cycle.resume — resume a paused cycle (engine-method mutation)
@@ -901,7 +879,7 @@ gates:
   release-recovery-authorized:
     gate_type:
       binary: {}
-    description: Explicit authorization for release recovery transition; gate receipt required before recovering from RELEASE_PENDING to REMEDIATING
+    description: Explicit authorization for release recovery transition; gate receipt required before recovering from RELEASE_PENDING to OPEN/build
 
 forge:
   provider: auto

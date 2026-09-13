@@ -37,6 +37,27 @@ pub enum CycleStatus {
     Paused,
 }
 
+impl CycleStatus {
+    /// Whether this status is a RUNTIME-DERIVED state (waiting / remediation
+    /// / recovery detail that belongs to Run/Authority facts, not to the
+    /// canonical Cycle record).
+    ///
+    /// WU-C3 cutover (DELTA-CONF-004): production code no longer writes
+    /// these variants as Cycle truth. Approval waits live in approval
+    /// facts (`approval.capability.*` events + `ApprovalProjection`), UAT
+    /// waits/results in gate receipts, remediation/recovery in the cycle
+    /// transition ledger and Run execution facts. The variants remain
+    /// DECODE-ONLY for pre-cutover repositories (wire roundtrip pinned by
+    /// `sp04_cycle_status_slimming` and
+    /// `test_cycle_status_approval_pending_roundtrip`).
+    pub fn is_runtime_derived(self) -> bool {
+        matches!(
+            self,
+            Self::Remediating | Self::Recovering | Self::UatWaiting | Self::ApprovalPending
+        )
+    }
+}
+
 crate::assert_variant_count_eq!(
     CycleStatus,
     11,
