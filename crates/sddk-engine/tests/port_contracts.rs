@@ -5,8 +5,6 @@
 //! ForkStore branch, ProjectionStore write, ControlPlane upsert, 2 byte-equivalence
 //! cross-checks.  Total: ≥8 distinct tests, ≤150 LOC.
 
-#![allow(deprecated)] // port-contract tests exercise the C1.3-deprecated wrappers by design
-
 use std::collections::BTreeMap;
 
 use sddk_domain::Checkpoint;

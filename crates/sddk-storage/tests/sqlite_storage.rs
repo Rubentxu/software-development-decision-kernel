@@ -1,5 +1,3 @@
-#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
-
 use rusqlite::Connection;
 use sddk_domain::{ArtifactStore, CycleId, CycleManifest, CycleStatus, Ledger};
 use sddk_storage::{

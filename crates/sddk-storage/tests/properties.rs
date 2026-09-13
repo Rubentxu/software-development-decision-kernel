@@ -1,6 +1,5 @@
 //! Property tests for ledger hashing and append verification.
 
-#![allow(deprecated)] // these tests exercise the deprecated forwarder itself until C1.5 removes it
 use proptest::prelude::*;
 use sddk_storage::{CapabilityStatus, LedgerEventInput, ProjectRecord, Storage, WorkspaceRecord};
 
