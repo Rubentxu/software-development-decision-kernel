@@ -121,6 +121,32 @@ pub struct ApprovalDecisionInput {
     pub correlation_id: Option<String>,
 }
 
+/// Input for an `authority.admission.decided` event emission (D-02, R-4-005:
+/// every deny — and every advisory High approval — is durably recorded).
+#[derive(Debug, Clone)]
+pub struct AdmissionDecidedInput {
+    /// Project that owns the governed surface.
+    pub project_id: String,
+    /// Stream/cycle context of the governed action (best effort).
+    pub cycle_id: Option<String>,
+    /// Admission surface the action targeted.
+    pub surface: String,
+    /// Action kind segment (e.g. `cli_run`).
+    pub action_kind: String,
+    /// Admission verdict: `allow` | `deny` | `require_approval` | `advisory_high_approval`.
+    pub verdict: String,
+    /// Engine decision id (`decision_id()` of the AdmissionDecision).
+    pub decision_id: String,
+    /// SHA-256 of the AdmissionExplanation (decision digest).
+    pub explanation_digest: String,
+    /// Wall-clock time of the decision (RFC 3339).
+    pub occurred_at: String,
+    /// Causation chain: set to predecessor event_id in the same stream.
+    pub causation_id: Option<String>,
+    /// Correlation group: propagates the command's frame_id for grouping related events.
+    pub correlation_id: Option<String>,
+}
+
 // ── Planning event input types ─────────────────────────────────────────────────
 
 /// Input for a `planning.work_item.created` event emission.
@@ -1509,9 +1535,266 @@ pub fn emit_decision_recorded<S: EventStore>(
     store.append(&env)
 }
 
+/// Emits an `authority.admission.decided` event (D-02).
+///
+/// Actor is fixed to `System("sddk-authority")`: admission decisions are
+/// runtime facts about the engine, not actions of the caller.
+///
+/// The event_id is deterministic: `authority-<decision_id>-<verdict>`, so
+/// re-emitting the same decision is idempotent (the store returns the
+/// original `EventAppended` without allocating a new sequence).
+///
+/// Fail-soft by design at call sites: the governed mutation has already
+/// been aborted before this event is recorded, so an emission error must
+/// not change the caller's blocking outcome.
+pub fn emit_admission_decision<S: EventStore>(
+    store: &mut S,
+    input: &AdmissionDecidedInput,
+) -> Result<EventAppended, StorageError> {
+    let event_id = format!("authority-{}-{}", input.decision_id, input.verdict);
+    let payload = json!({
+        "surface": input.surface,
+        "action_kind": input.action_kind,
+        "verdict": input.verdict,
+        "decision_id": input.decision_id,
+        "explanation_digest": input.explanation_digest,
+    });
+    let stream_id = input
+        .cycle_id
+        .clone()
+        .unwrap_or_else(|| format!("authority-{surface}", surface = input.surface));
+    let mut env = EventEnvelopeV1 {
+        event_id,
+        event_type: "authority.admission.decided".to_string(),
+        schema_version: 1,
+        stream_id,
+        sequence: 0,
+        project_id: input.project_id.clone(),
+        occurred_at: input.occurred_at.clone(),
+        recorded_at: input.occurred_at.clone(),
+        actor: ActorRef {
+            kind: ActorKind::System,
+            id: "sddk-authority".to_string(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+            role: None,
+        },
+        subjects: vec![EntityRef {
+            kind: "surface".into(),
+            id: input.surface.clone(),
+            version: None,
+            content_hash: None,
+        }],
+        payload,
+        evidence_refs: vec![],
+        content_hash: String::new(),
+        metadata: None,
+        causation_id: None,
+        correlation_id: None,
+        cycle_id: input.cycle_id.clone(),
+        frame_id: None,
+        fork_id: None,
+    };
+    if let Some(ref cid) = input.causation_id {
+        with_causation(&mut env, cid);
+    }
+    if let Some(ref corr) = input.correlation_id {
+        with_correlation_id(&mut env, corr);
+    }
+    env.content_hash = env.compute_content_hash();
+    validate_secretary_event(&env.actor, &env.event_type)
+        .map_err(|e| StorageError::Other(e.to_string()))?;
+    store.append(&env)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── authority.admission.decided (WU-C4-3, D-02, R-4-005) ─────────────────
+
+    /// In-memory store honoring the EventStore idempotency contract:
+    /// re-appending the same event_id returns the original result without
+    /// allocating a new sequence.
+    struct AdmissionMemStore {
+        events: Vec<EventEnvelopeV1>,
+        appended: std::cell::RefCell<usize>,
+    }
+
+    impl AdmissionMemStore {
+        fn new() -> Self {
+            Self {
+                events: vec![],
+                appended: std::cell::RefCell::new(0),
+            }
+        }
+    }
+
+    impl EventStore for AdmissionMemStore {
+        fn append(&mut self, envelope: &EventEnvelopeV1) -> Result<EventAppended, StorageError> {
+            *self.appended.borrow_mut() += 1;
+            if let Some(existing) = self.events.iter().find(|e| e.event_id == envelope.event_id) {
+                return Ok(EventAppended {
+                    event_id: existing.event_id.clone(),
+                    stream_id: existing.stream_id.clone(),
+                    sequence: existing.sequence,
+                    content_hash: existing.content_hash.clone(),
+                    recorded_at: existing.recorded_at.clone(),
+                    chain_hash: String::new(),
+                });
+            }
+            let sequence = envelope.sequence.max(1);
+            let mut env = envelope.clone();
+            env.sequence = sequence;
+            self.events.push(env.clone());
+            Ok(EventAppended {
+                event_id: env.event_id,
+                stream_id: env.stream_id,
+                sequence,
+                content_hash: env.content_hash,
+                recorded_at: env.recorded_at,
+                chain_hash: String::new(),
+            })
+        }
+        fn load_by_event_id(
+            &self,
+            event_id: &str,
+        ) -> Result<Option<EventEnvelopeV1>, StorageError> {
+            Ok(self.events.iter().find(|e| e.event_id == event_id).cloned())
+        }
+        fn load_stream(
+            &self,
+            stream_id: &str,
+            after_sequence: Option<u64>,
+            limit: u32,
+        ) -> Result<Vec<EventEnvelopeV1>, StorageError> {
+            let start = after_sequence.unwrap_or(0);
+            Ok(self
+                .events
+                .iter()
+                .filter(|e| e.stream_id == stream_id && e.sequence > start)
+                .take(limit as usize)
+                .cloned()
+                .collect())
+        }
+        fn last_sequence(&self, stream_id: &str) -> Result<Option<u64>, StorageError> {
+            Ok(self
+                .events
+                .iter()
+                .filter(|e| e.stream_id == stream_id)
+                .map(|e| e.sequence)
+                .max())
+        }
+        fn count(&self) -> Result<u64, StorageError> {
+            Ok(self.events.len() as u64)
+        }
+        fn head_hash(&self, stream_id: &str) -> Result<Option<String>, StorageError> {
+            Ok(self
+                .events
+                .iter()
+                .filter(|e| e.stream_id == stream_id)
+                .last()
+                .map(|e| e.content_hash.clone()))
+        }
+        fn head_chain_hash(&self, _stream_id: &str) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        fn verify_stream_chain(&self, _stream_id: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        fn verify_chain_integrity(&self, _stream_id: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        fn backfill_chain_hash(&mut self, _stream_id: &str) -> Result<usize, StorageError> {
+            Ok(0)
+        }
+        fn load_by_sequence(
+            &self,
+            stream_id: &str,
+            sequence: u64,
+        ) -> Result<Option<EventEnvelopeV1>, StorageError> {
+            Ok(self
+                .events
+                .iter()
+                .find(|e| e.stream_id == stream_id && e.sequence == sequence)
+                .cloned())
+        }
+    }
+
+    fn admission_input(verdict: &str) -> AdmissionDecidedInput {
+        AdmissionDecidedInput {
+            project_id: "p-1".into(),
+            cycle_id: Some("c-42".into()),
+            surface: "gate_receipts".into(),
+            action_kind: "cli_run".into(),
+            verdict: verdict.into(),
+            decision_id: "deny-cap-human-cli_run".into(),
+            explanation_digest: "sha256:deadbeef".into(),
+            occurred_at: "2026-09-13T10:00:00Z".into(),
+            causation_id: None,
+            correlation_id: None,
+        }
+    }
+
+    #[test]
+    fn emit_admission_decision_is_idempotent_per_decision_id() {
+        let mut store = AdmissionMemStore::new();
+        let input = admission_input("deny");
+        let first = emit_admission_decision(&mut store, &input).unwrap();
+        let second = emit_admission_decision(&mut store, &input).unwrap();
+        // Same event_id, same sequence: no duplicate stored.
+        assert_eq!(first.event_id, second.event_id);
+        assert_eq!(first.sequence, second.sequence);
+        assert_eq!(store.count().unwrap(), 1, "exactly one event");
+        let events = store.load_stream("c-42", None, 10).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "authority.admission.decided");
+    }
+
+    #[test]
+    fn emit_admission_decision_event_contains_verdict_fields() {
+        let mut store = AdmissionMemStore::new();
+        let input = admission_input("deny");
+        emit_admission_decision(&mut store, &input).unwrap();
+        let env = store
+            .load_by_event_id("authority-deny-cap-human-cli_run-deny")
+            .unwrap()
+            .expect("stored");
+        assert_eq!(env.event_type, "authority.admission.decided");
+        assert_eq!(env.actor.kind, ActorKind::System);
+        assert_eq!(env.actor.id, "sddk-authority");
+        assert_eq!(env.payload["surface"], "gate_receipts");
+        assert_eq!(env.payload["action_kind"], "cli_run");
+        assert_eq!(env.payload["verdict"], "deny");
+        assert_eq!(env.payload["explanation_digest"], "sha256:deadbeef");
+        // Deterministic event_id formula.
+        assert!(
+            env.event_id
+                .starts_with("authority-deny-cap-human-cli_run-")
+        );
+    }
+
+    #[test]
+    fn emit_admission_decision_verdicts_yield_distinct_event_ids() {
+        let mut store = AdmissionMemStore::new();
+        emit_admission_decision(&mut store, &admission_input("deny")).unwrap();
+        emit_admission_decision(&mut store, &admission_input("require_approval")).unwrap();
+        emit_admission_decision(&mut store, &admission_input("advisory_high_approval")).unwrap();
+        assert_eq!(store.count().unwrap(), 3);
+    }
+
+    #[test]
+    fn emit_admission_decision_without_cycle_uses_surface_stream() {
+        let mut store = AdmissionMemStore::new();
+        let mut input = admission_input("deny");
+        input.cycle_id = None;
+        emit_admission_decision(&mut store, &input).unwrap();
+        let events = store
+            .load_stream("authority-gate_receipts", None, 10)
+            .unwrap();
+        assert_eq!(events.len(), 1, "falls back to per-surface stream");
+    }
 
     #[test]
     fn emit_approval_requested_produces_deterministic_event_id() {

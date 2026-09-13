@@ -9,9 +9,9 @@
 // approval loop is live (M4, R-4-001 S2). The engine stays pure; this module
 // decides how the CLI reacts to the verdict.
 
-use sddk_engine::authority_engine::{
-    ActionKind, AdmissionDecision, DenyReason, DigestSha256, RunnerVerdict,
-};
+use sddk_engine::authority_engine::{ActionKind, AdmissionDecision, DenyReason, RunnerVerdict};
+use sddk_engine::event_bus::emit::{AdmissionDecidedInput, emit_admission_decision};
+use sddk_storage::SqliteEventStore;
 use sha2::{Digest, Sha256};
 
 /// Enforcement staging (D-08). Advanced by milestone commit; rollback of a
@@ -164,30 +164,143 @@ fn approval_request_hash_from(decision_id: &str, surface: &str) -> String {
 /// CLI wrapper over `enforce_gated` at the current stage: returns an error
 /// (non-zero exit, no mutation) when the outcome blocks the effect. The
 /// message is operator-facing; the decision ids stay machine-correlatable.
+///
+/// Every recorded denial (and every advisory High approval) is persisted as
+/// an `authority.admission.decided` event (R-4-005: "denial decision
+/// recorded") before returning. Emission is fail-soft: the governed
+/// mutation has already been aborted, so a ledger write failure must not
+/// change the blocking outcome — it is reported on stderr only.
 pub(crate) fn enforce_admission_or_block(
     verdict: &RunnerVerdict,
     surface: &str,
 ) -> anyhow::Result<()> {
+    enforce_admission_or_block_in(
+        verdict,
+        surface,
+        std::env::var_os("SDDK_STATE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| {
+                    let mut p = std::path::PathBuf::from(h);
+                    p.push(".local/state");
+                    p
+                })
+            })
+            .as_deref(),
+    )
+}
+
+/// Same as [`enforce_admission_or_block`] with an explicit state dir (test
+/// injection point); `None` disables event recording entirely.
+pub(crate) fn enforce_admission_or_block_in(
+    verdict: &RunnerVerdict,
+    surface: &str,
+    state_dir: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    let verdict_str = verdict_segment(verdict);
     match enforce_gated(verdict, surface, ENFORCEMENT_STAGE) {
-        EnforcementOutcome::Proceed { .. } | EnforcementOutcome::AdvisoryHighApproval { .. } => {
+        EnforcementOutcome::Proceed { .. } => Ok(()),
+        // Advisory at M1, still recorded (D-02): the approval loop (M4)
+        // consumes these events to build the pending-approval projection.
+        EnforcementOutcome::AdvisoryHighApproval { decision_id, .. } => {
+            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
             Ok(())
         }
-        EnforcementOutcome::AwaitingApproval {
-            decision_id,
-            request_hash,
-        } => Err(anyhow::anyhow!(
-            "ADMISSION: approval required before mutating '{surface}' \
-             (decision_id={decision_id}, request_hash={request_hash}); \
-             no changes were made"
-        )),
+        EnforcementOutcome::AwaitingApproval { decision_id, .. } => {
+            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
+            Err(anyhow::anyhow!(
+                "ADMISSION: approval required before mutating '{surface}' \
+                 (decision_id={decision_id}); no changes were made"
+            ))
+        }
         EnforcementOutcome::Blocked {
             reason,
             decision_id,
-        } => Err(anyhow::anyhow!(
-            "ADMISSION: denied '{surface}' ({reason:?}, decision_id={decision_id}); \
-             no changes were made"
-        )),
+        } => {
+            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
+            Err(anyhow::anyhow!(
+                "ADMISSION: denied '{surface}' ({reason:?}, decision_id={decision_id}); \
+                 no changes were made"
+            ))
+        }
     }
+}
+
+/// Verdict segment for event ids / payloads, from the engine decision plus
+/// the surface band (advisory vs blocking is an enforcement-stage concern).
+fn verdict_segment(verdict: &RunnerVerdict) -> String {
+    match &verdict.decision {
+        AdmissionDecision::Allow { .. } => "allow".to_string(),
+        AdmissionDecision::Deny { .. } => "deny".to_string(),
+        AdmissionDecision::RequireApproval { .. } => {
+            match surface_band(verdict.capability.trim_start_matches("surface.")) {
+                SurfaceBand::High => "advisory_high_approval".to_string(),
+                _ => "require_approval".to_string(),
+            }
+        }
+        _ => "unknown".to_string(),
+    }
+}
+
+/// Fail-soft emission of `authority.admission.decided` into every project
+/// ledger under `state_dir`. Errors are swallowed (logged to stderr).
+fn record_admission_decision(
+    state_dir: Option<&std::path::Path>,
+    surface: &str,
+    verdict_str: &str,
+    decision_id: &str,
+    verdict: &RunnerVerdict,
+) {
+    let Some(state_dir) = state_dir else {
+        return;
+    };
+    let projects_dir = state_dir.join("sddk").join("projects");
+    let Ok(entries) = std::fs::read_dir(&projects_dir) else {
+        return;
+    };
+    let base = AdmissionDecidedInput {
+        project_id: String::new(), // filled per project dir below
+        cycle_id: None,
+        surface: surface.to_string(),
+        action_kind: action_kind_segment(verdict),
+        verdict: verdict_str.to_string(),
+        decision_id: decision_id.to_string(),
+        explanation_digest: verdict.explanation.decision_digest.0.clone(),
+        occurred_at: now_rfc3339(),
+        causation_id: None,
+        correlation_id: None,
+    };
+    for entry in entries.flatten() {
+        let project_id = entry.file_name().to_string_lossy().into_owned();
+        let Ok(mut store) = SqliteEventStore::open(&projects_dir.join(&project_id)) else {
+            continue;
+        };
+        let input = AdmissionDecidedInput {
+            project_id: project_id.clone(),
+            ..base.clone()
+        };
+        if let Err(e) = emit_admission_decision(&mut store, &input) {
+            eprintln!("admission event recording failed (fail-soft): {e}");
+        }
+    }
+}
+
+/// RFC 3339 timestamp via the same default used by git receipts.
+fn now_rfc3339() -> String {
+    crate::git_cmd::default_timestamp()
+}
+
+/// Action-kind segment from the decision id (`deny-cap-<actor>-<action>` /
+/// `approval-<actor>-<action>` / `allow-<actor>-<action>`).
+fn action_kind_segment(verdict: &RunnerVerdict) -> String {
+    verdict
+        .decision
+        .decision_id()
+        .rsplit('-')
+        .next()
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -195,7 +308,7 @@ mod admission_tests {
     use super::*;
     use sddk_engine::authority_engine::{
         ActorKind, AdmissionDecision, AdmissionExplanation, ApprovalRequirement, ApproverKind,
-        AuthorityEngineRunner, Facts, RunnerVerdict,
+        AuthorityEngineRunner, DigestSha256, Facts, RunnerVerdict,
     };
 
     fn require_approval_verdict() -> RunnerVerdict {
@@ -467,11 +580,50 @@ mod admission_tests {
     }
 
     #[test]
-    fn cli_wrapper_errs_with_request_hash_on_awaiting_approval() {
+    fn cli_wrapper_errs_on_awaiting_approval() {
+        // state_dir None: event recording disabled (unit test, no ledger).
         let v = require_approval_verdict();
-        let err = enforce_admission_or_block(&v, "knowledge_graph_vault").unwrap_err();
+        let err = enforce_admission_or_block_in(&v, "knowledge_graph_vault", None).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("approval required"), "{msg}");
-        assert!(msg.contains("request_hash=sha256:"), "{msg}");
+        assert!(msg.contains("no changes were made"), "{msg}");
+    }
+
+    #[test]
+    fn cli_wrapper_records_admission_event_on_deny() {
+        // With a state dir, a deny must fail-soft-record the decision event
+        // in the project ledger (R-4-005) even though the command aborts.
+        let tmp = tempfile::tempdir().unwrap();
+        let project_dir = tmp.path().join("sddk").join("projects").join("p-test");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        // Bootstrap: the store requires the project row to exist.
+        {
+            let mut store = sddk_storage::Storage::open(project_dir.join("ledger.sqlite")).unwrap();
+            store
+                .insert_project(&sddk_domain::ProjectRecord {
+                    project_id: "p-test".into(),
+                    display_name: "test".into(),
+                    remote_url: None,
+                    scope: ".".into(),
+                    created_at: "2026-09-13T00:00:00Z".into(),
+                })
+                .unwrap();
+        }
+        let v = runner_verdict(
+            AdmissionDecision::Deny {
+                reason: DenyReason::ActorKindNotPermitted,
+                decision_id: "deny-cap-human-cli_run".into(),
+            },
+            "surface.gate_receipts",
+        );
+        let err = enforce_admission_or_block_in(&v, "gate_receipts", Some(tmp.path())).unwrap_err();
+        assert!(format!("{err}").contains("ADMISSION"));
+        // Deny aborts the mutation AND records the decision event (R-4-005).
+        let store =
+            sddk_storage::Storage::open_read_only(project_dir.join("ledger.sqlite")).unwrap();
+        let events = store.list_events().unwrap();
+        assert_eq!(events.len(), 1, "exactly one admission event");
+        assert_eq!(events[0].event_type, "authority.admission.decided");
+        assert_eq!(events[0].project_id, "p-test");
     }
 }
