@@ -24,6 +24,8 @@ pub fn default_policy_for_surface(surface: &str) -> Result<PolicySnapshot, Autho
         "knowledge_graph_vault" | "plan_item" | "evidence_attachment" | "decision_record" => {
             RiskBand::Medium
         }
+        // WU-C1.4: metadata-only surface name (risk band); no table I/O.
+        // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
         "ledger_events" | "dependency_edge" => RiskBand::Low,
         other => {
             return Err(AuthorityEngineError::InternalContractBug {

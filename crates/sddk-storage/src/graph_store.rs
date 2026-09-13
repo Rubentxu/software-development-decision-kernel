@@ -120,11 +120,17 @@ impl SqliteGraphStore {
         };
 
         // Apply all streams in deterministic order into one global projection.
+        // WU-C1.4 read-only window: the branch below is a READ-ONLY-LEGACY-WINDOW
+        // decoder. `ledger_events` is frozen (append-only triggers) and read
+        // ONLY when the canonical events_v1 streams are empty. Allowlist entry:
+        // docs/architecture/lints/legacy-compat-allowlist.yaml
+        // (parity test: cli_graph_e2e::explanation_event_ids_stable_across_cutover).
         let mut projection = GraphProjection::new(stream_id);
         if streams.is_empty() {
             // CEP events_v1 is empty — fall back to the kernel ledger
-            // (`ledger_events`) which the CLI writes for workflow/approval
-            // cycles. Map each kernel event into an EventEnvelopeV1 and apply.
+            // (`ledger_events`) which the CLI wrote for workflow/approval
+            // cycles before the C1.2 redirect. Map each frozen kernel event
+            // into an EventEnvelopeV1 (event_id preserved verbatim, R-002.6).
             let ledger = crate::Storage::open(dir.join("ledger.sqlite"))
                 .map_err(|e| ProjectionError::Storage(format!("open kernel storage: {e}")))?;
             let kernel_events = ledger

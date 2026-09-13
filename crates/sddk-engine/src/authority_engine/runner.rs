@@ -215,6 +215,9 @@ mod runner_tests {
 
     #[test]
     fn admit_low_band_system_allows() {
+        // WU-C1.4: metadata-only surface name in an admission check; no
+        // ledger_events table I/O. Allowlist entry:
+        // docs/architecture/lints/legacy-compat-allowlist.yaml
         let v = runner()
             .admit_surface(
                 "system",

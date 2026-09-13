@@ -312,8 +312,12 @@ fn run_fork_create(args: ForkCreateArgs, environment: &CliEnvironment) -> Comman
     let result = (|| -> anyhow::Result<ForkCreateOutput> {
         let (mut fork_store, event_store, stream, _pid) = open_stores(&args.runtime, environment)?;
         // Resolve the fork-point event: try the CEP store first, then fall
-        // back to the kernel ledger (which the CLI writes for workflow
+        // back to the kernel ledger (pre-cutover corpus for workflow
         // cycles). Consistent with the graph rebuild fallback.
+        // WU-C1.4 read-only window: the kernel-ledger fallback below is a
+        // READ-ONLY-LEGACY-WINDOW decoder (canonical events_v1 first; frozen
+        // `ledger_events` read only when the canonical store misses the id).
+        // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
         let event = if let Some(event) = event_store.load_by_event_id(&args.at)? {
             event
         } else {

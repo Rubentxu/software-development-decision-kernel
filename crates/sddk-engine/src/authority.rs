@@ -39,6 +39,9 @@ impl WritableSurface {
     pub fn name(self) -> &'static str {
         match self {
             WritableSurface::CycleState => "cycle_state",
+            // WU-C1.4: metadata-only surface name; no table I/O. Writes are
+            // denied by the empty matrix row below (C1.3 hard-disable).
+            // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
             WritableSurface::LedgerEvents => "ledger_events",
             WritableSurface::GateReceipts => "gate_receipts",
             WritableSurface::PlanRevisions => "plan_revisions",

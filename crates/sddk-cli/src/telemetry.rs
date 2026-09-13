@@ -503,6 +503,11 @@ fn derive_ledger_cycles(
 }
 
 /// Read all ledger events from a project ledger SQLite file.
+///
+/// WU-C1.4 read-only window: READ-ONLY-LEGACY-WINDOW access via the merged
+/// `Ledger::load_all_ledger_events` view (frozen `ledger_events` corpus +
+/// canonical events_v1). Never appends. Allowlist entry:
+/// docs/architecture/lints/legacy-compat-allowlist.yaml
 fn read_ledger_events(ledger: &dyn sddk_domain::Ledger) -> Vec<sddk_domain::LedgerEvent> {
     ledger.load_all_ledger_events().unwrap_or_default()
 }

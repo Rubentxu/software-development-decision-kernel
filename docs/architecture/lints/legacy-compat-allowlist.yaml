@@ -1,0 +1,175 @@
+# legacy-compat-allowlist.yaml — WU-C1.4 read-only window (C1-READWINDOW)
+#
+# Compatibility allowlist for the frozen legacy `ledger_events` corpus.
+# Contract: SPEC-CONF-001 §Compatibility exception (6 condiciones) and
+# CONFORMANCE-FITNESS-RATCHETS.md §Allowlist policy (:29-40): every entry
+# MUST declare exactly the 8 ratchet fields with read_or_write = "read".
+# Entries with read_or_write = "write" are FORBIDDEN at C7.
+#
+# Enforced by:
+#   crates/sddk-cli/tests/arch_ratchet_mutations.rs::legacy_reads_only_via_readonly_decoder_allowlist
+#
+# Design: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/
+#         08-BASELINE-CONFORMANCE-09-09/design/DESIGN-C1-C3-CUTOVERS.md §1.2 (C1.4)
+schema_version: 1
+updated: "2026-09-13"
+cycle: "p-63676b11dc0ef88f/conformance-closeout-2026-09-13"
+step: "C1.4 read-only window"
+entries:
+  - symbol/path: "crates/sddk-storage/src/lib.rs"
+    reason: >-
+      Decoder/merge layer of the legacy read-only window: list_legacy_events,
+      list_legacy_cycle_events, list_legacy_frame_events, load_all_ledger_events,
+      the merged list_events/list_cycle_events/list_frame_events/list_events_after
+      views and verify_ledger read the frozen ledger_events corpus (append-only
+      triggers intact) and merge it with the canonical events_v1 stream.
+      No INSERT path remains since the C1.3 hard-disable.
+    canonical_replacement: "SqliteEventStore (events_v1) via the CanonicalEventLog port"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: DROP of ledger_events after C1.1 export fixture + canonical rebuild proof (R-002.2)"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-storage/tests/canonical_parity.rs::fresh_and_migrated_repo_read_canonical_stream_identically"
+  - symbol/path: "crates/sddk-storage/src/migrations.rs"
+    reason: >-
+      Schema DDL only: CREATE TABLE ledger_events plus the append-only triggers
+      ledger_events_no_update / ledger_events_no_delete that freeze the corpus
+      during the read-only window. Never a runtime write path.
+    canonical_replacement: "events_v1 schema owned by SqliteEventStore migrations"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop table DDL and triggers from the schema"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-storage/tests/legacy_ledger_migration.rs::legacy_ledger_export_reimport_is_idempotent_and_restart_safe"
+  - symbol/path: "crates/sddk-storage/src/graph_store.rs"
+    reason: >-
+      Graph projection legacy fallback: rebuild_from_ledger reads the kernel
+      ledger via load_all_ledger_events ONLY when the canonical events_v1
+      streams are empty, mapping each frozen row through the read-only decoder
+      kernel_envelope_to_v1 (event_id preserved verbatim, R-002.6).
+    canonical_replacement: "GraphProjection replay from events_v1 via SqliteEventStore"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: delete the kernel-ledger fallback branch once migrated repos are canonical"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-cli/tests/cli_graph_e2e.rs::explanation_event_ids_stable_across_cutover"
+  - symbol/path: "crates/sddk-cli/src/fork_cmd.rs"
+    reason: >-
+      Fork-point resolution legacy fallback: KernelEventStore::events (:158)
+      and the run_fork_create kernel fallback (:323) read ledger_events only
+      when the CEP store has no event with the requested id. KernelEventStore
+      itself is read-only (its EventStore::append returns an error).
+    canonical_replacement: "EventStore::load_by_event_id over events_v1"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop KernelEventStore and the kernel fallback branch"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-cli/tests/cli_graph_e2e.rs::explanation_event_ids_stable_across_cutover"
+  - symbol/path: "crates/sddk-cli/src/telemetry.rs"
+    reason: >-
+      Metrics ingest reads the merged ledger view via
+      Ledger::load_all_ledger_events (:507) to derive metrics for cycles
+      without a metrics.jsonl entry. Pure read; never appends.
+    canonical_replacement: "telemetry derived from events_v1 streams"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: switch ingest to the canonical stream only"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-storage/tests/canonical_parity.rs::fresh_and_migrated_repo_read_canonical_stream_identically"
+  - symbol/path: "crates/sddk-engine/src/authority.rs"
+    reason: >-
+      Metadata only: the WritableSurface::LedgerEvents snake_case name (:42)
+      and its WRITABLE_SURFACE_MATRIX row (:164) with an EMPTY actor set
+      (deny-all since the C1.3 hard-disable). No table I/O on this path.
+    canonical_replacement: "surface removed together with the table in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: delete the LedgerEvents surface variant and matrix row"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/authority_engine_runner.rs::ledger_events_surface_is_denied_for_every_actor_kind"
+  - symbol/path: "crates/sddk-engine/src/authority_engine/bridge.rs"
+    reason: >-
+      Metadata only: default_policy_for_surface maps the "ledger_events"
+      surface name to a RiskBand (:27); remaining mentions are inline test
+      fixtures (:191, :214). No table I/O on this path.
+    canonical_replacement: "policy entry removed together with the surface in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the risk-band arm with the surface"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/authority_engine_runner.rs::ledger_events_surface_is_denied_for_every_actor_kind"
+  - symbol/path: "crates/sddk-engine/src/authority_engine/runner.rs"
+    reason: >-
+      Metadata only: admission test referencing the "ledger_events" surface
+      name (:221). The authority engine admission layer performs no
+      ledger_events table I/O; writes are denied by the surface matrix.
+    canonical_replacement: "test re-pointed at the canonical stream surface in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: update the admission test with the surface removal"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/authority_engine_runner.rs::admit_low_band_system_allows"
+  - symbol/path: "crates/sddk-domain/src/ports.rs"
+    reason: >-
+      Trait definition only: Ledger::load_all_ledger_events (:155) is the
+      read-only port every allowed reader goes through. It performs no table
+      I/O itself; the trait documents the read-after-write contract.
+    canonical_replacement: "trait method removed together with the table in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the method from the Ledger trait"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/port_contracts.rs::ledger_roundtrip_sqlite"
+  - symbol/path: "crates/sddk-testkit/src/lib.rs"
+    reason: >-
+      Test double only: InMemoryLedger implements the read-only trait method
+      over an in-memory Vec. No SQLite table, no writes.
+    canonical_replacement: "testkit re-pointed at CanonicalEventLog doubles in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the InMemoryLedger implementation"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/port_contracts.rs::byte_equiv_event_count"
+  - symbol/path: "crates/sddk-engine/src/up_to_date.rs"
+    reason: >-
+      Test double only (#[cfg(test)] module): FakeLedger returns an empty vec
+      from the read-only trait method. No table I/O, no writes.
+    canonical_replacement: "fake re-pointed at the canonical stream in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the FakeLedger implementation"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/src/up_to_date.rs::up_to_date_fails_closed_when_no_cycle_id"
+  - symbol/path: "crates/sddk-engine/tests/port_contracts.rs"
+    reason: >-
+      Port contract fixture: byte_equiv_event_count asserts the in-memory and
+      SQLite implementations of the read-only method return equal counts.
+      Read-only by construction.
+    canonical_replacement: "contract test re-pointed at CanonicalEventLog in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the legacy roundtrip contract test"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-engine/tests/port_contracts.rs::byte_equiv_event_count"
+  - symbol/path: "crates/sddk-storage/tests/canonical_parity.rs"
+    reason: >-
+      Parity fixture (R-002.2): seeds the pre-cutover legacy corpus by SQL
+      and asserts fresh and migrated repos read the canonical stream
+      identically. The seed INSERT is fixture-only, never a runtime write.
+    canonical_replacement: "fixture removed when the table is dropped in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the legacy seeding fixture"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-storage/tests/canonical_parity.rs::fresh_and_migrated_repo_read_canonical_stream_identically"
+  - symbol/path: "crates/sddk-storage/tests/legacy_ledger_migration.rs"
+    reason: >-
+      Export/recovery fixture (C1.1 destructive-removal gate): reads the
+      frozen corpus to build counts+digest fixtures and proves import is
+      idempotent and restart-safe. Read-only against production tables.
+    canonical_replacement: "fixture removed when the table is dropped in C1.5"
+    read_or_write: "read"
+    owner: "rubentxu74"
+    removal_trigger: "C1.5 removal: drop the export fixture test"
+    expiry/version: "before 1.169.0 (conformance closeout C1.5)"
+    parity_test: "crates/sddk-storage/tests/legacy_ledger_migration.rs::legacy_ledger_export_reimport_is_idempotent_and_restart_safe"

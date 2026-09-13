@@ -208,3 +208,201 @@ pub fn rogue_write() {{
 
     let _ = std::fs::remove_dir_all(&sandbox);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WU-C1.4 read-only window ratchet (C1-READWINDOW, R-002.5).
+//
+// Since the redirect (C1.2) and hard-disable (C1.3), the legacy
+// `ledger_events` table must be READ only, and only from the paths declared
+// in docs/architecture/lints/legacy-compat-allowlist.yaml (8-field entries
+// per CONFORMANCE-FITNESS-RATCHETS §Allowlist policy, read_or_write = read).
+//
+// This test:
+//   1. Loads the allowlist YAML and enforces its structure (8 fields per
+//      entry, read_or_write = "read", write entries forbidden).
+//   2. Scans the workspace for READ references to the legacy table
+//      (`load_all_ledger_events`) and requires every offender file to be
+//      declared in the allowlist (allowlist creep guard).
+//   3. Scans for the legacy WRITE fragment and requires every offender file
+//      to be either the WU-C1.3 closed write set or an allowlisted test
+//      fixture (no new write-capable entries).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Path of the allowlist, relative to the workspace root.
+const ALLOWLIST_REL: &str = "docs/architecture/lints/legacy-compat-allowlist.yaml";
+
+/// The literal symbol that constitutes a legacy READ. Built via `concat!` so
+/// this file's own source does not contain the contiguous fragment (same
+/// self-flag avoidance as `FORBIDDEN_FRAGMENT`).
+const LEGACY_READ_FRAGMENT: &str = concat!("load_all_", "ledger_events");
+
+/// The 8 mandatory fields of every allowlist entry.
+const ALLOWLIST_REQUIRED_FIELDS: [&str; 8] = [
+    "symbol/path",
+    "reason",
+    "canonical_replacement",
+    "read_or_write",
+    "owner",
+    "removal_trigger",
+    "expiry/version",
+    "parity_test",
+];
+
+/// One allowlist entry, deserialized leniently from the YAML.
+#[derive(Debug, serde::Deserialize)]
+struct AllowlistEntry {
+    #[serde(rename = "symbol/path")]
+    symbol_path: String,
+    #[serde(rename = "read_or_write")]
+    read_or_write: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AllowlistDoc {
+    entries: Vec<AllowlistEntry>,
+}
+
+/// Loads and structurally validates the allowlist: every entry carries the
+/// 8 ratchet fields, at least the decoder layer is declared, and no entry
+/// claims write capability (forbidden at C7).
+fn load_validated_allowlist(root: &Path) -> AllowlistDoc {
+    let path = root.join(ALLOWLIST_REL);
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read allowlist {}: {e}", path.display()));
+    // Structural check independent of serde field filtering: the doc splits
+    // into `entries:` list items on the `symbol/path:` key (which each item
+    // starts with, so it is verified by construction), and every item must
+    // mention the remaining 7 mandatory field keys.
+    let item_count = raw.matches("symbol/path:").count();
+    let items: Vec<&str> = raw
+        .split("symbol/path:")
+        .skip(1)
+        .collect();
+    assert!(
+        !items.is_empty() && items.len() == item_count,
+        "allowlist must declare at least one entry"
+    );
+    for item in &items {
+        for field in ALLOWLIST_REQUIRED_FIELDS.iter().skip(1) {
+            assert!(
+                item.contains(field),
+                "allowlist entry is missing required field '{field}' \
+                 (CONFORMANCE-FITNESS-RATCHETS §Allowlist policy)"
+            );
+        }
+    }
+    let doc: AllowlistDoc = serde_saphyr::from_str(&raw).expect("parse allowlist yaml");
+    for entry in &doc.entries {
+        assert!(
+            entry.read_or_write == "read",
+            "allowlist entry '{}' declares read_or_write = '{}'; \
+             write-capable legacy entries are forbidden (C7)",
+            entry.symbol_path,
+            entry.read_or_write
+        );
+    }
+    assert!(
+        doc.entries
+            .iter()
+            .any(|e| e.symbol_path == "crates/sddk-storage/src/lib.rs"),
+        "the decoder layer (sddk-storage lib.rs) must remain allowlisted"
+    );
+    doc
+}
+
+/// Scans the workspace for files containing the legacy read symbol
+/// `load_all_ledger_events` (comment-stripped, like the writer scan) and
+/// returns those NOT declared in the allowlist, sorted.
+fn scan_for_undeclared_readers(root: &Path, allowlisted: &[String]) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    rust_sources(&root.join("crates"), &mut sources);
+    let mut offenders = Vec::new();
+    for path in sources {
+        let declared = allowlisted
+            .iter()
+            .any(|rel| path == root.join(Path::new(rel)));
+        if declared {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if strip_rust_comments(&content).contains(LEGACY_READ_FRAGMENT) {
+                offenders.push(path);
+            }
+        }
+    }
+    offenders.sort();
+    offenders
+}
+
+/// THE RATCHET (WU-C1.4, R-002.5): every static reference to the legacy
+/// ledger read path lives inside the allowlist, no allowlist entry is
+/// write-capable, and the legacy write surface stays closed.
+#[test]
+fn legacy_reads_only_via_readonly_decoder_allowlist() {
+    let root = workspace_root();
+    let doc = load_validated_allowlist(&root);
+    let allowlisted: Vec<String> = doc
+        .entries
+        .iter()
+        .map(|e| e.symbol_path.clone())
+        .collect();
+
+    // 1. Every reader of the legacy table is declared in the allowlist.
+    let undeclared = scan_for_undeclared_readers(&root, &allowlisted);
+    assert!(
+        undeclared.is_empty(),
+        "WU-C1.4 ratchet violated: files read the legacy ledger \
+         (the read fragment) without an allowlist entry in \
+         {ALLOWLIST_REL}. Add an 8-field entry with read_or_write = read, \
+         or migrate to the canonical events_v1 stream. Offending files: \
+         {undeclared:?}"
+    );
+
+    // 2. Positive control: the known decoder layer is really covered by the
+    // scan (guards against allowlist paths drifting out of the scanned tree).
+    for required in [
+        "crates/sddk-storage/src/lib.rs",
+        "crates/sddk-storage/src/graph_store.rs",
+        "crates/sddk-cli/src/fork_cmd.rs",
+        "crates/sddk-cli/src/telemetry.rs",
+    ] {
+        assert!(
+            allowlisted.iter().any(|rel| rel == required),
+            "allowlist must cover {required} (WU-C1.4 inventory, design §1.1)"
+        );
+    }
+
+    // 3. The legacy WRITE fragment stays confined: any file containing it is
+    // either the WU-C1.3 closed write set or an explicitly allowlisted
+    // (read-only) fixture. Nothing new may enter either set silently.
+    let write_set = [
+        "crates/sddk-storage/src/lib.rs",
+        "crates/sddk-storage/src/migrations.rs",
+        "crates/sddk-storage/tests/canonical_parity.rs",
+        "crates/sddk-storage/tests/cross_ledger_consistency.rs",
+    ];
+    let mut sources = Vec::new();
+    rust_sources(&root.join("crates"), &mut sources);
+    for path in sources {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if file_offends(&path, &root, &content) {
+                let rel = path
+                    .strip_prefix(&root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
+                assert!(
+                    allowlisted.contains(&rel),
+                    "legacy write fragment in '{rel}' is neither in the WU-C1.3 \
+                     closed write set nor in the WU-C1.4 allowlist; the \
+                     ledger_events write surface is CLOSED since C1.3"
+                );
+                assert!(
+                    write_set.contains(&rel.as_str()),
+                    "'{rel}' contains a legacy write but is not in the closed \
+                     write set; write-capable allowlist entries are forbidden"
+                );
+            }
+        }
+    }
+}
