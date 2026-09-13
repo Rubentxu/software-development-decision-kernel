@@ -742,8 +742,8 @@ impl Storage {
             role: None,
         });
         let metadata = json!({
-            // Redirect marker: lets verify_cross_ledger_consistency tell
-            // redirect output apart from third-party events_v1 writers.
+            // Redirect marker: distinguishes C1-redirected events from
+            // third-party events_v1 writers (audit trail, WU-C1.2).
             "redirect": "sddk-c1",
             "command_id": input.command_id,
             "state_before": input.state_before,
