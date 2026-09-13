@@ -4,6 +4,7 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+mod admission;
 pub mod agent_profile;
 pub mod agent_surface_golden;
 mod analytics;

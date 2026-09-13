@@ -24,6 +24,7 @@ use serde::Serialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
+use crate::admission::enforce_admission_or_block;
 use crate::{CliEnvironment, CommandOutput, OutputFormat, render_result};
 
 const CYCLE_START_REQUIREMENTS: [&str; 4] = [
@@ -1371,7 +1372,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
             causation_id: None,
             correlation_id: None,
         };
-        let _runner_verdict = context
+        let runner_verdict = context
             .authority_runner
             .admit_surface(
                 &actor_id,
@@ -1381,6 +1382,7 @@ fn run_cycle_transition(args: CycleTransitionArgs, environment: &CliEnvironment)
                 sddk_engine::authority_engine::Facts::default(),
             )
             .map_err(|e| anyhow::anyhow!("runner denied transition_records: {e:?}"))?;
+        enforce_admission_or_block(&runner_verdict, "transition_records")?;
         let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind, None, None);
         let applied = match context.engine.apply_transition(
             &plan,
@@ -1797,7 +1799,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
 
         // Convert reason
         let reason: Option<SupersedeReason> = args.reason.map(|r| r.into());
-        let _runner_verdict = context
+        let runner_verdict = context
             .authority_runner
             .admit_surface(
                 &actor,
@@ -1807,6 +1809,7 @@ fn run_cycle_supersede(args: CycleSupersedeArgs, environment: &CliEnvironment) -
                 sddk_engine::authority_engine::Facts::default(),
             )
             .map_err(|e| anyhow::anyhow!("runner denied cycle_state: {e:?}"))?;
+        enforce_admission_or_block(&runner_verdict, "cycle_state")?;
         let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let receipt = context.engine.cycle_supersede(
@@ -1915,7 +1918,7 @@ fn run_cycle_pause(args: CyclePauseArgs, environment: &CliEnvironment) -> Comman
         validate_cycle_project(&cycle_id, &context.identity.project_id)?;
 
         let reason: PauseReason = args.reason.into();
-        let _runner_verdict = context
+        let runner_verdict = context
             .authority_runner
             .admit_surface(
                 &actor,
@@ -1925,6 +1928,7 @@ fn run_cycle_pause(args: CyclePauseArgs, environment: &CliEnvironment) -> Comman
                 sddk_engine::authority_engine::Facts::default(),
             )
             .map_err(|e| anyhow::anyhow!("runner denied cycle_state: {e:?}"))?;
+        enforce_admission_or_block(&runner_verdict, "cycle_state")?;
         let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let receipt = context.engine.cycle_pause(
@@ -1977,7 +1981,7 @@ fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> Comm
 
         // GAP-UX-1: validate cycle belongs to this project before touching storage
         validate_cycle_project(&cycle_id, &context.identity.project_id)?;
-        let _runner_verdict = context
+        let runner_verdict = context
             .authority_runner
             .admit_surface(
                 &actor,
@@ -1987,6 +1991,7 @@ fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> Comm
                 sddk_engine::authority_engine::Facts::default(),
             )
             .map_err(|e| anyhow::anyhow!("runner denied cycle_state: {e:?}"))?;
+        enforce_admission_or_block(&runner_verdict, "cycle_state")?;
         let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);
 
         let resume_output = context.engine.cycle_resume(
@@ -2709,7 +2714,7 @@ fn run_cycle_evaluate_gate(
             .or_else(|| environment.user.clone())
             .unwrap_or_else(|| "sddk-cli".into());
         // AC-EVT-LEDGER-08: gate receipt creation requires System authority
-        let _runner_verdict = context
+        let runner_verdict = context
             .authority_runner
             .admit_surface(
                 &actor,
@@ -2719,6 +2724,7 @@ fn run_cycle_evaluate_gate(
                 sddk_engine::authority_engine::Facts::default(),
             )
             .map_err(|e| anyhow::anyhow!("runner denied gate_receipts: {e:?}"))?;
+        enforce_admission_or_block(&runner_verdict, "gate_receipts")?;
         let actor_kind = infer_actor_kind(&actor);
         let auth = AuthorityContext::for_cli(actor.clone(), actor_kind, None, None);
         // Fail-closed: when --outcome is omitted we record `Failed`, so a

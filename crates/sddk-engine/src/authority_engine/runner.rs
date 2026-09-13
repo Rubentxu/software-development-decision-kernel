@@ -108,15 +108,29 @@ fn actor_kind_to_engine(k: &DomainActorKind) -> crate::authority_engine::ActorKi
     }
 }
 
-fn derive_capabilities_for(_actor: DomainActorKind, surface: &str) -> Vec<Capability> {
+/// Capabilities derived for the (actor, surface) pair: the surface grant
+/// plus the action capabilities the default policy's capability matrix
+/// requires for actions characteristic of the surface band. Sites no longer
+/// hand-pick capabilities (D-01); derivation lives here so the engine
+/// matrix stays the single source of truth.
+///
+/// Actor-sensitive rule (preserves the legacy C3 surface matrix):
+/// `cli.execute` on High band surfaces (gate receipts, framework bundle,
+/// github releases) is System-only — Human/Agent keep `cycle.lifecycle`
+/// (escalating to approval) but cannot ship without an explicit grant.
+fn derive_capabilities_for(actor: DomainActorKind, surface: &str) -> Vec<Capability> {
     let band = default_band_for_surface(surface);
     let mut caps = vec![format!("surface.{surface}")];
     match band {
         RiskBand::High => {
             caps.push("cycle.lifecycle".to_string());
+            if matches!(actor, DomainActorKind::System) {
+                caps.push("cli.execute".to_string());
+            }
         }
         RiskBand::Medium => {
             caps.push("plan.write".to_string());
+            caps.push("vault.write".to_string());
         }
         RiskBand::Low => {
             caps.push("cli.execute".to_string());
