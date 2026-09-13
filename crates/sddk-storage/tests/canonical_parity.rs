@@ -80,6 +80,18 @@ fn seeded_storage(path: &std::path::Path) -> Storage {
     storage
 }
 
+/// WU-C15-3 (stub mínimo de compilación): cuenta filas de `ledger_events`
+/// con SQL directo. El helper `legacy_ledger_count_for_tests` de lib.rs se
+/// eliminó con el read layer legacy; la suite se reescribe en WU-C15-4/8.
+fn legacy_rows(storage: &Storage) -> usize {
+    storage
+        .connection_for_tests()
+        .query_row("SELECT COUNT(*) FROM ledger_events", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize
+}
+
 /// Seeds a pre-cutover legacy corpus directly into `ledger_events`,
 /// replicating the old hash-chain invariants (sequence from 1, previous_hash
 /// linkage, legacy `hash_event` payload). This simulates a repo migrated
@@ -195,7 +207,8 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
 
     // Canonical stream is the only writer: new events live in events_v1,
     // ledger_events stays empty.
-    assert_eq!(fresh.legacy_ledger_count_for_tests(), 0);
+    // WU-C15-3 stub: helper de lib.rs eliminado; SQL directo desde el test.
+    assert_eq!(legacy_rows(&fresh), 0);
 
     // Merged readers expose the canonical events with per-stream sequences.
     let all = fresh.list_events().unwrap();
@@ -275,29 +288,26 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     migrated.append_event(&event("evt-new-1", None)).unwrap();
 
     // The redirect must NOT write new events into the legacy table.
-    assert_eq!(migrated.legacy_ledger_count_for_tests(), 3);
+    // WU-C15-3 stub: helper de lib.rs eliminado; SQL directo desde el test.
+    assert_eq!(legacy_rows(&migrated), 3);
 
-    // Merged readers see 3 legacy + 1 canonical event, ordered by sequence
-    // (legacy rows keep 1..3; the canonical project-stream event has its own
-    // per-stream sequence).
-    let merged = migrated.load_all_ledger_events().unwrap();
-    assert_eq!(merged.len(), 4);
-    let legacy_ids: Vec<&str> = merged[..3].iter().map(|e| e.event_id.as_str()).collect();
-    assert_eq!(
-        legacy_ids,
-        vec!["evt-legacy-001", "evt-legacy-002", "evt-legacy-003"]
-    );
-    assert_eq!(merged[3].event_id, "evt-new-1");
+    // WU-C15-3 stub mínimo de compilación: `load_all_ledger_events` fue
+    // eliminado; se usa la vista canónica `list_events`. Este test muere y se
+    // reescribe en WU-C15-4/WU-C15-8 (parity post-v20).
+    let merged = migrated.list_events().expect("list_events");
+    assert!(merged.iter().any(|e| e.event_id == "evt-new-1"));
 
     // Chain verification: legacy corpus verifies on its own linkage, the
     // canonical stream verifies via the event store chain.
     migrated.verify_ledger().unwrap();
 
-    // list_events_after (watch semantics): on the migrated repo the cursor
-    // addresses the merged sequence domain; legacy corpus (seq 1..3) stays
-    // addressable and canonical per-stream sequences join the same filter.
+    // list_events_after (watch semantics): canonical-only desde WU-C15-3 —
+    // el cursor ya no abarca el corpus legacy (las 3 filas de ledger_events
+    // no participan del dominio de secuencia canónico). Este test muere y se
+    // reescribe en WU-C15-4/WU-C15-8 (parity post-v20).
     let after = migrated.list_events_after(0, 10).unwrap();
-    assert_eq!(after.len(), 4);
+    assert_eq!(after.len(), 1, "solo evt-new-1 vive en events_v1");
+    assert_eq!(after[0].event_id, "evt-new-1");
     let after_legacy_cursor = migrated.list_events_after(3, 10).unwrap();
     assert!(after_legacy_cursor.is_empty());
 }
@@ -316,7 +326,7 @@ fn canonical_append_conflict_maps_to_ledger_integrity() {
     assert_eq!(first.event_id, second.event_id);
     assert_eq!(first.sequence, second.sequence);
     assert_eq!(
-        storage.legacy_ledger_count_for_tests(),
+        legacy_rows(&storage),
         0,
         "idempotent redelivery must not write the legacy table"
     );
@@ -335,7 +345,7 @@ fn read_only_storage_rejects_domain_event_writes() {
     if outcome.is_ok() {
         panic!(
             "read-only append unexpectedly succeeded; canonical count={}",
-            read_only.legacy_ledger_count_for_tests()
+            legacy_rows(&read_only)
         );
     }
     let err = outcome.err().unwrap();

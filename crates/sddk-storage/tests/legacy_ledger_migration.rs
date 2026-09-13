@@ -64,10 +64,13 @@ fn sample_input(i: usize) -> LedgerEventInput {
 /// del ledger y produce un fixture serializable con count + digest sha256.
 /// Digest calculado sobre la serialización JSON canónica de los inputs en
 /// orden de secuencia.
+///
+/// WU-C15-3 (stub mínimo de compilación): `load_all_ledger_events` fue
+/// eliminado del read layer; este helper usa la vista canónica `list_events`
+/// (misma proyección LedgerEvent sobre events_v1). La suite se reescribe en
+/// WU-C15-4 para validar idempotencia sobre events_v1 only.
 fn export_fixture(storage: &Storage) -> (Vec<LedgerEventInput>, usize, String) {
-    let events = storage
-        .load_all_ledger_events()
-        .expect("load_all_ledger_events");
+    let events = storage.list_events().expect("list_events");
     let inputs: Vec<LedgerEventInput> = events.iter().map(|e| e.as_input()).collect();
     let count = inputs.len();
     let mut hasher = Sha256::new();
@@ -200,11 +203,21 @@ fn domain_event_redirect_does_not_write_legacy_table() {
         "append_event no debe escribir en ledger_events tras el redirect (WU-C1.2)"
     );
 
-    // El evento nuevo sí es visible vía la lectura fusionada (events_v1).
-    let all = storage.load_all_ledger_events().unwrap();
+    // El evento nuevo sí es visible vía la lectura canónica (events_v1).
+    // WU-C15-3 stub: `load_all_ledger_events` fue eliminado; la suite se
+    // reescribe en WU-C15-4.
+    let all = storage.list_events().unwrap();
     assert!(all.iter().any(|e| e.event_id == "evt-mig-0100"));
 }
 
+/// WU-C15-3 (stub mínimo de compilación): cuenta filas de `ledger_events`
+/// con SQL directo desde el propio test. El helper de lib.rs se eliminó con
+/// el read layer legacy; la suite se reescribe en WU-C15-4.
 fn count_legacy(storage: &Storage) -> usize {
-    storage.legacy_ledger_count_for_tests()
+    storage
+        .connection_for_tests()
+        .query_row("SELECT COUNT(*) FROM ledger_events", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize
 }

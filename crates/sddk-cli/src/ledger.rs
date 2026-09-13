@@ -24,8 +24,6 @@ pub(crate) enum LedgerCommand {
     Export(LedgerExportArgs),
     /// Replay events from a named snapshot, optionally verifying chain hashes.
     Replay(ReplayArgs),
-    /// Verify bidirectional consistency between events_v1 and ledger_events.
-    VerifyCrossLedger(VerifyCrossLedgerArgs),
     /// Tail the ledger in real time (M9.5 live-mode streaming).
     ///
     /// Polls `list_events_after` in a loop and emits one event per line
@@ -120,18 +118,6 @@ pub(crate) struct ReplayArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-pub(crate) struct VerifyCrossLedgerArgs {
-    #[command(flatten)]
-    pub(crate) runtime: RuntimeArgs,
-    /// Tolerance: maximum unmatched events to accept without failing.
-    #[arg(long, default_value_t = 0)]
-    pub(crate) tolerance: usize,
-    /// Output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-    pub(crate) format: OutputFormat,
-}
-
-#[derive(Debug, Clone, Args)]
 pub(crate) struct LedgerWatchArgs {
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
@@ -173,7 +159,6 @@ pub(crate) fn run_ledger(command: LedgerCommand, environment: &CliEnvironment) -
         LedgerCommand::Events(args) => run_ledger_events(args, environment),
         LedgerCommand::Export(args) => run_ledger_export(args, environment),
         LedgerCommand::Replay(args) => run_replay(args, environment),
-        LedgerCommand::VerifyCrossLedger(args) => run_verify_cross_ledger(args, environment),
         LedgerCommand::Watch(args) => run_ledger_watch(args, environment),
     }
 }
@@ -518,93 +503,6 @@ fn replay_text(output: &ReplayOutput) -> String {
             output.snapshot_name, output.stream, error
         ),
     }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-struct VerifyCrossLedgerOutput {
-    events_v1_count: usize,
-    ledger_events_count: usize,
-    in_v1_not_ledger: Vec<String>,
-    in_ledger_not_v1: Vec<String>,
-    total_divergences: usize,
-    tolerance_events: usize,
-    within_tolerance: bool,
-    status: VerifyCrossLedgerStatus,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum VerifyCrossLedgerStatus {
-    Pass,
-    Fail { error: String },
-}
-
-fn run_verify_cross_ledger(
-    args: VerifyCrossLedgerArgs,
-    environment: &CliEnvironment,
-) -> CommandOutput {
-    let format = args.format;
-    let result = (|| -> anyhow::Result<VerifyCrossLedgerOutput> {
-        let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let report = context
-            .storage
-            .verify_cross_ledger_consistency(args.tolerance)
-            .map_err(|e| anyhow::anyhow!("verify_cross_ledger_consistency: {e}"))?;
-        let status = if report.within_tolerance {
-            VerifyCrossLedgerStatus::Pass
-        } else {
-            VerifyCrossLedgerStatus::Fail {
-                error: format!(
-                    "{} divergences exceed tolerance of {}",
-                    report.total_divergences, report.tolerance_events
-                ),
-            }
-        };
-        Ok(VerifyCrossLedgerOutput {
-            events_v1_count: report.events_v1_count,
-            ledger_events_count: report.ledger_events_count,
-            in_v1_not_ledger: report.in_v1_not_ledger,
-            in_ledger_not_v1: report.in_ledger_not_v1,
-            total_divergences: report.total_divergences,
-            tolerance_events: report.tolerance_events,
-            within_tolerance: report.within_tolerance,
-            status,
-        })
-    })();
-    render_result(result, format, verify_cross_ledger_text)
-}
-
-fn verify_cross_ledger_text(output: &VerifyCrossLedgerOutput) -> String {
-    let status_str = match &output.status {
-        VerifyCrossLedgerStatus::Pass => "PASS",
-        VerifyCrossLedgerStatus::Fail { .. } => "FAIL",
-    };
-    let mut text = format!(
-        "events_v1_count: {}\nledger_events_count: {}\ntotal_divergences: {}\ntolerance_events: {}\nwithin_tolerance: {}\nstatus: {}\n",
-        output.events_v1_count,
-        output.ledger_events_count,
-        output.total_divergences,
-        output.tolerance_events,
-        output.within_tolerance,
-        status_str
-    );
-    if !output.in_v1_not_ledger.is_empty() {
-        text.push_str(&format!(
-            "in_v1_not_ledger: {}\n",
-            output.in_v1_not_ledger.join(", ")
-        ));
-    }
-    if !output.in_ledger_not_v1.is_empty() {
-        text.push_str(&format!(
-            "in_ledger_not_v1: {}\n",
-            output.in_ledger_not_v1.join(", ")
-        ));
-    }
-    if let VerifyCrossLedgerStatus::Fail { error } = &output.status {
-        text.push_str(&format!("error: {}\n", error));
-    }
-    text
 }
 
 fn ledger_verify_text(output: &LedgerVerifyOutput) -> String {

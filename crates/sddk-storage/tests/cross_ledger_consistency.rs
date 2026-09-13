@@ -1,7 +1,9 @@
 //! Cross-ledger consistency tests (AC-EVT-LEDGER-06).
 //!
-//! Verifies that `Storage::verify_cross_ledger_consistency` correctly detects
-//! and reports divergences between `events_v1` and `ledger_events` tables.
+//! WU-C15-3: `verify_cross_ledger_consistency` fue eliminado con el read
+//! layer legacy (C1.5). Los tests de divergencia quedan deshabilitados hasta
+//! que WU-C15-8 reescriba la suite como chain-integrity canónica. El test de
+//! write-guard canónico se conserva abajo.
 
 #![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
 
@@ -22,6 +24,9 @@ fn project_record() -> ProjectRecord {
     }
 }
 
+// Helpers de seed legacy: en desuso tras eliminar la suite cross-check en
+// WU-C15-3; WU-C15-8 reescribe esta suite sobre events_v1 only.
+#[allow(dead_code)]
 fn workspace_record() -> WorkspaceRecord {
     WorkspaceRecord {
         workspace_id: "ws-test".into(),
@@ -31,6 +36,7 @@ fn workspace_record() -> WorkspaceRecord {
     }
 }
 
+#[allow(dead_code)]
 fn minimal_envelope(event_id: &str, stream_id: &str, project_id: &str) -> EventEnvelopeV1 {
     let mut env = EventEnvelopeV1 {
         event_id: event_id.into(),
@@ -65,6 +71,7 @@ fn minimal_envelope(event_id: &str, stream_id: &str, project_id: &str) -> EventE
 }
 
 /// Inserts an event into the events_v1 table using raw SQL on a shared connection.
+#[allow(dead_code)]
 fn insert_events_v1(conn: &Connection, env: &EventEnvelopeV1) {
     // Get next sequence for this stream
     let actor_json = serde_json::to_string(&env.actor).unwrap();
@@ -126,6 +133,7 @@ fn insert_events_v1(conn: &Connection, env: &EventEnvelopeV1) {
 /// WU-C1.2: desde el redirect, `append_event` ya no escribe en
 /// `ledger_events`. Los fixtures que necesitan una fila legacy siembran la
 /// tabla directamente (mismo mecanismo que usan para `events_v1`).
+#[allow(dead_code)]
 fn insert_legacy_event(conn: &Connection, event_id: &str) {
     conn.execute(
         "INSERT INTO ledger_events (
@@ -146,122 +154,6 @@ fn insert_legacy_event(conn: &Connection, event_id: &str) {
 // =============================================================================
 // AC-EVT-LEDGER-06: verify_cross_ledger_consistency
 // =============================================================================
-
-/// Aligned tables: zero divergences, report says within_tolerance.
-#[test]
-fn verify_cross_ledger_consistency_passes_when_aligned() {
-    let dir = TempDir::new().unwrap();
-    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
-    let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-
-    storage.insert_project(&project_record()).unwrap();
-    storage.insert_workspace(&workspace_record()).unwrap();
-
-    // Insert identical events into both tables. WU-C1.2: the legacy side is
-    // seeded by SQL because `append_event` now redirects to `events_v1`.
-    let env = minimal_envelope("evt-aligned-1", "stream:p-test", "p-test");
-    insert_events_v1(&conn, &env);
-    insert_legacy_event(&conn, "evt-aligned-1");
-    drop(conn);
-
-    let report = storage.verify_cross_ledger_consistency(0).unwrap();
-    assert!(
-        report.within_tolerance,
-        "aligned tables should be within tolerance: {report:?}"
-    );
-    assert_eq!(report.total_divergences, 0);
-    assert!(report.in_v1_not_ledger.is_empty());
-    assert!(report.in_ledger_not_v1.is_empty());
-}
-
-/// Orphan in events_v1 (present in events_v1, absent from ledger_events).
-#[test]
-fn verify_cross_ledger_consistency_detects_orphan_in_events_v1() {
-    let dir = TempDir::new().unwrap();
-    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
-    let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-
-    storage.insert_project(&project_record()).unwrap();
-    storage.insert_workspace(&workspace_record()).unwrap();
-
-    // Insert only into events_v1 (orphan)
-    let env = minimal_envelope("evt-orphan-v1", "stream:p-test", "p-test");
-    insert_events_v1(&conn, &env);
-    drop(conn);
-    // ledger_events is empty
-
-    let report = storage.verify_cross_ledger_consistency(0).unwrap();
-    assert!(
-        !report.within_tolerance,
-        "orphan should be detected: {report:?}"
-    );
-    assert_eq!(report.total_divergences, 1);
-    assert_eq!(report.in_v1_not_ledger, vec!["evt-orphan-v1"]);
-}
-
-/// Orphan in ledger_events (present in ledger_events, absent from events_v1).
-#[test]
-fn verify_cross_ledger_consistency_detects_orphan_in_ledger_events() {
-    let dir = TempDir::new().unwrap();
-    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
-
-    storage.insert_project(&project_record()).unwrap();
-    storage.insert_workspace(&workspace_record()).unwrap();
-
-    // Insert only into ledger_events (orphan). WU-C1.2: seeded by SQL
-    // because `append_event` now redirects to `events_v1`.
-    {
-        let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-        insert_legacy_event(&conn, "evt-orphan-ledger");
-    }
-
-    // events_v1 is empty
-
-    let report = storage.verify_cross_ledger_consistency(0).unwrap();
-    assert!(
-        !report.within_tolerance,
-        "orphan should be detected: {report:?}"
-    );
-    assert_eq!(report.total_divergences, 1);
-    assert_eq!(report.in_ledger_not_v1, vec!["evt-orphan-ledger"]);
-}
-
-/// Tolerance allows small number of divergences.
-#[test]
-fn verify_cross_ledger_consistency_tolerance_is_tolerated() {
-    let dir = TempDir::new().unwrap();
-    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
-    let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-
-    storage.insert_project(&project_record()).unwrap();
-    storage.insert_workspace(&workspace_record()).unwrap();
-
-    // Insert one aligned event (both sides seeded directly; WU-C1.2).
-    let env1 = minimal_envelope("evt-1", "stream:p-test", "p-test");
-    insert_events_v1(&conn, &env1);
-    insert_legacy_event(&conn, "evt-1");
-    drop(conn);
-
-    // Add one orphan in events_v1
-    let conn2 = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-    let env2 = minimal_envelope("evt-orphan", "stream:p-test", "p-test");
-    insert_events_v1(&conn2, &env2);
-    drop(conn2);
-
-    // Tolerance=1 should pass
-    let report = storage.verify_cross_ledger_consistency(1).unwrap();
-    assert!(
-        report.within_tolerance,
-        "1 orphan with tolerance=1 should pass: {report:?}"
-    );
-
-    // Tolerance=0 should fail
-    let report0 = storage.verify_cross_ledger_consistency(0).unwrap();
-    assert!(
-        !report0.within_tolerance,
-        "1 orphan with tolerance=0 should fail: {report0:?}"
-    );
-}
 
 // =============================================================================
 // WU-C1.3 / CLOSE-01: legacy domain write hard-disable
@@ -322,10 +214,12 @@ fn legacy_domain_write_is_rejected_with_typed_error() {
         .expect("canonical redirect must still work after the hard-disable");
     assert_eq!(redirected.event_type, "workflow.phase.entered");
 
-    // And the legacy table stays untouched (read-only window, C1.4).
-    let report = storage.verify_cross_ledger_consistency(0).unwrap();
-    assert_eq!(
-        report.ledger_events_count, 0,
-        "ledger_events must stay empty: no legacy domain write may land"
+    // And the canonical-only read view reflects the redirect: the event is
+    // visible through the canonical list (C1.5; the cross-ledger report was
+    // removed with the legacy read layer).
+    let listed = storage.list_events().expect("list_events");
+    assert!(
+        listed.iter().any(|e| e.event_id == "evt-guard-1"),
+        "canonical redirect output must be readable via list_events"
     );
 }
