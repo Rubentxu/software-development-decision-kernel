@@ -874,7 +874,6 @@ CREATE TRIGGER IF NOT EXISTS backlog_item_events_v1_no_delete
     BEGIN SELECT RAISE(ABORT, 'backlog_item_events_v1 is append-only'); END;
 "#;
 
-
 pub(crate) const MIGRATION_19: &str = r#"
 -- Universal Evidence Cutover (WU-C2, DELTA-CONF-003, cycle
 -- p-63676b11dc0ef88f/conformance-closeout-2026-09-13).

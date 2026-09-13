@@ -347,8 +347,12 @@ fn explanation_event_ids_stable_across_cutover() {
             }
             if let Some(relations) = parsed["relations"].as_array() {
                 for edge in relations {
-                    edge_event_ids
-                        .push(edge["event_id"].as_str().expect("edge event_id").to_string());
+                    edge_event_ids.push(
+                        edge["event_id"]
+                            .as_str()
+                            .expect("edge event_id")
+                            .to_string(),
+                    );
                 }
             }
         }

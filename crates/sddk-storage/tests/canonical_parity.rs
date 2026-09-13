@@ -15,9 +15,9 @@
 //! 3. `SqliteEventStore` opened over the same database file
 //!    (`open_path`) sees exactly the same canonical events.
 
-use serde_json::json;
 use sddk_domain::{CycleId, CycleManifest, LedgerEventInput, ProjectRecord, WorkspaceRecord};
 use sddk_storage::{Storage, StorageError};
+use serde_json::json;
 use tempfile::TempDir;
 
 const CREATED_AT: &str = "2026-09-01T12:00:00Z";
@@ -189,9 +189,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
             false,
         )
         .unwrap();
-    fresh
-        .append_event(&event("evt-fresh-3", None))
-        .unwrap();
+    fresh.append_event(&event("evt-fresh-3", None)).unwrap();
 
     // Canonical stream is the only writer: new events live in events_v1,
     // ledger_events stays empty.
@@ -206,13 +204,13 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
         vec!["evt-fresh-1", "evt-fresh-2", "evt-fresh-3"],
         "merged list_events must expose every canonical event"
     );
-    let cycle_events = fresh
-        .list_cycle_events(manifest.cycle_id.as_str())
-        .unwrap();
+    let cycle_events = fresh.list_cycle_events(manifest.cycle_id.as_str()).unwrap();
     assert_eq!(cycle_events.len(), 2);
-    assert!(cycle_events
-        .iter()
-        .all(|e| e.cycle_id.as_deref() == Some(manifest.cycle_id.as_str())));
+    assert!(
+        cycle_events
+            .iter()
+            .all(|e| e.cycle_id.as_deref() == Some(manifest.cycle_id.as_str()))
+    );
     let frame_events = fresh.list_frame_events("frame-1").unwrap();
     assert_eq!(frame_events.len(), 3);
 
@@ -233,9 +231,11 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
         .unwrap();
     assert!(released);
     let all_after_release = fresh.list_events().unwrap();
-    assert!(all_after_release
-        .iter()
-        .any(|e| e.event_type == "lease.released"));
+    assert!(
+        all_after_release
+            .iter()
+            .any(|e| e.event_type == "lease.released")
+    );
 
     // verify_ledger covers both sides (legacy empty + canonical streams).
     let verification = fresh.verify_ledger().unwrap();
@@ -252,8 +252,8 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     assert_eq!(watched[0].event_type, "lease.released");
 
     // Canonical receipts mirror into the LedgerEvent view (hash parity).
-    let store = sddk_storage::SqliteEventStore::open_path(fresh_dir.path().join("ledger.sqlite"))
-        .unwrap();
+    let store =
+        sddk_storage::SqliteEventStore::open_path(fresh_dir.path().join("ledger.sqlite")).unwrap();
     use sddk_domain::EventStore as _;
     let canonical_ids: Vec<String> = store
         .list_streams()
@@ -270,9 +270,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     seed_legacy_corpus(&migrated, 3);
 
     let mut migrated = migrated;
-    migrated
-        .append_event(&event("evt-new-1", None))
-        .unwrap();
+    migrated.append_event(&event("evt-new-1", None)).unwrap();
 
     // The redirect must NOT write new events into the legacy table.
     assert_eq!(migrated.legacy_ledger_count_for_tests(), 3);
@@ -282,10 +280,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     // per-stream sequence).
     let merged = migrated.load_all_ledger_events().unwrap();
     assert_eq!(merged.len(), 4);
-    let legacy_ids: Vec<&str> = merged[..3]
-        .iter()
-        .map(|e| e.event_id.as_str())
-        .collect();
+    let legacy_ids: Vec<&str> = merged[..3].iter().map(|e| e.event_id.as_str()).collect();
     assert_eq!(
         legacy_ids,
         vec!["evt-legacy-001", "evt-legacy-002", "evt-legacy-003"]

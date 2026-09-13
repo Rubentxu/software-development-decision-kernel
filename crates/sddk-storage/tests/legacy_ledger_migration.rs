@@ -21,10 +21,10 @@
 //! desde el fixture se hace sobre un Storage NUEVO (path fresco), que es
 //! exactamente lo que haría el recovery tooling real.
 
-use serde_json::json;
-use sha2::{Digest, Sha256};
 use sddk_domain::{LedgerEventInput, ProjectRecord};
 use sddk_storage::Storage;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 const CREATED_AT: &str = "2026-09-01T12:00:00Z";
@@ -63,7 +63,9 @@ fn sample_input(i: usize) -> LedgerEventInput {
 /// Digest calculado sobre la serialización JSON canónica de los inputs en
 /// orden de secuencia.
 fn export_fixture(storage: &Storage) -> (Vec<LedgerEventInput>, usize, String) {
-    let events = storage.load_all_ledger_events().expect("load_all_ledger_events");
+    let events = storage
+        .load_all_ledger_events()
+        .expect("load_all_ledger_events");
     let inputs: Vec<LedgerEventInput> = events.iter().map(|e| e.as_input()).collect();
     let count = inputs.len();
     let mut hasher = Sha256::new();
@@ -79,7 +81,9 @@ fn export_fixture(storage: &Storage) -> (Vec<LedgerEventInput>, usize, String) {
 /// Devuelve el storage; el caller decide cuándo dropearlo (failure injection).
 fn import_fixture(dir: &TempDir, name: &str, inputs: &[LedgerEventInput]) -> Storage {
     let mut storage = Storage::open(dir.path().join(name)).expect("open fresh storage");
-    storage.insert_project(&project_record()).expect("insert project");
+    storage
+        .insert_project(&project_record())
+        .expect("insert project");
     for input in inputs {
         storage.append_event(input).expect("append fixture event");
     }
@@ -105,7 +109,10 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
     // --- Export 1 desde el storage persistido ---
     let storage_a = Storage::open(&original_path).unwrap();
     let (fixture_a, count_a, digest_a) = export_fixture(&storage_a);
-    assert_eq!(count_a, n, "original storage debe contener exactamente N eventos");
+    assert_eq!(
+        count_a, n,
+        "original storage debe contener exactamente N eventos"
+    );
     assert_eq!(fixture_a.len(), count_a);
 
     // --- When: reconstruir un Storage nuevo desde el fixture y re-exportar ---
@@ -115,8 +122,14 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
 
     // --- Then: idempotencia ---
     assert_eq!(count_b, count_a, "count debe coincidir tras re-import");
-    assert_eq!(digest_b, digest_a, "digest debe coincidir tras re-import (idempotente)");
-    assert_eq!(fixture_a, fixture_b, "fixtures deben ser idénticos campo a campo");
+    assert_eq!(
+        digest_b, digest_a,
+        "digest debe coincidir tras re-import (idempotente)"
+    );
+    assert_eq!(
+        fixture_a, fixture_b,
+        "fixtures deben ser idénticos campo a campo"
+    );
 
     // --- Restart: reabrir el storage reconstruido desde la misma ruta ---
     let reopened = Storage::open(dir.path().join("rebuilt.sqlite")).unwrap();
@@ -133,7 +146,10 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
         // y dropeando el storage sin completarla.
         let aborted = import_fixture(&dir, "aborted.sqlite", &fixture_a[..half]);
         let (_, partial_count, _) = export_fixture(&aborted);
-        assert_eq!(partial_count, half, "import abortada debe dejar exactamente la mitad");
+        assert_eq!(
+            partial_count, half,
+            "import abortada debe dejar exactamente la mitad"
+        );
         drop(aborted); // drop del storage = interrupción sin completar la importación
     }
 
@@ -142,15 +158,27 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
     let (fixture_d, count_d, digest_d) = export_fixture(&recovered);
     drop(recovered);
 
-    assert_eq!(count_d, count_a, "recuperación debe restaurar el count completo");
-    assert_eq!(digest_d, digest_a, "recuperación debe restaurar el digest exacto");
-    assert_eq!(fixture_d, fixture_a, "estado final tras recovery == fixture original");
+    assert_eq!(
+        count_d, count_a,
+        "recuperación debe restaurar el count completo"
+    );
+    assert_eq!(
+        digest_d, digest_a,
+        "recuperación debe restaurar el digest exacto"
+    );
+    assert_eq!(
+        fixture_d, fixture_a,
+        "estado final tras recovery == fixture original"
+    );
 
     // --- El storage original sigue intacto (solo lectura/exportación) ---
     let final_check = Storage::open(&original_path).unwrap();
     let (_, count_final, digest_final) = export_fixture(&final_check);
     assert_eq!(count_final, count_a);
-    assert_eq!(digest_final, digest_a, "original no debe mutar por exportar");
+    assert_eq!(
+        digest_final, digest_a,
+        "original no debe mutar por exportar"
+    );
 }
 
 /// WU-C1.2 gate: tras el redirect, los eventos de dominio nuevos NO se

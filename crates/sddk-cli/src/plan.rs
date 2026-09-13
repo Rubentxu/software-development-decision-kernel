@@ -21,8 +21,8 @@ use sddk_domain::planning::projections::{
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::planning::{
     DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
-    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
-    WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, WORK_ITEM_SCHEMA_VERSION,
+    WorkItemRecord, WorkItemStatus,
 };
 use sddk_engine::evidence_ref::{EvidenceKind, EvidenceRef};
 use sddk_engine::evidence_relation_mapping::resolve_planning_evidence_relation;
@@ -878,10 +878,8 @@ fn run_evidence(
             // Universal substrate ref (ADR-0100): Planning evidence bound to
             // the work item, body persisted in CAS.
             let work_item_id = args.work_item_id.clone();
-            let _evidence_ref = EvidenceRef::new(
-                EvidenceKind::Planning,
-                format!("workitem/{work_item_id}"),
-            );
+            let _evidence_ref =
+                EvidenceRef::new(EvidenceKind::Planning, format!("workitem/{work_item_id}"));
             let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
             let relation_tag = relation.domain_tag();
             let record = match EvidenceAttachmentRecord::from_universal_relation(

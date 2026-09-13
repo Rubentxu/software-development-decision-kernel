@@ -138,17 +138,19 @@ fn complete_chain_verifies() {
     let store = store_with_wi("cycle-001", &["wi-001", "wi-002"])
         .with_evidence(
             "wi-001",
-            vec![EvidenceAttachmentRecord::from_universal_relation(
-                "ev-001".to_string(),
-                "wi-001".to_string(),
-                "justifies",
-                "sha256:abc123".to_string(),
-                None,
-                None,
-                None,
-                1,
-            )
-            .expect("justifies must resolve to a legacy representative")],
+            vec![
+                EvidenceAttachmentRecord::from_universal_relation(
+                    "ev-001".to_string(),
+                    "wi-001".to_string(),
+                    "justifies",
+                    "sha256:abc123".to_string(),
+                    None,
+                    None,
+                    None,
+                    1,
+                )
+                .expect("justifies must resolve to a legacy representative"),
+            ],
         )
         .with_decisions(
             "wi-001",
@@ -437,17 +439,19 @@ fn chain_with_work_items_and_evidence_passes() {
     let store = store_with_wi("cycle-001", &["wi-001", "wi-002"])
         .with_evidence(
             "wi-001",
-            vec![EvidenceAttachmentRecord::from_universal_relation(
-                "ev-001".to_string(),
-                "wi-001".to_string(),
-                "justifies",
-                "sha256:abc123".to_string(),
-                None,
-                None,
-                None,
-                1,
-            )
-            .expect("justifies must resolve to a legacy representative")],
+            vec![
+                EvidenceAttachmentRecord::from_universal_relation(
+                    "ev-001".to_string(),
+                    "wi-001".to_string(),
+                    "justifies",
+                    "sha256:abc123".to_string(),
+                    None,
+                    None,
+                    None,
+                    1,
+                )
+                .expect("justifies must resolve to a legacy representative"),
+            ],
         )
         .with_decisions(
             "wi-001",
@@ -636,17 +640,19 @@ fn different_cycle_ids_both_verify_successfully() {
     let store_a = store_with_wi("cycle-A", &["wi-001"])
         .with_evidence(
             "wi-001",
-            vec![EvidenceAttachmentRecord::from_universal_relation(
-                "ev-a".to_string(),
-                "wi-001".to_string(),
-                "justifies",
-                "sha256:abc".to_string(),
-                None,
-                None,
-                None,
-                1,
-            )
-            .expect("justifies must resolve to a legacy representative")],
+            vec![
+                EvidenceAttachmentRecord::from_universal_relation(
+                    "ev-a".to_string(),
+                    "wi-001".to_string(),
+                    "justifies",
+                    "sha256:abc".to_string(),
+                    None,
+                    None,
+                    None,
+                    1,
+                )
+                .expect("justifies must resolve to a legacy representative"),
+            ],
         )
         .with_decisions(
             "wi-001",
@@ -665,17 +671,19 @@ fn different_cycle_ids_both_verify_successfully() {
     let store_b = store_with_wi("cycle-B", &["wi-001"])
         .with_evidence(
             "wi-001",
-            vec![EvidenceAttachmentRecord::from_universal_relation(
-                "ev-b".to_string(),
-                "wi-001".to_string(),
-                "justifies",
-                "sha256:abc".to_string(),
-                None,
-                None,
-                None,
-                1,
-            )
-            .expect("justifies must resolve to a legacy representative")],
+            vec![
+                EvidenceAttachmentRecord::from_universal_relation(
+                    "ev-b".to_string(),
+                    "wi-001".to_string(),
+                    "justifies",
+                    "sha256:abc".to_string(),
+                    None,
+                    None,
+                    None,
+                    1,
+                )
+                .expect("justifies must resolve to a legacy representative"),
+            ],
         )
         .with_decisions(
             "wi-001",
@@ -738,17 +746,19 @@ fn chain_with_many_references_is_valid() {
     for wi_id in &work_item_ids[..5] {
         store = store.with_evidence(
             wi_id,
-            vec![EvidenceAttachmentRecord::from_universal_relation(
-                format!("ev-{}", wi_id),
-                wi_id.clone(),
-                "justifies",
-                format!("sha256:{}", wi_id),
-                None,
-                None,
-                None,
-                1,
-            )
-            .expect("justifies must resolve to a legacy representative")],
+            vec![
+                EvidenceAttachmentRecord::from_universal_relation(
+                    format!("ev-{}", wi_id),
+                    wi_id.clone(),
+                    "justifies",
+                    format!("sha256:{}", wi_id),
+                    None,
+                    None,
+                    None,
+                    1,
+                )
+                .expect("justifies must resolve to a legacy representative"),
+            ],
         );
         store = store.with_decisions(
             wi_id,

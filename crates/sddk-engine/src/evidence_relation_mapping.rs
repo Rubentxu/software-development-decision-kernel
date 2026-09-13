@@ -70,9 +70,7 @@ pub fn resolve_planning_evidence_relation(
 ) -> Result<CoreRelationKind, UnknownPlanningEvidenceKind> {
     match kind.trim().to_lowercase().as_str() {
         "log" => Ok(planning_evidence_relation(PlanningEvidenceKind::Log)),
-        "metric" | "metrics" => Ok(planning_evidence_relation(
-            PlanningEvidenceKind::Metric,
-        )),
+        "metric" | "metrics" => Ok(planning_evidence_relation(PlanningEvidenceKind::Metric)),
         "snapshot" => Ok(planning_evidence_relation(PlanningEvidenceKind::Snapshot)),
         "reference" => Ok(planning_evidence_relation(PlanningEvidenceKind::Reference)),
         "approval" => Ok(planning_evidence_relation(PlanningEvidenceKind::Approval)),
@@ -248,8 +246,14 @@ mod tests {
         let all_kinds = [
             (PlanningEvidenceKind::Log, CoreRelationKind::ObservedFor),
             (PlanningEvidenceKind::Metric, CoreRelationKind::Verifies),
-            (PlanningEvidenceKind::Snapshot, CoreRelationKind::ObservedFor),
-            (PlanningEvidenceKind::Reference, CoreRelationKind::References),
+            (
+                PlanningEvidenceKind::Snapshot,
+                CoreRelationKind::ObservedFor,
+            ),
+            (
+                PlanningEvidenceKind::Reference,
+                CoreRelationKind::References,
+            ),
             (PlanningEvidenceKind::Approval, CoreRelationKind::Justifies),
         ];
         for (kind, expected) in all_kinds {
