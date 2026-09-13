@@ -193,7 +193,7 @@ mod tests {
         ) -> Result<sddk_domain::CycleLease, sddk_domain::StorageError> {
             unimplemented!()
         }
-        fn release_cycle_lease(
+        fn release_lease_with_event(
             &mut self,
             _: &str,
             _: &str,

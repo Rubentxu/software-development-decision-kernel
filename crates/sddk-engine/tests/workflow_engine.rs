@@ -467,7 +467,7 @@ fn engine_with_state_event(
     state_after: Option<serde_json::Value>,
 ) -> Engine<Storage> {
     let cycle_id = manifest.cycle_id.clone();
-    let mut storage = storage_with_parents();
+    let storage = storage_with_parents();
     storage
         .insert_cycle(&CycleRecord {
             manifest,
@@ -476,7 +476,7 @@ fn engine_with_state_event(
         })
         .unwrap();
     storage
-        .append_event(&raw_state_event(&cycle_id, state_after))
+        .emit_canonical_event(&raw_state_event(&cycle_id, state_after))
         .unwrap();
     Engine::new(load_workflow_str(WORKFLOW_YAML).unwrap(), storage).unwrap()
 }

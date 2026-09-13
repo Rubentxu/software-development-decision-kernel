@@ -54,9 +54,11 @@ pub trait Ledger {
         now_ms: i64,
         expires_at_ms: i64,
     ) -> Result<CycleLease, StorageError>;
-    /// Releases a cycle lease only when owner and fencing token still match.
+    /// Releases a cycle lease only when owner and fencing token still match,
+    /// emitting the `lease.released` audit event on the canonical events_v1
+    /// stream (cycle:<cycle_id>).
     #[allow(clippy::too_many_arguments)]
-    fn release_cycle_lease(
+    fn release_lease_with_event(
         &mut self,
         project_id: &str,
         cycle_id: &str,

@@ -20,8 +20,6 @@
 //! the classifier detects it (mutation self-check,
 //! CONFORMANCE-FITNESS-RATCHETS §mutation).
 
-#![allow(deprecated)] // ratchet mutation tests exercise the deprecated forwarder by design (C1.3)
-
 use std::path::{Path, PathBuf};
 
 /// The literal SQL fragment that constitutes a legacy write. Built via

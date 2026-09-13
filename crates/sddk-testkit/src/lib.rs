@@ -201,15 +201,15 @@ impl sddk_domain::Ledger for InMemoryLedger {
         Ok(lease)
     }
 
-    fn release_cycle_lease(
+    fn release_lease_with_event(
         &mut self,
-        _project_id: &str,
+        project_id: &str,
         cycle_id: &str,
         owner: &str,
         fencing_token: i64,
-        _actor: &str,
-        _command_id: &str,
-        _occurred_at: &str,
+        actor: &str,
+        command_id: &str,
+        occurred_at: &str,
     ) -> Sr<bool> {
         let mut leases = self.leases.write().unwrap();
         let released = leases
@@ -218,6 +218,44 @@ impl sddk_domain::Ledger for InMemoryLedger {
             .is_some();
         if released {
             leases.remove(cycle_id);
+            drop(leases);
+            // WU-C15-5 (D3): align the in-memory double with the canonical
+            // `Storage` behavior — releasing a matched lease also appends a
+            // `lease.released` event so the supersede N+3 invariant stays
+            // observable in-memory.
+            let seq = self.next_sequence();
+            let previous_hash = self
+                .events
+                .read()
+                .unwrap()
+                .last()
+                .map(|e| e.event_hash.clone());
+            let event_hash = format!("sha256:{:032x}", (seq as u64).wrapping_mul(19));
+            let ledger_event = sddk_domain::LedgerEvent {
+                sequence: seq,
+                event_id: format!("evt-lease-released-{seq}"),
+                project_id: project_id.to_string(),
+                cycle_id: Some(cycle_id.to_string()),
+                frame_id: format!("frame:{command_id}"),
+                command_id: command_id.to_string(),
+                actor: actor.to_string(),
+                actor_ref: None,
+                event_type: "lease.released".to_string(),
+                occurred_at: occurred_at.to_string(),
+                state_before: None,
+                state_after: None,
+                payload: serde_json::json!({
+                    "cycle_id": cycle_id,
+                    "owner": owner,
+                    "fencing_token": fencing_token,
+                    "actor": actor,
+                }),
+                previous_hash,
+                event_hash,
+                causation_id: None,
+                correlation_id: None,
+            };
+            self.events.write().unwrap().push(ledger_event);
             return Ok(true);
         }
         Ok(false)

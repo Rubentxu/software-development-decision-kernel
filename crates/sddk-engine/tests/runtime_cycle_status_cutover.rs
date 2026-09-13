@@ -89,7 +89,7 @@ fn open_cycle(storage: &Storage, status: CycleStatus) {
 fn transition_event(storage: &mut Storage, event_id: &str, transition_id: &str, outcome: &str) {
     let record = storage.get_cycle("cycle-1").unwrap();
     storage
-        .append_event(&LedgerEventInput {
+        .emit_canonical_event(&LedgerEventInput {
             event_id: event_id.into(),
             project_id: record.manifest.project_id.clone(),
             cycle_id: Some("cycle-1".into()),
@@ -115,7 +115,7 @@ fn transition_event(storage: &mut Storage, event_id: &str, transition_id: &str, 
 fn approval_event(storage: &mut Storage, event_id: &str, event_type: &str, request_hash: &str) {
     let record = storage.get_cycle("cycle-1").unwrap();
     storage
-        .append_event(&LedgerEventInput {
+        .emit_canonical_event(&LedgerEventInput {
             event_id: event_id.into(),
             project_id: record.manifest.project_id.clone(),
             cycle_id: Some("cycle-1".into()),

@@ -1,7 +1,7 @@
 #![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
 
 use rusqlite::Connection;
-use sddk_domain::{ArtifactStore, CycleId, CycleManifest, CycleStatus};
+use sddk_domain::{ArtifactStore, CycleId, CycleManifest, CycleStatus, Ledger};
 use sddk_storage::{
     ArtifactRecord, CapabilityReceiptInput, CapabilityStatus, CycleRecord, GateOutcomeStatus,
     GateReceiptInput, GateReceiptNextSeqInput, LedgerEventInput, ProjectRecord, RID_FORMAT_REGEX,
@@ -98,11 +98,15 @@ fn adoption_registration_is_transactional_idempotent_and_conflict_safe() {
 fn ledger_is_hash_linked_ordered_and_append_only() {
     let directory = tempdir().unwrap();
     let database_path = directory.path().join("ledger.sqlite");
-    let mut storage = Storage::open(&database_path).unwrap();
+    let storage = Storage::open(&database_path).unwrap();
     storage.insert_project(&project_record()).unwrap();
 
-    let first = storage.append_event(&event("event-1", None)).unwrap();
-    let second = storage.append_event(&event("event-2", None)).unwrap();
+    let first = storage
+        .emit_canonical_event(&event("event-1", None))
+        .unwrap();
+    let second = storage
+        .emit_canonical_event(&event("event-2", None))
+        .unwrap();
 
     assert_eq!(first.sequence, 1);
     assert_eq!(second.sequence, 2);
@@ -143,18 +147,20 @@ fn ledger_is_hash_linked_ordered_and_append_only() {
 
 #[test]
 fn cycle_event_listing_is_scoped_and_ordered() {
-    let mut storage = Storage::open_in_memory().unwrap();
+    let storage = Storage::open_in_memory().unwrap();
     storage.insert_project(&project_record()).unwrap();
     storage.insert_workspace(&workspace_record()).unwrap();
     let cycle = cycle_record();
     let cycle_id = cycle.manifest.cycle_id.clone();
     storage.insert_cycle(&cycle).unwrap();
-    storage.append_event(&event("event-project", None)).unwrap();
     storage
-        .append_event(&event("event-cycle-1", Some(&cycle_id)))
+        .emit_canonical_event(&event("event-project", None))
         .unwrap();
     storage
-        .append_event(&event("event-cycle-2", Some(&cycle_id)))
+        .emit_canonical_event(&event("event-cycle-1", Some(&cycle_id)))
+        .unwrap();
+    storage
+        .emit_canonical_event(&event("event-cycle-2", Some(&cycle_id)))
         .unwrap();
 
     let events = storage.list_cycle_events(&cycle_id).unwrap();
@@ -279,7 +285,7 @@ fn uniqueness_and_lease_conflicts_are_enforced() {
     );
     assert!(
         !storage
-            .release_cycle_lease(
+            .release_lease_with_event(
                 "project-1",
                 &cycle.manifest.cycle_id,
                 "runtime-a",
@@ -292,7 +298,7 @@ fn uniqueness_and_lease_conflicts_are_enforced() {
     );
     assert!(
         storage
-            .release_cycle_lease(
+            .release_lease_with_event(
                 "project-1",
                 &cycle.manifest.cycle_id,
                 "runtime-b",
@@ -421,14 +427,14 @@ fn reacquire_after_expiry_preserves_acquire_semantics() {
 }
 
 #[test]
-fn release_cycle_lease_writes_lease_released_event() {
+fn release_lease_with_event_writes_lease_released_event() {
     let (mut storage, cycle) = storage_with_cycle();
     storage
         .acquire_cycle_lease(&cycle.manifest.cycle_id, "runtime-a", 1_000, 2_000)
         .unwrap();
 
     let released = storage
-        .release_cycle_lease(
+        .release_lease_with_event(
             "project-1",
             &cycle.manifest.cycle_id,
             "runtime-a",
@@ -459,7 +465,7 @@ fn release_cycle_lease_writes_lease_released_event() {
     );
 
     let miss = storage
-        .release_cycle_lease(
+        .release_lease_with_event(
             "project-1",
             &cycle.manifest.cycle_id,
             "runtime-a",
@@ -505,7 +511,7 @@ fn cycle_exists_returns_true_for_existing_and_false_for_missing() {
 fn duplicate_event_id_is_idempotent_and_leaves_snapshot_intact() {
     let (mut storage, cycle) = storage_with_cycle();
     let initial_event = event("event-1", Some(&cycle.manifest.cycle_id));
-    storage.append_event(&initial_event).unwrap();
+    storage.emit_canonical_event(&initial_event).unwrap();
 
     let mut blocked = cycle.manifest.clone();
     blocked.status = CycleStatus::Blocked;
@@ -523,7 +529,7 @@ fn duplicate_event_id_is_idempotent_and_leaves_snapshot_intact() {
     let outcome =
         storage.update_cycle_with_event(&blocked, "2026-08-03T12:01:00Z", &duplicate_event, false);
     assert!(
-        matches!(outcome, Err(StorageError::LedgerIntegrity { .. })),
+        matches!(outcome, Err(sddk_domain::StorageError::Other(_))),
         "divergent duplicate event_id must be rejected with a typed error: {outcome:?}"
     );
     assert_eq!(

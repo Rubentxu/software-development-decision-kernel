@@ -50,9 +50,9 @@ proptest! {
 
     #[test]
     fn appended_ledger_always_verifies(events in prop::collection::vec(any::<u8>(), 0..12)) {
-        let mut storage = storage_with_project();
+        let storage = storage_with_project();
         for (index, byte) in events.iter().enumerate() {
-            storage.append_event(&event(&format!("{index}-{byte}"), &byte.to_string())).unwrap();
+            storage.emit_canonical_event(&event(&format!("{index}-{byte}"), &byte.to_string())).unwrap();
         }
         let verification = storage.verify_ledger().unwrap();
         prop_assert_eq!(verification.event_count, events.len());
@@ -66,9 +66,9 @@ proptest! {
     #[test]
     fn distinct_payloads_yield_distinct_hashes(payload_a in ".{0,16}", payload_b in ".{0,16}") {
         prop_assume!(payload_a != payload_b);
-        let mut storage = storage_with_project();
-        let first = storage.append_event(&event("a", &payload_a)).unwrap();
-        let second = storage.append_event(&event("b", &payload_b)).unwrap();
+        let storage = storage_with_project();
+        let first = storage.emit_canonical_event(&event("a", &payload_a)).unwrap();
+        let second = storage.emit_canonical_event(&event("b", &payload_b)).unwrap();
         prop_assert_ne!(first.event_hash, second.event_hash);
     }
 }

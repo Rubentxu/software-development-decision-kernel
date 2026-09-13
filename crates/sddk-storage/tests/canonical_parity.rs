@@ -18,7 +18,9 @@
 
 #![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders by design
 
-use sddk_domain::{CycleId, CycleManifest, LedgerEventInput, ProjectRecord, WorkspaceRecord};
+use sddk_domain::{
+    CycleId, CycleManifest, Ledger, LedgerEventInput, ProjectRecord, WorkspaceRecord,
+};
 use sddk_storage::{Storage, StorageError};
 use serde_json::json;
 use tempfile::TempDir;
@@ -107,7 +109,9 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
             false,
         )
         .unwrap();
-    fresh.append_event(&event("evt-fresh-3", None)).unwrap();
+    fresh
+        .emit_canonical_event(&event("evt-fresh-3", None))
+        .unwrap();
 
     // Canonical stream is the only writer: new events live in events_v1.
     // (WU-C15-4: `ledger_events` ya no existe físicamente; no hay tabla
@@ -133,12 +137,12 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     let frame_events = fresh.list_frame_events("frame-1").unwrap();
     assert_eq!(frame_events.len(), 3);
 
-    // W4: release_cycle_lease emits lease.released into the canonical stream.
+    // W4: release_lease_with_event emits lease.released into the canonical stream.
     let lease = fresh
         .acquire_cycle_lease(manifest.cycle_id.as_str(), "runtime", 1_000, 2_000)
         .unwrap();
     let released = fresh
-        .release_cycle_lease(
+        .release_lease_with_event(
             "project-1",
             manifest.cycle_id.as_str(),
             "runtime",
@@ -188,10 +192,10 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     // post-MIGRATION_20 re-abierto, cuya lectura canónica debe ser
     // idéntica a la del fresh repo.)
     let migrated_path = migrated_dir.path().join("ledger.sqlite");
-    let mut migrated = seeded_storage(&migrated_path);
+    let migrated = seeded_storage(&migrated_path);
     for i in 1..=3 {
         migrated
-            .append_event(&event(&format!("evt-new-{i}"), None))
+            .emit_canonical_event(&event(&format!("evt-new-{i}"), None))
             .unwrap();
     }
     drop(migrated); // close → re-open simula la migración post-v20
@@ -226,9 +230,13 @@ fn canonical_append_conflict_maps_to_ledger_integrity() {
     // Duplicate event_id across wrappers must surface as a storage error
     // (INSERT OR IGNORE makes the canonical append idempotent, so this
     // asserts the redelivery path, not a panic).
-    let mut storage = storage;
-    let first = storage.append_event(&event("evt-dup", None)).unwrap();
-    let second = storage.append_event(&event("evt-dup", None)).unwrap();
+    let storage = storage;
+    let first = storage
+        .emit_canonical_event(&event("evt-dup", None))
+        .unwrap();
+    let second = storage
+        .emit_canonical_event(&event("evt-dup", None))
+        .unwrap();
     assert_eq!(first.event_id, second.event_id);
     assert_eq!(first.sequence, second.sequence);
     assert_eq!(
@@ -242,12 +250,14 @@ fn canonical_append_conflict_maps_to_ledger_integrity() {
 fn read_only_storage_rejects_domain_event_writes() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("ledger.sqlite");
-    let mut storage = seeded_storage(&path);
-    storage.append_event(&event("evt-ro-1", None)).unwrap();
+    let storage = seeded_storage(&path);
+    storage
+        .emit_canonical_event(&event("evt-ro-1", None))
+        .unwrap();
     drop(storage);
 
-    let mut read_only = Storage::open_read_only(&path).unwrap();
-    let outcome = read_only.append_event(&event("evt-ro-2", None));
+    let read_only = Storage::open_read_only(&path).unwrap();
+    let outcome = read_only.emit_canonical_event(&event("evt-ro-2", None));
     if outcome.is_ok() {
         panic!(
             "read-only append unexpectedly succeeded; canonical count={}",

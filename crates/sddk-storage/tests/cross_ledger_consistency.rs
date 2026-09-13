@@ -5,8 +5,6 @@
 //! que WU-C15-8 reescriba la suite como chain-integrity canónica. El test de
 //! write-guard canónico se conserva abajo.
 
-#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
-
 use rusqlite::{Connection, params};
 use sddk_domain::{ActorKind, ActorRef, EventEnvelopeV1, ProjectRecord, WorkspaceRecord};
 use sddk_storage::Storage;
@@ -156,46 +154,21 @@ fn insert_legacy_event(conn: &Connection, event_id: &str) {
 // =============================================================================
 
 // =============================================================================
-// WU-C1.3 / CLOSE-01: legacy domain write hard-disable
+// WU-C15-5: write-guard canónico (el guard legacy `LegacyDomainWriteForbidden`
+// fue eliminado junto al wrapper `append_event` y la tabla `ledger_events`).
 // =============================================================================
 
-/// C1.3 hard-disable: attempting a domain-event append through the legacy
-/// `ledger_events` write path must fail with the typed
-/// `StorageError::LegacyDomainWriteForbidden` error, never write a row.
+/// La única vía de escritura de dominio es el stream canónico `events_v1`:
+/// `emit_canonical_event` persiste y el evento es visible vía `list_events`.
 #[test]
-fn legacy_domain_write_is_rejected_with_typed_error() {
-    use sddk_domain::SddkErrorCode;
-    use sddk_storage::legacy_domain_write_forbidden;
-
+fn canonical_write_is_visible_in_canonical_read_view() {
     let dir = TempDir::new().unwrap();
     let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
 
-    // The direct typed constructor: the only legacy-domain-write factory left
-    // in the tree (`append_event_on` is `#[cfg(test)]`-gated and always
-    // returns this error).
-    let err = legacy_domain_write_forbidden("cycle.transitioned");
-    assert_eq!(
-        err.code(),
-        "STORAGE_LEGACY_DOMAIN_WRITE_FORBIDDEN",
-        "typed error code must be stable (event_store:<code> prefix contract): {err:?}"
-    );
-    let message = err.to_string();
-    assert!(
-        message.contains("legacy ledger_events write forbidden"),
-        "error message must name the forbidden legacy path: {message}"
-    );
-    assert!(
-        message.contains("cycle.transitioned"),
-        "error message must name the rejected event type: {message}"
-    );
-
-    // The guard is the terminal state of the strangler: `append_event` (the
-    // public wrapper) redirects to the canonical stream and SUCCEEDS — the
-    // rejection is for raw legacy writes only.
     storage.insert_project(&project_record()).unwrap();
     let writable = &mut storage;
-    let redirected = writable
-        .append_event(&sddk_storage::LedgerEventInput {
+    let appended = writable
+        .emit_canonical_event(&sddk_storage::LedgerEventInput {
             event_id: "evt-guard-1".into(),
             project_id: "p-test".into(),
             cycle_id: None,
@@ -211,15 +184,15 @@ fn legacy_domain_write_is_rejected_with_typed_error() {
             causation_id: None,
             correlation_id: None,
         })
-        .expect("canonical redirect must still work after the hard-disable");
-    assert_eq!(redirected.event_type, "workflow.phase.entered");
+        .expect("canonical append must work (single write authority)");
+    assert_eq!(appended.event_type, "workflow.phase.entered");
 
-    // And the canonical-only read view reflects the redirect: the event is
+    // And the canonical-only read view reflects the append: the event is
     // visible through the canonical list (C1.5; the cross-ledger report was
     // removed with the legacy read layer).
     let listed = storage.list_events().expect("list_events");
     assert!(
         listed.iter().any(|e| e.event_id == "evt-guard-1"),
-        "canonical redirect output must be readable via list_events"
+        "canonical append output must be readable via list_events"
     );
 }

@@ -87,13 +87,13 @@ fn import_fixture(dir: &TempDir, name: &str, inputs: &[LedgerEventInput]) -> Sto
     storage
 }
 
-/// Seed path canónico disponible en WU-C15-4: el wrapper deprecado
-/// `append_event` redirige al stream `events_v1` desde C1.2 (C1-REDIRECT).
-/// WU-C15-5 elimina el wrapper y publica `emit_canonical_event`; este
-/// helper se re-apunta allí (sin cambios en las aserciones de la suite).
-#[allow(deprecated)]
+/// Seed path canónico desde WU-C15-5: `emit_canonical_event` es la vía
+/// pública al stream `events_v1` (el wrapper deprecated `append_event`
+/// fue eliminado junto a la tabla `ledger_events`).
 fn append_canonical(storage: &mut Storage, input: &LedgerEventInput) {
-    storage.append_event(input).expect("append canonical event");
+    storage
+        .emit_canonical_event(input)
+        .expect("append canonical event");
 }
 
 #[test]

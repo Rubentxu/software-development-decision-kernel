@@ -226,16 +226,16 @@ fn watch_from_tail_ignores_pre_existing_events() {
     // Insert project + two historical events directly via Storage.
     seed_project(&env);
     {
-        let mut store = open_test_store(&env);
+        let store = open_test_store(&env);
         store
-            .append_event(&make_input(
+            .emit_canonical_event(&make_input(
                 &env.project_id,
                 "historical.event.1",
                 json!({"k": "v1"}),
             ))
             .unwrap();
         store
-            .append_event(&make_input(
+            .emit_canonical_event(&make_input(
                 &env.project_id,
                 "historical.event.2",
                 json!({"k": "v2"}),
@@ -328,16 +328,16 @@ fn watch_emits_newly_appended_events() {
     // Append two live events while watch is polling. The project row
     // was already inserted above to satisfy the FK.
     {
-        let mut store = open_test_store(&env);
+        let store = open_test_store(&env);
         store
-            .append_event(&make_input(
+            .emit_canonical_event(&make_input(
                 &env.project_id,
                 "live.event.1",
                 json!({"k": "v1"}),
             ))
             .unwrap();
         store
-            .append_event(&make_input(
+            .emit_canonical_event(&make_input(
                 &env.project_id,
                 "live.event.2",
                 json!({"k": "v2"}),
@@ -376,10 +376,10 @@ fn watch_max_events_caps_emission() {
     // the first and exit.
     seed_project(&env);
     {
-        let mut store = open_test_store(&env);
+        let store = open_test_store(&env);
         for i in 0..5 {
             store
-                .append_event(&make_input(
+                .emit_canonical_event(&make_input(
                     &env.project_id,
                     &format!("cap.event.{i}"),
                     json!({"i": i}),

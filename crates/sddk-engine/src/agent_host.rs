@@ -87,7 +87,7 @@ pub enum ExecuteDecisionError {
 }
 
 /// Abstraction over the lease store. Real implementations forward to
-/// `sddk_storage::Ledger::acquire_cycle_lease / release_cycle_lease`.
+/// `sddk_storage::Ledger::acquire_cycle_lease / release_lease_with_event`.
 pub trait LeaseStore: Send + Sync + std::fmt::Debug {
     fn acquire(
         &self,
