@@ -240,6 +240,11 @@ pub struct Facts {
     pub memory_refs: Vec<MemoryRef>,
     #[serde(default)]
     pub cycle_refs: Vec<CycleRef>,
+    /// Granted approval request hashes (D-03). When a RequireApproval gate
+    /// fires, a matching entry here (granted via `sddk approval grant`)
+    /// satisfies the gate and the admission proceeds to Allow (R-4-002).
+    #[serde(default)]
+    pub approval_refs: Vec<EvidenceRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -536,18 +541,36 @@ impl DefaultAuthorityEngine {
         if policy.approval_required_for.contains(&proposal.kind)
             || matches!(policy.risk_band, RiskBand::High)
         {
+            // D-03 (R-4-002): a granted approval fact satisfies the gate.
+            // The approval loop (M2) re-invokes admission with the granted
+            // request hash in `Facts::approval_refs`; the gate is skipped and
+            // admission proceeds to Allow. `payload_digest` (proposal-stable)
+            // is the request hash when present, else any non-empty
+            // approval_refs entry satisfies the gate (compat with runners
+            // that pass the hash as a plain EvidenceRef).
             trace.gates_applied.push(GateKind::Approval);
-            return (
-                AdmissionDecision::RequireApproval {
-                    requirement: ApprovalRequirement {
-                        approver_kind: ApproverKind::Human,
-                        minimum_evidence: vec![],
-                        timeout_seconds: 3600,
+            let approval_satisfied = match proposal.payload_digest.as_ref() {
+                Some(expected) => facts.approval_refs.iter().any(|r| r.0 == expected.0),
+                None => !facts.approval_refs.is_empty(),
+            };
+            if !approval_satisfied {
+                return (
+                    AdmissionDecision::RequireApproval {
+                        requirement: ApprovalRequirement {
+                            approver_kind: ApproverKind::Human,
+                            minimum_evidence: vec![],
+                            timeout_seconds: 3600,
+                        },
+                        decision_id: format!(
+                            "approval-{}-{}",
+                            actor_pattern,
+                            proposal.kind.as_str()
+                        ),
                     },
-                    decision_id: format!("approval-{}-{}", actor_pattern, proposal.kind.as_str()),
-                },
-                trace,
-            );
+                    trace,
+                );
+            }
+            // Gate satisfied by a granted approval fact: fall through to Allow.
         }
 
         // 6. Allow
@@ -1037,6 +1060,150 @@ mod inline_tests {
         };
         let e = engine.explain(&d);
         assert_eq!(e.deny_reasons_evaluated.len(), 1);
+    }
+
+    // ── WU-C4-6: Facts::approval_refs + approval-gate skip (D-03 / R-4-002) ──
+
+    fn high_band_approval_case() -> (
+        DefaultAuthorityEngine,
+        ActionProposal,
+        Actor,
+        PolicySnapshot,
+    ) {
+        let engine = DefaultAuthorityEngine::new();
+        let mut policy = PolicySnapshot::default_low_risk("p");
+        policy.risk_band = RiskBand::High;
+        let actor = Actor {
+            kind: ActorKind::Human {
+                id: "u1".to_string(),
+            },
+            capabilities: vec!["cycle.lifecycle".to_string()],
+            lease: None,
+        };
+        let proposal = ActionProposal {
+            kind: ActionKind::CycleStart,
+            target_id: "c1".to_string(),
+            payload_digest: None,
+            created_at: now_utc(),
+        };
+        (engine, proposal, actor, policy)
+    }
+
+    #[test]
+    fn approval_refs_skip_approval_gate_without_payload_digest() {
+        // No payload_digest: any granted approval ref satisfies the gate.
+        let (engine, proposal, actor, policy) = high_band_approval_case();
+        let facts = Facts {
+            approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
+            ..Facts::default()
+        };
+        let decision = engine.admit(&proposal, &actor, &facts, &policy);
+        assert!(
+            decision.is_allow(),
+            "granted approval fact must skip the approval gate, got {decision:?}"
+        );
+    }
+
+    #[test]
+    fn approval_refs_matching_payload_digest_skips_gate() {
+        // With a proposal payload_digest (the stable request hash), only the
+        // matching granted ref satisfies the gate.
+        let (engine, _plain, actor, policy) = high_band_approval_case();
+        let proposal = ActionProposal {
+            kind: ActionKind::CycleStart,
+            target_id: "c1".to_string(),
+            payload_digest: Some(DigestSha256("sha256:expected".to_string())),
+            created_at: now_utc(),
+        };
+        let matching = Facts {
+            approval_refs: vec![EvidenceRef("sha256:expected".to_string())],
+            ..Facts::default()
+        };
+        assert!(
+            engine
+                .admit(&proposal, &actor, &matching, &policy)
+                .is_allow()
+        );
+
+        let mismatched = Facts {
+            approval_refs: vec![EvidenceRef("sha256:other".to_string())],
+            ..Facts::default()
+        };
+        assert!(
+            engine
+                .admit(&proposal, &actor, &mismatched, &policy)
+                .is_require_approval()
+        );
+    }
+
+    #[test]
+    fn empty_approval_refs_still_requires_approval() {
+        // Sanity: the gate still fires with default facts (M1 behavior).
+        let (engine, proposal, actor, policy) = high_band_approval_case();
+        let decision = engine.admit(&proposal, &actor, &Facts::default(), &policy);
+        assert!(decision.is_require_approval());
+    }
+
+    #[test]
+    fn approval_refs_do_not_override_deny() {
+        // An approval fact only satisfies the Approval gate: it must never
+        // rescue a deny_override or a missing capability.
+        let (engine, _plain, actor, mut policy) = high_band_approval_case();
+        policy
+            .deny_override
+            .insert(("human".to_string(), ActionKind::CycleStart));
+        let proposal = ActionProposal {
+            kind: ActionKind::CycleStart,
+            target_id: "c1".to_string(),
+            payload_digest: None,
+            created_at: now_utc(),
+        };
+        let facts = Facts {
+            approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
+            ..Facts::default()
+        };
+        assert!(engine.admit(&proposal, &actor, &facts, &policy).is_deny());
+
+        let no_cap_engine = DefaultAuthorityEngine::new();
+        let no_cap_actor = Actor {
+            kind: ActorKind::Human {
+                id: "u2".to_string(),
+            },
+            capabilities: vec![],
+            lease: None,
+        };
+        assert!(
+            no_cap_engine
+                .admit(&proposal, &no_cap_actor, &facts, &policy)
+                .is_deny()
+        );
+    }
+
+    #[test]
+    fn facts_deserializes_without_approval_refs() {
+        // Serde-compat: pre-M2 serialized Facts (no approval_refs field)
+        // must deserialize cleanly with an empty vec (serde default).
+        let json = serde_json::json!({
+            "evidence_refs": [],
+            "decision_refs": [],
+            "memory_refs": [],
+            "cycle_refs": []
+        });
+        let facts: Facts = serde_json::from_value(json).expect("legacy Facts must deserialize");
+        assert!(facts.approval_refs.is_empty());
+    }
+
+    #[test]
+    fn satisfied_approval_gate_still_traces_approval_gate() {
+        // Even when skipped by a granted fact, the Approval gate stays in
+        // gates_applied (auditability of why the decision was reached).
+        let (engine, proposal, actor, policy) = high_band_approval_case();
+        let facts = Facts {
+            approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
+            ..Facts::default()
+        };
+        let (_, explanation) = engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
+        assert!(explanation.gates_applied.contains(&GateKind::Approval));
     }
 }
 
