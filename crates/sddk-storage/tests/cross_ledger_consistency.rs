@@ -1,13 +1,27 @@
-//! Cross-ledger consistency tests (AC-EVT-LEDGER-06).
+//! Canonical chain-integrity tests (AC-EVT-LEDGER-06, post-C1.5 rewrite).
 //!
-//! WU-C15-3: `verify_cross_ledger_consistency` fue eliminado con el read
-//! layer legacy (C1.5). Los tests de divergencia quedan deshabilitados hasta
-//! que WU-C15-8 reescriba la suite como chain-integrity canónica. El test de
-//! write-guard canónico se conserva abajo.
+//! WU-C15-8: la suite original comparaba los streams legacy `ledger_events`
+//! y `events_v1` (`verify_cross_ledger_consistency`). Con la tabla legacy
+//! eliminada (WU-C15-4) ya no hay "dos ledgers": `events_v1` es la única
+//! autoridad de eventos de dominio y su integridad se prueba directamente:
+//!
+//! 1. `chain_integrity_is_preserved_across_cycles` — una secuencia de
+//!    eventos canónicos a través de varios ciclos mantiene la cadena
+//!    verificable (`verify_ledger` verde, conteo exacto).
+//! 2. `tampered_event_breaks_chain_verification` — una mutación ilegal de
+//!    una fila existente de `events_v1` rompe la verificación de cadena
+//!    (fallo detectable, no silencioso).
+//! 3. `events_v1_is_append_only` — los triggers de inmutabilidad
+//!    (`events_v1_no_update` / `events_v1_no_delete`) rechazan UPDATE y
+//!    DELETE sobre filas ya escritas.
+//! 4. `canonical_write_is_visible_in_canical_read_view` — la única vía de
+//!    escritura de dominio (`emit_canonical_event`) persiste y es visible
+//!    vía `list_events` (conservado de WU-C15-5).
 
-use rusqlite::{Connection, params};
-use sddk_domain::{ActorKind, ActorRef, EventEnvelopeV1, ProjectRecord, WorkspaceRecord};
+use rusqlite::Connection;
+use sddk_domain::{LedgerEventInput, ProjectRecord};
 use sddk_storage::Storage;
+use std::path::Path;
 use tempfile::TempDir;
 
 const CREATED_AT: &str = "2026-09-01T12:00:00Z";
@@ -22,174 +36,143 @@ fn project_record() -> ProjectRecord {
     }
 }
 
-// Helpers de seed legacy: en desuso tras eliminar la suite cross-check en
-// WU-C15-3; WU-C15-8 reescribe esta suite sobre events_v1 only.
-#[allow(dead_code)]
-fn workspace_record() -> WorkspaceRecord {
-    WorkspaceRecord {
-        workspace_id: "ws-test".into(),
+fn canonical_input(event_id: &str, cycle_id: Option<&str>) -> LedgerEventInput {
+    LedgerEventInput {
+        event_id: event_id.into(),
         project_id: "p-test".into(),
-        canonical_path: "/tmp/test".into(),
-        created_at: CREATED_AT.into(),
+        cycle_id: cycle_id.map(str::to_owned),
+        frame_id: "frame-1".into(),
+        command_id: "cmd-1".into(),
+        actor: "system".into(),
+        actor_ref: None,
+        event_type: "workflow.phase.entered".into(),
+        occurred_at: "2026-09-01T10:00:00Z".into(),
+        state_before: None,
+        state_after: None,
+        payload: serde_json::json!({}),
+        causation_id: None,
+        correlation_id: None,
     }
 }
 
-#[allow(dead_code)]
-fn minimal_envelope(event_id: &str, stream_id: &str, project_id: &str) -> EventEnvelopeV1 {
-    let mut env = EventEnvelopeV1 {
-        event_id: event_id.into(),
-        event_type: "workflow.phase.entered".into(),
-        schema_version: 1,
-        stream_id: stream_id.into(),
-        sequence: 0,
-        project_id: project_id.into(),
-        occurred_at: "2026-09-01T10:00:00Z".into(),
-        recorded_at: "2026-09-01T10:00:01Z".into(),
-        actor: ActorRef {
-            kind: ActorKind::System,
-            id: "sddk-test".into(),
-            definition_hash: None,
-            policy_hash: None,
-            model: None,
-            role: None,
-        },
-        subjects: vec![],
-        payload: serde_json::json!({}),
-        evidence_refs: vec![],
-        content_hash: String::new(),
-        metadata: None,
-        causation_id: None,
-        correlation_id: None,
-        cycle_id: Some("c-1".into()),
-        frame_id: None,
-        fork_id: None,
-    };
-    env.content_hash = env.compute_content_hash();
-    env
+/// Opens an independent read-write connection over the same database file
+/// (the tampering path a rogue writer would use).
+fn raw_connection(db_path: &Path) -> Connection {
+    Connection::open(db_path).expect("open raw connection")
 }
 
-/// Inserts an event into the events_v1 table using raw SQL on a shared connection.
-#[allow(dead_code)]
-fn insert_events_v1(conn: &Connection, env: &EventEnvelopeV1) {
-    // Get next sequence for this stream
-    let actor_json = serde_json::to_string(&env.actor).unwrap();
-    let subjects_json = serde_json::to_string(&env.subjects).unwrap();
-    let payload_json = serde_json::to_string(&env.payload).unwrap();
-    let evidence_refs_json = serde_json::to_string(&env.evidence_refs).unwrap();
-    let metadata_json = serde_json::to_string(&env.metadata).unwrap();
-    let causation_id: Option<String> = env.causation_id.clone();
-    let correlation_id: Option<String> = env.correlation_id.clone();
-    let cycle_id: Option<String> = env.cycle_id.clone();
-    let frame_id: Option<String> = env.frame_id.clone();
-    let fork_id: Option<String> = env.fork_id.clone();
-
-    // Get next sequence for this stream
-    let next_seq: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM events_v1 WHERE stream_id = ?1",
-            params![env.stream_id],
-            |row| row.get(0),
-        )
-        .unwrap_or(1);
-
-    // Compute chain_hash (simplified for tests: empty string)
-    let chain_hash = "";
-
-    conn.execute(
-        "INSERT INTO events_v1 \
-         (event_id, event_type, schema_version, stream_id, sequence, project_id, \
-          occurred_at, recorded_at, actor_json, subjects_json, payload_json, \
-          evidence_refs_json, content_hash, metadata_json, causation_id, \
-          correlation_id, cycle_id, frame_id, fork_id, chain_hash) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
-        params![
-            env.event_id,
-            env.event_type,
-            env.schema_version,
-            env.stream_id,
-            next_seq,
-            env.project_id,
-            env.occurred_at,
-            env.recorded_at,
-            actor_json,
-            subjects_json,
-            payload_json,
-            evidence_refs_json,
-            env.content_hash,
-            metadata_json,
-            causation_id,
-            correlation_id,
-            cycle_id,
-            frame_id,
-            fork_id,
-            chain_hash,
-        ],
-    )
-    .expect("insert events_v1");
-}
-
-/// WU-C1.2: desde el redirect, `append_event` ya no escribe en
-/// `ledger_events`. Los fixtures que necesitan una fila legacy siembran la
-/// tabla directamente (mismo mecanismo que usan para `events_v1`).
-#[allow(dead_code)]
-fn insert_legacy_event(conn: &Connection, event_id: &str) {
-    conn.execute(
-        "INSERT INTO ledger_events (
-            sequence, event_id, project_id, cycle_id, frame_id, command_id,
-            actor, event_type, occurred_at, state_before_json,
-            state_after_json, payload_json, previous_hash, event_hash
-         ) VALUES (
-            COALESCE((SELECT MAX(sequence) FROM ledger_events), 0) + 1,
-            ?1, 'p-test', NULL, 'frame-1', 'cmd-1', 'system',
-            'workflow.phase.entered', '2026-09-01T10:00:00Z',
-            NULL, NULL, '{}', NULL, 'sha256:legacy'
-         )",
-        params![event_id],
-    )
-    .expect("insert legacy event");
-}
-
-// =============================================================================
-// AC-EVT-LEDGER-06: verify_cross_ledger_consistency
-// =============================================================================
-
-// =============================================================================
-// WU-C15-5: write-guard canónico (el guard legacy `LegacyDomainWriteForbidden`
-// fue eliminado junto al wrapper `append_event` y la tabla `ledger_events`).
-// =============================================================================
-
-/// La única vía de escritura de dominio es el stream canónico `events_v1`:
-/// `emit_canonical_event` persiste y el evento es visible vía `list_events`.
+/// Sección 1: la cadena canónica sobrevive escrituras multi-ciclo y
+/// `verify_ledger` la valida completa.
 #[test]
-fn canonical_write_is_visible_in_canonical_read_view() {
+fn chain_integrity_is_preserved_across_cycles() {
     let dir = TempDir::new().unwrap();
-    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
 
     storage.insert_project(&project_record()).unwrap();
-    let writable = &mut storage;
-    let appended = writable
-        .emit_canonical_event(&sddk_storage::LedgerEventInput {
-            event_id: "evt-guard-1".into(),
-            project_id: "p-test".into(),
-            cycle_id: None,
-            frame_id: "frame-1".into(),
-            command_id: "cmd-1".into(),
-            actor: "system".into(),
-            actor_ref: None,
-            event_type: "workflow.phase.entered".into(),
-            occurred_at: "2026-09-01T10:00:00Z".into(),
-            state_before: None,
-            state_after: None,
-            payload: serde_json::json!({}),
-            causation_id: None,
-            correlation_id: None,
-        })
+    storage
+        .emit_canonical_event(&canonical_input("evt-chain-1", Some("c-1")))
+        .unwrap();
+    storage
+        .emit_canonical_event(&canonical_input("evt-chain-2", Some("c-1")))
+        .unwrap();
+    storage
+        .emit_canonical_event(&canonical_input("evt-chain-3", Some("c-2")))
+        .unwrap();
+
+    let verification = storage.verify_ledger().expect("chain must verify");
+    assert_eq!(verification.event_count, 3);
+    assert!(verification.last_hash.is_some());
+}
+
+fn tampered_chain_fixture(dir: &TempDir) -> (Storage, std::path::PathBuf) {
+    let db_path = dir.path().join("ledger.sqlite");
+    let storage = Storage::open(&db_path).unwrap();
+    storage.insert_project(&project_record()).unwrap();
+    storage
+        .emit_canonical_event(&canonical_input("evt-tamper-1", Some("c-1")))
+        .unwrap();
+    storage
+        .emit_canonical_event(&canonical_input("evt-tamper-2", Some("c-1")))
+        .unwrap();
+    assert!(
+        storage.verify_ledger().is_ok(),
+        "pre-tamper chain must verify"
+    );
+    (storage, db_path)
+}
+
+/// Sección 2: mutar una fila existente de `events_v1` rompe la verificación
+/// de cadena (el fallo es detectable, no silencioso). La mutación necesita
+/// el trigger de UPDATE desactivado — los triggers normales la bloquean
+/// (sección 3), así que este test lo desactiva explícitamente para simular
+/// la vía de un escritor rogue con acceso SQL directo.
+#[test]
+fn tampered_event_breaks_chain_verification() {
+    let dir = TempDir::new().unwrap();
+    let (storage, db_path) = tampered_chain_fixture(&dir);
+
+    // Rogue write: drop the append-only guard, mutate a payload, restore
+    // the guard. The stored content no longer matches its content_hash.
+    let conn = raw_connection(&db_path);
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS events_v1_no_update;
+         UPDATE events_v1 SET payload_json = '{\"tampered\":true}'
+         WHERE event_id = 'evt-tamper-1';
+         CREATE TRIGGER events_v1_no_update BEFORE UPDATE ON events_v1
+         BEGIN SELECT RAISE(ABORT, 'events_v1 is append-only'); END;",
+    )
+    .expect("simulate rogue tampering");
+
+    assert!(
+        storage.verify_ledger().is_err(),
+        "a mutated canonical row must break chain verification"
+    );
+}
+
+/// Sección 3: `events_v1` es append-only por triggers — UPDATE y DELETE
+/// sobre filas existentes se rechazan en la capa SQL, sin depender de la
+/// disciplina del código de aplicación.
+#[test]
+fn events_v1_is_append_only() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("ledger.sqlite");
+    let storage = Storage::open(&db_path).unwrap();
+
+    storage.insert_project(&project_record()).unwrap();
+    storage
+        .emit_canonical_event(&canonical_input("evt-appendonly-1", Some("c-1")))
+        .unwrap();
+
+    let conn = raw_connection(&db_path);
+    let update = conn.execute(
+        "UPDATE events_v1 SET payload_json = '{\"x\":1}' WHERE event_id = 'evt-appendonly-1'",
+        [],
+    );
+    assert!(update.is_err(), "UPDATE must be rejected by trigger");
+    let delete = conn.execute(
+        "DELETE FROM events_v1 WHERE event_id = 'evt-appendonly-1'",
+        [],
+    );
+    assert!(delete.is_err(), "DELETE must be rejected by trigger");
+}
+
+/// WU-C15-5: la única vía de escritura de dominio es el stream canónico
+/// `events_v1`: `emit_canonical_event` persiste y el evento es visible vía
+/// `list_events`.
+#[test]
+fn canonical_write_is_visible_in_canical_read_view() {
+    let dir = TempDir::new().unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+
+    storage.insert_project(&project_record()).unwrap();
+    let appended = storage
+        .emit_canonical_event(&canonical_input("evt-guard-1", None))
         .expect("canonical append must work (single write authority)");
     assert_eq!(appended.event_type, "workflow.phase.entered");
 
-    // And the canonical-only read view reflects the append: the event is
-    // visible through the canonical list (C1.5; the cross-ledger report was
-    // removed with the legacy read layer).
+    // The canonical read view reflects the append: the event is visible
+    // through the canonical list (C1.5; the cross-ledger report was removed
+    // with the legacy read layer).
     let listed = storage.list_events().expect("list_events");
     assert!(
         listed.iter().any(|e| e.event_id == "evt-guard-1"),

@@ -108,10 +108,10 @@ fn open_test_store(env: &WatchTestEnv) -> sddk_storage::Storage {
 /// Builds a minimal `LedgerEventInput` matching the schema used in
 /// `cli_approval_e2e.rs::make_event`.
 ///
-/// `cycle_id` is intentionally `None` — `ledger_events` enforces a FK
-/// `(project_id, cycle_id) REFERENCES cycles`, and we don't need to spin
-/// up a cycle manifest for these streaming tests. The project_id FK is
-/// satisfied by [`seed_project`].
+/// `cycle_id` is intentionally `None` — no requerimos un cycle manifest
+/// para estos tests de streaming (WU-C15-8: la FK legacy de
+/// `ledger_events` ya no existe; `events_v1` no la impone). El `project_id`
+/// queda sembrado por [`seed_project`].
 fn make_input(project_id: &str, event_type: &str, payload: serde_json::Value) -> LedgerEventInput {
     LedgerEventInput {
         event_id: format!("e-{event_type}-{}", chrono_like_id()),
@@ -131,8 +131,9 @@ fn make_input(project_id: &str, event_type: &str, payload: serde_json::Value) ->
     }
 }
 
-/// Inserts a project row into the ledger so the `ledger_events.project_id`
-/// FK is satisfied when appending events directly.
+/// Inserts a project row so subsequent appends reference a live project
+/// (WU-C15-8: sin FK legacy que satisfacer; se mantiene como semilla
+/// mínima coherente del workspace).
 fn seed_project(env: &WatchTestEnv) {
     let store = open_test_store(env);
     store
