@@ -1,7 +1,8 @@
 //! `dev doctor` — toolchain and environment prerequisite checker.
 
 use crate::dev::arch_lint::{
-    MarkerStatus, convention_first_cli_alignment_checks, dag_execution_alignment_checks,
+    MarkerStatus, c4_find_new_legacy_authority_deps, c4_legacy_allowlist_m1,
+    convention_first_cli_alignment_checks, dag_execution_alignment_checks,
     decision_memory_cli_alignment_checks, m7_1_command_registry_alignment_checks,
     m7_1b_examples_wiring_alignment_checks, m7_1c_live_walker_alignment_checks,
     m7_2_surface_integration_alignment_checks, m7_3_skill_definition_alignment_checks,
@@ -616,6 +617,46 @@ pub(super) fn run_dev_doctor(
                 // M8.8: stable projection digest surface marker.
                 for marker in m8_8_stable_projection_digest_alignment_checks(&text) {
                     push_marker(&mut checks, &marker);
+                }
+                // C4: freeze deny-new-dependency (D-06, R-4-007/R-4-008).
+                // Scans the real production sources of this checkout for new
+                // legacy-authority call sites outside the M1 allowlist.
+                let files = [
+                    "crates/sddk-cli/src/cycle.rs",
+                    "crates/sddk-cli/src/knowledge_ingest.rs",
+                    "crates/sddk-cli/src/dev/install.rs",
+                    "crates/sddk-engine/src/lib.rs",
+                    "crates/sddk-engine/src/cycle_supersede.rs",
+                    "crates/sddk-engine/src/cycle_pause.rs",
+                    "crates/sddk-engine/src/event_bus/emit.rs",
+                ]
+                .iter()
+                .filter_map(|rel| {
+                    std::fs::read_to_string(root.join(rel))
+                        .ok()
+                        .map(|src| ((*rel).to_string(), src))
+                })
+                .collect::<Vec<_>>();
+                let hits = c4_find_new_legacy_authority_deps(&files, c4_legacy_allowlist_m1());
+                if hits.is_empty() {
+                    push_marker(
+                        &mut checks,
+                        &MarkerStatus {
+                            id: "c4.authority_single_admission".into(),
+                            present: true,
+                        },
+                    );
+                } else {
+                    for hit in &hits {
+                        eprintln!(
+                            "c4.authority_single_admission: new legacy authority dependency {}:{} ({}) — route through admission.rs enforce_admission_or_block or add a cycle-level waiver",
+                            hit.file, hit.line, hit.api
+                        );
+                    }
+                    checks.push(DoctorCheck {
+                        tool: "c4.authority_single_admission".into(),
+                        present: false,
+                    });
                 }
             }
             Err(_) => {

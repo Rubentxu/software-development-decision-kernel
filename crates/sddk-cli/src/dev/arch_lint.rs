@@ -132,6 +132,108 @@ const MARKER_AUTHORITY_ENGINE_SINGLE_PATH: &str = "m5.authority_engine_single_pa
 const MARKER_ADMISSION_EXPLAINABLE: &str = "m5.admission_explainable";
 const MARKER_LEGACY_AUTHORITY_COMPAT: &str = "m5.legacy_authority_compat";
 
+// C4 (cycle p-63676b11dc0ef88f/c4-authority-engine-cutover-2026-09-13) —
+// freeze deny-new-dependency (D-06, R-4-007/R-4-008). The legacy authority
+// surface (AuthorityContext::for_cli / AuthorityContext::validate) must not
+// grow new production call sites. This allowlist is the M1 freeze baseline
+// and is DECREASING-ONLY (M1→M4 milestones remove entries; M9 removes the
+// legacy module itself). Adding an entry requires a cycle-level waiver.
+// Format: "relative/path/from/crate/root:line".
+const C4_LEGACY_ALLOWLIST_M1: &[&str] = &[
+    // CLI — remaining legacy sites (C5+ per plan: cycle.rs collapse +
+    // knowledge_ingest.rs legacy mirror + dev/install.rs operator surface).
+    "crates/sddk-cli/src/cycle.rs:1194",
+    "crates/sddk-cli/src/cycle.rs:1386",
+    "crates/sddk-cli/src/cycle.rs:1813",
+    "crates/sddk-cli/src/cycle.rs:1932",
+    "crates/sddk-cli/src/cycle.rs:1995",
+    "crates/sddk-cli/src/cycle.rs:2729",
+    "crates/sddk-cli/src/knowledge_ingest.rs:328",
+    "crates/sddk-cli/src/knowledge_ingest.rs:329",
+    "crates/sddk-cli/src/dev/install.rs:32",
+    "crates/sddk-cli/src/dev/install.rs:38",
+    // Engine — internal compat mirror (defense-in-depth behind the runner
+    // pre-gate; removal belongs to M9).
+    "crates/sddk-engine/src/lib.rs:1165",
+    "crates/sddk-engine/src/lib.rs:1292",
+    "crates/sddk-engine/src/lib.rs:1352",
+    "crates/sddk-engine/src/cycle_supersede.rs:98",
+    "crates/sddk-engine/src/cycle_pause.rs:82",
+    "crates/sddk-engine/src/cycle_pause.rs:257",
+    "crates/sddk-engine/src/event_bus/emit.rs:1222",
+    "crates/sddk-engine/src/event_bus/emit.rs:1285",
+    "crates/sddk-engine/src/event_bus/emit.rs:1347",
+    "crates/sddk-engine/src/event_bus/emit.rs:1420",
+    "crates/sddk-engine/src/event_bus/emit.rs:1483",
+];
+
+/// One detected legacy-authority dependency (D-06 violation candidate).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct C4LegacyDependency {
+    /// Repo-relative path, e.g. `crates/sddk-cli/src/cycle.rs`.
+    pub file: String,
+    /// 1-based line number of the call site.
+    pub line: u32,
+    /// `for_cli` or `validate` (the matched legacy API).
+    pub api: &'static str,
+}
+
+/// Scan production source lines for new legacy-authority dependencies.
+///
+/// `files` maps repo-relative paths to file contents; test modules
+/// (`#[cfg(test)] mod tests` onward) are excluded because the freeze governs
+/// production call sites only. `allowlist` entries are `path:line`.
+pub fn c4_find_new_legacy_authority_deps(
+    files: &[(String, String)],
+    allowlist: &[&str],
+) -> Vec<C4LegacyDependency> {
+    let mut found = Vec::new();
+    for (path, src) in files {
+        let mut in_test_module = false;
+        for (idx, line) in src.lines().enumerate() {
+            let lineno = idx as u32 + 1;
+            if line.trim_start().starts_with("#[cfg(test)]") {
+                in_test_module = true;
+            }
+            if in_test_module {
+                continue;
+            }
+            if line.contains("AuthorityContext::for_cli") {
+                let site = format!("{path}:{lineno}");
+                if !allowlist.contains(&site.as_str()) {
+                    found.push(C4LegacyDependency {
+                        file: path.clone(),
+                        line: lineno,
+                        api: "for_cli",
+                    });
+                }
+            } else if line.contains("AuthorityContext::validate")
+                || line.trim_start().starts_with(".validate(")
+                || line.contains(".validate(")
+            {
+                // Only validate() calls on WritableSurface count as legacy
+                // authority; other validate* functions are out of scope.
+                if line.contains("WritableSurface") {
+                    let site = format!("{path}:{lineno}");
+                    if !allowlist.contains(&site.as_str()) {
+                        found.push(C4LegacyDependency {
+                            file: path.clone(),
+                            line: lineno,
+                            api: "validate",
+                        });
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The M1 freeze baseline allowlist (see `C4_LEGACY_ALLOWLIST_M1`).
+pub fn c4_legacy_allowlist_m1() -> &'static [&'static str] {
+    C4_LEGACY_ALLOWLIST_M1
+}
+
 const MARKER_CLI_SPEC_TABLE_CANONICAL: &str = "m6_1.cli_spec_table_canonical";
 const MARKER_CLI_FIRST_CLASS_ROUTERS: &str = "m6_1.cli_first_class_routers";
 const MARKER_CONFIG_EXPLAIN_DECLARATIVE: &str = "m6_1.config_explain_declarative";
@@ -773,6 +875,66 @@ fn has_delivered_entry(yaml: &str, module_path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn c4_guard_flags_new_for_cli_site_outside_allowlist() {
+        let files = vec![(
+            "crates/sddk-cli/src/cycle.rs".to_string(),
+            r#"fn x() {
+                let auth = AuthorityContext::for_cli(actor, kind, None, None);
+            }"#
+            .to_string(),
+        )];
+        let hits = c4_find_new_legacy_authority_deps(&files, &[]);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].file, "crates/sddk-cli/src/cycle.rs");
+        assert_eq!(hits[0].line, 2);
+        assert_eq!(hits[0].api, "for_cli");
+    }
+
+    #[test]
+    fn c4_guard_allows_allowlisted_site() {
+        let files = vec![(
+            "crates/sddk-cli/src/cycle.rs".to_string(),
+            r#"fn x() {
+                let auth = AuthorityContext::for_cli(actor, kind, None, None);
+            }"#
+            .to_string(),
+        )];
+        let hits = c4_find_new_legacy_authority_deps(&files, &["crates/sddk-cli/src/cycle.rs:2"]);
+        assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn c4_guard_ignores_test_modules_and_non_surface_validate() {
+        let files = vec![(
+            "crates/sddk-engine/src/foo.rs".to_string(),
+            r#"fn prod() { let _ = manifest.validate("x"); }
+#[cfg(test)]
+mod tests {
+    fn t() {
+        let auth = AuthorityContext::for_cli(a, k, None, None);
+        auth.validate(WritableSurface::CycleState);
+    }
+}"#
+            .to_string(),
+        )];
+        let hits = c4_find_new_legacy_authority_deps(&files, &[]);
+        assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn c4_guard_flags_new_validate_site_naming_file_and_line() {
+        let files = vec![(
+            "crates/sddk-engine/src/new_site.rs".to_string(),
+            "fn y() { ctx.validate(WritableSurface::GateReceipts)?; }".to_string(),
+        )];
+        let hits = c4_find_new_legacy_authority_deps(&files, &[]);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].file, "crates/sddk-engine/src/new_site.rs");
+        assert_eq!(hits[0].line, 1);
+        assert_eq!(hits[0].api, "validate");
+    }
 
     #[test]
     fn canonical_event_log_owner_recognised() {

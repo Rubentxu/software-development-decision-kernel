@@ -14,6 +14,46 @@
 
 use std::process::Command;
 
+/// C4 freeze guard (cycle c4-authority-engine-cutover, WU-C4-4): the M1
+/// allowlist must cover every current legacy-authority call site, so
+/// `sddk dev doctor` in the real workspace reports
+/// `c4.authority_single_admission` as present (R-4-008). A NEW site outside
+/// the allowlist is unit-tested with a synthetic fixture in
+/// `src/dev/arch_lint.rs::tests::c4_guard_flags_new_for_cli_site_outside_allowlist`.
+#[test]
+fn dev_doctor_c4_authority_single_admission_green_on_current_workspace() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    // Two levels up: workspace root of sddk-framework.
+    let workspace_root = std::path::Path::new(root)
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["dev", "doctor", "--format", "json"])
+        .current_dir(&workspace_root)
+        .output()
+        .expect("sddk binary not found");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"c4.authority_single_admission\""),
+        "doctor must emit the c4 marker\nstdout: {stdout}"
+    );
+    // present: true — the M1 allowlist covers all current sites.
+    let marker_idx = stdout
+        .find("\"c4.authority_single_admission\"")
+        .expect("marker index");
+    let tail = &stdout[marker_idx..];
+    let present_idx = tail.find("\"present\"").expect("present field");
+    let value = &tail[present_idx..present_idx + 40];
+    assert!(
+        value.contains("true"),
+        "c4.authority_single_admission must be present with the M1 allowlist\ntail: {value}"
+    );
+}
+
 /// Scenario: Help text is available
 ///
 /// GIVEN any directory
