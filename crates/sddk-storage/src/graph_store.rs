@@ -120,43 +120,24 @@ impl SqliteGraphStore {
         };
 
         // Apply all streams in deterministic order into one global projection.
-        // WU-C1.4 read-only window: the branch below is a READ-ONLY-LEGACY-WINDOW
-        // decoder. `ledger_events` is frozen (append-only triggers) and read
-        // ONLY when the canonical events_v1 streams are empty. Allowlist entry:
-        // docs/architecture/lints/legacy-compat-allowlist.yaml
-        // (parity test: cli_graph_e2e::explanation_event_ids_stable_across_cutover).
+        // An empty canonical stream set yields an empty projection (C1.5:
+        // `events_v1` is the single read authority).
         let mut projection = GraphProjection::new(stream_id);
-        if streams.is_empty() {
-            // CEP events_v1 is empty — fall back to the kernel ledger
-            // (`ledger_events`) which the CLI wrote for workflow/approval
-            // cycles before the C1.2 redirect. Map each frozen kernel event
-            // into an EventEnvelopeV1 (event_id preserved verbatim, R-002.6).
-            let ledger = crate::Storage::open(dir.join("ledger.sqlite"))
-                .map_err(|e| ProjectionError::Storage(format!("open kernel storage: {e}")))?;
-            let kernel_events = ledger
-                .load_all_ledger_events()
-                .map_err(|e| ProjectionError::Storage(format!("load_all_ledger_events: {e}")))?;
-            for kernel in &kernel_events {
-                let envelope = kernel_envelope_to_v1(kernel);
-                projection.apply(&envelope)?;
+        for stream in &streams {
+            let events = event_store
+                .load_stream(stream, None, u32::MAX)
+                .map_err(|e| ProjectionError::Storage(format!("load_stream: {e}")))?;
+            if events.is_empty() {
+                continue;
             }
-        } else {
-            for stream in &streams {
-                let events = event_store
-                    .load_stream(stream, None, u32::MAX)
-                    .map_err(|e| ProjectionError::Storage(format!("load_stream: {e}")))?;
-                if events.is_empty() {
-                    continue;
+            event_store.verify_stream_chain(stream).map_err(|_e| {
+                ProjectionError::ChainIntegrityBroken {
+                    stream_id: stream.clone(),
+                    sequence: events.last().map(|ev| ev.sequence).unwrap_or(0),
                 }
-                event_store.verify_stream_chain(stream).map_err(|_e| {
-                    ProjectionError::ChainIntegrityBroken {
-                        stream_id: stream.clone(),
-                        sequence: events.last().map(|ev| ev.sequence).unwrap_or(0),
-                    }
-                })?;
-                for event in &events {
-                    projection.apply(event)?;
-                }
+            })?;
+            for event in &events {
+                projection.apply(event)?;
             }
         }
 
@@ -170,50 +151,6 @@ impl SqliteGraphStore {
                 .map_err(|e| ProjectionError::Storage(format!("save_checkpoint: {e}")))?;
         }
         Ok(state)
-    }
-}
-
-/// Maps a kernel `LedgerEvent` into an `EventEnvelopeV1` for graph projection.
-fn kernel_envelope_to_v1(event: &sddk_domain::LedgerEvent) -> sddk_domain::EventEnvelopeV1 {
-    use sddk_domain::{ActorKind, ActorRef};
-    sddk_domain::EventEnvelopeV1 {
-        event_id: event.event_id.clone(),
-        event_type: event.event_type.clone(),
-        schema_version: 1,
-        stream_id: event
-            .cycle_id
-            .clone()
-            .unwrap_or_else(|| format!("project:{}", event.project_id)),
-        sequence: event.sequence as u64,
-        project_id: event.project_id.clone(),
-        occurred_at: event.occurred_at.clone(),
-        recorded_at: event.occurred_at.clone(),
-        actor: ActorRef {
-            kind: ActorKind::System,
-            id: event.actor.clone(),
-            definition_hash: None,
-            policy_hash: None,
-            model: None,
-            role: None,
-        },
-        subjects: vec![sddk_domain::EntityRef {
-            kind: "cycle".into(),
-            id: event
-                .cycle_id
-                .clone()
-                .unwrap_or_else(|| event.project_id.clone()),
-            version: None,
-            content_hash: None,
-        }],
-        payload: event.payload.clone(),
-        evidence_refs: vec![],
-        content_hash: event.event_hash.clone(),
-        metadata: None,
-        causation_id: None,
-        correlation_id: None,
-        cycle_id: event.cycle_id.clone(),
-        frame_id: Some(event.frame_id.clone()),
-        fork_id: None,
     }
 }
 

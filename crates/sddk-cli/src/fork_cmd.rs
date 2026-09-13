@@ -139,165 +139,6 @@ fn open_stores(
 }
 
 /// EventStore adapter over the kernel ledger (`ledger_events`).
-///
-/// Used when the CEP store (`events_v1`) is empty — the CLI writes workflow
-/// events to the kernel ledger, and fork replay must read them.
-struct KernelEventStore {
-    /// Kernel storage handle.
-    storage: sddk_storage::Storage,
-}
-
-impl KernelEventStore {
-    fn open(ledger_path: &std::path::Path) -> anyhow::Result<Self> {
-        Ok(Self {
-            storage: sddk_storage::Storage::open(ledger_path)?,
-        })
-    }
-
-    fn events(&self) -> anyhow::Result<Vec<sddk_domain::LedgerEvent>> {
-        Ok(self.storage.load_all_ledger_events()?)
-    }
-}
-
-impl sddk_domain::EventStore for KernelEventStore {
-    fn append(
-        &mut self,
-        _envelope: &sddk_domain::EventEnvelopeV1,
-    ) -> Result<sddk_domain::EventAppended, sddk_domain::StorageError> {
-        Err(sddk_domain::StorageError::Other(
-            "kernel event store is read-only".into(),
-        ))
-    }
-
-    fn load_by_event_id(
-        &self,
-        event_id: &str,
-    ) -> Result<Option<sddk_domain::EventEnvelopeV1>, sddk_domain::StorageError> {
-        let events = self
-            .events()
-            .map_err(|e| sddk_domain::StorageError::Other(e.to_string()))?;
-        Ok(events
-            .iter()
-            .find(|e| e.event_id == event_id)
-            .map(kernel_to_envelope))
-    }
-
-    fn load_stream(
-        &self,
-        stream_id: &str,
-        after_sequence: Option<u64>,
-        limit: u32,
-    ) -> Result<Vec<sddk_domain::EventEnvelopeV1>, sddk_domain::StorageError> {
-        let events = self
-            .events()
-            .map_err(|e| sddk_domain::StorageError::Other(e.to_string()))?;
-        let start = after_sequence.unwrap_or(0);
-        Ok(events
-            .iter()
-            .filter(|e| {
-                e.sequence as u64 > start
-                    && e.cycle_id
-                        .as_deref()
-                        .map(|c| format!("project:{}", e.project_id) == stream_id || c == stream_id)
-                        .unwrap_or(false)
-            })
-            .take(limit as usize)
-            .map(kernel_to_envelope)
-            .collect())
-    }
-
-    fn last_sequence(&self, _stream_id: &str) -> Result<Option<u64>, sddk_domain::StorageError> {
-        let events = self
-            .events()
-            .map_err(|e| sddk_domain::StorageError::Other(e.to_string()))?;
-        Ok(events.last().map(|e| e.sequence as u64))
-    }
-
-    fn count(&self) -> Result<u64, sddk_domain::StorageError> {
-        Ok(self
-            .events()
-            .map_err(|e| sddk_domain::StorageError::Other(e.to_string()))?
-            .len() as u64)
-    }
-
-    fn head_hash(&self, _stream_id: &str) -> Result<Option<String>, sddk_domain::StorageError> {
-        let events = self
-            .events()
-            .map_err(|e| sddk_domain::StorageError::Other(e.to_string()))?;
-        Ok(events.last().map(|e| e.event_hash.clone()))
-    }
-
-    fn head_chain_hash(
-        &self,
-        _stream_id: &str,
-    ) -> Result<Option<String>, sddk_domain::StorageError> {
-        // KernelEventStore is read-only; chain_hash is maintained by the primary EventStore.
-        Ok(None)
-    }
-
-    fn verify_stream_chain(&self, _stream_id: &str) -> Result<(), sddk_domain::StorageError> {
-        // The kernel ledger is verified by `sddk ledger verify`; replay reads
-        // it as-is (fail-closed happens at promote via prefix hash).
-        Ok(())
-    }
-
-    fn verify_chain_integrity(&self, _stream_id: &str) -> Result<(), sddk_domain::StorageError> {
-        // KernelEventStore is read-only; chain integrity is maintained by the primary EventStore.
-        Ok(())
-    }
-
-    fn backfill_chain_hash(
-        &mut self,
-        _stream_id: &str,
-    ) -> Result<usize, sddk_domain::StorageError> {
-        // KernelEventStore is read-only; backfill is done by the primary EventStore.
-        Ok(0)
-    }
-
-    fn load_by_sequence(
-        &self,
-        _stream_id: &str,
-        _sequence: u64,
-    ) -> Result<Option<sddk_domain::EventEnvelopeV1>, sddk_domain::StorageError> {
-        unimplemented!("kernel store load_by_sequence")
-    }
-}
-
-/// Maps a kernel ledger event to an envelope.
-fn kernel_to_envelope(event: &sddk_domain::LedgerEvent) -> sddk_domain::EventEnvelopeV1 {
-    sddk_domain::EventEnvelopeV1 {
-        event_id: event.event_id.clone(),
-        event_type: event.event_type.clone(),
-        schema_version: 1,
-        stream_id: event
-            .cycle_id
-            .clone()
-            .unwrap_or_else(|| format!("project:{}", event.project_id)),
-        sequence: event.sequence as u64,
-        project_id: event.project_id.clone(),
-        occurred_at: event.occurred_at.clone(),
-        recorded_at: event.occurred_at.clone(),
-        actor: sddk_domain::ActorRef {
-            kind: sddk_domain::ActorKind::System,
-            id: event.actor.clone(),
-            definition_hash: None,
-            policy_hash: None,
-            model: None,
-            role: None,
-        },
-        subjects: vec![],
-        payload: event.payload.clone(),
-        evidence_refs: vec![],
-        content_hash: event.event_hash.clone(),
-        metadata: None,
-        causation_id: None,
-        correlation_id: None,
-        cycle_id: event.cycle_id.clone(),
-        frame_id: Some(event.frame_id.clone()),
-        fork_id: None,
-    }
-}
-
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 struct ForkCreateOutput {
@@ -311,25 +152,11 @@ fn run_fork_create(args: ForkCreateArgs, environment: &CliEnvironment) -> Comman
     let format = args.format;
     let result = (|| -> anyhow::Result<ForkCreateOutput> {
         let (mut fork_store, event_store, stream, _pid) = open_stores(&args.runtime, environment)?;
-        // Resolve the fork-point event: try the CEP store first, then fall
-        // back to the kernel ledger (pre-cutover corpus for workflow
-        // cycles). Consistent with the graph rebuild fallback.
-        // WU-C1.4 read-only window: the kernel-ledger fallback below is a
-        // READ-ONLY-LEGACY-WINDOW decoder (canonical events_v1 first; frozen
-        // `ledger_events` read only when the canonical store misses the id).
-        // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
-        let event = if let Some(event) = event_store.load_by_event_id(&args.at)? {
-            event
-        } else {
-            let context = crate::cycle::RuntimeContext::open(&args.runtime, environment, false)?;
-            let storage = sddk_storage::Storage::open(&context.paths.ledger)?;
-            let kernel_event = storage
-                .load_all_ledger_events()?
-                .into_iter()
-                .find(|e| e.event_id == args.at)
-                .ok_or_else(|| anyhow::anyhow!("event not found: {}", args.at))?;
-            kernel_to_envelope(&kernel_event)
-        };
+        // Resolve the fork-point event from the canonical CEP store
+        // (`events_v1`) — the single read authority since C1.5.
+        let event = event_store
+            .load_by_event_id(&args.at)?
+            .ok_or_else(|| anyhow::anyhow!("event not found: {}", args.at))?;
         let overrides = args
             .set
             .iter()
@@ -412,10 +239,7 @@ fn run_fork_set(args: ForkSetArgs, environment: &CliEnvironment) -> CommandOutpu
     }
 }
 
-/// Opens the fork store and a replay event source.
-///
-/// Uses the CEP store (`events_v1`) when it has events; otherwise falls back
-/// to the kernel ledger (`ledger_events`) — consistent with graph rebuild.
+/// Opens the fork store and a replay event source (canonical CEP `events_v1`).
 fn open_replay_source(
     args: &RuntimeArgs,
     environment: &CliEnvironment,
@@ -429,12 +253,9 @@ fn open_replay_source(
         .to_path_buf();
     let stream = format!("project:{}", context.identity.project_id);
     let fork_store = SqliteForkStore::open(&ledger_dir)?;
-    let cep = sddk_storage::event_store::SqliteEventStore::open(&ledger_dir)?;
-    let source: Box<dyn sddk_domain::EventStore> = if cep.count()? == 0 {
-        Box::new(KernelEventStore::open(&context.paths.ledger)?)
-    } else {
-        Box::new(cep)
-    };
+    let source: Box<dyn sddk_domain::EventStore> = Box::new(
+        sddk_storage::event_store::SqliteEventStore::open(&ledger_dir)?,
+    );
     Ok((fork_store, source, stream))
 }
 

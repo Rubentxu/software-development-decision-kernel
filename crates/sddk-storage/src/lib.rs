@@ -794,8 +794,7 @@ impl Storage {
     /// canonical receipt. `ledger_events` is no longer written for domain
     /// events: it stays read-only for pre-cutover corpora (R-002.4).
     ///
-    /// Mapping decisions (parity with `kernel_envelope_to_v1` in
-    /// `graph_store.rs`):
+    /// Mapping decisions (C1.2 cutover envelope mapping):
     /// - `stream_id` = `cycle:<cycle_id>` when a cycle is set, otherwise
     ///   `project:<project_id>` (global projection replays per-project).
     /// - `sequence` = canonical per-stream sequence (legacy global seq drops).

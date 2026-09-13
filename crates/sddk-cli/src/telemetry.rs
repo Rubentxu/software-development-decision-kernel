@@ -444,7 +444,7 @@ pub(crate) fn load_uat_results(plane: &dyn ControlPlane) -> anyhow::Result<Vec<U
 fn derive_ledger_cycles(
     _project: &DiscoveredProject,
     existing: &[sddk_domain::MetricsRecord],
-    ledger: &dyn sddk_domain::Ledger,
+    ledger: &crate::Storage,
 ) -> Vec<(String, sddk_domain::MetricsRecord)> {
     let existing_ids: std::collections::HashSet<&str> = existing
         .iter()
@@ -502,14 +502,10 @@ fn derive_ledger_cycles(
     out
 }
 
-/// Read all ledger events from a project ledger SQLite file.
-///
-/// WU-C1.4 read-only window: READ-ONLY-LEGACY-WINDOW access via the merged
-/// `Ledger::load_all_ledger_events` view (frozen `ledger_events` corpus +
-/// canonical events_v1). Never appends. Allowlist entry:
-/// docs/architecture/lints/legacy-compat-allowlist.yaml
-fn read_ledger_events(ledger: &dyn sddk_domain::Ledger) -> Vec<sddk_domain::LedgerEvent> {
-    ledger.load_all_ledger_events().unwrap_or_default()
+/// Read all ledger events from a project ledger SQLite file (canonical
+/// `events_v1` view in sequence order, C1.5).
+fn read_ledger_events(ledger: &crate::Storage) -> Vec<sddk_domain::LedgerEvent> {
+    ledger.list_events().unwrap_or_default()
 }
 
 #[derive(Serialize)]
