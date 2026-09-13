@@ -388,6 +388,25 @@ pub trait AuthorityEngine {
         policy: &PolicySnapshot,
     ) -> AdmissionDecision;
 
+    /// Single-pass admission with a real explanation derived from the same
+    /// `PolicySnapshot`/`Facts` used for the decision (D-07 / R-4-006).
+    ///
+    /// The default implementation combines `admit` + `explain`; concrete
+    /// engines SHOULD override it to fill `gates_applied` and
+    /// `policy_id`/`policy_version` from the actual snapshot without mutating
+    /// engine state.
+    fn admit_with_explanation(
+        &self,
+        proposal: &ActionProposal,
+        actor: &Actor,
+        facts: &Facts,
+        policy: &PolicySnapshot,
+    ) -> (AdmissionDecision, AdmissionExplanation) {
+        let decision = self.admit(proposal, actor, facts, policy);
+        let explanation = self.explain(&decision);
+        (decision, explanation)
+    }
+
     fn explain(&self, decision: &AdmissionDecision) -> AdmissionExplanation;
 
     fn policy_at(&self, version: u32) -> Result<PolicySnapshot, AuthorityEngineError>;
@@ -399,6 +418,13 @@ pub trait AuthorityEngine {
 pub struct DefaultAuthorityEngine {
     policies: BTreeMap<u32, PolicySnapshot>,
     next_receipt_seq: u64,
+}
+
+/// Gates applied while evaluating an admission, in evaluation order
+/// (D-07). Produced by the single-pass trace inside `admit_with_explanation`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AdmissionTrace {
+    gates_applied: Vec<GateKind>,
 }
 
 impl DefaultAuthorityEngine {
@@ -433,6 +459,110 @@ impl DefaultAuthorityEngine {
             ActorKind::SecretaryL2 => "secretary_l2".to_string(),
         }
     }
+
+    /// Evaluate the admission pipeline, tracing the gates applied (D-07).
+    ///
+    /// Mirrors `admit` step by step without mutating engine state; used by
+    /// `admit_with_explanation` so the decision and the explanation come
+    /// from the same single pass over the real `PolicySnapshot`/`Facts`.
+    fn admit_traced(
+        &self,
+        proposal: &ActionProposal,
+        actor: &Actor,
+        facts: &Facts,
+        policy: &PolicySnapshot,
+    ) -> (AdmissionDecision, AdmissionTrace) {
+        let mut trace = AdmissionTrace::default();
+
+        // 1. Lease / fencing check → Operational gate
+        if let Some(token) = &actor.lease
+            && token.is_empty()
+        {
+            trace.gates_applied.push(GateKind::Operational);
+            return (
+                AdmissionDecision::Deny {
+                    reason: DenyReason::LeaseExpired,
+                    decision_id: format!("deny-lease-{}", format_ts(&proposal.created_at)),
+                },
+                trace,
+            );
+        }
+
+        // 2. Explicit deny override → Operational gate
+        let actor_pattern = Self::actor_kind_pattern(&actor.kind);
+        if policy
+            .deny_override
+            .contains(&(actor_pattern.clone(), proposal.kind))
+        {
+            trace.gates_applied.push(GateKind::Operational);
+            return (
+                AdmissionDecision::Deny {
+                    reason: DenyReason::ExplicitDenyOverride,
+                    decision_id: format!(
+                        "deny-override-{}-{}",
+                        actor_pattern,
+                        proposal.kind.as_str()
+                    ),
+                },
+                trace,
+            );
+        }
+
+        // 3. Capability check → Operational gate
+        trace.gates_applied.push(GateKind::Operational);
+        let required = policy.capability_matrix.get(&proposal.kind);
+        let capability_ok = match required {
+            None => false,
+            Some(cap) if cap.is_empty() => true,
+            Some(cap) => actor.capabilities.iter().any(|c| c == cap),
+        };
+        if !capability_ok {
+            return (
+                AdmissionDecision::Deny {
+                    reason: DenyReason::ActorKindNotPermitted,
+                    decision_id: format!("deny-cap-{}-{}", actor_pattern, proposal.kind.as_str()),
+                },
+                trace,
+            );
+        }
+
+        // 4. Evidence presence check (per minimum-evidence map; empty for default policy)
+        // The default policy has no mandatory evidence; if a policy specifies required
+        // evidence (via future policy field), this is the integration point.
+
+        // 5. Risk band escalation → Approval gate
+        // For default policy, all actors are Low risk; escalation triggers if
+        // action kind is in `approval_required_for` OR if policy risk band is High.
+        if policy.approval_required_for.contains(&proposal.kind)
+            || matches!(policy.risk_band, RiskBand::High)
+        {
+            trace.gates_applied.push(GateKind::Approval);
+            return (
+                AdmissionDecision::RequireApproval {
+                    requirement: ApprovalRequirement {
+                        approver_kind: ApproverKind::Human,
+                        minimum_evidence: vec![],
+                        timeout_seconds: 3600,
+                    },
+                    decision_id: format!("approval-{}-{}", actor_pattern, proposal.kind.as_str()),
+                },
+                trace,
+            );
+        }
+
+        // 6. Allow
+        let _ = facts; // facts reserved for future evidence presence checks
+        (
+            AdmissionDecision::Allow {
+                receipt_id: format!("allow-{}-{}", actor_pattern, proposal.kind.as_str()),
+                postconditions: vec![Postcondition {
+                    label: "evidence_emitted".to_string(),
+                    verification: "post_decision_evidence".to_string(),
+                }],
+            },
+            trace,
+        )
+    }
 }
 
 impl AuthorityEngine for DefaultAuthorityEngine {
@@ -443,74 +573,42 @@ impl AuthorityEngine for DefaultAuthorityEngine {
         facts: &Facts,
         policy: &PolicySnapshot,
     ) -> AdmissionDecision {
-        // 1. Lease / fencing check
-        if let Some(token) = &actor.lease
-            && token.is_empty()
-        {
-            return AdmissionDecision::Deny {
-                reason: DenyReason::LeaseExpired,
-                decision_id: format!("deny-lease-{}", format_ts(&proposal.created_at)),
-            };
-        }
+        self.admit_traced(proposal, actor, facts, policy).0
+    }
 
-        // 2. Explicit deny override
-        let actor_pattern = Self::actor_kind_pattern(&actor.kind);
-        if policy
-            .deny_override
-            .contains(&(actor_pattern.clone(), proposal.kind))
-        {
-            return AdmissionDecision::Deny {
-                reason: DenyReason::ExplicitDenyOverride,
-                decision_id: format!("deny-override-{}-{}", actor_pattern, proposal.kind.as_str()),
-            };
+    fn admit_with_explanation(
+        &self,
+        proposal: &ActionProposal,
+        actor: &Actor,
+        facts: &Facts,
+        policy: &PolicySnapshot,
+    ) -> (AdmissionDecision, AdmissionExplanation) {
+        let (decision, trace) = self.admit_traced(proposal, actor, facts, policy);
+        let mut deny_reasons_evaluated = Vec::new();
+        let mut approval_requirements_considered = Vec::new();
+        if let AdmissionDecision::Deny { reason, .. } = &decision {
+            deny_reasons_evaluated.push(reason.clone());
         }
-
-        // 3. Capability check
-        let required = policy.capability_matrix.get(&proposal.kind);
-        let capability_ok = match required {
-            None => false,
-            Some(cap) if cap.is_empty() => true,
-            Some(cap) => actor.capabilities.iter().any(|c| c == cap),
+        if let AdmissionDecision::RequireApproval { requirement, .. } = &decision {
+            approval_requirements_considered.push(requirement.clone());
+        }
+        let explanation = AdmissionExplanation {
+            policy_id: policy.policy_id.clone(),
+            policy_version: policy.policy_version,
+            gates_applied: trace.gates_applied,
+            evidence_refs_used: facts.evidence_refs.clone(),
+            deny_reasons_evaluated,
+            approval_requirements_considered,
+            decision_digest: DigestSha256::compute(decision.decision_id().as_bytes()),
         };
-        if !capability_ok {
-            return AdmissionDecision::Deny {
-                reason: DenyReason::ActorKindNotPermitted,
-                decision_id: format!("deny-cap-{}-{}", actor_pattern, proposal.kind.as_str()),
-            };
-        }
-
-        // 4. Evidence presence check (per minimum-evidence map; empty for default policy)
-        // The default policy has no mandatory evidence; if a policy specifies required
-        // evidence (via future policy field), this is the integration point.
-
-        // 5. Risk band escalation — escalate by approval if actor risk exceeds policy
-        // For default policy, all actors are Low risk; escalation triggers if
-        // action kind is in `approval_required_for` OR if policy risk band is High.
-        if policy.approval_required_for.contains(&proposal.kind)
-            || matches!(policy.risk_band, RiskBand::High)
-        {
-            return AdmissionDecision::RequireApproval {
-                requirement: ApprovalRequirement {
-                    approver_kind: ApproverKind::Human,
-                    minimum_evidence: vec![],
-                    timeout_seconds: 3600,
-                },
-                decision_id: format!("approval-{}-{}", actor_pattern, proposal.kind.as_str()),
-            };
-        }
-
-        // 6. Allow
-        let _ = facts; // facts reserved for future evidence presence checks
-        AdmissionDecision::Allow {
-            receipt_id: format!("allow-{}-{}", actor_pattern, proposal.kind.as_str()),
-            postconditions: vec![Postcondition {
-                label: "evidence_emitted".to_string(),
-                verification: "post_decision_evidence".to_string(),
-            }],
-        }
+        (decision, explanation)
     }
 
     fn explain(&self, decision: &AdmissionDecision) -> AdmissionExplanation {
+        // D-07: legacy explain is decision-only (no proposal context); it
+        // delegates to the same shape as `admit_with_explanation` minus the
+        // real policy snapshot, which callers must obtain via
+        // `admit_with_explanation` when they need gates/policy_id traceability.
         let decision_digest = DigestSha256::compute(decision.decision_id().as_bytes());
         let mut deny_reasons_evaluated = Vec::new();
         let mut approval_requirements_considered = Vec::new();
@@ -845,6 +943,100 @@ mod inline_tests {
         if let AdmissionDecision::Deny { reason, .. } = decision {
             assert!(matches!(reason, DenyReason::LeaseExpired));
         }
+    }
+
+    // ── WU-C4-0: admit_with_explanation (D-07 / R-4-006) ────────────────────
+
+    fn medium_surface_explanation_case() -> (
+        DefaultAuthorityEngine,
+        ActionProposal,
+        Actor,
+        Facts,
+        PolicySnapshot,
+    ) {
+        // Medium surface: knowledge_graph_vault / VaultIndex per bridge table.
+        let engine = DefaultAuthorityEngine::new();
+        let mut policy = PolicySnapshot::default_low_risk("vault-policy");
+        policy.risk_band = RiskBand::Medium;
+        let actor = Actor {
+            kind: ActorKind::Human {
+                id: "u1".to_string(),
+            },
+            capabilities: vec!["vault.write".to_string()],
+            lease: None,
+        };
+        let proposal = ActionProposal {
+            kind: ActionKind::VaultIndex,
+            target_id: "vault-1".to_string(),
+            payload_digest: None,
+            created_at: now_utc(),
+        };
+        let facts = Facts::default();
+        (engine, proposal, actor, facts, policy)
+    }
+
+    #[test]
+    fn admit_with_explanation_medium_surface_fills_gates_and_real_policy() {
+        let (engine, proposal, actor, facts, policy) = medium_surface_explanation_case();
+        let (decision, explanation) =
+            engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
+        assert!(decision.is_allow(), "got {:?}", decision);
+        // R-4-006: gates_applied non-empty on a Medium surface with
+        // capability matrix entries (capability check → Operational gate).
+        assert!(!explanation.gates_applied.is_empty(), "gates_applied vacío");
+        assert!(explanation.gates_applied.contains(&GateKind::Operational));
+        // R-4-006: policy_id/policy_version identify the real snapshot used.
+        assert_eq!(explanation.policy_id, "vault-policy");
+        assert_eq!(explanation.policy_version, policy.policy_version);
+    }
+
+    #[test]
+    fn admit_with_explanation_high_band_traces_approval_gate() {
+        let (engine, proposal, actor, facts, mut policy) = medium_surface_explanation_case();
+        policy.risk_band = RiskBand::High;
+        let (decision, explanation) =
+            engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
+        assert!(decision.is_require_approval(), "got {:?}", decision);
+        assert!(explanation.gates_applied.contains(&GateKind::Operational));
+        assert!(explanation.gates_applied.contains(&GateKind::Approval));
+        assert_eq!(explanation.policy_id, "vault-policy");
+        assert_eq!(explanation.approval_requirements_considered.len(), 1);
+    }
+
+    #[test]
+    fn admit_with_explanation_deny_override_traces_operational() {
+        let (engine, proposal, actor, facts, mut policy) = medium_surface_explanation_case();
+        policy
+            .deny_override
+            .insert(("human".to_string(), ActionKind::VaultIndex));
+        let (decision, explanation) =
+            engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
+        assert!(decision.is_deny(), "got {:?}", decision);
+        assert!(explanation.gates_applied.contains(&GateKind::Operational));
+        assert_eq!(explanation.policy_id, "vault-policy");
+        assert_eq!(explanation.deny_reasons_evaluated.len(), 1);
+    }
+
+    #[test]
+    fn admit_with_explanation_decision_matches_admit() {
+        // Single-pass: same inputs produce the same decision via both paths.
+        let (engine, proposal, actor, facts, policy) = medium_surface_explanation_case();
+        let via_admit = engine.admit(&proposal, &actor, &facts, &policy);
+        let (via_explained, _) = engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
+        assert_eq!(via_admit, via_explained);
+    }
+
+    #[test]
+    fn legacy_explain_signature_unchanged() {
+        // D-07: explain() legacy keeps its signature and delegates; it must
+        // not panic and must still surface deny reasons / approval reqs.
+        let engine = DefaultAuthorityEngine::new();
+        let d = AdmissionDecision::Deny {
+            reason: DenyReason::ActorKindNotPermitted,
+            decision_id: "x".to_string(),
+        };
+        let e = engine.explain(&d);
+        assert_eq!(e.deny_reasons_evaluated.len(), 1);
     }
 }
 
