@@ -1,3 +1,5 @@
+#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
+
 use rusqlite::Connection;
 use sddk_domain::{ArtifactStore, CycleId, CycleManifest, CycleStatus};
 use sddk_storage::{
@@ -34,7 +36,7 @@ fn persists_canonical_records_across_reopen() {
         // MIGRATION_7 adds agent/behavior_version_hash to capability_receipts
         // MIGRATION_15 adds evidence_attachments_v1 + decision_records_v1 (schema 15)
         // MIGRATION_17 adds workflow_run_events_v1 (schema 17)
-        assert_eq!(storage.schema_version().unwrap(), 18);
+        assert_eq!(storage.schema_version().unwrap(), 19);
         storage.insert_project(&project_record()).unwrap();
         storage.insert_workspace(&workspace_record()).unwrap();
         storage.insert_cycle(&cycle).unwrap();
@@ -988,7 +990,7 @@ fn storage_migration_3_backfills_seq_default_one() {
     // Open with current code — MIGRATION_3..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
 
     // The pre-existing row now carries seq = 1
     let receipt = storage
@@ -1495,7 +1497,7 @@ fn legacy_receipt_without_version_columns_returns_none() {
     // Open with current code — MIGRATION_7..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
 
     // Read back the legacy receipt — new columns must be None
     let receipt = storage.get_capability_receipt("legacy-receipt-1").unwrap();

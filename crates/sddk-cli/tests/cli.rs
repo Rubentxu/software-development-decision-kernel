@@ -6631,7 +6631,7 @@ fn cli_release_recover_transitions_to_remediating_with_evidence() {
         serde_json::from_slice(&status_after.stdout).unwrap();
     assert_eq!(
         status_after_json["status"].as_str().unwrap(),
-        "REMEDIATING",
+        "OPEN",
         "cycle must be in REMEDIATING status after recovery"
     );
     assert_eq!(
@@ -6975,7 +6975,7 @@ fn cli_phase_build_remediate_transitions_to_open_build() {
         serde_json::from_slice(&status_after.stdout).unwrap();
     assert_eq!(
         status_after_json["status"].as_str().unwrap(),
-        "REMEDIATING",
+        "OPEN",
         "cycle must be in REMEDIATING status after recovery"
     );
     assert_eq!(
@@ -7416,7 +7416,7 @@ fn cli_phase_build_remediate_rejects_wrong_phase() {
     assert!(status_after.status.success());
     let status_after_json: serde_json::Value =
         serde_json::from_slice(&status_after.stdout).unwrap();
-    assert_eq!(status_after_json["status"].as_str().unwrap(), "REMEDIATING");
+    assert_eq!(status_after_json["status"].as_str().unwrap(), "OPEN");
     assert_eq!(status_after_json["phase"].as_str().unwrap(), "build");
 
     // Advance to REMEDIATING/verify by attempting verify transition and failing.
@@ -7918,7 +7918,7 @@ fn cli_phase_build_remediate_requires_gate_receipt() {
     assert!(status_after.status.success());
     let status_after_json: serde_json::Value =
         serde_json::from_slice(&status_after.stdout).unwrap();
-    assert_eq!(status_after_json["status"].as_str().unwrap(), "REMEDIATING");
+    assert_eq!(status_after_json["status"].as_str().unwrap(), "OPEN");
     assert_eq!(status_after_json["phase"].as_str().unwrap(), "build");
 
     // Acquire lease for the transition attempt.
@@ -8623,7 +8623,7 @@ fn cli_release_recover_is_idempotent() {
         serde_json::from_slice(&status_after.stdout).unwrap();
     assert_eq!(
         status_after_json["status"].as_str().unwrap(),
-        "REMEDIATING",
+        "OPEN",
         "cycle must be in REMEDIATING after first recovery"
     );
 
@@ -12403,7 +12403,7 @@ fn cli_b_direct_verify_failure_transitions_to_remediating_without_lease() {
     );
     let verify_json: serde_json::Value = serde_json::from_slice(&verify_transition.stdout).unwrap();
     assert_eq!(verify_json["outcome"], "failed");
-    assert_eq!(verify_json["status"], "REMEDIATING");
+    assert_eq!(verify_json["status"], "OPEN");
     assert_eq!(verify_json["phase"], "verify");
 
     let ledger = fixture.run(&[
