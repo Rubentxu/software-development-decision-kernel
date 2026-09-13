@@ -279,11 +279,6 @@ mod tests {
         ) -> Result<(), sddk_domain::StorageError> {
             unimplemented!()
         }
-        fn load_all_ledger_events(
-            &self,
-        ) -> Result<Vec<sddk_domain::LedgerEvent>, sddk_domain::StorageError> {
-            Ok(vec![])
-        }
     }
 
     /// up_to_date returns NotUpToDate(EevidenceMissing) when goal has no cycle_id.

@@ -222,9 +222,17 @@ fn byte_equiv_event_count() {
         mem.insert_cycle_with_event(&c, &e).unwrap();
         sqlite.insert_cycle_with_event(&c, &e).unwrap();
     }
+    // Canonical full-view roundtrip (C1.5): reading every event from
+    // cursor 0 must return the same event count on both adapters without
+    // any legacy corpus counting.
     assert_eq!(
-        mem.load_all_ledger_events().unwrap().len(),
-        sqlite.load_all_ledger_events().unwrap().len()
+        mem.list_events_after(0, i64::MAX).unwrap().len(),
+        sqlite.list_events_after(0, i64::MAX).unwrap().len()
+    );
+    assert_eq!(
+        mem.list_events_after(0, i64::MAX).unwrap().len(),
+        5,
+        "every inserted cycle event must be visible in the canonical view"
     );
 }
 

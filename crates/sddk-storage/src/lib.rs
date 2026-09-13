@@ -2619,12 +2619,6 @@ impl sddk_domain::Ledger for Storage {
         Storage::register_project_workspace(self, project, workspace).map_err(|e| e.into())
     }
 
-    fn load_all_ledger_events(
-        &self,
-    ) -> std::result::Result<Vec<LedgerEvent>, sddk_domain::StorageError> {
-        Storage::load_all_ledger_events(self).map_err(|e| e.into())
-    }
-
     fn list_events_after(
         &self,
         after_sequence: i64,

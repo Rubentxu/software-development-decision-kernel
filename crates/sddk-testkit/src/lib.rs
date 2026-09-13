@@ -396,12 +396,6 @@ impl sddk_domain::Ledger for InMemoryLedger {
         Ok(())
     }
 
-    fn load_all_ledger_events(&self) -> Sr<Vec<sddk_domain::LedgerEvent>> {
-        let mut events = self.events.read().unwrap().clone();
-        events.sort_by_key(|ev| ev.sequence);
-        Ok(events)
-    }
-
     fn list_events_after(
         &self,
         after_sequence: i64,

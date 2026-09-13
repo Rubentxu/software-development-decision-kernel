@@ -150,10 +150,6 @@ pub trait Ledger {
 
     /// Loads all ledger events from the database in ascending sequence order.
     ///
-    /// Used by telemetry ingest to derive metrics for cycles that have no
-    /// metrics.jsonl entry.
-    fn load_all_ledger_events(&self) -> Result<Vec<LedgerEvent>, StorageError>;
-
     /// Lists ledger events strictly after `after_sequence`, in ascending
     /// sequence order, capped at `limit` rows.
     ///
