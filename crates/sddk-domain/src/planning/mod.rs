@@ -279,9 +279,22 @@ impl DependencyEdgeV1 {
 
 /// Kind of evidence attached to a WorkItem (planning-specific).
 ///
+/// DEPRECATED as an authority (WU-C2, DELTA-CONF-003 / ADR-0100): this enum
+/// is now a **read-only compat type**. It survives only so the decoders in
+/// `crates/sddk-storage/src/spine_import.rs` and the read paths of
+/// `evidence_attachments_v1` can decode legacy rows. NO new production code
+/// may construct it: new evidence writes must use the universal substrate
+/// (`EvidenceRef` + `CoreRelationKind`) and set the `relation` field of
+/// `EvidenceAttachmentRecord` via
+/// `sddk_engine::evidence_relation_mapping::resolve_planning_evidence_relation`.
+/// Enforced by the arch ratchets `conf09_universal_evidence_only` and
+/// `conf09_no_planning_evidence_new_writes`
+/// (crates/sddk-cli/tests/arch_ratchet_mutations.rs).
+///
 /// Distinct from `evidence::EvidenceKind` which covers UAT/approval evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[doc(hidden)]
 pub enum PlanningEvidenceKind {
     /// Log output or trace.
     Log,
@@ -293,6 +306,25 @@ pub enum PlanningEvidenceKind {
     Reference,
     /// Approval or sign-off.
     Approval,
+}
+
+impl PlanningEvidenceKind {
+    /// Read-only decoder helper (WU-C2): maps a decoded legacy discriminator
+    /// to its universal `CoreRelationKind` domain tag using the ADR-0100
+    /// table (Log/Snapshot → "observed_for", Metric → "verifies",
+    /// Reference → "references", Approval → "justifies"). It NEVER builds a
+    /// new value — the constructor surface stays closed. The engine-side
+    /// `planning_evidence_relation` is authoritative; a pin test keeps the
+    /// two tables in lockstep.
+    pub fn relation_tag(&self) -> &'static str {
+        match self {
+            PlanningEvidenceKind::Log => "observed_for",
+            PlanningEvidenceKind::Metric => "verifies",
+            PlanningEvidenceKind::Snapshot => "observed_for",
+            PlanningEvidenceKind::Reference => "references",
+            PlanningEvidenceKind::Approval => "justifies",
+        }
+    }
 }
 
 assert_variant_count_eq!(
@@ -334,6 +366,14 @@ pub struct EvidenceAttachmentV1 {
 
 impl EvidenceAttachmentV1 {
     /// Creates a new EvidenceAttachmentV1.
+    ///
+    /// DEPRECATED constructor (WU-C2): legacy compat only. New evidence must
+    /// be written via `EvidenceAttachmentRecord` with `relation` set from
+    /// `resolve_planning_evidence_relation` (universal substrate).
+    #[deprecated(
+        since = "1.168.60",
+        note = "legacy planning evidence authority (ADR-0100): use EvidenceAttachmentRecord with relation: CoreRelationKind via resolve_planning_evidence_relation"
+    )]
     pub fn new(
         id: EvidenceId,
         work_item_id: WorkItemId,
@@ -354,6 +394,23 @@ impl EvidenceAttachmentV1 {
 
 /// Evidence identifier.
 pub type EvidenceId = String;
+
+/// Typed error: a relation tag that has no legacy `PlanningEvidenceKind`
+/// representative (or is malformed). Fail-closed per DELTA-CONF-003 §2.2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownRelationTag(pub String);
+
+impl std::fmt::Display for UnknownRelationTag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown or non-representable evidence relation tag: {:?} (expected: observed_for, verifies, references, justifies)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownRelationTag {}
 
 // ── DecisionKind ─────────────────────────────────────────────────────────────
 
@@ -1094,7 +1151,19 @@ pub struct EvidenceAttachmentRecord {
     /// Work item this evidence is attached to.
     pub work_item_id: WorkItemId,
     /// Kind of evidence (e.g., verification, artifact).
+    ///
+    /// DEPRECATED authority (WU-C2 / ADR-0100): read-compat decode target
+    /// only. New writes go through `relation` (universal `CoreRelationKind`).
     pub kind: PlanningEvidenceKind,
+    /// Universal semantic relation of this evidence (WU-C2, DELTA-CONF-003).
+    ///
+    /// The canonical production path: populated from
+    /// `resolve_planning_evidence_relation` so every attachment is expressed
+    /// over the universal `CoreRelationKind` substrate (supports, verifies,
+    /// gates, produced_by, contradicts, ...). Snake_case tag of the relation,
+    /// e.g. "observed_for", "verifies". `None` only for rows decoded before
+    /// the field existed (pre-MIGRATION_19); decoders derive it from `kind`.
+    pub relation: Option<String>,
     /// CAS hash reference to the evidence body.
     pub body_ref: CasHash,
     /// Actor kind (Human, Agent, System) — optional.
@@ -1108,6 +1177,86 @@ pub struct EvidenceAttachmentRecord {
 }
 
 impl EvidenceAttachmentRecord {
+    /// Universal construction path (WU-C2, DELTA-CONF-003): builds the
+    /// record from the universal `CoreRelationKind` domain tag. This
+    /// constructor lives in the compat module and is the ONLY
+    /// production-allowed way to fill the legacy `kind` field: it derives
+    /// the read-only discriminator from the relation (observed_for → Log,
+    /// verifies → Metric, references → Reference, justifies → Approval),
+    /// so new evidence is authored over the universal substrate and the
+    /// legacy enum is never named by production callers (ratchet
+    /// `conf09_universal_evidence_only`). Universal relations without a
+    /// legacy representative (supports, gates, produced_by, contradicts)
+    /// are rejected here — persisting them requires a successor record
+    /// shape, not a fake legacy kind (fail-closed).
+    pub fn from_universal_relation(
+        id: EvidenceId,
+        work_item_id: WorkItemId,
+        relation_tag: &str,
+        body_ref: CasHash,
+        actor_ref_kind: Option<String>,
+        actor_ref_id: Option<String>,
+        actor_ref_label: Option<String>,
+        schema_version: u32,
+    ) -> Result<Self, UnknownRelationTag> {
+        let kind = match relation_tag {
+            "observed_for" => PlanningEvidenceKind::Log,
+            "verifies" => PlanningEvidenceKind::Metric,
+            "references" => PlanningEvidenceKind::Reference,
+            "justifies" => PlanningEvidenceKind::Approval,
+            other => return Err(UnknownRelationTag(other.to_string())),
+        };
+        Ok(Self {
+            id,
+            work_item_id,
+            kind,
+            relation: Some(relation_tag.to_string()),
+            body_ref,
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            schema_version,
+        })
+    }
+
+    /// Read-compat decoder (WU-C2): builds the record directly from the
+    /// persisted legacy kind tag ("log" | "metric" | "snapshot" |
+    /// "reference" | "approval"). Used only by storage READ paths
+    /// (get/list/spine-import) for rows predating MIGRATION_19; the
+    /// relation tag is derived via `relation_tag()` so the universal
+    /// column is always populated on read. Never a write path.
+    pub fn from_legacy_kind_tag(
+        id: EvidenceId,
+        work_item_id: WorkItemId,
+        kind_tag: &str,
+        body_ref: CasHash,
+        actor_ref_kind: Option<String>,
+        actor_ref_id: Option<String>,
+        actor_ref_label: Option<String>,
+        schema_version: u32,
+    ) -> Result<Self, UnknownRelationTag> {
+        let kind = match kind_tag {
+            "log" => PlanningEvidenceKind::Log,
+            "metric" => PlanningEvidenceKind::Metric,
+            "snapshot" => PlanningEvidenceKind::Snapshot,
+            "reference" => PlanningEvidenceKind::Reference,
+            "approval" => PlanningEvidenceKind::Approval,
+            other => return Err(UnknownRelationTag(other.to_string())),
+        };
+        let relation = Some(kind.relation_tag().to_string());
+        Ok(Self {
+            id,
+            work_item_id,
+            kind,
+            relation,
+            body_ref,
+            actor_ref_kind,
+            actor_ref_id,
+            actor_ref_label,
+            schema_version,
+        })
+    }
+
     /// Converts this record into a domain EvidenceAttachmentV1.
     pub fn into_domain(self) -> EvidenceAttachmentV1 {
         let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
@@ -1135,7 +1284,15 @@ impl EvidenceAttachmentRecord {
         }
     }
 
-    /// Creates a record from a domain EvidenceAttachmentV1.
+    /// Creates a record from a domain EvidenceAttachmentV1, deriving the
+    /// universal `relation` from the legacy `kind` (decoder path only).
+    ///
+    /// Note: sddk-domain cannot call the engine mapping (no dependency, and
+    /// ARCH001 forbids engine→storage/domain edges upward), so this derives
+    /// the tag locally with the same ADR-0100 table. The engine-side
+    /// `resolve_planning_evidence_relation` remains the production entry; a
+    /// pin test (`relation_field_matches_engine_mapping`) guards the two
+    /// tables from drifting.
     pub fn from_domain(ea: &EvidenceAttachmentV1) -> Self {
         let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &ea.actor_ref {
             Some(ar) => (
@@ -1156,6 +1313,7 @@ impl EvidenceAttachmentRecord {
             id: ea.id.clone(),
             work_item_id: ea.work_item_id.clone(),
             kind: ea.kind,
+            relation: Some(ea.kind.relation_tag().to_string()),
             body_ref: ea.body_ref.clone(),
             actor_ref_kind,
             actor_ref_id,

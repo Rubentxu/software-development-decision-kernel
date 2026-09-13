@@ -19,8 +19,8 @@ fn fresh_db_opens_at_schema_15() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        18,
-        "LATEST_SCHEMA_VERSION must be 18 after MIGRATION_18"
+        19,
+        "LATEST_SCHEMA_VERSION must be 19 after MIGRATION_19"
     );
 }
 
@@ -100,8 +100,8 @@ fn migration_from_v14_preserves_existing_rows() {
     let storage = Storage::open(&db_path).expect("must open and migrate");
     assert_eq!(
         storage.schema_version().expect("schema_version"),
-        18,
-        "must be at schema 18 after full migration chain"
+        19,
+        "must be at schema 19 after full migration chain"
     );
 
     // Verify pre-existing row survived migration
@@ -121,17 +121,17 @@ fn reopen_v15_db_is_idempotent() {
     // First open
     {
         let storage = Storage::open(&db_path).expect("first open must succeed");
-        assert_eq!(storage.schema_version().unwrap(), 18);
+        assert_eq!(storage.schema_version().unwrap(), 19);
     }
     // Second open
     {
         let storage = Storage::open(&db_path).expect("re-open must succeed");
-        assert_eq!(storage.schema_version().unwrap(), 18);
+        assert_eq!(storage.schema_version().unwrap(), 19);
     }
     // Third open
     {
         let storage = Storage::open(&db_path).expect("third open must succeed");
-        assert_eq!(storage.schema_version().unwrap(), 18);
+        assert_eq!(storage.schema_version().unwrap(), 19);
     }
 }
 

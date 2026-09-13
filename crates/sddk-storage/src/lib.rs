@@ -2977,6 +2977,11 @@ impl Storage {
     /// Inserts an EvidenceAttachment: writes body to CAS, stores metadata in SQL.
     ///
     /// Fails with `StorageError::EmptyEvidenceBody` if body is empty.
+    ///
+    /// WU-C2 (DELTA-CONF-003): the universal `relation` column is the
+    /// production authority. If the caller did not set it, it is derived
+    /// from the legacy `kind` (decoder-compat path only); new callers MUST
+    /// set it from `resolve_planning_evidence_relation`.
     pub fn insert_evidence_attachment(
         &mut self,
         attachment: &sddk_domain::EvidenceAttachmentRecord,
@@ -2987,18 +2992,23 @@ impl Storage {
         }
         // Write to CAS
         let cas_hash = self.cas_put(body)?;
+        let relation = attachment
+            .relation
+            .clone()
+            .unwrap_or_else(|| attachment.kind.relation_tag().to_string());
         // Store metadata with the CAS hash
         self.connection.execute(
             "INSERT INTO evidence_attachments_v1 (
-                id, work_item_id, kind, body_ref,
+                id, work_item_id, kind, body_ref, relation,
                 actor_ref_kind, actor_ref_id, actor_ref_label,
                 schema_version
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 attachment.id,
                 attachment.work_item_id,
                 serde_json::to_string(&attachment.kind).unwrap(),
                 cas_hash,
+                relation,
                 attachment.actor_ref_kind,
                 attachment.actor_ref_id,
                 attachment.actor_ref_label,
@@ -3009,30 +3019,40 @@ impl Storage {
     }
 
     /// Loads an EvidenceAttachment and its body from CAS.
+    ///
+    /// WU-C2: decodes the universal `relation` tag; legacy rows predating
+    /// MIGRATION_19 (NULL relation) derive it from the legacy `kind` via the
+    /// ADR-0100 table (read-compat decoder path).
     pub fn get_evidence_attachment(
         &self,
         id: &str,
     ) -> Result<Option<(sddk_domain::EvidenceAttachmentRecord, Vec<u8>)>> {
         let result = self.connection.query_row(
-            "SELECT id, work_item_id, kind, body_ref,
+            "SELECT id, work_item_id, kind, body_ref, relation,
                     actor_ref_kind, actor_ref_id, actor_ref_label,
                     schema_version
              FROM evidence_attachments_v1 WHERE id = ?1",
             [id],
             |row| {
                 let kind_str: String = row.get(2)?;
-                let kind = serde_json::from_str(&kind_str).unwrap();
+                let relation_col: Option<String> = row.get(4)?;
+                let record = sddk_domain::EvidenceAttachmentRecord::from_legacy_kind_tag(
+                    row.get(0)?,
+                    row.get(1)?,
+                    kind_str.trim_matches('"'),
+                    row.get(3)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                )
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
+                let record = sddk_domain::EvidenceAttachmentRecord {
+                    relation: relation_col.or(record.relation),
+                    ..record
+                };
                 Ok((
-                    sddk_domain::EvidenceAttachmentRecord {
-                        id: row.get(0)?,
-                        work_item_id: row.get(1)?,
-                        kind,
-                        body_ref: row.get(3)?,
-                        actor_ref_kind: row.get(4)?,
-                        actor_ref_id: row.get(5)?,
-                        actor_ref_label: row.get(6)?,
-                        schema_version: row.get(7)?,
-                    },
+                    record,
                     row.get::<_, String>(3)?, // body_ref for CAS lookup
                 ))
             },
@@ -3049,28 +3069,36 @@ impl Storage {
     }
 
     /// Lists evidence attachments for a WorkItem.
+    ///
+    /// WU-C2: decodes the universal `relation` tag; legacy rows predating
+    /// MIGRATION_19 derive it from the legacy `kind` (read-compat decoder).
     pub fn list_evidence_attachments_by_work_item(
         &self,
         work_item_id: &str,
     ) -> Result<Vec<sddk_domain::EvidenceAttachmentRecord>> {
         let mut stmt = self.connection.prepare(
-            "SELECT id, work_item_id, kind, body_ref,
+            "SELECT id, work_item_id, kind, body_ref, relation,
                     actor_ref_kind, actor_ref_id, actor_ref_label,
                     schema_version
              FROM evidence_attachments_v1 WHERE work_item_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([work_item_id], |row| {
             let kind_str: String = row.get(2)?;
-            let kind = serde_json::from_str(&kind_str).unwrap();
+            let relation_col: Option<String> = row.get(4)?;
+            let record = sddk_domain::EvidenceAttachmentRecord::from_legacy_kind_tag(
+                row.get(0)?,
+                row.get(1)?,
+                kind_str.trim_matches('"'),
+                row.get(3)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+            )
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
             Ok(sddk_domain::EvidenceAttachmentRecord {
-                id: row.get(0)?,
-                work_item_id: row.get(1)?,
-                kind,
-                body_ref: row.get(3)?,
-                actor_ref_kind: row.get(4)?,
-                actor_ref_id: row.get(5)?,
-                actor_ref_label: row.get(6)?,
-                schema_version: row.get(7)?,
+                relation: relation_col.or(record.relation),
+                ..record
             })
         })?;
         rows.map(|row| row.map_err(StorageError::from)).collect()

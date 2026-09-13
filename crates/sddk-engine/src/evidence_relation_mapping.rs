@@ -53,6 +53,49 @@ pub fn planning_evidence_relation(kind: PlanningEvidenceKind) -> CoreRelationKin
     }
 }
 
+/// Universal, lossless resolver for planning evidence (WU-C2, DELTA-CONF-003).
+///
+/// This is the CANONICAL production path for attaching planning evidence:
+/// production code must build an `EvidenceRef` (universal substrate) plus a
+/// `CoreRelationKind`, never a `PlanningEvidenceKind` discriminator. The
+/// `kind` string is the legacy UI vocabulary (`log|metric|snapshot|reference|
+/// approval`); it maps to its semantic relation via the same ADR-0100 table
+/// as `planning_evidence_relation` (Log/Snapshot → ObservedFor, Metric →
+/// Verifies, Reference → References, Approval → Justifies).
+///
+/// Returns a typed error for unknown kinds so callers fail closed instead of
+/// guessing a relation.
+pub fn resolve_planning_evidence_relation(
+    kind: &str,
+) -> Result<CoreRelationKind, UnknownPlanningEvidenceKind> {
+    match kind.trim().to_lowercase().as_str() {
+        "log" => Ok(planning_evidence_relation(PlanningEvidenceKind::Log)),
+        "metric" | "metrics" => Ok(planning_evidence_relation(
+            PlanningEvidenceKind::Metric,
+        )),
+        "snapshot" => Ok(planning_evidence_relation(PlanningEvidenceKind::Snapshot)),
+        "reference" => Ok(planning_evidence_relation(PlanningEvidenceKind::Reference)),
+        "approval" => Ok(planning_evidence_relation(PlanningEvidenceKind::Approval)),
+        other => Err(UnknownPlanningEvidenceKind(other.to_string())),
+    }
+}
+
+/// Typed error for an unknown planning evidence kind string (fail-closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownPlanningEvidenceKind(pub String);
+
+impl std::fmt::Display for UnknownPlanningEvidenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown planning evidence kind: {:?} (expected: log, metric, snapshot, reference, approval)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownPlanningEvidenceKind {}
+
 /// Asserts the mapping table is **total**: every variant of
 /// `PlanningEvidenceKind` is mapped.
 ///
@@ -169,6 +212,81 @@ mod tests {
             mapped.len(),
             4,
             "expected 5 → 4 mapping (Log/Snapshot collapse); got {mapped:?}"
+        );
+    }
+
+    // ── WU-C2 (DELTA-CONF-003) R-003.2: universal relation surface ─────────
+
+    /// R-003.2: the FIVE semantic relations required by DELTA-CONF-003
+    /// (supports, verifies, gates, produced_by, contradicts) exist as typed
+    /// variants of the universal `CoreRelationKind` substrate.
+    #[test]
+    fn universal_substrate_has_all_five_semantic_relations() {
+        let required = [
+            (CoreRelationKind::Supports, "supports"),
+            (CoreRelationKind::Verifies, "verifies"),
+            (CoreRelationKind::Gates, "gates"),
+            (CoreRelationKind::ProducedBy, "produced_by"),
+            (CoreRelationKind::Contradicts, "contradicts"),
+        ];
+        for (variant, tag) in required {
+            assert!(
+                CoreRelationKind::ALL.contains(&variant),
+                "semantic relation {tag} missing from CoreRelationKind::ALL"
+            );
+            assert_eq!(variant.domain_tag(), tag, "canonical tag drift for {tag}");
+        }
+    }
+
+    /// R-003.2: every `PlanningEvidenceKind` variant maps losslessly into
+    /// one of the universal relations, including the five semantic ones.
+    /// (Lossless = the mapping is total AND every produced relation is a
+    /// canonical variant — see `assert_planning_evidence_kind_mapping_total`
+    /// for the base contract.)
+    #[test]
+    fn every_legacy_variant_maps_into_the_universal_set() {
+        let all_kinds = [
+            (PlanningEvidenceKind::Log, CoreRelationKind::ObservedFor),
+            (PlanningEvidenceKind::Metric, CoreRelationKind::Verifies),
+            (PlanningEvidenceKind::Snapshot, CoreRelationKind::ObservedFor),
+            (PlanningEvidenceKind::Reference, CoreRelationKind::References),
+            (PlanningEvidenceKind::Approval, CoreRelationKind::Justifies),
+        ];
+        for (kind, expected) in all_kinds {
+            assert_eq!(
+                planning_evidence_relation(kind),
+                expected,
+                "{kind:?} must map to {expected:?} without loss"
+            );
+        }
+    }
+
+    /// WU-C2: the universal resolver produces the same relation as the
+    /// legacy mapping for every UI vocabulary string, and fails closed on
+    /// unknown strings.
+    #[test]
+    fn universal_resolver_matches_legacy_mapping_and_fails_closed() {
+        for (text, kind) in [
+            ("log", PlanningEvidenceKind::Log),
+            ("LOG", PlanningEvidenceKind::Log),
+            ("metric", PlanningEvidenceKind::Metric),
+            ("metrics", PlanningEvidenceKind::Metric),
+            ("snapshot", PlanningEvidenceKind::Snapshot),
+            ("reference", PlanningEvidenceKind::Reference),
+            ("approval", PlanningEvidenceKind::Approval),
+        ] {
+            let via_universal = resolve_planning_evidence_relation(text)
+                .unwrap_or_else(|e| panic!("resolver rejected {text:?}: {e}"));
+            assert_eq!(
+                via_universal,
+                planning_evidence_relation(kind),
+                "universal resolver drifted from the legacy mapping for {text:?}"
+            );
+        }
+        assert_eq!(
+            resolve_planning_evidence_relation("nonsense"),
+            Err(UnknownPlanningEvidenceKind("nonsense".to_string())),
+            "unknown kinds must fail closed with a typed error"
         );
     }
 }

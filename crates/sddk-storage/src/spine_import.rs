@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use sha2::{Digest, Sha256};
 
-use sddk_domain::planning::{DependencyEdgeKind, PlanningEvidenceKind, WorkItemStatus};
+use sddk_domain::planning::{DependencyEdgeKind, WorkItemStatus};
 use sddk_domain::spine::{SpineHorizon, SpineStatus, canonicalize_spine_bytes, parse_spine_yaml};
 
 use crate::{Storage, StorageError};
@@ -379,16 +379,19 @@ pub fn import_spine(
         storage.cas_put(&canonical_bytes)?;
 
         let evidence_id = uuid::Uuid::new_v4().to_string();
-        let evidence_record = sddk_domain::EvidenceAttachmentRecord {
-            id: evidence_id,
-            work_item_id: work_item_id.clone(),
-            kind: PlanningEvidenceKind::Snapshot,
-            body_ref: body_ref.clone(),
-            actor_ref_kind: None,
-            actor_ref_id: None,
-            actor_ref_label: None,
-            schema_version: sddk_domain::EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
-        };
+        // WU-C2: authored on the universal substrate (relation-tagged);
+        // the legacy kind is filled read-only by the compat constructor.
+        let evidence_record = sddk_domain::EvidenceAttachmentRecord::from_universal_relation(
+            evidence_id,
+            work_item_id.clone(),
+            "observed_for",
+            body_ref.clone(),
+            None,
+            None,
+            None,
+            sddk_domain::EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
+        )
+        .expect("observed_for must resolve to a legacy representative");
         storage.insert_evidence_attachment(&evidence_record, &canonical_bytes)?;
 
         imported += 1;

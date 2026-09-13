@@ -9,7 +9,7 @@
 
 use sddk_domain::planning::{
     DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, EvidenceAttachmentRecord,
-    PlanningEvidenceKind, WorkItemRecord, WorkItemStatus, compute_planning_graph_identity,
+    WorkItemRecord, WorkItemStatus, compute_planning_graph_identity,
 };
 use sddk_domain::{CycleId, CycleManifest};
 use sddk_storage::{CycleRecord, ProjectRecord, Storage, WorkspaceRecord};
@@ -95,16 +95,18 @@ fn evidence_attachment_cas_round_trip() {
 
     // Insert evidence with a non-empty body
     let body = b"log output: build succeeded at 14:32";
-    let record = EvidenceAttachmentRecord {
-        id: "ev-001".into(),
-        work_item_id: "wi-ev-test".into(),
-        kind: PlanningEvidenceKind::Log,
-        body_ref: "pending".into(),
-        actor_ref_kind: Some("Agent".into()),
-        actor_ref_id: Some("agent:test".into()),
-        actor_ref_label: Some("test".into()),
-        schema_version: 1,
-    };
+    // WU-C2: authored on the universal substrate (relation-tagged).
+    let record = EvidenceAttachmentRecord::from_universal_relation(
+        "ev-001".into(),
+        "wi-ev-test".into(),
+        "observed_for",
+        "pending".into(),
+        Some("Agent".into()),
+        Some("agent:test".into()),
+        Some("test".into()),
+        1,
+    )
+    .expect("observed_for must resolve to a legacy representative");
     storage
         .insert_evidence_attachment(&record, body)
         .expect("insert must succeed");
@@ -116,9 +118,9 @@ fn evidence_attachment_cas_round_trip() {
         .expect("evidence must exist");
     assert_eq!(loaded_body, body, "loaded body must match original");
     assert_eq!(
-        loaded_record.kind,
-        PlanningEvidenceKind::Log,
-        "kind must be preserved"
+        loaded_record.relation.as_deref(),
+        Some("observed_for"),
+        "universal relation must round-trip through storage"
     );
 }
 
@@ -166,16 +168,18 @@ fn evidence_insert_empty_body_rejected() {
         .insert_work_item(&wi_record)
         .expect("insert workitem must succeed");
 
-    let record = EvidenceAttachmentRecord {
-        id: "ev-empty".into(),
-        work_item_id: "wi-empty".into(),
-        kind: PlanningEvidenceKind::Log,
-        body_ref: "pending".into(),
-        actor_ref_kind: Some("Agent".into()),
-        actor_ref_id: Some("agent:test".into()),
-        actor_ref_label: Some("test".into()),
-        schema_version: 1,
-    };
+    // WU-C2: authored on the universal substrate (relation-tagged).
+    let record = EvidenceAttachmentRecord::from_universal_relation(
+        "ev-empty".into(),
+        "wi-empty".into(),
+        "observed_for",
+        "pending".into(),
+        Some("Agent".into()),
+        Some("agent:test".into()),
+        Some("test".into()),
+        1,
+    )
+    .expect("observed_for must resolve to a legacy representative");
     let result = storage.insert_evidence_attachment(&record, b"");
     assert!(result.is_err(), "empty body must be rejected");
     let err = result.unwrap_err();
@@ -316,16 +320,18 @@ fn build_provenance_chain_over_persisted_records() {
         .insert_work_item(&wi)
         .expect("insert workitem must succeed");
 
-    let ev_record = EvidenceAttachmentRecord {
-        id: "ev-chain".into(),
-        work_item_id: "wi-chain".into(),
-        kind: PlanningEvidenceKind::Log,
-        body_ref: "pending".into(),
-        actor_ref_kind: Some("Agent".into()),
-        actor_ref_id: Some("agent:test".into()),
-        actor_ref_label: Some("test".into()),
-        schema_version: 1,
-    };
+    // WU-C2: authored on the universal substrate (relation-tagged).
+    let ev_record = EvidenceAttachmentRecord::from_universal_relation(
+        "ev-chain".into(),
+        "wi-chain".into(),
+        "observed_for",
+        "pending".into(),
+        Some("Agent".into()),
+        Some("agent:test".into()),
+        Some("test".into()),
+        1,
+    )
+    .expect("observed_for must resolve to a legacy representative");
     storage
         .insert_evidence_attachment(&ev_record, b"log line")
         .expect("evidence must succeed");

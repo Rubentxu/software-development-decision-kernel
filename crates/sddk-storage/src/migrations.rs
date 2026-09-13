@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 18;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 19;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -247,6 +247,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
         tx.execute_batch(MIGRATION_18)
             .map_err(super::StorageError::Database)?;
         tx.pragma_update(None, "user_version", 18)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
+    if version < 19 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_19)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 19)
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
@@ -744,7 +754,7 @@ pub(crate) const MIGRATION_15: &str = r#"
 CREATE TABLE IF NOT EXISTS evidence_attachments_v1 (
     id              TEXT PRIMARY KEY,           -- UUIDv7
     work_item_id    TEXT NOT NULL,
-    kind            TEXT NOT NULL,             -- PlanningEvidenceKind: log|metric|snapshot|reference|approval
+    kind            TEXT NOT NULL,             -- legacy evidence kind tag: log|metric|snapshot|reference|approval (read-only compat; universal authority = relation column)
     body_ref        TEXT NOT NULL,             -- sha256:<hex> from CasPort::put
     actor_ref_kind  TEXT,
     actor_ref_id    TEXT,
@@ -862,4 +872,32 @@ CREATE TRIGGER IF NOT EXISTS backlog_item_events_v1_no_update
 CREATE TRIGGER IF NOT EXISTS backlog_item_events_v1_no_delete
     BEFORE DELETE ON backlog_item_events_v1
     BEGIN SELECT RAISE(ABORT, 'backlog_item_events_v1 is append-only'); END;
+"#;
+
+
+pub(crate) const MIGRATION_19: &str = r#"
+-- Universal Evidence Cutover (WU-C2, DELTA-CONF-003, cycle
+-- p-63676b11dc0ef88f/conformance-closeout-2026-09-13).
+-- Adds the additive `relation` column to evidence_attachments_v1: the
+-- universal CoreRelationKind domain tag (observed_for / verifies /
+-- references / ...) that replaces the legacy evidence kind tags
+-- discriminator as the production authority (ADR-0100).
+-- MIGRATION_19 is purely additive: no DROP, no ALTER of existing columns.
+-- The UPDATE backfill is idempotent (only fills NULLs) and derives the
+-- relation from the legacy kind with the ADR-0100 table:
+--   log|snapshot -> observed_for; metric -> verifies;
+--   reference -> references; approval -> justifies.
+
+ALTER TABLE evidence_attachments_v1 ADD COLUMN relation TEXT;
+
+UPDATE evidence_attachments_v1
+SET relation = CASE kind
+    WHEN 'log'       THEN 'observed_for'
+    WHEN 'snapshot'  THEN 'observed_for'
+    WHEN 'metric'    THEN 'verifies'
+    WHEN 'reference' THEN 'references'
+    WHEN 'approval'  THEN 'justifies'
+    ELSE NULL
+END
+WHERE relation IS NULL;
 "#;

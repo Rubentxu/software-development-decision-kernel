@@ -54,8 +54,8 @@ fn migration_16_schema_version_16() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        18,
-        "LATEST_SCHEMA_VERSION must be 18 (MIGRATION_18 backlog tables)"
+        19,
+        "LATEST_SCHEMA_VERSION must be 19 (MIGRATION_19 universal evidence relation column)"
     );
 }
 
@@ -165,6 +165,31 @@ fn migration_16_preserves_existing_rows() {
                 schema_version INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (from_id, to_id, kind)
             );
+            -- MIGRATION_15 shape: the v15 schema includes the evidence and
+            -- decision tables; a faithful v15 fixture must carry them or
+            -- later additive migrations (MIGRATION_19 ALTER) would fail.
+            CREATE TABLE IF NOT EXISTS evidence_attachments_v1 (
+                id TEXT PRIMARY KEY,
+                work_item_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                body_ref TEXT NOT NULL,
+                actor_ref_kind TEXT,
+                actor_ref_id TEXT,
+                actor_ref_label TEXT,
+                schema_version INTEGER NOT NULL,
+                FOREIGN KEY (work_item_id) REFERENCES work_items_v1(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS decision_records_v1 (
+                id TEXT PRIMARY KEY,
+                work_item_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                rationale TEXT NOT NULL,
+                actor_ref_kind TEXT,
+                actor_ref_id TEXT,
+                actor_ref_label TEXT,
+                schema_version INTEGER NOT NULL,
+                FOREIGN KEY (work_item_id) REFERENCES work_items_v1(id) ON DELETE CASCADE
+            );
             INSERT INTO work_items_v1 (id, cycle_id, title, description, status, created_at, schema_version)
             VALUES ('LEGACY-001', 'LEGACY-001', 'Legacy Item', 'Desc', 'Draft', 1234567890, 1);
             "#,
@@ -179,8 +204,8 @@ fn migration_16_preserves_existing_rows() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        18,
-        "schema version must be 17 after migration"
+        19,
+        "schema version must be 19 after migration"
     );
 
     // Verify legacy row survived

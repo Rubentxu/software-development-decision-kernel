@@ -21,9 +21,11 @@ use sddk_domain::planning::projections::{
 use sddk_domain::planning::roadmap_read::RoadmapGraphRead;
 use sddk_domain::planning::{
     DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
-    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, PlanningEvidenceKind,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord,
     WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
 };
+use sddk_engine::evidence_ref::{EvidenceKind, EvidenceRef};
+use sddk_engine::evidence_relation_mapping::resolve_planning_evidence_relation;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -863,31 +865,37 @@ fn run_evidence(
                     args.body_file.display()
                 ));
             }
-            // Parse the evidence kind
-            let planning_kind = match args.kind.to_lowercase().as_str() {
-                "log" => PlanningEvidenceKind::Log,
-                "metric" | "metrics" => PlanningEvidenceKind::Metric,
-                "snapshot" => PlanningEvidenceKind::Snapshot,
-                "reference" => PlanningEvidenceKind::Reference,
-                "approval" => PlanningEvidenceKind::Approval,
-                _ => {
-                    return failure(format!(
-                        "invalid evidence kind: {} (expected: log, metric, snapshot, reference, approval)",
-                        args.kind
-                    ));
-                }
+            // WU-C2 (DELTA-CONF-003): universal evidence cutover. The --kind
+            // flag keeps its UI vocabulary (log/metric/...) but resolves to
+            // the universal semantic relation over CoreRelationKind; NO
+            // legacy evidence kind value is constructed here (the legacy
+            // enum is a read-only compat type enforced by the arch ratchet
+            // conf09_universal_evidence_only).
+            let relation = match resolve_planning_evidence_relation(&args.kind) {
+                Ok(r) => r,
+                Err(e) => return failure(e.to_string()),
             };
-            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            // Universal substrate ref (ADR-0100): Planning evidence bound to
+            // the work item, body persisted in CAS.
             let work_item_id = args.work_item_id.clone();
-            let record = EvidenceAttachmentRecord {
-                id: Uuid::new_v4().hyphenated().to_string(),
+            let _evidence_ref = EvidenceRef::new(
+                EvidenceKind::Planning,
+                format!("workitem/{work_item_id}"),
+            );
+            let (actor_ref_kind, actor_ref_id, actor_ref_label) = parse_actor_ref(&args.actor_id);
+            let relation_tag = relation.domain_tag();
+            let record = match EvidenceAttachmentRecord::from_universal_relation(
+                Uuid::new_v4().hyphenated().to_string(),
                 work_item_id,
-                kind: planning_kind,
-                body_ref: "pending".to_string(), // Will be set by storage
+                relation_tag,
+                "pending".to_string(), // Will be set by storage
                 actor_ref_kind,
-                actor_ref_id: Some(actor_ref_id.unwrap_or_default()),
-                actor_ref_label: Some(actor_ref_label.unwrap_or_default()),
-                schema_version: EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
+                Some(actor_ref_id.unwrap_or_default()),
+                Some(actor_ref_label.unwrap_or_default()),
+                EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
+            ) {
+                Ok(r) => r,
+                Err(e) => return failure(e.to_string()),
             };
             match storage.insert_evidence_attachment(&record, &body) {
                 Ok(()) => {

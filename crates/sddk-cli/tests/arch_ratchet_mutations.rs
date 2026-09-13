@@ -406,3 +406,276 @@ fn legacy_reads_only_via_readonly_decoder_allowlist() {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WU-C2 universal evidence cutover ratchets (DELTA-CONF-003 / design §2).
+//
+// Since the cutover, planning evidence is authored on the universal
+// substrate (EvidenceRef + CoreRelationKind via
+// `resolve_planning_evidence_relation` /
+// `EvidenceAttachmentRecord::from_universal_relation`). The legacy
+// `PlanningEvidenceKind` enum is a read-only compat type: its references
+// are confined to the closed compat set (definition + re-export + mapping
+// + decoders + corpus), and its VARIANT CONSTRUCTION is confined to the
+// even narrower constructor set (the compat module and the canonical
+// mapping module only).
+//
+// Two ratchets, both mutation self-checked (CONFORMANCE-FITNESS-RATCHETS
+// §mutation):
+//   1. conf09_universal_evidence_only — no reference to the legacy type
+//      outside the closed compat set; E1 (plan.rs run_evidence) stays
+//      redirected to the universal resolver.
+//   2. conf09_no_planning_evidence_new_writes — no variant construction
+//      outside the constructor compat set, so no new legacy-typed writes
+//      can appear anywhere in the crate tree.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The legacy type identifier, assembled so this file never contains it
+/// contiguously (self-flag avoidance, same trick as `FORBIDDEN_FRAGMENT`).
+const CONF09_TYPE_FRAGMENT: &str = concat!("Planning", "EvidenceKind");
+
+/// The variant-construction prefix (`Type::`), narrower than the type
+/// reference itself.
+const CONF09_CONSTRUCTION_FRAGMENT: &str = concat!("Planning", "EvidenceKind", "::");
+
+/// Closed compat set for TYPE REFERENCES (mirrors the `evidence_kind_v1`
+/// lint exclude_paths in docs/architecture/lints/deprecated_patterns.toml;
+/// keep the two in sync).
+// Note: semantic_kind.rs cites the legacy name only inside a doc comment,
+// which the comment-stripping scan does not see, so it needs no entry here
+// (the evidence_kind_v1 lint exclude_paths keeps it for its raw-text scan).
+// Note: spine_import.rs (the E4 import decoder) was fully migrated to the
+// universal constructor in WU-C2 and no longer names the legacy type.
+// semantic_kind.rs cites the legacy name only inside a doc comment, which
+// the comment-stripping scan does not see. Neither needs an entry here
+// (the evidence_kind_v1 lint exclude_paths keeps raw-text entries).
+const CONF09_TYPE_ALLOWLIST: [&str; 4] = [
+    "crates/sddk-domain/src/planning/mod.rs",
+    "crates/sddk-domain/src/lib.rs",
+    "crates/sddk-engine/src/evidence_relation_mapping.rs",
+    "crates/sddk-engine/src/spike_sp06.rs",
+];
+
+/// Closed constructor set for VARIANT CONSTRUCTION (narrower than
+/// `CONF09_TYPE_ALLOWLIST`: decoders and the corpus may NAME the legacy
+/// type, but only the compat module and the canonical mapping module may
+/// CONSTRUCT its variants).
+const CONF09_CONSTRUCTION_ALLOWLIST: [&str; 2] = [
+    "crates/sddk-domain/src/planning/mod.rs",
+    "crates/sddk-engine/src/evidence_relation_mapping.rs",
+];
+
+/// Whether one file offends a conf09 scan: NOT in the given allowlist AND
+/// its comment-stripped source contains the given fragment.
+fn conf09_file_offends(
+    path: &Path,
+    root: &Path,
+    content: &str,
+    allowlist: &[&str],
+    fragment: &str,
+) -> bool {
+    let declared = allowlist
+        .iter()
+        .any(|rel| path == root.join(Path::new(rel)));
+    !declared && strip_rust_comments(content).contains(fragment)
+}
+
+/// Scans the crate tree for conf09 offenders under the given allowlist,
+/// sorted.
+fn scan_for_conf09_offenders(root: &Path, allowlist: &[&str], fragment: &str) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    rust_sources(&root.join("crates"), &mut sources);
+    let mut offenders = Vec::new();
+    for path in sources {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if conf09_file_offends(&path, &root, &content, allowlist, fragment) {
+                offenders.push(path);
+            }
+        }
+    }
+    offenders.sort();
+    offenders
+}
+
+/// RATCHET 1 (WU-C2, DELTA-CONF-003): the legacy planning evidence type is
+/// referenced ONLY from the closed compat set, and the E1 write path stays
+/// redirected to the universal resolver.
+#[test]
+fn conf09_universal_evidence_only() {
+    let root = workspace_root();
+
+    let offenders = scan_for_conf09_offenders(&root, &CONF09_TYPE_ALLOWLIST, CONF09_TYPE_FRAGMENT);
+    assert!(
+        offenders.is_empty(),
+        "WU-C2 ratchet violated: legacy planning evidence type referenced \
+         outside the closed compat set. Author evidence via \
+         resolve_planning_evidence_relation + \
+         EvidenceAttachmentRecord::from_universal_relation (universal \
+         substrate, DELTA-CONF-003). To extend the compat set, update BOTH \
+         this allowlist and the evidence_kind_v1 lint exclude_paths, with an \
+         8-field entry in the legacy-compat allowlist. Offending files: \
+         {offenders:?}"
+    );
+
+    // Positive control 1: the scan actually visited the crate tree.
+    let mut sources = Vec::new();
+    rust_sources(&root.join("crates"), &mut sources);
+    assert!(
+        sources.len() > 100,
+        "scanner must cover the crate tree, found only {} files",
+        sources.len()
+    );
+
+    // Positive control 2: the E1 production write path is really redirected
+    // (plan.rs must resolve through the universal relation resolver).
+    let plan_rs = root.join("crates/sddk-cli/src/plan.rs");
+    let plan_src = std::fs::read_to_string(&plan_rs).expect("read plan.rs");
+    assert!(
+        strip_rust_comments(&plan_src).contains("resolve_planning_evidence_relation"),
+        "E1 (plan.rs run_evidence) must author evidence via the universal \
+         resolver; the redirect regressed"
+    );
+
+    // Allowlist sanity: each compat file would offend if unlisted (they
+    // really contain the fragment, so the allowlist is load-bearing).
+    for rel in CONF09_TYPE_ALLOWLIST {
+        let path = root.join(rel);
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read compat file {rel}: {e}"));
+        assert!(
+            strip_rust_comments(&content).contains(CONF09_TYPE_FRAGMENT),
+            "compat file '{rel}' no longer contains the legacy type; \
+             shrink the allowlist instead of keeping dead entries"
+        );
+    }
+}
+
+/// RATCHET 2 (WU-C2, DELTA-CONF-003): the legacy enum is never CONSTRUCTED
+/// outside the compat constructor set, so no new legacy-typed writes can
+/// appear (read-only compat, decode-only).
+#[test]
+fn conf09_no_planning_evidence_new_writes() {
+    let root = workspace_root();
+
+    let offenders = scan_for_conf09_offenders(
+        &root,
+        &CONF09_CONSTRUCTION_ALLOWLIST,
+        CONF09_CONSTRUCTION_FRAGMENT,
+    );
+    assert!(
+        offenders.is_empty(),
+        "WU-C2 ratchet violated: legacy planning evidence variants \
+         constructed outside the compat constructor set. New evidence \
+         writes must go through EvidenceAttachmentRecord::\
+         from_universal_relation (relation-tagged, universal substrate). \
+         Offending files: {offenders:?}"
+    );
+
+    // Positive control: the compat constructor file really contains
+    // variant constructions, so the narrow allowlist is load-bearing.
+    let compat = root.join("crates/sddk-domain/src/planning/mod.rs");
+    let content = std::fs::read_to_string(&compat).expect("read compat module");
+    assert!(
+        strip_rust_comments(&content).contains(CONF09_CONSTRUCTION_FRAGMENT),
+        "compat constructor module must contain the construction fragment \
+         for this allowlist entry to be meaningful"
+    );
+}
+
+/// MUTATION SELF-CHECK for the conf09 classifiers: synthetic files (in the
+/// OS tempdir, never inside the scanned tree) prove the detectors (1) flag
+/// real violations, (2) do not flag comment-only mentions, and (3) do not
+/// flag allowlisted paths even with real content.
+#[test]
+fn conf09_mutations_detect_injected_violations() {
+    let root = workspace_root();
+    let sandbox = std::env::temp_dir().join(MUTATION_SANDBOX_DIR);
+    std::fs::create_dir_all(&sandbox).expect("create sandbox");
+    let rogue = sandbox.join("rogue_evidence.rs");
+
+    // 1. A rogue type reference in a non-allowlisted file offends the type
+    //    ratchet... and also the (narrower-allowlist) construction ratchet
+    //    when it constructs a variant.
+    std::fs::write(
+        &rogue,
+        format!(
+            r#"// Rogue module injected by the conf09 mutation test.
+pub fn rogue_evidence() -> &'static str {{
+    let kind: {} = Default::default();
+    let _ = kind;
+    "{}"
+}}
+"#,
+            CONF09_TYPE_FRAGMENT, "legacy"
+        ),
+    )
+    .expect("write violating file");
+    let violating = std::fs::read_to_string(&rogue).expect("read violating file");
+    assert!(
+        conf09_file_offends(&rogue, &root, &violating, &CONF09_TYPE_ALLOWLIST, CONF09_TYPE_FRAGMENT),
+        "type ratchet must detect the injected reference"
+    );
+
+    // 2. A rogue VARIANT CONSTRUCTION offends the write ratchet even when the
+    //    file would be innocent for a mere type mention.
+    std::fs::write(
+        &rogue,
+        format!(
+            r#"// Rogue module injected by the conf09 mutation test.
+pub fn rogue_construction() -> u8 {{
+    let v = {}::Log;
+    v as u8
+}}
+"#,
+            CONF09_TYPE_FRAGMENT
+        ),
+    )
+    .expect("write construction violation");
+    let construction = std::fs::read_to_string(&rogue).expect("read construction violation");
+    assert!(
+        conf09_file_offends(
+            &rogue,
+            &root,
+            &construction,
+            &CONF09_CONSTRUCTION_ALLOWLIST,
+            CONF09_CONSTRUCTION_FRAGMENT
+        ),
+        "write ratchet must detect the injected construction"
+    );
+
+    // 3. Comment-only mentions never offend either classifier.
+    let comment_only = format!(
+        "// mentions {} and {}::Log in comments only\npub fn f() {{}}\n",
+        CONF09_TYPE_FRAGMENT, CONF09_TYPE_FRAGMENT
+    );
+    assert!(
+        !conf09_file_offends(&rogue, &root, &comment_only, &CONF09_TYPE_ALLOWLIST, CONF09_TYPE_FRAGMENT),
+        "comment mentions must not trip the type ratchet"
+    );
+    assert!(
+        !conf09_file_offends(
+            &rogue,
+            &root,
+            &comment_only,
+            &CONF09_CONSTRUCTION_ALLOWLIST,
+            CONF09_CONSTRUCTION_FRAGMENT
+        ),
+        "comment mentions must not trip the write ratchet"
+    );
+
+    // 4. Allowlisted files never offend, even with real fragment content.
+    for rel in CONF09_TYPE_ALLOWLIST {
+        assert!(
+            !conf09_file_offends(
+                &root.join(rel),
+                &root,
+                &construction,
+                &CONF09_TYPE_ALLOWLIST,
+                CONF09_TYPE_FRAGMENT
+            ),
+            "allowlisted compat file '{rel}' must not offend"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&sandbox);
+}
