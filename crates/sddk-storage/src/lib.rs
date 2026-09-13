@@ -128,6 +128,20 @@ pub enum StorageError {
     /// Cycle state and event input refer to different cycles or projects.
     #[error("cycle state and ledger event identifiers do not match")]
     EventScopeMismatch,
+    /// A domain event write was attempted through the legacy `ledger_events`
+    /// path (C1-HARDDISABLE-1, WU-C1.3). The canonical `events_v1` stream is
+    /// the single authority for domain events (AGENTS.md §2.7); legacy
+    /// `ledger_events` accepts no new domain writes (read-only window, C1.4).
+    #[error(
+        "legacy ledger_events write forbidden for domain event {event_type:?}: \
+         domain events must go through the canonical events_v1 stream \
+         (Storage::insert_cycle_with_event / update_cycle_with_event / \
+         append_event redirect automatically; raw ledger append is disabled)"
+    )]
+    LegacyDomainWriteForbidden {
+        /// Legacy event type that was rejected.
+        event_type: String,
+    },
     /// Existing identity data disagrees with an idempotent registration request.
     #[error("adoption registration conflicts with existing {entity}: {id}")]
     RegistrationConflict {
@@ -589,6 +603,14 @@ impl Storage {
     /// the `cycles` table while the domain event is emitted through the
     /// canonical `events_v1` stream (`cycle:<cycle_id>`); `ledger_events` is
     /// no longer appended for domain events (C1-REDIRECT-1).
+    ///
+    /// C1-HARDDISABLE removal trigger: removed together with the legacy
+    /// `ledger_events` table in C1.5, once the C1.4 read-only window closes
+    /// (export fixture + canonical rebuild proven, R-002.2).
+    #[deprecated(
+        since = "1.168.60",
+        note = "C1.3 hard-disable (WU-C1.3): snapshot-only wrapper; domain events go through the canonical events_v1 stream. Removed in C1.5 with the ledger_events read-only window."
+    )]
     pub fn insert_cycle_with_event(
         &mut self,
         cycle: &CycleRecord,
@@ -629,6 +651,14 @@ impl Storage {
     /// are emitted through the canonical `events_v1` stream
     /// (`cycle:<cycle_id>`); `ledger_events` is no longer appended for
     /// domain events (C1-REDIRECT-2).
+    ///
+    /// C1-HARDDISABLE removal trigger: removed together with the legacy
+    /// `ledger_events` table in C1.5, once the C1.4 read-only window closes
+    /// (export fixture + canonical rebuild proven, R-002.2).
+    #[deprecated(
+        since = "1.168.60",
+        note = "C1.3 hard-disable (WU-C1.3): snapshot-only wrapper; domain events go through the canonical events_v1 stream. Removed in C1.5 with the ledger_events read-only window."
+    )]
     pub fn update_cycle_with_event(
         &mut self,
         manifest: &CycleManifest,
@@ -637,6 +667,17 @@ impl Storage {
         release_lease_on_phase_change: bool,
     ) -> Result<LedgerEvent> {
         ensure_event_scope(manifest, event)?;
+        // WU-C1.3: emit the causal event BEFORE mutating the snapshot. The
+        // canonical append is the guard: a duplicate event_id with divergent
+        // content fails here and leaves the `cycles` row untouched, which
+        // restores the pre-redirect rollback semantics that
+        // `duplicate_event_id_rolls_back_transition_snapshot` pins (the
+        // old `append_event_on` INSERT rejected inside the same legacy
+        // transaction). Design note: the snapshot remains a projection —
+        // an event that landed without a snapshot is recoverable via
+        // `Engine::rebuild_cycle`, but a snapshot moved without its event
+        // would be unrecoverable divergence.
+        let main_event = self.emit_canonical_event(event)?;
         let changed = self.connection.execute(
             "UPDATE cycles SET
                 project_id = ?2,
@@ -659,10 +700,6 @@ impl Storage {
         if changed == 0 {
             return Err(not_found("cycle", &manifest.cycle_id));
         }
-        // The main event is emitted first: the derived `lease.released` is
-        // *caused by* the transition (causation_id points at it) and must
-        // occupy the next sequence in the canonical `cycle:<id>` stream.
-        let main_event = self.emit_canonical_event(event)?;
         if release_lease_on_phase_change {
             let deleted = self
                 .connection
@@ -703,6 +740,14 @@ impl Storage {
     /// `events_v1` stream via [`SqliteEventStore`] (`project:<project_id>`
     /// stream when the input carries no cycle); `ledger_events` is no longer
     /// appended for domain events (C1-REDIRECT-3).
+    ///
+    /// C1-HARDDISABLE removal trigger: removed together with the legacy
+    /// `ledger_events` table in C1.5, once the C1.4 read-only window closes
+    /// (export fixture + canonical rebuild proven, R-002.2).
+    #[deprecated(
+        since = "1.168.60",
+        note = "C1.3 hard-disable (WU-C1.3): use the canonical EventStore (SqliteEventStore::append) directly; this wrapper only forwards to the canonical stream. Removed in C1.5 with the ledger_events read-only window."
+    )]
     pub fn append_event(&mut self, event: &LedgerEventInput) -> Result<LedgerEvent> {
         self.emit_canonical_event(event)
     }
@@ -840,7 +885,6 @@ impl Storage {
         Ok(events)
     }
 
-
     /// Reads the pre-cutover legacy corpus from `ledger_events` in ascending
     /// sequence order. The table is never written for domain events since the
     /// redirect, so this is a stable historical view.
@@ -953,10 +997,7 @@ impl Storage {
                 .cloned(),
         );
         events.sort_by_key(|event| event.sequence);
-        Ok(events
-            .into_iter()
-            .take(limit.max(0) as usize)
-            .collect())
+        Ok(events.into_iter().take(limit.max(0) as usize).collect())
     }
 
     /// Deletes only the materialized cycle snapshot, preserving its ledger events.
@@ -1039,7 +1080,10 @@ impl Storage {
         let store = SqliteEventStore::open_path(self.database_path()?)?;
         for stream in store.list_streams()? {
             if let Err(error) = store.verify_stream_chain(&stream) {
-                return Err(integrity_error(-1, &format!("canonical stream {stream}: {error}")));
+                return Err(integrity_error(
+                    -1,
+                    &format!("canonical stream {stream}: {error}"),
+                ));
             }
             if let Err(error) = store.verify_chain_integrity(&stream) {
                 return Err(integrity_error(
@@ -1083,10 +1127,7 @@ impl Storage {
         // the divergence report via the `sddk.redirect` marker metadata;
         // events inserted directly (raw SQL / third-party writers) are still
         // reported.
-        let redirected_ids: HashSet<String> = self
-            .redirected_event_ids()?
-            .into_iter()
-            .collect();
+        let redirected_ids: HashSet<String> = self.redirected_event_ids()?.into_iter().collect();
 
         // Load all events_v1 event_ids and ledger_events event_ids
         let events_v1_ids: HashSet<String> = {
@@ -1142,8 +1183,7 @@ impl Storage {
              WHERE json_extract(metadata_json, '$.redirect') = 'sddk-c1'",
         )?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.map(|r| r.map_err(StorageError::from))
-            .collect()
+        rows.map(|r| r.map_err(StorageError::from)).collect()
     }
 
     /// Inserts artifact metadata. Artifact bytes remain in the external store.
@@ -1541,7 +1581,16 @@ impl Storage {
     /// When the delete removes one row, appends a `lease.released` ledger
     /// event in the same transaction. Returns `true` iff the event was
     /// appended.
+    ///
+    /// C1-HARDDISABLE removal trigger: the legacy `lease.released` audit
+    /// event is emitted through the canonical `events_v1` stream since
+    /// C1-REDIRECT-4; removed in C1.5 with the ledger_events read-only
+    /// window.
     #[allow(clippy::too_many_arguments)]
+    #[deprecated(
+        since = "1.168.60",
+        note = "C1.3 hard-disable (WU-C1.3): legacy lease-release path kept for compat; the lease.released audit event goes through the canonical events_v1 stream. Removed in C1.5 with the ledger_events read-only window."
+    )]
     pub fn release_cycle_lease(
         &mut self,
         project_id: &str,
@@ -1862,7 +1911,6 @@ fn workspace_optional_on(
         .optional()?)
 }
 
-
 #[derive(Serialize)]
 struct EventHashMaterial<'a> {
     sequence: i64,
@@ -1931,6 +1979,40 @@ fn ensure_event_scope(manifest: &CycleManifest, event: &LedgerEventInput) -> Res
         return Err(StorageError::EventScopeMismatch);
     }
     Ok(())
+}
+
+// ── Legacy ledger hard-disable (WU-C1.3, C1-HARDDISABLE) ────────────────────
+//
+// Pre-cutover, `Storage::append_event_on` was the single `INSERT INTO
+// ledger_events` writer (strangler step C1.2 redirected W1–W4 to the
+// canonical `events_v1` stream). Since C1.3 the legacy write is hard-disabled:
+// the only writer left in the tree must be this factory, which exists solely
+// so `cross_ledger_consistency` can prove that the typed guard fires (CLOSE-01)
+// while the arch ratchet (`crates/sddk-cli/tests/arch_ratchet_mutations.rs`)
+// fails the build if any new `INSERT INTO ledger_events` appears outside
+// migrations or this module.
+
+/// Builds the typed error for a rejected legacy domain write, with the
+/// stable `event_store:` error-prefix contract of the canonical event store
+/// (`event_store:legacy_domain_write_forbidden`, R2).
+pub fn legacy_domain_write_forbidden(event_type: &str) -> StorageError {
+    StorageError::LegacyDomainWriteForbidden {
+        event_type: event_type.to_owned(),
+    }
+}
+
+// Test-only stub that preserves the pre-cutover symbol `append_event_on`
+// (C1-HARDDISABLE-2): it always returns the typed error, never a row. It is
+// intentionally uncalled inside this crate; the CLOSE-01 guard test in
+// `crates/sddk-storage/tests/cross_ledger_consistency.rs` exercises the same
+// typed error through the public factory above.
+#[cfg(test)]
+#[allow(dead_code)]
+fn append_event_on(
+    _transaction: &rusqlite::Transaction<'_>,
+    input: &LedgerEventInput,
+) -> Result<LedgerEvent> {
+    Err(legacy_domain_write_forbidden(&input.event_type))
 }
 
 fn enum_string<T: Serialize>(value: &T) -> Result<String> {
@@ -2198,6 +2280,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::LeaseNotRenewable { .. } => "STORAGE_LEASE_NOT_RENEWABLE",
             Self::InvalidLease => "STORAGE_INVALID_LEASE",
             Self::EventScopeMismatch => "STORAGE_EVENT_SCOPE_MISMATCH",
+            Self::LegacyDomainWriteForbidden { .. } => "STORAGE_LEGACY_DOMAIN_WRITE_FORBIDDEN",
             Self::RegistrationConflict { .. } => "STORAGE_REGISTRATION_CONFLICT",
             Self::SchemaVersion { .. } => "STORAGE_SCHEMA_VERSION",
             Self::LedgerIntegrity { .. } => "STORAGE_LEDGER_INTEGRITY",
@@ -2233,6 +2316,12 @@ impl sddk_domain::SddkErrorCode for StorageError {
             }
             Self::InvalidLease => "provide an expiry later than the acquisition time".into(),
             Self::EventScopeMismatch => "match the event scope to the cycle or project".into(),
+            Self::LegacyDomainWriteForbidden { .. } => {
+                "emit the domain event through the canonical events_v1 stream \
+                 (Storage::append_event already redirects); the legacy ledger_events \
+                 table is read-only for domain events (C1.4 read-only window)"
+                    .into()
+            }
             Self::RegistrationConflict { .. } => {
                 "keep the existing identity data consistent".into()
             }
@@ -2333,6 +2422,9 @@ impl sddk_domain::Ledger for Storage {
         cycle: &CycleRecord,
         event: &LedgerEventInput,
     ) -> std::result::Result<LedgerEvent, sddk_domain::StorageError> {
+        // Compat bridge: the `Ledger` trait surface predates the C1.3
+        // hard-disable; engine callers migrate with the C1.5 removal.
+        #[allow(deprecated)]
         Storage::insert_cycle_with_event(self, cycle, event).map_err(|e| e.into())
     }
 
@@ -2343,6 +2435,9 @@ impl sddk_domain::Ledger for Storage {
         event: &LedgerEventInput,
         release_lease_on_phase_change: bool,
     ) -> std::result::Result<LedgerEvent, sddk_domain::StorageError> {
+        // Compat bridge: the `Ledger` trait surface predates the C1.3
+        // hard-disable; engine callers migrate with the C1.5 removal.
+        #[allow(deprecated)]
         Storage::update_cycle_with_event(
             self,
             manifest,
@@ -2374,6 +2469,9 @@ impl sddk_domain::Ledger for Storage {
         command_id: &str,
         occurred_at: &str,
     ) -> std::result::Result<bool, sddk_domain::StorageError> {
+        // Compat bridge: the `Ledger` trait surface predates the C1.3
+        // hard-disable; engine callers migrate with the C1.5 removal.
+        #[allow(deprecated)]
         Storage::release_cycle_lease(
             self,
             project_id,
@@ -3419,6 +3517,9 @@ mod cycle_project_mismatch_tests {
 }
 
 #[cfg(test)]
+// Inline tests still exercise the deprecated legacy wrappers on purpose;
+// they must keep passing until C1.5 removes the wrappers.
+#[allow(deprecated)]
 mod list_events_after_tests {
     use super::*;
     use serde_json::json;

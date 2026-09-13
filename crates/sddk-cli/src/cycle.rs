@@ -1737,6 +1737,9 @@ fn run_cycle_lock_release(
             .or_else(|| environment.sddk_actor.clone())
             .or_else(|| environment.user.clone())
             .unwrap_or_else(|| "sddk-cli".into());
+        // Compat bridge: `sddk cycle lock release` still uses the legacy
+        // lease-release path; migrates when C1.5 removes the wrapper.
+        #[allow(deprecated)]
         let released = context.storage.release_cycle_lease(
             context.identity.project_id.as_str(),
             &cycle_id,
@@ -2721,6 +2724,9 @@ fn gate_evaluation_text(output: &GateEvaluationOutput) -> String {
 // ── Tests for context inference ─────────────────────────────────────────────────
 
 #[cfg(test)]
+// The inline tests still exercise the deprecated legacy wrappers on purpose:
+// they must keep passing until C1.5 removes the wrappers.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use sddk_domain::{

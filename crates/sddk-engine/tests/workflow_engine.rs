@@ -341,9 +341,17 @@ fn duplicate_event_id_rolls_back_transition_snapshot() {
         .plan_transition(&cycle.cycle_id, "phase.explore.complete", evidence)
         .unwrap();
 
+    // WU-C1.2 redirect: a duplicate event_id now violates the events_v1
+    // PRIMARY KEY inside the canonical append, which maps the failure to
+    // `LedgerIntegrity` (was a raw rusqlite `Database` error on the legacy
+    // table). Crossing the `Ledger` trait boundary it surfaces as
+    // `StorageError::Other` (domain enum has no integrity variant). The
+    // rollback invariants below are unchanged.
     assert!(matches!(
         engine.apply_transition(&plan, &context("duplicate-event"), &auth()),
-        Err(EngineError::Storage(StorageError::Database(_)))
+        Err(EngineError::Storage(
+            StorageError::Other(ref message)
+        )) if message.contains("ledger integrity failure"),
     ));
     let stored = engine.ledger().get_cycle(&cycle.cycle_id).unwrap();
     assert_eq!(stored.manifest.phase, Phase::Explore);

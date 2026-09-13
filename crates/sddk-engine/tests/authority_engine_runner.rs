@@ -95,11 +95,41 @@ fn sc_m5_5_explanation_digest_non_empty() {
 
 // SC-M5-6: Legacy AuthorityContext::validate stays working (compat mirror).
 // We verify the runner does NOT replace the legacy path — both can coexist.
+// WU-C1.3 (C1.3 hard-disable): `WritableSurface::LedgerEvents` now denies
+// EVERY actor kind — domain events go through the canonical events_v1
+// stream, so any new legacy-ledger write must fail closed. The other
+// surfaces keep their legacy matrix behavior.
 #[test]
 fn sc_m5_6_runner_coexists_with_legacy_validate() {
     use sddk_engine::authority::{AuthorityContext, WritableSurface};
     let ctx = AuthorityContext::for_test(sddk_domain::ActorKind::System, "sys");
-    assert!(ctx.validate(WritableSurface::LedgerEvents).is_ok());
+    // Deny contract for the retired surface (C1-HARDDISABLE-3).
+    assert!(
+        ctx.validate(WritableSurface::LedgerEvents).is_err(),
+        "LedgerEvents must deny every actor kind since WU-C1.3"
+    );
+    // The legacy validate path itself still works for an admitted surface.
+    assert!(ctx.validate(WritableSurface::CycleState).is_ok());
+}
+
+// WU-C1.3: LedgerEvents denies all three actor kinds (fail-closed surface).
+#[test]
+fn ledger_events_surface_is_denied_for_every_actor_kind() {
+    use sddk_engine::authority::{AuthorityContext, WritableSurface};
+    for (kind, id) in [
+        (sddk_domain::ActorKind::Human, "user:alice"),
+        (sddk_domain::ActorKind::Agent, "agent:sddk"),
+        (sddk_domain::ActorKind::System, "sys"),
+    ] {
+        let ctx = AuthorityContext::for_test(kind, id);
+        let outcome = ctx.validate(WritableSurface::LedgerEvents);
+        assert!(outcome.is_err(), "{id} must be denied on ledger_events");
+        let err = outcome.unwrap_err().to_string();
+        assert!(
+            err.contains("ledger_events"),
+            "rejection must name the surface: {err}"
+        );
+    }
 }
 
 // SC-M5-7: Deterministic decision_id for same inputs.

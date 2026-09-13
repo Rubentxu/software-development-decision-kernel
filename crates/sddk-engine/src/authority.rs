@@ -156,10 +156,12 @@ pub const WRITABLE_SURFACE_MATRIX: &[(WritableSurface, &[ActorKind])] = &[
         WritableSurface::CycleState,
         &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
     ),
-    (
-        WritableSurface::LedgerEvents,
-        &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
-    ),
+    // C1.3 hard-disable (WU-C1.3): `ledger_events` no longer accepts domain
+    // writes, so the surface admits NO actor kind — every new use of
+    // `WritableSurface::LedgerEvents` for a domain write must fail closed.
+    // Domain events are written through the canonical `events_v1` stream
+    // (single authority, AGENTS.md §2.7). Empty slice = deny for everyone.
+    (WritableSurface::LedgerEvents, &[]),
     (WritableSurface::GateReceipts, &[ActorKind::System]),
     (
         WritableSurface::PlanRevisions,

@@ -260,3 +260,70 @@ fn verify_cross_ledger_consistency_tolerance_is_tolerated() {
         "1 orphan with tolerance=0 should fail: {report0:?}"
     );
 }
+
+// =============================================================================
+// WU-C1.3 / CLOSE-01: legacy domain write hard-disable
+// =============================================================================
+
+/// C1.3 hard-disable: attempting a domain-event append through the legacy
+/// `ledger_events` write path must fail with the typed
+/// `StorageError::LegacyDomainWriteForbidden` error, never write a row.
+#[test]
+fn legacy_domain_write_is_rejected_with_typed_error() {
+    use sddk_domain::SddkErrorCode;
+    use sddk_storage::legacy_domain_write_forbidden;
+
+    let dir = TempDir::new().unwrap();
+    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+
+    // The direct typed constructor: the only legacy-domain-write factory left
+    // in the tree (`append_event_on` is `#[cfg(test)]`-gated and always
+    // returns this error).
+    let err = legacy_domain_write_forbidden("cycle.transitioned");
+    assert_eq!(
+        err.code(),
+        "STORAGE_LEGACY_DOMAIN_WRITE_FORBIDDEN",
+        "typed error code must be stable (event_store:<code> prefix contract): {err:?}"
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("legacy ledger_events write forbidden"),
+        "error message must name the forbidden legacy path: {message}"
+    );
+    assert!(
+        message.contains("cycle.transitioned"),
+        "error message must name the rejected event type: {message}"
+    );
+
+    // The guard is the terminal state of the strangler: `append_event` (the
+    // public wrapper) redirects to the canonical stream and SUCCEEDS — the
+    // rejection is for raw legacy writes only.
+    storage.insert_project(&project_record()).unwrap();
+    let writable = &mut storage;
+    let redirected = writable
+        .append_event(&sddk_storage::LedgerEventInput {
+            event_id: "evt-guard-1".into(),
+            project_id: "p-test".into(),
+            cycle_id: None,
+            frame_id: "frame-1".into(),
+            command_id: "cmd-1".into(),
+            actor: "system".into(),
+            actor_ref: None,
+            event_type: "workflow.phase.entered".into(),
+            occurred_at: "2026-09-01T10:00:00Z".into(),
+            state_before: None,
+            state_after: None,
+            payload: serde_json::json!({}),
+            causation_id: None,
+            correlation_id: None,
+        })
+        .expect("canonical redirect must still work after the hard-disable");
+    assert_eq!(redirected.event_type, "workflow.phase.entered");
+
+    // And the legacy table stays untouched (read-only window, C1.4).
+    let report = storage.verify_cross_ledger_consistency(0).unwrap();
+    assert_eq!(
+        report.ledger_events_count, 0,
+        "ledger_events must stay empty: no legacy domain write may land"
+    );
+}

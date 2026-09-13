@@ -287,7 +287,10 @@ impl EventStore for SqliteEventStore {
         //
         // Use INSERT OR IGNORE on event_id for idempotency: re-append of the
         // same event_id returns the original row without allocating a new sequence.
-        let _rows_affected = tx
+        // WU-C1.3 (CLOSE-01b): a DIFFERENT event colliding with a stored
+        // event_id is a real integrity failure, not an idempotent retry —
+        // the caller must see the typed guard instead of a silent no-op.
+        let rows_affected = tx
             .execute(
                 "INSERT OR IGNORE INTO events_v1 (
                     event_id, stream_id, sequence, event_type, schema_version, project_id,
@@ -322,6 +325,24 @@ impl EventStore for SqliteEventStore {
                 ],
             )
             .map_err(|e| DomainStorageError::Database(format!("insert: {e}")))?;
+
+        if rows_affected == 0 {
+            // event_id already stored. Idempotent retry only when the stored
+            // event is byte-identical (same content hash); otherwise reject.
+            let stored_hash: String = tx
+                .query_row(
+                    "SELECT content_hash FROM events_v1 WHERE event_id = ?1",
+                    rusqlite::params![envelope.event_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| DomainStorageError::Database(format!("dup probe: {e}")))?;
+            if stored_hash != envelope.content_hash {
+                return Err(DomainStorageError::Other(format!(
+                    "event_store:duplicate_event_id:{}",
+                    envelope.event_id
+                )));
+            }
+        }
 
         // 7. Read back the row (handles both first-insert and idempotent re-append).
         let appended = tx

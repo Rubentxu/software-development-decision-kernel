@@ -513,20 +513,25 @@ fn duplicate_event_id_is_idempotent_and_leaves_snapshot_intact() {
         ..initial_event
     };
 
-    // WU-C1.2 redirect: the canonical event store is idempotent per event_id
-    // (INSERT OR IGNORE redelivery semantics), so the duplicate id no longer
-    // rejects the update. The cycle snapshot update succeeds and no extra
-    // event is recorded.
-    storage
-        .update_cycle_with_event(&blocked, "2026-08-03T12:01:00Z", &duplicate_event, false)
-        .unwrap();
+    // WU-C1.3 (CLOSE-01b): a duplicate event_id carrying DIFFERENT content
+    // is an integrity failure, not an idempotent redelivery. The canonical
+    // append rejects it BEFORE the snapshot UPDATE, so the cycle row keeps
+    // its previous status and no extra event is recorded. (Byte-identical
+    // redelivery stays idempotent; see canonical_parity tests.)
+    let outcome =
+        storage.update_cycle_with_event(&blocked, "2026-08-03T12:01:00Z", &duplicate_event, false);
+    assert!(
+        matches!(outcome, Err(StorageError::LedgerIntegrity { .. })),
+        "divergent duplicate event_id must be rejected with a typed error: {outcome:?}"
+    );
     assert_eq!(
         storage
             .get_cycle(&cycle.manifest.cycle_id)
             .unwrap()
             .manifest
             .status,
-        CycleStatus::Blocked
+        CycleStatus::Open,
+        "snapshot must be rolled back / untouched"
     );
     assert_eq!(storage.list_events().unwrap().len(), 1);
 }
