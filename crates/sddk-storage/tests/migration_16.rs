@@ -54,8 +54,8 @@ fn migration_16_schema_version_16() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        19,
-        "LATEST_SCHEMA_VERSION must be 19 (MIGRATION_19 universal evidence relation column)"
+        20,
+        "LATEST_SCHEMA_VERSION must be 20 (MIGRATION_20 legacy ledger_events drop)"
     );
 }
 
@@ -204,8 +204,8 @@ fn migration_16_preserves_existing_rows() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        19,
-        "schema version must be 19 after migration"
+        20,
+        "schema version must be 20 after migration"
     );
 
     // Verify legacy row survived

@@ -1,17 +1,18 @@
-//! Canonical parity gate for the WU-C1.2 events redirect (C1-TEST-2).
+//! Canonical parity gate for the events redirect (C1-TEST-2, re-seed
+//! canónico WU-C15-4/C15-8).
 //!
 //! Verifies that domain events emitted through the `Storage` wrappers
 //! (W1..W4) are readable identically from a fresh repository and from a
-//! pre-cutover migrated repository, and that the canonical `events_v1`
-//! stream is the single source of truth for new events:
+//! post-v20 migrated repository (sin corpus legacy: `ledger_events` ya no
+//! existe físicamente), and that the canonical `events_v1` stream is the
+//! single source of truth for all events:
 //!
 //! 1. Fresh repo: every wrapper-emitted event lands in `events_v1` (via
-//!    `SqliteEventStore`), nothing new in `ledger_events`, and the merged
-//!    `Storage` readers return the events in sequence order.
-//! 2. Migrated repo: a pre-cutover legacy corpus (seeded directly into
-//!    `ledger_events` with the legacy hash chain) coexists with new
-//!    canonical events; both are visible through the merged readers and
-//!    `verify_ledger` validates both sides.
+//!    `SqliteEventStore`), and the canonical `Storage` readers return the
+//!    events in sequence order.
+//! 2. Post-v20 repo (re-abierto tras MIGRATION_20): los eventos canónicos
+//!    sobreviven el ciclo open→close→open y `verify_ledger` valida la
+//!    cadena canónica completa.
 //! 3. `SqliteEventStore` opened over the same database file
 //!    (`open_path`) sees exactly the same canonical events.
 
@@ -80,103 +81,6 @@ fn seeded_storage(path: &std::path::Path) -> Storage {
     storage
 }
 
-/// WU-C15-3 (stub mínimo de compilación): cuenta filas de `ledger_events`
-/// con SQL directo. El helper `legacy_ledger_count_for_tests` de lib.rs se
-/// eliminó con el read layer legacy; la suite se reescribe en WU-C15-4/8.
-fn legacy_rows(storage: &Storage) -> usize {
-    storage
-        .connection_for_tests()
-        .query_row("SELECT COUNT(*) FROM ledger_events", [], |row| {
-            row.get::<_, i64>(0)
-        })
-        .unwrap_or(0) as usize
-}
-
-/// Seeds a pre-cutover legacy corpus directly into `ledger_events`,
-/// replicating the old hash-chain invariants (sequence from 1, previous_hash
-/// linkage, legacy `hash_event` payload). This simulates a repo migrated
-/// from a pre-redirect version.
-fn seed_legacy_corpus(storage: &Storage, count: usize) {
-    let connection = storage.connection_for_tests();
-    let mut previous_hash: Option<String> = None;
-    for sequence in 1..=count as i64 {
-        let input = event(&format!("evt-legacy-{sequence:03}"), None);
-        let event_hash = legacy_hash_event(sequence, &input, &previous_hash);
-        connection
-            .execute(
-                "INSERT INTO ledger_events (
-                    sequence, event_id, project_id, cycle_id, frame_id, command_id,
-                    actor, event_type, occurred_at, state_before_json,
-                    state_after_json, payload_json, previous_hash, event_hash
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-                rusqlite::params![
-                    sequence,
-                    input.event_id,
-                    input.project_id,
-                    input.cycle_id,
-                    input.frame_id,
-                    input.command_id,
-                    input.actor,
-                    input.event_type,
-                    input.occurred_at,
-                    Option::<String>::None,
-                    serde_json::to_string(&input.state_after).unwrap(),
-                    serde_json::to_string(&input.payload).unwrap(),
-                    previous_hash,
-                    event_hash
-                ],
-            )
-            .unwrap();
-        previous_hash = Some(event_hash);
-    }
-}
-
-/// Replica of the legacy hash function used before the redirect
-/// (`hash_event` in sddk-storage lib.rs), kept local so the fixture does not
-/// depend on private storage internals.
-fn legacy_hash_event(
-    sequence: i64,
-    input: &LedgerEventInput,
-    previous_hash: &Option<String>,
-) -> String {
-    use sha2::{Digest, Sha256};
-    // Must mirror `hash_event` in sddk-storage (EventHashMaterial field
-    // order + canonical JSON) so the seeded corpus passes verify_ledger.
-    #[derive(serde::Serialize)]
-    struct Material<'a> {
-        sequence: i64,
-        event_id: &'a str,
-        project_id: &'a str,
-        cycle_id: &'a Option<String>,
-        frame_id: &'a str,
-        command_id: &'a str,
-        actor: &'a str,
-        event_type: &'a str,
-        occurred_at: &'a str,
-        state_before: &'a Option<serde_json::Value>,
-        state_after: &'a Option<serde_json::Value>,
-        payload: &'a serde_json::Value,
-        previous_hash: &'a Option<String>,
-    }
-    let material = Material {
-        sequence,
-        event_id: &input.event_id,
-        project_id: &input.project_id,
-        cycle_id: &input.cycle_id,
-        frame_id: &input.frame_id,
-        command_id: &input.command_id,
-        actor: &input.actor,
-        event_type: &input.event_type,
-        occurred_at: &input.occurred_at,
-        state_before: &input.state_before,
-        state_after: &input.state_after,
-        payload: &input.payload,
-        previous_hash,
-    };
-    let digest = Sha256::digest(serde_json::to_vec(&material).unwrap());
-    format!("sha256:{digest:x}")
-}
-
 #[test]
 fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     let fresh_dir = TempDir::new().unwrap();
@@ -205,10 +109,10 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
         .unwrap();
     fresh.append_event(&event("evt-fresh-3", None)).unwrap();
 
-    // Canonical stream is the only writer: new events live in events_v1,
-    // ledger_events stays empty.
-    // WU-C15-3 stub: helper de lib.rs eliminado; SQL directo desde el test.
-    assert_eq!(legacy_rows(&fresh), 0);
+    // Canonical stream is the only writer: new events live in events_v1.
+    // (WU-C15-4: `ledger_events` ya no existe físicamente; no hay tabla
+    // legacy que contar — el schema v20 lo garantiza.)
+    assert_eq!(fresh.schema_version().unwrap(), 20);
 
     // Merged readers expose the canonical events with per-stream sequences.
     let all = fresh.list_events().unwrap();
@@ -252,7 +156,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
             .any(|e| e.event_type == "lease.released")
     );
 
-    // verify_ledger covers both sides (legacy empty + canonical streams).
+    // verify_ledger covers the canonical stream (single read authority).
     let verification = fresh.verify_ledger().unwrap();
     assert!(verification.event_count >= 4);
 
@@ -279,37 +183,39 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
         .collect();
     assert_eq!(canonical_ids.len(), 4);
 
-    // --- Migrated repo: legacy corpus + new canonical events coexist ---
+    // --- Post-v20 migrated repo: same events survive open→close→open ---
+    // (El corpus legacy ya no existe; el "migrated" repo de C1.5 es un DB
+    // post-MIGRATION_20 re-abierto, cuya lectura canónica debe ser
+    // idéntica a la del fresh repo.)
     let migrated_path = migrated_dir.path().join("ledger.sqlite");
-    let migrated = seeded_storage(&migrated_path);
-    seed_legacy_corpus(&migrated, 3);
+    let mut migrated = seeded_storage(&migrated_path);
+    for i in 1..=3 {
+        migrated
+            .append_event(&event(&format!("evt-new-{i}"), None))
+            .unwrap();
+    }
+    drop(migrated); // close → re-open simula la migración post-v20
 
-    let mut migrated = migrated;
-    migrated.append_event(&event("evt-new-1", None)).unwrap();
-
-    // The redirect must NOT write new events into the legacy table.
-    // WU-C15-3 stub: helper de lib.rs eliminado; SQL directo desde el test.
-    assert_eq!(legacy_rows(&migrated), 3);
-
-    // WU-C15-3 stub mínimo de compilación: `load_all_ledger_events` fue
-    // eliminado; se usa la vista canónica `list_events`. Este test muere y se
-    // reescribe en WU-C15-4/WU-C15-8 (parity post-v20).
+    let migrated = Storage::open(&migrated_path).unwrap();
+    assert_eq!(migrated.schema_version().unwrap(), 20);
     let merged = migrated.list_events().expect("list_events");
-    assert!(merged.iter().any(|e| e.event_id == "evt-new-1"));
+    assert_eq!(
+        merged.len(),
+        3,
+        "post-v20 re-open must expose every canonical event"
+    );
+    assert!(merged.iter().all(|e| e.event_id.starts_with("evt-new-")));
 
-    // Chain verification: legacy corpus verifies on its own linkage, the
-    // canonical stream verifies via the event store chain.
+    // Chain verification: the canonical stream verifies via its own chain.
     migrated.verify_ledger().unwrap();
 
     // list_events_after (watch semantics): canonical-only desde WU-C15-3 —
-    // el cursor ya no abarca el corpus legacy (las 3 filas de ledger_events
-    // no participan del dominio de secuencia canónico). Este test muere y se
-    // reescribe en WU-C15-4/WU-C15-8 (parity post-v20).
+    // per-stream sequences, cursor 0..=2 devuelve el flujo completo.
     let after = migrated.list_events_after(0, 10).unwrap();
-    assert_eq!(after.len(), 1, "solo evt-new-1 vive en events_v1");
-    assert_eq!(after[0].event_id, "evt-new-1");
-    let after_legacy_cursor = migrated.list_events_after(3, 10).unwrap();
-    assert!(after_legacy_cursor.is_empty());
+    assert_eq!(after.len(), 3);
+    let after_tail = migrated.list_events_after(2, 10).unwrap();
+    assert_eq!(after_tail.len(), 1);
+    assert_eq!(after_tail[0].event_id, "evt-new-3");
 }
 
 #[test]
@@ -326,9 +232,9 @@ fn canonical_append_conflict_maps_to_ledger_integrity() {
     assert_eq!(first.event_id, second.event_id);
     assert_eq!(first.sequence, second.sequence);
     assert_eq!(
-        legacy_rows(&storage),
-        0,
-        "idempotent redelivery must not write the legacy table"
+        storage.list_events().unwrap().len(),
+        1,
+        "idempotent redelivery must not duplicate the canonical event"
     );
 }
 
@@ -345,7 +251,7 @@ fn read_only_storage_rejects_domain_event_writes() {
     if outcome.is_ok() {
         panic!(
             "read-only append unexpectedly succeeded; canonical count={}",
-            legacy_rows(&read_only)
+            read_only.list_events().unwrap().len()
         );
     }
     let err = outcome.err().unwrap();

@@ -36,7 +36,7 @@ fn persists_canonical_records_across_reopen() {
         // MIGRATION_7 adds agent/behavior_version_hash to capability_receipts
         // MIGRATION_15 adds evidence_attachments_v1 + decision_records_v1 (schema 15)
         // MIGRATION_17 adds workflow_run_events_v1 (schema 17)
-        assert_eq!(storage.schema_version().unwrap(), 19);
+        assert_eq!(storage.schema_version().unwrap(), 20);
         storage.insert_project(&project_record()).unwrap();
         storage.insert_workspace(&workspace_record()).unwrap();
         storage.insert_cycle(&cycle).unwrap();
@@ -929,7 +929,8 @@ fn storage_migration_3_backfills_seq_default_one() {
                 phase TEXT NOT NULL,
                 manifest_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, cycle_id)
             );
             CREATE TABLE gate_receipts (
                 receipt_id TEXT PRIMARY KEY,
@@ -990,7 +991,7 @@ fn storage_migration_3_backfills_seq_default_one() {
     // Open with current code — MIGRATION_3..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
 
     // The pre-existing row now carries seq = 1
     let receipt = storage
@@ -1030,7 +1031,8 @@ fn storage_get_gate_receipt_handles_v1914_id_without_seq_suffix() {
                 phase TEXT NOT NULL,
                 manifest_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, cycle_id)
             );
             CREATE TABLE gate_receipts (
                 receipt_id TEXT PRIMARY KEY,
@@ -1450,7 +1452,8 @@ fn legacy_receipt_without_version_columns_returns_none() {
                 phase TEXT NOT NULL,
                 manifest_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, cycle_id)
             );
             CREATE TABLE capability_receipts (
                 receipt_id TEXT PRIMARY KEY,
@@ -1497,7 +1500,7 @@ fn legacy_receipt_without_version_columns_returns_none() {
     // Open with current code — MIGRATION_7..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
 
     // Read back the legacy receipt — new columns must be None
     let receipt = storage.get_capability_receipt("legacy-receipt-1").unwrap();
@@ -1550,4 +1553,168 @@ fn artifact_store_port_impl() {
     let list = ArtifactStore::list_project_artifacts(&storage, "project-1").unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].artifact_id, "art-test-001");
+}
+
+// ── C1.5 (WU-C15-4): ledger_events physical removal migration tests ──────────
+
+/// Fresh repositories (v0) run MIGRATION_1..20 in one open and must end at
+/// schema 20 with no `ledger_events` table, index, or triggers in
+/// `sqlite_master` (MIGRATION_1 no longer carries the legacy DDL).
+#[test]
+fn fresh_v0_database_has_no_legacy_ledger_events_table() {
+    let directory = tempdir().unwrap();
+    let database_path = directory.path().join("ledger.sqlite");
+
+    let storage = Storage::open(&database_path).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 20);
+
+    let legacy_objects: i64 = storage
+        .connection_for_tests()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'ledger_events%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        legacy_objects, 0,
+        "fresh v0 schema must not contain any ledger_events object"
+    );
+}
+
+/// A v19 database carrying the legacy `ledger_events` table (with rows,
+/// index, and triggers) upgrades to v20 on first open: MIGRATION_20 drops
+/// every object. Re-opening is idempotent (IF EXISTS everywhere).
+#[test]
+fn v19_database_with_legacy_ledger_events_upgrades_to_v20_and_drops_table() {
+    let directory = tempdir().unwrap();
+    let database_path = directory.path().join("ledger.sqlite");
+
+    // Build a v19-shaped database with the pre-C1.5 legacy table seeded.
+    {
+        let conn = Connection::open(&database_path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE projects (
+                project_id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                remote_url TEXT,
+                scope TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE workspaces (
+                workspace_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(project_id),
+                canonical_path TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE cycles (
+                cycle_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, cycle_id)
+            );
+            CREATE TABLE ledger_events (
+                sequence INTEGER PRIMARY KEY CHECK (sequence > 0),
+                event_id TEXT NOT NULL UNIQUE,
+                project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE RESTRICT,
+                cycle_id TEXT,
+                frame_id TEXT NOT NULL,
+                command_id TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                state_before_json TEXT,
+                state_after_json TEXT,
+                payload_json TEXT NOT NULL,
+                previous_hash TEXT,
+                event_hash TEXT NOT NULL UNIQUE,
+                CHECK (
+                    (sequence = 1 AND previous_hash IS NULL)
+                    OR (sequence > 1 AND previous_hash IS NOT NULL)
+                ),
+                FOREIGN KEY (project_id, cycle_id)
+                    REFERENCES cycles(project_id, cycle_id) ON DELETE RESTRICT
+            );
+            CREATE INDEX ledger_events_cycle_sequence_idx
+                ON ledger_events(cycle_id, sequence);
+            CREATE TRIGGER ledger_events_no_update
+            BEFORE UPDATE ON ledger_events
+            BEGIN
+                SELECT RAISE(ABORT, 'ledger events are append-only');
+            END;
+            CREATE TRIGGER ledger_events_no_delete
+            BEFORE DELETE ON ledger_events
+            BEGIN
+                SELECT RAISE(ABORT, 'ledger events are append-only');
+            END;
+            "#,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO projects VALUES ('project-1', 'Project One', NULL, '.', '2026-08-03T12:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ledger_events (
+                sequence, event_id, project_id, cycle_id, frame_id, command_id,
+                actor, event_type, occurred_at, payload_json, event_hash
+             ) VALUES (
+                1, 'evt-legacy-0001', 'project-1', NULL, 'frame-1', 'cmd-1',
+                'test-runtime', 'cycle.state_changed', '2026-08-03T12:00:00Z',
+                '{}', 'sha256:deadbeef'
+             )",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 19).unwrap();
+    }
+
+    // First open with v20 code: MIGRATION_20 runs and drops the legacy corpus.
+    let storage = Storage::open(&database_path).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 20);
+    let legacy_objects: i64 = storage
+        .connection_for_tests()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'ledger_events%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        legacy_objects, 0,
+        "v19→v20 upgrade must drop every ledger_events object"
+    );
+
+    // Kernel tables survive the drop untouched.
+    assert_eq!(
+        storage.get_project("project-1").unwrap(),
+        ProjectRecord {
+            project_id: "project-1".into(),
+            display_name: "Project One".into(),
+            remote_url: None,
+            scope: ".".into(),
+            created_at: "2026-08-03T12:00:00Z".into(),
+        }
+    );
+    drop(storage);
+
+    // Re-open is idempotent: version stays 20, no legacy objects reappear.
+    let reopened = Storage::open(&database_path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 20);
+    let legacy_objects: i64 = reopened
+        .connection_for_tests()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'ledger_events%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(legacy_objects, 0, "re-open must stay legacy-free");
 }

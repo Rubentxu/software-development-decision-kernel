@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 19;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 20;
 
 /// Runs all pending migrations on an open SQLite connection.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
@@ -260,6 +260,16 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
+    if version < 20 {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(super::StorageError::Database)?;
+        tx.execute_batch(MIGRATION_20)
+            .map_err(super::StorageError::Database)?;
+        tx.pragma_update(None, "user_version", 20)
+            .map_err(super::StorageError::Database)?;
+        tx.commit().map_err(super::StorageError::Database)?;
+    }
     Ok(())
 }
 
@@ -303,44 +313,6 @@ CREATE TABLE IF NOT EXISTS cycles (
 );
 
 CREATE INDEX IF NOT EXISTS cycles_project_status_idx ON cycles(project_id, status);
-
-CREATE TABLE IF NOT EXISTS ledger_events (
-    sequence INTEGER PRIMARY KEY CHECK (sequence > 0),
-    event_id TEXT NOT NULL UNIQUE,
-    project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE RESTRICT,
-    cycle_id TEXT,
-    frame_id TEXT NOT NULL,
-    command_id TEXT NOT NULL,
-    actor TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    occurred_at TEXT NOT NULL,
-    state_before_json TEXT,
-    state_after_json TEXT,
-    payload_json TEXT NOT NULL,
-    previous_hash TEXT,
-    event_hash TEXT NOT NULL UNIQUE,
-    CHECK (
-        (sequence = 1 AND previous_hash IS NULL)
-        OR (sequence > 1 AND previous_hash IS NOT NULL)
-    ),
-    FOREIGN KEY (project_id, cycle_id)
-        REFERENCES cycles(project_id, cycle_id) ON DELETE RESTRICT
-);
-
-CREATE INDEX IF NOT EXISTS ledger_events_cycle_sequence_idx
-    ON ledger_events(cycle_id, sequence);
-
-CREATE TRIGGER IF NOT EXISTS ledger_events_no_update
-BEFORE UPDATE ON ledger_events
-BEGIN
-    SELECT RAISE(ABORT, 'ledger events are append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS ledger_events_no_delete
-BEFORE DELETE ON ledger_events
-BEGIN
-    SELECT RAISE(ABORT, 'ledger events are append-only');
-END;
 
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,
@@ -463,7 +435,7 @@ CREATE INDEX gate_receipts_plan_hash_idx ON gate_receipts(plan_hash);
 
 pub(crate) const MIGRATION_5: &str = r#"
 -- events_v1: append-only event-sourced store for EventEnvelopeV1 (SDDK2-202).
--- Mirrors the ledger_events immutability policy via SQL triggers.
+-- Append-only policy is enforced via SQL triggers (update/delete abort).
 --
 -- Minimal projects stub so the events_v1 FK reference is satisfiable when
 -- SqliteEventStore runs without the full Storage migrations (e.g. in tests).
@@ -899,4 +871,16 @@ SET relation = CASE kind
     ELSE NULL
 END
 WHERE relation IS NULL;
+"#;
+
+pub(crate) const MIGRATION_20: &str = r#"
+-- C1.5 (cycle p-63676b11dc0ef88f/c15-ledger-removal-2026-09-13):
+-- physically retires the frozen legacy ledger_events corpus. Canonical
+-- authority is events_v1 (SqliteEventStore) since the C1.2 redirect.
+-- Idempotent: fresh repos never create the table (MIGRATION_1 no longer
+-- has the DDL), so every statement is IF EXISTS.
+DROP TRIGGER IF EXISTS ledger_events_no_update;
+DROP TRIGGER IF EXISTS ledger_events_no_delete;
+DROP INDEX IF EXISTS ledger_events_cycle_sequence_idx;
+DROP TABLE IF EXISTS ledger_events;
 "#;
