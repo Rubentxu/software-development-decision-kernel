@@ -8,6 +8,7 @@ This directory contains the canonical contracts for the durable debt remediation
 - **[PRIORITY.md](./PRIORITY.md)** — Priority taxonomy (`P0 | P1 | P2 | P3`). Remediation scheduling, distinct from UAT priority namespace.
 - **[debt-report.schema.json](./debt-report.schema.json)** (v1.0.0, draft-07) — JSON Schema for the per-cycle debt report.
 - **[INCIDENCE-TEMPLATE.md](./INCIDENCE-TEMPLATE.md)** — Template for `INC-NNN-{slug}.md` cross-cycle records.
+- **[INC-DEBT-023](./INC-DEBT-023-lints-advisory-no-expansion-cycle.md)** — Lints advisory sin ciclo de expansión programado (low/P3, open; cycle conformance-closeout-2026-09-13).
 
 ## Source of truth
 
