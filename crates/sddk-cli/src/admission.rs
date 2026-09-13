@@ -22,6 +22,8 @@ pub(crate) enum EnforcementStage {
     /// M1: RequireApproval blocks Low/Medium surfaces; High stays advisory.
     LowMedium,
     /// M4: RequireApproval blocks every surface via the live approval loop.
+    /// Constructed from M4 (WU-C4-14+) once the approval loop is live.
+    #[allow(dead_code)]
     All,
 }
 
@@ -62,6 +64,7 @@ pub(crate) enum EnforcementOutcome {
 
 impl EnforcementOutcome {
     /// True when the governed effect must not execute.
+    #[cfg(test)]
     pub(crate) fn blocks_effect(&self) -> bool {
         matches!(self, Self::Blocked { .. } | Self::AwaitingApproval { .. })
     }
@@ -127,12 +130,16 @@ pub(crate) fn enforce_gated(
 
 /// Approval capability key (OQ-1 default: (surface, action) granularity).
 /// Example: `surface.cycle_state#cycle_supersede`.
+/// Consumed by the M2 approval loop (WU-C4-6+).
+#[allow(dead_code)]
 pub(crate) fn approval_capability_key(surface: &str, action: ActionKind) -> String {
     format!("surface.{}#{}", surface, action.as_str())
 }
 
 /// Stable SHA-256 over the full proposal identity (no timestamps), so the
 /// same (surface, action, target, actor) always yields the same hash.
+/// Consumed by the M2 approval loop (WU-C4-6+).
+#[allow(dead_code)]
 pub(crate) fn approval_request_hash(
     surface: &str,
     action: ActionKind,
@@ -598,7 +605,7 @@ mod admission_tests {
         std::fs::create_dir_all(&project_dir).unwrap();
         // Bootstrap: the store requires the project row to exist.
         {
-            let mut store = sddk_storage::Storage::open(project_dir.join("ledger.sqlite")).unwrap();
+            let store = sddk_storage::Storage::open(project_dir.join("ledger.sqlite")).unwrap();
             store
                 .insert_project(&sddk_domain::ProjectRecord {
                     project_id: "p-test".into(),

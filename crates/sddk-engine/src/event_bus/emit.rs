@@ -1694,7 +1694,7 @@ mod tests {
                 .events
                 .iter()
                 .filter(|e| e.stream_id == stream_id)
-                .last()
+                .next_back()
                 .map(|e| e.content_hash.clone()))
         }
         fn head_chain_hash(&self, _stream_id: &str) -> Result<Option<String>, StorageError> {

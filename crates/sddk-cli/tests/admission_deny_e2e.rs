@@ -11,7 +11,7 @@
 //! binary via CARGO_BIN_EXE_sddk).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -57,9 +57,9 @@ impl DenyFixture {
 
 /// Collect every file under the XDG state dir (the durable side-effect
 /// surface of the CLI). Empty vec = zero side effects.
-fn state_tree(state: &PathBuf) -> Vec<String> {
+fn state_tree(state: &Path) -> Vec<String> {
     let mut out = vec![];
-    let mut stack = vec![state.clone()];
+    let mut stack = vec![state.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
@@ -84,7 +84,7 @@ fn state_tree(state: &PathBuf) -> Vec<String> {
 /// Zero-governed-mutation check (R-4-005): the ledger may be bootstrapped
 /// by `RuntimeContext::open` (schema + project row, storage-local), but a
 /// deny must leave ZERO events in it. No event = no durable domain effect.
-fn ledger_event_count(state: &PathBuf, project_dir: &str) -> usize {
+fn ledger_event_count(state: &Path, project_dir: &str) -> usize {
     let ledger = state
         .join("sddk")
         .join("projects")
