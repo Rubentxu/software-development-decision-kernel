@@ -215,13 +215,12 @@ mod runner_tests {
 
     #[test]
     fn admit_low_band_system_allows() {
-        // WU-C1.4: metadata-only surface name in an admission check; no
-        // ledger_events table I/O. Allowlist entry:
-        // docs/architecture/lints/legacy-compat-allowlist.yaml
+        // WU-C15-6: `ledger_events` fue retirada como surface; el caso
+        // low-band usa `dependency_edge` (la única low restante).
         let v = runner()
             .admit_surface(
                 "system",
-                "ledger_events",
+                "dependency_edge",
                 ActionKind::CliRun,
                 "evt-1",
                 Facts::default(),

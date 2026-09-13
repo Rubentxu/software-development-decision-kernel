@@ -24,9 +24,7 @@ pub fn default_policy_for_surface(surface: &str) -> Result<PolicySnapshot, Autho
         "knowledge_graph_vault" | "plan_item" | "evidence_attachment" | "decision_record" => {
             RiskBand::Medium
         }
-        // WU-C1.4: metadata-only surface name (risk band); no table I/O.
-        // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
-        "ledger_events" | "dependency_edge" => RiskBand::Low,
+        "dependency_edge" => RiskBand::Low,
         other => {
             return Err(AuthorityEngineError::InternalContractBug {
                 reason: format!("default_policy_for_surface: unknown surface '{other}'"),
@@ -190,7 +188,7 @@ mod bridge_tests {
             RiskBand::Medium
         );
         assert_eq!(
-            default_policy_for_surface("ledger_events")
+            default_policy_for_surface("dependency_edge")
                 .unwrap()
                 .risk_band,
             RiskBand::Low
@@ -210,10 +208,9 @@ mod bridge_tests {
     }
 
     #[test]
-    fn default_policy_for_surface_covers_twelve_surfaces() {
+    fn default_policy_for_surface_covers_eleven_surfaces() {
         let surfaces = [
             "cycle_state",
-            "ledger_events",
             "gate_receipts",
             "plan_revisions",
             "transition_records",

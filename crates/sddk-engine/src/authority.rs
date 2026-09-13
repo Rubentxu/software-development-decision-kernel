@@ -12,11 +12,11 @@
 use crate::EngineError;
 use sddk_domain::ActorKind;
 
-/// The 12 writable surfaces (8 from ADR-069 §3 + 4 planning surfaces from ADR-072).
+/// The 11 writable surfaces (8 from ADR-069 §3 + 4 planning surfaces from
+/// ADR-072, minus the retired `ledger_events` removed in C1.5/WU-C15-6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WritableSurface {
     CycleState,
-    LedgerEvents,
     GateReceipts,
     PlanRevisions,
     TransitionRecords,
@@ -39,10 +39,6 @@ impl WritableSurface {
     pub fn name(self) -> &'static str {
         match self {
             WritableSurface::CycleState => "cycle_state",
-            // WU-C1.4: metadata-only surface name; no table I/O. Writes are
-            // denied by the empty matrix row below (C1.3 hard-disable).
-            // Allowlist entry: docs/architecture/lints/legacy-compat-allowlist.yaml
-            WritableSurface::LedgerEvents => "ledger_events",
             WritableSurface::GateReceipts => "gate_receipts",
             WritableSurface::PlanRevisions => "plan_revisions",
             WritableSurface::TransitionRecords => "transition_records",
@@ -159,12 +155,6 @@ pub const WRITABLE_SURFACE_MATRIX: &[(WritableSurface, &[ActorKind])] = &[
         WritableSurface::CycleState,
         &[ActorKind::Human, ActorKind::Agent, ActorKind::System],
     ),
-    // C1.3 hard-disable (WU-C1.3): `ledger_events` no longer accepts domain
-    // writes, so the surface admits NO actor kind — every new use of
-    // `WritableSurface::LedgerEvents` for a domain write must fail closed.
-    // Domain events are written through the canonical `events_v1` stream
-    // (single authority, AGENTS.md §2.7). Empty slice = deny for everyone.
-    (WritableSurface::LedgerEvents, &[]),
     (WritableSurface::GateReceipts, &[ActorKind::System]),
     (
         WritableSurface::PlanRevisions,
@@ -229,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_covers_twelve_surfaces() {
-        assert_eq!(WRITABLE_SURFACE_MATRIX.len(), 12);
+    fn matrix_covers_eleven_surfaces() {
+        assert_eq!(WRITABLE_SURFACE_MATRIX.len(), 11);
     }
 }

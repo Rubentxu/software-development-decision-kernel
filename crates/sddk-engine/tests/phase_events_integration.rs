@@ -147,10 +147,10 @@ fn pe03_two_transitions_produce_four_events() {
     assert_eq!(stream_b.len(), 2);
 }
 
-// PE-04: ledger coexistence — SqliteEventStore writes only to events_v1,
-// not to the legacy ledger_events table (managed by Storage/Ledger).
+// PE-04: single canonical stream — SqliteEventStore writes only to
+// events_v1. La tabla legacy ledger_events fue eliminada (C1.5/WU-C15-4).
 #[test]
-fn pe04_ledger_coexistence_events_v1_only() {
+fn pe04_events_v1_only() {
     let mut store = SqliteEventStore::open_in_memory().unwrap();
     let input = make_phase_input("cycle-4", "design", "plan");
 
@@ -160,10 +160,8 @@ fn pe04_ledger_coexistence_events_v1_only() {
     let count = store.count().unwrap();
     assert_eq!(count, 2, "should have 2 events in events_v1");
 
-    // SqliteEventStore operates on events_v1 ONLY.
-    // The legacy ledger_events table is managed by Storage/Ledger trait.
-    // This architectural boundary ensures coexistence: LedgerEvent (v0)
-    // and EventEnvelopeV1 (v1) are separate tables, written by separate code paths.
+    // events_v1 es la única superficie de eventos: la tabla legacy murió
+    // y no hay segunda superficie con la que coexistir.
 }
 
 // OE-01: emit_outcome_event emits workflow.transition.succeeded with correct payload.
