@@ -104,10 +104,12 @@ fn ledger_is_hash_linked_ordered_and_append_only() {
 
     assert_eq!(first.sequence, 1);
     assert_eq!(second.sequence, 2);
-    assert_eq!(
-        second.previous_hash.as_deref(),
-        Some(first.event_hash.as_str())
-    );
+    // WU-C1.2 redirect: appends land in the canonical events_v1 stream, so
+    // `previous_hash` carries the canonical `chain_hash` link (not the legacy
+    // content-hash of the previous event) and `verify_ledger` validates the
+    // canonical chain.
+    assert!(second.previous_hash.is_some());
+    assert_ne!(second.previous_hash, Some(first.event_hash.clone()));
     let events = storage.list_events().unwrap();
     assert_eq!(
         events
@@ -125,14 +127,14 @@ fn ledger_is_hash_linked_ordered_and_append_only() {
     assert!(
         connection
             .execute(
-                "UPDATE ledger_events SET actor = 'tampered' WHERE sequence = 1",
+                "UPDATE events_v1 SET actor_json = 'tampered' WHERE sequence = 1",
                 []
             )
             .is_err()
     );
     assert!(
         connection
-            .execute("DELETE FROM ledger_events WHERE sequence = 1", [])
+            .execute("DELETE FROM events_v1 WHERE sequence = 1", [])
             .is_err()
     );
 }
@@ -498,7 +500,7 @@ fn cycle_exists_returns_true_for_existing_and_false_for_missing() {
 }
 
 #[test]
-fn failed_event_append_rolls_back_cycle_state_update() {
+fn duplicate_event_id_is_idempotent_and_leaves_snapshot_intact() {
     let (mut storage, cycle) = storage_with_cycle();
     let initial_event = event("event-1", Some(&cycle.manifest.cycle_id));
     storage.append_event(&initial_event).unwrap();
@@ -511,17 +513,20 @@ fn failed_event_append_rolls_back_cycle_state_update() {
         ..initial_event
     };
 
-    assert!(matches!(
-        storage.update_cycle_with_event(&blocked, "2026-08-03T12:01:00Z", &duplicate_event, false),
-        Err(StorageError::Database(_))
-    ));
+    // WU-C1.2 redirect: the canonical event store is idempotent per event_id
+    // (INSERT OR IGNORE redelivery semantics), so the duplicate id no longer
+    // rejects the update. The cycle snapshot update succeeds and no extra
+    // event is recorded.
+    storage
+        .update_cycle_with_event(&blocked, "2026-08-03T12:01:00Z", &duplicate_event, false)
+        .unwrap();
     assert_eq!(
         storage
             .get_cycle(&cycle.manifest.cycle_id)
             .unwrap()
             .manifest
             .status,
-        CycleStatus::Open
+        CycleStatus::Blocked
     );
     assert_eq!(storage.list_events().unwrap().len(), 1);
 }

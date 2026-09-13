@@ -121,6 +121,26 @@ fn insert_events_v1(conn: &Connection, env: &EventEnvelopeV1) {
     .expect("insert events_v1");
 }
 
+/// WU-C1.2: desde el redirect, `append_event` ya no escribe en
+/// `ledger_events`. Los fixtures que necesitan una fila legacy siembran la
+/// tabla directamente (mismo mecanismo que usan para `events_v1`).
+fn insert_legacy_event(conn: &Connection, event_id: &str) {
+    conn.execute(
+        "INSERT INTO ledger_events (
+            sequence, event_id, project_id, cycle_id, frame_id, command_id,
+            actor, event_type, occurred_at, state_before_json,
+            state_after_json, payload_json, previous_hash, event_hash
+         ) VALUES (
+            COALESCE((SELECT MAX(sequence) FROM ledger_events), 0) + 1,
+            ?1, 'p-test', NULL, 'frame-1', 'cmd-1', 'system',
+            'workflow.phase.entered', '2026-09-01T10:00:00Z',
+            NULL, NULL, '{}', NULL, 'sha256:legacy'
+         )",
+        params![event_id],
+    )
+    .expect("insert legacy event");
+}
+
 // =============================================================================
 // AC-EVT-LEDGER-06: verify_cross_ledger_consistency
 // =============================================================================
@@ -135,28 +155,12 @@ fn verify_cross_ledger_consistency_passes_when_aligned() {
     storage.insert_project(&project_record()).unwrap();
     storage.insert_workspace(&workspace_record()).unwrap();
 
-    // Insert identical events into both tables
+    // Insert identical events into both tables. WU-C1.2: the legacy side is
+    // seeded by SQL because `append_event` now redirects to `events_v1`.
     let env = minimal_envelope("evt-aligned-1", "stream:p-test", "p-test");
     insert_events_v1(&conn, &env);
+    insert_legacy_event(&conn, "evt-aligned-1");
     drop(conn);
-    storage
-        .append_event(&sddk_storage::LedgerEventInput {
-            event_id: "evt-aligned-1".into(),
-            project_id: "p-test".into(),
-            cycle_id: None,
-            frame_id: "frame-1".into(),
-            command_id: "cmd-1".into(),
-            actor: "system".into(),
-            actor_ref: None,
-            event_type: "workflow.phase.entered".into(),
-            occurred_at: "2026-09-01T10:00:00Z".into(),
-            state_before: None,
-            state_after: None,
-            payload: serde_json::json!({}),
-            causation_id: None,
-            correlation_id: None,
-        })
-        .unwrap();
 
     let report = storage.verify_cross_ledger_consistency(0).unwrap();
     assert!(
@@ -202,25 +206,12 @@ fn verify_cross_ledger_consistency_detects_orphan_in_ledger_events() {
     storage.insert_project(&project_record()).unwrap();
     storage.insert_workspace(&workspace_record()).unwrap();
 
-    // Insert only into ledger_events (orphan)
-    storage
-        .append_event(&sddk_storage::LedgerEventInput {
-            event_id: "evt-orphan-ledger".into(),
-            project_id: "p-test".into(),
-            cycle_id: None,
-            frame_id: "frame-1".into(),
-            command_id: "cmd-1".into(),
-            actor: "system".into(),
-            actor_ref: None,
-            event_type: "workflow.phase.entered".into(),
-            occurred_at: "2026-09-01T10:00:00Z".into(),
-            state_before: None,
-            state_after: None,
-            payload: serde_json::json!({}),
-            causation_id: None,
-            correlation_id: None,
-        })
-        .unwrap();
+    // Insert only into ledger_events (orphan). WU-C1.2: seeded by SQL
+    // because `append_event` now redirects to `events_v1`.
+    {
+        let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
+        insert_legacy_event(&conn, "evt-orphan-ledger");
+    }
 
     // events_v1 is empty
 
@@ -243,27 +234,10 @@ fn verify_cross_ledger_consistency_tolerance_is_tolerated() {
     storage.insert_project(&project_record()).unwrap();
     storage.insert_workspace(&workspace_record()).unwrap();
 
-    // Insert one aligned event
+    // Insert one aligned event (both sides seeded directly; WU-C1.2).
     let env1 = minimal_envelope("evt-1", "stream:p-test", "p-test");
     insert_events_v1(&conn, &env1);
-    storage
-        .append_event(&sddk_storage::LedgerEventInput {
-            event_id: "evt-1".into(),
-            project_id: "p-test".into(),
-            cycle_id: None,
-            frame_id: "frame-1".into(),
-            command_id: "cmd-1".into(),
-            actor: "system".into(),
-            actor_ref: None,
-            event_type: "workflow.phase.entered".into(),
-            occurred_at: "2026-09-01T10:00:00Z".into(),
-            state_before: None,
-            state_after: None,
-            payload: serde_json::json!({}),
-            causation_id: None,
-            correlation_id: None,
-        })
-        .unwrap();
+    insert_legacy_event(&conn, "evt-1");
     drop(conn);
 
     // Add one orphan in events_v1

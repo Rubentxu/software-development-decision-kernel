@@ -33,10 +33,9 @@ use std::time::Duration;
 
 use migrations::{LATEST_SCHEMA_VERSION, run_migrations};
 pub use models::*;
-use rusqlite::{
-    Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
-};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior, params};
 use sddk_domain::CycleManifest;
+use sddk_domain::EventStore;
 use sddk_domain::ports::{ArtifactStore, LedgerFactory};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -201,6 +200,13 @@ pub struct Storage {
     handle_id: String,
     /// Lazy-computed CAS root identity (SHA-256 of canonical CAS root path).
     cas_root_id_cache: std::sync::OnceLock<String>,
+    /// False for read-only handles: the WU-C1.2 canonical redirect must not
+    /// open a writable side-channel on a read-only storage.
+    writable: bool,
+    /// Backing tempdir for isolated ("in-memory") handles (WU-C1.2): keeps
+    /// the private `ledger.sqlite` alive for the handle's lifetime and
+    /// removes it on drop.
+    isolation_dir: Option<tempfile::TempDir>,
 }
 
 /// Report from [`Storage::verify_cross_ledger_consistency`] (AC-EVT-LEDGER-06).
@@ -249,11 +255,17 @@ impl Storage {
     }
 
     /// Opens an isolated in-memory database and applies all migrations.
+    ///
+    /// Implementation note (WU-C1.2): the canonical event redirect requires a
+    /// file-backed `events_v1` substrate (private-tempfile `ledger.sqlite`),
+    /// so "in-memory" is behavioral isolation, not a literal `:memory:`
+    /// handle. The backing file is removed when the returned [`TempDir`]
+    /// guard is dropped.
     pub fn open_in_memory() -> Result<Self> {
         // Use a temporary directory for CAS in in-memory mode
         let cas_root = std::env::temp_dir().join("sddk_cas_inmemory");
         std::fs::create_dir_all(&cas_root).ok();
-        Self::from_connection(Connection::open_in_memory()?, true, cas_root)
+        Self::open_isolated()
     }
 
     /// Opens an in-memory database with a specific CAS root path.
@@ -262,7 +274,21 @@ impl Storage {
     /// where the CAS root path needs to be controlled.
     #[cfg(test)]
     pub fn open_in_memory_with_cas_root(cas_root: std::path::PathBuf) -> Result<Self> {
-        Self::from_connection(Connection::open_in_memory()?, true, cas_root)
+        let _ = cas_root;
+        Self::open_isolated()
+    }
+
+    /// Shared backend for the isolated (in-memory) constructors: a private
+    /// tempdir hosting a fresh `ledger.sqlite`. Canonical event emission
+    /// opens this same file via `SqliteEventStore::open_path`, so the
+    /// redirect substrate always exists. The tempdir guard lives inside the
+    /// [`Storage`] handle and removes the directory on drop.
+    fn open_isolated() -> Result<Self> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("ledger.sqlite");
+        let mut storage = Self::open(&path)?;
+        storage.isolation_dir = Some(dir);
+        Ok(storage)
     }
 
     fn from_connection(
@@ -291,6 +317,8 @@ impl Storage {
             cas_root,
             handle_id,
             cas_root_id_cache: std::sync::OnceLock::new(),
+            writable,
+            isolation_dir: None,
         })
     }
 
@@ -298,6 +326,34 @@ impl Storage {
     ///
     /// The CAS root ID is the SHA-256 of the canonical absolute CAS root path.
     /// Two storage handles with the same CAS root path will return the same ID.
+
+    /// Returns the filesystem path of the backing SQLite database.
+    ///
+    /// Used by the WU-C1.2 redirect to open the canonical
+    /// [`SqliteEventStore`] over the same file. Errors on in-memory handles.
+    fn database_path(&self) -> Result<std::path::PathBuf> {
+        storage_database_path(&self.connection)
+    }
+
+    /// Test-only access to the raw connection (legacy-table seeding in
+    /// integration tests). Not part of the public contract.
+    #[doc(hidden)]
+    pub fn connection_for_tests(&self) -> &Connection {
+        &self.connection
+    }
+
+    /// Test-only row count of the legacy `ledger_events` table (used by the
+    /// WU-C1.2 parity gate to assert the redirect does not write legacy).
+    #[doc(hidden)]
+    pub fn legacy_ledger_count_for_tests(&self) -> usize {
+        self.connection
+            .query_row("SELECT COUNT(*) FROM ledger_events", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap_or(0) as usize
+    }
+
+    /// Returns the stable CAS root identity string for this storage.
     pub fn cas_root_id(&self) -> String {
         self.cas_root_id_cache
             .get_or_init(|| {
@@ -528,6 +584,11 @@ impl Storage {
     }
 
     /// Inserts a cycle snapshot and its initial event atomically.
+    ///
+    /// Since the WU-C1.2 redirect, the snapshot write stays transactional on
+    /// the `cycles` table while the domain event is emitted through the
+    /// canonical `events_v1` stream (`cycle:<cycle_id>`); `ledger_events` is
+    /// no longer appended for domain events (C1-REDIRECT-1).
     pub fn insert_cycle_with_event(
         &mut self,
         cycle: &CycleRecord,
@@ -538,9 +599,8 @@ impl Storage {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         insert_cycle_on(&transaction, cycle)?;
-        let appended = append_event_on(&transaction, event)?;
         transaction.commit()?;
-        Ok(appended)
+        self.emit_canonical_event(event)
     }
 
     /// Loads a cycle snapshot by identifier.
@@ -556,14 +616,19 @@ impl Storage {
             .ok_or_else(|| not_found("cycle", cycle_id))
     }
 
-    /// Replaces a cycle snapshot and appends its causal event atomically.
+    /// Replaces a cycle snapshot and appends its causal event.
     ///
     /// When `release_lease_on_phase_change` is `true`, the method also
-    /// deletes the `cycles_lease` row and appends a `lease.released` ledger
-    /// event inside the same transaction. The caller (typically
-    /// `Engine::apply_transition`) opts in only when the transition changes
-    /// the cycle's `phase` and the outcome is `Succeeded`; on rollback both
-    /// the cycle update and the lease release are discarded.
+    /// deletes the `cycles_lease` row and emits a `lease.released` domain
+    /// event. The caller (typically `Engine::apply_transition`) opts in only
+    /// when the transition changes the cycle's `phase` and the outcome is
+    /// `Succeeded`.
+    ///
+    /// Since the WU-C1.2 redirect, the snapshot write and the lease release
+    /// stay on the `cycles`/`cycle_leases` tables while the domain events
+    /// are emitted through the canonical `events_v1` stream
+    /// (`cycle:<cycle_id>`); `ledger_events` is no longer appended for
+    /// domain events (C1-REDIRECT-2).
     pub fn update_cycle_with_event(
         &mut self,
         manifest: &CycleManifest,
@@ -572,10 +637,7 @@ impl Storage {
         release_lease_on_phase_change: bool,
     ) -> Result<LedgerEvent> {
         ensure_event_scope(manifest, event)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = transaction.execute(
+        let changed = self.connection.execute(
             "UPDATE cycles SET
                 project_id = ?2,
                 workspace_id = ?3,
@@ -597,9 +659,13 @@ impl Storage {
         if changed == 0 {
             return Err(not_found("cycle", &manifest.cycle_id));
         }
-        let appended = append_event_on(&transaction, event)?;
+        // The main event is emitted first: the derived `lease.released` is
+        // *caused by* the transition (causation_id points at it) and must
+        // occupy the next sequence in the canonical `cycle:<id>` stream.
+        let main_event = self.emit_canonical_event(event)?;
         if release_lease_on_phase_change {
-            let deleted = transaction
+            let deleted = self
+                .connection
                 .execute(
                     "DELETE FROM cycle_leases WHERE cycle_id = ?1",
                     [&manifest.cycle_id],
@@ -622,28 +688,163 @@ impl Storage {
                         "cycle_id": manifest.cycle_id,
                         "released_at_ms": updated_at,
                     }),
-                    causation_id: event.causation_id.clone(),
+                    causation_id: Some(main_event.event_id.clone()),
                     correlation_id: event.correlation_id.clone(),
                 };
-                append_event_on(&transaction, &release_event)?;
+                self.emit_canonical_event(&release_event)?;
             }
         }
-        transaction.commit()?;
-        Ok(appended)
+        Ok(main_event)
     }
 
     /// Appends one immutable event to the ledger.
+    ///
+    /// Since the WU-C1.2 redirect this is served by the canonical
+    /// `events_v1` stream via [`SqliteEventStore`] (`project:<project_id>`
+    /// stream when the input carries no cycle); `ledger_events` is no longer
+    /// appended for domain events (C1-REDIRECT-3).
     pub fn append_event(&mut self, event: &LedgerEventInput) -> Result<LedgerEvent> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let appended = append_event_on(&transaction, event)?;
-        transaction.commit()?;
-        Ok(appended)
+        self.emit_canonical_event(event)
+    }
+
+    /// Redirects a legacy `LedgerEventInput` to the canonical `events_v1`
+    /// table (WU-C1.2 strangler cutover, C1-REDIRECT-1..4).
+    ///
+    /// Persists an `EventEnvelopeV1` via the canonical [`SqliteEventStore`]
+    /// path and returns the equivalent `LedgerEvent` view derived from the
+    /// canonical receipt. `ledger_events` is no longer written for domain
+    /// events: it stays read-only for pre-cutover corpora (R-002.4).
+    ///
+    /// Mapping decisions (parity with `kernel_envelope_to_v1` in
+    /// `graph_store.rs`):
+    /// - `stream_id` = `cycle:<cycle_id>` when a cycle is set, otherwise
+    ///   `project:<project_id>` (global projection replays per-project).
+    /// - `sequence` = canonical per-stream sequence (legacy global seq drops).
+    /// - `actor_ref` when present, else a `System` actor with `input.actor`.
+    /// - `command_id`, `state_before`/`state_after` ride in `metadata`
+    ///   (envelope has no first-class columns for them).
+    /// - subjects: one `cycle:<id>` (or `project:<id>`) entity, matching the
+    ///   legacy root-subject convention.
+    fn emit_canonical_event(&self, input: &LedgerEventInput) -> Result<LedgerEvent> {
+        use sddk_domain::{ActorKind, ActorRef, EntityRef, EventEnvelopeV1};
+        let stream_id = match &input.cycle_id {
+            Some(cycle_id) => format!("cycle:{cycle_id}"),
+            None => format!("project:{}", input.project_id),
+        };
+        let subject_id = input
+            .cycle_id
+            .clone()
+            .unwrap_or_else(|| input.project_id.clone());
+        let actor = input.actor_ref.clone().unwrap_or_else(|| ActorRef {
+            kind: ActorKind::System,
+            id: input.actor.clone(),
+            definition_hash: None,
+            policy_hash: None,
+            model: None,
+            role: None,
+        });
+        let metadata = json!({
+            // Redirect marker: lets verify_cross_ledger_consistency tell
+            // redirect output apart from third-party events_v1 writers.
+            "redirect": "sddk-c1",
+            "command_id": input.command_id,
+            "state_before": input.state_before,
+            "state_after": input.state_after,
+        });
+        let mut envelope = EventEnvelopeV1 {
+            event_id: input.event_id.clone(),
+            event_type: input.event_type.clone(),
+            schema_version: EventEnvelopeV1::SCHEMA_VERSION,
+            stream_id: stream_id.clone(),
+            // Placeholder; `append` validates and assigns the canonical
+            // per-stream sequence.
+            sequence: 0,
+            project_id: input.project_id.clone(),
+            occurred_at: input.occurred_at.clone(),
+            recorded_at: input.occurred_at.clone(),
+            actor,
+            subjects: vec![EntityRef {
+                kind: if input.cycle_id.is_some() {
+                    "cycle".to_string()
+                } else {
+                    "project".to_string()
+                },
+                id: subject_id,
+                version: None,
+                content_hash: None,
+            }],
+            payload: input.payload.clone(),
+            evidence_refs: vec![],
+            // `compute_content_hash` blanks content_hash/sequence/recorded_at
+            // before hashing, so the placeholder values do not affect the
+            // digest.
+            content_hash: String::new(),
+            metadata: Some(metadata),
+            causation_id: input.causation_id.clone(),
+            correlation_id: Some(
+                input
+                    .correlation_id
+                    .clone()
+                    .unwrap_or_else(|| input.frame_id.clone()),
+            ),
+            cycle_id: input.cycle_id.clone(),
+            frame_id: Some(input.frame_id.clone()),
+            fork_id: None,
+        };
+        envelope.content_hash = envelope.compute_content_hash();
+        if !self.writable {
+            return Err(StorageError::LedgerIntegrity {
+                sequence: 0,
+                reason: "cannot append canonical events on a read-only storage".to_owned(),
+            });
+        }
+        let mut store = SqliteEventStore::open_path(self.database_path()?)?;
+        let receipt = store
+            .append(&envelope)
+            .map_err(|e| integrity_error(0, &format!("canonical event append failed: {e}")))?;
+        Ok(LedgerEvent {
+            sequence: receipt.sequence as i64,
+            event_id: receipt.event_id,
+            project_id: input.project_id.clone(),
+            cycle_id: input.cycle_id.clone(),
+            frame_id: input.frame_id.clone(),
+            command_id: input.command_id.clone(),
+            actor: input.actor.clone(),
+            actor_ref: input.actor_ref.clone(),
+            event_type: input.event_type.clone(),
+            occurred_at: input.occurred_at.clone(),
+            state_before: input.state_before.clone(),
+            state_after: input.state_after.clone(),
+            payload: input.payload.clone(),
+            causation_id: input.causation_id.clone(),
+            correlation_id: input.correlation_id.clone(),
+            // Parity contract: `event_hash` mirrors the canonical content
+            // hash so downstream receipt comparisons keep working unchanged.
+            event_hash: receipt.content_hash,
+            // Parity contract: legacy `previous_hash` carried the chain link,
+            // so the canonical `chain_hash` rides in the same field.
+            previous_hash: Some(receipt.chain_hash),
+        })
     }
 
     /// Lists all ledger events in ascending sequence order.
+    ///
+    /// Since the WU-C1.2 redirect this merges the pre-cutover legacy corpus
+    /// (`ledger_events`, read-only) with the canonical `events_v1` streams
+    /// (C1-READ-1), ordered by sequence with legacy rows first on ties.
     pub fn list_events(&self) -> Result<Vec<LedgerEvent>> {
+        let mut events = self.list_legacy_events()?;
+        let mut canonical = self.canonical_events()?;
+        canonical.sort_by_key(|event| event.sequence);
+        events.extend(canonical);
+        Ok(events)
+    }
+
+
+    /// Reads the pre-cutover legacy corpus from `ledger_events` in ascending
+    /// sequence order. The table is never written for domain events since the
+    /// redirect, so this is a stable historical view.
+    fn list_legacy_events(&self) -> Result<Vec<LedgerEvent>> {
         let mut statement = self.connection.prepare(
             "SELECT sequence, event_id, project_id, cycle_id, frame_id,
                     command_id, actor, event_type, occurred_at,
@@ -655,8 +856,32 @@ impl Storage {
         rows.map(|row| row.map_err(StorageError::from)).collect()
     }
 
+    /// Loads every canonical `events_v1` event mapped into the `LedgerEvent`
+    /// view (C1-READ-2).
+    fn canonical_events(&self) -> Result<Vec<LedgerEvent>> {
+        let store = SqliteEventStore::open_path(self.database_path()?)?;
+        let mut out = Vec::new();
+        for stream in store.list_streams()? {
+            let stream_events = store.load_stream(&stream, None, u32::MAX)?;
+            out.extend(stream_events.iter().map(canonical_event_to_ledger));
+        }
+        Ok(out)
+    }
+
     /// Lists ledger events for one cycle in ascending global sequence order.
     pub fn list_cycle_events(&self, cycle_id: &str) -> Result<Vec<LedgerEvent>> {
+        let mut events = self.list_legacy_cycle_events(cycle_id)?;
+        events.extend(
+            self.canonical_events()?
+                .into_iter()
+                .filter(|event| event.cycle_id.as_deref() == Some(cycle_id)),
+        );
+        events.sort_by_key(|event| event.sequence);
+        Ok(events)
+    }
+
+    /// Reads the pre-cutover legacy corpus for one cycle.
+    fn list_legacy_cycle_events(&self, cycle_id: &str) -> Result<Vec<LedgerEvent>> {
         let mut statement = self.connection.prepare(
             "SELECT sequence, event_id, project_id, cycle_id, frame_id,
                     command_id, actor, event_type, occurred_at,
@@ -673,19 +898,27 @@ impl Storage {
     /// Used by telemetry ingest to derive metrics for cycles that have no
     /// metrics.jsonl entry.
     pub fn load_all_ledger_events(&self) -> Result<Vec<LedgerEvent>> {
-        let mut statement = self.connection.prepare(
-            "SELECT sequence, event_id, project_id, cycle_id, frame_id,
-                    command_id, actor, event_type, occurred_at,
-                    state_before_json, state_after_json, payload_json,
-                    previous_hash, event_hash
-             FROM ledger_events ORDER BY sequence ASC",
-        )?;
-        let rows = statement.query_map([], event_from_row)?;
-        rows.map(|row| row.map_err(StorageError::from)).collect()
+        let mut events = self.list_legacy_events()?;
+        let mut canonical = self.canonical_events()?;
+        canonical.sort_by_key(|event| event.sequence);
+        events.extend(canonical);
+        Ok(events)
     }
 
     /// Lists ledger events sharing one command frame in ascending sequence order.
     pub fn list_frame_events(&self, frame_id: &str) -> Result<Vec<LedgerEvent>> {
+        let mut events = self.list_legacy_frame_events(frame_id)?;
+        events.extend(
+            self.canonical_events()?
+                .into_iter()
+                .filter(|event| event.frame_id == frame_id),
+        );
+        events.sort_by_key(|event| event.sequence);
+        Ok(events)
+    }
+
+    /// Reads the pre-cutover legacy corpus for one command frame.
+    fn list_legacy_frame_events(&self, frame_id: &str) -> Result<Vec<LedgerEvent>> {
         let mut statement = self.connection.prepare(
             "SELECT sequence, event_id, project_id, cycle_id, frame_id,
                     command_id, actor, event_type, occurred_at,
@@ -701,16 +934,29 @@ impl Storage {
     /// capped at `limit` rows. M9.5 live-mode streaming foundation
     /// (`sddk ledger watch`).
     pub fn list_events_after(&self, after_sequence: i64, limit: i64) -> Result<Vec<LedgerEvent>> {
-        let mut statement = self.connection.prepare(
-            "SELECT sequence, event_id, project_id, cycle_id, frame_id,
-                    command_id, actor, event_type, occurred_at,
-                    state_before_json, state_after_json, payload_json,
-                    previous_hash, event_hash
-             FROM ledger_events WHERE sequence > ?1
-             ORDER BY sequence ASC LIMIT ?2",
-        )?;
-        let rows = statement.query_map(rusqlite::params![after_sequence, limit], event_from_row)?;
-        rows.map(|row| row.map_err(StorageError::from)).collect()
+        // Merged view: legacy rows keep the historical global sequence;
+        // canonical streams carry per-stream sequences. The cursor applies
+        // to the merged sequence domain (legacy corpus first on ties), so
+        // fresh repositories stream canonical events seamlessly while the
+        // pre-cutover corpus remains addressable by its historical cursor.
+        let mut events: Vec<LedgerEvent> = self
+            .list_legacy_events()?
+            .into_iter()
+            .filter(|event| event.sequence > after_sequence)
+            .collect();
+        let mut canonical = self.canonical_events()?;
+        canonical.sort_by_key(|event| event.sequence);
+        events.extend(
+            canonical
+                .iter()
+                .filter(|event| event.sequence > after_sequence)
+                .cloned(),
+        );
+        events.sort_by_key(|event| event.sequence);
+        Ok(events
+            .into_iter()
+            .take(limit.max(0) as usize)
+            .collect())
     }
 
     /// Deletes only the materialized cycle snapshot, preserving its ledger events.
@@ -767,10 +1013,16 @@ impl Storage {
     }
 
     /// Verifies sequence continuity, predecessor links, and event hashes.
+    ///
+    /// Since the WU-C1.2 redirect the check is two-sided (C1-READ-3): the
+    /// pre-cutover legacy corpus keeps its own hash-link verification, and
+    /// every canonical `events_v1` stream is verified with the event store's
+    /// chain verifier. The two ledgers are verified independently: canonical
+    /// events intentionally no longer chain into the legacy table.
     pub fn verify_ledger(&self) -> Result<LedgerVerification> {
-        let events = self.list_events()?;
+        let legacy = self.list_legacy_events()?;
         let mut previous_hash: Option<String> = None;
-        for (expected_sequence, event) in (1_i64..).zip(&events) {
+        for (expected_sequence, event) in (1_i64..).zip(&legacy) {
             if event.sequence != expected_sequence {
                 return Err(integrity_error(event.sequence, "sequence gap"));
             }
@@ -783,9 +1035,25 @@ impl Storage {
             }
             previous_hash = Some(event.event_hash.clone());
         }
+        let canonical = self.canonical_events()?;
+        let store = SqliteEventStore::open_path(self.database_path()?)?;
+        for stream in store.list_streams()? {
+            if let Err(error) = store.verify_stream_chain(&stream) {
+                return Err(integrity_error(-1, &format!("canonical stream {stream}: {error}")));
+            }
+            if let Err(error) = store.verify_chain_integrity(&stream) {
+                return Err(integrity_error(
+                    -1,
+                    &format!("canonical stream {stream} chain: {error}"),
+                ));
+            }
+        }
         Ok(LedgerVerification {
-            event_count: events.len(),
-            last_hash: previous_hash,
+            event_count: legacy.len() + canonical.len(),
+            last_hash: canonical
+                .last()
+                .map(|event| event.event_hash.clone())
+                .or(previous_hash),
         })
     }
 
@@ -808,6 +1076,18 @@ impl Storage {
     ) -> Result<CrossLedgerConsistencyReport> {
         use std::collections::HashSet;
 
+        // WU-C1.2: `ledger_events` is a read-only pre-cutover corpus. Domain
+        // events written after the redirect land only in `events_v1`, so the
+        // comparison below would flag every new event as an orphan. Events
+        // produced by the redirect (`Storage` wrappers) are excluded from
+        // the divergence report via the `sddk.redirect` marker metadata;
+        // events inserted directly (raw SQL / third-party writers) are still
+        // reported.
+        let redirected_ids: HashSet<String> = self
+            .redirected_event_ids()?
+            .into_iter()
+            .collect();
+
         // Load all events_v1 event_ids and ledger_events event_ids
         let events_v1_ids: HashSet<String> = {
             let mut stmt = self
@@ -827,9 +1107,10 @@ impl Storage {
                 .collect::<std::result::Result<HashSet<_>, _>>()?
         };
 
-        // Events in events_v1 but not in ledger_events
+        // Events in events_v1 but not in ledger_events (redirect output excluded)
         let in_v1_not_ledger: Vec<String> = events_v1_ids
             .difference(&ledger_event_ids)
+            .filter(|id| !redirected_ids.contains(*id))
             .cloned()
             .collect();
 
@@ -851,6 +1132,18 @@ impl Storage {
             tolerance_events,
             within_tolerance,
         })
+    }
+
+    /// Event ids written by the WU-C1.2 redirect (marker metadata
+    /// `redirect: "sddk-c1"` set by [`Storage::emit_canonical_event`]).
+    fn redirected_event_ids(&self) -> Result<Vec<String>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT event_id FROM events_v1
+             WHERE json_extract(metadata_json, '$.redirect') = 'sddk-c1'",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|r| r.map_err(StorageError::from))
+            .collect()
     }
 
     /// Inserts artifact metadata. Artifact bytes remain in the external store.
@@ -1297,8 +1590,11 @@ impl Storage {
             causation_id: None,
             correlation_id: None,
         };
-        append_event_on(&transaction, &event)?;
+        // WU-C1.2 redirect (C1-REDIRECT-4): the lease row delete is committed
+        // on the kernel tables while the `lease.released` event goes to the
+        // canonical `cycle:<cycle_id>` events_v1 stream.
         transaction.commit()?;
+        self.emit_canonical_event(&event)?;
         Ok(true)
     }
 
@@ -1566,61 +1862,6 @@ fn workspace_optional_on(
         .optional()?)
 }
 
-fn append_event_on(transaction: &Transaction<'_>, input: &LedgerEventInput) -> Result<LedgerEvent> {
-    let previous = transaction
-        .query_row(
-            "SELECT sequence, event_hash FROM ledger_events ORDER BY sequence DESC LIMIT 1",
-            [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()?;
-    let (sequence, previous_hash) = previous
-        .map(|(sequence, hash)| (sequence + 1, Some(hash)))
-        .unwrap_or((1, None));
-    let event_hash = hash_event(sequence, input, &previous_hash)?;
-    transaction.execute(
-        "INSERT INTO ledger_events (
-            sequence, event_id, project_id, cycle_id, frame_id, command_id,
-            actor, event_type, occurred_at, state_before_json,
-            state_after_json, payload_json, previous_hash, event_hash
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-        params![
-            sequence,
-            input.event_id,
-            input.project_id,
-            input.cycle_id,
-            input.frame_id,
-            input.command_id,
-            input.actor,
-            input.event_type,
-            input.occurred_at,
-            optional_json(&input.state_before)?,
-            optional_json(&input.state_after)?,
-            serde_json::to_string(&input.payload)?,
-            previous_hash,
-            event_hash
-        ],
-    )?;
-    Ok(LedgerEvent {
-        sequence,
-        event_id: input.event_id.clone(),
-        project_id: input.project_id.clone(),
-        cycle_id: input.cycle_id.clone(),
-        frame_id: input.frame_id.clone(),
-        command_id: input.command_id.clone(),
-        actor: input.actor.clone(),
-        actor_ref: input.actor_ref.clone(),
-        event_type: input.event_type.clone(),
-        occurred_at: input.occurred_at.clone(),
-        state_before: input.state_before.clone(),
-        state_after: input.state_after.clone(),
-        payload: input.payload.clone(),
-        previous_hash,
-        event_hash,
-        causation_id: input.causation_id.clone(),
-        correlation_id: input.correlation_id.clone(),
-    })
-}
 
 #[derive(Serialize)]
 struct EventHashMaterial<'a> {
@@ -1840,6 +2081,92 @@ fn gate_receipt_from_row(row: &Row<'_>) -> rusqlite::Result<GateReceipt> {
 
 fn json_from_sql_error(error: serde_json::Error) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+}
+
+/// Maps a canonical `EventEnvelopeV1` into the legacy `LedgerEvent` view
+/// (inverse of the redirect mapping in
+/// [`Storage::emit_canonical_event`]).
+///
+/// - `sequence`: envelope per-stream sequence (canonical authority).
+/// - `previous_hash`: `None` (linkage lives in `chain_hash`; the legacy
+///   hash-link semantics do not apply to canonical events).
+/// - `command_id` / `state_before` / `state_after`: recovered from
+///   `metadata` when present.
+/// - `actor`: `actor_ref.id` (the legacy string mirrors the canonical actor).
+fn canonical_event_to_ledger(envelope: &sddk_domain::EventEnvelopeV1) -> LedgerEvent {
+    let metadata = envelope.metadata.as_ref();
+    let command_id = metadata
+        .and_then(|m| m.get("command_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let state_before = metadata
+        .and_then(|m| m.get("state_before"))
+        .filter(|v| !v.is_null())
+        .cloned();
+    let state_after = metadata
+        .and_then(|m| m.get("state_after"))
+        .filter(|v| !v.is_null())
+        .cloned();
+    LedgerEvent {
+        sequence: envelope.sequence as i64,
+        event_id: envelope.event_id.clone(),
+        project_id: envelope.project_id.clone(),
+        cycle_id: envelope.cycle_id.clone(),
+        frame_id: envelope.frame_id.clone().unwrap_or_default(),
+        command_id,
+        actor: envelope.actor.id.clone(),
+        actor_ref: Some(envelope.actor.clone()),
+        event_type: envelope.event_type.clone(),
+        occurred_at: envelope.occurred_at.clone(),
+        state_before,
+        state_after,
+        payload: envelope.payload.clone(),
+        causation_id: envelope.causation_id.clone(),
+        correlation_id: envelope.correlation_id.clone(),
+        event_hash: envelope.content_hash.clone(),
+        previous_hash: None,
+    }
+}
+
+/// Returns the filesystem path of the SQLite database backing a connection.
+///
+/// Backed by `PRAGMA database_list` so it works for file-backed handles in
+/// both read-write and read-only mode. In-memory handles fail closed: they
+/// have no canonical-stream substrate to redirect to.
+fn storage_database_path(connection: &Connection) -> Result<std::path::PathBuf> {
+    let path: String = connection.query_row(
+        "SELECT file FROM pragma_database_list() WHERE name = 'main'",
+        [],
+        |row| row.get(0),
+    )?;
+    if path.is_empty() {
+        return Err(StorageError::LedgerIntegrity {
+            sequence: 0,
+            reason: "canonical event redirect requires a file-backed database".to_owned(),
+        });
+    }
+    Ok(std::path::PathBuf::from(path))
+}
+
+/// Converts `sddk_domain::StorageError` (canonical event store boundary) →
+/// `sddk_storage::StorageError` (WU-C1.2 redirect).
+impl From<sddk_domain::StorageError> for StorageError {
+    fn from(err: sddk_domain::StorageError) -> Self {
+        match err {
+            sddk_domain::StorageError::NotFound { entity, id } => {
+                StorageError::NotFound { entity, id }
+            }
+            sddk_domain::StorageError::LeaseConflict { cycle_id, owner } => {
+                StorageError::LeaseConflict {
+                    cycle_id,
+                    owner,
+                    expires_at_ms: 0,
+                }
+            }
+            other => integrity_error(0, &other.to_string()),
+        }
+    }
 }
 
 fn not_found(entity: &'static str, id: &str) -> StorageError {

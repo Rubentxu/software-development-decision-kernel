@@ -67,6 +67,28 @@ impl SqliteEventStore {
         Ok(Self { conn })
     }
 
+    /// Opens (or creates) the canonical events table at an explicit database
+    /// file path.
+    ///
+    /// Unlike [`Self::open`], which derives `ledger.sqlite` from a directory,
+    /// this accepts the exact file path so an existing [`Storage`] handle and
+    /// the canonical event store can point at the same database file. Writer
+    /// serialization is delegated to WAL mode + busy timeout (same policy as
+    /// every other connection to `ledger.sqlite`).
+    pub fn open_path(path: impl AsRef<Path>) -> Result<Self, DomainStorageError> {
+        let conn = Connection::open(path.as_ref())
+            .map_err(|e| DomainStorageError::Database(format!("open: {e}")))?;
+        conn.busy_timeout(Duration::from_secs(5))
+            .map_err(|e| DomainStorageError::Database(format!("busy_timeout: {e}")))?;
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(|e| DomainStorageError::Database(format!("foreign_keys: {e}")))?;
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .map_err(|e| DomainStorageError::Database(format!("journal_mode: {e}")))?;
+        let mut conn = conn;
+        Self::run_migrations(&mut conn)?;
+        Ok(Self { conn })
+    }
+
     /// Lists all stream ids present in the event ledger (distinct).
     pub fn list_streams(&self) -> Result<Vec<String>, DomainStorageError> {
         let mut stmt = self

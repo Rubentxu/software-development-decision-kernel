@@ -152,3 +152,29 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
     assert_eq!(count_final, count_a);
     assert_eq!(digest_final, digest_a, "original no debe mutar por exportar");
 }
+
+/// WU-C1.2 gate: tras el redirect, los eventos de dominio nuevos NO se
+/// escriben en `ledger_events`; la tabla queda como corpus histórico de solo
+/// lectura y los wrappers entregan los eventos nuevos al EventStore canónico.
+#[test]
+fn domain_event_redirect_does_not_write_legacy_table() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).expect("open storage");
+    storage.insert_project(&project_record()).unwrap();
+
+    let before = count_legacy(&storage);
+    storage.append_event(&sample_input(100)).unwrap();
+    let after = count_legacy(&storage);
+    assert_eq!(
+        before, after,
+        "append_event no debe escribir en ledger_events tras el redirect (WU-C1.2)"
+    );
+
+    // El evento nuevo sí es visible vía la lectura fusionada (events_v1).
+    let all = storage.load_all_ledger_events().unwrap();
+    assert!(all.iter().any(|e| e.event_id == "evt-mig-0100"));
+}
+
+fn count_legacy(storage: &Storage) -> usize {
+    storage.legacy_ledger_count_for_tests()
+}

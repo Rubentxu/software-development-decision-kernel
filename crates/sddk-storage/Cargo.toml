@@ -18,9 +18,12 @@ rusqlite = { workspace = true }
 sha2 = { workspace = true }
 sddk-domain = { path = "../sddk-domain" }
 uuid = { workspace = true }
+# Backing store for `Storage::open_in_memory` (WU-C1.2): the canonical event
+# redirect needs a file-backed `events_v1` substrate, so "in-memory" handles
+# get a private tempdir instead of a `:memory:` connection.
+tempfile = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.11"
 regex = { workspace = true }
 serde-saphyr = { workspace = true }
-tempfile = { workspace = true }

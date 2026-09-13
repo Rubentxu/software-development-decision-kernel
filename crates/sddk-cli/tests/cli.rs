@@ -1306,11 +1306,13 @@ fn cli_walks_cycle_with_fencing_and_rebuilds_state() {
     ]);
     assert!(verified.status.success());
     let verify_json: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
-    // The explore→specify phase change auto-releases the lease in the same
-    // transaction, which now emits a `lease.released` event. The total
-    // expected event count is therefore 3 (cycle.created + cycle.transitioned
-    // + lease.released).
-    assert_eq!(verify_json["event_count"], 3);
+    // The explore→specify phase change auto-releases the lease (emitting a
+    // `lease.released` event) and the workflow runtime emits `workflow.*`
+    // events into their canonical streams. Since the WU-C1.2 redirect the
+    // merged ledger view counts both corpora: 3 cycle-stream events
+    // (cycle.created + cycle.transitioned + lease.released) + 3 workflow
+    // events.
+    assert_eq!(verify_json["event_count"], 6);
 
     let events = fixture.run(&[
         "ledger",
@@ -1326,15 +1328,18 @@ fn cli_walks_cycle_with_fencing_and_rebuilds_state() {
     ]);
     assert!(events.status.success());
     let events_json: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
-    // After REQ-FSI-003 the explore→specify phase change emits a
-    // `lease.released` event in the same transaction, so the total event
-    // count is 3 (cycle.created + cycle.transitioned + lease.released) and
-    // the auto-release event shares the same frame as the transition.
-    assert_eq!(events_json.as_array().unwrap().len(), 3);
+    // After the WU-C1.2 redirect the merged view includes the canonical
+    // workflow events: 6 total (3 cycle-stream + 3 workflow-stream) and the
+    // auto-release event shares the same frame as the transition.
+    assert_eq!(events_json.as_array().unwrap().len(), 6);
+    // Frame sharing holds on the cycle stream: the auto-release event shares
+    // the transition frame. Workflow events carry no frame_id (empty string
+    // in the merged view) and live on their own canonical streams.
     let frames = events_json
         .as_array()
         .unwrap()
         .iter()
+        .filter(|event| !event["frame_id"].as_str().unwrap().is_empty())
         .map(|event| event["frame_id"].as_str().unwrap())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(frames.len(), 2);
