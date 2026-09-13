@@ -20,6 +20,8 @@
 //! the classifier detects it (mutation self-check,
 //! CONFORMANCE-FITNESS-RATCHETS §mutation).
 
+#![allow(deprecated)] // ratchet mutation tests exercise the deprecated forwarder by design (C1.3)
+
 use std::path::{Path, PathBuf};
 
 /// The literal SQL fragment that constitutes a legacy write. Built via
@@ -109,10 +111,10 @@ fn scan_for_legacy_writers(root: &Path) -> Vec<PathBuf> {
     rust_sources(&root.join("crates"), &mut sources);
     let mut offenders = Vec::new();
     for path in sources {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if file_offends(&path, root, &content) {
-                offenders.push(path);
-            }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && file_offends(&path, root, &content)
+        {
+            offenders.push(path);
         }
     }
     offenders.sort();
@@ -321,10 +323,10 @@ fn scan_for_undeclared_readers(root: &Path, allowlisted: &[String]) -> Vec<PathB
         if declared {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if strip_rust_comments(&content).contains(LEGACY_READ_FRAGMENT) {
-                offenders.push(path);
-            }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && strip_rust_comments(&content).contains(LEGACY_READ_FRAGMENT)
+        {
+            offenders.push(path);
         }
     }
     offenders.sort();
@@ -377,25 +379,25 @@ fn legacy_reads_only_via_readonly_decoder_allowlist() {
     let mut sources = Vec::new();
     rust_sources(&root.join("crates"), &mut sources);
     for path in sources {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if file_offends(&path, &root, &content) {
-                let rel = path
-                    .strip_prefix(&root)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-                assert!(
-                    allowlisted.contains(&rel),
-                    "legacy write fragment in '{rel}' is neither in the WU-C1.3 \
-                     closed write set nor in the WU-C1.4 allowlist; the \
-                     ledger_events write surface is CLOSED since C1.3"
-                );
-                assert!(
-                    write_set.contains(&rel.as_str()),
-                    "'{rel}' contains a legacy write but is not in the closed \
-                     write set; write-capable allowlist entries are forbidden"
-                );
-            }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && file_offends(&path, &root, &content)
+        {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            assert!(
+                allowlisted.contains(&rel),
+                "legacy write fragment in '{rel}' is neither in the WU-C1.3 \
+                 closed write set nor in the WU-C1.4 allowlist; the \
+                 ledger_events write surface is CLOSED since C1.3"
+            );
+            assert!(
+                write_set.contains(&rel.as_str()),
+                "'{rel}' contains a legacy write but is not in the closed \
+                 write set; write-capable allowlist entries are forbidden"
+            );
         }
     }
 }
@@ -480,10 +482,10 @@ fn scan_for_conf09_offenders(root: &Path, allowlist: &[&str], fragment: &str) ->
     rust_sources(&root.join("crates"), &mut sources);
     let mut offenders = Vec::new();
     for path in sources {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if conf09_file_offends(&path, &root, &content, allowlist, fragment) {
-                offenders.push(path);
-            }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && conf09_file_offends(&path, root, &content, allowlist, fragment)
+        {
+            offenders.push(path);
         }
     }
     offenders.sort();

@@ -15,6 +15,8 @@
 //! 3. `SqliteEventStore` opened over the same database file
 //!    (`open_path`) sees exactly the same canonical events.
 
+#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders by design
+
 use sddk_domain::{CycleId, CycleManifest, LedgerEventInput, ProjectRecord, WorkspaceRecord};
 use sddk_storage::{Storage, StorageError};
 use serde_json::json;

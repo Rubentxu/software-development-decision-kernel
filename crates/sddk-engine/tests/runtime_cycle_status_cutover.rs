@@ -10,6 +10,8 @@
 //!    keeps all 11 variants and the derived summary coexists with the
 //!    persisted delivery status (scenario 7).
 
+#![allow(deprecated)] // cutover tests exercise the deprecated forwarder by design (C1.3)
+
 use std::collections::HashMap;
 
 use sddk_domain::{CycleManifest, CyclePath, CycleStatus, Phase};

@@ -351,11 +351,6 @@ impl Storage {
         })
     }
 
-    /// Returns the stable CAS root identity string for this storage.
-    ///
-    /// The CAS root ID is the SHA-256 of the canonical absolute CAS root path.
-    /// Two storage handles with the same CAS root path will return the same ID.
-
     /// Returns the filesystem path of the backing SQLite database.
     ///
     /// Used by the WU-C1.2 redirect to open the canonical
@@ -383,6 +378,9 @@ impl Storage {
     }
 
     /// Returns the stable CAS root identity string for this storage.
+    ///
+    /// The CAS root ID is the SHA-256 of the canonical absolute CAS root path.
+    /// Two storage handles with the same CAS root path will return the same ID.
     pub fn cas_root_id(&self) -> String {
         self.cas_root_id_cache
             .get_or_init(|| {

@@ -21,6 +21,8 @@
 //! desde el fixture se hace sobre un Storage NUEVO (path fresco), que es
 //! exactamente lo que haría el recovery tooling real.
 
+#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
+
 use sddk_domain::{LedgerEventInput, ProjectRecord};
 use sddk_storage::Storage;
 use serde_json::json;
@@ -133,7 +135,7 @@ fn legacy_ledger_export_reimport_is_idempotent_and_restart_safe() {
 
     // --- Restart: reabrir el storage reconstruido desde la misma ruta ---
     let reopened = Storage::open(dir.path().join("rebuilt.sqlite")).unwrap();
-    let (fixture_c, count_c, digest_c) = export_fixture(&reopened);
+    let (_fixture_c, count_c, digest_c) = export_fixture(&reopened);
     drop(reopened);
     assert_eq!(count_c, count_a, "count sobrevive al restart");
     assert_eq!(digest_c, digest_a, "digest sobrevive al restart");

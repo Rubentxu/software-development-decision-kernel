@@ -3,6 +3,8 @@
 //! Verifies that `Storage::verify_cross_ledger_consistency` correctly detects
 //! and reports divergences between `events_v1` and `ledger_events` tables.
 
+#![allow(deprecated)] // tests exercise the C1.3-deprecated forwarders / read-compat API by design
+
 use rusqlite::{Connection, params};
 use sddk_domain::{ActorKind, ActorRef, EventEnvelopeV1, ProjectRecord, WorkspaceRecord};
 use sddk_storage::Storage;
@@ -149,7 +151,7 @@ fn insert_legacy_event(conn: &Connection, event_id: &str) {
 #[test]
 fn verify_cross_ledger_consistency_passes_when_aligned() {
     let dir = TempDir::new().unwrap();
-    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
     let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
 
     storage.insert_project(&project_record()).unwrap();
@@ -201,7 +203,7 @@ fn verify_cross_ledger_consistency_detects_orphan_in_events_v1() {
 #[test]
 fn verify_cross_ledger_consistency_detects_orphan_in_ledger_events() {
     let dir = TempDir::new().unwrap();
-    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
 
     storage.insert_project(&project_record()).unwrap();
     storage.insert_workspace(&workspace_record()).unwrap();
@@ -228,7 +230,7 @@ fn verify_cross_ledger_consistency_detects_orphan_in_ledger_events() {
 #[test]
 fn verify_cross_ledger_consistency_tolerance_is_tolerated() {
     let dir = TempDir::new().unwrap();
-    let mut storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
+    let storage = Storage::open(dir.path().join("ledger.sqlite")).unwrap();
     let conn = Connection::open(dir.path().join("ledger.sqlite")).unwrap();
 
     storage.insert_project(&project_record()).unwrap();

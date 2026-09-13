@@ -10,6 +10,8 @@
 //!
 //! Follows the same XDG-isolation pattern as `cli_approval_e2e.rs`.
 
+#![allow(deprecated)] // these tests exercise the deprecated forwarder itself until C1.5 removes it
+
 use sddk_domain::LedgerEventInput;
 use sddk_domain::ProjectRecord;
 use serde_json::json;

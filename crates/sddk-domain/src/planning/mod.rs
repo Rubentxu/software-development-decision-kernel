@@ -1189,6 +1189,7 @@ impl EvidenceAttachmentRecord {
     /// legacy representative (supports, gates, produced_by, contradicts)
     /// are rejected here — persisting them requires a successor record
     /// shape, not a fake legacy kind (fail-closed).
+    #[allow(clippy::too_many_arguments)] // read-compat decoder: mirrors persisted row shape (WU-C2)
     pub fn from_universal_relation(
         id: EvidenceId,
         work_item_id: WorkItemId,
@@ -1225,6 +1226,7 @@ impl EvidenceAttachmentRecord {
     /// (get/list/spine-import) for rows predating MIGRATION_19; the
     /// relation tag is derived via `relation_tag()` so the universal
     /// column is always populated on read. Never a write path.
+    #[allow(clippy::too_many_arguments)] // read-compat decoder: mirrors persisted row shape (WU-C2)
     pub fn from_legacy_kind_tag(
         id: EvidenceId,
         work_item_id: WorkItemId,
@@ -1559,6 +1561,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // round-trip test of the legacy read-compat record itself (WU-C2)
     fn evidence_attachment_round_trip() {
         let ea = EvidenceAttachmentV1::new(
             "ev-001".into(),

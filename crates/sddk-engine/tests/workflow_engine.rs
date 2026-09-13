@@ -1,3 +1,5 @@
+#![allow(deprecated)] // cutover tests exercise the deprecated forwarder by design (C1.3)
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use sddk_domain::StorageError;
