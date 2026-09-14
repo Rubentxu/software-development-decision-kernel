@@ -395,4 +395,48 @@ mod tests {
         assert_eq!(store.get("plan", "head").unwrap(), Some(a));
         assert_eq!(store.get("graph", "head").unwrap(), Some(b));
     }
+
+    /// PR-UAT-004: two writers racing the same `expected_old` must be decided
+    /// by the single generic CAS invariant — exactly one `Updated`, one
+    /// `Stale`, and the ref ends on the winner's Oid. Decision Memory adds
+    /// only decision semantics on top of this substrate invariant.
+    #[test]
+    fn ref_store_cas_race_has_single_winner() {
+        use std::sync::Arc;
+
+        let store = Arc::new(RefStore::new());
+        let base = Oid::of(&serde_json::json!({"base": 1}));
+        store.cas("plan", "head", None, &base).expect("init");
+
+        let writer_a = Oid::of(&serde_json::json!({"writer": "a"}));
+        let writer_b = Oid::of(&serde_json::json!({"writer": "b"}));
+
+        let s1 = Arc::clone(&store);
+        let s2 = Arc::clone(&store);
+        let base1 = base.clone();
+        let base2 = base.clone();
+        let a = writer_a.clone();
+        let b = writer_b.clone();
+        let h1 = std::thread::spawn(move || s1.cas("plan", "head", Some(&base1), &a).unwrap());
+        let h2 = std::thread::spawn(move || s2.cas("plan", "head", Some(&base2), &b).unwrap());
+        let r1 = h1.join().expect("writer a joined");
+        let r2 = h2.join().expect("writer b joined");
+
+        let updated = [&r1, &r2]
+            .iter()
+            .filter(|r| matches!(r, RefUpdate::Updated { .. }))
+            .count();
+        let stale = [&r1, &r2]
+            .iter()
+            .filter(|r| matches!(r, RefUpdate::Stale { .. }))
+            .count();
+        assert_eq!(updated, 1, "exactly one writer must win the CAS race");
+        assert_eq!(stale, 1, "the other writer must observe a stale ref");
+
+        let final_oid = store.get("plan", "head").unwrap().unwrap();
+        assert!(
+            final_oid == writer_a || final_oid == writer_b,
+            "ref must end on the winning writer's Oid"
+        );
+    }
 }
