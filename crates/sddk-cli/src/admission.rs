@@ -4,10 +4,11 @@
 // admission.rs — C4 single enforcement choke point (D-01 / D-08 / R-4-001).
 //
 // `enforce_gated` maps a `RunnerVerdict` onto a blocking `EnforcementOutcome`.
-// Stage M1 (`LowMedium`): `Deny` aborts on ALL surfaces; `RequireApproval`
-// blocks Low/Medium surfaces and stays advisory on High surfaces until the
-// approval loop is live (M4, R-4-001 S2). The engine stays pure; this module
-// decides how the CLI reacts to the verdict.
+// Stage M4 (`All`): `Deny` aborts on ALL surfaces; every `RequireApproval`
+// blocks through the live M2 approval loop (a granted approval matching the
+// stable request hash re-admits). Per B+ (ADR-0111) only explicitly dangerous
+// actions reach `RequireApproval`. The engine stays pure; this module decides
+// how the CLI reacts to the verdict.
 
 use sddk_domain::projections::ApprovalProjection;
 use sddk_domain::{ApprovalDecision, EventStore, Projection};
@@ -23,16 +24,24 @@ use sha2::{Digest, Sha256};
 /// would be a new bypass surface, contradicting the cutover.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum EnforcementStage {
-    /// M1: RequireApproval blocks Low/Medium surfaces; High stays advisory.
-    LowMedium,
-    /// M4: RequireApproval blocks every surface via the live approval loop.
-    /// Constructed from M4 (WU-C4-14+) once the approval loop is live.
+    /// M1 rollback affordance: RequireApproval blocks Low/Medium surfaces;
+    /// High stays advisory. Not constructed in production since M4 = `All`.
+    /// Retained (deliberately unconstructed) so a stage flip stays a
+    /// single-commit revert. Owner: admission/authority maintainers. Reason:
+    /// rollback affordance. Exit trigger: remove once M4 enforcement is proven
+    /// across a full release cycle.
     #[allow(dead_code)]
+    LowMedium,
+    /// M4: every `RequireApproval` decision blocks via the live approval loop.
+    /// Active since the M2 approval loop closed. Combined with B+ (ADR-0111),
+    /// only explicitly dangerous actions reach `RequireApproval`, so routine
+    /// High-band operations are unaffected.
     All,
 }
 
-/// Current enforcement stage (D-08). M1 = `LowMedium`.
-pub(crate) const ENFORCEMENT_STAGE: EnforcementStage = EnforcementStage::LowMedium;
+/// Current enforcement stage (D-08). M4 = `All`: the M2 approval loop is live,
+/// so every `RequireApproval` blocks and a granted approval re-admits.
+pub(crate) const ENFORCEMENT_STAGE: EnforcementStage = EnforcementStage::All;
 
 /// Risk band of the surface a verdict was computed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,16 +143,16 @@ pub(crate) fn enforce_gated(
 
 /// Approval capability key (OQ-1 default: (surface, action) granularity).
 /// Example: `surface.cycle_state#cycle_supersede`.
-/// Consumed by the M2 approval loop (WU-C4-6+).
-#[allow(dead_code)]
+/// Consumed by the M2 approval loop (`emit_approval_requested_for`,
+/// `granted_approval_refs`).
 pub(crate) fn approval_capability_key(surface: &str, action: ActionKind) -> String {
     format!("surface.{}#{}", surface, action.as_str())
 }
 
 /// Stable SHA-256 over the full proposal identity (no timestamps), so the
 /// same (surface, action, target, actor) always yields the same hash.
-/// Consumed by the M2 approval loop (WU-C4-6+).
-#[allow(dead_code)]
+/// Consumed by the M2 approval loop (`emit_approval_requested_for`,
+/// `granted_approval_refs`).
 pub(crate) fn approval_request_hash(
     surface: &str,
     action: ActionKind,
@@ -464,18 +473,16 @@ pub(crate) fn enforce_admission_or_block_ctx(
     }
 }
 
-/// Verdict segment for event ids / payloads, from the engine decision plus
-/// the surface band (advisory vs blocking is an enforcement-stage concern).
+/// Verdict segment for event ids / payloads, from the engine decision.
 fn verdict_segment(verdict: &RunnerVerdict) -> String {
     match &verdict.decision {
         AdmissionDecision::Allow { .. } => "allow".to_string(),
         AdmissionDecision::Deny { .. } => "deny".to_string(),
-        AdmissionDecision::RequireApproval { .. } => {
-            match surface_band(verdict.capability.trim_start_matches("surface.")) {
-                SurfaceBand::High => "advisory_high_approval".to_string(),
-                _ => "require_approval".to_string(),
-            }
-        }
+        // B+ (ADR-0111): the risk band no longer makes approval advisory, so
+        // every `RequireApproval` is recorded as `require_approval`. The
+        // historical `advisory_high_approval` string remains decodable in the
+        // event schema but is never produced at M4.
+        AdmissionDecision::RequireApproval { .. } => "require_approval".to_string(),
         _ => "unknown".to_string(),
     }
 }
@@ -733,6 +740,118 @@ mod admission_tests {
         assert!(matches!(out, EnforcementOutcome::AwaitingApproval { .. }));
     }
 
+    /// PR-UAT-005 / B+ (ADR-0111): approval is action-driven, not band-driven.
+    /// Routine High-band operations allow; only explicitly dangerous actions
+    /// require approval and block at the production stage.
+    #[test]
+    fn approval_matrix_is_action_driven_not_band_driven() {
+        use sddk_engine::authority_engine::AuthorityEngineRunner;
+        let runner = AuthorityEngineRunner::new();
+        let cases = [
+            // (actor, surface, action, expect_approval)
+            (
+                "user:alice",
+                "cycle_state",
+                ActionKind::CycleTransition,
+                false,
+            ),
+            ("user:alice", "cycle_state", ActionKind::CyclePause, false),
+            ("user:alice", "cycle_state", ActionKind::CycleResume, false),
+            (
+                "user:alice",
+                "cycle_state",
+                ActionKind::CycleSupersede,
+                true,
+            ),
+            ("system", "gate_receipts", ActionKind::CliRun, false),
+            (
+                "user:alice",
+                "transition_records",
+                ActionKind::CycleTransition,
+                false,
+            ),
+            (
+                "user:alice",
+                "knowledge_graph_vault",
+                ActionKind::VaultIndex,
+                false,
+            ),
+            ("system", "github_releases", ActionKind::CliRelease, true),
+        ];
+        for (actor, surface, action, expect_approval) in cases {
+            let v = runner
+                .admit_surface(actor, surface, action, "t1", Facts::default())
+                .expect("admit");
+            let out = enforce_gated(&v, surface, ENFORCEMENT_STAGE);
+            if expect_approval {
+                assert!(
+                    matches!(v.decision, AdmissionDecision::RequireApproval { .. }),
+                    "{surface}/{action:?} must require approval, got {:?}",
+                    v.decision
+                );
+                assert!(out.blocks_effect(), "{surface}/{action:?} must block");
+            } else {
+                assert!(
+                    matches!(v.decision, AdmissionDecision::Allow { .. }),
+                    "{surface}/{action:?} must allow, got {:?}",
+                    v.decision
+                );
+                assert!(!out.blocks_effect(), "{surface}/{action:?} must not block");
+            }
+        }
+    }
+
+    /// D-03 / R-4-002: a granted approval re-admits the same action as Allow.
+    #[test]
+    fn approval_grant_re_admits_as_allow() {
+        use sddk_engine::authority_engine::{AuthorityEngineRunner, EvidenceRef};
+        let runner = AuthorityEngineRunner::new();
+        let facts = Facts {
+            approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
+            ..Facts::default()
+        };
+        let v = runner
+            .admit_surface(
+                "user:alice",
+                "cycle_state",
+                ActionKind::CycleSupersede,
+                "c1",
+                facts,
+            )
+            .expect("admit");
+        assert!(
+            matches!(v.decision, AdmissionDecision::Allow { .. }),
+            "granted approval must re-admit as Allow, got {:?}",
+            v.decision
+        );
+    }
+
+    /// Zero-bypass (PR-UAT-005): at the production stage every surface blocks a
+    /// `RequireApproval`, so no surface can remain advisory.
+    #[test]
+    fn zero_bypass_every_surface_blocks_require_approval() {
+        for surface in [
+            "cycle_state",
+            "gate_receipts",
+            "plan_revisions",
+            "transition_records",
+            "framework_bundle",
+            "github_releases",
+            "knowledge_graph_vault",
+            "plan_item",
+            "evidence_attachment",
+            "decision_record",
+            "dependency_edge",
+        ] {
+            let out = enforce_gated(&require_approval_verdict(), surface, ENFORCEMENT_STAGE);
+            assert!(
+                out.blocks_effect(),
+                "{surface} must block a RequireApproval at M4"
+            );
+            assert!(matches!(out, EnforcementOutcome::AwaitingApproval { .. }));
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     #[test]
@@ -801,27 +920,24 @@ mod admission_tests {
     }
 
     #[test]
-    fn runner_high_surface_stays_advisory_at_m1() {
+    fn runner_high_surface_blocks_at_m4() {
         let runner = AuthorityEngineRunner::new();
         let v = runner
             .admit_surface(
                 "user:alice",
                 "cycle_state",
-                ActionKind::CycleTransition,
+                ActionKind::CycleSupersede,
                 "c1",
                 Facts::default(),
             )
             .unwrap();
         let out = enforce_gated(&v, "cycle_state", ENFORCEMENT_STAGE);
-        assert!(!out.blocks_effect());
-        assert!(matches!(
-            out,
-            EnforcementOutcome::AdvisoryHighApproval { .. }
-        ));
+        assert!(out.blocks_effect(), "RequireApproval must block at M4");
+        assert!(matches!(out, EnforcementOutcome::AwaitingApproval { .. }));
     }
 
     #[test]
-    fn runner_gate_receipts_system_denies_human_advisory() {
+    fn runner_gate_receipts_denies_human_blocks_system_at_m4() {
         let runner = AuthorityEngineRunner::new();
         // gate_receipts is System-only in the legacy matrix.
         let human = runner
@@ -841,19 +957,15 @@ mod admission_tests {
             .admit_surface(
                 "system",
                 "gate_receipts",
-                ActionKind::CliRun,
+                ActionKind::CycleSupersede,
                 "g1",
                 Facts::default(),
             )
             .unwrap();
-        // System actor: capability ok, then High band → RequireApproval →
-        // advisory at M1 (no early blocking of the gate flow).
+        // System actor: capability ok, dangerous action → RequireApproval → M4 blocks.
         let out = enforce_gated(&system, "gate_receipts", ENFORCEMENT_STAGE);
-        assert!(!out.blocks_effect());
-        assert!(matches!(
-            out,
-            EnforcementOutcome::AdvisoryHighApproval { .. } | EnforcementOutcome::Proceed { .. }
-        ));
+        assert!(out.blocks_effect(), "RequireApproval must block at M4");
+        assert!(matches!(out, EnforcementOutcome::AwaitingApproval { .. }));
     }
 
     #[test]
@@ -864,7 +976,7 @@ mod admission_tests {
     }
 
     #[test]
-    fn cli_wrapper_ok_on_proceed_and_advisory() {
+    fn cli_wrapper_ok_on_proceed_and_blocks_on_approval() {
         let allow = runner_verdict(
             AdmissionDecision::Allow {
                 receipt_id: "allow-1".into(),
@@ -884,7 +996,8 @@ mod admission_tests {
         let high = require_approval_verdict();
         assert!(
             enforce_admission_or_block_ctx(&high, "cycle_state", None, ApprovalLoopContext::none())
-                .is_ok()
+                .is_err(),
+            "RequireApproval must block at M4"
         );
     }
 

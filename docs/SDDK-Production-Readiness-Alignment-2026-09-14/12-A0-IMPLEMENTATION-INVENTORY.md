@@ -42,3 +42,19 @@ PR-GAP-006 (High-band enforcement flip) is deliberately **not** first: it is a p
 - **Known risks:** migrated DBs created by the old event-store-first path could already hold the minimal `projects` shape; `MIGRATION_20`/existing migration tests cover supported upgrade paths. No new bypass authority.
 - **Next eligible requirement:** PR-GAP-006 (escalate behavior decision) or PR-GAP-008/PR-GAP-004 (bounded).
 
+### Slice A0-4 — PR-GAP-006 AuthorityEngine cutover via B+ (`PASS`)
+
+- **What changed:** separated risk classification from approval necessity (ADR-0111). `admit_traced` now raises `RequireApproval` only from explicit `PolicySnapshot.approval_required_for`; the implicit `risk_band == High` disjunction is removed. `bridge::default_approval_required_for()` lists only dangerous actions (`CycleSupersede`, `CliRelease`, `CliShip`, `PackInstall`). `ENFORCEMENT_STAGE = All`; the advisory path is unreachable in production; `verdict_segment` no longer emits `advisory_high_approval`.
+- **Canonical authority after change:** one AuthorityEngine decision path; approval driven by explicit policy, not band; every `RequireApproval` blocks at M4.
+- **Legacy/compatibility remaining:** `EnforcementStage::LowMedium` retained as a documented single-commit rollback affordance (owner/trigger recorded, `#[allow(dead_code)]`).
+- **Tests/UAT executed:** engine tests (band-alone-no-approval, explicit-approval cases); CLI admission matrix (action×surface×actor), grant→re-admit, `zero_bypass_every_surface_blocks_require_approval`; the 16 formerly-broken CLI workflows green; `cli_approval_loop_e2e` green; `cargo test --workspace`; `clippy --workspace --all-targets -D warnings`; `fmt`; `tests/test_adr_promotion_format.sh` (19 accepted ADRs, 0 violations).
+- **Evidence/receipt updated:** gap register PR-GAP-006 → `PASS`; ADR-0111 accepted.
+- **Known risks:** routine `Allow` admissions are no longer recorded as `authority.admission.decided` (as before the advisory path); future approval rules must be added explicitly to `approval_required_for`.
+
+## A0 closure
+
+All seven A0 MUST gaps resolve to `PASS` / `PASS_WITH_COMPAT` (004 PASS, 005 PASS, 006 PASS, 007 PASS_WITH_COMPAT, 008 PASS, 009 PASS, 010 PASS). C3/C4/C5/C6 have executable evidence and no unresolved MUST drift. **A0 is closed**; the declared next milestone is A1 (C7 conformance receipt).
+
+Note: the register still lists PR-GAP-002 (`PARTIAL`, universal Evidence convergence) and PR-GAP-011 (`NOT_STARTED`, C7 receipt) in section A. PR-GAP-002 is out of the seven-gap A0 scope defined by the implementation prompt; PR-GAP-011 is the A1 artifact.
+
+

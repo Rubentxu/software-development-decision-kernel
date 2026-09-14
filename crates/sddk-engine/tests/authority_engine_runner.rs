@@ -13,9 +13,10 @@ fn runner() -> AuthorityEngineRunner {
     AuthorityEngineRunner::new()
 }
 
-// SC-M5-1: High band → RequireApproval.
+// SC-M5-1 (B+/ADR-0111): a routine CycleTransition on a High-band surface is
+// allowed; an explicitly dangerous action (CycleSupersede) requires approval.
 #[test]
-fn sc_m5_1_high_band_requires_approval() {
+fn sc_m5_1_high_band_routine_allows_and_dangerous_requires_approval() {
     let v: RunnerVerdict = runner()
         .admit_surface(
             "user:alice",
@@ -25,11 +26,22 @@ fn sc_m5_1_high_band_requires_approval() {
             Facts::default(),
         )
         .expect("ok");
+    assert!(matches!(v.decision, AdmissionDecision::Allow { .. }));
+    assert_eq!(v.capability, "surface.cycle_state");
+
+    let d = runner()
+        .admit_surface(
+            "user:alice",
+            "cycle_state",
+            ActionKind::CycleSupersede,
+            "c1",
+            Facts::default(),
+        )
+        .expect("ok");
     assert!(matches!(
-        v.decision,
+        d.decision,
         AdmissionDecision::RequireApproval { .. }
     ));
-    assert_eq!(v.capability, "surface.cycle_state");
 }
 
 // SC-M5-2: Low band + matching capability → Allow.
@@ -130,12 +142,12 @@ fn sc_m5_7_decision_id_deterministic() {
         .admit_surface(
             "user:alice",
             "cycle_state",
-            ActionKind::CycleTransition,
+            ActionKind::CycleSupersede,
             "c1",
             Facts::default(),
         )
         .expect("ok");
-    assert_eq!(v.decision.decision_id(), "approval-human-cycle_transition");
+    assert_eq!(v.decision.decision_id(), "approval-human-cycle_supersede");
 }
 
 // SC-M5-8: Runner is safe under non-panicking error paths.

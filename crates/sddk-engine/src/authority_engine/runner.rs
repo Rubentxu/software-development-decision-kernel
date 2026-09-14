@@ -159,8 +159,11 @@ mod runner_tests {
     }
 
     #[test]
-    fn admit_cycle_state_high_band_requires_approval() {
-        let v = runner()
+    fn admit_cycle_state_transition_allows_and_supersede_requires_approval() {
+        // B+ (ADR-0111): a routine CycleTransition on the High-band
+        // `cycle_state` surface is allowed; only the explicitly dangerous
+        // CycleSupersede requires approval.
+        let transition = runner()
             .admit_surface(
                 "user:alice",
                 "cycle_state",
@@ -170,12 +173,30 @@ mod runner_tests {
             )
             .expect("ok");
         assert!(
-            matches!(v.decision, AdmissionDecision::RequireApproval { .. }),
-            "expected RequireApproval, got {:?}",
-            v.decision
+            matches!(transition.decision, AdmissionDecision::Allow { .. }),
+            "CycleTransition must allow, got {:?}",
+            transition.decision
         );
-        assert_eq!(v.capability, "surface.cycle_state");
-        assert!(!v.explanation.decision_digest.0.is_empty());
+        assert_eq!(transition.capability, "surface.cycle_state");
+
+        let supersede = runner()
+            .admit_surface(
+                "user:alice",
+                "cycle_state",
+                ActionKind::CycleSupersede,
+                "c1",
+                Facts::default(),
+            )
+            .expect("ok");
+        assert!(
+            matches!(
+                supersede.decision,
+                AdmissionDecision::RequireApproval { .. }
+            ),
+            "CycleSupersede must require approval, got {:?}",
+            supersede.decision
+        );
+        assert!(!supersede.explanation.decision_digest.0.is_empty());
     }
 
     #[test]
@@ -218,13 +239,13 @@ mod runner_tests {
             .admit_surface(
                 "user:alice",
                 "cycle_state",
-                ActionKind::CycleTransition,
+                ActionKind::CycleSupersede,
                 "c1",
                 Facts::default(),
             )
             .expect("ok");
-        // decision_id is "approval-human-cycle_transition" per engine impl.
-        assert_eq!(r1.decision.decision_id(), "approval-human-cycle_transition");
+        // decision_id is "approval-human-cycle_supersede" per engine impl.
+        assert_eq!(r1.decision.decision_id(), "approval-human-cycle_supersede");
     }
 
     #[test]

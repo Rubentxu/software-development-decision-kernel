@@ -1,6 +1,6 @@
 # A0 — PR-GAP-006 AuthorityEngine cutover investigation
 
-**Audit basis:** `main@e43f929`. **Status:** investigated, awaiting product decision. `ENFORCEMENT_STAGE` remains `LowMedium`; no production behavior changed.
+**Audit basis:** `main@e43f929`. **Status:** RESOLVED via option **B+** (`ADR-0111-EXPLICIT-APPROVAL-POLICY.md`). The engine now derives approval only from explicit policy; `ENFORCEMENT_STAGE = All`. The naive-flip evidence below is retained as the rationale.
 
 ## Requirement (gap register)
 

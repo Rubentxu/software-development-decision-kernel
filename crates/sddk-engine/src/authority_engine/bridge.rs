@@ -10,12 +10,37 @@ use crate::authority_engine::{
     ActionKind, ActorKind, ApprovalRequirement, ApproverKind, AuthorityEngineError, Capability,
     Facts, PolicySnapshot, RiskBand, infer_capability_from_surface, risk_band_from_policy_level,
 };
+use std::collections::BTreeSet;
+
+/// Actions that require explicit human approval by default (ADR-0111).
+///
+/// B+ rule: approval is a policy decision over the action/context, not an
+/// automatic consequence of the risk band. Only demonstrably dangerous and
+/// hard-to-reverse actions are listed here; routine operations on High-band
+/// surfaces (cycle transitions, gate receipts, plan revisions, derived
+/// transition records) do NOT require approval.
+pub fn default_approval_required_for() -> BTreeSet<ActionKind> {
+    let mut set = BTreeSet::new();
+    // Irreversible cycle replacement.
+    set.insert(ActionKind::CycleSupersede);
+    // External publication / release.
+    set.insert(ActionKind::CliRelease);
+    set.insert(ActionKind::CliShip);
+    // Sensitive framework-bundle mutation.
+    set.insert(ActionKind::PackInstall);
+    set
+}
 
 /// Default policy table for the 12 writable surfaces (ADR-069 §3 + ADR-072).
 ///
 /// Returns a `PolicySnapshot` whose `risk_band` matches the SPEC-M5 surface
 /// classification: High band → cycle mutations and infra writes;
 /// Medium band → plan items and vault writes; Low band → append-only logs.
+///
+/// The band is a **risk classification / policy input**, not an approval
+/// decision. `approval_required_for` is populated from
+/// [`default_approval_required_for`] and is the sole trigger for
+/// `RequireApproval` (ADR-0111).
 pub fn default_policy_for_surface(surface: &str) -> Result<PolicySnapshot, AuthorityEngineError> {
     let mut policy = PolicySnapshot::default_low_risk(surface);
     let risk = match surface {
@@ -32,21 +57,19 @@ pub fn default_policy_for_surface(surface: &str) -> Result<PolicySnapshot, Autho
         }
     };
     policy.risk_band = risk;
+    policy.approval_required_for = default_approval_required_for();
     Ok(policy)
 }
 
 /// Build a `PolicySnapshot` from existing risk approval policy level.
+///
+/// The risk level only sets the classification band (ADR-0111); the approval
+/// set is the explicit [`default_approval_required_for`] set, independent of
+/// the band.
 pub fn policy_snapshot_from_risk_level(policy_id: &str, risk_level: &str) -> PolicySnapshot {
     let mut policy = PolicySnapshot::default_low_risk(policy_id);
     policy.risk_band = risk_band_from_policy_level(risk_level);
-    if matches!(policy.risk_band, RiskBand::High) {
-        policy
-            .approval_required_for
-            .insert(ActionKind::CycleSupersede);
-        policy
-            .approval_required_for
-            .insert(ActionKind::MemoryRefMutation);
-    }
+    policy.approval_required_for = default_approval_required_for();
     policy
 }
 
@@ -124,7 +147,15 @@ mod bridge_tests {
     fn policy_snapshot_from_risk_level_low() {
         let p = policy_snapshot_from_risk_level("p", "low");
         assert_eq!(p.risk_band, RiskBand::Low);
-        assert!(p.approval_required_for.is_empty());
+        // B+ (ADR-0111): approval is explicit and independent of the band.
+        assert!(
+            p.approval_required_for
+                .contains(&ActionKind::CycleSupersede)
+        );
+        assert!(
+            !p.approval_required_for
+                .contains(&ActionKind::CycleTransition)
+        );
     }
 
     #[test]

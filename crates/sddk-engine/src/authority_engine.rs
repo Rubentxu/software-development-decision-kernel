@@ -537,19 +537,21 @@ impl DefaultAuthorityEngine {
         // The default policy has no mandatory evidence; if a policy specifies required
         // evidence (via future policy field), this is the integration point.
 
-        // 5. Risk band escalation → Approval gate
-        // For default policy, all actors are Low risk; escalation triggers if
-        // action kind is in `approval_required_for` OR if policy risk band is High.
-        if policy.approval_required_for.contains(&proposal.kind)
-            || matches!(policy.risk_band, RiskBand::High)
-        {
-            // D-03 (R-4-002): a granted approval fact satisfies the gate.
-            // The approval loop (M2) re-invokes admission with the granted
-            // request hash in `Facts::approval_refs`; the gate is skipped and
-            // admission proceeds to Allow. `payload_digest` (proposal-stable)
-            // is the request hash when present, else any non-empty
-            // approval_refs entry satisfies the gate (compat with runners
-            // that pass the hash as a plain EvidenceRef).
+        // 5. Explicit approval policy → Approval gate.
+        //
+        // B+ (ADR-0111): human approval is an explicit policy decision over the
+        // action/context, NOT an automatic consequence of the risk band. The
+        // risk band classifies/informs; `approval_required_for` decides. Only
+        // actions that are demonstrably dangerous and hard to reverse require
+        // approval by default (see `bridge::default_approval_required_for`).
+        //
+        // D-03 (R-4-002): a granted approval fact satisfies the gate. The
+        // approval loop (M2) re-invokes admission with the granted request hash
+        // in `Facts::approval_refs`; the gate is skipped and admission proceeds
+        // to Allow. `payload_digest` (proposal-stable) is the request hash when
+        // present, else any non-empty approval_refs entry satisfies the gate
+        // (compat with runners that pass the hash as a plain EvidenceRef).
+        if policy.approval_required_for.contains(&proposal.kind) {
             trace.gates_applied.push(GateKind::Approval);
             let approval_satisfied = match proposal.payload_digest.as_ref() {
                 Some(expected) => facts.approval_refs.iter().any(|r| r.0 == expected.0),
@@ -881,7 +883,9 @@ mod inline_tests {
     }
 
     #[test]
-    fn high_risk_band_triggers_approval() {
+    fn high_risk_band_alone_does_not_require_approval() {
+        // B+ (ADR-0111): High risk does not imply human approval by itself.
+        // Approval is an explicit policy decision over the action/context.
         let engine = DefaultAuthorityEngine::new();
         let mut policy = PolicySnapshot::default_low_risk("p");
         policy.risk_band = RiskBand::High;
@@ -898,6 +902,15 @@ mod inline_tests {
             payload_digest: None,
             created_at: now_utc(),
         };
+        let decision = engine.admit(&proposal, &actor, &Facts::default(), &policy);
+        assert!(
+            decision.is_allow(),
+            "High band alone must not force approval; got {:?}",
+            decision
+        );
+
+        // The same action with an explicit approval policy requires approval.
+        policy.approval_required_for.insert(ActionKind::CycleStart);
         let decision = engine.admit(&proposal, &actor, &Facts::default(), &policy);
         assert!(decision.is_require_approval(), "got {:?}", decision);
     }
@@ -1016,9 +1029,12 @@ mod inline_tests {
     }
 
     #[test]
-    fn admit_with_explanation_high_band_traces_approval_gate() {
+    fn admit_with_explanation_explicit_approval_traces_approval_gate() {
+        // B+ (ADR-0111): the Approval gate is traced only when the policy
+        // explicitly lists the action; the band is not sufficient.
         let (engine, proposal, actor, facts, mut policy) = medium_surface_explanation_case();
         policy.risk_band = RiskBand::High;
+        policy.approval_required_for.insert(ActionKind::VaultIndex);
         let (decision, explanation) =
             engine.admit_with_explanation(&proposal, &actor, &facts, &policy);
         assert!(decision.is_require_approval(), "got {:?}", decision);
@@ -1066,7 +1082,7 @@ mod inline_tests {
 
     // ── WU-C4-6: Facts::approval_refs + approval-gate skip (D-03 / R-4-002) ──
 
-    fn high_band_approval_case() -> (
+    fn approval_required_case() -> (
         DefaultAuthorityEngine,
         ActionProposal,
         Actor,
@@ -1075,6 +1091,9 @@ mod inline_tests {
         let engine = DefaultAuthorityEngine::new();
         let mut policy = PolicySnapshot::default_low_risk("p");
         policy.risk_band = RiskBand::High;
+        // B+ (ADR-0111): the band does not imply approval; the policy must list
+        // the action explicitly.
+        policy.approval_required_for.insert(ActionKind::CycleStart);
         let actor = Actor {
             kind: ActorKind::Human {
                 id: "u1".to_string(),
@@ -1094,7 +1113,7 @@ mod inline_tests {
     #[test]
     fn approval_refs_skip_approval_gate_without_payload_digest() {
         // No payload_digest: any granted approval ref satisfies the gate.
-        let (engine, proposal, actor, policy) = high_band_approval_case();
+        let (engine, proposal, actor, policy) = approval_required_case();
         let facts = Facts {
             approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
             ..Facts::default()
@@ -1110,7 +1129,7 @@ mod inline_tests {
     fn approval_refs_matching_payload_digest_skips_gate() {
         // With a proposal payload_digest (the stable request hash), only the
         // matching granted ref satisfies the gate.
-        let (engine, _plain, actor, policy) = high_band_approval_case();
+        let (engine, _plain, actor, policy) = approval_required_case();
         let proposal = ActionProposal {
             kind: ActionKind::CycleStart,
             target_id: "c1".to_string(),
@@ -1140,8 +1159,9 @@ mod inline_tests {
 
     #[test]
     fn empty_approval_refs_still_requires_approval() {
-        // Sanity: the gate still fires with default facts (M1 behavior).
-        let (engine, proposal, actor, policy) = high_band_approval_case();
+        // Sanity: the gate still fires with default facts when the policy
+        // explicitly lists the action for approval.
+        let (engine, proposal, actor, policy) = approval_required_case();
         let decision = engine.admit(&proposal, &actor, &Facts::default(), &policy);
         assert!(decision.is_require_approval());
     }
@@ -1150,7 +1170,7 @@ mod inline_tests {
     fn approval_refs_do_not_override_deny() {
         // An approval fact only satisfies the Approval gate: it must never
         // rescue a deny_override or a missing capability.
-        let (engine, _plain, actor, mut policy) = high_band_approval_case();
+        let (engine, _plain, actor, mut policy) = approval_required_case();
         policy
             .deny_override
             .insert(("human".to_string(), ActionKind::CycleStart));
@@ -1199,7 +1219,7 @@ mod inline_tests {
     fn satisfied_approval_gate_still_traces_approval_gate() {
         // Even when skipped by a granted fact, the Approval gate stays in
         // gates_applied (auditability of why the decision was reached).
-        let (engine, proposal, actor, policy) = high_band_approval_case();
+        let (engine, proposal, actor, policy) = approval_required_case();
         let facts = Facts {
             approval_refs: vec![EvidenceRef("sha256:granted".to_string())],
             ..Facts::default()

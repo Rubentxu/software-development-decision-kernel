@@ -157,11 +157,16 @@ fn receipt_id_is_unique_per_decision_shape() {
         &default_facts(),
         &policy,
     );
+    // B+ (ADR-0111): approval is explicit; list the action on the policy.
+    let mut approval_policy = policy_snapshot_from_risk_level("test-policy", "high");
+    approval_policy
+        .approval_required_for
+        .insert(ActionKind::MemoryRefMutation);
     let d_high_risk = engine.admit(
         &proposal(ActionKind::MemoryRefMutation, "mem-2"),
         &actor,
         &default_facts(),
-        &policy_snapshot_from_risk_level("test-policy", "high"),
+        &approval_policy,
     );
 
     let allow_id = if let AdmissionDecision::Allow { receipt_id, .. } = d_allow {
