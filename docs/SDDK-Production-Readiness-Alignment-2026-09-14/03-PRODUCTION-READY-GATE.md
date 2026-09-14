@@ -1,12 +1,12 @@
 # Production-Ready Gate
 
-This document defines what must be true before a release or commit may carry an SDDK production-readiness declaration.
+This document defines what must be true before a release or commit may carry an SDDK production-readiness declaration, and separately what must be true before an Agentic Workspace host integration may carry a GA/stability declaration.
 
 ## 1. Principle
 
 A readiness label is a **receipt over evidence**, not a roadmap status and not a test-count claim.
 
-Every receipt MUST bind to:
+Every production-readiness receipt MUST bind to:
 
 - SDDK commit SHA and version;
 - readiness profile (`BASE`, `STATIC_ENHANCED`, `RUNTIME_ENHANCED`, `FULLY_ENHANCED`);
@@ -18,9 +18,11 @@ Every receipt MUST bind to:
 - unresolved accepted risks and their revisit triggers;
 - provider compatibility basis when the profile uses providers.
 
+Agentic integration receipts additionally bind to the SDDK Agentic API version/commit, integration adapter commit, exact host/protocol/SDK basis and negotiated capabilities.
+
 ## 2. Gate G0 — Baseline semantic conformance
 
-Required for every profile.
+Required for every production profile.
 
 - 09/09 C7 conformance receipt exists and is green.
 - SPEC-001..018 are `PASS` or `PASS_WITH_COMPAT`.
@@ -53,8 +55,9 @@ Required for Base and above.
 
 - R0 bounded-context ownership is physically represented or an ADR proves an equivalent boundary.
 - Dependency fitness checks block forbidden edges.
-- Domain types contain no protobuf/gRPC/provider SDK types.
+- Domain types contain no protobuf/gRPC/provider/host SDK types.
 - Knowledge and Alignment depend on semantic ports, not CogniCode/Chronos implementations.
+- generic Agentic Workspace contracts contain no JCode-specific types.
 - Alignment cannot call Governance/Authority implementation paths.
 - Alignment cannot compile into EffectiveInstructions.
 - Workbooks/projections cannot write canonical facts directly.
@@ -106,19 +109,19 @@ Required for Base and above.
 
 ## 7. Gate G5 — Authority, safety and failure behavior
 
-Required for every profile.
+Required for every production profile.
 
 - governed side effects cannot bypass AuthorityEngine;
 - approval/deny/require-approval outcomes are deterministic from the same proposal/actor/facts/policy snapshot;
 - crash/restart does not duplicate an already committed canonical fact or silently lose an acknowledged one;
 - CAS/ref races are covered by tests;
 - invalid/corrupt/incompatible state fails explicitly;
-- provider failure never gives provider code canonical write authority;
+- provider/host integration failure never gives external code canonical write authority;
 - sensitive material is not written to receipts/logs/evidence without an explicit redaction policy.
 
 ## 8. Gate G6 — Operational recovery and compatibility
 
-Required for every profile.
+Required for every production profile.
 
 At minimum test:
 
@@ -162,18 +165,70 @@ Must additionally prove static/runtime contradiction preservation and provider-i
 
 ## 10. Gate G8 — Documentation and release hygiene
 
-Required for every profile.
+Required for every production profile.
 
 - one normative architecture entry point;
 - every active specification has status/owner/evidence linkage;
 - historical/superseded packages are clearly marked;
-- proposal disposition register contains no important accepted proposal silently missing from implementation or an explicit defer/reject/supersede decision;
+- proposal disposition register contains no important accepted proposal silently missing from implementation or an explicit track/defer/reject/supersede decision;
 - CLI command documentation/examples derive from the typed command surface;
 - release notes name the readiness profile actually certified.
 
-## 11. Receipt template
+## 11. Gate AG — Agentic Workspace integration declarations
 
-A release/certification receipt SHOULD use this shape:
+This gate family is **independent** from G0–G8 production profiles. It cannot prevent a truthful `BASE_PRODUCTION_READY` claim.
+
+### AG0 — External host SDK boundary proof
+
+Required before the JCode adapter is considered viable:
+
+- external Rust workspace consumes pinned `jcode-sdk` public API only;
+- exact Git revision/SDK/Harness API basis recorded;
+- shared runtime connect, session attach, global events, no-reply context injection and structured execution are exercised;
+- packaging/publication constraints are recorded honestly.
+
+### AG1 — Generic SDDK Agentic API/SDK
+
+Required for `AGENTIC_API_EXPERIMENTAL`:
+
+- host-neutral SDDK semantic contracts;
+- no JCode types in generic API/domain;
+- transport-neutral client/server boundary;
+- fake-host conformance tests;
+- SessionBinding, ContextDelta, host events/actions and structured-work contracts represented.
+
+### AG2 — JCode Core GA
+
+Required for `JCODE_CORE_GA`:
+
+- J0→J6 complete;
+- JCode and SDDK remain independently runnable/versioned;
+- `sddk-jcode` consumes public SDKs only;
+- Session is not Run;
+- transcript remains host-owned;
+- event materiality prevents Canonical Event Log flooding;
+- edit bursts coalesce to bounded WorkspaceChangeSet/Verify cycles;
+- Base-mode reactive loop works with CogniCode/Chronos absent;
+- ContextDelta preserves advisory/instruction separation;
+- structured execution returns typed Contribution or explicit failure;
+- negotiated capability state controls optional host operations.
+
+### AG3 — JCode Advanced
+
+Required only for a `JCODE_ADVANCED` claim. Tests selected advanced capabilities such as permission mediation, safe interruption, model/reasoning controls, compaction/rewind and remote/SSH locality. Unsupported capabilities MAY remain unsupported without invalidating Core GA.
+
+### AG4 — Multi-host validation / API stability
+
+Required before `AGENTIC_API_STABLE` / 1.0 consideration:
+
+- J9 fake + thin second-host validation passes;
+- no JCode-specific type/name/behavior is required by generic contracts;
+- host-specific extensions remain namespaced;
+- second host may truthfully expose a capability subset.
+
+MCP/J7 is optional and is never a prerequisite for Agentic API or JCode Core GA.
+
+## 12. Production-readiness receipt template
 
 ```yaml
 schema_version: 1
@@ -206,11 +261,50 @@ evidence:
 
 For enhanced profiles, provider entries additionally record protocol version, provider build identity, capability snapshot digest and analyzer/instrumentation basis.
 
-## 12. Release claim rules
+## 13. Agentic integration receipt template
+
+```yaml
+schema_version: 1
+declaration: AGENTIC_API_EXPERIMENTAL | JCODE_CORE_GA | JCODE_ADVANCED | MULTI_HOST_VALIDATED | AGENTIC_API_STABLE
+sddk:
+  version: "..."
+  commit: "..."
+agentic_api:
+  version: "..."
+  commit: "..."
+integration:
+  name: sddk-jcode
+  version: "..."
+  commit: "..."
+host:
+  product: jcode
+  version: "..."
+  revision: "..."
+  sdk_version: "..."
+  protocol: "..."
+  negotiated_capabilities: []
+gates:
+  AG0: PASS
+  AG1: PASS
+  AG2: PASS
+  AG3: NOT_APPLICABLE
+  AG4: NOT_APPLICABLE
+accepted_risks: []
+evidence:
+  - uat_id: AW-UAT-...
+    result_ref: "..."
+```
+
+## 14. Release claim rules
 
 - `BASE_PRODUCTION_READY` requires G0–G6 and G8.
 - `STATIC_ENHANCED_PRODUCTION_READY` requires Base + CogniCode part of G7.
 - `RUNTIME_ENHANCED_PRODUCTION_READY` requires Base + Chronos part of G7.
-- `FULLY_ENHANCED_PRODUCTION_READY` requires all gates including cross-provider G7.
+- `FULLY_ENHANCED_PRODUCTION_READY` requires all production gates including cross-provider G7.
+- `AGENTIC_API_EXPERIMENTAL` requires AG0/AG1 as applicable to the published boundary.
+- `JCODE_CORE_GA` requires AG0–AG2 and the Core AW-UAT set.
+- `JCODE_ADVANCED` requires Core GA plus the claimed J8 capabilities' UAT.
+- `MULTI_HOST_VALIDATED` requires AG4.
+- `AGENTIC_API_STABLE` requires multi-host evidence and explicit stable-version decision.
 
-R9 control-tower polish, R11 crate splitting and Agentic Workspace/JCode are not permitted to delay a truthful Base production-ready claim unless a later ADR explicitly promotes one of them to a required gate.
+R9 control-tower polish, R11 crate splitting and Agentic Workspace/JCode are not permitted to delay a truthful Base production-ready claim unless a later ADR explicitly promotes one of them to a required production gate. Conversely, Base production readiness does not imply any Agentic integration declaration.
