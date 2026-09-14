@@ -42,14 +42,16 @@
 | `PR-GAP-022` | Cross-provider reconciliation | `NOT_STARTED` | Static and runtime evidence may corroborate or contradict each other without either provider becoming canonical truth. Contradictions are preserved and surfaced. | Fully enhanced |
 | `PR-GAP-023` | Provider reproducibility basis | `NOT_STARTED` | Every enhanced receipt records protocol version, provider build/version, capability snapshot, analyzer/instrumentation basis and stable result references/digests. | Static + Runtime enhanced |
 
-## D. Later accepted evolution, not Base blocker
+## D. Accepted post-Base evolution and independent GA tracks
 
 | ID | Finding | Audit state | Requirement / exit | Blocks |
 |---|---|---:|---|---|
 | `PR-GAP-024` | Workbooks/control tower (R9) | `NOT_STARTED` | Rebuildable projections only; edits emit semantic commands to owners; provenance on every rendered assessment/evidence item; no canonical writes from workbook code. | Program convergence, not Base |
 | `PR-GAP-025` | Governance ratchets + enriched WHY (R10) | `PARTIAL` | Governance may consume explicit evidence/contracts but never Alignment opinions directly. WHY/WHY-NOT includes Knowledge/Alignment provenance. | Program convergence, not minimum Base if existing Authority/WHY gates are already green |
 | `PR-GAP-026` | Crate split evaluation (R11) | `DEFERRED` | Split only with sustained dependency/change metrics. No aesthetic split. | None |
-| `PR-GAP-027` | Agentic Workspace / JCode | `DEFERRED` | Separate accepted integration track. Rename/disambiguate current execution `AgentHost` before introducing host-workspace abstractions. Public SDK/API boundaries only; no JCode internals in SDDK. | Separate integration GA |
+| `PR-GAP-027` | Agentic Workspace / JCode | `NOT_STARTED` | Execute J0→J9 from `09-AGENTIC-WORKSPACE-ROADMAP.md`: public SDDK Agentic API/SDK, separate `sddk-jcode` ACL, SessionBinding, event-driven materiality/debounce, KMT/Verify reactivity, ContextDelta, structured Contribution, advanced capability mediation and second-host portability validation. Public SDK/API boundaries only; no JCode internals in SDDK. | Separate Agentic/JCode GA declarations, not Base |
+
+`PR-GAP-027` is scheduled, not a vague future placeholder: J0/J1 preparation is P1 once A2/A3 contracts are stable enough; after A5 the default product priority is J2→J6 `JCODE_CORE_GA`, in parallel with A6/A7 provider tracks. J7 MCP remains optional P3; J8/J9 are P2 post-Core-GA/portability work.
 
 ## Mandatory resolution policy
 
