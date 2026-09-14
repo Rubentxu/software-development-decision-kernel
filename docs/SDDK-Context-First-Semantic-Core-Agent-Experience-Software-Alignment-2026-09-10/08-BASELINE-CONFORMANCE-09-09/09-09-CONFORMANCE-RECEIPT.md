@@ -6,8 +6,8 @@
 
 ## Identity
 
-- Repository commit: `__CERT_COMMIT__` (`main`)
-- SDDK workspace version: `__CERT_VERSION__`
+- Repository commit: `0c2ca56` (`main`)
+- SDDK workspace version: `1.169.19`
 - Baseline package: `SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09`
 - Date: 2026-09-14
 - Runner/environment: local `cargo` (dev profile), Linux; full workspace profile
