@@ -3,7 +3,7 @@
 //! Key = `(provider, credential_route, optional model)` (SPEC-026 §Circuit
 //! breaker key). The breaker decides whether a route is eligible for the next
 //! attempt and reacts to successes/failures recorded by the
-//! [`crate::provider_router::ProviderRouter`].
+//! [`crate::completion_provider_router::ProviderRouter`].
 
 use std::collections::HashMap;
 use std::sync::Mutex;

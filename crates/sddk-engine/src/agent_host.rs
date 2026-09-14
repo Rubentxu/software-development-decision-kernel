@@ -239,7 +239,7 @@ pub struct DecisionReceipt {
     /// decision was routed through a `ProviderRouter` (AGENT-HOST-002);
     /// `None` for lease-only mutations or projection reads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_route: Option<Vec<crate::provider_router::RouteAttempt>>,
+    pub provider_route: Option<Vec<crate::completion_provider_router::RouteAttempt>>,
 }
 
 /// Agent Host — owns identity, lease, fencing, retry.

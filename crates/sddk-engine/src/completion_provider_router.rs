@@ -1,4 +1,6 @@
-//! Provider router — bounded failover over a registered list of providers.
+//! Completion provider router — bounded failover over a registered list of
+//! completion/model providers. Distinct from the future engineering-intelligence
+//! Provider SPI (CodeIntelligencePort/RuntimeIntelligencePort); do not conflate.
 //!
 //! Implements ADR-027 semantics (retry vs reroute vs disable) on top of the
 //! closed-set [`ProviderFailure`] taxonomy adopted from SPEC-026.

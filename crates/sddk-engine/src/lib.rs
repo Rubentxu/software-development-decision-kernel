@@ -27,6 +27,7 @@ pub mod circuit_breaker;
 pub mod cockpit_observability;
 pub mod cockpit_views;
 pub mod cold_start;
+pub mod completion_provider_router;
 pub mod context_capsule;
 pub mod context_compiler;
 pub mod continuation_candidate;
@@ -69,7 +70,6 @@ pub mod pack_registry;
 mod paths;
 pub mod production_hardening;
 pub mod projector_registry;
-pub mod provider_router;
 pub mod receipt_writers;
 pub mod release_readiness;
 pub mod replay_proof;
@@ -130,6 +130,11 @@ pub use cold_start::{
     InMemoryCapsuleStore, InMemoryRunStateViewInputs, NullCapsulePersistence,
     RecordingCapsulePersistence, RunStateViewInputs, cold_start as cold_start_core,
 };
+pub use completion_provider_router::{
+    Provider, ProviderError, ProviderFailure, ProviderFailureKind, ProviderOutput,
+    ProviderOutputKind, ProviderRouter, RouteAttempt, RouteError, RouterPolicy,
+    mock_identity as mock_provider_router_identity,
+};
 pub use context_capsule::{
     ArtifactBundle, Assumption, CapsuleBudget, CapsuleDecisions, CapsuleError, CapsuleInputs,
     CapsuleTarget, ChangeEntry, ChangeKind, CompilerPolicy, ContextCapsule, ContextCompiler,
@@ -167,11 +172,6 @@ pub use orchestration_synthesis::{
 };
 pub use pack_registry::*;
 pub use paths::*;
-pub use provider_router::{
-    Provider, ProviderError, ProviderFailure, ProviderFailureKind, ProviderOutput,
-    ProviderOutputKind, ProviderRouter, RouteAttempt, RouteError, RouterPolicy,
-    mock_identity as mock_provider_router_identity,
-};
 pub use receipt_writers::write_atomic;
 pub use retry::{Clock, MockClock, RetryPolicy, RngCore, WallClock};
 pub use risk_approval_policy::{
