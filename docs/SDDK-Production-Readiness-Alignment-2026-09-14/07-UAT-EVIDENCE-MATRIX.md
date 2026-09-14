@@ -1,6 +1,6 @@
 # UAT and Evidence Matrix
 
-This matrix complements the existing 09/09 UAT-01..22. It does not renumber or replace them; it verifies the convergence work and the new accepted context-first/enhanced-provider capabilities.
+This matrix complements the existing 09/09 UAT-01..22. It does not renumber or replace them; it verifies the convergence work, accepted context-first/enhanced-provider capabilities, and links the separate Agentic Workspace/JCode GA evidence track.
 
 Every row must end with a reproducible test/fixture/receipt reference, not prose-only sign-off.
 
@@ -92,9 +92,36 @@ Every row must end with a reproducible test/fixture/receipt reference, not prose
 | `PR-UAT-F04` | Chronos dies mid-cycle while CogniCode remains | capability profile degrades accurately; unaffected Static/Base work continues | Full |
 | `PR-UAT-F05` | Both providers unavailable | system returns to truthful Base behavior; no stale FULLY_ENHANCED advertisement | Full |
 
-## H. Evidence required to mark a row PASS
+## H. Agentic Workspace / JCode GA UAT
 
-Each row should record:
+The Agentic track is intentionally separate from Base/Static/Runtime/Full readiness. Its complete matrix is `10-AGENTIC-WORKSPACE-UAT.md` using `AW-UAT-*` identifiers.
+
+The primary cross-profile invariants are:
+
+| Gate | Required evidence | Relationship to production profiles |
+|---|---|---|
+| `AGENTIC_API_EXPERIMENTAL` | J1 generic API/SDK + fake-host/no-type-leak UAT | independent of Base deployment profile, but consumes A3 semantic contracts |
+| `JCODE_CORE_GA` | J0-J6 + required AW-UAT external SDK, binding, context, reactive Verify and structured execution rows | requires a stable Base semantic implementation; CogniCode/Chronos not required |
+| `JCODE_ADVANCED` | selected J8 permission/interruption/model/remote UAT | additive after Core GA |
+| `MULTI_HOST_VALIDATED` | J9 + AW-UAT-090..092 | required before generic Agentic API 1.0/stable claim |
+| `AGENTIC_API_STABLE` | multi-host evidence + no unresolved host-specific generic contract leak | does not imply Static/Runtime/Full provider profiles |
+
+Agentic cross-checks that MUST remain green:
+
+- no JCode SDK/protocol types enter generic SDDK semantic contracts;
+- `Session != Run`;
+- host transcripts remain host-owned;
+- ephemeral host events do not flood the Canonical Event Log;
+- `turn_done`/semantic debounce produces bounded delta-scoped Verify;
+- `ContextDelta` preserves advisory/instruction separation;
+- JCode Core GA passes with CogniCode and Chronos absent;
+- existing `ledger watch`/`diff-watch` are not required as host transport;
+- capability negotiation, not product version inference, controls optional host behavior;
+- invalid structured output cannot become a successful Contribution.
+
+## I. Evidence required to mark a row PASS
+
+Each readiness row should record:
 
 ```yaml
 uat_id: PR-UAT-...
@@ -107,5 +134,7 @@ result_ref: "..."
 provider_basis: null | {...}
 notes: "..."
 ```
+
+Agentic rows use the richer record defined in `10-AGENTIC-WORKSPACE-UAT.md`, including SDDK Agentic API version, `sddk-jcode` commit, JCode revision/Harness API and negotiated host capabilities.
 
 A row is not PASS merely because a unit test with a similar name exists. The evidence must exercise the authority/boundary described by the scenario, including the negative/bypass path where applicable.
