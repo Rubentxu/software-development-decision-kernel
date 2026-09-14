@@ -425,16 +425,35 @@ pub(crate) fn enforce_admission_or_block_ctx(
     approval_loop: ApprovalLoopContext,
 ) -> anyhow::Result<()> {
     let verdict_str = verdict_segment(verdict);
+    let project_id = if approval_loop.is_none() {
+        ""
+    } else {
+        approval_loop.project_id.as_str()
+    };
     match enforce_gated(verdict, surface, ENFORCEMENT_STAGE) {
         EnforcementOutcome::Proceed { .. } => Ok(()),
         // Advisory at M1, still recorded (D-02): the approval loop (M4)
         // consumes these events to build the pending-approval projection.
         EnforcementOutcome::AdvisoryHighApproval { decision_id, .. } => {
-            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
+            record_admission_decision(
+                state_dir,
+                project_id,
+                surface,
+                &verdict_str,
+                &decision_id,
+                verdict,
+            );
             Ok(())
         }
         EnforcementOutcome::AwaitingApproval { decision_id, .. } => {
-            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
+            record_admission_decision(
+                state_dir,
+                project_id,
+                surface,
+                &verdict_str,
+                &decision_id,
+                verdict,
+            );
             // M2 approval loop (WU-C4-7): publish the request so a human can
             // resolve it via `sddk approval list|grant`. Fail-soft.
             if !approval_loop.is_none()
@@ -459,7 +478,14 @@ pub(crate) fn enforce_admission_or_block_ctx(
             reason,
             decision_id,
         } => {
-            record_admission_decision(state_dir, surface, &verdict_str, &decision_id, verdict);
+            record_admission_decision(
+                state_dir,
+                project_id,
+                surface,
+                &verdict_str,
+                &decision_id,
+                verdict,
+            );
             Err(anyhow::anyhow!(
                 "ADMISSION: denied '{surface}' ({reason:?}, decision_id={decision_id}); \
                  no changes were made"
@@ -484,10 +510,12 @@ fn verdict_segment(verdict: &RunnerVerdict) -> String {
     }
 }
 
-/// Fail-soft emission of `authority.admission.decided` into every project
-/// ledger under `state_dir`. Errors are swallowed (logged to stderr).
+/// Fail-soft emission of `authority.admission.decided` into the current
+/// project's ledger under `state_dir`. Errors are swallowed (logged to
+/// stderr).
 fn record_admission_decision(
     state_dir: Option<&std::path::Path>,
+    project_id: &str,
     surface: &str,
     verdict_str: &str,
     decision_id: &str,
@@ -496,12 +524,73 @@ fn record_admission_decision(
     let Some(state_dir) = state_dir else {
         return;
     };
-    let projects_dir = state_dir.join("sddk").join("projects");
-    let Ok(entries) = std::fs::read_dir(&projects_dir) else {
+    if project_id.is_empty() {
+        // Legacy path (M1 without cycle context): pick the single
+        // bootstrapped project under `state_dir`. We deliberately do NOT
+        // iterate every project dir (the previous M1 broadcast produced
+        // FK-constraint noise and duplicated events in projects that did
+        // not own the action). If there is no bootstrapped project, the
+        // recording is skipped (the legacy test surface asserts a single
+        // project ledger for its fixture).
+        let projects_dir = state_dir.join("sddk").join("projects");
+        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+            for entry in entries.flatten() {
+                let dir = entry.path();
+                let ledger = dir.join("ledger.sqlite");
+                if ledger.exists()
+                    && let Ok(store) = sddk_storage::Storage::open(&ledger)
+                    && let Ok(Some(record)) =
+                        store.get_project_optional(&entry.file_name().to_string_lossy())
+                {
+                    let pid = record.project_id;
+                    drop(store);
+                    // Re-open via Storage to ensure the project row
+                    // exists (it just did) and emit the event.
+                    return record_single_project(
+                        state_dir,
+                        &pid,
+                        surface,
+                        verdict_str,
+                        decision_id,
+                        verdict,
+                    );
+                }
+            }
+        }
+        return;
+    }
+    record_single_project(
+        state_dir,
+        project_id,
+        surface,
+        verdict_str,
+        decision_id,
+        verdict,
+    );
+}
+
+/// Single-project emission helper (extracted from
+/// [`record_admission_decision`] so the legacy "first bootstrapped
+/// project" path and the cycle-aware M2 path share the same emit
+/// logic).
+fn record_single_project(
+    state_dir: &std::path::Path,
+    project_id: &str,
+    surface: &str,
+    verdict_str: &str,
+    decision_id: &str,
+    verdict: &RunnerVerdict,
+) {
+    let project_dir = state_dir.join("sddk").join("projects").join(project_id);
+    if let Err(e) = ensure_project_row(&project_dir, project_id) {
+        eprintln!("admission event recording failed (fail-soft): project upsert: {e}");
+        return;
+    }
+    let Ok(mut store) = SqliteEventStore::open(&project_dir) else {
         return;
     };
-    let base = AdmissionDecidedInput {
-        project_id: String::new(), // filled per project dir below
+    let input = AdmissionDecidedInput {
+        project_id: project_id.to_string(),
         cycle_id: None,
         surface: surface.to_string(),
         action_kind: action_kind_segment(verdict),
@@ -512,19 +601,33 @@ fn record_admission_decision(
         causation_id: None,
         correlation_id: None,
     };
-    for entry in entries.flatten() {
-        let project_id = entry.file_name().to_string_lossy().into_owned();
-        let Ok(mut store) = SqliteEventStore::open(&projects_dir.join(&project_id)) else {
-            continue;
-        };
-        let input = AdmissionDecidedInput {
-            project_id: project_id.clone(),
-            ..base.clone()
-        };
-        if let Err(e) = emit_admission_decision(&mut store, &input) {
-            eprintln!("admission event recording failed (fail-soft): {e}");
-        }
+    if let Err(e) = emit_admission_decision(&mut store, &input) {
+        eprintln!("admission event recording failed (fail-soft): {e}");
     }
+}
+
+/// Make sure the `projects` row for `project_id` exists in the ledger
+/// file at `project_dir/ledger.sqlite`. The Storage migration creates a
+/// `projects` table with NOT NULL columns (`display_name`, `scope`,
+/// `created_at`) that the event-store `INSERT OR IGNORE` does not
+/// satisfy when sharing the same file. We open via `Storage` (which
+/// applies all migrations) and skip the insert when the row already
+/// exists.
+fn ensure_project_row(project_dir: &std::path::Path, project_id: &str) -> anyhow::Result<()> {
+    let ledger_path = project_dir.join("ledger.sqlite");
+    let storage = sddk_storage::Storage::open(&ledger_path)?;
+    if let Ok(Some(_)) = storage.get_project_optional(project_id) {
+        return Ok(());
+    }
+    let record = sddk_storage::ProjectRecord {
+        project_id: project_id.to_string(),
+        display_name: "admission.decided".to_string(),
+        remote_url: None,
+        scope: ".".to_string(),
+        created_at: crate::git_cmd::default_timestamp(),
+    };
+    let _ = storage.insert_project(&record);
+    Ok(())
 }
 
 /// RFC 3339 timestamp via the same default used by git receipts.

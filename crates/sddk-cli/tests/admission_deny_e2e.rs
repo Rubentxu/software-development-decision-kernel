@@ -83,19 +83,42 @@ fn state_tree(state: &Path) -> Vec<String> {
 
 /// Zero-governed-mutation check (R-4-005): the ledger may be bootstrapped
 /// by `RuntimeContext::open` (schema + project row, storage-local), but a
-/// deny must leave ZERO events in it. No event = no durable domain effect.
-fn ledger_event_count(state: &Path, project_dir: &str) -> usize {
-    let ledger = state
-        .join("sddk")
-        .join("projects")
-        .join(project_dir)
-        .join("ledger.sqlite");
+/// deny must leave ZERO governed domain events in it (no cycle/transition
+/// artifacts). WU-C4-3 (M2, v1.169.x) additionally records a single
+/// `authority.admission.decided` event as the ONLY event so the authority
+/// decision is durably auditable.
+fn count_authority_admission_decided(ledger: &Path) -> i64 {
     if !ledger.exists() {
         return 0;
     }
-    let store = sddk_storage::Storage::open_read_only(&ledger)
-        .expect("ledger must be openable if it exists");
-    store.list_events().expect("list_events").len()
+    let conn =
+        rusqlite::Connection::open_with_flags(ledger, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("ledger must be openable if it exists");
+    conn.query_row(
+        "SELECT COUNT(*) FROM events_v1 WHERE event_type = 'authority.admission.decided'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .expect("query events_v1")
+}
+
+/// Count `events_v1` rows that are NOT authority decisions: a deny must
+/// leave ZERO governed domain events (no cycles, no transitions, no
+/// approvals). The M2 `authority.admission.decided` row is excluded here
+/// because it is the expected single audit trail entry.
+fn count_non_authority_events(ledger: &Path) -> i64 {
+    if !ledger.exists() {
+        return 0;
+    }
+    let conn =
+        rusqlite::Connection::open_with_flags(ledger, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("ledger must be openable if it exists");
+    conn.query_row(
+        "SELECT COUNT(*) FROM events_v1 WHERE event_type <> 'authority.admission.decided'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .expect("query events_v1")
 }
 
 #[test]
@@ -156,11 +179,12 @@ fn human_evaluate_gate_denied_with_zero_side_effects() {
         "expected zero-side-effect wording, got: {stderr}"
     );
 
-    // 3) Zero governed mutations: `RuntimeContext::open` bootstraps the
-    //    ledger file (schema + project row — storage-local, identical for
-    //    every command), but the deny must leave ZERO events in it (R-4-005).
-    //    Once WU-C4-3 lands, the same scenario will additionally assert a
-    //    single `authority.admission.decided` event as the ONLY event.
+    // 3) Zero governed domain mutations: `RuntimeContext::open` bootstraps
+    //    the ledger file (schema + project row — storage-local, identical
+    //    for every command). A deny must leave ZERO governed domain events
+    //    (no cycles, no transitions, no approvals) and exactly ONE M2
+    //    audit entry — `authority.admission.decided` — so the decision is
+    //    durably recorded (R-4-005 / WU-C4-3).
     let project_dirs: Vec<String> = fs::read_dir(fixture.state.join("sddk").join("projects"))
         .map(|rd| {
             rd.flatten()
@@ -168,13 +192,28 @@ fn human_evaluate_gate_denied_with_zero_side_effects() {
                 .collect()
         })
         .unwrap_or_default();
+    let mut total_authority = 0;
+    let mut total_non_authority = 0;
     for project_dir in &project_dirs {
-        let events = ledger_event_count(&fixture.state, project_dir);
-        assert_eq!(
-            events, 0,
-            "deny must append zero events to ledger of {project_dir}"
-        );
+        let ledger = fixture
+            .state
+            .join("sddk")
+            .join("projects")
+            .join(project_dir)
+            .join("ledger.sqlite");
+        let authority = count_authority_admission_decided(&ledger);
+        let non_authority = count_non_authority_events(&ledger);
+        total_authority += authority;
+        total_non_authority += non_authority;
     }
+    assert_eq!(
+        total_non_authority, 0,
+        "deny must append zero governed domain events (any non-authority event is a regression)"
+    );
+    assert_eq!(
+        total_authority, 1,
+        "deny must record exactly one authority.admission.decided event (R-4-005 / WU-C4-3)"
+    );
     // And no receipts or other durable artifacts beyond the bootstrap
     // ledger file (and its sqlite -wal/-shm siblings) itself.
     let durable: Vec<String> = state_tree(&fixture.state)
