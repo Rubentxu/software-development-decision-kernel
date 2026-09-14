@@ -10,6 +10,7 @@ mod tests;
 
 pub use crate::uat::QualityArgs;
 pub use detector::detect_13_smells;
+// allow(dead_code): owner=uat-quality; reason=readiness dashboard re-export not yet consumed; exit=when a module imports QualityReport directly.
 #[allow(dead_code)]
 pub use report::QualityReport;
 

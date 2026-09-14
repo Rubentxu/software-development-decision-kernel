@@ -1745,7 +1745,6 @@ dependencies = [
 name = "sddk-domain"
 version = "1.169.15"
 dependencies = [
- "anyhow",
  "jsonschema",
  "proptest",
  "regex",
@@ -1788,7 +1787,6 @@ dependencies = [
 name = "sddk-gateway"
 version = "1.169.15"
 dependencies = [
- "anyhow",
  "proptest",
  "sddk-domain",
  "sddk-engine",
@@ -1809,9 +1807,6 @@ name = "sddk-pack-uat"
 version = "1.169.15"
 dependencies = [
  "sddk-domain",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -1845,7 +1840,6 @@ dependencies = [
 name = "sddk-vault"
 version = "1.169.15"
 dependencies = [
- "anyhow",
  "petgraph",
  "proptest",
  "regex",

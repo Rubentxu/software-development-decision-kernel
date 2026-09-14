@@ -292,6 +292,7 @@ pub fn compare_replay_proofs(
 
 // ── Audit guard ─────────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const PROMOTION_POLICY_VARIANT_LIST: &[PromotionPolicy] = &[
     PromotionPolicy::NotRegressing,
@@ -301,6 +302,7 @@ const PROMOTION_POLICY_VARIANT_LIST: &[PromotionPolicy] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const PROMOTION_HOLD_REASON_VARIANT_LIST: &[PromotionHoldReason] = &[
     PromotionHoldReason::MetricRegressed {

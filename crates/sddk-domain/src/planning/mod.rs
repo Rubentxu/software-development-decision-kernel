@@ -370,6 +370,9 @@ impl EvidenceAttachmentV1 {
     /// DEPRECATED constructor (WU-C2): legacy compat only. New evidence must
     /// be written via `EvidenceAttachmentRecord` with `relation` set from
     /// `resolve_planning_evidence_relation` (universal substrate).
+    ///
+    /// Owner: planning/evidence. Removal trigger: drop together with the legacy
+    /// `PlanningEvidenceKind` decode path once the C2 compatibility window closes.
     #[deprecated(
         since = "1.168.60",
         note = "legacy planning evidence authority (ADR-0100): use EvidenceAttachmentRecord with relation: CoreRelationKind via resolve_planning_evidence_relation"

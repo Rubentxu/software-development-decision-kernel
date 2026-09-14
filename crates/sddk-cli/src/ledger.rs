@@ -426,6 +426,7 @@ struct ReplayOutput {
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
+// allow(dead_code): owner=ledger; reason=reserved ReplayStatus expansion (Success+Fail match CLI exit codes); exit=when replay status is wired to CLI exit codes.
 #[allow(dead_code)]
 // Retained for future ReplayStatus expansion (Success + Fail states match CLI exit codes).
 enum ReplayStatus {
@@ -660,6 +661,7 @@ fn run_ledger_watch(args: LedgerWatchArgs, environment: &CliEnvironment) -> Comm
 mod tests {
     use super::*;
 
+    // allow(dead_code): owner=ledger-tests; reason=shared test env() fixture; exit=remove if no test uses it.
     #[allow(dead_code)]
     fn env() -> CliEnvironment {
         CliEnvironment::default()

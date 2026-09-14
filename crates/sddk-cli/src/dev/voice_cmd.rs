@@ -385,6 +385,7 @@ struct OverrideYaml {
     prompt: Option<String>,
 }
 
+// allow(dead_code): owner=dev; reason=builder helper retained for voice-profile tests; exit=remove if no test consumes it.
 #[allow(dead_code)]
 pub(super) fn make_voice_profile(
     key: String,

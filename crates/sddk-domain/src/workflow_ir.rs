@@ -137,6 +137,9 @@ impl ExpansionPermission {
     /// Deprecated: misleading semantics — ignores the allowlist parameter and always
     /// returns true for the v1 closed set. Use `is_known_permission()` and/or
     /// `is_allowed_by(allowlist)` instead.
+    ///
+    /// Owner: workflow_ir. Removal trigger: remove once no caller/test references
+    /// `is_allowed` (tracked by the domain deprecation sweep).
     #[deprecated(
         since = "1.30.0",
         note = "misleading: ignores the allowlist. Use is_known_permission() + is_allowed_by(allowlist). Removed in cycle 3 (v1.31.0)."

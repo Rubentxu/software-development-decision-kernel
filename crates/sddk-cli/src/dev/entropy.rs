@@ -90,6 +90,7 @@ pub enum MetricStatus {
 }
 
 impl MetricStatus {
+    // allow(dead_code): owner=dev; reason=convenience constructor for metric status; exit=remove if no caller adopts it.
     #[allow(dead_code)]
     fn from_bool(warn: bool) -> Self {
         if warn {

@@ -9,6 +9,3 @@ description = "UAT pack — user acceptance testing guided runner, form DSL, and
 
 [dependencies]
 sddk-domain = { path = "../sddk-domain" }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }

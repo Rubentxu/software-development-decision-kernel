@@ -1,5 +1,6 @@
 //! Injectable Approval IO — enables testing the generate pipeline's approval gate.
 
+// allow(dead_code): owner=uat-common; reason=injectable approval IO shared surface used by tests; exit=when the generate pipeline stops needing injection.
 #![allow(dead_code)]
 
 /// Verdict of the human approval gate.

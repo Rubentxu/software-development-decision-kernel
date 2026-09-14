@@ -1,5 +1,6 @@
 //! Plan read/write helpers.
 
+// allow(dead_code): owner=uat-common; reason=plan read/write helpers used by tests; exit=when callers converge on a single plan IO path.
 #![allow(dead_code)]
 
 use sddk_domain::UatPlan;

@@ -3025,6 +3025,7 @@ fn run_uat_verify_integrity(
     }
 }
 
+// allow(dead_code): owner=uat; reason=reserved sha256 helper for a future CLI hashing surface; exit=remove if unused after the next UAT surface review.
 #[allow(dead_code)]
 fn _cli_sha256_hex(bytes: &[u8]) -> String {
     sha256_hex(bytes)

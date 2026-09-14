@@ -28,6 +28,7 @@
 //! This module is a spike artifact: it is allowed to be deleted or
 //! archived wholesale once the embeddings decision (KEEP/DEFER) is made
 //! and recorded in `docs/architecture/adrs/`.
+// allow(dead_code): owner=spike-sp06; reason=spike artifact (embeddings KEEP/DEFER decision pending); exit=delete/archive when the embeddings ADR records the decision.
 #![allow(dead_code)]
 
 // Spike artifact: synthetic corpus, evaluation harness, rankers.

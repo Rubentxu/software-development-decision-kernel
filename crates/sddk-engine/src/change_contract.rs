@@ -438,6 +438,7 @@ impl ShapeSelector {
 
 // ── Audit guards ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const CHANGE_KIND_VARIANT_LIST: &[ChangeKind] = &[
     ChangeKind::Tweak,
@@ -447,6 +448,7 @@ const CHANGE_KIND_VARIANT_LIST: &[ChangeKind] = &[
     ChangeKind::Optimisation,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const SPECIALIST_KIND_VARIANT_LIST: &[SpecialistKind] = &[
     SpecialistKind::Human,
@@ -455,6 +457,7 @@ const SPECIALIST_KIND_VARIANT_LIST: &[SpecialistKind] = &[
     SpecialistKind::LabAgent,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const REJECTION_REASON_VARIANT_LIST: &[RejectionReason] = &[
     RejectionReason::NoSurfaceCoverage {
@@ -469,6 +472,7 @@ const REJECTION_REASON_VARIANT_LIST: &[RejectionReason] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const SHAPE_SELECTION_ERROR_VARIANT_LIST: &[ShapeSelectionError] = &[
     ShapeSelectionError::EmptyRoster,

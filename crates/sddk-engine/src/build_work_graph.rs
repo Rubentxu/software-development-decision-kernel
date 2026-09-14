@@ -339,6 +339,7 @@ impl WorkGraphBuilder {
 
 // ── Audit guards ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const WORK_UNIT_STAGE_VARIANT_LIST: &[WorkUnitStage] = &[
     WorkUnitStage::Compile,
@@ -349,6 +350,7 @@ const WORK_UNIT_STAGE_VARIANT_LIST: &[WorkUnitStage] = &[
     WorkUnitStage::Finalize,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const WORK_UNIT_TOPOLOGY_ERROR_VARIANT_LIST: &[WorkUnitTopologyError] = &[
     WorkUnitTopologyError::UnknownPredecessor {
@@ -363,6 +365,7 @@ const WORK_UNIT_TOPOLOGY_ERROR_VARIANT_LIST: &[WorkUnitTopologyError] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const WORK_GRAPH_BUILD_ERROR_VARIANT_LIST: &[WorkGraphBuildError] = &[
     WorkGraphBuildError::Topology(WorkUnitTopologyError::DuplicateUnitId {

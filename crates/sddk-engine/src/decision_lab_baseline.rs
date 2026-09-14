@@ -414,6 +414,7 @@ fn kind_name(v: &serde_json::Value) -> String {
 
 // ── Audit guard ─────────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const BASELINE_STRATEGY_VARIANT_LIST: &[BaselineStrategy] = &[
     BaselineStrategy::Pareto { max_keep: 0 },

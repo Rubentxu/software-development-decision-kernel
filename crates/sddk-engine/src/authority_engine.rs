@@ -52,6 +52,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 pub type UtcTimestamp = OffsetDateTime;
 
+// allow(dead_code): owner=authority-engine; reason=now_utc helper for deterministic timestamps; exit=remove if no caller adopts it.
 #[allow(dead_code)]
 fn now_utc() -> UtcTimestamp {
     OffsetDateTime::now_utc()
@@ -443,6 +444,7 @@ impl DefaultAuthorityEngine {
         e
     }
 
+    // allow(dead_code): owner=authority-engine; reason=next_receipt_id test helper; exit=remove if no test uses it.
     #[allow(dead_code)]
     fn next_receipt_id(&mut self, prefix: &str) -> ReceiptId {
         self.next_receipt_seq += 1;

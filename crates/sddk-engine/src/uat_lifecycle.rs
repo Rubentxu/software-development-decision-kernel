@@ -361,6 +361,7 @@ impl UatLifecycleEngine {
 
 // ── Audit guards ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const UAT_SCENARIO_STATE_VARIANT_LIST: &[UatScenarioState] = &[
     UatScenarioState::Draft,
@@ -375,6 +376,7 @@ const UAT_SCENARIO_STATE_VARIANT_LIST: &[UatScenarioState] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const UAT_DEFECT_SEVERITY_VARIANT_LIST: &[UatDefectSeverity] = &[
     UatDefectSeverity::Blocker,
@@ -382,6 +384,7 @@ const UAT_DEFECT_SEVERITY_VARIANT_LIST: &[UatDefectSeverity] = &[
     UatDefectSeverity::Minor,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const UAT_DEFECT_STATUS_VARIANT_LIST: &[UatDefectStatus] = &[
     UatDefectStatus::Open,
@@ -390,6 +393,7 @@ const UAT_DEFECT_STATUS_VARIANT_LIST: &[UatDefectStatus] = &[
     UatDefectStatus::WontFix,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const UAT_RETEST_OUTCOME_VARIANT_LIST: &[UatRetestOutcome] = &[
     UatRetestOutcome::Pass,
@@ -399,6 +403,7 @@ const UAT_RETEST_OUTCOME_VARIANT_LIST: &[UatRetestOutcome] = &[
     UatRetestOutcome::Skipped,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const UAT_LIFECYCLE_ERROR_VARIANT_LIST: &[UatLifecycleError] = &[
     UatLifecycleError::IllegalTransition {

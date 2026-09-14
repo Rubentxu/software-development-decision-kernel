@@ -45,12 +45,14 @@ use crate::OutputFormat;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Registry {
     #[serde(default = "default_schema_version")]
+    // allow(dead_code): owner=dev-lint; reason=registry schema_version parsed for forward compatibility; exit=when schema versioning is enforced.
     #[allow(dead_code)]
     schema_version: String,
     #[serde(default)]
     #[allow(dead_code)]
     generated_at: String,
     #[serde(default)]
+    // allow(dead_code): owner=dev-lint; reason=deserialized registry/lint field kept for schema completeness; exit=when the field is consumed by lint reporting.
     #[allow(dead_code)]
     enforcement_status: String,
     lints: Vec<LintSpec>,
@@ -63,9 +65,11 @@ pub struct LintSpec {
     #[serde(default)]
     pub default: Option<String>,
     #[serde(default)]
+    // allow(dead_code): owner=dev-lint; reason=deserialized registry/lint field kept for schema completeness; exit=when the field is consumed by lint reporting.
     #[allow(dead_code)]
     description: String,
     #[serde(default)]
+    // allow(dead_code): owner=dev-lint; reason=deserialized registry/lint field kept for schema completeness; exit=when the field is consumed by lint reporting.
     #[allow(dead_code)]
     detection: String,
     pub pattern: String,

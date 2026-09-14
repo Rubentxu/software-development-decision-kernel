@@ -558,6 +558,7 @@ fn invariant_holds(evidence: &[AssuranceEvidence], invariant: &str) -> bool {
 
 // ── Audit guards ─────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ASSURANCE_PROFILE_VARIANT_LIST: &[AssuranceProfile] = &[
     AssuranceProfile::Smoke,
@@ -568,6 +569,7 @@ const ASSURANCE_PROFILE_VARIANT_LIST: &[AssuranceProfile] = &[
     AssuranceProfile::Custom { rules: vec![] },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ASSURANCE_RULE_KIND_VARIANT_LIST: &[AssuranceRuleKind] = &[
     AssuranceRuleKind::CoverageAtLeastBps { value_bps: 0 },
@@ -583,6 +585,7 @@ const ASSURANCE_RULE_KIND_VARIANT_LIST: &[AssuranceRuleKind] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ASSURANCE_SEVERITY_VARIANT_LIST: &[AssuranceSeverity] = &[
     AssuranceSeverity::Must,
@@ -590,6 +593,7 @@ const ASSURANCE_SEVERITY_VARIANT_LIST: &[AssuranceSeverity] = &[
     AssuranceSeverity::Info,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ASSURANCE_SCOPE_VARIANT_LIST: &[AssuranceScope] = &[
     AssuranceScope::Cycle {
@@ -601,6 +605,7 @@ const ASSURANCE_SCOPE_VARIANT_LIST: &[AssuranceScope] = &[
     AssuranceScope::Global,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const EVIDENCE_TAG_VARIANT_LIST: &[EvidenceTag] = &[
     EvidenceTag::EngineTest {
@@ -625,6 +630,7 @@ const EVIDENCE_TAG_VARIANT_LIST: &[EvidenceTag] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ASSURANCE_STATUS_VARIANT_LIST: &[AssuranceStatus] = &[
     AssuranceStatus::Pass,

@@ -208,6 +208,7 @@ pub fn observe_replay_proof(
 
 // ── Audit guard ─────────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const WORKFLOW_METRIC_KIND_VARIANT_LIST: &[WorkflowMetricKind] = &[
     WorkflowMetricKind::ReplayProofCount,

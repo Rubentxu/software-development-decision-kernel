@@ -260,6 +260,8 @@ impl ActionSurfaceView {
 /// Use [`build_action_surface_view_with_frontier`] instead. This signature is
 /// retained so existing callers and tests keep compiling during the migration
 /// window; new code MUST use the frontier variant.
+///
+/// Owner: run_view. Removal trigger: when no caller/test uses the heuristic path.
 #[deprecated(
     since = "1.91.0",
     note = "use build_action_surface_view_with_frontier — heuristic path is a fallback only"

@@ -209,6 +209,7 @@ pub enum IntrospectCommand {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+// allow(dead_code): owner=cli-command-spec; reason=ArgKind reserved for full arg-schema derivation; exit=when arg schemas surface ArgKind.
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ArgKind {
@@ -219,6 +220,7 @@ pub enum ArgKind {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+// allow(dead_code): owner=cli-command-spec; reason=ValueType reserved for full arg-schema derivation; exit=when arg schemas surface ValueType.
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ValueType {

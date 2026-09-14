@@ -527,6 +527,7 @@ mod tests {
             .with_dispatch_allowlist(allow.into_iter().map(String::from).collect())
     }
 
+    // allow(dead_code): owner=engine-tests; reason=shared orch() test fixture; exit=remove if no test uses it.
     #[allow(dead_code)]
     fn orch(id: &str) -> AgentRoleContract {
         AgentRoleContract::new(id, RoleKind::Orchestrator, "owns planning")

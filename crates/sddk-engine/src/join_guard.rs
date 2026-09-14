@@ -454,6 +454,7 @@ fn kind_name(v: &serde_json::Value) -> String {
 
 // ── Audit guard ──────────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const JOIN_POLICY_VARIANT_LIST: &[JoinPolicy] = &[
     JoinPolicy::FirstSuccess {
@@ -471,6 +472,7 @@ const JOIN_POLICY_VARIANT_LIST: &[JoinPolicy] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const JOIN_FAILURE_REASON_VARIANT_LIST: &[JoinFailureReason] = &[
     JoinFailureReason::EmptyBatch,

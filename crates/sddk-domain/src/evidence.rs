@@ -450,6 +450,7 @@ fn strip_nulls(value: &serde_json::Value) -> serde_json::Value {
 mod tests {
     use super::*;
 
+    // allow(dead_code): owner=domain-evidence-tests; reason=redaction test helper; exit=remove if no test uses it.
     #[allow(dead_code)] // Helper for future redacted_with_fields tests; currently unused.
     fn bundle_with_sensitive_fields() -> EvidenceBundle {
         EvidenceBundle {

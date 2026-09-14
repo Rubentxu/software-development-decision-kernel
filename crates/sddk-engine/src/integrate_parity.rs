@@ -250,6 +250,7 @@ fn within_tolerance(a: f64, b: f64, tol_bps: u32) -> bool {
 
 // ── Audit guards ─────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const INTEGRATE_STATUS_VARIANT_LIST: &[IntegrateStatus] = &[
     IntegrateStatus::Parity,
@@ -257,6 +258,7 @@ const INTEGRATE_STATUS_VARIANT_LIST: &[IntegrateStatus] = &[
     IntegrateStatus::Diverged,
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const INTEGRATE_ERROR_VARIANT_LIST: &[IntegrateError] = &[
     IntegrateError::SurfaceMismatch {

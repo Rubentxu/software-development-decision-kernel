@@ -526,6 +526,7 @@ fn kind_compatible(declared: &str, actual: &str) -> bool {
 
 // Compile-time guard: 6 variants in ReducerKind. Match this list when
 // adding a new variant.
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const REDUCER_KIND_VARIANT_LIST: &[ReducerKind] = &[
     ReducerKind::Sum {

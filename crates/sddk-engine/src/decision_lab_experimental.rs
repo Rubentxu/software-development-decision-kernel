@@ -481,6 +481,7 @@ fn kind_name(v: &serde_json::Value) -> String {
 
 // ── Audit guard ─────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const EXPERIMENTAL_STRATEGY_VARIANT_LIST: &[ExperimentalStrategy] = &[
     ExperimentalStrategy::Tot {

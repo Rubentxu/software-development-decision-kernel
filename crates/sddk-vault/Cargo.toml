@@ -12,7 +12,6 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serde-saphyr = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 regex = { workspace = true }
 petgraph = "0.8"
 sha2 = { workspace = true }

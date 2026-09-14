@@ -253,6 +253,7 @@ impl EvidenceResolver {
 
 // ── Audit guard ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const ADAPTER_FACT_VARIANT_LIST: &[AdapterFact] = &[
     AdapterFact::CargoTest {

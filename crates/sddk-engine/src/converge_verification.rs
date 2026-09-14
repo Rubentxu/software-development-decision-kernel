@@ -266,6 +266,7 @@ impl ConvergeVerifier {
 
 // ── Audit guards ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const WORK_UNIT_RESULT_VARIANT_LIST: &[WorkUnitResult] = &[
     WorkUnitResult::Succeeded,
@@ -275,6 +276,7 @@ const WORK_UNIT_RESULT_VARIANT_LIST: &[WorkUnitResult] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const CONVERGE_STATUS_VARIANT_LIST: &[ConvergeStatus] = &[
     ConvergeStatus::AllSucceeded,
@@ -285,6 +287,7 @@ const CONVERGE_STATUS_VARIANT_LIST: &[ConvergeStatus] = &[
     },
 ];
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const CONVERGE_VERIFY_ERROR_VARIANT_LIST: &[ConvergeVerifyError] = &[
     ConvergeVerifyError::UnknownUnit {

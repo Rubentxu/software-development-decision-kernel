@@ -190,6 +190,7 @@ impl DecisionPlaneGater {
 
 // ── Audit guard ──────────────────────────────────────────────────────────
 
+// allow(unused): owner=engine; reason=variant-list audit guard, currently unreferenced; exit=wire into an exhaustiveness test or delete.
 #[allow(unused)]
 const DECISION_PLANE_GATE_VARIANT_LIST: &[DecisionPlaneGate] = &[
     DecisionPlaneGate::Advance,

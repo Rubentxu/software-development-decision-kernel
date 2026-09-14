@@ -545,16 +545,6 @@ CREATE TABLE IF NOT EXISTS response_cache_v1 (
 );
 "#;
 
-#[allow(dead_code)]
-pub(crate) const MIGRATION_10: &str = r#"
--- events_v1 chain_hash: stream hash chaining for cryptographic integrity (Phase 2 SHOULD).
--- chain_hash[0] = SHA256(content_hash || "genesis")
--- chain_hash[N] = SHA256(content_hash[N] || chain_hash[N-1])
--- Only applies if events_v1 exists (legacy databases created before MIGRATION_5
--- never had events_v1, so this is a no-op for them).
-ALTER TABLE events_v1 ADD COLUMN chain_hash TEXT NOT NULL DEFAULT '';
-"#;
-
 pub(crate) const MIGRATION_11: &str = r#"
 -- workflow_runs_v1: runtime instance metadata (projection table).
 -- Source of truth is events_v1; this table is a materialized lookup index.

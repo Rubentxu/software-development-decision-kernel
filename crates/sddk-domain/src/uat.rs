@@ -3238,6 +3238,7 @@ pub struct UatScenarioHistory {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+// allow(dead_code): owner=domain-uat; reason=UatRunRef reserved API for run references; exit=when UAT run refs are persisted/consumed.
 #[allow(dead_code)]
 pub struct UatRunRef {
     pub session_id: String,
