@@ -1,371 +1,213 @@
-# Mini-roadmap — From Current Main to Production Readiness + Agentic GA
+# Mini-roadmap — Production Readiness, Architecture Conformance and Agentic GA
 
-This roadmap does not replace C0→C7 or R0→R11. It compresses them into a finite execution sequence based on the 2026-09-14 code audit and integrates the accepted Agentic Workspace/JCode evolution as a parallel product track.
+This roadmap reconciles C0→C7, R0→R11, provider integration, Agentic Workspace/JCode and the Architecture Conformance (AC) evolution.
+
+## Current checkpoint
+
+- **A0:** CLOSED — 7/7 production-readiness gaps closed.
+- **A1:** CLOSED — C7 `PASS`, certified at `0c2ca56` / SDDK `1.169.19`.
+- **A2:** current next structural milestone; behavior-preserving context cut.
 
 ## Priority model
 
-- **P0 — blocker/release gate:** close before consuming the affected contract or declaring the corresponding readiness profile.
-- **P1 — high:** next product-value work; may run in parallel when dependencies permit.
-- **P2 — medium:** important enhancement but not a blocker for the preceding GA profile.
-- **P3 — optional/evidence-driven:** only after a demonstrated need or portability/maintenance trigger.
+- **P0:** blocker/release gate.
+- **P1:** high product/semantic value.
+- **P2:** important enhancement after preceding GA profile.
+- **P3:** optional/evidence-driven.
 
 ## Global dependency map
 
 ```text
-BASE / semantic critical path
+BASE semantic path
 
-A0 Close current authority drifts                 [P0]
-  -> A1 Baseline C7 receipt                       [P0]
-  -> A2 Context cut + semantic ownership          [P0]
-  -> A3 Knowledge + Agent advisory foundation     [P1]
-  -> A4 Alignment + Verify + DebVerify            [P1]
-  -> A5 Base production certification             [P0 release gate]
+A0 authority/drift closeout             [CLOSED]
+  → A1 C7 baseline receipt              [CLOSED]
+  → A2 context cut + ownership          [P0]
+       └─ AC0 ownership/fitness inventory
+  → A3 Knowledge + Agent advisory       [P1]
+       ├─ AC1 typed ArchitecturalContract
+       ├─ AC2 architecture graph overlay
+       └─ AC3 paradigm intent/profiles
+  → A4 Alignment + Verify + DebVerify   [P1]
+       ├─ AC4 architecture Verify
+       ├─ AC5 architecture DebVerify
+       ├─ AC6 critical mutation probes
+       └─ AC7 OO/FP/ADT/DSL lenses
+  → A5 BASE_PRODUCTION_READY            [P0 release gate]
+       └─ AC8 SDDK self-audit receipt
 
-Preparation allowed after A2/A3 contracts stabilize
+Preparation after A2/A3 contracts stabilize
+  ├─ J0 external JCode SDK proof
+  ├─ J1 SDDK Agentic API/SDK
+  ├─ CogniCode protocol spike
+  └─ Chronos protocol spike
 
-                 +-> J0 external JCode SDK proof              [P1]
-                 +-> J1 SDDK Agentic public API/SDK            [P1]
-
-Post-Base product tracks
-
-A5 BASE READY ---+-> J2 -> J6 JCode Core GA                    [P1]
-                 +-> A6 CogniCode Static Enhanced              [P1 parallel]
-                 +-> A7 Chronos Runtime Enhanced               [P1 parallel]
+After A5
+  ├─ J2→J6 JCODE_CORE_GA                [P1 default product priority]
+  │    └─ AC9 reactive conformance at J5
+  ├─ A6 CogniCode STATIC_ENHANCED       [P1 parallel]
+  │    └─ AC10 static evidence
+  └─ A7 Chronos RUNTIME_ENHANCED        [P1 parallel]
+       └─ AC11 runtime evidence
 
 Then
-
-J8 Advanced host capabilities                                  [P2]
-J9 Second-host validation before Agentic API 1.0               [P2]
-A8 Full Enhanced + program convergence                         [P2]
-J7 MCP pull surface                                             [P3 optional]
-R11 bounded-context crate split evaluation                     [P3 evidence-driven]
+  ├─ A8 FULLY_ENHANCED                  [P2]
+  │    ├─ AC12 conformance workbooks/time travel
+  │    ├─ AC13 counterfactual architecture
+  │    └─ AC14 proof-carrying changes/immune ratchets
+  ├─ J8 advanced host capabilities      [P2]
+  ├─ J9 second-host validation          [P2]
+  ├─ J7 MCP pull surface                [P3]
+  └─ R11 crate-split evaluation         [P3]
 ```
 
-**Priority decision:** after `BASE_PRODUCTION_READY`, the default next product priority is **JCode Core GA (J2→J6)** because it exposes the already-built SDDK semantics directly in an interactive development workflow. CogniCode and Chronos remain P1 and may proceed in parallel. Neither provider is allowed to become a prerequisite for JCode Base-mode integration.
+## A2 — R0 + R1 Context boundary cut — P0
 
-Provider/JCode protocol spikes may run in parallel after A2/A3, but production integrations must consume stable SDDK-owned semantic ports rather than shape the domain around external APIs.
+Perform behavior-preserving MOVE→VERIFY→CONSOLIDATE→DELETE across:
 
----
+`shared / planning / execution / decision / knowledge / alignment / verification / governance / agent_experience / extension`.
 
-## A0 — Close the remaining 09/09 authority drifts — P0
+AC0 contributes only ownership/state/dependency inventories and fitness rules. Do **not** implement ArchitecturalContract, new Knowledge, paradigm lenses or Verify semantics early.
 
-**Scope:** finish C3→C6 with the current code still physically where it is.
+Required fitness includes no inward provider/host SDK types, no Alignment→Authority/InstructionCompiler dependency, no workbook canonical write and no new root context without ADR.
 
-Work:
+Exit: A1 behavior parity remains green; dependencies/ownership are machine-protected.
 
-1. reconcile `Revision<T>` and Decision Memory generic revision primitives (`PR-GAP-004`);
-2. establish one SQLite schema/migration owner (`PR-GAP-005`);
-3. complete AuthorityEngine cutover and zero-bypass guard (`PR-GAP-006`);
-4. make Command Registry single-source (`PR-GAP-007`);
-5. internalize/time-bound legacy compatibility (`PR-GAP-008`);
-6. run dead-dependency/staged-code cleanup (`PR-GAP-009`);
-7. reconcile architecture/spec statuses and succession (`PR-GAP-010`).
+## A3 — R2 + R3 Knowledge + advisory foundation — P1
 
-**Do not do:** R0 file moves mixed with semantic fixes. Semantic fixes first; physical movement afterwards.
+Implement:
 
-**Exit:** C3, C4, C5 and C6 have executable evidence and no unresolved MUST drift.
-
-## A1 — Close C7 and freeze the baseline receipt — P0
-
-Run the full closeout exactly once against a named commit after A0:
-
-- SPEC-001..018 crosswalk;
-- UAT-01..22;
-- clean repository workflow;
-- migrated repository workflow;
-- projection delete/rebuild;
-- crash/reopen/fresh-process recovery;
-- installed CLI fixtures/examples;
-- dependency and deprecated-path guards.
-
-**Artifact:** `09-09-CONFORMANCE-RECEIPT.md` with commit SHA and test evidence.
-
-**Exit:** only `PASS` / `PASS_WITH_COMPAT`; zero unresolved MUST.
-
-## A2 — R0 + R1: context boundary cut and semantic consolidation — P0
-
-Perform the behaviour-preserving file/module cut first, then consolidate semantic ownership in the new locations.
-
-Target ownership:
-
-```text
-shared
-planning
-execution
-decision
-knowledge
-alignment
-verification
-governance
-agent_experience
-extension
-```
-
-Agentic Workspace is a logical supporting integration context, but host-specific adapter code SHALL NOT be placed in these core contexts. JCode-specific code belongs to the separate `sddk-jcode` parcel.
-
-Required fitness rules include:
-
-- no domain → RPC/provider/host SDK;
-- no Knowledge → provider SDK;
-- no Alignment → AuthorityEngine implementation;
-- no Alignment → InstructionCompiler;
-- no workbook → canonical write;
-- no host-specific JCode type in generic Agentic Workspace contracts;
-- no new root-level context module after R0 without ADR.
-
-**Exit:** behaviour parity from A1 remains green and dependency fitness tests enforce the new boundaries.
-
-## A3 — R2 + R3: Knowledge substrate and Agent advisory boundary — P1
-
-Implement only the foundations required by Alignment/Verify and later Agentic Workspace exposure:
-
-- `KnowledgeAssertion` with evidence/status discipline;
-- `KnowledgeBasis`;
-- KMT v1 identity/freshness/invalidation;
+- KnowledgeAssertion / KnowledgeBasis;
+- KMT identity/freshness/invalidation;
 - SemanticGraph cross-tree overlay;
 - Software Unit cards/progressive disclosure;
-- `ContextCapsule.advisory_context`;
-- separate `context_capsule_hash` and `effective_instruction_set_hash`;
-- explicit invariant that Alignment cannot become `InstructionSource`.
+- ContextCapsule `advisory_context` and separate instruction hash;
+- **AC1:** typed ArchitecturalContract/ArchitectureClaim;
+- **AC2:** architecture nodes/relations inside the one SemanticGraphProjection;
+- **AC3:** scoped ParadigmProfile metadata for OO, Functional/Pure, ADT, DSL and extensible lenses.
 
-**Exit:** deterministic fixtures prove freshness/invalidation and an Alignment-like advisory payload changes context hash without changing instruction-set hash.
+Exit: deterministic graph rebuild/freshness fixtures; Alignment-like advisory payload never changes EffectiveInstructions.
 
-A3 is the minimum semantic basis for finalizing J1; J0 may execute earlier as an external SDK spike.
+## A4 — R4 + R5 + R6 Alignment, Verify, DebVerify — P1
 
-## A4 — R4 + R5 + R6: Alignment, Verify and DebVerify — P1
-
-Implement the intelligence loop in Base mode before requiring external providers:
+Base intelligence loop:
 
 ```text
 Sources + Decision Memory
-        -> Knowledge/KMT
-        -> Alignment
-        -> Verify / DebVerify
-        -> Evidence + receipts
+  → Knowledge/KMT + SemanticGraph
+  → Alignment
+  → Verify / DebVerify
+  → Evidence + receipts
 ```
 
-Key acceptance:
+Architecture Conformance becomes operational here:
 
-- Alignment is advisory and paradigm-neutral;
-- missing evidence => `UNKNOWN`, never `MISALIGNED` or synthetic green;
-- Verify is delta-scoped by default;
-- DebVerify challenges the global accumulated baseline and is not `verify --full`;
-- deterministic analyzers + optional LLM evaluator have provenance and status discipline;
-- Base mode requires neither CogniCode nor Chronos.
+- **AC4:** changed units → affected contracts → minimal probes → ConformanceDelta;
+- **AC5:** DebVerify searches for duplicate/shadow authority, ownership gaps, bypasses, stale compatibility and contradictions;
+- **AC6:** critical mutation probes prove fitness guards detect injected violations;
+- **AC7:** paradigm-aware lenses evaluate OO, pure/functional, ADTs and typed DSL design relative to declared intent.
 
-**Exit:** R4/R5/R6 UAT fixtures green with both providers absent.
+Rules:
 
-This stage supplies the reactive semantic loop later consumed by J5; the host adapter SHALL NOT reimplement Verify/Alignment semantics.
+- Alignment remains advisory;
+- missing evidence → UNKNOWN/NOT_EVALUATED;
+- no universal quality score;
+- Verify is delta-scoped; DebVerify is global challenge, not `verify --full`;
+- Base requires neither LLM, CogniCode nor Chronos.
 
-## A5 — Certify `BASE_PRODUCTION_READY` — P0 release gate
+## A5 — BASE_PRODUCTION_READY — P0 gate
 
-Hardening:
+Hardening includes migration/recovery/rebuild, concurrency/CAS/authority races, installed-binary UAT, blocking architecture/deprecation lints, secrets/telemetry review and release hygiene.
 
-- migration/backward compatibility matrix;
-- restart/recovery and projection rebuild;
-- concurrency/CAS/authority races;
-- corrupt/incompatible input behaviour;
-- CLI installed-binary UAT;
-- dependency/architecture lints blocking;
-- no secrets or uncontrolled telemetry in receipts;
-- docs and release process point to one normative architecture state.
+**AC8 becomes part of the gate:** SDDK runs its Architecture Conformance capability against itself and emits `ARCHITECTURE-CONFORMANCE-RECEIPT` at an exact revision. The self-audit must reproduce representative A0/A1 defect classes in Base mode.
 
-**Artifact:** `PRODUCTION-READINESS-RECEIPT.md` with profile `BASE`.
+Artifacts:
 
-At this point SDDK may be used in production without enhanced providers or agentic hosts.
+- `PRODUCTION-READINESS-RECEIPT.md` profile BASE;
+- `ARCHITECTURE-CONFORMANCE-RECEIPT.md`.
 
----
+At this point Base is production-ready without external providers/agentic hosts.
 
-# Agentic Workspace / JCode track
+# Agentic Workspace / JCode
 
-Detailed architecture: `08-AGENTIC-WORKSPACE-JCODE-ARCHITECTURE.md`  
-Detailed milestones: `09-AGENTIC-WORKSPACE-ROADMAP.md`  
-UAT: `10-AGENTIC-WORKSPACE-UAT.md`
+Detailed docs remain `08-AGENTIC-WORKSPACE-JCODE-ARCHITECTURE.md`, `09-AGENTIC-WORKSPACE-ROADMAP.md`, `10-AGENTIC-WORKSPACE-UAT.md`.
 
-## J0 — External JCode SDK boundary proof — P1
+## J0/J1 — preparation — P1
 
-Pin current JCode integration basis by exact Git revision and prove from an external Rust workspace:
+J0 proves the external `jcode-sdk` boundary at a pinned revision. J1 defines host-neutral `sddk-agentic-api/sdk` contracts. J0 may begin after A2 boundaries stabilize; J1 finalizes after A3 semantic types stabilize.
 
-- shared runtime connect;
-- list/attach/create session;
-- `global_events` / `turn_done`;
-- no-reply context delivery;
-- `run_structured`;
-- capability discovery;
-- publication/package constraints.
+## J2→J4 — ACL, SessionBinding, ContextBridge — P1 after Base
 
-Current verified basis on 2026-09-14:
+`jcode-sdk → sddk-jcode → sddk-agentic-sdk`; Session != Run; transcript ownership stays in JCode; context uses bootstrap then relevant deltas.
+
+## J5 — Reactive Verify + AC9 — P1
 
 ```text
-JCode 0.84.0
-jcode-sdk 0.1.0
-Harness API major 1
-rev 752df77d3c13fa7a648eda257dbfcb8d3ea5974d
+JCode material events / turn_done
+ → coalesced WorkspaceChangeSet
+ → KMT
+ → affected ArchitecturalContracts
+ → Verify
+ → optional provider deepening
+ → Knowledge/Alignment
+ → ArchitectureConformanceDelta
+ → useful ContextDelta
 ```
 
-**Exit:** external spike receipt; no JCode internal imports.
+Routine reads/grep/list stay ephemeral. Normal architecture tensions are contextual/advisory, not automatic interrupts.
 
-## J1 — SDDK Agentic Workspace public API/SDK — P1
+## J6 — Structured work / JCODE_CORE_GA — P1
 
-Define host-neutral SDDK contracts for SessionBinding, capabilities, workspace identity/locality, context bootstrap/deltas, normalized host events/actions, structured work and receipts.
+`AgentWorkRequest → run_structured(schema) → ContributionV2 + receipts`.
 
-Preferred boundary:
+JCode Core GA does not require enhanced providers, MCP or advanced host controls.
 
-```text
-sddk-agentic-api
-sddk-agentic-sdk
-```
+## J7/J8/J9
 
-Crate split is justified here by a public external integration/release boundary, not by bounded-context diagram aesthetics.
+J7 MCP remains P3 evidence-driven. J8 adds safe interruption/permissions/model/rewind/remote capabilities. J9 validates a second host before Agentic API 1.0.
 
-**Exit:** fake-host/client/server tests + no-JCode-type-leak fitness.
+## A6 — CogniCode STATIC_ENHANCED — P1 parallel
 
-## J2 — `sddk-jcode` anti-corruption adapter — P1
+Follow `04-COGNICODE-HANDOFF.md` and arch-spec-021.
 
-Separate Rust integration parcel:
+AC10 consumes CogniCode call/dependency/impact/graph observations as Evidence through `CodeIntelligencePort`; provider types never enter Knowledge/Alignment/Verification domain. Static evidence can verify or contradict architecture claims but CogniCode never owns status.
 
-```text
-jcode-sdk -> sddk-jcode -> sddk-agentic-sdk
-```
+Exit: Base stays green with provider absent; pinned enhanced UAT yields `STATIC_ENHANCED` receipt.
 
-No JCode internals and no SDDK internals.
-
-## J3 — Activation + SessionBinding — P1
-
-Attach shared host sessions to PROJECT / WORK_ITEM / RUN / TASK / EPHEMERAL bindings without assuming Session=Run. Preserve host transcript ownership and workspace locality.
-
-## J4 — ContextBridge + KMT relevance — P1
-
-One bootstrap context per basis, then `ContextDelta` only when relevant. Alignment remains advisory; irrelevant KMT updates create no host-message churn.
-
-## J5 — Reactive Verify loop — P1
-
-```text
-JCode global_events/turn_done
- -> normalize/materiality
- -> coalesced WorkspaceChangeSet
- -> KMT
- -> VerifyPreflight/Verify
- -> optional CogniCode/Chronos deepening
- -> Knowledge/Alignment
- -> useful ContextDelta
-```
-
-Routine read/grep/list events remain ephemeral. `ledger watch` and `diff-watch` are observability/operator tools, not host transport.
-
-## J6 — Structured work + `JCODE_CORE_GA` — P1
-
-`AgentWorkRequest -> run_structured(schema) -> ContributionV2 -> Synthesis/Evidence/receipt`.
-
-Core GA does **not** require MCP, providers, soft interruption, model routing, rewind or SSH. Unsupported optional host capabilities must be reported truthfully.
-
-## J7 — MCP pull surface — P3 optional
-
-Only after empirical J4-J6 usage demonstrates agent-initiated pull needs that native SDK push/context cannot satisfy. Keep initial surface to 3–5 semantic operations.
-
-## J8 — Advanced JCode capabilities — P2
-
-Safe interruption, permission mediation, model/reasoning selection, compaction/rewind, SSH/remote and richer native collaboration. SDDK MUST NOT create a second swarm orchestrator.
-
-## J9 — Second-host validation — P2 before Agentic API 1.0
-
-Use fake host + thin OpenCode/Claude Code spike to prove the generic API models SDDK semantics rather than JCode implementation details.
-
-**Exit:** `MULTI_HOST_PORTABILITY_RECEIPT`; only then consider `AGENTIC_API_STABLE`/1.0.
-
----
-
-## A6 — R7: CogniCode `STATIC_ENHANCED` — P1 parallel after A5
-
-Follow `04-COGNICODE-HANDOFF.md`.
-
-SDDK work:
-
-- freeze `CodeIntelligencePort` ADTs;
-- implement provider registry/capability negotiation/lifecycle;
-- add CogniCode adapter in gateway/extension infrastructure;
-- map provider observations to Evidence/Knowledge without provider types crossing inward;
-- use the provider selectively for D1/D2/D3 deepening and impact/static evidence.
-
-CogniCode work:
-
-- versioned protocol + service surface;
-- analysis basis/capability snapshot;
-- stable result refs/digests;
-- delta/scope/impact/summary/graph-slice operations required by the agreed contract;
-- deterministic integration fixtures.
-
-**Exit:** Base stays green with CogniCode absent; enhanced UAT is green with a pinned compatible CogniCode build.
-
-**Artifact:** profile receipt `STATIC_ENHANCED`.
-
-J5 MAY consume this evidence when available, but JCode Core GA MUST pass without it.
-
-## A7 — R8: Chronos `RUNTIME_ENHANCED` — P1 parallel after A5
+## A7 — Chronos RUNTIME_ENHANCED — P1 parallel
 
 Follow `05-CHRONOS-HANDOFF.md`.
 
-SDDK work:
+AC11 uses runtime paths, effects, traces and behavior summaries to corroborate/contradict static assumptions. Traces stay provider-side by default; SDDK stores stable refs/fingerprints/evidence.
 
-- freeze `RuntimeIntelligencePort` ADTs;
-- implement Chronos adapter;
-- normalize runtime observations to Evidence refs/fingerprints;
-- integrate selected scenario evidence into Knowledge/Alignment/Verify without making runtime evidence universally mandatory.
+Exit: Base green without Chronos; pinned runtime UAT yields `RUNTIME_ENHANCED` receipt.
 
-Chronos work:
+## A8 — Full Enhanced + Architecture Intelligence — P2
 
-- versioned scenario/runtime protocol;
-- scenario basis and capability snapshot;
-- observe/run/analyze/compare/summary contract;
-- cancellation, timeout and resource limits;
-- stable trace/evidence refs and golden scenarios.
+Converge Workbooks/control tower, Knowledge Health, contradiction-preserving static/runtime reconciliation, Governance ratchets and WHY provenance.
 
-**Exit:** Base remains green with Chronos absent; runtime-enhanced UAT passes against a pinned compatible Chronos build.
+AC additions:
 
-**Artifact:** profile receipt `RUNTIME_ENHANCED`.
+- **AC12** authority/ownership/compatibility/paradigm topology workbooks and semantic architecture time travel;
+- **AC13** counterfactual refactor planning over ephemeral candidate graph deltas;
+- **AC14** proof-carrying changes and immune-system ratchets converting solved defects into durable fitness protection.
 
-J5 MAY consume runtime evidence when relevant/available; host integration is still Base-capable without it.
+Counterfactual/proof-carrying novelty must not delay AC1..AC8 or Base readiness.
 
-## A8 — R9/R10 + Full Enhanced convergence — P2
+## Programming paradigm policy
 
-Finish operator/product-level convergence:
+The platform is poly-paradigm. OO, Functional/Pure Functional, ADTs, Typed DSL, reactive/event-driven and custom profiles are **lenses selected by project/unit intent**, never universal policy. DSL authoring syntax compiles to typed semantic AST/IR and still crosses AuthorityEngine for effects.
 
-- Workbooks/control-tower projections with provenance;
-- Knowledge Health and static/runtime views;
-- contradiction-preserving cross-provider reconciliation;
-- Governance ratchets consume explicit contracts/evidence, not Alignment opinion;
-- WHY/WHY-NOT exposes decision/knowledge/alignment provenance;
-- waivers have owner + expiry/revisit trigger.
+## ActiveGraph design transfer
 
-Then run CogniCode + Chronos together and prove that:
+SDDK adopts inspiration from event-sourced graph state, small shared vocabulary, behavior-local context, layered/optional integrations and generated behavior maps. It does **not** replace Goal/WorkItem/Workflow/Run orchestration with a no-orchestrator model.
 
-- evidence can corroborate or contradict without authority inversion;
-- provider degradation cannot corrupt Base state;
-- both providers may be restarted/upgraded independently;
-- all claimed capabilities are reflected by runtime negotiation, not guessed from version strings.
+Reference: `yoheinakajima/activegraph-packs@6639a5385518ad49f74813373c85cf96eff9adc0`.
 
-**Artifact:** profile receipt `FULLY_ENHANCED` plus final proposal-disposition reconciliation.
+## R11 — outside critical path — P3
 
-## R11 — deliberately outside the critical path — P3
+Evaluate further crate splits only from measured dependency/compile/release coupling. Public Agentic API crates are a separate external release-boundary justification.
 
-Evaluate bounded-context crate splits only after A5/A8 measurements exist. Splitting `knowledge`, `alignment` or `verification` is not a production-readiness requirement. A split needs evidence from dependency pressure, compile cost, release cadence or change coupling and MUST preserve temporary facade paths during migration.
+## Parallelism rule
 
-The public Agentic API/SDK is a different kind of boundary: a separate externally consumed release interface may justify dedicated package/crate boundaries even when internal BC crate splitting remains deferred.
-
-## What may be parallelized
-
-After A2/A3:
-
-- J0 external JCode spike;
-- early J1 contract/fake-host work once A3 types are stable enough;
-- CogniCode protocol spike;
-- Chronos protocol spike;
-- provider fixture servers/clients against copied contract schemas.
-
-After A5:
-
-- J2→J6, A6 and A7 SHOULD proceed as three independent P1 tracks;
-- J5 consumes provider evidence only through stable provider ports and only when negotiated/required;
-- no track may introduce external SDK types into SDDK semantic domains to save time.
-
-A3/A4 remain semantic authority: external integrations adapt to them, not the reverse.
+After A2/A3: J0/J1 prep and provider protocol spikes may run in parallel. After A5: J2→J6, A6 and A7 are independent P1 tracks. A3/A4 remain semantic authority: external hosts/providers adapt to SDDK, not the reverse.

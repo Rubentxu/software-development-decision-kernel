@@ -4,39 +4,43 @@ This directory contains repository-native architecture specifications.
 
 ## Normative succession
 
-Single documented succession path (`PR-GAP-010`):
-
 ```text
 2026-09-09 semantic-core + agent-experience baseline
-  -> C0..C7 conformance closeout (A1 receipt)
-  -> 2026-09-10 context-first roadmap (adopted after the C7 receipt)
-  -> 2026-09-14 production-readiness convergence / provider / agentic layers
+  -> C0..C7 conformance closeout
+  -> C7 PASS certified at 0c2ca56 / SDDK 1.169.19
+  -> 2026-09-10 context-first roadmap
+  -> 2026-09-14 production-readiness / providers / agentic layers
+  -> 2026-09-14 architecture-conformance + graph-intelligence evolution
   -> per-profile readiness receipts
 ```
 
-The currently adopted 2026-09-09 canonical architecture remains the baseline until its C7 closeout/reconciliation is complete. The 2026-09-14 production-readiness package does not silently replace that baseline; it adds an explicit convergence/evolution layer and repository-native specifications that become active according to their status and acceptance evidence.
+The C7 receipt is:
 
-Current convergence package:
+`docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`
 
-`docs/SDDK-Production-Readiness-Alignment-2026-09-14/`
-
-Execution order and priorities:
+Current convergence roadmap:
 
 `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
 
-Proposal/track disposition:
+Architecture Conformance evolution:
 
-`docs/SDDK-Production-Readiness-Alignment-2026-09-14/06-PROPOSAL-DISPOSITION-REGISTER.md`
+`docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/`
 
-## 2026-09-14 repository-native specifications
+## Status rule
 
-### Production convergence / providers
+Document presence is not implementation evidence. A spec remains `proposed` until the receipt/acceptance process named by its roadmap closes. `PASS` claims belong to receipts at exact commits.
+
+## Baseline arch-spec-001..018
+
+The 09/09 baseline is conformance-certified by C7 at `0c2ca56` with every SPEC-001..018 row `PASS` or legitimate `PASS_WITH_COMPAT` and UAT-01..22 green. File-frontmatter promotion, where desired, follows ADR-0001 and is distinct from the receipt itself.
+
+## Production convergence / providers
 
 - `arch-spec-019-production-readiness-convergence.md`
 - `arch-spec-020-storage-schema-ownership.md`
 - `arch-spec-021-intelligence-provider-boundary.md`
 
-### Agentic Workspace / host integration
+## Agentic Workspace / host integration
 
 - `arch-spec-022-agentic-workspace-boundary.md`
 - `arch-spec-023-host-capability-negotiation.md`
@@ -49,59 +53,43 @@ Proposal/track disposition:
 - `arch-spec-030-agentic-integration-api-sdk.md`
 - `arch-spec-031-jcode-anti-corruption-layer.md`
 
-## Status rule
+## Architecture Conformance + Graph Intelligence
 
-A specification marked `proposed` is not evidence that its implementation exists. Its roadmap/UAT/receipt must close before the corresponding capability or GA/readiness declaration can be made.
+- `arch-spec-032-architectural-contracts.md`
+- `arch-spec-033-architecture-semantic-graph-overlay.md`
+- `arch-spec-034-architecture-conformance-verification.md`
+- `arch-spec-035-paradigm-lens-system.md`
+- `arch-spec-036-adt-and-typed-dsl-modeling.md`
+- `arch-spec-037-reactive-conformance-loop.md`
+- `arch-spec-038-architecture-mutation-and-counterfactual-probes.md`
+- `arch-spec-039-proof-carrying-changes.md`
+- `arch-spec-040-architecture-conformance-workbooks.md`
+- `arch-spec-041-sddk-architecture-self-audit.md`
 
-Do not infer implementation status from document presence alone.
+### Activation mapping
 
-## Spec status crosswalk (`PR-GAP-010`)
+| Specs | Roadmap |
+|---|---|
+| 032–033 | AC1/AC2 in A3 |
+| 035–036 | AC3/AC7 across A3/A4 |
+| 034 | AC4/AC5 in A4 |
+| 038 | AC6 Base critical probes; AC13 post-Base counterfactual |
+| 037 | A4 foundation + J5 reactive integration |
+| 039 | J5/A8 proof-carrying changes |
+| 040 | Base read views + A8 richer workbooks/time travel |
+| 041 | AC8 / A5 Base self-audit gate |
 
-Every native spec is currently `proposed`. That is deliberate, not an omission: a spec's status is **evidence**, not intent, so it only advances when the named receipt exists at a specific commit. The reason each spec remains `proposed` is recorded here so no spec is `proposed` "without reason".
+## Architectural guardrails
 
-### 2026-09-09 baseline specs (SPEC-001..018)
+Across specs 019..041:
 
-Implementation is known to exist in the codebase, but conformance is **not yet certified**. These stay `proposed` until the 09/09 C7 closeout (roadmap A1) produces `09-09-CONFORMANCE-RECEIPT.md` marking each `PASS`/`PASS_WITH_COMPAT` at a named commit. Flipping them to a green status before that receipt would fabricate evidence.
-
-| Spec | Package id | Status | Reason it is `proposed` |
-|---|---|---|---|
-| `arch-spec-001` | SPEC-001 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-002` | SPEC-002 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-003` | SPEC-003 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-004` | SPEC-004 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-005` | SPEC-005 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-006` | SPEC-006 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-007` | SPEC-007 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-008` | SPEC-008 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-009` | SPEC-009 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-010` | SPEC-010 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-011` | SPEC-011 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-012` | SPEC-012 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-013` | SPEC-013 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-014` | SPEC-014 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-015` | SPEC-015 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-016` | SPEC-016 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-017` | SPEC-017 | proposed | Awaiting C7 conformance receipt (A1) |
-| `arch-spec-018` | SPEC-018 | proposed | Awaiting C7 conformance receipt (A1) |
-
-### 2026-09-14 convergence / Agentic specs (arch-spec-019..031)
-
-These were added by the production-readiness package and are `proposed` because their implementation milestones and receipts have not closed yet.
-
-| Spec | Status | Reason it is `proposed` |
-|---|---|---|
-| `arch-spec-019` production-readiness-convergence | proposed | Convergence program in progress (A0..A5) |
-| `arch-spec-020` storage-schema-ownership | proposed | Awaiting convergence receipts; PR-GAP-005 code evidence exists but the spec gate closes with Base |
-| `arch-spec-021` intelligence-provider-boundary | proposed | Awaiting A6/A7 provider tracks |
-| `arch-spec-022` agentic-workspace-boundary | proposed | Awaiting J1/J2 track |
-| `arch-spec-023` host-capability-negotiation | proposed | Awaiting J3/J8 track |
-| `arch-spec-024` agentic-session-binding | proposed | Awaiting J3 track |
-| `arch-spec-025` reactive-host-event-bridge | proposed | Awaiting J5 track |
-| `arch-spec-026` context-delta-delivery | proposed | Awaiting J4 track |
-| `arch-spec-027` structured-agent-work | proposed | Awaiting J6 track |
-| `arch-spec-028` permission-interruption-bridge | proposed | Awaiting J8 track |
-| `arch-spec-029` workspace-locality | proposed | Awaiting J3 track |
-| `arch-spec-030` agentic-integration-api-sdk | proposed | Awaiting J1/J9 track |
-| `arch-spec-031` jcode-anti-corruption-layer | proposed | Awaiting J2 track |
-
-Historical/superseded packages remain listed in `docs/architecture/README.md` and do not claim competing current authority.
+- one Canonical Event Log authority;
+- one SemanticGraphProjection, rebuildable and non-authoritative with respect to source facts;
+- one AuthorityEngine decision path for governed effects;
+- Alignment is advisory;
+- missing evidence/provider never becomes PASS;
+- provider/host types terminate at adapters;
+- Workbooks are projections;
+- programming paradigms are scoped lenses, not global policy;
+- DSL knowledge is not capability/authority;
+- advanced counterfactual/proof-carrying features may not delay the AC1..AC8 Base value path.
