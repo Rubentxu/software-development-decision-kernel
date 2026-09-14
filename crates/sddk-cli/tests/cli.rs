@@ -1311,8 +1311,12 @@ fn cli_walks_cycle_with_fencing_and_rebuilds_state() {
     // events into their canonical streams. Since the WU-C1.2 redirect the
     // merged ledger view counts both corpora: 3 cycle-stream events
     // (cycle.created + cycle.transitioned + lease.released) + 3 workflow
-    // events.
-    assert_eq!(verify_json["event_count"], 6);
+    // events. The M2 approval loop (WU-C4-7, R-4-005) records an extra
+    // `authority.admission.decided` event per governed admission call site
+    // whose verdict is advisory-High or blocking — `evaluate-gate` writes
+    // one for `gate_receipts`, and `cycle transition` writes one for
+    // `transition_records`. 3 + 3 + 2 = 8.
+    assert_eq!(verify_json["event_count"], 8);
 
     let events = fixture.run(&[
         "ledger",
@@ -1329,9 +1333,12 @@ fn cli_walks_cycle_with_fencing_and_rebuilds_state() {
     assert!(events.status.success());
     let events_json: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
     // After the WU-C1.2 redirect the merged view includes the canonical
-    // workflow events: 6 total (3 cycle-stream + 3 workflow-stream) and the
-    // auto-release event shares the same frame as the transition.
-    assert_eq!(events_json.as_array().unwrap().len(), 6);
+    // workflow events plus the auto-release event (shared frame with the
+    // transition). With the M2 approval loop (WU-C4-7) the M2 advisory-High
+    // recording (R-4-005) contributes 2 `authority.admission.decided` events
+    // (gate_receipts from evaluate-gate, transition_records from cycle
+    // transition), making the merged view 8 events long.
+    assert_eq!(events_json.as_array().unwrap().len(), 8);
     // Frame sharing holds on the cycle stream: the auto-release event shares
     // the transition frame. Workflow events carry no frame_id (empty string
     // in the merged view) and live on their own canonical streams.
