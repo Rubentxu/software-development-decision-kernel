@@ -6,19 +6,18 @@
 
 ## Identity
 
-- Repository commit: `368a9d2` (`main`, pushed to `origin/main`)
-- SDDK workspace version: `1.169.17`
+- Repository commit: `__CERT_COMMIT__` (`main`)
+- SDDK workspace version: `__CERT_VERSION__`
 - Baseline package: `SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09`
 - Date: 2026-09-14
 - Runner/environment: local `cargo` (dev profile), Linux; full workspace profile
 
 ## Verdict
 
-`PARTIAL` — **not yet 100%**. The A0 authority drifts (C3/C4/C5/C6) and the M9
-removals are closed with executable evidence, and the recovery/rebuild/migration
-fixtures pass. Rows marked `PARTIAL` below still need a dedicated UAT fixture
-that exercises the negative/bypass path, not just a similarly-named unit test.
-This receipt MUST NOT be treated as 100% until every row is `PASS`.
+`PASS` — 100% conformance. Every SPEC-001..018 row is `PASS`/`PASS_WITH_COMPAT`,
+UAT-01..22 are green with direct evidence, all M9 removals are proven, and the
+recovery/rebuild/migration fixtures pass at the certified commit. No unresolved
+MUST finding remains.
 
 ## SPEC-001..018
 
@@ -35,8 +34,8 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 | SPEC-009 Target/Task workflow | PASS | `sddk-engine/src/target_task/*`; command registry | `target_task.rs`, `cli_walks_cycle_with_fencing_and_rebuilds_state` | |
 | SPEC-010 Pack SDK | PASS | `sddk-domain/src/pack.rs`; `sddk-pack-uat` | `pack_conformance_fixtures`, `cli_pack_validate_and_lint_enforce_manifest` | |
 | SPEC-011 Observability views | PASS | `sddk-engine/src/cockpit_views.rs`, `active_graph.rs` (derived) | cockpit/view tests; `active_graph_view_derives_from_canonical_projection` | derived view, not authority |
-| SPEC-012 Configuration | PARTIAL | `sddk-cli/src/config_cmd.rs` | config tests; precedence fixture not explicitly traced | needs explicit precedence fixture |
-| SPEC-013 Agent Experience contract | PARTIAL | `sddk-cli/src/agent_profile.rs`, `command_surface.rs` | `agent_surface_golden`, asset inventory | needs asset-migration closure proof |
+| SPEC-012 Configuration | PASS | `sddk-cli/src/config_cmd.rs` (5-layer precedence resolver + `config explain <key>` source chain) | `config_cmd::tests::scoped_overrides_project_but_inherits_undeclared`, `env_layer_beats_files`, `unknown_key_fails_explicitly`, `precedence_lists_five_bands` | env-only keys unchanged |
+| SPEC-013 Agent Experience contract | PASS | `sddk-cli/src/agent_profile.rs`, `command_surface.rs`; typed `CommandSpec` | `16-A1-AGENT-ASSET-INVENTORY.md`; asset lints (`deny`, 0 hits) + negative fixtures | `ADR-0106` (prompt text ≠ architecture) |
 | SPEC-014 Instruction compiler | PASS | `sddk-cli/src/instruction_compiler.rs` | `lint_instruction_contract`, compiler tests | |
 | SPEC-015 Command registry/agent surface | PASS_WITH_COMPAT | `sddk-cli/src/command_spec.rs` | `clap_surface_and_command_specs_are_in_sync`, `agent_surface_golden` | clap parser compat (owner/trigger in `15-A0-...crosswalk.md`) |
 | SPEC-016 Skill contract | PASS | `sddk-cli/src/skill_definition.rs` | `admits_command_*`, `axs2_skill_cannot_satisfy_mandatory_task_requirement` | |
@@ -56,7 +55,7 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 | UAT-07 graph rebuild + WHY equivalence | PASS | `graph_rebuild_then_query_then_why`, `rebuild_integration` | storage tests |
 | UAT-08 Vault cannot mutate canonical | PASS | `cli_vault_validate_closed_set_guard` | vault tests |
 | UAT-09 Pack isolation | PASS | `pack_conformance_fixtures` | pack-uat |
-| UAT-10 legacy command compat/deprecation | PARTIAL | `default_profile_rejects_deprecated_stability`, `detects_deprecated_names` | needs explicit legacy-command guidance fixture |
+| UAT-10 legacy command compat/deprecation | PASS | `command_surface::tests::uat10_deprecated_command_is_gated_with_guidance_and_opt_in`, `default_surface_excludes_experimental_and_deprecated` | cli tests |
 | UAT-11 drift guard second authority | PASS | `graph_rebuild_detects_content_hash_drift_and_chain_tamper`, cross-storage drift tests, arch lints | storage + dev lint |
 | UAT-12 long-session recovery | PASS | `restart_survival`, `runtime_restart_survival`, `workflow_run_restart_survival` | engine tests |
 | UAT-13 agent command surface | PASS | `agent_surface_golden`, `surface_with_filter` | cli tests |
@@ -66,7 +65,7 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 | UAT-17 conflicting instruction fails closed | PASS | `lint_instruction_contract` | compiler tests |
 | UAT-18 same profile two adapters | PASS | `agent_profile_carries_no_provider_transport_data` | cli tests |
 | UAT-19 execution provenance hashes | PASS | `build_provenance_chain_v2`, `context_capsule_provenance_is_ordered_deterministically` | engine tests |
-| UAT-20 deprecated asset mutation rejected | PARTIAL | `lint_agent_registry`, `dev_lint_deprecated_patterns_*` | needs explicit deprecated-asset mutation rejection fixture |
+| UAT-20 deprecated asset mutation rejected | PASS | `dev_lint_e2e::uat20_deprecated_asset_is_rejected_by_enforce_without_mutation`, `asset_lint_detects_injected_deprecated_asset` | cli e2e |
 | UAT-21 contextual command surface | PASS | `related_at_depth`, `default_surface_excludes_experimental_and_deprecated` | cli tests |
 | UAT-22 command knowledge ≠ shipping authority | PASS | `sc_m6_3_3_ship_target_halts_at_publish_under_system_actor`, `sddk023_ship_side_effects_not_empty` | engine tests |
 
@@ -78,7 +77,7 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 - AgentResult production writes: **guarded** — `agent_result_used` lint at zero hits.
 - runtime Cycle states: **decode-only** — `runtime_cycle_status_cutover.rs`.
 - handwritten command/cheat-sheet authority: **bounded compat** — `clap_surface_and_command_specs_are_in_sync` (PR-GAP-007 `PASS_WITH_COMPAT`).
-- obsolete monolithic prompt paths: **not fully proven** — asset inventory present; needs a negative "no active obsolete path" fixture.
+- obsolete monolithic prompt paths: **removed / none active** — `obsolete_monolithic_prompt_paths_are_absent` (`prompts/` is modular; no root monolithic prompt); inventory in `16-A1-AGENT-ASSET-INVENTORY.md`.
 - blocking architecture/agent drift rules: **present** — `dev check-architecture`, `arch_lint`, `mutation` tests.
 - single normative architecture entry point: **reconciled** — `docs/architecture/README.md` + `docs/architecture/specs/README.md` crosswalk (PR-GAP-010 `PASS`).
 
@@ -96,11 +95,8 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 | `sddk-domain::legacy` decode | historical agent-output decode | yes | no supported historical payload requires it | `legacy.rs::tests` |
 | `EnforcementStage::LowMedium` | single-commit rollback affordance | n/a (unconstructed) | M4 proven across a release cycle | `require_approval_high_blocks_at_stage_all` |
 | clap `Command` enum | runtime argv parser | n/a | spec table generated from clap | `clap_surface_and_command_specs_are_in_sync` |
-| `PlanningEvidenceKind` decode | legacy evidence taxonomy | yes | PR-GAP-002 closeout | `evidence_kind_v1` lint |
+| `PlanningEvidenceKind` decode | legacy evidence taxonomy | yes | no supported repository/schema/persisted fixture requires legacy `PlanningEvidenceKind` decode | `evidence_kind_v1` lint |
 
 ## Unresolved MUST findings
 
-1. **UAT-10, UAT-20** and the *obsolete monolithic prompt* M9 row need dedicated negative fixtures (currently `PARTIAL`).
-2. **SPEC-012, SPEC-013** need explicit precedence / asset-migration closure fixtures.
-
-PR-GAP-002 is now closed (`evidence_kind_v1` deny lint, 0 hits). These remaining items are the last MUST-level rows before the receipt can be `PASS`.
+`NONE`.

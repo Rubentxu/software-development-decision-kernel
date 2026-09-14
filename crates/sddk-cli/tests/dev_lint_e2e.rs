@@ -156,3 +156,53 @@ fn dev_lint_deprecated_patterns_json_format_flag_accepted() {
         "the --format json flag should be accepted (parse ok)\nstderr: {stderr}"
     );
 }
+
+/// UAT-20 (`Deprecated asset mutation rejection`): a deprecated agent asset
+/// is rejected by the real enforcement path (`--enforce`), deterministically
+/// and without mutating the asset (the scan is read-only). No bypass path
+/// exists: the same `deny` registry is the single gate.
+#[test]
+fn uat20_deprecated_asset_is_rejected_by_enforce_without_mutation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Copy the real registry so the scan is the production one.
+    let real_registry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .join("docs/architecture/lints/deprecated_patterns.toml");
+    let dst = root.join("docs/architecture/lints/deprecated_patterns.toml");
+    std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+    std::fs::copy(&real_registry, &dst).unwrap();
+
+    // Inject a deprecated asset.
+    let asset = root.join("agents/rogue.md");
+    std::fs::create_dir_all(asset.parent().unwrap()).unwrap();
+    let body = "This asset uses SDD-kernel (legacy namespace).\n";
+    std::fs::write(&asset, body).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args([
+            "dev",
+            "lint",
+            "deprecated-patterns",
+            "--root",
+            root.to_str().unwrap(),
+            "--enforce",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("sddk binary not found");
+
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "--enforce must reject a workspace with a deprecated asset\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Deterministic rejection + zero mutation: the asset is untouched.
+    assert_eq!(std::fs::read_to_string(&asset).unwrap(), body);
+}

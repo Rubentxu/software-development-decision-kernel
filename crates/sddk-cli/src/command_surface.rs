@@ -228,6 +228,33 @@ mod tests {
         }
     }
 
+    /// UAT-10 (`Legacy command compatibility/deprecation guidance`): a
+    /// Deprecated command is gated from the default surface with an explicit
+    /// deprecation guidance reason, and becomes reachable only through the
+    /// explicit `include_deprecated` opt-in. This exercises the observable
+    /// command surface, not an internal `deprecated` attribute.
+    #[test]
+    fn uat10_deprecated_command_is_gated_with_guidance_and_opt_in() {
+        let spec =
+            CommandSpec::new("legacy-cmd", "legacy command").with_stability(Stability::Deprecated);
+
+        let gated = classify(&spec, &SurfaceFilter::default())
+            .expect("a Deprecated command must be gated from the default surface");
+        assert!(
+            gated.contains("deprecated"),
+            "guidance must name the deprecation, got: {gated}"
+        );
+
+        let include = SurfaceFilter {
+            include_deprecated: true,
+            ..SurfaceFilter::default()
+        };
+        assert!(
+            classify(&spec, &include).is_none(),
+            "explicit opt-in must make the deprecated command reachable"
+        );
+    }
+
     #[test]
     fn read_only_profile_blocks_governed_commands() {
         let s = surface_for_target(None, AgentProfileTag::ReadOnly);
