@@ -142,14 +142,17 @@ const MARKER_LEGACY_AUTHORITY_COMPAT: &str = "m5.legacy_authority_compat";
 const C4_LEGACY_ALLOWLIST_M1: &[&str] = &[
     // CLI — remaining legacy sites (C5+ per plan: cycle.rs collapse +
     // knowledge_ingest.rs legacy mirror + dev/install.rs operator surface).
-    "crates/sddk-cli/src/cycle.rs:1194",
-    "crates/sddk-cli/src/cycle.rs:1386",
-    "crates/sddk-cli/src/cycle.rs:1813",
-    "crates/sddk-cli/src/cycle.rs:1932",
-    "crates/sddk-cli/src/cycle.rs:1995",
-    "crates/sddk-cli/src/cycle.rs:2729",
+    // Line numbers shifted by -1 because the M2 approval loop (WU-C4-7)
+    // collapsed `let runner_verdict = ...; enforce_admission_or_block(...);`
+    // into a single `let _ = admit_governed(...)` call at each site.
+    "crates/sddk-cli/src/cycle.rs:1193",
+    "crates/sddk-cli/src/cycle.rs:1383",
+    "crates/sddk-cli/src/cycle.rs:1808",
+    "crates/sddk-cli/src/cycle.rs:1925",
+    "crates/sddk-cli/src/cycle.rs:1986",
+    "crates/sddk-cli/src/cycle.rs:2718",
+    "crates/sddk-cli/src/knowledge_ingest.rs:327",
     "crates/sddk-cli/src/knowledge_ingest.rs:328",
-    "crates/sddk-cli/src/knowledge_ingest.rs:329",
     "crates/sddk-cli/src/dev/install.rs:32",
     "crates/sddk-cli/src/dev/install.rs:38",
     // Engine — internal compat mirror (defense-in-depth behind the runner
