@@ -73,7 +73,7 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 ## M9 removals
 
 - duplicate event write paths: **removed** — `events_v1` sole append authority; MIGRATION_20 drops `ledger_events` (`migration_16.rs`, `canonical_parity.rs`).
-- planning evidence duplicates: **closed for Base** — legacy `PlanningEvidenceKind` is decode-only; `evidence_kind_v1` lint; PR-GAP-002 remains `PARTIAL` for the full closeout (see below).
+- planning evidence duplicates: **closed for Base** — `evidence_kind_v1` lint is `default = deny` with 0 hits after bounded exclude_paths; `sddk dev lint deprecated-patterns` enforces it; E1 authors evidence via `resolve_planning_evidence_relation` / `CoreRelationKind`; legacy `PlanningEvidenceKind` is read-only decode with a removal trigger (PR-GAP-002 → PASS_WITH_COMPAT).
 - ActiveGraph authority: **projection-only** — `active_graph_view_derives_from_canonical_projection`.
 - AgentResult production writes: **guarded** — `agent_result_used` lint at zero hits.
 - runtime Cycle states: **decode-only** — `runtime_cycle_status_cutover.rs`.
@@ -100,8 +100,7 @@ This receipt MUST NOT be treated as 100% until every row is `PASS`.
 
 ## Unresolved MUST findings
 
-1. **PR-GAP-002** (universal Evidence convergence) is `PARTIAL` — legacy `PlanningEvidenceKind` may still be constructible outside the compat migration; needs a compile/architecture guard fixture (CLOSE-02).
-2. **UAT-10, UAT-20** and the *obsolete monolithic prompt* M9 row need dedicated negative fixtures (currently `PARTIAL`).
-3. **SPEC-012, SPEC-013** need explicit precedence / asset-migration closure fixtures.
+1. **UAT-10, UAT-20** and the *obsolete monolithic prompt* M9 row need dedicated negative fixtures (currently `PARTIAL`).
+2. **SPEC-012, SPEC-013** need explicit precedence / asset-migration closure fixtures.
 
-These are the remaining MUST-level items before the receipt can be `PASS`.
+PR-GAP-002 is now closed (`evidence_kind_v1` deny lint, 0 hits). These remaining items are the last MUST-level rows before the receipt can be `PASS`.
