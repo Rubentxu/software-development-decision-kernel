@@ -1,8 +1,8 @@
 //! SQLite-backed [`sddk_domain::EventStore`] adapter for the Common Event Protocol v1.
 //!
-//! Persists [`sddk_domain::EventEnvelopeV1`] to the `events_v1` table. Co-exists
-//! with `ledger_events` (legacy ledger bookkeeping) — they are independent tables
-//! within the same `ledger.sqlite` file.
+//! Persists [`sddk_domain::EventEnvelopeV1`] to the `events_v1` table, the
+//! single canonical append authority (C1.5, MIGRATION_20 dropped the frozen
+//! legacy `ledger_events` table).
 //!
 //! ## Stable error prefix contract (R2)
 //!
@@ -21,9 +21,10 @@
 //! Each `SqliteEventStore` instance owns its own `rusqlite::Connection` to
 //! `ledger.sqlite`. This is a second connection separate from `Storage`'s
 //! connection — both connect to the same file. They serialize writers via
-//! `busy_timeout=5s` + WAL mode. A future cycle (SDDK2-203/204) that needs
-//! cross-table atomic transactions between `ledger_events` and `events_v1`
-//! will need to merge the two connections into one.
+//! `busy_timeout=5s` + WAL mode. The shared physical schema is owned by the
+//! single migration authority (`crate::migrations::run_migrations`); this
+//! store MUST NOT run a competing shared-schema migration sequence
+//! (ARCH-SPEC-020 SSO-001).
 
 use std::path::Path;
 use std::time::Duration;
@@ -103,80 +104,27 @@ impl SqliteEventStore {
         Ok(streams)
     }
 
+    /// Applies the single canonical schema/migration sequence owned by
+    /// [`crate::migrations::run_migrations`], then ensures the
+    /// event-store-owned `event_snapshots_v1` table exists.
+    ///
+    /// ARCH-SPEC-020 SSO-001: `SqliteEventStore` opens the same physical
+    /// `ledger.sqlite` as `Storage`; it MUST NOT maintain a competing
+    /// migration history or a private schema-version pragma for shared
+    /// schema. It previously re-ran a subset (`MIGRATION_5/6`) behind a
+    /// private `sddk_eventstore_version` pragma. That could leave the shared
+    /// `projects` table as the minimal `MIGRATION_5` stub whenever the event
+    /// store opened the database before `Storage`, because the full
+    /// `MIGRATION_1` definition is then skipped by `CREATE TABLE IF NOT
+    /// EXISTS`. Delegating to the canonical owner removes that divergence.
     fn run_migrations(conn: &mut Connection) -> Result<(), DomainStorageError> {
-        // SqliteEventStore manages its own schema version via a private pragma,
-        // leaving user_version for Storage (full schema) to manage.
-        // This prevents version conflicts when both stores share the same file.
-        let version: i32 = conn
-            .pragma_query_value(None, "sddk_eventstore_version", |row| row.get(0))
-            .unwrap_or(0);
-        if version < 5 {
-            let tx = conn
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.execute_batch(crate::migrations::MIGRATION_5)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.pragma_update(None, "sddk_eventstore_version", 5)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.commit()
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-        }
-        if version < 6 {
-            let tx = conn
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.execute_batch(crate::migrations::MIGRATION_6)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.pragma_update(None, "sddk_eventstore_version", 6)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.commit()
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-        }
-        if version < 10 {
-            let tx = conn
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            // Defensively check if events_v1 exists before ALTERing, since databases
-            // created before MIGRATION_5 never had the events_v1 table.
-            let table_exists: bool = tx
-                .query_row(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='events_v1'",
-                    [],
-                    |_row| Ok(true),
-                )
-                .unwrap_or(false);
-            if table_exists {
-                let col_exists: bool = tx
-                    .query_row(
-                        "SELECT 1 FROM pragma_table_info('events_v1') WHERE name='chain_hash'",
-                        [],
-                        |_row| Ok(true),
-                    )
-                    .unwrap_or(false);
-                if !col_exists {
-                    tx.execute(
-                        "ALTER TABLE events_v1 ADD COLUMN chain_hash TEXT NOT NULL DEFAULT ''",
-                        [],
-                    )
-                    .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-                }
-            }
-            tx.pragma_update(None, "sddk_eventstore_version", 10)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.commit()
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-        }
-        if version < 11 {
-            let tx = conn
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.execute_batch(MIGRATION_11)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.pragma_update(None, "sddk_eventstore_version", 11)
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-            tx.commit()
-                .map_err(|e| DomainStorageError::Database(e.to_string()))?;
-        }
+        crate::migrations::run_migrations(conn)
+            .map_err(|e| DomainStorageError::Database(e.to_string()))?;
+        // `event_snapshots_v1` is owned solely by this store (no other store
+        // consumes it), so its single DDL definition lives here rather than in
+        // the canonical owner. `IF NOT EXISTS` keeps reopen idempotent.
+        conn.execute_batch(EVENT_SNAPSHOTS_DDL)
+            .map_err(|e| DomainStorageError::Database(e.to_string()))?;
         Ok(())
     }
 
@@ -214,10 +162,20 @@ impl EventStore for SqliteEventStore {
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| DomainStorageError::Database(format!("begin tx: {e}")))?;
 
-        // 2. Ensure the project row exists (satisfies FK constraint).
+        // 2. Ensure the project row exists (satisfies the events_v1 FK).
+        //    ARCH-SPEC-020 SSO-002: the shared `projects` row is a
+        //    cross-store bootstrap contract. The event store MUST write a
+        //    row that every store can consume (all NOT NULL columns), not a
+        //    partial shape. The previous `INSERT ... (project_id)` relied on
+        //    the minimal `MIGRATION_5` stub: against the canonical full
+        //    `MIGRATION_1` schema, `OR IGNORE` silently swallowed the NOT NULL
+        //    violation and left the FK parent missing. `display_name` defaults
+        //    to the project id and `scope` to "."; `OR IGNORE` keeps this
+        //    idempotent when the canonical owner already created the project.
         tx.execute(
-            "INSERT OR IGNORE INTO projects (project_id) VALUES (?1)",
-            rusqlite::params![envelope.project_id],
+            "INSERT OR IGNORE INTO projects (project_id, display_name, scope, created_at)
+             VALUES (?1, ?1, '.', ?2)",
+            rusqlite::params![envelope.project_id, envelope.recorded_at],
         )
         .map_err(|e| DomainStorageError::Database(format!("project upsert: {e}")))?;
 
@@ -823,13 +781,19 @@ fn row_to_envelope(row: &rusqlite::Row) -> Result<EventEnvelopeV1, DomainStorage
     })
 }
 
-// ── MIGRATION_11: event_snapshots_v1 (AC-EVT-LEDGER-04) ──────────────────────
+// ── EVENT_SNAPSHOTS_DDL: event_snapshots_v1 (AC-EVT-LEDGER-04) ───────────────
 
-/// SQL for MIGRATION_11: creates the event_snapshots_v1 table.
+/// DDL for `event_snapshots_v1`, owned solely by this store.
 ///
 /// AC-EVT-LEDGER-04: persists named replay snapshots so replay can resume
 /// from a known position rather than reprocessing the entire stream.
-const MIGRATION_11: &str = r#"
+///
+/// Ownership note (ARCH-SPEC-020 SSO-006): this is a store-owned auxiliary
+/// table, not shared schema. It is created idempotently after the canonical
+/// schema owner runs; it is not a competing shared-schema migration. The name
+/// deliberately avoids `MIGRATION_11` to prevent confusion with the canonical
+/// `crate::migrations::MIGRATION_11` (workflow_runs_v1).
+const EVENT_SNAPSHOTS_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS event_snapshots_v1 (
     name            TEXT NOT NULL,
     stream_id       TEXT NOT NULL,

@@ -437,14 +437,11 @@ pub(crate) const MIGRATION_5: &str = r#"
 -- events_v1: append-only event-sourced store for EventEnvelopeV1 (SDDK2-202).
 -- Append-only policy is enforced via SQL triggers (update/delete abort).
 --
--- Minimal projects stub so the events_v1 FK reference is satisfiable when
--- SqliteEventStore runs without the full Storage migrations (e.g. in tests).
--- IF NOT EXISTS avoids conflict when both Storage and SqliteEventStore share
--- the same ledger.sqlite file.
-CREATE TABLE IF NOT EXISTS projects (
-    project_id  TEXT NOT NULL PRIMARY KEY
-);
-
+-- The events_v1 FK parent is `projects(project_id)`, created canonically by
+-- MIGRATION_1, which always precedes MIGRATION_5 in the single ordered
+-- migration sequence (ARCH-SPEC-020 SSO-001). No minimal `projects` stub is
+-- defined here: a second definition of the shared `projects` table would be a
+-- competing DDL authority (SSO-001/SSO-002).
 CREATE TABLE IF NOT EXISTS events_v1 (
     event_id           TEXT NOT NULL PRIMARY KEY
                        CHECK (event_id <> ''),

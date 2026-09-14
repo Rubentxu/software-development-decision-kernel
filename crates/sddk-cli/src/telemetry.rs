@@ -21,65 +21,6 @@ const CONTROL_PLANE_DB: &str = "control-plane.sqlite";
 /// Dashboard output default path.
 const DASHBOARD_HTML: &str = "dashboard.html";
 
-/// Schema v1 of the control plane store (ADR-0009 §4).
-// `dead_code` allow: pre-existing schema constant retained for future
-// schema migrations; tracked for cleanup in phase2-hygiene-baseline.
-#[allow(dead_code)]
-const SCHEMA_V1: &str = r#"
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS projects (
-    project_id   TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    scope        TEXT NOT NULL DEFAULT '.',
-    remote_url   TEXT,
-    first_seen   TEXT NOT NULL,
-    last_seen    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cycles (
-    cycle_id                  TEXT PRIMARY KEY,
-    project_id                TEXT NOT NULL REFERENCES projects(project_id),
-    path                      TEXT NOT NULL DEFAULT 'unknown',
-    context_quality           TEXT NOT NULL DEFAULT 'C2',
-    phase_durations_sec       TEXT NOT NULL DEFAULT '{}',
-    coherence_scores          TEXT NOT NULL DEFAULT '[]',
-    correction_cycles         INTEGER NOT NULL DEFAULT 0,
-    tokens_used               INTEGER NOT NULL DEFAULT 0,
-    cost_estimate_usd         REAL NOT NULL DEFAULT 0.0,
-    costs                     TEXT NOT NULL DEFAULT '{}',
-    first_pass_success        INTEGER NOT NULL DEFAULT 0,
-    verify_verdict            TEXT NOT NULL DEFAULT 'UNKNOWN',
-    merged_to_main            INTEGER NOT NULL DEFAULT 0,
-    tag_version               TEXT,
-    lead_time_hours           REAL,
-    teleological_coherence_pct REAL,
-    recorded_at               TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS aggregates (
-    window_days   INTEGER NOT NULL,
-    computed_at   TEXT NOT NULL,
-    payload_json  TEXT NOT NULL,
-    PRIMARY KEY (window_days)
-);
-
-CREATE INDEX IF NOT EXISTS idx_cycles_project ON cycles(project_id);
-CREATE INDEX IF NOT EXISTS idx_cycles_recorded ON cycles(recorded_at);
-
-CREATE TABLE IF NOT EXISTS uat_results (
-    project_id     TEXT NOT NULL REFERENCES projects(project_id),
-    tag_version    TEXT NOT NULL,
-    verdict        TEXT NOT NULL,           -- READY|READY_WITH_RISKS|NOT_READY
-    coverage_pct   REAL NOT NULL DEFAULT 0,
-    defects        INTEGER NOT NULL DEFAULT 0,
-    session_count  INTEGER NOT NULL DEFAULT 0,
-    uat_duration_minutes INTEGER NOT NULL DEFAULT 0,
-    recorded_at    TEXT NOT NULL,
-    PRIMARY KEY (project_id, tag_version)
-);
-"#;
-
 #[derive(Debug, Subcommand)]
 pub(crate) enum TelemetryCommand {
     /// Ingest telemetry from all adopted projects into the central store.

@@ -40,9 +40,11 @@ fn insert_event_with_chain(
     chain_hash: &str,
     cycle_id: Option<&str>,
 ) -> Result<(), rusqlite::Error> {
-    // Ensure project exists (FK constraint)
+    // Ensure project exists (FK constraint). Write a consumable row matching
+    // the canonical schema, not a partial shape (ARCH-SPEC-020 SSO-002).
     conn.execute(
-        "INSERT OR IGNORE INTO projects (project_id) VALUES (?1)",
+        "INSERT OR IGNORE INTO projects (project_id, display_name, scope, created_at)
+         VALUES (?1, ?1, '.', '2026-08-19T10:00:00Z')",
         params![project_id],
     )?;
 

@@ -49,19 +49,13 @@ fn make_event(
 }
 
 /// Opens two store instances sharing the same `ledger.sqlite` temp file.
-/// The file is initialized with a `projects` stub so the FK constraint is satisfied.
+///
+/// `SqliteEventStore` now initializes the full canonical schema through the
+/// single migration owner (ARCH-SPEC-020 SSO-001), so no manual `projects`
+/// stub is required here; the event store's append bootstraps the project row
+/// with a complete, consumable shape (SSO-002).
 fn setup_shared_stores(dir: &tempfile::TempDir) -> (SqliteEventStore, SqliteProjectionStore) {
-    // Pre-create the projects stub so SqliteEventStore can open the DB.
-    let conn_setup = rusqlite::Connection::open(dir.path().join("ledger.sqlite")).unwrap();
-    conn_setup
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS projects (project_id TEXT NOT NULL PRIMARY KEY);
-             INSERT OR REPLACE INTO projects VALUES('p-1');",
-        )
-        .unwrap();
-    drop(conn_setup);
-
-    // Now open both stores on the same file.
+    // Open both stores on the same file; the first open owns schema creation.
     let event_store = SqliteEventStore::open(dir.path()).unwrap();
     let proj_store = SqliteProjectionStore::open(dir.path()).unwrap();
     (event_store, proj_store)
