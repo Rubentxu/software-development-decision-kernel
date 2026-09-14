@@ -361,21 +361,6 @@ fn upsert_cycle(
     Ok(())
 }
 
-/// Upsert a UAT aggregate into the control plane (ADR-012: the CP stores
-/// only the numeric rollup; sessions/evidence stay in XDG artifacts).
-// `dead_code` allow: retained as API surface for future use;
-/// tracked for cleanup in phase2-hygiene-baseline.
-#[allow(dead_code)]
-pub(crate) fn upsert_uat_result(
-    plane: &mut dyn ControlPlane,
-    result: &UatResultRow,
-) -> anyhow::Result<()> {
-    plane
-        .upsert_uat_result(result)
-        .map_err(anyhow::Error::from)?;
-    Ok(())
-}
-
 /// Load UAT aggregates for the readiness panel (ADR-013).
 pub(crate) fn load_uat_results(plane: &dyn ControlPlane) -> anyhow::Result<Vec<UatResultRow>> {
     plane.load_uat_results().map_err(anyhow::Error::from)
