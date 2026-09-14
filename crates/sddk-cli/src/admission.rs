@@ -328,39 +328,6 @@ pub(crate) fn admit_governed(
     Ok(verdict)
 }
 
-/// CLI wrapper over `enforce_gated` at the current stage: returns an error
-/// (non-zero exit, no mutation) when the outcome blocks the effect. The
-/// message is operator-facing; the decision ids stay machine-correlatable.
-///
-/// **M2 deprecation note (WU-C4-7):** new call sites should use
-/// [`admit_governed`] (single entry point that consults `ApprovalProjection`,
-/// runs `admit_surface`, and emits `approval.capability.requested` on a
-/// blocking `RequireApproval`). This wrapper is kept for the test surface
-/// (`cli_wrapper_*` tests below) that exercises `enforce_gated` directly
-/// without an engine runner.
-#[allow(dead_code)]
-pub(crate) fn enforce_admission_or_block(
-    verdict: &RunnerVerdict,
-    surface: &str,
-) -> anyhow::Result<()> {
-    enforce_admission_or_block_in(verdict, surface, resolve_state_dir().as_deref())
-}
-
-/// Same as [`enforce_admission_or_block`] with an explicit state dir (test
-/// injection point); `None` disables event recording entirely.
-///
-/// **M2 deprecation note (WU-C4-7):** used by the test surface to drive
-/// `enforce_admission_or_block_ctx` directly without going through
-/// [`admit_governed`]. New call sites should use [`admit_governed`].
-#[allow(dead_code)]
-pub(crate) fn enforce_admission_or_block_in(
-    verdict: &RunnerVerdict,
-    surface: &str,
-    state_dir: Option<&std::path::Path>,
-) -> anyhow::Result<()> {
-    enforce_admission_or_block_ctx(verdict, surface, state_dir, ApprovalLoopContext::none())
-}
-
 /// Per-call approval-loop context (WU-C4-7). When present, a blocking
 /// `RequireApproval` emits `approval.capability.requested` into the cycle's
 /// ledger and re-admissions consult `ApprovalProjection` for a grant.
@@ -373,6 +340,9 @@ pub(crate) struct ApprovalLoopContext {
     actor: String,
 }
 
+/// CLI wrapper over `enforce_gated` at the current stage: returns an error
+/// (non-zero exit, no mutation) when the outcome blocks the effect. The
+/// message is operator-facing; the decision ids stay machine-correlatable.
 impl ApprovalLoopContext {
     /// Disables the approval loop (M1 behavior; unit tests without ledger).
     pub(crate) fn none() -> Self {
@@ -902,9 +872,20 @@ mod admission_tests {
             },
             "surface.dependency_edge",
         );
-        assert!(enforce_admission_or_block(&allow, "dependency_edge").is_ok());
+        assert!(
+            enforce_admission_or_block_ctx(
+                &allow,
+                "dependency_edge",
+                None,
+                ApprovalLoopContext::none()
+            )
+            .is_ok()
+        );
         let high = require_approval_verdict();
-        assert!(enforce_admission_or_block(&high, "cycle_state").is_ok());
+        assert!(
+            enforce_admission_or_block_ctx(&high, "cycle_state", None, ApprovalLoopContext::none())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -916,7 +897,13 @@ mod admission_tests {
             },
             "surface.gate_receipts",
         );
-        let err = enforce_admission_or_block(&deny, "gate_receipts").unwrap_err();
+        let err = enforce_admission_or_block_ctx(
+            &deny,
+            "gate_receipts",
+            None,
+            ApprovalLoopContext::none(),
+        )
+        .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("ADMISSION"), "{msg}");
         assert!(msg.contains("deny-cap-x"), "{msg}");
@@ -927,7 +914,13 @@ mod admission_tests {
     fn cli_wrapper_errs_on_awaiting_approval() {
         // state_dir None: event recording disabled (unit test, no ledger).
         let v = require_approval_verdict();
-        let err = enforce_admission_or_block_in(&v, "knowledge_graph_vault", None).unwrap_err();
+        let err = enforce_admission_or_block_ctx(
+            &v,
+            "knowledge_graph_vault",
+            None,
+            ApprovalLoopContext::none(),
+        )
+        .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("approval required"), "{msg}");
         assert!(msg.contains("no changes were made"), "{msg}");
@@ -960,7 +953,13 @@ mod admission_tests {
             },
             "surface.gate_receipts",
         );
-        let err = enforce_admission_or_block_in(&v, "gate_receipts", Some(tmp.path())).unwrap_err();
+        let err = enforce_admission_or_block_ctx(
+            &v,
+            "gate_receipts",
+            Some(tmp.path()),
+            ApprovalLoopContext::none(),
+        )
+        .unwrap_err();
         assert!(format!("{err}").contains("ADMISSION"));
         // Deny aborts the mutation AND records the decision event (R-4-005).
         let store =
