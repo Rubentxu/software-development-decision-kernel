@@ -62,6 +62,7 @@ pub mod inc_generator;
 pub mod incident_pack;
 pub mod integrate_parity;
 pub mod join_guard;
+pub mod knowledge;
 pub mod lab_promotion;
 pub mod operator;
 pub mod orchestration_synthesis;
