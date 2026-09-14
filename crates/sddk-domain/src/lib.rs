@@ -71,7 +71,11 @@ pub use fork::*;
 pub use goal::*;
 pub use graph::*;
 pub use identity::*;
-pub use legacy::*;
+// `legacy` is a decode-only compatibility surface (ARCH-SPEC-019 PRC-002 /
+// PR-GAP-008): it is NOT glob-re-exported into the active domain API. Consumers
+// must opt in explicitly via `sddk_domain::legacy` so historical decoding never
+// regains active-write authority. Owner/reason/removal trigger: see
+// `legacy.rs` module docs.
 pub use metrics::*;
 pub use models::*;
 pub use operator_contract::{

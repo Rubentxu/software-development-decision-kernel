@@ -4,7 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use sddk_domain::{AgentResult, Phase, convert_legacy_map, convert_legacy_text};
+use sddk_domain::legacy::{convert_legacy_map, convert_legacy_text};
+use sddk_domain::{AgentResult, Phase};
 use serde::Serialize;
 use serde_json::Value;
 

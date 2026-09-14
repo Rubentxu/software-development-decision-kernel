@@ -1,4 +1,17 @@
-//! Conversion of legacy unstructured agent output into structured results.
+//! Decode-only compatibility surface for historical unstructured agent output.
+//!
+//! ARCH-SPEC-019 PRC-002 / `PR-GAP-008`: this module converts legacy free-form
+//! agent output into structured results. It is a **read/decode-only**
+//! compatibility path and MUST NOT regain canonical write authority.
+//!
+//! - **Active API:** not glob-exported by `sddk_domain`; consumers opt in via
+//!   `sddk_domain::legacy::{convert_legacy_map, convert_legacy_text, ...}`.
+//! - **Owner:** `sddk-domain` maintainers (surface defined by ARCH-SPEC-019).
+//! - **Fixture:** `legacy.rs::tests` exercise tolerant decode of legacy
+//!   spellings and fallback of unrecognized fields (PR-UAT-007).
+//! - **Removal trigger:** once no supported historical payload requires
+//!   tolerant decoding (no producer emits the legacy unstructured shape and the
+//!   migration window closes), or a superseding decoder replaces it.
 
 use serde_json::{Map, Value};
 use thiserror::Error;
