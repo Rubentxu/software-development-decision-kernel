@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Repository commit: `__CERT_COMMIT__` (`main`)
-- SDDK workspace version: `__CERT_VERSION__`
+- Repository commit: `dcde795` (`main`)
+- SDDK workspace version: `1.169.20`
 - C7 baseline certified at: `0c2ca56` / `1.169.19`
 - Date: 2026-09-14
 
