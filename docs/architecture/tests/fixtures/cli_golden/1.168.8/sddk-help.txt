@@ -23,6 +23,7 @@ Commands:
   knowledge     Resolve the canonical knowledge vault path and profile
   dev           Developer tooling: doctor, gates, and atomic install/verify
   pack          Validate declarative pack manifests
+  architecture  Architecture conformance: emit the architecture-conformance receipt
   graph         Query, inspect, and rebuild the reactive knowledge graph
   metrics       Record, aggregate, and tune cycle telemetry metrics
   analytics     Report, trend, and bottleneck analytics from cycle metrics
