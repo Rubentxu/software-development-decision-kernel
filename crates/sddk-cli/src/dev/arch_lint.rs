@@ -12,6 +12,7 @@
 // `DoctorCheck { tool, present }` per marker.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarkerStatus {
@@ -138,45 +139,161 @@ const MARKER_LEGACY_AUTHORITY_COMPAT: &str = "m5.legacy_authority_compat";
 // grow new production call sites. This allowlist is the M1 freeze baseline
 // and is DECREASING-ONLY (M1→M4 milestones remove entries; M9 removes the
 // legacy module itself). Adding an entry requires a cycle-level waiver.
-// Format: "relative/path/from/crate/root:line".
-const C4_LEGACY_ALLOWLIST_M1: &[&str] = &[
+//
+// Format (since A3-S6 / INC-A3-S1-C4-LINE-SHIFT refactor): content-addressed.
+// Each allowance keys on (path, api, normalized source line, max_occurrences).
+// Physical line numbers are NOT part of the key, so inserting or reordering
+// modules no longer invalidates the baseline. `max_occurrences` closes the
+// "duplicate identical line" hole: a file may contain the allowed line at most
+// N times before the (N+1)-th occurrence is flagged.
+const C4_LEGACY_ALLOWLIST_M1: &[LegacyAllowance] = &[
     // CLI — remaining legacy sites (C5+ per plan: cycle.rs collapse +
     // knowledge_ingest.rs legacy mirror + dev/install.rs operator surface).
-    // Line numbers shifted by -1 because the M2 approval loop (WU-C4-7)
-    // collapsed `let runner_verdict = ...; enforce_admission_or_block(...);`
-    // into a single `let _ = admit_governed(...)` call at each site.
-    "crates/sddk-cli/src/cycle.rs:1193",
-    "crates/sddk-cli/src/cycle.rs:1383",
-    "crates/sddk-cli/src/cycle.rs:1808",
-    "crates/sddk-cli/src/cycle.rs:1925",
-    "crates/sddk-cli/src/cycle.rs:1986",
-    "crates/sddk-cli/src/cycle.rs:2718",
-    "crates/sddk-cli/src/knowledge_ingest.rs:327",
-    "crates/sddk-cli/src/knowledge_ingest.rs:328",
-    "crates/sddk-cli/src/dev/install.rs:32",
-    "crates/sddk-cli/src/dev/install.rs:38",
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/cycle.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = AuthorityContext::for_cli(",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/cycle.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = AuthorityContext::for_cli(actor.clone(), actor_kind, None, None);",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/cycle.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = AuthorityContext::for_cli(actor.clone(), infer_actor_kind(&actor), None, None);",
+        max_occurrences: 3,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/cycle.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = AuthorityContext::for_cli(actor_id.clone(), actor_kind, None, None);",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/knowledge_ingest.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = AuthorityContext::for_cli(actor, actor_kind, None, None);",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/knowledge_ingest.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(sddk_engine::authority::WritableSurface::KnowledgeGraphVault)",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/dev/install.rs",
+        api: LegacyApi::ForCli,
+        line: "let auth = sddk_engine::authority::AuthorityContext::for_cli(",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-cli/src/dev/install.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(sddk_engine::authority::WritableSurface::FrameworkBundle)",
+        max_occurrences: 1,
+    },
     // Engine — internal compat mirror (defense-in-depth behind the runner
-    // pre-gate; removal belongs to M9).
-    // A3-S4 (2026-09-15): line numbers shifted by +1 after alphabetical
-    // insertion of `pub mod paradigm_profile;` in lib.rs.
-    // A3-S5 (2026-09-15): shifted by +1 again after alphabetical insertion
-    // of `pub mod architecture_conformance;` in lib.rs (5th instance of
-    // INC-A3-S1-C4-LINE-SHIFT). Code at the three sites is unchanged.
-    // The line-number brittleness is now at its documented blocking
-    // threshold; the content-based allowlist refactor is the immediate
-    // follow-up cycle.
-    "crates/sddk-engine/src/lib.rs:1170",
-    "crates/sddk-engine/src/lib.rs:1297",
-    "crates/sddk-engine/src/lib.rs:1357",
-    "crates/sddk-engine/src/cycle_supersede.rs:98",
-    "crates/sddk-engine/src/cycle_pause.rs:82",
-    "crates/sddk-engine/src/cycle_pause.rs:257",
-    "crates/sddk-engine/src/event_bus/emit.rs:1222",
-    "crates/sddk-engine/src/event_bus/emit.rs:1285",
-    "crates/sddk-engine/src/event_bus/emit.rs:1347",
-    "crates/sddk-engine/src/event_bus/emit.rs:1420",
-    "crates/sddk-engine/src/event_bus/emit.rs:1483",
+    // pre-gate; removal belongs to M9). These three sites were the ones that
+    // shifted five times (A3-S1..A3-S5); content keying ends that class.
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/lib.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(crate::authority::WritableSurface::GateReceipts)?;",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/lib.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(crate::authority::WritableSurface::CycleState)?;",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/lib.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(crate::authority::WritableSurface::TransitionRecords)?;",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/cycle_supersede.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(crate::authority::WritableSurface::CycleState)?;",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/cycle_pause.rs",
+        api: LegacyApi::Validate,
+        line: "auth.validate(crate::authority::WritableSurface::CycleState)?;",
+        max_occurrences: 2,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/event_bus/emit.rs",
+        api: LegacyApi::Validate,
+        line: ".validate(WritableSurface::PlanItem)",
+        max_occurrences: 2,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/event_bus/emit.rs",
+        api: LegacyApi::Validate,
+        line: ".validate(WritableSurface::DependencyEdge)",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/event_bus/emit.rs",
+        api: LegacyApi::Validate,
+        line: ".validate(WritableSurface::EvidenceAttachment)",
+        max_occurrences: 1,
+    },
+    LegacyAllowance {
+        path: "crates/sddk-engine/src/event_bus/emit.rs",
+        api: LegacyApi::Validate,
+        line: ".validate(WritableSurface::DecisionRecord)",
+        max_occurrences: 1,
+    },
 ];
+
+/// The two legacy-authority APIs the C4 freeze governs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum LegacyApi {
+    /// `AuthorityContext::for_cli`.
+    ForCli,
+    /// `AuthorityContext::validate` / `.validate(...WritableSurface...)`.
+    Validate,
+}
+
+impl LegacyApi {
+    /// Canonical tag used in allowance keys and reports.
+    pub const fn canonical_tag(self) -> &'static str {
+        match self {
+            LegacyApi::ForCli => "for_cli",
+            LegacyApi::Validate => "validate",
+        }
+    }
+}
+
+/// One frozen legacy-authority call site, addressed by content rather than by
+/// physical line number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyAllowance {
+    /// Repo-relative path, e.g. `crates/sddk-cli/src/cycle.rs`.
+    pub path: &'static str,
+    /// Which legacy API the line uses.
+    pub api: LegacyApi,
+    /// The source line, whitespace-collapsed (see [`normalize_legacy_line`]).
+    pub line: &'static str,
+    /// How many times this exact line may appear in this file.
+    pub max_occurrences: usize,
+}
+
+/// Collapse runs of whitespace so indentation and formatting edits do not
+/// change an allowance key.
+pub fn normalize_legacy_line(line: &str) -> String {
+    line.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
 /// One detected legacy-authority dependency (D-06 violation candidate).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,12 +310,28 @@ pub struct C4LegacyDependency {
 ///
 /// `files` maps repo-relative paths to file contents; test modules
 /// (`#[cfg(test)] mod tests` onward) are excluded because the freeze governs
-/// production call sites only. `allowlist` entries are `path:line`.
+/// production call sites only.
+///
+/// `allowlist` is content-addressed: an entry freezes a
+/// `(path, api, normalized line)` key up to `max_occurrences` times. Physical
+/// line numbers are never part of the key, so inserting or reordering code
+/// cannot invalidate the baseline.
 pub fn c4_find_new_legacy_authority_deps(
     files: &[(String, String)],
-    allowlist: &[&str],
+    allowlist: &[LegacyAllowance],
 ) -> Vec<C4LegacyDependency> {
+    // Allowed multiplicity per (path, api, normalized line).
+    let mut allowed: HashMap<(&str, &'static str, &str), usize> = HashMap::new();
+    for a in allowlist {
+        *allowed
+            .entry((a.path, a.api.canonical_tag(), a.line))
+            .or_insert(0) += a.max_occurrences;
+    }
+
+    // Observed multiplicity per key, accumulated as we scan.
+    let mut seen: HashMap<(String, &'static str, String), usize> = HashMap::new();
     let mut found = Vec::new();
+
     for (path, src) in files {
         let mut in_test_module = false;
         for (idx, line) in src.lines().enumerate() {
@@ -209,31 +342,32 @@ pub fn c4_find_new_legacy_authority_deps(
             if in_test_module {
                 continue;
             }
-            if line.contains("AuthorityContext::for_cli") {
-                let site = format!("{path}:{lineno}");
-                if !allowlist.contains(&site.as_str()) {
-                    found.push(C4LegacyDependency {
-                        file: path.clone(),
-                        line: lineno,
-                        api: "for_cli",
-                    });
-                }
-            } else if line.contains("AuthorityContext::validate")
-                || line.trim_start().starts_with(".validate(")
-                || line.contains(".validate(")
+            let api = if line.contains("AuthorityContext::for_cli") {
+                LegacyApi::ForCli
+            } else if (line.contains("AuthorityContext::validate") || line.contains(".validate("))
+                && line.contains("WritableSurface")
             {
                 // Only validate() calls on WritableSurface count as legacy
                 // authority; other validate* functions are out of scope.
-                if line.contains("WritableSurface") {
-                    let site = format!("{path}:{lineno}");
-                    if !allowlist.contains(&site.as_str()) {
-                        found.push(C4LegacyDependency {
-                            file: path.clone(),
-                            line: lineno,
-                            api: "validate",
-                        });
-                    }
-                }
+                LegacyApi::Validate
+            } else {
+                continue;
+            };
+
+            let normalized = normalize_legacy_line(line);
+            let exactly_allowed = allowed
+                .get(&(path.as_str(), api.canonical_tag(), normalized.as_str()))
+                .copied()
+                .unwrap_or(0);
+            let key = (path.clone(), api.canonical_tag(), normalized);
+            let count = seen.entry(key).or_insert(0);
+            *count += 1;
+            if *count > exactly_allowed {
+                found.push(C4LegacyDependency {
+                    file: path.clone(),
+                    line: lineno,
+                    api: api.canonical_tag(),
+                });
             }
         }
     }
@@ -241,7 +375,7 @@ pub fn c4_find_new_legacy_authority_deps(
 }
 
 /// The M1 freeze baseline allowlist (see `C4_LEGACY_ALLOWLIST_M1`).
-pub fn c4_legacy_allowlist_m1() -> &'static [&'static str] {
+pub fn c4_legacy_allowlist_m1() -> &'static [LegacyAllowance] {
     C4_LEGACY_ALLOWLIST_M1
 }
 
@@ -903,17 +1037,143 @@ mod tests {
         assert_eq!(hits[0].api, "for_cli");
     }
 
+    fn allow_for(path: &'static str, api: LegacyApi, line: &'static str) -> LegacyAllowance {
+        LegacyAllowance {
+            path,
+            api,
+            line,
+            max_occurrences: 1,
+        }
+    }
+
     #[test]
-    fn c4_guard_allows_allowlisted_site() {
+    fn c4_guard_allows_allowlisted_site_by_content() {
         let files = vec![(
             "crates/sddk-cli/src/cycle.rs".to_string(),
-            r#"fn x() {
-                let auth = AuthorityContext::for_cli(actor, kind, None, None);
-            }"#
-            .to_string(),
+            "fn x() {\n    let auth = AuthorityContext::for_cli(actor, kind, None, None);\n}"
+                .to_string(),
         )];
-        let hits = c4_find_new_legacy_authority_deps(&files, &["crates/sddk-cli/src/cycle.rs:2"]);
+        let a = allow_for(
+            "crates/sddk-cli/src/cycle.rs",
+            LegacyApi::ForCli,
+            "let auth = AuthorityContext::for_cli(actor, kind, None, None);",
+        );
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
         assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn c4_guard_survives_line_shift() {
+        // INC-A3-S1-C4-LINE-SHIFT regression: prepending N lines (a fake
+        // `pub mod`) must NOT invalidate a content-addressed allowance.
+        let body = "    auth.validate(WritableSurface::GateReceipts)?;\n";
+        let shifted = format!("pub mod zzz;\npub mod aaa;\n{}", body);
+        let files = vec![("crates/sddk-engine/src/lib.rs".to_string(), shifted)];
+        let a = allow_for(
+            "crates/sddk-engine/src/lib.rs",
+            LegacyApi::Validate,
+            "auth.validate(WritableSurface::GateReceipts)?;",
+        );
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
+        assert!(
+            hits.is_empty(),
+            "a line shift must not trip the content-addressed baseline: {hits:?}"
+        );
+    }
+
+    #[test]
+    fn c4_guard_flags_duplicate_beyond_max_occurrences() {
+        // `max_occurrences` closes the duplicate-line hole: three identical
+        // lines with a max of 2 must flag the third.
+        let line = "auth.validate(crate::authority::WritableSurface::CycleState)?;";
+        let files = vec![(
+            "crates/sddk-engine/src/cycle_pause.rs".to_string(),
+            format!("    {line}\n    {line}\n    {line}\n"),
+        )];
+        let a = LegacyAllowance {
+            path: "crates/sddk-engine/src/cycle_pause.rs",
+            api: LegacyApi::Validate,
+            line,
+            max_occurrences: 2,
+        };
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
+        assert_eq!(
+            hits.len(),
+            1,
+            "the third duplicate must be flagged: {hits:?}"
+        );
+        assert_eq!(hits[0].line, 3);
+    }
+
+    #[test]
+    fn c4_guard_max_occurrences_allows_exact_multiplicity() {
+        let line = "auth.validate(crate::authority::WritableSurface::CycleState)?;";
+        let files = vec![(
+            "crates/sddk-engine/src/cycle_pause.rs".to_string(),
+            format!("    {line}\n    {line}\n"),
+        )];
+        let a = LegacyAllowance {
+            path: "crates/sddk-engine/src/cycle_pause.rs",
+            api: LegacyApi::Validate,
+            line,
+            max_occurrences: 2,
+        };
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
+        assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn c4_guard_normalizes_whitespace() {
+        // Re-indenting an allowed site must not invalidate the baseline.
+        let files = vec![(
+            "crates/sddk-engine/src/lib.rs".to_string(),
+            "\t\t\t\t\t\t".to_string()
+                + "auth.validate(crate::authority::WritableSurface::GateReceipts)?;",
+        )];
+        let a = allow_for(
+            "crates/sddk-engine/src/lib.rs",
+            LegacyApi::Validate,
+            "auth.validate(crate::authority::WritableSurface::GateReceipts)?;",
+        );
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
+        assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn c4_guard_flags_same_content_in_different_file() {
+        // Content keying includes the path: the same line in a new file is a
+        // new dependency.
+        let line = "auth.validate(crate::authority::WritableSurface::CycleState)?;";
+        let files = vec![(
+            "crates/sddk-engine/src/brand_new.rs".to_string(),
+            line.to_string(),
+        )];
+        let a = allow_for(
+            "crates/sddk-engine/src/cycle_pause.rs",
+            LegacyApi::Validate,
+            line,
+        );
+        let hits = c4_find_new_legacy_authority_deps(&files, &[a]);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+    }
+
+    #[test]
+    fn c4_allowlist_baseline_is_internally_consistent() {
+        // Every baseline entry must have a non-empty path/line and a positive
+        // multiplicity, and no two entries may address the same key.
+        let mut keys: Vec<(String, &'static str, &'static str)> = Vec::new();
+        for a in c4_legacy_allowlist_m1() {
+            assert!(!a.path.is_empty());
+            assert!(!a.line.is_empty());
+            assert!(a.max_occurrences >= 1);
+            let key = (a.path.to_string(), a.api.canonical_tag(), a.line);
+            assert!(
+                !keys.contains(&key),
+                "duplicate allowance key: {key:?} (fold multiplicities into max_occurrences)"
+            );
+            keys.push(key);
+        }
+        assert_eq!(keys.len(), 17, "baseline key count");
     }
 
     #[test]
@@ -932,6 +1192,89 @@ mod tests {
         )];
         let hits = c4_find_new_legacy_authority_deps(&files, &[]);
         assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    /// The scanned production sources of this checkout, read from disk.
+    fn real_scanned_sources(root: &std::path::Path) -> Vec<(String, String)> {
+        [
+            "crates/sddk-cli/src/cycle.rs",
+            "crates/sddk-cli/src/knowledge_ingest.rs",
+            "crates/sddk-cli/src/dev/install.rs",
+            "crates/sddk-engine/src/lib.rs",
+            "crates/sddk-engine/src/cycle_supersede.rs",
+            "crates/sddk-engine/src/cycle_pause.rs",
+            "crates/sddk-engine/src/event_bus/emit.rs",
+        ]
+        .iter()
+        .filter_map(|rel| {
+            std::fs::read_to_string(root.join(rel))
+                .ok()
+                .map(|src| ((*rel).to_string(), src))
+        })
+        .collect()
+    }
+
+    #[test]
+    fn c4_baseline_covers_real_sources() {
+        // Acceptance: the shipped baseline covers the real sources of this
+        // checkout (the same file set `sddk dev doctor` scans).
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workspace root")
+            .to_path_buf();
+        let files = real_scanned_sources(&root);
+        assert!(
+            !files.is_empty(),
+            "real sources must be readable from {root:?}"
+        );
+        let hits = c4_find_new_legacy_authority_deps(&files, c4_legacy_allowlist_m1());
+        assert!(
+            hits.is_empty(),
+            "baseline must cover every real site: {hits:?}"
+        );
+    }
+
+    #[test]
+    fn c4_baseline_survives_real_lib_rs_module_insertion() {
+        // INC-A3-S1-C4-LINE-SHIFT regression at the acceptance boundary:
+        // insert fake `pub mod` lines into the REAL lib.rs and assert the REAL
+        // baseline still covers every site. Under the old `path:line` format
+        // this failed on the 1st of five recorded instances.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workspace root")
+            .to_path_buf();
+        let mut files = real_scanned_sources(&root);
+        let lib = files
+            .iter_mut()
+            .find(|(p, _)| p == "crates/sddk-engine/src/lib.rs")
+            .expect("lib.rs in scanned set");
+        let original = lib.1.clone();
+        lib.1 = original.replace(
+            "pub mod architecture_conformance;",
+            "pub mod aaa_shift_probe;
+pub mod zzz_shift_probe;
+pub mod architecture_conformance;",
+        );
+        // The shift must actually have happened.
+        let before = original
+            .lines()
+            .position(|l| l.contains("WritableSurface::GateReceipts)?"))
+            .expect("gate receipts site");
+        let after = lib
+            .1
+            .lines()
+            .position(|l| l.contains("WritableSurface::GateReceipts)?"))
+            .expect("gate receipts site after shift");
+        assert_eq!(after, before + 2, "fixture must shift the site by 2 lines");
+
+        let hits = c4_find_new_legacy_authority_deps(&files, c4_legacy_allowlist_m1());
+        assert!(
+            hits.is_empty(),
+            "a module insertion must not invalidate the content-addressed baseline: {hits:?}"
+        );
     }
 
     #[test]
