@@ -3,7 +3,7 @@
 > **Milestone:** A3 — R2 + R3 Knowledge + advisory foundation (roadmap P1)
 > **Normative source:** `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §A3
 > **Closeout cycle:** `p-63676b11dc0ef88f/a3-closeout-milestone-reconciliation`
-> **Certified revision:** `__CERTIFIED_SHA__`
+> **Certified revision:** ``98b7fc78d39aa1deab4c37a1c0273d20a8bdb388` (`98b7fc7`)`
 > **Version / tag:** `1.169.39` / `v1.169.39`
 > **Method:** roadmap → code → tests → receipts → missing requirements. Only genuinely
 > absent requirements were implemented (roadmap-driven, not rewrite-driven).
