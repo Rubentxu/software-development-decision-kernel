@@ -20,6 +20,7 @@ pub mod agent_role_contract;
 pub mod architectural_contract;
 pub mod architecture_conformance;
 pub mod architecture_graph;
+pub mod architecture_mutation;
 pub mod authority;
 pub mod authority_engine;
 pub mod build_work_graph;
