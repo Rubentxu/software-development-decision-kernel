@@ -539,3 +539,113 @@ fn acceptance_audit_error_surface_is_reserved_not_reachable() {
     assert_eq!(why.contracts[0].assessment.outcome, "not_evaluated");
     assert!(!why.why_not.is_empty(), "the gap is stated, not implied");
 }
+
+/// The reason a contract has no claim must name the **actual** cause.
+///
+/// Regression pin from the v1.169.37 release smoke: a `projection_only` contract
+/// on a *declared* unit was reported as "its subject is not a declared unit",
+/// which is false for it. The old pin asserted only that *a* reason existed, so it
+/// passed while the explanation lied. Presence of a reason is not truth of a
+/// reason, and for a READ/EXPLAIN surface only the second one matters.
+#[test]
+fn acceptance_unevaluable_reason_names_the_real_cause() {
+    use crate::architectural_contract::{ContractId, DecisionRef, Revision, SpecRef};
+
+    // Cause A: the kind is not unit-scoped, on a *declared* unit.
+    let non_unit = ArchitecturalContract::declare_projection_only(
+        ContractId::new("c-proj").expect("id"),
+        "comp:x".to_string(),
+        DecisionRef::Adr("ADR-0113".into()),
+        SpecRef::ArchSpec("arch-spec-033".into()),
+        Revision::new("rev:1").expect("rev"),
+        EventTime(T0),
+    )
+    .expect("declare");
+    let f = build(vec![non_unit], &["comp:x"]);
+    assert!(
+        f.claims.is_empty(),
+        "a non-unit-scoped kind is never linked"
+    );
+    let idx = f
+        .audit
+        .findings
+        .iter()
+        .position(|x| x.kind == DebVerifyFindingKind::MissingOwner)
+        .or_else(|| f.audit.findings.first().map(|_| 0));
+    if let Some(idx) = idx {
+        let finding = &f.audit.findings[idx];
+        let id = FindingId::derive(
+            &f.basis,
+            finding.kind,
+            &finding.subjects,
+            &finding.contract_ids,
+        )
+        .as_str()
+        .to_string();
+        let why = explain(WhyInput {
+            query: &id,
+            resolved_as: WhyResolvedAs::Finding,
+            basis: &f.basis,
+            contracts: &f.contracts,
+            claims: &f.claims,
+            audit: &f.audit,
+            overlay: &f.overlay,
+            finding: Some((&id, idx)),
+        });
+        if let Some(detail) = why.why_not.iter().find_map(|r| match r {
+            WhyNotReason::ContractNotEvaluable { detail, .. } => Some(detail.clone()),
+            _ => None,
+        }) {
+            assert!(
+                detail.contains("not unit-scoped"),
+                "a non-unit-scoped kind must be reported as such, not as a \
+                 missing unit: {detail}"
+            );
+            assert!(
+                !detail.contains("subject is not a declared unit"),
+                "the subject IS declared here; saying otherwise is a false explanation: {detail}"
+            );
+        }
+    }
+
+    // Cause B: unit-scoped kind, subject not declared.
+    let orphan = build(vec![authority("c-orphan", "comp:nowhere")], &["comp:a"]);
+    let idx = orphan
+        .audit
+        .findings
+        .iter()
+        .position(|x| x.kind == DebVerifyFindingKind::MissingOwner)
+        .expect("missing_owner");
+    let finding = &orphan.audit.findings[idx];
+    let id = FindingId::derive(
+        &orphan.basis,
+        finding.kind,
+        &finding.subjects,
+        &finding.contract_ids,
+    )
+    .as_str()
+    .to_string();
+    let why = explain(WhyInput {
+        query: &id,
+        resolved_as: WhyResolvedAs::Finding,
+        basis: &orphan.basis,
+        contracts: &orphan.contracts,
+        claims: &orphan.claims,
+        audit: &orphan.audit,
+        overlay: &orphan.overlay,
+        finding: Some((&id, idx)),
+    });
+    let detail = why
+        .why_not
+        .iter()
+        .find_map(|r| match r {
+            WhyNotReason::ContractNotEvaluable { detail, .. } => Some(detail.clone()),
+            _ => None,
+        })
+        .expect("a stated reason");
+    assert!(
+        detail.contains("not a declared unit"),
+        "cause B must name the missing unit: {detail}"
+    );
+    assert!(!detail.contains("not unit-scoped"), "{detail}");
+}

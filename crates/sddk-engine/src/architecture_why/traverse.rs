@@ -154,14 +154,15 @@ pub fn explain(input: WhyInput<'_>) -> ArchitectureWhy {
                 }
             }
             None => {
-                // No claim means the overlay linked nothing, which happens when
-                // the contract's subject unit is not declared. That is an
-                // unanswerable leg, not an empty one.
+                // No claim means the overlay linked nothing. There are exactly
+                // two causes, and naming the wrong one would be a false
+                // explanation — the one thing this surface must not produce.
+                // Found in the v1.169.37 release smoke: a `projection_only`
+                // contract on a **declared** unit was reported as "subject is not
+                // declared", which is false for it.
                 why_not.push(WhyNotReason::ContractNotEvaluable {
                     contract: cid.clone(),
-                    detail: "no AC1 claim exists for this contract, because the AC2 overlay links \
-                             a contract only when its subject is a declared unit"
-                        .to_string(),
+                    detail: unevaluable_reason(contract).to_string(),
                 });
                 WhyAssessment {
                     outcome: DeltaContractStatus::NotEvaluated
@@ -224,6 +225,32 @@ pub fn explain(input: WhyInput<'_>) -> ArchitectureWhy {
         unresolved_edges,
         why_not,
     }
+}
+
+/// Why a contract has no AC1 claim, discriminating the two real causes.
+///
+/// The overlay links a contract only when its kind is unit-scoped **and** its
+/// subject is a declared unit. Reporting the wrong one of those is worse than
+/// reporting nothing, because a reader trusts the explanation.
+fn unevaluable_reason(contract: &ArchitecturalContract) -> &'static str {
+    if unit_scoped(contract) {
+        "the contract is unit-scoped but its subject is not a declared unit, so the AC2 overlay \
+         has no unit to attach a claim to"
+    } else {
+        "the contract's kind is not unit-scoped, so the AC2 overlay never links it (only \
+         `single_authority` and `unique_owner` name a subject that is a unit id)"
+    }
+}
+
+/// Whether a contract's kind names a subject that is also a unit id.
+///
+/// Mirrors `unit_subject` in the CLI's `declare_overlay`; both must agree or the
+/// explanation below would describe a condition the overlay does not apply.
+fn unit_scoped(contract: &ArchitecturalContract) -> bool {
+    matches!(
+        contract.payload(),
+        ContractPayload::SingleAuthority(_) | ContractPayload::UniqueOwner(_)
+    )
 }
 
 /// Why a contract participates in a finding.

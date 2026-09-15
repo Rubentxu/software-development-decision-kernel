@@ -80,6 +80,41 @@ contracts:
     revision: rev:1
 "#;
 
+/// Two unlinked contracts for two *different* reasons: `c-proj` is not a
+/// unit-scoped kind (and its subject IS declared), `c-orphan` is unit-scoped but
+/// its subject is not declared.
+const DECL_TWO_CAUSES: &str = r#"
+revision: why-rev
+knowledge_basis: test/why
+units:
+  - id: comp:dup
+contracts:
+  - id: c-auth-1
+    kind: single_authority
+    component: comp:dup
+    decided_by: ADR-0112
+    specified_by: arch-spec-032
+    revision: rev:1
+  - id: c-auth-2
+    kind: single_authority
+    component: comp:dup
+    decided_by: ADR-0112
+    specified_by: arch-spec-032
+    revision: rev:1
+  - id: c-proj
+    kind: projection_only
+    source_kind: comp:dup
+    decided_by: ADR-0113
+    specified_by: arch-spec-033
+    revision: rev:1
+  - id: c-orphan
+    kind: single_authority
+    component: comp:nowhere
+    decided_by: ADR-0112
+    specified_by: arch-spec-032
+    revision: rev:1
+"#;
+
 fn write_decl(root: &Path, decl: &str) {
     fs::create_dir_all(root.join(".sddk/architecture")).unwrap();
     fs::write(root.join(FILE), decl).unwrap();
@@ -823,4 +858,46 @@ fn why_does_not_touch_the_ledger_or_the_store() {
         ]);
     }
     assert_eq!(before, ledger(tmp.path()), "no canonical append");
+}
+
+/// The reason a contract has no assessment must name the real cause.
+///
+/// Regression pin from the v1.169.37 release smoke: `c-proj` is a
+/// `projection_only` contract on a **declared** unit, and it was reported as
+/// "its subject is not a declared unit" — false for it. The previous pin asserted
+/// only that a reason existed, so it passed while the explanation lied.
+#[test]
+fn why_unevaluable_reason_names_the_real_cause() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), DECL_TWO_CAUSES);
+
+    let mut details: BTreeMap<String, String> = BTreeMap::new();
+    for row in finding_rows(tmp.path(), "5000") {
+        let v = why_json(tmp.path(), row["id"].as_str().unwrap(), "5000");
+        for w in v["why_not"].as_array().unwrap() {
+            if w["reason"] == "contract_not_evaluable" {
+                details.insert(
+                    w["contract"].as_str().unwrap().to_string(),
+                    w["detail"].as_str().unwrap().to_string(),
+                );
+            }
+        }
+    }
+
+    let proj = details.get("c-proj").expect("c-proj is unevaluable");
+    assert!(
+        proj.contains("not unit-scoped"),
+        "`c-proj` has a declared subject; the kind is what prevents linking: {proj}"
+    );
+    assert!(
+        !proj.contains("subject is not a declared unit"),
+        "claiming the subject is undeclared would be a false explanation: {proj}"
+    );
+
+    let orphan = details.get("c-orphan").expect("c-orphan is unevaluable");
+    assert!(
+        orphan.contains("not a declared unit"),
+        "`c-orphan`'s cause is the missing unit: {orphan}"
+    );
+    assert!(!orphan.contains("not unit-scoped"), "{orphan}");
 }
