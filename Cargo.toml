@@ -13,7 +13,7 @@ members = [
 exclude = ["docs/sddk-stabilization-plan"]
 
 [workspace.package]
-version = "1.169.24"
+version = "1.169.25"
 edition = "2024"
 # A3-S3 closure marker: see docs/handoff/
 authors = ["SDDK Team"]
