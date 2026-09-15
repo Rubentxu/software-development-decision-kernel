@@ -8,6 +8,8 @@ accepted_by_cycle: p-63676b11dc0ef88f/a3-2-architectural-contract
 implementation_evidence:
   - "crates/sddk-engine/src/architectural_contract/ (ArchitecturalContract + ArchitectureClaim)"
   - "docs/architecture/specs/arch-spec-A3-S2-architectural-contracts.md"
+  - "crates/sddk-engine/src/architecture_conformance/ (AC4 Verify: consumes ArchitecturalContract + ContractEvaluation::evaluate; produces ArchitectureConformanceDelta)"
+  - "docs/architecture/specs/arch-spec-A3-S5-ac4-verify-contracts.md (cycle-bounded AC4 spec)"
 superseded_by: []
 related_adrs:
   - "ADR-0097-COMMON-REVISION-SUBSTRATE"

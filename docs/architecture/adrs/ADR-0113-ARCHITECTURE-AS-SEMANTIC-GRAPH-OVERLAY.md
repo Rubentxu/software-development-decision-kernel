@@ -12,6 +12,7 @@ implementation_evidence:
   - "crates/sddk-engine/src/architecture_graph/rebuild.rs (sorted rebuild for determinism; REQ-AC2-006)"
   - "crates/sddk-engine/src/architecture_graph/tests.rs (16 acceptance + 4 anti-encroachment + bonus type pins)"
   - "docs/architecture/specs/arch-spec-A3-S3-architecture-semantic-graph-overlay.md (cycle-bounded spec, 22 REQs)"
+  - "crates/sddk-engine/src/architecture_conformance/compute.rs (AC4 Verify: read-only consumer of the overlay via find_contracts_for_unit + projection + digest)"
 superseded_by: []
 related_adrs:
   - "ADR-0098-ONE-SEMANTIC-GRAPH"
