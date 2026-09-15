@@ -11,12 +11,72 @@ use std::collections::BTreeSet;
 use crate::architectural_contract::{
     ArchitecturalContract, ComponentRef, ContractId, DecisionRef, EntityRef, Revision, SpecRef,
 };
-use crate::architecture_graph::{SoftwareUnit, SoftwareUnitRef, UnitKind};
+use crate::architecture_graph::{
+    ArchitectureOverlayRelation, ArchitectureOverlayRelationKind, OverlayNodeRef, SoftwareUnit,
+    SoftwareUnitRef, UnitKind,
+};
 use crate::knowledge::EventTime;
 
 use super::types::{
-    ContractDecl, DeclarationError, DeclarationFile, DeclaredArchitecture, UnitDecl,
+    ContractDecl, DeclarationError, DeclarationFile, DeclaredArchitecture, RelationDecl, UnitDecl,
 };
+
+/// The nine relation kinds a declaration may state.
+///
+/// The semantic kinds (`decided_by`, `verified_by`, `contradicts_by`,
+/// `supersedes_by`, `architecture_claimed_by`) are produced by the system and
+/// are deliberately NOT declarable.
+pub const DECLARABLE_RELATION_KINDS: [&str; 9] = [
+    "owns",
+    "depends_on",
+    "writes",
+    "reads",
+    "emits",
+    "consumes",
+    "projects",
+    "derives_from",
+    "implements",
+];
+
+fn relation_kind(kind: &str) -> Option<ArchitectureOverlayRelationKind> {
+    match kind.trim() {
+        "owns" => Some(ArchitectureOverlayRelationKind::Owns),
+        "depends_on" => Some(ArchitectureOverlayRelationKind::DependsOn),
+        "writes" => Some(ArchitectureOverlayRelationKind::Writes),
+        "reads" => Some(ArchitectureOverlayRelationKind::Reads),
+        "emits" => Some(ArchitectureOverlayRelationKind::Emits),
+        "consumes" => Some(ArchitectureOverlayRelationKind::Consumes),
+        "projects" => Some(ArchitectureOverlayRelationKind::Projects),
+        "derives_from" => Some(ArchitectureOverlayRelationKind::DerivesFrom),
+        "implements" => Some(ArchitectureOverlayRelationKind::Implements),
+        _ => None,
+    }
+}
+
+/// Convert one declared relation, checking its kind and both endpoints.
+pub fn relation_from_decl(
+    decl: &RelationDecl,
+    unit_ids: &BTreeSet<String>,
+) -> Result<ArchitectureOverlayRelation, DeclarationError> {
+    let kind = relation_kind(&decl.kind).ok_or_else(|| DeclarationError::UnknownRelationKind {
+        from: decl.from.clone(),
+        to: decl.to.clone(),
+        kind: decl.kind.clone(),
+    })?;
+    for endpoint in [&decl.from, &decl.to] {
+        if !unit_ids.contains(endpoint) {
+            return Err(DeclarationError::UnknownRelationEndpoint {
+                endpoint: endpoint.clone(),
+            });
+        }
+    }
+    Ok(ArchitectureOverlayRelation {
+        from: OverlayNodeRef::SoftwareUnit(SoftwareUnitRef::new(decl.from.clone())),
+        to: OverlayNodeRef::SoftwareUnit(SoftwareUnitRef::new(decl.to.clone())),
+        kind,
+        evidence: Vec::new(),
+    })
+}
 
 fn cid(decl: &ContractDecl) -> Result<ContractId, DeclarationError> {
     ContractId::new(decl.id.clone()).map_err(|e| DeclarationError::InvalidContract {
@@ -246,6 +306,12 @@ pub fn validate(
         units.push(unit_from_decl(u)?);
     }
 
+    // ── relations (both endpoints must be declared units) ──────────────────
+    let mut relations: Vec<ArchitectureOverlayRelation> = Vec::with_capacity(decl.relations.len());
+    for r in &decl.relations {
+        relations.push(relation_from_decl(r, &unit_ids)?);
+    }
+
     // ── contracts ──────────────────────────────────────────────────────────
     let mut contract_ids: BTreeSet<String> = BTreeSet::new();
     let mut contracts: Vec<ArchitecturalContract> = Vec::with_capacity(decl.contracts.len());
@@ -286,6 +352,7 @@ pub fn validate(
         revision: decl.revision.trim().to_string(),
         knowledge_basis,
         units,
+        relations,
         contracts,
         waivers,
     })

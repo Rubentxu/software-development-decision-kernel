@@ -238,7 +238,14 @@ fn architecture_receipt_is_deterministic() {
     // Two runs over the same declaration produce the same receipt id.
     let tmp = tempfile::tempdir().unwrap();
     write_declaration(tmp.path(), DIRTY);
-    let a = String::from_utf8_lossy(&run(tmp.path(), &["--format", "json"]).stdout).into_owned();
-    let b = String::from_utf8_lossy(&run(tmp.path(), &["--format", "json"]).stdout).into_owned();
+    // Pin the evaluation time: the receipt records `created_at`.
+    let a = String::from_utf8_lossy(
+        &run(tmp.path(), &["--now-ms", "1000", "--format", "json"]).stdout,
+    )
+    .into_owned();
+    let b = String::from_utf8_lossy(
+        &run(tmp.path(), &["--now-ms", "1000", "--format", "json"]).stdout,
+    )
+    .into_owned();
     assert_eq!(a, b);
 }

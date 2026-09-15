@@ -34,5 +34,9 @@ pub mod validate;
 #[cfg(test)]
 mod tests;
 
-pub use types::{ContractDecl, DeclarationError, DeclarationFile, DeclaredArchitecture, UnitDecl};
-pub use validate::{contract_from_decl, unit_from_decl, validate};
+pub use types::{
+    ContractDecl, DeclarationError, DeclarationFile, DeclaredArchitecture, RelationDecl, UnitDecl,
+};
+pub use validate::{
+    DECLARABLE_RELATION_KINDS, contract_from_decl, relation_from_decl, unit_from_decl, validate,
+};

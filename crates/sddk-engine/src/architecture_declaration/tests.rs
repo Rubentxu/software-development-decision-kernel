@@ -8,15 +8,32 @@
 
 use super::*;
 use crate::architectural_contract::{ContractKind, ContractPayload};
-use crate::architecture_graph::UnitKind;
+use crate::architecture_graph::{ArchitectureOverlayRelationKind, OverlayNodeRef, UnitKind};
 
 fn decl_with(contracts: Vec<ContractDecl>) -> DeclarationFile {
     DeclarationFile {
         revision: "rev-1".to_string(),
         knowledge_basis: None,
         units: vec![],
+        relations: vec![],
         contracts,
         waivers: vec![],
+    }
+}
+
+fn unit(id: &str) -> UnitDecl {
+    UnitDecl {
+        id: id.to_string(),
+        kind: None,
+        locator: None,
+    }
+}
+
+fn rel(from: &str, to: &str, kind: &str) -> RelationDecl {
+    RelationDecl {
+        from: from.to_string(),
+        to: to.to_string(),
+        kind: kind.to_string(),
     }
 }
 
@@ -246,6 +263,126 @@ fn acceptance_bounded_compatibility_carries_replacement() {
         }
         other => panic!("unexpected payload: {other:?}"),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// acceptance — declared relations (REQ-A3S11-001..006)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn acceptance_relations_default_empty() {
+    // REQ-A3S11-001
+    let d = decl_with(vec![]);
+    assert!(d.relations.is_empty());
+    assert!(validate(&d, "l").unwrap().relations.is_empty());
+}
+
+#[test]
+fn acceptance_relation_kinds_closed() {
+    // REQ-A3S11-002: the nine declarable kinds are accepted.
+    for kind in DECLARABLE_RELATION_KINDS {
+        let mut d = decl_with(vec![]);
+        d.units = vec![unit("a"), unit("b")];
+        d.relations = vec![rel("a", "b", kind)];
+        let out = validate(&d, "l").unwrap_or_else(|e| panic!("kind `{kind}` rejected: {e}"));
+        assert_eq!(out.relations.len(), 1);
+    }
+}
+
+#[test]
+fn acceptance_relation_endpoint_must_exist() {
+    // REQ-A3S11-003
+    let mut d = decl_with(vec![]);
+    d.units = vec![unit("a")];
+    d.relations = vec![rel("a", "ghost", "depends_on")];
+    let err = validate(&d, "l").unwrap_err();
+    assert_eq!(
+        err,
+        DeclarationError::UnknownRelationEndpoint {
+            endpoint: "ghost".to_string()
+        }
+    );
+}
+
+#[test]
+fn acceptance_relations_convert() {
+    // REQ-A3S11-004
+    let mut d = decl_with(vec![]);
+    d.units = vec![unit("comp:a"), unit("comp:b")];
+    d.relations = vec![rel("comp:a", "comp:b", "writes")];
+    let out = validate(&d, "l").expect("valid");
+    assert_eq!(out.relations.len(), 1);
+    let r = &out.relations[0];
+    assert_eq!(r.kind, ArchitectureOverlayRelationKind::Writes);
+    match (&r.from, &r.to) {
+        (OverlayNodeRef::SoftwareUnit(f), OverlayNodeRef::SoftwareUnit(t)) => {
+            assert_eq!(f.as_str(), "comp:a");
+            assert_eq!(t.as_str(), "comp:b");
+        }
+        other => panic!("unexpected node refs: {other:?}"),
+    }
+}
+
+#[test]
+fn acceptance_semantic_kinds_rejected() {
+    // REQ-A3S11-006: system-produced semantic kinds are not declarable.
+    for kind in [
+        "decided_by",
+        "verified_by",
+        "contradicts_by",
+        "supersedes_by",
+        "architecture_claimed_by",
+    ] {
+        let mut d = decl_with(vec![]);
+        d.units = vec![unit("a"), unit("b")];
+        d.relations = vec![rel("a", "b", kind)];
+        assert!(
+            matches!(
+                validate(&d, "l"),
+                Err(DeclarationError::UnknownRelationKind { .. })
+            ),
+            "kind `{kind}` must be rejected"
+        );
+    }
+}
+
+#[test]
+fn acceptance_declared_bypass_is_detected() {
+    // REQ-A3S11-005: a declared live relation + a forbidden-dependency contract
+    // makes AC5 report AuthorityBypass.
+    use crate::architecture_debverify::{DebVerifyFindingKind, run_debverify_audit};
+    use crate::architecture_graph::ArchitectureGraphOverlay;
+    use crate::knowledge::EventTime;
+
+    let mut d = decl_with(vec![{
+        let mut c = sa("no-edge", "comp:domain");
+        c.kind = "forbidden_dependency".to_string();
+        c.component = None;
+        c.from = Some("comp:domain".to_string());
+        c.to = Some("comp:provider".to_string());
+        c.reason = Some("forbidden".to_string());
+        c
+    }]);
+    d.units = vec![unit("comp:domain"), unit("comp:provider")];
+    d.relations = vec![rel("comp:domain", "comp:provider", "depends_on")];
+
+    let declared = validate(&d, "l").expect("valid");
+    let mut overlay = ArchitectureGraphOverlay::new();
+    for u in &declared.units {
+        overlay.add_unit(u);
+    }
+    for r in &declared.relations {
+        overlay.add_relation(r);
+    }
+
+    let audit = run_debverify_audit(&overlay, &declared.contracts, EventTime(0)).expect("audit");
+    let bypasses = audit.by_kind(DebVerifyFindingKind::AuthorityBypass);
+    assert_eq!(
+        bypasses.len(),
+        1,
+        "a declared relation must make the forbidden edge detectable: {:?}",
+        audit.findings
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

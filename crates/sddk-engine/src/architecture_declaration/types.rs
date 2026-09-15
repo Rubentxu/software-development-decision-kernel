@@ -10,7 +10,7 @@
 use serde::Deserialize;
 
 use crate::architectural_contract::ArchitecturalContract;
-use crate::architecture_graph::SoftwareUnit;
+use crate::architecture_graph::{ArchitectureOverlayRelation, SoftwareUnit};
 
 /// One declared software unit (AC2 substrate).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -23,6 +23,17 @@ pub struct UnitDecl {
     /// Human locator (path); defaults to `id`.
     #[serde(default)]
     pub locator: Option<String>,
+}
+
+/// One declared dependency/ownership relation between two units (AC2 relation).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct RelationDecl {
+    /// Source unit id.
+    pub from: String,
+    /// Target unit id.
+    pub to: String,
+    /// One of the nine declarable relation kinds.
+    pub kind: String,
 }
 
 /// One declared architectural contract.
@@ -86,6 +97,9 @@ pub struct DeclarationFile {
     /// Declared software units.
     #[serde(default)]
     pub units: Vec<UnitDecl>,
+    /// Declared relations between units (both endpoints must be declared units).
+    #[serde(default)]
+    pub relations: Vec<RelationDecl>,
     /// Declared contracts.
     #[serde(default)]
     pub contracts: Vec<ContractDecl>,
@@ -103,6 +117,8 @@ pub struct DeclaredArchitecture {
     pub knowledge_basis: String,
     /// AC2 units (declaration order).
     pub units: Vec<SoftwareUnit>,
+    /// AC2 relations between declared units (declaration order).
+    pub relations: Vec<ArchitectureOverlayRelation>,
     /// AC1 contracts (sorted by id).
     pub contracts: Vec<ArchitecturalContract>,
     /// Waivers (sorted, deduplicated).
@@ -151,6 +167,20 @@ pub enum DeclarationError {
         /// The unrecognised kind string.
         kind: String,
     },
+    /// The relation `kind` is not one of the nine declarable kinds.
+    UnknownRelationKind {
+        /// The declared `from`.
+        from: String,
+        /// The declared `to`.
+        to: String,
+        /// The unrecognised kind string.
+        kind: String,
+    },
+    /// A relation endpoint names no declared unit.
+    UnknownRelationEndpoint {
+        /// The offending endpoint id.
+        endpoint: String,
+    },
     /// AC1 rejected the declared payload (kind/payload mismatch or invalid id).
     InvalidContract {
         /// The offending contract id.
@@ -179,6 +209,14 @@ impl std::fmt::Display for DeclarationError {
             Self::UnknownUnitKind { id, kind } => {
                 write!(f, "declaration: unit `{id}` has unknown kind `{kind}`")
             }
+            Self::UnknownRelationKind { from, to, kind } => write!(
+                f,
+                "declaration: relation `{from} -> {to}` has non-declarable kind `{kind}`"
+            ),
+            Self::UnknownRelationEndpoint { endpoint } => write!(
+                f,
+                "declaration: relation endpoint `{endpoint}` names no declared unit"
+            ),
             Self::InvalidContract { id, reason } => {
                 write!(f, "declaration: contract `{id}` is invalid: {reason}")
             }

@@ -6,11 +6,14 @@
 //!
 //! Read-only: the handler reads one file under the resolved root and prints.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
+use sddk_engine::architectural_contract::{
+    ArchitecturalContract, ContractPayload, DecisionRef, SpecRef,
+};
 use sddk_engine::architecture_conformance::{
     ConformanceInputs, ContractEvidence, compute_conformance_delta,
 };
@@ -20,6 +23,21 @@ use sddk_engine::architecture_graph::ArchitectureGraphOverlay;
 use sddk_engine::architecture_mutation::{MutationSandbox, run_mutation_suite};
 use sddk_engine::architecture_receipt::{ReceiptInputs, ReceiptVerdict, compose_receipt};
 use sddk_engine::knowledge::EventTime;
+use serde::Serialize;
+
+/// Resolve the evaluation time: the caller's `--now-ms`, else the wall clock.
+///
+/// Staleness is inherently time-dependent; pinning it to zero would silently
+/// report every elapsed compatibility window as open.
+fn resolve_now(now_ms: Option<i64>) -> EventTime {
+    let ms = now_ms.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    });
+    EventTime(ms)
+}
 
 /// Exit code for a `Blocked` receipt.
 const EXIT_BLOCKED: i32 = 1;
@@ -33,6 +51,55 @@ pub(crate) const DEFAULT_DECLARATION: &str = ".sddk/architecture/contracts.yaml"
 pub(crate) enum ArchitectureCommand {
     /// Emit the architecture-conformance receipt for a declarative contract set.
     Receipt(ArchitectureReceiptArgs),
+    /// List every declared architectural contract.
+    Contracts(ReadArgs),
+    /// List the declared single-authority contracts grouped by component.
+    Authorities(ReadArgs),
+    /// List the declared unique-owner contracts grouped by entity.
+    Ownership(ReadArgs),
+    /// List the declared compatibility windows and their status.
+    Compatibility(ReadArgs),
+    /// Show the declared units and relations (the AC2 projection).
+    Graph(GraphReadArgs),
+}
+
+/// Arguments shared by the read surfaces.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct ReadArgs {
+    /// Repository root.
+    #[arg(long, default_value = ".")]
+    pub(crate) root: PathBuf,
+    /// Declaration file, relative to `--root`.
+    #[arg(long, default_value = DEFAULT_DECLARATION)]
+    pub(crate) contracts: PathBuf,
+    /// Evaluation time in epoch-ms. Defaults to the current wall clock;
+    /// pass it explicitly for a reproducible run.
+    #[arg(long)]
+    pub(crate) now_ms: Option<i64>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Arguments for `architecture graph`.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct GraphReadArgs {
+    /// Repository root.
+    #[arg(long, default_value = ".")]
+    pub(crate) root: PathBuf,
+    /// Declaration file, relative to `--root`.
+    #[arg(long, default_value = DEFAULT_DECLARATION)]
+    pub(crate) contracts: PathBuf,
+    /// Evaluation time in epoch-ms. Defaults to the current wall clock;
+    /// pass it explicitly for a reproducible run.
+    #[arg(long)]
+    pub(crate) now_ms: Option<i64>,
+    /// Restrict units to those whose locator starts with this prefix.
+    #[arg(long)]
+    pub(crate) scope: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -43,6 +110,10 @@ pub(crate) struct ArchitectureReceiptArgs {
     /// Declaration file, relative to `--root`.
     #[arg(long, default_value = DEFAULT_DECLARATION)]
     pub(crate) contracts: PathBuf,
+    /// Evaluation time in epoch-ms. Defaults to the current wall clock;
+    /// pass it explicitly for a reproducible run.
+    #[arg(long)]
+    pub(crate) now_ms: Option<i64>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -55,7 +126,382 @@ pub(crate) fn run_architecture(
 ) -> CommandOutput {
     match command {
         ArchitectureCommand::Receipt(args) => run_receipt(args, environment),
+        ArchitectureCommand::Contracts(args) => run_contracts(args),
+        ArchitectureCommand::Authorities(args) => run_authorities(args),
+        ArchitectureCommand::Ownership(args) => run_ownership(args),
+        ArchitectureCommand::Compatibility(args) => run_compatibility(args),
+        ArchitectureCommand::Graph(args) => run_graph(args),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared prologue
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Load + parse + validate the declaration, or return the error output.
+fn load_declaration(
+    root: &Path,
+    contracts: &Path,
+) -> Result<sddk_engine::architecture_declaration::DeclaredArchitecture, CommandOutput> {
+    let path = root.join(contracts);
+    let label = contracts.display().to_string();
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        error_output(format!(
+            "architecture: cannot read declaration `{}`: {e}",
+            path.display()
+        ))
+    })?;
+    let parsed: DeclarationFile = serde_yaml::from_str(&text).map_err(|e| {
+        error_output(format!(
+            "architecture: `{}` is not a valid declaration: {e}",
+            path.display()
+        ))
+    })?;
+    validate(&parsed, &label).map_err(|e| error_output(format!("architecture: {e}")))
+}
+
+/// Build the AC2 overlay from a validated declaration (units + relations).
+fn declare_overlay(
+    decl: &sddk_engine::architecture_declaration::DeclaredArchitecture,
+) -> ArchitectureGraphOverlay {
+    let mut overlay = ArchitectureGraphOverlay::new();
+    for unit in &decl.units {
+        overlay.add_unit(unit);
+    }
+    for relation in &decl.relations {
+        overlay.add_relation(relation);
+    }
+    overlay
+}
+
+/// A contract's subject identifier, for display and grouping.
+fn subject_of(contract: &ArchitecturalContract) -> String {
+    match contract.payload() {
+        ContractPayload::SingleAuthority(c) => c.as_str().to_string(),
+        ContractPayload::UniqueOwner(e) => e.as_str().to_string(),
+        ContractPayload::ForbiddenDependency { from, to, .. } => {
+            format!("{} -> {}", from.as_str(), to.as_str())
+        }
+        ContractPayload::ProjectionOnly { source_kind } => source_kind.clone(),
+        ContractPayload::BoundedCompatibility { .. } => contract.id().as_str().to_string(),
+        ContractPayload::ProviderBoundary { surface, .. } => surface.clone(),
+        ContractPayload::Extension { kind, .. } => kind.as_str().to_string(),
+    }
+}
+
+/// A concise rendering of an overlay relation kind.
+fn relation_tag(kind: sddk_engine::architecture_graph::ArchitectureOverlayRelationKind) -> String {
+    format!("{kind:?}")
+}
+
+/// A concise rendering of an overlay node reference.
+fn node_tag(node: &sddk_engine::architecture_graph::OverlayNodeRef) -> String {
+    use sddk_engine::architecture_graph::OverlayNodeRef as N;
+    match node {
+        N::SoftwareUnit(u) => u.0.clone(),
+        N::BoundedContext(s) => s.clone(),
+        N::Decision(d) => decision_tag(d),
+        N::Spec(s) => spec_tag(s),
+        N::Test(t) => t.0.clone(),
+        N::Uat(u) => u.0.clone(),
+        N::CompatibilityPath(p) => p.0.clone(),
+        N::Claim(c) => c.as_str().to_string(),
+    }
+}
+
+fn kind_tag(contract: &ArchitecturalContract) -> &'static str {
+    match contract.payload() {
+        ContractPayload::SingleAuthority(_) => "single_authority",
+        ContractPayload::UniqueOwner(_) => "unique_owner",
+        ContractPayload::ForbiddenDependency { .. } => "forbidden_dependency",
+        ContractPayload::ProjectionOnly { .. } => "projection_only",
+        ContractPayload::BoundedCompatibility { .. } => "bounded_compatibility",
+        ContractPayload::ProviderBoundary { .. } => "provider_boundary",
+        ContractPayload::Extension { .. } => "extension",
+    }
+}
+
+/// One row of the contract catalogue.
+#[derive(Debug, Serialize)]
+struct ContractRow {
+    id: String,
+    kind: &'static str,
+    subject: String,
+    decided_by: String,
+    specified_by: String,
+    revision: String,
+}
+
+fn decision_tag(d: &DecisionRef) -> String {
+    match d {
+        DecisionRef::Decision(s) => s.clone(),
+        DecisionRef::Adr(s) => s.clone(),
+        DecisionRef::ExternalDecision { authority, .. } => authority.clone(),
+    }
+}
+
+fn spec_tag(s: &SpecRef) -> String {
+    match s {
+        SpecRef::ArchSpec(v) | SpecRef::Spec(v) | SpecRef::Adr(v) => v.clone(),
+    }
+}
+
+fn contract_row(c: &ArchitecturalContract) -> ContractRow {
+    ContractRow {
+        id: c.id().as_str().to_string(),
+        kind: kind_tag(c),
+        subject: subject_of(c),
+        decided_by: decision_tag(c.decided_by()),
+        specified_by: spec_tag(c.specified_by()),
+        revision: c.revision().as_str().to_string(),
+    }
+}
+
+fn emit<T: Serialize>(
+    format: OutputFormat,
+    header: &str,
+    rows: &[T],
+    text: String,
+) -> CommandOutput {
+    match format {
+        OutputFormat::Json => match serde_json::to_string_pretty(rows) {
+            Ok(body) => CommandOutput {
+                status: 0,
+                stdout: format!("{body}\n"),
+                stderr: String::new(),
+            },
+            Err(e) => error_output(format!("architecture: cannot serialise: {e}")),
+        },
+        OutputFormat::Text => CommandOutput {
+            status: 0,
+            stdout: format!("{header}\n{text}"),
+            stderr: String::new(),
+        },
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Read surfaces
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn run_contracts(args: ReadArgs) -> CommandOutput {
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    let rows: Vec<ContractRow> = decl.contracts.iter().map(contract_row).collect();
+    let mut text = String::new();
+    for r in &rows {
+        text.push_str(&format!(
+            "  {:<28} {:<22} {:<28} rev={}\n",
+            r.id, r.kind, r.subject, r.revision
+        ));
+    }
+    if rows.is_empty() {
+        text.push_str("  (no contracts declared)\n");
+    }
+    emit(
+        args.format,
+        &format!("architecture contracts — revision {}", decl.revision),
+        &rows,
+        text,
+    )
+}
+
+fn run_authorities(args: ReadArgs) -> CommandOutput {
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    let mut groups: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for c in &decl.contracts {
+        if matches!(c.payload(), ContractPayload::SingleAuthority(_)) {
+            groups
+                .entry(subject_of(c))
+                .or_default()
+                .push(c.id().as_str().to_string());
+        }
+    }
+    let mut text = String::new();
+    let mut json_rows: Vec<(String, Vec<String>)> = Vec::new();
+    for (component, mut ids) in groups {
+        ids.sort();
+        text.push_str(&format!("  {component}: {}\n", ids.join(", ")));
+        json_rows.push((component, ids));
+    }
+    if json_rows.is_empty() {
+        text.push_str("  (no single-authority contracts declared)\n");
+    }
+    emit(
+        args.format,
+        &format!("architecture authorities — revision {}", decl.revision),
+        &json_rows,
+        text,
+    )
+}
+
+fn run_ownership(args: ReadArgs) -> CommandOutput {
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    let mut groups: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for c in &decl.contracts {
+        if matches!(c.payload(), ContractPayload::UniqueOwner(_)) {
+            groups
+                .entry(subject_of(c))
+                .or_default()
+                .push(c.id().as_str().to_string());
+        }
+    }
+    let mut text = String::new();
+    let mut json_rows: Vec<(String, Vec<String>)> = Vec::new();
+    for (entity, mut ids) in groups {
+        ids.sort();
+        text.push_str(&format!("  {entity}: {}\n", ids.join(", ")));
+        json_rows.push((entity, ids));
+    }
+    if json_rows.is_empty() {
+        text.push_str("  (no unique-owner contracts declared)\n");
+    }
+    emit(
+        args.format,
+        &format!("architecture ownership — revision {}", decl.revision),
+        &json_rows,
+        text,
+    )
+}
+
+/// One row of the compatibility surface.
+#[derive(Debug, Serialize)]
+struct CompatibilityRow {
+    id: String,
+    deprecated_after_ms: i64,
+    replaced_by: Option<String>,
+    window_status: &'static str,
+}
+
+fn run_compatibility(args: ReadArgs) -> CommandOutput {
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    // AC5 tells us which windows are actually stale; the read surface mirrors
+    // that rather than re-deriving it.
+    let overlay = declare_overlay(&decl);
+    let audit = match sddk_engine::architecture_debverify::run_debverify_audit(
+        &overlay,
+        &decl.contracts,
+        resolve_now(args.now_ms),
+    ) {
+        Ok(a) => a,
+        Err(e) => return error_output(format!("architecture: audit failed: {e}")),
+    };
+    let stale: std::collections::BTreeSet<String> = audit
+        .by_kind(sddk_engine::architecture_debverify::DebVerifyFindingKind::StaleCompatibility)
+        .iter()
+        .flat_map(|f| f.subjects.clone())
+        .collect();
+
+    let mut rows: Vec<CompatibilityRow> = Vec::new();
+    for c in &decl.contracts {
+        if let ContractPayload::BoundedCompatibility {
+            deprecated_after,
+            replaced_by,
+        } = c.payload()
+        {
+            let id = c.id().as_str().to_string();
+            let status = if stale.contains(&id) { "stale" } else { "open" };
+            rows.push(CompatibilityRow {
+                id,
+                deprecated_after_ms: deprecated_after.0,
+                replaced_by: replaced_by.as_ref().map(|c| c.as_str().to_string()),
+                window_status: status,
+            });
+        }
+    }
+    let mut text = String::new();
+    for r in &rows {
+        text.push_str(&format!(
+            "  {:<28} window_status={:<6} deprecated_after_ms={} replaced_by={}\n",
+            r.id,
+            r.window_status,
+            r.deprecated_after_ms,
+            r.replaced_by.as_deref().unwrap_or("<none>")
+        ));
+    }
+    if rows.is_empty() {
+        text.push_str("  (no bounded-compatibility contracts declared)\n");
+    }
+    emit(
+        args.format,
+        &format!("architecture compatibility — revision {}", decl.revision),
+        &rows,
+        text,
+    )
+}
+
+/// One row of the graph surface.
+#[derive(Debug, Serialize)]
+struct GraphRow {
+    units: Vec<(String, String, String)>,
+    relations: Vec<(String, String, String)>,
+    overlay_digest_len: usize,
+}
+
+fn run_graph(args: GraphReadArgs) -> CommandOutput {
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    let overlay = declare_overlay(&decl);
+    let units: Vec<(String, String, String)> = decl
+        .units
+        .iter()
+        .filter(|u| {
+            args.scope
+                .as_ref()
+                .map(|s| u.locator.starts_with(s.as_str()))
+                .unwrap_or(true)
+        })
+        .map(|u| (u.id.0.clone(), format!("{:?}", u.kind), u.locator.clone()))
+        .collect();
+    let relations: Vec<(String, String, String)> = decl
+        .relations
+        .iter()
+        .map(|r| (node_tag(&r.from), node_tag(&r.to), relation_tag(r.kind)))
+        .collect();
+    let digest_len = overlay.digest().len();
+    let row = GraphRow {
+        units: units.clone(),
+        relations: relations.clone(),
+        overlay_digest_len: digest_len,
+    };
+
+    let mut text = String::new();
+    text.push_str("  units:\n");
+    for (id, kind, locator) in &units {
+        text.push_str(&format!("    {id}  {kind}  {locator}\n"));
+    }
+    if units.is_empty() {
+        text.push_str("    (none)\n");
+    }
+    text.push_str("  relations:\n");
+    for (from, to, kind) in &relations {
+        text.push_str(&format!("    {from} -> {to}  {kind}\n"));
+    }
+    if relations.is_empty() {
+        text.push_str("    (none)\n");
+    }
+    text.push_str(&format!("  overlay_digest_len: {digest_len}\n"));
+    emit(
+        args.format,
+        &format!("architecture graph — revision {}", decl.revision),
+        std::slice::from_ref(&row),
+        text,
+    )
 }
 
 fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> CommandOutput {
@@ -89,15 +535,13 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
     };
 
     // ── AC2 overlay ────────────────────────────────────────────────────────
-    let mut overlay = ArchitectureGraphOverlay::new();
-    for unit in &declared.units {
-        overlay.add_unit(unit);
-    }
+    let overlay = declare_overlay(&declared);
 
     // ── AC4: change-scoped delta over an EMPTY change basis ────────────────
     // The receipt is global; the delta contributes its digests and its
     // (empty) claim/witness sets honestly.
     let evidence: ContractEvidence = std::collections::BTreeMap::new();
+    let now = resolve_now(args.now_ms);
     let delta = match compute_conformance_delta(
         &overlay,
         ConformanceInputs {
@@ -105,7 +549,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             evidence: &evidence,
             contradiction_witnesses: &[],
         },
-        EventTime(0),
+        now,
         &[],
     ) {
         Ok(d) => d,
@@ -113,7 +557,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
     };
 
     // ── AC5: global audit ──────────────────────────────────────────────────
-    let audit = match run_debverify_audit(&overlay, &declared.contracts, EventTime(0)) {
+    let audit = match run_debverify_audit(&overlay, &declared.contracts, now) {
         Ok(a) => a,
         Err(e) => return error_output(format!("architecture receipt: audit failed: {e}")),
     };
@@ -138,7 +582,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             waivers: &declared.waivers,
             provider_basis: &[],
         },
-        EventTime(0),
+        now,
     );
 
     let status = match receipt.verdict {
