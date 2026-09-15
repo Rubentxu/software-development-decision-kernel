@@ -130,6 +130,7 @@ fn explain_finding(
         audit: &f.audit,
         overlay: &f.overlay,
         finding: Some((&id, index)),
+        observations: None,
     })
 }
 
@@ -182,9 +183,17 @@ fn acceptance_evidence_to_software_is_unresolved() {
         .iter()
         .find(|u| u.edge == super::types::ArchitectureWhy::EVIDENCE_TO_SOFTWARE_EDGE)
         .expect("present");
+    // The reason must describe the *current* substrate truth: no observation
+    // covers this subject. It must not claim the leg is structurally impossible —
+    // A4-0 provides the edge, so that would now be a false explanation.
     assert!(
-        u.reason.contains("no evidence node") || u.reason.contains("metadata"),
-        "the reason must name the substrate gap: {}",
+        u.reason.contains("no supplied observation") && u.reason.contains("Supply"),
+        "the reason must name the gap and how to close it: {}",
+        u.reason
+    );
+    assert!(
+        !u.reason.contains("there is no evidence node"),
+        "the substrate now has the edge; claiming otherwise would be false: {}",
         u.reason
     );
     // And nothing pretends the leg exists.
@@ -248,6 +257,7 @@ fn acceptance_contract_without_a_claim_is_not_evaluated() {
         audit: &f.audit,
         overlay: &f.overlay,
         finding: Some((&id, idx)),
+        observations: None,
     });
     let leg = why
         .contracts
@@ -298,6 +308,7 @@ fn acceptance_query_resolved_as_contract_explains_one_leg() {
         audit: &f.audit,
         overlay: &f.overlay,
         finding: None,
+        observations: None,
     });
     assert!(why.finding.is_none());
     assert_eq!(why.contracts.len(), 1);
@@ -344,6 +355,7 @@ fn acceptance_audit_error_is_not_empty_explanation() {
         audit: &f.audit,
         overlay: &f.overlay,
         finding: None,
+        observations: None,
     });
     assert_eq!(why.contracts.len(), 1);
     assert_eq!(why.contracts[0].assessment.outcome, "not_evaluated");
@@ -375,6 +387,7 @@ fn acceptance_claim_outcome_maps_through() {
         audit: &f.audit,
         overlay: &f.overlay,
         finding: None,
+        observations: None,
     });
     let outcome = &why.contracts[0].assessment.outcome;
     assert!(
@@ -534,6 +547,7 @@ fn acceptance_audit_error_surface_is_reserved_not_reachable() {
         audit: &f.audit,
         overlay: &f.overlay,
         finding: Some((&id, idx)),
+        observations: None,
     });
     assert!(!why.contracts.is_empty(), "never an empty explanation");
     assert_eq!(why.contracts[0].assessment.outcome, "not_evaluated");
@@ -591,6 +605,7 @@ fn acceptance_unevaluable_reason_names_the_real_cause() {
             audit: &f.audit,
             overlay: &f.overlay,
             finding: Some((&id, idx)),
+            observations: None,
         });
         if let Some(detail) = why.why_not.iter().find_map(|r| match r {
             WhyNotReason::ContractNotEvaluable { detail, .. } => Some(detail.clone()),
@@ -634,6 +649,7 @@ fn acceptance_unevaluable_reason_names_the_real_cause() {
         audit: &orphan.audit,
         overlay: &orphan.overlay,
         finding: Some((&id, idx)),
+        observations: None,
     });
     let detail = why
         .why_not
@@ -648,4 +664,156 @@ fn acceptance_unevaluable_reason_names_the_real_cause() {
         "cause B must name the missing unit: {detail}"
     );
     assert!(!detail.contains("not unit-scoped"), "{detail}");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A4-0 integration: the evidence → software relation leg (REQ-A4S0-019)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn observation_set_for(subject: &str) -> crate::observation::ObservationSet {
+    use crate::observation::{
+        ObservationBasis, ObservationOrigin, ObservationSet, ObservationStance, ObservationSubject,
+        SoftwareEntityRef, SoftwareObservation, SoftwareRelation,
+    };
+    use crate::semantic_kind::CoreRelationKind;
+
+    let basis = ObservationBasis::new(
+        "rev:1",
+        crate::knowledge::KnowledgeBasis::empty(EventTime(T0))
+            .basis_hash()
+            .clone(),
+        "input:test",
+    );
+    let mut set = ObservationSet::new();
+    set.insert(SoftwareObservation::declare(
+        ObservationSubject::SoftwareRelation(SoftwareRelation::new(
+            SoftwareEntityRef::Unit(SoftwareUnitRef::new(subject)),
+            CoreRelationKind::DependsOn,
+            SoftwareEntityRef::Unit(SoftwareUnitRef::new("comp:log")),
+        )),
+        ObservationStance::Affirms,
+        crate::evidence_ref::EvidenceRef::new(
+            crate::evidence_ref::EvidenceKind::Adhoc,
+            "static:dep-scan",
+        ),
+        ObservationOrigin::StaticProvider,
+        basis,
+        None,
+        "test-analyzer",
+    ));
+    set
+}
+
+/// With a real observation the leg closes; the unresolved edge disappears.
+#[test]
+fn acceptance_why_closes_the_leg_when_evidence_exists() {
+    let f = build(
+        vec![authority("c-a", "comp:x"), authority("c-b", "comp:x")],
+        &["comp:x"],
+    );
+    let idx = f
+        .audit
+        .findings
+        .iter()
+        .position(|x| x.kind == DebVerifyFindingKind::ShadowAuthority)
+        .expect("shadow_authority");
+    let finding = &f.audit.findings[idx];
+    let id = FindingId::derive(
+        &f.basis,
+        finding.kind,
+        &finding.subjects,
+        &finding.contract_ids,
+    )
+    .as_str()
+    .to_string();
+    let set = observation_set_for("comp:x");
+
+    let why = explain(WhyInput {
+        query: &id,
+        resolved_as: WhyResolvedAs::Finding,
+        basis: &f.basis,
+        contracts: &f.contracts,
+        claims: &f.claims,
+        audit: &f.audit,
+        overlay: &f.overlay,
+        finding: Some((&id, idx)),
+        observations: Some(&set),
+    });
+
+    assert!(
+        why.unresolved_edges.is_empty(),
+        "a supplied observation must close the leg: {:?}",
+        why.unresolved_edges
+    );
+    assert!(
+        why.contracts
+            .iter()
+            .any(|c| !c.observed_relations.is_empty()),
+        "the leg is reported on the contract it involves: {:?}",
+        why.contracts
+    );
+    assert!(
+        !why.why_not
+            .iter()
+            .any(|r| matches!(r, WhyNotReason::UnknownRelation { .. })),
+        "a closed leg must not also be reported as a why-not unknown relation"
+    );
+}
+
+/// Without an observation the leg stays unresolved — a truthful gap, not a claim.
+#[test]
+fn acceptance_why_keeps_the_leg_when_absent() {
+    let f = build(
+        vec![authority("c-a", "comp:x"), authority("c-b", "comp:x")],
+        &["comp:x"],
+    );
+    let idx = f
+        .audit
+        .findings
+        .iter()
+        .position(|x| x.kind == DebVerifyFindingKind::ShadowAuthority)
+        .expect("shadow_authority");
+    let finding = &f.audit.findings[idx];
+    let id = FindingId::derive(
+        &f.basis,
+        finding.kind,
+        &finding.subjects,
+        &finding.contract_ids,
+    )
+    .as_str()
+    .to_string();
+
+    // (a) no observation set at all
+    let none = explain(WhyInput {
+        query: &id,
+        resolved_as: WhyResolvedAs::Finding,
+        basis: &f.basis,
+        contracts: &f.contracts,
+        claims: &f.claims,
+        audit: &f.audit,
+        overlay: &f.overlay,
+        finding: Some((&id, idx)),
+        observations: None,
+    });
+    assert_eq!(none.unresolved_edges.len(), 1);
+    assert!(
+        none.unresolved_edges[0].reason.contains("Supply"),
+        "the reason must say how to close it: {}",
+        none.unresolved_edges[0].reason
+    );
+
+    // (b) an empty set behaves identically: nothing observed, so nothing is claimed.
+    let empty = crate::observation::ObservationSet::new();
+    let with_empty = explain(WhyInput {
+        query: &id,
+        resolved_as: WhyResolvedAs::Finding,
+        basis: &f.basis,
+        contracts: &f.contracts,
+        claims: &f.claims,
+        audit: &f.audit,
+        overlay: &f.overlay,
+        finding: Some((&id, idx)),
+        observations: Some(&empty),
+    });
+    assert_eq!(with_empty.unresolved_edges.len(), 1);
 }

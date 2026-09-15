@@ -125,6 +125,12 @@ pub struct WhyContract {
     pub evidence: Vec<WhyEvidence>,
     /// Software units reached from this contract through the AC2 overlay.
     pub software_units: Vec<String>,
+    /// Software relations **observed** to involve this contract's subject.
+    ///
+    /// OBSERVED provenance: these come from `SoftwareObservation`s (A4-0), not from
+    /// the declaration. Empty means nothing observed this contract's subject — which
+    /// is why the `evidence → software relation` leg stays unresolved.
+    pub observed_relations: Vec<String>,
 }
 
 /// A leg of the chain the substrate cannot supply.
@@ -209,7 +215,8 @@ impl ArchitectureWhy {
     pub const EVIDENCE_TO_SOFTWARE_EDGE: &'static str = "evidence→observes→software_relation";
 
     /// Fixed reason text for [`Self::EVIDENCE_TO_SOFTWARE_EDGE`].
-    pub const EVIDENCE_TO_SOFTWARE_REASON: &'static str = "the substrate attaches evidence to relations as (provider, reference) \
-         metadata; there is no evidence node kind and no edge from an evidence \
-         reference to a software relation, so this leg is UNKNOWN rather than inferred";
+    pub const EVIDENCE_TO_SOFTWARE_REASON: &'static str = "no supplied observation covers this subject's software relations, so the \
+         evidence → software relation leg is UNKNOWN rather than inferred. Supply \
+         observations (A4-0 provides the substrate) to close it. This is a truthful \
+         gap for this subject, not a structural impossibility.";
 }

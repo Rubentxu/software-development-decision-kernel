@@ -10,8 +10,9 @@ use std::collections::BTreeMap;
 use crate::architectural_contract::{ArchitecturalContract, ArchitectureClaim, ContractPayload};
 use crate::architecture_conformance::DeltaContractStatus;
 use crate::architecture_debverify::{DebVerifyAudit, FindingBasis};
-use crate::architecture_graph::ArchitectureGraphOverlay;
+use crate::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
 use crate::knowledge::MissingEvidence;
+use crate::observation::{ObservationSet, ObservationSubject, SoftwareEntityRef};
 use crate::semantic_graph::SemanticGraphProjection;
 
 use super::types::{
@@ -41,6 +42,11 @@ pub struct WhyInput<'a> {
     /// The id is borrowed as a string because the traversal only reports it; it
     /// does not re-derive identity.
     pub finding: Option<(&'a str, usize)>,
+    /// Observations available to close the `evidence → software relation` leg.
+    ///
+    /// `None` and an empty set mean the same thing for the answer: nothing observed
+    /// the subject, so the leg stays unresolved.
+    pub observations: Option<&'a ObservationSet>,
 }
 
 /// Build the explanation.
@@ -107,6 +113,7 @@ pub fn explain(input: WhyInput<'_>) -> ArchitectureWhy {
                 },
                 evidence: vec![],
                 software_units: vec![],
+                observed_relations: vec![],
             });
             why_not.push(WhyNotReason::ContractNotEvaluable {
                 contract: cid.clone(),
@@ -186,6 +193,26 @@ pub fn explain(input: WhyInput<'_>) -> ArchitectureWhy {
             })
             .unwrap_or_default();
 
+        // OBSERVED provenance: relations an observation reports for this contract's
+        // subject. This is what closes the `evidence → software relation` leg.
+        let observed_relations: Vec<String> = match (input.observations, contract_entity(contract))
+        {
+            (Some(set), Some(entity)) => {
+                let mut v: Vec<String> = set
+                    .for_entity(&entity)
+                    .into_iter()
+                    .filter_map(|o| match &o.subject {
+                        ObservationSubject::SoftwareRelation(r) => Some(r.render()),
+                        _ => None,
+                    })
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            }
+            _ => Vec::new(),
+        };
+
         contracts.push(WhyContract {
             contract: cid.clone(),
             participates_because: participates(contract),
@@ -199,20 +226,30 @@ pub fn explain(input: WhyInput<'_>) -> ArchitectureWhy {
             },
             evidence,
             software_units: units_for_contract(input.overlay, cid),
+            observed_relations,
         });
     }
 
     // Deterministic order: by contract id, which is how the audit already sorts.
     contracts.sort_by(|a, b| a.contract.cmp(&b.contract));
 
-    // The one leg the substrate cannot supply, always reported.
-    let unresolved_edges = vec![WhyUnresolved {
-        edge: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_EDGE.to_string(),
-        reason: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_REASON.to_string(),
-    }];
-    why_not.push(WhyNotReason::UnknownRelation {
-        edge: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_EDGE.to_string(),
-    });
+    // The `evidence → software relation` leg is unresolved **only** when nothing
+    // observed the subject. Since A4-0 the substrate can supply it, so reporting it
+    // as structurally impossible would now be false.
+    let any_observed = contracts.iter().any(|c| !c.observed_relations.is_empty());
+    let unresolved_edges = if any_observed {
+        Vec::new()
+    } else {
+        vec![WhyUnresolved {
+            edge: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_EDGE.to_string(),
+            reason: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_REASON.to_string(),
+        }]
+    };
+    if !any_observed {
+        why_not.push(WhyNotReason::UnknownRelation {
+            edge: ArchitectureWhy::EVIDENCE_TO_SOFTWARE_EDGE.to_string(),
+        });
+    }
     why_not.sort_by_key(|r| format!("{r:?}"));
     why_not.dedup();
 
@@ -251,6 +288,23 @@ fn unit_scoped(contract: &ArchitecturalContract) -> bool {
         contract.payload(),
         ContractPayload::SingleAuthority(_) | ContractPayload::UniqueOwner(_)
     )
+}
+
+/// The contract's subject as a relation endpoint, when it has one.
+///
+/// This is the join key between a contract and the observations that involve its
+/// subject. `BoundedCompatibility` and the other global kinds name no unit, so they
+/// have no endpoint and therefore no observation can cover them.
+fn contract_entity(contract: &ArchitecturalContract) -> Option<SoftwareEntityRef> {
+    match contract.payload() {
+        ContractPayload::SingleAuthority(c) => {
+            Some(SoftwareEntityRef::Unit(SoftwareUnitRef::new(c.as_str())))
+        }
+        ContractPayload::UniqueOwner(e) => {
+            Some(SoftwareEntityRef::Unit(SoftwareUnitRef::new(e.as_str())))
+        }
+        _ => None,
+    }
 }
 
 /// Why a contract participates in a finding.

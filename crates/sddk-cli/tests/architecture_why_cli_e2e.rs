@@ -449,8 +449,10 @@ fn why_leg_carries_assessment_intent_evidence() {
 
 #[test]
 fn why_reports_unresolved_evidence_leg() {
-    // REQ-A3S15-012: the substrate has no evidence→software edge. It is
-    // reported, and it is the same in every answer.
+    // REQ-A3S15-012, UPDATED by A4-0: the leg is unresolved **only** when no
+    // observation covers the subject. A CLI run cannot supply observations yet, so
+    // it reports the truthful gap — and it must no longer claim the edge is
+    // structurally impossible, because A4-0 provides it.
     let tmp = tempfile::tempdir().unwrap();
     write_decl(tmp.path(), DECL_TWO);
 
@@ -459,10 +461,13 @@ fn why_reports_unresolved_evidence_leg() {
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0]["edge"], "evidence→observes→software_relation");
     let reason = edges[0]["reason"].as_str().unwrap();
-    assert!(reason.contains("metadata"), "{reason}");
     assert!(
-        reason.contains("no evidence node"),
-        "the reason must name the substrate gap: {reason}"
+        reason.contains("no supplied observation") && reason.contains("Supply"),
+        "the reason must name the gap and how to close it: {reason}"
+    );
+    assert!(
+        !reason.contains("there is no evidence node"),
+        "A4-0 provides the edge; claiming otherwise would now be false: {reason}"
     );
 
     // It is also represented in the prepared WHY-NOT ADT.
