@@ -231,6 +231,7 @@ pub fn compose_receipt(
         id,
         basis,
         claim_results,
+        audited_contracts: inputs.audit.audited_contracts,
         evidence_refs,
         provider_basis: inputs.provider_basis.to_vec(),
         unknowns,

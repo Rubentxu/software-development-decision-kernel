@@ -31,6 +31,7 @@ pub mod spike_axs3;
 pub mod spike_axs4;
 pub mod spike_axs5;
 
+mod architecture_cmd;
 mod docs;
 mod explore_cmd;
 mod fork_cmd;
@@ -294,6 +295,11 @@ enum Command {
     Pack {
         #[command(subcommand)]
         command: PackCommand,
+    },
+    /// Architecture conformance: emit the architecture-conformance receipt.
+    Architecture {
+        #[command(subcommand)]
+        command: architecture_cmd::ArchitectureCommand,
     },
     /// Query, inspect, and rebuild the reactive knowledge graph.
     Graph {
@@ -820,6 +826,9 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
         Command::Knowledge { command } => knowledge_cmd::run_knowledge(command, environment),
         Command::Dev { command } => dev::run_dev(command, environment),
         Command::Pack { command } => pack_cmd::run_pack(command, environment),
+        Command::Architecture { command } => {
+            architecture_cmd::run_architecture(command, environment)
+        }
         Command::Graph { command } => graph_cmd::run_graph(command, environment),
         Command::Metrics { command } => metrics::run_metrics(command, environment),
         Command::Analytics { command } => analytics::run_analytics(command, environment),
@@ -1724,6 +1733,7 @@ fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
         Lint { .. } => "lint",
         Generate { .. } => "generate",
         Cycle { .. } => "cycle",
+        Architecture { .. } => "architecture",
         Ledger { .. } => "ledger",
         Capability { .. } => "capability",
         Git { .. } => "git",

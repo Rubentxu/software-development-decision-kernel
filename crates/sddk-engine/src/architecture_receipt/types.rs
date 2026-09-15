@@ -238,7 +238,13 @@ pub struct ArchitectureConformanceReceipt {
     /// Exact basis.
     pub basis: ReceiptBasis,
     /// Per-contract results (sorted by contract id).
+    ///
+    /// NOTE: these come from AC4's **change-scoped** delta, so a global run
+    /// with no change basis legitimately has none. `audited_contracts` reports
+    /// how many contracts the global pass actually inspected.
     pub claim_results: Vec<ClaimResult>,
+    /// How many contracts the global DebVerify pass inspected (AC5).
+    pub audited_contracts: usize,
     /// Evidence cited by the aggregated capabilities (sorted by locator).
     pub evidence_refs: Vec<EvidenceRef>,
     /// Provider contributions; empty in Base mode (AC-041-005).

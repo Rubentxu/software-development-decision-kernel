@@ -464,6 +464,15 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
         ),
         spec(
+            "architecture",
+            "Architecture conformance: emit the architecture-conformance receipt",
+            OutputFormatKind::Text,
+            vec![],
+            true,
+            None,
+            Some("arch-spec-A3-S10-architecture-cli-surface"),
+        ),
+        spec(
             "graph",
             "Query, inspect, and rebuild the reactive knowledge graph",
             OutputFormatKind::Text,
