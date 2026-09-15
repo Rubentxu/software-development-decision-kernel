@@ -407,6 +407,61 @@ fn anti_encroachment_no_a4_or_provider_imports() {
 }
 
 #[test]
+fn anti_encroachment_no_architecture_graph_reexport() {
+    // REQ-AC3-023: paradigm_profile MUST NOT depend on architecture_graph
+    // (no `use crate::architecture_graph`, no type reexport). The
+    // shared substrate is reached only via the canonical SemanticGraph
+    // projection, not by importing AC2's newtypes.
+    //
+    // Pin 1: source-grep — no `architecture_graph` import in any submodule.
+    let sources: &[(&str, &str)] = &[
+        ("mod.rs", include_str!("mod.rs")),
+        ("types.rs", include_str!("types.rs")),
+        ("overlay.rs", include_str!("overlay.rs")),
+        ("rebuild.rs", include_str!("rebuild.rs")),
+    ];
+    let mut offenders: Vec<(String, String)> = Vec::new();
+    for (file, src) in sources {
+        for (idx, line) in src.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("use ") && trimmed.contains("architecture_graph") {
+                offenders.push((file.to_string(), format!("line {}: {}", idx + 1, trimmed)));
+            }
+            if trimmed.starts_with("pub use ") && trimmed.contains("architecture_graph") {
+                offenders.push((
+                    file.to_string(),
+                    format!("reexport line {}: {}", idx + 1, trimmed),
+                ));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "paradigm_profile must not reexport or import architecture_graph: {:?}",
+        offenders
+    );
+
+    // Pin 2: the local newtypes are NOT the AC2 newtypes (distinct types).
+    // If someone later aliases ProjectIntentRef = architecture_graph::..., this
+    // type-name check will fail because the path contains "paradigm_profile".
+    let local_pi = std::any::type_name::<ProjectIntentRef>();
+    assert!(
+        local_pi.contains("paradigm_profile"),
+        "ProjectIntentRef must be the local AC3 newtype, got {local_pi}"
+    );
+    let local_bc = std::any::type_name::<BoundedContextRef>();
+    assert!(
+        local_bc.contains("paradigm_profile"),
+        "BoundedContextRef must be the local AC3 newtype, got {local_bc}"
+    );
+    let local_su = std::any::type_name::<SoftwareUnitRef>();
+    assert!(
+        local_su.contains("paradigm_profile"),
+        "SoftwareUnitRef must be the local AC3 newtype, got {local_su}"
+    );
+}
+
+#[test]
 fn anti_encroachment_no_authority_or_capability_side_effects() {
     // Compile-time pin: module must not import authority_engine / capability /
     // effective_instructions. The previous test catches it by source-grep;
