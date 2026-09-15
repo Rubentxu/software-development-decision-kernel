@@ -3,7 +3,7 @@ id: INC-A3-S1-C4-LINE-SHIFT
 title: "C4 legacy-authority allowlist uses raw line numbers; any insertion in lib.rs invalidates it"
 status: open
 severity: medium
-priority: P3
+priority: P2
 fingerprint: "c4_allowlist_line_shift_v1"
 fingerprint_aliases: ["c4_allowlist_line_shift_v1"]
 cluster_id: CL-09
@@ -36,6 +36,21 @@ allowlist still contained the old numbers, so the doctor falsely flagged
 the three calls as "new legacy authority dependencies" and
 `dev_doctor_c4_authority_single_admission_green_on_current_workspace`
 failed.
+
+## Instance log
+
+| # | Cycle | Insertion | Sites | Priority |
+|---|-------|-----------|-------|----------|
+| 1 | `a3-1-kmt-foundation` | `pub mod knowledge;` | 1165/1292/1352 → 1166/1293/1353 | P3 |
+| 2 | `a3-2-architectural-contract` | `pub mod architectural_contract;` | → 1167/1294/1354 | P3 |
+| 3 | `a3-3-architecture-graph-overlay` | `pub mod architecture_graph;` | → 1168/1295/1355 | P3 |
+| 4 | `a3-4-paradigm-lens-profile` | `pub mod paradigm_profile;` | → 1169/1296/1356 | P3 |
+| 5 | `a3-5-ac4-verify-contracts` | `pub mod architecture_conformance;` | → 1170/1297/1357 | **P2** |
+
+**Threshold reached at instance 5.** Every subsequent `pub mod` insertion in
+`crates/sddk-engine/src/lib.rs` breaks the allowlist. Priority raised P3 → P2
+(later-cycle planning commitment) and the content-based refactor is scheduled
+as the immediate follow-up cycle.
 
 ## Mitigation applied in this cycle
 
