@@ -59,6 +59,29 @@ scoped follow-up; the vector is designed to be renderable without a score.
 (Q5) All collections sorted (`BTreeMap` / sorted `Vec`); two evaluations over
 identical inputs yield byte-identical `plan_digest`.
 
+## Implementation refinements (applied during Build)
+
+Three refinements were made while implementing, because the AC1 substrate
+constrained the shape. They are recorded here so the spec matches the code.
+
+- **R-A (REQ-AC4-005)** — `AffectedContract.contract_kind` is
+  `Option<ContractKind>`. `None` means the contract is reachable from the graph
+  but no contract object was supplied; its status is `NotEvaluated`. A non-
+  optional kind would have forced a fabricated kind.
+
+- **R-B (REQ-AC4-019, new REQ-AC4-030)** — `Contradicted` is carried by a new
+  delta-level field `ArchitectureConformanceDelta.contradictions: Vec<ContractId>`
+  rather than by an AC1 claim. Reason: AC1's `ContractEvaluation::evaluate`
+  deliberately never produces `Contradicted` ("A4 Verify is responsible for
+  `Contradicted`"). AC4 therefore accepts `contradiction_witnesses` as an input
+  (the seam the AC6 mutation probes will drive) and records them without ever
+  constructing a claim itself — preserving REQ-AC4-028. `claims` holds only
+  `evaluate()` outputs (`Verified` / `Unknown` / `Stale`).
+
+- **R-C (REQ-AC4-013)** — `compute_conformance_delta` takes the basis as a
+  single `ConformanceInputs { contracts, evidence, contradiction_witnesses }`
+  value instead of three positional arguments.
+
 ## Scope (must)
 
 - Declare `DeltaContractStatus` as a closed enum of 5 variants mirroring
