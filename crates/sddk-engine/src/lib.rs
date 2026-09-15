@@ -22,6 +22,7 @@ pub mod architecture_conformance;
 pub mod architecture_debverify;
 pub mod architecture_graph;
 pub mod architecture_mutation;
+pub mod architecture_receipt;
 pub mod authority;
 pub mod authority_engine;
 pub mod build_work_graph;
