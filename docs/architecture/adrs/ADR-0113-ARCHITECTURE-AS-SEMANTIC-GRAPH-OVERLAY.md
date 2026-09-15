@@ -1,11 +1,17 @@
 ---
 id: ADR-0113-ARCHITECTURE-AS-SEMANTIC-GRAPH-OVERLAY
-status: proposed
+status: accepted
 supersedes_history: false
 proposed_at: 2026-09-14
-accepted_at: null
-accepted_by_cycle: null
-implementation_evidence: []
+accepted_at: 2026-09-15
+accepted_by_cycle: p-63676b11dc0ef88f/a3-3-architecture-graph-overlay
+implementation_evidence:
+  - "crates/sddk-engine/src/architecture_graph/mod.rs (ArchitectureGraphOverlay entry; state-class doc)"
+  - "crates/sddk-engine/src/architecture_graph/types.rs (SoftwareUnit, UnitKind, DecisionRef, SpecRef, TestRef, UatRef, CompatibilityPathRef, ArchitectureOverlayNodeKind, ArchitectureOverlayRelationKind)"
+  - "crates/sddk-engine/src/architecture_graph/overlay.rs (ArchitectureGraphOverlay::add_unit/add_claim/add_relation/add_contract_metadata/find_*_contracted_by/find_contracts_for_unit/attach_claim_to_unit/traverse_finding_to_software/traverse_decision_to_software; Query ADT with 3 closed variants)"
+  - "crates/sddk-engine/src/architecture_graph/rebuild.rs (sorted rebuild for determinism; REQ-AC2-006)"
+  - "crates/sddk-engine/src/architecture_graph/tests.rs (16 acceptance + 4 anti-encroachment + bonus type pins)"
+  - "docs/architecture/specs/arch-spec-A3-S3-architecture-semantic-graph-overlay.md (cycle-bounded spec, 22 REQs)"
 superseded_by: []
 related_adrs:
   - "ADR-0098-ONE-SEMANTIC-GRAPH"
