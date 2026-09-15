@@ -70,6 +70,7 @@ pub mod operator;
 pub mod orchestration_synthesis;
 pub mod pack_agnosticity;
 pub mod pack_registry;
+pub mod paradigm_profile;
 mod paths;
 pub mod production_hardening;
 pub mod projector_registry;

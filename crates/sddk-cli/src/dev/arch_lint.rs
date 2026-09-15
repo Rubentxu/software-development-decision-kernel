@@ -157,14 +157,15 @@ const C4_LEGACY_ALLOWLIST_M1: &[&str] = &[
     "crates/sddk-cli/src/dev/install.rs:38",
     // Engine — internal compat mirror (defense-in-depth behind the runner
     // pre-gate; removal belongs to M9).
-    // A3-S3 (2026-09-15): line numbers shifted by +1 after alphabetical
-    // insertion of `pub mod architecture_graph;` in lib.rs (between
-    // architectural_contract and authority). Code at the three sites is
-    // unchanged. See INC-A3-S1-C4-LINE-SHIFT for the underlying fragility
-    // (line-number brittleness in the allowlist) and follow-up.
-    "crates/sddk-engine/src/lib.rs:1168",
-    "crates/sddk-engine/src/lib.rs:1295",
-    "crates/sddk-engine/src/lib.rs:1355",
+    // A3-S4 (2026-09-15): line numbers shifted by +1 after alphabetical
+    // insertion of `pub mod paradigm_profile;` in lib.rs (between
+    // `mod paths;` and `pub mod production_hardening;`). Code at the
+    // three sites is unchanged. See INC-A3-S1-C4-LINE-SHIFT for the
+    // underlying fragility (line-number brittleness in the allowlist)
+    // and follow-up.
+    "crates/sddk-engine/src/lib.rs:1169",
+    "crates/sddk-engine/src/lib.rs:1296",
+    "crates/sddk-engine/src/lib.rs:1356",
     "crates/sddk-engine/src/cycle_supersede.rs:98",
     "crates/sddk-engine/src/cycle_pause.rs:82",
     "crates/sddk-engine/src/cycle_pause.rs:257",
