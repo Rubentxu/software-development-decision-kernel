@@ -17,6 +17,7 @@ mod adoption;
 pub mod agent_contribution_envelope;
 pub mod agent_host;
 pub mod agent_role_contract;
+pub mod architectural_contract;
 pub mod authority;
 pub mod authority_engine;
 pub mod build_work_graph;

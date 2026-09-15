@@ -9,7 +9,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// The 18 core node families listed in arch-spec-005.
+/// The 19 core node families listed in arch-spec-005. Cycle A3-S2
+/// (`p-63676b11dc0ef88f/a3-2-architectural-contract`, AC1) added the
+/// `ArchitecturalContract` variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoreNodeKind {
     Project,
@@ -30,10 +32,13 @@ pub enum CoreNodeKind {
     Synthesis,
     Dissent,
     Artifact,
+    /// A typed architectural contract (A3-S2 / AC1).
+    /// Implemented in `architectural_contract::ArchitecturalContract`.
+    ArchitecturalContract,
 }
 
 impl CoreNodeKind {
-    pub const ALL: [CoreNodeKind; 18] = [
+    pub const ALL: [CoreNodeKind; 19] = [
         CoreNodeKind::Project,
         CoreNodeKind::Goal,
         CoreNodeKind::WorkItem,
@@ -52,6 +57,7 @@ impl CoreNodeKind {
         CoreNodeKind::Synthesis,
         CoreNodeKind::Dissent,
         CoreNodeKind::Artifact,
+        CoreNodeKind::ArchitecturalContract,
     ];
 
     pub fn domain_tag(&self) -> &'static str {
@@ -74,16 +80,15 @@ impl CoreNodeKind {
             CoreNodeKind::Synthesis => "synthesis",
             CoreNodeKind::Dissent => "dissent",
             CoreNodeKind::Artifact => "artifact",
+            CoreNodeKind::ArchitecturalContract => "architectural_contract",
         }
     }
 }
 
-/// The 14 core relation kinds listed in arch-spec-005 plus the two
-/// evidence-model relations added in v1.168.35: `Verifies` (an Evidence
-/// confirms a Decision, Assumption, or Contribution) and `ObservedFor`
-/// (an Evidence was collected specifically for a Risk, Goal, or Run).
-/// Per ADR-0100, these replace the legacy `PlanningEvidenceKind` enum
-/// (which was a closed-set discriminator instead of a typed graph edge).
+/// The 16 core relation kinds listed in arch-spec-005. Cycle A3-S2
+/// (`p-63676b11dc0ef88f/a3-2-architectural-contract`, AC1) added the
+/// `ContractedBy` and `SpecifiedBy` relations; v1.168.35 added `Verifies`
+/// and `ObservedFor` per ADR-0100.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoreRelationKind {
     DependsOn,
@@ -105,10 +110,18 @@ pub enum CoreRelationKind {
     /// to inform or guard the target (e.g. a regression run observed a
     /// risk mitigation).
     ObservedFor,
+    /// A node → ArchitecturalContract. The contract constrains the node
+    /// (e.g. a Component is constrained by a SingleAuthority contract).
+    /// Added in cycle A3-S2 (AC1).
+    ContractedBy,
+    /// A node → ArchitecturalContract. The contract specifies the node's
+    /// intended design (e.g. an Entity is specified by a UniqueOwner contract).
+    /// Added in cycle A3-S2 (AC1).
+    SpecifiedBy,
 }
 
 impl CoreRelationKind {
-    pub const ALL: [CoreRelationKind; 14] = [
+    pub const ALL: [CoreRelationKind; 16] = [
         CoreRelationKind::DependsOn,
         CoreRelationKind::CausedBy,
         CoreRelationKind::Supports,
@@ -123,6 +136,8 @@ impl CoreRelationKind {
         CoreRelationKind::Affects,
         CoreRelationKind::Verifies,
         CoreRelationKind::ObservedFor,
+        CoreRelationKind::ContractedBy,
+        CoreRelationKind::SpecifiedBy,
     ];
 
     pub fn domain_tag(&self) -> &'static str {
@@ -141,6 +156,8 @@ impl CoreRelationKind {
             CoreRelationKind::Affects => "affects",
             CoreRelationKind::Verifies => "verifies",
             CoreRelationKind::ObservedFor => "observed_for",
+            CoreRelationKind::ContractedBy => "contracted_by",
+            CoreRelationKind::SpecifiedBy => "specified_by",
         }
     }
 }
@@ -359,15 +376,27 @@ mod tests {
     }
 
     #[test]
-    fn core_relation_kinds_have_14_entries_after_evidence_relations() {
+    fn core_relation_kinds_have_16_entries_after_ac1_relations() {
         // Pin the count so a future addition must update both this test
-        // AND the doc comment line 81. Without this pin, adding a relation
-        // silently is too easy.
+        // AND the doc comment line 88. Without this pin, adding a relation
+        // silently is too easy. Cycle A3-S2 (AC1) added ContractedBy +
+        // SpecifiedBy, taking the count from 14 to 16.
         assert_eq!(
             CoreRelationKind::ALL.len(),
-            14,
-            "expected 14 core relation kinds (12 original + Verifies + ObservedFor)"
+            16,
+            "expected 16 core relation kinds (12 original + Verifies + ObservedFor + ContractedBy + SpecifiedBy)"
         );
+    }
+
+    #[test]
+    fn core_relation_kinds_had_14_entries_before_ac1() {
+        // Historical anchor: before A3-S2 added `ContractedBy` and
+        // `SpecifiedBy`, the count was 14 (12 original + Verifies +
+        // ObservedFor from v1.168.35). This test exists to preserve the
+        // historical baseline so future readers can reconstruct the
+        // evolution path without grep archaeology.
+        const PRE_AC1_RELATION_COUNT: usize = 14;
+        assert_eq!(PRE_AC1_RELATION_COUNT, 14);
     }
 
     #[test]

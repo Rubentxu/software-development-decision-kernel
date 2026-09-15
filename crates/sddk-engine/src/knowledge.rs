@@ -116,7 +116,7 @@ impl BasisHash {
     }
 
     /// Internal constructor used only by canonical derivation functions.
-    fn from_digest(digest: Sha256) -> Self {
+    pub(crate) fn from_digest(digest: Sha256) -> Self {
         let bytes = digest.finalize();
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
@@ -1109,13 +1109,29 @@ mod tests {
     }
 
     /// REQ-A3S1-041: no new `CoreNodeKind` / `CoreRelationKind` variants
-    /// are introduced by S1. We verify this by counting the `ALL` array
-    /// entries in `semantic_kind.rs`.
+    /// were introduced by S1 (historical anchor preserved verbatim).
+    ///
+    /// Cycle A3-S2 (AC1) legitimately added `CoreNodeKind::ArchitecturalContract`
+    /// (18 → 19) and `CoreRelationKind::{ContractedBy, SpecifiedBy}` (14 → 16).
+    /// The post-A3-S2 baseline is pinned by the companion test
+    /// `s2_post_ac1_corenodekind_baseline` below. This S1 anchor test
+    /// continues to run as a *historical* proof: pre-A3-S2, the counts
+    /// were 18/14. Any future change must keep both pins consistent.
+    ///
+    /// `#[ignore]` because the assert fires by design after A3-S2; it is
+    /// preserved as historical evidence, not as a live gate. The post-A3-S2
+    /// pin is `s2_post_ac1_corenodekind_baseline` below.
     #[test]
+    #[ignore = "historical anchor only — A3-S2 grew the enums by design"]
     fn s1_does_not_introduce_new_corenodekind_variants() {
         // Pre-S1 baseline (taken from `semantic_kind.rs` lines 36 and 111).
-        // CoreNodeKind::ALL has 18 entries.
-        // CoreRelationKind::ALL has 14 entries (after evidence-relations cycle).
+        // CoreNodeKind::ALL had 18 entries pre-A3-S2.
+        // CoreRelationKind::ALL had 14 entries pre-A3-S2 (after evidence-relations cycle).
+        //
+        // NOTE: After A3-S2 (AC1), the live counts are 19/16. This S1 test
+        // is preserved as a historical anchor and currently fails its
+        // assert by design — its message documents the expected drift.
+        // Re-evaluate if A3-S3+ regresses the S1 invariant.
         const CORE_NODE_KIND_ALL_LEN: usize = 18;
         const CORE_RELATION_KIND_ALL_LEN: usize = 14;
 
@@ -1129,13 +1145,41 @@ mod tests {
         assert_eq!(
             node_count,
             Some(CORE_NODE_KIND_ALL_LEN),
-            "CoreNodeKind::ALL length drifted from pre-S1 baseline (was {})",
+            "CoreNodeKind::ALL drifted from pre-S1 baseline (was {}) — if A3-S2 (or later) intentionally grew the enum, also update this anchor",
             CORE_NODE_KIND_ALL_LEN
         );
         assert_eq!(
             rel_count,
             Some(CORE_RELATION_KIND_ALL_LEN),
-            "CoreRelationKind::ALL length drifted from pre-S1 baseline (was {})",
+            "CoreRelationKind::ALL drifted from pre-S1 baseline (was {}) — if A3-S2 (or later) intentionally grew the enum, also update this anchor",
+            CORE_RELATION_KIND_ALL_LEN
+        );
+    }
+
+    /// REQ-A3S2 anti-encroachment (AENC-04): after A3-S2 (AC1), the new
+    /// baseline is 19 CoreNodeKind variants and 16 CoreRelationKind variants.
+    /// This test pins that live baseline so any future contributor adding a
+    /// variant must update this test alongside the enum + array + match.
+    #[test]
+    fn s2_post_ac1_corenodekind_baseline() {
+        const CORE_NODE_KIND_ALL_LEN: usize = 19;
+        const CORE_RELATION_KIND_ALL_LEN: usize = 16;
+
+        let semantic_kind_source = include_str!("semantic_kind.rs");
+
+        let node_count = extract_const_array_len(semantic_kind_source, "CoreNodeKind");
+        let rel_count = extract_const_array_len(semantic_kind_source, "CoreRelationKind");
+
+        assert_eq!(
+            node_count,
+            Some(CORE_NODE_KIND_ALL_LEN),
+            "CoreNodeKind::ALL length drifted from post-AC1 baseline (was {})",
+            CORE_NODE_KIND_ALL_LEN
+        );
+        assert_eq!(
+            rel_count,
+            Some(CORE_RELATION_KIND_ALL_LEN),
+            "CoreRelationKind::ALL length drifted from post-AC1 baseline (was {})",
             CORE_RELATION_KIND_ALL_LEN
         );
     }
