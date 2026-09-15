@@ -66,6 +66,7 @@ fn debverify_is_global_while_conformance_delta_is_change_scoped() {
             contracts: &contracts,
             evidence: &evidence,
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[], // no changed units
@@ -124,6 +125,7 @@ fn debverify_audit_is_global_and_delta_independent() {
             contracts: &contracts,
             evidence: &ContractEvidence::new(),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[SoftwareUnitRef::new("unit:comp:x")],

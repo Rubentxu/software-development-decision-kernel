@@ -50,8 +50,12 @@ architecture`; `why architecture`; `plan architecture`; the `paradigms` and
 ## Requirements (REQ-A3S13-NNN)
 
 - **REQ-A3S13-001** — `architecture receipt --contract <id>` scopes the delta to
-  the contracts whose id matches, independently of `--changed`. Pin: engine
-  `acceptance_filter_narrows_to_one_contract`, e2e
+  the contracts whose id matches, independently of `--changed`. With no
+  `--changed`, the scope units are the named contract's subject unit, so the
+  run *evaluates* that contract instead of returning an empty (and therefore
+  passing) delta. A filter can only narrow, never widen. Pin: engine
+  `acceptance_filter_narrows_to_one_contract`,
+  `acceptance_filter_never_widens_the_scope`, e2e
   `architecture_contract_filter_scopes`.
 - **REQ-A3S13-002** — Naming a contract that is not declared fails closed:
   exit 2, no receipt, and the error names the id. Pin: e2e
@@ -77,6 +81,25 @@ architecture`; `why architecture`; `plan architecture`; the `paradigms` and
 - **REQ-A3S13-009** — A receipt produced with no new flag is unchanged from
   v1.169.34. Pin: the A3-S12 e2e suite passing unmodified, plus
   `architecture_global_run_unchanged`.
+- **REQ-A3S13-010** — The receipt id identifies the receipt, not just the
+  declaration: the scope (change basis and contract filter) is part of the
+  derivation. Pin: engine `acceptance_scope_is_part_of_the_receipt_id`.
+  *Found in build: the `v1` derivation hashed only basis + verdict, so a global
+  run, a `--changed` run and a `--contract` run over one declaration shared an
+  id while reporting different scopes and different verdicts. The id is the
+  receipt's address (`--out`), so it has to distinguish them.*
+- **REQ-A3S13-011** — `--contract` naming a contract with no evaluable subject
+  unit (any kind other than `single_authority` / `unique_owner`) is a usage
+  error, not an empty scope. Pin: e2e
+  `architecture_contract_filter_rejects_unevaluable_kinds`. *Found in build:
+  "verify X" for a global-kind contract is an unanswerable question, and
+  answering it with zero rows reads as a pass.*
+- **REQ-A3S13-012** — The renderer's scope note names the scope actually asked
+  for (`change-scoped`, `contract-scoped`, `change-scoped and filtered`, or
+  `empty without --changed or --contract`). Pin: e2e
+  `architecture_contract_filter_text_names_it`. *Found in build: the note was
+  hardcoded to "change-scoped; empty without --changed", which misdescribes a
+  filtered run with no diff.*
 
 ## Design sketch
 
@@ -97,7 +120,7 @@ the compiler surfaces every construction site.
 alongside `change_basis`, and the renderer prints it next to `change_basis:` so
 the two scope statements read together.
 
-## Acceptance tests (planned, 9)
+## Acceptance tests (shipped, 12)
 
 Engine (`architecture_conformance/tests.rs` or `architecture_receipt/tests.rs`):
 1. `acceptance_filter_narrows_to_one_contract`
@@ -112,3 +135,4 @@ CLI e2e (`tests/architecture_verify_cli_e2e.rs`):
 8. `architecture_out_writes_receipt`
 9. `architecture_out_missing_parent_fails_closed`
 10. `read_surfaces_reject_change_flags`
+11. `architecture_contract_filter_rejects_unevaluable_kinds` (REQ-011)

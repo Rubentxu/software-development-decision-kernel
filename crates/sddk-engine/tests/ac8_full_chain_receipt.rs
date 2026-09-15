@@ -136,6 +136,7 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
             contracts: &contracts,
             evidence: &evidence,
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[],
@@ -166,6 +167,7 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
             waivers: &[],
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );
@@ -204,6 +206,7 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
             waivers: &[],
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );
@@ -221,6 +224,7 @@ fn ac8_waivers_turn_blocked_into_pass_with_waivers() {
             contracts: &contracts,
             evidence: &ContractEvidence::new(),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[],
@@ -254,6 +258,7 @@ fn ac8_waivers_turn_blocked_into_pass_with_waivers() {
             waivers: &waivers,
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );

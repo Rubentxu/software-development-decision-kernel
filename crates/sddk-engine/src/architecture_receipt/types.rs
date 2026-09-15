@@ -201,10 +201,19 @@ pub struct ReceiptId(pub String);
 
 impl ReceiptId {
     /// Domain prefix for the derivation.
-    pub const DOMAIN_PREFIX: &'static str = "sddk.architecture_receipt.id.v1|";
+    ///
+    /// `v2` since A3-S13: `v1` hashed the basis and the verdict only, so a
+    /// global run, a `--changed` run and a `--contract` run over the same
+    /// declaration produced the *same* id while reporting different scopes and
+    /// different verdicts. The id is the receipt's address (`--out`), so it has
+    /// to identify the receipt, not just the declaration it was taken against.
+    pub const DOMAIN_PREFIX: &'static str = "sddk.architecture_receipt.id.v2|";
 
-    /// Derive the id from the basis + verdict.
-    pub fn derive(basis: &ReceiptBasis, verdict: ReceiptVerdict) -> Self {
+    /// Derive the id from the basis, the verdict and the scope.
+    ///
+    /// The scope is hashed because it is what the receipt *is*: two runs over
+    /// one declaration answer different questions and must not share an id.
+    pub fn derive(basis: &ReceiptBasis, verdict: ReceiptVerdict, scope: &ReceiptScope<'_>) -> Self {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
         h.update(Self::DOMAIN_PREFIX.as_bytes());
@@ -219,6 +228,23 @@ impl ReceiptId {
         h.update(basis.knowledge_basis.as_bytes());
         h.update(b"|");
         h.update(verdict.canonical_tag().as_bytes());
+        h.update(b"|");
+        match scope.change_basis {
+            Some(b) => {
+                h.update(b.base.as_bytes());
+                h.update(b"|");
+                for unit in &b.changed_units {
+                    h.update(unit.as_bytes());
+                    h.update(b",");
+                }
+            }
+            None => h.update(b"(no change basis)"),
+        }
+        h.update(b"|");
+        match scope.contract_filter {
+            Some(id) => h.update(id.as_bytes()),
+            None => h.update(b"(no contract filter)"),
+        }
         let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
         Self(hex)
     }
@@ -238,6 +264,22 @@ impl std::fmt::Display for ReceiptId {
 // ─────────────────────────────────────────────────────────────────────────────
 // ArchitectureConformanceReceipt
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// The named Base-mode architecture-conformance receipt.
+///
+/// A **PROJECTION** (ADR-0095): derived from the outputs of AC2/AC4/AC5/AC6/AC7
+/// What a receipt was asked about, as opposed to what it was taken against.
+///
+/// Both fields are optional and both are hashed into the receipt id: a global
+/// run, a `--changed` run and a `--contract` run over one declaration are three
+/// different receipts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReceiptScope<'a> {
+    /// The change basis, when the run was change-scoped (AC8 + AC4).
+    pub change_basis: Option<&'a ChangeBasis>,
+    /// The contract the caller asked to verify, when one was requested.
+    pub contract_filter: Option<&'a str>,
+}
 
 /// The named Base-mode architecture-conformance receipt.
 ///
@@ -281,6 +323,12 @@ pub struct ArchitectureConformanceReceipt {
     pub unresolved: Vec<UnresolvedFinding>,
     /// The change basis, when the run was change-scoped (AC8 + AC4).
     pub change_basis: Option<ChangeBasis>,
+    /// The contract the caller asked to verify, when one was requested.
+    ///
+    /// Recorded so that an empty scope is always attributable to a stated
+    /// scope. Without it, `--contract c-x` on an untouched unit and "the diff
+    /// touched nothing" produce receipts that read identically.
+    pub contract_filter: Option<String>,
     /// Waivers supplied by the caller (never invented).
     pub waivers: Vec<String>,
     /// The verdict.

@@ -270,6 +270,7 @@ fn acceptance_no_fabricated_verified_without_evidence() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -366,6 +367,7 @@ fn acceptance_triggering_units_sorted_dedup() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u1.clone(), u2.clone(), u1.clone()], // u1 repeated
@@ -397,6 +399,7 @@ fn acceptance_affected_is_sorted() {
             contracts: &[c_b.clone(), c_a.clone()],
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -425,6 +428,7 @@ fn acceptance_one_claim_per_evaluated_contract() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -460,6 +464,7 @@ fn acceptance_unknowns_contradictions_stale_sorted() {
             contracts: &[c1, c2, c3],
             evidence: &ev,
             contradiction_witnesses: &[cid("c2")],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -489,6 +494,7 @@ fn acceptance_probe_plan_dedup() {
             contracts: std::slice::from_ref(&c1),
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -516,6 +522,7 @@ fn acceptance_plan_digest_deterministic() {
             contracts: std::slice::from_ref(&contract),
             evidence: &ev,
             contradiction_witnesses: &w,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&u),
@@ -527,6 +534,7 @@ fn acceptance_plan_digest_deterministic() {
             contracts: std::slice::from_ref(&contract),
             evidence: &ev,
             contradiction_witnesses: &w,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&u),
@@ -556,6 +564,7 @@ fn acceptance_compute_is_deterministic() {
                 contracts: &[c1.clone(), c2.clone()],
                 evidence: &ev,
                 contradiction_witnesses: &w,
+                contract_filter: None,
             },
             EventTime(T0 + 2),
             &[u1.clone(), u2.clone()],
@@ -581,6 +590,7 @@ fn acceptance_contract_set_digest_stable_across_evidence() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&u),
@@ -592,6 +602,7 @@ fn acceptance_contract_set_digest_stable_across_evidence() {
             contracts: std::slice::from_ref(&contract),
             evidence: &with_ev,
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&u),
@@ -625,6 +636,7 @@ fn acceptance_graph_digest_matches_overlay() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -649,6 +661,7 @@ fn acceptance_affected_resolved_from_overlay() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -678,6 +691,7 @@ fn acceptance_only_changed_units_enter_scope() {
             contracts: &[c1, c2],
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u1], // only u1 changed
@@ -703,6 +717,7 @@ fn acceptance_missing_contract_object_is_not_evaluated() {
             contracts: &[], // object not supplied
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -730,6 +745,7 @@ fn acceptance_empty_evidence_is_unknown() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -754,6 +770,7 @@ fn acceptance_valid_evidence_is_verified() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -779,6 +796,7 @@ fn acceptance_contradicted_listed() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &[cid("c1")],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -843,6 +861,7 @@ fn acceptance_ac7_ac11_dimensions_not_evaluated() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -876,6 +895,7 @@ fn acceptance_vector_maps_contract_kinds_to_dimensions() {
             contracts: &[c1, c2, c3, c4, c5],
             evidence: &ev,
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -901,6 +921,7 @@ fn acceptance_stale_compatibility_is_partial() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 100), // past the window
         &[u],
@@ -966,6 +987,7 @@ fn anti_encroachment_read_only_overlay() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &[cid("c1")],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -1012,6 +1034,7 @@ fn anti_encroachment_no_claim_construction() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -1079,6 +1102,7 @@ fn bonus_empty_changed_units_yields_empty_delta() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &[cid("c1")],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[], // no changed units
@@ -1104,6 +1128,7 @@ fn bonus_witness_outside_scope_is_dropped() {
             contracts: std::slice::from_ref(&contract),
             evidence: &empty_evidence(),
             contradiction_witnesses: &[cid("c-other")],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -1127,6 +1152,7 @@ fn bonus_statuses_cover_affected() {
             contracts: &[c1],
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -1150,6 +1176,7 @@ fn bonus_projection_only_appears_in_delta_but_not_vector() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence_for("c1", "static", "obs:1"),
             contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         &[u],
@@ -1176,4 +1203,85 @@ fn bonus_kind_tag_distinct_for_extension() {
     ));
     assert_ne!(a, b);
     assert!(b.starts_with("extension:"));
+}
+
+#[test]
+fn acceptance_filter_narrows_to_one_contract() {
+    // REQ-A3S13-001: `--contract` narrows the delta to exactly that contract.
+    let c1 = single_authority("c1");
+    let c2 = single_authority("c2");
+    let u1 = unit("u1");
+    let u2 = unit("u2");
+    let mut g = ArchitectureGraphOverlay::new();
+    wire(&mut g, &c1, &u1, ClaimOutcome::Verified);
+    wire(&mut g, &c2, &u2, ClaimOutcome::Verified);
+    let contracts = [c1.clone(), c2.clone()];
+    let scope = [u1.clone(), u2.clone()];
+
+    let unfiltered = compute_conformance_delta(
+        &g,
+        ConformanceInputs {
+            contracts: &contracts,
+            evidence: &empty_evidence(),
+            contradiction_witnesses: &no_witnesses(),
+            contract_filter: None,
+        },
+        EventTime(T0 + 2),
+        &scope,
+    )
+    .expect("compute");
+    assert_eq!(unfiltered.affected.len(), 2);
+
+    let only = cid("c2");
+    let filtered = compute_conformance_delta(
+        &g,
+        ConformanceInputs {
+            contracts: &contracts,
+            evidence: &empty_evidence(),
+            contradiction_witnesses: &no_witnesses(),
+            contract_filter: Some(&only),
+        },
+        EventTime(T0 + 2),
+        &scope,
+    )
+    .expect("compute");
+    assert_eq!(filtered.affected.len(), 1);
+    assert!(filtered.affected.contains_key(&only));
+    assert!(!filtered.affected.contains_key(&cid("c1")));
+    // The digests still describe the whole graph: the filter scopes the
+    // *question*, not the substrate the answer is taken against.
+    assert_eq!(filtered.contract_set_digest, unfiltered.contract_set_digest);
+}
+
+#[test]
+fn acceptance_filter_never_widens_the_scope() {
+    // REQ-A3S13-001 (contrapositive): a filter can only remove. Naming a
+    // contract the scope never reached yields nothing, even though the contract
+    // is declared and fully wired.
+    let c1 = single_authority("c1");
+    let c2 = single_authority("c2");
+    let u1 = unit("u1");
+    let u2 = unit("u2");
+    let mut g = ArchitectureGraphOverlay::new();
+    wire(&mut g, &c1, &u1, ClaimOutcome::Verified);
+    wire(&mut g, &c2, &u2, ClaimOutcome::Verified);
+    let contracts = [c1.clone(), c2.clone()];
+
+    let only = cid("c2");
+    let delta = compute_conformance_delta(
+        &g,
+        ConformanceInputs {
+            contracts: &contracts,
+            evidence: &empty_evidence(),
+            contradiction_witnesses: &no_witnesses(),
+            contract_filter: Some(&only),
+        },
+        EventTime(T0 + 2),
+        std::slice::from_ref(&u1),
+    )
+    .expect("compute");
+    assert!(
+        delta.affected.is_empty(),
+        "the filter must not pull c2 into a scope that never reached u2"
+    );
 }

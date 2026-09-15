@@ -433,6 +433,11 @@ pub struct ConformanceInputs<'a> {
     /// This is the seam the AC6 mutation probes will drive. AC4 does not
     /// execute arbitrary probes; it records the witnesses it is given.
     pub contradiction_witnesses: &'a [ContractId],
+    /// When set, only this contract may enter the delta's scope.
+    ///
+    /// A *filter*, not a widened scope: it can only narrow. `--contract` on the
+    /// CLI sets it; leaving it `None` reproduces pre-A3-S13 behaviour exactly.
+    pub contract_filter: Option<&'a ContractId>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

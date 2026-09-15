@@ -61,6 +61,6 @@ pub use compose::{ReceiptInputs, compose_receipt};
 pub use self_audit::evaluate_class_coverage;
 pub use types::{
     ArchitectureConformanceReceipt, ChangeBasis, ClaimResult, ClassCoverage, CompatibilityEntry,
-    HistoricalClass, LensResult, MutationResult, ReceiptBasis, ReceiptId, ReceiptVerdict,
-    UnresolvedFinding,
+    HistoricalClass, LensResult, MutationResult, ReceiptBasis, ReceiptId, ReceiptScope,
+    ReceiptVerdict, UnresolvedFinding,
 };

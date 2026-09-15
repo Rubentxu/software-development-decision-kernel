@@ -12,7 +12,8 @@ use clap::{Args, Subcommand};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
 use sddk_engine::architectural_contract::{
-    ArchitecturalContract, ContractEvaluation, ContractPayload, DecisionRef, EvaluatorRef, SpecRef,
+    ArchitecturalContract, ContractEvaluation, ContractId, ContractPayload, DecisionRef,
+    EvaluatorRef, SpecRef,
 };
 use sddk_engine::architecture_conformance::{
     ConformanceInputs, ContractEvidence, compute_conformance_delta,
@@ -78,12 +79,6 @@ pub(crate) struct ReadArgs {
     /// pass it explicitly for a reproducible run.
     #[arg(long)]
     pub(crate) now_ms: Option<i64>,
-    /// Scope the receipt to units touched since `--base` (git diff).
-    #[arg(long)]
-    pub(crate) changed: bool,
-    /// Revision the change basis is taken against (default: origin/main, then HEAD~1).
-    #[arg(long)]
-    pub(crate) base: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -128,6 +123,13 @@ pub(crate) struct ArchitectureReceiptArgs {
     /// Revision the change basis is taken against (default: origin/main, then HEAD~1).
     #[arg(long)]
     pub(crate) base: Option<String>,
+    /// Verify only this declared contract. Unknown ids fail closed.
+    #[arg(long)]
+    pub(crate) contract: Option<String>,
+    /// Write the receipt to this path as well as stdout. The parent directory
+    /// must already exist.
+    #[arg(long)]
+    pub(crate) out: Option<PathBuf>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -711,20 +713,81 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
     } else {
         None
     };
+    // Resolve `--contract` against the declaration before anything else runs:
+    // a typo must read as a usage error, never as an empty (and therefore
+    // passing) scope.
+    let contract_filter = match args.contract.as_deref() {
+        None => None,
+        Some(id) => {
+            // A malformed id and an undeclared id are the same user error:
+            // both mean "no contract in this declaration matches", and neither
+            // may degrade into an empty scope.
+            let wanted = match ContractId::new(id) {
+                Ok(c) => c,
+                Err(_) => {
+                    return error_output(format!(
+                        "architecture receipt: `--contract {id}` is not declared in `{label}`"
+                    ));
+                }
+            };
+            let Some(contract) = declared.contracts.iter().find(|c| c.id() == &wanted) else {
+                return error_output(format!(
+                    "architecture receipt: `--contract {id}` is not declared in `{label}`"
+                ));
+            };
+            // Only unit-scoped contracts have an evaluable subject. Naming a
+            // global kind is not an empty scope, it is an unanswerable
+            // question: fail closed rather than report a passing nothing.
+            if unit_subject(contract).is_none() {
+                return error_output(format!(
+                    "architecture receipt: `--contract {id}` has no evaluable subject unit \
+                     (only `single_authority` and `unique_owner` are unit-scoped)"
+                ));
+            }
+            Some(wanted)
+        }
+    };
+    // Validate `--out` before doing any work: a missing parent directory is a
+    // usage error, and creating it silently would put the receipt somewhere the
+    // caller did not ask for. The artifact only has value if a harness can find
+    // it exactly where it was told to look.
+    if let Some(path) = &args.out
+        && let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.is_dir()
+    {
+        return error_output(format!(
+            "architecture receipt: `--out {}` parent directory `{}` does not exist",
+            path.display(),
+            parent.display()
+        ));
+    }
     let overlay = declare_overlay(&declared, now);
 
     // ── AC4: change-scoped delta over an EMPTY change basis ────────────────
     // The receipt is global; the delta contributes its digests and its
     // (empty) claim/witness sets honestly.
-    let changed_unit_refs: Vec<SoftwareUnitRef> = change_basis
-        .as_ref()
-        .map(|b| {
-            b.changed_units
-                .iter()
-                .map(|u| SoftwareUnitRef::new(u.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
+    // The delta's scope units. `--changed` scopes to the diff; naming a
+    // contract with no diff scopes to that contract's subject, because
+    // "verify X" is a question about X and must not degenerate into an empty
+    // (and therefore passing) scope just because nothing was touched.
+    let scope_unit_refs: Vec<SoftwareUnitRef> = match (&change_basis, &contract_filter) {
+        (Some(basis), _) => basis
+            .changed_units
+            .iter()
+            .map(|u| SoftwareUnitRef::new(u.clone()))
+            .collect(),
+        (None, Some(id)) => declared
+            .contracts
+            .iter()
+            .find(|c| c.id() == id)
+            .and_then(unit_subject)
+            .map(SoftwareUnitRef::new)
+            .into_iter()
+            .collect(),
+        (None, None) => Vec::new(),
+    };
+    let changed_unit_refs = scope_unit_refs;
 
     let evidence: ContractEvidence = std::collections::BTreeMap::new();
     let delta = match compute_conformance_delta(
@@ -733,6 +796,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             contracts: &declared.contracts,
             evidence: &evidence,
             contradiction_witnesses: &[],
+            contract_filter: contract_filter.as_ref(),
         },
         now,
         changed_unit_refs.as_slice(),
@@ -767,6 +831,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             waivers: &declared.waivers,
             provider_basis: &[],
             change_basis: change_basis.as_ref(),
+            contract_filter: contract_filter.as_ref().map(|c| c.as_str().to_string()),
         },
         now,
     );
@@ -784,10 +849,23 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
         OutputFormat::Text => render_text(&receipt),
     };
 
+    let mut stderr = String::new();
+    if let Some(path) = &args.out {
+        if let Err(e) = std::fs::write(path, stdout.as_bytes()) {
+            return error_output(format!(
+                "architecture receipt: cannot write `--out {}`: {e}",
+                path.display()
+            ));
+        }
+        // Reported on stderr so stdout stays a pure receipt in both formats: a
+        // note appended to JSON would make it unparseable.
+        stderr = format!("wrote: {} ({} bytes)\n", path.display(), stdout.len());
+    }
+
     CommandOutput {
         status,
         stdout,
-        stderr: String::new(),
+        stderr,
     }
 }
 
@@ -810,8 +888,20 @@ fn render_text(
         "audited_contracts: {}\n",
         receipt.audited_contracts
     ));
+    // The scope note names whichever scope was actually asked for. A filtered
+    // run with no diff is not a "change-scoped" run, and saying so would
+    // misdescribe where the rows came from.
+    let scope_note = match (
+        receipt.change_basis.is_some(),
+        receipt.contract_filter.is_some(),
+    ) {
+        (true, true) => "change-scoped and filtered",
+        (true, false) => "change-scoped",
+        (false, true) => "contract-scoped",
+        (false, false) => "empty without --changed or --contract",
+    };
     out.push_str(&format!(
-        "affected_contracts: {} (change-scoped; empty without --changed)\n",
+        "affected_contracts: {} ({scope_note})\n",
         receipt.claim_results.len()
     ));
     out.push_str(&format!("unknowns:          {}\n", receipt.unknowns.len()));
@@ -827,6 +917,9 @@ fn render_text(
             b.changed_units.len()
         )),
         None => out.push_str("change_basis:      (global run; no --changed)\n"),
+    }
+    if let Some(id) = &receipt.contract_filter {
+        out.push_str(&format!("contract_filter:   {id}\n"));
     }
     out.push_str("historical_class_coverage:\n");
     for c in &receipt.class_coverage {

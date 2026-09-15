@@ -38,7 +38,7 @@ pub fn compute_conformance_delta(
     overlay: &ArchitectureGraphOverlay,
     inputs: ConformanceInputs<'_>,
     now: EventTime,
-    changed_units: &[SoftwareUnitRef],
+    scope_units: &[SoftwareUnitRef],
 ) -> Result<ArchitectureConformanceDelta, ConformanceError> {
     // 1. Contract object index (sorted by id via BTreeMap).
     let mut contract_index: BTreeMap<ContractId, &ArchitecturalContract> = BTreeMap::new();
@@ -50,15 +50,34 @@ pub fn compute_conformance_delta(
     let mut witnesses: BTreeSet<ContractId> =
         inputs.contradiction_witnesses.iter().cloned().collect();
 
-    // 2. Affected contracts: only those reachable from *changed* units
+    // 2. Affected contracts: only those reachable from the scope units
     //    (AC-UAT-008). Iterate units in sorted order for determinism.
-    let changed: BTreeSet<&SoftwareUnitRef> = changed_units.iter().collect();
+    //
+    //    `scope_units` is the set of units whose contracts are being asked
+    //    about. Its usual source is the diff (`--changed`), but a caller may
+    //    instead name a subject explicitly (`--contract X`, which scopes to X's
+    //    subject unit). The delta does not care which: it reports what it was
+    //    asked about, and `contract_filter` narrows further.
+    let scope: BTreeSet<&SoftwareUnitRef> = scope_units.iter().collect();
     let mut triggering: BTreeMap<ContractId, BTreeSet<SoftwareUnitRef>> = BTreeMap::new();
-    for unit in changed {
+    for unit in scope {
         for anchor in overlay.find_contracts_for_unit(unit) {
             let cid = resolve_contract_id(overlay, &anchor)?;
             triggering.entry(cid).or_default().insert(unit.clone());
         }
+    }
+
+    // Narrow to the requested contract, if any. Applied here rather than
+    // downstream so the delta stays the single authority for its own scope:
+    // `claim_results`, `unknowns`, `contradictions` and `class_coverage` are
+    // all derived from `affected` and follow without a second filtering pass.
+    //
+    // A filter can only remove; it never adds a contract the change did not
+    // reach. `--contract X --changed` is therefore the intersection, and an
+    // empty result means "X was not touched", which the receipt makes
+    // attributable by recording the filter.
+    if let Some(filter) = inputs.contract_filter {
+        triggering.retain(|cid, _| cid == filter);
     }
 
     // A contradiction witness is only meaningful for an affected contract;

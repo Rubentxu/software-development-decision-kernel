@@ -86,6 +86,7 @@ fn fixture() -> Fixture {
             contracts: &contracts,
             evidence: &empty_evidence(),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[],
@@ -146,6 +147,7 @@ fn compose(
             waivers,
             provider_basis: providers,
             change_basis: None,
+            contract_filter: None,
         },
         now,
     )
@@ -185,7 +187,11 @@ fn acceptance_receipt_id_is_derived() {
     let a = compose(&f, &[], &[], EventTime(T0 + 2));
     let b = compose(&f, &[], &[], EventTime(T0 + 2));
     assert_eq!(a.id, b.id);
-    assert_eq!(a.id, ReceiptId::derive(&a.basis, a.verdict));
+    let global = ReceiptScope {
+        change_basis: None,
+        contract_filter: None,
+    };
+    assert_eq!(a.id, ReceiptId::derive(&a.basis, a.verdict, &global));
     // A different revision changes the id.
     let mut inputs_rev = "other".to_string();
     inputs_rev.push_str("");
@@ -195,10 +201,63 @@ fn acceptance_receipt_id_is_derived() {
                 revision: inputs_rev,
                 ..a.basis.clone()
             },
-            a.verdict
+            a.verdict,
+            &global
         ),
         a.id
     );
+}
+
+#[test]
+fn acceptance_scope_is_part_of_the_receipt_id() {
+    // REQ-A3S13-010. v1 hashed only the basis and the verdict, so a global run,
+    // a `--changed` run and a `--contract` run over one declaration shared an
+    // id while reporting different scopes. The id is the receipt's address.
+    let f = fixture();
+    let global = compose(&f, &[], &[], EventTime(T0 + 2));
+
+    let basis = ChangeBasis {
+        base: "origin/main".to_string(),
+        changed_units: vec!["comp:auth".to_string()],
+    };
+    let lenses: Vec<crate::paradigm_lens::LensEvaluation> = vec![];
+    let scoped = compose_receipt(
+        ReceiptInputs {
+            revision: "rev".into(),
+            knowledge_basis: "kb".into(),
+            delta: &f.delta,
+            audit: &f.audit,
+            mutations: &f.mutations,
+            lenses: &lenses,
+            waivers: &[],
+            provider_basis: &[],
+            change_basis: Some(&basis),
+            contract_filter: None,
+        },
+        EventTime(T0 + 2),
+    );
+    assert_ne!(scoped.id, global.id, "a change basis must change the id");
+
+    let filtered = compose_receipt(
+        ReceiptInputs {
+            revision: "rev".into(),
+            knowledge_basis: "kb".into(),
+            delta: &f.delta,
+            audit: &f.audit,
+            mutations: &f.mutations,
+            lenses: &lenses,
+            waivers: &[],
+            provider_basis: &[],
+            change_basis: Some(&basis),
+            contract_filter: Some("c:auth".to_string()),
+        },
+        EventTime(T0 + 2),
+    );
+    assert_ne!(
+        filtered.id, scoped.id,
+        "a contract filter must change the id"
+    );
+    assert_eq!(filtered.contract_filter.as_deref(), Some("c:auth"));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -335,6 +394,7 @@ fn acceptance_pass_when_clean() {
             contracts: &contracts,
             evidence: &evidence,
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         std::slice::from_ref(&unit_ref),
@@ -371,6 +431,7 @@ fn acceptance_pass_when_clean() {
             waivers: &[],
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );
@@ -410,6 +471,7 @@ fn acceptance_medium_is_advisory() {
             contracts: &contracts,
             evidence: &empty_evidence(),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 100),
         &[],
@@ -437,6 +499,7 @@ fn acceptance_medium_is_advisory() {
             waivers: &[],
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 101),
     );
@@ -686,6 +749,7 @@ fn acceptance_all_five_classes_reproduced() {
             contracts: &contracts,
             evidence: &empty_evidence(),
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 1),
         &[],
@@ -702,6 +766,7 @@ fn acceptance_all_five_classes_reproduced() {
             waivers: &[],
             provider_basis: &[],
             change_basis: None,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );
@@ -814,6 +879,7 @@ fn acceptance_receipt_carries_change_basis() {
             waivers: &[],
             provider_basis: &[],
             change_basis: Some(&basis),
+            contract_filter: None,
         },
         EventTime(T0 + 2),
     );

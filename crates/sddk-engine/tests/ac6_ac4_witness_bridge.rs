@@ -117,6 +117,7 @@ fn ac6_witnesses_drive_ac4_contradiction() {
             contracts: std::slice::from_ref(&contract),
             evidence: &evidence,
             contradiction_witnesses: &witnesses,
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&unit_ref),
@@ -148,6 +149,7 @@ fn ac6_witnesses_drive_ac4_contradiction() {
                 m
             },
             contradiction_witnesses: &[],
+            contract_filter: None,
         },
         EventTime(T0 + 2),
         std::slice::from_ref(&unit_ref),

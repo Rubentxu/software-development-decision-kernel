@@ -23,7 +23,7 @@ use crate::paradigm_lens::LensEvaluation;
 use super::self_audit::evaluate_class_coverage;
 use super::types::{
     ArchitectureConformanceReceipt, ChangeBasis, ClaimResult, CompatibilityEntry, LensResult,
-    MutationResult, ReceiptBasis, ReceiptId, ReceiptVerdict, UnresolvedFinding,
+    MutationResult, ReceiptBasis, ReceiptId, ReceiptScope, ReceiptVerdict, UnresolvedFinding,
 };
 
 /// The inputs the receipt aggregates. Every value is produced elsewhere.
@@ -46,6 +46,8 @@ pub struct ReceiptInputs<'a> {
     pub provider_basis: &'a [String],
     /// The change basis, when the caller scoped the run.
     pub change_basis: Option<&'a ChangeBasis>,
+    /// The contract the caller asked to verify, when one was requested.
+    pub contract_filter: Option<String>,
 }
 
 fn waiver_for(kind: &str, subjects: &[String], waivers: &[String]) -> Vec<String> {
@@ -227,7 +229,14 @@ pub fn compose_receipt(
     waivers.sort();
     waivers.dedup();
 
-    let id = ReceiptId::derive(&basis, verdict);
+    let id = ReceiptId::derive(
+        &basis,
+        verdict,
+        &ReceiptScope {
+            change_basis: inputs.change_basis,
+            contract_filter: inputs.contract_filter.as_deref(),
+        },
+    );
 
     ArchitectureConformanceReceipt {
         id,
@@ -246,6 +255,7 @@ pub fn compose_receipt(
         unresolved,
         class_coverage,
         change_basis: inputs.change_basis.cloned(),
+        contract_filter: inputs.contract_filter.clone(),
         waivers,
         verdict,
         created_at: now,

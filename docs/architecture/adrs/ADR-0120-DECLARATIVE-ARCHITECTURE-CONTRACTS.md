@@ -99,3 +99,49 @@ MUST findings — no numeric aggregate (AC-UAT-043).
   surfaces and change scoping are follow-ups.
 - **Emit a pass/fail score for easy gating.** Rejected: AC-UAT-043 forbids a
   fabricated aggregate; the verdict plus statuses is the honest output.
+
+---
+
+## Addendum (A3-S13, v1.169.35) — the verification entry point is `architecture receipt`
+
+`12-CLI-AGENT-UX.md` names `sddk verify architecture [--changed] [--contract ID]`.
+That name is **not** adopted, and this is a deliberate continuation of this
+ADR's decision rather than a new one, so no new ADR is minted.
+
+Two reasons:
+
+1. **`sddk verify` is taken.** It is the M6.1 ledger-continuity and
+   capability-policy facade (`sddk verify [--format]`). Hanging an `architecture`
+   subcommand off it would overload one verb with two unrelated meanings.
+2. **This ADR already placed the entry point under `architecture`.** A3-S10
+   shipped `sddk architecture receipt` precisely because of the context recorded
+   above. Adding `sddk verify architecture` or `sddk architecture verify` now
+   would put two canonical surfaces on one concept (AGENTS.md §2.7, §2.9), and a
+   thin alias is forbidden outright (§2.0: "Sin aliases").
+
+The verb already gates rather than reports: `Pass | PassWithWaivers → 0`,
+`Blocked → 1`, usage and resolution errors → `2`. A3-S13 completed it into the
+entry point the package needs:
+
+- `--contract <id>` — answer a question about one contract, independently of any
+  diff. Fails closed if the id is undeclared or the contract has no evaluable
+  subject unit.
+- `--out <path>` — leave the receipt where a harness can find it. Fails closed on
+  a missing parent directory; the path is reported on stderr so stdout stays a
+  pure receipt in both formats.
+
+Two consequences for the receipt's identity, both fixed in A3-S13:
+
+- The receipt id now hashes the **scope** as well as the basis and verdict
+  (`sddk.architecture_receipt.id.v2`). Under `v1`, a global run, a `--changed`
+  run and a `--contract` run over one declaration shared an id while reporting
+  different scopes and different verdicts. An address that does not distinguish
+  its receipts is not an address.
+- `contract_filter` is recorded alongside `change_basis`, so an empty scope is
+  always attributable to a stated scope. This generalizes the rule A3-S12
+  established for `change_basis`.
+
+The `architecture contracts|authorities|ownership|compatibility` surfaces lost
+`--changed` and `--base`. They advertised both in `--help` and silently ignored
+them; a read surface is not change-scoped, and `graph --scope` already narrows
+read-side.
