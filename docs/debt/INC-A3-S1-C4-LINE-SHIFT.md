@@ -1,7 +1,7 @@
 ---
 id: INC-A3-S1-C4-LINE-SHIFT
 title: "C4 legacy-authority allowlist uses raw line numbers; any insertion in lib.rs invalidates it"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "c4_allowlist_line_shift_v1"
@@ -105,3 +105,50 @@ canonical place where new engine modules are declared.
 - AC evolution package §7 (mutation probes): the allowlist would benefit
   from a mutation test that confirms shifting lines without changing
   behaviour does NOT trip the check.
+
+## Resolution (2026-09-15, cycle `p-63676b11dc0ef88f/inc-a3-s1-c4-content-allowlist`)
+
+**Status: closed.** The `path:line` baseline was replaced by a content-addressed
+allowance, removing the line-number coupling entirely.
+
+The baseline is now a slice of:
+
+```rust
+pub struct LegacyAllowance {
+    pub path: &'static str,
+    pub api: LegacyApi,          // ForCli | Validate
+    pub line: &'static str,       // whitespace-normalized source line
+    pub max_occurrences: usize,   // multiplicity cap within the file
+}
+```
+
+`c4_find_new_legacy_authority_deps` keys each detected site on
+`(path, api, normalize(line))` and flags only occurrences beyond the allowed
+multiplicity. Physical line numbers are reported for diagnostics but are never
+part of the key.
+
+The 21 `path:line` entries collapsed to **17 distinct content keys**.
+
+### Proof of closure (real repo, freshly built CLI)
+
+| Scenario | Result |
+|---|---|
+| baseline | `c4.authority_single_admission: present` |
+| insert 2 fake `pub mod` lines in `lib.rs` (GateReceipts site 1170 → 1172) | `present` |
+| inject a new legacy call into a scanned file | `missing` + `new legacy authority dependency <file>:<line> (validate)` |
+
+The middle row is the exact failure mode recorded five times above; it now
+passes. The last row proves the freeze is still enforced.
+
+### Tests added
+
+- `c4_guard_survives_line_shift` (unit)
+- `c4_guard_flags_duplicate_beyond_max_occurrences` (unit)
+- `c4_guard_max_occurrences_allows_exact_multiplicity` (unit)
+- `c4_guard_normalizes_whitespace` (unit)
+- `c4_guard_flags_same_content_in_different_file` (unit)
+- `c4_allowlist_baseline_is_internally_consistent` (unit)
+- `c4_baseline_covers_real_sources` (acceptance, real files)
+- `c4_baseline_survives_real_lib_rs_module_insertion` (acceptance, real files)
+
+Spec: `docs/architecture/specs/arch-spec-A3-S6-c4-content-allowlist.md`.
