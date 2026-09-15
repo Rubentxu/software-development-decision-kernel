@@ -24,6 +24,101 @@ use super::types::{
 /// The nine relation kinds a declaration may state.
 ///
 /// The semantic kinds (`decided_by`, `verified_by`, `contradicts_by`,
+/// Convert declared observations into substrate observations (A4-0b).
+///
+/// Fail-closed on every field: an unknown relation kind, an endpoint naming no
+/// declared unit, an unknown stance or origin, blank evidence. The declaration is
+/// **input** — this validates shape and referential integrity, and decides nothing
+/// about whether the observation is true.
+///
+/// The basis is the empty knowledge basis at the declaration's own origin: the
+/// declaration supplies no knowledge basis, and pinning it here keeps observation
+/// identity clock-stable (A4-0's invariant). `declared_at` does not enter identity,
+/// so the pin is honest rather than a hidden zero.
+fn convert_observations(
+    decl: &DeclarationFile,
+    unit_ids: &BTreeSet<String>,
+) -> Result<Vec<crate::observation::SoftwareObservation>, DeclarationError> {
+    use crate::evidence_ref::{EvidenceKind, EvidenceRef};
+    use crate::knowledge::{EventTime, KnowledgeBasis};
+    use crate::observation::{
+        ObservationBasis, ObservationOrigin, ObservationStance, ObservationSubject,
+        SoftwareEntityRef, SoftwareObservation, SoftwareRelation,
+    };
+
+    let basis_hash = KnowledgeBasis::empty(EventTime(0)).basis_hash().clone();
+    let mut out = Vec::with_capacity(decl.observations.len());
+    for o in &decl.observations {
+        for endpoint in [&o.from, &o.to] {
+            if !unit_ids.contains(endpoint) {
+                return Err(DeclarationError::UnknownRelationEndpoint {
+                    endpoint: endpoint.clone(),
+                });
+            }
+        }
+        let kind =
+            core_relation_kind(&o.kind).ok_or_else(|| DeclarationError::UnknownRelationKind {
+                from: o.from.clone(),
+                to: o.to.clone(),
+                kind: o.kind.clone(),
+            })?;
+        let stance = match o.stance.trim() {
+            "affirms" => ObservationStance::Affirms,
+            "denies" => ObservationStance::Denies,
+            other => {
+                return Err(DeclarationError::UnknownObservationField {
+                    field: "stance".to_string(),
+                    value: other.to_string(),
+                });
+            }
+        };
+        let origin = ObservationOrigin::ALL
+            .into_iter()
+            .find(|c| c.canonical_tag() == o.origin.trim())
+            .ok_or_else(|| DeclarationError::UnknownObservationField {
+                field: "origin".to_string(),
+                value: o.origin.clone(),
+            })?;
+        let evidence_locator = o.evidence.trim();
+        if evidence_locator.is_empty() {
+            return Err(DeclarationError::UnknownObservationField {
+                field: "evidence".to_string(),
+                value: o.evidence.clone(),
+            });
+        }
+        out.push(SoftwareObservation::declare(
+            ObservationSubject::SoftwareRelation(SoftwareRelation::new(
+                SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
+                    o.from.clone(),
+                )),
+                kind,
+                SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
+                    o.to.clone(),
+                )),
+            )),
+            stance,
+            EvidenceRef::new(EvidenceKind::Adhoc, evidence_locator),
+            origin,
+            ObservationBasis::new(decl.revision.clone(), basis_hash.clone(), "declaration"),
+            None,
+            o.producer.clone(),
+        ));
+    }
+    // Canonical order, so the declared set is deterministic regardless of file order.
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+/// Resolve a core relation tag against the closed core vocabulary.
+///
+/// Derived from `CoreRelationKind::ALL` rather than hand-listed, so a new core kind
+/// becomes declarable the moment it exists and the accepted set cannot go stale.
+fn core_relation_kind(tag: &str) -> Option<crate::semantic_kind::CoreRelationKind> {
+    crate::semantic_kind::CoreRelationKind::ALL
+        .into_iter()
+        .find(|k| k.domain_tag() == tag.trim())
+}
+
 /// `supersedes_by`, `architecture_claimed_by`) are produced by the system and
 /// are deliberately NOT declarable.
 pub const DECLARABLE_RELATION_KINDS: [&str; 9] = [
@@ -348,12 +443,16 @@ pub fn validate(
         .filter(|k| !k.is_empty())
         .unwrap_or_else(|| format!("declaration:{source_label}"));
 
+    // ── observations (A4-0b) ───────────────────────────────────────────────
+    let observations = convert_observations(decl, &unit_ids)?;
+
     Ok(DeclaredArchitecture {
         revision: decl.revision.trim().to_string(),
         knowledge_basis,
         units,
         relations,
         contracts,
+        observations,
         waivers,
     })
 }

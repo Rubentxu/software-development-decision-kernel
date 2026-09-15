@@ -36,6 +36,36 @@ pub struct RelationDecl {
     pub kind: String,
 }
 
+/// One declared software observation (A4-0b).
+///
+/// A declaration can state what a producer observed. The declaration is **input**
+/// (ADR-0120): it supplies the observation, and the substrate decides nothing about
+/// whether it is true.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationDecl {
+    /// Source unit id (must be a declared unit).
+    pub from: String,
+    /// Target unit id (must be a declared unit).
+    pub to: String,
+    /// A core relation tag, e.g. `depends_on`. Derived from `CoreRelationKind`.
+    pub kind: String,
+    /// `affirms` | `denies`.
+    pub stance: String,
+    /// `deterministic_local` | `static_provider` | `runtime_provider` |
+    /// `human_declared` | `inferred`.
+    pub origin: String,
+    /// Evidence locator within the universal evidence namespace.
+    pub evidence: String,
+    /// The producer's identifier. Provenance, not identity.
+    #[serde(default = "default_observation_producer")]
+    pub producer: String,
+}
+
+fn default_observation_producer() -> String {
+    "declaration".to_string()
+}
+
 /// One declared architectural contract.
 ///
 /// A tagged-by-`kind` union: only the fields relevant to `kind` are required,
@@ -103,6 +133,9 @@ pub struct DeclarationFile {
     /// Declared contracts.
     #[serde(default)]
     pub contracts: Vec<ContractDecl>,
+    /// Declared software observations (A4-0b).
+    #[serde(default)]
+    pub observations: Vec<ObservationDecl>,
     /// Governed waivers, carried verbatim.
     #[serde(default)]
     pub waivers: Vec<String>,
@@ -121,6 +154,8 @@ pub struct DeclaredArchitecture {
     pub relations: Vec<ArchitectureOverlayRelation>,
     /// AC1 contracts (sorted by id).
     pub contracts: Vec<ArchitecturalContract>,
+    /// Declared observations, keyed deterministically (sorted by id).
+    pub observations: Vec<crate::observation::SoftwareObservation>,
     /// Waivers (sorted, deduplicated).
     pub waivers: Vec<String>,
 }
@@ -176,6 +211,13 @@ pub enum DeclarationError {
         /// The unrecognised kind string.
         kind: String,
     },
+    /// An observation field carries an unrecognised value.
+    UnknownObservationField {
+        /// The field name.
+        field: String,
+        /// The unrecognised value.
+        value: String,
+    },
     /// A relation endpoint names no declared unit.
     UnknownRelationEndpoint {
         /// The offending endpoint id.
@@ -209,6 +251,10 @@ impl std::fmt::Display for DeclarationError {
             Self::UnknownUnitKind { id, kind } => {
                 write!(f, "declaration: unit `{id}` has unknown kind `{kind}`")
             }
+            Self::UnknownObservationField { field, value } => write!(
+                f,
+                "declaration: observation `{field}` has unrecognised value `{value}`"
+            ),
             Self::UnknownRelationKind { from, to, kind } => write!(
                 f,
                 "declaration: relation `{from} -> {to}` has non-declarable kind `{kind}`"

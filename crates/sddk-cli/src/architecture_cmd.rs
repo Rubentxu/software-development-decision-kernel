@@ -711,6 +711,8 @@ fn run_graph(args: GraphReadArgs) -> CommandOutput {
 /// errors out because it computes no delta.
 pub(crate) struct ArchitectureContext {
     pub(crate) declared: sddk_engine::architecture_declaration::DeclaredArchitecture,
+    /// Observations the declaration supplies, in canonical order.
+    pub(crate) observations: sddk_engine::observation::ObservationSet,
     pub(crate) now: EventTime,
     pub(crate) overlay: ArchitectureGraphOverlay,
     pub(crate) claims: std::collections::BTreeMap<String, ArchitectureClaim>,
@@ -739,8 +741,16 @@ pub(crate) fn build_context(
         declared.knowledge_basis.clone(),
         contract_set_digest(&declared.contracts),
     );
+    // The declaration's declared observations, as a substrate set. Empty when the
+    // declaration declares none, which is the truthful default.
+    let mut observations = sddk_engine::observation::ObservationSet::new();
+    for o in &declared.observations {
+        observations.insert(o.clone());
+    }
+
     Ok(ArchitectureContext {
         declared,
+        observations,
         now,
         overlay,
         claims,

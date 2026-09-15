@@ -119,11 +119,10 @@ fn run_architecture(args: WhyArchitectureArgs) -> CommandOutput {
         audit: &ctx.audit,
         overlay: &ctx.overlay,
         finding: finding_index.map(|i| (query_id.as_str(), i)),
-        // No CLI observation input exists yet (A4-0 delivers the substrate; the
-        // declaration-driven observation source is the immediate next step), so a
-        // CLI run cannot close the evidence → software leg. It reports the gap
-        // truthfully instead of pretending the leg is structurally impossible.
-        observations: None,
+        // Observations the declaration supplies (A4-0b). When it declares none the
+        // leg stays unresolved and the answer says so, rather than pretending the
+        // leg is structurally impossible.
+        observations: Some(&ctx.observations),
     });
 
     match args.format {

@@ -906,3 +906,127 @@ fn why_unevaluable_reason_names_the_real_cause() {
     );
     assert!(!orphan.contains("not unit-scoped"), "{orphan}");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A4-0b: the declaration can supply observations (FU-A4S0-1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The same declaration as `DECL_TWO` plus one declared observation of a relation
+/// involving the shadow-authority component.
+const DECL_TWO_OBSERVED: &str = r#"
+revision: why-rev
+knowledge_basis: test/why
+units:
+  - id: comp:dup
+  - id: comp:log
+observations:
+  - from: comp:dup
+    to: comp:log
+    kind: depends_on
+    stance: affirms
+    origin: static_provider
+    evidence: "static:dep-scan"
+    producer: local-dep-scan
+contracts:
+  - id: c-auth-1
+    kind: single_authority
+    component: comp:dup
+    decided_by: ADR-0112
+    specified_by: arch-spec-032
+    revision: rev:1
+  - id: c-auth-2
+    kind: single_authority
+    component: comp:dup
+    decided_by: ADR-0112
+    specified_by: arch-spec-032
+    revision: rev:1
+"#;
+
+#[test]
+fn why_closes_the_leg_from_a_declared_observation() {
+    // REQ-A4S0-019: with a real observation the leg closes, end to end from the CLI.
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), DECL_TWO_OBSERVED);
+
+    let id = id_for(tmp.path(), "shadow_authority");
+    let v = why_json(tmp.path(), &id, "5000");
+
+    assert!(
+        v["unresolved_edges"].as_array().unwrap().is_empty(),
+        "a declared observation must close the leg: {}",
+        v["unresolved_edges"]
+    );
+    let observed: Vec<&str> = v["contracts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["observed_relations"].as_array().unwrap().iter())
+        .map(|r| r.as_str().unwrap())
+        .collect();
+    assert!(
+        observed
+            .iter()
+            .any(|r| r.contains("comp:dup") && r.contains("comp:log")),
+        "the observed relation must be reported: {observed:?}"
+    );
+
+    // And the text rendering states it, not just the JSON.
+    let text = both(&sddk(&[
+        "why",
+        "architecture",
+        &id,
+        "--root",
+        tmp.path().to_str().unwrap(),
+        "--now-ms",
+        "5000",
+    ]));
+    assert!(text.contains("unresolved_edges (0)"), "{text}");
+}
+
+#[test]
+fn why_keeps_the_leg_when_the_declaration_observes_nothing() {
+    // REQ-A4S0-019, the other half: no observation means the gap stays truthful.
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), DECL_TWO);
+
+    let v = why_json(tmp.path(), &id_for(tmp.path(), "shadow_authority"), "5000");
+    assert_eq!(v["unresolved_edges"].as_array().unwrap().len(), 1);
+    assert!(
+        v["contracts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["observed_relations"].as_array().unwrap().is_empty()),
+        "nothing observed means nothing claimed: {}",
+        v["contracts"]
+    );
+}
+
+#[test]
+fn declaration_rejects_unknown_observation_fields() {
+    // Fail-closed on every field, mirroring the relation-endpoint rule.
+    let cases = [
+        ("origin: static_provider", "origin: telepathy"),
+        ("stance: affirms", "stance: maybe"),
+        ("kind: depends_on", "kind: not_a_relation"),
+        ("to: comp:log", "to: comp:undeclared"),
+    ];
+    for (from, to) in cases {
+        let tmp = tempfile::tempdir().unwrap();
+        write_decl(tmp.path(), &DECL_TWO_OBSERVED.replace(from, to));
+        let out = sddk(&[
+            "architecture",
+            "receipt",
+            "--root",
+            tmp.path().to_str().unwrap(),
+            "--now-ms",
+            "5000",
+        ]);
+        let text = both(&out);
+        assert_eq!(out.status.code(), Some(2), "[{to}] {text}");
+        assert!(
+            out.stdout.is_empty(),
+            "[{to}] no receipt on an invalid declaration"
+        );
+    }
+}

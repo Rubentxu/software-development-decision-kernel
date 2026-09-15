@@ -17,6 +17,7 @@ fn decl_with(contracts: Vec<ContractDecl>) -> DeclarationFile {
         units: vec![],
         relations: vec![],
         contracts,
+        observations: vec![],
         waivers: vec![],
     }
 }
