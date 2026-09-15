@@ -20,6 +20,7 @@ use crate::architecture_graph::{
     ArchitectureGraphOverlay, SoftwareUnit, SoftwareUnitRef, UnitKind,
 };
 use crate::knowledge::EventTime;
+use crate::semantic_graph::SemanticGraphProjection;
 
 use super::traverse::{WhyInput, explain};
 use super::types::{WhyNotReason, WhyResolvedAs};
@@ -387,4 +388,154 @@ fn acceptance_claim_outcome_maps_through() {
         .contains(&outcome.as_str()),
         "assessment outcome must be AC4's closed vocabulary, got {outcome}"
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verification probes (A3-S15)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rebuild the projection from the same inputs, the way every CLI invocation
+/// does, and assert the `SpecifiedBy` edge survives and the WHY is unchanged.
+///
+/// NOTE on scope: `SemanticGraphProjection::rebuild_from_canonical` is the
+/// intended rebuild path but has no adapter for the AC2 overlay (no caller
+/// anywhere in the workspace), so the rebuild exercised here is the one the
+/// system actually performs: a fresh overlay built from the same declaration.
+/// The missing adapter is recorded as a follow-up, not papered over.
+#[test]
+fn acceptance_specified_by_survives_a_projection_rebuild() {
+    let contracts = vec![authority("c-a", "comp:x"), authority("c-b", "comp:x")];
+
+    let a = build(contracts.clone(), &["comp:x"]);
+    let b = build(contracts, &["comp:x"]);
+
+    // Same inputs => same projection bytes.
+    assert_eq!(
+        a.overlay.projection().canonical_bytes(),
+        b.overlay.projection().canonical_bytes(),
+        "a rebuild from identical inputs must produce identical projection bytes"
+    );
+
+    // The edge is present in both, with the same endpoints.
+    let specified = |f: &Fixture| -> Vec<(String, String)> {
+        let kind = crate::architecture_graph::ArchitectureOverlayRelationKind::SpecifiedBy
+            .as_relation_kind()
+            .expect("tag");
+        let mut v: Vec<(String, String)> = f
+            .overlay
+            .projection()
+            .relations()
+            .into_iter()
+            .filter(|r| r.kind == kind)
+            .map(|r| (r.from.as_str().to_string(), r.to.as_str().to_string()))
+            .collect();
+        v.sort();
+        v
+    };
+    let sa = specified(&a);
+    assert_eq!(sa.len(), 2, "one SpecifiedBy edge per contract");
+    assert_eq!(sa, specified(&b), "same endpoints after rebuild");
+
+    // And the answer is the same, which is what "semantically equivalent" means.
+    let wa = explain_finding(&a, DebVerifyFindingKind::ShadowAuthority, "comp:x");
+    let wb = explain_finding(&b, DebVerifyFindingKind::ShadowAuthority, "comp:x");
+    assert_eq!(wa, wb);
+    for leg in &wa.contracts {
+        assert_eq!(leg.intent.specs, vec!["arch-spec-032".to_string()]);
+    }
+}
+
+/// A finding is ASSESSMENT. Explaining it must not promote it into the graph.
+#[test]
+fn acceptance_finding_stays_an_assessment() {
+    let f = build(
+        vec![authority("c-a", "comp:x"), authority("c-b", "comp:x")],
+        &["comp:x"],
+    );
+    let before = f.overlay.projection().canonical_bytes();
+    let why = explain_finding(&f, DebVerifyFindingKind::ShadowAuthority, "comp:x");
+    let after = f.overlay.projection().canonical_bytes();
+
+    // `explain` takes `&ArchitectureGraphOverlay`, so mutation is impossible by
+    // construction; this asserts the consequence the reader depends on.
+    assert_eq!(
+        before, after,
+        "explaining a finding must not change the graph"
+    );
+
+    // The finding is not a node kind, and no finding kind is projected as one.
+    use crate::architecture_graph::ArchitectureOverlayNodeKind;
+    use crate::semantic_kind::NodeKind;
+    let node_tags: Vec<String> = f
+        .overlay
+        .projection()
+        .nodes()
+        .into_iter()
+        .map(|n| match n.kind {
+            NodeKind::Extension(k) => k.as_str().to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    assert!(
+        !node_tags
+            .iter()
+            .any(|t| t.contains("shadow_authority") || t.contains("contradiction")),
+        "an AC5 finding kind must never appear as a graph node kind: {node_tags:?}"
+    );
+    assert!(
+        node_tags
+            .iter()
+            .any(|t| t == ArchitectureOverlayNodeKind::ArchitectureClaim.domain_tag()),
+        "the AC1 claim is the projected object, not the AC5 finding"
+    );
+
+    // The finding carries no observation of its own: OBSERVED lives on the legs.
+    let finding = why.finding.as_ref().expect("finding");
+    assert!(finding.contract_ids.len() == 2);
+    assert!(why.contracts.iter().all(|c| c.evidence.is_empty()));
+}
+
+/// The audit is total today, so the failure path is pinned as a structural
+/// invariant rather than a behavioural fixture — and this records *why*.
+#[test]
+fn acceptance_audit_error_surface_is_reserved_not_reachable() {
+    // `DebVerifyError` has exactly one variant and it is documented as reserved:
+    // current detectors never fail because subject identifiers are always
+    // readable. That is the honest reason no fixture can force an audit error.
+    let variants = crate::architecture_debverify::DebVerifyError::UnreadableSubject {
+        contract: cid("c-x"),
+    };
+    assert!(variants.to_string().contains("c-x"));
+
+    // What must hold regardless: an unevaluable contract is `not_evaluated` with
+    // a stated reason, never a blank leg and never an implicit "fine".
+    let f = build(vec![authority("c-orphan", "comp:nowhere")], &["comp:x"]);
+    let idx = f
+        .audit
+        .findings
+        .iter()
+        .position(|x| x.kind == DebVerifyFindingKind::MissingOwner)
+        .expect("missing_owner");
+    let finding = &f.audit.findings[idx];
+    let id = FindingId::derive(
+        &f.basis,
+        finding.kind,
+        &finding.subjects,
+        &finding.contract_ids,
+    )
+    .as_str()
+    .to_string();
+    let why = explain(WhyInput {
+        query: &id,
+        resolved_as: WhyResolvedAs::Finding,
+        basis: &f.basis,
+        contracts: &f.contracts,
+        claims: &f.claims,
+        audit: &f.audit,
+        overlay: &f.overlay,
+        finding: Some((&id, idx)),
+    });
+    assert!(!why.contracts.is_empty(), "never an empty explanation");
+    assert_eq!(why.contracts[0].assessment.outcome, "not_evaluated");
+    assert!(!why.why_not.is_empty(), "the gap is stated, not implied");
 }

@@ -695,3 +695,132 @@ fn why_does_not_decide_a_namespace_by_shape() {
         "the ambiguity arm must name the problem"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline discipline (A3-S15 probes 9, 10, 11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One audit invocation for all three surfaces.
+///
+/// Pinned structurally because it is a *shape* invariant: if a future surface
+/// calls `run_debverify_audit` on its own, the three can disagree about what the
+/// audit found while every behavioural test still passes on its own fixture.
+#[test]
+fn surfaces_share_one_audit_invocation() {
+    let arch = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/architecture_cmd.rs"
+    ))
+    .expect("architecture_cmd.rs");
+    // `run_debverify_audit(` matches the call site only; the import in the `use`
+    // block has no parens. Exactly one call is the invariant.
+    let calls = arch.matches("run_debverify_audit(").count();
+    assert_eq!(
+        calls, 1,
+        "the audit must be invoked once for all three surfaces, found {calls}"
+    );
+    let ctx_at = arch.find("fn build_context").expect("build_context");
+    let call_at = arch
+        .find("run_debverify_audit(")
+        .expect("call site")
+        .max(ctx_at);
+    assert!(
+        call_at > ctx_at,
+        "the single call must live in build_context, not in a surface"
+    );
+
+    let why = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/why_cmd.rs"))
+        .expect("why_cmd.rs");
+    assert!(
+        !why.contains("run_debverify_audit("),
+        "why must not run its own audit"
+    );
+    assert!(
+        !why.contains("load_declaration"),
+        "why must not parse the declaration itself"
+    );
+    assert!(
+        why.contains("build_context("),
+        "why must go through the shared seam"
+    );
+    assert!(
+        !why.contains("serde_yaml"),
+        "why must not parse the declaration format itself"
+    );
+}
+
+/// An audit or basis failure is an error, never an empty explanation.
+///
+/// The audit is total today — `DebVerifyError` has one variant and documents that
+/// current detectors never fail — so the failure branch cannot be reached from a
+/// fixture. What is pinned instead: the branch exists, and it returns an error
+/// rather than an empty result.
+#[test]
+fn audit_failure_branch_is_an_error_not_an_empty_answer() {
+    let arch = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/architecture_cmd.rs"
+    ))
+    .expect("architecture_cmd.rs");
+    let at = arch
+        .find("let audit = run_debverify_audit(")
+        .expect("audit call");
+    let window = &arch[at..(at + 320).min(arch.len())];
+    assert!(
+        window.contains("map_err") && window.contains("error_output"),
+        "the audit error must map to an error, never to an empty audit: {window}"
+    );
+    assert!(
+        window.contains("never a silent zero") || window.contains("not \"no findings\""),
+        "the reason must be recorded next to the mapping: {window}"
+    );
+
+    // Behaviourally, the reachable version of the same rule: an unevaluable
+    // contract yields not_evaluated with a reason, never a blank answer.
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), DECL_ONE);
+    let v = why_json(tmp.path(), "c-orphan", "5000");
+    assert_eq!(v["contracts"][0]["assessment"]["outcome"], "not_evaluated");
+    assert!(!v["why_not"].as_array().unwrap().is_empty());
+}
+
+/// `why` is read-only, including against the workspace store and the ledger.
+#[test]
+fn why_does_not_touch_the_ledger_or_the_store() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), DECL_TWO);
+    let id = id_for(tmp.path(), "shadow_authority");
+
+    let ledger = |root: &Path| {
+        let out = sddk(&["ledger", "verify", "--root", root.to_str().unwrap()]);
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let before = ledger(tmp.path());
+    for _ in 0..3 {
+        sddk(&[
+            "architecture",
+            "findings",
+            "--root",
+            tmp.path().to_str().unwrap(),
+            "--now-ms",
+            "5000",
+            "--format",
+            "json",
+        ]);
+        sddk(&[
+            "why",
+            "architecture",
+            &id,
+            "--root",
+            tmp.path().to_str().unwrap(),
+            "--now-ms",
+            "5000",
+            "--format",
+            "json",
+        ]);
+    }
+    assert_eq!(before, ledger(tmp.path()), "no canonical append");
+}
