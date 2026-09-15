@@ -28,6 +28,7 @@
 // - `rebuild` — `rebuild(overlay, inputs)` for delete-and-rebuild equivalence.
 // - `tests` — 16 tests covering REQ-AC2-001..022 + AC-033-001..007.
 
+pub mod card;
 pub mod overlay;
 pub mod rebuild;
 pub mod types;
@@ -35,6 +36,9 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
+pub use card::{
+    CardDependency, CardKnowledgeStatus, CardProvenance, SoftwareUnitCard, card_for_unit,
+};
 pub use overlay::{ArchitectureGraphOverlay, Query};
 pub use rebuild::{RebuildInputs, rebuild};
 pub use types::{

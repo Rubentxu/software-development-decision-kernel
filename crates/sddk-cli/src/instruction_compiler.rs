@@ -1094,4 +1094,202 @@ mod tests {
             );
         }
     }
+    // ─────────────────────────────────────────────────────────────────────────
+    // A3 closeout: the agent advisory boundary
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// The A3 invariant, against the **real** compiler output.
+    ///
+    /// ```text
+    /// same EffectiveInstructions + different advisory_context
+    ///   ⇒ same effective_instruction_set_hash, different context_capsule_hash
+    /// ```
+    ///
+    /// Deliberately not a stub: `effective_instruction_set_hash` is the actual
+    /// `EffectiveInstructions::content_hash` produced by `InstructionCompiler`,
+    /// so the fixture fails if compilation ever starts absorbing advisory data.
+    #[test]
+    fn acceptance_advisory_context_does_not_change_instruction_identity() {
+        use sddk_domain::{
+            AdvisoryContext, AdvisoryItem, AdvisoryKind, AdvisoryProvenance, ContextCapsule,
+        };
+
+        let compiler = InstructionCompiler::new();
+        let mut inputs = empty_inputs();
+        inputs
+            .invariants
+            .entries
+            .push(inv("writes-cas", "all writes are content-addressed"));
+        let instructions = compiler.compile(&inputs).expect("compile");
+        let instruction_hash = instructions.content_hash.clone();
+
+        let mut advisory_a = AdvisoryContext::none();
+        advisory_a.push(AdvisoryItem {
+            kind: AdvisoryKind::ParadigmObservation,
+            subject: "comp:engine".into(),
+            note: "pure functions observed on the boundary".into(),
+            provenance: AdvisoryProvenance::Observed,
+        });
+
+        let mut advisory_b = AdvisoryContext::none();
+        advisory_b.push(AdvisoryItem {
+            kind: AdvisoryKind::AlignmentTension,
+            subject: "comp:engine".into(),
+            note: "a different tension entirely".into(),
+            provenance: AdvisoryProvenance::Inferred,
+        });
+
+        let capsule_a = ContextCapsule::seal(
+            instructions.ref_token(),
+            instruction_hash.clone(),
+            advisory_a,
+        );
+        let capsule_b = ContextCapsule::seal(
+            instructions.ref_token(),
+            instruction_hash.clone(),
+            advisory_b,
+        );
+
+        // 1. Same instruction identity, because the instructions did not change.
+        assert_eq!(
+            capsule_a.effective_instruction_set_hash,
+            capsule_b.effective_instruction_set_hash
+        );
+        assert_eq!(
+            capsule_a.effective_instruction_set_hash,
+            instructions.content_hash
+        );
+
+        // 2. Different capsule identity, because the advisory payload changed.
+        assert_ne!(
+            capsule_a.context_capsule_hash, capsule_b.context_capsule_hash,
+            "the advisory payload must change the capsule identity"
+        );
+
+        // 3. The compiled instructions themselves are untouched by advisory data.
+        assert_eq!(
+            compiler.compile(&inputs).expect("recompile").content_hash,
+            instruction_hash,
+            "advisory content must never reach compilation"
+        );
+    }
+
+    /// The capsule hash is stable under insertion order and re-sealing.
+    #[test]
+    fn acceptance_capsule_hash_is_order_invariant_and_validates() {
+        use sddk_domain::{
+            AdvisoryContext, AdvisoryItem, AdvisoryKind, AdvisoryProvenance, ContextCapsule,
+        };
+
+        let item = |k, s: &str, n: &str| AdvisoryItem {
+            kind: k,
+            subject: s.into(),
+            note: n.into(),
+            provenance: AdvisoryProvenance::Observed,
+        };
+
+        let mut forward = AdvisoryContext::none();
+        forward.push(item(AdvisoryKind::ParadigmObservation, "a", "first"));
+        forward.push(item(AdvisoryKind::KnowledgeStatus, "b", "second"));
+
+        let mut reverse = AdvisoryContext::none();
+        reverse.push(item(AdvisoryKind::KnowledgeStatus, "b", "second"));
+        reverse.push(item(AdvisoryKind::ParadigmObservation, "a", "first"));
+
+        let a = ContextCapsule::seal("effective@v1", "deadbeef", forward);
+        let b = ContextCapsule::seal("effective@v1", "deadbeef", reverse);
+        assert_eq!(
+            a.context_capsule_hash, b.context_capsule_hash,
+            "insertion order must not change identity"
+        );
+
+        // Empty advisory still has an identity, distinct from a populated one.
+        let empty = ContextCapsule::seal("effective@v1", "deadbeef", AdvisoryContext::none());
+        assert_ne!(empty.context_capsule_hash, a.context_capsule_hash);
+        assert_eq!(
+            empty.effective_instruction_set_hash,
+            a.effective_instruction_set_hash
+        );
+
+        // Seal/validate round-trips; tampering is detected.
+        a.validate().expect("freshly sealed capsule validates");
+        let mut tampered = a.clone();
+        tampered.advisory_context.items.clear();
+        assert!(
+            tampered.validate().is_err(),
+            "a mutated payload with a stale hash must fail validation"
+        );
+        tampered.reseal();
+        tampered.validate().expect("reseal restores validity");
+    }
+
+    /// Advisory is not, and cannot become, instruction text or authority.
+    ///
+    /// The negative half of REQ-A4/A5/A6. `AdvisoryContext` has no conversion into
+    /// `InstructionSource`, no path into a capability requirement, and the
+    /// authority engine takes explicit facts only — so this pins the *absence* of
+    /// the wiring rather than trusting it.
+    #[test]
+    fn acceptance_advisory_is_not_instruction_source_capability_or_authority() {
+        // Scan only the non-test portion: this test's own text necessarily
+        // names the advisory types, and a scanner that matched itself would be
+        // asserting nothing.
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/instruction_compiler.rs"
+        ))
+        .expect("instruction_compiler.rs");
+        let source = raw
+            .split("#[cfg(test)]")
+            .next()
+            .expect("non-test portion")
+            .to_string();
+        let raw_domain = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../sddk-domain/src/workflow_run.rs"
+        ))
+        .expect("workflow_run.rs");
+        let domain = raw_domain
+            .split("#[cfg(test)]")
+            .next()
+            .expect("non-test portion")
+            .to_string();
+
+        // 1. No conversion carries advisory data into any normative concept.
+        for forbidden in [
+            "impl From<AdvisoryContext>",
+            "impl From<&AdvisoryContext>",
+            "impl From<AdvisoryItem>",
+            "impl TryFrom<AdvisoryContext>",
+        ] {
+            assert!(
+                !domain.contains(forbidden) && !source.contains(forbidden),
+                "`{forbidden}` would give advisory content a route into a normative type"
+            );
+        }
+
+        // 2. The compiler never reads advisory types: advisory cannot be compiled.
+        for forbidden in ["AdvisoryContext", "AdvisoryItem", "advisory_context"] {
+            assert!(
+                !source.contains(forbidden),
+                "the instruction compiler must not know about `{forbidden}`"
+            );
+        }
+
+        // 3. `AdvisoryContext` is not an `InstructionSource` variant.
+        let src_enum = source
+            .split("pub enum InstructionSource")
+            .nth(1)
+            .expect("InstructionSource");
+        let body = &src_enum[..src_enum
+            .find(
+                "
+}",
+            )
+            .expect("enum end")];
+        assert!(
+            !body.contains("Advisory"),
+            "advisory must not be an InstructionSource variant"
+        );
+    }
 }

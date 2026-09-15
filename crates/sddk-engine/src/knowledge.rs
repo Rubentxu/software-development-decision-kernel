@@ -1261,3 +1261,189 @@ mod tests {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A3 closeout: knowledge projection into the one SemanticGraphProjection
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::semantic_graph::SemanticGraphProjection;
+use crate::semantic_kind::{NodeKind, SemanticKindError};
+use crate::semantic_node::{NodeId, SemanticNode};
+
+/// Namespaced node kind for a projected [`KnowledgeAssertion`].
+///
+/// Follows the `a3_node_*` convention (the AC2 overlay uses `ac2_node_*`), so the
+/// knowledge tree lives in the **same** projection as architecture nodes rather
+/// than in a second graph.
+pub const KNOWLEDGE_NODE_KIND: &str = "a3_node_knowledge_assertion";
+
+/// Project every assertion in a basis into a [`SemanticGraphProjection`].
+///
+/// This is the knowledge half of the roadmap's "SemanticGraph cross-tree
+/// overlay": per ADR-022 the KMT owns invalidation while the SemanticGraph owns
+/// cross-tree impact, and this is what lets impact navigation reach knowledge
+/// assertions at all.
+///
+/// Properties, all deliberate:
+///
+/// - **projection, not authority**: nodes are derived from the basis and carry a
+///   `basis_hash` prop so a consumer can tell which basis they came from;
+/// - **deterministic**: assertions are iterated in `BTreeMap` order and node ids
+///   are `NodeId::new(kind, assertion_id)`, so two projections over equal bases
+///   are byte-identical;
+/// - **no invented edges**: this emits nodes, and nothing else. A relation edge
+///   would have to be decoded from `KnowledgePayload::Relation`'s opaque bytes,
+///   which requires a documented canonical encoding that does not exist yet.
+///   Inventing one here would fabricate provenance, so it is recorded as the
+///   remaining gap instead.
+///
+/// Returns the projected node ids, in order.
+pub fn project_into<S: SemanticGraphProjection>(
+    basis: &KnowledgeBasis,
+    graph: &mut S,
+) -> Result<Vec<NodeId>, SemanticKindError> {
+    let kind = NodeKind::parse(KNOWLEDGE_NODE_KIND)?;
+    let mut ids = Vec::new();
+    for assertion in basis.assertions().values() {
+        let locator = assertion.id().as_str().to_string();
+        let id = NodeId::new(&kind, &locator);
+        let mut node = SemanticNode::new(id.clone(), kind.clone(), locator);
+        node.props_inline.insert(
+            "knowledge_kind".to_string(),
+            assertion.kind().canonical_tag().to_string(),
+        );
+        node.props_inline
+            .insert("basis_hash".to_string(), assertion.basis_hash().to_hex());
+        node.props_inline.insert(
+            "payload_kind".to_string(),
+            assertion.payload().canonical_tag().to_string(),
+        );
+        node.props_inline.insert(
+            "declared_at".to_string(),
+            assertion.declared_at().0.to_string(),
+        );
+        graph.add_node(node);
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
+#[cfg(test)]
+mod closeout_tests {
+    use super::*;
+    use crate::semantic_graph::{InMemorySemanticGraph, SemanticGraphProjection};
+
+    fn assertion(id: &str, kind: KnowledgeKind, payload: KnowledgePayload) -> KnowledgeAssertion {
+        KnowledgeAssertion::declare(
+            KnowledgeId::new(id).expect("id"),
+            EventTime(1_700_000_000),
+            kind,
+            payload,
+        )
+    }
+
+    /// Projection is deterministic, rebuild-equivalent, and carries its basis.
+    #[test]
+    fn acceptance_knowledge_projection_is_deterministic_and_rebuildable() {
+        let mut basis = KnowledgeBasis::empty(EventTime(1_700_000_000));
+        // Insertion order deliberately reversed relative to id order.
+        basis
+            .insert(assertion(
+                "k:2",
+                KnowledgeKind::Declaration,
+                KnowledgePayload::Fact {
+                    content_type: "text/plain".into(),
+                    bytes: b"second".to_vec(),
+                },
+            ))
+            .expect("insert");
+        basis
+            .insert(assertion(
+                "k:1",
+                KnowledgeKind::Observation,
+                KnowledgePayload::Object {
+                    content_type: "application/json".into(),
+                    bytes: b"{}".to_vec(),
+                },
+            ))
+            .expect("insert");
+
+        let mut g1 = InMemorySemanticGraph::new();
+        let mut g2 = InMemorySemanticGraph::new();
+        let ids1 = project_into(&basis, &mut g1).expect("project");
+        let ids2 = project_into(&basis, &mut g2).expect("project");
+
+        assert_eq!(ids1, ids2, "node ids are deterministic");
+        assert_eq!(ids1.len(), 2);
+        assert_eq!(
+            g1.canonical_bytes(),
+            g2.canonical_bytes(),
+            "two projections over an equal basis are byte-identical"
+        );
+
+        // Sorted by assertion id, independent of insertion order.
+        let locators: Vec<String> = g1.nodes().iter().map(|n| n.locator.clone()).collect();
+        assert_eq!(locators, vec!["k:1".to_string(), "k:2".to_string()]);
+
+        // Provenance retained: each node says which basis and which kinds it came from.
+        for n in g1.nodes() {
+            match &n.kind {
+                NodeKind::Extension(k) => assert_eq!(k.as_str(), KNOWLEDGE_NODE_KIND),
+                other => panic!("knowledge node must be an extension kind, got {other:?}"),
+            }
+            assert!(n.props_inline.contains_key("basis_hash"));
+            assert!(n.props_inline.contains_key("knowledge_kind"));
+            assert!(n.props_inline.contains_key("payload_kind"));
+        }
+    }
+
+    /// Knowledge and architecture share **one projection abstraction**, and the
+    /// projection invents no edges.
+    ///
+    /// Note on what this can and cannot assert. The AC2 overlay deliberately
+    /// exposes its projection read-only ("so the overlay cannot leak its store"),
+    /// so knowledge nodes cannot be injected into an overlay instance. What the
+    /// single-projection rule actually requires is that both trees use the *same*
+    /// graph type and that no second graph is introduced — asserted here at the
+    /// type level and by projecting into the canonical `InMemorySemanticGraph`.
+    #[test]
+    fn acceptance_knowledge_shares_the_one_projection_abstraction() {
+        use crate::architecture_graph::ArchitectureGraphOverlay;
+
+        // 1. The overlay's store is the same canonical projection type, so a
+        //    consumer navigates one abstraction rather than two.
+        let overlay = ArchitectureGraphOverlay::new();
+        let _as_projection: &InMemorySemanticGraph = overlay.projection();
+
+        // 2. Knowledge projects into that same type.
+        let mut basis = KnowledgeBasis::empty(EventTime(1_700_000_000));
+        basis
+            .insert(assertion(
+                "k:1",
+                KnowledgeKind::Inference,
+                KnowledgePayload::Relation {
+                    content_type: "application/x-sddk-relation".into(),
+                    bytes: b"k:1|depends_on|k:2".to_vec(),
+                },
+            ))
+            .expect("insert");
+        let mut graph = InMemorySemanticGraph::new();
+        let ids = project_into(&basis, &mut graph).expect("project");
+        assert_eq!(ids.len(), 1);
+        assert_eq!(graph.nodes().len(), 1);
+
+        // 3. No invented edges: a `Relation` payload is opaque bytes, so the
+        //    projection emits the node and refuses to guess an edge. Fabricating
+        //    one would be false provenance.
+        assert!(
+            graph.relations().is_empty(),
+            "the projection must not decode opaque payload bytes into edges"
+        );
+
+        // 4. Empty basis projects nothing at all.
+        let empty = KnowledgeBasis::empty(EventTime(1_700_000_000));
+        let mut g = InMemorySemanticGraph::new();
+        assert!(project_into(&empty, &mut g).expect("project").is_empty());
+        assert!(g.nodes().is_empty());
+    }
+}

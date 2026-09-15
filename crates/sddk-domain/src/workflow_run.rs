@@ -605,3 +605,264 @@ impl From<WorkflowRunPersistError> for crate::StorageError {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AdvisoryContext + ContextCapsule (A3 closeout: the agent advisory boundary)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The kind of an advisory item.
+///
+/// Closed on purpose: an advisory payload must not become a free-text channel,
+/// because a free-text channel cannot be audited for "did it act as authority?".
+/// `AlignmentTension` is **reserved**: A4 delivers the evaluator; A3 closeout
+/// establishes only the delivery boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvisoryKind {
+    /// A paradigm-lens observation (AC7). Advisory by construction.
+    ParadigmObservation,
+    /// A software-alignment tension. Reserved for A4; no producer exists yet.
+    AlignmentTension,
+    /// A knowledge freshness / status warning.
+    KnowledgeStatus,
+}
+
+impl AdvisoryKind {
+    /// Every variant, in canonical order.
+    pub const ALL: [AdvisoryKind; 3] = [
+        AdvisoryKind::ParadigmObservation,
+        AdvisoryKind::AlignmentTension,
+        AdvisoryKind::KnowledgeStatus,
+    ];
+
+    /// Stable short tag used in canonical hashing.
+    pub fn canonical_tag(self) -> &'static str {
+        match self {
+            AdvisoryKind::ParadigmObservation => "paradigm_observation",
+            AdvisoryKind::AlignmentTension => "alignment_tension",
+            AdvisoryKind::KnowledgeStatus => "knowledge_status",
+        }
+    }
+}
+
+/// How strongly an advisory statement is held.
+///
+/// Mirrors the provenance classes the rest of the system distinguishes, so a
+/// reader never has to guess whether a hint was observed or inferred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvisoryProvenance {
+    /// Derived from evidence the system collected.
+    Observed,
+    /// Stated by a declaration.
+    Declared,
+    /// Derived by a documented rule from other knowledge.
+    Inferred,
+}
+
+impl AdvisoryProvenance {
+    /// Stable short tag used in canonical hashing.
+    pub fn canonical_tag(self) -> &'static str {
+        match self {
+            AdvisoryProvenance::Observed => "observed",
+            AdvisoryProvenance::Declared => "declared",
+            AdvisoryProvenance::Inferred => "inferred",
+        }
+    }
+}
+
+/// One advisory statement.
+///
+/// `note` is **informational only and never authority**, exactly as the finding
+/// `message` and the claim `note` are elsewhere in the system.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdvisoryItem {
+    /// Closed kind tag.
+    pub kind: AdvisoryKind,
+    /// The subject the advisory concerns (a unit id, contract id, ...).
+    pub subject: String,
+    /// Informational text. NEVER authority.
+    pub note: String,
+    /// Provenance class.
+    pub provenance: AdvisoryProvenance,
+}
+
+/// A typed advisory payload delivered **alongside** compiled instructions.
+///
+/// # What this is not
+///
+/// Advisory content **cannot** become an `InstructionSource`, **cannot** grant a
+/// capability, and **cannot** reach the authority engine except as an ordinary
+/// explicit fact a policy specifically asks for. That is enforced by the type
+/// system rather than by convention: there is no conversion from
+/// [`AdvisoryContext`] to any of those concepts, and `AdvisoryContext` is not an
+/// input to them.
+///
+/// The A3 exit criterion this exists to satisfy:
+///
+/// ```text
+/// same EffectiveInstructions + different advisory_context
+///   ⇒ same effective_instruction_set_hash, different context_capsule_hash
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdvisoryContext {
+    /// Sorted, deduplicated advisory statements.
+    pub items: Vec<AdvisoryItem>,
+}
+
+impl AdvisoryContext {
+    /// Domain prefix for canonical hashing.
+    pub const DOMAIN: &'static str = "sddk.advisory_context.v1|";
+
+    /// An empty advisory payload.
+    pub fn none() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    /// True iff there is nothing to advise.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Insert an item, keeping the payload canonically ordered and deduplicated.
+    ///
+    /// Ordering is by `(kind, subject, note, provenance)`, so two payloads that
+    /// differ only in insertion order hash identically.
+    pub fn push(&mut self, item: AdvisoryItem) {
+        self.items.push(item);
+        self.normalize();
+    }
+
+    /// Sort + deduplicate in canonical order.
+    pub fn normalize(&mut self) {
+        self.items.sort_by(|a, b| {
+            (a.kind, &a.subject, &a.note, a.provenance).cmp(&(
+                b.kind,
+                &b.subject,
+                &b.note,
+                b.provenance,
+            ))
+        });
+        self.items.dedup();
+    }
+
+    /// Canonical bytes: stable across insertion order, so hashing is stable too.
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        let mut sorted = self.items.clone();
+        sorted.sort_by(|a, b| {
+            (a.kind, &a.subject, &a.note, a.provenance).cmp(&(
+                b.kind,
+                &b.subject,
+                &b.note,
+                b.provenance,
+            ))
+        });
+        let mut out = String::from(Self::DOMAIN);
+        for i in &sorted {
+            out.push_str(i.kind.canonical_tag());
+            out.push('|');
+            out.push_str(&i.subject);
+            out.push('|');
+            out.push_str(&i.note);
+            out.push('|');
+            out.push_str(i.provenance.canonical_tag());
+            out.push('\n');
+        }
+        out.into_bytes()
+    }
+}
+
+/// The content a [`ContextCapsuleRef`] points at.
+///
+/// # Two identities, deliberately separate
+///
+/// | field | identity of |
+/// |---|---|
+/// | `effective_instruction_set_hash` | the **compiled instructions only** |
+/// | `context_capsule_hash` | instructions **plus** the advisory payload |
+///
+/// Changing the advisory payload changes `context_capsule_hash` and **must not**
+/// change `effective_instruction_set_hash`. That separation is the whole point:
+/// advisory content is delivered to an agent, but it is not part of what the
+/// instructions *are*, so it can never be mistaken for a normative directive.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextCapsule {
+    /// Stable ref token for the compiled instruction set, e.g. `effective@v1`.
+    pub effective_instructions_ref: String,
+    /// Hash of the compiled instruction set alone.
+    pub effective_instruction_set_hash: String,
+    /// The advisory payload.
+    pub advisory_context: AdvisoryContext,
+    /// Hash over (ref, instruction hash, advisory payload).
+    pub context_capsule_hash: String,
+}
+
+impl ContextCapsule {
+    /// Domain prefix for the capsule hash.
+    pub const HASH_DOMAIN: &'static str = "sddk.context_capsule.v1|";
+
+    /// Seal a capsule, computing its hash deterministically.
+    pub fn seal(
+        effective_instructions_ref: impl Into<String>,
+        effective_instruction_set_hash: impl Into<String>,
+        advisory_context: AdvisoryContext,
+    ) -> Self {
+        let effective_instructions_ref = effective_instructions_ref.into();
+        let effective_instruction_set_hash = effective_instruction_set_hash.into();
+        let mut capsule = Self {
+            effective_instructions_ref,
+            effective_instruction_set_hash,
+            advisory_context,
+            context_capsule_hash: String::new(),
+        };
+        capsule.context_capsule_hash = capsule.recompute_hash();
+        capsule
+    }
+
+    /// Recompute the capsule hash from the current fields.
+    ///
+    /// The instruction hash is an **input**, never recomputed here: the capsule
+    /// does not know how to compile instructions, and recomputing them would put a
+    /// second compiler in the delivery path.
+    pub fn recompute_hash(&self) -> String {
+        let mut h = Sha256::new();
+        h.update(Self::HASH_DOMAIN.as_bytes());
+        h.update(self.effective_instructions_ref.as_bytes());
+        h.update(b"|");
+        h.update(self.effective_instruction_set_hash.as_bytes());
+        h.update(b"|");
+        h.update(self.advisory_context.canonical_bytes());
+        format!("{:064x}", h.finalize())
+    }
+
+    /// Re-seal after mutating the advisory payload.
+    pub fn reseal(&mut self) {
+        self.advisory_context.normalize();
+        self.context_capsule_hash = self.recompute_hash();
+    }
+
+    /// Validate: the declared capsule hash matches the recomputed one.
+    pub fn validate(&self) -> Result<(), CapsuleError> {
+        if self.context_capsule_hash.len() != 64
+            || !self
+                .context_capsule_hash
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        {
+            return Err(CapsuleError::Sha256Malformed(
+                self.context_capsule_hash.clone(),
+            ));
+        }
+        let computed = self.recompute_hash();
+        if computed != self.context_capsule_hash {
+            return Err(CapsuleError::Sha256Mismatch {
+                expected: computed,
+                got: self.context_capsule_hash.clone(),
+            });
+        }
+        Ok(())
+    }
+}
