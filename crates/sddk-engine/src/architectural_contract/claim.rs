@@ -138,7 +138,7 @@ pub enum ClaimOutcome {
 impl ClaimOutcome {
     /// Canonical short tag for receipts.
     #[allow(dead_code)] // reserved for receipt emission (A4 cycle)
-    pub(super) fn canonical_tag(self) -> &'static str {
+    pub(crate) fn canonical_tag(self) -> &'static str {
         match self {
             ClaimOutcome::Verified => "verified",
             ClaimOutcome::Contradicted => "contradicted",
@@ -292,6 +292,36 @@ impl ContractEvaluation {
             evaluator,
             missing_evidence: Vec::new(),
             note,
+        }
+    }
+}
+
+/// Test-only helpers exposed via `claim::test_helpers::*`. Sibling modules
+/// in the engine (e.g. `architecture_graph`) use these to construct claims
+/// with arbitrary outcomes for fixture-level testing — the substrate's
+/// `evaluate()` only reaches Verified/Unknown/Stale outcomes.
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::*;
+
+    /// Build an `ArchitectureClaim` with a specified outcome. Used by
+    /// architecture_graph tests to exercise Contradicted and Stale relation
+    /// emission paths that `evaluate()` cannot reach on its own.
+    pub fn claim_with_outcome(
+        contract_id: crate::architectural_contract::ContractId,
+        outcome: ClaimOutcome,
+        provider: &str,
+    ) -> ArchitectureClaim {
+        ArchitectureClaim {
+            contract_id,
+            outcome,
+            evidence_refs: vec![
+                EvidenceRef::new(provider, "ref:test").expect("valid evidence ref"),
+            ],
+            evaluated_at: EventTime(1_700_000_002),
+            evaluator: EvaluatorRef::new("test:helper").unwrap(),
+            missing_evidence: Vec::new(),
+            note: Some("test-only claim constructed via test_helpers".to_string()),
         }
     }
 }

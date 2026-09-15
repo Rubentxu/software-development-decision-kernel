@@ -215,7 +215,7 @@ impl DecisionRef {
     }
 
     /// Borrow the inner reference string (for hashing).
-    pub(super) fn canonical_payload(&self) -> String {
+    pub(crate) fn canonical_payload(&self) -> String {
         match self {
             DecisionRef::Decision(s) => s.clone(),
             DecisionRef::Adr(s) => s.clone(),
@@ -255,7 +255,7 @@ impl SpecRef {
     }
 
     /// Borrow the inner reference string (for hashing).
-    pub(super) fn canonical_payload(&self) -> &str {
+    pub(crate) fn canonical_payload(&self) -> &str {
         match self {
             SpecRef::ArchSpec(s) | SpecRef::Spec(s) | SpecRef::Adr(s) => s,
         }

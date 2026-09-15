@@ -37,7 +37,7 @@
 
 #![allow(missing_docs)]
 
-mod claim;
+pub(crate) mod claim;
 mod contract;
 mod error;
 mod hashing;

@@ -1,0 +1,466 @@
+// Copyright (c) SDDK contributors.
+// SPDX-License-Identifier: MIT
+//
+// architecture_graph/overlay.rs — T-02 (A3-S3 / AC2)
+//
+// ArchitectureGraphOverlay: a thin PROJECTION wrapper over the canonical
+// SemanticGraphProjection. The overlay never owns bytes; it delegates every
+// mutation to the canonical graph (`InMemorySemanticGraph`) so the digest
+// surface stays unified (REQ-AC2-001/002/007, AC-033-001/006).
+//
+// Query surface is bounded and typed:
+//   - find_units_contracted_by(ContractId) -> Vec<NodeId>
+//   - find_contracts_for_unit(SoftwareUnitRef) -> Vec<NodeId>
+//   - traverse_finding_to_software(ArchitectureClaimId) -> Vec<NodeId>
+//   - traverse_decision_to_software(OverlayDecisionRef) -> Vec<NodeId>
+//
+// All queries return `Vec<NodeId>` against the canonical projection; no
+// second store is exposed.
+
+use crate::architectural_contract::{ArchitecturalContract, ArchitectureClaim, ClaimOutcome};
+use crate::evidence_ref::EvidenceRef;
+use crate::semantic_graph::{GraphRevision, InMemorySemanticGraph, SemanticGraphProjection};
+use crate::semantic_kind::NodeKind;
+use crate::semantic_node::{NodeId, SemanticNode, SemanticRelation};
+
+use super::types::{
+    ArchitectureClaimId, ArchitectureOverlayNodeKind, ArchitectureOverlayRelation,
+    ArchitectureOverlayRelationKind, OverlayNodeRef, SoftwareUnit, SoftwareUnitRef,
+};
+
+/// ArchitectureGraphOverlay (PROJECTION, per ADR-0095).
+///
+/// Wraps an `InMemorySemanticGraph`. All overlay mutations route through
+/// the canonical projection — there is no second store (REQ-AC2-001/002).
+pub struct ArchitectureGraphOverlay {
+    projection: InMemorySemanticGraph,
+}
+
+impl Default for ArchitectureGraphOverlay {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ArchitectureGraphOverlay {
+    pub fn new() -> Self {
+        Self {
+            projection: InMemorySemanticGraph::new(),
+        }
+    }
+
+    pub fn graph_revision(&self) -> GraphRevision {
+        self.projection.graph_revision()
+    }
+
+    /// Clear the underlying projection. Used by `rebuild` to reset before
+    /// re-projection. REQ-AC2-006 requires that a rebuild clears prior
+    /// state and re-projects deterministically.
+    pub fn clear(&mut self) {
+        self.projection = InMemorySemanticGraph::new();
+    }
+
+    /// Borrow the underlying canonical projection. Read-only access so the
+    /// overlay cannot leak its store.
+    pub fn projection(&self) -> &InMemorySemanticGraph {
+        &self.projection
+    }
+
+    /// Canonical bytes of the underlying projection — REQ-AC2-007 says the
+    /// overlay MUST NOT introduce a parallel digest surface.
+    pub fn digest(&self) -> Vec<u8> {
+        self.projection.canonical_bytes()
+    }
+
+    /// Add a typed software unit as a node. The NodeId locator is the
+    /// unit's `id` (SoftwareUnitRef) so subsequent relations referencing
+    /// `OverlayNodeRef::SoftwareUnit(unit_ref)` resolve to the same NodeId.
+    pub fn add_unit(&mut self, unit: &SoftwareUnit) {
+        let kind = NodeKind::parse(ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag())
+            .expect("static tag is well-formed");
+        let locator = unit.id.0.clone();
+        let id = NodeId::new(&kind, &locator);
+        let mut node = SemanticNode::new(id, kind, locator);
+        for (k, v) in super::types::build_unit_props(unit) {
+            node.props_inline.insert(k, v);
+        }
+        self.projection.add_node(node);
+    }
+
+    /// Add an ArchitectureClaim as a node. Each claim gets a stable
+    /// `ArchitectureClaimId` derived from contract_id + outcome + evaluated_at.
+    pub fn add_claim(&mut self, claim: &ArchitectureClaim) -> ArchitectureClaimId {
+        let kind = NodeKind::parse(ArchitectureOverlayNodeKind::ArchitectureClaim.domain_tag())
+            .expect("static tag is well-formed");
+        let claim_id = ArchitectureClaimId::from_claim(claim);
+        // Use claim_id.as_str() as the locator so that subsequent relations
+        // referencing OverlayNodeRef::Claim(claim_id) resolve to the same
+        // NodeId (sha256(kind, locator) is deterministic).
+        let locator = claim_id.as_str().to_string();
+        let id = NodeId::new(&kind, &locator);
+        let mut node = SemanticNode::new(id, kind, locator);
+        node.props_inline.insert(
+            "contract_id".to_string(),
+            claim.contract_id().as_str().to_string(),
+        );
+        node.props_inline.insert(
+            "outcome".to_string(),
+            claim.outcome().canonical_tag().to_string(),
+        );
+        if let Some(note) = claim.note() {
+            node.props_inline
+                .insert("note".to_string(), note.to_string());
+        }
+        self.projection.add_node(node);
+        claim_id
+    }
+
+    /// Emit one overlay relation into the canonical graph.
+    pub fn add_relation(&mut self, rel: &ArchitectureOverlayRelation) {
+        let from_kind =
+            NodeKind::parse(relation_node_kind_tag(&rel.from)).expect("static tag is well-formed");
+        let to_kind =
+            NodeKind::parse(relation_node_kind_tag(&rel.to)).expect("static tag is well-formed");
+        let from_locator = relation_node_locator(&rel.from);
+        let to_locator = relation_node_locator(&rel.to);
+        let from_id = NodeId::new(&from_kind, &from_locator);
+        let to_id = NodeId::new(&to_kind, &to_locator);
+        let relation_kind = rel
+            .kind
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let mut semantic_rel = SemanticRelation::new(from_id, to_id, relation_kind);
+        for e in &rel.evidence {
+            semantic_rel.attach_evidence(e.clone());
+        }
+        self.projection.add_relation(semantic_rel);
+    }
+    /// Emit the contract-side relations for a contract: DecidedBy (contract
+    /// → decision) and, when a matching Verified claim exists, VerifiedBy
+    /// (contract → spec).
+    pub fn add_contract_metadata(
+        &mut self,
+        contract: &ArchitecturalContract,
+        decision_ref: &crate::architectural_contract::DecisionRef,
+        spec_ref: &super::types::OverlaySpecRef,
+        verified_by: &[EvidenceRef],
+    ) {
+        // Ensure the contract anchor node exists (one per contract). This
+        // is idempotent: InMemorySemanticGraph::add_node replaces by id.
+        let contract_node_kind =
+            NodeKind::parse(ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag())
+                .expect("static tag is well-formed");
+        let contract_node_locator = format!("contract:{}", contract.id().as_str());
+        let contract_node_id = NodeId::new(&contract_node_kind, &contract_node_locator);
+        let mut node = SemanticNode::new(
+            contract_node_id.clone(),
+            contract_node_kind,
+            contract_node_locator.clone(),
+        );
+        node.props_inline.insert(
+            "contract_id".to_string(),
+            contract.id().as_str().to_string(),
+        );
+        node.props_inline
+            .insert("kind".to_string(), "ac2.anchor.contract".to_string());
+        self.projection.add_node(node);
+
+        // DecidedBy: contract → decision
+        let dec_locator = format!("decision:{}", decision_ref.canonical_payload());
+        let dec_kind = NodeKind::parse(ArchitectureOverlayNodeKind::DecisionRef.domain_tag())
+            .expect("static tag is well-formed");
+        let dec_id = NodeId::new(&dec_kind, &dec_locator);
+        let mut dec_node = SemanticNode::new(dec_id.clone(), dec_kind, dec_locator.clone());
+        dec_node
+            .props_inline
+            .insert("decision_ref".to_string(), decision_ref.canonical_payload());
+        self.projection.add_node(dec_node);
+
+        let relation_kind = ArchitectureOverlayRelationKind::DecidedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let semantic_rel = SemanticRelation::new(contract_node_id.clone(), dec_id, relation_kind);
+        self.projection.add_relation(semantic_rel);
+
+        // SpecRef node + VerifiedBy when evidence present.
+        let spec_locator = format!("spec:{}", spec_ref.canonical_payload());
+        let spec_kind = NodeKind::parse(ArchitectureOverlayNodeKind::SpecRef.domain_tag())
+            .expect("static tag is well-formed");
+        let spec_id = NodeId::new(&spec_kind, &spec_locator);
+        let mut spec_node = SemanticNode::new(spec_id.clone(), spec_kind, spec_locator.clone());
+        spec_node.props_inline.insert(
+            "spec_ref".to_string(),
+            spec_ref.canonical_payload().to_string(),
+        );
+        self.projection.add_node(spec_node);
+
+        if !verified_by.is_empty() {
+            let relation_kind = ArchitectureOverlayRelationKind::VerifiedBy
+                .as_relation_kind()
+                .expect("static tag is well-formed");
+            let mut semantic_rel = SemanticRelation::new(contract_node_id, spec_id, relation_kind);
+            for e in verified_by {
+                semantic_rel.attach_evidence(e.clone());
+            }
+            self.projection.add_relation(semantic_rel);
+        }
+    }
+
+    /// Find all software-unit nodes contracted by the given contract id.
+    /// REQ-AC2-009: returns empty Vec when no matching claim exists.
+    ///
+    /// Convention: `ArchitectureClaimedBy` relations run `from=claim_node,
+    /// to=unit_node`. So we look for any relation whose from is a claim
+    /// node whose props_inline.contract_id == contract_id, and return the
+    /// `to` (unit) side.
+    pub fn find_units_contracted_by(&self, contract_id: &str) -> Vec<NodeId> {
+        let relation_kind = ArchitectureOverlayRelationKind::ArchitectureClaimedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let mut results = Vec::new();
+        for rel in self.projection.relations() {
+            if rel.kind != relation_kind {
+                continue;
+            }
+            // rel.from is the claim node. Look up its contract_id prop.
+            if let Some(cid) = self.contract_id_for_claim_node(&rel.from)
+                && cid == contract_id
+            {
+                results.push(rel.to.clone());
+            }
+        }
+        results.sort();
+        results.dedup();
+        results
+    }
+
+    /// Find all contracts constraining a given software unit.
+    /// REQ-AC2-010: inverse of find_units_contracted_by.
+    ///
+    /// Convention: ArchitectureClaimedBy runs `from=claim, to=unit`. So we
+    /// find any relation whose `to` equals the unit ref, then look up the
+    /// contract_id prop on `from` (the claim node) and synthesize the
+    /// contract anchor NodeId.
+    pub fn find_contracts_for_unit(&self, unit_ref: &SoftwareUnitRef) -> Vec<NodeId> {
+        let relation_kind = ArchitectureOverlayRelationKind::ArchitectureClaimedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let unit_kind = NodeKind::parse(ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag())
+            .expect("static tag is well-formed");
+        let unit_locator = &unit_ref.0;
+        let unit_id = NodeId::new(&unit_kind, unit_locator);
+        let mut results = Vec::new();
+        for rel in self.projection.relations() {
+            if rel.kind != relation_kind || rel.to != unit_id {
+                continue;
+            }
+            if let Some(contract_id) = self.contract_id_for_claim_node(&rel.from) {
+                let contract_locator = format!("contract:{contract_id}");
+                let contract_kind =
+                    NodeKind::parse(ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag())
+                        .expect("static tag is well-formed");
+                results.push(NodeId::new(&contract_kind, &contract_locator));
+            }
+        }
+        results.sort();
+        results.dedup();
+        results
+    }
+
+    fn contract_id_for_claim_node(&self, claim_node: &NodeId) -> Option<String> {
+        for node in self.projection.nodes() {
+            if node.id == *claim_node {
+                return node.props_inline.get("contract_id").cloned();
+            }
+        }
+        None
+    }
+
+    /// Attach a claim to a unit with the appropriate relation kind based
+    /// on the claim outcome (REQ-AC2-014/015/016):
+    ///   - Verified → ArchitectureClaimedBy (ArchitectureClaimedBy in A3-S3).
+    ///   - Contradicted → ContradictsBy.
+    ///   - Unknown → ArchitectureClaimedBy (recorded as unknown).
+    ///   - Stale → NO relation emitted (REQ-AC2-016).
+    pub fn attach_claim_to_unit(
+        &mut self,
+        claim: &ArchitectureClaim,
+        claim_id: &ArchitectureClaimId,
+        unit_ref: &SoftwareUnitRef,
+    ) {
+        let evidence: Vec<EvidenceRef> = claim
+            .evidence_refs()
+            .iter()
+            .map(super::types::convert_claim_evidence_to_universal)
+            .collect();
+        match claim.outcome() {
+            ClaimOutcome::Stale => {
+                // REQ-AC2-016: stale claims excluded from projection.
+            }
+            ClaimOutcome::Contradicted => {
+                let rel = ArchitectureOverlayRelation {
+                    from: OverlayNodeRef::SoftwareUnit(unit_ref.clone()),
+                    to: OverlayNodeRef::Claim(claim_id.clone()),
+                    kind: ArchitectureOverlayRelationKind::ContradictsBy,
+                    evidence,
+                };
+                self.add_relation(&rel);
+            }
+            ClaimOutcome::Verified | ClaimOutcome::Unknown => {
+                let rel = ArchitectureOverlayRelation {
+                    from: OverlayNodeRef::Claim(claim_id.clone()),
+                    to: OverlayNodeRef::SoftwareUnit(unit_ref.clone()),
+                    kind: ArchitectureOverlayRelationKind::ArchitectureClaimedBy,
+                    evidence,
+                };
+                self.add_relation(&rel);
+            }
+        }
+    }
+
+    /// Bounded query surface (REQ-AC2-018).
+    pub fn query(&self, q: Query) -> Vec<NodeId> {
+        match q {
+            Query::ContractsForUnit(unit) => self.find_contracts_for_unit(&unit),
+            Query::UnitsContractedBy(contract) => self.find_units_contracted_by(&contract),
+            Query::TraverseDecisionToSoftware(decision) => {
+                self.traverse_decision_to_software(&decision)
+            }
+        }
+    }
+}
+
+/// Closed ADT of overlay queries (REQ-AC2-018). Unknown variants would fail
+/// closed at compile time because `match` here is exhaustive.
+pub enum Query {
+    ContractsForUnit(SoftwareUnitRef),
+    UnitsContractedBy(String),
+    TraverseDecisionToSoftware(super::types::OverlayDecisionRef),
+}
+
+/// Helper: derive the overlay node kind tag from an `OverlayNodeRef`.
+fn relation_node_kind_tag(r: &OverlayNodeRef) -> &'static str {
+    match r {
+        OverlayNodeRef::SoftwareUnit(_) => ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag(),
+        OverlayNodeRef::BoundedContext(_) => {
+            ArchitectureOverlayNodeKind::BoundedContext.domain_tag()
+        }
+        OverlayNodeRef::Decision(_) => ArchitectureOverlayNodeKind::DecisionRef.domain_tag(),
+        OverlayNodeRef::Spec(_) => ArchitectureOverlayNodeKind::SpecRef.domain_tag(),
+        OverlayNodeRef::Test(_) => ArchitectureOverlayNodeKind::TestRef.domain_tag(),
+        OverlayNodeRef::Uat(_) => ArchitectureOverlayNodeKind::UatRef.domain_tag(),
+        OverlayNodeRef::CompatibilityPath(_) => {
+            ArchitectureOverlayNodeKind::CompatibilityPath.domain_tag()
+        }
+        OverlayNodeRef::Claim(_) => ArchitectureOverlayNodeKind::ArchitectureClaim.domain_tag(),
+    }
+}
+
+/// Helper: derive the locator string from an `OverlayNodeRef`.
+fn relation_node_locator(r: &OverlayNodeRef) -> String {
+    match r {
+        OverlayNodeRef::SoftwareUnit(u) => u.0.clone(),
+        OverlayNodeRef::BoundedContext(s) => format!("ctx:{s}"),
+        OverlayNodeRef::Decision(d) => format!("decision:{}", d.canonical_payload()),
+        OverlayNodeRef::Spec(s) => format!("spec:{}", s.canonical_payload()),
+        OverlayNodeRef::Test(t) => format!("test:{}", t.0),
+        OverlayNodeRef::Uat(u) => format!("uat:{}", u.0),
+        OverlayNodeRef::CompatibilityPath(c) => format!("compat:{}", c.0),
+        OverlayNodeRef::Claim(c) => c.0.clone(),
+    }
+}
+
+impl ArchitectureGraphOverlay {
+    /// Traverse from a claim id to its software unit (REQ-AC2-011).
+    pub fn traverse_finding_to_software(&self, claim_id: &ArchitectureClaimId) -> Vec<NodeId> {
+        let relation_kind = ArchitectureOverlayRelationKind::ArchitectureClaimedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let claim_kind =
+            NodeKind::parse(ArchitectureOverlayNodeKind::ArchitectureClaim.domain_tag())
+                .expect("static tag is well-formed");
+        let target_locator = claim_id.0.clone();
+        let target_id = NodeId::new(&claim_kind, &target_locator);
+        // In this overlay's convention ArchitectureClaimedBy runs claim->unit;
+        // we want the unit side. Find any relation whose from is the claim.
+        let mut visited = Vec::new();
+        for rel in self.projection.relations() {
+            if rel.kind == relation_kind && rel.from == target_id {
+                visited.push(rel.to);
+            }
+        }
+        visited.sort();
+        visited.dedup();
+        visited
+    }
+
+    /// Traverse from a decision ref to software units reachable via the
+    /// overlay relation set (REQ-AC2-012). Forward half of REQ-AC2-011.
+    pub fn traverse_decision_to_software(
+        &self,
+        decision_ref: &super::types::OverlayDecisionRef,
+    ) -> Vec<NodeId> {
+        // DecidedBy contract → decision. Walk from the decision node to
+        // contracts, then from contracts to claims, then claims to units.
+        let decided_kind = ArchitectureOverlayRelationKind::DecidedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let decided_locator = format!("decision:{}", decision_ref.canonical_payload());
+        let dec_node_kind = NodeKind::parse(ArchitectureOverlayNodeKind::DecisionRef.domain_tag())
+            .expect("static tag is well-formed");
+        let dec_node_id = NodeId::new(&dec_node_kind, &decided_locator);
+
+        // 1) find contracts whose DecidedBy points at this decision.
+        let mut contracts = Vec::new();
+        for rel in self.projection.relations() {
+            if rel.kind == decided_kind && rel.to == dec_node_id {
+                contracts.push(rel.from.clone());
+            }
+        }
+        // 2) for each contract, find its claims.
+        let mut claims = Vec::new();
+        let claimed_kind = ArchitectureOverlayRelationKind::ArchitectureClaimedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        for contract_node_id in &contracts {
+            for rel in self.projection.relations() {
+                if rel.kind == claimed_kind && rel.from == *contract_node_id {
+                    claims.push(rel.to.clone());
+                }
+            }
+        }
+        // 3) for each claim, walk to its unit (ArchitectureClaimedBy in
+        //    this overlay convention is contract->claim; the unit side is
+        //    attached via the claim's contract_id prop and a follow-up
+        //    ArchitectureClaimedBy edge stored in opposite direction).
+        let mut units = Vec::new();
+        for claim_id in &claims {
+            // The unit side: any ArchitectureClaimedBy edge whose from
+            // matches this claim_id is the unit claim→unit edge (added
+            // via attach_claim_to_unit for Verified/Unknown).
+            for rel in self.projection.relations() {
+                if rel.kind == claimed_kind && rel.from == *claim_id {
+                    units.push(rel.to.clone());
+                }
+            }
+        }
+        units.sort();
+        units.dedup();
+        units
+    }
+}
+
+// Helper to silence the unused import warning when overlay.rs is compiled
+// in isolation.
+#[allow(dead_code)]
+fn _ensure_use(_x: &SoftwareUnit) {}
+
+#[allow(dead_code)]
+fn _ensure_use_claim(_x: &ArchitectureClaim) {}
+
+// contract_overlay_node_id is exposed in case downstream callers want to
+// reuse the locator convention; keep it referenced so `unused_imports`
+// doesn't fire.
+#[allow(dead_code)]
+const _REFERENCE_ANCHOR: fn(&ArchitecturalContract) -> OverlayNodeRef =
+    super::types::contract_overlay_node_id;
