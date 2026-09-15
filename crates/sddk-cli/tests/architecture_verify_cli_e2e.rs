@@ -171,6 +171,51 @@ fn architecture_contract_filter_rejects_unevaluable_kinds() {
 }
 
 #[test]
+fn architecture_contract_filter_rejects_dangling_subjects() {
+    // REQ-A3S13-011 (extended, found in verify): a unit-scoped kind whose
+    // subject the declaration does not describe is just as unanswerable as a
+    // global kind. AC5's missing-owner finding would eventually flag the
+    // dangling reference, but the verdict would be incidental to "verify c-x".
+    let decl = r#"
+revision: verify-rev
+knowledge_basis: test/verify
+units:
+  - id: comp:a
+    kind: module
+    locator: src/a.rs
+contracts:
+  - id: c-orphan
+    kind: single_authority
+    component: comp:missing
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+"#;
+    let tmp = tempfile::tempdir().unwrap();
+    init_plain(tmp.path(), decl);
+
+    let out = sddk(tmp.path(), &["--contract", "c-orphan"]);
+    let text = both(&out);
+    assert_eq!(out.status.code(), Some(2), "{text}");
+    assert!(out.stdout.is_empty(), "no receipt may be emitted");
+    assert!(text.contains("no evaluable subject unit"), "{text}");
+
+    // The declaration itself is still accepted: a partial declaration is a
+    // manifest of intent, and the global audit remains the thing that reports
+    // what it left undescribed.
+    let read = Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args([
+            "architecture",
+            "contracts",
+            "--root",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("sddk");
+    assert_eq!(read.status.code(), Some(0));
+}
+
+#[test]
 fn architecture_contract_filter_is_recorded() {
     // REQ-A3S13-003: present when asked for, absent (not empty) otherwise.
     let tmp = tempfile::tempdir().unwrap();

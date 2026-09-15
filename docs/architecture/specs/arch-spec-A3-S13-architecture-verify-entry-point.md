@@ -89,11 +89,16 @@ architecture`; `why architecture`; `plan architecture`; the `paradigms` and
   id while reporting different scopes and different verdicts. The id is the
   receipt's address (`--out`), so it has to distinguish them.*
 - **REQ-A3S13-011** — `--contract` naming a contract with no evaluable subject
-  unit (any kind other than `single_authority` / `unique_owner`) is a usage
-  error, not an empty scope. Pin: e2e
-  `architecture_contract_filter_rejects_unevaluable_kinds`. *Found in build:
-  "verify X" for a global-kind contract is an unanswerable question, and
-  answering it with zero rows reads as a pass.*
+  unit is a usage error, not an empty scope. "Evaluable" means: a
+  `single_authority` or `unique_owner` subject that is also a **declared unit**.
+  Pin: e2e `architecture_contract_filter_rejects_unevaluable_kinds`,
+  `architecture_contract_filter_rejects_dangling_subjects`. *Found in build: a
+  global kind has no subject at all. Extended in verify: a unit-scoped kind whose
+  subject the declaration does not describe is equally unanswerable — AC5's
+  missing-owner finding would eventually flag the dangling reference, but the
+  verdict would be incidental to the question asked, not an answer to it.*
+  A partial declaration stays valid input; the global audit remains the thing
+  that reports what it left undescribed.
 - **REQ-A3S13-012** — The renderer's scope note names the scope actually asked
   for (`change-scoped`, `contract-scoped`, `change-scoped and filtered`, or
   `empty without --changed or --contract`). Pin: e2e
@@ -120,7 +125,7 @@ the compiler surfaces every construction site.
 alongside `change_basis`, and the renderer prints it next to `change_basis:` so
 the two scope statements read together.
 
-## Acceptance tests (shipped, 12)
+## Acceptance tests (shipped, 13)
 
 Engine (`architecture_conformance/tests.rs` or `architecture_receipt/tests.rs`):
 1. `acceptance_filter_narrows_to_one_contract`
@@ -136,3 +141,4 @@ CLI e2e (`tests/architecture_verify_cli_e2e.rs`):
 9. `architecture_out_missing_parent_fails_closed`
 10. `read_surfaces_reject_change_flags`
 11. `architecture_contract_filter_rejects_unevaluable_kinds` (REQ-011)
+12. `architecture_contract_filter_rejects_dangling_subjects` (REQ-011)

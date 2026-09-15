@@ -735,13 +735,21 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
                     "architecture receipt: `--contract {id}` is not declared in `{label}`"
                 ));
             };
-            // Only unit-scoped contracts have an evaluable subject. Naming a
-            // global kind is not an empty scope, it is an unanswerable
-            // question: fail closed rather than report a passing nothing.
-            if unit_subject(contract).is_none() {
+            // A subject is evaluable only if it is a *declared unit* of a
+            // unit-scoped kind. Anything else is an unanswerable question, not
+            // an empty scope: fail closed rather than report a passing nothing.
+            //
+            // Both halves matter. A global kind (`bounded_compatibility`) has no
+            // subject at all, and `declare_overlay` links nothing for a contract
+            // whose subject unit the declaration does not describe — AC5 would
+            // eventually flag the dangling reference, but the verdict would be
+            // incidental to the question asked.
+            let subject_ok =
+                unit_subject(contract).is_some_and(|s| declared.units.iter().any(|u| u.id.0 == s));
+            if !subject_ok {
                 return error_output(format!(
                     "architecture receipt: `--contract {id}` has no evaluable subject unit \
-                     (only `single_authority` and `unique_owner` are unit-scoped)"
+                     (needs a `single_authority`/`unique_owner` subject that is a declared unit)"
                 ));
             }
             Some(wanted)
