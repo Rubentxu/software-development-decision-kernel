@@ -72,8 +72,16 @@ any verdict, score, write or persistence; a new root module.
 ## Requirements (REQ-A3S14-NNN)
 
 - **REQ-A3S14-001** — `architecture findings` lists every AC5 finding with kind,
-  severity, subjects, contract ids and message. Pin: e2e
-  `architecture_findings_lists_full_shape`.
+  severity, subjects, contract ids and message, for **every** kind AC5 can
+  produce, in the audit's canonical order. Pin: e2e
+  `architecture_findings_lists_full_shape`,
+  `architecture_findings_carries_the_full_kind_variety`. *Broadened in verify:
+  the narrow fixture only reached two of the five kinds, so a renderer that
+  special-cased one would have passed. The broadened pin drives all five
+  (`shadow_authority`, `missing_owner`, `authority_bypass`,
+  `stale_compatibility`, `contradiction`) in one declaration and asserts each
+  kind's severity, contract ids and ordering, then that each `--kind` isolates
+  its own finding.*
 - **REQ-A3S14-002** — `--kind <tag>` narrows to that kind; the accepted tags are
   the five `DebVerifyFindingKind` canonical tags. Pin: e2e
   `architecture_findings_kind_filter`.
@@ -114,7 +122,7 @@ set is derived from the closed enum rather than hand-listed.
 Rendering mirrors the existing row-per-item read surfaces: one flat, aligned line
 per finding, counts summarised at the end, no verdict line.
 
-## Acceptance tests (planned, 10)
+## Acceptance tests (shipped, 11)
 
 CLI e2e (`tests/architecture_findings_cli_e2e.rs`):
 
@@ -127,4 +135,6 @@ CLI e2e (`tests/architecture_findings_cli_e2e.rs`):
 7. `architecture_findings_clock_is_honest`
 8. `architecture_findings_is_inspection_not_a_gate`
 9. `architecture_findings_fails_closed_on_bad_declaration`
-10. `architecture_findings_subcommand_registered` (via the `command_spec` suite)
+10. `architecture_findings_carries_the_full_kind_variety` (REQ-001, verify)
+11. `architecture_findings_writes_nothing` (REQ-008)
+12. `architecture_findings_subcommand_registered` (via the `command_spec` suite)

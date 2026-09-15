@@ -411,3 +411,132 @@ fn architecture_findings_writes_nothing() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(before, after, "findings must not create or remove anything");
 }
+
+#[test]
+fn architecture_findings_carries_the_full_kind_variety() {
+    // REQ-A3S14-001/005 (broadened in verify): the surface must render every
+    // kind AC5 can produce, not just the two that happen to be easy to trigger.
+    // Each kind has its own severity and its own contract_ids shape, so a
+    // renderer that special-cases one kind would pass the narrow tests and fail
+    // here.
+    let decl = r#"
+revision: five
+knowledge_basis: test/findings
+units:
+  - id: comp:domain
+  - id: comp:provider
+  - id: comp:dup
+  - id: ent:twin
+relations:
+  - from: comp:domain
+    to: comp:provider
+    kind: depends_on
+  - from: comp:dup
+    to: ent:twin
+    kind: owns
+contracts:
+  - id: no-edge
+    kind: forbidden_dependency
+    from: comp:domain
+    to: comp:provider
+    reason: forbidden
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: auth-1
+    kind: single_authority
+    component: comp:dup
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: auth-2
+    kind: single_authority
+    component: comp:dup
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: proj-1
+    kind: projection_only
+    source_kind: comp:dup
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: orphan
+    kind: single_authority
+    component: comp:nowhere
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: window
+    kind: bounded_compatibility
+    component: comp:domain
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+    deprecated_after_ms: 500
+"#;
+    let tmp = tempfile::tempdir().unwrap();
+    write_decl(tmp.path(), decl);
+
+    let out = sddk(
+        tmp.path(),
+        &["findings", "--now-ms", "5000", "--format", "json"],
+    );
+    let text = both(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    let rows = json_rows(&out);
+
+    let pairs: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|r| (r["kind"].as_str().unwrap(), r["severity"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            // DebVerifyAudit orders findings by (kind, subjects, contract_ids),
+            // which is the canonical order the audit documents.
+            ("ShadowAuthority", "Critical"),
+            ("MissingOwner", "High"),
+            ("AuthorityBypass", "Critical"),
+            ("StaleCompatibility", "Medium"),
+            ("Contradiction", "High"),
+        ],
+        "all five kinds, in the audit's canonical order: {text}"
+    );
+
+    // Each kind names the contracts involved, which is what the receipt dropped.
+    assert_eq!(find(&rows, "AuthorityBypass")["contract_ids"][0], "no-edge");
+    assert_eq!(find(&rows, "MissingOwner")["contract_ids"][0], "orphan");
+    // The contradiction involves both sides of the conflict.
+    let contra: Vec<&str> = find(&rows, "Contradiction")["contract_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap())
+        .collect();
+    assert!(
+        contra.contains(&"auth-1") && contra.contains(&"proj-1"),
+        "{contra:?}"
+    );
+
+    // Every kind is filterable, which is what `--kind` derives from the enum.
+    for tag in [
+        "shadow_authority",
+        "missing_owner",
+        "authority_bypass",
+        "stale_compatibility",
+        "contradiction",
+    ] {
+        let one = sddk(
+            tmp.path(),
+            &[
+                "findings", "--now-ms", "5000", "--kind", tag, "--format", "json",
+            ],
+        );
+        assert_eq!(
+            json_rows(&one).len(),
+            1,
+            "--kind {tag} must isolate its own finding"
+        );
+    }
+}
