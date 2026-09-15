@@ -509,6 +509,15 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             Some("arch-spec-A3-S11-architecture-read-surfaces"),
         ),
         spec(
+            "architecture findings",
+            "List the AC5 DebVerify findings with their full shape",
+            OutputFormatKind::Text,
+            vec![],
+            false,
+            None,
+            Some("arch-spec-A3-S14-architecture-findings"),
+        ),
+        spec(
             "architecture",
             "Architecture conformance: emit the architecture-conformance receipt",
             OutputFormatKind::Text,

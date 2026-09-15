@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 56,
+  "total": 57,
   "entries": [
     {
       "name": "version",
@@ -184,6 +184,14 @@
       "side_effect_class": "pure",
       "required_authority": "none",
       "machine": "ArchitectureGraphReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "architecture findings",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "ArchitectureFindingsListV1",
       "examples_n": 0
     },
     {

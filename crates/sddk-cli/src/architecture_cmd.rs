@@ -18,7 +18,9 @@ use sddk_engine::architectural_contract::{
 use sddk_engine::architecture_conformance::{
     ConformanceInputs, ContractEvidence, compute_conformance_delta,
 };
-use sddk_engine::architecture_debverify::run_debverify_audit;
+use sddk_engine::architecture_debverify::{
+    DebVerifyFinding, DebVerifyFindingKind, run_debverify_audit,
+};
 use sddk_engine::architecture_declaration::{DeclarationFile, validate};
 use sddk_engine::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
 use sddk_engine::architecture_mutation::{MutationSandbox, run_mutation_suite};
@@ -64,6 +66,8 @@ pub(crate) enum ArchitectureCommand {
     Compatibility(ReadArgs),
     /// Show the declared units and relations (the AC2 projection).
     Graph(GraphReadArgs),
+    /// List the AC5 DebVerify findings with their full shape.
+    Findings(FindingsArgs),
 }
 
 /// Arguments shared by the read surfaces.
@@ -100,6 +104,27 @@ pub(crate) struct GraphReadArgs {
     /// Restrict units to those whose locator starts with this prefix.
     #[arg(long)]
     pub(crate) scope: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Arguments for `architecture findings`.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct FindingsArgs {
+    /// Repository root.
+    #[arg(long, default_value = ".")]
+    pub(crate) root: PathBuf,
+    /// Declaration file, relative to `--root`.
+    #[arg(long, default_value = DEFAULT_DECLARATION)]
+    pub(crate) contracts: PathBuf,
+    /// Evaluation time in epoch-ms. Defaults to the current wall clock;
+    /// pass it explicitly for a reproducible run.
+    #[arg(long)]
+    pub(crate) now_ms: Option<i64>,
+    /// Restrict the listing to one finding kind (canonical tag).
+    #[arg(long)]
+    pub(crate) kind: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -147,6 +172,7 @@ pub(crate) fn run_architecture(
         ArchitectureCommand::Ownership(args) => run_ownership(args),
         ArchitectureCommand::Compatibility(args) => run_compatibility(args),
         ArchitectureCommand::Graph(args) => run_graph(args),
+        ArchitectureCommand::Findings(args) => run_findings(args),
     }
 }
 
@@ -667,6 +693,105 @@ fn run_graph(args: GraphReadArgs) -> CommandOutput {
         args.format,
         &format!("architecture graph — revision {}", decl.revision),
         std::slice::from_ref(&row),
+        text,
+    )
+}
+
+/// Resolve a `--kind` tag against the closed finding-kind enum.
+///
+/// Derived from `ALL` rather than hand-listed, so a new kind is filterable the
+/// moment it exists and the accepted set in the error cannot go stale.
+fn finding_kind_from_tag(tag: &str) -> Option<DebVerifyFindingKind> {
+    DebVerifyFindingKind::ALL
+        .into_iter()
+        .find(|k| k.canonical_tag() == tag)
+}
+
+fn accepted_kind_tags() -> String {
+    DebVerifyFindingKind::ALL
+        .iter()
+        .map(|k| k.canonical_tag())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `sddk architecture findings` — the AC5 audit as an inspectable projection.
+///
+/// Deliberately shares `load_declaration`, `declare_overlay` and
+/// `run_debverify_audit` with `receipt`, with no preprocessing and no filtering
+/// before the audit. The two surfaces therefore cannot disagree about what the
+/// audit found; they differ only in what they print. `receipt` gates on the
+/// result, this lists it — no verdict, no score, no writes.
+fn run_findings(args: FindingsArgs) -> CommandOutput {
+    let kind_filter = match args.kind.as_deref() {
+        None => None,
+        Some(tag) => match finding_kind_from_tag(tag) {
+            Some(k) => Some(k),
+            None => {
+                // An empty listing would be indistinguishable from a clean
+                // declaration, so an unknown tag is a usage error.
+                return error_output(format!(
+                    "architecture findings: unknown --kind `{tag}` (accepted: {})",
+                    accepted_kind_tags()
+                ));
+            }
+        },
+    };
+
+    let decl = match load_declaration(&args.root, &args.contracts) {
+        Ok(d) => d,
+        Err(o) => return o,
+    };
+    let now = resolve_now(args.now_ms);
+    let overlay = declare_overlay(&decl, now);
+    let audit = match run_debverify_audit(&overlay, &decl.contracts, now) {
+        Ok(a) => a,
+        Err(e) => return error_output(format!("architecture findings: audit failed: {e}")),
+    };
+
+    let rows: Vec<DebVerifyFinding> = audit
+        .findings
+        .iter()
+        .filter(|f| kind_filter.is_none_or(|k| f.kind == k))
+        .cloned()
+        .collect();
+
+    let mut text = String::new();
+    for f in &rows {
+        let contracts: Vec<String> = f
+            .contract_ids
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect();
+        text.push_str(&format!(
+            "  {:<24} {:<9} subjects=[{}] contracts=[{}]\n",
+            f.kind.canonical_tag(),
+            f.severity.canonical_tag(),
+            f.subjects.join(", "),
+            contracts.join(", ")
+        ));
+        text.push_str(&format!("    {}\n", f.message));
+    }
+    if rows.is_empty() {
+        text.push_str("  (no findings)\n");
+    }
+    text.push_str(&format!(
+        "  {} finding(s) over {} audited contract(s)\n",
+        rows.len(),
+        audit.audited_contracts
+    ));
+
+    let scope = match kind_filter {
+        Some(k) => format!(", kind={}", k.canonical_tag()),
+        None => String::new(),
+    };
+    emit(
+        args.format,
+        &format!(
+            "architecture findings — revision {}, now={}{}",
+            decl.revision, now.0, scope
+        ),
+        &rows,
         text,
     )
 }
