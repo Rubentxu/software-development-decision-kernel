@@ -60,7 +60,7 @@ mod tests;
 pub use compose::{ReceiptInputs, compose_receipt};
 pub use self_audit::evaluate_class_coverage;
 pub use types::{
-    ArchitectureConformanceReceipt, ClaimResult, ClassCoverage, CompatibilityEntry,
+    ArchitectureConformanceReceipt, ChangeBasis, ClaimResult, ClassCoverage, CompatibilityEntry,
     HistoricalClass, LensResult, MutationResult, ReceiptBasis, ReceiptId, ReceiptVerdict,
     UnresolvedFinding,
 };

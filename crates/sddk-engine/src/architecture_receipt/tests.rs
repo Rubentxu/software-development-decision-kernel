@@ -145,6 +145,7 @@ fn compose(
             lenses: &lenses,
             waivers,
             provider_basis: providers,
+            change_basis: None,
         },
         now,
     )
@@ -369,6 +370,7 @@ fn acceptance_pass_when_clean() {
             lenses: &[],
             waivers: &[],
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 2),
     );
@@ -434,6 +436,7 @@ fn acceptance_medium_is_advisory() {
             lenses: &[],
             waivers: &[],
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 101),
     );
@@ -698,6 +701,7 @@ fn acceptance_all_five_classes_reproduced() {
             lenses: &[],
             waivers: &[],
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 2),
     );
@@ -784,6 +788,38 @@ fn acceptance_rebuild_preserves_findings() {
     assert_eq!(r1.id, r2.id);
     assert_eq!(r1.class_coverage, r2.class_coverage);
     assert_eq!(r1.verdict, r2.verdict);
+}
+
+#[test]
+fn acceptance_receipt_carries_change_basis() {
+    // REQ-A3S12-005 (engine side): a supplied basis is copied through; absence
+    // stays absence.
+    let f = fixture();
+    let global = compose(&f, &[], &[], EventTime(T0 + 2));
+    assert!(global.change_basis.is_none());
+
+    let basis = ChangeBasis {
+        base: "origin/main".to_string(),
+        changed_units: vec!["comp:auth".to_string()],
+    };
+    let lenses: Vec<crate::paradigm_lens::LensEvaluation> = vec![];
+    let scoped = compose_receipt(
+        ReceiptInputs {
+            revision: "rev".into(),
+            knowledge_basis: "kb".into(),
+            delta: &f.delta,
+            audit: &f.audit,
+            mutations: &f.mutations,
+            lenses: &lenses,
+            waivers: &[],
+            provider_basis: &[],
+            change_basis: Some(&basis),
+        },
+        EventTime(T0 + 2),
+    );
+    let got = scoped.change_basis.expect("basis carried");
+    assert_eq!(got.base, "origin/main");
+    assert_eq!(got.changed_units, vec!["comp:auth".to_string()]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

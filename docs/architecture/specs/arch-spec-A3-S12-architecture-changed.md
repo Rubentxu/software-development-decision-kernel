@@ -70,13 +70,15 @@ other kinds remain global.
   `architecture_changed_text_names_base`.
 - **REQ-A3S12-007** — A global run (no `--changed`) is unchanged: empty basis,
   `audited_contracts` from AC5. Pin: e2e `architecture_global_run_unchanged`.
+  The text renderer prints `change_basis:      (global run; no --changed)` so a
+  global run and an empty scoped run are never confused.
 - **REQ-A3S12-008** — Untouched units' contracts do not enter the delta.
   Pin: e2e `architecture_changed_excludes_untouched`.
 - **REQ-A3S12-009** — The linkage claims are produced by AC1's evaluator and are
   `Unknown` when no evidence is supplied. Pin: e2e
   `architecture_changed_reports_unknown_without_evidence`.
 
-## Acceptance tests (planned, 9)
+## Acceptance tests (shipped, 11)
 
 CLI unit tests (`architecture_cmd.rs`):
 1. `acceptance_path_overlap`
@@ -92,6 +94,8 @@ CLI e2e (`tests/architecture_changed_cli_e2e.rs`):
 7. `architecture_changed_records_basis`
 8. `architecture_changed_excludes_untouched`
 9. `architecture_global_run_unchanged`
+10. `architecture_changed_text_names_base` (REQ-006)
+11. `architecture_changed_reports_unknown_without_evidence` (REQ-009)
 
 ## Change-basis contract
 

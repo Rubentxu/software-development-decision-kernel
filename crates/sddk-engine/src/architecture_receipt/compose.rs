@@ -22,8 +22,8 @@ use crate::paradigm_lens::LensEvaluation;
 
 use super::self_audit::evaluate_class_coverage;
 use super::types::{
-    ArchitectureConformanceReceipt, ClaimResult, CompatibilityEntry, LensResult, MutationResult,
-    ReceiptBasis, ReceiptId, ReceiptVerdict, UnresolvedFinding,
+    ArchitectureConformanceReceipt, ChangeBasis, ClaimResult, CompatibilityEntry, LensResult,
+    MutationResult, ReceiptBasis, ReceiptId, ReceiptVerdict, UnresolvedFinding,
 };
 
 /// The inputs the receipt aggregates. Every value is produced elsewhere.
@@ -44,6 +44,8 @@ pub struct ReceiptInputs<'a> {
     pub waivers: &'a [String],
     /// Provider contributions; empty in Base mode (AC-041-005).
     pub provider_basis: &'a [String],
+    /// The change basis, when the caller scoped the run.
+    pub change_basis: Option<&'a ChangeBasis>,
 }
 
 fn waiver_for(kind: &str, subjects: &[String], waivers: &[String]) -> Vec<String> {
@@ -243,6 +245,7 @@ pub fn compose_receipt(
         vector: inputs.delta.vector,
         unresolved,
         class_coverage,
+        change_basis: inputs.change_basis.cloned(),
         waivers,
         verdict,
         created_at: now,

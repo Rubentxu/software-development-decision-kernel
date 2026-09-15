@@ -165,6 +165,7 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
             lenses: &lenses,
             waivers: &[],
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 2),
     );
@@ -202,6 +203,7 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
             lenses: &lenses,
             waivers: &[],
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 2),
     );
@@ -251,6 +253,7 @@ fn ac8_waivers_turn_blocked_into_pass_with_waivers() {
             lenses: &[],
             waivers: &waivers,
             provider_basis: &[],
+            change_basis: None,
         },
         EventTime(T0 + 2),
     );

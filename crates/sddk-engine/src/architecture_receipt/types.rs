@@ -166,6 +166,18 @@ pub struct CompatibilityEntry {
     pub status: DeltaContractStatus,
 }
 
+/// The change basis a scoped receipt was computed against.
+///
+/// `None` on the receipt means a global run (no change basis supplied); an
+/// empty `changed_units` inside a present basis is a *real* zero.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeBasis {
+    /// The resolved base revision the diff was taken against.
+    pub base: String,
+    /// The declared units a changed path overlapped (sorted).
+    pub changed_units: Vec<String>,
+}
+
 /// One unresolved finding that may block the receipt.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnresolvedFinding {
@@ -267,6 +279,8 @@ pub struct ArchitectureConformanceReceipt {
     pub class_coverage: Vec<ClassCoverage>,
     /// All unresolved findings (mandatory ones drive the verdict).
     pub unresolved: Vec<UnresolvedFinding>,
+    /// The change basis, when the run was change-scoped (AC8 + AC4).
+    pub change_basis: Option<ChangeBasis>,
     /// Waivers supplied by the caller (never invented).
     pub waivers: Vec<String>,
     /// The verdict.

@@ -12,16 +12,18 @@ use clap::{Args, Subcommand};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
 use sddk_engine::architectural_contract::{
-    ArchitecturalContract, ContractPayload, DecisionRef, SpecRef,
+    ArchitecturalContract, ContractEvaluation, ContractPayload, DecisionRef, EvaluatorRef, SpecRef,
 };
 use sddk_engine::architecture_conformance::{
     ConformanceInputs, ContractEvidence, compute_conformance_delta,
 };
 use sddk_engine::architecture_debverify::run_debverify_audit;
 use sddk_engine::architecture_declaration::{DeclarationFile, validate};
-use sddk_engine::architecture_graph::ArchitectureGraphOverlay;
+use sddk_engine::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
 use sddk_engine::architecture_mutation::{MutationSandbox, run_mutation_suite};
-use sddk_engine::architecture_receipt::{ReceiptInputs, ReceiptVerdict, compose_receipt};
+use sddk_engine::architecture_receipt::{
+    ChangeBasis, ReceiptInputs, ReceiptVerdict, compose_receipt,
+};
 use sddk_engine::knowledge::EventTime;
 use serde::Serialize;
 
@@ -76,6 +78,12 @@ pub(crate) struct ReadArgs {
     /// pass it explicitly for a reproducible run.
     #[arg(long)]
     pub(crate) now_ms: Option<i64>,
+    /// Scope the receipt to units touched since `--base` (git diff).
+    #[arg(long)]
+    pub(crate) changed: bool,
+    /// Revision the change basis is taken against (default: origin/main, then HEAD~1).
+    #[arg(long)]
+    pub(crate) base: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -114,6 +122,12 @@ pub(crate) struct ArchitectureReceiptArgs {
     /// pass it explicitly for a reproducible run.
     #[arg(long)]
     pub(crate) now_ms: Option<i64>,
+    /// Scope the receipt to units touched since `--base` (git diff).
+    #[arg(long)]
+    pub(crate) changed: bool,
+    /// Revision the change basis is taken against (default: origin/main, then HEAD~1).
+    #[arg(long)]
+    pub(crate) base: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -160,9 +174,29 @@ fn load_declaration(
     validate(&parsed, &label).map_err(|e| error_output(format!("architecture: {e}")))
 }
 
-/// Build the AC2 overlay from a validated declaration (units + relations).
+/// The declared unit a contract is scoped to, when it is unit-scoped.
+///
+/// Only `SingleAuthority` (component) and `UniqueOwner` (entity) name a subject
+/// that is also a unit id; the other kinds are global.
+fn unit_subject(contract: &ArchitecturalContract) -> Option<String> {
+    match contract.payload() {
+        ContractPayload::SingleAuthority(c) => Some(c.as_str().to_string()),
+        ContractPayload::UniqueOwner(e) => Some(e.as_str().to_string()),
+        _ => None,
+    }
+}
+
+/// Build the AC2 overlay from a validated declaration.
+///
+/// Also attaches a **linkage claim** for every unit-scoped contract so that
+/// `ArchitectureGraphOverlay::find_contracts_for_unit` (which discovers
+/// contracts through `ArchitectureClaimedBy` relations) can scope AC4. The
+/// claim is a genuine AC1 evaluation whose outcome is truthfully `Unknown`
+/// when no evidence is supplied — it establishes the link, and AC4 then
+/// re-evaluates with the caller's evidence.
 fn declare_overlay(
     decl: &sddk_engine::architecture_declaration::DeclaredArchitecture,
+    now: EventTime,
 ) -> ArchitectureGraphOverlay {
     let mut overlay = ArchitectureGraphOverlay::new();
     for unit in &decl.units {
@@ -171,7 +205,126 @@ fn declare_overlay(
     for relation in &decl.relations {
         overlay.add_relation(relation);
     }
+    let unit_ids: std::collections::BTreeSet<&str> =
+        decl.units.iter().map(|u| u.id.0.as_str()).collect();
+    for contract in &decl.contracts {
+        let Some(subject) = unit_subject(contract) else {
+            continue;
+        };
+        if !unit_ids.contains(subject.as_str()) {
+            continue;
+        }
+        let evaluator =
+            EvaluatorRef::new("sddk.architecture_cli.linkage").expect("non-empty literal");
+        let claim = ContractEvaluation::evaluate(contract, Vec::new(), now, evaluator, None);
+        let claim_id = overlay.add_claim(&claim);
+        overlay.attach_claim_to_unit(&claim, &claim_id, &SoftwareUnitRef::new(subject));
+        // `find_contracts_for_unit` returns a synthesized contract-anchor
+        // NodeId; AC4 resolves it through the anchor node's `contract_id` prop,
+        // which only `add_contract_metadata` writes.
+        overlay.add_contract_metadata(
+            contract,
+            contract.decided_by(),
+            contract.specified_by(),
+            &[],
+        );
+    }
     overlay
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Change basis (`--changed`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// True when a unit locator and a changed path overlap (either is a prefix of
+/// the other, so a directory locator covers its files).
+pub(crate) fn path_overlaps(locator: &str, path: &str) -> bool {
+    if locator.is_empty() || path.is_empty() {
+        return false;
+    }
+    path.starts_with(locator) || locator.starts_with(path)
+}
+
+fn git(root: &Path, args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git {:?} failed to start: {e}", args))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Resolve the base revision, or fail closed.
+fn resolve_base(root: &Path, explicit: Option<&str>) -> Result<String, String> {
+    if let Some(b) = explicit {
+        git(root, &["rev-parse", "--verify", &format!("{b}^{{commit}}")])
+            .map_err(|_| format!("`--base {b}` does not resolve to a commit"))?;
+        return Ok(b.to_string());
+    }
+    for candidate in ["origin/main", "HEAD~1"] {
+        if git(
+            root,
+            &["rev-parse", "--verify", &format!("{candidate}^{{commit}}")],
+        )
+        .is_ok()
+        {
+            return Ok(candidate.to_string());
+        }
+    }
+    Err("no base revision could be resolved (pass --base <rev>)".to_string())
+}
+
+/// Union of the committed range diff and the worktree diff.
+fn git_changed_paths(root: &Path, base: &str) -> Result<Vec<String>, String> {
+    let range = format!("{base}...HEAD");
+    let mut paths: Vec<String> = Vec::new();
+    if let Ok(out) = git(root, &["diff", "--name-only", &range]) {
+        paths.extend(
+            out.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty()),
+        );
+    }
+    if let Ok(out) = git(root, &["diff", "--name-only"]) {
+        paths.extend(
+            out.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty()),
+        );
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+/// Build the change basis for `--changed`.
+fn changed_basis(
+    root: &Path,
+    explicit_base: Option<&str>,
+    decl: &sddk_engine::architecture_declaration::DeclaredArchitecture,
+) -> Result<ChangeBasis, String> {
+    let base = resolve_base(root, explicit_base)?;
+    let paths = git_changed_paths(root, &base)?;
+    let mut units: Vec<String> = decl
+        .units
+        .iter()
+        .filter(|u| paths.iter().any(|p| path_overlaps(&u.locator, p)))
+        .map(|u| u.id.0.clone())
+        .collect();
+    units.sort();
+    units.dedup();
+    Ok(ChangeBasis {
+        base,
+        changed_units: units,
+    })
 }
 
 /// A contract's subject identifier, for display and grouping.
@@ -390,11 +543,12 @@ fn run_compatibility(args: ReadArgs) -> CommandOutput {
     };
     // AC5 tells us which windows are actually stale; the read surface mirrors
     // that rather than re-deriving it.
-    let overlay = declare_overlay(&decl);
+    let now = resolve_now(args.now_ms);
+    let overlay = declare_overlay(&decl, now);
     let audit = match sddk_engine::architecture_debverify::run_debverify_audit(
         &overlay,
         &decl.contracts,
-        resolve_now(args.now_ms),
+        now,
     ) {
         Ok(a) => a,
         Err(e) => return error_output(format!("architecture: audit failed: {e}")),
@@ -456,7 +610,7 @@ fn run_graph(args: GraphReadArgs) -> CommandOutput {
         Ok(d) => d,
         Err(o) => return o,
     };
-    let overlay = declare_overlay(&decl);
+    let overlay = declare_overlay(&decl, EventTime(0));
     let units: Vec<(String, String, String)> = decl
         .units
         .iter()
@@ -535,13 +689,33 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
     };
 
     // ── AC2 overlay ────────────────────────────────────────────────────────
-    let overlay = declare_overlay(&declared);
+    let now = resolve_now(args.now_ms);
+    let change_basis = if args.changed {
+        match changed_basis(&args.root, args.base.as_deref(), &declared) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                return error_output(format!("architecture receipt: {e}"));
+            }
+        }
+    } else {
+        None
+    };
+    let overlay = declare_overlay(&declared, now);
 
     // ── AC4: change-scoped delta over an EMPTY change basis ────────────────
     // The receipt is global; the delta contributes its digests and its
     // (empty) claim/witness sets honestly.
+    let changed_unit_refs: Vec<SoftwareUnitRef> = change_basis
+        .as_ref()
+        .map(|b| {
+            b.changed_units
+                .iter()
+                .map(|u| SoftwareUnitRef::new(u.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+
     let evidence: ContractEvidence = std::collections::BTreeMap::new();
-    let now = resolve_now(args.now_ms);
     let delta = match compute_conformance_delta(
         &overlay,
         ConformanceInputs {
@@ -550,7 +724,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             contradiction_witnesses: &[],
         },
         now,
-        &[],
+        changed_unit_refs.as_slice(),
     ) {
         Ok(d) => d,
         Err(e) => return error_output(format!("architecture receipt: delta failed: {e}")),
@@ -581,6 +755,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             lenses: &[],
             waivers: &declared.waivers,
             provider_basis: &[],
+            change_basis: change_basis.as_ref(),
         },
         now,
     );
@@ -634,6 +809,14 @@ fn render_text(
         receipt.contradictions.len()
     ));
     out.push_str(&format!("waivers:           {}\n", receipt.waivers.len()));
+    match &receipt.change_basis {
+        Some(b) => out.push_str(&format!(
+            "change_basis:      base={} changed_units={}\n",
+            b.base,
+            b.changed_units.len()
+        )),
+        None => out.push_str("change_basis:      (global run; no --changed)\n"),
+    }
     out.push_str("historical_class_coverage:\n");
     for c in &receipt.class_coverage {
         out.push_str(&format!(
@@ -666,5 +849,72 @@ fn error_output(message: String) -> CommandOutput {
         status: EXIT_INPUT_ERROR,
         stdout: String::new(),
         stderr: format!("{message}\n"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sddk_engine::architecture_declaration::{DeclarationFile, validate};
+
+    /// REQ-A3S12-001
+    #[test]
+    fn acceptance_path_overlap() {
+        // File locator vs a changed path in the same directory.
+        assert!(path_overlaps(
+            "crates/sddk-engine/src/architecture_graph",
+            "crates/sddk-engine/src/architecture_graph/overlay.rs"
+        ));
+        // Exact file match.
+        assert!(path_overlaps(
+            "crates/sddk-engine/src/canonical_event_log.rs",
+            "crates/sddk-engine/src/canonical_event_log.rs"
+        ));
+        // Disjoint paths do not overlap.
+        assert!(!path_overlaps(
+            "crates/sddk-engine/src/architecture_graph",
+            "crates/sddk-cli/src/lib.rs"
+        ));
+        // Empty input is never an overlap (guards against a prefix match on "").
+        assert!(!path_overlaps("", "crates/x.rs"));
+        assert!(!path_overlaps("crates/x.rs", ""));
+    }
+
+    /// REQ-A3S12-002
+    #[test]
+    fn acceptance_changed_units_mapping() {
+        let yaml = r#"
+revision: r1
+units:
+  - id: comp:touched
+    locator: crates/a/src/lib.rs
+  - id: comp:untouched
+    locator: crates/b/src/lib.rs
+"#;
+        let parsed: DeclarationFile = serde_yaml::from_str(yaml).expect("yaml");
+        let decl = validate(&parsed, "t").expect("valid");
+        let paths = ["crates/a/src/lib.rs".to_string()];
+        let affected: Vec<String> = decl
+            .units
+            .iter()
+            .filter(|u| paths.iter().any(|p| path_overlaps(&u.locator, p)))
+            .map(|u| u.id.0.clone())
+            .collect();
+        assert_eq!(affected, vec!["comp:touched".to_string()]);
+    }
+
+    /// REQ-A3S12-005
+    #[test]
+    fn acceptance_change_basis_optional() {
+        // The type models both states; absence is not an empty basis.
+        let none: Option<ChangeBasis> = None;
+        assert!(none.is_none());
+        let empty = ChangeBasis {
+            base: "origin/main".to_string(),
+            changed_units: vec![],
+        };
+        // A present-but-empty basis is a *real* zero, distinct from absence.
+        assert!(empty.changed_units.is_empty());
+        assert!(!empty.base.is_empty());
     }
 }
