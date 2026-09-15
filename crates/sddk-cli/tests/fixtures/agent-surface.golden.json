@@ -147,43 +147,43 @@
       "examples_n": 0
     },
     {
-      "name": "architecture.contracts",
+      "name": "architecture contracts",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "Architecture.contractsListV1",
+      "machine": "ArchitectureContractsListV1",
       "examples_n": 0
     },
     {
-      "name": "architecture.authorities",
+      "name": "architecture authorities",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "Architecture.authoritiesListV1",
+      "machine": "ArchitectureAuthoritiesListV1",
       "examples_n": 0
     },
     {
-      "name": "architecture.ownership",
+      "name": "architecture ownership",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "Architecture.ownershipReportV1",
+      "machine": "ArchitectureOwnershipReportV1",
       "examples_n": 0
     },
     {
-      "name": "architecture.compatibility",
+      "name": "architecture compatibility",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "Architecture.compatibilityReportV1",
+      "machine": "ArchitectureCompatibilityReportV1",
       "examples_n": 0
     },
     {
-      "name": "architecture.graph",
+      "name": "architecture graph",
       "stability": "stable",
       "side_effect_class": "pure",
       "required_authority": "none",
-      "machine": "Architecture.graphReportV1",
+      "machine": "ArchitectureGraphReportV1",
       "examples_n": 0
     },
     {

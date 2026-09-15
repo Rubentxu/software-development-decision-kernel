@@ -464,7 +464,7 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
         ),
         spec(
-            "architecture.contracts",
+            "architecture contracts",
             "List every declared architectural contract",
             OutputFormatKind::Text,
             vec![],
@@ -473,7 +473,7 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             Some("arch-spec-A3-S11-architecture-read-surfaces"),
         ),
         spec(
-            "architecture.authorities",
+            "architecture authorities",
             "List declared single-authority contracts grouped by component",
             OutputFormatKind::Text,
             vec![],
@@ -482,7 +482,7 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             Some("arch-spec-A3-S11-architecture-read-surfaces"),
         ),
         spec(
-            "architecture.ownership",
+            "architecture ownership",
             "List declared unique-owner contracts grouped by entity",
             OutputFormatKind::Text,
             vec![],
@@ -491,7 +491,7 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             Some("arch-spec-A3-S11-architecture-read-surfaces"),
         ),
         spec(
-            "architecture.compatibility",
+            "architecture compatibility",
             "List declared compatibility windows and their status",
             OutputFormatKind::Text,
             vec![],
@@ -500,7 +500,7 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             Some("arch-spec-A3-S11-architecture-read-surfaces"),
         ),
         spec(
-            "architecture.graph",
+            "architecture graph",
             "Show the declared units and relations (AC2 projection)",
             OutputFormatKind::Text,
             vec![],

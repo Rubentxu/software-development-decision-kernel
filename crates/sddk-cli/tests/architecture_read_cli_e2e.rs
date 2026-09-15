@@ -279,11 +279,11 @@ fn architecture_subcommands_are_registered() {
         String::from_utf8_lossy(&out.stderr)
     );
     for surface in [
-        "architecture.contracts",
-        "architecture.authorities",
-        "architecture.ownership",
-        "architecture.compatibility",
-        "architecture.graph",
+        "architecture contracts",
+        "architecture authorities",
+        "architecture ownership",
+        "architecture compatibility",
+        "architecture graph",
     ] {
         assert!(text.contains(surface), "registry missing `{surface}`");
     }
