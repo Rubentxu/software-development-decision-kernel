@@ -77,8 +77,20 @@ other kinds remain global.
 - **REQ-A3S12-009** — The linkage claims are produced by AC1's evaluator and are
   `Unknown` when no evidence is supplied. Pin: e2e
   `architecture_changed_reports_unknown_without_evidence`.
+- **REQ-A3S12-010** — Path enumeration is byte-faithful: `git diff` is read
+  NUL-separated (`-z`), so a path holding a byte outside ASCII or a space still
+  matches its locator. Pin: e2e `architecture_changed_matches_non_ascii_paths`,
+  `architecture_changed_matches_paths_with_spaces`. *Found in verify: without
+  `-z`, git quotes `café/y.rs` as `"caf\303\251/y.rs"`, no locator matches, and
+  `--changed` silently reports an empty basis for a file that did change.*
+- **REQ-A3S12-011** — Renames are split (`--no-renames`), so a move scopes both
+  the destination unit and the unit that lost its source. Pin: e2e
+  `architecture_changed_scopes_both_sides_of_a_rename`,
+  `detection_would_miss_the_renamed_away_side`. *Found in verify: with rename
+  detection on, a move reports only the destination, so the unit whose entire
+  source was deleted is never scoped.*
 
-## Acceptance tests (shipped, 11)
+## Acceptance tests (shipped, 15)
 
 CLI unit tests (`architecture_cmd.rs`):
 1. `acceptance_path_overlap`
@@ -96,6 +108,10 @@ CLI e2e (`tests/architecture_changed_cli_e2e.rs`):
 9. `architecture_global_run_unchanged`
 10. `architecture_changed_text_names_base` (REQ-006)
 11. `architecture_changed_reports_unknown_without_evidence` (REQ-009)
+12. `architecture_changed_matches_non_ascii_paths` (REQ-010, verify-found)
+13. `architecture_changed_matches_paths_with_spaces` (REQ-010, verify-found)
+14. `architecture_changed_scopes_both_sides_of_a_rename` (REQ-011, verify-found)
+15. `detection_would_miss_the_renamed_away_side` (REQ-011, verify-found)
 
 ## Change-basis contract
 

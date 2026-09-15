@@ -51,18 +51,41 @@ fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
-/// Initialise a repo with the declaration and two unit sources; return the base
-/// commit sha.
-fn init_repo(root: &Path) -> String {
+/// Commit a declaration plus a set of files; return the base commit sha.
+fn init_with(root: &Path, decl: &str, files: &[(&str, &str)]) -> String {
     fs::create_dir_all(root.join(".sddk/architecture")).unwrap();
-    fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(root.join(FILE), DECL).unwrap();
-    fs::write(root.join("src/a.rs"), "pub fn a() -> u64 { 1 }\n").unwrap();
-    fs::write(root.join("src/b.rs"), "pub fn b() -> u64 { 2 }\n").unwrap();
+    fs::write(root.join(FILE), decl).unwrap();
+    for (rel, body) in files {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, body).unwrap();
+    }
     git(root, &["init", "-q"]);
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "base"]);
     git(root, &["rev-parse", "HEAD"])
+}
+
+/// Initialise a repo with the declaration and two unit sources; return the base
+/// commit sha.
+fn init_repo(root: &Path) -> String {
+    init_with(
+        root,
+        DECL,
+        &[
+            ("src/a.rs", "pub fn a() -> u64 { 1 }\n"),
+            ("src/b.rs", "pub fn b() -> u64 { 2 }\n"),
+        ],
+    )
+}
+
+fn units_of(v: &serde_json::Value) -> Vec<String> {
+    v["change_basis"]["changed_units"]
+        .as_array()
+        .expect("changed_units")
+        .iter()
+        .map(|u| u.as_str().unwrap().to_string())
+        .collect()
 }
 
 fn run(root: &Path, extra: &[&str]) -> std::process::Output {
@@ -282,4 +305,175 @@ fn architecture_global_run_unchanged() {
         text_out.contains("change_basis:      (global run"),
         "{text_out}"
     );
+}
+
+/// A changed path holding a byte outside ASCII must still scope its unit.
+///
+/// Regression pin: `git diff --name-only` quoting is on by default, so a path
+/// like `café/y.rs` arrives as `"caf\303\251/y.rs"` and matches no locator. The
+/// `changed_units = []` that follows is a silent false-clean, the one outcome
+/// `--changed` must never produce.
+#[test]
+fn architecture_changed_matches_non_ascii_paths() {
+    let decl = r#"
+revision: r
+units:
+  - id: comp:accented
+    locator: café/y.rs
+contracts:
+  - id: c-accented
+    kind: single_authority
+    component: comp:accented
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+"#;
+    let tmp = tempfile::tempdir().unwrap();
+    let base = init_with(
+        tmp.path(),
+        decl,
+        &[("café/y.rs", "pub fn y() -> u64 { 1 }\n")],
+    );
+    fs::write(tmp.path().join("café/y.rs"), "pub fn y() -> u64 { 2 }\n").unwrap();
+
+    let out = run(
+        tmp.path(),
+        &["--changed", "--base", &base, "--format", "json"],
+    );
+    let text = both(&out);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!("json: {e}: {text}");
+    });
+    assert_eq!(units_of(&v), vec!["comp:accented".to_string()], "{text}");
+}
+
+/// A path holding a space must still scope its unit (the NUL-separated form is
+/// also what keeps whitespace from being trimmed off a real name).
+#[test]
+fn architecture_changed_matches_paths_with_spaces() {
+    let decl = r#"
+revision: r
+units:
+  - id: comp:spaced
+    locator: dir with space/x.rs
+contracts:
+  - id: c-spaced
+    kind: single_authority
+    component: comp:spaced
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+"#;
+    let tmp = tempfile::tempdir().unwrap();
+    let base = init_with(
+        tmp.path(),
+        decl,
+        &[("dir with space/x.rs", "pub fn x() -> u64 { 1 }\n")],
+    );
+    fs::write(
+        tmp.path().join("dir with space/x.rs"),
+        "pub fn x() -> u64 { 2 }\n",
+    )
+    .unwrap();
+
+    let out = run(
+        tmp.path(),
+        &["--changed", "--base", &base, "--format", "json"],
+    );
+    let text = both(&out);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!("json: {e}: {text}");
+    });
+    assert_eq!(units_of(&v), vec!["comp:spaced".to_string()], "{text}");
+}
+
+/// Both sides of a rename are scoped.
+///
+/// Regression pin: git detects renames by default, so a move reports only the
+/// destination and the unit that lost its entire source is never scoped. The
+/// deleted side is the more serious of the two, so the diff is taken with
+/// `--no-renames`: a move splits into a delete plus an add and scopes both.
+#[test]
+fn architecture_changed_scopes_both_sides_of_a_rename() {
+    let decl = r#"
+revision: r
+units:
+  - id: comp:old
+    locator: src/old.rs
+  - id: comp:moved
+    locator: src/sub/moved.rs
+contracts:
+  - id: c-old
+    kind: single_authority
+    component: comp:old
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+  - id: c-moved
+    kind: single_authority
+    component: comp:moved
+    decided_by: decision:d
+    specified_by: spec:s
+    revision: rev:1
+"#;
+    let tmp = tempfile::tempdir().unwrap();
+    let base = init_with(
+        tmp.path(),
+        decl,
+        &[("src/old.rs", "pub fn a() -> u64 { 1 }\n")],
+    );
+    fs::create_dir_all(tmp.path().join("src/sub")).unwrap();
+    fs::rename(
+        tmp.path().join("src/old.rs"),
+        tmp.path().join("src/sub/moved.rs"),
+    )
+    .unwrap();
+    git(tmp.path(), &["add", "-A"]);
+    git(tmp.path(), &["commit", "-q", "-m", "rename"]);
+
+    let out = run(
+        tmp.path(),
+        &["--changed", "--base", &base, "--format", "json"],
+    );
+    let text = both(&out);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!("json: {e}: {text}");
+    });
+    assert_eq!(
+        units_of(&v),
+        vec!["comp:moved".to_string(), "comp:old".to_string()],
+        "{text}"
+    );
+    // The contract that lost its source is the one that must not be skipped.
+    let claims: Vec<String> = v["claim_results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["contract"].as_str().unwrap().to_string())
+        .collect();
+    assert!(claims.contains(&"c-old".to_string()), "{claims:?}");
+}
+
+/// A rename needs `--no-renames`, or git collapses it to the destination only.
+#[test]
+fn detection_would_miss_the_renamed_away_side() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _base = init_with(
+        tmp.path(),
+        DECL,
+        &[("src/a.rs", "pub fn a() -> u64 { 1 }\n")],
+    );
+    fs::create_dir_all(tmp.path().join("src/sub")).unwrap();
+    fs::rename(tmp.path().join("src/a.rs"), tmp.path().join("src/sub/a.rs")).unwrap();
+    git(tmp.path(), &["add", "-A"]);
+    git(tmp.path(), &["commit", "-q", "-m", "rename"]);
+
+    let detected = git(tmp.path(), &["diff", "--name-only", "HEAD~1...HEAD"]);
+    let split = git(
+        tmp.path(),
+        &["diff", "--name-only", "--no-renames", "HEAD~1...HEAD"],
+    );
+    assert_eq!(detected.lines().count(), 1, "rename detection: {detected}");
+    assert_eq!(split.lines().count(), 2, "--no-renames: {split}");
+    assert!(split.contains("src/a.rs"), "the deleted side must appear");
 }

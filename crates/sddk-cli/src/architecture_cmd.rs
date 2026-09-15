@@ -286,23 +286,34 @@ fn resolve_base(root: &Path, explicit: Option<&str>) -> Result<String, String> {
 fn git_changed_paths(root: &Path, base: &str) -> Result<Vec<String>, String> {
     let range = format!("{base}...HEAD");
     let mut paths: Vec<String> = Vec::new();
-    if let Ok(out) = git(root, &["diff", "--name-only", &range]) {
-        paths.extend(
-            out.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty()),
-        );
-    }
-    if let Ok(out) = git(root, &["diff", "--name-only"]) {
-        paths.extend(
-            out.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty()),
-        );
+    // `--no-renames` is load-bearing in the same way: with rename detection on,
+    // a move reports only the destination, so a unit whose whole source was
+    // deleted out of its locator is never scoped. Splitting a rename into a
+    // delete plus an add scopes both sides, which is the fail-closed direction.
+    for args in [
+        vec!["diff", "--name-only", "-z", "--no-renames", &range],
+        vec!["diff", "--name-only", "-z", "--no-renames"],
+    ] {
+        if let Ok(out) = git(root, &args) {
+            paths.extend(split_z(&out));
+        }
     }
     paths.sort();
     paths.dedup();
     Ok(paths)
+}
+
+/// Split NUL-separated git output into paths.
+///
+/// `-z` is load-bearing, not cosmetic: without it git quotes any path holding a
+/// byte outside ASCII (`"caf\303\251/y.rs"`), the quoted form matches no locator,
+/// and `--changed` would report an empty basis for a file that did change. That
+/// silent false-clean is the one outcome `--changed` must never produce.
+fn split_z(out: &str) -> impl Iterator<Item = String> + '_ {
+    out.split('\0')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
 }
 
 /// Build the change basis for `--changed`.
