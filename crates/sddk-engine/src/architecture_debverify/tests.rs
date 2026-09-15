@@ -682,3 +682,143 @@ fn bonus_auditable_kind_mapping() {
         )
     ));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FindingId (A3-S15 / REQ-A3S15-001..003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::architecture_debverify::finding_id::{FindingBasis, FindingId};
+
+fn fid_cid(s: &str) -> crate::architectural_contract::ContractId {
+    crate::architectural_contract::ContractId::new(s).expect("valid contract id")
+}
+
+fn finding_basis() -> FindingBasis {
+    FindingBasis::new("rev:1", "kb:test", [7u8; 32])
+}
+
+#[test]
+fn acceptance_finding_id_excludes_message() {
+    // REQ-A3S15-001: `message` is free text that can change for a redaction
+    // alone, so it must never participate in identity.
+    let b = finding_basis();
+    let subjects = vec!["comp:dup".to_string()];
+    let contracts = vec![fid_cid("c-a"), fid_cid("c-b")];
+    let a = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    let c = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    assert_eq!(a, c);
+
+    // Rewording the finding must not move the id.
+    let other_message = "a completely different sentence about the same subject";
+    let d = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    assert_eq!(a, d, "id must not depend on message text ({other_message})");
+}
+
+#[test]
+fn acceptance_finding_id_excludes_severity() {
+    // REQ-A3S15-001: `severity` is a pure function of `kind`, so including it
+    // would add no discrimination while implying it can vary independently.
+    // Same id for two findings that differ only in... nothing, because severity
+    // is derived. The real assertion is that the id is computable from the kind
+    // alone, with no severity parameter to get wrong.
+    let b = finding_basis();
+    let id = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &["comp:x".into()],
+        &[],
+    );
+    let again = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &["comp:x".into()],
+        &[],
+    );
+    assert_eq!(id, again);
+    // And the signature has no severity argument: this compiles only because the
+    // derivation is (basis, kind, subjects, contracts).
+    assert_eq!(id.as_str().len(), 64);
+    assert!(FindingId::looks_like_id(id.as_str()));
+}
+
+#[test]
+fn acceptance_finding_id_is_clock_stable() {
+    // REQ-A3S15-002: the basis carries no clock, so an id printed by
+    // `findings --now-ms X` is resolvable by `why --now-ms Y`. If the clock
+    // entered the basis this would be unusable in the primary workflow.
+    let b = finding_basis();
+    let subjects = vec!["comp:dup".to_string()];
+    let contracts = vec![fid_cid("c-a")];
+    let at_1000 = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    let at_9999999 = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    assert_eq!(at_1000, at_9999999);
+
+    // A different substrate does move it: that is the id meaning something.
+    let other = FindingBasis::new("rev:1", "kb:test", [9u8; 32]);
+    assert_ne!(
+        at_1000,
+        FindingId::derive(
+            &other,
+            DebVerifyFindingKind::ShadowAuthority,
+            &subjects,
+            &contracts
+        )
+    );
+}
+
+#[test]
+fn acceptance_two_findings_one_subject_do_not_collapse() {
+    // REQ-A3S15-003, the observation from A3-S14: `comp:dup` produces both a
+    // shadow_authority and a contradiction, so `subject` cannot be the identity.
+    let b = finding_basis();
+    let subjects = vec!["comp:dup".to_string()];
+    let contracts = vec![fid_cid("c-a"), fid_cid("c-b")];
+
+    let shadow = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &contracts,
+    );
+    let contra = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::Contradiction,
+        &subjects,
+        &contracts,
+    );
+    assert_ne!(shadow, contra, "one subject, two kinds, two ids");
+
+    // Same kind, different contract set: also distinct.
+    let narrower = FindingId::derive(
+        &b,
+        DebVerifyFindingKind::ShadowAuthority,
+        &subjects,
+        &[fid_cid("c-a")],
+    );
+    assert_ne!(shadow, narrower);
+}

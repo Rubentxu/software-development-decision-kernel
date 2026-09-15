@@ -280,6 +280,19 @@ fn compute_plan_digest(affected: &BTreeMap<ContractId, AffectedContract>) -> [u8
 }
 
 /// sha256 over the sorted supplied contract basis hashes (REQ-AC4-020).
+///
+/// Public since A3-S15: `FindingId`'s basis needs the same digest, and the
+/// surfaces that print finding ids (`architecture findings`) deliberately compute
+/// no AC4 delta. Exposing one function keeps AC4 and the finding basis from
+/// drifting into two answers for one question.
+pub fn contract_set_digest(contracts: &[ArchitecturalContract]) -> [u8; 32] {
+    let mut index: BTreeMap<ContractId, &ArchitecturalContract> = BTreeMap::new();
+    for c in contracts {
+        index.insert(c.id().clone(), c);
+    }
+    compute_contract_set_digest(&index)
+}
+
 fn compute_contract_set_digest(
     contract_index: &BTreeMap<ContractId, &ArchitecturalContract>,
 ) -> [u8; 32] {

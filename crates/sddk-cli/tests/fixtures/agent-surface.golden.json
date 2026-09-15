@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 57,
+  "total": 59,
   "entries": [
     {
       "name": "version",
@@ -184,6 +184,22 @@
       "side_effect_class": "pure",
       "required_authority": "none",
       "machine": "ArchitectureGraphReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "why",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "WhyReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "why architecture",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "WhyArchitectureReportV1",
       "examples_n": 0
     },
     {

@@ -472,10 +472,61 @@ fn bonus_overlay_node_kinds_all_eight_have_unique_tags() {
 
 #[test]
 fn bonus_overlay_relation_kinds_all_fourteen_have_unique_tags() {
-    assert_eq!(ArchitectureOverlayRelationKind::ALL.len(), 14);
+    // 15 since A3-S15: `SpecifiedBy` was added so `contract → spec` is a real
+    // edge rather than a node reachable only through the evidence-conditional
+    // `VerifiedBy`.
+    assert_eq!(ArchitectureOverlayRelationKind::ALL.len(), 15);
 }
 
 // Suppress unused-import warnings for symbols that exist only as
 // compile-time anchors (REQ-AC2-019/020/021 use them in assertions).
 #[allow(dead_code)]
 fn _anchor(_: ComponentRef, _: EvidenceRef, _: ClaimOutcome, _: NodeKind) {}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpecifiedBy (A3-S15 / REQ-A3S15-011)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn acceptance_specified_by_edge_is_emitted() {
+    // Before A3-S15 the `spec:` node was created unconditionally but had no
+    // relation, so `contract → spec` (the declared intent behind a contract) was
+    // unreachable by traversal: the only edge to it was the evidence-conditional
+    // `VerifiedBy`.
+    let mut g = ArchitectureGraphOverlay::new();
+    let contract = make_contract("c1", "comp:a");
+    g.add_contract_metadata(
+        &contract,
+        contract.decided_by(),
+        contract.specified_by(),
+        &[],
+    );
+
+    let wanted = ArchitectureOverlayRelationKind::SpecifiedBy
+        .as_relation_kind()
+        .expect("static tag");
+    let spec_kind =
+        NodeKind::parse(ArchitectureOverlayNodeKind::SpecRef.domain_tag()).expect("static tag");
+
+    let hits: Vec<_> = g
+        .projection()
+        .relations()
+        .into_iter()
+        .filter(|r| r.kind == wanted)
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "exactly one SpecifiedBy edge, emitted unconditionally"
+    );
+    // Contract side is the anchor; spec side is the spec node.
+    assert!(
+        g.projection()
+            .nodes()
+            .iter()
+            .any(|n| n.id == hits[0].to && n.kind == spec_kind),
+        "SpecifiedBy must terminate at the spec node"
+    );
+    // Still emitted with no evidence at all, which is the whole point.
+    assert!(!contract.specified_by().render().is_empty());
+}

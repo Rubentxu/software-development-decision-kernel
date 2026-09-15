@@ -214,6 +214,10 @@ pub enum ArchitectureOverlayRelationKind {
     DerivesFrom,
     Implements,
     DecidedBy,
+    /// Contract anchor → spec node. Emitted unconditionally since A3-S15: the
+    /// spec node always existed but had no stable edge, so `contract → spec`
+    /// (the declared intent behind a contract) was unreachable by traversal.
+    SpecifiedBy,
     VerifiedBy,
     ContradictsBy,
     SupersedesBy,
@@ -224,7 +228,7 @@ pub enum ArchitectureOverlayRelationKind {
 }
 
 impl ArchitectureOverlayRelationKind {
-    pub const ALL: [ArchitectureOverlayRelationKind; 14] = [
+    pub const ALL: [ArchitectureOverlayRelationKind; 15] = [
         ArchitectureOverlayRelationKind::Owns,
         ArchitectureOverlayRelationKind::DependsOn,
         ArchitectureOverlayRelationKind::Writes,
@@ -235,6 +239,7 @@ impl ArchitectureOverlayRelationKind {
         ArchitectureOverlayRelationKind::DerivesFrom,
         ArchitectureOverlayRelationKind::Implements,
         ArchitectureOverlayRelationKind::DecidedBy,
+        ArchitectureOverlayRelationKind::SpecifiedBy,
         ArchitectureOverlayRelationKind::VerifiedBy,
         ArchitectureOverlayRelationKind::ContradictsBy,
         ArchitectureOverlayRelationKind::SupersedesBy,
@@ -253,6 +258,7 @@ impl ArchitectureOverlayRelationKind {
             ArchitectureOverlayRelationKind::DerivesFrom => "ac2_rel_derives_from",
             ArchitectureOverlayRelationKind::Implements => "ac2_rel_implements",
             ArchitectureOverlayRelationKind::DecidedBy => "ac2_rel_decided_by",
+            ArchitectureOverlayRelationKind::SpecifiedBy => "ac2_rel_specified_by",
             ArchitectureOverlayRelationKind::VerifiedBy => "ac2_rel_verified_by",
             ArchitectureOverlayRelationKind::ContradictsBy => "ac2_rel_contradicts_by",
             ArchitectureOverlayRelationKind::SupersedesBy => "ac2_rel_supersedes_by",

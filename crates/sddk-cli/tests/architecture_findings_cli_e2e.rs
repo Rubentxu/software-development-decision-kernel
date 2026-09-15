@@ -114,8 +114,8 @@ fn architecture_findings_lists_full_shape() {
     let rows = json_rows(&out);
     assert_eq!(rows.len(), 2, "{text}");
 
-    let shadow = find(&rows, "ShadowAuthority");
-    assert_eq!(shadow["severity"], "Critical");
+    let shadow = find(&rows, "shadow_authority");
+    assert_eq!(shadow["severity"], "critical");
     assert_eq!(shadow["subjects"][0], "comp:b");
     // The actionable fact the receipt withheld: which contracts conflict.
     let ids: Vec<&str> = shadow["contract_ids"]
@@ -152,7 +152,7 @@ fn architecture_findings_kind_filter() {
     assert_eq!(out.status.code(), Some(0), "{}", both(&out));
     let rows = json_rows(&out);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["kind"], "ShadowAuthority");
+    assert_eq!(rows[0]["kind"], "shadow_authority");
 
     // The filtered kind is genuinely excluded, not merely unmentioned.
     let out = sddk(
@@ -169,7 +169,7 @@ fn architecture_findings_kind_filter() {
     );
     let rows = json_rows(&out);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["kind"], "StaleCompatibility");
+    assert_eq!(rows[0]["kind"], "stale_compatibility");
 
     // The text header states the filter, so a short listing is attributable.
     let text = both(&sddk(
@@ -237,14 +237,14 @@ fn architecture_findings_reports_severity() {
         &["findings", "--now-ms", "5000", "--format", "json"],
     );
     let rows = json_rows(&out);
-    assert_eq!(find(&rows, "ShadowAuthority")["severity"], "Critical");
-    assert_eq!(find(&rows, "StaleCompatibility")["severity"], "Medium");
+    assert_eq!(find(&rows, "shadow_authority")["severity"], "critical");
+    assert_eq!(find(&rows, "stale_compatibility")["severity"], "medium");
 
     // Three closed severities, no numeric weight anywhere.
     for r in &rows {
         let s = r["severity"].as_str().unwrap();
         assert!(
-            ["Critical", "High", "Medium"].contains(&s),
+            ["critical", "high", "medium"].contains(&s),
             "unexpected severity {s}"
         );
     }
@@ -272,14 +272,9 @@ fn architecture_findings_agree_with_receipt() {
     );
     let mut mine: std::collections::BTreeMap<String, usize> = Default::default();
     for r in json_rows(&listing) {
-        let tag = match r["kind"].as_str().unwrap() {
-            "ShadowAuthority" => "shadow_authority",
-            "MissingOwner" => "missing_owner",
-            "AuthorityBypass" => "authority_bypass",
-            "StaleCompatibility" => "stale_compatibility",
-            "Contradiction" => "contradiction",
-            other => panic!("unmapped kind {other}"),
-        };
+        // The row already carries the canonical tag (A3-S15 aligned it), so no
+        // enum-name mapping is needed: the two surfaces name kinds identically.
+        let tag = r["kind"].as_str().unwrap();
         *mine.entry(tag.to_string()).or_insert(0) += 1;
     }
     let theirs: std::collections::BTreeMap<String, usize> = counts
@@ -495,20 +490,23 @@ contracts:
         vec![
             // DebVerifyAudit orders findings by (kind, subjects, contract_ids),
             // which is the canonical order the audit documents.
-            ("ShadowAuthority", "Critical"),
-            ("MissingOwner", "High"),
-            ("AuthorityBypass", "Critical"),
-            ("StaleCompatibility", "Medium"),
-            ("Contradiction", "High"),
+            ("shadow_authority", "critical"),
+            ("missing_owner", "high"),
+            ("authority_bypass", "critical"),
+            ("stale_compatibility", "medium"),
+            ("contradiction", "high"),
         ],
         "all five kinds, in the audit's canonical order: {text}"
     );
 
     // Each kind names the contracts involved, which is what the receipt dropped.
-    assert_eq!(find(&rows, "AuthorityBypass")["contract_ids"][0], "no-edge");
-    assert_eq!(find(&rows, "MissingOwner")["contract_ids"][0], "orphan");
+    assert_eq!(
+        find(&rows, "authority_bypass")["contract_ids"][0],
+        "no-edge"
+    );
+    assert_eq!(find(&rows, "missing_owner")["contract_ids"][0], "orphan");
     // The contradiction involves both sides of the conflict.
-    let contra: Vec<&str> = find(&rows, "Contradiction")["contract_ids"]
+    let contra: Vec<&str> = find(&rows, "contradiction")["contract_ids"]
         .as_array()
         .unwrap()
         .iter()

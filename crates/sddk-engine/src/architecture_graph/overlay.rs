@@ -194,6 +194,20 @@ impl ArchitectureGraphOverlay {
         );
         self.projection.add_node(spec_node);
 
+        // SpecifiedBy: contract anchor → spec, unconditionally (A3-S15).
+        // The node was always created; without this edge `contract → spec` was
+        // reachable only through the `VerifiedBy` relation below, which is
+        // emitted only when evidence exists and points at the spec node for
+        // want of an evidence node.
+        let specified_by = ArchitectureOverlayRelationKind::SpecifiedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        self.projection.add_relation(SemanticRelation::new(
+            contract_node_id.clone(),
+            spec_id.clone(),
+            specified_by,
+        ));
+
         if !verified_by.is_empty() {
             let relation_kind = ArchitectureOverlayRelationKind::VerifiedBy
                 .as_relation_kind()

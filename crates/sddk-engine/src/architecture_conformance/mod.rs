@@ -53,6 +53,7 @@ mod tests;
 
 pub use compute::{
     AC4_EVALUATOR, CONTRACT_SET_DIGEST_DOMAIN, PLAN_DIGEST_DOMAIN, compute_conformance_delta,
+    contract_set_digest,
 };
 pub use types::{
     AffectedContract, ArchitectureConformanceDelta, ArchitectureConformanceDeltaId,

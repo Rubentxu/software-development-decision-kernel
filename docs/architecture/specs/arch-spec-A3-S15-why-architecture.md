@@ -83,7 +83,27 @@ index; closing the `evidence → software relation` leg; repointing the existing
   finding namespace explicitly; the outcome is reported as `resolved_as`. Pin: e2e
   `why_resolves_contract`, `why_resolves_finding`.
 - **REQ-A3S15-006** — An id matching both namespaces is an ambiguity error
-  (exit 2) naming both, never a silent choice. Pin: e2e `why_ambiguous_id_fails_closed`.
+  (exit 2) naming both, never a silent choice.
+  **Pin: structural, and that is the honest maximum.** A true collision is not
+  constructible: giving a contract the id of a finding changes the contract set,
+  hence the finding's basis, hence the finding's id, so `id = hash(basis(id))`
+  would need a fixed point of sha256. What *is* constructible, and what a
+  shape-based heuristic would get wrong, is a contract whose id merely looks like
+  a finding id (64 hex) — pinned by e2e
+  `why_does_not_decide_a_namespace_by_shape`, which asserts it resolves as a
+  **contract**. The ambiguity arm itself is pinned by a source assertion in the
+  same test, so removing or silently ordering it fails the suite. *Found in build:
+  the requirement named a behaviour no fixture can reach; the suite now says so
+  instead of implying coverage it does not have.*
+- **REQ-A3S15-020** — Finding kinds and severities are named identically by
+  `architecture findings` and `why architecture`: the canonical tag
+  (`shadow_authority`, `critical`), not serde's enum name (`ShadowAuthority`,
+  `Critical`). Pin: e2e `findings_prints_ids`, `why_resolves_finding`,
+  `surfaces_share_the_audit_seam`. *Found in build: `findings` shipped the enum
+  name while `why` shipped the tag, so the user's own workflow
+  (`findings` → `why`) displayed two spellings of one kind. The tag is the
+  vocabulary `--kind`, the audit digest and the finding id already use, so the
+  read surface was aligned to it and A3-S14's suite updated with it.*
 - **REQ-A3S15-007** — An id matching neither is an unknown error (exit 2) that
   states both namespaces were tried. Pin: e2e `why_unknown_id_fails_closed`.
 - **REQ-A3S15-008** — A missing/invalid declaration fails closed (exit 2). Pin: e2e
@@ -167,7 +187,7 @@ built once and consumed by `receipt`, `findings` and `why`; the delta stays
 caller-specific so A3-S14's recorded `findings`-without-delta behaviour is
 preserved. New root `why` verb with one `architecture` subcommand.
 
-## Acceptance tests (planned, 22)
+## Acceptance tests (shipped)
 
 Engine — `architecture_debverify` (identity):
 
@@ -196,7 +216,7 @@ CLI e2e — `tests/architecture_why_cli_e2e.rs`:
 14. `why_resolves_contract`
 15. `why_resolves_finding`
 16. `why_unknown_id_fails_closed`
-17. `why_ambiguous_id_fails_closed`
+17. ~~`why_ambiguous_id_fails_closed`~~ → `why_does_not_decide_a_namespace_by_shape` (REQ-006, ambiguity is structurally pinned; a true collision is not constructible)
 18. `why_declaration_invalid_fails_closed`
 19. `why_finding_one_contract`
 20. `why_shadow_authority_two_contracts`

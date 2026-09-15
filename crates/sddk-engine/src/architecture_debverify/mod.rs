@@ -50,6 +50,7 @@
 
 pub mod audit;
 pub mod detectors;
+pub mod finding_id;
 pub mod types;
 
 #[cfg(test)]
@@ -60,6 +61,7 @@ pub use detectors::{
     authority_bypass, contradiction, kind_is_auditable, missing_owner, shadow_authority,
     stale_compatibility,
 };
+pub use finding_id::{FindingBasis, FindingId};
 pub use types::{
     DebVerifyAudit, DebVerifyError, DebVerifyFinding, DebVerifyFindingKind, FindingSeverity,
 };

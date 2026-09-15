@@ -70,6 +70,7 @@ mod uat_quality;
 mod uat_serve;
 mod vault_cmd;
 pub mod verify_cmd;
+mod why_cmd;
 mod writer;
 
 use std::ffi::{OsStr, OsString};
@@ -300,6 +301,11 @@ enum Command {
     Architecture {
         #[command(subcommand)]
         command: architecture_cmd::ArchitectureCommand,
+    },
+    /// Explain why SDDK claims something, from the substrate it claims it against.
+    Why {
+        #[command(subcommand)]
+        command: why_cmd::WhyCommand,
     },
     /// Query, inspect, and rebuild the reactive knowledge graph.
     Graph {
@@ -830,6 +836,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             architecture_cmd::run_architecture(command, environment)
         }
         Command::Graph { command } => graph_cmd::run_graph(command, environment),
+        Command::Why { command } => why_cmd::run_why(command, environment),
         Command::Metrics { command } => metrics::run_metrics(command, environment),
         Command::Analytics { command } => analytics::run_analytics(command, environment),
         Command::Telemetry { command } => telemetry::run_telemetry(command, environment),
@@ -1734,6 +1741,7 @@ fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
         Generate { .. } => "generate",
         Cycle { .. } => "cycle",
         Architecture { .. } => "architecture",
+        Why { .. } => "why",
         Ledger { .. } => "ledger",
         Capability { .. } => "capability",
         Git { .. } => "git",

@@ -230,6 +230,20 @@ impl DecisionRef {
     }
 }
 
+impl DecisionRef {
+    /// Canonical rendering of the reference (e.g. `ADR-0120`).
+    ///
+    /// Canonical here rather than in the CLI so `receipt`, the read surfaces and
+    /// `why` render a decision identically (A3-S15).
+    pub fn render(&self) -> String {
+        match self {
+            Self::Decision(s) => s.clone(),
+            Self::Adr(s) => s.clone(),
+            Self::ExternalDecision { authority, .. } => authority.clone(),
+        }
+    }
+}
+
 /// Typed reference to the spec / ADR that defined a contract's vocabulary.
 ///
 /// At least one of the variants is required (REQ-A3S2-009, REQ-A3S2-010).
@@ -241,6 +255,15 @@ pub enum SpecRef {
     Spec(String),
     /// An ADR that doubles as the spec source.
     Adr(String),
+}
+
+impl SpecRef {
+    /// Canonical rendering of the reference (e.g. `arch-spec-A3-S15`).
+    pub fn render(&self) -> String {
+        match self {
+            Self::ArchSpec(v) | Self::Spec(v) | Self::Adr(v) => v.clone(),
+        }
+    }
 }
 
 impl SpecRef {

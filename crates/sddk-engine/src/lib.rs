@@ -24,6 +24,7 @@ pub mod architecture_declaration;
 pub mod architecture_graph;
 pub mod architecture_mutation;
 pub mod architecture_receipt;
+pub mod architecture_why;
 pub mod authority;
 pub mod authority_engine;
 pub mod build_work_graph;

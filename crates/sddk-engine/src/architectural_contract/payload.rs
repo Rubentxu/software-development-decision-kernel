@@ -213,3 +213,41 @@ impl ContractPayload {
         }
     }
 }
+
+impl ContractPayload {
+    /// The contract kind tag, matching the declaration's `kind:` field.
+    ///
+    /// Canonical here rather than in the CLI so every surface that renders a
+    /// contract (`architecture contracts`, `receipt`, `findings`, `why`) names the
+    /// kind identically. Added A3-S15, when the WHY traversal found itself about to
+    /// write a fourth copy.
+    pub fn kind_tag(&self) -> &'static str {
+        match self {
+            Self::SingleAuthority(_) => "single_authority",
+            Self::UniqueOwner(_) => "unique_owner",
+            Self::ForbiddenDependency { .. } => "forbidden_dependency",
+            Self::ProjectionOnly { .. } => "projection_only",
+            Self::BoundedCompatibility { .. } => "bounded_compatibility",
+            Self::ProviderBoundary { .. } => "provider_boundary",
+            Self::Extension { .. } => "extension",
+        }
+    }
+
+    /// The payload's subject, as the read surfaces render it.
+    ///
+    /// `BoundedCompatibility` has no subject field of its own, so it falls back
+    /// to the contract id (its window is keyed by the contract, not by a unit).
+    pub fn subject(&self, contract_id: &str) -> String {
+        match self {
+            Self::SingleAuthority(c) => c.as_str().to_string(),
+            Self::UniqueOwner(e) => e.as_str().to_string(),
+            Self::ForbiddenDependency { from, to, .. } => {
+                format!("{} -> {}", from.as_str(), to.as_str())
+            }
+            Self::ProjectionOnly { source_kind } => source_kind.clone(),
+            Self::BoundedCompatibility { .. } => contract_id.to_string(),
+            Self::ProviderBoundary { surface, .. } => surface.clone(),
+            Self::Extension { kind, .. } => kind.as_str().to_string(),
+        }
+    }
+}

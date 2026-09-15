@@ -12,14 +12,15 @@ use clap::{Args, Subcommand};
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
 use sddk_engine::architectural_contract::{
-    ArchitecturalContract, ContractEvaluation, ContractId, ContractPayload, DecisionRef,
-    EvaluatorRef, SpecRef,
+    ArchitecturalContract, ArchitectureClaim, ContractEvaluation, ContractId, ContractPayload,
+    DecisionRef, EvaluatorRef, SpecRef,
 };
 use sddk_engine::architecture_conformance::{
-    ConformanceInputs, ContractEvidence, compute_conformance_delta,
+    ConformanceInputs, ContractEvidence, compute_conformance_delta, contract_set_digest,
 };
 use sddk_engine::architecture_debverify::{
-    DebVerifyFinding, DebVerifyFindingKind, run_debverify_audit,
+    DebVerifyAudit, DebVerifyFinding, DebVerifyFindingKind, FindingBasis, FindingId,
+    run_debverify_audit,
 };
 use sddk_engine::architecture_declaration::{DeclarationFile, validate};
 use sddk_engine::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
@@ -34,7 +35,7 @@ use serde::Serialize;
 ///
 /// Staleness is inherently time-dependent; pinning it to zero would silently
 /// report every elapsed compatibility window as open.
-fn resolve_now(now_ms: Option<i64>) -> EventTime {
+pub(crate) fn resolve_now(now_ms: Option<i64>) -> EventTime {
     let ms = now_ms.unwrap_or_else(|| {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -225,8 +226,16 @@ fn unit_subject(contract: &ArchitecturalContract) -> Option<String> {
 fn declare_overlay(
     decl: &sddk_engine::architecture_declaration::DeclaredArchitecture,
     now: EventTime,
-) -> ArchitectureGraphOverlay {
+) -> (
+    ArchitectureGraphOverlay,
+    std::collections::BTreeMap<String, ArchitectureClaim>,
+) {
     let mut overlay = ArchitectureGraphOverlay::new();
+    // The claims the overlay registers, kept alongside it so a caller can read a
+    // contract's assessment without re-evaluating. This is the same object the
+    // overlay holds — not a copy, not a second evaluation.
+    let mut claims: std::collections::BTreeMap<String, ArchitectureClaim> =
+        std::collections::BTreeMap::new();
     for unit in &decl.units {
         overlay.add_unit(unit);
     }
@@ -245,6 +254,7 @@ fn declare_overlay(
         let evaluator =
             EvaluatorRef::new("sddk.architecture_cli.linkage").expect("non-empty literal");
         let claim = ContractEvaluation::evaluate(contract, Vec::new(), now, evaluator, None);
+        claims.insert(contract.id().as_str().to_string(), claim.clone());
         let claim_id = overlay.add_claim(&claim);
         overlay.attach_claim_to_unit(&claim, &claim_id, &SoftwareUnitRef::new(subject));
         // `find_contracts_for_unit` returns a synthesized contract-anchor
@@ -257,7 +267,7 @@ fn declare_overlay(
             &[],
         );
     }
-    overlay
+    (overlay, claims)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -576,22 +586,15 @@ struct CompatibilityRow {
 }
 
 fn run_compatibility(args: ReadArgs) -> CommandOutput {
-    let decl = match load_declaration(&args.root, &args.contracts) {
-        Ok(d) => d,
+    // AC5 tells us which windows are actually stale; the read surface mirrors
+    // that rather than re-deriving it, through the same context the other
+    // surfaces build.
+    let ctx = match build_context(&args.root, &args.contracts, resolve_now(args.now_ms)) {
+        Ok(c) => c,
         Err(o) => return o,
     };
-    // AC5 tells us which windows are actually stale; the read surface mirrors
-    // that rather than re-deriving it.
-    let now = resolve_now(args.now_ms);
-    let overlay = declare_overlay(&decl, now);
-    let audit = match sddk_engine::architecture_debverify::run_debverify_audit(
-        &overlay,
-        &decl.contracts,
-        now,
-    ) {
-        Ok(a) => a,
-        Err(e) => return error_output(format!("architecture: audit failed: {e}")),
-    };
+    let decl = &ctx.declared;
+    let audit = &ctx.audit;
     let stale: std::collections::BTreeSet<String> = audit
         .by_kind(sddk_engine::architecture_debverify::DebVerifyFindingKind::StaleCompatibility)
         .iter()
@@ -649,7 +652,7 @@ fn run_graph(args: GraphReadArgs) -> CommandOutput {
         Ok(d) => d,
         Err(o) => return o,
     };
-    let overlay = declare_overlay(&decl, EventTime(0));
+    let (overlay, _claims) = declare_overlay(&decl, EventTime(0));
     let units: Vec<(String, String, String)> = decl
         .units
         .iter()
@@ -697,6 +700,94 @@ fn run_graph(args: GraphReadArgs) -> CommandOutput {
     )
 }
 
+/// The shared architecture context.
+///
+/// `receipt`, `findings` and `why` all build this through one constructor, so the
+/// three surfaces cannot prepare three different universes: one declaration
+/// parse, one projection, one audit, one claim set. They differ in what they do
+/// with it — `receipt` composes a verdict, `findings` renders the audit, `why`
+/// traverses — and the AC4 delta stays caller-specific on purpose, which is what
+/// preserves the recorded behaviour that `findings` reports where `receipt`
+/// errors out because it computes no delta.
+pub(crate) struct ArchitectureContext {
+    pub(crate) declared: sddk_engine::architecture_declaration::DeclaredArchitecture,
+    pub(crate) now: EventTime,
+    pub(crate) overlay: ArchitectureGraphOverlay,
+    pub(crate) claims: std::collections::BTreeMap<String, ArchitectureClaim>,
+    pub(crate) audit: DebVerifyAudit,
+    pub(crate) finding_basis: FindingBasis,
+}
+
+pub(crate) fn build_context(
+    root: &Path,
+    contracts: &Path,
+    now: EventTime,
+) -> Result<ArchitectureContext, CommandOutput> {
+    let declared = load_declaration(root, contracts)?;
+    let overlay_and_claims = declare_overlay(&declared, now);
+    let (overlay, claims) = overlay_and_claims;
+    let audit = run_debverify_audit(&overlay, &declared.contracts, now).map_err(|e| {
+        // Never a silent zero: a failed audit is an error, not "no findings".
+        error_output(format!("architecture: audit failed: {e}"))
+    })?;
+    // Clock-stable by construction: revision + knowledge basis + contract set.
+    // The overlay digest is deliberately excluded (it embeds each linkage claim's
+    // `evaluated_at`), so a finding id survives a change of `--now-ms` and can be
+    // fed back from `findings` into `why`.
+    let finding_basis = FindingBasis::new(
+        declared.revision.clone(),
+        declared.knowledge_basis.clone(),
+        contract_set_digest(&declared.contracts),
+    );
+    Ok(ArchitectureContext {
+        declared,
+        now,
+        overlay,
+        claims,
+        audit,
+        finding_basis,
+    })
+}
+
+/// One rendered AC5 finding, carrying its deterministic id.
+///
+/// The id is **added**, not substituted: `kind`, `severity`, `subjects`,
+/// `contract_ids` and `message` keep the exact shape A3-S14 shipped, so that e2e
+/// suite keeps pinning the same contract while a new one pins the id.
+#[derive(Debug, Serialize)]
+struct FindingRow {
+    id: String,
+    /// Canonical kind tag (`shadow_authority`).
+    ///
+    /// Deliberately **not** serde's enum name (`"ShadowAuthority"`): the tag is
+    /// the vocabulary `--kind`, the audit digest, the finding id and
+    /// `why architecture` all already use, and two spellings of one kind across
+    /// two surfaces is exactly the drift this cycle exists to remove.
+    kind: &'static str,
+    /// Canonical severity tag (`critical`).
+    severity: &'static str,
+    subjects: Vec<String>,
+    contract_ids: Vec<String>,
+    message: String,
+}
+
+fn finding_row(f: &DebVerifyFinding, basis: &FindingBasis) -> FindingRow {
+    FindingRow {
+        id: FindingId::derive(basis, f.kind, &f.subjects, &f.contract_ids)
+            .as_str()
+            .to_string(),
+        kind: f.kind.canonical_tag(),
+        severity: f.severity.canonical_tag(),
+        subjects: f.subjects.clone(),
+        contract_ids: f
+            .contract_ids
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect(),
+        message: f.message.clone(),
+    }
+}
+
 /// Resolve a `--kind` tag against the closed finding-kind enum.
 ///
 /// Derived from `ALL` rather than hand-listed, so a new kind is filterable the
@@ -738,37 +829,28 @@ fn run_findings(args: FindingsArgs) -> CommandOutput {
         },
     };
 
-    let decl = match load_declaration(&args.root, &args.contracts) {
-        Ok(d) => d,
+    let ctx = match build_context(&args.root, &args.contracts, resolve_now(args.now_ms)) {
+        Ok(c) => c,
         Err(o) => return o,
     };
-    let now = resolve_now(args.now_ms);
-    let overlay = declare_overlay(&decl, now);
-    let audit = match run_debverify_audit(&overlay, &decl.contracts, now) {
-        Ok(a) => a,
-        Err(e) => return error_output(format!("architecture findings: audit failed: {e}")),
-    };
+    let decl = &ctx.declared;
+    let now = ctx.now;
+    let audit = &ctx.audit;
 
-    let rows: Vec<DebVerifyFinding> = audit
+    let rows: Vec<FindingRow> = audit
         .findings
         .iter()
         .filter(|f| kind_filter.is_none_or(|k| f.kind == k))
-        .cloned()
+        .map(|f| finding_row(f, &ctx.finding_basis))
         .collect();
 
     let mut text = String::new();
     for f in &rows {
-        let contracts: Vec<String> = f
-            .contract_ids
-            .iter()
-            .map(|c| c.as_str().to_string())
-            .collect();
+        text.push_str(&format!("  {:<24} {:<9} id={}\n", f.kind, f.severity, f.id));
         text.push_str(&format!(
-            "  {:<24} {:<9} subjects=[{}] contracts=[{}]\n",
-            f.kind.canonical_tag(),
-            f.severity.canonical_tag(),
+            "    subjects=[{}] contracts=[{}]\n",
             f.subjects.join(", "),
-            contracts.join(", ")
+            f.contract_ids.join(", ")
         ));
         text.push_str(&format!("    {}\n", f.message));
     }
@@ -800,36 +882,17 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
     let declaration_path = args.root.join(&args.contracts);
     let label = args.contracts.display().to_string();
 
-    // ── read + parse (CLI owns the format; the engine owns semantics) ──────
-    let text = match std::fs::read_to_string(&declaration_path) {
-        Ok(t) => t,
-        Err(e) => {
-            return error_output(format!(
-                "architecture receipt: cannot read declaration `{}`: {e}",
-                declaration_path.display()
-            ));
-        }
+    let _ = &declaration_path;
+    // ── the shared context: one parse, one validation, one projection, one
+    // audit across `receipt`, `findings` and `why` ────────────────────────
+    let ctx = match build_context(&args.root, &args.contracts, resolve_now(args.now_ms)) {
+        Ok(c) => c,
+        Err(o) => return o,
     };
-    let parsed: DeclarationFile = match serde_yaml::from_str(&text) {
-        Ok(d) => d,
-        Err(e) => {
-            return error_output(format!(
-                "architecture receipt: `{}` is not a valid declaration: {e}",
-                declaration_path.display()
-            ));
-        }
-    };
-
-    // ── validate (fail-closed) ─────────────────────────────────────────────
-    let declared = match validate(&parsed, &label) {
-        Ok(d) => d,
-        Err(e) => return error_output(format!("architecture receipt: {e}")),
-    };
-
-    // ── AC2 overlay ────────────────────────────────────────────────────────
-    let now = resolve_now(args.now_ms);
+    let declared = &ctx.declared;
+    let now = ctx.now;
     let change_basis = if args.changed {
-        match changed_basis(&args.root, args.base.as_deref(), &declared) {
+        match changed_basis(&args.root, args.base.as_deref(), declared) {
             Ok(b) => Some(b),
             Err(e) => {
                 return error_output(format!("architecture receipt: {e}"));
@@ -895,7 +958,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             parent.display()
         ));
     }
-    let overlay = declare_overlay(&declared, now);
+    let overlay = &ctx.overlay;
 
     // ── AC4: change-scoped delta over an EMPTY change basis ────────────────
     // The receipt is global; the delta contributes its digests and its
@@ -924,7 +987,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
 
     let evidence: ContractEvidence = std::collections::BTreeMap::new();
     let delta = match compute_conformance_delta(
-        &overlay,
+        overlay,
         ConformanceInputs {
             contracts: &declared.contracts,
             evidence: &evidence,
@@ -938,11 +1001,8 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
         Err(e) => return error_output(format!("architecture receipt: delta failed: {e}")),
     };
 
-    // ── AC5: global audit ──────────────────────────────────────────────────
-    let audit = match run_debverify_audit(&overlay, &declared.contracts, now) {
-        Ok(a) => a,
-        Err(e) => return error_output(format!("architecture receipt: audit failed: {e}")),
-    };
+    // ── AC5: the audit the shared context already ran ──────────────────────
+    let audit = &ctx.audit;
 
     // ── AC6: no mutation sandbox supplied by v1 declarations ───────────────
     // An empty suite is recorded honestly: the receipt reports the
@@ -958,7 +1018,7 @@ fn run_receipt(args: ArchitectureReceiptArgs, _environment: &CliEnvironment) -> 
             revision: declared.revision.clone(),
             knowledge_basis: declared.knowledge_basis.clone(),
             delta: &delta,
-            audit: &audit,
+            audit,
             mutations: &mutations,
             lenses: &[],
             waivers: &declared.waivers,
@@ -1081,7 +1141,7 @@ fn render_text(
     out
 }
 
-fn error_output(message: String) -> CommandOutput {
+pub(crate) fn error_output(message: String) -> CommandOutput {
     CommandOutput {
         status: EXIT_INPUT_ERROR,
         stdout: String::new(),
