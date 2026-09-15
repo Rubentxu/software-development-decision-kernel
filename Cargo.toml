@@ -15,6 +15,7 @@ exclude = ["docs/sddk-stabilization-plan"]
 [workspace.package]
 version = "1.169.24"
 edition = "2024"
+# A3-S3 closure marker: see docs/handoff/
 authors = ["SDDK Team"]
 license = "MIT"
 rust-version = "1.91"
