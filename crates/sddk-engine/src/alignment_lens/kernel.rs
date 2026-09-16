@@ -222,7 +222,7 @@ pub fn contribution_id_for(
     lens_id: super::types::LensId,
     lens_version: super::types::LensVersion,
     input: &LensInput,
-    resolution: &crate::observation::EvidenceResolution,
+    resolution: &crate::observation::LensEvidenceResolution,
     evidence_refs: &[crate::evidence_ref::EvidenceRef],
     observation_set_canonical_tag: &str,
 ) -> super::id::LensContributionId {

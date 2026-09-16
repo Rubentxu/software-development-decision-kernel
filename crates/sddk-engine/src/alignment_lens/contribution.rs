@@ -17,6 +17,15 @@
 // - **Identity excludes wall clock, message text, registration
 //   order, vector insertion order.** See `id.rs`.
 //
+// A4-4bR: `LensContribution.evidence_resolution` now carries the
+// subject-general [`EvidencePosture<ObservationTargetRef>`] (A4-4bR
+// alias `LensEvidenceResolution`). Lenses may legitimately emit
+// contributions about `Unit(foo)`, `Contract(c)`, `Knowledge(k)`, or
+// `Relation(r)` — without inventing synthetic `SoftwareRelation`s to
+// satisfy the relation-only A4-0 API. The historical
+// [`EvidenceResolution`] (relation-only, `gap: String`) is preserved
+// for A4-0/A4-2 consumers and is **not** the lens-side type.
+//
 // `LensContribution` is **construct-only**. The kernel calls the lens's
 // `evaluate` method, the lens returns one of these via
 // [`LensEvaluationOutcome::Contribution`], the kernel attaches the
@@ -25,7 +34,7 @@
 use serde::Serialize;
 
 use crate::evidence_ref::EvidenceRef;
-use crate::observation::EvidenceResolution;
+use crate::observation::LensEvidenceResolution;
 
 use super::id::LensContributionId;
 use super::types::{LensId, LensVersion};
@@ -75,10 +84,13 @@ pub struct LensContribution {
     pub lens_version: LensVersion,
     /// The concern being evaluated.
     pub concern: UniversalConcern,
-    /// The evidence posture, **reused** from the canonical
-    /// `EvidenceResolution` (A4-0 substrate). Do not introduce a
-    /// parallel vocabulary.
-    pub evidence_resolution: EvidenceResolution,
+    /// The evidence posture, **subject-general** since A4-4bR. The
+    /// target is an `ObservationTargetRef` so a lens may emit on a
+    /// `Unit`, `Contract`, `Knowledge`, or `Relation` directly — never
+    /// via synthetic `SoftwareRelation`s. The four-variant epistemic
+    /// shape (Supported/Contradicted/Conflicted/Insufficient) is
+    /// identical across target kinds.
+    pub evidence_resolution: LensEvidenceResolution,
     /// Semantic references the lens claims it consulted. Sorted by
     /// [`EvidenceRef::ordering_key`] before being attached (the kernel
     /// does this; lenses passing unsorted refs are accepted, sorted,
@@ -106,7 +118,7 @@ impl LensContribution {
         lens_id: LensId,
         lens_version: LensVersion,
         concern: UniversalConcern,
-        evidence_resolution: EvidenceResolution,
+        evidence_resolution: LensEvidenceResolution,
         mut evidence_refs: Vec<EvidenceRef>,
     ) -> Self {
         // Sort refs for identity determinism.

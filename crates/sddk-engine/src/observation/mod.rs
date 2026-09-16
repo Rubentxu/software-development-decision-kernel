@@ -22,6 +22,7 @@
 //
 // Contradictions are first-class and are never collapsed by "latest wins".
 
+pub mod posture;
 pub mod project;
 pub mod resolution;
 pub mod types;
@@ -29,10 +30,19 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
+pub use posture::{EvidencePosture, InsufficientGap, ObservationTargetRef};
+
+/// A4-4bR: the lens-side evidence resolution.
+///
+/// Equivalent to `EvidencePosture<ObservationTargetRef>`. Lenses use
+/// this natively; the historical `EvidenceResolution` (relation-only,
+/// `gap: String`) is the observation substrate's relation-specialized
+/// type and is NOT used by the lens kernel.
+pub type LensEvidenceResolution = EvidencePosture<ObservationTargetRef>;
 pub use project::{
     OBSERVATION_NODE_KIND, OBSERVES_RELATION_KIND, RELATION_NODE_KIND, project_into,
 };
-pub use resolution::{EvidenceResolution, resolve_relation};
+pub use resolution::{EvidenceResolution, resolve_relation, resolve_subject};
 pub use types::{
     ObservationBasis, ObservationId, ObservationOrigin, ObservationSet, ObservationStance,
     ObservationSubject, RelationId, SoftwareEntityRef, SoftwareObservation, SoftwareRelation,

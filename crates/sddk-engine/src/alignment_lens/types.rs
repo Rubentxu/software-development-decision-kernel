@@ -101,57 +101,14 @@ impl std::fmt::Display for LensVersion {
 
 // ─── Insufficient gap: typed replacement for the gap: String ─────────────────
 
-/// Typed reason a [`LensContribution`](super::LensContribution)'s
-/// `EvidenceResolution` is `Insufficient`.
-///
-/// `observation::EvidenceResolution::Insufficient` carries a
-/// `gap: String` for wire compat. The lens kernel does **not** let that
-/// string reach identity: identity is derived from this enum (via its
-/// canonical tag) and the `gap: String` is only set when serializing.
-///
-/// Why this matters: the A4-4b pin *no-message-text-in-identity*
-/// (spec §3 X15, pin 10). Without this enum the kernel would either
-/// (a) invent message text by string concatenation (stringly), or
-/// (b) leave `gap` empty (losing provenance). This enum gives both:
-/// typed provenance in identity; faithful serialization on the wire.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InsufficientGap {
-    /// No observation covers the relation at all.
-    NoObservation,
-    /// Some observation covers the relation but its stance is empty
-    /// (no affirm, no deny) — the relation is unobservable in practice.
-    ObservationsWithoutStance,
-    /// Provenance is missing (no `basis` or `evidence` attached to the
-    /// covering observation). Distinct from "no observation" because
-    /// the observation exists but cannot be reasoned about.
-    MissingProvenance,
-    /// The lens author explicitly declared "insufficient but I have a
-    /// typed reason that is none of the above". Used by future built-in
-    /// lenses (A4-4M).
-    LensDeclaredGap,
-}
-
-impl InsufficientGap {
-    /// Canonical short tag. Used for identity.
-    pub fn canonical_tag(self) -> &'static str {
-        match self {
-            Self::NoObservation => "no_observation",
-            Self::ObservationsWithoutStance => "observations_without_stance",
-            Self::MissingProvenance => "missing_provenance",
-            Self::LensDeclaredGap => "lens_declared_gap",
-        }
-    }
-
-    /// Wire form for `observation::EvidenceResolution::Insufficient.gap`.
-    /// This is a serialized message; it MUST NOT enter identity.
-    pub fn wire_message(self) -> String {
-        // Stable, deterministic, derived from the enum so the message
-        // does not carry clock, locale, or random bytes. The message is
-        // for human-readable serialization only.
-        format!("alignment_lens_insufficient:{}", self.canonical_tag())
-    }
-}
+// A4-4bR: the canonical  enum has moved to
+//  (typed, with  /
+//  for the bridge between the historical
+// on  and the typed lens-side identity). The variant
+// set is preserved from A4-4b:
+// , , ,
+// . Wire-form prefix: .
+pub use crate::observation::InsufficientGap;
 
 // ─── LensDescriptor ─────────────────────────────────────────────────────────
 

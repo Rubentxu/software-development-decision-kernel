@@ -42,7 +42,10 @@ use sddk_engine::observation::types::{
     ObservationBasis, ObservationId, ObservationOrigin, ObservationStance, ObservationSubject,
     RelationId, SoftwareObservation, SoftwareRelation,
 };
-use sddk_engine::observation::{EvidenceResolution, ObservationSet, SoftwareEntityRef};
+use sddk_engine::observation::{
+    EvidencePosture, EvidenceResolution, LensEvidenceResolution, ObservationSet,
+    ObservationTargetRef, SoftwareEntityRef,
+};
 use sddk_engine::semantic_kind::CoreRelationKind;
 
 // ─── Helpers (typed, no string parsing) ──────────────────────────────────────
@@ -66,20 +69,12 @@ pub fn observation_set_canonical_tag(set: &ObservationSet) -> String {
 /// Derive the canonical relation id for Lens A. Lens A's relation is
 /// `(unit_ref --depends_on--> unit_ref)` — a stable identity bridge
 /// from the lens id into the relation substrate. Intentionally
-/// different from Lens B's relation.
+/// different from Lens B's relation (Lens B uses the unit target
+/// directly — no synthetic relation is fabricated since A4-4bR).
 fn relation_for_lens_a(input: &LensInput) -> RelationId {
     let from = SoftwareEntityRef::Unit(input.unit_ref.clone());
     let to = SoftwareEntityRef::Unit(input.unit_ref.clone());
     let rel = SoftwareRelation::new(from, CoreRelationKind::DependsOn, to);
-    rel.id()
-}
-
-/// Derive Lens B's relation. Lens B is "freshness-of-unit"; the
-/// relation is `(unit_ref --measures_freshness_of--> unit_ref)`.
-fn relation_for_lens_b(input: &LensInput) -> RelationId {
-    let from = SoftwareEntityRef::Unit(input.unit_ref.clone());
-    let to = SoftwareEntityRef::Unit(input.unit_ref.clone());
-    let rel = SoftwareRelation::new(from, CoreRelationKind::Verifies, to);
     rel.id()
 }
 
@@ -153,7 +148,9 @@ impl AlignmentLens for LensDependencyDirection {
         if covering.is_empty() {
             // Insufficient — no observation covers Lens A's relation.
             let gap = InsufficientGap::NoObservation.wire_message();
-            let resolution = EvidenceResolution::Insufficient { relation, gap };
+            let resolution_a = EvidenceResolution::Insufficient { relation, gap };
+            // Lift to lens-side general posture (relation target).
+            let resolution: LensEvidenceResolution = resolution_a.into();
             let obs_tag = observation_set_canonical_tag(&input.observations);
             let id =
                 contribution_id_for(LENS_A_ID, LENS_A_VERSION, input, &resolution, &[], &obs_tag);
@@ -178,7 +175,7 @@ impl AlignmentLens for LensDependencyDirection {
         }
         sort_ids(&mut supporting);
         sort_ids(&mut contradicting);
-        let resolution = if !supporting.is_empty() && contradicting.is_empty() {
+        let resolution_a = if !supporting.is_empty() && contradicting.is_empty() {
             EvidenceResolution::Supported {
                 relation,
                 supporting,
@@ -200,6 +197,8 @@ impl AlignmentLens for LensDependencyDirection {
                 gap: InsufficientGap::ObservationsWithoutStance.wire_message(),
             }
         };
+        // Lift to lens-side general posture (relation target).
+        let resolution: LensEvidenceResolution = resolution_a.into();
         let obs_tag = observation_set_canonical_tag(&input.observations);
         let id = contribution_id_for(
             LENS_A_ID,
@@ -221,6 +220,13 @@ impl AlignmentLens for LensDependencyDirection {
 }
 
 // ─── Lens B — Freshness ─────────────────────────────────────────────────────
+//
+// A4-4bR: this lens works directly on `ObservationTargetRef::Unit(unit)`.
+// It does **not** fabricate a synthetic `SoftwareRelation` (e.g.
+// `unit --Verifies--> unit`) to satisfy a relation-only API. It
+// queries observations whose `ObservationSubject` is the unit itself,
+// via `ObservationSet::for_subject(&ObservationTargetRef::Unit(unit))`,
+// and emits a `LensEvidenceResolution` with a unit target.
 
 pub const LENS_B_ID: LensId = LensId::new("alignment_lens_fixture::freshness");
 pub const LENS_B_VERSION: LensVersion = LensVersion::new(1, 0);
@@ -242,11 +248,14 @@ impl AlignmentLens for LensFreshness {
                 concern: input.concern(),
             });
         }
-        let relation = relation_for_lens_b(input);
-        let covering = input.observations.for_relation(&relation);
+        // A4-4bR: target is the unit itself, NOT a synthetic relation.
+        let target = ObservationTargetRef::Unit(input.unit_ref.clone());
+        let covering = input.observations.for_subject(&target);
         if covering.is_empty() {
-            let gap = InsufficientGap::NoObservation.wire_message();
-            let resolution = EvidenceResolution::Insufficient { relation, gap };
+            let resolution: LensEvidenceResolution = EvidencePosture::Insufficient {
+                target,
+                gap: InsufficientGap::NoObservation,
+            };
             let obs_tag = observation_set_canonical_tag(&input.observations);
             let id =
                 contribution_id_for(LENS_B_ID, LENS_B_VERSION, input, &resolution, &[], &obs_tag);
@@ -292,26 +301,23 @@ impl AlignmentLens for LensFreshness {
         let mut contradicting = contradicting;
         sort_ids(&mut supporting);
         sort_ids(&mut contradicting);
-        let resolution = if has_stale && has_fresh {
-            EvidenceResolution::Conflicted {
-                relation,
+        let resolution: LensEvidenceResolution = if has_stale && has_fresh {
+            EvidencePosture::Conflicted {
+                target,
                 supporting,
                 contradicting,
             }
         } else if has_stale {
-            EvidenceResolution::Contradicted {
-                relation,
+            EvidencePosture::Contradicted {
+                target,
                 contradicting,
             }
         } else if has_fresh {
-            EvidenceResolution::Supported {
-                relation,
-                supporting,
-            }
+            EvidencePosture::Supported { target, supporting }
         } else {
-            EvidenceResolution::Insufficient {
-                relation,
-                gap: InsufficientGap::MissingProvenance.wire_message(),
+            EvidencePosture::Insufficient {
+                target,
+                gap: InsufficientGap::MissingProvenance,
             }
         };
         let obs_tag = observation_set_canonical_tag(&input.observations);
@@ -370,6 +376,7 @@ pub fn observation_affirms_a(
 }
 
 /// Same as `observation_affirms_a` but stance `Denies`.
+#[allow(dead_code)]
 pub fn observation_denies_a(
     set: &mut ObservationSet,
     basis: ObservationBasis,
@@ -394,11 +401,20 @@ pub fn observation_denies_a(
     set.insert(obs);
 }
 
-/// Build a typed observation of Lens B's relation with the given
-/// `KmtStatus` (freshness) and a corresponding stance. The status is
-/// baked into the observation's basis via the typed constructor (the
-/// observation substrate does not expose `with_freshness` as a builder
-/// method, so this fixture holds the construction seam).
+/// Build a typed observation of the **unit itself** (NOT a synthetic
+/// self-relation) carrying the given `KmtStatus` (freshness). The
+/// status is baked into the observation's basis via the typed
+/// constructor (the observation substrate does not expose
+/// `with_freshness` as a builder method, so this fixture holds the
+/// construction seam).
+///
+/// **A4-4bR**: Lens B (Freshness) consumes observations whose
+/// `ObservationSubject` is the unit directly, via
+/// `ObservationSet::for_subject(&ObservationTargetRef::Unit(unit))`.
+/// This helper no longer fabricates a `SoftwareRelation` (the
+/// pre-A4-4bR path was `unit --Verifies--> unit`). The lens
+/// kernel reaches the unit observation through the subject-general
+/// target, not through a synthetic relation.
 ///
 /// For "no freshness" semantics, pass `None`-style: the caller can
 /// wrap a `KmtStatus` in `Some(...)` if a non-empty status is desired;
@@ -411,12 +427,7 @@ pub fn observation_freshness_b(
     unit: SoftwareUnitRef,
     freshness: Option<sddk_engine::knowledge::KmtStatus>,
 ) {
-    let relation = SoftwareRelation::new(
-        SoftwareEntityRef::Unit(unit.clone()),
-        CoreRelationKind::Verifies,
-        SoftwareEntityRef::Unit(unit),
-    );
-    let subject = ObservationSubject::SoftwareRelation(relation);
+    let subject = ObservationSubject::Unit(unit);
     let evidence = EvidenceRef::new(EvidenceKind::Adhoc, "lens_b_freshness");
     let obs = SoftwareObservation::declare(
         subject,

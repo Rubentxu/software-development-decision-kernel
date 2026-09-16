@@ -22,6 +22,7 @@ mod alignment_lens_fixture;
 use sddk_engine::alignment_lens::error::LensError;
 use sddk_engine::alignment_lens::kernel::AlignmentLensKernel;
 use sddk_engine::alignment_lens::not_evaluated::NotEvaluatedReason;
+use sddk_engine::alignment_lens::types::InsufficientGap;
 use sddk_engine::alignment_lens::types::{LensDescriptor, LensId, LensVersion};
 use sddk_engine::alignment_lens::{
     AlignmentLens, AlignmentLensRegistry, LensContribution, LensInput,
@@ -30,8 +31,8 @@ use sddk_engine::architecture_graph::SoftwareUnitRef;
 use sddk_engine::intent_universal_concern::types::IntentId;
 use sddk_engine::intent_universal_concern::{ApplicableConcern, UniversalConcern};
 use sddk_engine::knowledge::{BasisHash, EventTime};
-use sddk_engine::observation::EvidenceResolution;
 use sddk_engine::observation::ObservationSet;
+use sddk_engine::observation::{LensEvidenceResolution, ObservationTargetRef};
 use std::collections::BTreeSet;
 
 use alignment_lens_fixture::{
@@ -112,11 +113,13 @@ fn pin_01_duplicate_lens_id_is_typed_refusal() {
                     LENS_A_ID,
                     LENS_A_VERSION,
                     UniversalConcern::Freshness,
-                    EvidenceResolution::Insufficient {
-                        relation: sddk_engine::observation::types::RelationId::derive(
-                            "a", "supports", "b",
+                    LensEvidenceResolution::Insufficient {
+                        target: ObservationTargetRef::Relation(
+                            sddk_engine::observation::types::RelationId::derive(
+                                "a", "supports", "b",
+                            ),
                         ),
-                        gap: "test".into(),
+                        gap: InsufficientGap::LensDeclaredGap,
                     },
                     Vec::new(),
                 ),
@@ -238,9 +241,9 @@ fn pin_05_insufficient_evidence_remains_insufficient() {
     let outcome = outcome.ok().expect("ok");
     assert_eq!(outcome.contributions.len(), 1);
     let c = &outcome.contributions[0];
-    assert_eq!(c.evidence_resolution.canonical_tag(), "insufficient");
+    assert_eq!(c.evidence_resolution.posture_class(), "insufficient");
     // And it's NOT NotApplicable / NotEvaluated / Conflicted.
-    assert_ne!(c.evidence_resolution.canonical_tag(), "conflicted");
+    assert_ne!(c.evidence_resolution.posture_class(), "conflicted");
 }
 
 #[test]
@@ -267,9 +270,9 @@ fn pin_06_conflicted_remains_conflicted() {
     let outcome = outcome.ok().expect("ok");
     assert_eq!(outcome.contributions.len(), 1);
     let c = &outcome.contributions[0];
-    assert_eq!(c.evidence_resolution.canonical_tag(), "conflicted");
+    assert_eq!(c.evidence_resolution.posture_class(), "conflicted");
     // Resolution is preserved: the kernel has NOT picked a side.
-    if let EvidenceResolution::Conflicted {
+    if let LensEvidenceResolution::Conflicted {
         supporting,
         contradicting,
         ..
@@ -311,8 +314,8 @@ fn pin_07_two_lenses_two_contributions() {
             // Forced different EvidenceResolution: emit Supported when
             // A emits, so the kernel carries two distinct contributions.
             let relation = RelationId::derive("crates/sddk-cli", "depends_on", "crates/sddk-cli");
-            let resolution = EvidenceResolution::Supported {
-                relation,
+            let resolution = LensEvidenceResolution::Supported {
+                target: ObservationTargetRef::Relation(relation.clone()),
                 supporting: Vec::new(),
             };
             let obs_tag = observation_set_canonical_tag(&input.observations);
@@ -408,9 +411,11 @@ fn pin_09_identity_excludes_wall_clock() {
         LENS_A_VERSION,
         UniversalConcern::DependencyDirection,
         "OBSTAG|test",
-        &EvidenceResolution::Insufficient {
-            relation: sddk_engine::observation::types::RelationId::derive("a", "supports", "b"),
-            gap: "this string must not affect the id".to_string(),
+        &LensEvidenceResolution::Insufficient {
+            target: ObservationTargetRef::Relation(
+                sddk_engine::observation::types::RelationId::derive("a", "supports", "b"),
+            ),
+            gap: InsufficientGap::LensDeclaredGap,
         },
         &[],
     );
@@ -423,9 +428,11 @@ fn pin_09_identity_excludes_wall_clock() {
         LENS_A_VERSION,
         UniversalConcern::DependencyDirection,
         "OBSTAG|test",
-        &EvidenceResolution::Insufficient {
-            relation: sddk_engine::observation::types::RelationId::derive("a", "supports", "b"),
-            gap: "this string must not affect the id".to_string(),
+        &LensEvidenceResolution::Insufficient {
+            target: ObservationTargetRef::Relation(
+                sddk_engine::observation::types::RelationId::derive("a", "supports", "b"),
+            ),
+            gap: InsufficientGap::LensDeclaredGap,
         },
         &[],
     );
@@ -442,9 +449,9 @@ fn pin_10_identity_excludes_message_text() {
         LENS_A_VERSION,
         UniversalConcern::DependencyDirection,
         "OBSTAG|test",
-        &EvidenceResolution::Insufficient {
-            relation: r.clone(),
-            gap: "alpha".into(),
+        &LensEvidenceResolution::Insufficient {
+            target: ObservationTargetRef::Relation(r.clone()),
+            gap: InsufficientGap::LensDeclaredGap,
         },
         &[],
     );
@@ -453,9 +460,9 @@ fn pin_10_identity_excludes_message_text() {
         LENS_A_VERSION,
         UniversalConcern::DependencyDirection,
         "OBSTAG|test",
-        &EvidenceResolution::Insufficient {
-            relation: r.clone(),
-            gap: "BETA".into(),
+        &LensEvidenceResolution::Insufficient {
+            target: ObservationTargetRef::Relation(r.clone()),
+            gap: InsufficientGap::LensDeclaredGap,
         },
         &[],
     );
@@ -499,10 +506,10 @@ fn pin_11_no_score_or_confidence_field() {
         // (since the field does not exist), but we ensure every
         // contribution's `evidence_resolution` is a typed variant.
         match &c.evidence_resolution {
-            EvidenceResolution::Supported { .. }
-            | EvidenceResolution::Contradicted { .. }
-            | EvidenceResolution::Conflicted { .. }
-            | EvidenceResolution::Insufficient { .. } => {}
+            LensEvidenceResolution::Supported { .. }
+            | LensEvidenceResolution::Contradicted { .. }
+            | LensEvidenceResolution::Conflicted { .. }
+            | LensEvidenceResolution::Insufficient { .. } => {}
         }
     }
 }
@@ -643,10 +650,10 @@ fn pin_a1_fresh_stale_lens_emits_conflicted() {
     assert!(
         matches!(
             c.evidence_resolution,
-            EvidenceResolution::Supported { .. }
-                | EvidenceResolution::Conflicted { .. }
-                | EvidenceResolution::Contradicted { .. }
-                | EvidenceResolution::Insufficient { .. }
+            LensEvidenceResolution::Supported { .. }
+                | LensEvidenceResolution::Conflicted { .. }
+                | LensEvidenceResolution::Contradicted { .. }
+                | LensEvidenceResolution::Insufficient { .. }
         ),
         "resolution must be a typed EvidenceResolution variant"
     );

@@ -381,6 +381,30 @@ impl ObservationSet {
             .collect()
     }
 
+    /// Every observation whose subject matches the given target ref
+    /// (A4-4bR: subject-general lookup).
+    ///
+    /// The target kind is part of the match: a Unit observation never
+    /// matches a Relation target and vice versa. The lookup is
+    /// deterministic; observations are returned in canonical order
+    /// (the set already sorts on insert).
+    pub fn for_subject(
+        &self,
+        target: &crate::observation::ObservationTargetRef,
+    ) -> Vec<&SoftwareObservation> {
+        use crate::observation::ObservationTargetRef as T;
+        self.observations
+            .iter()
+            .filter(|o| match (target, &o.subject) {
+                (T::Relation(r), ObservationSubject::SoftwareRelation(obs_r)) => obs_r.id() == *r,
+                (T::Unit(u), ObservationSubject::Unit(obs_u)) => obs_u == u,
+                (T::Contract(c), ObservationSubject::Contract(obs_c)) => obs_c == c,
+                (T::Knowledge(k), ObservationSubject::Knowledge(obs_k)) => obs_k == k,
+                _ => false,
+            })
+            .collect()
+    }
+
     /// Every observation of a relation that has the given entity as an endpoint.
     ///
     /// This is what lets `why architecture` connect an observation to the contract
