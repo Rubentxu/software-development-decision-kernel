@@ -3,7 +3,7 @@ id: arch-spec-043-generic-verify
 title: Generic Verify — delta-scoped verification kernel
 status: implemented
 milestone: A4
-implemented_by: A4-1 (crates/sddk-engine/src/verify_kernel, crates/sddk-cli/src/verify_kernel_cmd)
+implemented_by: A4-1 + A4-2M (crates/sddk-engine/src/verify_kernel, crates/sddk-cli/src/verify_kernel_cmd; AC4 convergence via `compute_conformance_delta_core` + `ArchitectureVerificationDomain::evaluate_with_context`)
 depends_on: arch-spec-042-evidence-observation-provenance
 ---
 

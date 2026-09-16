@@ -1,25 +1,51 @@
 // Copyright (c) SDDK contributors.
 // SPDX-License-Identifier: MIT
 //
-// debverify_kernel/strategy_architecture.rs — A4-2: ArchitectureChallengeStrategy.
+// debverify_kernel/strategy_architecture.rs — A4-2 / A4-2M:
+// ArchitectureChallengeStrategy.
 //
 // Wraps AC5's `run_debverify_audit`. Does NOT re-implement AC5's five
-// detectors; calls them through the substrate.
+// detectors; calls them through the substrate (`audit_to_findings`).
 //
 // Why this is not "AC5 renombrado": the strategy is one of N. The kernel
 // composes it with non-architecture strategies and reports results in the
 // generic DebVerify vocabulary. AC5's `DebVerifyAudit` is reconstructed
 // in-memory and converted into `ChallengeFinding`s.
+//
+// A4-2M semantics:
+// - The audit executes **once**, at the call site (CLI / integration
+//   layer), via `run_debverify_audit`. The strategy is a **port**, not
+//   the executor.
+// - `challenge()` returns `Gaps(...)` when the audit could not run
+//   (no inputs available). It NEVER returns `Findings(vec![])`, because
+//   that would be a false-clean trap — the kernel would promote it to
+//   `ConfirmedBaseline` and the caller would conclude "all good" when
+//   in fact nothing was checked.
+// - The actual audit → finding conversion is `audit_to_findings`,
+//   called by the CLI when the overlay + contracts are loaded. That
+//   function is the **single execution** of the five detectors; the
+//   strategy itself never calls them.
 
 use crate::observation::ObservationSet;
 
-use super::strategy::{ChallengeFinding, ChallengeOutcome, ChallengeStrategy};
-use super::types::{Baseline, ChallengeFindingKind, DebtItem, DebtItemKind, ReconciliationScope};
+use super::strategy::{ChallengeError, ChallengeOutcome, ChallengeStrategy};
+use super::types::{Baseline, GapSet, ReconciliationScope, SubjectId};
 
 /// Strategy name (stable, used in registry).
 pub const STRATEGY_NAME: &str = "architecture_challenge";
 
-/// Wraps AC5.
+/// Architecture challenge port.
+///
+/// The strategy itself does NOT execute the AC5 audit. It declares
+/// that an architecture audit was required (the strategy is registered
+/// for the "architecture" scope) and the call site is responsible for
+/// running the audit and feeding the findings back through
+/// `audit_to_findings`.
+///
+/// When the audit cannot run (no overlay, no contracts), the
+/// strategy surfaces that absence as an explicit `GapSet`, NOT as
+/// zero findings. This prevents the kernel from reporting
+/// `ConfirmedBaseline` when nothing was actually checked.
 pub struct ArchitectureChallengeStrategy;
 
 impl ChallengeStrategy for ArchitectureChallengeStrategy {
@@ -29,7 +55,8 @@ impl ChallengeStrategy for ArchitectureChallengeStrategy {
 
     fn applicable(&self, scope: &ReconciliationScope) -> bool {
         // Applies to any scope that names "architecture" (case-insensitive)
-        // or is named "all". Other named scopes are not architecture.
+        // or is named "all" / "default". Other named scopes are not
+        // architecture.
         let n = scope.name.to_lowercase();
         n == "architecture" || n == "all" || n == "default"
     }
@@ -38,55 +65,59 @@ impl ChallengeStrategy for ArchitectureChallengeStrategy {
         &self,
         _baseline: &Baseline,
         _evidence: &ObservationSet,
-    ) -> Result<ChallengeOutcome, super::strategy::ChallengeError> {
-        // A4-2 ships the SEAM and the adapter contract. The runtime bridge to
-        // AC5's `run_debverify_audit(overlay, contracts, now)` lives in the
-        // CLI / integration layer, where `overlay` and `contracts` are loaded
-        // from the workspace. Here, the strategy reports its applicable
-        // findings as a stub that is replaced once the bridge is wired in
-        // (A4-2M). The seam itself is the value: any consumer can swap in a
-        // different audit without touching the kernel.
+    ) -> Result<ChallengeOutcome, ChallengeError> {
+        // The strategy cannot execute the audit by itself — it does not
+        // have access to the overlay or contracts (those live in the CLI /
+        // integration layer). The CLI is the call site that runs
+        // `run_debverify_audit` and converts via `audit_to_findings`.
         //
-        // The stub returns no findings when there is no overlay/contracts
-        // input available. This is correct: DebVerify without an overlay
-        // cannot challenge architecture. The kernel surfaces this as
-        // "no findings" rather than a synthetic error, because the
-        // architecture challenge is one of several strategies and its
-        // absence does not poison the whole pass.
-        Ok(ChallengeOutcome::Findings(Vec::new()))
+        // When called directly without those inputs (e.g. from a unit
+        // test that does not load a declaration), the strategy emits
+        // a `GapSet` so the kernel surfaces `EvidenceGap` instead of
+        // `ConfirmedBaseline`. This is the A4-2M false-clean guard.
+        let scope_subject: SubjectId = crate::observation::SoftwareEntityRef::Component(
+            crate::architectural_contract::ComponentRef::new("architecture".to_string())
+                .unwrap_or_else(|_| {
+                    crate::architectural_contract::ComponentRef::new("<invalid>".to_string())
+                        .expect("ComponentRef::new always succeeds for ASCII")
+                }),
+        );
+        Ok(ChallengeOutcome::Gaps(vec![GapSet {
+            subject: scope_subject,
+            gap: "architecture_challenge: audit inputs not provided; \
+                  run_debverify_audit must be invoked at the call site \
+                  and findings converted via audit_to_findings"
+                .to_string(),
+        }]))
     }
 }
 
 /// Bridge entry-point: convert a `DebVerifyAudit` into a vector of
-/// `ChallengeFinding`s. Used by the CLI / integration layer when the AC5
-/// audit is actually run.
+/// `ChallengeFinding`s. This is the **single execution** of the five
+/// detectors and the only place the AC5 types cross into the kernel
+/// vocabulary.
 ///
-/// Kept here (not in the strategy itself) so that the strategy stays pure
-/// and free of any direct dependency on the AC5 types beyond the trait
-/// boundary. This makes the strategy testable without an audit payload.
+/// Called by the CLI / integration layer after running
+/// `architecture_debverify::run_debverify_audit(overlay, contracts, now)`.
 pub fn audit_to_findings(
     audit: &crate::architecture_debverify::DebVerifyAudit,
-) -> Vec<ChallengeFinding> {
+) -> Vec<super::strategy::ChallengeFinding> {
+    use super::strategy::ChallengeFinding;
+    use super::types::{ChallengeFindingKind, DebtItem, DebtItemKind};
     audit
         .findings
         .iter()
-        .map(|f| {
-            // AC5 severity maps to ChallengeFindingKind::Stale (the closest
-            // semantic match in the DebVerify vocabulary). Per arch-spec-044,
-            // architecture findings are surfaced as findings on the subjects
-            // they implicate, not as a separate output channel.
-            ChallengeFinding {
-                kind: ChallengeFindingKind::Stale,
-                subject: subject_for_audit_finding(f),
-                message: format!("{}: {}", f.kind.canonical_tag(), f.message),
-                debt: Some(DebtItem {
-                    kind: DebtItemKind::ArchitectureDesign,
-                    location: subject_for_audit_finding(f),
-                    description: f.message.clone(),
-                    decision_ref: None,
-                    revisit_trigger: None,
-                }),
-            }
+        .map(|f| ChallengeFinding {
+            kind: ChallengeFindingKind::Stale,
+            subject: subject_for_audit_finding(f),
+            message: format!("{}: {}", f.kind.canonical_tag(), f.message),
+            debt: Some(DebtItem {
+                kind: DebtItemKind::ArchitectureDesign,
+                location: subject_for_audit_finding(f),
+                description: f.message.clone(),
+                decision_ref: None,
+                revisit_trigger: None,
+            }),
         })
         .collect()
 }
@@ -94,11 +125,6 @@ pub fn audit_to_findings(
 fn subject_for_audit_finding(
     f: &crate::architecture_debverify::DebVerifyFinding,
 ) -> super::types::SubjectId {
-    // The DebVerify kernel speaks subjects in the `SoftwareEntityRef`
-    // vocabulary. AC5 speaks contract ids and string subjects. We surface
-    // the first contract id as a Unit subject when possible; otherwise we
-    // fall back to a Unit ref from the first subject string. This is
-    // a stable mapping that does not introduce new identity axes.
     use crate::observation::SoftwareEntityRef;
     if let Some(first_contract) = f.contract_ids.first() {
         SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(

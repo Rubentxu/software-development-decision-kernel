@@ -364,7 +364,14 @@ fn verify_clean_debverify_drift() {
     let r = crate::verify_kernel::VerifyKernel::evaluate(&v, &ev, &arch_domain);
     assert!(matches!(r, VerificationResult::Unknown { .. }));
 
-    // Now DebVerify on the same evidence must be ConfirmedBaseline.
+    // Now DebVerify on the same evidence.
+    //
+    // A4-2M convergence: the architecture strategy cannot run an audit
+    // without overlay + contracts (those live at the CLI / integration
+    // call site). When called directly without those inputs, the
+    // strategy returns `Gaps(...)`, which the kernel promotes to
+    // `EvidenceGap`. This is the A4-2M false-clean guard: a missing
+    // audit MUST NOT degrade into `ConfirmedBaseline`.
     let b = baseline_of("architecture", &ev);
     let s = DebVerifyKernel::reconcile(
         ReconciliationScope::all("architecture"),
@@ -372,7 +379,7 @@ fn verify_clean_debverify_drift() {
         &ev,
         &default_strategy_set(),
     );
-    assert!(matches!(s, ReconciliationSummary::ConfirmedBaseline { .. }));
+    assert!(matches!(s, ReconciliationSummary::EvidenceGap(_)));
 }
 
 // ─── 14: DebVerify can find a subject with no recent edits ─────────────────

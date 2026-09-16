@@ -34,7 +34,29 @@ pub const AC4_EVALUATOR: &str = "sddk.architecture_conformance";
 ///
 /// Pure: identical inputs yield byte-identical digests and identical ordering
 /// (REQ-AC4-013). `now` is data, not a clock read.
+///
+/// A4-2M convergence: this is a thin wrapper around
+/// [`compute_conformance_delta_core`]. The core is the **single execution
+/// surface** of AC4's computation; both the public function and the
+/// architecture verification domain adapter (via
+/// `ArchitectureVerificationDomain::evaluate_with_context`) call it.
 pub fn compute_conformance_delta(
+    overlay: &ArchitectureGraphOverlay,
+    inputs: ConformanceInputs<'_>,
+    now: EventTime,
+    scope_units: &[SoftwareUnitRef],
+) -> Result<ArchitectureConformanceDelta, ConformanceError> {
+    compute_conformance_delta_core(overlay, inputs, now, scope_units)
+}
+
+/// Core AC4 computation. Returns the delta as-is.
+///
+/// This is the **single source of truth** for AC4's conformance
+/// computation. Both [`compute_conformance_delta`] (legacy DTO shape) and
+/// [`crate::verify_kernel::ArchitectureVerificationDomain::evaluate_with_context`]
+/// (generic verify kernel shape) call into here, ensuring the two paths
+/// share exactly one execution.
+pub fn compute_conformance_delta_core(
     overlay: &ArchitectureGraphOverlay,
     inputs: ConformanceInputs<'_>,
     now: EventTime,

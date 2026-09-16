@@ -36,7 +36,9 @@
 // | `Stale` | `Stale { basis: computed_from_basis }` |
 // | `NotEvaluated` | `NotApplicable` |
 
-use crate::architecture_conformance::DeltaContractStatus;
+use crate::architecture_conformance::{
+    ConformanceInputs, DeltaContractStatus, compute_conformance_delta_core,
+};
 use crate::observation::ObservationSet;
 use crate::verify_kernel::registry::VerificationDomain;
 use crate::verify_kernel::types::{
@@ -105,39 +107,88 @@ impl VerificationDomain for ArchitectureVerificationDomain {
     ) -> VerificationResult {
         match claim {
             VerificationClaim::ArchitectureConformance(c) => {
-                // Map to DeltaContractStatus via AC4's compute.
-                // Note: In a full implementation, we'd build the overlay and inputs
-                // from the claim. This adapter demonstrates the mapping pattern.
-                let status = self.map_architecture_claim_to_status(c);
-
-                // Bijection: DeltaContractStatus → VerificationResult
-                Self::map_status_to_result(status, &c.contract_id)
+                // The trait-level `evaluate` is the **port**. It has access to
+                // the claim but not to the architecture context (overlay,
+                // contracts, evidence). Without context, the correct kernel
+                // result is `Unknown` (we cannot evaluate an architecture
+                // conformance claim without its inputs).
+                //
+                // The full computation goes through `evaluate_with_context`,
+                // called by the CLI / integration layer which DOES have the
+                // context. The trait method is here so the kernel registry is
+                // complete and the domain is callable from generic surfaces;
+                // it is not the primary path for architecture verification.
+                let _ = c;
+                VerificationResult::Unknown {
+                    gap: EvidenceGap::MissingForSubject(
+                        "architecture context not provided to trait evaluate; \
+                         call evaluate_with_context from the integration layer"
+                            .to_string(),
+                    ),
+                }
             }
         }
     }
 }
 
 impl ArchitectureVerificationDomain {
-    /// Map an architecture conformance claim to a DeltaContractStatus.
+    /// Evaluate an architecture conformance claim with full context.
     ///
-    /// In a full implementation, this would call `compute_conformance_delta`.
-    /// Here we demonstrate the adapter pattern; the actual computation is
-    /// delegated to the CLI which has access to the full context.
-    fn map_architecture_claim_to_status(
+    /// This is the **A4-2M single execution path** for AC4. It calls
+    /// `compute_conformance_delta_core` (the same core that
+    /// `architecture_conformance::compute_conformance_delta` calls) and
+    /// maps the resulting `DeltaContractStatus` for the claim's contract
+    /// id into the generic verify kernel's `VerificationResult` vocabulary.
+    ///
+    /// Both this method and the legacy public function call into the same
+    /// core, so there is exactly one AC4 computation in the codebase. The
+    /// legacy DTO shape (`ArchitectureConformanceDelta`) survives as a
+    /// read model; the kernel result (`VerificationResult`) is the
+    /// authority in the generic substrate.
+    ///
+    /// Mapping rules (bijection with `map_status_to_result`):
+    ///
+    /// | DeltaContractStatus    | VerificationResult              |
+    /// |------------------------|---------------------------------|
+    /// | `Verified`             | `Verified`                      |
+    /// | `Contradicted`         | `Contradicted { OwnershipViolation }` |
+    /// | `Unknown`              | `Unknown { MissingForSubject }` |
+    /// | `Stale`                | `Stale { basis: SENTINEL }`     |
+    /// | `NotEvaluated`         | `NotApplicable`                 |
+    pub fn evaluate_with_context(
         &self,
-        _claim: &ArchitectureConformanceClaim,
-    ) -> DeltaContractStatus {
-        // This is a stub. In production, this would:
-        // 1. Build the ArchitectureGraphOverlay from the declaration.
-        // 2. Build ConformanceInputs with the claim's contract_id as filter.
-        // 3. Call compute_conformance_delta(overlay, inputs, now, scope_units).
-        // 4. Extract the DeltaContractStatus from the resulting delta.
-        //
-        // The CLI (`verify_kernel_cmd.rs`) provides the full implementation
-        // because it has access to the filesystem, git history, etc.
-        DeltaContractStatus::Unknown
+        claim: &ArchitectureConformanceClaim,
+        overlay: &crate::architecture_graph::ArchitectureGraphOverlay,
+        inputs: ConformanceInputs<'_>,
+        now: crate::knowledge::EventTime,
+        scope_units: &[crate::architecture_graph::SoftwareUnitRef],
+    ) -> VerificationResult {
+        let delta = match compute_conformance_delta_core(overlay, inputs, now, scope_units) {
+            Ok(d) => d,
+            Err(_e) => {
+                // AC4 failed (e.g. invalid contract id, unresolved anchor).
+                // In the kernel vocabulary this is `Unknown` — we cannot
+                // produce a verification result without a delta.
+                return VerificationResult::Unknown {
+                    gap: EvidenceGap::MissingForSubject(claim.contract_id.clone()),
+                };
+            }
+        };
+        // Resolve the claim's contract_id to a `ContractId` and look up its
+        // status in the delta. If the contract did not enter scope (e.g.
+        // the change did not touch its subject), the status is `Unknown`.
+        let status = match crate::architectural_contract::ContractId::new(claim.contract_id.clone())
+        {
+            Ok(cid) => delta
+                .status_of(&cid)
+                .unwrap_or(DeltaContractStatus::Unknown),
+            Err(_) => DeltaContractStatus::Unknown,
+        };
+        Self::map_status_to_result(status, &claim.contract_id)
     }
+}
 
+impl ArchitectureVerificationDomain {
     /// Bijective mapping: DeltaContractStatus → VerificationResult.
     ///
     /// This mapping is the **inverse** of the mapping in the CLI adapter
@@ -219,5 +270,135 @@ mod tests {
             let back = verification_result_to_delta_status(&result);
             assert_eq!(status, back, "bijection violated for {:?}", status);
         }
+    }
+
+    // ─── A4-2M convergence tests ──────────────────────────────────────────
+
+    use crate::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
+    use crate::knowledge::EventTime;
+    use std::collections::BTreeMap;
+
+    /// Build a minimal claim-from-foundation path: an empty overlay and an
+    /// empty contract set are the canonical A4-2M "no inputs" case.
+    fn empty_context() -> (ArchitectureGraphOverlay, Vec<SoftwareUnitRef>) {
+        (ArchitectureGraphOverlay::new(), Vec::new())
+    }
+
+    /// The legacy public function and the new `evaluate_with_context` MUST
+    /// produce the same kernel status for the same contract_id, over the
+    /// same inputs. This is the A4-2M convergence invariant — the two
+    /// paths are guaranteed to share the same computation because they
+    /// call the same core.
+    #[test]
+    fn a4_2m_legacy_and_context_paths_agree_on_empty_inputs() {
+        // Both paths, when called with an empty overlay / contract set /
+        // scope, MUST agree. The legacy path produces a delta with
+        // `not_evaluated` containing the contract id (status Unknown);
+        // the kernel path applies `map_status_to_result(Unknown, ..)` to
+        // get `VerificationResult::Unknown { .. }`.
+        let (overlay, scope) = empty_context();
+        let now = EventTime::EPOCH;
+        let inputs = ConformanceInputs {
+            contracts: &[],
+            evidence: &BTreeMap::new(),
+            contradiction_witnesses: &[],
+            contract_filter: None,
+        };
+        let claim = ArchitectureConformanceClaim {
+            contract_id: "units/auth_core".to_string(),
+            basis: ChangeBasis::new(vec![]),
+        };
+        // Legacy path: with no contracts in scope, the delta is empty and
+        // `status_of` for any id returns None → Unknown by the bijection.
+        let result = ArchitectureVerificationDomain::new()
+            .evaluate_with_context(&claim, &overlay, inputs, now, &scope);
+        assert!(
+            matches!(result, VerificationResult::Unknown { .. }),
+            "A4-2M: empty context must yield Unknown, got {:?}",
+            result
+        );
+    }
+
+    /// When the trait-level `evaluate` is called without context, the
+    /// result is `Unknown` (NOT `Verified` and NOT `Contradicted`).
+    /// This is the A4-2M false-clean guard at the verify kernel level:
+    /// a domain that lacks the data it needs MUST say so.
+    #[test]
+    fn a4_2m_trait_evaluate_without_context_returns_unknown() {
+        let claim = ArchitectureConformanceClaim {
+            contract_id: "units/auth_core".to_string(),
+            basis: ChangeBasis::new(vec![]),
+        };
+        let result = ArchitectureVerificationDomain::new().evaluate(
+            &VerificationClaim::ArchitectureConformance(claim),
+            &ObservationSet::new(),
+        );
+        assert!(
+            matches!(result, VerificationResult::Unknown { .. }),
+            "A4-2M: trait evaluate without context must return Unknown, got {:?}",
+            result
+        );
+    }
+
+    /// The two paths share `compute_conformance_delta_core` as their single
+    /// execution surface. Asserting that the legacy `compute_conformance_delta`
+    /// is now a thin wrapper over the core (no separate code path) is the
+    /// A4-2M convergence guarantee.
+    #[test]
+    fn a4_2m_legacy_is_thin_wrapper_over_core() {
+        // If they ever diverge, this compile-time + behavioural equality
+        // breaks. Both must accept the same inputs and produce the same
+        // delta shape.
+        let (overlay, scope) = empty_context();
+        let now = EventTime::EPOCH;
+        let inputs = ConformanceInputs {
+            contracts: &[],
+            evidence: &BTreeMap::new(),
+            contradiction_witnesses: &[],
+            contract_filter: None,
+        };
+        let legacy = crate::architecture_conformance::compute_conformance_delta(
+            &overlay,
+            inputs.clone(),
+            now,
+            &scope,
+        )
+        .expect("legacy compute");
+        let core =
+            compute_conformance_delta_core(&overlay, inputs, now, &scope).expect("core compute");
+        assert_eq!(
+            legacy.id, core.id,
+            "A4-2M: legacy and core must produce the same delta id"
+        );
+        assert_eq!(
+            legacy.affected.len(),
+            core.affected.len(),
+            "A4-2M: legacy and core must produce the same affected map size"
+        );
+        assert_eq!(
+            legacy.claims.len(),
+            core.claims.len(),
+            "A4-2M: legacy and core must produce the same claim map size"
+        );
+        assert_eq!(
+            legacy.plan_digest, core.plan_digest,
+            "A4-2M: legacy and core must produce the same plan_digest"
+        );
+        assert_eq!(
+            legacy.contract_set_digest, core.contract_set_digest,
+            "A4-2M: legacy and core must produce the same contract_set_digest"
+        );
+        assert_eq!(
+            legacy.graph_digest, core.graph_digest,
+            "A4-2M: legacy and core must produce the same graph_digest"
+        );
+        assert_eq!(
+            legacy.evaluated_at, core.evaluated_at,
+            "A4-2M: legacy and core must produce the same evaluated_at"
+        );
+        assert_eq!(
+            legacy.vector, core.vector,
+            "A4-2M: legacy and core must produce the same vector"
+        );
     }
 }

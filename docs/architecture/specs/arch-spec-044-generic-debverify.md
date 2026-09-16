@@ -3,7 +3,7 @@ id: arch-spec-044-generic-debverify
 title: Generic DebVerify — baseline-challenge and reconciliation kernel
 status: implemented
 milestone: A4
-implemented_by: A4-2 (crates/sddk-engine/src/debverify_kernel, AC5 adapter + ObservationContradictionChallenge)
+implemented_by: A4-2 + A4-2M (crates/sddk-engine/src/debverify_kernel, AC5 adapter + ObservationContradictionChallenge; AC4/AC5 convergence via single-execution cores)
 depends_on: arch-spec-042-evidence-observation-provenance + arch-spec-043-generic-verify
 ---
 
