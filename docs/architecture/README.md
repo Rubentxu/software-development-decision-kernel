@@ -129,8 +129,8 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-2M** | AC4/AC5 convergence onto generic kernels (single execution surface) | `arch-spec-043/044` | closed — v1.169.48 |
 | **A4-3** | Software Alignment domain (closed states + closed findings; pure reducer; no authority) | `arch-spec-045` | closed — v1.169.50 |
 | **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | closed — v1.169.52 |
-| **A4-4aR** | **Applicability Semantics Correction** — separate Applicability from Grounding and Evaluability; remove string-grounding from `applicable_concerns()` reducer; paradigm MUST NOT erase a universal concern; `NotApplicableReason` shrinks to the four legitimate-scope variants (`NotInProjectIntent`, `NotInUnitIntent`, `ExplicitlyExcludedByProject`, `ExplicitlyExcludedByUnit`) | `arch-spec-046` part-1 rectification | **NEXT** — closes A4-4a string-grounding applicability finding |
-| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous strategies) | `arch-spec-046` part-2 | blocked_by A4-4aR |
+| **A4-4aR** | **Applicability Semantics Correction** — separate Applicability from Grounding and Evaluability; remove string-grounding from `applicable_concerns()` reducer; paradigm MUST NOT erase a universal concern; `NotApplicableReason` shrinks to the four legitimate-scope variants (`NotInProjectIntent`, `NotInUnitIntent`, `ExplicitlyExcludedByProject`, `ExplicitlyExcludedByUnit`) | `arch-spec-046` part-1 rectification | closed — v1.169.54 (release SHA `219de3f16a067819125054b89abb88d9dc73cc57`) |
+| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous test lenses via fixtures — ABSTRACTION ONLY, no AC7 migration, no `software_alignment::reduce_alignment` wiring) | `arch-spec-046` part-2 | **CURRENT** |
 | **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | blocked_by A4-4b |
 | **A4-4C** | Receipt/UAT for `arch-spec-046` milestone closure | — | blocked_by A4-4M |
 | **A4-5** | Intelligence loop wiring: Verify + DebVerify + Alignment → AdvisoryContext + WHY/WHY-NOT | `arch-spec-047` | blocked_by A4-4C |
@@ -153,28 +153,45 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 - Local `sddk 1.169.53` installed; `sddk dev doctor` reports `binary.bundle_coherence: present` + `all_present: true`.
 - `FU-A4-4A-REL-1` disposition: closed 2026-09-16.
 
-**Checkpoint (A4-4aR open, 2026-09-16 — Applicability Semantics Correction):**
-- `released_baseline_for_A4-4aR` = v1.169.53 (HEAD `ccecdc723355b0ecc7e037f2266f465165dc59dc`)
-- Discovery: A4-4a `applicable_concerns()` reducer collapsed three distinct
-  semantic layers — **Applicability** (intent-only), **Grounding**
-  (decisions/contracts), **Evaluability** (paradigm×concern, evidence
-  sufficiency) — into a single Applicable/NotApplicable answer. Pre-A4-4aR
-  the reducer used `DecisionRef::render().contains(concern.canonical_tag())`
-  and `ContractId::as_str().contains(...)` to decide applicability, and
-  used `(Pipeline, TemporalCoupling) → NotApplicable` to erase a universal
-  concern. That conflates layers and would have made A4-4b build on a
-  flawed reducer — equivalent to the `false-clean` shape A4-2 (DebVerify)
-  had to correct.
-- A4-4aR correction is the single budget for this cycle: separate the
-  three layers at the reducer boundary, keep A4-4b/A4-5 to own their
-  respective layers.
-- Scope contract: `.sddk/cycles/p-63676b11dc0ef88f-a4-4ar-applicability-correction/spec.md`
-  (gitignored, durable local ground truth). MUST 1-10 enumerate the
-  correction; MUST NOT enumerates anti-encroachment.
-- Carry-over from REL-1: `FU-REL-1-BACKFILL` lands in the same `chore(release)`
-  commit that ships v1.169.54. The handoff `docs/handoff/HANDOFF-2026-09-16-rel-1-public-release-gate-v1.169.53.md`
-  gets its deferred SHA backfill (two rows in the Pinned reference table
-  flip from placeholder to `ccecdc7…`) atomically with the release.
+**Checkpoint (A4-4aR close, 2026-09-16 — Applicability Semantics Correction shipped):**
+- `released_baseline_for_A4-4aR` = v1.169.54 (release SHA `219de3f16a067819125054b89abb88d9dc73cc57`, identical to `origin/main` HEAD at release time)
+- `development_head` = `daac3b3c5341b09bc8d092f8eb100c3d2da82de1` (post-release docs-sync; `workspace_version = 1.169.55`, docs only — **do not** treat `1.169.55` as a published release)
+- Live `bash scripts/release.sh` for v1.169.54:
+  step 1 (fmt+clippy+test+doctests) = workspace green; step 1b = 9/9 shell contract tests green; step 9b **PublicReleaseGate** = PASS (tag SHA anchored, `isDraft=false`, `isPrerelease=false`, 9/9 canonical assets reachable HTTP 200); steps 10-13 (install + doctor + prune + distrib round-trip) = OK; final = `binary=bundle=current=1.169.54`. **First non-REL cycle to exercise the new PublicReleaseGate in regression mode.**
+- Discoveries reduced:
+  1. A4-4a `applicable_concerns()` reducer collapsed three distinct semantic layers — **Applicability** (intent-only), **Grounding** (decisions/contracts), **Evaluability** (paradigm×concern, evidence sufficiency) — into a single Applicable/NotApplicable answer.
+  2. Pre-A4-4aR the reducer used `DecisionRef::render().contains(concern.canonical_tag())` and `ContractId::as_str().contains(...)` to decide applicability (string-grounding — the same `false-clean` shape A4-2/DebVerify had to correct).
+  3. It also used `(Pipeline, TemporalCoupling) → NotApplicable` to erase a universal concern at the paradigm level. Building A4-4b on that surface would have perpetuated the conflation.
+- Single-budget correction: reducer signature shrunk to 2 args (`&ProjectIntent`, `&UnitIntent`); `NotApplicableReason` reduced to the 4 legitimate-scope variants; `ApplicableReason` reduced to a single `ProjectAndUnitIntent`; `DecisionRefs`/`ContractRefs` deleted (zero external callers); `ProjectIntent`/`UnitIntent` gain `excluded_concerns: BTreeSet<UniversalConcern>` with `#[serde(default)]`; paradigm-level erasure rule removed; 22 unit + 5 integration tests with explicit falsification pins (`falsification_paradigm_does_not_erase_concern`, `falsification_same_applicability_with_or_without_evidence`, `falsification_no_deprecated_reasons`, `falsification_signature_no_decisions_or_contracts`).
+- Carry-over folded into v1.169.54 chore(release): `FU-A4-4A-STRING-GROUNDING` CLOSED; `FU-REL-1-BACKFILL` CLOSED (two SHA-placeholder rows in the REL-1 handoff backfilled to `ccecdc7…`).
+- A4-4b unblocked; see checkpoint below.
+- Epistemic pin (now enforced in code + tests + docs):
+  `NotApplicable != Unknown != Ungrounded != InsufficientEvidence`.
+
+**Checkpoint (A4-4b open, 2026-09-16 — Generic AlignmentLens Kernel / Registry):**
+- **Budget:** ABSTRACTION / KERNEL ONLY. UniversalConcern + ApplicableConcern + Evidence/Observations → Generic `AlignmentLensRegistry` → matching lenses → `AlignmentLensKernel` → typed `LensContribution[]`. NO paradigm_lens migration, NO AlignmentAssessment wiring, NO new Alignment states, NO CLI, NO providers, NO Governance.
+- **Release baseline inherited from A4-4aR:** v1.169.54 / `219de3f16a067819125054b89abb88d9dc73cc57` (this is the **released_baseline**, not the development head).
+- **Development head at cycle start:** `daac3b3c5341b09bc8d092f8eb100c3d2da82de1` (`workspace_version = 1.169.55`, docs-sync only since release).
+- **Expected semantic release:** v1.169.56 (will undergo PublicReleaseGate again at release time).
+- **Epistemic discipline (must not invent a new taxonomy):** Reuse `observation::EvidenceResolution::{Supported, Contradicted, Conflicted, Insufficient}` everywhere a lens needs to express evidence posture. Do **not** create parallel `LensSupported/LensContradicted/LensConflict/LensUnknown`. AC7's `LensFamily/LensObservation/LensStatus/LensEvaluationBasis` is historical and out-of-scope; its convergence belongs to A4-4M, not to A4-4b's basis.
+- **Pins (non-negotiable, must be enforced as tests):**
+  - *Missing lens != NotApplicable.* An `ApplicableConcern` with no registered lens produces `NotEvaluated` (typed gap), never `NotApplicable`.
+  - *Insufficient evidence remains Insufficient.* An `ApplicableConcern` with a registered lens but insufficient evidence returns `EvidenceResolution::Insufficient` — not `NotApplicable`, not `MISALIGNED`.
+  - *Conflicted remains Conflicted.* When a lens receives `EvidenceResolution::Conflicted`, the lens **preserves** the conflict — no first-wins, no side-pick, no score/confidence resolution.
+  - *Multi-lens preservation.* Same `ApplicableConcern` + `Lens A` + `Lens B` = two distinct `LensContribution`s. No per-concern collapse, no dedup on rendered message.
+  - *Registry determinism.* Duplicate `LensId` → typed error. Insertion order is independent of evaluation result. Lookup is deterministic. No IO during evaluation. No global mutable state.
+- **AC7 (`paradigm_lens/`) is read-only during A4-4b.** A4-4M owns the migration. No `LensFamily`/`LensObservation`/`LensStatus`/`evaluate_lens`/`probes OO/FP/ADT/DSL` may be touched. Anti-encroachment test pins that the new kernel compiles and runs **without** depending on `paradigm_lens`.
+- **`software_alignment::reduce_alignment` is read-only.** A4-4b does not call it and does not fabricate `AlignmentAssessment`/`ContractViolation`/`AlignmentTension`/`ImprovementOpportunity`.
+- **Identities:** `LensId` is stable/explicit. If `LensContributionId` exists, content-addressed on `(lens_id, lens_version, concern, semantic_evidence_basis_or_resolution, stable_intent_or_basis_refs)` — never on wall-clock, message text, renderer output, registration order, or vector insertion order.
+- **Demonstrated genericity:** two heterogeneous **reference/test lenses** (under `tests/fixtures/`, NOT exported as production API) consumed by the kernel:
+  - *Lens A:* consumes `DependencyDirection` observations.
+  - *Lens B:* consumes `Freshness` observations.
+  Each produces a `LensContribution` keyed by `(LensId, ApplicableConcern, EvidenceResolution, ref_set)`. The two produce different `EvidenceResolution`s so multi-lens preservation is observable.
+- **Decision to document:** trait `AlignmentLens` vs closed ADT + explicit dispatch — recorded in the cycle spec; extensibility for future built-in lenses + packs + provider-backed observations must be considered, but no packs are designed in this cycle.
+- **Risk carry-overs already on the books** (do not fix here, leave them open):
+  - `FU-A4-3-CONSTRAINT-BINDING` (NEW, P1): `software_alignment::reduce_alignment` still associates `ExplicitConstraint` → observations via `subject.contains(contract_ref)` / `canonical_tag.contains(contract_ref)`. **MUST close before A4-5, MUST NOT** be touched in A4-4b's budget.
+- **Acceptance (real release):** tag SHA anchored; `isDraft=false`; `isPrerelease=false`; 9 canonical assets; 9/9 public URLs HTTP 200; install from URL; doctor; prune; distrib round-trip — through `scripts/release.sh` step 9b + 10–13.
+- **STOP.** A4-4M does NOT auto-open.
 
 ## 12 non-negotiable invariants
 
