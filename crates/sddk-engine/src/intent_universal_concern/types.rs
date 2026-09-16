@@ -6,7 +6,6 @@
 use serde::Serialize;
 use std::collections::BTreeSet;
 
-use crate::architectural_contract::{ContractId, DecisionRef};
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::knowledge::EventTime;
 use crate::paradigm_profile::ParadigmLensKind;
@@ -86,17 +85,27 @@ pub struct ProjectIntent {
     pub intent_id: IntentId,
     pub paradigm: ParadigmProfileRef,
     pub declared_concerns: BTreeSet<UniversalConcern>,
+    /// Concerns the project explicitly excludes. A concern in this set
+    /// is `NotApplicable(c, NotApplicableReason::ExplicitlyExcludedByProject)`
+    /// irrespective of whether it is also in `declared_concerns`.
+    /// (A4-4aR: explicit exclusion is the only declaratively-legitimate
+    /// reason beyond the absence-of-declaration gate.)
+    #[serde(default)]
+    pub excluded_concerns: BTreeSet<UniversalConcern>,
 }
 
 /// Declared intent for a specific unit, within a `ProjectIntent`.
 ///
 /// `unit_ref` is the identity of the unit being declared for.
 /// `applies_to_concerns` is the unit's declared subset — narrower than
-/// the project's declared_concerns.
+/// the project's declared_concerns. `excluded_concerns` is the unit's
+/// explicit exclusion list (A4-4aR).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct UnitIntent {
     pub unit_ref: SoftwareUnitRef,
     pub applies_to_concerns: BTreeSet<UniversalConcern>,
+    #[serde(default)]
+    pub excluded_concerns: BTreeSet<UniversalConcern>,
 }
 
 /// Content-addressed identity for an intent.
@@ -158,18 +167,6 @@ impl ParadigmProfileRef {
     }
 }
 
-/// Typed accessor for the `AcceptedDecision` references a concern decision
-/// was grounded on. A4-4a *references* — `AcceptedDecision` itself lives in
-/// `software_alignment` (A4-3).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
-pub struct DecisionRefs(pub Vec<DecisionRef>);
-
-/// Typed accessor for the `ArchitecturalContract` references a concern
-/// decision was grounded on. A4-4a *references* — contracts live in
-/// `architectural_contract`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
-pub struct ContractRefs(pub Vec<ContractId>);
-
 // ─── ApplicableConcern answer ───────────────────────────────────────────────
 
 /// The descriptive answer to "is this concern applicable to this unit,
@@ -215,18 +212,30 @@ impl ApplicableConcern {
 }
 
 /// Reason a concern is not applicable to a given unit.
+///
+/// **A4-4aR semantics:** these reasons describe *declared-scope applicability
+/// only*. The presence or absence of grounding decisions, contracts, or
+/// paradigm-specific observations is OUT OF SCOPE for applicability — that
+/// state belongs to Grounding and Evaluability (A4-4b, A4-5), not to
+/// `ApplicableConcern`.
+///
+/// Epistemic pin (do not collapse these notions in future cycles):
+///
+/// ```text
+/// NotApplicable         != Unknown
+///                        != Ungrounded
+///                        != InsufficientEvidence
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub enum NotApplicableReason {
-    /// The project's declared_concerns does not include this concern.
+    /// The project's `declared_concerns` does not include this concern.
     NotInProjectIntent,
-    /// The unit's applies_to_concerns does not include this concern.
+    /// The unit's `applies_to_concerns` does not include this concern.
     NotInUnitIntent,
-    /// No accepted decision grounds this concern for this unit.
-    NoGroundingDecision,
-    /// No contract references this concern for this unit.
-    NoContractReference,
-    /// The paradigm profile does not produce observations of this concern.
-    ParadigmIrrelevant,
+    /// The project explicitly excludes this concern via `excluded_concerns`.
+    ExplicitlyExcludedByProject,
+    /// The unit explicitly excludes this concern via `excluded_concerns`.
+    ExplicitlyExcludedByUnit,
 }
 
 impl NotApplicableReason {
@@ -234,35 +243,29 @@ impl NotApplicableReason {
         match self {
             Self::NotInProjectIntent => "not_in_project_intent",
             Self::NotInUnitIntent => "not_in_unit_intent",
-            Self::NoGroundingDecision => "no_grounding_decision",
-            Self::NoContractReference => "no_contract_reference",
-            Self::ParadigmIrrelevant => "paradigm_irrelevant",
+            Self::ExplicitlyExcludedByProject => "explicitly_excluded_by_project",
+            Self::ExplicitlyExcludedByUnit => "explicitly_excluded_by_unit",
         }
     }
 }
 
 /// The typed reason a particular `ApplicableConcern::Applicable` answer
 /// was produced — i.e. the *positive* reason alongside the boolean answer.
-/// (A4-4a emits this in the `applicable_reason` side channel for
-/// traceability.)
+///
+/// A4-4aR collapsed the prior three-variant enum (which referenced
+/// decisions, contracts, or paradigms) into a single **intent-only** reason,
+/// because the prior variants conflated Applicability with Grounding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub enum ApplicableReason {
     /// Project intent includes the concern AND unit intent includes the
-    /// concern AND there is at least one grounding decision.
-    ProjectAndUnitIntentAndDecision,
-    /// Project intent includes the concern AND the unit's paradigm profile
-    /// produces observations of this concern.
-    ProjectIntentAndParadigm,
-    /// Unit intent includes the concern AND there is a contract reference.
-    UnitIntentAndContract,
+    /// concern AND neither scope declares an exclusion.
+    ProjectAndUnitIntent,
 }
 
 impl ApplicableReason {
     pub fn canonical_tag(self) -> &'static str {
         match self {
-            Self::ProjectAndUnitIntentAndDecision => "project_unit_intent_and_decision",
-            Self::ProjectIntentAndParadigm => "project_intent_and_paradigm",
-            Self::UnitIntentAndContract => "unit_intent_and_contract",
+            Self::ProjectAndUnitIntent => "project_unit_intent",
         }
     }
 }

@@ -129,10 +129,11 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-2M** | AC4/AC5 convergence onto generic kernels (single execution surface) | `arch-spec-043/044` | closed — v1.169.48 |
 | **A4-3** | Software Alignment domain (closed states + closed findings; pure reducer; no authority) | `arch-spec-045` | closed — v1.169.50 |
 | **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | closed — v1.169.52 |
-| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous strategies) | `arch-spec-046` part-2 | blocked_by A4-4a |
+| **A4-4aR** | **Applicability Semantics Correction** — separate Applicability from Grounding and Evaluability; remove string-grounding from `applicable_concerns()` reducer; paradigm MUST NOT erase a universal concern; `NotApplicableReason` shrinks to the four legitimate-scope variants (`NotInProjectIntent`, `NotInUnitIntent`, `ExplicitlyExcludedByProject`, `ExplicitlyExcludedByUnit`) | `arch-spec-046` part-1 rectification | **NEXT** — closes A4-4a string-grounding applicability finding |
+| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous strategies) | `arch-spec-046` part-2 | blocked_by A4-4aR |
 | **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | blocked_by A4-4b |
 | **A4-4C** | Receipt/UAT for `arch-spec-046` milestone closure | — | blocked_by A4-4M |
-| **A4-5** | Intelligence loop wiring: Verify + DebVerify + Alignment → AdvisoryContext + WHY/WHY-NOT | `arch-spec-047` | blocked_by A4-4 |
+| **A4-5** | Intelligence loop wiring: Verify + DebVerify + Alignment → AdvisoryContext + WHY/WHY-NOT | `arch-spec-047` | blocked_by A4-4C |
 | **A4-CLOSEOUT** | A4 acceptance gate + A5 readiness check | — | blocked_by A4-5 |
 | **A5** | `BASE_PRODUCTION_READY` — release receipts, hardening programme close | — | blocked_by A4-CLOSEOUT |
 
@@ -143,6 +144,37 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 - `arch-spec-046` part-1 → `implemented` (model surface: closed vocabularies + typed intent + pure reducer). Part-2 promotion deferred to A4-CLOSEOUT per arch-spec-046 §6.
 - `arch-spec-047` updated: `implemented_by: pending (A4-5 — full loop integration)`
 - Next cycle (A4-4b) requires a new ROADMAP-SYNC preflight and scope contract.
+
+**Checkpoint (REL-1 close, 2026-09-16 — PublicReleaseGate step 9b in `scripts/release.sh`):**
+- `released_baseline` = v1.169.53 (HEAD `ccecdc723355b0ecc7e037f2266f465165dc59dc`)
+- Live step 9b ran on the GH API: tag SHA anchored, `isDraft=false`, `isPrerelease=false`, 9-asset contract, 9/9 HTTP 200.
+- `scripts/release.sh` now 14 pasos (was 13); step 9b gates step 10 (`install --version $TAG`) and is fail-closed.
+- Contract tests: `tests/test_release_public_gate.sh` (PASS=11, FAIL=0).
+- Local `sddk 1.169.53` installed; `sddk dev doctor` reports `binary.bundle_coherence: present` + `all_present: true`.
+- `FU-A4-4A-REL-1` disposition: closed 2026-09-16.
+
+**Checkpoint (A4-4aR open, 2026-09-16 — Applicability Semantics Correction):**
+- `released_baseline_for_A4-4aR` = v1.169.53 (HEAD `ccecdc723355b0ecc7e037f2266f465165dc59dc`)
+- Discovery: A4-4a `applicable_concerns()` reducer collapsed three distinct
+  semantic layers — **Applicability** (intent-only), **Grounding**
+  (decisions/contracts), **Evaluability** (paradigm×concern, evidence
+  sufficiency) — into a single Applicable/NotApplicable answer. Pre-A4-4aR
+  the reducer used `DecisionRef::render().contains(concern.canonical_tag())`
+  and `ContractId::as_str().contains(...)` to decide applicability, and
+  used `(Pipeline, TemporalCoupling) → NotApplicable` to erase a universal
+  concern. That conflates layers and would have made A4-4b build on a
+  flawed reducer — equivalent to the `false-clean` shape A4-2 (DebVerify)
+  had to correct.
+- A4-4aR correction is the single budget for this cycle: separate the
+  three layers at the reducer boundary, keep A4-4b/A4-5 to own their
+  respective layers.
+- Scope contract: `.sddk/cycles/p-63676b11dc0ef88f-a4-4ar-applicability-correction/spec.md`
+  (gitignored, durable local ground truth). MUST 1-10 enumerate the
+  correction; MUST NOT enumerates anti-encroachment.
+- Carry-over from REL-1: `FU-REL-1-BACKFILL` lands in the same `chore(release)`
+  commit that ships v1.169.54. The handoff `docs/handoff/HANDOFF-2026-09-16-rel-1-public-release-gate-v1.169.53.md`
+  gets its deferred SHA backfill (two rows in the Pinned reference table
+  flip from placeholder to `ccecdc7…`) atomically with the release.
 
 ## 12 non-negotiable invariants
 

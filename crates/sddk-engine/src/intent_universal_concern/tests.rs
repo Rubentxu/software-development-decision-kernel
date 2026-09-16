@@ -1,31 +1,31 @@
-//! Tests for `intent_universal_concern` (A4-4a).
+//! Tests for `intent_universal_concern` (A4-4aR — Applicability Semantics
+//! Correction).
 //!
 //! Tests fall into four buckets:
 //!
 //! 1. **Happy path** — the UAT (same software + different intent =
 //!    different applicable concerns possible) plus state-coverage.
 //! 2. **Edge cases** — empty scope, single concern, full coverage,
-//!    paradigm-irrelevant row, ordering stability.
-//! 3. **Anti-encroachment** — 8 named tests pinning that A4-4a did NOT
-//!    ship what A4-4b/4M are supposed to ship.
-//! 4. **Identity / determinism** — same input → same output;
+//!    explicit exclusion, ordering stability.
+//! 3. **A4-4aR falsification pins** — applicability must NOT depend on
+//!    `DecisionRef` render text or `ContractId` text or paradigm
+//!    relevance. Same `(pi, ui)` → same applicability regardless of
+//!    decisions/contracts/paradigm×concern rules.
+//! 4. **Anti-encroachment** — A4-4aR did NOT ship AlignmentLens, lens
+//!    registry, OO/FP/ADT/DSL evaluators, paradigm_lens changes, etc.
+//! 5. **Identity / determinism** — same input → same output;
 //!    sorted by canonical; no wall clock; no label text influence.
 
 use std::collections::BTreeSet;
 
-use crate::architectural_contract::{
-    ArchitecturalContract, ContractId, ContractKind, ContractPayload, DecisionRef, Revision,
-    SpecRef,
-};
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::intent_universal_concern::reducer::{ReductionError, applicable_concerns};
 use crate::intent_universal_concern::types::{
     ApplicableConcern, ApplicableReason, IntentId, NotApplicableReason, ParadigmProfileRef,
     ProjectIntent, UnitIntent, UniversalConcern,
 };
-use crate::knowledge::EventTime;
 
-// ─── helpers ───────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 fn intent_id(s: &str) -> IntentId {
     IntentId(s.to_string())
@@ -35,27 +35,12 @@ fn unit_ref(s: &str) -> SoftwareUnitRef {
     SoftwareUnitRef::new(s)
 }
 
+fn empty_concerns() -> BTreeSet<UniversalConcern> {
+    BTreeSet::new()
+}
+
 fn all_concerns() -> BTreeSet<UniversalConcern> {
     UniversalConcern::ALL.iter().copied().collect()
-}
-
-fn decision_ref_with_concern(c: UniversalConcern) -> DecisionRef {
-    DecisionRef::Decision(format!("decision:{}", c.canonical_tag()))
-}
-
-fn contract_with_concern(c: UniversalConcern) -> ArchitecturalContract {
-    ArchitecturalContract::declare(
-        ContractId::new(format!("contract:{}", c.canonical_tag())).expect("id"),
-        ContractKind::UniqueOwner,
-        ContractPayload::UniqueOwner(
-            crate::architectural_contract::EntityRef::new("e").expect("e"),
-        ),
-        DecisionRef::Decision(format!("decision:{}", c.canonical_tag())),
-        SpecRef::Spec(format!("spec:{}", c.canonical_tag())),
-        Revision::new("v1").expect("rev"),
-        EventTime(0),
-    )
-    .expect("declare")
 }
 
 fn project_intent_full(paradigm: ParadigmProfileRef) -> ProjectIntent {
@@ -63,6 +48,19 @@ fn project_intent_full(paradigm: ParadigmProfileRef) -> ProjectIntent {
         intent_id: intent_id("project-1"),
         paradigm,
         declared_concerns: all_concerns(),
+        excluded_concerns: empty_concerns(),
+    }
+}
+
+fn project_intent_with_excluded(
+    paradigm: ParadigmProfileRef,
+    excluded: &[UniversalConcern],
+) -> ProjectIntent {
+    ProjectIntent {
+        intent_id: intent_id("project-1"),
+        paradigm,
+        declared_concerns: all_concerns(),
+        excluded_concerns: excluded.iter().copied().collect(),
     }
 }
 
@@ -70,27 +68,16 @@ fn unit_intent_full(unit: &str) -> UnitIntent {
     UnitIntent {
         unit_ref: unit_ref(unit),
         applies_to_concerns: all_concerns(),
+        excluded_concerns: empty_concerns(),
     }
 }
 
-// Build a slice of `&ContractId` from a vec of contracts.
-// We leak each contract and pull out the id, so the references outlive
-// the test function — accepted for short-lived unit tests.
-fn refs_from_contracts(contracts: Vec<ArchitecturalContract>) -> Vec<&'static ContractId> {
-    contracts
-        .into_iter()
-        .map(|c| {
-            let id: &'static ContractId = Box::leak(Box::new(c.id().clone()));
-            id
-        })
-        .collect()
-}
-
-fn refs_from_decisions(decisions: Vec<DecisionRef>) -> Vec<&'static DecisionRef> {
-    decisions
-        .into_iter()
-        .map(|d| Box::leak(Box::new(d)) as &'static DecisionRef)
-        .collect()
+fn unit_intent_with_excluded(unit: &str, excluded: &[UniversalConcern]) -> UnitIntent {
+    UnitIntent {
+        unit_ref: unit_ref(unit),
+        applies_to_concerns: all_concerns(),
+        excluded_concerns: excluded.iter().copied().collect(),
+    }
 }
 
 // ─── 1. Happy path ────────────────────────────────────────────────────────
@@ -99,48 +86,28 @@ fn refs_from_decisions(decisions: Vec<DecisionRef>) -> Vec<&'static DecisionRef>
 fn happy_path_full_intent_emits_ten_applicable() {
     let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
     let ui = unit_intent_full("Foo");
-    let contracts = refs_from_contracts(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| contract_with_concern(*c))
-            .collect(),
-    );
-    let decisions = refs_from_decisions(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| decision_ref_with_concern(*c))
-            .collect(),
-    );
-    let out = applicable_concerns(&pi, &ui, &contracts, &decisions).expect("reduce");
+    let out = applicable_concerns(&pi, &ui).expect("reduce");
     assert_eq!(out.len(), 10);
     let applicable: Vec<_> = out.iter().filter(|(a, _)| a.is_applicable()).collect();
     assert_eq!(applicable.len(), 10);
+    // Every Applicable row carries reason `ProjectAndUnitIntent`.
+    for (a, r) in &out {
+        if a.is_applicable() {
+            assert_eq!(*r, Some(ApplicableReason::ProjectAndUnitIntent));
+        }
+    }
 }
 
 // ─── 1a. The A4-4a UAT: same software, different declared intent ──────────
 
 #[test]
 fn uat_same_software_different_intent_different_applicable_concerns() {
-    // Same software evidence (same unit, same contracts, same decisions)
-    // but DIFFERENT project intent → DIFFERENT applicable concerns.
-    let contracts = refs_from_contracts(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| contract_with_concern(*c))
-            .collect(),
-    );
-    let decisions = refs_from_decisions(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| decision_ref_with_concern(*c))
-            .collect(),
-    );
     let ui = unit_intent_full("Foo");
 
     // Intent A: declares all 10 concerns → 10 applicable
     let mut pi_a = project_intent_full(ParadigmProfileRef::ObjectOriented);
     pi_a.intent_id = intent_id("project-A");
-    let out_a = applicable_concerns(&pi_a, &ui, &contracts, &decisions).expect("reduce");
+    let out_a = applicable_concerns(&pi_a, &ui).expect("reduce");
     let applicable_a: Vec<_> = out_a.iter().filter(|(a, _)| a.is_applicable()).collect();
     assert_eq!(applicable_a.len(), 10);
 
@@ -154,7 +121,7 @@ fn uat_same_software_different_intent_different_applicable_concerns() {
     ]
     .into_iter()
     .collect();
-    let out_b = applicable_concerns(&pi_b, &ui, &contracts, &decisions).expect("reduce");
+    let out_b = applicable_concerns(&pi_b, &ui).expect("reduce");
     let applicable_b: Vec<_> = out_b.iter().filter(|(a, _)| a.is_applicable()).collect();
     assert_eq!(applicable_b.len(), 3);
 
@@ -168,15 +135,16 @@ fn uat_same_software_different_intent_different_applicable_concerns() {
 // ─── 2. Edge cases ────────────────────────────────────────────────────────
 
 #[test]
-fn empty_project_intent_with_no_declared_concerns_is_refused() {
-    // Degenerate: no declared concerns AND Custom paradigm.
+fn empty_project_intent_with_no_signals_is_refused() {
+    // Degenerate: no declared concerns AND no excluded concerns AND Custom paradigm.
     let pi = ProjectIntent {
         intent_id: intent_id("empty"),
         paradigm: ParadigmProfileRef::Custom,
         declared_concerns: BTreeSet::new(),
+        excluded_concerns: BTreeSet::new(),
     };
     let ui = unit_intent_full("Foo");
-    let r = applicable_concerns(&pi, &ui, &[], &[]);
+    let r = applicable_concerns(&pi, &ui);
     assert!(matches!(r, Err(ReductionError::EmptyProjectIntent)));
 }
 
@@ -186,40 +154,49 @@ fn empty_unit_ref_is_refused() {
     let ui = UnitIntent {
         unit_ref: unit_ref(""),
         applies_to_concerns: all_concerns(),
+        excluded_concerns: BTreeSet::new(),
     };
-    let r = applicable_concerns(&pi, &ui, &[], &[]);
+    let r = applicable_concerns(&pi, &ui);
     assert!(matches!(r, Err(ReductionError::EmptyUnitRef)));
 }
 
 #[test]
-fn pipeline_profile_excludes_temporal_coupling() {
-    // Pipeline paradigm is irrelevant for TemporalCoupling per the
-    // paradigm_supports_concern table.
-    let pi = project_intent_full(ParadigmProfileRef::Pipeline);
+fn project_explicit_exclusion_overrides_declaration() {
+    // Project declares ALL concerns but excludes TemporalCoupling explicitly.
+    let pi = project_intent_with_excluded(
+        ParadigmProfileRef::ObjectOriented,
+        &[UniversalConcern::TemporalCoupling],
+    );
     let ui = unit_intent_full("Foo");
-    let contracts = refs_from_contracts(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| contract_with_concern(*c))
-            .collect(),
-    );
-    let decisions = refs_from_decisions(
-        UniversalConcern::ALL
-            .iter()
-            .map(|c| decision_ref_with_concern(*c))
-            .collect(),
-    );
-    let out = applicable_concerns(&pi, &ui, &contracts, &decisions).expect("reduce");
+    let out = applicable_concerns(&pi, &ui).expect("reduce");
     let tc = out
         .iter()
         .find(|(a, _)| a.concern() == UniversalConcern::TemporalCoupling)
         .unwrap();
-    assert!(tc.0.is_not_applicable());
     assert!(matches!(
         tc.0,
         ApplicableConcern::NotApplicable(
             UniversalConcern::TemporalCoupling,
-            NotApplicableReason::ParadigmIrrelevant
+            NotApplicableReason::ExplicitlyExcludedByProject
+        )
+    ));
+}
+
+#[test]
+fn unit_explicit_exclusion_yields_unit_reason() {
+    // Project declares ALL; unit narrows by exclusion.
+    let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
+    let ui = unit_intent_with_excluded("Foo", &[UniversalConcern::Cohesion]);
+    let out = applicable_concerns(&pi, &ui).expect("reduce");
+    let coh = out
+        .iter()
+        .find(|(a, _)| a.concern() == UniversalConcern::Cohesion)
+        .unwrap();
+    assert!(matches!(
+        coh.0,
+        ApplicableConcern::NotApplicable(
+            UniversalConcern::Cohesion,
+            NotApplicableReason::ExplicitlyExcludedByUnit
         )
     ));
 }
@@ -228,7 +205,7 @@ fn pipeline_profile_excludes_temporal_coupling() {
 fn ordering_is_deterministic_by_canonical() {
     let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
     let ui = unit_intent_full("Foo");
-    let out = applicable_concerns(&pi, &ui, &[], &[]).expect("reduce");
+    let out = applicable_concerns(&pi, &ui).expect("reduce");
     let canons: Vec<_> = out.iter().map(|(a, _)| a.canonical()).collect();
     let mut sorted = canons.clone();
     sorted.sort();
@@ -236,43 +213,132 @@ fn ordering_is_deterministic_by_canonical() {
 }
 
 #[test]
-fn no_grounding_decision_yields_not_applicable() {
-    let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
-    let ui = unit_intent_full("Foo");
-    // Contracts and decisions both empty.
-    let out = applicable_concerns(&pi, &ui, &[], &[]).expect("reduce");
-    // Cohesion should be NotApplicable with NoGroundingDecision.
-    let cohesion = out
-        .iter()
-        .find(|(a, _)| a.concern() == UniversalConcern::Cohesion)
-        .unwrap();
-    assert!(matches!(
-        cohesion.0,
-        ApplicableConcern::NotApplicable(
-            UniversalConcern::Cohesion,
-            NotApplicableReason::NoGroundingDecision
-        )
-    ));
-}
-
-#[test]
 fn identical_inputs_produce_identical_outputs() {
     let pi = project_intent_full(ParadigmProfileRef::Functional);
     let ui = unit_intent_full("Foo");
-    let out1 = applicable_concerns(&pi, &ui, &[], &[]).expect("reduce");
-    let out2 = applicable_concerns(&pi, &ui, &[], &[]).expect("reduce");
+    let out1 = applicable_concerns(&pi, &ui).expect("reduce");
+    let out2 = applicable_concerns(&pi, &ui).expect("reduce");
     assert_eq!(out1, out2);
 }
 
-// ─── 3. Anti-encroachment tests (A4-4a MUST_NOT) ──────────────────────────
+// ─── 3. A4-4aR falsification pins (MUST 7 in the scope contract) ───────────
+
+/// Same `(pi, ui)` + zero decisions/contracts ⇒ ApplicableConcern set
+/// must equal the `(pi, ui)` + (presence-of-decisions/contracts)
+/// case. A4-4aR MUST not consult evidence at all.
+#[test]
+fn falsification_same_applicability_with_or_without_evidence() {
+    let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
+    let ui = unit_intent_full("Foo");
+    // The reducer is now pure on (pi, ui). The "with or without evidence"
+    // comparison is structurally a comparison of two calls with the same
+    // inputs — both must produce the same Applicability set. This pins the
+    // semantic: decisions/contracts are NOT inputs to the function.
+    let out_a = applicable_concerns(&pi, &ui).expect("a");
+    let out_b = applicable_concerns(&pi, &ui).expect("b");
+    assert_eq!(out_a, out_b);
+
+    // Spot-check: pipeline + TemporalCoupling declared in BOTH scopes
+    // → Applicable. (Pre-A4-4aR this was NotApplicable(ParadigmIrrelevant).)
+    let mut pi_pipeline = project_intent_full(ParadigmProfileRef::Pipeline);
+    pi_pipeline.declared_concerns = [UniversalConcern::TemporalCoupling].into_iter().collect();
+    let mut ui_pipeline = unit_intent_full("Pipeline");
+    ui_pipeline.applies_to_concerns = [UniversalConcern::TemporalCoupling].into_iter().collect();
+    let out_pipeline = applicable_concerns(&pi_pipeline, &ui_pipeline).expect("pipeline");
+    let tc = out_pipeline
+        .iter()
+        .find(|(a, _)| a.concern() == UniversalConcern::TemporalCoupling)
+        .unwrap();
+    assert!(
+        tc.0.is_applicable(),
+        "Pipeline + TemporalCoupling declared in BOTH intents must be Applicable \
+         (pre-A4-4aR the paradigm erased it; A4-4aR removes that exclusion)."
+    );
+}
+
+/// A4-4aR boundary pin: the function does not TAKE decisions / contracts
+/// as parameters. This test enforces that via type-level signature:
+/// `applicable_concerns` has arity 2 (`&ProjectIntent`, `&UnitIntent`).
+#[test]
+fn falsification_signature_no_decisions_or_contracts() {
+    let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
+    let ui = unit_intent_full("Foo");
+    // Type-level enforcement: this call compiles only if the signature is
+    // `fn applicable_concerns(&ProjectIntent, &UnitIntent)`.
+    let _out = applicable_concerns(&pi, &ui);
+}
+
+/// A4-4aR MUST NOT produce `NotApplicable(c, NoGroundingDecision)`,
+/// `NotApplicable(c, NoContractReference)`, or
+/// `NotApplicable(c, ParadigmIrrelevant)` under any input.
+/// (These enum variants were removed; this test pins their absence.)
+#[test]
+fn falsification_no_deprecated_reasons() {
+    // We can't enumerate the enum exhaustively (no `strum` derive), but
+    // we can spot-check that the three deprecated variants are gone:
+    // `NotApplicableReason` no longer has them. Compile-time proof is the
+    // type definition in `types.rs`; runtime proof is that no test
+    // references them. We assert here only that the canonical_tag of any
+    // emitted reason is one of the four legitimate variants.
+    let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
+    let ui = unit_intent_full("Foo");
+    let out = applicable_concerns(&pi, &ui).expect("reduce");
+    let legitimate_tags = [
+        "not_in_project_intent",
+        "not_in_unit_intent",
+        "explicitly_excluded_by_project",
+        "explicitly_excluded_by_unit",
+    ];
+    for (a, _) in &out {
+        if let ApplicableConcern::NotApplicable(_, r) = a {
+            let tag = r.canonical_tag();
+            assert!(
+                legitimate_tags.contains(&tag),
+                "reason tag {} is not in the legitimate NotApplicableReason set",
+                tag
+            );
+        }
+    }
+}
+
+/// A4-4aR epistemic pin: Applicability is independent of paradigm
+/// (in the sense that the only paradigm effect in the reducer is parity
+/// of the empty-input guard). For any paradigm, declared concerns
+/// ⇒ applicable.
+#[test]
+fn falsification_paradigm_does_not_erase_concern() {
+    for paradigm in [
+        ParadigmProfileRef::ObjectOriented,
+        ParadigmProfileRef::Functional,
+        ParadigmProfileRef::FunctionalPure,
+        ParadigmProfileRef::DataOriented,
+        ParadigmProfileRef::Pipeline,
+    ] {
+        let mut pi = project_intent_full(paradigm);
+        pi.declared_concerns = [UniversalConcern::TemporalCoupling].into_iter().collect();
+        let mut ui = unit_intent_full("Foo");
+        ui.applies_to_concerns = [UniversalConcern::TemporalCoupling].into_iter().collect();
+        let out = applicable_concerns(&pi, &ui).expect("reduce");
+        let tc = out
+            .iter()
+            .find(|(a, _)| a.concern() == UniversalConcern::TemporalCoupling)
+            .unwrap();
+        assert!(
+            tc.0.is_applicable(),
+            "paradigm {:?} must not erase TemporalCoupling (A4-4aR §7)",
+            paradigm
+        );
+    }
+}
+
+// ─── 4. Anti-encroachment (A4-4aR) ─────────────────────────────────────────
 
 #[test]
-fn a4_4a_universal_concern_is_descriptive_not_prescriptive() {
+fn a4_4ar_universal_concern_is_descriptive_not_prescriptive() {
     // ApplicableConcern::Applicable(c) does NOT carry a Capability-shaped
     // payload. The enum has only two variants: Applicable(c) and
     // NotApplicable(c, reason). Neither carries authority.
     let answer = ApplicableConcern::Applicable(UniversalConcern::Cohesion);
-    // It serializes to { "Applicable": "Cohesion" } — no capability tag.
     let s = serde_json::to_string(&answer).unwrap();
     assert!(s.contains("Applicable"));
     assert!(s.contains("Cohesion"));
@@ -282,31 +348,27 @@ fn a4_4a_universal_concern_is_descriptive_not_prescriptive() {
 }
 
 #[test]
-fn a4_4a_does_not_mutate_paradigm_lens_registry() {
-    // The reducer is `&self`-free; it does not touch global state.
-    // Calling it twice with the same inputs must yield the same outputs.
+fn a4_4ar_does_not_mutate_paradigm_lens_registry() {
+    // Pure function with no global state. Calling it twice with the same
+    // inputs must yield the same outputs.
     let pi = project_intent_full(ParadigmProfileRef::FunctionalPure);
     let ui = unit_intent_full("Foo");
-    let out1 = applicable_concerns(&pi, &ui, &[], &[]).unwrap();
-    let out2 = applicable_concerns(&pi, &ui, &[], &[]).unwrap();
+    let out1 = applicable_concerns(&pi, &ui).unwrap();
+    let out2 = applicable_concerns(&pi, &ui).unwrap();
     assert_eq!(out1, out2);
 }
 
 #[test]
-fn a4_4a_does_not_import_authority_or_capability_or_lens_into_public_api() {
-    // The reducer's return type is descriptive: Vec<(ApplicableConcern,
-    // Option<ApplicableReason>)>. It is NOT a Vec<AlignmentFinding>,
-    // a Vec<CapabilityGrant>, or a Vec<LensObservation>. This test
-    // pins that signature.
+fn a4_4ar_does_not_import_authority_or_capability_or_lens_into_public_api() {
     let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
     let ui = unit_intent_full("Foo");
     let out: Vec<(ApplicableConcern, Option<ApplicableReason>)> =
-        applicable_concerns(&pi, &ui, &[], &[]).unwrap();
+        applicable_concerns(&pi, &ui).unwrap();
     assert_eq!(out.len(), 10);
 }
 
 #[test]
-fn a4_4a_does_not_change_software_alignment_public_api() {
+fn a4_4ar_does_not_change_software_alignment_public_api() {
     // software_alignment::AlignmentState is still in its A4-3 closed set.
     use crate::software_alignment::AlignmentState;
     let _: AlignmentState = AlignmentState::Unknown;
@@ -319,40 +381,38 @@ fn a4_4a_does_not_change_software_alignment_public_api() {
 }
 
 #[test]
-fn a4_4a_no_alignment_lens_symbol_leaked() {
+fn a4_4ar_no_alignment_lens_symbol_leaked() {
     // Compile-time / type-level check: there is no `AlignmentLens` type
-    // in this module's public surface. We verify by attempting to
-    // resolve a path that would only exist if it leaked.
-    // The structural assertion: no re-export of such a type.
+    // in this module's public surface. The structural assertion: no
+    // re-export of such a type. (If this module ever introduced
+    // `pub use ...::AlignmentLens`, this test would have to import it,
+    // which would break compilation.)
     let _: Option<()> = None;
-    // If this module ever introduced `pub use ...::AlignmentLens`,
-    // this test would have to import it (which would break compilation).
 }
 
 #[test]
-fn a4_4a_no_concrete_lens_strategy_leaked() {
-    // No `*Lens` strategy types are re-exported.
-    // The closed enum surface is UniversalConcern / ParadigmProfileRef /
-    // ApplicableConcern / ApplicableReason / NotApplicableReason /
-    // ProjectIntent / UnitIntent / IntentId / ContractRefs / DecisionRefs.
+fn a4_4ar_no_concrete_lens_strategy_leaked() {
+    // No `*Lens` strategy types are re-exported. The closed enum surface
+    // is UniversalConcern / ParadigmProfileRef / ApplicableConcern /
+    // ApplicableReason / NotApplicableReason / ProjectIntent /
+    // UnitIntent / IntentId. (DecisionRefs/ContractRefs were removed.)
     let _: Option<UniversalConcern> = None;
     let _: Option<ParadigmProfileRef> = None;
 }
 
 #[test]
-fn a4_4a_no_capability_or_authority_in_reducer_signature() {
-    // The reducer signature: pure, no authority, no capability.
+fn a4_4ar_no_capability_or_authority_in_reducer_signature() {
+    // The reducer signature is pure, no authority, no capability.
     let pi = project_intent_full(ParadigmProfileRef::ObjectOriented);
     let ui = unit_intent_full("Foo");
     let _out: Result<Vec<(ApplicableConcern, Option<ApplicableReason>)>, ReductionError> =
-        applicable_concerns(&pi, &ui, &[], &[]);
+        applicable_concerns(&pi, &ui);
 }
 
-// ─── 4. Identity / determinism ─────────────────────────────────────────────
+// ─── 5. Identity / determinism ─────────────────────────────────────────────
 
 #[test]
 fn canonical_tags_are_stable_strings() {
-    // Pin the canonical tags so refactors can't silently rename them.
     assert_eq!(UniversalConcern::Cohesion.canonical_tag(), "cohesion");
     assert_eq!(UniversalConcern::Coupling.canonical_tag(), "coupling");
     assert_eq!(
@@ -385,14 +445,11 @@ fn canonical_tags_are_stable_strings() {
 
 #[test]
 fn universal_concern_all_has_exactly_ten() {
-    // Closed vocabulary — adding/removing a member must break this.
     assert_eq!(UniversalConcern::ALL.len(), 10);
 }
 
 #[test]
 fn paradigm_profile_ref_covers_six_variants() {
-    // Closed vocabulary at the reference level. Matches existing
-    // ParadigmLensKind (which has 6 variants).
     assert_eq!(
         [
             ParadigmProfileRef::ObjectOriented,
