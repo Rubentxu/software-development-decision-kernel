@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 59,
+  "total": 60,
   "entries": [
     {
       "name": "version",
@@ -376,6 +376,14 @@
       "side_effect_class": "pure",
       "required_authority": "none",
       "machine": "VerifyReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "verify-kernel",
+      "stability": "stable",
+      "side_effect_class": "pure",
+      "required_authority": "none",
+      "machine": "Verify-kernelReportV1",
       "examples_n": 0
     },
     {
