@@ -2,8 +2,9 @@
 
 **Date:** 2026-09-16
 **Cycle:** `p-63676b11dc0ef88f/a4-4br-subject-general-evidence`
-**Status:** SHIPPED (release publish in progress at write time; reconcile SHA below after `scripts/release.sh` completes).
-**Expected release tag:** `v1.169.58` (workspace bumped to `1.169.58` per the cycle-46 install-coherence contract).
+**Status:** SHIPPED + RELEASED.
+**Release tag:** `v1.169.58` → SHA `b37321ff2fd337f36cda822bd96385ddf768a3b7`
+**GH Release URL:** https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.58
 
 ## Scope
 
@@ -22,7 +23,8 @@ forcing AC7-style unit observations into fabricated self-relations.
 | 0 | 5f7a3e6 | docs(preflight): A4-4bR — reconcile release version + ADR attribution + drift fixes |
 | 1 | 4de3dd1 | docs(preflight): A4-4bR — fix alignment_lens doc-comment drifts |
 | 2 | 86606c6 | feat(engine): A4-4bR — subject-general EvidencePosture algebra |
-| 3 | (this commit) | docs: ADR-0125 amendment + roadmap delta + handoff |
+| 3 | 1a8cd33 | docs: ADR-0125 amendment + roadmap delta + handoff |
+| 4 | b37321f | chore(release): bump version 1.169.57 -> 1.169.58 (lockfile sync) |
 
 ### Source
 
@@ -60,8 +62,10 @@ forcing AC7-style unit observations into fabricated self-relations.
 | `cargo clippy --workspace --all-targets -- -D warnings` | clean |
 | `cargo test --workspace --offline` | 210 suites, 0 failed |
 
-Post-release gates (PublicReleaseGate, install, doctor, prune) run via
-`scripts/release.sh`; results to be reconciled in `archive-manifest.md`.
+Post-release gates: PublicReleaseGate PASS (9/9 assets HTTP 200), CDN
+sha256 verified, install from URL, doctor `all_present: true`, prune,
+distrib round-trip OK. Full evidence in
+`.sddk/cycles/p-63676b11dc0ef88f-a4-4br-subject-general-evidence/archive-manifest.md`.
 
 ## Debt notes
 
