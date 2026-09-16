@@ -171,7 +171,6 @@ mod tests {
         AffectedSubjects, ArchitectureConformanceClaim, ChangeBasis, ProbeKind, ProbePlan,
         ProbePlanStep, VerificationClaim,
     };
-    use std::collections::BTreeMap;
 
     /// A test domain that returns `Verified` for all claims.
     struct AlwaysVerifiedDomain;

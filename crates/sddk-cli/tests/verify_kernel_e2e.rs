@@ -66,7 +66,7 @@ fn verify_kernel_architecture_claim_evaluates() {
         ArchitectureConformanceClaim, ChangeBasis, VerificationClaim, VerifyKernel,
         default_registry,
     };
-    use std::collections::BTreeMap;
+    
 
     let registry = default_registry();
     let domain = registry.lookup("architecture").unwrap();

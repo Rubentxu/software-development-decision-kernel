@@ -131,7 +131,6 @@ impl Default for VerifyDomainRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::verify_kernel::types::{ArchitectureConformanceClaim, ChangeBasis};
 
     /// A test domain that always returns `Verified`.
     struct TestDomain;

@@ -40,8 +40,7 @@ pub trait EvidenceSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observation::{ObservationSet, SoftwareObservation};
-    use std::collections::BTreeMap;
+    use crate::observation::ObservationSet;
 
     /// A minimal test source for pin tests.
     struct TestEvidenceSource {
