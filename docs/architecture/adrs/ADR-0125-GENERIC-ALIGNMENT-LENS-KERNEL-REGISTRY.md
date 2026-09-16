@@ -270,3 +270,21 @@ Negative:
   from `(intent_id, concern, unit_ref)` is forbidden (doc + grep pins).
   No second epistemic taxonomy was introduced. Status remains
   `accepted`; this amendment records the generalization, not a reversal.
+
+## Post-acceptance amendment: A4-4M — AC7 convergence executed
+
+- **2026-09-16 (A4-4M, cycle
+  `p-63676b11dc0ef88f/a4-4m-ac7-alignmentlens-convergence`):** The AC7
+  migration referenced above landed behind an **M0 Migration Proof**
+  gate (user-mandated): a pinned migration matrix
+  (`docs/architecture/a4-4m-migration-matrix.md`) proving the typed,
+  lossless `LensObservation → SoftwareObservation` translation before
+  any production edit. Outcome: four production `ParadigmLens` family
+  lenses (OO/FP/ADT/DSL) now implement the single `AlignmentLens`
+  trait and compose via `AlignmentLensRegistry`; AC7 probes feed the
+  canonical `ObservationSet` through `paradigm_lens::translation`;
+  `evaluate_lens` survives only as a zero-logic compatibility facade
+  (projection posture→`LensStatus`, removal trigger = A4-4C);
+  `status_from_polarities` and `inferred_lens_assessment` are deleted —
+  there is exactly one execution authority. A4-5 encroachment remains
+  pinned out: the kernel still produces only `LensContribution[]`.
