@@ -246,3 +246,27 @@ Negative:
   Unknown) with the equivalence mapping to the four-variant
   `EvidencePosture` shape that A4-4bR formalizes. Status remains
   `accepted`; these are factual corrections, not a decision reversal.
+
+## Post-acceptance amendment: A4-4bR — subject-general evidence target
+
+- **2026-09-16 (A4-4bR, cycle
+  `p-63676b11dc0ef88f/a4-4br-subject-general-evidence`):** The A4-4M
+  preflight revealed that reusing relation-only `EvidenceResolution`
+  inside the lens kernel forced unit-target observations into fabricated
+  self-relations (`unit A --depends_on--> unit A`) merely to satisfy the
+  resolution shape. A4-4bR generalizes the **same algebra** by
+  parameterizing it on the observed target:
+  `EvidencePosture<Target>` with the unchanged four variants
+  (Supported / Contradicted / Conflicted / Insufficient), where
+  `EvidenceResolution := EvidencePosture<RelationId>` (type alias —
+  `resolve_relation` and every A4-0/A4-2 consumer unchanged, equivalence
+  pinned by tests) and
+  `LensEvidenceResolution := EvidencePosture<ObservationTargetRef>` with
+  `ObservationTargetRef ∈ {Relation, Unit, Contract, Knowledge}`.
+  `LensContribution` and `LensContributionId` migrate to the
+  subject-general shape; **target kind enters identity**
+  (`Unit(foo) ≠ Relation(foo→foo)`, pinned). Lenses consume real
+  targets from the `ObservationSet`; synthetic `RelationId` derivation
+  from `(intent_id, concern, unit_ref)` is forbidden (doc + grep pins).
+  No second epistemic taxonomy was introduced. Status remains
+  `accepted`; this amendment records the generalization, not a reversal.
