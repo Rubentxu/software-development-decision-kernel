@@ -3,7 +3,7 @@ id: arch-spec-046-alignment-intent-and-lenses
 title: Alignment intent, universal concerns and lenses
 status: contract-ready
 milestone: A4
-implemented_by: partial — part-1 (model surface: closed vocabularies, typed intent, pure reducer) shipped as v1.169.52 / A4-4a; part-2 (kernel + lenses + loop integration) pending A4-4b / A4-4M / A4-5
+implemented_by: partial — part-1 (model surface: closed vocabularies, typed intent, pure reducer) shipped as v1.169.52 / A4-4a; part-2 kernel+registry shipped as v1.169.57 / A4-4b with subject-general evidence (v1.169.58 / A4-4bR); lens migration (A4-4M) and loop integration (A4-5) remain open
 depends_on: arch-spec-045-software-alignment-domain
 reconciles: historical SPEC-024-ALIGNMENT-LENSES
 ---
