@@ -215,6 +215,26 @@ impl LensDescriptor {
 /// must use [`LensInput::try_new`], which returns
 /// [`LensError::NotApplicableInput`](super::LensError::NotApplicableInput)
 /// in that case. Mixing layers is the shape A4-4aR corrected.
+///
+/// # A4-4bR: lenses consume real targets, never synthetic relations.
+///
+/// Lenses query the `ObservationSet` for **real** observation subjects
+/// — `ObservationSubject::SoftwareRelation`, `::Unit`,
+/// `::Contract`, `::Knowledge` — and emit contributions on those real
+/// targets. The kernel MUST NOT, and lens authors MUST NOT, derive a
+/// synthetic `RelationId` from `(intent_id, concern, unit_ref)` as a
+/// convenience to satisfy the relation-only API of
+/// `EvidenceResolution`. Subject-general evidence resolution lives in
+/// A4-4bR; pre-A4-4bR relation-only API MUST be used only when the
+/// lens genuinely observes a `SoftwareRelation`.
+///
+/// `LensInput` carries the `ObservationSet` as-is; lenses iterate
+/// `observations` (via
+/// [`SoftwareObservation::subject`](crate::observation::SoftwareObservation::subject))
+/// and pick their targets directly. The fixture `Freshness` lens in
+/// `tests/alignment_lens_fixture.rs` is the falsification: it works
+/// against `ObservationSubject::Unit(foo)` without fabricating any
+/// `SoftwareRelation`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LensInput {
     /// The applicability answer being evaluated. Lens authors read
@@ -232,9 +252,11 @@ pub struct LensInput {
     /// Lenses MUST NOT read wall clock; `basis` is content-stable.
     pub basis: BasisHash,
 
-    /// The canonical observation set. Lenses query this via
-    /// [`ObservationSet::for_relation`] with a `RelationId` derived
-    /// from `(intent_id, concern, unit_ref)`.
+    /// The canonical observation set. Lenses iterate this directly to
+    /// pick real observation subjects (relations, units, contracts,
+    /// knowledge). They MUST NOT derive synthetic `RelationId`s from
+    /// `(intent_id, concern, unit_ref)` — see the module-level note
+    /// above.
     pub observations: ObservationSet,
 }
 

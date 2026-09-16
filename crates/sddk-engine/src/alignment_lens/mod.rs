@@ -5,11 +5,12 @@
 //
 // Cycle: `p-63676b11dc0ef88f/a4-4b-alignment-lens-kernel`
 // Spec: `.sddk/cycles/.../spec.md` (gitignored)
-// ADR:  (none new in A4-4b — A4-3 owns the final Alignment taxonomy;
-//        AC7 paradigm_lens is read-only during A4-4b; the A4-4b-only
-//        architectural decision is `AlignmentLens` as a *trait*, recorded
-//        in §2.M13 of the spec and again in `lens.rs` and the
-//        `archive-manifest.md`.)
+// ADR:  ADR-0125 (accepted, 2026-09-16).
+//        <https://github.com/Rubentxu/software-development-decision-kernel/blob/main/docs/architecture/adrs/ADR-0125-GENERIC-ALIGNMENT-LENS-KERNEL-REGISTRY.md>
+//        The architectural decision recorded there is `AlignmentLens` as
+//        a *trait* (documented again in `lens.rs` and in the cycle's
+//        `archive-manifest.md`). AC7 paradigm_lens migration is owned
+//        by A4-4M (blocked by A4-4bR — Subject-General Evidence Resolution).
 //
 // # Purpose
 //
@@ -57,6 +58,17 @@
 // NotApplicable != NotEvaluated != Unknown != Ungrounded != InsufficientEvidence
 // ```
 //
+// # Subject-General Evidence (A4-4bR)
+//
+// A4-4bR generalizes the epistemic algebra from `EvidenceResolution`
+// (relation-only) into `EvidencePosture<Target>` parameterized over the
+// observed subject (`Relation | Unit | Contract | Knowledge`). The lens
+// kernel keeps the four-variant shape and never invents a parallel
+// `LensSupported2/LensUnknown2/Aligned2/Misaligned2/Tension2/LensState`
+// vocabulary. Lenses consume real targets/relations from the
+// `ObservationSet`; the kernel MUST NOT derive a synthetic `RelationId`
+// from `(intent_id, concern, unit_ref)`.
+//
 // # Determinism contract
 //
 // - Duplicate `LensId` → `Err(LensError::DuplicateLensId)` (NOT replace;
@@ -82,10 +94,10 @@
 //   `AlignmentTension`, or `ImprovementOpportunity`. (Those belong to
 //   A4-3's domain reducer and to A4-5 integration.)
 // - The two reference/test lenses (`TestLensA` / `TestLensB`) live
-//   inside the `tests` tree (`crates/sddk-engine/tests/fixtures/
-//   alignment_lens/`) and are **never re-exported** through `pub use`
-//   below. They are not a production surface; they are public only for
-//   tests.
+//   inside the `tests` tree (`crates/sddk-engine/tests/
+//   alignment_lens_fixture.rs`) and are **never re-exported** through
+//   `pub use` below. They are not a production surface; they are public
+//   only for tests.
 //
 // # Boot-time registry
 //
