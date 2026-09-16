@@ -1,16 +1,17 @@
 ---
 id: arch-spec-043-generic-verify
 title: Generic Verify — delta-scoped verification kernel
-status: contract-ready
+status: implemented
 milestone: A4
-implemented_by: pending (A4-1)
+implemented_by: A4-1 (crates/sddk-engine/src/verify_kernel, crates/sddk-cli/src/verify_kernel_cmd)
 depends_on: arch-spec-042-evidence-observation-provenance
 ---
 
 # arch-spec-043 — Generic Verify
 
-> **Contract-ready, NOT implemented.** Written during A4-0 so A4-1 has a frozen
-> contract. A4-0 deliberately implemented only `arch-spec-042`.
+> **Implemented in A4-1** as the `verify_kernel` engine module and the
+> `verify-kernel` CLI command. See `crates/sddk-engine/src/verify_kernel/` and
+> `crates/sddk-cli/src/verify_kernel_cmd.rs` for the working implementation.
 
 ## Purpose
 

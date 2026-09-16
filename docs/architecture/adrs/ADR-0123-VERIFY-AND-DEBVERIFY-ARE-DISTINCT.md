@@ -6,8 +6,10 @@ proposed_at: 2026-09-15
 accepted_at: 2026-09-15
 accepted_by_cycle: p-63676b11dc0ef88f/a4-0-verification-provenance-foundation
 implementation_evidence:
-  - "docs/architecture/specs/arch-spec-043-generic-verify.md (contract-ready)"
+  - "docs/architecture/specs/arch-spec-043-generic-verify.md (implemented in A4-1)"
   - "docs/architecture/specs/arch-spec-044-generic-debverify.md (contract-ready)"
+  - "crates/sddk-engine/src/verify_kernel/ (A4-1 implementation: closed ADT core + registry/port + evidence sources)"
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs (A4-1 CLI surface: `sddk verify-kernel --domain <d> --claim <c>`)"
   - "docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/02-BOUNDED-CONTEXTS/verification/DEB-VERIFY.md (historical source)"
 superseded_by: []
 related_adrs:
