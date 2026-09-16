@@ -10,6 +10,8 @@ implementation_evidence:
   - "crates/sddk-cli/src/instruction_compiler.rs (acceptance_advisory_context_does_not_change_instruction_identity)"
   - "docs/architecture/specs/arch-spec-045-software-alignment-domain.md (contract-ready)"
   - "docs/architecture/specs/arch-spec-047-a4-intelligence-loop.md (contract-ready)"
+  - "crates/sddk-engine/src/intent_universal_concern/ (A4-4a — closed 10-member UniversalConcern + typed Intent + pure applicable_concerns() reducer; descriptive, no authority)"
+  - "crates/sddk-engine/src/software_alignment/ (A4-3 — closed 7-state AlignmentState + 3-finding reducer; no_findings != ALIGNED invariant)"
 superseded_by: []
 related_adrs:
   - "ADR-0122-EVIDENCE-OBSERVES-SOFTWARE"
@@ -79,3 +81,71 @@ observation substrate.
   here: without an explicit contract there is nothing to violate.
 - **Score alignment (`confidence = 0.73`).** Rejected: SDDK resolves to closed
   states and preserves contradictions.
+
+---
+
+## Addendum (2026-09-16): A4-4a — Intent + UniversalConcern model
+
+**Scope:** This addendum extends the ADR to cover the new
+`intent_universal_concern` module shipped in A4-4a. It does **not**
+modify the original advisory boundary; it adds a *descriptive*
+kernel surface on top of it.
+
+### Intent
+
+A4-4a establishes the **closed 10-member `UniversalConcern` vocabulary**
+(Cohesion / Coupling / BoundaryIntegrity / StateSafety / EffectVisibility /
+DependencyDirection / SemanticOwnership / TemporalCoupling / Testability /
+Freshness) plus typed intent representation (`ProjectIntent`, `UnitIntent`,
+`IntentId`, `ParadigmProfileRef`) and a pure `applicable_concerns()`
+reducer.
+
+### Decision (A4-4a)
+
+**7. Descriptive, not prescriptive.** `applicable_concerns()` returns a
+`Vec<(ApplicableConcern, Option<ApplicableReason>)>`. The answer is *what
+is worth looking at for this unit, given the declared intent* — never a
+capability grant, denial, or authority decision. The function is pure:
+no IO, no wall clock, no global state, no mutation of `paradigm_lens`.
+
+**8. `MISALIGNED ≠ DENY` (architectural invariant, restated).** The
+`ApplicableConcern` enum has only two variants: `Applicable(c)` and
+`NotApplicable(c, NotApplicableReason)`. Neither carries authority.
+Authority is upstream (ADR-0123 / A4-3) and downstream (Governance,
+ADR-0124 §4).
+
+**9. Paradigm × concern relevance table is closed.** Adding a concern
+or paradigm variant requires a deliberate breaking change to
+`paradigm_supports_concern()` in `reducer.rs`.
+
+**10. Anti-encroachment for A4-4a.** A4-4a ships *only*: types, reducer,
+tests, lib.rs wire-up, and an ADR addendum. It does **not** ship:
+`AlignmentLens` trait, any concrete lens strategy, any wiring into
+`software_alignment::reduce_alignment`, any CLI surface, any
+authority/capability wiring, or any mutation of the existing
+`paradigm_lens` registry. These are A4-4b / A4-4M / A4-5 work.
+
+### Implementation evidence (A4-4a)
+
+- `crates/sddk-engine/src/intent_universal_concern/mod.rs` — public
+  surface: 11 named exports, none of which are authority-shaped.
+- `crates/sddk-engine/src/intent_universal_concern/types.rs` — closed
+  vocabularies + typed accessors (271 lines).
+- `crates/sddk-engine/src/intent_universal_concern/reducer.rs` —
+  pure reducer (166 lines).
+- `crates/sddk-engine/src/intent_universal_concern/tests.rs` —
+  18 tests: 1 happy path, 1 UAT, 6 edge cases, 7 anti-encroachment,
+  3 identity/determinism.
+- `crates/sddk-engine/src/lib.rs` — single line wire-up
+  (`pub mod intent_universal_concern;`).
+
+### Consequences (A4-4a)
+
+- A4-4b can now define `AlignmentLens` as a trait that *consumes*
+  `ApplicableConcern` answers without re-deriving the vocabulary.
+- A4-4M can converge the existing `paradigm_lens` registry to use the
+  A4-4a `ParadigmProfileRef` as its reference surface without
+  breaking A4-4a's typed identity.
+- The UAT pin ("same software + different intent = different
+  applicable concerns possible") is testable today; future cycles
+  must not regress it.

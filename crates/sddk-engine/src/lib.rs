@@ -70,6 +70,7 @@ pub mod human_resume_view;
 pub mod inc_generator;
 pub mod incident_pack;
 pub mod integrate_parity;
+pub mod intent_universal_concern;
 pub mod join_guard;
 pub mod knowledge;
 pub mod lab_promotion;
