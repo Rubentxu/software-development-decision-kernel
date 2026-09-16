@@ -30,6 +30,7 @@
 | ID                                          | Origin                       | Status                     | Disposition |
 |---------------------------------------------|------------------------------|----------------------------|-------------|
 | `uat_stale_tests::stale_detects_geometry_change` | First observed during `release.sh` run for v1.169.48 | open (one occurrence)      | Passed on isolated re-run. Likely Playwright/server timing race. Must-fix before A5 if it reproduces. |
+| `FU-A4-4A-REL-1` | A4-4a acceptance (v1.169.52) | **open** | `scripts/release.sh` step 9 reports `ok "release $TAG published"` based on `gh release create` exit code but does NOT assert `isDraft=false` nor that asset URLs are under `/v1.169.52/` (vs the draft-only `/untagged-.../` slug). Caught during A4-4a acceptance: initial release was `isDraft: true`, every asset returned HTTP 404 from the public CDN, distribution was broken. Mitigated in-flight via `gh release edit --draft=false` + 90s CDN refresh. Root-cause fix should add an explicit `isDraft=false` assertion gate to step 9 (or a new step 9b) before declaring done. Priority P2 (it makes releases silently non-distributable). |
 
 ## Not yet recorded (to be added as A4-3 / A4-4 land)
 
@@ -37,3 +38,4 @@
 - A4-4 lens registry and first three lens contracts (OO/Functional/ADT).
 - A4-5 loop wiring observations.
 - Any new debt from A4-CLOSEOUT.
+- A4-4a: `Intent + UniversalConcern Foundation` (v1.169.52) — closed; 22/22 tests (18 unit + 4 integration); 4418/4418 workspace; arch-spec-046 part-1 model surface shipped, part-2 deferred to A4-CLOSEOUT per arch-spec-046 §6. The only follow-up is the release-script gate above.
