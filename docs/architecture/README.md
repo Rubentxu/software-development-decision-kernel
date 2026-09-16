@@ -130,8 +130,8 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-3** | Software Alignment domain (closed states + closed findings; pure reducer; no authority) | `arch-spec-045` | closed — v1.169.50 |
 | **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | closed — v1.169.52 |
 | **A4-4aR** | **Applicability Semantics Correction** — separate Applicability from Grounding and Evaluability; remove string-grounding from `applicable_concerns()` reducer; paradigm MUST NOT erase a universal concern; `NotApplicableReason` shrinks to the four legitimate-scope variants (`NotInProjectIntent`, `NotInUnitIntent`, `ExplicitlyExcludedByProject`, `ExplicitlyExcludedByUnit`) | `arch-spec-046` part-1 rectification | closed — v1.169.54 (release SHA `219de3f16a067819125054b89abb88d9dc73cc57`) |
-| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous test lenses via fixtures — ABSTRACTION ONLY, no AC7 migration, no `software_alignment::reduce_alignment` wiring) | `arch-spec-046` part-2 | **CURRENT** |
-| **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | blocked_by A4-4b |
+| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous test lenses via fixtures — ABSTRACTION ONLY, no AC7 migration, no `software_alignment::reduce_alignment` wiring) | `arch-spec-046` part-2 | **closed — v1.169.56 (release SHA pending `chore(release)` + `scripts/release.sh`)** |
+| **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | **CURRENT** (waiting on user green-light) |
 | **A4-4C** | Receipt/UAT for `arch-spec-046` milestone closure | — | blocked_by A4-4M |
 | **A4-5** | Intelligence loop wiring: Verify + DebVerify + Alignment → AdvisoryContext + WHY/WHY-NOT | `arch-spec-047` | blocked_by A4-4C |
 | **A4-CLOSEOUT** | A4 acceptance gate + A5 readiness check | — | blocked_by A4-5 |
@@ -191,6 +191,28 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 - **Risk carry-overs already on the books** (do not fix here, leave them open):
   - `FU-A4-3-CONSTRAINT-BINDING` (NEW, P1): `software_alignment::reduce_alignment` still associates `ExplicitConstraint` → observations via `subject.contains(contract_ref)` / `canonical_tag.contains(contract_ref)`. **MUST close before A4-5, MUST NOT** be touched in A4-4b's budget.
 - **Acceptance (real release):** tag SHA anchored; `isDraft=false`; `isPrerelease=false`; 9 canonical assets; 9/9 public URLs HTTP 200; install from URL; doctor; prune; distrib round-trip — through `scripts/release.sh` step 9b + 10–13.
+- **STOP.** A4-4M does NOT auto-open.
+
+**Checkpoint (A4-4b close, 2026-09-16 — Generic AlignmentLens Kernel / Registry shipped):**
+- **Status:** ABSTRACTION / KERNEL ONLY — closed.
+- **Workspace head at cycle close:** pre-`chore(release)` (release SHA pending).
+- **Surface delivered:** `crates/sddk-engine/src/alignment_lens/` (9 files, ~1750 lines) + 24 pin tests + 2 heterogeneous reference fixture lenses under `tests/` (NOT exported) + ADR-0125.
+- **Kernel design contract (locked, anti-encroachment pins):**
+  - `ApplicableConcern + no registered lens` → `NotEvaluated { reason: NoRegisteredLens }` (typed gap, distinct from `NotApplicable`).
+  - `ApplicableConcern + lens + insufficient` → `EvidenceResolution::Insufficient` carrying typed `InsufficientGap` enum (free-form `gap: String` cannot leak into identity).
+  - `ApplicableConcern + lens + contradicted-or-conflicted` → preserve both sides (`Conflicted` carries supporting AND contradicting).
+  - `LensVersion` is in identity. Duplicate `LensId` with same `LensVersion` + same `supported_concerns` → idempotent success; with any divergence → typed refusal (`InconsistentSupportedConcerns` / `InconsistentLensVersion`).
+  - `LensInput::try_new` refuses `NotApplicable` at the boundary; kernel never sees `NotApplicable`.
+- **Identity:** `LensContributionId` content-addressed sha256 over `(domain | lens_id | lens_version | concern | observation_set_canonical_tag | EvidenceResolution::canonical_tag | sorted_evidence_ref_ordering_keys)`. Excludes wall clock, message text, registration order, vector insertion order, severity, producer labels, rendered text.
+- **Anti-encroachment (type-locked, structural, not aspirational):**
+  - `LensContribution` has no `score` / `confidence` / `AlignmentState` / `Capability` / `AuthorityDecision` / `InstructionSource` field.
+  - Module does not import `authority`, `instruction_compiler`, `provider_sdk`, `cli`, `paradigm_lens`.
+  - `software_alignment::reduce_alignment` is **not called** (textual probe grep, doc-comments excluded).
+  - No production concrete OO/FP/ADT/DSL lens impls.
+  - Reference lenses live under `tests/` root, not `src/`.
+- **Acceptance (real release, not dry-run):** all gates green pre-release (`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --offline`, `cargo build --release -p sddk-cli --bin sddk`, `bash tests/test_release_public_gate.sh` → PASS=11 FAIL=0). Tag SHA, GH Release creation, install from URL, doctor, prune — through `scripts/release.sh` step 9b + 10–13.
+- **Risk carry-overs:** `FU-A4-3-CONSTRAINT-BINDING` (P1, must close before A4-5) remains open. **NOT** touched in A4-4b's budget.
+- **Cycle artifacts:** `.sddk/cycles/p-63676b11dc0ef88f-a4-4b-alignment-lens-kernel/spec.md`, ADR-0125, handoff `HANDOFF-2026-09-16-a4-4b-alignment-lens-kernel-v1.169.56.md`.
 - **STOP.** A4-4M does NOT auto-open.
 
 ## 12 non-negotiable invariants
