@@ -1,6 +1,11 @@
 # Handoff — A4-4aR Applicability Semantics Correction + v1.169.54 release
 
 - **Cycle:** `p-63676b11dc0ef88f-a4-4ar-applicability-correction`
+- **Released:** v1.169.54 (tag `v1.169.54` →
+  `219de3f16a067819125054b89abb88d9dc73cc57`, origin/main HEAD identical)
+- **GitHub Release:** https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.54
+- **Commits (origin):** feat `df3ea1f`, chore(release) `219de3f16a067819125054b89abb88d9dc73cc57`
+- **PublicReleaseGate:** PASS (first non-REL regression of the REL-1 gate)
 - **Goal:** Single-budget correction of the `applicable_concerns()` reducer
   so that Applicability is intent-only, separating it from Grounding and
   Evaluability. Found by the user during the A4-4b pre-flight; opened
@@ -9,6 +14,12 @@
   (REL-1 closed 2026-09-16; v1.169.53 / `ccecdc723355b0ecc7e037f2266f465165dc59dc`).
   Carries the REL-1 close-out + the FU-REL-1-BACKFILL obligation that
   lands in this cycle's `chore(release)` commit.
+
+## Status
+
+**CLOSED 2026-09-16.** All MUST satisfied, all MUST_NOT observed, all
+falsification pins landed. v1.169.54 shipped to GH, end-to-end install
+verified, framework bundle pruned. A4-4b is unblocked for user green-light.
 
 ## Goal (single budget)
 
@@ -140,6 +151,75 @@ ships the version bump + the REL-1 carry-over + closes
 REL-1 handoff backfill (`docs/handoff/HANDOFF-2026-09-16-rel-1-...md`)
 gets its two deferred SHA rows replaced by `ccecdc7…` in that same
 commit. No new REL cycle opens.
+
+> **Outcome (2026-09-16T16:22Z).** The single `chore(release)`
+> (`219de3f`) landed and is pushed to origin. Both SHA backfills (REL-1
+> handoff) and both followup closures (`FU-A4-4A-STRING-GROUNDING`,
+> `FU-REL-1-BACKFILL`) are folded into this handoff + the on-origin
+> followups table. See "Live release evidence" below.
+
+## Live release evidence — v1.169.54 (2026-09-16)
+
+Source of truth: `bash scripts/release.sh` run captured to
+`/tmp/release-1.169.54.log`. **First non-REL cycle to exercise the
+new PublicReleaseGate in regression mode.**
+
+| Step | Marker | Result |
+|------|--------|--------|
+| 0 | preflight | on main, clean tree, HEAD is a release commit |
+| 1 | fmt + clippy + test + doctests | workspace green (1101 passed, doctests ok) |
+| 1b | shell contract tests | all green (release-receipt authority + 8 cross-crate/M9+ tests) |
+| 1c | sync HEAD to origin/main | `HEAD==origin/main (219de3f16a067819125054b89abb88d9dc73cc57)` |
+| 2 | read version | 1.169.54 → tag v1.169.54 |
+| 3 | cargo build --release --bin sddk | OK |
+| 4 | regenerate MANIFEST.sha256 | OK |
+| 5 | bundle tarball | OK |
+| 6 | BUNDLE.toml (schema v2) | `manifest_sha256=608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f` |
+| 7 | unified tarball | OK |
+| 8 | sha256 + CHECKSUMS + sbom | OK |
+| 8b | vault ADR mirror sync | OK |
+| 9 | gh release create v1.169.54 | URL `https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.54` |
+| **9b** | **PublicReleaseGate** | **PASS** — tag SHA anchored `219de3f16a067819125054b89abb88d9dc73cc57`, isDraft=false, isPrerelease=false, asset set matches 9-asset contract, 9/9 canonical assets reachable from public CDN (HTTP 200) |
+| 10 | install from URL | CDN served correct binary sha256 after 10s |
+| 11 | sddk dev doctor | binary.bundle_coherence present, all_present true |
+| 12 | sddk dev update --prune-only --keep 1 | removed 1 stale bundle (1.169.53); current -> 1.169.54 |
+| 13 | re-install from URL (distrib smoke test) | OK (binary=bundle=1.169.54) |
+| 14 | final state | binary=1.169.54, bundle=1.169.54, current=1.169.54 |
+
+**Pinned reference points (SHA discipline):**
+
+| Identifier | Value |
+|---|---|
+| released_baseline | v1.169.54 |
+| release_commit | `219de3f16a067819125054b89abb88d9dc73cc57` |
+| release_commit_subject | `chore(release): bump version 1.169.53 -> 1.169.54 (A4-4aR + REL-1 backfill)` |
+| feat_commit_subject | `feat(engine): A4-4aR — separate Applicability from Grounding and Evaluability` |
+| feat_commit | `df3ea1f` |
+| origin_main_HEAD | `219de3f16a067819125054b89abb88d9dc73cc57` (matches release) |
+| tag | `v1.169.54` → `219de3f16a067819125054b89abb88d9dc73cc57` (per `git ls-remote origin v1.169.54`) |
+| released_baseline_origin | v1.169.53 (`ccecdc723355b0ecc7e037f2266f465165dc59dc`) |
+| previous_released_baseline | v1.169.52 (HEAD `9785288`) |
+| gh_release_url | https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.54 |
+| local_installed_binary | `/home/rubentxu/.local/bin/sddk` = 1.169.54 |
+| local_bundle | `/home/rubentxu/.local/share/sddk/framework/1.169.54` |
+| tag_drift_anchor | `git ls-remote origin $TAG` (NOT `origin/main`) |
+
+**Key cross-check (proves release SHA == origin/main, anchored on the tag,
+not on a fresh HEAD push):**
+
+```
+$ git ls-remote origin v1.169.54
+219de3f16a067819125054b89abb88d9dc73cc57	refs/tags/v1.169.54
+
+$ git rev-parse origin/main
+219de3f16a067819125054b89abb88d9dc73cc57
+```
+
+**First non-REL PublicReleaseGate regression.** Step 9b PASS proves the
+REL-1 fix from v1.169.53 is durable: it does not depend on REL-1's
+specific 10-scenario contract test passing; it exercises the live GH API
+end-to-end (release-create → release-view → 9 asset probes on the public
+CDN). v1.169.54 is the first cycle since REL-1 to do so.
 
 ## Roadmap Delta (live in `docs/architecture/README.md`)
 
