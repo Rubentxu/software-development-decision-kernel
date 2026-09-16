@@ -128,7 +128,7 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-2** | Generic DebVerify kernel (`debverify_kernel` + AC5 adapter + ObservationContradiction) | `arch-spec-044` | closed — v1.169.47 |
 | **A4-2M** | AC4/AC5 convergence onto generic kernels (single execution surface) | `arch-spec-043/044` | closed — v1.169.48 |
 | **A4-3** | Software Alignment domain (closed states + closed findings; pure reducer; no authority) | `arch-spec-045` | closed — v1.169.50 |
-| **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | current (this cycle) |
+| **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | closed — v1.169.52 |
 | **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous strategies) | `arch-spec-046` part-2 | blocked_by A4-4a |
 | **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | blocked_by A4-4b |
 | **A4-4C** | Receipt/UAT for `arch-spec-046` milestone closure | — | blocked_by A4-4M |
@@ -136,11 +136,13 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-CLOSEOUT** | A4 acceptance gate + A5 readiness check | — | blocked_by A4-5 |
 | **A5** | `BASE_PRODUCTION_READY` — release receipts, hardening programme close | — | blocked_by A4-CLOSEOUT |
 
-**Checkpoint (A4-4a start, 2026-09-16):**
-- `released_baseline` = v1.169.50 (HEAD `1672b1e`)
-- `development_head` = `1672b1e`
-- `workspace_version` = `1.169.51` (expected drift per INC-M7-9 amend-handoff pattern)
+**Checkpoint (A4-4a close, 2026-09-16):**
+- `released_baseline` = v1.169.52 (tag tracks `main`)
+- `development_head` = post-bump `chore(release)` commit on `main` (matches `origin/main` and the GH release tag `v1.169.52`; use `git rev-parse origin/main` for the live SHA)
+- `workspace_version` = `1.169.52`
+- `arch-spec-046` part-1 → `implemented` (model surface: closed vocabularies + typed intent + pure reducer). Part-2 promotion deferred to A4-CLOSEOUT per arch-spec-046 §6.
 - `arch-spec-047` updated: `implemented_by: pending (A4-5 — full loop integration)`
+- Next cycle (A4-4b) requires a new ROADMAP-SYNC preflight and scope contract.
 
 ## 12 non-negotiable invariants
 

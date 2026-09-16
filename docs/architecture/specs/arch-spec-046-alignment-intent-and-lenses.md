@@ -3,7 +3,7 @@ id: arch-spec-046-alignment-intent-and-lenses
 title: Alignment intent, universal concerns and lenses
 status: contract-ready
 milestone: A4
-implemented_by: pending (A4-4)
+implemented_by: partial — part-1 (model surface: closed vocabularies, typed intent, pure reducer) shipped as v1.169.52 / A4-4a; part-2 (kernel + lenses + loop integration) pending A4-4b / A4-4M / A4-5
 depends_on: arch-spec-045-software-alignment-domain
 reconciles: historical SPEC-024-ALIGNMENT-LENSES
 ---
@@ -34,7 +34,7 @@ A depends on B
 is interpreted differently under a different project intent, bounded context,
 paradigm profile or explicit decision.
 
-## Universal concerns (from the historical base, to be validated in A4-4)
+## Universal concerns (validated in A4-4a as the closed 10-member vocabulary)
 
 cohesion · coupling · boundary integrity · state safety · effect visibility ·
 dependency direction · semantic ownership · temporal coupling · testability ·
