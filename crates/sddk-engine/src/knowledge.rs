@@ -1111,12 +1111,11 @@ mod tests {
     /// REQ-A3S1-041: no new `CoreNodeKind` / `CoreRelationKind` variants
     /// were introduced by S1 (historical anchor preserved verbatim).
     ///
-    /// Cycle A3-S2 (AC1) legitimately added `CoreNodeKind::ArchitecturalContract`
-    /// (18 → 19) and `CoreRelationKind::{ContractedBy, SpecifiedBy}` (14 → 16).
-    /// The post-A3-S2 baseline is pinned by the companion test
-    /// `s2_post_ac1_corenodekind_baseline` below. This S1 anchor test
-    /// continues to run as a *historical* proof: pre-A3-S2, the counts
-    /// were 18/14. Any future change must keep both pins consistent.
+    /// Cycle A4 (FU-A3-CO-2, Option B) removed `CoreRelationKind::{ContractedBy,
+    /// SpecifiedBy}` (zero producers ever constructed them), bringing the count
+    /// from 16 back to 14. This test pins the current live baseline so any future
+    /// contributor adding a variant must update this test alongside the enum +
+    /// array + match. The S1 anchor (`#[ignore]`) reflects the pre-A3-S2 state.
     ///
     /// `#[ignore]` because the assert fires by design after A3-S2; it is
     /// preserved as historical evidence, not as a live gate. The post-A3-S2
@@ -1163,7 +1162,7 @@ mod tests {
     #[test]
     fn s2_post_ac1_corenodekind_baseline() {
         const CORE_NODE_KIND_ALL_LEN: usize = 19;
-        const CORE_RELATION_KIND_ALL_LEN: usize = 16;
+        const CORE_RELATION_KIND_ALL_LEN: usize = 14;
 
         let semantic_kind_source = include_str!("semantic_kind.rs");
 

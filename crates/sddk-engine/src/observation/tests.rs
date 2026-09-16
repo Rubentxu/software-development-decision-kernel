@@ -161,7 +161,8 @@ fn acceptance_identities_exclude_volatile_fields() {
 fn acceptance_relation_kind_reuses_core_vocabulary() {
     // REQ-A4S0-005: no second relation taxonomy.
     assert_eq!(CoreRelationKind::DependsOn.domain_tag(), "depends_on");
-    assert_eq!(CoreRelationKind::ALL.len(), 16);
+    // A4 FU-A3-CO-2: ContractedBy + SpecifiedBy removed from CoreRelationKind (16 -> 14).
+    assert_eq!(CoreRelationKind::ALL.len(), 14);
 }
 
 #[test]

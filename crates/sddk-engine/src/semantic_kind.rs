@@ -85,10 +85,11 @@ impl CoreNodeKind {
     }
 }
 
-/// The 16 core relation kinds listed in arch-spec-005. Cycle A3-S2
-/// (`p-63676b11dc0ef88f/a3-2-architectural-contract`, AC1) added the
-/// `ContractedBy` and `SpecifiedBy` relations; v1.168.35 added `Verifies`
-/// and `ObservedFor` per ADR-0100.
+/// The 14 core relation kinds listed in arch-spec-005. Cycle A3-S2
+/// (`p-63676b11dc0ef88f/a3-2-architectural-contract`, AC1) originally added
+/// `ContractedBy` and `SpecifiedBy` but they were removed in cycle A4
+/// (FU-A3-CO-2, Option B) — zero producers ever constructed them. v1.168.35
+/// added `Verifies` and `ObservedFor` per ADR-0100.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoreRelationKind {
     DependsOn,
@@ -110,18 +111,10 @@ pub enum CoreRelationKind {
     /// to inform or guard the target (e.g. a regression run observed a
     /// risk mitigation).
     ObservedFor,
-    /// A node → ArchitecturalContract. The contract constrains the node
-    /// (e.g. a Component is constrained by a SingleAuthority contract).
-    /// Added in cycle A3-S2 (AC1).
-    ContractedBy,
-    /// A node → ArchitecturalContract. The contract specifies the node's
-    /// intended design (e.g. an Entity is specified by a UniqueOwner contract).
-    /// Added in cycle A3-S2 (AC1).
-    SpecifiedBy,
 }
 
 impl CoreRelationKind {
-    pub const ALL: [CoreRelationKind; 16] = [
+    pub const ALL: [CoreRelationKind; 14] = [
         CoreRelationKind::DependsOn,
         CoreRelationKind::CausedBy,
         CoreRelationKind::Supports,
@@ -136,8 +129,6 @@ impl CoreRelationKind {
         CoreRelationKind::Affects,
         CoreRelationKind::Verifies,
         CoreRelationKind::ObservedFor,
-        CoreRelationKind::ContractedBy,
-        CoreRelationKind::SpecifiedBy,
     ];
 
     pub fn domain_tag(&self) -> &'static str {
@@ -156,8 +147,6 @@ impl CoreRelationKind {
             CoreRelationKind::Affects => "affects",
             CoreRelationKind::Verifies => "verifies",
             CoreRelationKind::ObservedFor => "observed_for",
-            CoreRelationKind::ContractedBy => "contracted_by",
-            CoreRelationKind::SpecifiedBy => "specified_by",
         }
     }
 }
@@ -376,25 +365,29 @@ mod tests {
     }
 
     #[test]
-    fn core_relation_kinds_have_16_entries_after_ac1_relations() {
+    fn core_relation_kinds_have_14_entries_after_a4_fu_co2_removal() {
         // Pin the count so a future addition must update both this test
         // AND the doc comment line 88. Without this pin, adding a relation
-        // silently is too easy. Cycle A3-S2 (AC1) added ContractedBy +
-        // SpecifiedBy, taking the count from 14 to 16.
+        // silently is too easy. Cycle A4 (FU-A3-CO-2, Option B) removed
+        // ContractedBy + SpecifiedBy (zero producers ever constructed them),
+        // taking the count from 16 back to 14.
         assert_eq!(
             CoreRelationKind::ALL.len(),
-            16,
-            "expected 16 core relation kinds (12 original + Verifies + ObservedFor + ContractedBy + SpecifiedBy)"
+            14,
+            "expected 14 core relation kinds (12 original + Verifies + ObservedFor)"
         );
     }
 
     #[test]
-    fn core_relation_kinds_had_14_entries_before_ac1() {
+    fn core_relation_kinds_had_14_entries_after_evidence_relations() {
         // Historical anchor: before A3-S2 added `ContractedBy` and
         // `SpecifiedBy`, the count was 14 (12 original + Verifies +
-        // ObservedFor from v1.168.35). This test exists to preserve the
-        // historical baseline so future readers can reconstruct the
-        // evolution path without grep archaeology.
+        // ObservedFor from v1.168.35). Then A4 (FU-A3-CO-2, Option B)
+        // removed ContractedBy + SpecifiedBy (zero producers), returning
+        // the count to 14. This test exists to preserve the historical
+        // baseline so future readers can reconstruct the evolution path
+        // without grep archaeology. Note: the count is 14 both before
+        // AC1 and after the FU-A3-CO-2 removal — but the composition differs.
         const PRE_AC1_RELATION_COUNT: usize = 14;
         assert_eq!(PRE_AC1_RELATION_COUNT, 14);
     }
