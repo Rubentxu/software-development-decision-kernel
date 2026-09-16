@@ -70,6 +70,7 @@ mod uat_quality;
 mod uat_serve;
 mod vault_cmd;
 pub mod verify_cmd;
+pub mod verify_kernel_cmd;
 mod why_cmd;
 mod writer;
 
@@ -477,6 +478,11 @@ enum Command {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+    },
+    /// Generic Verify kernel: drive verification for a specific domain.
+    VerifyKernel {
+        #[command(flatten)]
+        args: verify_kernel_cmd::VerifyArgs,
     },
     /// Audit memory reflog plus ledger events (M6.1 facade).
     Audit {
@@ -887,6 +893,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             format,
         } => change::run_change(cycle_id, title, description, actor, format, environment),
         Command::Verify { format } => verify_cmd::run_verify(format, environment),
+        Command::VerifyKernel { args } => verify_kernel_cmd::run_verify(args, environment),
         Command::Audit { since, format } => audit_cmd::run_audit(since, format, environment),
         Command::Config { command } => config_cmd::run_config(command, environment),
         Command::Introspect { command } => command_spec::run_introspect(command, environment),
@@ -1778,6 +1785,7 @@ fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
         | Recover { .. }
         | Change { .. }
         | Verify { .. }
+        | VerifyKernel { .. }
         | Audit { .. }
         | Config { .. }
         | Introspect { .. }
