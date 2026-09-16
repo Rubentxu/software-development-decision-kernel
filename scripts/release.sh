@@ -109,6 +109,7 @@ require gh
 require tar
 require sha256sum
 require curl
+require jq
 
 gh auth status >/dev/null 2>&1 \
     || die "gh CLI not authenticated — run: gh auth login"
@@ -455,6 +456,113 @@ else
         || die "gh release create failed"
 fi
 ok "release $TAG published"
+
+# --- 9b. public-release gate ---
+# >>> REL-1 public-release gate begin >>>
+# Closes FU-A4-4A-REL-1. Before the install step, assert the GitHub
+# Release is publicly distributable. Fail closed on any mismatch.
+#
+# Skipped under --dry-run (no publish happened) and --skip-install
+# (no install will run, so the gate is moot).
+if [ "$DRY_RUN" = "1" ]; then
+    warn "skipping step 9b (--dry-run)"
+elif [ "$SKIP_INSTALL" = "1" ]; then
+    warn "skipping step 9b (--skip-install)"
+else
+    step "9b/14 — public-release gate for $TAG"
+    require jq
+
+    # 1. Tag SHA anchoring: refs/tags/$TAG must equal the release commit
+    #    we just published. `main` will keep moving; the tag is durable.
+    EXPECTED_RELEASE_SHA="$(git rev-parse HEAD)"
+    ACTUAL_TAG_SHA="$(git ls-remote origin "$TAG" | awk '{print $1}')"
+    if [ -z "$ACTUAL_TAG_SHA" ]; then
+        die "tag $TAG not found on origin — refusing to install"
+    fi
+    if [ "$EXPECTED_RELEASE_SHA" != "$ACTUAL_TAG_SHA" ]; then
+        die "tag $TAG SHA drift: HEAD=$EXPECTED_RELEASE_SHA tag=$ACTUAL_TAG_SHA — refusing to install"
+    fi
+    ok "tag SHA anchored: $ACTUAL_TAG_SHA"
+
+    # 2. Release metadata: query gh release view, parse JSON, assert state.
+    #    isDraft=false, isPrerelease=false, tagName=expected, asset set
+    #    equals the canonical 9-asset contract.
+    RELEASE_JSON="$(gh release view "$TAG" --repo "$REPO" --json tagName,isDraft,isPrerelease,assets 2>/dev/null)" \
+        || die "gh release view $TAG failed — refusing to install"
+    GOTTEN_TAG="$(echo "$RELEASE_JSON" | jq -r '.tagName')"
+    if [ "$GOTTEN_TAG" != "$TAG" ]; then
+        die "tagName drift: expected $TAG got $GOTTEN_TAG"
+    fi
+    ok "tagName match: $TAG"
+
+    IS_DRAFT="$(echo "$RELEASE_JSON" | jq -r '.isDraft')"
+    if [ "$IS_DRAFT" != "false" ]; then
+        die "release $TAG is in draft state (isDraft=$IS_DRAFT) — run: gh release edit $TAG --draft=false"
+    fi
+    ok "isDraft=false"
+
+    IS_PRERELEASE="$(echo "$RELEASE_JSON" | jq -r '.isPrerelease')"
+    if [ "$IS_PRERELEASE" != "false" ]; then
+        die "release $TAG is a prerelease (isPrerelease=$IS_PRERELEASE) — Base releases must be non-prerelease"
+    fi
+    ok "isPrerelease=false"
+
+    # 3. Asset contract: exactly the 9 canonical assets by basename.
+    CANONICAL_ASSETS=(
+        "sddk"
+        "sddk.sha256"
+        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz"
+        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz.sha256"
+        "CHECKSUMS"
+        "sbom.json"
+        "gh-release-receipt.json"
+        "software-development-decision-kernel.tar.gz"
+        "software-development-decision-kernel.tar.gz.sha256"
+    )
+    ACTUAL_ASSETS="$(echo "$RELEASE_JSON" | jq -r '.assets[].name' | sort -u)"
+    EXPECTED_ASSETS_SORTED="$(printf '%s\n' "${CANONICAL_ASSETS[@]}" | sort -u)"
+    MISSING_ASSETS="$(comm -23 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
+    EXTRA_ASSETS="$(comm -13 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
+    if [ -n "$MISSING_ASSETS" ]; then
+        die "missing canonical assets: $(echo "$MISSING_ASSETS" | tr '\n' ' ')"
+    fi
+    if [ -n "$EXTRA_ASSETS" ]; then
+        die "unexpected assets replacing canonical ones: $(echo "$EXTRA_ASSETS" | tr '\n' ' ')"
+    fi
+    ok "asset set matches 9-asset contract"
+
+    # 4. Public URL HTTP probes: each canonical asset must respond
+    #    200 from the public releases/download/$TAG/<asset> URL.
+    #    CDN refresh can lag a few minutes after `gh release create`.
+    #    Per-asset budget: 60s (6 attempts × 10s). Across 9 assets
+    #    the worst case is ~9 minutes if every asset is stale. In
+    #    practice the CDN catches up within seconds; this is a safety
+    #    net, not a retry loop.
+    URL_FAILS=""
+    for asset in "${CANONICAL_ASSETS[@]}"; do
+        URL="https://github.com/$REPO/releases/download/$TAG/$asset"
+        ok_remote=0
+        last_rc="000"
+        for i in $(seq 1 6); do
+            rc="$(curl -fsSL -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || echo "000")"
+            last_rc="$rc"
+            if [ "$rc" = "200" ]; then
+                ok_remote=1
+                break
+            fi
+            sleep 10
+        done
+        if [ "$ok_remote" = "0" ]; then
+            URL_FAILS="$URL_FAILS $asset(HTTP $last_rc)"
+        fi
+    done
+    if [ -n "$URL_FAILS" ]; then
+        die "public URL probes failed after 60s-per-asset budget:$URL_FAILS"
+    fi
+    ok "9/9 canonical assets reachable from public CDN (HTTP 200)"
+    ok "public-release gate PASS"
+fi
+# <<< REL-1 public-release gate end <<<
 
 if [ "$SKIP_INSTALL" = "1" ]; then
     warn "skipping step 10-13 (--skip-install)"

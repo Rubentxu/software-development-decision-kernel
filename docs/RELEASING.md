@@ -24,6 +24,23 @@ The `scripts/install.sh` script:
 - Runs `sddk dev link --editor <X>` (symlinks bundle to editor dir)
 - Prints `sddk dev doctor` (final verification)
 
+**Public-release gate (v1.169.53+, REL-1 / FU-A4-4A-REL-1).** Between
+`gh release create` and the install-from-real-URL step, `scripts/release.sh`
+runs step 9b — a `PublicReleaseGate` that re-checks the published GH release
+on the live API:
+
+- Tag SHA anchors against `git ls-remote origin $TAG` (not `origin/main`)
+- `isDraft=false`, `isPrerelease=false`
+- 9 canonical assets present (no extras, no missing)
+- Each asset URL returns HTTP 200 from the public CDN
+  (6 retries × 10 s = 60 s budget per asset, ~9 min worst-case)
+
+If any condition fails, step 9b exits non-zero and the script refuses to
+proceed to install. The gate makes a draft / partial release
+non-distributable by construction. Contract tests live in
+`tests/test_release_public_gate.sh` (10 scenarios, mocked `gh` / `git` /
+`curl`; scenario 9 is the real acceptance run).
+
 **Supported platforms:**
 - ✅ Linux x86_64 (musl static)
 - ✅ Linux aarch64 (musl static)
@@ -158,6 +175,28 @@ gh release create "$TAG" --repo $REPO --title "sddk $TAG" \
     $TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256 \
     $TMP/software-development-decision-kernel.tar.gz \
     $TMP/software-development-decision-kernel.tar.gz.sha256
+
+# 7b. Public-release gate (REL-1, v1.169.53+). Re-check the published
+#     release on the live API before allowing install. Fail-closed.
+TAG_SHA=$(git rev-parse HEAD)
+REMOTE_SHA=$(git ls-remote origin "$TAG" | awk '{print $1}')
+[ "$TAG_SHA" = "$REMOTE_SHA" ] || { echo "tag SHA drift"; exit 1; }
+RELEASE_JSON=$(gh release view "$TAG" --repo $REPO --json isDraft,isPrerelease,assets)
+IS_DRAFT=$(echo "$RELEASE_JSON" | jq -r '.isDraft')
+IS_PRE=$(echo "$RELEASE_JSON" | jq -r '.isPrerelease')
+[ "$IS_DRAFT" = "false" ] && [ "$IS_PRE" = "false" ] || exit 1
+ASSET_COUNT=$(echo "$RELEASE_JSON" | jq -r '.assets | length')
+[ "$ASSET_COUNT" -ge 9 ] || exit 1
+for asset in sddk sddk.sha256 sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz \
+             sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256 \
+             CHECKSUMS sbom.json gh-release-receipt.json \
+             software-development-decision-kernel.tar.gz \
+             software-development-decision-kernel.tar.gz.sha256; do
+    code=$(curl -fsSL -o /dev/null -w '%{http_code}' \
+           "https://github.com/$REPO/releases/download/$TAG/$asset" || echo 000)
+    [ "$code" = "200" ] || { echo "$asset not reachable (HTTP $code)"; exit 1; }
+done
+echo "public-release gate PASS"
 
 # 8. Install from real URL (wait out CDN cache)
 sleep 60   # empirical: CDN caches for up to ~5 min; --clobber uploads don't invalidate

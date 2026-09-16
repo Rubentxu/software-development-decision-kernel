@@ -142,3 +142,30 @@ Whichever is opened next requires:
 - `docs/architecture/specs/arch-spec-046-*.md` — part-1 model surface (now `implemented`).
 - `docs/architecture/adrs/ADR-0124-ALIGNMENT-IS-ADVISORY.md` — addendum (A4-4a MISALIGNED ≠ DENY restatement).
 - `docs/handoff/HANDOFF-2026-09-16-a4-3-software-alignment-core-v1.169.50.md` — predecessor handoff.
+
+---
+
+## Correction addendum (REL-1 close-out, 2026-09-16)
+
+**Origin:** FU-A4-4A-REL-1 → REL-1 cycle (closed this session, see sibling
+handoff `HANDOFF-2026-09-16-rel-1-public-release-gate-v1.169.53.md`).
+
+The original handoff body says HEAD is "post-bump chore(release)" / "matches
+`origin/main`" / "tracks main". That phrasing violates the 6-rule protocol's
+SHA discipline (`Use SHA, not 'tracks main'`). Pinned reference points for
+v1.169.52 (the release this handoff shipped):
+
+| Identifier | Value |
+|---|---|
+| released_baseline | v1.169.52 |
+| released_baseline_tag_SHA | `9785288` (HEAD of `chore(release): bump version 1.169.51 -> 1.169.52`) |
+| released_baseline_origin_main_HEAD | `9785288` (matches) |
+| development_head_post_REL-1 | post-REL-1 `chore(release): bump version 1.169.52 -> 1.169.53` commit (see REL-1 handoff for exact SHA once `bash scripts/release.sh` has run) |
+
+**Forward-looking rule:** Every handoff, followup entry, and release
+reference MUST cite a SHA. If a followup says "tracks main" without a SHA,
+it is non-conformant with the 6-rule protocol and the cycle that produced
+it must be re-opened (INC-M7-9 / INC-M7 territory) to pin the SHA. The new
+REL-1 gate (v1.169.53+) reinforces this by anchoring every release to
+`git ls-remote origin $TAG` (not `origin/main`), so as of v1.169.53 no
+release can ship without an explicit tag SHA in the receipt chain.

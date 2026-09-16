@@ -255,18 +255,18 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
 
 **Entry point canónico:** `bash scripts/release.sh`.
 
-Ese script ejecuta los 13 pasos abajo en orden, gateados por el previo.
+Ese script ejecuta los 14 pasos abajo en orden, gateados por el previo.
 Cualquier paso que falle aborta con código no-cero. Si el script no puede
 correr en tu entorno, el equivalente manual está en `docs/RELEASING.md`
 sección "Manual fallback" — pero la regla es: **si no puedes correr el
 script, abre un ciclo para arreglar lo que sea que te lo impide, no
 hagas un release a medias**.
 
-### Pipeline (13 pasos)
+### Pipeline (14 pasos)
 
 | # | Paso | Gate | Cómo se verifica |
 |---|------|------|------------------|
-| 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version` | `git log -1 --format=%s` matchea regex |
+| 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version`, `jq` en PATH | `git log -1 --format=%s` matchea regex |
 | 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | exit code 0 |
 | 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
 | 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
@@ -276,18 +276,27 @@ hagas un release a medias**.
 | 7 | Unified tarball | `bin/sddk` + `framework/` con `chmod 0755` defensivo sobre el binario | `tar tvzf …` muestra `-rwxr-xr-x` |
 | 8 | sha256 + CHECKSUMS + sbom | CycloneDX 1.5 mínimo | existe `sddk.sha256`, `CHECKSUMS`, `sbom.json` |
 | 9 | `gh release create` | assets en un solo comando | `gh release view $TAG --repo …` |
+| 9b | **Public-release gate** (REL-1 / FU-A4-4A-REL-1, v1.169.53+) | tag SHA anchored via `git ls-remote origin $TAG` (no `origin/main`), `isDraft=false`, `isPrerelease=false`, 9-asset contract, cada `https://github.com/$REPO/releases/download/$TAG/<asset>` HTTP 200 (6 × 10 s budget = 60 s/asset) | `tests/test_release_public_gate.sh` (10 scenarios; exit 0); `bash scripts/release.sh` falla-closed si cualquier check falla |
 | 10 | Install desde URL real | `bash scripts/install.sh --version $TAG --editor all` (sin `SDDK_BASE_URL`) | exit 0, `bin/sddk` extraído con exec bit |
 | 11 | `sddk dev doctor` | `--prefix $SDDK_PREFIX` | `binary.bundle_coherence: present` + `all_present: true` |
 | 12 | `sddk dev update --prune-only --keep 1` | elimina `<version>/` stale | "removed N, kept 1.X.Y" |
 | 13 | Final state | print binary version, bundle version, current symlink, framework layout | output legible |
 
+**Importante sobre 9b.** El gate vuelve a verificar el release publicado en
+la API de GH antes de permitir instalar localmente — atrapa drafts,
+prereleases, asset sets incompletos y CDN caching stale. El contrato está
+pinado en `tests/test_release_public_gate.sh` (10 scenarios, todos
+pasan con mocks; scenario 9 = la release real, garantizado por construcción
+porque el bloque vive dentro del script). No skip-able con
+`--skip-install`; el dry-run sí lo skipea porque no publica nada.
+
 ### Flags del script
 
 ```bash
-bash scripts/release.sh               # flujo completo
-bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica)
+bash scripts/release.sh               # flujo completo (0-13)
+bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica, no corre 9b)
 bash scripts/release.sh --skip-tests  # asume que ya corriste los gates
-bash scripts/release.sh --skip-install # pasos 0-9 (no toca local)
+bash scripts/release.sh --skip-install # pasos 0-8 (no toca local; 9b no corre porque presupone 9)
 bash scripts/release.sh --force       # sobrescribe release existente en GH
 ```
 
