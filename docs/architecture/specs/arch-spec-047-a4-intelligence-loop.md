@@ -3,7 +3,7 @@ id: arch-spec-047-a4-intelligence-loop
 title: A4 intelligence loop and repository spec-ID reconciliation
 status: contract-ready
 milestone: A4
-implemented_by: pending (A4-4)
+implemented_by: pending (A4-5 — full loop integration; A4-4a/4b/4M ship only the kernel surfaces: UniversalConcern + Intent + AlignmentLens abstraction + paradigm_lens convergence)
 depends_on: 042, 043, 044, 045, 046
 ---
 
