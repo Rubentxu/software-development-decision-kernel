@@ -1,27 +1,48 @@
 // Copyright (c) SDDK contributors.
 // SPDX-License-Identifier: MIT
 //
-// paradigm_lens/lenses.rs — A3-S8 / AC7 evaluation.
+// paradigm_lens/lenses.rs — A4-4M M4/M5: AC7 compatibility facade.
 //
-// `evaluate_lens` turns a declared paradigm profile plus deterministic
-// observations into an AC3 `LensAssessment` with a real status and concrete
-// evidence citations. It is scoped to the declared anchor and never emits a
-// global paradigm judgment (AC-UAT-012).
+// Cycle: `p-63676b11dc0ef88f/a4-4m-ac7-alignmentlens-convergence`
+// Matrix: docs/architecture/a4-4m-migration-matrix.md
 //
-// Rules (AC-035-004):
-//   undeclared family                  -> NotApplicable
-//   declared family, zero observations -> Unknown
-//   all Supports                       -> Aligned
-//   all Contradicts                    -> Misaligned
-//   mixed                              -> Tension
+// # M4 — compatibility facade, zero evaluation logic
+//
+// `evaluate_lens` keeps its historical signature (LEGACY_READ_COMPAT:
+// consumers are the AC7 corpus tests) but contains NO evaluation logic
+// of its own. The status is now a **projection** of the kernel-substrate
+// posture:
+//
+// ```text
+// legacy input (ParadigmLensKind, observations)
+//   → intent-layer applicability gate (undeclared family → NotApplicable)
+//   → M0 translation (typed observations → canonical substrate)
+//   → substrate posture (resolve over translated set)
+//   → projection (Supported→Aligned, Contradicted→Misaligned,
+//                 Conflicted→Tension, Insufficient→Unknown)
+// ```
+//
+// # M5 — single execution authority
+//
+// `status_from_polarities` is DELETED. It no longer exists as an
+// evaluation motor anywhere. `inferred_lens_assessment` is DELETED
+// (M0.4 verdict: DEAD — zero consumers). `LensProvenance` /
+// `LensEvaluationBasis` remain only as part of the legacy
+// `LensEvaluation` payload the corpus tests read; the generic kernel
+// never produces them.
+//
+// Removal trigger for this facade: when the AC7 corpus tests migrate
+// to the canonical surface (A4-4C acceptance), delete this module.
 
-use crate::paradigm_profile::{
-    EvidenceBasis, LensAssessment, LensStatus, ParadigmAnchorRef, ParadigmLensKind,
-};
+use crate::architecture_graph::SoftwareUnitRef;
+use crate::observation::ObservationTargetRef;
+use crate::observation::posture::EvidencePosture;
+use crate::observation::types::ObservationSet;
+use crate::paradigm_profile::{LensAssessment, LensStatus, ParadigmAnchorRef, ParadigmLensKind};
 
+use super::translation;
 use super::types::{
-    LENS_VERSION, LensError, LensEvaluationBasis, LensObservation, LensProvenance,
-    ObservationPolarity, family_for_kind,
+    LENS_VERSION, LensEvaluationBasis, LensObservation, LensProvenance, family_for_kind,
 };
 
 /// The result of a deterministic lens evaluation: the AC3 assessment plus the
@@ -45,23 +66,20 @@ fn notes_for(family_tag: &str, used: usize, basis: LensEvaluationBasis) -> Strin
     )
 }
 
-fn status_from_polarities(used: &[LensObservation]) -> LensStatus {
-    if used.is_empty() {
-        return LensStatus::Unknown;
-    }
-    let supports = used
-        .iter()
-        .filter(|o| o.polarity() == ObservationPolarity::Supports)
-        .count();
-    let contradicts = used.len() - supports;
-    match (supports > 0, contradicts > 0) {
-        (_, false) => LensStatus::Aligned,
-        (false, true) => LensStatus::Misaligned,
-        (true, true) => LensStatus::Tension,
+/// M0.3 compatibility projection: substrate posture → legacy status.
+/// `NotApplicable` is unreachable here — it is resolved by the
+/// intent-layer gate BEFORE this projection runs.
+pub(crate) fn project_status(posture: &EvidencePosture<ObservationTargetRef>) -> LensStatus {
+    match posture {
+        EvidencePosture::Supported { .. } => LensStatus::Aligned,
+        EvidencePosture::Contradicted { .. } => LensStatus::Misaligned,
+        EvidencePosture::Conflicted { .. } => LensStatus::Tension,
+        EvidencePosture::Insufficient { .. } => LensStatus::Unknown,
     }
 }
 
-/// Evaluate a lens deterministically.
+/// Evaluate a lens through the canonical substrate (compatibility
+/// facade; the execution authority is the A4-4 observation substrate).
 ///
 /// `declared_kind` is the profile's declared lens kind (AC3 vocabulary);
 /// `observations` is whatever the caller gathered (extra families are ignored).
@@ -81,10 +99,23 @@ pub fn evaluate_lens(
         None => Vec::new(),
     };
 
+    // Intent-layer gate: undeclared family → NotApplicable (the ONLY
+    // source of NotApplicable; never the kernel/substrate).
     let status = match family {
-        // Undeclared family: nothing to assess (AC-UAT-013).
         None => LensStatus::NotApplicable,
-        Some(_) => status_from_polarities(&used),
+        Some(_f) => {
+            // Canonical substrate path (M2): translate the typed
+            // observations and resolve the posture over them.
+            let unit = SoftwareUnitRef(format!("ac7::{}", anchor.locator()));
+            let kb = crate::knowledge::KnowledgeBasis::empty(crate::knowledge::EventTime(0))
+                .basis_hash()
+                .clone();
+            let mut set = ObservationSet::new();
+            translation::translate_batch(&used, &unit, &kb, "ac7-facade", &mut set);
+            let posture =
+                crate::observation::resolve_subject(&set, &ObservationTargetRef::Unit(unit));
+            project_status(&posture)
+        }
     };
 
     let basis = LensEvaluationBasis::Deterministic;
@@ -96,7 +127,7 @@ pub fn evaluate_lens(
         anchor,
         status,
         basis: basis.to_evidence_basis(),
-        // Cite only the contradicting/ supporting observations that were used.
+        // Cite only the observations that were used.
         evidence_refs: used.iter().map(|o| o.evidence_ref()).collect(),
         notes: Some(notes_for(family_tag, used.len(), basis)),
         evaluated_at_ms,
@@ -110,76 +141,17 @@ pub fn evaluate_lens(
     }
 }
 
-/// Build an *inferred* (LLM-supplied) assessment (AC-035-007).
+/// REMOVED (A4-4M M5): `inferred_lens_assessment` — DEAD (zero
+/// consumers, M0.4). REMOVED: `status_from_polarities` — the legacy
+/// evaluation motor; the substrate posture + projection replace it.
 ///
-/// AC7 performs no inference itself: it validates the caller's provenance and
-/// shapes the result. Incomplete provenance is rejected (REQ-AC7-016..018).
-pub fn inferred_lens_assessment(
-    declared_kind: ParadigmLensKind,
-    anchor: ParadigmAnchorRef,
-    observations: &[LensObservation],
-    provenance: LensProvenance,
-    evaluated_at_ms: i64,
-) -> Result<LensEvaluation, LensError> {
-    if provenance.evaluator.trim().is_empty() {
-        return Err(LensError::MissingProvenance { field: "evaluator" });
-    }
-    if provenance
-        .model
-        .as_ref()
-        .map(|m| m.trim().is_empty())
-        .unwrap_or(true)
-    {
-        return Err(LensError::MissingProvenance { field: "model" });
-    }
-    if provenance.input_digest == [0u8; 32] {
-        return Err(LensError::MissingProvenance {
-            field: "input_digest",
-        });
-    }
-    if provenance.lens_version.trim().is_empty() {
-        return Err(LensError::MissingProvenance {
-            field: "lens_version",
-        });
-    }
-
-    let family = family_for_kind(declared_kind);
-    let used: Vec<LensObservation> = match family {
-        Some(f) => observations
-            .iter()
-            .copied()
-            .filter(|o| o.family() == f)
-            .collect(),
-        None => Vec::new(),
-    };
-    let status = match family {
-        None => LensStatus::NotApplicable,
-        Some(_) => status_from_polarities(&used),
-    };
-    let basis = LensEvaluationBasis::Inferred;
-    let family_tag = family.map(|f| f.canonical_tag()).unwrap_or("none");
-
-    let assessment = LensAssessment {
-        lens: declared_kind,
-        anchor,
-        status,
-        // `Inferred` maps onto AC3's `Declared` (intent-only, no deterministic
-        // observation backs it).
-        basis: EvidenceBasis::Declared,
-        evidence_refs: used.iter().map(|o| o.evidence_ref()).collect(),
-        notes: Some(format!(
-            "{}; evaluator={}; model={}",
-            notes_for(family_tag, used.len(), basis),
-            provenance.evaluator,
-            provenance.model.as_deref().unwrap_or("<none>")
-        )),
-        evaluated_at_ms,
-    };
-
-    Ok(LensEvaluation {
-        assessment,
-        basis,
-        provenance,
-        used_observations: used,
-    })
-}
+/// Kept as compile-time documentation of the removal: any code that
+/// still tries to call the removed functions fails to build.
+#[deprecated(note = "removed in A4-4M M5: use alignment_lens::AlignmentLensKernel")]
+#[doc(hidden)]
+pub const REMOVED_IN_A4_4M: () = {
+    // `inferred_lens_assessment` → DELETE (M0.4 DEAD).
+    // `status_from_polarities`  → REPLACE (substrate posture).
+    // Proof: no symbol references remain below.
+    let _: fn(&EvidencePosture<ObservationTargetRef>) -> LensStatus = project_status;
+};

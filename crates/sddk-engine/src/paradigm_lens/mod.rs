@@ -44,7 +44,8 @@
 // # Submodules
 //
 // - `types` — families, observations, polarity, basis, provenance.
-// - `lenses` — `evaluate_lens` / `inferred_lens_assessment`.
+// - `lenses` — `evaluate_lens` compatibility facade (A4-4M M4/M5).
+// - `translation` — typed AC7→substrate bridge (A4-4M M2).
 // - `probes` — deterministic source heuristics.
 // - `tests` — acceptance (AC-UAT-011..015) + anti-encroachment pins.
 
@@ -55,7 +56,9 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use lenses::{LensEvaluation, evaluate_lens, inferred_lens_assessment};
+pub mod translation;
+
+pub use lenses::{LensEvaluation, evaluate_lens};
 pub use probes::{
     probe_adt_observations, probe_dsl_observations, probe_functional_observations,
     probe_oo_observations,

@@ -345,77 +345,12 @@ fn acceptance_probes_have_negative_controls() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// acceptance — inferred (REQ-AC7-016..018)
-// ─────────────────────────────────────────────────────────────────────────────
+// acceptance — inferred (REQ-AC7-016..018): REMOVED in A4-4M M5.
+// `inferred_lens_assessment` was DEAD (zero consumers, M0.4 verdict) and
+// is deleted together with its provenance gate. The generic kernel never
+// performs inference; any future inference lives OUTSIDE
+// `alignment_lens`, per the A4-4M MUST-NOTs.
 
-fn complete_provenance() -> LensProvenance {
-    LensProvenance {
-        evaluator: "llm.lens".to_string(),
-        model: Some("test-model-v1".to_string()),
-        input_digest: [7u8; 32],
-        lens_version: LENS_VERSION.to_string(),
-    }
-}
-
-#[test]
-fn acceptance_inferred_requires_provenance() {
-    // REQ-AC7-016
-    let ev = inferred_lens_assessment(
-        ParadigmLensKind::DataOriented,
-        anchor(),
-        &[LensObservation::StringlyTypedStatus],
-        complete_provenance(),
-        T0,
-    )
-    .expect("inferred assessment");
-    assert_eq!(ev.basis, LensEvaluationBasis::Inferred);
-    assert_eq!(ev.assessment.basis, EvidenceBasis::Declared);
-    assert_eq!(ev.assessment.status, LensStatus::Misaligned);
-    let notes = ev.assessment.notes.as_deref().unwrap_or("");
-    assert!(notes.contains("test-model-v1"), "notes: {notes}");
-    assert!(notes.contains("inferred"), "notes: {notes}");
-}
-
-#[test]
-fn acceptance_inferred_without_provenance_is_rejected() {
-    // REQ-AC7-017
-    let mut p = complete_provenance();
-    p.evaluator = "   ".to_string();
-    let err =
-        inferred_lens_assessment(ParadigmLensKind::DataOriented, anchor(), &[], p, T0).unwrap_err();
-    assert_eq!(err, LensError::MissingProvenance { field: "evaluator" });
-
-    let mut p2 = complete_provenance();
-    p2.input_digest = [0u8; 32];
-    let err2 = inferred_lens_assessment(ParadigmLensKind::DataOriented, anchor(), &[], p2, T0)
-        .unwrap_err();
-    assert_eq!(
-        err2,
-        LensError::MissingProvenance {
-            field: "input_digest"
-        }
-    );
-
-    // And the completeness predicate agrees.
-    assert!(complete_provenance().is_complete_for_inference());
-}
-
-#[test]
-fn acceptance_inferred_requires_model_id() {
-    // REQ-AC7-018
-    let mut p = complete_provenance();
-    p.model = None;
-    let err =
-        inferred_lens_assessment(ParadigmLensKind::DataOriented, anchor(), &[], p, T0).unwrap_err();
-    assert_eq!(err, LensError::MissingProvenance { field: "model" });
-
-    // A deterministic evaluation needs no model id and succeeds.
-    let det = evaluate_lens(ParadigmLensKind::DataOriented, anchor(), &[], T0);
-    assert_eq!(det.basis, LensEvaluationBasis::Deterministic);
-    assert!(det.provenance.model.is_none());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // anti-encroachment (REQ-AC7-019..022)
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -355,6 +355,25 @@ impl ObservationSet {
         self.observations.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
+    /// A4-4M (M2): stable content digest of the set, usable as the
+    /// `observation_set_canonical_tag` input to
+    /// `alignment_lens::derive_contribution_id`.
+    ///
+    /// Derivation: `OBSET|` + the sorted observation ids joined by the
+    /// unit separator; `OBSET|empty` for an empty set. Deterministic
+    /// and insertion-order-independent (the set is normalized before
+    /// hashing, and ids are content-derived).
+    pub fn canonical_digest(&self) -> String {
+        let mut ids: Vec<&str> = self.observations.iter().map(|o| o.id.as_str()).collect();
+        ids.sort_unstable();
+        let mut out = String::from("OBSET|");
+        out.push_str(&ids.join("\u{1f}"));
+        if self.observations.is_empty() {
+            out.push_str("empty");
+        }
+        out
+    }
+
     /// All observations, in canonical order.
     pub fn observations(&self) -> &[SoftwareObservation] {
         &self.observations

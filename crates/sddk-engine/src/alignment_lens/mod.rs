@@ -136,8 +136,11 @@ pub mod id;
 pub mod kernel;
 pub mod lens;
 pub mod not_evaluated;
+pub mod paradigm;
 pub mod registry;
 pub mod types;
+
+pub use paradigm::ParadigmLens;
 
 pub use contribution::LensContribution;
 pub use error::{KernelError, LensError};
