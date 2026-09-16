@@ -12,6 +12,10 @@ implementation_evidence:
   - "crates/sddk-cli/src/verify_kernel_cmd.rs (A4-1 CLI surface: `sddk verify-kernel --domain <d> --claim <c>`)"
   - "crates/sddk-engine/src/debverify_kernel/ (A4-2 implementation: Baseline-driven kernel + ChallengeStrategy registry; two strategies: ArchitectureChallengeStrategy wrapping AC5, ObservationContradictionChallengeStrategy consuming arch-spec-042)"
   - "docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/02-BOUNDED-CONTEXTS/verification/DEB-VERIFY.md (historical source)"
+  - "crates/sddk-engine/src/architecture_conformance/compute.rs (A4-2M: compute_conformance_delta_core as single AC4 execution surface; legacy function is a thin wrapper)"
+  - "crates/sddk-engine/src/verify_kernel/adapter_architecture.rs (A4-2M: ArchitectureVerificationDomain::evaluate_with_context calls compute_conformance_delta_core)"
+  - "crates/sddk-engine/src/debverify_kernel/strategy_architecture.rs (A4-2M: ArchitectureChallengeStrategy::challenge returns Gaps(...) when audit inputs missing — false-clean guard)"
+  - "crates/sddk-engine/src/software_alignment/ (A4-3 implementation: closed 7-state vocabulary {ALIGNED, TENSION, MISALIGNED, ACCEPTED, REVIEW_DUE, UNKNOWN, NOT_APPLICABLE}; closed 3-finding vocabulary {ContractViolation, AlignmentTension, ImprovementOpportunity}; pure reducer with no authority; no findings != ALIGNED pin)"
 superseded_by: []
 related_adrs:
   - "ADR-0122-EVIDENCE-OBSERVES-SOFTWARE"

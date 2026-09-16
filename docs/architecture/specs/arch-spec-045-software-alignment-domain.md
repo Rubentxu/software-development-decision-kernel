@@ -1,9 +1,9 @@
 ---
 id: arch-spec-045-software-alignment-domain
 title: Software Alignment domain
-status: contract-ready
+status: implemented
 milestone: A4
-implemented_by: pending (A4-3)
+implemented_by: A4-3 (crates/sddk-engine/src/software_alignment, 7 closed states + 3 closed findings, pure reducer, no authority)
 depends_on: arch-spec-042-evidence-observation-provenance
 reconciles: historical SPEC-019-SOFTWARE-ALIGNMENT-DOMAIN
 ---
