@@ -2,8 +2,9 @@
 
 **Date:** 2026-09-16
 **Cycle:** `p-63676b11dc0ef88f/a4-4m-ac7-alignmentlens-convergence`
-**Status:** SHIPPED (release publish runs at close; reconcile SHA after `scripts/release.sh`).
-**Expected release tag:** `v1.169.59` (workspace bumped to `1.169.59` per cycle-46 contract).
+**Status:** SHIPPED + RELEASED.
+**Release tag:** `v1.169.59` → SHA `ba986a5eda88e87dff0874e0cb01e57e838aa3db`
+**GH Release URL:** https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.59
 **Released baseline inherited:** v1.169.58 / `b37321ff2fd337f36cda822bd96385ddf768a3b7`.
 
 ## Scope
@@ -21,7 +22,8 @@ primitives — no substrate extension needed).
 |---|------|---------|
 | 1 | 44d9371 | chore(release)+test: M0 migration proof pins + matrix doc (incl. cycle spec + arch-spec-046 live-status) |
 | 2 | 4b2d394 | feat(engine): M1-M5, M9, M10 — AC7 converged onto generic AlignmentLens |
-| 3 | (this commit) | docs: ADR-0125 amendment + roadmap + handoff |
+| 3 | 4e1c5ce | docs: ADR-0125 amendment + roadmap + handoff |
+| 4 | ba986a5 | chore(release): bump version 1.169.58 -> 1.169.59 (A4-4M release) |
 
 ### M0 (gate, PASS)
 
