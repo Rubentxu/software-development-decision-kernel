@@ -1,8 +1,10 @@
-# Handoff: A4-4b — Generic AlignmentLens kernel/registry → v1.169.56
+# Handoff: A4-4b — Generic AlignmentLens kernel/registry → v1.169.57
 
 **Date:** 2026-09-16
 **Cycle:** `p-63676b11dc0ef88f/a4-4b-alignment-lens-kernel`
-**Status:** feat/test green; release pending (commit `chore(release)` next).
+**Status:** SHIPPED + RELEASED.
+**Release tag:** `v1.169.57` → SHA `7fc820d6e88d7e132d0383a72661c466a889b2d2`
+**GH Release URL:** https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.57
 
 ## Scope
 
@@ -108,26 +110,46 @@ required: 14 MUST, 15 MUST_NOT, 20 pin tests, ≤3 commit budget.
 
 ## Roadmap delta
 
-A4-4b is the **CURRENT** milestone. Status:
+A4-4b is the **CLOSED** milestone (released v1.169.57). The next
+open cycle is **A4-4bR — Subject-General Evidence Resolution**
+(scope contract at
+`.sddk/cycles/p-63676b11dc0ef88f-a4-4br-subject-general-evidence/spec.md`).
+A4-4bR blocks on user green-light; A4-4M blocks on A4-4bR.
+
+Status:
 
 - A4-4aR: `closed v1.169.54`.
-- A4-4b: `CURRENT` (this cycle).
-- A4-4M: `blocked_by A4-4b`.
+- A4-4b: `closed v1.169.57` (this cycle).
+- A4-4M: `blocked_by A4-4bR` (next open cycle is A4-4bR — Subject-General
+  Evidence Resolution; A4-4M is still blocked by A4-4bR because the
+  generalized algebra is what AC7 will plug into).
 - A4-4C: `blocked_by A4-4M`.
 - A4-5: `blocked_by A4-4C`.
 
 `docs/architecture/README.md` was updated in the preflight commit
-(`a54f016`).
+(`a54f016`) and again in the cycle's docs commit (`0cb981d`); the
+A4-4bR preflight reconciles the release-tag drift that
+the `0cb981d` row still implied.
 
-## Release pending
+## Release — DONE
 
-Next commits (after this handoff lands):
+| Step | Value |
+|------|-------|
+| Tag  | `v1.169.57` |
+| SHA  | `7fc820d6e88d7e132d0383a72661c466a889b2d2` |
+| Workspace version at release | `1.169.57` |
+| GitHub Release | https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.57 |
+| 9 canonical assets | published (sddk + sddk.sha256 + tar.gz + tar.gz.sha256 + CHECKSUMS + sbom.json + unified tarball + unified tarball.sha256 + gh-release-receipt.json) |
+| Install from URL | OK |
+| Doctor | OK (`binary.bundle_coherence: present`, `all_present: true`) |
+| Prune | OK (`removed 1 stale bundle(s); kept 1.169.57`) |
+| Distrib round-trip | OK (binary + bundle coherent after prune) |
+| `scripts/release.sh` final state | `release v1.169.57 shipped and installed locally` |
 
-1. `chore(release): bump version 1.169.56 → 1.169.57`.
-2. `bash scripts/release.sh` for v1.169.56 release (must pass step 9b
-   `PublicReleaseGate` as a regression test).
+## STOP — Do NOT auto-open A4-4bR (let alone A4-4M)
 
-## STOP — Do NOT auto-open A4-4M
-
-A4-4M is the next milestone but is **blocked** on user green-light.
-Do not start work on A4-4M until the user explicitly opens it.
+A4-4bR is the next cycle but is **blocked** on user green-light. The
+cycle spec at
+`.sddk/cycles/p-63676b11dc0ef88f-a4-4br-subject-general-evidence/spec.md`
+documents the proposed scope. Do not start A4-4bR until the user
+opens it explicitly. Do not auto-open A4-4M after A4-4bR either.

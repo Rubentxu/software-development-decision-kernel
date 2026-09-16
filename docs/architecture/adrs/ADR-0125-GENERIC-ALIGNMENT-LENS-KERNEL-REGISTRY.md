@@ -31,17 +31,19 @@ stale_after: 2027-03-16
 
 ## Context
 
-ADR-0118 introduced `paradigm_lens/` (A4-2) as a per-paradigm lens
+`paradigm_lens/` was introduced by **A3-S8 (AC7)** — the alignment
+paradigm probes (OO/FP/ADT/DSL) — as the historical per-paradigm lens
 implementation. It works, but its surface is paradigm-specific and its
 contribution identity is not content-addressed.
 
 ADR-0124 made alignment advisory rather than normative. ADR-0122 makes
 evidence observe software rather than adjudicate it. The next layer must
 be a **generic, paradigm-agnostic** kernel that any lens — present-day
-paradigm lens, future built-in lens, pack-supplied lens, provider-backed
-observation lens — can plug into, with **content-addressed contribution
-identity** so that the same lens, the same concern, the same observation
-set, and the same evidence resolution always yield the same id (regardless
+paradigm lens (AC7), future built-in lens, pack-supplied lens,
+provider-backed observation lens — can plug into, with
+**content-addressed contribution identity** so that the same lens, the
+same concern, the same observation set, and the same evidence
+resolution always yield the same id (regardless
 of wall clock, message text, registration order, or producer labels).
 
 The historical `software_alignment::reduce_alignment` reducer
@@ -214,12 +216,33 @@ Negative:
 
 ## Migration notes
 
-- A4-4M (next) migrates `paradigm_lens/` to register under
-  `AlignmentLensRegistry` and emits `LensContribution[]` instead of
-  `AlignmentState`. Until A4-4M closes, `paradigm_lens/` remains the
-  runtime authority for AC7.
+- AC7 (A3-S8) historically produces `LensAssessment` carrying a
+  `LensStatus` (Aligned / Misaligned / Tension / Unknown). `AlignmentState`
+  is A4-3's vocabulary, not AC7's. A4-4M migrates `paradigm_lens/` so
+  that the historical `LensAssessment + LensStatus` output is replaced
+  by `LensContribution[]` carrying the same four-variant epistemic
+  shape (Supported/Contradicted/Conflicted/Insufficient) via the
+  subject-general `LensEvidenceResolution` introduced in A4-4bR. The
+  legacy mapping would be approximately:
+  `Aligned → Supported`, `Misaligned → Contradicted`,
+  `Tension → Conflicted`, `Unknown → Insufficient`. `NotApplicable`
+  remains an intent-layer concern and is resolved **before** the
+  kernel. Until A4-4M closes, `paradigm_lens/` remains the runtime
+  authority for AC7.
 - The two reference lenses under
   `crates/sddk-engine/tests/alignment_lens_fixture.rs` are **test-only**,
   not exported in the production API. They exist to exercise the
   kernel's heterogeneity contract and to pin behavior under
-  `observation_set_canonical_tag` / `relation_id`.
+  `observation_set_canonical_tag` / real `ObservationSubject`s
+  (relations AND units — see A4-4bR).
+
+## Post-acceptance corrections
+
+- **2026-09-16 (A4-4bR preflight):** The "Context" section originally
+  attributed `paradigm_lens/` to A4-2. Corrected to **A3-S8 (AC7)**.
+  The "Migration notes" section originally said the legacy output was
+  `AlignmentState`; that is A4-3's vocabulary, not AC7's. Corrected
+  to `LensAssessment + LensStatus` (Aligned / Misaligned / Tension /
+  Unknown) with the equivalence mapping to the four-variant
+  `EvidencePosture` shape that A4-4bR formalizes. Status remains
+  `accepted`; these are factual corrections, not a decision reversal.

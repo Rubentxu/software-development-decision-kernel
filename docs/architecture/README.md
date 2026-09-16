@@ -130,8 +130,9 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A4-3** | Software Alignment domain (closed states + closed findings; pure reducer; no authority) | `arch-spec-045` | closed — v1.169.50 |
 | **A4-4a** | Intent + `UniversalConcern` (closed vocabulary; typed intent representation; applicable/not-applicable reasoning) | `arch-spec-046` part-1 | closed — v1.169.52 |
 | **A4-4aR** | **Applicability Semantics Correction** — separate Applicability from Grounding and Evaluability; remove string-grounding from `applicable_concerns()` reducer; paradigm MUST NOT erase a universal concern; `NotApplicableReason` shrinks to the four legitimate-scope variants (`NotInProjectIntent`, `NotInUnitIntent`, `ExplicitlyExcludedByProject`, `ExplicitlyExcludedByUnit`) | `arch-spec-046` part-1 rectification | closed — v1.169.54 (release SHA `219de3f16a067819125054b89abb88d9dc73cc57`) |
-| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous test lenses via fixtures — ABSTRACTION ONLY, no AC7 migration, no `software_alignment::reduce_alignment` wiring) | `arch-spec-046` part-2 | **closed — v1.169.57 (release SHA pending `scripts/release.sh` step 9 publish; cycle spec target v1.169.56 was off-by-one vs. the cycle-46 install-coherence contract which bumps workspace BEFORE the release tag, so the actual release tag is v1.169.57)** |
-| **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | **CURRENT** (waiting on user green-light) |
+| **A4-4b** | Generic `AlignmentLens` kernel/registry (ADT + registry shape; two heterogeneous test lenses via fixtures — ABSTRACTION ONLY, no AC7 migration, no `software_alignment::reduce_alignment` wiring) | `arch-spec-046` part-2 | **closed — v1.169.57 (release SHA `7fc820d6e88d7e132d0383a72661c466a889b2d2`; GH Release https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.57; cycle spec target v1.169.56 was off-by-one vs. the cycle-46 install-coherence contract which bumps workspace BEFORE the release tag, so the actual release tag is v1.169.57)** |
+| **A4-4bR** | **Subject-General Evidence Resolution** — generalize `EvidenceResolution` into `EvidencePosture<Target>` (parameterized over the observed subject: `Relation(RelationId) \| Unit(SoftwareUnitRef) \| Contract(ContractId) \| Knowledge(KnowledgeId)`); preserve `EvidenceResolution` as a type alias / adapter over the new shape so A4-0/A4-2 relation tests pass without modification; migrate `LensContribution` to a subject-general `LensEvidenceResolution = EvidencePosture<ObservationTargetRef>` so AC7 can emit contributions on `Unit(foo)` without fabricating self-relations | `arch-spec-046` part-2 rect | **CURRENT** (waiting on user green-light) |
+| **A4-4M** | Convergence of existing `paradigm_lens` (OO/FP/ADT/DSL) onto generic `Alignment` — zero feature | `arch-spec-046` migration | blocked_by A4-4bR |
 | **A4-4C** | Receipt/UAT for `arch-spec-046` milestone closure | — | blocked_by A4-4M |
 | **A4-5** | Intelligence loop wiring: Verify + DebVerify + Alignment → AdvisoryContext + WHY/WHY-NOT | `arch-spec-047` | blocked_by A4-4C |
 | **A4-CLOSEOUT** | A4 acceptance gate + A5 readiness check | — | blocked_by A4-5 |
@@ -194,8 +195,10 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 - **STOP.** A4-4M does NOT auto-open.
 
 **Checkpoint (A4-4b close, 2026-09-16 — Generic AlignmentLens Kernel / Registry shipped):**
-- **Status:** ABSTRACTION / KERNEL ONLY — closed.
-- **Workspace head at cycle close:** pre-`chore(release)` (release SHA pending).
+- **Status:** ABSTRACTION / KERNEL ONLY — closed; released v1.169.57.
+- **Release tag:** `v1.169.57` → SHA `7fc820d6e88d7e132d0383a72661c466a889b2d2`.
+- **GH Release:** https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.57 (isDraft=false, isPrerelease=false, 9 canonical assets, 9/9 public URLs HTTP 200).
+- **Workspace version at release:** `1.169.57` (the cycle-46 install-coherence contract bumps workspace BEFORE the release tag; the cycle spec's "v1.169.56" target was off-by-one vs. the bump step).
 - **Surface delivered:** `crates/sddk-engine/src/alignment_lens/` (9 files, ~1750 lines) + 24 pin tests + 2 heterogeneous reference fixture lenses under `tests/` (NOT exported) + ADR-0125.
 - **Kernel design contract (locked, anti-encroachment pins):**
   - `ApplicableConcern + no registered lens` → `NotEvaluated { reason: NoRegisteredLens }` (typed gap, distinct from `NotApplicable`).
