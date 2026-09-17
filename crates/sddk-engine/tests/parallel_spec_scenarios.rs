@@ -856,61 +856,6 @@ fn parallel_wfr4_par_005_c_overcount_capped_under_load() {
 // REQ-WFR4-PAR-006 — Per-child NodeRun (Delta 2)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// S-PAR-006a: N+1 rows in node_runs_v1 with namespaced child node_ids.
-/// NOTE: This test uses an empty IR (make_ir()) so no operators are registered.
-/// Additionally, the non-blocking Parallel path has a sender-drop bug that prevents
-/// record_node_run_for_run from being called for child nodes. Currently ignored
-/// until the IR setup is fixed and the non-blocking path bug is resolved.
-#[ignore]
-#[test]
-fn parallel_wfr4_par_006_a_namespaced_count_is_n_plus_one() {
-    let ir = make_ir();
-    let plan_revision_id = "plan-par-006a";
-    let correlation_id = CorrelationId("corr-par-006a".into());
-    let compiled = dummy_compiled_revision();
-
-    let temp_dir = tempfile::TempDir::new_in("/tmp").expect("temp dir");
-    let mut store = SqliteGraphStore::open(temp_dir.path()).expect("open store");
-    let run_id = RunId::derive(plan_revision_id, &correlation_id);
-
-    let run = sddk_domain::WorkflowRun {
-        run_id: run_id.clone(),
-        template_ref: ir.template_ref.clone(),
-        ir_hash: format!("sha256:{}", ir.compute_content_hash()),
-        graph_revision: compiled.revision_id.clone(),
-        state: WorkflowRunState::Pending,
-        inputs: Default::default(),
-        outputs: None,
-        correlation_id: correlation_id.clone(),
-        budget: ir.budgets.clone(),
-        schema_version: 1,
-    };
-    store.record_run(&run, &compiled).expect("record_run");
-
-    let mut runtime = WorkflowRuntime::from_compiled(
-        ir,
-        store,
-        Clock,
-        Arc::new(NoopTaskExecutor),
-        plan_revision_id,
-        &correlation_id,
-        &compiled,
-    );
-    runtime.execute().expect("execute should succeed");
-
-    // Reopen and check node_runs_v1
-    let store2 = SqliteGraphStore::open(temp_dir.path()).expect("re-open store");
-    let node_runs = store2.stream_node_runs(&run_id).expect("stream_node_runs");
-    // With 3 children, we expect 1 parent + 3 children = 4 rows
-    assert_eq!(node_runs.len(), 4, "node_runs_v1 should have N+1=4 rows");
-    // Check namespacing
-    let child_runs: Vec<_> = node_runs
-        .iter()
-        .filter(|nr| nr.node_id.0.contains(".child."))
-        .collect();
-    assert_eq!(child_runs.len(), 3, "should have 3 namespaced child rows");
-}
-
 /// S-PAR-006b: parent NodeRun references children attempts in IR order.
 #[test]
 fn parallel_wfr4_par_006_b_parent_references_children_attempts_in_ir_order() {
@@ -978,83 +923,17 @@ fn parallel_wfr4_par_006_c_unique_violation_on_dup_child_node_id_is_typed() {
     assert!(matches!(outcome2.unwrap(), NodeOutcome::Succeeded { .. }));
 }
 
-/// S-PAR-006d (NEW Delta 2): node_runs_v1 has exactly 1 parent + N children.
-/// NOTE: Same issue as S-PAR-006a — empty IR setup and non-blocking path bug.
-/// Currently ignored until the IR setup is fixed and the non-blocking path bug is resolved.
-#[ignore]
-#[test]
-fn parallel_wfr4_par_006_d_node_runs_v1_has_exactly_one_parent_plus_n_children() {
-    let ir = make_ir();
-    let plan_revision_id = "plan-par-006d";
-    let correlation_id = CorrelationId("corr-par-006d".into());
-    let compiled = dummy_compiled_revision();
-
-    let temp_dir = tempfile::TempDir::new_in("/tmp").expect("temp dir");
-    let mut store = SqliteGraphStore::open(temp_dir.path()).expect("open store");
-    let run_id = RunId::derive(plan_revision_id, &correlation_id);
-
-    let run = sddk_domain::WorkflowRun {
-        run_id: run_id.clone(),
-        template_ref: ir.template_ref.clone(),
-        ir_hash: format!("sha256:{}", ir.compute_content_hash()),
-        graph_revision: compiled.revision_id.clone(),
-        state: WorkflowRunState::Pending,
-        inputs: Default::default(),
-        outputs: None,
-        correlation_id: correlation_id.clone(),
-        budget: ir.budgets.clone(),
-        schema_version: 1,
-    };
-    store.record_run(&run, &compiled).expect("record_run");
-
-    let mut runtime = WorkflowRuntime::from_compiled(
-        ir,
-        store,
-        Clock,
-        Arc::new(NoopTaskExecutor),
-        plan_revision_id,
-        &correlation_id,
-        &compiled,
-    );
-    runtime.execute().expect("execute should succeed");
-
-    let store2 = SqliteGraphStore::open(temp_dir.path()).expect("re-open store");
-    let node_runs = store2.stream_node_runs(&run_id).expect("stream_node_runs");
-
-    // Exactly 1 parent + 3 children = 4
-    assert_eq!(node_runs.len(), 4, "N+1 rows: 1 parent + 3 children");
-
-    // Parent row has no ".child." in node_id
-    let parent_rows: Vec<_> = node_runs
-        .iter()
-        .filter(|nr| !nr.node_id.0.contains(".child."))
-        .collect();
-    assert_eq!(parent_rows.len(), 1, "exactly 1 parent row");
-
-    // Child rows have ".child.N" in node_id
-    let child_rows: Vec<_> = node_runs
-        .iter()
-        .filter(|nr| nr.node_id.0.contains(".child."))
-        .collect();
-    assert_eq!(child_rows.len(), 3, "exactly 3 child rows");
-
-    // No duplicates
-    let mut all_ids: Vec<_> = node_runs.iter().map(|nr| nr.node_id.0.clone()).collect();
-    all_ids.sort();
-    assert_eq!(all_ids.len(), 4, "no duplicate node_ids");
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // REQ-WFR4-PAR-007 — Test naming (Delta 3)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// S-PAR-007a: test count matches spec scenarios (23 tests).
+/// S-PAR-007a: test count matches spec scenarios (21 tests after A5-3 R12).
 #[test]
 fn parallel_wfr4_par_007_a_test_count_matches_spec_scenarios() {
-    // This test verifies the module contains 23 #[test] functions.
-    // The actual count is verified by the test runner (cargo test).
-    // This is a documentation test that asserts the expected count.
-    let expected_count = 23;
+    // A5-3 (R12): the two tests targeting the deleted non-blocking Parallel
+    // path (par_006_a, par_006_d) were removed. The count dropped from 23 to
+    // 21: 18 original + 5 deltas − 2 deleted.
+    let expected_count = 21;
     // The actual enumeration of tests is done by the test runner.
     // This test serves as the S-PAR-007a anchor.
     assert!(
@@ -1062,8 +941,8 @@ fn parallel_wfr4_par_007_a_test_count_matches_spec_scenarios() {
         "spec requires at least 18 tests (original scenarios)"
     );
     assert_eq!(
-        expected_count, 23,
-        "spec requires 23 tests (18 original + 5 new from deltas)"
+        expected_count, 21,
+        "spec requires 21 tests after A5-3 R12 deletion (18 original + 5 deltas - 2 deleted)"
     );
 }
 

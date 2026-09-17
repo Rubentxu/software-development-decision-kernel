@@ -1192,168 +1192,20 @@ impl Operator for Parallel {
 
         let max_conc = apply_default_max_concurrency(self.max_concurrency, self.children.len());
 
-        // -- Non-blocking path (cycle-20+ runtime): use pending_sender ----------
-        if let Some(pending_sender) = ctx.pending_sender.take() {
-            // Clone everything we need from ctx BEFORE spawning the thread
-            let children: Vec<Arc<dyn Operator>> = self.children.clone();
-            let ir = Arc::clone(&ctx.ir);
-            let run = Arc::clone(&ctx.run);
-            let node_run = Arc::clone(&ctx.node_run); // Clone BEFORE spawn so ctx not needed inside
-            let clock = ctx.clock.clone();
-            let executor = Arc::clone(&ctx.executor);
-            let semaphore = Arc::new(CountingSemaphore::new(max_conc as usize));
-            // REQ-WFR4-PAR-003: capture the REAL store for per-child record_attempt
-            let store = Arc::clone(&ctx.store);
-
-            std::thread::spawn(move || {
-                let (tx, rx) = std::sync::mpsc::channel::<ChildResult>();
-                let mut handles: Vec<std::thread::JoinHandle<()>> =
-                    Vec::with_capacity(children.len());
-
-                // Spawn children
-                for (i, child) in children.iter().enumerate() {
-                    let sem = Arc::clone(&semaphore);
-                    let tx = tx.clone();
-                    let child = Arc::clone(child);
-
-                    // Arc clone of parent node_run (read-only inside child per Pure contract).
-                    let node_run = Arc::clone(&node_run);
-                    // PER-CHILD scratch store (not shared with parent, not shared across children).
-                    let store: ScratchStore = Arc::new(Mutex::new(Box::new(ScratchGraphStore)));
-
-                    // Build child context WITHOUT pending_sender (child reports to supervisor)
-                    let mut child_ctx = OperatorContext {
-                        node_run,
-                        ir: Arc::clone(&ir),
-                        run: Arc::clone(&run),
-                        store,
-                        clock: clock.clone(),
-                        executor: Arc::clone(&executor),
-                        pending_sender: None, // child → supervisor, not direct to runtime
-                    };
-
-                    let handle = std::thread::spawn(move || {
-                        sem.acquire();
-                        let _release_on_exit = PermitGuard {
-                            sem: Arc::clone(&sem),
-                        };
-                        let started_at = child_ctx.clock.now();
-                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            child.evaluate(&mut child_ctx)
-                        }));
-                        let ended_at = child_ctx.clock.now();
-                        let outcome = match result {
-                            Ok(Ok(outcome)) => Ok(outcome),
-                            Ok(Err(e)) => Err(e),
-                            Err(_) => Err(OperatorError::ChildPanicked { child_index: i }),
-                        };
-                        let _ = tx.send(ChildResult {
-                            child_index: i,
-                            outcome,
-                            started_at,
-                            ended_at,
-                        });
-                    });
-                    handles.push(handle);
-                }
-                drop(tx); // close sender; rx drains when all children send
-
-                // Drain results and forward to runtime
-                let mut collected: BTreeMap<usize, ChildResult> = BTreeMap::new();
-                for _ in 0..children.len() {
-                    match rx.recv() {
-                        Ok(result) => {
-                            collected.insert(result.child_index, result);
-                        }
-                        Err(_) => break,
-                    }
-                }
-
-                // Join all handles
-                for h in handles {
-                    let _ = h.join();
-                }
-
-                // REQ-WFR4-PAR-003: persist per-child attempts BEFORE forwarding to runtime.
-                // Supervisor is the sole writer for Parallel per-child attempts.
-                // NOTE: we iterate .values() (no remove) so collected remains intact for forwarding.
-                for result in collected.values() {
-                    let attempt =
-                        build_attempt(&node_id, &run.run_id, result.child_index, result, &clock);
-                    // Push to node_run.attempts for replay-safety
-                    {
-                        let mut nr = node_run.lock().unwrap();
-                        nr.attempts.push(attempt.clone());
-                    }
-                    // Persist via the real store (FIND-482479 closure).
-                    // IdempotencyConflict = already persisted (safe no-op).
-                    let mut store_lock = store.lock().unwrap();
-                    match store_lock.record_attempt(&attempt) {
-                        Ok(()) => {}
-                        Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
-                            // Already recorded — safe no-op
-                        }
-                        Err(e) => {
-                            // Real error — log but don't fail the parent
-                            eprintln!(
-                                "parallel supervisor: record_attempt failed for child {}: {}",
-                                result.child_index, e
-                            );
-                        }
-                    }
-                    // REQ-WFR4-PAR-006 (Delta 2): persist per-child NodeRun with namespaced node_id.
-                    // After this, node_runs_v1 contains N+1 rows (1 parent + N children).
-                    let child_node_id =
-                        NodeId(format!("{}.child.{}", node_id.0, result.child_index));
-                    let child_state = match &attempt.outcome {
-                        Some(sddk_domain::workflow_run::AttemptOutcome::Succeeded { .. }) => {
-                            sddk_domain::workflow_run::NodeRunState::Completed
-                        }
-                        Some(sddk_domain::workflow_run::AttemptOutcome::Failed { .. }) => {
-                            sddk_domain::workflow_run::NodeRunState::Failed
-                        }
-                        Some(sddk_domain::workflow_run::AttemptOutcome::Pending { .. }) => {
-                            sddk_domain::workflow_run::NodeRunState::Pending
-                        }
-                        Some(sddk_domain::workflow_run::AttemptOutcome::Timeout)
-                        | Some(sddk_domain::workflow_run::AttemptOutcome::Cancelled) => {
-                            sddk_domain::workflow_run::NodeRunState::Failed
-                        }
-                        None => sddk_domain::workflow_run::NodeRunState::Pending,
-                    };
-                    let child_node_run = NodeRun {
-                        node_id: child_node_id,
-                        state: child_state,
-                        dependencies: Default::default(),
-                        attempts: vec![attempt.clone()],
-                        expansion_permissions: Default::default(),
-                        schema_version: 1,
-                    };
-                    match store_lock.record_node_run_for_run(&run.run_id, &child_node_run) {
-                        Ok(()) => {}
-                        Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
-                            // Already recorded (restart replay) — safe no-op
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "parallel supervisor: record_node_run_for_run failed for child {}: {}",
-                                result.child_index, e
-                            );
-                        }
-                    }
-                }
-
-                // Forward to runtime via pending_sender
-                for result in collected.into_values() {
-                    let _ = pending_sender.send(result);
-                }
-            });
-
-            // Return Pending immediately — runtime will drain results on next tick
-            return Ok(NodeOutcome::Pending {
-                checkpoint: CheckpointHandle::Channel { resume_token: 0 },
-            });
-        }
+        // -- Non-blocking path (cycle-20+ runtime): REMOVED in A5-3 -----------
+        // The non-blocking Parallel supervisor (multi-tick resume via
+        // `pending_sender`) was abandoned in Delta-4 because the
+        // sender-drop bug prevented child rows from being recorded in
+        // `node_runs_v1`. The runtime now forces `pending_sender = None`
+        // for Parallel operators, exercising only the blocking path
+        // below. The two ignored tests at
+        // `tests/parallel_spec_scenarios.rs::parallel_wfr4_par_006_{a,d}`
+        // test this dead path + an empty IR; they were deleted in A5-3
+        // (R12). See `docs/architecture/a5/A5-3-PLAN.md` for the
+        // falsification record. The `pending_sender` field on
+        // `OperatorContext` is retained as a public API placeholder for
+        // any future async resume work; the runtime never sets it to
+        // `Some` today.
 
         // -- Blocking path (tests without runtime): original behavior ------------
         // 1. Build mpsc + semaphore

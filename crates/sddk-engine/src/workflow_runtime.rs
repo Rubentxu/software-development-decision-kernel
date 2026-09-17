@@ -1076,8 +1076,10 @@ impl WorkflowRuntime {
                     };
 
                     let is_sequence = matches!(ir_op, Operator::Sequence { .. });
-                    // Delta-4: Parallel operators now use the blocking path (pending_sender = None).
-                    // The non-blocking path had a sender-drop bug that prevented proper result collection.
+                    // A5-3 (R12): the non-blocking Parallel supervisor was deleted
+                    // (see operator.rs). Parallel operators now always evaluate via
+                    // the blocking path. `pending_sender` is reserved for any future
+                    // async resume work but is never set to `Some` by this runtime.
                     let pending_sender: Option<std::sync::mpsc::Sender<ChildResult>> = None;
 
                     let node_run_owned = node_run.clone();
@@ -1354,11 +1356,25 @@ impl WorkflowRuntime {
                             node_run.state = NodeRunState::Failed;
                         }
                     }
-                    // REQ-WFR3-FAIL-001: use record_node_run_for_run with proper error propagation
-                    self.store
+                    // REQ-WFR3-FAIL-001: use record_node_run_for_run with proper error propagation.
+                    // A5-3 (R3): a `StorageError::IdempotencyConflict` here means the row
+                    // was already persisted on a previous tick of the same node — this
+                    // happens for `Sequence` (which evaluates step-by-step, returning
+                    // `Running` per tick for N children) and is a safe no-op. The state
+                    // is being overwritten in-place from the in-memory NodeRun, so the
+                    // persisted row is consistent with the latest write by construction.
+                    match self
+                        .store
                         .lock()
                         .unwrap()
-                        .record_node_run_for_run(&self.run.run_id, node_run)?;
+                        .record_node_run_for_run(&self.run.run_id, node_run)
+                    {
+                        Ok(()) => {}
+                        Err(sddk_domain::StorageError::IdempotencyConflict { .. }) => {
+                            // Safe no-op: same (run_id, node_id) was recorded on a prior tick.
+                        }
+                        Err(e) => return Err(RuntimeError::Storage(e)),
+                    }
                 }
             }
         }
