@@ -124,14 +124,26 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     die "working tree is dirty — commit or stash before releasing"
 fi
 
-# Confirm the last commit matches chore(release): bump version — without it
-# the pre-push hook will reject the next push. We refuse early to keep the
-# loop tight.
+# A5-1 §6 — release admission is semantic, not textual.
+#
+# A release HEAD MUST carry a REAL (and monotonically increasing)
+# [workspace.package] version change relative to its first parent. The commit
+# subject may follow the `chore(release): bump version` convention, but the
+# subject alone is NEVER the contract: an empty ceremonial marker commit is
+# refused here, so it can never be mistaken for a real release.
+#
+# Single source of the invariant: `scripts/lib/release_admission.sh`.
+# shellcheck source=lib/release_admission.sh
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/release_admission.sh"
+
 LAST_SUBJECT="$(git log -1 --format=%s)"
+ADMISSION="$(release_admission_check HEAD)" \
+    || die "release admission refused: $ADMISSION — release requires a real, monotonic [workspace.package] version bump"
 if ! echo "$LAST_SUBJECT" | grep -qE '^chore\(release\): bump version'; then
-    die "HEAD is not a chore(release) commit: $LAST_SUBJECT"
+    warn "HEAD subject does not follow the 'chore(release): bump version' convention: $LAST_SUBJECT"
 fi
-ok "on main, clean tree, HEAD is a release commit"
+ok "on main, clean tree, release admission: $ADMISSION"
 
 # --- 1. tests ---
 
@@ -159,6 +171,10 @@ if [ "$SKIP_TESTS" = "0" ]; then
         # SC2034/SC2329 warnings outside our gate (they're exercised by
         # their own dynamic tests, not by shellcheck).
         shellcheck --severity=warning scripts/release-receipt.sh \
+            scripts/lib/release_admission.sh \
+            githooks/pre-push \
+            tests/test_release_admission.sh \
+            tests/test_push_prevention_hook.sh \
             tests/test_release_receipt_authority.sh \
             tests/test_authority_helper_lockstep.sh \
             tests/test_adr_promotion_format.sh \
@@ -168,11 +184,13 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_tag_anchoring.sh \
             tests/test_vault_mirror_auto.sh \
             || die "shellcheck failed"
-        ok "shellcheck clean (scope: release-receipt + 8 cross-crate/M9+ tests)"
+        ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
-    for t in tests/test_release_receipt_authority.sh \
+    for t in tests/test_push_prevention_hook.sh \
+             tests/test_release_admission.sh \
+             tests/test_release_receipt_authority.sh \
              tests/test_authority_helper_lockstep.sh \
              tests/test_adr_promotion_format.sh \
              tests/test_advisory_lint_explanations.sh \
@@ -232,7 +250,7 @@ elif git merge-base --is-ancestor "$REMOTE_MAIN" "$LOCAL_HEAD"; then
     if git push origin main >/dev/null 2>&1; then
         ok "pushed HEAD to origin/main: $LOCAL_HEAD"
     else
-        die "git push origin main failed — pre-push hook rejected the push; ensure HEAD is chore(release): bump version"
+        die "git push origin main failed — pre-push hook rejected the push; ensure HEAD carries a real [workspace.package] version bump or a docs-only range"
     fi
 else
     # origin/main is ahead of HEAD → concurrent advance. Fail closed.

@@ -1,35 +1,35 @@
 #!/bin/bash
-# pre-push hook — Mechanical push prevention for CL-APPLY-PUSH-DISCIPLINE
-# INC: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
+# pre-push hook — mechanical push admission for refs/heads/main
 #
-# Rejects push to refs/heads/main unless the commit range contains EITHER:
-#   (1) a release commit with subject matching ^chore\(release\): bump version, OR
-#   (2) a semantic version bump in Cargo.toml ([workspace.package] or any [package])
-#       detectable via `git diff` of `Cargo.toml` across the commit range.
+# Cluster: CL-APPLY-PUSH-DISCIPLINE
+# INCs:    INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
+#          INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT (closed by A5-1)
+#          INC-A5-PUSH-RELEASE-MARKER-FRICTION      (closed by A5-1)
 #
-# This dual-condition prevents the "ceremonial marker commit" smell documented in
-# INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT (option 3 implementation):
-#   - Real release commits bump Cargo.toml → pass via semantic check (no marker needed)
-#   - Post-release doc handoffs with empty `chore(release): bump version to v1.167.8
-#     (already published)` markers pass via the regex check (preserves existing flow)
-#   - Plain doc commits without any version bump AND without a marker still fail
-#     (preserves the original safety guarantee)
+# A5-1 contract — a push to refs/heads/main is ACCEPTED iff:
+#
+#   (A) the pushed range contains a REAL `[workspace.package] version`
+#       change in Cargo.toml (old != new), OR
+#   (B) the pushed range is NON-EMPTY and EVERY changed path lies inside the
+#       closed documentation-only allowlist (docs/**, .sddk/followups/**).
+#
+# The commit SUBJECT is NOT authority. This kills the ceremonial
+# `chore(release): bump version (cycle close marker)` empty commit: an empty
+# range has zero changed paths, so (B) fails (count > 0 is required) and (A)
+# finds no version change.
 #
 # stdin contract: <local_ref> <local_sha> <remote_ref> <remote_sha>
-# zero remote_sha means new branch (range is HEAD..local_sha)
-# zero local_sha means branch deletion
+# zero remote_sha  -> new branch (range = whole history)
+# zero local_sha   -> branch deletion
 
 DISCIPLINE="apply/release split"
 INC_IDENTIFIER="INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION"
-INC_CEREMONIAL="INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT"
-RELEASE_COMMIT_REGEX="^chore\(release\): bump version"
+INC_CEREMONIAL="INC-A5-PUSH-RELEASE-MARKER-FRICTION"
 CARGO_TOML_PATH="Cargo.toml"
 
-# Helper: extract the [workspace.package] version from Cargo.toml content.
-# Returns empty string if no workspace.package.version key is found.
+# Extract the [workspace.package] version from Cargo.toml content (empty if absent).
 cargo_workspace_version() {
     local cargo_content="$1"
-    # Use awk to extract the workspace.package.version block
     echo "$cargo_content" | awk '
         /^\[workspace\.package\]/ { in_block=1; next }
         /^\[/ { in_block=0 }
@@ -41,84 +41,102 @@ cargo_workspace_version() {
     '
 }
 
-# Read all lines from stdin
+# Closed documentation-only allowlist. Keep small and explicit.
+is_allowed_path() {
+    case "$1" in
+        docs/* | .sddk/followups/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# remote_ref is part of the stdin contract but is not needed here.
+# shellcheck disable=SC2034
 while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
-    # Skip empty lines
     [[ -z "$local_ref" ]] && continue
 
-    # Only check pushes to refs/heads/main
+    # Only gate pushes to refs/heads/main.
     if [[ "$local_ref" != "refs/heads/main" ]]; then
-        # Non-main refs always pass
         continue
     fi
 
-    # Check for deletion of main: local_sha is all zeros (40 zeros)
+    # Deletion of main is never allowed.
     if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
         echo "ERROR: Deletion of main is not allowed. ($DISCIPLINE | $INC_IDENTIFIER)" >&2
         exit 1
     fi
 
-    # Determine the commits to check
-    # If remote_sha is zeros, it's a new branch — check all commits on the branch
-    # Otherwise, check commits from the remote's current state to the new state
+    # Resolve the commit range to check.
+    NEW_BRANCH=0
     if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
-        # New branch: check if HEAD contains a release commit
-        COMMITS_TO_CHECK=$(git rev-list --reverse HEAD 2>/dev/null)
+        NEW_BRANCH=1
+        COMMITS_TO_CHECK=$(git rev-list --reverse "$local_sha" 2>/dev/null)
+    elif git rev-parse --verify --quiet "$remote_sha" >/dev/null 2>&1; then
+        COMMITS_TO_CHECK=$(git rev-list --reverse "$remote_sha..$local_sha" 2>/dev/null)
     else
-        # Existing branch: check if the new commits contain a release commit
-        # Use git merge-base to find the common ancestor
-        if git rev-parse --verify --quiet "$remote_sha" >/dev/null 2>&1; then
-            # remote_sha exists locally — check commits between it and local_sha
-            COMMITS_TO_CHECK=$(git rev-list --reverse "$remote_sha..$local_sha" 2>/dev/null)
-        else
-            # remote_sha does not exist locally (e.g. file:// protocol)
-            # Be conservative: check all commits on the branch
-            COMMITS_TO_CHECK=$(git rev-list --reverse HEAD 2>/dev/null)
-        fi
+        # remote_sha unknown locally (e.g. file:// protocol) — be conservative.
+        COMMITS_TO_CHECK=$(git rev-list --reverse "$local_sha" 2>/dev/null)
     fi
 
-    # Check 1: any commit in the range matches the release commit regex (subject)
-    RELEASE_COMMIT=""
-    for commit in $COMMITS_TO_CHECK; do
-        msg=$(git log -1 --format=%s "$commit" 2>/dev/null)
-        if echo "$msg" | grep -qE "$RELEASE_COMMIT_REGEX"; then
-            RELEASE_COMMIT="$msg"
-            break
-        fi
-    done
-
-    # Check 2: any commit in the range bumps [workspace.package] version in Cargo.toml
-    SEM_VER_BUMP=""
-    for commit in $COMMITS_TO_CHECK; do
-        # Compare Cargo.toml content before and after this commit
-        prev_sha=$(git rev-parse "$commit^" 2>/dev/null || true)
-        if [[ -z "$prev_sha" ]]; then
-            continue
-        fi
-        old_cargo=$(git show "$prev_sha:$CARGO_TOML_PATH" 2>/dev/null || true)
-        new_cargo=$(git show "$commit:$CARGO_TOML_PATH" 2>/dev/null || true)
-        if [[ -z "$old_cargo" || -z "$new_cargo" ]]; then
-            continue
-        fi
-        old_ver=$(cargo_workspace_version "$old_cargo")
-        new_ver=$(cargo_workspace_version "$new_cargo")
-        if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
-            SEM_VER_BUMP="$commit ($old_ver -> $new_ver)"
-            break
-        fi
-    done
-
-    if [[ -z "$RELEASE_COMMIT" && -z "$SEM_VER_BUMP" ]]; then
-        echo "ERROR: Push to main rejected — no release marker or Cargo.toml version bump found in range." >&2
+    # §3 — an empty range is never admissible.
+    if [[ -z "$COMMITS_TO_CHECK" ]]; then
+        echo "ERROR: Push to main rejected — empty commit range (nothing to admit)." >&2
         echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
-        echo "ERROR: A push to main requires EITHER:" >&2
-        echo "ERROR:   (1) a commit with subject matching:  $RELEASE_COMMIT_REGEX" >&2
-        echo "ERROR:   (2) a commit that bumps [workspace.package] version in $CARGO_TOML_PATH" >&2
-        echo "ERROR: ($DISCIPLINE | $INC_CEREMONIAL) — see INC-M7-9 for remediation options" >&2
         exit 1
     fi
 
+    # (A) real [workspace.package] version change in the range.
+    VERSION_BUMP=""
+    for commit in $COMMITS_TO_CHECK; do
+        prev_sha=$(git rev-parse --verify --quiet "$commit^" 2>/dev/null || true)
+        [[ -z "$prev_sha" ]] && continue
+        old_cargo=$(git show "$prev_sha:$CARGO_TOML_PATH" 2>/dev/null || true)
+        new_cargo=$(git show "$commit:$CARGO_TOML_PATH" 2>/dev/null || true)
+        [[ -z "$old_cargo" || -z "$new_cargo" ]] && continue
+        old_ver=$(cargo_workspace_version "$old_cargo")
+        new_ver=$(cargo_workspace_version "$new_cargo")
+        if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
+            VERSION_BUMP="$commit ($old_ver -> $new_ver)"
+            break
+        fi
+    done
+
+    if [[ -n "$VERSION_BUMP" ]]; then
+        continue
+    fi
+
+    # (B) non-empty range entirely inside the docs-only allowlist.
+    if [[ "$NEW_BRANCH" -eq 1 ]]; then
+        CHANGED_PATHS=$(git ls-tree -r --name-only "$local_sha" 2>/dev/null)
+    else
+        # --no-renames so a rename contributes BOTH the old and the new path;
+        # a rename that touches any non-allowed path is therefore rejected.
+        CHANGED_PATHS=$(git diff --name-only --no-renames "$remote_sha" "$local_sha" 2>/dev/null)
+    fi
+
+    CHANGED_COUNT=0
+    DOCS_ONLY=1
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        CHANGED_COUNT=$((CHANGED_COUNT + 1))
+        if ! is_allowed_path "$path"; then
+            DOCS_ONLY=0
+        fi
+    done <<<"$CHANGED_PATHS"
+
+    # §3 — require count > 0 so the empty set cannot pass vacuously.
+    if [[ "$CHANGED_COUNT" -gt 0 && "$DOCS_ONLY" -eq 1 ]]; then
+        continue
+    fi
+
+    echo "ERROR: Push to main rejected — no real release contract found in range." >&2
+    echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
+    echo "ERROR: A push to main requires EITHER:" >&2
+    echo "ERROR:   (1) a commit that changes [workspace.package] version in $CARGO_TOML_PATH" >&2
+    echo "ERROR:   (2) a NON-EMPTY range whose changed paths are all under: docs/**, .sddk/followups/**" >&2
+    echo "ERROR: A commit subject (e.g. 'chore(release): bump version') is NOT authority." >&2
+    echo "ERROR: ($INC_CEREMONIAL) — see INC-M7-9 for remediation options" >&2
+    exit 1
+
 done
 
-# All checks passed
 exit 0

@@ -1,6 +1,21 @@
+---
+id: ADR-0127-VERIFIEDBY-TARGETS-EVIDENCEREF
+status: accepted
+supersedes_history: false
+proposed_at: 2026-09-17
+accepted_at: 2026-09-17
+accepted_by_cycle: p-63676b11dc0ef88f/a4-s15r-verifiedby-evidence-provenance
+implementation_evidence:
+  - "crates/sddk-engine/src/architecture_graph/types.rs (EvidenceRef node kind)"
+  - "crates/sddk-engine/src/architecture_graph/overlay.rs (VerifiedBy repointing)"
+  - "crates/sddk-engine/tests/a4_s15r_verifiedby_evidence_provenance.rs (21 pins)"
+  - ".sddk/cycles/p-63676b11dc0ef88f-a4-s15r-verifiedby-evidence-provenance/spec.md"
+superseded_by: []
+---
+
 # ADR-0127 — VerifiedBy Targets EvidenceRef (Provenance Model Correction)
 
-> Status: **proposed** (this cycle promotes it to **accepted** after release)
+> Status: **accepted** (A4-S15R shipped v1.169.65; acceptance closed by A4-5C)
 > Cycle: `p-63676b11dc0ef88f/a4-s15r-verifiedby-evidence-provenance`
 > Spec:  `arch-spec-016` part-2, `arch-spec-017` part-2
 > Companion ADRs: ADR-0121 (Architecture WHY traversal — explicitly

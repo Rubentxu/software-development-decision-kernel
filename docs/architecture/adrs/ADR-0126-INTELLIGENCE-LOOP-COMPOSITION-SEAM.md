@@ -1,6 +1,21 @@
+---
+id: ADR-0126-INTELLIGENCE-LOOP-COMPOSITION-SEAM
+status: accepted
+supersedes_history: false
+proposed_at: 2026-09-17
+accepted_at: 2026-09-17
+accepted_by_cycle: p-63676b11dc0ef88f/a4-5a-intelligence-loop-composition
+implementation_evidence:
+  - "crates/sddk-engine/src/intelligence_loop/mod.rs (composition seam; two public types)"
+  - "crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs (16 pins)"
+  - "docs/architecture/specs/arch-spec-047-a4-intelligence-loop.md"
+  - ".sddk/cycles/p-63676b11dc0ef88f-a4-5a-intelligence-loop-composition/spec.md"
+superseded_by: []
+---
+
 # ADR-0126 — Intelligence Loop Composition Seam
 
-> Status: **proposed** (this cycle promotes it to **accepted** after release)
+> Status: **accepted** (A4-5a shipped v1.169.64; acceptance closed by A4-5C)
 > Cycle: `p-63676b11dc0ef88f/a4-5a-intelligence-loop-composition`
 > Spec:  `arch-spec-047` part-1
 > Companion ADRs: ADR-0123 (Verify/DebVerify are distinct),

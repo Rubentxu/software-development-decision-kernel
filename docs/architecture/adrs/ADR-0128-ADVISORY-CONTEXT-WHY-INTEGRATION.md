@@ -1,6 +1,21 @@
+---
+id: ADR-0128-ADVISORY-CONTEXT-WHY-INTEGRATION
+status: accepted
+supersedes_history: false
+proposed_at: 2026-09-17
+accepted_at: 2026-09-17
+accepted_by_cycle: p-63676b11dc0ef88f/a4-5b-advisory-context-why-integration
+implementation_evidence:
+  - "crates/sddk-engine/src/intelligence_advisory/mod.rs (AdvisoryWhy seam)"
+  - "crates/sddk-engine/tests/a4_5b_advisory_context_why.rs (20 tests)"
+  - "docs/architecture/specs/arch-spec-047-a4-intelligence-loop.md"
+  - ".sddk/cycles/p-63676b11dc0ef88f-a4-5b-advisory-context-why-integration/spec.md"
+superseded_by: []
+---
+
 # ADR-0128 — Advisory Context + WHY Integration (absence ≠ negation)
 
-> Status: **proposed** (this cycle promotes it to **accepted** after release)
+> Status: **accepted** (A4-5b shipped v1.169.66; acceptance closed by A4-5C)
 > Cycle: `p-63676b11dc0ef88f/a4-5b-advisory-context-why-integration`
 > Spec:  `arch-spec-047` part-2
 > Companion ADRs: ADR-0126 (Intelligence Loop composition seam),
