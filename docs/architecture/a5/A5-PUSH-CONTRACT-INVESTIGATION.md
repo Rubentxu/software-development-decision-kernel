@@ -99,3 +99,49 @@ semantic one.
   but **not** the root cause; they must be resolved independently.
 - This cycle (A5-PLAN) records the behaviour as evidence and does **not**
   change `release.sh` or the hook (§24).
+
+## Empirical evidence collected this cycle
+
+A5-PLAN is docs-only and publishes **no** release. Instead of the
+ceremonial marker, its two commits (`docs(a5): …` + an honest
+`chore: advance workspace version to 1.169.69 (A5-PLAN docs integration)`)
+were pushed in **one** push:
+
+```text
+$ git push origin main
+   4086347..a020b0b  main -> main        # accepted, no marker commit
+```
+
+The hook accepted the push via its **semantic** `[workspace.package]`
+version-bump check — exactly the desired behaviour. This confirms:
+
+- The friction is **not** the hook's regex per se; it is the
+  **sequencing** where `release.sh` pushes the bump commit before the
+  handoff docs exist, splitting one logical close into two ranges.
+- A single push whose range contains the version bump needs no marker.
+
+This is direct support for remediation option **2** (single-push release):
+the ceremony disappears when the release commit and its documentation
+land together.
+
+### Reproduction of the rejection (OBSERVED)
+
+A **subsequent** docs-only push (a one-line correction to this very
+document) was then attempted and **rejected** by the hook:
+
+```text
+$ git commit -m "docs(a5): record push-contract empirical evidence"
+$ git push origin main
+ERROR: Push to main rejected — no release marker or Cargo.toml version bump found in range.
+ERROR: (apply/release split | INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION)
+ERROR: A push to main requires EITHER:
+ERROR:   (1) a commit with subject matching:  ^chore\(release\): bump version
+ERROR:   (2) a commit that bumps [workspace.package] version in Cargo.toml
+ERROR: (apply/release split | INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT) ...
+```
+
+So the friction is **reproduced**: once the bump commit has been pushed,
+*any* later documentation correction to `main` needs a new
+version bump (or a ceremonial marker). The fix (option 1 or 2) is
+required so that honest documentation does not have to masquerade as a
+release.
