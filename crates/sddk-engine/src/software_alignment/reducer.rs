@@ -59,6 +59,22 @@ enum BindingOutcome {
 }
 
 /// Typed target an `ExplicitConstraint` binds to.
+///
+/// **A4-3R2 — strict namespace.** Each arm binds only to observations
+/// whose subject is the **same-namespace typed** variant:
+///
+/// - `SingleAuthority(ComponentRef)` binds only
+///   `ObservationSubject::Component(ComponentRef)` by newtype
+///   equality. It does NOT bind `Unit` or `Entity` subjects, even
+///   when the inner strings match.
+/// - `UniqueOwner(EntityRef)` binds only
+///   `ObservationSubject::Entity(EntityRef)` by newtype equality.
+/// - `ForbiddenDependency` continues to bind via
+///   `SoftwareRelation` whose endpoints are
+///   `SoftwareEntityRef::Component` (typed equality).
+///
+/// See `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` (closed by A4-3R2) and
+/// `arch-spec-042 §3.1`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum BindingTarget {
     /// `ForbiddenDependency { from, to }`. Match against observations
@@ -69,12 +85,12 @@ enum BindingTarget {
         to: crate::architectural_contract::ComponentRef,
     },
     /// `SingleAuthority(component)`. Match against observations whose
-    /// `ObservationSubject::Unit` has the same string identity as
-    /// `component`.
+    /// subject is `ObservationSubject::Component(component)` by
+    /// newtype equality (A4-3R2).
     SingleAuthority(crate::architectural_contract::ComponentRef),
     /// `UniqueOwner(entity)`. Match against observations whose
-    /// `ObservationSubject::Unit` has the same string identity as
-    /// `entity`.
+    /// subject is `ObservationSubject::Entity(entity)` by newtype
+    /// equality (A4-3R2).
     UniqueOwner(crate::architectural_contract::EntityRef),
 }
 
@@ -120,8 +136,23 @@ fn derive_binding_outcome(
 
 /// Compare an observation's typed subject against a `BindingTarget`.
 ///
-/// Returns `true` only on structural typed equality. **Never** reads
-/// rendered text or string-contains matching.
+/// Returns `true` only on **same-namespace typed equality**. **Never**
+/// reads rendered text, string-contains matching, prefix stripping,
+/// case folding, or any other cross-namespace string equivalence
+/// (A4-3R2 — closes `FU-A4-3R-TARGET-NAMESPACE-BRIDGE`).
+///
+/// The arms are exhaustive on the binding shape:
+///
+/// - `ForbiddenDependency` binds only `ObservationSubject::SoftwareRelation`
+///   with matching `Component`→`Component` endpoints.
+/// - `SingleAuthority` binds only `ObservationSubject::Component` with
+///   the same `ComponentRef` value.
+/// - `UniqueOwner` binds only `ObservationSubject::Entity` with the
+///   same `EntityRef` value.
+///
+/// Any other pair of `(target, subject)` returns `false` — including
+/// `SingleAuthority` against a `Unit` subject (the legacy pre-A4-3R2
+/// path; now impossible).
 fn observation_matches_target(o: &SoftwareObservation, target: &BindingTarget) -> bool {
     match (target, &o.subject) {
         (
@@ -131,10 +162,8 @@ fn observation_matches_target(o: &SoftwareObservation, target: &BindingTarget) -
             r.from == SoftwareEntityRef::Component(from.clone())
                 && r.to == SoftwareEntityRef::Component(to.clone())
         }
-        (BindingTarget::SingleAuthority(c), ObservationSubject::Unit(u)) => {
-            u.as_str() == c.as_str()
-        }
-        (BindingTarget::UniqueOwner(e), ObservationSubject::Unit(u)) => u.as_str() == e.as_str(),
+        (BindingTarget::SingleAuthority(c), ObservationSubject::Component(obs_c)) => obs_c == c,
+        (BindingTarget::UniqueOwner(e), ObservationSubject::Entity(obs_e)) => obs_e == e,
         _ => false,
     }
 }
@@ -530,15 +559,20 @@ pub fn reduce_alignment(
 // ── helpers ────────────────────────────────────────────────────────────
 
 fn subject_canonical_tag(o: &SoftwareObservation) -> String {
-    // For `SoftwareRelation` subjects we use the rendered form so
-    // contract ids embedded in unit names (`auth:single`) can be
-    // matched by the constraint evaluator. Identity is unaffected:
-    // observations are derived independently from this helper.
-    use crate::observation::ObservationSubject;
-    match &o.subject {
-        ObservationSubject::SoftwareRelation(r) => r.render(),
-        _ => o.subject.canonical_tag(),
-    }
+    // A4-3R2: identity uses the typed canonical only. The previous
+    // branch that emitted `SoftwareRelation::render()` for the subject
+    // key was a relic of the pre-A4-3R substring-collision rule (it
+    // embedded rendered text into identity). Closing
+    // `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` removes the only reason that
+    // branch existed: the binding is now strictly typed and cannot
+    // collide on rendered text. The `canonical_tag()` method already
+    // returns `relation:<relation_id>` which is namespaced and stable.
+    //
+    // **Side-effect:** `AlignmentAssessment.derive_id` will differ for
+    // any assessment whose `ContradictionMarker.subjects` carries a
+    // `SoftwareRelation` subject. This is a correctness fix; document
+    // it in the cycle handoff.
+    o.subject.canonical_tag()
 }
 
 fn relation_kind(o: &SoftwareObservation) -> crate::semantic_kind::CoreRelationKind {

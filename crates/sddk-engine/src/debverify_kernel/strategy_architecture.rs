@@ -126,17 +126,28 @@ fn subject_for_audit_finding(
     f: &crate::architecture_debverify::DebVerifyFinding,
 ) -> super::types::SubjectId {
     use crate::observation::SoftwareEntityRef;
+    // A4-3R2: contract_ids and subjects are derived from the audit
+    // finding, not from observation subjects. Use the typed
+    // `Component` / `Entity` constructors instead of the legacy
+    // `SoftwareUnitRef` constructor (which collapsed distinct
+    // namespaces — see `FU-A4-3R-TARGET-NAMESPACE-BRIDGE`).
+    //
+    // `ComponentRef::new` and `EntityRef::new` reject empty strings
+    // (see `architectural_contract::types`). When the raw value is
+    // empty or whitespace-only, fall back to a sentinel
+    // `<unknown>` so construction never panics. The fallback stays
+    // inside the typed namespace — it never reaches identity.
+    let component_or_unknown = |raw: &str| -> crate::architectural_contract::ComponentRef {
+        crate::architectural_contract::ComponentRef::new(raw.to_string()).unwrap_or_else(|_| {
+            crate::architectural_contract::ComponentRef::new("<unknown>".to_string())
+                .expect("ComponentRef::new always succeeds for ASCII")
+        })
+    };
     if let Some(first_contract) = f.contract_ids.first() {
-        SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
-            first_contract.as_str(),
-        ))
+        SoftwareEntityRef::Component(component_or_unknown(first_contract.as_str()))
     } else if let Some(first_subject) = f.subjects.first() {
-        SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
-            first_subject.clone(),
-        ))
+        SoftwareEntityRef::Component(component_or_unknown(first_subject))
     } else {
-        SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
-            "<unknown>".to_string(),
-        ))
+        SoftwareEntityRef::Component(component_or_unknown("<unknown>"))
     }
 }

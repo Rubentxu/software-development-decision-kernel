@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use crate::architectural_contract::{ArchitecturalContract, ArchitectureClaim, ContractPayload};
 use crate::architecture_conformance::DeltaContractStatus;
 use crate::architecture_debverify::{DebVerifyAudit, FindingBasis};
-use crate::architecture_graph::{ArchitectureGraphOverlay, SoftwareUnitRef};
+use crate::architecture_graph::ArchitectureGraphOverlay;
 use crate::knowledge::MissingEvidence;
 use crate::observation::{ObservationSet, ObservationSubject, SoftwareEntityRef};
 use crate::semantic_graph::SemanticGraphProjection;
@@ -295,14 +295,20 @@ fn unit_scoped(contract: &ArchitecturalContract) -> bool {
 /// This is the join key between a contract and the observations that involve its
 /// subject. `BoundedCompatibility` and the other global kinds name no unit, so they
 /// have no endpoint and therefore no observation can cover them.
+///
+/// **A4-3R2 — strict namespace.** `SingleAuthority` names a `ComponentRef`
+/// and the corresponding observation lives under
+/// `SoftwareEntityRef::Component`. `UniqueOwner` names an `EntityRef`
+/// and the corresponding observation lives under
+/// `SoftwareEntityRef::Entity`. The pre-A4-3R2 conversion to
+/// `SoftwareEntityRef::Unit` collapsed three distinct namespaces; the
+/// cross-namespace equivalence is forbidden by
+/// `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` (closed by A4-3R2) and
+/// `arch-spec-042 §3.1`.
 fn contract_entity(contract: &ArchitecturalContract) -> Option<SoftwareEntityRef> {
     match contract.payload() {
-        ContractPayload::SingleAuthority(c) => {
-            Some(SoftwareEntityRef::Unit(SoftwareUnitRef::new(c.as_str())))
-        }
-        ContractPayload::UniqueOwner(e) => {
-            Some(SoftwareEntityRef::Unit(SoftwareUnitRef::new(e.as_str())))
-        }
+        ContractPayload::SingleAuthority(c) => Some(SoftwareEntityRef::Component(c.clone())),
+        ContractPayload::UniqueOwner(e) => Some(SoftwareEntityRef::Entity(e.clone())),
         _ => None,
     }
 }

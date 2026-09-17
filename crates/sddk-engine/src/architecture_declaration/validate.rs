@@ -47,6 +47,34 @@ fn convert_observations(
     };
 
     let basis_hash = KnowledgeBasis::empty(EventTime(0)).basis_hash().clone();
+    // A4-3R2 — strict namespace. The CLI infers the typed endpoint
+    // (Component / Entity / Unit) per observation: when a relation
+    // endpoint string is referenced by a declared contract as
+    // `SingleAuthority(component)` or `UniqueOwner(entity)`, the
+    // matching observation endpoint is `Component` / `Entity`; in every
+    // other case (and AC7 paradigm membership) it remains `Unit`.
+    //
+    // This avoids the pre-A4-3R2 cross-namespace equivalence that
+    // matched `Unit("comp:dup")` against `SingleAuthority(ComponentRef("comp:dup"))`
+    // via `as_str()`. Now both sides live in their own namespace and
+    // `for_entity` finds the observation through typed equality.
+    let mut component_endpoints: BTreeSet<String> = BTreeSet::new();
+    let mut entity_endpoints: BTreeSet<String> = BTreeSet::new();
+    for c in &decl.contracts {
+        match c.kind.trim() {
+            "single_authority" => {
+                if let Some(ref component) = c.component {
+                    component_endpoints.insert(component.clone());
+                }
+            }
+            "unique_owner" => {
+                if let Some(ref entity) = c.entity {
+                    entity_endpoints.insert(entity.clone());
+                }
+            }
+            _ => {}
+        }
+    }
     let mut out = Vec::with_capacity(decl.observations.len());
     for o in &decl.observations {
         for endpoint in [&o.from, &o.to] {
@@ -86,15 +114,29 @@ fn convert_observations(
                 value: o.evidence.clone(),
             });
         }
+        // A4-3R2 — typed endpoint constructor (Unit stays the
+        // default; Component / Entity selected when the endpoint is
+        // named by a SingleAuthority / UniqueOwner contract).
+        let endpoint_ref = |raw: &str| -> SoftwareEntityRef {
+            if component_endpoints.contains(raw) {
+                SoftwareEntityRef::Component(
+                    ComponentRef::new(raw.to_string()).expect("ascii component ref"),
+                )
+            } else if entity_endpoints.contains(raw) {
+                SoftwareEntityRef::Entity(
+                    EntityRef::new(raw.to_string()).expect("ascii entity ref"),
+                )
+            } else {
+                SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
+                    raw.to_string(),
+                ))
+            }
+        };
         out.push(SoftwareObservation::declare(
             ObservationSubject::SoftwareRelation(SoftwareRelation::new(
-                SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
-                    o.from.clone(),
-                )),
+                endpoint_ref(&o.from),
                 kind,
-                SoftwareEntityRef::Unit(crate::architecture_graph::SoftwareUnitRef::new(
-                    o.to.clone(),
-                )),
+                endpoint_ref(&o.to),
             )),
             stance,
             EvidenceRef::new(EvidenceKind::Adhoc, evidence_locator),

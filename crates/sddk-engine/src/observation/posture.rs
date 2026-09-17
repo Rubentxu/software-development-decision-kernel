@@ -63,7 +63,7 @@
 
 use serde::Serialize;
 
-use crate::architectural_contract::ContractId;
+use crate::architectural_contract::{ComponentRef, ContractId, EntityRef};
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::knowledge::KnowledgeId;
 
@@ -74,9 +74,17 @@ use super::types::{ObservationId, RelationId};
 /// Canonical subject of an evidence resolution.
 ///
 /// `Relation` is the historical A4-0 case (resolution around a
-/// `RelationId`). `Unit`, `Contract`, and `Knowledge` are first-class
-/// targets introduced by A4-4bR; lenses may emit contributions on any
-/// variant without inventing synthetic `SoftwareRelation`s.
+/// `RelationId`). `Unit`, `Component`, `Entity`, `Contract`, and
+/// `Knowledge` are first-class targets; lenses may emit contributions
+/// on any variant without inventing synthetic `SoftwareRelation`s.
+///
+/// **A4-3R2 — strict namespace.** `Unit`, `Component`, and `Entity`
+/// are three distinct identity namespaces. Equal inner strings across
+/// namespaces do NOT imply target equivalence. The `kind_tag()` and
+/// `canonical_tag()` methods emit a literal namespace prefix that is
+/// part of identity; it is never stripped. See
+/// `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` (closed by A4-3R2) and
+/// `arch-spec-042 §3.1`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "subject")]
 pub enum ObservationTargetRef {
@@ -84,6 +92,10 @@ pub enum ObservationTargetRef {
     Relation(RelationId),
     /// A software unit on its own (AC7 paradigm-lens target).
     Unit(SoftwareUnitRef),
+    /// An architectural component on its own (A4-3R2).
+    Component(ComponentRef),
+    /// A domain entity on its own (A4-3R2).
+    Entity(EntityRef),
     /// An architectural contract.
     Contract(ContractId),
     /// A knowledge assertion.
@@ -97,6 +109,8 @@ impl ObservationTargetRef {
         match self {
             ObservationTargetRef::Relation(_) => "relation",
             ObservationTargetRef::Unit(_) => "unit",
+            ObservationTargetRef::Component(_) => "component",
+            ObservationTargetRef::Entity(_) => "entity",
             ObservationTargetRef::Contract(_) => "contract",
             ObservationTargetRef::Knowledge(_) => "knowledge",
         }
@@ -110,6 +124,8 @@ impl ObservationTargetRef {
         match self {
             ObservationTargetRef::Relation(r) => format!("relation:{}", r.as_str()),
             ObservationTargetRef::Unit(u) => format!("unit:{}", u.as_str()),
+            ObservationTargetRef::Component(c) => format!("component:{}", c.as_str()),
+            ObservationTargetRef::Entity(e) => format!("entity:{}", e.as_str()),
             ObservationTargetRef::Contract(c) => format!("contract:{}", c.as_str()),
             ObservationTargetRef::Knowledge(k) => format!("knowledge:{}", k.as_str()),
         }

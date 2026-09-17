@@ -208,6 +208,38 @@ fn obs_unit_affirm(unit: &str, ev: &str) -> SoftwareObservation {
     )
 }
 
+// A4-3R2 — Component subject helper. Used by `pin_r04` (Component
+// binds `SingleAuthority(ComponentRef)`) and `a4_3r2_*` corpus.
+fn obs_component_deny(component: &str, ev: &str) -> SoftwareObservation {
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, ev.to_string());
+    SoftwareObservation::declare(
+        ObservationSubject::Component(component_ref(component)),
+        ObservationStance::Denies,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "a4_3r_test_producer",
+    )
+}
+
+// A4-3R2 — Entity subject helper. Used by `pin_r06` (Entity binds
+// `UniqueOwner(EntityRef)`) and `a4_3r2_*` corpus.
+fn obs_entity_affirm(entity: &str, ev: &str) -> SoftwareObservation {
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, ev.to_string());
+    SoftwareObservation::declare(
+        ObservationSubject::Entity(entity_ref(entity)),
+        ObservationStance::Affirms,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "a4_3r_test_producer",
+    )
+}
+
 fn obs_relation(
     from_unit: &str,
     kind: CoreRelationKind,
@@ -306,14 +338,20 @@ fn pin_r03_forbidden_dependency_no_match_when_target_is_unrelated() {
     );
 }
 
-// ─── Pin 4: SingleAuthority matches on Unit (Denies) ──────────────────────
+// ─── Pin 4: SingleAuthority binds Component (Denies) ──────────────────────
 
 #[test]
-fn pin_r04_single_authority_matches_unit_denies() {
+fn pin_r04_single_authority_binds_component_subject() {
+    // A4-3R2 — strict namespace: the observation subject is
+    // `ObservationSubject::Component(ComponentRef("comp:auth"))`. The
+    // pre-A4-3R2 test (`pin_r04_single_authority_matches_unit_denies`)
+    // emitted `ObservationSubject::Unit(SoftwareUnitRef("comp:auth"))`
+    // and asserted binding via cross-namespace `as_str()` equality;
+    // that path is closed by `FU-A4-3R-TARGET-NAMESPACE-BRIDGE`.
     let c = constraint("k1", "sa:auth", MustDirection::Must);
     let i = intent("repo:test", vec![c]);
     let mut obs = ObservationSet::new();
-    obs.insert(obs_unit_deny("comp:auth", "ev:sa:deny"));
+    obs.insert(obs_component_deny("comp:auth", "ev:sa:deny"));
     let contract = contract_single_authority("sa:auth", "comp:auth");
     let r =
         reduce_alignment(&i, &empty_basis(), &obs, &[contract], &[], EventTime(0)).expect("reduce");
@@ -348,14 +386,20 @@ fn pin_r05_single_authority_no_match_on_substring_collision() {
     );
 }
 
-// ─── Pin 6: UniqueOwner matches entity ────────────────────────────────────
+// ─── Pin 6: UniqueOwner binds Entity (Affirms under MustNot) ──────────────
 
 #[test]
-fn pin_r06_unique_owner_matches_entity() {
+fn pin_r06_unique_owner_binds_entity_subject() {
+    // A4-3R2 — strict namespace: the observation subject is
+    // `ObservationSubject::Entity(EntityRef("entity:X"))`. The
+    // pre-A4-3R2 test (`pin_r06_unique_owner_matches_entity`) emitted
+    // `ObservationSubject::Unit(SoftwareUnitRef("entity:X"))` and
+    // asserted binding via cross-namespace `as_str()` equality; that
+    // path is closed by `FU-A4-3R-TARGET-NAMESPACE-BRIDGE`.
     let c = constraint("k1", "uo:x", MustDirection::MustNot);
     let i = intent("repo:test", vec![c]);
     let mut obs = ObservationSet::new();
-    obs.insert(obs_unit_affirm("entity:X", "ev:uo:affirm"));
+    obs.insert(obs_entity_affirm("entity:X", "ev:uo:affirm"));
     let contract = contract_unique_owner("uo:x", "entity:X");
     let r =
         reduce_alignment(&i, &empty_basis(), &obs, &[contract], &[], EventTime(0)).expect("reduce");

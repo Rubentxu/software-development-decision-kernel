@@ -9,6 +9,23 @@ use crate::evidence_ref::EvidenceRef;
 use crate::knowledge::{BasisHash, KmtStatus, KnowledgeId};
 use crate::semantic_kind::CoreRelationKind;
 
+// A4-3R2 REQ: `ObservationSubject` and `ObservationTargetRef` share
+// the same closed set of namespaces. Any new namespace added here MUST
+// be added in both. Namespaces currently in scope:
+//
+//   SoftwareRelation  (RelationId)            — binary, A4-0
+//   Unit              (SoftwareUnitRef)        — unary, A4-4bR (AC7 paradigm)
+//   Component         (ComponentRef)           — unary, A4-3R2 (was missing)
+//   Entity            (EntityRef)              — unary, A4-3R2 (was missing)
+//   Contract          (ContractId)             — unary, A4-4bR
+//   Knowledge         (KnowledgeId)            — unary, A4-4bR
+//
+// Adding a new namespace requires updating `SoftwareEntityRef` (the
+// relation-endpoint side) and the kind/canonical_tag maps in both
+// enums. Cross-namespace equivalence is FORBIDDEN — see
+// `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` (closed by A4-3R2) and
+// `arch-spec-042 §3.1`.
+
 /// An endpoint of a software relation.
 ///
 /// Reuses the refs that already exist rather than minting parallel ones: those
@@ -207,13 +224,30 @@ impl ObservationBasis {
 }
 
 /// What the observation is about.
+///
+/// Three **distinct identity namespaces** participate as unary subjects:
+/// `Unit`, `Component`, `Entity`. They share no equivalence under any
+/// circumstance — equal inner strings across namespaces do NOT imply
+/// subject equivalence. See `FU-A4-3R-TARGET-NAMESPACE-BRIDGE` and
+/// `arch-spec-042 §3.1` (closed by A4-3R2).
+///
+/// `SoftwareRelation`, `Contract`, and `Knowledge` are the other three
+/// subjects. The total is six closed variants.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "subject")]
 pub enum ObservationSubject {
     /// A software relation — the case `why architecture` needs.
     SoftwareRelation(SoftwareRelation),
-    /// A software unit on its own.
+    /// A software unit on its own (AC7 paradigm-lens target).
     Unit(SoftwareUnitRef),
+    /// An architectural component on its own.
+    /// Added by A4-3R2 — the same-namespace typed binding target for
+    /// `ContractPayload::SingleAuthority(ComponentRef)`.
+    Component(ComponentRef),
+    /// A domain entity on its own.
+    /// Added by A4-3R2 — the same-namespace typed binding target for
+    /// `ContractPayload::UniqueOwner(EntityRef)`.
+    Entity(EntityRef),
     /// An architectural contract.
     Contract(ContractId),
     /// A knowledge assertion.
@@ -222,10 +256,16 @@ pub enum ObservationSubject {
 
 impl ObservationSubject {
     /// Canonical identity contribution.
+    ///
+    /// Always namespaced: `unit:x` never collides with `component:x`
+    /// or `entity:x`. The prefix is the namespace; it is part of
+    /// identity, never stripped.
     pub fn canonical_tag(&self) -> String {
         match self {
             ObservationSubject::SoftwareRelation(r) => format!("relation:{}", r.id().as_str()),
             ObservationSubject::Unit(u) => format!("unit:{}", u.as_str()),
+            ObservationSubject::Component(c) => format!("component:{}", c.as_str()),
+            ObservationSubject::Entity(e) => format!("entity:{}", e.as_str()),
             ObservationSubject::Contract(c) => format!("contract:{}", c.as_str()),
             ObservationSubject::Knowledge(k) => format!("knowledge:{}", k.as_str()),
         }
@@ -401,12 +441,13 @@ impl ObservationSet {
     }
 
     /// Every observation whose subject matches the given target ref
-    /// (A4-4bR: subject-general lookup).
+    /// (A4-4bR: subject-general lookup; A4-3R2: strict namespace).
     ///
-    /// The target kind is part of the match: a Unit observation never
-    /// matches a Relation target and vice versa. The lookup is
-    /// deterministic; observations are returned in canonical order
-    /// (the set already sorts on insert).
+    /// The target kind is part of the match: a `Unit` observation never
+    /// matches a `Component` target and vice versa, even when the
+    /// inner strings are identical. The lookup is deterministic;
+    /// observations are returned in canonical order (the set already
+    /// sorts on insert).
     pub fn for_subject(
         &self,
         target: &crate::observation::ObservationTargetRef,
@@ -417,6 +458,8 @@ impl ObservationSet {
             .filter(|o| match (target, &o.subject) {
                 (T::Relation(r), ObservationSubject::SoftwareRelation(obs_r)) => obs_r.id() == *r,
                 (T::Unit(u), ObservationSubject::Unit(obs_u)) => obs_u == u,
+                (T::Component(c), ObservationSubject::Component(obs_c)) => obs_c == c,
+                (T::Entity(e), ObservationSubject::Entity(obs_e)) => obs_e == e,
                 (T::Contract(c), ObservationSubject::Contract(obs_c)) => obs_c == c,
                 (T::Knowledge(k), ObservationSubject::Knowledge(obs_k)) => obs_k == k,
                 _ => false,
@@ -428,6 +471,14 @@ impl ObservationSet {
     ///
     /// This is what lets `why architecture` connect an observation to the contract
     /// subject it constrains.
+    ///
+    /// **A4-3R2 — strict namespace**: the match uses
+    /// `SoftwareEntityRef::canonical_tag()` for the requested entity AND
+    /// for the candidate observation subject, via the same
+    /// `SoftwareEntityRef` constructor on each side. There is no
+    /// string-prefix stripping. `Unit("auth")` matches `Unit("auth")`;
+    /// `Component("auth")` matches `Component("auth")`; they never
+    /// cross.
     pub fn for_entity(&self, entity: &SoftwareEntityRef) -> Vec<&SoftwareObservation> {
         let tag = entity.canonical_tag();
         self.observations
@@ -437,7 +488,13 @@ impl ObservationSet {
                     r.from.canonical_tag() == tag || r.to.canonical_tag() == tag
                 }
                 ObservationSubject::Unit(u) => {
-                    u.as_str() == entity.canonical_tag().trim_start_matches("unit:")
+                    SoftwareEntityRef::Unit(u.clone()).canonical_tag() == tag
+                }
+                ObservationSubject::Component(c) => {
+                    SoftwareEntityRef::Component(c.clone()).canonical_tag() == tag
+                }
+                ObservationSubject::Entity(e) => {
+                    SoftwareEntityRef::Entity(e.clone()).canonical_tag() == tag
                 }
                 _ => false,
             })

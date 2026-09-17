@@ -229,16 +229,23 @@ fn heuristic_disagreement_yields_tension_not_misaligned() {
 fn explicit_must_contradiction_yields_misaligned() {
     // A4-3R: typed binding. The constraint must declare the contract's
     // `SingleAuthority("auth:single")` payload; the observation must
-    // match the typed target (Unit("auth:single") for SingleAuthority).
+    // match the typed target `Component("auth:single")`.
+    //
+    // A4-3R2 — strict namespace: the observation subject is
+    // `ObservationSubject::Component(ComponentRef("auth:single"))`,
+    // not `Unit`. Pre-A4-3R2 the reducer used `as_str()` cross-namespace
+    // equality (`FU-A4-3R-TARGET-NAMESPACE-BRIDGE`); that path was
+    // closed by A4-3R2. The pre-fix test asserted that a
+    // `Unit("auth:single")` observation binds to
+    // `SingleAuthority("auth:single")`; with the bug fixed it would
+    // have failed. This test asserts the corrected typed binding.
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let i = intent("repo:test", vec![c.clone()]);
     let mut obs = ObservationSet::new();
     let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
     let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:single")),
         ObservationStance::Denies,
         evidence,
         ObservationOrigin::DeterministicLocal,
@@ -304,9 +311,7 @@ fn accepted_violation_with_decision_ref_yields_accepted() {
     let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
     let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:single")),
         ObservationStance::Denies,
         evidence,
         ObservationOrigin::DeterministicLocal,
@@ -338,16 +343,14 @@ fn accepted_violation_with_decision_ref_yields_accepted() {
 
 #[test]
 fn accepted_without_revisit_trigger_does_not_become_review_due() {
-    // A4-3R: typed binding via SingleAuthority.
+    // A4-3R: typed binding via SingleAuthority on Component subjects.
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let i = intent("repo:test", vec![c]);
     let mut obs = ObservationSet::new();
     let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
     let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:single")),
         ObservationStance::Denies,
         evidence,
         ObservationOrigin::DeterministicLocal,
@@ -386,9 +389,7 @@ fn review_due_uses_input_evaluation_time_not_wall_clock() {
     let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
     let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:single")),
         ObservationStance::Denies,
         evidence,
         ObservationOrigin::DeterministicLocal,
@@ -457,7 +458,7 @@ fn conflicted_evidence_does_not_resolve_latest_wins() {
 
 #[test]
 fn finding_order_does_not_change_assessment_identity() {
-    // A4-3R: typed binding via SingleAuthority for both constraints.
+    // A4-3R: typed binding via SingleAuthority on Component subjects.
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let c2 = constraint("k2", "auth:other", MustDirection::MustNot);
     let i = intent("repo:test", vec![c.clone(), c2.clone()]);
@@ -465,9 +466,7 @@ fn finding_order_does_not_change_assessment_identity() {
     let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
     let ev1 = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:single")),
         ObservationStance::Denies,
         ev1,
         ObservationOrigin::DeterministicLocal,
@@ -477,9 +476,7 @@ fn finding_order_does_not_change_assessment_identity() {
     ));
     let ev2 = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:affirm:auth:other".to_string());
     obs.insert(SoftwareObservation::declare(
-        crate::observation::ObservationSubject::Unit(
-            crate::architecture_graph::SoftwareUnitRef::new("auth:other".to_string()),
-        ),
+        crate::observation::ObservationSubject::Component(component_ref("auth:other")),
         ObservationStance::Affirms,
         ev2,
         ObservationOrigin::DeterministicLocal,

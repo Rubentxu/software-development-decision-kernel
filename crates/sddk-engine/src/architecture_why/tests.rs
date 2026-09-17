@@ -685,11 +685,23 @@ fn observation_set_for(subject: &str) -> crate::observation::ObservationSet {
         "input:test",
     );
     let mut set = ObservationSet::new();
+    // A4-3R2 — strict namespace: the observation's `from` is a
+    // `SoftwareEntityRef::Component(ComponentRef)`, matching the
+    // `contract_entity(SingleAuthority(ComponentRef))` lookup. Pre-A4-3R2
+    // the test emitted `SoftwareEntityRef::Unit(SoftwareUnitRef)` for
+    // both endpoints and relied on the cross-namespace string equivalence
+    // closed by `FU-A4-3R-TARGET-NAMESPACE-BRIDGE`.
     set.insert(SoftwareObservation::declare(
         ObservationSubject::SoftwareRelation(SoftwareRelation::new(
-            SoftwareEntityRef::Unit(SoftwareUnitRef::new(subject)),
+            SoftwareEntityRef::Component(
+                crate::architectural_contract::ComponentRef::new(subject.to_string())
+                    .expect("ascii component ref"),
+            ),
             CoreRelationKind::DependsOn,
-            SoftwareEntityRef::Unit(SoftwareUnitRef::new("comp:log")),
+            SoftwareEntityRef::Component(
+                crate::architectural_contract::ComponentRef::new("comp:log".to_string())
+                    .expect("ascii component ref"),
+            ),
         )),
         ObservationStance::Affirms,
         crate::evidence_ref::EvidenceRef::new(
