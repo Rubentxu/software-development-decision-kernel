@@ -24,16 +24,120 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::architectural_contract::ArchitecturalContract;
+use crate::architectural_contract::{ArchitecturalContract, ContractPayload};
 use crate::knowledge::{EventTime, KnowledgeBasis};
-use crate::observation::{ObservationSet, ObservationStance, SoftwareObservation};
+use crate::observation::{
+    ObservationSet, ObservationStance, ObservationSubject, SoftwareEntityRef, SoftwareObservation,
+};
 
 use super::types::{
     AcceptedDecision, AcceptedSubject, AlignmentAssessment, AlignmentFinding, AlignmentFindingId,
     AlignmentFindingKind, AlignmentScope, AlignmentState, ArchitecturalIntentSnapshot,
-    ContradictionMarker, ExplicitConstraint, FindingLocation, IntentSnapshotId, MustDirection,
-    RevisitTrigger,
+    ContractViolationCause, ContradictionMarker, ExplicitConstraint, FindingCause, FindingLocation,
+    IntentSnapshotId, MustDirection, RevisitTrigger,
 };
+
+// ─── Typed constraint binding (A4-3R) ───────────────────────────────────────
+
+/// What the reducer needs to bind an observation to an `ExplicitConstraint`.
+///
+/// Three outcomes:
+/// - `UnknownContract` → contract ref not in `contracts: &[ArchitecturalContract]`.
+///   The constraint is **silently dropped** (no false match against absent
+///   contract).
+/// - `Binding(target)` → typed target to compare against observations.
+/// - `NonBinding { kind_tag }` → contract kind without a safely comparable
+///   target; emit a `ContractViolation` with `cause: EvidenceGap { kind_tag }`.
+enum BindingOutcome {
+    UnknownContract,
+    Binding(BindingTarget),
+    NonBinding {
+        /// Canonical short tag of the `ContractKind` (e.g. "projection_only").
+        /// Serialised; cross-version stable.
+        kind_tag: String,
+    },
+}
+
+/// Typed target an `ExplicitConstraint` binds to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum BindingTarget {
+    /// `ForbiddenDependency { from, to }`. Match against observations
+    /// whose `ObservationSubject::SoftwareRelation` joins the same
+    /// `SoftwareEntityRef`s on the same `CoreRelationKind`.
+    ForbiddenDependency {
+        from: crate::architectural_contract::ComponentRef,
+        to: crate::architectural_contract::ComponentRef,
+    },
+    /// `SingleAuthority(component)`. Match against observations whose
+    /// `ObservationSubject::Unit` has the same string identity as
+    /// `component`.
+    SingleAuthority(crate::architectural_contract::ComponentRef),
+    /// `UniqueOwner(entity)`. Match against observations whose
+    /// `ObservationSubject::Unit` has the same string identity as
+    /// `entity`.
+    UniqueOwner(crate::architectural_contract::EntityRef),
+}
+
+/// Look up a contract by id and derive the typed binding outcome.
+fn derive_binding_outcome(
+    constraint: &ExplicitConstraint,
+    contracts: &[ArchitecturalContract],
+) -> BindingOutcome {
+    let Some(contract) = contracts
+        .iter()
+        .find(|c| *c.id() == constraint.contract_ref)
+    else {
+        return BindingOutcome::UnknownContract;
+    };
+    match &contract.payload() {
+        ContractPayload::ForbiddenDependency { from, to, .. } => {
+            BindingOutcome::Binding(BindingTarget::ForbiddenDependency {
+                from: from.clone(),
+                to: to.clone(),
+            })
+        }
+        ContractPayload::SingleAuthority(component) => {
+            BindingOutcome::Binding(BindingTarget::SingleAuthority(component.clone()))
+        }
+        ContractPayload::UniqueOwner(entity) => {
+            BindingOutcome::Binding(BindingTarget::UniqueOwner(entity.clone()))
+        }
+        // Non-binding kinds: no comparable observation target.
+        ContractPayload::ProjectionOnly { .. } => BindingOutcome::NonBinding {
+            kind_tag: "projection_only".to_string(),
+        },
+        ContractPayload::BoundedCompatibility { .. } => BindingOutcome::NonBinding {
+            kind_tag: "bounded_compatibility".to_string(),
+        },
+        ContractPayload::ProviderBoundary { .. } => BindingOutcome::NonBinding {
+            kind_tag: "provider_boundary".to_string(),
+        },
+        ContractPayload::Extension { kind, .. } => BindingOutcome::NonBinding {
+            kind_tag: kind.as_str().to_string(),
+        },
+    }
+}
+
+/// Compare an observation's typed subject against a `BindingTarget`.
+///
+/// Returns `true` only on structural typed equality. **Never** reads
+/// rendered text or string-contains matching.
+fn observation_matches_target(o: &SoftwareObservation, target: &BindingTarget) -> bool {
+    match (target, &o.subject) {
+        (
+            BindingTarget::ForbiddenDependency { from, to },
+            ObservationSubject::SoftwareRelation(r),
+        ) => {
+            r.from == SoftwareEntityRef::Component(from.clone())
+                && r.to == SoftwareEntityRef::Component(to.clone())
+        }
+        (BindingTarget::SingleAuthority(c), ObservationSubject::Unit(u)) => {
+            u.as_str() == c.as_str()
+        }
+        (BindingTarget::UniqueOwner(e), ObservationSubject::Unit(u)) => u.as_str() == e.as_str(),
+        _ => false,
+    }
+}
 
 /// Errors that the reducer can return. Each error variant is a typed
 /// failure of a closed contract rule.
@@ -150,6 +254,7 @@ pub fn reduce_alignment(
                 location,
                 contract_ref: None,
                 constraint_ref: None,
+                cause: FindingCause::None,
                 evidence_observations: affirms
                     .iter()
                     .chain(denies.iter())
@@ -174,37 +279,84 @@ pub fn reduce_alignment(
             MustDirection::Must => ObservationStance::Denies,
             MustDirection::MustNot => ObservationStance::Affirms,
         };
-        for o in &obs_vec {
-            let subject_key = subject_canonical_tag(o);
-            let relation = relation_kind(o);
-            // Match either the contract's named subject or any
-            // observation that names the contract id as a tag.
-            let matches_subject = subject_key.contains(constraint.contract_ref.as_str())
-                || o.subject
-                    .canonical_tag()
-                    .contains(constraint.contract_ref.as_str());
-            if matches_subject && o.stance == affirmative_stance {
+        // A4-3R: typed binding replaces the previous string-based
+        // `subject_key.contains(constraint.contract_ref.as_str())` rule.
+        let binding = derive_binding_outcome(constraint, contracts);
+        match binding {
+            BindingOutcome::UnknownContract => {
+                // No contract payload to evaluate against; the constraint
+                // is silently dropped. **No** finding of any kind.
+                // (Pre-A4-3R this branch would have produced a
+                // ContractViolation against any subject whose canonical_tag
+                // happened to contain the contract_ref as a substring.)
+                continue;
+            }
+            BindingOutcome::NonBinding { kind_tag } => {
+                // The contract kind has no safely comparable observation
+                // target. Emit exactly one typed `ContractViolation`
+                // finding with `cause: EvidenceGap { kind_tag }` and
+                // empty `evidence_observations` (the gap IS the finding;
+                // there is no observation to cite).
+                //
+                // **Constraint**: must NOT match on string similarity,
+                // must NOT be filtered by observation stance, must NOT
+                // require observations at all.
+                let location = FindingLocation {
+                    relation: None,
+                    subjects: vec![format!("constraint:{}", constraint.id.as_str())],
+                };
                 let mut finding = AlignmentFinding {
                     id: AlignmentFindingId(String::new()),
                     kind: AlignmentFindingKind::ContractViolation,
-                    location: FindingLocation {
-                        relation: Some(relation),
-                        subjects: vec![subject_key.clone()],
-                    },
+                    location,
                     contract_ref: Some(constraint.contract_ref.clone()),
                     constraint_ref: Some(constraint.id.clone()),
-                    evidence_observations: vec![o.id.clone()],
+                    cause: FindingCause::ContractViolation(ContractViolationCause::EvidenceGap {
+                        kind_tag,
+                    }),
+                    evidence_observations: vec![],
                 };
                 finding.id = finding.derive_id();
-                if finding.contract_ref.is_none() {
-                    return Err(ReductionError::ContractViolationMissingContractRef {
-                        finding_id: finding.id.clone(),
-                        location: finding.location.clone(),
-                    });
-                }
-                let fid = finding.id.clone();
                 findings.push(finding);
-                violating_observations.insert(fid);
+                // No observation was violated; do NOT insert into
+                // `violating_observations` (it's keyed on observation ids).
+                continue;
+            }
+            BindingOutcome::Binding(target) => {
+                for o in &obs_vec {
+                    if !observation_matches_target(o, &target) {
+                        continue;
+                    }
+                    if o.stance != affirmative_stance {
+                        continue;
+                    }
+                    let relation = relation_kind(o);
+                    let subject_key = subject_canonical_tag(o);
+                    let mut finding = AlignmentFinding {
+                        id: AlignmentFindingId(String::new()),
+                        kind: AlignmentFindingKind::ContractViolation,
+                        location: FindingLocation {
+                            relation: Some(relation),
+                            subjects: vec![subject_key.clone()],
+                        },
+                        contract_ref: Some(constraint.contract_ref.clone()),
+                        constraint_ref: Some(constraint.id.clone()),
+                        cause: FindingCause::ContractViolation(
+                            ContractViolationCause::ContradictsMust,
+                        ),
+                        evidence_observations: vec![o.id.clone()],
+                    };
+                    finding.id = finding.derive_id();
+                    if finding.contract_ref.is_none() {
+                        return Err(ReductionError::ContractViolationMissingContractRef {
+                            finding_id: finding.id.clone(),
+                            location: finding.location.clone(),
+                        });
+                    }
+                    let fid = finding.id.clone();
+                    findings.push(finding);
+                    violating_observations.insert(fid);
+                }
             }
         }
     }

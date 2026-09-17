@@ -6,7 +6,9 @@
 // Twenty-plus pin tests covering the falsification list from the
 // A4-3 spec. Each test names the REQ it pins.
 
-use crate::architectural_contract::{ContractId, DecisionRef};
+use crate::architectural_contract::{
+    ArchitecturalContract, ComponentRef, ContractId, DecisionRef, Revision, SpecRef,
+};
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::evidence_ref::{EvidenceKind, EvidenceRef as UniEvidenceRef};
 use crate::knowledge::{BasisHash, EventTime, KnowledgeBasis};
@@ -119,6 +121,32 @@ fn decision_ref(s: &str) -> DecisionRef {
     DecisionRef::Decision(s.to_string())
 }
 
+// ── A4-3R helpers: typed ArchitecturalContract builders ───────────────────
+
+fn component_ref(s: &str) -> ComponentRef {
+    ComponentRef::new(s.to_string()).expect("ascii component ref")
+}
+
+fn spec_ref(s: &str) -> SpecRef {
+    SpecRef::Spec(s.to_string())
+}
+
+fn revision(s: &str) -> Revision {
+    Revision::new(s.to_string()).expect("ascii revision")
+}
+
+fn contract_single_authority(id: &str, owner: &str) -> ArchitecturalContract {
+    ArchitecturalContract::declare_single_authority(
+        contract_id(id),
+        component_ref(owner),
+        decision_ref("DEC-TEST"),
+        spec_ref("SPEC-TEST"),
+        revision("rev-1"),
+        EventTime(0),
+    )
+    .expect("single authority contract")
+}
+
 // ─── 1: no_evidence_yields_unknown_not_aligned ────────────────────────
 
 #[test]
@@ -199,17 +227,28 @@ fn heuristic_disagreement_yields_tension_not_misaligned() {
 
 #[test]
 fn explicit_must_contradiction_yields_misaligned() {
+    // A4-3R: typed binding. The constraint must declare the contract's
+    // `SingleAuthority("auth:single")` payload; the observation must
+    // match the typed target (Unit("auth:single") for SingleAuthority).
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let i = intent("repo:test", vec![c.clone()]);
     let mut obs = ObservationSet::new();
-    // The constraint says "must". A `Denies` observation against the
-    // same subject is the contradicting evidence.
-    obs.insert(obs_deny(
-        "auth:single",
-        CoreRelationKind::DependsOn,
-        "caller:x",
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
+        ),
+        ObservationStance::Denies,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "test_producer",
     ));
-    let r = reduce_alignment(&i, &empty_basis(), &obs, &[], &[], EventTime(0)).expect("reduce");
+    let contract = contract_single_authority("auth:single", "auth:single");
+    let r =
+        reduce_alignment(&i, &empty_basis(), &obs, &[contract], &[], EventTime(0)).expect("reduce");
     assert_eq!(r.state, AlignmentState::Misaligned);
     assert!(r.findings.iter().any(|f| matches!(
         f.kind,
@@ -258,38 +297,24 @@ fn accepted_decision_without_decision_ref_is_rejected() {
 
 #[test]
 fn accepted_violation_with_decision_ref_yields_accepted() {
+    // A4-3R: typed binding via SingleAuthority("auth:single").
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let i = intent("repo:test", vec![c]);
     let mut obs = ObservationSet::new();
-    obs.insert(obs_deny(
-        "auth:single",
-        CoreRelationKind::DependsOn,
-        "caller:x",
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
+        ),
+        ObservationStance::Denies,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "test_producer",
     ));
-    let accept = AcceptedDecision {
-        decision_ref: decision_ref("DEC-2026-09-16-001"),
-        accepts: AcceptedSubject::Constraint(ConstraintId::new("k1".to_string())),
-        revisit_trigger: None,
-        summary: None,
-    };
-    let r =
-        reduce_alignment(&i, &empty_basis(), &obs, &[], &[accept], EventTime(0)).expect("reduce");
-    // ACCEPTED takes precedence over MISALIGNED.
-    assert_eq!(r.state, AlignmentState::Accepted);
-}
-
-// ─── 7: accepted_without_revisit_trigger_does_not_become_review_due ───
-
-#[test]
-fn accepted_without_revisit_trigger_does_not_become_review_due() {
-    let c = constraint("k1", "auth:single", MustDirection::Must);
-    let i = intent("repo:test", vec![c]);
-    let mut obs = ObservationSet::new();
-    obs.insert(obs_deny(
-        "auth:single",
-        CoreRelationKind::DependsOn,
-        "caller:x",
-    ));
+    let contract = contract_single_authority("auth:single", "auth:single");
     let accept = AcceptedDecision {
         decision_ref: decision_ref("DEC-2026-09-16-001"),
         accepts: AcceptedSubject::Constraint(ConstraintId::new("k1".to_string())),
@@ -300,7 +325,48 @@ fn accepted_without_revisit_trigger_does_not_become_review_due() {
         &i,
         &empty_basis(),
         &obs,
-        &[],
+        &[contract],
+        &[accept],
+        EventTime(0),
+    )
+    .expect("reduce");
+    // ACCEPTED takes precedence over MISALIGNED.
+    assert_eq!(r.state, AlignmentState::Accepted);
+}
+
+// ─── 7: accepted_without_revisit_trigger_does_not_become_review_due ───
+
+#[test]
+fn accepted_without_revisit_trigger_does_not_become_review_due() {
+    // A4-3R: typed binding via SingleAuthority.
+    let c = constraint("k1", "auth:single", MustDirection::Must);
+    let i = intent("repo:test", vec![c]);
+    let mut obs = ObservationSet::new();
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
+        ),
+        ObservationStance::Denies,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "test_producer",
+    ));
+    let contract = contract_single_authority("auth:single", "auth:single");
+    let accept = AcceptedDecision {
+        decision_ref: decision_ref("DEC-2026-09-16-001"),
+        accepts: AcceptedSubject::Constraint(ConstraintId::new("k1".to_string())),
+        revisit_trigger: None,
+        summary: None,
+    };
+    let r = reduce_alignment(
+        &i,
+        &empty_basis(),
+        &obs,
+        &[contract],
         &[accept],
         EventTime(1_000_000),
     )
@@ -313,14 +379,24 @@ fn accepted_without_revisit_trigger_does_not_become_review_due() {
 
 #[test]
 fn review_due_uses_input_evaluation_time_not_wall_clock() {
+    // A4-3R: typed binding via SingleAuthority.
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let i = intent("repo:test", vec![c]);
     let mut obs = ObservationSet::new();
-    obs.insert(obs_deny(
-        "auth:single",
-        CoreRelationKind::DependsOn,
-        "caller:x",
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let evidence = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
+        ),
+        ObservationStance::Denies,
+        evidence,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "test_producer",
     ));
+    let contract = contract_single_authority("auth:single", "auth:single");
     let accept = AcceptedDecision {
         decision_ref: decision_ref("DEC-2026-09-16-001"),
         accepts: AcceptedSubject::Constraint(ConstraintId::new("k1".to_string())),
@@ -332,7 +408,7 @@ fn review_due_uses_input_evaluation_time_not_wall_clock() {
         &i,
         &empty_basis(),
         &obs,
-        &[],
+        std::slice::from_ref(&contract),
         std::slice::from_ref(&accept),
         EventTime(50),
     )
@@ -343,15 +419,22 @@ fn review_due_uses_input_evaluation_time_not_wall_clock() {
         &i,
         &empty_basis(),
         &obs,
-        &[],
+        std::slice::from_ref(&contract),
         std::slice::from_ref(&accept),
         EventTime(100),
     )
     .expect("reduce");
     assert_eq!(r.state, AlignmentState::ReviewDue);
     // evaluation_time = 200 → still REVIEW_DUE
-    let r =
-        reduce_alignment(&i, &empty_basis(), &obs, &[], &[accept], EventTime(200)).expect("reduce");
+    let r = reduce_alignment(
+        &i,
+        &empty_basis(),
+        &obs,
+        &[contract],
+        &[accept],
+        EventTime(200),
+    )
+    .expect("reduce");
     assert_eq!(r.state, AlignmentState::ReviewDue);
 }
 
@@ -374,22 +457,44 @@ fn conflicted_evidence_does_not_resolve_latest_wins() {
 
 #[test]
 fn finding_order_does_not_change_assessment_identity() {
+    // A4-3R: typed binding via SingleAuthority for both constraints.
     let c = constraint("k1", "auth:single", MustDirection::Must);
     let c2 = constraint("k2", "auth:other", MustDirection::MustNot);
     let i = intent("repo:test", vec![c.clone(), c2.clone()]);
     let mut obs = ObservationSet::new();
-    obs.insert(obs_deny(
-        "auth:single",
-        CoreRelationKind::DependsOn,
-        "caller:x",
+    let basis = ObservationBasis::new("rev-1", basis_hash_zero(), "input-1");
+    let ev1 = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:deny:auth:single".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:single".to_string()),
+        ),
+        ObservationStance::Denies,
+        ev1,
+        ObservationOrigin::DeterministicLocal,
+        basis.clone(),
+        None,
+        "test_producer",
     ));
-    obs.insert(obs_affirm(
-        "auth:other",
-        CoreRelationKind::DependsOn,
-        "caller:y",
+    let ev2 = UniEvidenceRef::new(EvidenceKind::Adhoc, "ev:affirm:auth:other".to_string());
+    obs.insert(SoftwareObservation::declare(
+        crate::observation::ObservationSubject::Unit(
+            crate::architecture_graph::SoftwareUnitRef::new("auth:other".to_string()),
+        ),
+        ObservationStance::Affirms,
+        ev2,
+        ObservationOrigin::DeterministicLocal,
+        basis,
+        None,
+        "test_producer",
     ));
-    let r1 = reduce_alignment(&i, &empty_basis(), &obs, &[], &[], EventTime(0)).expect("reduce");
-    let r2 = reduce_alignment(&i, &empty_basis(), &obs, &[], &[], EventTime(0)).expect("reduce");
+    let contracts = vec![
+        contract_single_authority("auth:single", "auth:single"),
+        contract_single_authority("auth:other", "auth:other"),
+    ];
+    let r1 =
+        reduce_alignment(&i, &empty_basis(), &obs, &contracts, &[], EventTime(0)).expect("reduce");
+    let r2 =
+        reduce_alignment(&i, &empty_basis(), &obs, &contracts, &[], EventTime(0)).expect("reduce");
     // Same inputs → same id (deterministic reducer).
     assert_eq!(r1.id, r2.id);
     // Two ContractViolations → MISALIGNED regardless of order.

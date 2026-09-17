@@ -256,6 +256,64 @@ impl AlignmentFindingKind {
     }
 }
 
+/// Cause discriminator for `ContractViolation` findings.
+///
+/// Closed. A4-3R introduces this enum so the reducer can express
+/// "typed violation" vs "non-binding constraint without a comparable
+/// target" without growing `AlignmentFindingKind` (which the user's
+/// mandate forbids). A `FindingCause::None` is the default for non-
+/// violation findings; `FindingCause::ContractViolation(_)` only
+/// appears on `ContractViolation` findings.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingCause {
+    /// No cause (default for non-`ContractViolation` findings).
+    None,
+    /// Typed violation: an observation with the matching target kind
+    /// contradicts the constraint's MUST / MUST_NOT direction.
+    ContractViolation(ContractViolationCause),
+}
+
+impl FindingCause {
+    pub fn canonical(&self) -> String {
+        match self {
+            FindingCause::None => "none".to_string(),
+            FindingCause::ContractViolation(c) => format!("contract_violation:{}", c.canonical()),
+        }
+    }
+}
+
+/// Closed cause taxonomy for `ContractViolation` findings.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContractViolationCause {
+    /// A typed observation on the contract's target contradicts the
+    /// MUST direction. The constraint binds; the observation is the
+    /// contradiction.
+    ContradictsMust,
+    /// The contract kind does not have a safely comparable observation
+    /// target (e.g. `ProjectionOnly`, `ProviderBoundary`,
+    /// `BoundedCompatibility`, `Extension`). The finding is recorded
+    /// as a `ContractViolation` to keep `AlignmentFindingKind` closed,
+    /// but the cause is explicit so the consumer can distinguish a
+    /// real violation from a non-evaluable constraint.
+    EvidenceGap {
+        /// The closed `ContractKind` for which no safe binding exists.
+        /// Stored as the kind's canonical short tag (not the enum) so
+        /// the cause remains serialisable across engine crate versions.
+        kind_tag: String,
+    },
+}
+
+impl ContractViolationCause {
+    pub fn canonical(&self) -> &'static str {
+        match self {
+            ContractViolationCause::ContradictsMust => "contradicts_must",
+            ContractViolationCause::EvidenceGap { .. } => "evidence_gap",
+        }
+    }
+}
+
 /// A finding id, content-addressed.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub struct AlignmentFindingId(pub String);
@@ -304,6 +362,18 @@ pub struct AlignmentFinding {
     /// The optional constraint ref (only set when this finding ties
     /// back to an explicit constraint).
     pub constraint_ref: Option<ConstraintId>,
+    /// Cause discriminator. A4-3R:
+    /// - `FindingCause::None` for `AlignmentTension` / `ImprovementOpportunity`.
+    /// - `FindingCause::ContractViolation(ContradictsMust)` for typed violations.
+    /// - `FindingCause::ContractViolation(EvidenceGap { kind_tag })` for
+    ///   non-binding contract kinds. **Empty `evidence_observations` is
+    ///   intentional**: there is no contradicting observation to cite;
+    ///   the gap IS the finding.
+    ///
+    /// `#[serde(default)]` preserves wire-compat with serialised findings
+    /// produced before A4-3R.
+    #[serde(default)]
+    pub cause: FindingCause,
     /// The observations that motivated this finding. **Set, ordered**
     /// by canonical observation id — but identity does not depend on
     /// the order (the reducer sorts before hashing).
@@ -311,13 +381,15 @@ pub struct AlignmentFinding {
 }
 
 impl AlignmentFinding {
-    /// Identity (sorted set of observation ids + location + kind).
+    /// Identity (sorted set of observation ids + location + kind + cause).
     pub fn derive_id(&self) -> AlignmentFindingId {
         let mut h = Sha256::new();
         h.update(b"sddk.software_alignment.finding.v1|");
         h.update(self.kind.canonical().as_bytes());
         h.update(b"|");
         h.update(self.location.canonical().as_bytes());
+        h.update(b"|");
+        h.update(self.cause.canonical().as_bytes());
         h.update(b"|");
         let mut obs: Vec<&str> = self
             .evidence_observations
