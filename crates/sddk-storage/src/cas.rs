@@ -101,10 +101,25 @@ impl CasPort for FilesystemCas {
         let hash_str = hash.strip_prefix("sha256:").unwrap_or(hash.as_str()).trim();
         let path = self.hash_path(hash_str);
 
-        fs::read(&path).map_err(|e| match e.kind() {
+        let bytes = fs::read(&path).map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => CasError::NotFound(hash.clone()),
             _ => CasError::Storage(e.to_string()),
-        })
+        })?;
+
+        // A5-2 (R2): a partial / corrupt / substituted blob at the CAS path
+        // is silently accepted by the filesystem-based CAS today. The CAS
+        // contract is "content addressed", which means the bytes must hash
+        // to the requested key. Verify before returning; on mismatch we
+        // refuse to hand out the bytes (and we do NOT substitute them or
+        // recompute the hash on behalf of the caller).
+        let computed = Self::compute_hash(&bytes);
+        if computed != hash_str {
+            return Err(CasError::HashMismatch {
+                expected: format!("sha256:{}", hash_str),
+                computed: format!("sha256:{}", computed),
+            });
+        }
+        Ok(bytes)
     }
 
     fn exists(&self, hash: &CasHash) -> Result<bool, CasError> {
