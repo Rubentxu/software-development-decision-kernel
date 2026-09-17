@@ -31,8 +31,15 @@
 // `LensEvaluation` payload the corpus tests read; the generic kernel
 // never produces them.
 //
-// Removal trigger for this facade: when the AC7 corpus tests migrate
-// to the canonical surface (A4-4C acceptance), delete this module.
+// Removal trigger for this facade: when the AC7 corpus tests
+// (`crates/sddk-engine/tests/ac7_lens_over_ac3_profile.rs` and
+// `crates/sddk-engine/tests/ac8_full_chain_receipt.rs`) migrate to
+// call `AlignmentLensKernel` directly, delete this module.
+// **A4-4C (2026-09-17) did NOT remove this facade** — A4-4C's scope
+// is receipt/UAT only. The migration + removal is owned by a future
+// cycle (next A4 series or A4-CLOSEOUT, depending on user green-light).
+// See ADR-0125 §"Post-acceptance amendment" (3rd entry) for the
+// acceptance log of this deferral.
 
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::observation::ObservationTargetRef;

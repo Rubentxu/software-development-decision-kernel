@@ -108,8 +108,14 @@ applicable). The two outputs differ in *which* concerns are applicable.
 - `arch-spec-046` part-1 (closed vocabularies + typed intent + pure
   reducer) → **`implemented`** as a model surface (kernel).
 - The `contract-ready → implemented` promotion of the **spec** is
-  deferred to A4-CLOSEOUT per arch-spec-046 §6, because the kernel is
-  only complete when the loop integration (A4-5) closes.
+  closed by **A4-4C (v1.169.60)**, not A4-CLOSEOUT. A4-4C issues
+  the receipt/UAT (closing the `arch-spec-046` part-1/part-2/lens-
+  migration triad; A4-5 loop integration remains honestly open).
+  The historical "per arch-spec-046 §6" deferral note above was a
+  documentation residue — §6 does not exist in `arch-spec-046`
+  (the spec has 4 sections); A4-CLOSEOUT remains the A4 milestone
+  acceptance gate (blocked_by A4-5), not the spec promotion
+  authority.
 - README A4 table: A4-4a moves from `current` to `closed`.
 - A4-4b, A4-4M, A4-4C remain blocked_by their own scope contracts;
   A4-5 remains blocked_by A4-4; A4-CLOSEOUT remains blocked_by A4-5.

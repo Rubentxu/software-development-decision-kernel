@@ -288,3 +288,24 @@ Negative:
   `status_from_polarities` and `inferred_lens_assessment` are deleted —
   there is exactly one execution authority. A4-5 encroachment remains
   pinned out: the kernel still produces only `LensContribution[]`.
+
+## Post-acceptance amendment: A4-4C — receipt/UAT closure (this ADR remains accepted)
+
+- **2026-09-17 (A4-4C, cycle
+  `p-63676b11dc0ef88f/a4-4c-arch-spec-046-receipt-uat`):** The
+  arch-spec-046 milestone closed as `implemented` (v1.169.60) on
+  receipt/UAT grounds. The 119-pin test base
+  (`a4_4a_intent_universal_concern_integration`,
+  `a4_4b_alignment_lens_kernel`, `a4_4br_subject_general_evidence`,
+  `a4_4m_convergence_pins`, `a4_4m_m0_migration_proof`, `ac7_lens_over_ac3_profile`,
+  `ac8_full_chain_receipt`, `alignment_lens_fixture`, plus the new
+  `a4_4c_arch_spec_046_acceptance`) is the witness set. **A4-4C did
+  NOT remove the `evaluate_lens` compatibility facade** — its scope
+  is receipt/UAT only, not source-code migration. The facade's
+  doc-comment in `crates/sddk-engine/src/paradigm_lens/lenses.rs:34`
+  now names the AC7 corpus tests (`ac7_lens_over_ac3_profile.rs` and
+  `ac8_full_chain_receipt.rs`) as the explicit migration predicate.
+  Removal of the facade (and migration of those two test files to
+  call `AlignmentLensKernel` directly) is owned by a future cycle.
+  ADR status remains `accepted`; this amendment records the deferral,
+  not a reversal of the kernel contract.
