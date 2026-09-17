@@ -154,6 +154,11 @@ impl CompatibilityPathRef {
 /// Closed enum of overlay node kinds. Each carries a domain_tag in the
 /// `ac2.node.*` namespace so callers parse via `NodeKind::Extension(...)`
 /// without growing `CoreNodeKind` in this cycle.
+///
+/// `EvidenceRef` is the projection node for the typed `evidence_ref::EvidenceRef`
+/// (A4-S15R): a `VerifiedBy` edge from a contract anchor points at one of these.
+/// Evidence is a PROJECTION (rebuildable) — not a new authority, store, CAS, or
+/// semantic graph. Identity is the `EvidenceRef` itself (kind + locator + cas).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum ArchitectureOverlayNodeKind {
     SoftwareUnit,
@@ -164,10 +169,14 @@ pub enum ArchitectureOverlayNodeKind {
     UatRef,
     CompatibilityPath,
     ArchitectureClaim,
+    /// A4-S15R: projection of an `evidence_ref::EvidenceRef` into the overlay.
+    /// The node's locator is derived from `EvidenceRef::ordering_key()` so two
+    /// typed-equal EvidenceRefs produce the same NodeId.
+    EvidenceRef,
 }
 
 impl ArchitectureOverlayNodeKind {
-    pub const ALL: [ArchitectureOverlayNodeKind; 8] = [
+    pub const ALL: [ArchitectureOverlayNodeKind; 9] = [
         ArchitectureOverlayNodeKind::SoftwareUnit,
         ArchitectureOverlayNodeKind::BoundedContext,
         ArchitectureOverlayNodeKind::DecisionRef,
@@ -176,6 +185,7 @@ impl ArchitectureOverlayNodeKind {
         ArchitectureOverlayNodeKind::UatRef,
         ArchitectureOverlayNodeKind::CompatibilityPath,
         ArchitectureOverlayNodeKind::ArchitectureClaim,
+        ArchitectureOverlayNodeKind::EvidenceRef,
     ];
 
     pub fn domain_tag(&self) -> &'static str {
@@ -188,6 +198,7 @@ impl ArchitectureOverlayNodeKind {
             ArchitectureOverlayNodeKind::UatRef => "ac2_node_uat_ref",
             ArchitectureOverlayNodeKind::CompatibilityPath => "ac2_node_compatibility_path",
             ArchitectureOverlayNodeKind::ArchitectureClaim => "ac2_node_architecture_claim",
+            ArchitectureOverlayNodeKind::EvidenceRef => "ac2_node_evidence_ref",
         }
     }
 
@@ -285,6 +296,9 @@ pub struct ArchitectureOverlayRelation {
 /// Typed reference to any overlay node. Variants are 1:1 with
 /// `ArchitectureOverlayNodeKind`. The overlay never owns bytes for these —
 /// these are pointers into the canonical graph nodes.
+///
+/// `Evidence(EvidenceRef)` (A4-S15R) is the typed pointer for the projection
+/// of a universal `evidence_ref::EvidenceRef` into the overlay graph.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OverlayNodeRef {
     SoftwareUnit(SoftwareUnitRef),
@@ -295,6 +309,16 @@ pub enum OverlayNodeRef {
     Uat(UatRef),
     CompatibilityPath(CompatibilityPathRef),
     Claim(ArchitectureClaimId),
+    /// A4-S15R: typed pointer to the projection of an `EvidenceRef`. Identity
+    /// is the `EvidenceRef` itself (kind + locator + cas).
+    Evidence(EvidenceRef),
+}
+
+/// A4-S15R: build the typed overlay node ref for an `EvidenceRef`. Used by
+/// `add_contract_metadata` so each `VerifiedBy` edge points at the right
+/// projection node.
+pub fn evidence_overlay_node_ref(e: &EvidenceRef) -> OverlayNodeRef {
+    OverlayNodeRef::Evidence(e.clone())
 }
 
 /// Typed identifier for an ArchitectureClaim projected into the overlay.

@@ -464,10 +464,10 @@ fn bonus_query_advertises_three_closed_variants() {
 }
 
 #[test]
-fn bonus_overlay_node_kinds_all_eight_have_unique_tags() {
-    // Pin the count to 8 — adding a variant requires updating both this
-    // test AND the doc comment in types.rs.
-    assert_eq!(ArchitectureOverlayNodeKind::ALL.len(), 8);
+fn bonus_overlay_node_kinds_all_nine_have_unique_tags() {
+    // Pin the count to 9 — adding a variant requires updating both this
+    // test AND the doc comment in types.rs. A4-S15R added EvidenceRef.
+    assert_eq!(ArchitectureOverlayNodeKind::ALL.len(), 9);
 }
 
 #[test]

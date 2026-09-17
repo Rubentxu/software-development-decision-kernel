@@ -136,8 +136,21 @@ impl ArchitectureGraphOverlay {
         self.projection.add_relation(semantic_rel);
     }
     /// Emit the contract-side relations for a contract: DecidedBy (contract
-    /// → decision) and, when a matching Verified claim exists, VerifiedBy
-    /// (contract → spec).
+    /// → decision), SpecifiedBy (contract → spec), and one VerifiedBy edge
+    /// per typed `EvidenceRef` (A4-S15R).
+    ///
+    /// Provenance axes (A4-S15R):
+    /// - `SpecifiedBy`: contract → spec. Always emitted. Declared intent.
+    /// - `VerifiedBy`:  contract → evidence node. One edge per unique typed
+    ///   `EvidenceRef` (dedup by `EvidenceRef` field equality), order-
+    ///   independent (canonicalised via `EvidenceBundle`). Never emitted
+    ///   with empty evidence.
+    /// - `DecidedBy`:   contract → decision.
+    ///
+    /// Pre-A4-S15R, `VerifiedBy` pointed at the spec node with the evidence
+    /// attached as relation metadata — but no real producer passed non-empty
+    /// evidence, so the path was unreachable. A3-S15 (ADR-0121 §4) explicitly
+    /// deferred repointing to its own cycle. This is that cycle.
     pub fn add_contract_metadata(
         &mut self,
         contract: &ArchitecturalContract,
@@ -145,6 +158,9 @@ impl ArchitectureGraphOverlay {
         spec_ref: &super::types::OverlaySpecRef,
         verified_by: &[EvidenceRef],
     ) {
+        use super::types::evidence_overlay_node_ref;
+        use crate::evidence_ref::EvidenceBundle;
+
         // Ensure the contract anchor node exists (one per contract). This
         // is idempotent: InMemorySemanticGraph::add_node replaces by id.
         let contract_node_kind =
@@ -182,7 +198,7 @@ impl ArchitectureGraphOverlay {
         let semantic_rel = SemanticRelation::new(contract_node_id.clone(), dec_id, relation_kind);
         self.projection.add_relation(semantic_rel);
 
-        // SpecRef node + VerifiedBy when evidence present.
+        // SpecRef node + SpecifiedBy edge, always emitted.
         let spec_locator = format!("spec:{}", spec_ref.canonical_payload());
         let spec_kind = NodeKind::parse(ArchitectureOverlayNodeKind::SpecRef.domain_tag())
             .expect("static tag is well-formed");
@@ -194,28 +210,70 @@ impl ArchitectureGraphOverlay {
         );
         self.projection.add_node(spec_node);
 
-        // SpecifiedBy: contract anchor → spec, unconditionally (A3-S15).
-        // The node was always created; without this edge `contract → spec` was
-        // reachable only through the `VerifiedBy` relation below, which is
-        // emitted only when evidence exists and points at the spec node for
-        // want of an evidence node.
         let specified_by = ArchitectureOverlayRelationKind::SpecifiedBy
             .as_relation_kind()
             .expect("static tag is well-formed");
         self.projection.add_relation(SemanticRelation::new(
             contract_node_id.clone(),
-            spec_id.clone(),
+            spec_id,
             specified_by,
         ));
 
-        if !verified_by.is_empty() {
-            let relation_kind = ArchitectureOverlayRelationKind::VerifiedBy
-                .as_relation_kind()
-                .expect("static tag is well-formed");
-            let mut semantic_rel = SemanticRelation::new(contract_node_id, spec_id, relation_kind);
-            for e in verified_by {
-                semantic_rel.attach_evidence(e.clone());
+        // A4-S15R: VerifiedBy points at typed EvidenceRef projection nodes.
+        // - Empty verified_by → no edge (no UnknownEvidence, no spec fallback).
+        // - Non-empty verified_by → exactly one edge per typed-unique EvidenceRef.
+        //   Dedup + canonical ordering via `EvidenceBundle` (BTreeSet over
+        //   `EvidenceRef` Ord = sha256(kind || locator || cas)).
+        // - Insertion order is irrelevant — two rebuilds over the same set
+        //   produce identical projection bytes.
+        if verified_by.is_empty() {
+            return;
+        }
+        let verified_by_kind = ArchitectureOverlayRelationKind::VerifiedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let evidence_kind_tag = ArchitectureOverlayNodeKind::EvidenceRef.domain_tag();
+        let evidence_node_kind =
+            NodeKind::parse(evidence_kind_tag).expect("static tag is well-formed");
+
+        // EvidenceBundle::from_refs canonicalises dedup + ordering without
+        // doing any locator string parsing.
+        let bundle = EvidenceBundle::from_refs(verified_by.iter().cloned());
+        for e in bundle.iter() {
+            let evidence_locator = format!("evidence:{}", e.ordering_key());
+            let evidence_node_id = NodeId::new(&evidence_node_kind, &evidence_locator);
+            // Idempotent node creation: same EvidenceRef → same NodeId →
+            // add_node replaces; this is fine.
+            let mut ev_node = SemanticNode::new(
+                evidence_node_id.clone(),
+                evidence_node_kind.clone(),
+                evidence_locator,
+            );
+            // Stash the typed identity on the node so future WHY / rebuild
+            // paths can recover the EvidenceRef without re-parsing.
+            ev_node
+                .props_inline
+                .insert("evidence_kind".to_string(), e.kind.domain_tag().to_string());
+            ev_node
+                .props_inline
+                .insert("evidence_locator".to_string(), e.locator.clone());
+            if let Some(cas) = &e.cas {
+                ev_node
+                    .props_inline
+                    .insert("evidence_cas".to_string(), cas.digest().to_string());
             }
+            self.projection.add_node(ev_node);
+
+            // Sanity-check the helper: the helper must agree with the kind tag
+            // we computed above. If a future refactor changes one but not the
+            // other, this fails closed at compile-time (the helper is `pub`).
+            let _ = evidence_overlay_node_ref(e);
+
+            let semantic_rel = SemanticRelation::new(
+                contract_node_id.clone(),
+                evidence_node_id,
+                verified_by_kind.clone(),
+            );
             self.projection.add_relation(semantic_rel);
         }
     }
@@ -367,6 +425,8 @@ fn relation_node_kind_tag(r: &OverlayNodeRef) -> &'static str {
             ArchitectureOverlayNodeKind::CompatibilityPath.domain_tag()
         }
         OverlayNodeRef::Claim(_) => ArchitectureOverlayNodeKind::ArchitectureClaim.domain_tag(),
+        // A4-S15R: evidence node uses the typed EvidenceRef kind tag.
+        OverlayNodeRef::Evidence(_) => ArchitectureOverlayNodeKind::EvidenceRef.domain_tag(),
     }
 }
 
@@ -381,6 +441,10 @@ fn relation_node_locator(r: &OverlayNodeRef) -> String {
         OverlayNodeRef::Uat(u) => format!("uat:{}", u.0),
         OverlayNodeRef::CompatibilityPath(c) => format!("compat:{}", c.0),
         OverlayNodeRef::Claim(c) => c.0.clone(),
+        // A4-S15R: evidence node locator derives from `EvidenceRef::ordering_key()`,
+        // the same key used by `EvidenceBundle::Ord`. Two typed-equal EvidenceRefs
+        // produce the same locator and therefore the same NodeId.
+        OverlayNodeRef::Evidence(e) => format!("evidence:{}", e.ordering_key()),
     }
 }
 

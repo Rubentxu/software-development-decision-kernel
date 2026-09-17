@@ -175,3 +175,35 @@ Two honest limitations recorded rather than papered over:
 2. `plan architecture --move/--dependency` (counterfactual, advisory).
 3. A `why-not` surface — the `WhyNotReason` ADT is prepared and unused.
 4. `architecture paradigms` / `behavior-map` — deferred since A3-S10.
+
+---
+
+## Addendum — A4-S15R (2026-09-17)
+
+**`FU-A3-S15-3` resolution.** ADR-0121 §4 explicitly deferred the
+repointing of `VerifiedBy` from `SpecRef` to `EvidenceRef` to its own
+cycle. A3-S15 left the legacy shape in place; A4-S15R (cycle
+`p-63676b11dc0ef88f/a4-s15r-verifiedby-evidence-provenance`, v1.169.65)
+shipped the deferred correction.
+
+- `VerifiedBy` now targets `OverlayNodeRef::Evidence(EvidenceRef)`.
+- `SpecifiedBy` is unchanged (contract → spec, always emitted).
+- Evidence is a first-class `ArchitectureOverlayNodeKind::EvidenceRef`
+  projection node (rebuildable; no new authority/store/CAS/second graph).
+- 19-pin corpus in
+  `crates/sddk-engine/tests/a4_s15r_verifiedby_evidence_provenance.rs`
+  (falsification, cardinality, A3-S15 regression, A4 regression,
+  anti-encroachment).
+- A3-S15 WHY behavior is **read-only compatible**: no `why` command,
+  no `WhyEngine`, no explanation vocabulary touched.
+
+The deferred item is closed; A4-5b unblocks now that `FU-A3-S15-3` is
+resolved. A4-5b does NOT auto-open — its own cycle begins when called.
+
+Cross-references:
+
+- `docs/architecture/adrs/ADR-0127-VERIFIEDBY-TARGETS-EVIDENCEREF.md`.
+- `docs/architecture/specs/arch-spec-A3-S3-architecture-semantic-graph-overlay.md`
+  (REQ-AC2-014/017 updated).
+- `docs/handoff/HANDOFF-2026-09-17-a4-s15r-verifiedby-evidence-provenance.md`
+  (cycle closeout).

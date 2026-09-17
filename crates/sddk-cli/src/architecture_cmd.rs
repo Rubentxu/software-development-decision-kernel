@@ -408,6 +408,9 @@ fn node_tag(node: &sddk_engine::architecture_graph::OverlayNodeRef) -> String {
         N::Uat(u) => u.0.clone(),
         N::CompatibilityPath(p) => p.0.clone(),
         N::Claim(c) => c.as_str().to_string(),
+        // A4-S15R: typed EvidenceRef projection. Show kind + locator so the
+        // CLI can spot evidence-bearing nodes without parsing.
+        N::Evidence(e) => format!("evidence:{}:{}", e.kind.domain_tag(), e.locator),
     }
 }
 

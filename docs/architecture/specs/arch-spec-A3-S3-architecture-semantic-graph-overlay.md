@@ -82,7 +82,8 @@ ArchitectureOverlayNodeKind (closed enum, namespaced domain_tag)
 ├── TestRef
 ├── UatRef
 ├── CompatibilityPath
-└── ArchitectureClaim
+├── ArchitectureClaim
+└── EvidenceRef                  // A4-S15R: projection of evidence_ref::EvidenceRef
 
 ArchitectureOverlayRelationKind (closed enum, namespaced domain_tag)
 ├── Owns
@@ -164,8 +165,12 @@ SoftwareUnit (PROJECTION input, lives in sddk-engine)
 - **REQ-AC2-014** — the overlay emits, for each accepted contract, an
   `ArchitectureClaim → Contract` (ArchitectureClaimedBy) relation whenever
   a matching claim exists, plus a `Contract → DecisionRef` (DecidedBy)
-  and `Contract → SpecRef` (VerifiedBy, when a claim outcome is Verified)
-  relation.
+  relation, a `Contract → SpecRef` (SpecifiedBy) relation (always emitted;
+  declared intent), and one `Contract → EvidenceRef` (VerifiedBy)
+  relation per typed-unique `EvidenceRef` in the contract's evidence set
+  (A4-S15R). VerifiedBy is **not** emitted for an empty evidence set.
+  `SpecifiedBy` and `VerifiedBy` are **separate provenance axes**:
+  declared intent vs. verification evidence.
 - **REQ-AC2-015** — contradiction claims (`outcome = Contradicted`) emit a
   `Claim → Contract` `ContradictsBy` relation instead of `ArchitectureClaimedBy`.
   This keeps assessment results distinguishable from observed facts
@@ -174,9 +179,12 @@ SoftwareUnit (PROJECTION input, lives in sddk-engine)
   projection (no relation emitted) — they must not pollute the canonical
   graph with stale assertions.
 - **REQ-AC2-017** — every non-declared observation carries basis/provenance/
-  freshness metadata. The overlay reuses `EvidenceRef` from A3-S2; each
-  emitted relation attaches `evidence` with at least the contract's
-  `evidence_refs`.
+  freshness metadata. The overlay reuses `EvidenceRef` from A3-S2 (and the
+  universal `EvidenceRef` from A4-0 / `evidence_ref::EvidenceRef`); each
+  `VerifiedBy` edge in the projection points at a typed `EvidenceRef`
+  projection node (A4-S15R). The node's identity derives from
+  `EvidenceRef::ordering_key()` (sha256 over kind | locator | cas), so
+  typed-equal refs produce the same node and dedup is by content.
 - **REQ-AC2-018** — `query` accepts a `Query` ADT with three closed variants
   (`ContractsForUnit`, `UnitsContractedBy`, `TraverseDecisionToSoftware`).
   Unknown query variants fail closed (return empty, do not panic).
