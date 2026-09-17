@@ -153,3 +153,56 @@ Local evidence (workspace grep + framework bundle grep):
 no locator parsing, no synthetic relations, no new concerns, no new
 taxonomy, no AC7 heuristic changes. Proceed to M1–M10 under the same
 budget, per spec.
+
+## 8. M11 — Concern-Preserving ParadigmLens Evaluation (corrective slice)
+
+> **Cycle:** `p-63676b11dc0ef88f/a4-4mr-concern-preserving`
+> **Closes:** `docs/debt/FU-A4-4M-CONCERN-PRESERVATION.md` (P1)
+> **Status:** CLOSED — see release tag in
+> `docs/handoff/HANDOFF-2026-09-17-a4-4mr-concern-preserving.md`.
+
+The production `ParadigmLens::evaluate(&LensInput)` (the four lenses
+in `crates/sddk-engine/src/alignment_lens/paradigm.rs`) iterated
+`self.concerns`, overwrote `out` on each iteration, and returned only
+the **last** contribution. As a result the contribution's `concern`
+field carried the lens's terminal declared concern, not the
+caller-requested concern in `LensInput::applicable`. The contribution
+identity was likewise wrong because `derive_contribution_id` hashed
+the (incorrect) concern into the content address.
+
+A4-4M did not catch the bug because no pin in
+`crates/sddk-engine/tests/a4_4m_convergence_pins.rs` exercises a
+production `ParadigmLens` through `AlignmentLensKernel::evaluate` —
+the corpus covers registry composition (M3), legacy motor removal
+probes (M5), legacy facade equivalence (M7), provenance (M9), and
+inferred-path deletion (M10). The M7 corpus invokes the
+`evaluate_lens` LEGACY_READ_COMPAT facade, which does not
+instantiate `AlignmentLens` and therefore never hit the buggy
+`for concern in self.concerns` loop.
+
+A4-4MR fixes the bug locally in `ParadigmLens::evaluate`:
+
+- `let concern = input.concern();` is the ONLY concern the lens
+  considers.
+- If `!self.concerns.contains(&concern)`: return
+  `LensEvaluationOutcome::Refused(LensError::LensRejected { id,
+  self.id, concern })`.
+- Otherwise assemble exactly ONE `LensContribution` carrying
+  `contribution.concern == concern` and identity
+  `derive_contribution_id(self.id, versions::V1, concern, ...)`.
+
+The legacy `paradigm_lens::evaluate_lens()` compatibility facade is
+unchanged — it has never instantiated `AlignmentLens` and never
+called `AlignmentLensKernel`. Its `LensStatus` is a substrate-posture
+projection, not a concern-tagged answer. The production-vs-facade
+boundary is documented in the `paradigm_lens/lenses.rs` module
+header.
+
+Pin corpus: `crates/sddk-engine/tests/a4_4mr_concern_preserving.rs`
+(16 pins across seven pin families: exhaustive positive,
+aggregate-for-declared/aggregate-for-undeclared, defence-in-depth
+refusal, multi-lens invariants, posture-class falsification,
+content-identical determinism, registry proof UAT, and explicit
+`derive_contribution_id` match). The corpus is verified to fail
+(13/16 red) against the pre-fix code, then to pass (16/16 green)
+against the post-fix code.

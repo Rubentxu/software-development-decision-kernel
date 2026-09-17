@@ -40,6 +40,28 @@
 // cycle (next A4 series or A4-CLOSEOUT, depending on user green-light).
 // See ADR-0125 §"Post-acceptance amendment" (3rd entry) for the
 // acceptance log of this deferral.
+//
+// # Production-vs-facade boundary (A4-4MR)
+//
+// `evaluate_lens` (this module) is a **LEGACY_READ_COMPAT** facade:
+// it does NOT instantiate `AlignmentLens` implementations and does NOT
+// invoke `AlignmentLensKernel`. Its `LensStatus` is a projection of
+// the substrate posture resolved via `observation::resolve_subject`
+// directly. The legacy input shape (`ParadigmLensKind` +
+// `&[LensObservation]`) has no `ApplicableConcern` and no
+// `LensInput.concern()` — it predates the A4-4bR intent layer.
+//
+// **Authority for production lenses:** every consumer that needs an
+// advisory `LensContribution` MUST go through
+// `AlignmentLensKernel::evaluate`. Future cycles (A4-5a Intelligence
+// Loop composition and beyond) MUST consume the production kernel,
+// not this facade. A4-4MR's release closed
+// `FU-A4-4M-CONCERN-PRESERVATION` by enforcing that production
+// `ParadigmLens` preserves `LensInput::concern()`; this facade
+// continues to ignore the concern (its status is a substrate
+// projection, not a concern-tagged answer) and that asymmetry is
+// intentional. The facade will be retired when the AC7 corpus
+// migrates to the kernel — see the removal trigger above.
 
 use crate::architecture_graph::SoftwareUnitRef;
 use crate::observation::ObservationTargetRef;

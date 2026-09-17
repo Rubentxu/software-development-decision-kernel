@@ -39,13 +39,41 @@
 // pure projection of it (M0.3 pins). The lens NEVER emits
 // `NotApplicable`, alignment state, scores, or confidence.
 //
-// # Concern mapping
+// # Concern preservation contract (A4-4MR)
+//
+// `LensInput.concern()` is the ONLY concern the lens evaluates. A
+// production `ParadigmLens`:
+//
+// 1. reads `let concern = input.concern();`,
+// 2. refuses the input with `LensError::LensRejected { id, concern }` if
+//    `self.concerns` does not contain `concern` (i.e. the lens was
+//    looked up for a concern outside its declared set — a kernel-level
+//    misrouting; defence-in-depth),
+// 3. otherwise emits EXACTLY ONE `LensContribution` carrying
+//    `contribution.concern == concern` and identity
+//    `derive_contribution_id(self.id, versions::V1, concern, ...)`.
+//
+// The lens NEVER iterates `self.concerns`. The previous A4-4M
+// implementation iterated them and returned the LAST contribution, which
+// silently substituted the requested concern with the lens's terminal
+// declared concern. A4-4MR removes that loop. See
+// `docs/debt/FU-A4-4M-CONCERN-PRESERVATION.md` for the closure log.
+//
+// The family-scoped posture resolution (Supported / Contradicted /
+// Conflicted / Insufficient) is independent of the concern: the same
+// family observations resolve to the same posture regardless of the
+// concern asked. The lens computes posture ONCE and projects it onto
+// exactly one contribution per call. The kernel does not need (and must
+// not add) a cross-check: the lens is the authority for the
+// `contribution.concern == input.concern()` invariant.
+//
+// # Concern mapping (unchanged from A4-4M)
 //
 // The per-variant `UniversalConcern` mapping is the one pinned by
-// `tests/a4_4m_m0_migration_proof.rs` (matrix §3). A lens emits one
-// contribution per (concern, family observations) pair, all carrying
-// the same evidence resolution — the concerns are views over the same
-// posture, not independent judgments.
+// `tests/a4_4m_m0_migration_proof.rs` (matrix §3). The
+// `LensDescriptor::supported_concerns` set drives registry lookup
+// (`AlignmentLensRegistry::for_concern`); the lens body no longer
+// iterates them.
 
 use std::collections::BTreeSet;
 
@@ -148,6 +176,20 @@ impl AlignmentLens for ParadigmLens {
     }
 
     fn evaluate(&self, input: &LensInput) -> LensEvaluationOutcome {
+        // A4-4MR — concern preservation: the requested concern is the
+        // ONLY concern this lens considers. If the lens was misrouted
+        // (caller asked for a concern outside the lens's declared set),
+        // refuse with the typed `LensRejected` variant; the kernel
+        // absorbs the refusal and emits a `NotEvaluated { reason:
+        // LensExistsButRefused }` gap if no other lens succeeded.
+        let concern = input.concern();
+        if !self.concerns.contains(&concern) {
+            return LensEvaluationOutcome::Refused(LensError::LensRejected {
+                id: self.id,
+                concern,
+            });
+        }
+
         // Typed, family-scoped observations about THIS unit only.
         let producer = self.producer_tag();
         let family_obs: Vec<_> = input
@@ -161,7 +203,8 @@ impl AlignmentLens for ParadigmLens {
             .collect();
 
         // Posture over the family's observations (supporting vs
-        // contradicting by TYPED stance).
+        // contradicting by TYPED stance). Computed once — concern is
+        // orthogonal to the family's posture.
         let target = ObservationTargetRef::Unit(input.unit_ref.clone());
         let resolution = if family_obs.is_empty() {
             EvidencePosture::Insufficient {
@@ -201,39 +244,30 @@ impl AlignmentLens for ParadigmLens {
         let evidence_refs: Vec<EvidenceRef> =
             family_obs.iter().map(|o| o.evidence.clone()).collect();
 
-        // One contribution per supported concern — views over the same
-        // posture. Identity is content-addressed per (lens, concern,
-        // set, posture), so distinct concerns yield distinct ids while
-        // remaining deterministic.
+        // ONE contribution carrying the requested concern. The id is
+        // content-addressed from (lens_id, lens_version, requested
+        // concern, observation_set_digest, resolution, evidence_refs) —
+        // the requested concern participates in the hash, so two
+        // different requested concerns produce two distinct ids even
+        // when observations and resolution are identical.
         let set_digest = input.observations.canonical_digest();
-        let mut out: Option<LensContribution> = None;
-        for concern in self.concerns {
-            let id = derive_contribution_id(
-                self.id,
-                versions::V1,
-                *concern,
-                &set_digest,
-                &resolution,
-                &evidence_refs,
-            );
-            out = Some(LensContribution::assemble(
-                id,
-                self.id,
-                versions::V1,
-                *concern,
-                resolution.clone(),
-                evidence_refs.clone(),
-            ));
-        }
-
-        match out {
-            Some(c) => LensEvaluationOutcome::Contribution(c),
-            // Unreachable: `concerns` is a non-empty static slice.
-            None => LensEvaluationOutcome::Refused(LensError::LensRejected {
-                id: self.id,
-                concern: *self.concerns.first().expect("non-empty concern list"),
-            }),
-        }
+        let id = derive_contribution_id(
+            self.id,
+            versions::V1,
+            concern,
+            &set_digest,
+            &resolution,
+            &evidence_refs,
+        );
+        let contribution = LensContribution::assemble(
+            id,
+            self.id,
+            versions::V1,
+            concern,
+            resolution,
+            evidence_refs,
+        );
+        LensEvaluationOutcome::Contribution(contribution)
     }
 }
 
