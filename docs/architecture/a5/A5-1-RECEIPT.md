@@ -18,7 +18,7 @@
 | `workspace_version_at_release` | `1.169.71` |
 | `actual_release_tag` | `v1.169.71` |
 | `release_sha` | `e3fc3a09259182478c5f508bc4d51ceb958260b5` |
-| `post_release_main_head` | *(see the docs-only handoff push — may differ from `release_sha`)* |
+| `post_release_main_head` | `b247766` (docs-only cycle-close push; **differs** from `release_sha`) |
 | `binary_sha256` | `0ff23cc06382c59c1ec8ef122d5c1ad04719a7d11a72972b395bcd5bc6d726ad` |
 | `bundle_digest` | `MANIFEST.sha256` in the bundle; `manifest_sha256=608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f` |
 | `sbom_digest` | `sbom.json` published as an asset (CycloneDX) |
@@ -144,9 +144,21 @@ After publishing `v1.169.71`, the handoff + this receipt are committed as a
 normal `docs/**` change and pushed to `main` with **no** `Cargo.toml` bump and
 **no** ceremonial marker. Expected: **ACCEPTED** by the new hook.
 
-This is the OBSERVED closure of `INC-A5-PUSH-RELEASE-MARKER-FRICTION` (see the
-handoff / Roadmap Delta for the push result), executed against the real hook —
-not a mock.
+**Result (OBSERVED, real hook):**
+
+```text
+$ git commit -m "docs(a5-1): cycle close — receipt, handoff, INC closures, roadmap delta"
+$ git push origin main
+   e3fc3a0..b247766  main -> main            # ACCEPTED, no bump, no marker
+```
+
+Before A5-1 this exact push was rejected (reproduced in the A5-PLAN
+investigation and in the RED matrix) and required an empty
+`chore(release): bump version (cycle close marker)`. This is the OBSERVED
+closure of `INC-A5-PUSH-RELEASE-MARKER-FRICTION`, executed against the real
+hook — not a mock. `post_release_main_head` (`b247766`) now differs from
+`release_sha` (`e3fc3a0`), which is legitimate and does not invalidate the
+release (`G16`).
 
 ## Findings discovered by running the FULL 14 steps
 
