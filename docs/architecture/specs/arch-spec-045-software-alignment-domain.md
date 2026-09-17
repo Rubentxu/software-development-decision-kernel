@@ -10,9 +10,11 @@ reconciles: historical SPEC-019-SOFTWARE-ALIGNMENT-DOMAIN
 
 # arch-spec-045 — Software Alignment domain
 
-> **Contract-ready, NOT implemented.** Reconciled from the historical context-first
-> package (see `arch-spec-047` for the ID-collision record). The historical content
-> is **not copied verbatim**; it is re-expressed against post-A3 reality.
+> **Implemented in A4-3** as `crates/sddk-engine/src/software_alignment` (7 closed
+> states + 3 closed findings, pure reducer, no authority). Reconciled from the
+> historical context-first package (see `arch-spec-047` for the ID-collision
+> record). The historical content is **not copied verbatim**; it is re-expressed
+> against post-A3 reality.
 
 ## Kept from the historical model
 

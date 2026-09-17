@@ -1,14 +1,21 @@
 ---
 id: arch-spec-042-evidence-observation-provenance
 title: Evidence observation and provenance substrate
-status: accepted
+status: implemented
 milestone: A4
 slice: A4-0
+implemented_by: A4-0 (crates/sddk-engine/src/observation, crates/sddk-engine/src/evidence_ref.rs, crates/sddk-engine/src/evidence_relation_mapping.rs; consumed by A4-1..A4-5)
 cycle: p-63676b11dc0ef88f/a4-0-verification-provenance-foundation
 adrs: [ADR-0122-EVIDENCE-OBSERVES-SOFTWARE]
 ---
 
 # arch-spec-042 — Evidence observation and provenance substrate
+
+> **Implemented in A4-0** as the observation/evidence substrate
+> (`crates/sddk-engine/src/observation/`, `evidence_ref.rs`,
+> `evidence_relation_mapping.rs`). Reconciled from `status: accepted` to
+> `implemented` at A4-CLOSEOUT, because the delivered substrate and its
+> A4-1..A4-5 consumers are the runtime reality.
 
 Closes the provenance leg the A3 closeout recorded as missing, as a **general
 capability**, not as a patch for `why architecture`.
