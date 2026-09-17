@@ -1333,8 +1333,11 @@ fn resolve_current(environment: &CliEnvironment) -> Option<(String, String)> {
     ))
 }
 
-/// `$SDDK_DATA_DIR/framework` — same resolution as `dev use`.
-fn sddk_framework_dir(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
+/// SDDK data root (the directory that holds `framework/` and `mode-index`).
+///
+/// `$SDDK_DATA_DIR` wins; otherwise `$XDG_DATA_HOME/sddk`; otherwise
+/// `~/.local/share/sddk`.
+pub(crate) fn sddk_data_root(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
     let data_root = if let Some(dir) = &environment.sddk_data_dir {
         dir.clone()
     } else {
@@ -1347,6 +1350,12 @@ fn sddk_framework_dir(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
         };
         data_home.join("sddk")
     };
+    Ok(data_root)
+}
+
+/// `$SDDK_DATA_DIR/framework` — same resolution as `dev use`.
+fn sddk_framework_dir(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
+    let data_root = sddk_data_root(environment)?;
     Ok(data_root.join("framework"))
 }
 
@@ -1355,6 +1364,26 @@ fn version_text(output: &VersionResolution) -> String {
         "binary: {}\nsource: {}\nresolved: {}\npresent: {}\n",
         output.binary, output.source, output.resolved, output.present
     )
+}
+
+/// Resolve `(project_id, workspace_id)` for a root. Single source shared by
+/// `sddk project resolve` and `sddk config resolve`.
+pub(crate) fn resolve_project_ids(
+    root: &Path,
+    scope: &str,
+    explicit_remote: Option<String>,
+    explicit_seed: Option<String>,
+) -> anyhow::Result<(String, String)> {
+    let root = canonical_root(root)?;
+    let remote = resolve_remote(&root, explicit_remote)?;
+    let fallback_seed = match (remote.as_ref(), explicit_seed) {
+        (None, None) => Some(Uuid::new_v4().hyphenated().to_string()),
+        (_, seed) => seed,
+    };
+    let identity = resolve_project_identity(remote.as_deref(), scope, fallback_seed.as_deref())?;
+    let canonical_workspace_path = path_string(&root)?;
+    let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
+    Ok((identity.project_id.to_string(), workspace_id))
 }
 
 fn run_project_resolve(args: ProjectResolveArgs) -> CommandOutput {

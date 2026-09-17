@@ -24,6 +24,7 @@ use clap::Subcommand;
 use serde::Serialize;
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
+use sddk_engine::orchestration_config::{self, EffectiveConfig, Mode, ResolvedKey};
 
 /// Compiled defaults for the project configuration keys declared by SPEC-012.
 ///
@@ -47,6 +48,57 @@ pub enum ConfigCommand {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+    },
+    /// Print the EFFECTIVE SDDK orchestration configuration (model v1) with the
+    /// SOURCE of every value. This is the single resolver: jcode consumes it.
+    Resolve {
+        /// Working directory whose identity is resolved (default: cwd).
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Print the non-overridable laws and forbidden keys of the model.
+    Laws {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// List the available SDDK profiles.
+    Profiles {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Declare the adoption mode (and optionally the profile) for an identity.
+    Set {
+        /// `on` | `off`.
+        mode: String,
+        /// Declare at project scope (default).
+        #[arg(long, conflicts_with = "workspace")]
+        project: bool,
+        /// Declare at workspace scope (overrides project).
+        #[arg(long, conflicts_with = "project")]
+        workspace: bool,
+        /// Profile name, or `-` to inherit. Must exist under the profiles dir.
+        #[arg(long)]
+        profile: Option<String>,
+        /// Working directory whose identity is used (default: cwd).
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+    },
+    /// Remove this identity's declaration (returns to inheritance / UNDECLARED).
+    Clear {
+        /// Clear at project scope (default).
+        #[arg(long, conflicts_with = "workspace")]
+        project: bool,
+        /// Clear at workspace scope.
+        #[arg(long, conflicts_with = "project")]
+        workspace: bool,
+        /// Working directory whose identity is used (default: cwd).
+        #[arg(long)]
+        cwd: Option<PathBuf>,
     },
 }
 
@@ -354,6 +406,352 @@ pub(crate) fn run_config(command: ConfigCommand, environment: &CliEnvironment) -
                 None => render_config_report_at(environment, format, &root),
             }
         }
+        ConfigCommand::Resolve { cwd, format } => {
+            let root = cwd
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            render_orchestration_resolve(environment, &root, format)
+        }
+        ConfigCommand::Laws { format } => render_orchestration_laws(format),
+        ConfigCommand::Profiles { format } => render_orchestration_profiles(format),
+        ConfigCommand::Set {
+            mode,
+            project: _,
+            workspace,
+            profile,
+            cwd,
+        } => run_config_set(environment, cwd, workspace, &mode, profile),
+        ConfigCommand::Clear {
+            project: _,
+            workspace,
+            cwd,
+        } => run_config_clear(environment, cwd, workspace),
+    }
+}
+
+fn config_root(cwd: Option<PathBuf>) -> PathBuf {
+    cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+fn identity_for(root: &Path, workspace_scope: bool) -> Result<String, CommandOutput> {
+    match crate::resolve_project_ids(root, ".", None, None) {
+        Ok((p, w)) => Ok(if workspace_scope { w } else { p }),
+        Err(err) => Err(CommandOutput {
+            status: 2,
+            stdout: String::new(),
+            stderr: format!("config: no se pudo resolver la identidad: {err}\n"),
+        }),
+    }
+}
+
+fn run_config_set(
+    environment: &CliEnvironment,
+    cwd: Option<PathBuf>,
+    workspace_scope: bool,
+    mode: &str,
+    profile: Option<String>,
+) -> CommandOutput {
+    let root = config_root(cwd);
+    let mode = match mode {
+        "on" => Mode::On,
+        "off" => Mode::Off,
+        other => {
+            return CommandOutput {
+                status: 2,
+                stdout: String::new(),
+                stderr: format!("error: valor invalido '{other}' (on|off)\n"),
+            };
+        }
+    };
+    if let Some(p) = &profile
+        && p != "-"
+        && !profiles_dir(environment)
+            .join(format!("{p}.yaml"))
+            .is_file()
+    {
+        return CommandOutput {
+            status: 2,
+            stdout: String::new(),
+            stderr: format!("error: perfil desconocido '{p}' (ver: sddk config profiles)\n"),
+        };
+    }
+    let id = match identity_for(&root, workspace_scope) {
+        Ok(id) => id,
+        Err(out) => return out,
+    };
+    let path = mode_index_path(environment);
+    let current = std::fs::read_to_string(&path).unwrap_or_default();
+    let next = orchestration_config::upsert_declaration(&current, &id, mode, profile.as_deref());
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(err) = std::fs::write(&path, next) {
+        return CommandOutput {
+            status: 2,
+            stdout: String::new(),
+            stderr: format!(
+                "error: no se pudo escribir {}: {err}\n",
+                path.to_string_lossy()
+            ),
+        };
+    }
+    let scope = if workspace_scope {
+        "workspace"
+    } else {
+        "project"
+    };
+    let suffix = profile.map(|p| format!(" profile={p}")).unwrap_or_default();
+    CommandOutput {
+        status: 0,
+        stdout: format!("set {id} ({scope}){}: {}\n", suffix, mode.canonical()),
+        stderr: String::new(),
+    }
+}
+
+fn run_config_clear(
+    environment: &CliEnvironment,
+    cwd: Option<PathBuf>,
+    workspace_scope: bool,
+) -> CommandOutput {
+    let root = config_root(cwd);
+    let id = match identity_for(&root, workspace_scope) {
+        Ok(id) => id,
+        Err(out) => return out,
+    };
+    let path = mode_index_path(environment);
+    let current = std::fs::read_to_string(&path).unwrap_or_default();
+    let next = orchestration_config::remove_declaration(&current, &id);
+    if let Err(err) = std::fs::write(&path, next) {
+        return CommandOutput {
+            status: 2,
+            stdout: String::new(),
+            stderr: format!(
+                "error: no se pudo escribir {}: {err}\n",
+                path.to_string_lossy()
+            ),
+        };
+    }
+    let scope = if workspace_scope {
+        "workspace"
+    } else {
+        "project"
+    };
+    CommandOutput {
+        status: 0,
+        stdout: format!("clear {id} ({scope})\n"),
+        stderr: String::new(),
+    }
+}
+
+// ── SDDK orchestration configuration (arch-spec-049) ────────────────────────
+
+/// `SDDK_PROFILE_DIR` or `~/.config/sddk/profiles`.
+fn profiles_dir(environment: &CliEnvironment) -> PathBuf {
+    if let Some(dir) = nonempty_env("SDDK_PROFILE_DIR") {
+        return PathBuf::from(dir);
+    }
+    match &environment.home {
+        Some(home) => home.join(".config/sddk/profiles"),
+        None => PathBuf::from(".config/sddk/profiles"),
+    }
+}
+
+/// `SDDK_MODE_INDEX` or `<sddk_data_root>/mode-index`.
+fn mode_index_path(environment: &CliEnvironment) -> PathBuf {
+    if let Some(path) = nonempty_env("SDDK_MODE_INDEX") {
+        return PathBuf::from(path);
+    }
+    match crate::sddk_data_root(environment) {
+        Ok(root) => root.join("mode-index"),
+        Err(_) => PathBuf::from("mode-index"),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OrchestrationIdentity {
+    project: String,
+    workspace: String,
+}
+
+#[derive(Debug, Serialize)]
+struct OrchestrationConfigReport {
+    mode: String,
+    reason: String,
+    profile: String,
+    identity: OrchestrationIdentity,
+    keys: Vec<ResolvedKey>,
+}
+
+/// Build the effective-config report without touching process env or identity.
+/// `render_orchestration_resolve` resolves identity and delegates here.
+fn orchestration_report(
+    index_text: Option<&str>,
+    profile_dir: &Path,
+    project: &str,
+    workspace: &str,
+) -> Result<OrchestrationConfigReport, String> {
+    let effective = orchestration_config::resolve(index_text, profile_dir, project, workspace)
+        .map_err(|e| e.to_string())?;
+    Ok(OrchestrationConfigReport {
+        mode: effective.mode.canonical().to_string(),
+        reason: effective.reason.clone(),
+        profile: effective.profile.clone(),
+        identity: OrchestrationIdentity {
+            project: project.to_string(),
+            workspace: workspace.to_string(),
+        },
+        keys: effective.keys.clone(),
+    })
+}
+
+fn render_orchestration_resolve(
+    environment: &CliEnvironment,
+    root: &Path,
+    format: OutputFormat,
+) -> CommandOutput {
+    let (project, workspace) = match crate::resolve_project_ids(root, ".", None, None) {
+        Ok(ids) => ids,
+        Err(err) => {
+            return CommandOutput {
+                status: 2,
+                stdout: String::new(),
+                stderr: format!("config resolve failed: could not resolve identity: {err}\n"),
+            };
+        }
+    };
+    let index_path = mode_index_path(environment);
+    let index_text = std::fs::read_to_string(&index_path).ok();
+    let profile_dir = profiles_dir(environment);
+    let report =
+        match orchestration_report(index_text.as_deref(), &profile_dir, &project, &workspace) {
+            Ok(report) => report,
+            Err(err) => {
+                return CommandOutput {
+                    status: 2,
+                    stdout: String::new(),
+                    stderr: format!("config resolve failed: {err}\n"),
+                };
+            }
+        };
+    let effective = EffectiveConfig {
+        mode: if report.mode == "on" {
+            Mode::On
+        } else if report.mode == "off" {
+            Mode::Off
+        } else {
+            Mode::Undeclared
+        },
+        reason: report.reason.clone(),
+        profile: report.profile.clone(),
+        keys: report.keys.clone(),
+    };
+    match format {
+        OutputFormat::Json => {
+            let stdout = serde_json::to_string_pretty(&report).unwrap_or_default();
+            CommandOutput {
+                status: 0,
+                stdout,
+                stderr: String::new(),
+            }
+        }
+        OutputFormat::Text => {
+            let mut out = String::new();
+            out.push_str(&format!("mode      {}\n", effective.mode.canonical()));
+            out.push_str(&format!("reason    {}\n", effective.reason));
+            out.push_str(&format!("profile   {}\n", effective.profile));
+            out.push_str(&format!("project   {project}\n"));
+            out.push_str(&format!("workspace {workspace}\n\n"));
+            out.push_str(&format!("{:<42} {:<16} {}\n", "KEY", "VALUE", "SOURCE"));
+            for k in &effective.keys {
+                out.push_str(&format!("{:<42} {:<16} {}\n", k.name, k.value, k.source));
+            }
+            CommandOutput {
+                status: 0,
+                stdout: out,
+                stderr: String::new(),
+            }
+        }
+    }
+}
+
+fn render_orchestration_laws(format: OutputFormat) -> CommandOutput {
+    match format {
+        OutputFormat::Json => {
+            let laws: Vec<serde_json::Value> = orchestration_config::LAWS
+                .iter()
+                .map(|(k, v)| serde_json::json!({"key": k, "value": v}))
+                .collect();
+            let body = serde_json::json!({
+                "laws": laws,
+                "forbidden_keys": orchestration_config::FORBIDDEN_KEYS,
+            });
+            CommandOutput {
+                status: 0,
+                stdout: serde_json::to_string_pretty(&body).unwrap_or_default(),
+                stderr: String::new(),
+            }
+        }
+        OutputFormat::Text => {
+            let mut out = String::new();
+            out.push_str("Non-overridable laws (arch-spec-049 §5):\n");
+            for (k, v) in orchestration_config::LAWS {
+                out.push_str(&format!("  {:<34} {}\n", k, v));
+            }
+            out.push_str("\nForbidden profile keys (presence rejects the profile):\n");
+            out.push_str(&format!(
+                "  {}\n",
+                orchestration_config::FORBIDDEN_KEYS.join(" ")
+            ));
+            CommandOutput {
+                status: 0,
+                stdout: out,
+                stderr: String::new(),
+            }
+        }
+    }
+}
+
+fn render_orchestration_profiles(format: OutputFormat) -> CommandOutput {
+    let dir = match nonempty_env("SDDK_PROFILE_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => match std::env::var("HOME") {
+            Ok(home) => PathBuf::from(home).join(".config/sddk/profiles"),
+            Err(_) => PathBuf::from(".config/sddk/profiles"),
+        },
+    };
+    let mut names: Vec<String> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("yaml")
+                && let Some(stem) = p.file_stem().and_then(|x| x.to_str())
+            {
+                names.push(stem.to_string());
+            }
+        }
+    }
+    names.sort();
+    match format {
+        OutputFormat::Json => CommandOutput {
+            status: 0,
+            stdout: serde_json::to_string_pretty(&serde_json::json!({
+                "dir": dir.to_string_lossy(),
+                "profiles": names,
+            }))
+            .unwrap_or_default(),
+            stderr: String::new(),
+        },
+        OutputFormat::Text => {
+            let mut out = String::new();
+            out.push_str(&format!("profiles dir: {}\n", dir.to_string_lossy()));
+            for n in &names {
+                out.push_str(&format!("  {n}\n"));
+            }
+            CommandOutput {
+                status: 0,
+                stdout: out,
+                stderr: String::new(),
+            }
+        }
     }
 }
 
@@ -456,5 +854,88 @@ mod tests {
         let report = resolve_key_with_env("policy.profile", Some("team-default"), &lookup, root);
         assert_eq!(report.resolved.as_deref(), Some("from-env"));
         assert_eq!(report.source, "env");
+    }
+}
+
+#[cfg(test)]
+mod orchestration_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn profdir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sddk-cli-cfg-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("default.yaml"),
+            "profile: default\nversion: 1\nautonomy.auto_advance: false\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("bender.yaml"),
+            "profile: bender\nversion: 1\nextends: default\nautonomy.auto_advance: true\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn report_resolves_mode_profile_and_sources() {
+        let dir = profdir("report");
+        let report = orchestration_report(Some("p-1 on bender\n"), &dir, "p-1", "w-1").unwrap();
+        assert_eq!(report.mode, "on");
+        assert_eq!(report.reason, "declared:project");
+        assert_eq!(report.profile, "bender");
+        assert_eq!(report.identity.project, "p-1");
+        let adv = report
+            .keys
+            .iter()
+            .find(|k| k.name == "autonomy.auto_advance")
+            .unwrap();
+        assert_eq!(adv.value, "true");
+        assert_eq!(adv.source, "profile:bender");
+    }
+
+    #[test]
+    fn report_laws_are_always_system_law() {
+        let dir = profdir("laws");
+        let report = orchestration_report(Some("p-1 on bender\n"), &dir, "p-1", "w-1").unwrap();
+        for key in ["git.push", "git.tag", "git.release", "git.history_rewrite"] {
+            let row = report.keys.iter().find(|k| k.name == key).unwrap();
+            assert_eq!(row.source, "system-law");
+            assert_eq!(row.value, "human_gate");
+        }
+    }
+
+    #[test]
+    fn report_undeclared_when_index_absent() {
+        let dir = profdir("absent");
+        let report = orchestration_report(None, &dir, "p-1", "w-1").unwrap();
+        assert_eq!(report.mode, "undeclared");
+        assert_eq!(report.reason, "index-absent");
+    }
+
+    #[test]
+    fn report_rejects_law_override_in_profile() {
+        let dir = profdir("evillaw");
+        fs::write(
+            dir.join("evil.yaml"),
+            "profile: evil\nversion: 1\ngit.push: allowed\n",
+        )
+        .unwrap();
+        let err = orchestration_report(Some("p-1 on evil\n"), &dir, "p-1", "w-1").unwrap_err();
+        assert!(err.contains("fail-closed"), "got: {err}");
+    }
+
+    #[test]
+    fn report_json_is_parseable_and_has_sources() {
+        let dir = profdir("json");
+        let report = orchestration_report(Some("p-1 on bender\n"), &dir, "p-1", "w-1").unwrap();
+        let text = serde_json::to_string(&report).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["mode"], "on");
+        assert!(value["keys"].as_array().unwrap().len() >= 30);
+        assert!(value["keys"][0]["source"].is_string());
     }
 }

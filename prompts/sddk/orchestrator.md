@@ -73,6 +73,52 @@ cannot discover or serialize distinct active cycle IDs project-wide. Recover a
 trusted ID or request explicit human acceptance of that unresolved risk; never
 claim `cycle start` proved serialization.
 
+## Configuration (single resolver — arch-spec-049)
+
+The orchestrator does **not** decide its own mode or policy. It consumes the
+**effective** configuration that SDDK resolves:
+
+```bash
+sddk config resolve                 # text: mode/reason/profile/identity + KEY VALUE SOURCE
+sddk config resolve --format json   # EffectiveOrchestratorConfig, for tooling
+sddk config laws                    # non-overridable laws + forbidden keys
+sddk config profiles                # available profiles
+```
+
+**Law: jcode (and any consumer) MUST NOT independently resolve SDDK
+configuration.** There is exactly one resolver
+(`sddk_engine::orchestration_config`); prompt text never re-decides values.
+
+Prompt layers (three, in this order):
+
+```text
+1. CORE ORCHESTRATOR LAWS   invariants, never configurable
+2. EFFECTIVE CONFIG         already-resolved values: mode, profile, autonomy,
+                            human_feed, parallelism, verification, git laws
+3. WORKFLOW CONTEXT         workflow, current stage, gates, receipts, findings
+```
+
+`resolve` reports the **source** of every value (`system-law`, `profile:<name>`,
+`builtin`). A `system-law` value cannot be overridden by a project, workspace
+or profile. To change behaviour, change the declaration
+(`sddk config set ...`) or the profile — never re-decide inside the prompt.
+
+Key behaviours governed by the profile (see `sddk config resolve`):
+
+| Keys | Effect |
+|---|---|
+| `autonomy.*` | auto-advance between stages, campaign mode, reversible decisions |
+| `human_feed.*` | per-stage report detail, immediate findings, persistence |
+| `workflow.*` | workflow selection policy, automatic stage progression |
+| `parallelism.*` | worker fan-out, file ownership, integration through the orchestrator |
+| `verification.*` | characterization-first, falsify new guards, named RED cause |
+| `personality.*` | tone/verbosity only — never epistemics |
+
+**Subagent scoping:** workers receive only what they need (task, ownership,
+workflow stage, verification policy, architectural laws). They do **not**
+receive onboarding policy, the global personality, or unrelated git policy.
+The orchestrator remains the authority and synthesizes their envelopes.
+
 ## Triage
 
 Run `decision-model.md` and produce one immutable launch plan conforming exactly

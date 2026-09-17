@@ -4,10 +4,11 @@ title: SDDK Configuration Model v1 — adoption, profiles, autonomy, human feed
 status: implemented
 milestone: A5
 implemented_by: >-
-  `~/.jcode/bin/sddk-mode` (adoption + profile selector),
-  `~/.jcode/bin/sddk-config` (resolver), `~/.config/sddk/profiles/*.yaml`
-  (default/bender/cautious/manual), `~/.jcode/bin/sddk-config-selftest`
-  (25 pins) + `~/.jcode/bin/sddk-mode-selftest` (14 pins)
+  `sddk_engine::orchestration_config` (single resolver),
+  `sddk config resolve|laws|profiles|set|clear` (crates/sddk-cli/src/config_cmd.rs),
+  `~/.config/sddk/profiles/*.yaml` (default/bender/cautious/manual);
+  `~/.jcode/bin/sddk-mode` + `~/.jcode/bin/sddk-config` are delegation shims
+adrs: [ADR-0129-SINGLE-CONFIG-RESOLVER]
 depends_on: []
 ---
 
