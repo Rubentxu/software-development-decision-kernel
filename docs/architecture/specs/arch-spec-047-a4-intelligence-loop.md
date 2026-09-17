@@ -3,13 +3,14 @@ id: arch-spec-047-a4-intelligence-loop
 title: A4 intelligence loop and repository spec-ID reconciliation
 status: contract-ready
 milestone: A4
-implemented_by: pending (A4-5 — full loop integration; A4-4a/4b/4M ship only the kernel surfaces: UniversalConcern + Intent + AlignmentLens abstraction + paradigm_lens convergence)
+implemented_by: partial — A4-5a composition shipped (v1.169.64); AdvisoryContext + WHY pending A4-5b; acceptance pending A4-5C
 depends_on: 042, 043, 044, 045, 046
 ---
 
 # arch-spec-047 — A4 intelligence loop
 
-> **Contract-ready, NOT implemented.**
+> **Partially implemented (A4-5a composition shipped v1.169.64).**
+> **AdvisoryContext + WHY pending A4-5b; acceptance pending A4-5C.**
 
 ## The loop
 
@@ -65,6 +66,20 @@ Historical ids that would have collided: `SPEC-019-SOFTWARE-ALIGNMENT-DOMAIN`,
 `SPEC-027-VERIFY-DELTA-INTELLIGENCE`,
 `SPEC-028-DEBVERIFY-GLOBAL-RECONCILIATION`,
 `SPEC-029-LLM-ALIGNMENT-EVALUATOR`, `SPEC-034-STATIC-RUNTIME-ALIGNMENT`.
+
+## A4-5a composition seam (v1.169.64, 2026-09-17)
+
+> Shipped by cycle `p-63676b11dc0ef88f/a4-5a-intelligence-loop-composition`.
+
+The four authority outputs (Knowledge, Observation, Verify, DebVerify,
+AlignmentLens, reduce_alignment) are now bound under one content-addressed
+`IntelligenceLoopReceiptId` via the `intelligence_loop` module. Two new
+public types: `IntelligenceLoopResult` (EPHEMERAL) and
+`IntelligenceLoopReceipt` (PROJECTION). Composition receives — never
+calls — the authority outputs. NO AdvisoryContext, NO WHY, NO
+Governance, NO authority derivation. MISALIGNED ≠ DENY is structurally
+pinned by the type system. See `crates/sddk-engine/src/intelligence_loop/`
+and ADR-0126.
 
 ## Explicitly out of A4
 
