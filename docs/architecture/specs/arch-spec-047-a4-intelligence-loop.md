@@ -33,6 +33,12 @@ VerificationReceipt + AlignmentAssessment
 **Never** `MISALIGNED → DENY`. Alignment computes the delta and presents
 attention; only Governance can turn explicit policy into a ratchet.
 
+**Never** `Alignment → Authority`, `Alignment → Capability`,
+`Alignment → InstructionSource`. Alignment produces findings and
+assessments; it must never become a ratchet on its own. Authority is
+granted by Governance (after the loop), Capability is granted by the
+runtime, and InstructionSource is a separate provenance direction.
+
 ## The ordering is the point
 
 > SDDK does not evaluate first and look for evidence afterwards. SDDK observes,
