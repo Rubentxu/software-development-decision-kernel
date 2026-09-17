@@ -1,17 +1,21 @@
 ---
 id: arch-spec-047-a4-intelligence-loop
 title: A4 intelligence loop and repository spec-ID reconciliation
-status: contract-ready
+status: implemented
 milestone: A4
-implemented_by: partial — A4-5a composition shipped (v1.169.64); A4-5b AdvisoryContext + WHY shipped (v1.169.66); acceptance pending A4-5C
+implemented_by: A4-5a (v1.169.64); A4-S15R (v1.169.65); A4-5b (v1.169.66); A4-5C acceptance (2026-09-17)
 depends_on: 042, 043, 044, 045, 046
 ---
 
 # arch-spec-047 — A4 intelligence loop
 
-> **Partially implemented.** A4-5a composition shipped (v1.169.64).
-> A4-5b AdvisoryContext + WHY shipped (v1.169.66).
-> **Acceptance pending A4-5C.**
+> **Implemented.** A4-5a composition (v1.169.64), A4-S15R provenance
+> (v1.169.65), A4-5b AdvisoryContext + WHY (v1.169.66), and A4-5C
+> acceptance (2026-09-17) have all shipped.
+>
+> Acceptance receipt:
+> `docs/architecture/receipts/A4-5C-arch-spec-047-acceptance-receipt.md`
+> — every normative clause PASS, no MUST `NOT_PROVEN`.
 
 ## The loop
 
@@ -119,6 +123,21 @@ Invariants pinned (20-test corpus
 - No global verdict (`status`/`score`/`verdict`/`health`/`confidence`/…).
 
 See `crates/sddk-engine/src/intelligence_advisory/` and ADR-0128.
+
+## A4-5C acceptance (2026-09-17)
+
+> Cycle `p-63676b11dc0ef88f-a4-5c-arch-spec-047-acceptance`.
+> Budget: ACCEPTANCE / RECEIPT / UAT ONLY (zero production semantics).
+
+Cross-cutting acceptance that every normative clause of this spec holds
+simultaneously, including negative cases. 34-test corpus
+`crates/sddk-engine/tests/a4_5c_arch_spec_047_acceptance.rs`; durable
+Acceptance Receipt at
+`docs/architecture/receipts/A4-5C-arch-spec-047-acceptance-receipt.md`.
+
+Result: **every normative clause PASS; no MUST `NOT_PROVEN`.** No
+production change was required (no STOP triggered). The spec is promoted
+to `status: implemented`.
 
 ## Explicitly out of A4
 
