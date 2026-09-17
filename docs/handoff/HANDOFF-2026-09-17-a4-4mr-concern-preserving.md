@@ -47,13 +47,20 @@ header.
 ## Release
 
 - **Tag:** `v1.169.63`
-- **Release SHA:** *(filled at release time, see `git ls-remote origin v1.169.63`)*
+- **Release SHA:** `6f48e1cb6a2eb1f740e007c1bb99a327b38e7143`
 - **Cargo.toml bump:** `1.169.62 → 1.169.63`
 - **Baseline:** `v1.169.62` / SHA `b9e928c6229e65dc141fb282c594931dc7ef7df3`
 - **PublicReleaseGate:** PASS (scenario 9 against the real release at
-  the GH API)
-- **Release script:** `bash scripts/release.sh` (14 pasos + step 9b)
+  the GH API; `isDraft=false`, `isPrerelease=false`, 9 assets, all
+  HTTP 200 from `https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.169.63/...`)
+- **Release script:** `bash scripts/release.sh --skip-tests --force` (the
+  first `--skip-tests` invocation aborted with "release v1.169.63
+  already exists" because step 9 had already published during a prior
+  timeout-affected attempt; the subsequent `--force` invocation
+  re-published with the up-to-date assets and continued through steps
+  9b → 13)
 - **Local install:** `~/.local/share/sddk/framework/1.169.63/`
+- **Live binary:** `sddk --version` → `sddk 1.169.63`
 
 ## Pre-flight gate (M0)
 
