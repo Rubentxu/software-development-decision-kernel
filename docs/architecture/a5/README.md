@@ -24,6 +24,7 @@ is its A5 detail.
 | [`A5-RELEASE-CERTIFICATION-PROTOCOL.md`](./A5-RELEASE-CERTIFICATION-PROTOCOL.md) | How is a certified release tied to an immutable revision? |
 | [`A5-DEFERRED-POST-BASE.md`](./A5-DEFERRED-POST-BASE.md) | What is explicitly POST_BASE? |
 | [`A5-PUSH-CONTRACT-INVESTIGATION.md`](./A5-PUSH-CONTRACT-INVESTIGATION.md) | The ceremonial-release-marker investigation |
+| [`../specs/arch-spec-049-sddk-configuration-model-v1.md`](../specs/arch-spec-049-sddk-configuration-model-v1.md) | SDDK Configuration Model v1 — adoption, profiles (bender/cautious/manual), autonomy, human feed; single authority for config keys, precedence and non-overridable laws |
 
 ## The definition, in one line
 

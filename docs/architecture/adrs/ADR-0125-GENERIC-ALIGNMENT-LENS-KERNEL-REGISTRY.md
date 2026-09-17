@@ -17,7 +17,7 @@ implementation_evidence:
   - "crates/sddk-engine/src/alignment_lens/not_evaluated.rs (NotEvaluated typed gap)"
   - "crates/sddk-engine/tests/a4_4b_alignment_lens_kernel.rs (24 pin tests; integration)"
   - "crates/sddk-engine/tests/alignment_lens_fixture.rs (two heterogeneous reference lenses under tests/ root, NOT exported)"
-  - "docs/architecture/specs/arch-spec-048-alignment-lens-kernel.md (contract-ready)"
+  - "this ADR is the contract of record for the lens kernel (no separate arch-spec-048 was created; the dangling reference was removed at A5-1)"
   - ".sddk/cycles/p-63676b11dc0ef88f-a4-4b-alignment-lens-kernel/spec.md (scope contract, ABSTRACTION/KERNEL ONLY)"
 superseded_by: []
 related_adrs:
