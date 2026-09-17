@@ -48,3 +48,15 @@ A5-C  BASE_PRODUCTION_READY certification
 ```
 
 Feature freeze applies throughout A5.
+
+## Adjacent strands (not A5 scope)
+
+Work that lands on `main` while A5 is open but is **not** an A5 workstream. It
+does not contribute gate evidence to `BASE_PRODUCTION_READY` and does not
+reorder the DAG.
+
+```text
+config-model-v1   SDDK Configuration Model v1 (single resolver) + jcode shims
+                  receipt: docs/architecture/receipts/CONFIG-MODEL-V1-RECEIPT.md
+                  contract: arch-spec-049, ADR-0129, released v1.169.73
+```
