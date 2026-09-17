@@ -614,25 +614,41 @@ impl From<WorkflowRunPersistError> for crate::StorageError {
 ///
 /// Closed on purpose: an advisory payload must not become a free-text channel,
 /// because a free-text channel cannot be audited for "did it act as authority?".
-/// `AlignmentTension` is **reserved**: A4 delivers the evaluator; A3 closeout
-/// establishes only the delivery boundary.
+/// `AlignmentTension` was **reserved** at A3 closeout; A4-5b is its first
+/// producer. A4-5b (AdvisoryContext + WHY integration) adds the three
+/// remaining kinds the intelligence loop needs, keeping the enum the single
+/// closed vocabulary for advisory content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdvisoryKind {
     /// A paradigm-lens observation (AC7). Advisory by construction.
     ParadigmObservation,
-    /// A software-alignment tension. Reserved for A4; no producer exists yet.
+    /// A software-alignment tension. Produced since A4-5b from
+    /// `AlignmentAssessment` (A4-5a).
     AlignmentTension,
     /// A knowledge freshness / status warning.
     KnowledgeStatus,
+    /// A verification outcome posture (A4-5b): one per
+    /// `(VerificationClaim, VerificationResult)` pair from the intelligence
+    /// loop. The typed result is the authority; this is the delivery tag.
+    VerificationOutcome,
+    /// A DebVerify reconciliation posture (A4-5b): one per
+    /// `ReconciliationSummary` from the intelligence loop.
+    DebtReconciliation,
+    /// A paradigm-lens coverage gap (A4-5b): one per `NotEvaluated`
+    /// (`NoRegisteredLens` / `LensExistsButRefused`).
+    LensCoverageGap,
 }
 
 impl AdvisoryKind {
     /// Every variant, in canonical order.
-    pub const ALL: [AdvisoryKind; 3] = [
+    pub const ALL: [AdvisoryKind; 6] = [
         AdvisoryKind::ParadigmObservation,
         AdvisoryKind::AlignmentTension,
         AdvisoryKind::KnowledgeStatus,
+        AdvisoryKind::VerificationOutcome,
+        AdvisoryKind::DebtReconciliation,
+        AdvisoryKind::LensCoverageGap,
     ];
 
     /// Stable short tag used in canonical hashing.
@@ -641,6 +657,9 @@ impl AdvisoryKind {
             AdvisoryKind::ParadigmObservation => "paradigm_observation",
             AdvisoryKind::AlignmentTension => "alignment_tension",
             AdvisoryKind::KnowledgeStatus => "knowledge_status",
+            AdvisoryKind::VerificationOutcome => "verification_outcome",
+            AdvisoryKind::DebtReconciliation => "debt_reconciliation",
+            AdvisoryKind::LensCoverageGap => "lens_coverage_gap",
         }
     }
 }

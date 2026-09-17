@@ -34,6 +34,23 @@ impl EvidenceKind {
             EvidenceKind::Adhoc => "adhoc",
         }
     }
+
+    /// Inverse of [`Self::domain_tag`] for the **closed** vocabulary.
+    ///
+    /// This is a codec for a closed enum, not locator parsing: the input is
+    /// the literal tag this type emits, and the mapping is total over
+    /// `ALL`. Unknown tags return `None` (fail closed) rather than a
+    /// default, so a typo can never be silently absorbed into `Adhoc`.
+    pub fn from_domain_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "planning" => Some(EvidenceKind::Planning),
+            "governance" => Some(EvidenceKind::Governance),
+            "authority" => Some(EvidenceKind::Authority),
+            "decision_memory" => Some(EvidenceKind::DecisionMemory),
+            "adhoc" => Some(EvidenceKind::Adhoc),
+            _ => None,
+        }
+    }
 }
 
 /// Universal evidence reference. Either carries an inline locator

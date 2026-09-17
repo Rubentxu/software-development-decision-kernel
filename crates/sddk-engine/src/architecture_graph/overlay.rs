@@ -526,6 +526,111 @@ impl ArchitectureGraphOverlay {
         units.dedup();
         units
     }
+
+    /// Read-only provenance of one contract (A4-5b).
+    ///
+    /// Returns the contract anchor plus the two **distinct** provenance
+    /// axes A4-S15R established:
+    ///
+    /// - `specified_by`: the spec payloads the contract is `SpecifiedBy`
+    ///   (declared intent). The overlay stores a spec node's identity as
+    ///   its canonical payload (A3-S15), so the payload is what is
+    ///   recovered — no variant guessing.
+    /// - `verified_by`: the typed `EvidenceRef`s the contract is
+    ///   `VerifiedBy` (verification evidence), reconstructed losslessly
+    ///   from the typed props A4-S15R stashed on each evidence node
+    ///   (`evidence_kind` / `evidence_locator` / `evidence_cas`).
+    ///
+    /// Both lists are canonical (sorted, deduplicated). An empty
+    /// `verified_by` means "no evidence linked", NOT "not verified".
+    /// The two axes are never conflated.
+    pub fn contract_provenance(&self, contract_id: &str) -> ContractProvenance {
+        let anchor_kind = NodeKind::parse(ArchitectureOverlayNodeKind::SoftwareUnit.domain_tag())
+            .expect("static tag is well-formed");
+        let anchor_locator = format!("contract:{contract_id}");
+        let anchor_id = NodeId::new(&anchor_kind, &anchor_locator);
+
+        let specified_kind = ArchitectureOverlayRelationKind::SpecifiedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let verified_kind = ArchitectureOverlayRelationKind::VerifiedBy
+            .as_relation_kind()
+            .expect("static tag is well-formed");
+        let spec_node_kind = NodeKind::parse(ArchitectureOverlayNodeKind::SpecRef.domain_tag())
+            .expect("static tag is well-formed");
+        let evidence_store_kind = ArchitectureOverlayNodeKind::EvidenceRef.domain_tag();
+
+        let mut specified_by: Vec<String> = Vec::new();
+        let mut verified_by: Vec<EvidenceRef> = Vec::new();
+        for rel in self.projection.relations() {
+            if rel.from != anchor_id {
+                continue;
+            }
+            if rel.kind != specified_kind && rel.kind != verified_kind {
+                continue;
+            }
+            let Some(node) = self.node_by_id(&rel.to) else {
+                continue;
+            };
+            if rel.kind == specified_kind && node.kind == spec_node_kind {
+                if let Some(payload) = node.props_inline.get("spec_ref") {
+                    specified_by.push(payload.clone());
+                }
+            } else if rel.kind == verified_kind
+                && let Some(evidence) = evidence_from_node(node, evidence_store_kind)
+            {
+                verified_by.push(evidence);
+            }
+        }
+        specified_by.sort();
+        specified_by.dedup();
+        // EvidenceRef Ord is sha256(ordering_key): canonical, deterministic.
+        verified_by.sort();
+        verified_by.dedup();
+        ContractProvenance {
+            contract: anchor_id,
+            specified_by,
+            verified_by,
+        }
+    }
+
+    /// Read-only node lookup by id within the projection.
+    fn node_by_id(&self, id: &NodeId) -> Option<SemanticNode> {
+        self.projection.nodes().into_iter().find(|n| n.id == *id)
+    }
+}
+
+/// Read-only provenance of one contract (A4-5b). PROJECTION-derived; no
+/// identity of its own, no persistence.
+///
+/// `specified_by` and `verified_by` are **separate provenance axes**:
+/// declared intent vs verification evidence. Neither implies the other.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContractProvenance {
+    /// The contract anchor node.
+    pub contract: NodeId,
+    /// Spec payloads the contract is `SpecifiedBy` (canonical order).
+    pub specified_by: Vec<String>,
+    /// Typed evidence the contract is `VerifiedBy` (canonical order).
+    pub verified_by: Vec<EvidenceRef>,
+}
+
+/// Reconstruct a typed `EvidenceRef` from the props A4-S15R stashed on an
+/// evidence node. Returns `None` (fail closed) if the closed kind tag is
+/// unknown or the required props are absent — no defaulting.
+fn evidence_from_node(node: SemanticNode, evidence_kind_tag: &str) -> Option<EvidenceRef> {
+    if node.kind.domain_tag() != evidence_kind_tag {
+        return None;
+    }
+    let kind = crate::evidence_ref::EvidenceKind::from_domain_tag(
+        node.props_inline.get("evidence_kind")?,
+    )?;
+    let locator = node.props_inline.get("evidence_locator")?.clone();
+    let cas = node
+        .props_inline
+        .get("evidence_cas")
+        .map(|d| crate::canonical_event_log::CasRef(d.clone()));
+    Some(EvidenceRef { kind, locator, cas })
 }
 
 // Helper to silence the unused import warning when overlay.rs is compiled

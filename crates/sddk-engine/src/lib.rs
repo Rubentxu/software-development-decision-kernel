@@ -71,6 +71,7 @@ pub mod human_resume_view;
 pub mod inc_generator;
 pub mod incident_pack;
 pub mod integrate_parity;
+pub mod intelligence_advisory;
 pub mod intelligence_loop;
 pub mod intent_universal_concern;
 pub mod join_guard;

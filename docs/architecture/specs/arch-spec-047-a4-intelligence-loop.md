@@ -3,14 +3,15 @@ id: arch-spec-047-a4-intelligence-loop
 title: A4 intelligence loop and repository spec-ID reconciliation
 status: contract-ready
 milestone: A4
-implemented_by: partial — A4-5a composition shipped (v1.169.64); AdvisoryContext + WHY pending A4-5b; acceptance pending A4-5C
+implemented_by: partial — A4-5a composition shipped (v1.169.64); A4-5b AdvisoryContext + WHY shipped (v1.169.66); acceptance pending A4-5C
 depends_on: 042, 043, 044, 045, 046
 ---
 
 # arch-spec-047 — A4 intelligence loop
 
-> **Partially implemented (A4-5a composition shipped v1.169.64).**
-> **AdvisoryContext + WHY pending A4-5b; acceptance pending A4-5C.**
+> **Partially implemented.** A4-5a composition shipped (v1.169.64).
+> A4-5b AdvisoryContext + WHY shipped (v1.169.66).
+> **Acceptance pending A4-5C.**
 
 ## The loop
 
@@ -80,6 +81,44 @@ calls — the authority outputs. NO AdvisoryContext, NO WHY, NO
 Governance, NO authority derivation. MISALIGNED ≠ DENY is structurally
 pinned by the type system. See `crates/sddk-engine/src/intelligence_loop/`
 and ADR-0126.
+
+## A4-5b AdvisoryContext + WHY integration (v1.169.66, 2026-09-17)
+
+> Shipped by cycle `p-63676b11dc0ef88f/a4-5b-advisory-context-why-integration`.
+
+The A4-5a composition output now feeds the **existing A3
+`AdvisoryContext`** (reused verbatim; no parallel advisory model) and a
+typed, provenance-backed WHY. New module:
+`crates/sddk-engine/src/intelligence_advisory/`.
+
+- `derive_advisory_context(&IntelligenceLoopResult) -> AdvisoryContext` —
+  deterministic, canonical; one item per verification pair, the
+  reconciliation, each lens contribution, each lens coverage gap, and the
+  alignment posture. Nothing from the loop is lost.
+- `explain_advisory(result, receipt_id, graph, subject) -> AdvisoryWhy` —
+  typed trace: `basis` (clock-stable) + typed `legs` + `unresolved` +
+  `why_not`.
+- `AdvisoryKind` gained `VerificationOutcome`, `DebtReconciliation`,
+  `LensCoverageGap`; `AlignmentTension` (reserved at A3 closeout) is now
+  produced.
+- The AC2 overlay gained a read-only `contract_provenance(contract_id)`
+  accessor exposing A4-S15R's two axes (`SpecifiedBy` spec payloads,
+  `VerifiedBy` typed evidence) without conflating them.
+
+Invariants pinned (20-test corpus
+`crates/sddk-engine/tests/a4_5b_advisory_context_why.rs`):
+
+- `SpecifiedBy` does not imply `VerifiedBy`; an empty evidence axis is
+  **reported** (as `unresolved`), never negated.
+- `no edge != evidence of negation`.
+- WHY explains an existing conclusion; it never creates a stronger one.
+- `MISALIGNED != DENY` (and no authority/capability/instruction coupling).
+- No hidden orchestration: the module never calls `VerifyKernel`,
+  `DebVerifyKernel`, `AlignmentLensKernel`, `reduce_alignment`, the legacy
+  `paradigm_lens` evaluator, or any provider.
+- No global verdict (`status`/`score`/`verdict`/`health`/`confidence`/…).
+
+See `crates/sddk-engine/src/intelligence_advisory/` and ADR-0128.
 
 ## Explicitly out of A4
 

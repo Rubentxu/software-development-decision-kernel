@@ -209,9 +209,12 @@ pub struct ArchitectureWhy {
 impl ArchitectureWhy {
     /// The unresolved leg this cycle documents.
     ///
-    /// It is constant because the substrate is: evidence is a `(provider,
-    /// reference)` tuple attached as relation metadata, there is no evidence node
-    /// kind, and no edge runs from an evidence reference to a software relation.
+    /// It stays constant because the substrate still has **no edge** running
+    /// from an evidence reference to a software relation. A4-S15R gave
+    /// evidence a first-class projection node kind and repointed `VerifiedBy`
+    /// at it, but the `evidence → observes → software_relation` edge is a
+    /// different relation (`FU-A3-S15-1`, still open). So the leg is a
+    /// truthful gap, not a structural impossibility.
     pub const EVIDENCE_TO_SOFTWARE_EDGE: &'static str = "evidence→observes→software_relation";
 
     /// Fixed reason text for [`Self::EVIDENCE_TO_SOFTWARE_EDGE`].
