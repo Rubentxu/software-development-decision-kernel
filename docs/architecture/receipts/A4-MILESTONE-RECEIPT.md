@@ -262,6 +262,22 @@ A5-PLAN      NEXT
 
 `BASE_PRODUCTION_READY` is **not** claimed; A5 still owns hardening.
 
+## §16 Release (certified immutable baseline for A5)
+
+| Field | Value |
+|---|---|
+| `released_baseline` | `v1.169.67` → `1949fa8448b636ffdc4fe2fea02339d82922481c` |
+| `development_head` (at open, full) | `730f855428f89c7232b8390ce0d96e791e6a68b0` |
+| `workspace_version` | `1.169.68` |
+| `release_target` | `main` |
+| `actual_release_tag` | `v1.169.68` |
+| `release_sha` | `3bad25275212f77c3d0d4d664f4d49293aa779c9` |
+| `binary_sha256` | `349e8f3d22ae9fce4eb1a088157411f00635f16481f9a945d6866de826eed9b2` |
+| PublicReleaseGate | PASS (draft=false, prerelease=false, 9/9 assets, doctor `all_present: true`) |
+
+The productive diff of this cycle is **zero** (docs + tests only). The
+release exists because A5 must inherit one immutable certified point.
+
 ## Final disposition
 
 # `A4_CERTIFIED`
