@@ -68,6 +68,8 @@
 
 - **Phase 7 (debt-verify)** was substituted: Z.ai GLM-5-turbo agent was unavailable (no OpenRouter key configured). Substituted with the `scripts/release.sh` step 1b shell contract tests (8/8 green) + explicit debt-list inventory above. The substitution is logged in `memory` (`a4-4c-debt-verify-substitution-honest`).
 - **Phase 2 (propose)** used `MiniMax-M3` (`wyvern`). The agent delivered only a meta-summary, not the proposal body. Orchestrator composed the proposal (13 sections, 251 lines) from local evidence. Mitigation recorded in `session-2026-09-17-learnings`.
+- **Cycle CLI ledger gap (discovered post-closure)**: A4-4C was NOT registered in the cycle ledger via `sddk cycle start`. The cycle authority is the release tag + handoff + archive-manifest, which is consistent with the project's pattern of scoped receipt-only cycles in the A4 family (the cycle scope lives in `.sddk/cycles/<id>/spec.md`, not in the ledger). A3-era cycles used `sddk cycle start` because they had transition state; A4-era cycles have been closed-via-release. **No retroactive registration** — that would invent ledger events that never happened. Future sessions that want formal ledger entries should consider `sddk cycle supersede` with `--reason` for the previous orphan cycle (none currently exists).
+
 
 ## What was actually hard (3 things)
 
