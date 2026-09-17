@@ -1,12 +1,30 @@
 # FU-A4-3R-TARGET-NAMESPACE-BRIDGE
 
-> **Status:** OPEN (registered by A4-5P preflight on 2026-09-17)
+> **Status:** CLOSED (closed by A4-3R2 release v1.169.62 on 2026-09-17)
 > **Severity:** P1
-> **Origin:** A4-5P §3 namespace audit (cycle `p-63676b11dc0ef88f/a4-5p-intelligence-loop-entry-gate`)
-> **Blocks:** A4-5a (Intelligence Loop composition)
-> **Disposes:** nothing — this is a new follow-up
+> **Origin:** A4-5P preflight §3 namespace audit (cycle `p-63676b11dc0ef88f/a4-5p-intelligence-loop-entry-gate`)
+> **Blocks:** A4-5a (Intelligence Loop composition) — STRUCTURALLY UNBLOCKED.
+> **Disposes:** nothing — this is a closed follow-up
 
-## 1. Problem statement
+## 0. Closure evidence
+
+- Release: **v1.169.62** (release tag `v1.169.62` → SHA `b9e928c6229e65dc141fb282c594931dc7ef7df3`).
+- Cycle: `p-63676b11dc0ef88f-a4-3r2-namespace-safe-targets`.
+- Scope contract: `.sddk/cycles/p-63676b11dc0ef88f-a4-3r2-namespace-safe-targets/spec.md`.
+- Handoff: `docs/handoff/HANDOFF-2026-09-17-a4-3r2-namespace-safe-targets.md`.
+- PublicReleaseGate: PASS (scenario 9 against the real release at the GH
+  API).
+- `cargo test --workspace` → **4570 passed, 0 failed**; `cargo fmt
+  --check` clean; `cargo clippy --workspace --all-targets -- -D
+  warnings` clean.
+- Falsification corpus: `crates/sddk-engine/tests/a4_3r2_namespace_safe_targets.rs`
+  (18 pins + 1 deterministic property test, 200 scenarios, fixed seed
+  `0xA4_3F_2E_5C_5A_FA_DE`).
+- A4-3R corpus migrated: pins 4 and 6 now assert typed binding
+  (`ObservationSubject::Component` for `SingleAuthority`,
+  `ObservationSubject::Entity` for `UniqueOwner`).
+
+## 1. Problem statement (historical — closed)
 
 `crates/sddk-engine/src/software_alignment/reducer.rs:134-137`:
 
