@@ -192,7 +192,10 @@ y se actualiza con `sddk dev install`.
 [ ] apply: ejecutar SOLO el lote scoped admitido por el cambio/SUT actual
 [ ] apply: registrar qué SUT/capability/tests se ejecutaron y por qué
 [ ] apply: si el impacto no es justificable, bloquear/reportar; NO lanzar todo
-[ ] Si tocaste assets/: sddk dev install        # bundle runtime actualizado
+[ ] Si tocaste assets/ (prompts/, agents/, skills/, packs/):
+[ ]   sddk dev manifest --root .               # MANIFEST.sha256 commiteado, ANTES del gate
+[ ]   git add MANIFEST.sha256                  # step 1 verifica el arbol commiteado
+[ ]   sddk dev install                         # bundle runtime actualizado
 [ ] Si tocaste el TUI de modelos: bash tests-e2e/tui/run.sh cuando el scope lo requiera
 [ ] git status                                  # clean
 [ ] git diff                                    # revisas lo que vas a commitear
