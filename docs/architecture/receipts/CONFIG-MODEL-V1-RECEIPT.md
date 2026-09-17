@@ -18,6 +18,7 @@
 | bundle `manifest_sha256` | `608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f` |
 | local framework bundle | `~/.local/share/sddk/framework/1.169.73` (`current` → `1.169.73`) |
 | GitHub Release | `v1.169.73`, `isDraft=false`, `isPrerelease=false`, 9 assets |
+| post-release main head | `6604117` (docs-only: receipt + A5 README pointer + INC registration) |
 
 ## §0 Falsification first (RED → GREEN)
 
