@@ -13,11 +13,14 @@
 |---|---|
 | project_id | `p-63676b11dc0ef88f` |
 | workspace_id | `w-2e7853aadc28217a6649e309` |
-| cycle HEAD at receipt | `bd8d9cc` |
-| release HEAD | (filled in by release commit; target v1.169.75) |
-| binary sha256 | (filled in by release commit) |
-| cycle commits | `28abee3` (R3+R6 fix + tests + plan), `af346b9` (R12 deletion + restart regression fix), `bd8d9cc` (R5 tests + R4 incident) |
-| release pipeline | (filled in after release) |
+| cycle HEAD at receipt | `6a60f83` |
+| release HEAD | `6a60f83` (v1.169.75) |
+| binary sha256 | `76a22e83b5ea4194747fbcd5a64c7b531bc3dde1cc59a79a638ea134b9b61583` |
+| cycle commits | `28abee3` (R3+R6 fix + tests + plan), `af346b9` (R12 deletion + restart regression fix), `bd8d9cc` (R5 tests + R4 incident), `bdd16a7` (receipt + finding), `6a60f83` (release bump) |
+| remote tag | `v1.169.75` → `6a60f834e6fa4d88d9c5e534cc21437754a67031` |
+| install path | `~/.local/bin/sddk` (= `/home/rubentxu/.local/bin/sddk`) → v1.169.75 |
+| doctor | `binary.bundle_coherence: present`, `all_present: true` |
+| release pipeline | 14/14 PASS (steps 0–13, including 9b public-release gate, 10 install from URL, 11 doctor, 12 prune, 13 distrib round-trip) |
 
 ## §0 Falsification first (RED → GREEN)
 
@@ -78,3 +81,33 @@ Falsification note for defect 1: A5-3's first attempt was to keep `INSERT OR REP
 - No new crate / trait / port. (A5-3 inherits the constraint from A5.)
 - No new AdmissionTicket / FencedAdmission substrate — that is the R4-B follow-up's job, and it lives outside A5.
 - No rewriting of pre-A5 commit history.
+
+## §6 Release pipeline (14/14 PASS)
+
+| # | Step | Gate / verifier | Result |
+|---|---|---|---|
+| 0 | Preflight | `gh auth status`, branch `main`, tree clean, HEAD `chore(release): bump version`, `jq` on PATH | PASS |
+| 1 | Workspace green | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` | PASS |
+| 2 | Read version | `Cargo.toml` `[workspace.package] version` = `1.169.75` | PASS |
+| 3 | Build binary | `cargo build --release --bin sddk` | PASS |
+| 4 | Manifest | `sddk dev manifest --root .` + `--verify` (RDI) | PASS |
+| 5 | Bundle tarball | `tar czf` with prefix `software-development-decision-kernel/` | PASS |
+| 6 | BUNDLE.toml (v2) | `schema_version=2`, manifest_sha256 pinned | PASS |
+| 7 | Unified tarball | `bin/sddk` + `framework/`, `chmod 0755` defensivo | PASS |
+| 8 | sha256 + CHECKSUMS + sbom | CycloneDX 1.5 | PASS |
+| 9 | `gh release create` | 9 assets in one command | PASS |
+| 9b | Public-release gate | tag SHA anchored via `git ls-remote origin $TAG`, `isDraft=false`, `isPrerelease=false`, all 6 HTTP-download URLs return 200, binary SHA `76a22e83...` matches the in-tarball binary | PASS |
+| 10 | Install from URL real | `bash scripts/install.sh --version v1.169.75 --editor none` | PASS |
+| 11 | `sddk dev doctor` | `binary.bundle_coherence: present, all_present: true` | PASS |
+| 12 | `sddk dev update --prune-only --keep 1` | removed 1.169.74, kept 1.169.75 | PASS |
+| 13 | Distrib smoke test | re-install from URL after prune; binary reports 1.169.75; bundle coherent | PASS |
+| 14 | Final state | `binary: sddk 1.169.75`, `bundle: 1.169.75`, `current -> 1.169.75` | PASS |
+
+## §7 What this cycle leaves for the next one
+
+- **R4-B (decide-then-act TOCTOU) is open.** `INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY` (medium/P2) is the durable reminder. A future cycle outside A5 must:
+  - Choose between Option A (transactional side effects), Option B (fenced admission tickets), Option C (high-band-only migration).
+  - Add a substrate primitive if Option B is chosen — which is the only one that fits the existing architecture.
+  - Migrate High-band unguarded surfaces (`framework_bundle`, `github_releases`) first; pin the "Allow ticket still Allow at effect time" contract with integration tests.
+- **Ignored count: 12.** The remaining `#[ignore]` tests are documented in `A5-2-RECEIPT` and `A5-3-RECEIPT` (chain-verify, ENVELOPE_GOLDEN manual harness, etc.).
+- **Recovered `parallel_spans_three_ticks_drain` is gone forever.** If a future cycle needs non-blocking Parallel semantics, it MUST rebuild intentionally.
