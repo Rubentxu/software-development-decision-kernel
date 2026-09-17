@@ -126,6 +126,42 @@ observation/tests.rs
 parallel refs. Contradiction detection is a pure function over an `ObservationSet`;
 it never mutates one.
 
+### A4-3R2 — Normative identity-namespace rule (FU-A4-3R-TARGET-NAMESPACE-BRIDGE, closed)
+
+`SoftwareUnitRef`, `ComponentRef`, and `EntityRef` are **three distinct identity
+namespaces**. They share the newtype-wrapping convention but no equivalence
+semantics: equal inner strings across namespaces do NOT imply subject
+equivalence, and any reducer / lookup / projection path that relied on
+cross-namespace string equality (`as_str() == as_str()`, `contains`, prefix
+stripping, rendered text) was a bug closed by A4-3R2 (release tag pinned in
+`docs/debt/FU-A4-3R-TARGET-NAMESPACE-BRIDGE.md`).
+
+Specifically:
+
+- `ObservationSubject::Unit(SoftwareUnitRef)` is the unary subject for AC7
+  paradigm-lens targets and **never** names a component or entity.
+- `ObservationSubject::Component(ComponentRef)` is the unary subject for
+  `ContractPayload::SingleAuthority(ComponentRef)` typed binding.
+- `ObservationSubject::Entity(EntityRef)` is the unary subject for
+  `ContractPayload::UniqueOwner(EntityRef)` typed binding.
+- `ObservationTargetRef` carries the same three unary targets plus
+  `Relation` (binary), `Contract`, and `Knowledge`. Their
+  `kind_tag()` / `canonical_tag()` always emit a literal namespace prefix
+  (`unit:`, `component:`, `entity:`); the prefix is part of identity and is
+  never stripped.
+
+**Cross-namespace equivalence requires an explicit typed mapping** (option A in
+the FU disposition). Such a mapping is **not** part of A4-3R2; introducing it is
+a separate architectural change with its own ADR and scope contract. Within
+A4-3R2's scope, no such mapping exists, so observations of a unit can never
+collide with a contract naming a component or entity of the same inner string.
+
+The eight falsification pins in `crates/sddk-engine/tests/a4_3r2_namespace_safe_targets.rs`
+enforce this rule. The A4-3R corpus (`crates/sddk-engine/tests/a4_3r_typed_constraint_binding.rs`)
+pins 4 and 6 are migrated to assert the typed binding (`Component` for
+`SingleAuthority`, `Entity` for `UniqueOwner`); pins 12–14 still defend against
+substring / rendered-text attacks on the *contract_ref* side and remain green.
+
 ## Vocabulary hygiene (FU-A3-CO-2 / FU-A3-CO-3)
 
 A4-0 produces a **disposition** for the three suspect relation kinds and does **not**
