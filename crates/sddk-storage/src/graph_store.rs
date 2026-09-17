@@ -760,8 +760,15 @@ impl GraphStore for SqliteGraphStore {
         };
         let last_attempt_id = node_run.attempts.last().map(|a| a.attempt_id.0.clone());
 
-        conn.execute(
-            r#"INSERT OR REPLACE INTO node_runs_v1
+        // A5-3 (R3): the previous `INSERT OR REPLACE` silently overwrote
+        // an existing row (silent last-writer-wins). The PK on
+        // `node_runs_v1` is (run_id, node_id); a second writer must
+        // fail closed with a typed IdempotencyConflict so the call site
+        // can decide what to do. Note: `INSERT OR REPLACE` does NOT
+        // trip the `node_runs_v1_no_delete` trigger — the trigger fires
+        // only on explicit DELETE statements.
+        let result = conn.execute(
+            r#"INSERT INTO node_runs_v1
                (run_id, node_id, state, dependencies_json, last_attempt_id)
                VALUES (?1, ?2, ?3, ?4, ?5)"#,
             params![
@@ -771,9 +778,25 @@ impl GraphStore for SqliteGraphStore {
                 deps_json,
                 last_attempt_id,
             ],
-        )
-        .map_err(|e| StorageError::Database(format!("record_node_run_for_run: {e}")))?;
-        Ok(())
+        );
+        match result {
+            Ok(_) => Ok(()),
+            Err(rusqlite::Error::SqliteFailure(code, _msg))
+                if code.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                Err(StorageError::IdempotencyConflict {
+                    key: sddk_domain::workflow_run::IdempotencyKey {
+                        project_id: "sddk".into(),
+                        run_id: run_id.clone(),
+                        node_id: node_run.node_id.clone(),
+                        attempt_seq: 0,
+                    },
+                })
+            }
+            Err(e) => Err(StorageError::Database(format!(
+                "record_node_run_for_run: {e}"
+            ))),
+        }
     }
 
     fn record_node_run(
