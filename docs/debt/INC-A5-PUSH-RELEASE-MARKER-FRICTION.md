@@ -1,9 +1,11 @@
 ---
 id: INC-A5-PUSH-RELEASE-MARKER-FRICTION
 title: "Push/release protocol requires an empty ceremonial `chore(release): bump version` marker after a post-release documentation commit"
-status: open
+status: closed
 severity: low
 priority: P2
+closed_at: 2026-09-17
+closed_by: cycle p-63676b11dc0ef88f/a5-1-release-distribution-version-governance
 fingerprint: "a5_push_release_marker_friction_v1"
 fingerprint_aliases: ["a5_push_release_marker_friction_v1", "ceremonial_release_marker_v2"]
 cluster_id: CL-RELEASE-DISCIPLINE
@@ -68,5 +70,10 @@ A push must never require asserting a version bump that did not happen.
 
 ## Disposition
 
-`MUST_CLOSE_A5` (P2), owner A5-1. Resolve independently of
+**CLOSED by A5-1.** The empty ceremonial marker is now **rejected** by
+`githooks/pre-push` (matrix case `empty chore(release) marker`), and a
+post-release **docs-only** push is accepted via the closed allowlist
+(`docs/**`, `.sddk/followups/**`) with no bump and no marker. Release
+admission additionally requires a real monotonic version change
+(`scripts/lib/release_admission.sh`). Resolved independently of
 `INC-A4-RELEASE-VERSION-DRIFT`.

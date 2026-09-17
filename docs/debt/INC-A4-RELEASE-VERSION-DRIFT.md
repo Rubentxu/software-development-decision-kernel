@@ -1,9 +1,11 @@
 ---
 id: INC-A4-RELEASE-VERSION-DRIFT
 title: "Release-discipline drift: preflight target version vs workspace development version vs actual release tag"
-status: open
+status: closed
 severity: low
 priority: P2
+closed_at: 2026-09-17
+closed_by: cycle p-63676b11dc0ef88f/a5-1-release-distribution-version-governance
 fingerprint: "a4_release_version_drift_v1"
 fingerprint_aliases: ["a4_release_version_drift_v1", "release_version_drift_v1"]
 cluster_id: CL-RELEASE-DISCIPLINE
@@ -83,3 +85,21 @@ cycle can address it cleanly.
 - Cycle-46 install-coherence contract.
 - A4-4b close-checkpoint (`docs/architecture/README.md`).
 - A4-4b handoff (`HANDOFF-2026-09-16-a4-4b-alignment-lens-kernel-v1.169.57.md`).
+
+## Closure (A5-1)
+
+Closed by cycle `p-63676b11dc0ef88f/a5-1-release-distribution-version-governance`
+with **verifiable invariants**, not documentation alone:
+
+- `scripts/lib/release_admission.sh` requires a real, **monotonic**
+  `[workspace.package]` change vs `HEAD^`; an empty `chore(release)` HEAD is
+  refused (7-case matrix in `tests/test_release_admission.sh`).
+- `githooks/pre-push` admits a push only on a real version change or a
+  non-empty docs-only range; the subject is no longer authority (20-case
+  matrix in `tests/test_push_prevention_hook.sh`).
+- The A5-1 receipt records `released_baseline`, `development_head`,
+  `workspace_version_before_release`, `workspace_version_at_release`,
+  `actual_release_tag`, `release_sha`, `post_release_main_head` and
+  `binary_sha256` **separately**.
+- The 1.169.69 / 1.169.70 development states (no releases) are the historical
+  UAT of the rule: `workspace_version != proof that a release exists`.
