@@ -153,11 +153,13 @@ implemented_by: A4-5a (v1.169.64); A4-S15R (v1.169.65); A4-5b (v1.169.66); A4-5C
 
 | Field | Value |
 |---|---|
-| Released baseline | `v1.169.66` → `aa3aa91c…` |
-| Development head | `9253a817…` |
-| Workspace version | `<filled at release>` |
-| Actual release tag | `<filled at release>` |
-| Release SHA | `<filled at release>` |
+| Released baseline | `v1.169.66` → `aa3aa91c11794baf9b5bce34cb26e704d1c7d59b` |
+| Development head | `9253a817f4b294b97d5ecd8488ad21ca9bc7b2ef` |
+| Workspace version | `1.169.67` |
+| Actual release tag | `v1.169.67` |
+| Release SHA | `1949fa8448b636ffdc4fe2fea02339d82922481c` |
+| Binary sha256 | `6c531c9f0c36de89e35812bb0e436f149c145be4bc77f6a3078ba30ea9d6759b` |
+| PublicReleaseGate | PASS (draft=false, prerelease=false, 9/9 assets, doctor `all_present: true`) |
 
 ## Unresolved items
 
