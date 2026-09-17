@@ -15,7 +15,13 @@
 | project_id | `p-63676b11dc0ef88f` |
 | workspace_id | `w-2e7853aadc28217a6649e309` |
 | cycle HEAD at receipt | `75da372` |
-| cycle commits | `957d0b0` (R1 fix), `7ab113a` (R2 fix), `75da372` (test clippy), `e0cc797` (plan), `06b8937` (prior cycle baseline) |
+| release HEAD | `31349ab` (v1.169.74) |
+| binary sha256 | `0dd9ddc5bf369cb55789031bf02ff30b4c0bdfa0f527223e6ac5dd300d550ec0` |
+| cycle commits | `957d0b0` (R1 fix), `7ab113a` (R2 fix), `75da372` (test clippy), `e0cc797` (plan), `06b8937` (prior cycle baseline), `a53b650` (receipt + finding), `31349ab` (release bump) |
+| remote tag | `v1.169.74` → `31349ab48cec31daf98569e86c399d31d8bd9290` |
+| install path | `~/.local/bin/sddk` (= `/var/home/rubentxu/.local/bin/sddk`) → v1.169.74 |
+| doctor | `binary.bundle_coherence: present`, `all_present: true` |
+| release pipeline | 14/14 PASS (steps 0–13, including 9b public-release gate, 10 install from URL, 11 doctor, 12 prune, 13 distrib round-trip) |
 
 ## §0 Falsification first (RED → GREEN)
 
@@ -89,3 +95,31 @@ The substrate **rejected the path** I had planned. The fix only landed because t
 
 One inherent method (`latest_run_state_for`). One new branch in the existing
 CAS `get` impl. No new port, no new schema, no new migration.
+
+## §8 Release evidence (post-merge, on the released tag)
+
+The release was driven from the workspace CWD by `scripts/release.sh` after
+the cycle commits were pushed. All 14 steps passed:
+
+| # | Step | Result |
+|---|------|--------|
+| 0 | preflight (HEAD on `main`, clean tree, version bump commit `chore(release): bump version 1.169.73 -> 1.169.74`, ADR format, vault mirror present) | OK |
+| 1 | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` | OK |
+| 2 | read version `1.169.74` → tag `v1.169.74` | OK |
+| 3 | `cargo build --release --bin sddk` | OK |
+| 4 | manifest regenerated + verified (manifest_sha256 `608c6d9c…`) | OK |
+| 5 | bundle tarball (`software-development-decision-kernel.tar.gz`, 669 132 bytes) | OK |
+| 6 | `BUNDLE.toml` written with `schema_version=2` | OK |
+| 7 | unified tarball (`sddk-v1.169.74-sddk-linux-x86_64-musl.tar.gz`, 12 007 275 bytes, exec bit + `BUNDLE.toml` OK) | OK |
+| 8 | sha256 + `CHECKSUMS` + CycloneDX 1.5 `sbom.json` | OK |
+| 8b | vault ADR mirror sync (36 ADRs, all already present) | OK |
+| 9 | `gh release create v1.169.74` (target `main`, actor `system`) | OK |
+| 9b | public-release gate: tag SHA anchored to `31349ab…`, `isDraft=false`, `isPrerelease=false`, 9-asset contract, **9/9 canonical assets reachable from public CDN (HTTP 200)** | OK |
+| 10 | install from real GH Release URL (`bash scripts/install.sh --version v1.169.74 --editor all`) — CDN served correct binary sha256 after 10 s | OK |
+| 11 | `sddk dev doctor --prefix ~/.local/bin` — `binary.bundle_coherence: present`, `all_present: true` | OK |
+| 12 | `sddk dev update --prune-only --keep 1` | OK |
+| 13 | re-install from URL (distrib round-trip smoke test) | OK |
+| 14 | final state: `sddk 1.169.74`, bundle 1.169.74, current symlink → `~/.local/share/sddk/framework/1.169.74` | OK |
+
+Receipt commit (this commit) lands on the released branch so the receipt
+pointer and the release tag share the same history.
