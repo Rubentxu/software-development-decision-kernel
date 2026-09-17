@@ -36,12 +36,16 @@ Out of scope (verified by source comment or anchor):
    today against `main` (RED captured). Keep `#[ignore]` removed; let cargo
    surface the failure so this is a real gate.
 
-2. **F2 (R1.a) — fix `workflow_runs_v1.state` write order.**
-   Inside `record_workflow_run_transition`, in the same `Immediate`
-   transaction, add `UPDATE workflow_runs_v1 SET state = ?2, updated_at = ?3
-   WHERE run_id = ?1` right after the event-log insert. Atomic, so the
-   snapshot row and the log row commit together or not at all.
-   No schema change. No migration.
+2. **F2 (R1.a) — fix `load_run` to read state from the event log.**
+   `workflow_runs_v1` is **append-only by trigger** (see
+   `crates/sddk-storage/migrations/MIGRATION_011..13`); updating it on
+   transition is not allowed by the substrate. The corrected contract is:
+   the event log (`workflow_run_events_v1`, also append-only) is the
+   single source of truth for state at any point in time. `load_run`
+   must read the same way `latest_workflow_run_state` does
+   (`ORDER BY rowid DESC LIMIT 1`) and merge that into the constructed
+   `WorkflowRun`. To avoid duplicating the SELECT, extract a single
+   helper `latest_run_state_for(run_id)` that both call sites share.
 
 3. **F3 (R1.b) — new probe: state survives a process drop.**
    New integration test in `crates/sddk-storage/tests/state_survives_restart.rs`:

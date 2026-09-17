@@ -72,21 +72,23 @@ fn compile_test_revision(ir: &WorkflowIR, anchor: &str) -> ExecutionGraphRevisio
 /// WHEN the store is dropped and a fresh SqliteGraphStore is opened on the same file
 /// THEN load_run returns the same run_id, ir_hash, template_ref, correlation_id,
 ///       graph_revision and schema_version;
-///       latest_workflow_run_state returns Running;
+///       load_run.state AND latest_workflow_run_state both return Running;
 ///       stream_node_runs returns the same node runs;
 ///       and the reloaded revision's digest == compute_digest()
-// TODO(storage): investigate pre-existing assertion failure.
-//
-// This test fails on `cargo test --workspace` after 2026-09-07 12:00 UTC because
-// `record_run` writes its initial pending→pending event with `current_iso8601()` (wall-clock)
-// and the hardcoded `occurred_at = "2026-09-07T12:00:00.000Z"` in this test sorts BEFORE the
-// `record_run` event under `ORDER BY occurred_at DESC LIMIT 1`. The same test fails on the
-// unmodified v1.89.1 base commit (db72647), confirming it is pre-existing debt unrelated to
-// DW-RUNTIME-003. The proper fix is to either (a) add an event_sequence column to
-// `workflow_run_events_v1` (MIGRATION_18) so ordering is monotonic, or (b) redesign
-// `latest_workflow_run_state` to read the latest state from `workflow_runs_v1` instead of the
-// event log. See DW-RUNTIME-003 follow-up cycle.
-#[ignore = "pre-existing v1.89.1 debt — see comment above; tracked in DW-RUNTIME-003 follow-up"]
+// A5-2 (R1): the previous version of this test was marked `#[ignore]` since
+// v1.89.1 with a comment referring to "DW-RUNTIME-003" and a clock-skew
+// theory that didn't match the test's actual flow. Re-baselined (2026-09-17):
+//   - The test fails today (before F2's fix) because it inserts the
+//     pending->running event directly into workflow_run_events_v1, but
+//     load_run read the (stale) workflow_runs_v1.state. That asymmetry was
+//     the real R1 defect.
+//   - The clock-skew theory is unrelated — recent_cycle dates move past
+//     the hardcoded `2026-09-07T12:00:00.000Z` after enough wall-clock,
+//     and the test reverted to green anyway via rowid ordering.
+//   - F2 makes load_run consult the event log via latest_run_state_for
+//     (the shared helper), so this test stays green for the right reason.
+// We remove `#[ignore]` and add the missing `load_run.state == Running`
+// assertion (it was implied in the docstring but never executed).
 #[test]
 fn run_survives_restart_with_equivalent_identity_and_provenance() {
     // Use TempDir (directory) as the ledger backing store.
@@ -157,13 +159,20 @@ fn run_survives_restart_with_equivalent_identity_and_provenance() {
             )
             .expect("failed to insert running event");
 
-        // Verify initial state before restart
+        // Verify initial state before restart. After the raw event insert above,
+        // `load_run.state` reads from the event log via latest_run_state_for
+        // (A5-2 fix), so it should now be Running, not the stale Pending
+        // the snapshot row holds.
         let loaded = store.load_run(&run_id).expect("load_run failed");
         assert!(loaded.is_some(), "run should exist before restart");
         let loaded = loaded.unwrap();
         assert_eq!(loaded.run_id, run_id);
-        assert_eq!(loaded.state, WorkflowRunState::Pending); // record_run writes pending→pending as initial event
         assert_eq!(loaded.correlation_id, correlation_id);
+        assert_eq!(
+            loaded.state,
+            WorkflowRunState::Running,
+            "load_run.state must reflect the lifecycle event (A5-2 R1)"
+        );
 
         // latest state should be running
         let latest = store
@@ -212,6 +221,17 @@ fn run_survives_restart_with_equivalent_identity_and_provenance() {
         assert_eq!(
             loaded.graph_revision, fresh_revision.revision_id,
             "graph_revision must match"
+        );
+        // A5-2 (R1): after the post-restart read, `load_run.state` must
+        // reflect the lifecycle event the store inserted before the drop.
+        // This is the assertion the original DW-RUNTIME-003 comment
+        // described but the test never actually performed. The snapshot
+        // row in `workflow_runs_v1` is append-only by trigger; state is
+        // now read from the event log via `latest_run_state_for`.
+        assert_eq!(
+            loaded.state,
+            WorkflowRunState::Running,
+            "after restart, load_run.state must read Running from the event log"
         );
         assert_eq!(loaded.schema_version, 1, "schema_version must be 1");
 

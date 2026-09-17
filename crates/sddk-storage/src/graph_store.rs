@@ -168,6 +168,62 @@ impl SqliteGraphStore {
     }
 }
 
+impl SqliteGraphStore {
+    /// Read the latest `WorkflowRunState` for a run from the append-only
+    /// event log (`workflow_run_events_v1`). Single source of truth shared
+    /// by `latest_workflow_run_state` (raw state probe) and `load_run`
+    /// (full row reader). Ordering is by `rowid` because `record_run` and
+    /// `record_workflow_run_transition` both insert under `Immediate`
+    /// transactions whose `rowid` advances monotonically across restarts
+    /// (the rowids are stored on the rows themselves, not derived).
+    ///
+    /// A5-2 (R1): returning `None` means "no event row" — for a run that
+    /// exists in `workflow_runs_v1` we therefore fall back to its snapshot
+    /// state in `load_run`. Under normal operation `record_run` writes a
+    /// `from_state == to_state` initial event so this helper returns
+    /// `Some(...)` for any persisted run.
+    fn latest_run_state_for(
+        conn: &rusqlite::Connection,
+        run_id: &RunId,
+    ) -> Result<Option<sddk_domain::workflow_run::WorkflowRunState>, StorageError> {
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT from_state, to_state FROM workflow_run_events_v1
+                 WHERE run_id = ?1
+                 ORDER BY rowid DESC
+                 LIMIT 1",
+                params![run_id.0],
+                |row| {
+                    let from_state: String = row.get(0)?;
+                    let to_state: String = row.get(1)?;
+                    Ok((from_state, to_state))
+                },
+            )
+            .optional()
+            .map_err(|e| StorageError::Database(format!("latest_run_state_for: {e}")))?;
+
+        match row {
+            Some((_, to_state)) => {
+                let state = match to_state.as_str() {
+                    "pending" => sddk_domain::workflow_run::WorkflowRunState::Pending,
+                    "running" => sddk_domain::workflow_run::WorkflowRunState::Running,
+                    "paused" => sddk_domain::workflow_run::WorkflowRunState::Paused,
+                    "completed" => sddk_domain::workflow_run::WorkflowRunState::Completed,
+                    "failed" => sddk_domain::workflow_run::WorkflowRunState::Failed,
+                    "cancelled" => sddk_domain::workflow_run::WorkflowRunState::Cancelled,
+                    _ => {
+                        return Err(StorageError::Database(format!(
+                            "unknown workflow state: {to_state}"
+                        )));
+                    }
+                };
+                Ok(Some(state))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 impl GraphStore for SqliteGraphStore {
     fn save_state(&mut self, state: &GraphState) -> Result<(), StorageError> {
         let state_json = serde_json::to_string(state)
@@ -533,41 +589,7 @@ impl GraphStore for SqliteGraphStore {
         run_id: &RunId,
     ) -> Result<Option<sddk_domain::workflow_run::WorkflowRunState>, StorageError> {
         let conn = self.proj_store.conn();
-        let row: Option<(String, String)> = conn
-            .query_row(
-                "SELECT from_state, to_state FROM workflow_run_events_v1
-                 WHERE run_id = ?1
-                 ORDER BY rowid DESC
-                 LIMIT 1",
-                params![run_id.0],
-                |row| {
-                    let from_state: String = row.get(0)?;
-                    let to_state: String = row.get(1)?;
-                    Ok((from_state, to_state))
-                },
-            )
-            .optional()
-            .map_err(|e| StorageError::Database(format!("latest_workflow_run_state: {e}")))?;
-
-        match row {
-            Some((_, to_state)) => {
-                let state = match to_state.as_str() {
-                    "pending" => sddk_domain::workflow_run::WorkflowRunState::Pending,
-                    "running" => sddk_domain::workflow_run::WorkflowRunState::Running,
-                    "paused" => sddk_domain::workflow_run::WorkflowRunState::Paused,
-                    "completed" => sddk_domain::workflow_run::WorkflowRunState::Completed,
-                    "failed" => sddk_domain::workflow_run::WorkflowRunState::Failed,
-                    "cancelled" => sddk_domain::workflow_run::WorkflowRunState::Cancelled,
-                    _ => {
-                        return Err(StorageError::Database(format!(
-                            "unknown workflow state: {to_state}"
-                        )));
-                    }
-                };
-                Ok(Some(state))
-            }
-            None => Ok(None),
-        }
+        SqliteGraphStore::latest_run_state_for(&conn, run_id)
     }
 
     fn record_workflow_run_transition(
@@ -660,19 +682,30 @@ impl GraphStore for SqliteGraphStore {
 
         match row {
             Some(r) => {
-                let state = match r.state.as_str() {
-                    "pending" => WorkflowRunState::Pending,
-                    "running" => WorkflowRunState::Running,
-                    "paused" => WorkflowRunState::Paused,
-                    "completed" => WorkflowRunState::Completed,
-                    "failed" => WorkflowRunState::Failed,
-                    "cancelled" => WorkflowRunState::Cancelled,
-                    _ => {
-                        return Err(StorageError::Database(format!(
-                            "unknown state: {}",
-                            r.state
-                        )));
-                    }
+                // A5-2 (R1): the snapshot row's `state` is only authoritative
+                // at record time (it is append-only by trigger). The
+                // canonical source for the current state is the event log;
+                // we reuse the same helper as `latest_workflow_run_state`.
+                // If the helper returns None (no event row at all), we fall
+                // back to the snapshot — that path is exercised only when
+                // a row exists without an event, which the substrate does
+                // not produce in normal operation.
+                let state = match Self::latest_run_state_for(&conn, run_id)? {
+                    Some(state) => state,
+                    None => match r.state.as_str() {
+                        "pending" => WorkflowRunState::Pending,
+                        "running" => WorkflowRunState::Running,
+                        "paused" => WorkflowRunState::Paused,
+                        "completed" => WorkflowRunState::Completed,
+                        "failed" => WorkflowRunState::Failed,
+                        "cancelled" => WorkflowRunState::Cancelled,
+                        _ => {
+                            return Err(StorageError::Database(format!(
+                                "unknown state: {}",
+                                r.state
+                            )));
+                        }
+                    },
                 };
                 let inputs: BTreeMap<String, serde_json::Value> =
                     serde_json::from_str(&r.inputs_json)
