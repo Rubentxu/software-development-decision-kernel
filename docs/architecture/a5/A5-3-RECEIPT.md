@@ -111,3 +111,7 @@ Falsification note for defect 1: A5-3's first attempt was to keep `INSERT OR REP
   - Migrate High-band unguarded surfaces (`framework_bundle`, `github_releases`) first; pin the "Allow ticket still Allow at effect time" contract with integration tests.
 - **Ignored count: 12.** The remaining `#[ignore]` tests are documented in `A5-2-RECEIPT` and `A5-3-RECEIPT` (chain-verify, ENVELOPE_GOLDEN manual harness, etc.).
 - **Recovered `parallel_spans_three_ticks_drain` is gone forever.** If a future cycle needs non-blocking Parallel semantics, it MUST rebuild intentionally.
+
+## §8 Cargo.lock propagation (follow-up)
+
+The `chore(release): bump version 1.169.74 -> 1.169.75` commit (`6a60f83`) updated `Cargo.toml` but did not propagate the version bump to `Cargo.lock`. The propagation landed via this follow-up commit (paired with this docs paragraph per the pre-push hook's allowlist rules — Cargo.lock alone is not authority; a paired docs change is). The release binary itself was unaffected (`sddk` package version is read from `Cargo.toml` at build time, not from `Cargo.lock`).
