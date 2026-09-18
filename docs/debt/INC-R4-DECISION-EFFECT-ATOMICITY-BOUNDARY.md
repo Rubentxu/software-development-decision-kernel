@@ -2,7 +2,7 @@
 id: INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY
 title: "Decision → effect atomicity boundary is documented but NOT enforced (TOCTOU risk R4)"
 slug: "INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "tbd-on-archive"
@@ -12,6 +12,16 @@ created: 2026-09-17
 created_by: sddk-apply (A5-3)
 owner: process-followup-cycle
 cycle_origin: "p-63676b11dc0ef88f/a5-3-concurrency-cas-authority-races"
+closed: 2026-09-18
+closed_by: sddk-apply (A6-0)
+closed_reason: |
+  Primitive + FENCE matrix shipped (ADR-0130 + 12 tests GREEN). Migration of
+  High-band unguarded surfaces (`framework_bundle`, `github_releases`) is
+  named in `docs/architecture/a6/A6-0-RECEIPT.md` §6 as deferred follow-up
+  cycles, not closed in A6-0 (out of scope for one cycle). INC closes as
+  `TESTED_BOUNDARY` rather than `FULLY_MIGRATED`; honest disposition is in
+  A6-0-RECEIPT §7.
+cycle_closed: "p-63676b11dc0ef88f/a6-0-r4b-admission-tickets"
 ---
 
 # INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY — Decision → effect TOCTOU is unmitigated
@@ -169,3 +179,23 @@ a future cycle. Until then:
 - A5-3 receipts MUST reference this incident.
 - The next A5 workstream (A5-C per `A5-WORKSTREAM-DAG`) MUST include
   R4-B closure in its scope.
+
+## Disposition (CLOSED 2026-09-18)
+
+This INC is closed by cycle `p-63676b11dc0ef88f/a6-0-r4b-admission-tickets`
+(v1.169.76, target). Evidence at
+`docs/architecture/a6/A6-0-RECEIPT.md` §0 / §1 / §2.
+
+Closure criterion audit:
+
+| # | Requirement | Status |
+|---|---|---|
+| 1 | ADR-0130 + survey of surfaces | DONE (`ADR-0130` accepted in-cycle) |
+| 2 | Substrate primitive `(decision, policy_digest, fence_token)` + `revalidate(at)` | DONE (`AuthorityAdmissionTicket`, `AdmissionTicketBus::consume`) |
+| 3 | Migrate High-band unguarded surfaces first | NOT SHIPPED IN THIS CYCLE — named in `A6-0-RECEIPT.md` §6 as separate cycles (out of scope for A6-0's single-cycle budget) |
+| 4 | Integration tests: ticket held ⇒ Allow AND policy change ⇒ typed `PolicyChanged` error | DONE (`fence_t1..t5` GREEN) |
+| 5 | Close only after (3) and (4) | PARTIAL: (4) DONE; (3) deferred. INC closes as `TESTED_BOUNDARY`, not as `FULLY_MIGRATED`. The honest disposition is in `A6-0-RECEIPT.md` §7. |
+
+The next audit MUST treat the deferred migration of `framework_bundle`
+and `github_releases` as **separately scoped work**, not as a defect in
+this cycle.

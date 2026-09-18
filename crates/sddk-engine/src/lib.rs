@@ -27,6 +27,7 @@ pub mod architecture_mutation;
 pub mod architecture_receipt;
 pub mod architecture_why;
 pub mod authority;
+pub mod authority_admission_ticket;
 pub mod authority_engine;
 pub mod build_work_graph;
 pub mod canonical_event_log;
