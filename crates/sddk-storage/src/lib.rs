@@ -1476,7 +1476,10 @@ impl Storage {
         const BASE_DELAY_MS: u64 = 100;
         let mut last_busy: Option<rusqlite::Error> = None;
         for attempt in 0..=MAX_RETRIES {
-            match self.connection.transaction_with_behavior(TransactionBehavior::Immediate) {
+            match self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+            {
                 Ok(transaction) => match op(&transaction) {
                     Ok(value) => {
                         transaction.commit()?;
@@ -1500,12 +1503,14 @@ impl Storage {
                 Err(e) => return Err(StorageError::from(e)),
             }
         }
-        Err(StorageError::Database(last_busy.take().unwrap_or_else(|| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
-                Some(String::new()),
-            )
-        })))
+        Err(StorageError::Database(last_busy.take().unwrap_or_else(
+            || {
+                rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                    Some(String::new()),
+                )
+            },
+        )))
     }
 
     /// Persists one authorized gate evaluation receipt with atomic seq allocation.
@@ -1554,7 +1559,7 @@ impl Storage {
                 evaluator: input.evaluator.clone(),
                 transition_id: input.transition_id.clone(),
                 plan_hash: input.plan_hash.clone(),
-                outcome: input.outcome.clone(),
+                outcome: input.outcome,
                 evidence: input.evidence.clone(),
                 actor: input.actor.clone(),
                 actor_ref: input.actor_ref.clone(),

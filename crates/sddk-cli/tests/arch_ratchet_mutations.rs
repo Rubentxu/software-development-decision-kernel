@@ -233,6 +233,11 @@ const CONF09_TYPE_ALLOWLIST: [&str; 5] = [
     // legacy `PlanningEvidenceKind` and constructs variants to build
     // canonical-equivalent test fixtures. It is NOT a producer.
     "crates/sddk-storage/tests/planning_cas_crud.rs",
+    // Note: concurrency_planning_substrate.rs (A5-SQLITE-CONCURRENCY-R) uses
+    // only the universal `EvidenceAttachmentRecord`; it does NOT reference
+    // the legacy `PlanningEvidenceKind` enum and therefore needs no entry
+    // here. Constructors of the legacy enum are still confined to
+    // CONF09_CONSTRUCTION_ALLOWLIST.
 ];
 
 /// Closed constructor set for VARIANT CONSTRUCTION (narrower than

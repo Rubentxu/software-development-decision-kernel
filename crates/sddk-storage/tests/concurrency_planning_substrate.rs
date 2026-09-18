@@ -11,9 +11,9 @@
 
 use sddk_domain::planning::{
     DecisionKind, DependencyEdgeKind, DependencyEdgeRecord, EvidenceAttachmentRecord,
-    PlanningEvidenceKind, WorkItemRecord, WorkItemStatus,
+    WorkItemRecord, WorkItemStatus,
 };
-use sddk_domain::{CycleId, CycleManifest, StorageError};
+use sddk_domain::{CycleId, CycleManifest};
 use sddk_storage::{CycleRecord, ProjectRecord, Storage, WorkspaceRecord};
 
 const CREATED_AT: i64 = 1_725_836_000; // 2026-09-05 00:00:00 UTC
@@ -54,13 +54,20 @@ fn setup_substrate() -> (tempfile::TempDir, String, String, String) {
         updated_at: CREATED_AT.to_string(),
     };
 
-    let mut storage = Storage::open(&db_path).expect("open storage");
+    let storage = Storage::open(&db_path).expect("open storage");
     storage.insert_project(&project).expect("insert_project");
-    storage.insert_workspace(&workspace).expect("insert_workspace");
+    storage
+        .insert_workspace(&workspace)
+        .expect("insert_workspace");
     storage.insert_cycle(&cycle).expect("insert_cycle");
     drop(storage);
 
-    (tmp, project_id.to_string(), workspace_id.to_string(), cycle_id)
+    (
+        tmp,
+        project_id.to_string(),
+        workspace_id.to_string(),
+        cycle_id,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,16 +87,15 @@ fn concurrent_insert_work_items_same_cycle_serializes_and_count_matches() {
     let db_path = Arc::new(db_path);
     let barrier = Arc::new(Barrier::new(2));
     let cycle_id_thread = cycle_id.clone();
-    let project_id = Arc::new(project_id);
+    let _project_id = Arc::new(project_id);
 
     let handle_a = {
         let db_path = Arc::clone(&db_path);
         let barrier = Arc::clone(&barrier);
         let cycle_id = cycle_id_thread.clone();
-        let project_id = Arc::clone(&project_id);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             for i in 0..50 {
                 let wi = WorkItemRecord {
                     id: format!("wi-a-{}", i),
@@ -116,10 +122,9 @@ fn concurrent_insert_work_items_same_cycle_serializes_and_count_matches() {
         let db_path = Arc::clone(&db_path);
         let barrier = Arc::clone(&barrier);
         let cycle_id = cycle_id_thread.clone();
-        let project_id = Arc::clone(&project_id);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             for i in 50..100 {
                 let wi = WorkItemRecord {
                     id: format!("wi-b-{}", i),
@@ -148,7 +153,12 @@ fn concurrent_insert_work_items_same_cycle_serializes_and_count_matches() {
     // Verify: exactly 100 rows, no duplicate id
     let storage = Storage::open(&*db_path).unwrap();
     let items = storage.list_work_items_by_cycle(&cycle_id).unwrap();
-    assert_eq!(items.len(), 100, "expected 100 work items, got {}", items.len());
+    assert_eq!(
+        items.len(),
+        100,
+        "expected 100 work items, got {}",
+        items.len()
+    );
     let mut ids: Vec<_> = items.iter().map(|w| w.id.clone()).collect();
     ids.sort();
     ids.dedup();
@@ -171,7 +181,7 @@ fn concurrent_insert_dependency_edges_same_pair_converges_to_one_row() {
 
     // Pre-seed wi-A and wi-B
     {
-        let mut storage = Storage::open(&db_path).unwrap();
+        let storage = Storage::open(&db_path).unwrap();
         let wi_a = WorkItemRecord {
             id: "wi-conc-a".into(),
             cycle_id: cycle_id.clone(),
@@ -216,7 +226,7 @@ fn concurrent_insert_dependency_edges_same_pair_converges_to_one_row() {
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             let edge = DependencyEdgeRecord {
                 from_id: "wi-conc-a".into(),
                 to_id: "wi-conc-b".into(),
@@ -235,7 +245,7 @@ fn concurrent_insert_dependency_edges_same_pair_converges_to_one_row() {
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             let edge = DependencyEdgeRecord {
                 from_id: "wi-conc-a".into(),
                 to_id: "wi-conc-b".into(),
@@ -255,7 +265,12 @@ fn concurrent_insert_dependency_edges_same_pair_converges_to_one_row() {
     // INV-4: exactly 1 row for (wi-conc-a, wi-conc-b, Blocks)
     let storage = Storage::open(&*db_path).unwrap();
     let edges = storage.get_dependency_edges_from("wi-conc-a").unwrap();
-    assert_eq!(edges.len(), 1, "expected 1 dependency edge, got {}", edges.len());
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected 1 dependency edge, got {}",
+        edges.len()
+    );
     assert_eq!(edges[0].from_id, "wi-conc-a");
     assert_eq!(edges[0].to_id, "wi-conc-b");
 }
@@ -276,7 +291,7 @@ fn concurrent_insert_evidence_attachments_distinct_ids_all_persist() {
 
     // Pre-seed work item
     {
-        let mut storage = Storage::open(&db_path).unwrap();
+        let storage = Storage::open(&db_path).unwrap();
         let wi = WorkItemRecord {
             id: "wi-ev-conc".into(),
             cycle_id: cycle_id.clone(),
@@ -308,7 +323,7 @@ fn concurrent_insert_evidence_attachments_distinct_ids_all_persist() {
             for i in 0..25 {
                 let body = format!("evidence body A-{}", i);
                 let record = EvidenceAttachmentRecord::from_universal_relation(
-                    format!("ev-conc-a-{}", i).into(),
+                    format!("ev-conc-a-{}", i),
                     "wi-ev-conc".into(),
                     "verifies",
                     "sha256:placeholder".into(),
@@ -334,7 +349,7 @@ fn concurrent_insert_evidence_attachments_distinct_ids_all_persist() {
             for i in 25..50 {
                 let body = format!("evidence body B-{}", i);
                 let record = EvidenceAttachmentRecord::from_universal_relation(
-                    format!("ev-conc-b-{}", i).into(),
+                    format!("ev-conc-b-{}", i),
                     "wi-ev-conc".into(),
                     "verifies",
                     "sha256:placeholder".into(),
@@ -384,7 +399,7 @@ fn concurrent_insert_evidence_attachments_duplicate_id_no_cas_orphan() {
 
     // Pre-seed work item
     {
-        let mut storage = Storage::open(&db_path).unwrap();
+        let storage = Storage::open(&db_path).unwrap();
         let wi = WorkItemRecord {
             id: "wi-ev-dup".into(),
             cycle_id: cycle_id.clone(),
@@ -518,7 +533,7 @@ fn concurrent_insert_decision_records_distinct_ids_all_persist() {
 
     // Pre-seed work item
     {
-        let mut storage = Storage::open(&db_path).unwrap();
+        let storage = Storage::open(&db_path).unwrap();
         let wi = WorkItemRecord {
             id: "wi-dec-conc".into(),
             cycle_id: cycle_id.clone(),
@@ -546,10 +561,10 @@ fn concurrent_insert_decision_records_distinct_ids_all_persist() {
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             for i in 0..50 {
                 let record = sddk_domain::planning::DecisionRecordRecord {
-                    id: format!("dec-a-{}", i).into(),
+                    id: format!("dec-a-{}", i),
                     work_item_id: "wi-dec-conc".into(),
                     kind: DecisionKind::Accept,
                     rationale: format!("decided to do something A-{}", i),
@@ -568,10 +583,10 @@ fn concurrent_insert_decision_records_distinct_ids_all_persist() {
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            let mut storage = Storage::open(&*db_path).unwrap();
+            let storage = Storage::open(&*db_path).unwrap();
             for i in 50..100 {
                 let record = sddk_domain::planning::DecisionRecordRecord {
-                    id: format!("dec-b-{}", i).into(),
+                    id: format!("dec-b-{}", i),
                     work_item_id: "wi-dec-conc".into(),
                     kind: DecisionKind::Accept,
                     rationale: format!("decided to do something B-{}", i),
