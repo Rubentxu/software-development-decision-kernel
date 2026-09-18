@@ -1,6 +1,10 @@
-# ROADMAP-COMPLETION-RECEIPT — 2026-09-18 session close
+# ROADMAP-COMPLETION-RECEIPT — 2026-09-18 session close (post-A5-4a)
 
-> **STATUS: NOT COMPLETE.**
+> **SUPERSEDED BY** `ROADMAP-COMPLETION-RECEIPT-2026-09-18-post-A5-4b.md`
+> (audit re-run at `v1.169.83` after A5-4b closed 4 MUST_CLOSE_A5 items).
+> This file is preserved as historical ground-truth for `v1.169.81`.
+>
+> **STATUS AT TIME OF WRITING (v1.169.81): NOT COMPLETE.**
 > This is an honest audit of what was closed in this session and what
 > remains mandatory work on the living roadmap. The session did NOT
 > reach `BASE_PRODUCTION_READY` and did NOT close the canonical M0–M9
