@@ -1,8 +1,12 @@
 # A5 — Debt Disposition
 
-> Cycle: `p-63676b11dc0ef88f/a5-plan-base-production-ready`
-> Status: **A5-PLAN deliverable (planning only — nothing fixed here)**
-> Last update: A5-4b (v1.169.83) — 4 MUST_CLOSE items disposed, 3 advisory lints pinned, 1 carry-forward
+> Cycle: `p-63676b11dc0ef88f/a5-c-rr2-risk-gate-debt-reconciliation`
+> Status: **RECONCILED at v1.169.84** (`b4acbbf`) — R1, R12 closures
+> propagated from certified per-cycle receipts into §3.4 / §3.4.2.
+> Last live update: A5-C-RR2 (v1.169.84) — closed-receipt
+> cross-references added; historical §3.4.0 preserved.
+> Last A5-cycle update: A5-4b (v1.169.83) — 4 MUST_CLOSE items
+> disposed, 3 advisory lints pinned, 1 carry-forward.
 
 Disposition vocabulary (§3):
 
@@ -54,23 +58,37 @@ Disposition vocabulary (§3):
 source → doctor/release presentations), and either promote or keep with
 reason. No lint is a blocker today.
 
-## §3.4 Ignored tests (14)
+## §3.4 Ignored tests
 
-| Test | Documented reason | Disposition |
+> **A5-C-RR2 reconciliation note (v1.169.84 → `b4acbbf`):**
+> The original §3.4 listed 14 ignored tests and called out R1 / R12
+> as P1 unresolved. **Both are CLOSED by certified per-cycle
+> receipts**, and **the historical 14-row table is no longer
+> current**. The live baseline at v1.169.84 has **11 ignored**
+> tests (per `cargo test --workspace`); per-test disposition
+> lives in §3.4.1 (live) below. The historical §3.4 table is
+> preserved for context; **the live authority is §3.4.1**.
+
+### §3.4.0 Historical table (preserved for context)
+
+| Test | Documented reason | Original disposition |
 |---|---|---|
 | `cli_phase_build_remediate_rejects_wrong_phase` | "workflow has no transition into REMEDIATING/verify; see cycle-45" | **MUST_CLOSE_A5** or **OBSOLETE** (decide) |
 | `regenerate_uat_acceptance_jsonl` | "regenerates uat-acceptance.jsonl; run manually" | **ACCEPTED_RISK** (intentional manual tool) |
 | `knowledge::tests::s1_does_not_introduce_new_corenodekind_variants` | "historical anchor only — A3-S2 grew the enums by design" | **OBSOLETE** (delete or re-anchor) |
-| `parallel_wfr4_par_006_a_namespaced_count_is_n_plus_one` | "sender-drop bug in non-blocking Parallel path; ignored until IR setup fixed" | **MUST_CLOSE_A5** (P1 — possible runtime defect, risk R12) |
-| `parallel_wfr4_par_006_d_node_runs_v1_has_exactly_one_parent_plus_n_children` | same | **MUST_CLOSE_A5** (P1) |
+| `parallel_wfr4_par_006_a_namespaced_count_is_n_plus_one` | "sender-drop bug in non-blocking Parallel path; ignored until IR setup fixed" | **MUST_CLOSE_A5** (P1 — possible runtime defect, risk R12) — **CLOSED A5-3** |
+| `parallel_wfr4_par_006_d_node_runs_v1_has_exactly_one_parent_plus_n_children` | same | **MUST_CLOSE_A5** (P1) — **CLOSED A5-3** |
 | `dm02_stress_harness` | "T1 diagnostic harness — run manually" | **ACCEPTED_RISK** (manual harness) |
 | `verify_stream_chain_fails_on_tampered_hash` | "Tampering requires trigger bypass; covered by SDDK2-203" | **MUST_CLOSE_A5** or **OBSOLETE** (SDDK2-203 unreachable → re-target) |
-| `run_survives_restart_with_equivalent_identity_and_provenance` | "pre-existing v1.89.1 debt; DW-RUNTIME-003 follow-up" | **MUST_CLOSE_A5** (P1 — durability/restart is G2/G15) |
+| `run_survives_restart_with_equivalent_identity_and_provenance` | "pre-existing v1.89.1 debt; DW-RUNTIME-003 follow-up" | **MUST_CLOSE_A5** (P1 — durability/restart is G2/G15) — **CLOSED A5-2** |
 | 6 × doc-tests (domain ×4, engine ×1, storage ×1) | rustdoc ignored examples | **ACCEPTED_RISK** (documentation examples) |
 
-**Disposition:** every ignored test is now individually dispositioned
-(none invisible). Two pairs point at **runtime** signals (Parallel
-sender-drop, restart survival) and are promoted to P1 risks R12/R1.
+**Disposition (historical):** every ignored test was individually
+dispositioned (none invisible). Two pairs historically pointed at
+**runtime** signals (Parallel sender-drop, restart survival) and
+were promoted to P1 risks R12/R1 — both now **CLOSED** by certified
+per-cycle receipts (A5-3 / A5-2). See §3.4.1 for the live
+disposition table.
 
 ### §3.4.1 A5-ITD dispositions (post-v1.169.83)
 
@@ -82,8 +100,29 @@ Two ignored tests disposed in `p-63676b11dc0ef88f/a5-itd-ignored-test-dispositio
 | `verify_stream_chain_fails_on_tampered_hash` | "Tampering requires trigger bypass; covered by SDDK2-203" | **OBSOLETE** | Test body is empty (placeholder). The tampering path (mutating `events_v1.content_hash`) is not a possible system entry: the SQL trigger on `events_v1` blocks UPDATE and DELETE, demonstrated by `append_rejects_update_via_trigger` and `append_rejects_delete_via_trigger` (both 2/2 green at v1.169.83). The "tampering is rejected" property is enforced at the canonical lower frontier (the SQL trigger), not at `verify_stream_chain`. Test removed. Receipt: `A5-ITD-RECEIPT.md §3.2`. |
 
 Post-A5-ITD baseline: 11 ignored tests (was 13; -2 from these
-OBSOLETE dispositions). Both runtime signals (R1, R12) remain P1
-unresolved — separate cycles. The 6 doc-tests remain ACCEPTED_RISK.
+OBSOLETE dispositions). Both runtime signals that originally
+pointed at R1 and R12 are now **CLOSED** by certified
+per-cycle receipts (A5-2 for R1, A5-3 for R12) — see
+`docs/architecture/a5/A5-RISK-REGISTER.md §1`. The 6 doc-tests
+remain `ACCEPTED_RISK`.
+
+### §3.4.2 R1 / R12 closure addendum (A5-C-RR2)
+
+Cross-reference for any future audit that finds the historical
+"remain P1 unresolved" wording above:
+
+| Risk | Closing cycle | Closing commit | Live evidence | Why it's closed (one line) |
+|---|---|---|---|---|
+| **R1** (restart survival) | A5-2 / v1.169.74 | `957d0b0` | `crates/sddk-engine/src/sqlite_graph_store.rs::latest_run_state_for` + 3 tests in `crates/sddk-engine/tests/state_survives_restart.rs` | Canonical event log is the authority for `load_run.state`; the previously-ignored test was *corrected* (not merely un-ignored) to assert the right post-restart state |
+| **R12** (non-blocking Parallel sender-drop) | A5-3 / v1.169.75 | `af346b9` | `crates/sddk-engine/src/operator.rs:1197-1205` (forces `pending_sender = None`) | Non-blocking path deleted (operator.rs:1196-1356, ~162 lines); 2 ignored `par_006_*` tests deleted; `parallel_spans_three_ticks_drain` deleted |
+
+The closed receipts (`A5-2-RECEIPT.md`, `A5-3-RECEIPT.md`) remain
+verbatim — no silent rewriting. The historical §3.4.0 rows above
+keep the original disposition; the **CLOSED A5-2** / **CLOSED A5-3**
+suffix is the addendum.
+
+A future async/non-blocking Parallel is a **POST-BASE feature**,
+NOT a closure of R12. See `A5-RISK-REGISTER.md §3`.
 
 ## §3.5 Legacy / compatibility surfaces
 

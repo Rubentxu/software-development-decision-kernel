@@ -1,10 +1,9 @@
-# A5 — Live Roadmap (post A5-C-RR)
+# A5 — Live Roadmap (post A5-C-RR2)
 
-> **Cycle:** `p-63676b11dc0ef88f/a5-current-roadmap-snapshot`
-> **Status:** LIVE — replaces the now-invalidated `Milestones remaining`
-> section of `ROADMAP-COMPLETION-RECEIPT-2026-09-18-post-A5-4b.md`.
-> **Issued:** 2026-09-18 by A5-C-RR (Roadmap Authority Reconciliation).
-> **Workspace version at issue:** `1.169.83` (`72dc08e`).
+> **Cycle:** `p-63676b11dc0ef88f/a5-c-rr2-risk-gate-debt-reconciliation`
+> **Status:** LIVE — reconciled against certified per-cycle receipts.
+> **Issued:** 2026-09-18 by A5-C-RR2 (Risk / Gate / Debt Reconciliation).
+> **Workspace version at issue:** `1.169.84` (`b4acbbf`).
 
 This is the live execution roadmap. It is the **single source of
 truth** for what remains until `BASE_PRODUCTION_READY` and beyond.
@@ -89,36 +88,33 @@ A5-C          BASE_PRODUCTION_READY certification                  NOT STARTED  
 This is the honest, current, executable backlog. It does **not**
 include any M0..M9 work — that baseline is certified.
 
-### P1 — runtime defect signals (ignored tests)
+> **A5-C-RR2 reconciliation note (v1.169.84 → `b4acbbf`):** The
+> prior version of this section listed `R1 — restart-survival` and
+> `R12 — sender-drop (parallel runtime)` as P1 open. Both are
+> **CLOSED** by certified per-cycle receipts:
+>
+> - **R1** closed by A5-2-RECEIPT.md (v1.169.74, commit `957d0b0`):
+>   `SqliteGraphStore::latest_run_state_for` makes the canonical
+>   event log the authority for `load_run.state`. The previously-
+>   ignored test `run_survives_restart_with_equivalent_identity_and_
+>   provenance` was **corrected** (not merely un-ignored) — it
+>   was passing for the wrong reason, asserting `loaded.state ==
+>   Pending` after a `running` event was inserted, which kept the
+>   snapshot stale. Now it asserts `Running` (A5-2 §0 row 3).
+>
+> - **R12** closed by A5-3-RECEIPT.md (v1.169.75, commit
+>   `af346b9`): the non-blocking Parallel path was deleted
+>   (`operator.rs:1196-1356`, ~162 lines); the 2 ignored `par_006`
+>   tests were deleted; `parallel_spans_three_ticks_drain` was
+>   deleted. The runtime now forces `pending_sender = None` per
+>   `operator.rs:1197-1205`. Any future async/non-blocking
+>   Parallel is a POST-BASE feature (see
+>   `A5-RISK-REGISTER.md §3`), NOT a closure of R12.
+>
+> - **A5-ITD** (v1.169.84) closed the two ignored tests previously
+>   listed as "P1 paperwork": both OBSOLETE → DELETED.
 
-- **R1 — restart-survival**
-  `run_survives_restart_with_equivalent_identity_and_provenance`
-  (pre-existing v1.89.1 debt; DW-RUNTIME-003 follow-up). Durability /
-  restart is G2/G15.
-
-- **R12 — sender-drop (parallel runtime)**
-  `parallel_wfr4_par_006_a_namespaced_count_is_n_plus_one`
-  `parallel_wfr4_par_006_d_node_runs_v1_has_exactly_one_parent_plus_n_children`
-  (sender-drop bug in non-blocking Parallel path; ignored until IR
-  setup fixed). Possible runtime defect.
-
-- **Flake observed this session**
-  `storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq`
-  in `crates/sddk-storage/tests/sqlite_storage.rs:850` — concurrent
-  SQLite insert hit `DatabaseBusy`. Isolated re-run 1/1 green; flake
-  is concurrent-resource contention. Likely same class as R1/R12;
-  needs separate cycle with explicit budget.
-
-### P1 — ignored-test OBSOLETE/MUST_CLOSE decision
-
-- `cli_phase_build_remediate_rejects_wrong_phase` — "workflow has no
-  transition into REMEDIATING/verify; see cycle-45". Decide OBSOLETE
-  or MUST_CLOSE.
-- `verify_stream_chain_fails_on_tampered_hash` — "Tampering requires
-  trigger bypass; covered by SDDK2-203". Decide OBSOLETE (SDDK2-203
-  unreachable → re-target) or MUST_CLOSE.
-
-### Carry-forward from A5-4b (PRE-BASE, NOT POST-BASE)
+### PRE-BASE (MIGRATE_A5, C2.5 risk)
 
 - **EvidenceAttachmentV1 + compat decoder** — `crates/sddk-engine/src/.../evidence_ref.rs:192` + ratchet exclude + storage migration.
 
@@ -140,40 +136,94 @@ include any M0..M9 work — that baseline is certified.
   decoder → MIGRATE_A5`). Correction recorded in
   `A5-C-RR-ADDENDUM-1.md` §3.3.
 
-### A5-1 follow-up (paperwork, P2)
+### P1 candidate (NOT yet classified — needs reproduction cycle)
 
-- `INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH` (open, MEDIUM).
+- **`storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq`**
+  in `crates/sddk-storage/tests/sqlite_storage.rs:850` —
+  concurrent SQLite insert hit `DatabaseBusy` during release.sh
+  runs. Isolated re-run 1/1 green; flake is concurrent-resource
+  contention. Needs a reproduce → root cause → fix/mitigate → pin
+  cycle with its own budget.
+  Proposed next-cycle name: `A5-SQLITE-CONCURRENCY-R`.
+  **Not** mixed with `EvidenceAttachmentV1` migration.
 
-### A5-3 follow-up (paperwork, P3)
+### A5-5 owed (clean-machine sweep)
 
-- `INC-DEBT-023-lints-advisory-no-expansion-cycle` (open, LOW).
+- G8 / R8 — corrupt/partial/stale public asset validation on a
+  fresh host. Mechanism + automated evidence complete
+  (release pipeline 14/14 PASS at every release, including 9b
+  public-release gate). Only the clean-machine revalidation is
+  outstanding.
+- G15 / R15 — rollback validation on a fresh host. Same status.
+- R11 — broader flake-discipline sweep (the specific
+  `stale_detects_geometry_change` flake is closed by A5-5R).
+
+### OPEN_NON_BLOCKER (no current blocker)
+
+- **R14 (secret leak path):** no observed leak; tracked for A5-5
+  or a future security cycle.
+- **R16 (silent A5→A4 contract breach):** mechanism (cross-crate
+  ratchets + ADR-0001 promotion gates) in place; no observed
+  breach in any A5 cycle.
+- **R17 (operator diagnostics):** partial mitigation in A5-4b;
+  deeper sweep pending A5-5 / A5-C.
+
+### A5-1 / A5-3 follow-up (paperwork)
+
+- `INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH` (open, MEDIUM, P2).
+- `INC-DEBT-023-lints-advisory-no-expansion-cycle` (open, LOW, P3).
 
 ### Deferred POST-BASE (out of A5)
 
-- `multi-region deployment` / `SLA` / `counterfactual planning`
-- `CogniCode` integration track (A6)
-- `Chronos` integration track (A7)
-- `JCode reactive loop` (J0..J9)
-- `new providers` (post-A6/A7)
-- `new alignment lenses` (post-Base)
-- `R11 crate split evaluation` (P3, evidence-driven)
+- **A6 CogniCode STATIC_ENHANCED** (NOT to be confused with the
+  historical `a6-0..a6-4` cycle IDs which were A5/G5 Authority
+  hardening — see `docs/architecture/README.md` Roadmap
+  Reconciliation Appendix).
+- **A7 Chronos RUNTIME_ENHANCED**.
+- **A8 FULLY_ENHANCED** (blocked_by A6 + A7).
+- **J2..J6 JCODE_CORE_GA** (parallel track, P1).
+- **Future async/non-blocking Parallel** (NOT R12; POST-BASE feature).
+- **R11 crate split evaluation** (P3, evidence-driven).
+- `multi-region deployment` / `SLA` / `counterfactual planning`.
 
 ## §4 Acceptance gates for `BASE_PRODUCTION_READY`
 
-Per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`:
+Per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`
+and reconciled by A5-C-RR2 (v1.169.84 → `b4acbbf`):
 
 ```text
-GATE   MEANING                                EVIDENCE STATUS        NOTES
-────   ─────────────────────────────────────   ──────────────────     ───────────────────────────────
-G0     Baseline semantic conformance          evidenced              09-09-CONFORMANCE-RECEIPT @ 0c2ca56
-G1     Ownership and dependency integrity     partial                lint suite (6 of 9 deny; 3 allow-with-reason, machine-pinned)
-G2     Knowledge and epistemic integrity       NOT EVIDENCED          R1 restart-survival blocks
-G3     Alignment boundary                     NOT EVIDENCED          (no A5 slice targets it)
-G4     Verify and DebVerify                   NOT EVIDENCED          (no A5 slice targets it)
-G5     Authority, safety and failure          partial                R4-B closed via A6-0..A6-4 (A5-3R0..R4)
-G6     Operational recovery / compatibility   partial                release script 14/14 GREEN at v1.169.83
-G8     Documentation and release hygiene      partial                current entry point OK; ADRs validated
-                                                                  through ADR-0136
+GATE   MEANING                                AUTHORITY / RECEIPT           STATUS                  NOTES
+────   ─────────────────────────────────────   ───────────────────────────   ─────────────────────   ────────────────────────────────────────────
+G0     Baseline semantic conformance          09-09-CONFORMANCE-RECEIPT    EVIDENCED               @ 0c2ca56 / SDDK 1.169.19; 100% conformance
+                                              (certified historical)
+G1     Ownership and dependency integrity     A5-4b / A5-ITD               EVIDENCED               lint suite (6 of 9 deny; 3 allow-with-reason,
+                                                                                                  machine-pinned by a5_4b_lint_disposition_pin.rs)
+G2     Knowledge and epistemic integrity       A5-2                          EVIDENCED               R1 closed; canonical event log is authority
+                                              (durability / crash recovery)
+G3     Rebuildability                         A5-2                          EVIDENCED               R1 closure requires only the rowid-monotonic
+                                                                                                  event log; same canonical inputs rebuild the
+                                                                                                  same WorkflowRun read
+G4     Verify and DebVerify                   A5-3                          EVIDENCED               R3 (typed conflict) + R6 (retry idempotency)
+                                              (concurrency correctness)                            + R12 (non-blocking Parallel dead-path removal);
+                                                                                                  4 + 6 = 10 RED→GREEN tests
+G5     Authority, safety and failure          A5-3 (R4-A) + A6-0..A6-4      EVIDENCED               R4-A: deny ⇒ zero side effect (A5-3);
+                                              (R4-B: AuthorityTicketService)                       R4-B: AuthorityAdmissionTicket primitive
+                                                                                                  + migration pattern (ADR-0130..0134);
+                                                                                                  INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY
+                                                                                                  CLOSED 2026-09-18
+G6     Operational recovery / compatibility   A5-1 + A5-2                   EVIDENCED               release pipeline 14/14 GREEN at every release
+                                              (R7, R8, R9, R10, R15, R20)                          since v1.169.71; A5-2 R20 re-pinned (G6)
+G8     Documentation and release hygiene      A5-1 + A5-2 + A5-4a + A5-4b   EVIDENCED               current entry point OK; ADRs validated
+                                                                                                  through ADR-0136; A5-2 R1/R2 evidence in
+                                                                                                  state_survives_restart.rs; A5-4a/4b lint
+                                                                                                  suite machine-pinned
+G11    Secrets / leak paths                   (R14 OPEN_NON_BLOCKER)        OPEN_NON_BLOCKER        no observed leak path; tracked for A5-5 or
+                                                                                                  a future security cycle
+G13    Test reliability / ignored discipline  A5-5R + A5-ITD + A5-C-RR-A1   EVIDENCED (R18)         R18 closed (per-ignored-test disposition);
+                                              (R11 CLOSED_PARTIAL,                                  R11 broader flake-discipline sweep owed
+                                               R18 CLOSED)                                          by A5-5
+G15    Rollback                               A5-1 mechanism + clean-mach   CLOSED_MECHANISM        mechanism + automated evidence complete;
+                                              validation pending A5-5        OPEN_CLEAN_MACHINE     clean-machine revalidation owed by A5-5
 ```
 
 ## §5 Cold-start pickup for the next session
@@ -191,26 +241,28 @@ The next session should read:
 Then pick the next single item with a single change budget.
 The recommended order, by cheapest first, **PRE-BASE work required
 before A5-C certification** (EvidenceAttachmentV1 is PRE-BASE, not
-POST-BASE):
+POST-BASE; R1/R12 are CLOSED and not in the active backlog):
 
-1. **P1 paperwork (cheapest):** ignored-test OBSOLETE/MUST_CLOSE
-   decision on `cli_phase_build_remediate_rejects_wrong_phase` and
-   `verify_stream_chain_fails_on_tampered_hash`. Zero code; binary
-   disposition per item.
-2. **P1 runtime:** R12 sender-drop cycle (own budget, runtime defect).
-3. **P1 runtime:** R1 restart-survival cycle (own budget, G2/G15).
-4. **P1 runtime:** SQLite concurrent-insert flake
-   (`storage_insert_gate_receipt_concurrent_allocations_…`).
-5. **C2.5 PRE-BASE slice (required before A5-C):**
+1. **C2.5 PRE-BASE slice (required before A5-C):**
    `EvidenceAttachmentV1` migration
    (`evidence-migration-v2`). Classification: `MIGRATE_A5 /
    STOP_NEEDS_SEPARATE_SLICE` (per A5-DEBT-DISPOSITION.md §3.5 and
    A5-4b-RECEIPT.md). NOT a POST-BASE item.
-6. **A5-C certification:** when A5-* slices are green, run the
-   acceptance-gate evidence sweep. G2/G3/G4 must be evidenced
-   explicitly; closing the A5-* slices does not automatically
-   evidence those gates. Emit `BASE_PRODUCTION_READY` only when
-   G0–G6 + G8 are evidenced.
+2. **P1 candidate cycle:** SQLite concurrent-insert flake
+   (`storage_insert_gate_receipt_concurrent_allocations_…`). Own
+   budget: REPRODUCE → ROOT CAUSE → FIX/MITIGATE → PIN.
+   Proposed cycle name: `A5-SQLITE-CONCURRENCY-R`.
+   **Not** mixed with `EvidenceAttachmentV1` migration.
+3. **A5-5 clean-machine sweep:** G8 / G15 / R11 broader
+   flake-discipline. Mechanism + automated evidence complete
+   (release pipeline 14/14 PASS at every release); only the
+   clean-machine revalidation is outstanding.
+4. **A5-C certification:** when items 1–3 are green, run the
+   final evidence sweep. Per the reconciled §4, G0..G6 + G8 are
+   already EVIDENCED; only G11 (secrets, OPEN_NON_BLOCKER),
+   G13 (R11 partial) and G15 (clean-machine) remain. Emit
+   `BASE_PRODUCTION_READY` only when these are either closed or
+   explicitly accepted as OPEN_NON_BLOCKER.
 
 After A5-C closes:
 
