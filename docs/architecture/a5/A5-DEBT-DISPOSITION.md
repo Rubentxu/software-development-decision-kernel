@@ -5,8 +5,9 @@
 > propagated from certified per-cycle receipts into §3.4 / §3.4.2.
 > Last live update: A5-C-RR2 (v1.169.84) — closed-receipt
 > cross-references added; historical §3.4.0 preserved.
-> Last A5-cycle update: A5-4b (v1.169.83) — 4 MUST_CLOSE items
-> disposed, 3 advisory lints pinned, 1 carry-forward.
+> Last A5-cycle update: A5-5 (v1.169.86) — clean-machine UAT (UAT-1)
+>   10/10 scenarios PASS on isolated container. R8, R15 → CLOSED_A5;
+>   R11 → CLOSED_A5 (broader flake-discipline sweep done).
 
 Disposition vocabulary (§3):
 
@@ -23,11 +24,11 @@ Disposition vocabulary (§3):
 | `FU-A3-CO-3` | Remaining rename / shape cleanup (post-CO-2) | followups ledger | **MUST_CLOSE_A5** (P3) | A5-4 |
 | `FU-A3-S15-4` | Fitness rule / CLI lint / doctor conversion | followups ledger | **MUST_CLOSE_A5** (P2) → design in A5-4 | A5-4 |
 | `ASC-MA-1` | `sddk --help` UX pass | followups ledger | **MUST_CLOSE_A5** (P3) | A5-4 |
-| `uat_stale_tests::stale_detects_geometry_change` | flaky test | followups ledger (one occurrence, passed on isolated re-run) | **MUST_CLOSE_A5** (P1, test reliability) | A5-5 |
+| `uat_stale_tests::stale_detects_geometry_change` | flaky test | followups ledger (one occurrence, passed on isolated re-run) | **CLOSED_A5** (A5-5R + A5-5; clean-machine UAT validates) | A5-5 ✓ |
 | `INC-A4-RELEASE-VERSION-DRIFT` | pre-bump vs release-tag confusion | `docs/debt/INC-A4-RELEASE-VERSION-DRIFT.md` (open, low); release.sh 1c+9b already mitigate | **MUST_CLOSE_A5** (P1, release governance) | A5-1 |
 | `paradigm_lens::evaluate_lens()` | LEGACY_READ_COMPAT facade, NO_RUNTIME_CONSUMER | `A4-MILESTONE-RECEIPT.md` §4 → **`A5-4a-RECEIPT.md` CLOSED / DELETED** | **CLOSED_A5** (A5-4a) | A5-4a ✓ |
 | `paradigm_lens::LensEvaluation` | Obsolete wrapper around `LensAssessment` | **`A5-4a-RECEIPT.md` OBSOLETE → DELETE; receipt composer field narrowed to `&[LensAssessment]`** | **CLOSED_A5** (A5-4a) | A5-4a ✓ |
-| `INC-A5-PUSH-RELEASE-MARKER-FRICTION` (new) | ceremonial empty `chore(release)` marker | `A5-PUSH-CONTRACT-INVESTIGATION.md` | **MUST_CLOSE_A5** (P2) — independent of the drift INC | A5-1 |
+| `INC-A5-PUSH-RELEASE-MARKER-FRICTION` (new) | ceremonial empty `chore(release)` marker | `A5-PUSH-CONTRACT-INVESTIGATION.md` | **CLOSED_A5** (A5-5; clean-machine UAT exercises rollback path) | A5-5 ✓ |
 
 ## §3.2 Live debt (`docs/debt/`)
 

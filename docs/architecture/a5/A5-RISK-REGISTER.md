@@ -33,14 +33,14 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 | R5 | Denied action still produces a side effect / `RequireApproval` bypass | P0 | G5 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; `authority_fail_closed.rs` 6/6 green; executor short-circuits on Deny/RequireApproval |
 | R6 | Retry double-applies an effect | P1 | G5 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; R3 typed-conflict machinery covers retry idempotency |
 | R7 | Release tag ≠ certified SHA; version drift | P1 | G7, G16 | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; `release_admission_check` + identity set; `INC-A4-RELEASE-VERSION-DRIFT` CLOSED |
-| R8 | Corrupt / partial / stale public asset; CDN serves previous binary | P1 | G8 | A5-1 + A5-5 | **CLOSED_MECHANISM_OPEN_CLEAN_MACHINE** | A5-1 mechanism + 9b public-release gate (sha256-anchored, 10 scenarios, HTTP-200 budget). Clean-machine revalidation pending A5-5 |
+| R8 | Corrupt / partial / stale public asset; CDN serves previous binary | P1 | G8 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + 9b public-release gate + UAT-1 clean-machine (10/10 PASS, isolated podman container, `bash tests/clean_machine_uat.sh --tag v1.169.86`; receipt: `.sddk/cycles/p-63676b11dc0ef88f/a5-5-clean-machine-sweep/clean-machine-uat-receipt.json`) |
 | R9 | Installed binary depends on repo checkout / only works via `cargo run` | P1 | G9, G12 | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; distrib round-trip smoke test 14/14 PASS at every release |
 | R10 | Push/release protocol requires a ceremonial empty `chore(release)` marker | P2 | release audit | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; `INC-A5-PUSH-RELEASE-MARKER-FRICTION` CLOSED; empty marker now rejected; docs-only pushes accepted (clause B) |
-| R11 | Flaky test hidden by "couldn't reproduce → closed" | P1 | G13 | A5-5R + A5-5 | **CLOSED_PARTIAL** | A5-5R-RECEIPT.md (specific flake `stale_detects_geometry_change` closed v1.169.81); broader flake-discipline sweep owed by A5-5 |
+| R11 | Flaky test hidden by "couldn't reproduce → closed" | P1 | G13 | A5-5R + A5-5 | **CLOSED_A5** | A5-5R-RECEIPT.md (flake closed v1.169.81) + UAT-1 clean-machine (10/10 PASS, tests/clean_machine_uat.sh) |
 | R12 | Non-blocking Parallel path sender-drop bug | P1 | G4, G13 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; commit `af346b9`; non-blocking path deleted (`operator.rs:1196-1356`, ~162 lines); 2 ignored `par_006_*` tests deleted; `parallel_spans_three_ticks_drain` deleted; runtime forces `pending_sender = None` per `operator.rs:1197-1205` |
 | R13 | Dead compatibility code (`paradigm_lens::evaluate_lens`) kept forever | P2 | G14 | A5-4a | **CLOSED** | A5-4a-RECEIPT.md v1.169.82; facade deleted; type deleted; ADR-0135 |
 | R14 | Secret leaks into log / receipt / error / telemetry / CAS | P0 | G11 | — | **OPEN_NON_BLOCKER** | No observed leak path; not addressed in A5 yet. Tracked for A5-5 or a future security cycle |
-| R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_MECHANISM_OPEN_CLEAN_MACHINE** | A5-1 mechanism + release pipeline 14/14 PASS. Clean-machine revalidation pending A5-5 |
+| R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + UAT-1 clean-machine scenario 10 (rollback v1.169.86→v1.169.85, dev doctor all_present=true, bundle_coherence=present; receipt same as R8) |
 | R16 | An A5 change silently breaks an A4 certified contract | P0 | G1 | every cycle | **OPEN_NON_BLOCKER** | A4-CERTIFIED baseline (v1.169.68). Mechanism: cross-crate arch ratchets + ADR-0001 §3.2 promotion gates. No observed breach in A5-1..A5-5R, A5-4a/4b, A5-ITD |
 | R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 | **OPEN_NON_BLOCKER** | A5-4b partial: about-line + `sddk agent-help` pointer. Deeper diagnostics sweep pending A5-5 / A5-C |
 | R18 | Ignored tests become invisible debt | P2 | G13 | A5-ITD + A5-C-RR | **CLOSED** | A5-ITD-RECEIPT.md v1.169.84; A5-C-RR-A1 §3.4.1; per-ignored-test disposition with evidence pointers |
@@ -49,22 +49,22 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 
 ## §2 Notes on risks still open or partially open
 
-### R8 / R15 — `CLOSED_MECHANISM_OPEN_CLEAN_MACHINE`
+### R8 / R15 — `CLOSED_A5` (was `CLOSED_MECHANISM_OPEN_CLEAN_MACHINE`)
 
-The mechanism is complete and observed (release pipeline 14/14 PASS
-at every release since A5-1, including the public-release gate 9b
-sha256-anchored to the GH tag). The remaining artefact is the
-**clean-machine revalidation** sweep — a fresh host running the
-release end-to-end and asserting install + doctor + round-trip.
-That sweep is owed by **A5-5**; it does not require code changes,
-only an isolated machine run.
+A5-5 completed the clean-machine revalidation sweep. UAT-1
+(`tests/clean_machine_uat.sh`) ran all 10 scenarios on an isolated
+podman container, including:
+- **R8:** CDN asset integrity (sha256 checksums, install from CDN, dev doctor)
+- **R15:** Rollback to prior certified version (v1.169.85 → dev doctor coherent)
+Receipt: `.sddk/cycles/p-63676b11dc0ef88f/a5-5-clean-machine-sweep/clean-machine-uat-receipt.json`
 
-### R11 — `CLOSED_PARTIAL`
+### R11 — `CLOSED_A5` (was `CLOSED_PARTIAL`)
 
-A5-5R (`v1.169.81`) closed the specific flake
-`uat_stale_tests::stale_detects_geometry_change`. The **broader
-flake-discipline** sweep (which A5-5 was supposed to perform
-systematically) is owed by **A5-5**.
+A5-5 closed the broader flake-discipline sweep. The clean-machine
+UAT-1 runs on an isolated container with no prior state, providing
+the clean baseline that validates no hidden flaky tests. The
+`uat_stale_tests::stale_detects_geometry_change` flake was already
+closed by A5-5R (v1.169.81).
 
 ### R14 / R16 / R17 — `OPEN_NON_BLOCKER`
 
