@@ -1,4 +1,4 @@
-Deterministic SDDK workflow tooling — First-class commands: status, plan, run, ship, recover, memory
+Deterministic SDDK workflow tooling — uses `sddk agent-help` for the operator-facing surface
 
 Usage: sddk <COMMAND>
 

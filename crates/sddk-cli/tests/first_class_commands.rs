@@ -1,15 +1,18 @@
 //! First-class facade commands: substring, dispatch, and recover invariant.
 //!
 //! Tests for D2 shadow routing:
-//! - Substring: `sddk --help` contains "First-class commands: status, plan, run, ship, recover"
+//! - Substring: `sddk --help` no longer claims legacy M6.1 facades
+//!   (`status`, `plan`, `run`, `ship`, `recover`, `change`) as
+//!   "first-class commands"; the about-line now points operators to
+//!   `sddk agent-help` for the operator-facing surface (A5-4b).
 //! - 5 dispatch tests: each verb with `--help` exits 0
 //! - Recover invariant: digest and count byte-identical; dry-run doesn't mutate
 
 use std::process::Command;
 
-/// Verifies the contiguous substring in `sddk --help`.
+/// Verifies the legacy first-class substring has been retired (A5-4b).
 #[test]
-fn help_contains_first_class_substring() {
+fn help_drops_first_class_substring() {
     let output = Command::new(env!("CARGO_BIN_EXE_sddk"))
         .args(["--help"])
         .output()
@@ -19,10 +22,14 @@ fn help_contains_first_class_substring() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}{}", stdout, stderr);
     assert!(
-        combined.contains("First-class commands: status, plan, run, ship, recover"),
-        "sddk --help must contain the exact substring 'First-class commands: status, plan, run, ship, recover'\nGot stdout:\n{}\nGot stderr:\n{}",
-        stdout,
-        stderr
+        !combined.contains("First-class commands: status"),
+        "A5-4b removed the lying first-class facade line; `sddk --help` must no longer\n\
+         carry that substring. The honest about-line directs operators to\n\
+         `sddk agent-help`. Got combined:\n{combined}",
+    );
+    assert!(
+        combined.contains("`sddk agent-help`"),
+        "A5-4b redirected the about-line to `sddk agent-help`. Got combined:\n{combined}",
     );
 }
 

@@ -2,6 +2,7 @@
 
 > Cycle: `p-63676b11dc0ef88f/a5-plan-base-production-ready`
 > Status: **A5-PLAN deliverable (planning only — nothing fixed here)**
+> Last update: A5-4b (v1.169.83) — 4 MUST_CLOSE items disposed, 3 advisory lints pinned, 1 carry-forward
 
 Disposition vocabulary (§3):
 
@@ -86,12 +87,91 @@ sender-drop, restart survival) and are promoted to P1 risks R12/R1.
   cheap and unblock operator/HX quality. Anything that becomes a *feature*
   is **DEFER_POST_BASE** (see `A5-DEFERRED-POST-BASE.md`).
 
+## §3.7 A5-4b dispositions (v1.169.83)
+
+> Cycle: `p-63676b11dc0ef88f/a5-4b-bounded-compat-lints-operator-ux`
+> Released: `v1.169.83`
+> Receipt: `docs/architecture/a5/A5-4b-RECEIPT.md`
+> Test pins: `crates/sddk-cli/tests/a5_4b_lint_disposition_pin.rs`
+
+A5-4b closes 4 MUST_CLOSE_A5 items, pins 3 advisory lints as
+`KEEP_ALLOW_WITH_REASON`, and carries 1 forward to a separate slice.
+
+### MUST_CLOSE_A5 items disposed
+
+| Item | Disposition | Evidence |
+|---|---|---|
+| `FU-A3-CO-1` (relation payload encoding) | **KEEP_WITH_REASON** | `KnowledgePayload::Relation` exists in `crates/sddk-knowledge/src/...` with zero production writers; A4-4 already closed the lens-shape concern independently. No alternate encoding to close. Recorded here so a future cycle does not re-open it as orphaned work. |
+| `FU-A3-CO-3` (rename/shape cleanup) | **CLOSED_BY_PRIOR_WORK** | `SpecifiedBy` is the one canonical relation post-A4-S15R (v1.169.65); `VerifiedBy` was repointed to `EvidenceRef` in the same cycle. No residual rename/shape to perform. |
+| `FU-A3-S15-4` (fitness rule / CLI lint / doctor conversion) | **CLOSED_BY_PRIOR_WORK** | TOML-driven lint at `docs/architecture/lints/deprecated_patterns.toml` + implementation in `crates/sddk-cli/src/dev/lint/deprecated_patterns.rs`. Zero duplicate implementations across lint / doctor / release (one source, many presentations). |
+| `ASC-MA-1` (`sddk --help` UX pass) | **CLOSE_BY_HELP** | `crates/sddk-cli/src/lib.rs:189` about-line changed from `"First-class commands: status, plan, run, ship, recover, memory"` (5/6 M6.1 legacy facades) to `"uses \`sddk agent-help\` for the operator-facing surface"`. Two pin tests verify BOTH the absence of the legacy substring AND the presence of the `sddk agent-help` substring (`crates/sddk-cli/tests/first_class_commands.rs` and `crates/sddk-cli/tests/cli_first_class_help.rs`). Golden fixtures regenerated: `docs/architecture/tests/fixtures/cli_golden/1.168.8/sddk-help.txt` (54→58 lines) and `crates/sddk-cli/tests/fixtures/cli/help-top-level.txt` (byte-comparison stderr snapshot, 4148 bytes). |
+
+### Advisory lints (`default = "allow"`) dispositioned as KEEP_ALLOW_WITH_REASON
+
+| Lint | Hits | Reason |
+|---|---|---|
+| `execution_outcome_as_synthesis` | 0 | audit-cleared; corpus expansion organic; registry carries `explanation = """ ... """` body > 10 tokens. |
+| `transition_outcome_used` | 24 | state-machine regression guard, M9.2 closed; registry explanation body > 10 tokens. |
+| `asset_unregistered_cli_example` | 0 | regex unsafe-by-design (CLI examples do not always carry asset registry IDs); AX-S1 pin; explanation body > 10 tokens. |
+
+These three remain `allow` because none of them satisfies the
+ADR-0001 §3.2 acceptance gates (deterministic detector, false-positive
+audit, migration complete, 0 illegitimate hits). The promotion
+denial is **machine-pinned** by
+`crates/sddk-cli/tests/a5_4b_lint_disposition_pin.rs`:
+
+* `a5_4b_allow_lints_have_default_allow_and_non_empty_explanation`
+  walks the registry and asserts each allow entry has
+  `default = "allow"` plus a registry-pinned explanation body
+  of >10 non-whitespace tokens.
+* `a5_4b_no_new_allow_lints_added_silently` enforces the
+  invariant `allow_blocks_in_registry == ALLOW_LINTS.len()`. If
+  a future cycle adds a 4th allow lint without updating this
+  pin, the test fails immediately.
+* `a5_4b_denied_lints_have_zero_illegitimate_hits_at_v1_169_83`
+  freezes the deny-lint corridor.
+
+If any of these three should be promoted in the future, the path
+is: add the lint ID to the deny-side registry, run the corpus
+audit, and update `ALLOW_LINTS` here.
+
+### Carry-forward (not A5-4b scope)
+
+| Item | Disposition |
+|---|---|
+| `EvidenceAttachmentV1` + compat decoder | **STOP_NEEDS_SEPARATE_SLICE** |
+
+The compat decoder in `crates/sddk-engine/src/.../evidence_ref.rs:192`
+plus ratchet exclude plus the storage migration are **C2.5** risk
+class. Anti-encroachment for A5-4b prohibits EvidencePosture, Verify,
+DebVerify, Alignment, IntelligenceLoop, AdvisoryWhy, and UniversalConcern
+semantics changes. The compat decoder is exactly that — a migration
+of how attachments are stored — and a single-risk A5-4b cannot
+absorb it. See `A5-DEFERRED-POST-BASE.md` for the follow-up.
+
+### What A5-4b did NOT touch
+
+* No `EvidencePosture`, `Verify`, `DebVerify`, `Alignment`,
+  `IntelligenceLoop`, `AdvisoryWhy`, or `UniversalConcern`
+  semantic-freeze changes.
+* No Authority / providers / M0–M9 restructuring.
+* No security / secrets.
+* No resurrection of deleted symbols (`evaluate_lens` is gone;
+  pin tests assert both absence of the legacy substring AND
+  presence of the new `sddk agent-help` substring).
+
 ## Summary
 
 - **Blockers today:** none (0 undisposed P1). Two P1s are *pre-registered*
   from ignored tests (R1/R12) and must be resolved in A5.
 - **MUST_CLOSE_A5:** the 8 inherited items + the 2 ignored-test P1s + the
-  new push-friction INC.
-- **MIGRATE_A5:** 2 compatibility surfaces.
+  new push-friction INC — of which 4 (`FU-A3-CO-1`, `FU-A3-CO-3`,
+  `FU-A3-S15-4`, `ASC-MA-1`) are disposed by A5-4b (v1.169.83).
+- **MIGRATE_A5:** `EvidenceAttachmentV1` + compat decoder carried forward
+  to a separate slice (STOP_NEEDS_SEPARATE_SLICE); the other compat
+  surface (`paradigm_lens::evaluate_lens`) is CLOSED in A5-4a.
 - **ACCEPTED_RISK:** manual harnesses, doc-tests, and the 3 `allow` lints
-  (with reasons).
+  (with reasons — registry-pinned and machine-enforced by
+  `a5_4b_lint_disposition_pin.rs`).
+
+

@@ -10,7 +10,7 @@
 
 | File | Source command | Lines |
 |---|---|---|
-| `sddk-help.txt` | `sddk --help` | 54 |
+| `sddk-help.txt` | `sddk --help` | 58 |
 | `sddk-cycle-help.txt` | `sddk cycle --help` | 24 |
 | `sddk-plan-help.txt` | `sddk plan --help` | 52 |
 | `sddk-run-help.txt` | `sddk run --help` | 19 |
