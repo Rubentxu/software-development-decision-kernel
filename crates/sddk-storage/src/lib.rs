@@ -1460,6 +1460,54 @@ impl Storage {
         Ok(format!("gate-{}-{}-{}", gate, &plan_hash[7..23], seq))
     }
 
+    /// Executes a closure inside an IMMEDIATE transaction with bounded retry on
+    /// `DatabaseBusy`.
+    ///
+    /// SQLite's write lock serializes concurrent IMMEDIATE transactions: the
+    /// second writer gets `SQLITE_BUSY` (extended code 5). This helper retries
+    /// with exponential backoff (100ms base, max 5 attempts) inside the
+    /// existing 5s `busy_timeout` budget. All other errors propagate
+    /// immediately. Zero new public API — internal helper only.
+    fn with_busy_retry<T, F>(&mut self, mut op: F) -> Result<T>
+    where
+        F: FnMut(&Connection) -> Result<T>,
+    {
+        const MAX_RETRIES: u32 = 5;
+        const BASE_DELAY_MS: u64 = 100;
+        let mut last_busy: Option<rusqlite::Error> = None;
+        for attempt in 0..=MAX_RETRIES {
+            match self.connection.transaction_with_behavior(TransactionBehavior::Immediate) {
+                Ok(transaction) => match op(&transaction) {
+                    Ok(value) => {
+                        transaction.commit()?;
+                        return Ok(value);
+                    }
+                    Err(e) => {
+                        let _ = transaction.rollback();
+                        return Err(e);
+                    }
+                },
+                Err(rusqlite::Error::SqliteFailure(code, ref ext))
+                    if code.code == rusqlite::ErrorCode::DatabaseBusy =>
+                {
+                    last_busy = Some(rusqlite::Error::SqliteFailure(code, ext.clone()));
+                    if attempt < MAX_RETRIES {
+                        let delay_ms = BASE_DELAY_MS * (1u64 << attempt).min(500);
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                        continue;
+                    }
+                }
+                Err(e) => return Err(StorageError::from(e)),
+            }
+        }
+        Err(StorageError::Database(last_busy.take().unwrap_or_else(|| {
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some(String::new()),
+            )
+        })))
+    }
+
     /// Persists one authorized gate evaluation receipt with atomic seq allocation.
     ///
     /// Computes `seq = COALESCE(MAX(seq)+1, 1)` and builds the `receipt_id`
@@ -1469,56 +1517,54 @@ impl Storage {
         &mut self,
         input: &GateReceiptNextSeqInput,
     ) -> Result<GateReceipt> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let seq: i64 = transaction.query_row(
-            "SELECT COALESCE(MAX(seq) + 1, 1) FROM gate_receipts WHERE gate = ?1 AND plan_hash = ?2",
-            [&input.gate, &input.plan_hash],
-            |row| row.get(0),
-        )?;
-        let receipt_id = Self::build_gate_receipt_id(&input.gate, &input.plan_hash, seq)?;
-        transaction.execute(
-            "INSERT INTO gate_receipts (
-                receipt_id, project_id, cycle_id, gate, evaluator, transition_id,
-                plan_hash, outcome, evidence, actor, command_id, frame_id, evaluated_at, seq
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
+        self.with_busy_retry(|transaction| {
+            let seq: i64 = transaction.query_row(
+                "SELECT COALESCE(MAX(seq) + 1, 1) FROM gate_receipts WHERE gate = ?1 AND plan_hash = ?2",
+                [&input.gate, &input.plan_hash],
+                |row| row.get(0),
+            )?;
+            let receipt_id = Self::build_gate_receipt_id(&input.gate, &input.plan_hash, seq)?;
+            transaction.execute(
+                "INSERT INTO gate_receipts (
+                    receipt_id, project_id, cycle_id, gate, evaluator, transition_id,
+                    plan_hash, outcome, evidence, actor, command_id, frame_id, evaluated_at, seq
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    receipt_id,
+                    input.project_id,
+                    input.cycle_id,
+                    input.gate,
+                    input.evaluator,
+                    input.transition_id,
+                    input.plan_hash,
+                    enum_string(&input.outcome)?,
+                    serde_json::to_string(&input.evidence)?,
+                    input.actor,
+                    input.command_id,
+                    input.frame_id,
+                    input.evaluated_at,
+                    seq
+                ],
+            )?;
+            Ok(GateReceipt {
                 receipt_id,
-                input.project_id,
-                input.cycle_id,
-                input.gate,
-                input.evaluator,
-                input.transition_id,
-                input.plan_hash,
-                enum_string(&input.outcome)?,
-                serde_json::to_string(&input.evidence)?,
-                input.actor,
-                input.command_id,
-                input.frame_id,
-                input.evaluated_at,
-                seq
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(GateReceipt {
-            receipt_id,
-            project_id: input.project_id.clone(),
-            cycle_id: input.cycle_id.clone(),
-            gate: input.gate.clone(),
-            evaluator: input.evaluator.clone(),
-            transition_id: input.transition_id.clone(),
-            plan_hash: input.plan_hash.clone(),
-            outcome: input.outcome,
-            evidence: input.evidence.clone(),
-            actor: input.actor.clone(),
-            actor_ref: input.actor_ref.clone(),
-            command_id: input.command_id.clone(),
-            frame_id: input.frame_id.clone(),
-            evaluated_at: input.evaluated_at.clone(),
-            seq,
-            causation_id: input.causation_id.clone(),
-            correlation_id: input.correlation_id.clone(),
+                project_id: input.project_id.clone(),
+                cycle_id: input.cycle_id.clone(),
+                gate: input.gate.clone(),
+                evaluator: input.evaluator.clone(),
+                transition_id: input.transition_id.clone(),
+                plan_hash: input.plan_hash.clone(),
+                outcome: input.outcome.clone(),
+                evidence: input.evidence.clone(),
+                actor: input.actor.clone(),
+                actor_ref: input.actor_ref.clone(),
+                command_id: input.command_id.clone(),
+                frame_id: input.frame_id.clone(),
+                evaluated_at: input.evaluated_at.clone(),
+                seq,
+                causation_id: input.causation_id.clone(),
+                correlation_id: input.correlation_id.clone(),
+            })
         })
     }
 
