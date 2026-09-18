@@ -222,20 +222,28 @@ const CONF09_CONSTRUCTION_FRAGMENT: &str = concat!("Planning", "EvidenceKind", "
 // semantic_kind.rs cites the legacy name only inside a doc comment, which
 // the comment-stripping scan does not see. Neither needs an entry here
 // (the evidence_kind_v1 lint exclude_paths keeps raw-text entries).
-const CONF09_TYPE_ALLOWLIST: [&str; 4] = [
+const CONF09_TYPE_ALLOWLIST: [&str; 5] = [
     "crates/sddk-domain/src/planning/mod.rs",
     "crates/sddk-domain/src/lib.rs",
     "crates/sddk-engine/src/evidence_relation_mapping.rs",
     "crates/sddk-engine/src/spike_sp06.rs",
+    // Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1: the storage CRUD test
+    // exercises the universal substrate end-to-end (CAS reopen, fail-closed
+    // writes, legacy NULL-relation read path) and necessarily names the
+    // legacy `PlanningEvidenceKind` and constructs variants to build
+    // canonical-equivalent test fixtures. It is NOT a producer.
+    "crates/sddk-storage/tests/planning_cas_crud.rs",
 ];
 
 /// Closed constructor set for VARIANT CONSTRUCTION (narrower than
 /// `CONF09_TYPE_ALLOWLIST`: decoders and the corpus may NAME the legacy
 /// type, but only the compat module and the canonical mapping module may
-/// CONSTRUCT its variants).
-const CONF09_CONSTRUCTION_ALLOWLIST: [&str; 2] = [
+/// CONSTRUCT its variants — plus the M3 reopen test, which constructs
+/// variants to build a canonical-equivalent fixture).
+const CONF09_CONSTRUCTION_ALLOWLIST: [&str; 3] = [
     "crates/sddk-domain/src/planning/mod.rs",
     "crates/sddk-engine/src/evidence_relation_mapping.rs",
+    "crates/sddk-storage/tests/planning_cas_crud.rs",
 ];
 
 /// Whether one file offends a conf09 scan: NOT in the given allowlist AND
