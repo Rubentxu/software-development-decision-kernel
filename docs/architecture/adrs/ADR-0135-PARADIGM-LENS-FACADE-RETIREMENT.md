@@ -1,8 +1,13 @@
-# ADR-0135 — A5-4a: Retire `paradigm_lens::evaluate_lens()` Legacy Facade
+---
+id: ADR-0135-PARADIGM-LENS-FACADE-RETIREMENT
+status: accepted
+supersedes_history: false
+adopted_at: 2026-09-18
+accepted_at: 2026-09-18
+accepted_by_cycle: p-63676b11dc0ef88f/a5-4a-paradigm-lens-facade-retirement
+---
 
-- Status: ACCEPTED
-- Date: 2026-09-18
-- Cycle: `p-63676b11dc0ef88f/a5-4a-paradigm-lens-facade-retirement`
+# ADR-0135 — A5-4a: Retire `paradigm_lens::evaluate_lens()` Legacy Facade
 - Supersedes: removal trigger in `ADR-0118-PARADIGM-LENS-EVALUATION`
   (post-acceptance amendment) and `ADR-0125-GENERIC-ALIGNMENT-LENS-KERNEL-REGISTRY`
   §"Post-acceptance amendment" entry 3.
