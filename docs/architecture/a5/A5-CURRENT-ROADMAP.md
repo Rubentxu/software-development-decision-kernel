@@ -127,13 +127,23 @@ and is not a PRE-BASE concern.
 ### P1 candidate (NOT yet classified — needs reproduction cycle)
 
 - **`storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq`**
-  in `crates/sddk-storage/tests/sqlite_storage.rs:850` —
+  in `crates/sddk-storage/tests/sqlite_storage.rs:738` —
   concurrent SQLite insert hit `DatabaseBusy` during release.sh
-  runs. Isolated re-run 1/1 green; flake is concurrent-resource
-  contention. Needs a reproduce → root cause → fix/mitigate → pin
-  cycle with its own budget.
-  Proposed next-cycle name: `A5-SQLITE-CONCURRENCY-R`.
-  **Not** mixed with `EvidenceAttachmentV1` migration.
+  runs. **CLOSED** by `v1.169.86`
+  (cycle `A5-SQLITE-CONCURRENCY-R`):
+  - flake pinned 50/50 under `--test-threads=4` via the new
+    `Storage::with_busy_retry` helper (M2, `lib.rs:1471`)
+  - CAS-orphan class on `insert_evidence_attachment` closed (M3)
+  - 5 new multi-thread tests for the planning substrate in
+    `tests/concurrency_planning_substrate.rs` (M4)
+  - substrate contract documented in
+    `crates/sddk-storage/src/planning_substrate_contract.md` (M5)
+  - receipt: `docs/architecture/a5/A5-SQLITE-CONCURRENCY-R-RECEIPT.md`
+
+  **Remaining scope deferred to a future cycle:** apply the
+  `with_busy_retry` helper to the other 8 IMMEDIATE sites
+  (registration, capability receipts, cycle leases) — out-of-scope
+  for R-SQLITE-1 by design (each surface warrants its own change-set).
 
 ### A5-5 owed (clean-machine sweep)
 
@@ -237,10 +247,9 @@ POST-BASE; R1/R12 are CLOSED and not in the active backlog):
    STOP_NEEDS_SEPARATE_SLICE` (per A5-DEBT-DISPOSITION.md §3.5 and
    A5-4b-RECEIPT.md). NOT a POST-BASE item.
 2. **P1 candidate cycle:** SQLite concurrent-insert flake
-   (`storage_insert_gate_receipt_concurrent_allocations_…`). Own
-   budget: REPRODUCE → ROOT CAUSE → FIX/MITIGATE → PIN.
-   Proposed cycle name: `A5-SQLITE-CONCURRENCY-R`.
-   **Not** mixed with `EvidenceAttachmentV1` migration.
+   (`storage_insert_gate_receipt_concurrent_allocations_…`). **DONE**
+   by `A5-SQLITE-CONCURRENCY-R` (v1.169.86). See receipt
+   `docs/architecture/a5/A5-SQLITE-CONCURRENCY-R-RECEIPT.md`.
 3. **A5-5 clean-machine sweep:** G8 / G15 / R11 broader
    flake-discipline. Mechanism + automated evidence complete
    (release pipeline 14/14 PASS at every release); only the

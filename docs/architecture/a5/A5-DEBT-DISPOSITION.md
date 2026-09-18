@@ -139,6 +139,18 @@ NOT a closure of R12. See `A5-RISK-REGISTER.md §3`.
   cheap and unblock operator/HX quality. Anything that becomes a *feature*
   is **DEFER_POST_BASE** (see `A5-DEFERRED-POST-BASE.md`).
 
+## §3.8 SQLite concurrency authority surface (planning substrate)
+
+| Surface | Evidence | Disposition |
+|---|---|---|
+| `Storage::insert_evidence_attachment` (lib.rs:2667) CAS-oracle orphan on UNIQUE collision | `M3` in spec; pre-cycle `cas_put` precedes SQL INSERT with no rollback | **CLOSED_A5** (v1.169.86) — see `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` §3 |
+| Gate-receipt concurrent_allocations flake (`storage_insert_gate_receipt_concurrent_allocations_observe_distinct_seq`, sqlite_storage.rs:738) | pre-cycle 1/5 reproductions under `--test-threads=4` | **CLOSED_A5** (v1.169.86) — pinned 50/50 via `with_busy_retry` helper (M2, `lib.rs:1471`) |
+| Planning substrate concurrency coverage gap (0 multi-thread tests on `work_items_v1` / `work_item_dependencies_v1` / `evidence_attachments_v1` / `decision_records_v1`) | pre-cycle inventory by explore envelope `8585666997…6e11c8fc0875e8da1c52c667d05a8aa576bb` | **CLOSED_A5** (v1.169.86) — 5 new tests in `tests/concurrency_planning_substrate.rs` |
+| Pre-existing flake `cross_surface_facades_share_the_service_instance` in `sddk-cli` | reproducible with `git stash` of this cycle's commits | **OPEN_NON_BLOCKER** — different crate (`sddk-cli`), different surface (cross-service wiring); recorded for a future dedicated cycle |
+| 8 IMMEDIATE sites not routed through `with_busy_retry` | `lib.rs:504, 607, 1039, 1140, 1233, 1335, 1391, 1538` | **DEFER_POST_BASE** — each surface warrants its own change-set; the helper is available and pinned for opportunistic adoption |
+| `update_cycle_with_event` (lib.rs:664) split-transaction design | intentional (event-first fail-closed) | **DEFERRED** (OQ-SQLITE-1, P3 future cycle) |
+| CAS root GC sweep for orphans | pre-cycle no GC; `DEFAULT_CAS_ROOT = "cas/"` | **DEFERRED** (OQ-SQLITE-2, P3 future cycle) |
+
 ## §3.7 A5-4b dispositions (v1.169.83)
 
 > Cycle: `p-63676b11dc0ef88f/a5-4b-bounded-compat-lints-operator-ux`
