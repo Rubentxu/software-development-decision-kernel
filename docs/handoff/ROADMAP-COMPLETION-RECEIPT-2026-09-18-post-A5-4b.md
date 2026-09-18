@@ -5,6 +5,21 @@
 >
 > **STATUS: NOT COMPLETE.**
 
+> **⚠ INVALID FOR ROADMAP AUTHORITY (A5-C-RR, 2026-09-18):**
+> This receipt contains a `Milestones remaining (mandatory)` section
+> that declares `M0..M9 NOT STARTED`. That section **misreads** the
+> 09/09 Semantic Core + Agent Experience package as the live
+> execution roadmap. The 09/09 is a **certified historical baseline**
+> (M0..M9 closed by C0..C7 conformance at `0c2ca56` / SDDK `1.169.19`),
+> not a pending execution backlog.
+>
+> This receipt is preserved as historical ground-truth at `v1.169.83`.
+> Its body is **untouched**; the banner above is the only addition.
+> For the live roadmap, read:
+>   - `docs/architecture/README.md` (current normative architecture)
+>   - `docs/architecture/a5/A5-CURRENT-ROADMAP.md` (live A0..A8 + J0..J9)
+>   - `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
+
 This is an honest audit of what was closed since the prior receipt
 and what remains mandatory work on the living roadmap. The session
 did NOT reach `BASE_PRODUCTION_READY` and did NOT close the

@@ -4,14 +4,32 @@
 > All other architecture, consolidation, and evolution packages in the
 > repository are **historical / superseded** unless explicitly imported as
 > current WorkItems through reconciliation.
+>
+> **Roadmap authority (reconciled 2026-09-18, A5-C-RR):** the current
+> execution roadmap is the **Context-First 10/09** (R0→R11) executed
+> through the **Production-Readiness Alignment 14/09** mini-roadmap
+> (A0→A5 BASE_READY → A6 CogniCode / A7 Chronos / A8 FULLY_ENHANCED).
+> The 09/09 Semantic Core + Agent Experience package is the **certified
+> historical baseline** (M0→M9 closed by C0→C7 conformance at
+> `0c2ca56` / SDDK `1.169.19`); it is NOT the live execution roadmap.
+> See `docs/architecture/a5/A5-CURRENT-ROADMAP.md` for the live A0–A8
+> + J0–J9 sequence.
 
 ## Package
 
-- **Canonical source**: `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
-- **MANIFEST.sha256** (72 documents, 0 broken internal links)
-- **Adopted**: 2026-09-09
-- **Supersedes**: prior competing roadmap narratives listed in
-  `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/05-INTEGRATION/SUPERSESSION.md`
+- **Canonical architecture (live)**: `docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`
+  - Bounded context map, target source layout, canonical roadmap R0→R11
+  - Adoption requires a green `09-09-CONFORMANCE-RECEIPT.md`
+- **Canonical roadmap (live)**: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/`
+  - `02-MINI-ROADMAP.md` (A0→A5 BASE_READY → A6/A7/A8 + J0→J9)
+  - `03-PRODUCTION-READY-GATE.md` (acceptance gates G0–G6 + G8)
+- **Historical baseline (certified, not live)**: `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
+  - 72 documents, M0→M9 closed by C0→C7
+  - Conformance receipt: `docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`
+  - Verdict: `PASS — 100% conformance`, commit `0c2ca56`, SDDK `1.169.19`
+  - **Not** the live execution roadmap.
+- **Supersedes (historical)**: prior competing roadmap narratives listed
+  in `docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/05-INTEGRATION/SUPERSESSION.md`.
 
 ## Purpose
 
@@ -427,3 +445,54 @@ Cycle archive at `~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-adr
 - **Lint `execution_outcome_as_synthesis`**: requires `SynthesisReceipt.disposition` field to be pinned in a follow-up to ADR-0101.
 - **Lint `transition_outcome_used`**: requires the `TransitionOutcome` field to be structurally validated in the synthesis receipt.
 - **Vault mirror nodes** (per ADR-0001 §3.6): the 13 newly accepted ADRs need minimal mirror nodes in `~/.sddk-knowledge/sddk-framework/adrs/` so vault-side queries reflect the repo truth. Stub-friendly pattern.
+
+## Roadmap Reconciliation Appendix (A5-C-RR, 2026-09-18)
+
+The reconciliation cycle A5-C-RR reconciles historical cycle IDs
+against the live roadmap (Context-First 10/09 + Production-Readiness
+Alignment 14/09). Historical cycle IDs, commits, tags, and handoffs
+are **preserved unchanged**; this appendix only maps them to their
+correct roadmap attribution.
+
+### Historical cycle IDs → live roadmap attribution
+
+| Historical cycle ID | Historical title (verbatim) | Live roadmap attribution | Why |
+|---|---|---|---|
+| `p-63676b11dc0ef88f/a6-0-r4b-admission-tickets` | A6-0 R4-B admission tickets | **A5-3R0 / G5 Authority atomicity boundary** | `AuthorityAdmissionTicket` primitive; foundation of the ticket-protected apply chain. Authority/G5 hardening, not CogniCode. |
+| (A6-1) `framework_bundle` ticket-protected apply chain | `v1.169.77` | **A5-3R1 / G5 framework_bundle migration** | Migrates one writable surface (`framework_bundle`) to the ticket service. Authority/G5 hardening. |
+| (A6-2) `github_releases` ticket-protected apply chain | `v1.169.78` | **A5-3R2 / G5 github release migration** | Migrates the second writable surface (`github_releases`) to the ticket service. Authority/G5 hardening. |
+| (A6-3) `AuthorityTicketService` (shared admission+ticket) | `v1.169.79` | **A5-3R3 / G5 AuthorityTicketService** | Single shared service replacing the two per-surface implementations. Authority/G5 hardening. |
+| (A6-4) High-band migration to shared service | `v1.169.80` | **A5-3R4 / G5 high-band close** | Closes the R4-B slice by migrating all high-band surfaces to the shared service. Authority/G5 hardening. |
+
+The cycle IDs `a6-0..a6-4` are preserved as historical provenance
+(`~/.sddk-knowledge/sddk-framework/cycles/p-63676b11dc0ef88f-a6-*`
+remain on disk). The roadmap attribution is **functional**: A5/G5
+Authority hardening, the continuation of R4 from A5-3.
+
+### What the live A6 / A7 / A8 mean (reserved for future work)
+
+| Roadmap slot | Meaning | Status |
+|---|---|---|
+| **A6** | CogniCode / `STATIC_ENHANCED` provider integration | NOT STARTED — reserved. Not to be confused with the historical `a6-0..a6-4` cycle IDs above. |
+| **A7** | Chronos / `RUNTIME_ENHANCED` provider integration | NOT STARTED — reserved. |
+| **A8** | `FULLY_ENHANCED` (both providers) | blocked_by A6 + A7. |
+
+The CogniCode and Chronos handoff documents live at:
+- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/05-CHRONOS-HANDOFF.md`
+
+### Invalidated roadmaps
+
+The following documents contained a `M0–M9 NOT STARTED` reading
+that mixed the certified historical baseline with the live
+execution roadmap. They are **invalid for roadmap authority** from
+the A5-C-RR commit forward:
+
+- `docs/handoff/ROADMAP-COMPLETION-RECEIPT-2026-09-18-post-A5-4b.md`
+
+The receipt itself is **preserved as historical ground-truth**
+(banner added, content untouched). Its "Milestones remaining"
+section, read in isolation, is misleading: M0–M9 are baseline-
+certified, not pending.
+
+For the live roadmap, read `docs/architecture/a5/A5-CURRENT-ROADMAP.md`.
