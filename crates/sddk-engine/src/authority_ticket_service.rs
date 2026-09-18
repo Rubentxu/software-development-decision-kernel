@@ -29,7 +29,7 @@
 // See ADR-0133 for the design.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::authority_admission_ticket::{
     AdmissionTicketBus, AdmissionTicketError, AuthorityAdmissionTicket, AuthorityNow,
@@ -81,6 +81,39 @@ impl Default for AuthorityTicketService {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Process-wide singleton. **One** `AuthorityTicketService` per CLI
+/// process, shared across all call sites (framework_bundle,
+/// github_releases, future surfaces). Constructed lazily on first access.
+///
+/// This satisfies A6-4 §1 (process ownership): there is exactly one
+/// `AdmissionTicketBus` / one monotonic seq / one fence domain per
+/// process. Calling `AuthorityTicketService::new()` directly is allowed
+/// for tests but **forbidden** in production call sites — production code
+/// must go through `process_service()`.
+static PROCESS_SERVICE: OnceLock<AuthorityTicketService> = OnceLock::new();
+
+/// Returns the process-wide singleton `AuthorityTicketService`.
+///
+/// Equivalent to constructing one at the entry of `main` and threading
+/// it everywhere, but usable from sites that do not currently take a
+/// `RuntimeContext`. If we ever need to swap the singleton for a test,
+/// `set_process_service_for_tests` is the only documented seam.
+pub fn process_service() -> &'static AuthorityTicketService {
+    PROCESS_SERVICE.get_or_init(AuthorityTicketService::new)
+}
+
+/// Test-only seam: replace the process singleton. Returns the previous
+/// value if any. **Not for production use** — call sites must go through
+/// `process_service()`.
+#[doc(hidden)]
+pub fn set_process_service_for_tests(
+    svc: AuthorityTicketService,
+) -> Option<AuthorityTicketService> {
+    // OnceLock::set returns Result<(), T>; we discard it and use get_mut
+    // semantics — the API intentionally returns Option<prev> for clarity.
+    PROCESS_SERVICE.set(svc).err()
 }
 
 impl AuthorityTicketService {
@@ -136,6 +169,19 @@ impl AuthorityTicketService {
     /// Read the service's current fence token.
     pub fn current_fence(&self) -> u64 {
         self.inner.bus.current_fence()
+    }
+
+    /// Set the service's last-known policy digest without registering
+    /// a new policy. Used by **facade helpers** (e.g. `framework_bundle_ticket`,
+    /// `github_releases_ticket`) so a re-entry of the same facade restores
+    /// the canonical digest in the service's view without colliding with
+    /// a previously-registered policy of the same `policy_version`.
+    ///
+    /// This is **not** a fence advance — the live fence stays put.
+    pub fn set_last_policy_digest(&self, digest: crate::authority_engine::DigestSha256) {
+        if let Ok(mut last) = self.inner.last_policy_digest.lock() {
+            *last = Some(digest);
+        }
     }
 
     /// Build the `AuthorityNow` for consume. Captures the live policy

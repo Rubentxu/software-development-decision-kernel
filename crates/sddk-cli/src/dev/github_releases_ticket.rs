@@ -1,43 +1,41 @@
-//! A6-2 — R4-B migration helper for the `github_releases` surface (Forge route).
+//! A6-4 — R4-B migration to **shared** `AuthorityTicketService` for the
+//! `github_releases` surface.
 //!
-//! Wraps `apply_release(...)` (which performs `pr.create` → `pr.merge` →
-//! `release.create` through the `Forge` trait) with an `AdmissionTicketBus`
-//! issue + consume, per
-//! `docs/architecture/adrs/ADR-0132-GITHUB-RELEASES-MIGRATION-PATTERN.md`
-//! (which references ADR-0131).
+//! As of A6-3, the `AuthorityTicketService` is the canonical authority
+//! facade: one per CLI process, shared monotonic seq, shared bus, shared
+//! fence domain. A6-2's standalone `AdmissionTicketBus` is **deleted**
+//! from this call site in favour of `process_service()`.
 //!
-//! The ticket covers the **whole chain**: if `consume` refuses, none of the
-//! three forge steps run, because they all live behind `apply_release(...)`.
-//! `GitHubForge` and `MockForge` are not modified.
+//! This file is a **thin compat facade**: the public function
+//! `with_github_releases_ticket(...)` keeps the same signature as A6-2
+//! so `run_release_apply` does not have to change. Its body delegates to
+//! the process-wide service.
+//!
+//! Pattern: ADR-0133 §"Scope of this cycle" — A6-4 migrates the call
+//! sites, the service is the new authority. The local bus / engine /
+//! `current_seq = 0` from A6-2 are GONE from production code.
 
-use sddk_engine::authority_admission_ticket::{
-    AdmissionTicketBus, AdmissionTicketError, AuthorityNow,
+use sddk_engine::authority_admission_ticket::AdmissionTicketError;
+use sddk_engine::authority_engine::{ActionKind, Actor, DigestSha256, Facts, PolicySnapshot};
+use sddk_engine::authority_ticket_service::{
+    AuthorityTicketService, AuthorityTicketServiceError, process_service,
 };
-use sddk_engine::authority_engine::{
-    ActionKind, ActionProposal, Actor, AuthorityEngine as _, DefaultAuthorityEngine, DigestSha256,
-    Facts, PolicySnapshot,
-};
-use time::OffsetDateTime;
 
-/// Typed error returned by the `github_releases` ticket wrapper.
+/// Typed error returned by the `github_releases` ticket facade.
 #[derive(Debug, thiserror::Error)]
 pub enum GithubReleasesTicketError {
+    /// Admission denied by the authority engine.
     #[error("github_releases admission denied: {0}")]
     Denied(String),
+    /// Admission ticket refused.
     #[error("github_releases ticket refused: {0}")]
     Ticket(#[source] AdmissionTicketError),
+    /// Apply chain failed after ticket consume.
     #[error("github_releases apply chain failed: {0}")]
     Apply(#[source] anyhow::Error),
 }
 
-impl From<AdmissionTicketError> for GithubReleasesTicketError {
-    fn from(value: AdmissionTicketError) -> Self {
-        Self::Ticket(value)
-    }
-}
-
-/// Shared policy for `github_releases`. Anchors the ticket; the engine
-/// re-validates `current_policy_digest` against it at consume time.
+/// Helper: build the canonical `github_releases` policy.
 pub fn github_releases_policy() -> PolicySnapshot {
     let mut policy = PolicySnapshot::default_low_risk("github_releases");
     policy.policy_digest = DigestSha256::compute(b"github_releases/v1-a6-2");
@@ -45,23 +43,17 @@ pub fn github_releases_policy() -> PolicySnapshot {
     policy
 }
 
-/// A6-2 — Wrap a `github_releases` apply chain with `AdmissionTicketBus`
-/// issue + consume. The body runs ONLY after the ticket is consumed; if
-/// consume fails the body never runs.
+/// A6-4 — wrap the entire `apply_release` chain
+/// (CreatePr → MergePr → CreateRelease) with the **process-wide**
+/// `AuthorityTicketService`. Body runs ONLY after a successful
+/// issue + consume against the service.
 ///
-/// Pattern is documented in
-/// `docs/architecture/adrs/ADR-0132-GITHUB-RELEASES-MIGRATION-PATTERN.md`.
+/// The caller passes the `Actor` already constructed. The facade does
+/// NOT enrich capabilities — that is the caller's job.
 ///
-/// Honest limits (inherited from ADR-0131): T2 (PolicyChanged via
-/// policy_digest) is NOT directly pinned at this call site. The
-/// primitive-level T2 is pinned in
-/// `crates/sddk-engine/tests/a6_0_admission_tickets.rs`. A6-3 will
-/// thread the live snapshot.
-///
-/// The caller passes the `Actor` already constructed (with whatever
-/// `capabilities` it holds). The helper does **not** add capabilities
-/// on its own — that is the caller's job. This lets tests construct
-/// actors whose capability set will be denied by the helper's policy.
+/// **A6-4 §8 (helper disposition):** this function is `THIN_COMPAT_FACADE`
+/// over the shared service. The standalone engine + bus + `current_seq = 0`
+/// from A6-2 are **deleted** from production code.
 pub fn with_github_releases_ticket<F, T>(
     actor: Actor,
     target_id: &str,
@@ -70,37 +62,51 @@ pub fn with_github_releases_ticket<F, T>(
 where
     F: FnOnce() -> anyhow::Result<T>,
 {
-    let mut engine = DefaultAuthorityEngine::new();
-    let policy = github_releases_policy();
-    engine.register_policy(policy.clone()).map_err(|e| {
-        GithubReleasesTicketError::Apply(anyhow::anyhow!("register github_releases policy: {e:?}"))
-    })?;
+    with_github_releases_ticket_on(process_service(), actor, target_id, body)
+}
 
-    let proposal = ActionProposal {
+/// Variant that accepts an explicit service. See `with_framework_bundle_ticket_on`.
+pub fn with_github_releases_ticket_on<F, T>(
+    svc: &AuthorityTicketService,
+    actor: Actor,
+    target_id: &str,
+    body: F,
+) -> Result<T, GithubReleasesTicketError>
+where
+    F: FnOnce() -> anyhow::Result<T>,
+{
+    let policy = github_releases_policy();
+    let _ = svc.register_policy(policy.clone());
+    svc.set_last_policy_digest(policy.policy_digest.clone());
+
+    let proposal = sddk_engine::authority_engine::ActionProposal {
         kind: ActionKind::CliRelease,
         target_id: target_id.to_string(),
         payload_digest: None,
-        created_at: OffsetDateTime::now_utc(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
-    let facts = Facts::default();
-
-    // admit step (R4-A: deny ⇒ no ticket).
-    let decision = engine.admit(&proposal, &actor, &facts, &policy);
-    if !decision.is_allow() {
-        return Err(GithubReleasesTicketError::Denied(format!("{:?}", decision)));
-    }
-
-    // Issue ticket (R4-B wired in A6-0).
-    let bus = AdmissionTicketBus::new();
-    let ticket = bus.issue(&engine, &proposal, &actor, &facts, &policy, 0)?;
-
-    // Consume anchor — same honest limit as A6-1 (`seq = 0`).
-    let now = AuthorityNow {
-        current_policy_digest: policy.policy_digest.clone(),
-        current_fence: bus.current_fence(),
-        current_seq: 0,
+    let ticket = match svc.issue(&actor, &proposal, &policy, &Facts::default()) {
+        Ok(t) => t,
+        Err(AuthorityTicketServiceError::Denied(msg)) => {
+            return Err(GithubReleasesTicketError::Denied(msg));
+        }
+        Err(other) => {
+            return Err(GithubReleasesTicketError::Ticket(match other {
+                AuthorityTicketServiceError::Ticket(e) => e,
+                other => AdmissionTicketError::EngineBug {
+                    reason: format!("{other:?}"),
+                },
+            }));
+        }
     };
-    bus.consume(&ticket, &now)?;
+    svc.consume_at_live_now(&ticket, &policy).map_err(|e| {
+        GithubReleasesTicketError::Ticket(match e {
+            AuthorityTicketServiceError::Ticket(e) => e,
+            other => AdmissionTicketError::EngineBug {
+                reason: format!("{other:?}"),
+            },
+        })
+    })?;
 
     body().map_err(GithubReleasesTicketError::Apply)
 }
@@ -108,15 +114,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sddk_engine::authority_admission_ticket::AdmissionTicketBus;
-    use sddk_engine::authority_engine::{
-        ActorKind, AuthorityEngine, DefaultAuthorityEngine, DigestSha256, Facts,
+    use sddk_engine::authority_admission_ticket::{
+        AdmissionTicketBus, AdmissionTicketError, AuthorityNow,
     };
+    use sddk_engine::authority_engine::{
+        ActionProposal, ActorKind, AuthorityEngine, DefaultAuthorityEngine,
+    };
+    use sddk_engine::authority_ticket_service::AuthorityTicketService;
 
-    fn system_actor() -> Actor {
+    fn sys_actor(service: &str) -> Actor {
         Actor {
             kind: ActorKind::System {
-                service: "a6-2-test".to_string(),
+                service: service.to_string(),
             },
             capabilities: vec!["cli.execute".to_string()],
             lease: None,
@@ -125,11 +134,17 @@ mod tests {
 
     #[test]
     fn fence_t1_happy_path_runs_body_and_consumes_ticket() {
+        let svc = AuthorityTicketService::new();
         let invoked = std::sync::Mutex::new(false);
-        let result = with_github_releases_ticket::<_, String>(system_actor(), "vA6-2-test", || {
-            *invoked.lock().unwrap() = true;
-            Ok("released".to_string())
-        });
+        let result = with_github_releases_ticket_on::<_, String>(
+            &svc,
+            sys_actor("a6-4-gr"),
+            "vA6-4-test",
+            || {
+                *invoked.lock().unwrap() = true;
+                Ok("released".to_string())
+            },
+        );
         let value = result.expect("happy-path wrapper returns Ok");
         assert_eq!(value, "released");
         assert!(*invoked.lock().unwrap(), "body must have run");
@@ -141,18 +156,17 @@ mod tests {
         let mut engine = DefaultAuthorityEngine::new();
         let p = github_releases_policy();
         engine.register_policy(p.clone()).unwrap();
-        let actor = system_actor();
+        let actor = sys_actor("a6-4-gr");
         let proposal = ActionProposal {
-            kind: sddk_engine::authority_engine::ActionKind::CliRelease,
+            kind: ActionKind::CliRelease,
             target_id: "github_releases-once".to_string(),
             payload_digest: None,
             created_at: time::OffsetDateTime::now_utc(),
         };
-
         let facts = Facts::default();
         let ticket = bus
             .issue(&engine, &proposal, &actor, &facts, &p, 0)
-            .unwrap();
+            .expect("issue succeeds");
         let now = AuthorityNow {
             current_policy_digest: p.policy_digest.clone(),
             current_fence: bus.current_fence(),
@@ -170,17 +184,7 @@ mod tests {
 
     #[test]
     fn fence_t5_deny_yields_no_ticket_and_body_does_not_run() {
-        let invoked = std::sync::Mutex::new(false);
-        // To force Deny inside the helper (which constructs the policy
-        // internally), we use an actor whose actor_kind would be denied by
-        // a policy that denies all System entries. The helper's policy
-        // accepts System actors for `CliRelease` when the capability is
-        // present, so we instead force Deny by submitting an actor kind
-        // that the engine denies. Agent with a profile_id is the safe
-        // choice: agent actions on a low-risk policy without a recorded
-        // approval_ref are denied by default.
-        // Construct an actor without any capabilities so the engine denies
-        // the action. The caller now has direct control over the actor.
+        let svc = AuthorityTicketService::new();
         let actor = Actor {
             kind: ActorKind::System {
                 service: "no-priv".to_string(),
@@ -188,10 +192,12 @@ mod tests {
             capabilities: Vec::new(),
             lease: None,
         };
-        let result = with_github_releases_ticket::<_, ()>(actor, "github_releases-deny", || {
-            *invoked.lock().unwrap() = true;
-            Ok(())
-        });
+        let invoked = std::sync::Mutex::new(false);
+        let result =
+            with_github_releases_ticket_on::<_, ()>(&svc, actor, "github_releases-deny", || {
+                *invoked.lock().unwrap() = true;
+                Ok(())
+            });
         match result {
             Err(GithubReleasesTicketError::Denied(_)) => {}
             other => panic!("expected Denied, got {:?}", other),
@@ -200,38 +206,33 @@ mod tests {
     }
 
     #[test]
-    fn fence_t6_ticket_with_swapped_policy_is_rejected_at_consume() {
-        let bus = AdmissionTicketBus::new();
-        let mut engine = DefaultAuthorityEngine::new();
-        let mut swapped = github_releases_policy();
-        swapped.policy_digest = DigestSha256::compute(b"github_releases/v2-a6-2-swapped");
-        swapped.policy_version = 2;
-        engine.register_policy(swapped.clone()).unwrap();
-        let actor = system_actor();
+    fn fence_t6_policy_swap_at_service_invalidates_ticket() {
+        let svc = AuthorityTicketService::new();
+        let policy_a = github_releases_policy();
+        svc.register_policy(policy_a.clone()).unwrap();
+        let actor = sys_actor("a6-4-gr");
         let proposal = ActionProposal {
-            kind: sddk_engine::authority_engine::ActionKind::CliRelease,
+            kind: ActionKind::CliRelease,
             target_id: "github_releases-swap".to_string(),
             payload_digest: None,
             created_at: time::OffsetDateTime::now_utc(),
         };
-
-        let facts = Facts::default();
-        let ticket = bus
-            .issue(&engine, &proposal, &actor, &facts, &swapped, 0)
-            .unwrap();
-        // Now consume using the wrapper's real anchor — must refuse.
-        let p_real = github_releases_policy();
-        let now = AuthorityNow {
-            current_policy_digest: p_real.policy_digest.clone(),
-            current_fence: bus.current_fence(),
-            current_seq: 0,
-        };
-        let err = bus
-            .consume(&ticket, &now)
-            .expect_err("consume against the wrapper's anchor must refuse");
+        let ticket = svc
+            .issue(&actor, &proposal, &policy_a, &Facts::default())
+            .expect("issue with policy_a");
+        let mut policy_b = github_releases_policy();
+        policy_b.policy_digest = DigestSha256::compute(b"github_releases/v2-a6-4-swapped");
+        policy_b.policy_version = 2;
+        svc.register_policy(policy_b).unwrap();
+        let err = svc
+            .consume_at_live_now(&ticket, &policy_a)
+            .expect_err("must refuse");
         match err {
-            AdmissionTicketError::PolicyChanged { .. } => {}
-            other => panic!("expected PolicyChanged, got {:?}", other),
+            AuthorityTicketServiceError::Ticket(
+                AdmissionTicketError::PolicyChanged { .. }
+                | AdmissionTicketError::FenceExpired { .. },
+            ) => {}
+            other => panic!("expected PolicyChanged or FenceExpired, got {:?}", other),
         }
     }
 }

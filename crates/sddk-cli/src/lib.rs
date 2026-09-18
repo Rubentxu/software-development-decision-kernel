@@ -21,7 +21,7 @@ pub mod command_surface;
 pub mod config_cmd;
 mod cycle;
 mod debt;
-mod dev;
+pub mod dev;
 pub mod examples_walker;
 pub mod execution_receipt;
 pub mod instruction_compiler;

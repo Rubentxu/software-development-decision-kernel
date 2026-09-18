@@ -13,15 +13,23 @@ created_by: sddk-apply (A5-3)
 owner: process-followup-cycle
 cycle_origin: "p-63676b11dc0ef88f/a5-3-concurrency-cas-authority-races"
 closed: 2026-09-18
-closed_by: sddk-apply (A6-0)
+closed_by: sddk-apply (A6-4)
 closed_reason: |
-  Primitive + FENCE matrix shipped (ADR-0130 + 12 tests GREEN). Migration of
-  High-band unguarded surfaces (`framework_bundle`, `github_releases`) is
-  named in `docs/architecture/a6/A6-0-RECEIPT.md` §6 as deferred follow-up
-  cycles, not closed in A6-0 (out of scope for one cycle). INC closes as
-  `TESTED_BOUNDARY` rather than `FULLY_MIGRATED`; honest disposition is in
-  A6-0-RECEIPT §7.
-cycle_closed: "p-63676b11dc0ef88f/a6-0-r4b-admission-tickets"
+  A6-0 shipped the FENCED-ADMISSION-TICKETS primitive + ADR-0130
+  (v1.169.76). A6-1 (framework_bundle) and A6-2 (github_releases) migrated
+  High-band unguarded writable surfaces to ticket-protected apply chains
+  (v1.169.77, v1.169.78). A6-3 shipped AuthorityTicketService as the shared
+  admission+ticket facade (v1.169.79). A6-4 migrated BOTH High-band call
+  sites to the shared service. Process-wide singleton (`process_service()`)
+  holds one bus + one monotonic seq + one fence domain. Both surfaces
+  delegate through it; `current_seq = 0` is gone from production paths.
+  FENCE matrix (T1..T6) re-run at the call sites; cross-surface shared-state
+  proof is in `tests/a6_4_shared_ticket_service.rs` (5/5 GREEN). INC closes
+  as `FULLY_MIGRATED_FOR_REQUIRED_HIGH_BAND_SURFACES`. Medium / Low-band
+  surfaces remain out of scope for BASE_PRODUCTION_READY. Honest limits in
+  `A6-4-RECEIPT.md` §"Honest limits" (seq is process-local, not canonical
+  event-log seq).
+cycle_closed: "p-63676b11dc0ef88f/a6-4-shared-ticket-service-migration"
 ---
 
 # INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY — Decision → effect TOCTOU is unmitigated
