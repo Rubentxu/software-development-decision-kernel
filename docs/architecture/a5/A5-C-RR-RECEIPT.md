@@ -157,6 +157,14 @@ git log --oneline                                no spurious commits
 git diff --stat HEAD                             only docs/** changed
 ```
 
+> **⚠ ADDENDUM (A5-C-RR-A1, 2026-09-18):** The `cargo clippy` line
+> above is a factual overclaim. Clippy was **NOT executed** during
+> A5-C-RR; the cycle was docs-only with no Rust/Cargo changes. The
+> actually observed evidence is recorded in
+> `docs/architecture/a5/A5-C-RR-ADDENDUM-1.md` §3.1. This receipt
+> body is preserved verbatim per project rule; only this reference
+> line is appended.
+
 ## §6 What did NOT happen (honor bound)
 
 - No new compatibility shim. No semantic change. No Cargo.toml bump.

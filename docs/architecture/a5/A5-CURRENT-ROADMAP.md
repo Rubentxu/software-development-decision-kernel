@@ -118,13 +118,27 @@ include any M0..M9 work — that baseline is certified.
   trigger bypass; covered by SDDK2-203". Decide OBSOLETE (SDDK2-203
   unreachable → re-target) or MUST_CLOSE.
 
-### Carry-forward from A5-4b
+### Carry-forward from A5-4b (PRE-BASE, NOT POST-BASE)
 
-- **EvidenceAttachmentV1 + compat decoder** —
-  `crates/sddk-engine/src/.../evidence_ref.rs:192` + ratchet exclude
-  + storage migration. C2.5 risk class. **STOP_NEEDS_SEPARATE_SLICE**
-  (per A5-4b-RECEIPT.md). Tracked under
-  `docs/architecture/a5/A5-DEFERRED-POST-BASE.md`.
+- **EvidenceAttachmentV1 + compat decoder** — `crates/sddk-engine/src/.../evidence_ref.rs:192` + ratchet exclude + storage migration.
+
+  ```text
+  classification:    PRE-BASE
+  disposition:       MIGRATE_A5
+  risk class:        C2.5
+  execution:         separate single-budget slice
+  required_before:   A5-C certification
+  tracked_in:        docs/architecture/a5/A5-DEBT-DISPOSITION.md §3.5
+                     docs/architecture/a5/A5-4b-RECEIPT.md
+                       (STOP_NEEDS_SEPARATE_SLICE)
+  NOT tracked_in:    docs/architecture/a5/A5-DEFERRED-POST-BASE.md
+                     (this item is NOT a POST-BASE item)
+  ```
+
+  Source of disposition: `A5-4b-RECEIPT.md` §"Carry-forward" and
+  `A5-DEBT-DISPOSITION.md` §3.5 (`EvidenceAttachmentV1 + compat
+  decoder → MIGRATE_A5`). Correction recorded in
+  `A5-C-RR-ADDENDUM-1.md` §3.3.
 
 ### A5-1 follow-up (paperwork, P2)
 
@@ -152,7 +166,7 @@ Per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GAT
 GATE   MEANING                                EVIDENCE STATUS        NOTES
 ────   ─────────────────────────────────────   ──────────────────     ───────────────────────────────
 G0     Baseline semantic conformance          evidenced              09-09-CONFORMANCE-RECEIPT @ 0c2ca56
-G1     Ownership and dependency integrity     partial                lint suite (5 of 9 deny; 4 advisory)
+G1     Ownership and dependency integrity     partial                lint suite (6 of 9 deny; 3 allow-with-reason, machine-pinned)
 G2     Knowledge and epistemic integrity       NOT EVIDENCED          R1 restart-survival blocks
 G3     Alignment boundary                     NOT EVIDENCED          (no A5 slice targets it)
 G4     Verify and DebVerify                   NOT EVIDENCED          (no A5 slice targets it)
@@ -175,19 +189,41 @@ The next session should read:
 7. `docs/architecture/a5/A5-DEFERRED-POST-BASE.md`
 
 Then pick the next single item with a single change budget.
-The recommended order, by cheapest first:
+The recommended order, by cheapest first, **PRE-BASE work required
+before A5-C certification** (EvidenceAttachmentV1 is PRE-BASE, not
+POST-BASE):
 
-1. **P1 paperwork:** ignored-test OBSOLETE/MUST_CLOSE decision on
-   `cli_phase_build_remediate_rejects_wrong_phase` and
-   `verify_stream_chain_fails_on_tampered_hash`.
+1. **P1 paperwork (cheapest):** ignored-test OBSOLETE/MUST_CLOSE
+   decision on `cli_phase_build_remediate_rejects_wrong_phase` and
+   `verify_stream_chain_fails_on_tampered_hash`. Zero code; binary
+   disposition per item.
 2. **P1 runtime:** R12 sender-drop cycle (own budget, runtime defect).
 3. **P1 runtime:** R1 restart-survival cycle (own budget, G2/G15).
 4. **P1 runtime:** SQLite concurrent-insert flake
    (`storage_insert_gate_receipt_concurrent_allocations_…`).
-5. **C2.5 separate slice:** EvidenceAttachmentV1 migration
-   (`evidence-migration-v2`).
+5. **C2.5 PRE-BASE slice (required before A5-C):**
+   `EvidenceAttachmentV1` migration
+   (`evidence-migration-v2`). Classification: `MIGRATE_A5 /
+   STOP_NEEDS_SEPARATE_SLICE` (per A5-DEBT-DISPOSITION.md §3.5 and
+   A5-4b-RECEIPT.md). NOT a POST-BASE item.
 6. **A5-C certification:** when A5-* slices are green, run the
-   acceptance-gate evidence sweep and emit `BASE_PRODUCTION_READY`.
+   acceptance-gate evidence sweep. G2/G3/G4 must be evidenced
+   explicitly; closing the A5-* slices does not automatically
+   evidence those gates. Emit `BASE_PRODUCTION_READY` only when
+   G0–G6 + G8 are evidenced.
 
-None of the above opens M0..M9, R0..R11, A0..A4, A6, A7, A8, J0..J9
-without explicit user green-light.
+After A5-C closes:
+
+- **A6 CogniCode / STATIC_ENHANCED** (NOT to be confused with the
+  historical `a6-0..a6-4` cycle IDs which were A5/G5 Authority
+  hardening — see `docs/architecture/README.md` Roadmap
+  Reconciliation Appendix).
+- **A7 Chronos / RUNTIME_ENHANCED**.
+- **A8 FULLY_ENHANCED** (blocked_by A6 + A7).
+- **J2..J6 JCODE_CORE_GA** (parallel track, P1).
+
+None of the above opens M0..M9, R0..R11, A0..A4 without explicit
+user green-light. M0..M9 are baseline-cert-closed (C0..C7 PASS at
+`0c2ca56` / SDDK `1.169.19`); R0..R11 lives in
+`docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`
+as design intent; A0..A4 are declared closed in §1 above.
