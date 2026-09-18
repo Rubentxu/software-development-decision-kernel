@@ -136,13 +136,6 @@ fn verify_stream_chain_succeeds_for_unbroken_chain() {
 }
 
 #[test]
-#[ignore = "Tampering requires trigger bypass; covered by SDDK2-203 chain verify"]
-fn verify_stream_chain_fails_on_tampered_hash() {
-    // The events_v1 trigger blocks UPDATE, so we cannot easily tamper
-    // without a test-only trigger disable. Covered by SDDK2-203.
-}
-
-#[test]
 fn idempotency_unique_event_id() {
     let mut store = SqliteEventStore::open_in_memory().unwrap();
     let env = minimal_envelope("e-1", "s-1", "p-1");

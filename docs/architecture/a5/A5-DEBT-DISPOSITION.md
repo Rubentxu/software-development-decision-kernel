@@ -72,6 +72,19 @@ reason. No lint is a blocker today.
 (none invisible). Two pairs point at **runtime** signals (Parallel
 sender-drop, restart survival) and are promoted to P1 risks R12/R1.
 
+### §3.4.1 A5-ITD dispositions (post-v1.169.83)
+
+Two ignored tests disposed in `p-63676b11dc0ef88f/a5-itd-ignored-test-disposition`:
+
+| Test | Original reason | Disposition | Evidence |
+|---|---|---|---|
+| `cli_phase_build_remediate_rejects_wrong_phase` (S2) | "workflow has no transition into REMEDIATING/verify; see cycle-45" | **OBSOLETE** | `REMEDIATING/verify` is a state-machine phantom: 0 references in YAML; the workflow only knows `REMEDIATING/build` (`release.recover`). The property the test wanted to prove (source-state mismatch rejected) is enforced at the canonical lower frontier: `cli_phase_build_remediate_transitions_to_open_build` (S1, green) traverses the same source-state check on every successful transition. Test removed; docstring at the deletion site points to S1 as live coverage. Receipt: `A5-ITD-RECEIPT.md §3.1`. |
+| `verify_stream_chain_fails_on_tampered_hash` | "Tampering requires trigger bypass; covered by SDDK2-203" | **OBSOLETE** | Test body is empty (placeholder). The tampering path (mutating `events_v1.content_hash`) is not a possible system entry: the SQL trigger on `events_v1` blocks UPDATE and DELETE, demonstrated by `append_rejects_update_via_trigger` and `append_rejects_delete_via_trigger` (both 2/2 green at v1.169.83). The "tampering is rejected" property is enforced at the canonical lower frontier (the SQL trigger), not at `verify_stream_chain`. Test removed. Receipt: `A5-ITD-RECEIPT.md §3.2`. |
+
+Post-A5-ITD baseline: 11 ignored tests (was 13; -2 from these
+OBSOLETE dispositions). Both runtime signals (R1, R12) remain P1
+unresolved — separate cycles. The 6 doc-tests remain ACCEPTED_RISK.
+
 ## §3.5 Legacy / compatibility surfaces
 
 | Surface | Evidence | Disposition |
