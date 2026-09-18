@@ -14,6 +14,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::dev::github_releases_ticket::{GithubReleasesTicketError, with_github_releases_ticket};
 use crate::{
     CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, render_result,
     uat::ReleaseTypeArg,
@@ -861,12 +862,40 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
                 };
                 let mut forge = GitHubForge::new(repo);
                 let plan = plan_release(input, &forge)?;
-                Ok(apply_release(
-                    &mut gateway,
-                    &plan,
-                    &mut forge,
-                    version_lockstep_passed,
-                )?)
+
+                // A6-2: wrap the entire CreatePr → MergePr → CreateRelease
+                // chain under one AdmissionTicket (issue + consume). The body
+                // runs only after the ticket is consumed; if consume fails
+                // (deny / fence expired / policy changed) the chain is
+                // never executed. See ADR-0132.
+                let ticket_actor = sddk_engine::authority_engine::Actor {
+                    kind: sddk_engine::authority_engine::ActorKind::System {
+                        service: "sddk-cli/release-apply".to_string(),
+                    },
+                    capabilities: vec!["cli.execute".to_string()],
+                    lease: None,
+                };
+                with_github_releases_ticket::<_, sddk_gateway::ReleaseOutcome>(
+                    ticket_actor,
+                    &format!("release/{}", args.tag),
+                    || {
+                        Ok(apply_release(
+                            &mut gateway,
+                            &plan,
+                            &mut forge,
+                            version_lockstep_passed,
+                        )?)
+                    },
+                )
+                .map_err(|e| match e {
+                    GithubReleasesTicketError::Denied(msg) => {
+                        anyhow::anyhow!("github_releases ticket denied: {msg}")
+                    }
+                    GithubReleasesTicketError::Ticket(err) => {
+                        anyhow::anyhow!("github_releases ticket error: {err:?}")
+                    }
+                    GithubReleasesTicketError::Apply(err) => err,
+                })
             })();
             render_result(result, format, release_outcome_text)
         }

@@ -20,6 +20,7 @@ mod editor_adapters;
 mod entropy;
 pub(super) mod framework_bundle_ticket;
 mod framework_check;
+pub(super) mod github_releases_ticket;
 pub(super) mod graph;
 mod install;
 mod link;
