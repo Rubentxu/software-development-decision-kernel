@@ -29,6 +29,7 @@ pub mod architecture_why;
 pub mod authority;
 pub mod authority_admission_ticket;
 pub mod authority_engine;
+pub mod authority_ticket_service;
 pub mod build_work_graph;
 pub mod canonical_event_log;
 pub mod cas_object_store;
