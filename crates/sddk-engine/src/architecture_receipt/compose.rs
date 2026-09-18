@@ -18,7 +18,7 @@ use crate::architecture_conformance::{ArchitectureConformanceDelta, DeltaContrac
 use crate::architecture_debverify::{DebVerifyAudit, FindingSeverity};
 use crate::architecture_mutation::MutationSuiteReceipt;
 use crate::knowledge::EventTime;
-use crate::paradigm_lens::LensEvaluation;
+use crate::paradigm_profile::LensAssessment;
 
 use super::self_audit::evaluate_class_coverage;
 use super::types::{
@@ -38,8 +38,13 @@ pub struct ReceiptInputs<'a> {
     pub audit: &'a DebVerifyAudit,
     /// AC6's mutation results (negative evidence).
     pub mutations: &'a MutationSuiteReceipt,
-    /// AC7's lens evaluations (advisory).
-    pub lenses: &'a [LensEvaluation],
+    /// AC7's lens evaluations (advisory). The composer reads the AC3-shaped
+    /// `LensAssessment` projection; it does NOT need the AC7-only
+    /// `LensEvaluationBasis` / `LensProvenance` / `used_observations`
+    /// wrapper (the legacy `paradigm_lens::LensEvaluation` type was a
+    /// thin envelope around this very shape — A5-4a documented the
+    /// audit + the type narrow).
+    pub lenses: &'a [LensAssessment],
     /// Governed waivers supplied by the caller.
     pub waivers: &'a [String],
     /// Provider contributions; empty in Base mode (AC-041-005).
@@ -127,10 +132,10 @@ pub fn compose_receipt(
         .lenses
         .iter()
         .map(|l| LensResult {
-            lens: l.assessment.lens,
-            anchor: l.assessment.anchor.locator(),
-            status: l.assessment.status,
-            basis: l.assessment.basis,
+            lens: l.lens,
+            anchor: l.anchor.locator(),
+            status: l.status,
+            basis: l.basis,
         })
         .collect();
     lens_results.sort_by(|a, b| {
@@ -150,7 +155,7 @@ pub fn compose_receipt(
     // ── evidence citations (sorted by ordering key) ─────────────────────────
     let mut evidence_refs: Vec<crate::evidence_ref::EvidenceRef> = Vec::new();
     for l in inputs.lenses {
-        evidence_refs.extend(l.assessment.evidence_refs.iter().cloned());
+        evidence_refs.extend(l.evidence_refs.iter().cloned());
     }
     for f in &inputs.audit.findings {
         for id in &f.contract_ids {

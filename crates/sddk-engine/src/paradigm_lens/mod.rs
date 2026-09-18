@@ -1,64 +1,57 @@
 // Copyright (c) SDDK contributors.
 // SPDX-License-Identifier: MIT
 //
-// paradigm_lens/mod.rs — A3-S8 / AC7 public surface.
+// paradigm_lens/mod.rs — A3-S8 / AC7 data path + A4-4M bridge.
 //
-// Paradigm lenses: deterministic/heuristic evaluation of OO, functional,
-// ADT/modelling and typed-DSL design intent against concrete observations.
+// Paradigm lens data: deterministic/heuristic *evidence* for OO, functional,
+// ADT/modelling and typed-DSL design intent. The typed observations and the
+// translation to the canonical observation substrate are the production data
+// path consumed by `alignment_lens::paradigm` lenses.
 //
-// Cycle: `p-63676b11dc0ef88f/a3-8-ac7-paradigm-lenses` (A3-S8)
+// Cycle: `p-63676b11dc0ef88f/a3-8-ac7-paradigm-lenses` (A3-S8) + A4-4M M2
 // Spec: `docs/architecture/specs/arch-spec-A3-S8-ac7-paradigm-lenses.md`
-// Upstream: `arch-spec-035-paradigm-lens-system` (remains `proposed`)
-// ADR: `ADR-0118-PARADIGM-LENS-EVALUATION`
+// Bridge spec: `docs/architecture/a4-4m-migration-matrix.md` §M0/M2
+// ADR: `ADR-0118-PARADIGM-LENS-EVALUATION`, `ADR-0125-GENERIC-ALIGNMENT-LENS-KERNEL-REGISTRY`
 //
-// # What AC7 adds to AC3
+// # A5-4a disposition
 //
-// A3-S4 (AC3) delivered the paradigm **data** and deferred evaluation:
-// assessments defaulted to `LensStatus::Unknown` / `EvidenceBasis::Declared`.
-// AC7 is that deferred evaluation: it produces AC3 `LensAssessment` values with
-// a real status and concrete evidence citations, without modifying AC3's closed
-// vocabularies.
-//
-// # The INFERRED problem
-//
-// AC3's `EvidenceBasis` is frozen at exactly 5 variants (REQ-AC3-004) and does
-// not contain `INFERRED`. AC7 therefore owns a 2-closed
-// `LensEvaluationBasis` (`Deterministic | Inferred`) and maps onto AC3's
-// vocabulary: `Deterministic -> Observed`, `Inferred -> Declared` (intent-only),
-// with provenance carried in a typed `LensProvenance` and in `notes`.
-//
-// # Advisory boundary (AC-035-005, AC-UAT-011)
-//
-// Lens status is advisory. This module imports no authority/capability/
-// instruction types, writes no `EffectiveInstructions`, grants no capability,
-// performs no IO, calls no LLM/provider, and mutates no graph. `evaluate_lens`
-// is scoped to the declared anchor and emits exactly one assessment — it never
-// produces a global paradigm judgment (AC-UAT-012).
+// The legacy `evaluate_lens()` compatibility facade and the legacy
+// `LensEvaluation` wrapper were retired in A5-4a:
+//   - `paradigm_lens::lenses` module is DELETED.
+//   - `evaluate_lens()` is gone.
+//   - `LensEvaluation` struct is gone; the receipt composer now
+//     takes `&[paradigm_profile::LensAssessment]` (the AC3 shape).
+// The AC7-specific deterministic-projection semantics that the facade
+// produced live on: the kernel pathway consumes the same
+// `SoftwareObservation`s via the M0 translation, and the substrate
+// posture + projection that the facade implemented is the SAME
+// projection the kernel uses (pinned in `a4_4m_m0_migration_proof.rs`).
 //
 // # State classes (ADR-0095)
 //
-// - `LensAssessment` — PROJECTION (AC3-owned shape; AC7 produces values).
-// - `LensEvaluation`, `LensObservation`, `ObservationPolarity`,
-//   `LensEvaluationBasis`, `LensProvenance` — EPHEMERAL computed values.
+// - `LensObservation`, `LensFamily`, `ObservationPolarity`,
+//   `LensEvaluationBasis`, `LensProvenance` — EPHEMERAL computed values
+//   used by the bridge to land typed observations in the canonical
+//   substrate. They are NOT semantic state of any architecture; they
+//   describe each individual deterministic observation emitted by a
+//   probe.
+// - `probe_*` — EPHEMERAL computation that emits typed observations.
+// - `translation::translate[_batch]` — pure transformation between two
+//   representation layers (typed observations → `SoftwareObservation`).
+//
+// No `LensAssessment` is produced here: that is the AC3 shape and is
+// built by callers (receipt composer, test fixtures) directly.
 //
 // # Submodules
 //
 // - `types` — families, observations, polarity, basis, provenance.
-// - `lenses` — `evaluate_lens` compatibility facade (A4-4M M4/M5).
-// - `translation` — typed AC7→substrate bridge (A4-4M M2).
 // - `probes` — deterministic source heuristics.
-// - `tests` — acceptance (AC-UAT-011..015) + anti-encroachment pins.
+// - `translation` — typed AC7→substrate bridge (A4-4M M2).
 
-pub mod lenses;
 pub mod probes;
+pub mod translation;
 pub mod types;
 
-#[cfg(test)]
-mod tests;
-
-pub mod translation;
-
-pub use lenses::{LensEvaluation, evaluate_lens};
 pub use probes::{
     probe_adt_observations, probe_dsl_observations, probe_functional_observations,
     probe_oo_observations,

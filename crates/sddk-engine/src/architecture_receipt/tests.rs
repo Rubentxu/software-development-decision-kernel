@@ -21,8 +21,11 @@ use crate::architecture_graph::{
 };
 use crate::architecture_mutation::{MutationSandbox, run_critical_mutations};
 use crate::knowledge::EventTime;
-use crate::paradigm_lens::{LensObservation, evaluate_lens};
-use crate::paradigm_profile::{LensStatus, ParadigmAnchorRef, ParadigmLensKind, ProjectIntentRef};
+use crate::paradigm_lens::LensObservation;
+use crate::paradigm_profile::{
+    EvidenceBasis, LensAssessment, LensStatus, ParadigmAnchorRef, ParadigmLensKind,
+    ProjectIntentRef,
+};
 
 const T0: i64 = 1_700_000_000;
 
@@ -130,12 +133,22 @@ fn compose(
     providers: &[String],
     now: EventTime,
 ) -> ArchitectureConformanceReceipt {
-    let lenses: Vec<crate::paradigm_lens::LensEvaluation> = vec![evaluate_lens(
-        ParadigmLensKind::ObjectOriented,
-        ParadigmAnchorRef::ProjectIntent(ProjectIntentRef::new("p-63676b11dc0ef88f")),
-        &[LensObservation::AnemicModelDetected],
-        T0,
-    )];
+    // A5-4a: pre-construction of the AC3-shaped assessment that the
+    // legacy `paradigm_lens::evaluate_lens(ObjectOriented, ...,
+    // &[AnemicModelDetected])` facade used to emit. The composer only
+    // reads (lens, anchor, status, basis, evidence_refs); we construct
+    // those five fields directly so the receipt path is independent of
+    // the deleted facade.
+    let anchor = ParadigmAnchorRef::ProjectIntent(ProjectIntentRef::new("p-63676b11dc0ef88f"));
+    let lenses: Vec<LensAssessment> = vec![LensAssessment {
+        lens: ParadigmLensKind::ObjectOriented,
+        anchor,
+        status: LensStatus::Misaligned,
+        basis: EvidenceBasis::Observed,
+        evidence_refs: vec![LensObservation::AnemicModelDetected.evidence_ref()],
+        notes: Some("a5-4a-direct-construction".to_string()),
+        evaluated_at_ms: T0,
+    }];
     compose_receipt(
         ReceiptInputs {
             revision: "d1ed1d0".to_string(),
@@ -220,7 +233,7 @@ fn acceptance_scope_is_part_of_the_receipt_id() {
         base: "origin/main".to_string(),
         changed_units: vec!["comp:auth".to_string()],
     };
-    let lenses: Vec<crate::paradigm_lens::LensEvaluation> = vec![];
+    let lenses: Vec<LensAssessment> = vec![];
     let scoped = compose_receipt(
         ReceiptInputs {
             revision: "rev".into(),
@@ -867,7 +880,7 @@ fn acceptance_receipt_carries_change_basis() {
         base: "origin/main".to_string(),
         changed_units: vec!["comp:auth".to_string()],
     };
-    let lenses: Vec<crate::paradigm_lens::LensEvaluation> = vec![];
+    let lenses: Vec<LensAssessment> = vec![];
     let scoped = compose_receipt(
         ReceiptInputs {
             revision: "rev".into(),

@@ -20,7 +20,8 @@ Disposition vocabulary (§3):
 | `ASC-MA-1` | `sddk --help` UX pass | followups ledger | **MUST_CLOSE_A5** (P3) | A5-4 |
 | `uat_stale_tests::stale_detects_geometry_change` | flaky test | followups ledger (one occurrence, passed on isolated re-run) | **MUST_CLOSE_A5** (P1, test reliability) | A5-5 |
 | `INC-A4-RELEASE-VERSION-DRIFT` | pre-bump vs release-tag confusion | `docs/debt/INC-A4-RELEASE-VERSION-DRIFT.md` (open, low); release.sh 1c+9b already mitigate | **MUST_CLOSE_A5** (P1, release governance) | A5-1 |
-| `paradigm_lens::evaluate_lens()` | LEGACY_READ_COMPAT facade, NO_RUNTIME_CONSUMER | `A4-MILESTONE-RECEIPT.md` §4 | **MUST_CLOSE_A5** — DELETE (no external consumer found) | A5-4 |
+| `paradigm_lens::evaluate_lens()` | LEGACY_READ_COMPAT facade, NO_RUNTIME_CONSUMER | `A4-MILESTONE-RECEIPT.md` §4 → **`A5-4a-RECEIPT.md` CLOSED / DELETED** | **CLOSED_A5** (A5-4a) | A5-4a ✓ |
+| `paradigm_lens::LensEvaluation` | Obsolete wrapper around `LensAssessment` | **`A5-4a-RECEIPT.md` OBSOLETE → DELETE; receipt composer field narrowed to `&[LensAssessment]`** | **CLOSED_A5** (A5-4a) | A5-4a ✓ |
 | `INC-A5-PUSH-RELEASE-MARKER-FRICTION` (new) | ceremonial empty `chore(release)` marker | `A5-PUSH-CONTRACT-INVESTIGATION.md` | **MUST_CLOSE_A5** (P2) — independent of the drift INC | A5-1 |
 
 ## §3.2 Live debt (`docs/debt/`)
@@ -74,8 +75,8 @@ sender-drop, restart survival) and are promoted to P1 risks R12/R1.
 
 | Surface | Evidence | Disposition |
 |---|---|---|
-| `paradigm_lens::evaluate_lens()` | `A4-MILESTONE-RECEIPT.md` §4 (tests only) | **MUST_CLOSE_A5** — DELETE |
-| `paradigm_lens::LensEvaluation` type | used by `architecture_receipt` (A3 receipt) | **MIGRATE_A5** (route to `alignment_lens`, or justify) |
+| `paradigm_lens::evaluate_lens()` | `A4-MILESTONE-RECEIPT.md` §4 → **`A5-4a-RECEIPT.md`** | **CLOSED_A5** (A5-4a) — DELETED |
+| `paradigm_lens::LensEvaluation` type | used by `architecture_receipt` (A3 receipt) → **narrowed to `&[LensAssessment]`** | **CLOSED_A5** (A5-4a) — DELETED |
 | `EvidenceAttachmentV1` + compat decoder | `evidence_relation_mapping.rs`; migration deferred | **MIGRATE_A5** |
 | old namespaces / schemas in assets | guarded by `asset_*` lints (deny) | **ALREADY_CLOSED** (lint-enforced) |
 

@@ -21,8 +21,11 @@ use sddk_engine::architecture_graph::{
 use sddk_engine::architecture_mutation::{MutationSandbox, run_critical_mutations};
 use sddk_engine::architecture_receipt::{ReceiptInputs, ReceiptVerdict, compose_receipt};
 use sddk_engine::knowledge::EventTime;
-use sddk_engine::paradigm_lens::{LensObservation, evaluate_lens};
-use sddk_engine::paradigm_profile::{ParadigmAnchorRef, ParadigmLensKind, ProjectIntentRef};
+use sddk_engine::paradigm_lens::LensObservation;
+use sddk_engine::paradigm_profile::{
+    EvidenceBasis, LensAssessment, LensStatus, ParadigmAnchorRef, ParadigmLensKind,
+    ProjectIntentRef,
+};
 
 const T0: i64 = 1_700_000_000;
 
@@ -147,13 +150,21 @@ fn ac8_full_chain_emits_receipt_and_reproduces_historical_classes() {
     let mutations = run_critical_mutations(&mutation_sandbox()).expect("mutations");
     assert!(mutations.all_detected);
 
-    // AC7 advisory lens result.
-    let lenses = vec![evaluate_lens(
-        ParadigmLensKind::DataOriented,
-        ParadigmAnchorRef::ProjectIntent(ProjectIntentRef::new("p-63676b11dc0ef88f")),
-        &[LensObservation::StringlyTypedStatus],
-        T0,
-    )];
+    // AC7 advisory lens result. A5-4a: the legacy `evaluate_lens()`
+    // facade was retired; the composer only reads the AC3-shaped
+    // `LensAssessment` (lens, anchor, status, basis, evidence_refs).
+    // We construct that shape directly with the same observable
+    // properties the legacy facade would have projected for
+    // DataOriented + &[StringlyTypedStatus].
+    let lenses = vec![LensAssessment {
+        lens: ParadigmLensKind::DataOriented,
+        anchor: ParadigmAnchorRef::ProjectIntent(ProjectIntentRef::new("p-63676b11dc0ef88f")),
+        status: LensStatus::Misaligned,
+        basis: EvidenceBasis::Observed,
+        evidence_refs: vec![LensObservation::StringlyTypedStatus.evidence_ref()],
+        notes: Some("a5-4a-direct-construction".to_string()),
+        evaluated_at_ms: T0,
+    }];
 
     // AC8 composes the named receipt.
     let receipt = compose_receipt(
