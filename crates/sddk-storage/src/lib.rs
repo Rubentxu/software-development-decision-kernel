@@ -2695,6 +2695,12 @@ impl Storage {
 
     /// Inserts an EvidenceAttachment: writes body to CAS, stores metadata in SQL.
     ///
+    /// **CAS-ORACLE contract (INV-1):** UNIQUE-id collision MUST NOT leave an
+    /// orphan CAS file. This is guaranteed by reordering: SQL INSERT executes
+    /// first. CAS is written only after INSERT succeeds. If INSERT fails
+    /// (UNIQUE or other), CAS is never touched — orphan class is impossible
+    /// by construction.
+    ///
     /// Fails with `StorageError::EmptyEvidenceBody` if body is empty.
     /// Fails with `StorageError::MissingEvidenceRelation` if the universal
     /// `relation` tag is not set.
@@ -2726,9 +2732,17 @@ impl Storage {
             .relation
             .clone()
             .ok_or(StorageError::MissingEvidenceRelation)?;
-        // Write to CAS
-        let cas_hash = self.cas_put(body)?;
-        // Store metadata with the CAS hash
+
+        // Compute CAS hash before any filesystem or database write.
+        // This lets us try the INSERT first; CAS is written only after
+        // INSERT succeeds — making the orphan class impossible by construction.
+        use sha2::{Digest, Sha256};
+        let hash_digest = Sha256::digest(body);
+        let hash_hex = format!("{:x}", hash_digest);
+        let cas_hash = format!("sha256:{}", hash_hex);
+
+        // Try INSERT first. On UNIQUE collision the error propagates
+        // immediately and CAS is never written.
         self.connection.execute(
             "INSERT INTO evidence_attachments_v1 (
                 id, work_item_id, kind, body_ref, relation,
@@ -2747,6 +2761,11 @@ impl Storage {
                 attachment.schema_version,
             ],
         )?;
+
+        // INSERT succeeded. Now write the body to CAS. This is idempotent
+        // (cas_put skips the write if the file already exists), so concurrent
+        // calls with the same body never create duplicate CAS files.
+        self.cas_put(body)?;
         Ok(())
     }
 
