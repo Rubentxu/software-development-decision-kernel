@@ -94,7 +94,7 @@ pub use planning::{
     CasHash, DECISION_RECORD_SCHEMA_VERSION, DEPENDENCY_EDGE_SCHEMA_VERSION, DecisionError,
     DecisionId, DecisionKind, DecisionRecordRecord, DecisionRecordV1,
     DependencyEdgeIdentityProjection, DependencyEdgeKind, DependencyEdgeRecord, DependencyEdgeV1,
-    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, EvidenceAttachmentV1, EvidenceId,
+    EVIDENCE_ATTACHMENT_SCHEMA_VERSION, EvidenceAttachmentRecord, EvidenceId,
     PLANNING_PROVENANCE_SCHEMA_VERSION, PlanningEvidenceKind, PlanningGraphRead,
     PlanningProvenanceChainV1, ProvenanceError, WORK_ITEM_SCHEMA_VERSION, WorkItemId,
     WorkItemIdentityProjection, WorkItemRecord, WorkItemStatus, WorkItemV1,

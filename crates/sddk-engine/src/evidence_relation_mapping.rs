@@ -18,8 +18,9 @@
 // a `PlanningEvidenceKind` and needs to express the relationship
 // as a `CoreRelationKind`. It is *additive*: the legacy enum remains
 // authoritative in its domain (per AGENTS §2.10 strangler migration).
-// Future cycles migrate `EvidenceAttachmentV1` and the SQL schema
-// (migrations.rs:737) to use `CoreRelationKind` directly.
+// Future cycles may also migrate the SQL schema (migrations.rs:737) to
+// use `CoreRelationKind` directly. The legacy `PlanningEvidenceKind`
+// enum remains as a read-only compat decoder for pre-MIGRATION_19 rows.
 //
 // Mapping rationale (one line per discriminator):
 //

@@ -4,7 +4,10 @@
 //! - WorkItemV1: planning unit with lifecycle status
 //! - DependencyEdgeV1: typed edges between WorkItems
 //! - WorkItemStatus: six-variant closed lifecycle state machine
-//! - EvidenceAttachmentV1: CAS-referenced evidence attached to WorkItems
+//! - EvidenceAttachmentRecord: CAS-referenced evidence attached to WorkItems
+//!   (universal substrate; relation is the production authority; legacy
+//!   `kind` column is read-compat only — see ADR-0100, WU-C2, DELTA-CONF-003,
+//   A5-EVIDENCE-ATTACHMENT-MIGRATION-V1).
 //! - DecisionRecordV1: rationale-bound decisions attached to WorkItems
 //! - PlanningProvenanceChainV1: cycle-indexed provenance chain
 
@@ -339,61 +342,13 @@ assert_variant_count_eq!(
     ]
 );
 
-// ── EvidenceAttachmentV1 ─────────────────────────────────────────────────────
+// ── Evidence Attachment — schema + relation tagging ────────────────────────────
 
-/// Schema version constant for EvidenceAttachmentV1.
+/// Schema version constant for the evidence attachments table.
 pub const EVIDENCE_ATTACHMENT_SCHEMA_VERSION: u32 = 1;
 
 /// SHA-256 content hash of a CAS object (hex string with prefix).
 pub type CasHash = String;
-
-/// Evidence attached to a WorkItem, stored in CAS.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EvidenceAttachmentV1 {
-    /// Unique evidence identifier.
-    pub id: EvidenceId,
-    /// WorkItem this evidence is attached to.
-    pub work_item_id: WorkItemId,
-    /// Kind of evidence.
-    pub kind: PlanningEvidenceKind,
-    /// CAS hash referencing the immutable evidence body.
-    pub body_ref: CasHash,
-    /// Actor who attached this evidence.
-    pub actor_ref: Option<ActorRef>,
-    /// Schema version; always 1.
-    pub schema_version: u32,
-}
-
-impl EvidenceAttachmentV1 {
-    /// Creates a new EvidenceAttachmentV1.
-    ///
-    /// DEPRECATED constructor (WU-C2): legacy compat only. New evidence must
-    /// be written via `EvidenceAttachmentRecord` with `relation` set from
-    /// `resolve_planning_evidence_relation` (universal substrate).
-    ///
-    /// Owner: planning/evidence. Removal trigger: drop together with the legacy
-    /// `PlanningEvidenceKind` decode path once the C2 compatibility window closes.
-    #[deprecated(
-        since = "1.168.60",
-        note = "legacy planning evidence authority (ADR-0100): use EvidenceAttachmentRecord with relation: CoreRelationKind via resolve_planning_evidence_relation"
-    )]
-    pub fn new(
-        id: EvidenceId,
-        work_item_id: WorkItemId,
-        kind: PlanningEvidenceKind,
-        body_ref: CasHash,
-        actor_ref: Option<ActorRef>,
-    ) -> Self {
-        Self {
-            id,
-            work_item_id,
-            kind,
-            body_ref,
-            actor_ref,
-            schema_version: EVIDENCE_ATTACHMENT_SCHEMA_VERSION,
-        }
-    }
-}
 
 /// Evidence identifier.
 pub type EvidenceId = String;
@@ -1262,69 +1217,18 @@ impl EvidenceAttachmentRecord {
         })
     }
 
-    /// Converts this record into a domain EvidenceAttachmentV1.
-    pub fn into_domain(self) -> EvidenceAttachmentV1 {
-        let actor_ref = match (self.actor_ref_kind, self.actor_ref_id, self.actor_ref_label) {
-            (Some(kind), Some(id), _label) => Some(ActorRef {
-                kind: match kind.as_str() {
-                    "Human" => ActorKind::Human,
-                    "Agent" => ActorKind::Agent,
-                    _ => ActorKind::System,
-                },
-                id,
-                definition_hash: None,
-                policy_hash: None,
-                model: None,
-                role: None,
-            }),
-            _ => None,
-        };
-        EvidenceAttachmentV1 {
-            id: self.id,
-            work_item_id: self.work_item_id,
-            kind: self.kind,
-            body_ref: self.body_ref,
-            actor_ref,
-            schema_version: self.schema_version,
-        }
-    }
-
-    /// Creates a record from a domain EvidenceAttachmentV1, deriving the
-    /// universal `relation` from the legacy `kind` (decoder path only).
+    /// Converts this record into a domain [`EvidenceAttachmentRecord`]
+    /// row read-compat view (returns the record itself, which already
+    /// carries the universal `relation` derived from the legacy `kind`
+    /// during MIGRATION_19 backfill).
     ///
-    /// Note: sddk-domain cannot call the engine mapping (no dependency, and
-    /// ARCH001 forbids engine→storage/domain edges upward), so this derives
-    /// the tag locally with the same ADR-0100 table. The engine-side
-    /// `resolve_planning_evidence_relation` remains the production entry; a
-    /// pin test (`relation_field_matches_engine_mapping`) guards the two
-    /// tables from drifting.
-    pub fn from_domain(ea: &EvidenceAttachmentV1) -> Self {
-        let (actor_ref_kind, actor_ref_id, actor_ref_label) = match &ea.actor_ref {
-            Some(ar) => (
-                Some(
-                    match ar.kind {
-                        ActorKind::Human => "Human",
-                        ActorKind::Agent => "Agent",
-                        ActorKind::System => "System",
-                    }
-                    .to_string(),
-                ),
-                Some(ar.id.clone()),
-                Some(ar.id.clone()),
-            ),
-            None => (None, None, None),
-        };
-        Self {
-            id: ea.id.clone(),
-            work_item_id: ea.work_item_id.clone(),
-            kind: ea.kind,
-            relation: Some(ea.kind.relation_tag().to_string()),
-            body_ref: ea.body_ref.clone(),
-            actor_ref_kind,
-            actor_ref_id,
-            actor_ref_label,
-            schema_version: ea.schema_version,
-        }
+    /// Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1: the legacy
+    /// `EvidenceAttachmentV1` domain struct has been removed. The
+    /// storage row IS the record; no separate "domain shape" exists.
+    /// This method is preserved only as an explicit identity alias for
+    /// callers that want a single entry-point for "give me the read shape".
+    pub fn into_record(self) -> Self {
+        self
     }
 }
 
@@ -1561,24 +1465,6 @@ mod tests {
         assert!(dec.is_ok());
         let dec = dec.unwrap();
         assert_eq!(dec.schema_version, DECISION_RECORD_SCHEMA_VERSION);
-    }
-
-    #[test]
-    #[allow(deprecated)] // round-trip test of the legacy read-compat record itself (WU-C2)
-    fn evidence_attachment_round_trip() {
-        let ea = EvidenceAttachmentV1::new(
-            "ev-001".into(),
-            "wi-001".into(),
-            PlanningEvidenceKind::Log,
-            "sha256:abc123".into(),
-            None,
-        );
-        let json = serde_json::to_string(&ea).expect("EvidenceAttachmentV1 is serializable");
-        let ea2: EvidenceAttachmentV1 =
-            serde_json::from_str(&json).expect("EvidenceAttachmentV1 is deserializable");
-        assert_eq!(ea.id, ea2.id);
-        assert_eq!(ea.body_ref, ea2.body_ref);
-        assert_eq!(ea.kind, ea2.kind);
     }
 
     // NOTE: verify_references tests moved to crates/sddk-domain/tests/planning_provenance.rs

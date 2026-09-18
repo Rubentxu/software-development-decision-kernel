@@ -923,20 +923,19 @@ fn sec16_evidence_kind_codec_is_fail_closed() {
         EvidenceKind::DecisionMemory,
         EvidenceKind::Adhoc,
     ] {
-        assert_eq!(EvidenceKind::from_domain_tag(k.domain_tag()), Some(k));
+        assert_eq!(EvidenceKind::from_domain_tag(k.domain_tag()), Ok(k));
     }
-    assert_eq!(EvidenceKind::from_domain_tag("no_such_kind"), None);
-    assert_eq!(EvidenceKind::from_domain_tag(""), None);
-    assert_eq!(
-        EvidenceKind::from_domain_tag("Planning"),
-        None,
-        "case-sensitive, no fuzzy match"
-    );
-    assert_eq!(
-        EvidenceKind::from_domain_tag("plan"),
-        None,
-        "no nearest match"
-    );
+    // Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1 §M2: unknown / empty /
+    // case-mismatched tags return Err(UnknownEvidenceKind), NOT None and
+    // NOT silently coerced to Adhoc. The signature changed from
+    // `Option<Self>` to `Result<Self, UnknownEvidenceKind>` precisely so
+    // a typo cannot be silently absorbed.
+    for bad in ["no_such_kind", "", "Planning", "plan"] {
+        assert!(
+            EvidenceKind::from_domain_tag(bad).is_err(),
+            "{bad:?} must fail closed; the codec must never silently default"
+        );
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

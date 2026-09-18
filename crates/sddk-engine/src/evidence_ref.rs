@@ -1,11 +1,23 @@
 // Copyright (c) SDDK contributors.
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT.
 //
 // evidence_ref.rs — T-05 (M1 ADR-0100 arch-spec-001 CA-002)
 //
 // Universal EvidenceRef + EvidenceBundle. Reused across planning,
 // governed capabilities, and authority receipts. Dedupe via BTreeSet
 // ordering computed from sha256(kind || locator || cas).
+//
+// Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1: the legacy adapter struct
+// `EvidenceAttachmentV1` (carrying kind_string/locator/payload_bytes)
+// has been removed. Universal `EvidenceRef` is the only productive
+// evidence attachment shape. Producers must build `EvidenceRef`
+// (or `EvidenceBundle`) directly; legacy compatibility for
+// pre-MIGRATION_19 rows lives at the storage read boundary
+// (`EvidenceAttachmentRecord::from_legacy_kind_tag`), not in this type.
+//
+// `EvidenceKind::from_domain_tag` now returns `Result<Self,
+// UnknownEvidenceKind>` so a typo or unknown tag can never be silently
+// absorbed into `Adhoc` (A5-EVIDENCE-ATTACHMENT-MIGRATION-V1 §M2).
 
 use crate::canonical_event_log::CasRef;
 use serde::{Deserialize, Serialize};
@@ -14,6 +26,26 @@ use std::collections::BTreeSet;
 
 /// Domain separation tag for evidence ref ordering.
 const EVIDENCE_REF_DOMAIN: &str = "sddk.evidence_ref.v1";
+
+/// Typed error returned when an unknown `kind` tag cannot be resolved
+/// against the closed [`EvidenceKind`] vocabulary.
+///
+/// Replaces the pre-migration `_ => EvidenceKind::Adhoc` silent fallback.
+/// Fail-closed (A5-EVIDENCE-ATTACHMENT-MIGRATION-V1 §M2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownEvidenceKind(pub String);
+
+impl std::fmt::Display for UnknownEvidenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown evidence kind: {:?} (expected: planning, governance, authority, decision_memory, adhoc)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownEvidenceKind {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum EvidenceKind {
@@ -39,16 +71,17 @@ impl EvidenceKind {
     ///
     /// This is a codec for a closed enum, not locator parsing: the input is
     /// the literal tag this type emits, and the mapping is total over
-    /// `ALL`. Unknown tags return `None` (fail closed) rather than a
-    /// default, so a typo can never be silently absorbed into `Adhoc`.
-    pub fn from_domain_tag(tag: &str) -> Option<Self> {
+    /// `ALL`. Unknown tags return `Err(UnknownEvidenceKind)` (fail closed)
+    /// rather than a default, so a typo can never be silently absorbed
+    /// into `Adhoc`.
+    pub fn from_domain_tag(tag: &str) -> Result<Self, UnknownEvidenceKind> {
         match tag {
-            "planning" => Some(EvidenceKind::Planning),
-            "governance" => Some(EvidenceKind::Governance),
-            "authority" => Some(EvidenceKind::Authority),
-            "decision_memory" => Some(EvidenceKind::DecisionMemory),
-            "adhoc" => Some(EvidenceKind::Adhoc),
-            _ => None,
+            "planning" => Ok(EvidenceKind::Planning),
+            "governance" => Ok(EvidenceKind::Governance),
+            "authority" => Ok(EvidenceKind::Authority),
+            "decision_memory" => Ok(EvidenceKind::DecisionMemory),
+            "adhoc" => Ok(EvidenceKind::Adhoc),
+            other => Err(UnknownEvidenceKind(other.to_string())),
         }
     }
 }
@@ -182,41 +215,6 @@ impl std::hash::Hash for EvidenceRef {
     }
 }
 
-// ---- Adapter: legacy EvidenceAttachmentV1 -> universal EvidenceRef ----
-//
-// Kept minimal so existing call sites can migrate without losing data.
-// The legacy shape is preserved as a tuple (kind_string, locator, payload_bytes).
-
-/// Legacy attachment shape, kept here only as an adapter source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceAttachmentV1 {
-    pub kind_string: String,
-    pub locator: String,
-    pub payload_bytes: Vec<u8>,
-}
-
-impl From<EvidenceAttachmentV1> for EvidenceRef {
-    fn from(v1: EvidenceAttachmentV1) -> Self {
-        let kind = match v1.kind_string.as_str() {
-            "planning" => EvidenceKind::Planning,
-            "governance" => EvidenceKind::Governance,
-            "authority" => EvidenceKind::Authority,
-            "decision_memory" => EvidenceKind::DecisionMemory,
-            _ => EvidenceKind::Adhoc,
-        };
-        let cas = if v1.payload_bytes.is_empty() {
-            None
-        } else {
-            Some(CasRef::from_bytes(&v1.payload_bytes))
-        };
-        EvidenceRef {
-            kind,
-            locator: v1.locator,
-            cas,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +224,38 @@ mod tests {
         let a = EvidenceRef::new(EvidenceKind::Planning, "spec/SP-001");
         let b = EvidenceRef::new(EvidenceKind::Planning, "spec/SP-001");
         assert_eq!(a.ordering_key(), b.ordering_key());
+    }
+
+    #[test]
+    fn from_domain_tag_total_over_closed_vocabulary() {
+        for tag in [
+            "planning",
+            "governance",
+            "authority",
+            "decision_memory",
+            "adhoc",
+        ] {
+            assert!(
+                EvidenceKind::from_domain_tag(tag).is_ok(),
+                "{tag} must resolve to a closed EvidenceKind variant"
+            );
+        }
+    }
+
+    #[test]
+    fn from_domain_tag_fails_closed_on_unknown() {
+        // Pre-migration this returned `Some(Adhoc)`. The post-migration
+        // contract is typed error (A5-EVIDENCE-ATTACHMENT-MIGRATION-V1
+        // §M2): a typo can never be silently absorbed.
+        for unknown in ["", "log", "metric", "snapshot", "no_such_kind", "PLAN"] {
+            let err =
+                EvidenceKind::from_domain_tag(unknown).expect_err("unknown tags must fail closed");
+            assert_eq!(err, UnknownEvidenceKind(unknown.to_string()));
+            assert!(
+                err.to_string().contains(unknown),
+                "error message must carry the offending tag"
+            );
+        }
     }
 
     #[test]
@@ -257,51 +287,12 @@ mod tests {
     }
 
     #[test]
-    fn adapter_converts_v1_without_data_loss() {
-        let v1 = EvidenceAttachmentV1 {
-            kind_string: "governance".into(),
-            locator: "rule/G-42".into(),
-            payload_bytes: b"rule-payload".to_vec(),
-        };
-        let r: EvidenceRef = v1.clone().into();
-        assert_eq!(r.kind, EvidenceKind::Governance);
-        assert_eq!(r.locator, "rule/G-42");
-        let cas = r.cas.expect("non-empty payload must yield CasRef");
-        assert_eq!(cas, CasRef::from_bytes(b"rule-payload"));
-        // Adapter does not modify the input.
-        assert_eq!(v1.locator, "rule/G-42");
-    }
-
-    #[test]
-    fn empty_payload_in_adapter_skips_cas() {
-        let v1 = EvidenceAttachmentV1 {
-            kind_string: "adhoc".into(),
-            locator: "note/note-1".into(),
-            payload_bytes: Vec::new(),
-        };
-        let r: EvidenceRef = v1.into();
-        assert!(r.cas.is_none());
-        assert_eq!(r.kind, EvidenceKind::Adhoc);
-    }
-
-    #[test]
     fn bundle_from_iter_dedupes_identical_refs() {
         let r1 = EvidenceRef::new(EvidenceKind::Planning, "shared");
         let r2 = EvidenceRef::new(EvidenceKind::Planning, "shared");
         let r3 = EvidenceRef::new(EvidenceKind::Planning, "other");
         let bundle = EvidenceBundle::from_refs([r1, r2, r3]);
         assert_eq!(bundle.len(), 2);
-    }
-
-    #[test]
-    fn unknown_kind_falls_back_to_adhoc() {
-        let v1 = EvidenceAttachmentV1 {
-            kind_string: "no_such_kind".into(),
-            locator: "x".into(),
-            payload_bytes: Vec::new(),
-        };
-        let r: EvidenceRef = v1.into();
-        assert_eq!(r.kind, EvidenceKind::Adhoc);
     }
 
     #[test]

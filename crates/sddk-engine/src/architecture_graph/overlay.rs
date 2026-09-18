@@ -618,13 +618,18 @@ pub struct ContractProvenance {
 /// Reconstruct a typed `EvidenceRef` from the props A4-S15R stashed on an
 /// evidence node. Returns `None` (fail closed) if the closed kind tag is
 /// unknown or the required props are absent — no defaulting.
+///
+/// Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1: `from_domain_tag` returns
+/// `Result<Self, UnknownEvidenceKind>`; an unknown tag from the overlay
+/// also collapses to `None` here (the overlay is read-only projection;
+/// it cannot fail the world on a malformed node).
 fn evidence_from_node(node: SemanticNode, evidence_kind_tag: &str) -> Option<EvidenceRef> {
     if node.kind.domain_tag() != evidence_kind_tag {
         return None;
     }
-    let kind = crate::evidence_ref::EvidenceKind::from_domain_tag(
-        node.props_inline.get("evidence_kind")?,
-    )?;
+    let kind =
+        crate::evidence_ref::EvidenceKind::from_domain_tag(node.props_inline.get("evidence_kind")?)
+            .ok()?;
     let locator = node.props_inline.get("evidence_locator")?.clone();
     let cas = node
         .props_inline
