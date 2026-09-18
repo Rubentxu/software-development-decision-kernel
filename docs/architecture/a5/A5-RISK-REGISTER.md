@@ -45,7 +45,7 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 | R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 | **OPEN_NON_BLOCKER** | A5-4b partial: about-line + `sddk agent-help` pointer. Deeper diagnostics sweep pending A5-5 / A5-C |
 | R18 | Ignored tests become invisible debt | P2 | G13 | A5-ITD + A5-C-RR | **CLOSED** | A5-ITD-RECEIPT.md v1.169.84; A5-C-RR-A1 §3.4.1; per-ignored-test disposition with evidence pointers |
 | R19 | Deprecated-pattern lints stay `allow` with no disposition | P3 | G14 | A5-4b | **CLOSED** | A5-4b-RECEIPT.md v1.169.83; 3 advisory `allow` lints machine-pinned by `crates/sddk-cli/tests/a5_4b_lint_disposition_pin.rs` (3 tests green) |
-| R20 | Migration of persisted state breaks an upgrade | P1 | G6 | A5-2 | **CLOSED** (re-pinned) | A5-2-RECEIPT.md v1.169.74; G6 evidence preserved across v1.169.74 |
+| R20 | Migration of persisted state breaks an upgrade | P1 | G6 | A5-2 | **CLOSED** (re-pinned) | A5-2-RECEIPT.md v1.169.74; G6 evidence preserved across v1.169.74; **MIGRATE_A5** follow-up closed by v1.169.85 — see `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md` §4.3 (CAS reopen test) |
 
 ## §2 Notes on risks still open or partially open
 

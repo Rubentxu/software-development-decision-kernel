@@ -114,27 +114,15 @@ include any M0..M9 work — that baseline is certified.
 > - **A5-ITD** (v1.169.84) closed the two ignored tests previously
 >   listed as "P1 paperwork": both OBSOLETE → DELETED.
 
-### PRE-BASE (MIGRATE_A5, C2.5 risk)
+### PRE-BASE — closed by v1.169.85 (no remaining items)
 
-- **EvidenceAttachmentV1 + compat decoder** — `crates/sddk-engine/src/.../evidence_ref.rs:192` + ratchet exclude + storage migration.
+`EvidenceAttachmentV1 + compat decoder` was the only MIGRATE_A5 entry; it
+is closed by `v1.169.85`. See
+`docs/architecture/a5/A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md`.
 
-  ```text
-  classification:    PRE-BASE
-  disposition:       MIGRATE_A5
-  risk class:        C2.5
-  execution:         separate single-budget slice
-  required_before:   A5-C certification
-  tracked_in:        docs/architecture/a5/A5-DEBT-DISPOSITION.md §3.5
-                     docs/architecture/a5/A5-4b-RECEIPT.md
-                       (STOP_NEEDS_SEPARATE_SLICE)
-  NOT tracked_in:    docs/architecture/a5/A5-DEFERRED-POST-BASE.md
-                     (this item is NOT a POST-BASE item)
-  ```
-
-  Source of disposition: `A5-4b-RECEIPT.md` §"Carry-forward" and
-  `A5-DEBT-DISPOSITION.md` §3.5 (`EvidenceAttachmentV1 + compat
-  decoder → MIGRATE_A5`). Correction recorded in
-  `A5-C-RR-ADDENDUM-1.md` §3.3.
+The READ-compat decoder (`from_legacy_kind_tag`) remains at the read
+boundary as a documented compat surface; it does not mint new authority
+and is not a PRE-BASE concern.
 
 ### P1 candidate (NOT yet classified — needs reproduction cycle)
 

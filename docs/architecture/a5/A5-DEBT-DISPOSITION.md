@@ -130,7 +130,7 @@ NOT a closure of R12. See `A5-RISK-REGISTER.md §3`.
 |---|---|---|
 | `paradigm_lens::evaluate_lens()` | `A4-MILESTONE-RECEIPT.md` §4 → **`A5-4a-RECEIPT.md`** | **CLOSED_A5** (A5-4a) — DELETED |
 | `paradigm_lens::LensEvaluation` type | used by `architecture_receipt` (A3 receipt) → **narrowed to `&[LensAssessment]`** | **CLOSED_A5** (A5-4a) — DELETED |
-| `EvidenceAttachmentV1` + compat decoder | `evidence_relation_mapping.rs`; migration deferred | **MIGRATE_A5** |
+| `EvidenceAttachmentV1` + compat decoder | `evidence_relation_mapping.rs`; migration deferred | **CLOSED_A5** (v1.169.85) — see `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md`; READ decoder retained as documented compat, no new authority minted |
 | old namespaces / schemas in assets | guarded by `asset_*` lints (deny) | **ALREADY_CLOSED** (lint-enforced) |
 
 ## §3.6 Post-BASE (not A5)
