@@ -196,8 +196,9 @@ fn serialize_spine_status(status: SpineStatus) -> String {
 /// Backfill: re-import of existing rows with NULL spine columns populates them.
 /// Hard-error on mutated bytes: returns `SpineImportError::ImportConflict` per Q8.
 ///
-/// Each imported spine row produces exactly one `EvidenceAttachmentV1` with
-/// `kind = "snapshot"` and `body_ref = sha256(canonical_yaml_bytes)`.
+/// Each imported spine row produces exactly one `EvidenceAttachmentRecord`
+/// on the universal substrate (relation = "observed_for", body_ref =
+/// sha256(canonical_yaml_bytes), body persisted in CAS).
 pub fn import_spine(
     bytes: &[u8],
     storage: &mut Storage,

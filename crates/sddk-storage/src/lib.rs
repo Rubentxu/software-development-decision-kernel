@@ -202,6 +202,16 @@ pub enum StorageError {
     /// An evidence attachment body is empty.
     #[error("evidence attachment body must be non-empty")]
     EmptyEvidenceBody,
+    /// An evidence attachment was written without the universal `relation`
+    /// tag (the production authority). The legacy `kind` column is read-compat
+    /// only — callers MUST set `relation` from
+    /// `resolve_planning_evidence_relation`. Pre-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1
+    /// this used to derive silently from the legacy discriminator, which is
+    /// now forbidden on the WRITE path.
+    #[error(
+        "evidence attachment write requires the universal relation tag (set it from resolve_planning_evidence_relation)"
+    )]
+    MissingEvidenceRelation,
     /// A dependency edge has the same source and target work item.
     #[error("self-loop dependency edge rejected: from_id == to_id ({0})")]
     SelfLoop(String),
@@ -1961,6 +1971,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::GateNameInvalid { .. } => "STORAGE_GATE_NAME_INVALID",
             Self::CycleProjectMismatch { .. } => "STORAGE_CYCLE_PROJECT_MISMATCH",
             Self::EmptyEvidenceBody => "STORAGE_EMPTY_EVIDENCE_BODY",
+            Self::MissingEvidenceRelation => "STORAGE_MISSING_EVIDENCE_RELATION",
             Self::SelfLoop(_) => "STORAGE_SELF_LOOP",
         }
     }
@@ -2018,6 +2029,12 @@ impl sddk_domain::SddkErrorCode for StorageError {
                 )
             }
             Self::EmptyEvidenceBody => "supply a non-empty evidence body".into(),
+            Self::MissingEvidenceRelation => {
+                "set EvidenceAttachmentRecord::relation from resolve_planning_evidence_relation \
+                 (universal substrate); the legacy kind field is read-compat only and must not \
+                 be used to derive relation on write"
+                    .into()
+            }
             Self::SelfLoop(_) => {
                 "remove the self-loop: a dependency edge cannot have the same source and target work item"
                     .into()
@@ -2633,11 +2650,20 @@ impl Storage {
     /// Inserts an EvidenceAttachment: writes body to CAS, stores metadata in SQL.
     ///
     /// Fails with `StorageError::EmptyEvidenceBody` if body is empty.
+    /// Fails with `StorageError::MissingEvidenceRelation` if the universal
+    /// `relation` tag is not set.
     ///
-    /// WU-C2 (DELTA-CONF-003): the universal `relation` column is the
-    /// production authority. If the caller did not set it, it is derived
-    /// from the legacy `kind` (decoder-compat path only); new callers MUST
-    /// set it from `resolve_planning_evidence_relation`.
+    /// Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1 §M2: the write path is
+    /// FAIL-CLOSED on the universal substrate. The legacy `kind` column is
+    /// read-compat only and is NEVER used to derive `relation` on write
+    /// (that would be a silent default to the legacy authority, forbidden
+    /// by ADR-0100 + SPEC-CONF-003). Producers MUST build the record via
+    /// `EvidenceAttachmentRecord::from_universal_relation` (which sets
+    /// `relation` from `resolve_planning_evidence_relation`).
+    ///
+    /// Reads (legacy NULL-relation rows from pre-MIGRATION_19 storage)
+    /// still derive `relation` from `kind` — the asymmetry is intentional:
+    /// legacy compatibility belongs to READ, not WRITE.
     pub fn insert_evidence_attachment(
         &mut self,
         attachment: &sddk_domain::EvidenceAttachmentRecord,
@@ -2646,12 +2672,16 @@ impl Storage {
         if body.is_empty() {
             return Err(StorageError::EmptyEvidenceBody);
         }
-        // Write to CAS
-        let cas_hash = self.cas_put(body)?;
+        // Write-path fail-closed: the universal `relation` tag is the
+        // production authority. Refuse to derive it from the legacy
+        // discriminator — that would silently re-promote the legacy
+        // authority to productive status on writes.
         let relation = attachment
             .relation
             .clone()
-            .unwrap_or_else(|| attachment.kind.relation_tag().to_string());
+            .ok_or(StorageError::MissingEvidenceRelation)?;
+        // Write to CAS
+        let cas_hash = self.cas_put(body)?;
         // Store metadata with the CAS hash
         self.connection.execute(
             "INSERT INTO evidence_attachments_v1 (

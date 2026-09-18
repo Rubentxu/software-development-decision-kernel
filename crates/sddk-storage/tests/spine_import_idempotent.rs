@@ -107,7 +107,7 @@ fn spine_import_idempotent_consecutive() {
     assert_eq!(result2.conflicts, 0);
 }
 
-/// Scenario: One EvidenceAttachmentV1 per spine row, same body_ref across re-imports
+/// Scenario: One EvidenceAttachmentRecord per spine row, same body_ref across re-imports
 #[test]
 fn spine_import_one_evidence_per_row() {
     let mut storage = Storage::open_in_memory().unwrap();
