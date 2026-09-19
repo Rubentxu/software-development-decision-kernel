@@ -188,3 +188,74 @@ this commit (changes are pending in a future release bundle).
 
 SEC-2 (if needed) would treat additional surfaces; not
 authorised in this session.
+
+---
+
+## Release status (post-cycle, added 2026-09-19)
+
+Operator decision 2026-09-19 authorised SEC-1 release as a
+corrective release independent of A6, on its own gate.
+
+### Bump
+
+- `Cargo.toml` workspace.package.version: `1.169.88` → `1.169.89`.
+- `Cargo.lock` updated by `cargo update --workspace --offline`.
+- Commit `b93b50d` (`chore(release): bump version to 1.169.89`).
+
+### Dry-run of `bash scripts/release.sh --dry-run`
+
+3 dry-runs executed against the bump commit. Result summary:
+
+| Run | Workspace green (cargo test --workspace --offline) | Steps 0–8 status |
+|-----|---------------------------------------------------|------------------|
+| 1   | 1 FAILED (`cross_surface_facades_share_the_service_instance`) | aborted at step 1 |
+| 2   | 0 FAILED | dry-run OK |
+| 3   | 0 FAILED | dry-run OK |
+
+Run 1 reproduces `SEC-WORKSPACE-FLAKE` against the post-fix
+state. The same test passes 5/5 when run in isolation:
+
+```text
+$ cargo test -p sddk-cli --test a6_4_shared_ticket_service --offline
+… 5 passed; 0 failed …
+```
+
+This is the same pre-existing flake documented in the original
+SEC-1 receipt §"Profile full" — a process-global CWD race caused
+by `sddk-cli` integration tests that the project itself flags at
+`crates/sddk-cli/src/cycle.rs:158`. SEC-1 changes are unrelated.
+
+### Disposition
+
+Per operator contract:
+
+> "Si reaparecen los dos fallos del workspace, no registrar el
+> gate completo como verde. Mantener el bloqueo hasta obtener un
+> resultado reproducible o una excepción explícita y acotada del
+> operador, respaldada por la reproducción anterior y posterior al
+> fix, la ejecución de los tests restantes y la conservación del
+> fallo en SEC-WORKSPACE-FLAKE."
+
+- Workspace gate **NOT GREEN** (1/3 flake observed post-fix).
+- Block on `gh release create` maintained.
+- `SEC-WORKSPACE-FLAKE` status: **OPEN, REPRODUCED POST-FIX**
+  (carried forward from SEC-1 receipt).
+
+### Required artefacts to clear the block
+
+The block clears when **one** of the following is satisfied:
+
+1. The flake is fixed (separate cycle, out of SEC-1 scope).
+2. The operator issues an explicit, bounded exception that:
+   - acknowledges the flake as pre-existing and out of scope,
+   - authorises `--skip-tests` on the release run,
+   - commits to a separate recorded register of the controls
+     that option omits (cargo fmt, clippy, `cargo test
+     -p sddk-gateway --offline`, the SEC-1 falsification
+     battery, the public-release-gate test, the install.sh
+     smoke),
+   - confirms that the exception does not convert "workspace
+     PASS" into a recorded green gate.
+
+Until either is satisfied, the release script is **not** invoked
+in production mode.
