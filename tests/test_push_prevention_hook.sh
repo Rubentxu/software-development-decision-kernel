@@ -216,6 +216,89 @@ s_rename_docs_to_runtime() {
     mkdir -p crates/x
     git mv docs/a.md crates/x/a.md; git commit -qm "move docs to runtime" >/dev/null
 }
+# ── INC-AIWS1-RECEIPT-PUSH-BLOCK: cycle-artifacts documentary files ─────────
+
+mk_cycle_dir() {
+    mkdir -p "tests/cycle-artifacts/p-example/some-cycle"
+}
+
+s_cycle_receipt_only() {
+    mk_cycle_dir
+    echo "# receipt" > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt" >/dev/null
+}
+s_cycle_receipt_plus_followup() {
+    mk_cycle_dir
+    mkdir -p .sddk/followups
+    echo "# receipt" > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    echo hi > .sddk/followups/f.md
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md .sddk/followups/f.md
+    git commit -qm "docs(cycle)+followup" >/dev/null
+}
+s_cycle_scope_contract_only() {
+    mk_cycle_dir
+    echo "# scope" > tests/cycle-artifacts/p-example/some-cycle/SCOPE-CONTRACT.md
+    git add tests/cycle-artifacts/p-example/some-cycle/SCOPE-CONTRACT.md
+    git commit -qm "docs(cycle): scope" >/dev/null
+}
+s_cycle_discovery_only() {
+    mk_cycle_dir
+    echo "# discovery" > tests/cycle-artifacts/p-example/some-cycle/DISCOVERY.md
+    git add tests/cycle-artifacts/p-example/some-cycle/DISCOVERY.md
+    git commit -qm "docs(cycle): discovery" >/dev/null
+}
+s_cycle_receipt_plus_crates() {
+    mk_cycle_dir
+    mkdir -p crates/x
+    echo "# receipt" > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    echo a > crates/x/a.rs
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md crates/x/a.rs
+    git commit -qm "docs+code" >/dev/null
+}
+s_cycle_receipt_plus_githooks() {
+    mk_cycle_dir
+    mkdir -p githooks
+    echo "# receipt" > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    echo x > githooks/x
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md githooks/x
+    git commit -qm "docs+githooks" >/dev/null
+}
+s_cycle_receipt_with_secret() {
+    mk_cycle_dir
+    cat > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md <<'MDEOF'
+# receipt
+
+token: ghp_16Charactersxx99
+aws_key: AKIAIOSFODNN7EXAMPLE
+MDEOF
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt (leaks secrets)" >/dev/null
+}
+s_cycle_non_documentary_file() {
+    mk_cycle_dir
+    echo "raw log output" > tests/cycle-artifacts/p-example/some-cycle/raw-output.log
+    git add tests/cycle-artifacts/p-example/some-cycle/raw-output.log
+    git commit -qm "chore(cycle): raw log" >/dev/null
+}
+s_cycle_stray_top_level_file() {
+    mkdir -p tests/cycle-artifacts
+    echo "notes" > tests/cycle-artifacts/notas.md
+    git add tests/cycle-artifacts/notas.md
+    git commit -qm "docs(cycle): stray note" >/dev/null
+}
+s_cycle_rename_runtime_to_cycle() {
+    mk_cycle_dir
+    git mv crates/x/a.rs tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "hide runtime as cycle receipt" >/dev/null
+}
+s_cycle_rename_receipt_to_docs() {
+    mk_cycle_dir
+    echo "# receipt" > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "add receipt" >/dev/null
+}
+
 s_space_path_runtime() {
     mkdir -p crates/x; echo a > "crates/x/a b.rs"; git add "crates/x/a b.rs"
     git commit -qm "feat: spaced" >/dev/null
@@ -250,6 +333,21 @@ run_case "Cargo.toml touched but version unchanged"             REJECT s_cargo_t
 run_case "rename runtime -> docs"                               REJECT s_rename_runtime_to_docs p_runtime_add
 run_case "rename docs -> runtime"                               REJECT s_rename_docs_to_runtime p_docs_add
 run_case "path with spaces under crates"                        REJECT s_space_path_runtime
+
+echo ""
+echo "=== cycle-artifacts documentary allowlist (INC-AIWS1-RECEIPT-PUSH-BLOCK) ==="
+
+run_case "cycle RECEIPT.md only"                                     ACCEPT s_cycle_receipt_only
+run_case "cycle RECEIPT.md + followup"                               ACCEPT s_cycle_receipt_plus_followup
+run_case "cycle SCOPE-CONTRACT.md only"                              ACCEPT s_cycle_scope_contract_only
+run_case "cycle DISCOVERY.md only"                                   ACCEPT s_cycle_discovery_only
+run_case "cycle RECEIPT.md + crates change"                          REJECT s_cycle_receipt_plus_crates
+run_case "cycle RECEIPT.md + githooks change"                        REJECT s_cycle_receipt_plus_githooks
+run_case "cycle RECEIPT.md containing secret patterns"               REJECT s_cycle_receipt_with_secret
+run_case "cycle non-documentary file (raw log)"                      REJECT s_cycle_non_documentary_file
+run_case "stray file at tests/cycle-artifacts root"                  REJECT s_cycle_stray_top_level_file
+run_case "rename runtime -> cycle RECEIPT.md (no bump)"              REJECT s_cycle_rename_runtime_to_cycle p_runtime_add
+run_case "rename cycle receipt -> docs"                              ACCEPT s_cycle_rename_receipt_to_docs
 
 echo ""
 echo "=== matrix result: PASS=$PASS_COUNT FAIL=$FAIL_COUNT ==="

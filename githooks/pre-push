@@ -5,13 +5,24 @@
 # INCs:    INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
 #          INC-M7-9-PRE-PUSH-HOOK-CEREMONIAL-COMMIT (closed by A5-1)
 #          INC-A5-PUSH-RELEASE-MARKER-FRICTION      (closed by A5-1)
+#          INC-AIWS1-RECEIPT-PUSH-BLOCK             (cycle-artifacts docs)
 #
-# A5-1 contract — a push to refs/heads/main is ACCEPTED iff:
+# A5-1 contract (amended by cycle inc-receipt-push-admission) — a push to
+# refs/heads/main is ACCEPTED iff:
 #
 #   (A) the pushed range contains a REAL `[workspace.package] version`
 #       change in Cargo.toml (old != new), OR
-#   (B) the pushed range is NON-EMPTY and EVERY changed path lies inside the
-#       closed documentation-only allowlist (docs/**, .sddk/followups/**).
+#   (B) the pushed range is NON-EMPTY and EVERY changed path lies inside
+#       the closed documentation-only allowlist:
+#         docs/**
+#         .sddk/followups/**
+#         tests/cycle-artifacts/p-*/<cycle>/{SCOPE-CONTRACT,DISCOVERY,RECEIPT}.md
+#         AND no changed file contains a secret pattern (added by the
+#         same amendment: allowing a route is not certifying content).
+#
+# Only the three named documentary files are admitted under
+# tests/cycle-artifacts/ — raw logs, fixtures and dumps stay outside
+# the publishable surface.
 #
 # The commit SUBJECT is NOT authority. This kills the ceremonial
 # `chore(release): bump version (cycle close marker)` empty commit: an empty
@@ -45,8 +56,21 @@ cargo_workspace_version() {
 is_allowed_path() {
     case "$1" in
         docs/* | .sddk/followups/*) return 0 ;;
+        # Cycle documentary files only (INC-AIWS1-RECEIPT-PUSH-BLOCK).
+        # Cycle id segment must be non-empty; project id is p- prefixed.
+        tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT.md | tests/cycle-artifacts/p-*/*/DISCOVERY.md | tests/cycle-artifacts/p-*/*/RECEIPT.md) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# Secret pattern screen for newly admitted cycle docs (heuristic, high
+# confidence only: known token prefixes + credential assignments).
+# Rationale: admitting a path is not certifying its content.
+file_contains_secret_pattern() {
+    # reads from stdin when the argument is "-", else from the named file
+    local f="$1"
+    # shellcheck disable=SC2016
+    grep -qE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA|EC|OPENSSH|PGP|DSA) PRIVATE KEY-----|"(api[_-]?key|secret[_-]?key|access[_-]?token|password)"?[[:space:]]*[:=][[:space:]]*"[^" ]{8,}|(api[_-]?key|secret[_-]?key|access[_-]?token|password)[[:space:]]*[:=][[:space:]]*[^ ][^ ]{8,})' "$f" 2>/dev/null
 }
 
 # remote_ref is part of the stdin contract but is not needed here.
@@ -125,6 +149,24 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
 
     # §3 — require count > 0 so the empty set cannot pass vacuously.
     if [[ "$CHANGED_COUNT" -gt 0 && "$DOCS_ONLY" -eq 1 ]]; then
+        # Secret screen: only newly admitted cycle docs need content
+        # screening; docs/** and followups retain their historical
+        # treatment.
+        CYCLE_DOCS=()
+        while IFS= read -r p; do
+            [[ "$p" == tests/cycle-artifacts/* ]] && CYCLE_DOCS+=("$p")
+        done <<<"$CHANGED_PATHS"
+        if [[ ${#CYCLE_DOCS[@]} -gt 0 ]]; then
+            for f in "${CYCLE_DOCS[@]}"; do
+                if git cat-file -e "$local_sha:$f" 2>/dev/null && \
+                   git show "$local_sha:$f" | file_contains_secret_pattern -; then
+                    echo "ERROR: Push to main rejected — cycle documentary file looks like it contains a secret: $f" >&2
+                    echo "ERROR: ($DISCIPLINE | INC-AIWS1-RECEIPT-PUSH-BLOCK)" >&2
+                    echo "ERROR: Redact the secret and re-commit; allowing the route does not certify content." >&2
+                    exit 1
+                fi
+            done
+        fi
         continue
     fi
 
@@ -132,7 +174,7 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
     echo "ERROR: A push to main requires EITHER:" >&2
     echo "ERROR:   (1) a commit that changes [workspace.package] version in $CARGO_TOML_PATH" >&2
-    echo "ERROR:   (2) a NON-EMPTY range whose changed paths are all under: docs/**, .sddk/followups/**" >&2
+    echo "ERROR:   (2) a NON-EMPTY range whose changed paths are all under: docs/**, .sddk/followups/**, tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT.md|DISCOVERY.md|RECEIPT.md" >&2
     echo "ERROR: A commit subject (e.g. 'chore(release): bump version') is NOT authority." >&2
     echo "ERROR: ($INC_CEREMONIAL) — see INC-M7-9 for remediation options" >&2
     exit 1
