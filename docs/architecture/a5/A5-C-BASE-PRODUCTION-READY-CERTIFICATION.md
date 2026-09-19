@@ -113,7 +113,7 @@ Gates outside this cycle's authority are honestly marked
   (R1 closure); CAS `get()` typed-error on truncation commit `7ab113a`
   (R2 closure).
 - **Executable proof** (kind **(a) workspace-resident**):
-  `crates/sddk-engine/tests/state_survives_restart.rs` (3 tests) +
+  `crates/sddk-storage/tests/state_survives_restart.rs` (3 tests) +
   the CAS trunc-rejection test cited in A5-2-RECEIPT §3 — both
   green in the §10 external run.
 - **State**: **GREEN**.
@@ -148,9 +148,11 @@ Gates outside this cycle's authority are honestly marked
   closure (non-blocking Parallel dead-path removal) at commit
   `af346b9`; `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` v1.169.86.
 - **Executable proof** (kind **(a) workspace-resident**):
-  `concurrency_record_attempt.rs` (4 RED→GREEN), `authority_fail_closed.rs`
-  (6/6 green), and `tests/concurrency_planning_substrate.rs` (5
-  multi-thread tests) — all green in the §10 external run.
+  `crates/sddk-storage/tests/concurrency_record_attempt.rs`
+  (4 RED→GREEN), `crates/sddk-engine/tests/authority_fail_closed.rs`
+  (6/6 green), and
+  `crates/sddk-storage/tests/concurrency_planning_substrate.rs`
+  (5 multi-thread tests) — all green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies no silent overwrite paths remain.
 
@@ -175,17 +177,19 @@ Gates outside this cycle's authority are honestly marked
   follow-up); `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` v1.169.86
   (R-SQLITE-1 follow-up).
 - **Executable proof** (kind **(a) workspace-resident**):
-  `tests/concurrency_planning_substrate.rs` (5 multi-thread tests
-  on the planning substrate tables — work_items_v1,
-  work_item_dependencies_v1, evidence_attachments_v1,
-  decision_records_v1), the CAS reopen test in
-  `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md §4.3`, and the
-  gate-receipt flake pin (`with_busy_retry` 50/50). All green in the
-  §10 external run.
+  `crates/sddk-storage/tests/concurrency_planning_substrate.rs`
+  (5 multi-thread tests on the planning substrate tables —
+  work_items_v1, work_item_dependencies_v1,
+  evidence_attachments_v1, decision_records_v1), the CAS reopen
+  test in `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md §4.3`,
+  and the gate-receipt flake pin (`with_busy_retry` 50/50). All
+  green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies no observed upgrade-breaking regression
-  between v1.169.74..v1.169.87; does not certify the 8 non-helper
-  IMMEDIATE sites deferred to POST-BASE.
+  between v1.169.74..v1.169.87; does not certify the 9
+  non-helper IMMEDIATE sites deferred to POST-BASE (the 9th site is
+  inside a closure passed to `with_busy_retry` at L1481; it is
+  unreachable through the public API but still counts).
 
 ### G7 — Release reproducibility
 
@@ -278,11 +282,14 @@ Gates outside this cycle's authority are honestly marked
   developer's working copy.
 - **Receipt / SHA**: A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md v1.169.87
   (`5ad25d1`) + this cycle's §6 install (v1.169.87, exit 0,
-  no workarounds, all_present=true).
+  no workarounds, all_present=true) + this cycle's full UAT run
+  at v1.169.88 (10/10 PASS in
+  `docs/architecture/a5/cycle-artifacts/.../clean-machine-uat-v1.169.88.txt`).
 - **Executable proof** (kind **(b) external procedure**): §6 of
-  this audit at v1.169.87, and §10.0 at v1.169.88 — both on
-  podman `catthehacker/ubuntu:rust-latest`, public artifact only,
-  both exit 0 with `all_present: true` and `binary.bundle_coherence:
+  this audit at v1.169.87, and `bash tests/clean_machine_uat.sh
+  --tag v1.169.88` at v1.169.88 — both on podman
+  `catthehacker/ubuntu:rust-latest`, public artifacts only, both
+  exit 0 with `all_present: true` and `binary.bundle_coherence:
   present`. The §10 run additionally verifies that the installed
   binary's sha256 matches the published `sddk.sha256`.
 - **State**: **GREEN**.
@@ -300,9 +307,10 @@ Gates outside this cycle's authority are honestly marked
 - **Executable proof** (kind **(a) workspace-resident**): §10.0
   re-verifies — full workspace test run at `add896d` with
   `--test-threads=1`: **228 runs, 4739 passed, 0 failed, 11
-  ignored**, exit 0. The serialised flag deterministically
-  mitigates the `a6_4_shared_ticket_service` flake (which is
-  otherwise OPEN_NON_BLOCKER under default thread count).
+  ignored**, exit 0. The serialised flag mitigates the
+  `a6_4_shared_ticket_service` flake deterministically (30% flake
+  rate in test-alone parallel runs at `add896d` — captured
+  2026-09-19 in this cycle; diagnosis in §13 #3).
 - **State**: **GREEN**.
 - **Scope**: certifies no unreproduced flake at `add896d` under
   `--test-threads=1`; the per-ignored-test inventory lives in
@@ -325,19 +333,24 @@ Gates outside this cycle's authority are honestly marked
 - **Contract** (§180): an upgrade that cannot be rolled back to the
   certified previous version.
 - **Receipt / SHA**: A5-1 mechanism + A5-5 scenario 10 (rollback
-  v1.169.86 → v1.169.85, doctor all_present=true).
-- **Executable proof** (kind **(c) historical + (b) partial**): the
-  A5-5 scenario 10 ran against v1.169.86 → v1.169.85 and passed;
-  the §10 run did not re-execute the rollback scenario specifically
-  against v1.169.88 → v1.169.87, but the install mechanism
-  exercised is the same. **Carry-over from A5-5; not re-pinned at
-  v1.169.88.**
-- **State**: **GREEN** (with the caveat above).
-- **Scope**: certifies rollback to the prior certified release on
-  the clean-machine path (which uses the same install.sh). Not
-  re-validated at the v1.169.88 release — a future dedicated cycle
-  should add a v1.169.88 → v1.169.87 rollback scenario to
-  `tests/clean_machine_uat.sh`.
+  v1.169.86 → v1.169.85, doctor all_present=true) + **this
+  cycle's external run at v1.169.88** (Scenario 10 PASS in
+  `docs/architecture/a5/cycle-artifacts/.../clean-machine-uat-v1.169.88.txt`).
+- **Executable proof** (kind **(b) external procedure**): `bash
+  tests/clean_machine_uat.sh --tag v1.169.88` ran end-to-end on
+  2026-09-19 against podman `catthehacker/ubuntu:rust-latest`,
+  public artifacts only, exit 0. Scenario 10 output verbatim:
+  "rolling back to: v1.169.87 / [PASS] rollback install.sh exits
+  0 / downloading bundle tarball for v1.169.87... / sddk --version
+  after rollback: 1.169.87 / [PASS] sddk --version reports prior
+  tag (v1.169.87) / [PASS] rollback doctor coherent
+  (bundle_coherence: present)". Full log at the artifact path
+  above; assertion count 10/10, total elapsed 21s.
+- **State**: **GREEN** (re-pinned 2026-09-19 with external
+  evidence at v1.169.88 → v1.169.87; the A5-5 carry-over is now
+  historical context, not the primary evidence).
+- **Scope**: certifies rollback from v1.169.88 to v1.169.87 on
+  the public install path.
 
 ### G16 — Exact-revision certification
 
@@ -523,10 +536,11 @@ commit**, by an external process:
 |---|---|---|
 | `git ls-remote origin v1.169.88` | `add896d94274a7515254b8c195e2e78c3669108f refs/tags/v1.169.88` | ✅ tag SHA anchored |
 | CDN download of all 9 assets | 9/9 fetched, sizes match release receipt | ✅ |
-| `sha256sum -c sddk.sha256` | `sddk: La suma coincide` → binary sha256 `7bb5a4d5…1e62d` | ✅ |
+| `sha256sum -c sddk.sha256` | `sddk: La suma coincide` → binary sha256 `7bb5a4d5…1e62d`. `sddk.sha256` is in canonical format. | ✅ |
 | `sha256sum -c software-development-decision-kernel.tar.gz.sha256` | **FAIL** — file contains only the hex, no filename; not `sha256sum -c` compatible | ⚠️ Drift — see §10.0.1 |
 | `sha256sum -c CHECKSUMS` | `sddk-v1.169.88-…tar.gz: La suma coincide` + `software-development-decision-kernel.tar.gz: La suma coincide`. CHECKSUMS file only lists the 2 tarballs, not binary / sha256 files. | ⚠️ Partial — see §10.0.1 |
 | `cargo test --workspace --offline -- --test-threads=1` at `add896d` | exit 0, **228 test runs, 4739 passed, 0 failed, 11 ignored** (aggregate across all crates including the `a6_4_shared_ticket_service` flake that fails under `--test-threads>1`) | ✅ G13 GREEN with externally-observed evidence |
+| `bash tests/clean_machine_uat.sh --tag v1.169.88` (2026-09-19, fresh podman) | exit 0, **10/10 assertions, 21s**. Scenario 10 (rollback v1.169.88 → v1.169.87) PASS, `sddk --version after rollback: 1.169.87`, `doctor coherent`. Full log at `docs/architecture/a5/cycle-artifacts/p-63676b11dc0ef88f/a5-c-base-production-ready-certification/clean-machine-uat-v1.169.88.txt`. | ✅ G12, G15 GREEN with externally-observed evidence |
 | Public install (CDN download + install.sh, no workarounds) in fresh podman `catthehacker/ubuntu:rust-latest` | exit 0; installed binary sha256 = `7bb5a4d573e1d5fa20ee63e89b3bf0206df1469251a824fa5b454e85eda1e62d` (**bit-exact match with `sddk.sha256` published**) | ✅ |
 | `sddk version` on installed | `binary: 1.169.88, source: current, resolved: /root/.local/share/sddk/framework/1.169.88, present: true` | ✅ |
 | `sddk agent-help agent` on installed | `Showing 60/60 commands.` | ✅ |
@@ -534,16 +548,21 @@ commit**, by an external process:
 
 #### §10.0.1 Drift notes (imprecisions in this cert doc)
 
-- **Bundle `.sha256` is not `sha256sum -c` compatible.** The file at
+- **Two `.sha256` files (the tarballs) are not `sha256sum -c`
+  compatible.** Verified 2026-09-19 against the live CDN: the files
   `software-development-decision-kernel.tar.gz.sha256` and
-  `sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz.sha256` contains only
+  `sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz.sha256` contain only
   the bare hex digest, not the `<hex>  <filename>` line format that
-  `sha256sum -c` requires. Users wanting to verify must do
+  `sha256sum -c` requires. **The third `.sha256` file,
+  `sddk.sha256`, IS in canonical `sha256sum -c` format** (verified
+  in this cycle — `sha256sum -c sddk.sha256` returns "La suma
+  coincide"). Users wanting to verify the two tarballs must do
   `sha256sum -c <(echo "$(cat file.sha256)  filename")` or use
   `awk '{print $1"  filename"}' file.sha256 | sha256sum -c`. The hex
-  itself is correct (`f58e9fd7…507e` matches); the format is just not
-  in canonical `sha256sum -c` shape. This is a release-pipeline
-  cosmetic issue, not a content defect.
+  itself is correct (`f58e9fd7…507e` and `4a365081…842be` match);
+  the format is just not in canonical `sha256sum -c` shape for
+  those two files. This is a release-pipeline cosmetic issue, not
+  a content defect.
 - **`CHECKSUMS` file covers only 2 of 9 assets.** Listed: the
   unified tarball and the legacy bundle tarball. Missing: the
   binary, both `.sha256` files, the SBOM, the `CHECKSUMS` itself,
@@ -620,7 +639,7 @@ listed so a future reader does not infer coverage:
 - Future async/non-blocking Parallel (a POST-BASE feature, NOT a
   closure of R12).
 - R11 crate split evaluation (P3, evidence-driven).
-- The 8 IMMEDIATE sites not yet routed through `with_busy_retry`
+- The 9 IMMEDIATE sites not yet routed through `with_busy_retry`
   (out of R-SQLITE-1 by design; each surface warrants its own
   change-set).
 - CAS root GC sweep for orphans (P3).
@@ -636,12 +655,12 @@ and where they live. Each has a concrete recommended action.
 |---|---|---|---|
 | 1 | `install.sh` defect #3 (`--editor none` skips bundle extraction) is opt-in design, not a defect | `A5-5-RECEIPT.md §6.1` | If we want `--editor none` to also install the bundle, document as enhancement and patch. Otherwise leave as documented contract. |
 | 2 | `install.sh` defects #6..#11 (6 POST_A5_DEBT items) are test-harness debt, not product | `A5-5-RECEIPT.md §6.1`, cert §5 | Future dedicated cycle: simplify `tests/clean_machine_uat.sh` to drop the workarounds and remove the harness bugs. |
-| 3 | `a6_4_shared_ticket_service::cross_surface_facades_share_the_service_instance` is OPEN_NON_BLOCKER flake under default thread count; serialised thread count mitigates deterministically | `A5-DEBT-DISPOSITION.md §3.8`; `crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:108` | Future dedicated cycle: close the flake so future releases can drop `--test-threads=1`. |
-| 4 | Bundle `.sha256` files are not `sha256sum -c` compatible (bare hex without filename) | `release.yml` | Future cycle: emit `.sha256` files in `<hex>  <filename>` format. |
+| 3 | `a6_4_shared_ticket_service::cross_surface_facades_share_the_service_instance` is OPEN_NON_BLOCKER flake under default thread count; serialised thread count mitigates deterministically. **Diagnosis captured 2026-09-19:** panic at line 108 (`expect("github_releases facade ok")`) with `Ticket(PolicyChanged { ticket_digest, current_digest, ticket_id })` — the second facade (`with_github_releases_ticket`) sees a different CAS digest than the singleton frozen by the first facade. 30% flake rate in 10×iterated test-alone parallel runs at `add896d`. The singleton is initialised with a digest derived from environment (CWD/env/time); the race is that two facade functions initialise the singleton at slightly different times. Full-workspace `--test-threads>1` run did NOT manifest the flake (other test binaries' contention masks the race window). | `A5-DEBT-DISPOSITION.md §3.8`; `crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:108` | Future dedicated cycle: freeze the singleton digest derivation before either facade initialises it, OR introduce a process-wide mutex around the lazy-init path. Drop `--test-threads=1` once the race is closed. |
+| 4 | The 2 tarball `.sha256` files are not `sha256sum -c` compatible (bare hex without filename). `sddk.sha256` IS canonical. | `release.yml` | Future cycle: emit tarball `.sha256` files in `<hex>  <filename>` format. |
 | 5 | `CHECKSUMS` file covers only 2 of 9 assets (the tarballs); binary, individual sha256 files, SBOM and release receipt are not listed | `release.yml` (CHECKSUMS emission) | Future cycle: emit a `CHECKSUMS` that lists all 9 assets with `sha256sum -c` format. |
-| 6 | G15 (Rollback) is GREEN on carry-over from A5-5; the v1.169.88 → v1.169.87 rollback scenario was not re-executed in this cycle | `tests/clean_machine_uat.sh::run_rollback` | Future dedicated cycle: add a v1.169.88 → v1.169.87 scenario to `tests/clean_machine_uat.sh` and re-pin. |
+| 6 | ~~G15 (Rollback) is GREEN on carry-over from A5-5~~ — **CLOSED 2026-09-19**: ran `bash tests/clean_machine_uat.sh --tag v1.169.88` end-to-end, Scenario 10 PASS (10/10 assertions, 21s). Rollback v1.169.88 → v1.169.87 verified fresh; `sddk --version after rollback: 1.169.87`, `doctor coherent (bundle_coherence: present)`. Full log at `docs/architecture/a5/cycle-artifacts/p-63676b11dc0ef88f/a5-c-base-production-ready-certification/clean-machine-uat-v1.169.88.txt`. G15 §3 entry updated to re-pinned state. | (no longer applicable) | (closed) |
 | 7 | R14 (secrets) is OPEN_NON_BLOCKER with no dedicated cycle | `A5-RISK-REGISTER.md §2` | Future dedicated security cycle: secrets matrix over production surfaces. Acceptance in §11 remains valid until then. |
-| 8 | 8 IMMEDIATE SQLite sites not yet routed through `with_busy_retry` | `crates/sddk-storage/src/lib.rs:504, 607, 1039, 1140, 1233, 1335, 1391, 1538` | Out of R-SQLITE-1 scope by design; opportunistic adoption only. |
+| 8 | 9 IMMEDIATE SQLite sites not yet routed through `with_busy_retry`. Verified 2026-09-19 via `grep -n TransactionBehavior::Immediate crates/sddk-storage/src/lib.rs` — 9 sites at L504, L607, L1039, L1140, L1233, L1335, L1391, L1481 (inside `with_busy_retry` closure body), L1589. Only `insert_gate_receipt_next_seq` (L1525) uses `with_busy_retry` directly. The 8 non-retry sites are reachable through the public API; the 9th (L1481) is inside the closure body of the retry helper itself. | `crates/sddk-storage/src/lib.rs:504, 607, 1039, 1140, 1233, 1335, 1391, 1481, 1589` (9 sites) | Out of R-SQLITE-1 scope by design; opportunistic adoption only. Each surface warrants its own change-set. |
 | 9 | INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH (P2) and INC-DEBT-023 (P3) paperwork | `docs/debt/` | Paperwork; not blockers. |
 
 None of these falsify the certification. They are the explicit,
@@ -656,5 +675,5 @@ honest boundary of what this cert covers and what it doesn't.
 - `A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md` — clean-machine sweep
   evidence (10/10 scenarios, isolated container).
 - `tests/clean_machine_uat.sh` — the UAT harness.
-- `tests/cycle-artifacts/p-63676b11dc0ef88f/a5-c-base-production-ready-certification/`
-  — artifacts captured by this cycle.
+- `docs/architecture/a5/cycle-artifacts/p-63676b11dc0ef88f/a5-c-base-production-ready-certification/`
+  — artifacts captured by this cycle (clean-machine UAT log at v1.169.88).

@@ -1,0 +1,89 @@
+========================================
+SDDK Clean-Machine UAT (UAT-1)
+  tag:     v1.169.88
+  offline: false
+  assets:  <download from GH>
+========================================
+
+=== Scenario 1: Launch podman container ===
+  Using image: catthehacker/ubuntu:rust-latest
+f338a4d28548d4c4c0781f63a233f46f27bbf174f1aa0e87d4fe5ca2011d148c
+  container running: sddk-clean-machine-uat
+=== Scenario 2: Download public release assets ===
+  using pinned tag: v1.169.88
+  [1] downloading CHECKSUMS
+  [2] downloading gh-release-receipt.json
+  [3] downloading sbom.json
+  [4] downloading sddk
+  [5] downloading sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz
+  [6] downloading sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz.sha256
+  [7] downloading sddk.sha256
+  [8] downloading software-development-decision-kernel.tar.gz
+  [9] downloading software-development-decision-kernel.tar.gz.sha256
+  downloaded 9 assets
+=== Scenario 3: Verify sha256 checksums ===
+sddk: OK
+  [PASS] sha256sum -c sddk.sha256 exits 0
+  binary sha256: 7bb5a4d573e1d5fa20ee63e89b3bf0206df1469251a824fa5b454e85eda1e62d
+sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz: OK
+software-development-decision-kernel.tar.gz: OK
+  [PASS] sha256sum -c CHECKSUMS exits 0 (all 9 assets)
+=== Scenario 4: Install via scripts/install.sh ===
+  install.sh exit: 0
+  extracting bundle to framework/1.169.88/...
+  [PASS] installation exits 0
+=== Scenario 5: Assert sddk dev doctor ===
+  [PASS] sddk dev doctor exits 0
+  [PASS] all_present == true (got: true)
+  [PASS] binary.bundle_coherence == present (got: true)
+=== Scenario 6: Canonical workflow (available binary commands) ===
+  NOTE: intake/verify/debverify/alignment/advisory (SPEC-011 workflow)
+  are not yet implemented in v1.169.86. Testing available commands instead.
+  running sddk version...
+  [PASS] sddk version exits 0
+  running sddk agent-help...
+  [PASS] sddk agent-help exits 0
+  running sddk dev doctor (idempotency check)...
+  [PASS] sddk dev doctor (idempotency) exits 0
+  [PASS] scenario 6: all available commands exited 0
+=== Scenario 7: Restart container + re-exercise ===
+  [PASS] sddk dev doctor after restart exits 0
+  [PASS] scenario 7: binary + framework survive container restart
+=== Scenario 8: Projection rebuild equivalence ===
+  [PASS] scenario 8: dev doctor stable before and after rebuild
+=== Scenario 9: Upgrade-to-next-version N/A step ===
+  N/A — no subsequent release at run time (tag queried: v1.169.88)
+  [PASS] upgrade-to-next-version N/A exits 0
+=== Scenario 10: Rollback to prior certified version ===
+  rolling back to: v1.169.87
+  [PASS] rollback install.sh exits 0
+  downloading bundle tarball for v1.169.87...
+  sddk --version after rollback: 1.169.87
+  [PASS] sddk --version reports prior tag (v1.169.87)
+  [PASS] rollback doctor coherent (bundle_coherence: present)
+
+========================================
+UAT Summary
+  assertions passed: 10 / 10
+  total elapsed:     21s
+========================================
+
+Receipt written: .sddk/cycles/p-63676b11dc0ef88f/a5-5-clean-machine-sweep/clean-machine-uat-receipt.json
+{
+  "tag": "v1.169.88",
+  "binary_sha256": "7bb5a4d573e1d5fa20ee63e89b3bf0206df1469251a824fa5b454e85eda1e62d",
+  "install_exit": 0,
+  "doctor_exit": 0,
+  "rollback_from": "v1.169.88",
+  "rollback_to": "v1.169.87",
+  "rollback_exit": 0,
+  "assertions_passed": 10,
+  "assertions_total": 10,
+  "scenario_timings": {
+    "scenario_4_install": 3
+  }
+}
+STATUS: PASS
+=== Cleanup ===
+sddk-clean-machine-uat
+  container removed
