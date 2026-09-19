@@ -1,14 +1,11 @@
-# A5 — Live Roadmap (post A5-C-RR2, sync at v1.169.87)
+# A5 — Live Roadmap (post A5-C, sync at v1.169.88)
 
-> **Cycle:** `p-63676b11dc0ef88f/a5-c-rr2-risk-gate-debt-reconciliation`
+> **Cycle:** `p-63676b11dc0ef88f/a5-c-base-production-ready-certification`
 > **Status:** LIVE — reconciled against certified per-cycle receipts.
-> **Issued:** 2026-09-18 by A5-C-RR2 (Risk / Gate / Debt Reconciliation).
-> **Workspace version at issue:** `1.169.84` (`b4acbbf`).
-> **Last roadmap sync:** 2026-09-19 by A5-C-DOC-SYNC (post-A5-5) —
->   A5-5 (clean-machine sweep) closed in `v1.169.87` (release tag,
->   commit `5ad25d1`); this snapshot reflects that closure. A5-C
->   certification paperwork is still pending (no release with bump
->   after `v1.169.87` exists yet).
+> **Issued:** 2026-09-19 by A5-C closure pass.
+> **Workspace version at issue:** `1.169.88` (`add896d`) — released.
+> **A5-C = CERTIFIED** at `v1.169.88`. Authority:
+>   `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`.
 
 This is the live execution roadmap. It is the **single source of
 truth** for what remains until `BASE_PRODUCTION_READY` and beyond.
@@ -85,9 +82,9 @@ A5-4a         remove paradigm_lens legacy facade                   CLOSED       
 A5-4b         compat / lints / operator UX                         CLOSED         v1.169.83 (A5-4b-RECEIPT.md, ADR-0136)
 A5-5R         stale Playwright flake                               CLOSED         v1.169.81 (A5-5R-RECEIPT.md)
 A5-5          clean-machine sweep (G8/G9/G12/G15 + R8/R15/R11)    CLOSED         v1.169.87 (A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md, `5ad25d1`)
-A5-C          BASE_PRODUCTION_READY certification                  PENDING        paperwork + acceptance-gate evidence + release with bump
-                                                                          (gates G0–G15 evidence-bound; 11 install.sh defects classified;
-                                                                           clean-machine install without internal workarounds pending)
+A5-C          BASE_PRODUCTION_READY certification                  CERTIFIED      v1.169.88 (A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md, `add896d`)
+                                                                          G0..G15 GREEN; G11 NOT VERIFIED with R14 accepted (see cert §11).
+                                                                          Public install path validated without test-harness workarounds.
 ```
 
 ## §3 Mandatory work remaining (A5 → BASE_PRODUCTION_READY)
@@ -164,18 +161,47 @@ are tracked as **installation defects pending classification** in the
 A5-C admission audit (see `A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`
 when emitted). They are not closed by A5-5 alone.
 
-### A5-C owed (paperwork + release)
+### A5-C — CERTIFIED at v1.169.88 (`add896d`)
 
-- Build the G0–G15 evidence-bound matrix against the public install
-  path (not against the harness).
-- Classify the 11 install.sh defects as RELEASE_BLOCKER /
-  ACCEPTED_NON_BLOCKER / POST_A5_DEBT, and run a clean-machine
-  install with **no internal workarounds** before certifying.
-- Emit `A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` as a new
-  authority distinct from the historical `A5-C-RECEIPT.md`.
-- Bump workspace version, run `bash scripts/release.sh` end-to-end,
-  and run a post-release UAT that downloads + verifies + installs the
-  public artifact and exercises one real product smoke flow.
+See `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`
+for the G0..G16 matrix, the 11 install.sh defect classifications,
+and the §10 release checkpoint.
+
+- G0..G15 GREEN.
+- G11 NOT VERIFIED with R14 accepted (no observed leak; future
+  dedicated security cycle owed).
+- Public install path passes end-to-end on a clean podman container
+  against the released artifact `v1.169.88`, without test-harness
+  workarounds.
+- 11 `install.sh` defects: zero RELEASE_BLOCKER; 5 ACCEPTED_NON_BLOCKER;
+  6 POST_A5_DEBT (test-harness bookkeeping).
+
+`BASE_PRODUCTION_READY` reached. Post-BASE backlog lives in the
+roadmap's deferred sections (A6/A7/A8, J2..J6, R17 deeper sweep,
+the 8 IMMEDIATE sites not yet routed through `with_busy_retry`, etc.).
+
+### Post-A5 (not yet started)
+
+After `BASE_PRODUCTION_READY` is certified, the roadmap reverts to
+the deferred-post-base queue:
+
+- **A6 CogniCode / STATIC_ENHANCED** (NOT to be confused with the
+  historical `a6-0..a6-4` cycle IDs which were A5/G5 Authority
+  hardening — see `docs/architecture/README.md` Roadmap
+  Reconciliation Appendix).
+- **A7 Chronos / RUNTIME_ENHANCED**.
+- **A8 FULLY_ENHANCED** (blocked_by A6 + A7).
+- **J2..J6 JCODE_CORE_GA** (parallel track, P1).
+- **R14 dedicated security cycle** (secrets matrix).
+- **R17 deeper operator diagnostics sweep**.
+- The 8 IMMEDIATE sites not yet routed through `with_busy_retry`
+  (out of R-SQLITE-1 by design).
+- Future async/non-blocking Parallel (a POST-BASE feature, NOT R12).
+- R11 crate split evaluation (P3).
+
+A6 is not auto-opened by A5-C. The user will decide its scope
+after reviewing the accepted debt (§3 G11 + the 5
+ACCEPTED_NON_BLOCKER install.sh defects + INC P2/P3 paperwork).
 
 ### OPEN_NON_BLOCKER (no current blocker)
 

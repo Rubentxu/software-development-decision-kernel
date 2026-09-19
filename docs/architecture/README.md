@@ -167,9 +167,9 @@ A4 sub-cycles (ROADMAP-SYNC preflight for A4-4a, 2026-09-16):
 | **A5-2** | Durability / rebuild / recovery | `docs/architecture/a5/` | **NEXT** (unblocked by A5-1; not auto-opened) |
 | **A5-3** | Concurrency / CAS / authority side-effect races | `docs/architecture/a5/` | blocked_by A5-2 |
 | **A5-4** | Compatibility / deprecation / lints / operator UX | `docs/architecture/a5/` | blocked_by A5-1 |
-| **A5-5** | Reliability / clean-machine / security / operational UAT | `docs/architecture/a5/` | blocked_by A5-1 |
-| **A5-C** | `BASE_PRODUCTION_READY` certification (audit + milestone receipt) | `docs/architecture/a5/` | blocked_by A5-1..A5-5 |
-| **A5** | `BASE_PRODUCTION_READY` — release receipts, hardening programme close | 042–047 | blocked_by A5-C |
+| **A5-5** | Reliability / clean-machine / security / operational UAT | `docs/architecture/a5/` | **CLOSED** — v1.169.87 (`5ad25d1`, A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md, UAT-1 10/10 on isolated podman container) |
+| **A5-C** | `BASE_PRODUCTION_READY` certification (audit + milestone receipt) | `docs/architecture/a5/` | **CERTIFIED** — v1.169.88 (`add896d`, A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md; G0..G15 GREEN, G11 NOT VERIFIED with R14 accepted, 11 install.sh defects classified with zero RELEASE_BLOCKER, public install path validated without harness workarounds) |
+| **A5** | `BASE_PRODUCTION_READY` — release receipts, hardening programme close | 042–047 | **CERTIFIED** at `v1.169.88` (`add896d`) |
 
 **Checkpoint (A4-4a close, 2026-09-16):**
 - `released_baseline` = v1.169.52 (tag tracks `main`)

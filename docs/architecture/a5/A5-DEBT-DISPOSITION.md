@@ -1,6 +1,6 @@
 # A5 — Debt Disposition
 
-> Cycle: `p-63676b11dc0ef88f/a5-c-rr2-risk-gate-debt-reconciliation`
+> Cycle: `p-63676b11dc0ef88f/a5-c-base-production-ready-certification`
 > Status: **RECONCILED at v1.169.84** (`b4acbbf`) — R1, R12 closures
 > propagated from certified per-cycle receipts into §3.4 / §3.4.2.
 > Last live update: A5-C-RR2 (v1.169.84) — closed-receipt
@@ -8,10 +8,11 @@
 > Last A5-cycle update: A5-5 (v1.169.87, commit `5ad25d1`) — clean-machine
 >   UAT (UAT-1) 10/10 scenarios PASS on isolated container. R8, R15,
 >   R11 → CLOSED_A5. Receipt: `docs/architecture/a5/A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md`.
-> A5-C admission audit: **PENDING** — see
->   `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`
->   when emitted (distinct from the historical `A5-C-RECEIPT.md`,
->   which is a paperwork audit at v1.169.83, not the certification).
+> A5-C certification: **CERTIFIED — v1.169.88** (`add896d`).
+>   Authority: `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`
+>   (distinct from the historical `A5-C-RECEIPT.md` paperwork audit at v1.169.83).
+>   14 of 16 gates GREEN; G11 NOT VERIFIED with R14 carried as
+>   OPEN_NON_BLOCKER; zero RELEASE_BLOCKER among the 11 install.sh defects.
 
 Disposition vocabulary (§3):
 

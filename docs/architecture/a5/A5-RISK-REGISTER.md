@@ -124,7 +124,13 @@ still open".
   against `v1.169.87`. Roadmap §2 row A5-5 promoted from
   `OWED` to `CLOSED`; debt disposition header updated to cite
   `5ad25d1`; risk matrix R8/R11/R15 cite the `v1.169.87` tag.
-  No status change for any open risk. A5-C itself remains
-  **PENDING** until a release with bump after `v1.169.87` is
-  certified against the public install path (see
-  `A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` when emitted).
+  No status change for any open risk. A5-C itself was
+  **PENDING** until a release with bump after `v1.169.87` was
+  certified against the public install path.
+- **A5-C certification (2026-09-19)** — `A5-C BASE_PRODUCTION_READY`
+  promoted to **CERTIFIED — v1.169.88** (`add896d`). Authority:
+  `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`.
+  G0..G15 GREEN; G11 NOT VERIFIED with R14 accepted (no observed leak).
+  11 install.sh defects classified (zero RELEASE_BLOCKER; 5
+  ACCEPTED_NON_BLOCKER; 6 POST_A5_DEBT). Public install path validated
+  on a clean podman container without test-harness workarounds.
