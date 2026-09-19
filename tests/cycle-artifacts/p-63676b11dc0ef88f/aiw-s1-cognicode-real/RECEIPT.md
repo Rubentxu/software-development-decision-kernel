@@ -89,6 +89,29 @@ no puede salir `Verified` por defecto sin evidencia.
   S1 solo consume find_usages/build_graph, no el catálogo completo.
 
 ## Estado
-- Commits: S0 `69f68a7`, S1 discovery `50c9238`, S1 código (este).
-- Push: BLOQUEADO por hook (artifacts fuera de allowlist, sin bump).
-  Publicación con el próximo release legítimo (v1.169.90).
+- Release: **v1.169.91** — tag y HEAD en `22e4446`, pusheado y verificado
+  (9 assets, no-draft, gate público OK, install local coherente:
+  binary 1.169.91, bundle 1.169.91, doctor all_present, prune OK).
+- binary_sha256: `sha256:7ce3ad999cb02bc9c703dfe4ba9b52ccabb162bb690eeb1cafdfd33820bc1d8c`.
+- Nota: un bump espurio a 1.169.90 (`959b9b7`, sin release) quedó en
+  origin/main por un intento prematuro de release; el release legítimo
+  es monotónico sobre él (1.169.90 → 1.169.91).
+
+## Reconciliación A6: qué satisface S1 y qué queda pendiente
+S1 satisface:
+- Conexión vertical real proveedor→observación→kernel→veredicto (núcleo A6).
+- Digests SHA-256 reales y basis canónico derivado del resultado.
+- Pruebas negativas sin proveedor (Base green) y con proveedor caído.
+- Primer dominio del kernel (static_provider) que consume ObservationSet.
+
+A6 pendiente (fuera de S1 por decisión del operador):
+- STATIC_ENHANCED: NO declarado; requiere cobertura de grafo completa,
+  no lightweight.
+- Persistencia de ObservationSets y consultas históricas (AIW-S2,
+  captura de resultados de tests): sin implementar.
+- Representación de contradicciones reales del proveedor (stance Denies
+  con evidencia): modelada en el kernel pero sin caso real observado.
+  Abrir AIW-S1b SOLO si una prueba real demuestra una carencia de
+  persistencia o representación de contradicciones.
+- Operators adicionales, agenda, segundo store, endpoint HTTP del
+  editor: fuera de alcance.
