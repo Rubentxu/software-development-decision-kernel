@@ -37,6 +37,8 @@ pub mod change_contract;
 pub mod circuit_breaker;
 pub mod cockpit_observability;
 pub mod cockpit_views;
+pub mod code_intelligence_port;
+pub mod code_intelligence_port_fake;
 pub mod cold_start;
 pub mod completion_provider_router;
 pub mod context_capsule;
