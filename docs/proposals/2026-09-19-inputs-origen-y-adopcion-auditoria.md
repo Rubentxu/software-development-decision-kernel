@@ -152,9 +152,60 @@ LO QUE EL LLM PRODUCE Y EL SISTEMA NO ANALIZA:
    cuatro verticales muertas-productivo deberían listarse en el A5-ROADMAP como
    deuda de adopción, no como capacidades disponibles.
 
+## 6. Cobertura extendida: skills, agentes y comandos top-level (segunda pasada)
+
+Tras la primera auditoría se revisó también el catálogo completo: **30 comandos
+top-level** del CLI vs los 19 invocados desde el bundle. Resultado por comando
+(menciones en prompts/skills/agents del bundle 1.169.88):
+
+**Vivos con adopción real (≥3 menciones):** cycle (60), ledger (19), knowledge (11,
+solo path/status), release (5), dev (5), adopt (4), plan (3), artifact (3),
+uat (22), vault (2), verify (1).
+
+**Vivos pero con adopción mínima o tangencial (1-2):** capability, lint, generate,
+status, ship, run, recover, init, archive. Los tres primeros tienen usos aislados y
+legítimos pero puntuales: `sddk lint`/`generate docs --in-repo` solo en
+document-catalog con permiso explícito; `sddk capability` en core-contract-review.
+
+**Muertos de adopción (0 menciones en todo el bundle):** `backlog`, `permission`,
+`validate`, `agent-result`, `git`, `graph`, `metrics`, `analytics`, `telemetry`,
+`approval`, `pack`, `why`.
+
+Matices honestos sobre los ceros:
+- `git`, `validate`, `agent-result`, `capability`: son superficies para **consumo
+  externo/agentes no-prompteados**, no flujo interno. Su falta de mención en prompts
+  no los invalida; su contrato es ser usados por otro actor. `agent-result` además
+  es fachada legacy de conversión.
+- `graph`, `metrics`, `analytics`, `telemetry`, `backlog`, `why`, `approval`, `pack`:
+  **sí son flujo interno esperado** y tienen backend real (backlog_store,
+  analytics.rs, telemetry.rs, projection rebuild). Cero adopción = capacidad
+  construida y no integrada al workflow prompteado. `why` es especialmente notable:
+  es la superficie de explicación que el doc hermano propone como consumidor de
+  salidas, y ningún prompt lo llama.
+
+**Sobre los 70 agentes del bundle:** 52 no son `sddk-*` (auto-grill-*, studio-*,
+uat-*, jd-*). Los 18 sddk-* cubren el ciclo canónico. Las skills sddk (13) invocan
+un repertorio estrecho: cycle transition/status/inventory/start/lock/artifacts-dir,
+knowledge status, ledger verify/events, release plan/apply, adopt status, vault
+validate. **Ninguna skill sddk invoca plan roadmap, architecture, graph, metrics,
+analytics, backlog, why, evidence attach ni knowledge scan/import.**
+
+**Corrección al mapa de la sección 3:** el conteo «plan: 3» corrige la impresión del
+desglose anterior; `plan evidence attach` sigue siendo el único uso de evidence, y
+`plan roadmap` (proyecciones next/blocked) **tampoco aparece en ninguna skill** —
+las consultas que proyectan el estado del spine no están integradas al flujo
+agéntico, se consumen manualmente.
+
+**Regla operativa resultante:** además de código+CLI+prompt, la auditoría debe
+incluir **skills**, porque son la capa que convierte comandos en hábitos agénticos.
+Con esa regla, el set de capacidades realmente adoptadas es aún menor que el
+estimado en la primera pasada: los comandos de análisis (graph/metrics/analytics/
+backlog/why) son infraestructura viva esperando un consumidor, igual que test_runner
+y knowledge ingest.
+
 ## 5. Evidencia y límites
 
-**OBSERVED:** inventario de menciones en prompts del bundle 1.169.88 (`grep -c`
+**OBSERVED:** segunda pasada: 30 comandos top-level vs 19 adoptados; conteos por comando con grep sobre prompts+skills+agents (backlog 0, permission 0, validate 0, agent-result 0, git 0, graph 0, metrics 0, analytics 0, telemetry 0, approval 0, pack 0, why 0; uat 22). Primera pasada: inventario de menciones en prompts del bundle 1.169.88 (`grep -c`
 por fichero: cycle 40, ledger 15, dev 5, knowledge 1 —solo path—; plan evidence:
 solo apply.md:471; git: verify 10, apply 28, explore 0; knowledge scan/import:
 0 en prompts). Consultas previas del doc hermano. Bundle resuelto por `sddk version`.
