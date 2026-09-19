@@ -5,9 +5,13 @@
 > propagated from certified per-cycle receipts into §3.4 / §3.4.2.
 > Last live update: A5-C-RR2 (v1.169.84) — closed-receipt
 > cross-references added; historical §3.4.0 preserved.
-> Last A5-cycle update: A5-5 (v1.169.86) — clean-machine UAT (UAT-1)
->   10/10 scenarios PASS on isolated container. R8, R15 → CLOSED_A5;
->   R11 → CLOSED_A5 (broader flake-discipline sweep done).
+> Last A5-cycle update: A5-5 (v1.169.87, commit `5ad25d1`) — clean-machine
+>   UAT (UAT-1) 10/10 scenarios PASS on isolated container. R8, R15,
+>   R11 → CLOSED_A5. Receipt: `docs/architecture/a5/A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md`.
+> A5-C admission audit: **PENDING** — see
+>   `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md`
+>   when emitted (distinct from the historical `A5-C-RECEIPT.md`,
+>   which is a paperwork audit at v1.169.83, not the certification).
 
 Disposition vocabulary (§3):
 

@@ -33,14 +33,14 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 | R5 | Denied action still produces a side effect / `RequireApproval` bypass | P0 | G5 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; `authority_fail_closed.rs` 6/6 green; executor short-circuits on Deny/RequireApproval |
 | R6 | Retry double-applies an effect | P1 | G5 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; R3 typed-conflict machinery covers retry idempotency |
 | R7 | Release tag ≠ certified SHA; version drift | P1 | G7, G16 | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; `release_admission_check` + identity set; `INC-A4-RELEASE-VERSION-DRIFT` CLOSED |
-| R8 | Corrupt / partial / stale public asset; CDN serves previous binary | P1 | G8 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + 9b public-release gate + UAT-1 clean-machine (10/10 PASS, isolated podman container, `bash tests/clean_machine_uat.sh --tag v1.169.86`; receipt: `.sddk/cycles/p-63676b11dc0ef88f/a5-5-clean-machine-sweep/clean-machine-uat-receipt.json`) |
+| R8 | Corrupt / partial / stale public asset; CDN serves previous binary | P1 | G8 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + 9b public-release gate + UAT-1 clean-machine (10/10 PASS, isolated podman container, `bash tests/clean_machine_uat.sh --tag v1.169.86`; receipt: `.sddk/cycles/p-63676b11dc0ef88f/a5-5-clean-machine-sweep/clean-machine-uat-receipt.json`); release tag `v1.169.87`, commit `5ad25d1` |
 | R9 | Installed binary depends on repo checkout / only works via `cargo run` | P1 | G9, G12 | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; distrib round-trip smoke test 14/14 PASS at every release |
 | R10 | Push/release protocol requires a ceremonial empty `chore(release)` marker | P2 | release audit | A5-1 | **CLOSED** | A5-1-RECEIPT.md v1.169.71; `INC-A5-PUSH-RELEASE-MARKER-FRICTION` CLOSED; empty marker now rejected; docs-only pushes accepted (clause B) |
-| R11 | Flaky test hidden by "couldn't reproduce → closed" | P1 | G13 | A5-5R + A5-5 | **CLOSED_A5** | A5-5R-RECEIPT.md (flake closed v1.169.81) + UAT-1 clean-machine (10/10 PASS, tests/clean_machine_uat.sh) |
+| R11 | Flaky test hidden by "couldn't reproduce → closed" | P1 | G13 | A5-5R + A5-5 | **CLOSED_A5** | A5-5R-RECEIPT.md (flake closed v1.169.81) + UAT-1 clean-machine (10/10 PASS, tests/clean_machine_uat.sh); release tag `v1.169.87`, commit `5ad25d1` |
 | R12 | Non-blocking Parallel path sender-drop bug | P1 | G4, G13 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; commit `af346b9`; non-blocking path deleted (`operator.rs:1196-1356`, ~162 lines); 2 ignored `par_006_*` tests deleted; `parallel_spans_three_ticks_drain` deleted; runtime forces `pending_sender = None` per `operator.rs:1197-1205` |
 | R13 | Dead compatibility code (`paradigm_lens::evaluate_lens`) kept forever | P2 | G14 | A5-4a | **CLOSED** | A5-4a-RECEIPT.md v1.169.82; facade deleted; type deleted; ADR-0135 |
 | R14 | Secret leaks into log / receipt / error / telemetry / CAS | P0 | G11 | — | **OPEN_NON_BLOCKER** | No observed leak path; not addressed in A5 yet. Tracked for A5-5 or a future security cycle |
-| R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + UAT-1 clean-machine scenario 10 (rollback v1.169.86→v1.169.85, dev doctor all_present=true, bundle_coherence=present; receipt same as R8) |
+| R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + UAT-1 clean-machine scenario 10 (rollback v1.169.86→v1.169.85, dev doctor all_present=true, bundle_coherence=present; receipt same as R8); release tag `v1.169.87`, commit `5ad25d1` |
 | R16 | An A5 change silently breaks an A4 certified contract | P0 | G1 | every cycle | **OPEN_NON_BLOCKER** | A4-CERTIFIED baseline (v1.169.68). Mechanism: cross-crate arch ratchets + ADR-0001 §3.2 promotion gates. No observed breach in A5-1..A5-5R, A5-4a/4b, A5-ITD |
 | R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 | **OPEN_NON_BLOCKER** | A5-4b partial: about-line + `sddk agent-help` pointer. Deeper diagnostics sweep pending A5-5 / A5-C |
 | R18 | Ignored tests become invisible debt | P2 | G13 | A5-ITD + A5-C-RR | **CLOSED** | A5-ITD-RECEIPT.md v1.169.84; A5-C-RR-A1 §3.4.1; per-ignored-test disposition with evidence pointers |
@@ -120,3 +120,11 @@ still open".
   R1..R20 against certified receipts; A5-ITD reflected in the
   register; A5-5 clean-machine sweep explicitly named as the
   only outstanding A5-* mechanism-pending gap.
+- **A5-C-DOC-SYNC (2026-09-19)** — closed-documentary pass
+  against `v1.169.87`. Roadmap §2 row A5-5 promoted from
+  `OWED` to `CLOSED`; debt disposition header updated to cite
+  `5ad25d1`; risk matrix R8/R11/R15 cite the `v1.169.87` tag.
+  No status change for any open risk. A5-C itself remains
+  **PENDING** until a release with bump after `v1.169.87` is
+  certified against the public install path (see
+  `A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` when emitted).
