@@ -449,12 +449,62 @@ Captured on 2026-09-19 by this cycle's release pipeline
 | Bundle digest | `sha256:f58e9fd774392207ea155dfdca3b4c7c4cff9d106ac77e04c2705e12d496507e` (`software-development-decision-kernel.tar.gz`) |
 | Unified tarball | `sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz` sha256 `4a365081eedacbc2b1e9d9fefe797290240bcf024ae09e5fd74c70af679842be` |
 | SBOM digest | `sha256:21a1330ced092d5e3cbbc2ce755c832ed327c36cdd7370d65f65397772e48370` |
-| Test receipt digest | workspace `cargo test --workspace` passes 780/780 (with one ignored Playwright stale-detection) + A5-4b lint disposition pin 3/3 at v1.169.87 baseline; reproducible via `cargo test --workspace --offline` against `add896d` |
+| Test receipt digest | workspace `cargo test --workspace --offline -- --test-threads=1` at `add896d` (external verifier, worktree detached): **228 test runs, 4739 passed, 0 failed, 11 ignored**, exit 0. Recorded 2026-09-19 against the actual release commit, not against a self-reported pre-release workspace. |
 | Doctor coherence (release.sh step 11) | `binary.bundle_coherence: present, all_present: true` |
 | Doctor coherence (post-release install) | `binary.bundle_coherence: present, all_present: true` |
 | Post-release UAT result | clean install on podman `catthehacker/ubuntu:rust-latest`, exit 0, `sddk --version` → `1.169.88`, `sddk version` → `source: current, resolved: /root/.local/share/sddk/framework/1.169.88`, 69 framework agents registered in 4 editors |
 | PublicReleaseGate (step 9b) | PASS — tag SHA anchored (`add896d` = local HEAD), `isDraft=false`, `isPrerelease=false`, 9 assets, sha256 verified against CDN |
-| `--skip-tests` rationale | flake `cross_surface_facades_share_the_service_instance` (`crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:108`) — reproducible only under `--test-threads>1`; **OPEN_NON_BLOCKER** in `A5-DEBT-DISPOSITION.md §3.8`; passes 5/5 when the test file runs in isolation. Test file was re-run isolated post-failure and went GREEN; flag is legitimately applied. |
+| `--skip-tests` rationale | flake `cross_surface_facades_share_the_service_instance` (`crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:108`) — reproducible only under `--test-threads>1`; **OPEN_NON_BLOCKER** in `A5-DEBT-DISPOSITION.md §3.8`; passes 5/5 when the test file runs in isolation. Test file was re-run isolated post-failure and went GREEN; flag is legitimately applied. **External verification (worktree detached at `add896d`):** `cargo test --workspace --offline -- --test-threads=1` finishes exit 0 with **4739 passed, 0 failed, 11 ignored** across 228 test runs (the serialised flag mitigates the flake deterministically). **Honest correction:** the `--skip-tests` flag used during the original release was unnecessary — running the suite with `--test-threads=1` produces the same GREEN outcome. The flag was applied as a conservative choice given the in-flight flake; future releases of SDDK can run `cargo test --workspace --offline -- --test-threads=1` directly without `--skip-tests` and expect a GREEN result. The flake remains an OPEN_NON_BLOCKER for a future dedicated cycle to close. |
+
+### §10.0 External verification (independent of self-report)
+
+The numbers above were initially self-reported. They were
+independently re-verified after the cert doc was first written, in a
+detached worktree (`/tmp/a5c-test-release`, `git worktree add
+/tmp/a5c-test-release add896d`) — that is, **on the actual release
+commit**, by an external process:
+
+| Check | External result | Matches cert §10? |
+|---|---|---|
+| `git ls-remote origin v1.169.88` | `add896d94274a7515254b8c195e2e78c3669108f refs/tags/v1.169.88` | ✅ tag SHA anchored |
+| CDN download of all 9 assets | 9/9 fetched, sizes match release receipt | ✅ |
+| `sha256sum -c sddk.sha256` | `sddk: La suma coincide` → binary sha256 `7bb5a4d5…1e62d` | ✅ |
+| `sha256sum -c software-development-decision-kernel.tar.gz.sha256` | **FAIL** — file contains only the hex, no filename; not `sha256sum -c` compatible | ⚠️ Drift — see §10.0.1 |
+| `sha256sum -c CHECKSUMS` | `sddk-v1.169.88-…tar.gz: La suma coincide` + `software-development-decision-kernel.tar.gz: La suma coincide`. CHECKSUMS file only lists the 2 tarballs, not binary / sha256 files. | ⚠️ Partial — see §10.0.1 |
+| `cargo test --workspace --offline -- --test-threads=1` at `add896d` | exit 0, **228 test runs, 4739 passed, 0 failed, 11 ignored** (aggregate across all crates including the `a6_4_shared_ticket_service` flake that fails under `--test-threads>1`) | ✅ G13 GREEN with externally-observed evidence |
+| Public install (CDN download + install.sh, no workarounds) in fresh podman `catthehacker/ubuntu:rust-latest` | exit 0; installed binary sha256 = `7bb5a4d573e1d5fa20ee63e89b3bf0206df1469251a824fa5b454e85eda1e62d` (**bit-exact match with `sddk.sha256` published**) | ✅ |
+| `sddk version` on installed | `binary: 1.169.88, source: current, resolved: /root/.local/share/sddk/framework/1.169.88, present: true` | ✅ |
+| `sddk agent-help agent` on installed | `Showing 60/60 commands.` | ✅ |
+| `sddk dev doctor --prefix "$HOME/.local" --format json` | `all_present: true, binary.bundle_coherence: present`, exit 0 | ✅ |
+
+#### §10.0.1 Drift notes (imprecisions in this cert doc)
+
+- **Bundle `.sha256` is not `sha256sum -c` compatible.** The file at
+  `software-development-decision-kernel.tar.gz.sha256` and
+  `sddk-v1.169.88-sddk-linux-x86_64-musl.tar.gz.sha256` contains only
+  the bare hex digest, not the `<hex>  <filename>` line format that
+  `sha256sum -c` requires. Users wanting to verify must do
+  `sha256sum -c <(echo "$(cat file.sha256)  filename")` or use
+  `awk '{print $1"  filename"}' file.sha256 | sha256sum -c`. The hex
+  itself is correct (`f58e9fd7…507e` matches); the format is just not
+  in canonical `sha256sum -c` shape. This is a release-pipeline
+  cosmetic issue, not a content defect.
+- **`CHECKSUMS` file covers only 2 of 9 assets.** Listed: the
+  unified tarball and the legacy bundle tarball. Missing: the
+  binary, both `.sha256` files, the SBOM, the `CHECKSUMS` itself,
+  and the `gh-release-receipt.json`. Step 9b PublicReleaseGate does
+  not require `CHECKSUMS` coverage; it verifies each asset's
+  individual sha256 against `gh release view`. So the contract holds.
+  But a third party running `sha256sum -c CHECKSUMS` will not get
+  full coverage. Recommendation for a follow-up cycle: emit a
+  `CHECKSUMS` that lists all 9 assets with proper `sha256sum -c`
+  format.
+
+Neither drift falsifies the certification. The release is verifiable
+through (a) each asset's individual `.sha256` companion file (where
+it exists) and (b) `gh release view $TAG --json assets` plus manual
+hash comparison. Step 9b PASSED in this release pipeline. The drifts
+are documented so a future cycle can tighten them.
 
 **`A5-C = CERTIFIED`** — §10 is fully populated, every field reads
 GREEN, post-release UAT confirms the published binary installs and
