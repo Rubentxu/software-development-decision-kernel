@@ -36,17 +36,23 @@ use std::fmt;
 pub struct DigestSha256(pub String);
 
 impl DigestSha256 {
-    /// Hash an arbitrary byte slice using a small, dependency-free
-    /// FNV-1a + fold algorithm. Not cryptographic — used only as
-    /// a content-stable digest for capability / analyzer-set
-    /// snapshots inside the spike.
+    /// Hash an arbitrary byte slice with real SHA-256 (64 hex chars).
+    ///
+    /// AIW-S1: replaces the CC-S0 FNV-64 provisional so durable
+    /// evidence refs carry a cryptographic identity. The spike's
+    /// 16-char digests are NOT upgradeable in place; consumers who
+    /// need the historical spike identity can keep referencing
+    /// recorded receipts (they are historical facts, not live refs).
     pub fn of(bytes: &[u8]) -> Self {
-        let mut h: u64 = 0xcbf29ce484222325;
-        for b in bytes {
-            h ^= *b as u64;
-            h = h.wrapping_mul(0x100000001b3);
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let out = hasher.finalize();
+        let mut s = String::with_capacity(64);
+        for b in out {
+            s.push_str(&format!("{b:02x}"));
         }
-        DigestSha256(format!("{:016x}", h))
+        DigestSha256(s)
     }
 }
 
@@ -310,6 +316,23 @@ pub enum CodeIntelligencePortError {
         /// Protocol major supported by SDDK.
         sddk_major: u32,
     },
+    /// Provider process could not be spawned, died, or its pipe
+    /// closed mid-request (AIW-S1).
+    Unavailable,
+    /// The provider did not answer within the request timeout
+    /// (AIW-S1).
+    Timeout,
+    /// The provider answered but the payload did not conform to
+    /// the expected contract — fails closed, never coerced
+    /// (AIW-S1).
+    InvalidPayload,
+    /// The provider reported an application error for the request
+    /// (AIW-S1).
+    ProviderError,
+    /// The requested analysis mode has no provider mapping
+    /// (AIW-S1; e.g. delta analysis needs structured file metadata
+    /// the MCP contract does not expose yet).
+    Unsupported,
 }
 
 impl fmt::Display for CodeIntelligencePortError {
@@ -323,6 +346,17 @@ impl fmt::Display for CodeIntelligencePortError {
                 f,
                 "provider protocol major {provider_major} does not match SDDK major {sddk_major}"
             ),
+            CodeIntelligencePortError::Unavailable => {
+                f.write_str("provider unavailable (spawn failure or pipe closed)")
+            }
+            CodeIntelligencePortError::Timeout => f.write_str("provider timed out"),
+            CodeIntelligencePortError::InvalidPayload => {
+                f.write_str("provider payload failed strict validation")
+            }
+            CodeIntelligencePortError::ProviderError => f.write_str("provider returned an error"),
+            CodeIntelligencePortError::Unsupported => {
+                f.write_str("analysis mode unsupported by this provider adapter")
+            }
         }
     }
 }

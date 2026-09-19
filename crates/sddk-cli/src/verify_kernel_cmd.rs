@@ -60,10 +60,25 @@ pub struct VerifyArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
+
+    /// Static-provider mode: path to the real `cognicode-mcp` binary.
+    /// When set together with `--domain static_provider`, the claim
+    /// is evaluated against a live provider observation (AIW-S1).
+    #[arg(long)]
+    pub provider_bin: Option<String>,
+
+    /// Static-provider mode: subject canonical tag to observe
+    /// (e.g. `unit:crates/sddk-engine/src/lib.rs`).
+    #[arg(long)]
+    pub subject: Option<String>,
 }
 
 /// Run the `verify` command.
 pub fn run_verify(args: VerifyArgs, _environment: &CliEnvironment) -> CommandOutput {
+    if args.domain == "static_provider" {
+        return run_verify_static_provider(args);
+    }
+
     // 1. Build the domain registry.
     let registry = default_registry();
 
@@ -125,6 +140,171 @@ pub fn run_verify(args: VerifyArgs, _environment: &CliEnvironment) -> CommandOut
                 stderr: String::new(),
             }
         }
+    }
+}
+
+/// Static-provider verification path (AIW-S1): spawn the real
+/// provider, observe the subject, evaluate the claim against the
+/// resulting non-empty observation set.
+fn run_verify_static_provider(args: VerifyArgs) -> CommandOutput {
+    use sddk_engine::architecture_graph::SoftwareUnitRef;
+    use sddk_engine::code_intelligence_port::CodeIntelligencePort;
+    use sddk_engine::code_intelligence_port_mcp::CogniCodeMcpAdapter;
+    use sddk_engine::evidence_ref::EvidenceRef;
+    use sddk_engine::observation::types::{
+        ObservationBasis, ObservationOrigin, ObservationSet as CanonicalSet, ObservationStance,
+        ObservationSubject, SoftwareEntityRef, SoftwareRelation,
+    };
+    use sddk_engine::semantic_kind::CoreRelationKind;
+    use sddk_engine::verify_kernel::adapter_static_provider::{
+        StaticProviderClaim, StaticProviderDomain,
+    };
+    use sddk_engine::verify_kernel::types::VerificationClaim;
+    use std::time::Duration;
+
+    let bin = match args.provider_bin.as_deref() {
+        Some(b) if !b.is_empty() => b.to_string(),
+        _ => {
+            return crate::failure(
+                "verify: --domain static_provider requires --provider-bin <cognicode-mcp path>"
+                    .to_string(),
+            );
+        }
+    };
+    let subject_tag = match args.subject.as_deref() {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            return crate::failure(
+                "verify: --domain static_provider requires --subject <tag>".to_string(),
+            );
+        }
+    };
+
+    // Spawn + negotiate (fails closed: Unavailable / ProtocolMajorMismatch).
+    let provider = match CogniCodeMcpAdapter::spawn(
+        &bin,
+        args.root.to_string_lossy().as_ref(),
+        "verify-cmd",
+        Duration::from_secs(180),
+    ) {
+        Ok(p) => p,
+        Err(e) => return crate::failure(format!("verify: provider spawn failed: {e}")),
+    };
+
+    // Observe: find_usages over the subject symbol.
+    let symbol = subject_tag
+        .rsplit(':')
+        .next()
+        .unwrap_or(&subject_tag)
+        .to_string();
+    let basis = sddk_engine::code_intelligence_port::AnalysisBasis {
+        provider_build: "cognicode-mcp/verify-cmd".to_string(),
+        protocol_major: 2025,
+        protocol_minor: 3,
+        capability_snapshot: provider.capabilities(),
+        analyzer_set_digest: provider.capabilities().analyzer_set_digest,
+        source_revision: "verify-cmd".to_string(),
+        request_scope: subject_tag.clone(),
+    };
+    let request = sddk_engine::code_intelligence_port::ScopeRequest {
+        added_units: vec![],
+        removed_units: vec![],
+        modified_units: vec![symbol.clone()],
+    };
+    let result = match provider.analyze_scope(&basis, &request) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(format!("verify: provider analyze failed: {e}")),
+    };
+
+    // Normalize the provider payload into canonical observations.
+    // One observation per usage reference found: Affirms that the
+    // subject-unit relation exists.
+    let mut set = CanonicalSet::new();
+    let mut usage_count = 0usize;
+    if let Some(obs) = result.observations.units.get(&symbol)
+        && let Ok(payload) = serde_json::from_str::<serde_json::Value>(&obs[0].text)
+        && let Some(usages) = payload.get("usages").and_then(|u| u.as_array())
+    {
+        let input_digest = result.digest.0.clone();
+        // Aggregate subject observation: the symbol unit itself,
+        // with usage count in the evidence locator. This is the
+        // subject the claim names (unit:symbol:<name>).
+        let unit_subject = SoftwareUnitRef::new(format!("symbol:{symbol}"));
+        let unit_basis = ObservationBasis::for_provider_result("verify-cmd", &input_digest);
+        let unit_evidence = EvidenceRef::new(
+            sddk_engine::evidence_ref::EvidenceKind::Adhoc,
+            format!(
+                "cognicode-mcp://find_usages/{symbol}#usages={}",
+                usages.len()
+            ),
+        );
+        set.insert(
+            sddk_engine::observation::types::SoftwareObservation::declare(
+                ObservationSubject::Unit(unit_subject),
+                ObservationStance::Affirms,
+                unit_evidence,
+                ObservationOrigin::StaticProvider,
+                unit_basis,
+                None,
+                "cognicode-mcp",
+            ),
+        );
+        for u in usages {
+            let file = u.get("file").and_then(|f| f.as_str()).unwrap_or("?");
+            let line = u.get("line").and_then(|l| l.as_u64()).unwrap_or(0);
+            let from = SoftwareEntityRef::Unit(SoftwareUnitRef::new(format!("rust:{file}:{line}")));
+            let to = SoftwareEntityRef::Unit(SoftwareUnitRef::new(format!("symbol:{symbol}")));
+            let relation = SoftwareRelation::new(from, CoreRelationKind::DependsOn, to);
+            let _ = &relation;
+            let obasis = ObservationBasis::for_provider_result("verify-cmd", &input_digest);
+            let evidence = EvidenceRef::new(
+                sddk_engine::evidence_ref::EvidenceKind::Adhoc,
+                format!("cognicode-mcp://find_usages/{symbol}#{file}:{line}"),
+            );
+            let observation = sddk_engine::observation::types::SoftwareObservation::declare(
+                ObservationSubject::SoftwareRelation(relation),
+                ObservationStance::Affirms,
+                evidence,
+                ObservationOrigin::StaticProvider,
+                obasis,
+                None,
+                "cognicode-mcp",
+            );
+            set.insert(observation);
+            usage_count += 1;
+        }
+    }
+    if usage_count == 0 {
+        return crate::failure(
+            "verify: provider produced no usable usage observations (empty or malformed payload)"
+                .to_string(),
+        );
+    }
+
+    // Evaluate the claim against the non-empty set.
+    let claim = VerificationClaim::StaticProvider(StaticProviderClaim {
+        subject_tag: subject_tag.clone(),
+        contract_id: args.claim.clone(),
+    });
+    let domain = StaticProviderDomain;
+    let verdict = sddk_engine::verify_kernel::engine::VerifyKernel::evaluate(&claim, &set, &domain);
+
+    let text = format!(
+        "verify(static_provider): claim={} subject={}\n  observations: {} (usages found: {})\n  observation_set: {}\n  verdict: {:?}\n",
+        args.claim,
+        subject_tag,
+        set.canonical_digest(),
+        usage_count,
+        set.observations().len(),
+        verdict,
+    );
+    CommandOutput {
+        status: match verdict {
+            sddk_engine::verify_kernel::types::VerificationResult::Verified => 0,
+            _ => 1,
+        },
+        stdout: text,
+        stderr: String::new(),
     }
 }
 

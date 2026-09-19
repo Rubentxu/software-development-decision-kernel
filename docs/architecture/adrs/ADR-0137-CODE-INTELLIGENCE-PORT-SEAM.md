@@ -142,3 +142,22 @@ No other file is modified.
   (A6 paragraph)
 - `docs/proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cognicode-protocol-spike/SCOPE-CONTRACT.md`
+
+## Addendum (AIW-S1, 2026-09-19): CogniCode MCP stdio adapter
+
+The first concrete `CodeIntelligencePort` implementation is
+`crates/sddk-engine/src/code_intelligence_port_mcp.rs`
+(`CogniCodeMcpAdapter`). Decisions recorded here so the context_fitness
+gate stays truthful:
+
+- **Transport:** stdio JSON-RPC (initialize → tools/call) against the
+  external `cognicode-mcp` binary. No daemon, no HTTP; AIS-004 holds.
+- **Provider isolation:** all CogniCode-specific knowledge (handshake
+  protocol 2025-03-26, JSON-in-`content[0].text` envelope, tool names)
+  lives inside the adapter, never in the trait or its consumers.
+- **Digests:** SHA-256 over canonical material
+  (`DigestSha256::of`), no provider-controlled strings enter digests
+  unhashed.
+- **Observation basis:** results derive `ObservationBasis` canonically
+  via `ObservationBasis::for_provider_result`, so the VerifyKernel can
+  check staleness without trusting the provider's own claims.

@@ -199,6 +199,23 @@ pub struct ObservationBasis {
 }
 
 impl ObservationBasis {
+    /// Construct a basis for provider observations (AIW-S1).
+    ///
+    /// The knowledge-basis hash is derived canonically from the
+    /// provider result digest, never invented by the caller: the
+    /// same digest yields the same basis identity.
+    pub fn for_provider_result(revision: impl Into<String>, provider_result_digest: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(b"sddk.observation.provider_basis.v1\n");
+        hasher.update(provider_result_digest.as_bytes());
+        let knowledge_basis = BasisHash::from_bytes32(hasher.finalize().into());
+        Self {
+            revision: revision.into(),
+            knowledge_basis,
+            input_digest: provider_result_digest.to_string(),
+        }
+    }
+
     /// Construct a basis.
     pub fn new(
         revision: impl Into<String>,

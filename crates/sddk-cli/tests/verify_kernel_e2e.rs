@@ -41,6 +41,8 @@ fn verify_kernel_unknown_domain_returns_error() {
         root: PathBuf::from("."),
         now_ms: None,
         format: OutputFormat::Text,
+        provider_bin: None,
+        subject: Some("unit:symbol:test".to_string()),
     };
 
     let output = run_verify(args);
@@ -99,6 +101,8 @@ fn verify_kernel_text_output_contains_result() {
         root: PathBuf::from("."),
         now_ms: None,
         format: OutputFormat::Text,
+        provider_bin: None,
+        subject: Some("unit:symbol:test".to_string()),
     };
 
     let output = run_verify(args);
@@ -116,6 +120,8 @@ fn verify_kernel_json_output_is_valid_json() {
         root: PathBuf::from("."),
         now_ms: None,
         format: OutputFormat::Json,
+        provider_bin: None,
+        subject: Some("unit:symbol:test".to_string()),
     };
 
     let output = run_verify(args);

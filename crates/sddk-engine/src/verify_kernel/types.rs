@@ -103,6 +103,9 @@ impl VerificationResult {
 pub enum VerificationClaim {
     /// Architecture conformance: a contract holds after a change.
     ArchitectureConformance(ArchitectureConformanceClaim),
+    /// Static-provider claim: a subject is observed by a provider
+    /// (AIW-S1; UAT A05).
+    StaticProvider(crate::verify_kernel::adapter_static_provider::StaticProviderClaim),
 }
 
 /// Architecture-conformance claim variant.

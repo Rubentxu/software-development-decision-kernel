@@ -116,6 +116,12 @@ impl BasisHash {
     }
 
     /// Internal constructor used only by canonical derivation functions.
+    /// Public canonical constructor from finalized hash bytes
+    /// (AIW-S1 provider observation bases). 32 bytes expected.
+    pub fn from_bytes32(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub(crate) fn from_digest(digest: Sha256) -> Self {
         let bytes = digest.finalize();
         let mut arr = [0u8; 32];

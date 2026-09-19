@@ -29,6 +29,7 @@
 // output, which is produced by the CLI adapter (not this module).
 
 pub mod adapter_architecture;
+pub mod adapter_static_provider;
 pub mod engine;
 pub mod evidence_source;
 pub mod registry;

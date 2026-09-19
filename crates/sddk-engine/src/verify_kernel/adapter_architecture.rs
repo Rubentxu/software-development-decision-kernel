@@ -78,11 +78,15 @@ impl VerificationDomain for ArchitectureVerificationDomain {
                 // For a single contract, we need at least one probe kind.
                 [ProbeKind::Ownership].into()
             }
+            // Not this domain's claim; empty requirement (fail-closed
+            // Unknown surfaces from the domain that owns it).
+            VerificationClaim::StaticProvider(_) => BTreeSet::new(),
         }
     }
 
     fn minimal_probe_plan(&self, claim: &VerificationClaim) -> ProbePlan {
         match claim {
+            VerificationClaim::StaticProvider(_) => ProbePlan { steps: vec![] },
             VerificationClaim::ArchitectureConformance(c) => {
                 let mut subjects = AffectedSubjects::default();
                 for unit in &c.basis.units {
@@ -106,6 +110,11 @@ impl VerificationDomain for ArchitectureVerificationDomain {
         _observations: &ObservationSet,
     ) -> VerificationResult {
         match claim {
+            VerificationClaim::StaticProvider(_) => VerificationResult::Unknown {
+                gap: EvidenceGap::Custom(
+                    "static_provider claims are evaluated by StaticProviderDomain".into(),
+                ),
+            },
             VerificationClaim::ArchitectureConformance(c) => {
                 // The trait-level `evaluate` is the **port**. It has access to
                 // the claim but not to the architecture context (overlay,
