@@ -106,6 +106,7 @@ pub enum VerificationClaim {
     /// Static-provider claim: a subject is observed by a provider
     /// (AIW-S1; UAT A05).
     StaticProvider(crate::verify_kernel::adapter_static_provider::StaticProviderClaim),
+    RuntimeProvider(crate::verify_kernel::adapter_runtime_provider::RuntimeProviderClaim),
 }
 
 /// Architecture-conformance claim variant.

@@ -370,6 +370,9 @@ fn claim_canonical_tag(claim: &VerificationClaim) -> String {
         VerificationClaim::StaticProvider(c) => {
             format!("static_provider|{}|{}", c.contract_id, c.subject_tag)
         }
+        VerificationClaim::RuntimeProvider(c) => {
+            format!("runtime_provider|{}|{}", c.contract_id, c.subject_tag)
+        }
     }
 }
 

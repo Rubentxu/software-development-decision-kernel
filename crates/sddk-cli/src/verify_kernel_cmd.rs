@@ -78,6 +78,9 @@ pub fn run_verify(args: VerifyArgs, _environment: &CliEnvironment) -> CommandOut
     if args.domain == "static_provider" {
         return run_verify_static_provider(args);
     }
+    if args.domain == "runtime_provider" {
+        return run_verify_runtime_provider(args);
+    }
 
     // 1. Build the domain registry.
     let registry = default_registry();
@@ -296,6 +299,93 @@ fn run_verify_static_provider(args: VerifyArgs) -> CommandOutput {
         set.canonical_digest(),
         usage_count,
         set.observations().len(),
+        verdict,
+    );
+    CommandOutput {
+        status: match verdict {
+            sddk_engine::verify_kernel::types::VerificationResult::Verified => 0,
+            _ => 1,
+        },
+        stdout: text,
+        stderr: String::new(),
+    }
+}
+
+fn run_verify_runtime_provider(args: VerifyArgs) -> CommandOutput {
+    use sddk_engine::runtime_evidence_port::RuntimeEvidencePort;
+    use sddk_engine::runtime_evidence_port_mcp::ChronosMcpAdapter;
+    use sddk_engine::verify_kernel::adapter_runtime_provider::{
+        RuntimeProviderClaim, RuntimeProviderDomain,
+    };
+    use sddk_engine::verify_kernel::types::VerificationClaim;
+    use std::time::Duration;
+
+    let bin = match args.provider_bin.as_deref() {
+        Some(b) if !b.is_empty() => b.to_string(),
+        _ => {
+            return crate::failure(
+                "verify: --domain runtime_provider requires --provider-bin <chronos-mcp path>"
+                    .to_string(),
+            );
+        }
+    };
+    // subject: the target program path; the claim tag becomes
+    // unit:runtime:<program>.
+    let program = match args.subject.as_deref() {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            return crate::failure(
+                "verify: --domain runtime_provider requires --subject <program path>".to_string(),
+            );
+        }
+    };
+    // claim: <contract-id>:<min-events> (default min-events = 1)
+    let (contract_id, min_events) = match args.claim.rsplit_once(':') {
+        Some((id, n)) if n.parse::<u64>().is_ok() => (id.to_string(), n.parse::<u64>().unwrap()),
+        _ => (args.claim.clone(), 1),
+    };
+
+    let provider = match ChronosMcpAdapter::spawn(&bin, None, Duration::from_secs(120)) {
+        Ok(p) => p,
+        Err(e) => return crate::failure(format!("verify: provider spawn failed: {e}")),
+    };
+    let req = sddk_engine::runtime_evidence_port::RuntimeCaptureRequest {
+        program: program.clone(),
+        args: Vec::new(),
+        cwd: Some(args.root.to_string_lossy().into_owned()),
+        timeout_ms: 60_000,
+    };
+    let capture = match provider.capture(&req) {
+        Ok(c) => c,
+        Err(e) => return crate::failure(format!("verify: runtime capture failed: {e}")),
+    };
+
+    let subject_tag = format!("unit:runtime:{program}");
+    let claim = VerificationClaim::RuntimeProvider(RuntimeProviderClaim {
+        subject_tag: subject_tag.clone(),
+        contract_id,
+        min_events,
+    });
+    // Evaluate against the CANONICAL observation set carrying the
+    // capture observation.
+    let canonical = capture.to_canonical_observation_set();
+    let domain = RuntimeProviderDomain;
+    let verdict =
+        sddk_engine::verify_kernel::engine::VerifyKernel::evaluate(&claim, &canonical, &domain);
+
+    let text = format!(
+        "verify(runtime_provider): claim={} subject={} min_events={}
+  capture: session={} events={} duration_ns={:?} digest={}
+  observation_set: {}
+  verdict: {:?}\n",
+        args.claim,
+        subject_tag,
+        min_events,
+        capture.session_id,
+        capture.total_events,
+        capture.duration_ns,
+        capture.digest,
+        canonical.observations().len(),
         verdict,
     );
     CommandOutput {

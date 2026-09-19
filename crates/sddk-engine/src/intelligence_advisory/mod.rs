@@ -508,6 +508,7 @@ fn claim_contract_id(claim: &VerificationClaim) -> Option<&str> {
     match claim {
         VerificationClaim::ArchitectureConformance(c) => Some(c.contract_id.as_str()),
         VerificationClaim::StaticProvider(c) => Some(c.contract_id.as_str()),
+        VerificationClaim::RuntimeProvider(c) => Some(c.contract_id.as_str()),
     }
 }
 

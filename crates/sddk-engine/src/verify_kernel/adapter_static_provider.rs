@@ -48,19 +48,23 @@ impl VerificationDomain for StaticProviderDomain {
 
     fn required_probe_kinds(&self, claim: &VerificationClaim) -> BTreeSet<ProbeKind> {
         match claim {
-            VerificationClaim::StaticProvider(_) => [ProbeKind::ProviderBoundary].into(),
+            VerificationClaim::StaticProvider(_) | VerificationClaim::RuntimeProvider(_) => {
+                [ProbeKind::ProviderBoundary].into()
+            }
             VerificationClaim::ArchitectureConformance(_) => BTreeSet::new(),
         }
     }
 
     fn minimal_probe_plan(&self, claim: &VerificationClaim) -> ProbePlan {
         match claim {
-            VerificationClaim::StaticProvider(_) => ProbePlan {
-                steps: vec![crate::verify_kernel::types::ProbePlanStep {
-                    kind: ProbeKind::ProviderBoundary,
-                    subjects: Default::default(),
-                }],
-            },
+            VerificationClaim::StaticProvider(_) | VerificationClaim::RuntimeProvider(_) => {
+                ProbePlan {
+                    steps: vec![crate::verify_kernel::types::ProbePlanStep {
+                        kind: ProbeKind::ProviderBoundary,
+                        subjects: Default::default(),
+                    }],
+                }
+            }
             VerificationClaim::ArchitectureConformance(_) => ProbePlan { steps: vec![] },
         }
     }
