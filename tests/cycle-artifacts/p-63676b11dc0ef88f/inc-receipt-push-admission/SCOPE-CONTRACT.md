@@ -50,3 +50,8 @@ solos sin bump.
 
 Pendientes de publicar en ese momento: `5af4faa` (receipt final S1),
 `9493d67` (INC), `5f604e5` (este parche).
+
+## Verificación post-release (v1.169.92)
+Parche activo en origin/main. Este archivo se actualiza en el primer
+push documental de ciclo sin bump posterior al release — si estás leyendo
+esto en origin/main, la prueba real PASÓ.
