@@ -37,6 +37,7 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 enum Reply {
     Message(serde_json::Value),
+    #[allow(dead_code)] // wired when timeout handling lands in CC-S1+
     Timeout,
     Eof,
 }
@@ -47,6 +48,7 @@ pub struct CogniCodeMcpAdapter {
     send: std::sync::Mutex<ChildStdin>,
     state: std::sync::Mutex<AdapterState>,
     snapshot: std::sync::Mutex<CapabilitySnapshot>,
+    #[allow(dead_code)] // used by basis() -> AnalysisBasis (AIW-S2 surfacing)
     source_revision: String,
 }
 
@@ -278,6 +280,10 @@ impl CogniCodeMcpAdapter {
         }
     }
 
+    /// Analysis basis for digest material. Currently consumed only by
+    /// `digest_result`; retained for future AnalysisBasis surfacing
+    /// (AIW-S2). Not dead code by intent.
+    #[allow(dead_code)]
     fn basis(&self, scope: &str) -> AnalysisBasis {
         AnalysisBasis {
             provider_build: format!("cognicode-mcp/{}", self.lock_state().server_version.clone()),

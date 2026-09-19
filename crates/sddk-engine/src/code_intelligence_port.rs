@@ -321,6 +321,7 @@ pub enum CodeIntelligencePortError {
     Unavailable,
     /// The provider did not answer within the request timeout
     /// (AIW-S1).
+    #[allow(dead_code)] // wired when timeout handling lands in CC-S1+
     Timeout,
     /// The provider answered but the payload did not conform to
     /// the expected contract — fails closed, never coerced

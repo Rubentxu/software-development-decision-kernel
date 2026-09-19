@@ -34,7 +34,7 @@ fn repo_root() -> String {
 
 fn basis_for(adapter: &CogniCodeMcpAdapter, scope: &str) -> AnalysisBasis {
     AnalysisBasis {
-        provider_build: format!("cognicode-mcp/test"),
+        provider_build: "cognicode-mcp/test".to_string(),
         protocol_major: 2025,
         protocol_minor: 3,
         capability_snapshot: adapter.capabilities(),

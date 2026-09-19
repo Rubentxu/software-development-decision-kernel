@@ -479,7 +479,9 @@ fn p7_claim_result_pairing_is_not_flattened() {
             .iter()
             .find_map(|l| match l {
                 AdvisoryWhyLeg::Verification { claim, result } => {
-                    let VerificationClaim::ArchitectureConformance(c) = claim;
+                    let VerificationClaim::ArchitectureConformance(c) = claim else {
+                        panic!("expected ArchitectureConformance claim, got {claim:?}");
+                    };
                     Some((c.contract_id.clone(), result.clone()))
                 }
                 _ => None,
