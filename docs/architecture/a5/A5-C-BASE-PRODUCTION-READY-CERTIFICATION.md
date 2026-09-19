@@ -114,7 +114,10 @@ Gates outside this cycle's authority are honestly marked
   (R2 closure).
 - **Executable proof** (kind **(a) workspace-resident**):
   `crates/sddk-storage/tests/state_survives_restart.rs` (3 tests) +
-  the CAS trunc-rejection test cited in A5-2-RECEIPT §3 — both
+  `a5_2_r2_truncated_blob_get_rejects_with_mismatch` and the
+  `cas_partial_state` 4/4 suite (truncated / substituted /
+  unreadable path / localised corruption) cited in `A5-2-RECEIPT.md
+  §2` (gate evidence) and §0 (RED captured pre-fix) — both
   green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies R1 + R2 closure evidence-bound in
@@ -227,8 +230,11 @@ Gates outside this cycle's authority are honestly marked
 
 - **Contract** (§127): a binary that only works inside the repo
   checkout or via `cargo run`.
-- **Receipt / SHA**: A5-1-RECEIPT.md (distrib round-trip smoke
-  14/14); A5-5 (§6 scenarios 5, 6).
+- **Receipt / SHA**: A5-1-RECEIPT.md G8 (9-asset contract, all
+  HTTP 200); A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md §6 M5 (real
+  podman run, 10/10 scenarios PASS); release.sh step 13
+  "re-install from URL (distrib smoke test)"
+  (`scripts/release.sh` line 642).
 - **Executable proof** (kind **(b) external procedure**): §6 of this
   audit at v1.169.87 and §10.0 at v1.169.88 — both ran install +
   `sddk agent-help` + `sddk dev doctor` in a fresh podman
