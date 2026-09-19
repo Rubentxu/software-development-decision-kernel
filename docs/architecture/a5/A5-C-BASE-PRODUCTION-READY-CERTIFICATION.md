@@ -1,7 +1,11 @@
 # A5-C — BASE_PRODUCTION_READY Certification
 
 > **Cycle:** `p-63676b11dc0ef88f/a5-c-base-production-ready-certification`
-> **Status:** **CERTIFIED — v1.169.88** (post-release, see §10 checkpoint).
+> **Status:** **CERTIFIED — v1.169.88** (`add896d`), **conditional on §11 acceptance**
+> of G11 as `NOT VERIFIED` with R14 carried as `OPEN_NON_BLOCKER`.
+> Without §11 the cert does not stand (per the contract §1 — every mandatory
+> gate must have evidence, and G11 has none). See §10 (release) + §10.0
+> (external verification) + §11 (explicit acceptance) for the full reading.
 > **Issued:** 2026-09-19 by A5-C closure pass.
 > **Distinct from:** `A5-C-RECEIPT.md` (paperwork audit at v1.169.83, NOT
 > a certification) and `A5-C-RR2-RECEIPT.md` (reconciliation of risks,
@@ -52,6 +56,16 @@ For every gate:
    that supplies the durable evidence.
 3. **Executable proof** — the command a third party can re-run today
    to reproduce the GREEN state, with the run observed in this audit.
+   **Two flavours, distinguished below:**
+   - **(a) Workspace-resident test** — a test that lives in the SDDK
+     workspace (`crates/.../tests/...`). Its GREEN status is
+     externally verifiable through the workspace test run captured in
+     §10 (228 runs, 4739 passed, 0 failed, 11 ignored at `add896d`
+     with `--test-threads=1`).
+   - **(b) External procedure** — a command a third party runs against
+     a public artifact (CDN download, clean-machine install,
+     `gh release view`, `git ls-remote`, etc.). Each gate that cites
+     one is independently re-verified in §10.0.
 4. **State** — `GREEN` / `RED` / `NOT VERIFIED` (no middle).
 5. **Scope** — what this certification does and does NOT certify, in
    one sentence.
@@ -66,9 +80,10 @@ Gates outside this cycle's authority are honestly marked
 - **Contract** (§ contract.md baseline): SDDK 1.169.19 at `0c2ca56`
   passes C0..C7 conformance at 100% — the 09/09 baseline.
 - **Receipt / SHA**: `docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`; commit `0c2ca56`.
-- **Executable proof**: read the conformance receipt above; the
-  PASS/100% verdict is the proof. Re-running the C0..C7 suite is
-  out of scope for an A5 audit (the baseline is frozen).
+- **Executable proof** (kind **(c) historical document**): the 09/09
+  conformance receipt is the durable evidence; the C0..C7 suite is
+  not re-run in an A5 audit by design. Reading the receipt is the
+  proof.
 - **State**: **GREEN** — baseline-cert closed, not re-opened by A5.
 - **Scope**: certifies the **historical baseline conformance** at
   `0c2ca56` / SDDK 1.169.19; does not certify the conformance of
@@ -81,14 +96,14 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A4-MILESTONE-RECEIPT.md` (`A4_CERTIFIED` at
   v1.169.68, `3bad2527`); `A5-RISK-REGISTER.md` R16 mechanism
   (cross-crate ratchets + ADR-0001 §3.2 promotion gates).
-- **Executable proof**: `cargo test --workspace` (per release.sh
-  step 1) plus the A4 milestone corpus run as part of the regression
-  gate. A5-1..A5-5R + A5-4a + A5-4b + A5-ITD + A5-SQLITE-CONCURRENCY-R
-  all produced GREEN workspaces before their respective releases.
+- **Executable proof** (kind **(a) workspace-resident**): the A4
+  milestone corpus + the A4 regression corpus are part of
+  `cargo test --workspace` and pass in the §10 external run
+  (228 runs /4739 passed /0 failed at `add896d`).
 - **State**: **GREEN** — A4 cert preserved; no A5 breach observed.
-- **Scope**: certifies no A5 release broke an A4 contract; does not
-  certify the full A4 corpus was re-run for v1.169.88 (it will be
-  during release.sh step 1, fail-closed).
+- **Scope**: certifies no A5 release broke an A4 contract as
+  exercised by the test corpus; does not certify the A4 reasoning
+  outside what the tests exercise.
 
 ### G2 — Durability / crash recovery
 
@@ -97,9 +112,10 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-2-RECEIPT.md` v1.169.74, commit `957d0b0`
   (R1 closure); CAS `get()` typed-error on truncation commit `7ab113a`
   (R2 closure).
-- **Executable proof**: `crates/sddk-engine/tests/state_survives_restart.rs`
-  (3 tests) + the CAS trunc-rejection test (file:line cited in
-  A5-2-RECEIPT §3).
+- **Executable proof** (kind **(a) workspace-resident**):
+  `crates/sddk-engine/tests/state_survives_restart.rs` (3 tests) +
+  the CAS trunc-rejection test cited in A5-2-RECEIPT §3 — both
+  green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies R1 + R2 closure evidence-bound in
   `v1.169.74..v1.169.87`.
@@ -111,13 +127,18 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: A5-2 durability work; A5-5 scenario 8
   (projection rebuild equivalence, 10/10 PASS at v1.169.86 against
   v1.169.87).
-- **Executable proof**: clean-machine UAT scenario 8
-  (`tests/clean_machine_uat.sh::run_projection_rebuild`) — delete
-  projection, rebuild, doctor stable.
-- **State**: **GREEN** (carry-over from A5-5, re-pinned by this
-  audit's post-release UAT §10).
+- **Executable proof** (kind **(a) + (b)**): the rebuild
+  equivalence scenario in `tests/clean_machine_uat.sh::run_projection_rebuild`
+  was exercised during A5-5 at v1.169.86 (10/10 PASS). The §10
+  external run did not re-execute this specific scenario, but the
+  workspace tests that underpin the projection digest
+  (`ProjectionDigest` + `active_graph_digest::DefaultDriftEngine`)
+  are part of the §10 run.
+- **State**: **GREEN** (carry-over from A5-5; the workspace tests
+  cited by the scenario pass in the §10 run).
 - **Scope**: certifies rebuild equivalence on the public install
-  artifact at v1.169.87.
+  artifact at v1.169.87; the exact scenario 10 was last run at
+  v1.169.86, not at v1.169.88.
 
 ### G4 — Concurrency correctness
 
@@ -126,9 +147,10 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-3-RECEIPT.md` v1.169.75 (R3+R6); R12
   closure (non-blocking Parallel dead-path removal) at commit
   `af346b9`; `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` v1.169.86.
-- **Executable proof**: `concurrency_record_attempt.rs` 4 RED→GREEN
-  + 6 RED→GREEN `authority_fail_closed.rs` + 5 multi-thread tests in
-  `tests/concurrency_planning_substrate.rs` (v1.169.86).
+- **Executable proof** (kind **(a) workspace-resident**):
+  `concurrency_record_attempt.rs` (4 RED→GREEN), `authority_fail_closed.rs`
+  (6/6 green), and `tests/concurrency_planning_substrate.rs` (5
+  multi-thread tests) — all green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies no silent overwrite paths remain.
 
@@ -138,8 +160,9 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-3-RECEIPT.md` v1.169.75 (R4-A, R5, R6);
   `INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY.md` CLOSED 2026-09-18
   (R4-B via A5-3R0..A5-3R4 ticket-protected apply chain, ADR-0130..0134).
-- **Executable proof**: `authority_fail_closed.rs` 6/6 green
-  (v1.169.75).
+- **Executable proof** (kind **(a) workspace-resident**):
+  `authority_fail_closed.rs` 6/6 green — passes in the §10
+  external run.
 - **State**: **GREEN**.
 - **Scope**: certifies decision→effect atomicity on real
   AuthorityEngine.
@@ -151,8 +174,14 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-2-RECEIPT.md` v1.169.74 (R20); `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md` v1.169.85 (MIGRATE_A5
   follow-up); `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` v1.169.86
   (R-SQLITE-1 follow-up).
-- **Executable proof**: upgrade scenario + 8 IMMEDIATE sites pinned
-  via `with_busy_retry` helper.
+- **Executable proof** (kind **(a) workspace-resident**):
+  `tests/concurrency_planning_substrate.rs` (5 multi-thread tests
+  on the planning substrate tables — work_items_v1,
+  work_item_dependencies_v1, evidence_attachments_v1,
+  decision_records_v1), the CAS reopen test in
+  `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md §4.3`, and the
+  gate-receipt flake pin (`with_busy_retry` 50/50). All green in the
+  §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies no observed upgrade-breaking regression
   between v1.169.74..v1.169.87; does not certify the 8 non-helper
@@ -164,12 +193,12 @@ Gates outside this cycle's authority are honestly marked
   provenance SHA.
 - **Receipt / SHA**: `A5-1-RECEIPT.md` v1.169.71; release.sh step
   9b PublicReleaseGate.
-- **Executable proof**: this cycle runs `bash scripts/release.sh`
-  end-to-end (step 0..9b), then re-resolves the published tag with
-  `git ls-remote origin $TAG` and `gh release view` — both must
-  agree with the local HEAD.
-- **State**: **GREEN** (will be re-pinned at release time; the
-  preflight step 0 of release.sh fail-closes on any drift).
+- **Executable proof** (kind **(b) external procedure**): §10.0
+  re-verifies — `git ls-remote origin v1.169.88` →
+  `add896d94274a7515254b8c195e2e78c3669108f`, `gh release view
+  v1.169.88 --json assets` lists the 9 canonical assets, each
+  downloaded binary's sha256 matches `sddk.sha256` (verified).
+- **State**: **GREEN**.
 - **Scope**: certifies release-pipeline reproducibility for the
   release created by this audit (v1.169.88, see §10).
 
@@ -180,13 +209,15 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-1-RECEIPT.md` v1.169.71 (mechanism +
   9-asset contract); `A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md` v1.169.87,
   commit `5ad25d1` (clean-machine UAT-1 10/10 PASS at v1.169.86).
-- **Executable proof**: this cycle runs a **clean-machine install
-  WITHOUT workarounds** (see §6 of this audit). The receipt is
-  observed and pinned.
-- **State**: **GREEN** (carries A5-5 evidence; the post-release
-  UAT in §10 re-validates against the v1.169.88 artifact).
+- **Executable proof** (kind **(b) external procedure**): §10.0
+  re-verifies — CDN download of all 9 assets + sha256 verified on
+  each, plus the clean-machine install in §6 with no workarounds
+  (binary sha256 of installed = `7bb5a4d5…1e62d`, bit-exact match).
+- **State**: **GREEN**.
 - **Scope**: certifies the 9-asset contract + clean-machine
-  installation of the released artifact.
+  installation of the released artifact. See §10.0.1 for two
+  documented imprecisions in the release pipeline that don't
+  falsify the gate.
 
 ### G9 — Installed-binary behaviour
 
@@ -194,10 +225,12 @@ Gates outside this cycle's authority are honestly marked
   checkout or via `cargo run`.
 - **Receipt / SHA**: A5-1-RECEIPT.md (distrib round-trip smoke
   14/14); A5-5 (§6 scenarios 5, 6).
-- **Executable proof**: post-release install into a fresh container;
-  invoke `sddk agent-help` and `sddk dev doctor`; both must exit 0
-  with no checkout reference. Done in §6 of this audit at v1.169.87
-  and re-pinned in §10.
+- **Executable proof** (kind **(b) external procedure**): §6 of this
+  audit at v1.169.87 and §10.0 at v1.169.88 — both ran install +
+  `sddk agent-help` + `sddk dev doctor` in a fresh podman
+  container, both exited 0 with no checkout reference. The
+  post-release verification (v1.169.88) re-confirms via CDN download
+  + install + smoke.
 - **State**: **GREEN**.
 - **Scope**: certifies the published binary works without the
   repo checkout.
@@ -208,9 +241,12 @@ Gates outside this cycle's authority are honestly marked
   what failed / why / can it be reproduced / rebuilt".
 - **Receipt / SHA**: `A5-4b-RECEIPT.md` v1.169.83 (about-line +
   `sddk agent-help` pointer).
-- **Executable proof**: `sddk dev doctor --prefix <P> --format json`
-  on the installed artifact. Observed in §6 (all_present=true;
-  binary.bundle_coherence=present).
+- **Executable proof** (kind **(b) external procedure + (a)
+  workspace-resident**): `sddk dev doctor --prefix "$HOME/.local"
+  --format json` on the installed v1.169.88 → `all_present: true,
+  binary.bundle_coherence: present`. Plus the lint disposition
+  pinning tests in `crates/sddk-cli/tests/a5_4b_lint_disposition_pin.rs`
+  pass in the §10 external run.
 - **State**: **GREEN_PARTIAL** — diagnostic surface exists and the
   contract commands are answered, but R17 deeper sweep is
   `OPEN_NON_BLOCKER`. This is **not** an undisposed blocker (P2),
@@ -243,8 +279,12 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md v1.169.87
   (`5ad25d1`) + this cycle's §6 install (v1.169.87, exit 0,
   no workarounds, all_present=true).
-- **Executable proof**: §6 of this audit, run on podman
-  `catthehacker/ubuntu:rust-latest`, public artifact only.
+- **Executable proof** (kind **(b) external procedure**): §6 of
+  this audit at v1.169.87, and §10.0 at v1.169.88 — both on
+  podman `catthehacker/ubuntu:rust-latest`, public artifact only,
+  both exit 0 with `all_present: true` and `binary.bundle_coherence:
+  present`. The §10 run additionally verifies that the installed
+  binary's sha256 matches the published `sddk.sha256`.
 - **State**: **GREEN**.
 - **Scope**: certifies the public install path works end-to-end
   on a clean container with the public binary + install.sh + the
@@ -257,11 +297,16 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-5R-RECEIPT.md` v1.169.81 (flake closed);
   `A5-ITD-RECEIPT.md` v1.169.84 (per-ignored-test disposition);
   `a5-4b_lint_disposition_pin.rs` 3 tests green (v1.169.83).
-- **Executable proof**: A5-5 clean-machine UAT 10/10 PASS;
-  per-ignored-test inventory in `A5-DEBT-DISPOSITION.md` §3.4.
+- **Executable proof** (kind **(a) workspace-resident**): §10.0
+  re-verifies — full workspace test run at `add896d` with
+  `--test-threads=1`: **228 runs, 4739 passed, 0 failed, 11
+  ignored**, exit 0. The serialised flag deterministically
+  mitigates the `a6_4_shared_ticket_service` flake (which is
+  otherwise OPEN_NON_BLOCKER under default thread count).
 - **State**: **GREEN**.
-- **Scope**: certifies no unreproduced flake + every ignored test
-  individually disposed.
+- **Scope**: certifies no unreproduced flake at `add896d` under
+  `--test-threads=1`; the per-ignored-test inventory lives in
+  `A5-DEBT-DISPOSITION.md` §3.4.
 
 ### G14 — Deprecation closure
 
@@ -269,8 +314,9 @@ Gates outside this cycle's authority are honestly marked
 - **Receipt / SHA**: `A5-4a-RECEIPT.md` v1.169.82, ADR-0135
   (paradigm_lens facade + LensEvaluation deleted); `A5-4b-RECEIPT.md`
   v1.169.83 (3 advisory lints pinned with reason); `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md` v1.169.85.
-- **Executable proof**: textual probe grep + `a5_4b_lint_disposition_pin.rs`
-  (registry-pinned allow count == `ALLOW_LINTS.len()`).
+- **Executable proof** (kind **(a) workspace-resident**):
+  `a5_4b_lint_disposition_pin.rs` (3 tests, registry-pinned allow
+  count == `ALLOW_LINTS.len()`) — green in the §10 external run.
 - **State**: **GREEN**.
 - **Scope**: certifies no zombie authority.
 
@@ -280,21 +326,30 @@ Gates outside this cycle's authority are honestly marked
   certified previous version.
 - **Receipt / SHA**: A5-1 mechanism + A5-5 scenario 10 (rollback
   v1.169.86 → v1.169.85, doctor all_present=true).
-- **Executable proof**: clean-machine UAT scenario 10; rollback
-  restores doctor coherence.
-- **State**: **GREEN**.
+- **Executable proof** (kind **(c) historical + (b) partial**): the
+  A5-5 scenario 10 ran against v1.169.86 → v1.169.85 and passed;
+  the §10 run did not re-execute the rollback scenario specifically
+  against v1.169.88 → v1.169.87, but the install mechanism
+  exercised is the same. **Carry-over from A5-5; not re-pinned at
+  v1.169.88.**
+- **State**: **GREEN** (with the caveat above).
 - **Scope**: certifies rollback to the prior certified release on
-  the clean-machine path (which uses the same install.sh).
+  the clean-machine path (which uses the same install.sh). Not
+  re-validated at the v1.169.88 release — a future dedicated cycle
+  should add a v1.169.88 → v1.169.87 rollback scenario to
+  `tests/clean_machine_uat.sh`.
 
 ### G16 — Exact-revision certification
 
 - **Contract** (§187): certifying a floating `origin/main`.
 - **Receipt / SHA**: the identity set captured at release time,
   recorded in §10 of this document.
-- **Executable proof**: this cycle runs the canonical release.sh
-  pipeline, captures the identity set, and re-pins it.
-- **State**: **GREEN** at the moment §10 is filled in by the
-  post-release UAT.
+- **Executable proof** (kind **(b) external procedure**): §10.0
+  re-verifies — `git ls-remote origin v1.169.88` →
+  `add896d94274a7515254b8c195e2e78c3669108f`, binary sha256
+  `7bb5a4d5…1e62d` matches `sddk.sha256`, bundle sha256
+  `f58e9fd7…507e` matches `software-development-decision-kernel.tar.gz.sha256`.
+- **State**: **GREEN**.
 - **Scope**: certifies the exact SHA + tag + binary SHA + bundle
   digest of the release produced by this cycle.
 
@@ -571,7 +626,28 @@ listed so a future reader does not infer coverage:
 - CAS root GC sweep for orphans (P3).
 - R17 deeper operator diagnostics sweep.
 
-## §13 See also
+## §13 Known imprecisions and follow-up debts
+
+Items below are NOT blockers for `BASE_PRODUCTION_READY` but a future
+cert cycle (or the user reviewing this cert) should know they exist
+and where they live. Each has a concrete recommended action.
+
+| # | Imprecision / debt | Where | Recommended action |
+|---|---|---|---|
+| 1 | `install.sh` defect #3 (`--editor none` skips bundle extraction) is opt-in design, not a defect | `A5-5-RECEIPT.md §6.1` | If we want `--editor none` to also install the bundle, document as enhancement and patch. Otherwise leave as documented contract. |
+| 2 | `install.sh` defects #6..#11 (6 POST_A5_DEBT items) are test-harness debt, not product | `A5-5-RECEIPT.md §6.1`, cert §5 | Future dedicated cycle: simplify `tests/clean_machine_uat.sh` to drop the workarounds and remove the harness bugs. |
+| 3 | `a6_4_shared_ticket_service::cross_surface_facades_share_the_service_instance` is OPEN_NON_BLOCKER flake under default thread count; serialised thread count mitigates deterministically | `A5-DEBT-DISPOSITION.md §3.8`; `crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:108` | Future dedicated cycle: close the flake so future releases can drop `--test-threads=1`. |
+| 4 | Bundle `.sha256` files are not `sha256sum -c` compatible (bare hex without filename) | `release.yml` | Future cycle: emit `.sha256` files in `<hex>  <filename>` format. |
+| 5 | `CHECKSUMS` file covers only 2 of 9 assets (the tarballs); binary, individual sha256 files, SBOM and release receipt are not listed | `release.yml` (CHECKSUMS emission) | Future cycle: emit a `CHECKSUMS` that lists all 9 assets with `sha256sum -c` format. |
+| 6 | G15 (Rollback) is GREEN on carry-over from A5-5; the v1.169.88 → v1.169.87 rollback scenario was not re-executed in this cycle | `tests/clean_machine_uat.sh::run_rollback` | Future dedicated cycle: add a v1.169.88 → v1.169.87 scenario to `tests/clean_machine_uat.sh` and re-pin. |
+| 7 | R14 (secrets) is OPEN_NON_BLOCKER with no dedicated cycle | `A5-RISK-REGISTER.md §2` | Future dedicated security cycle: secrets matrix over production surfaces. Acceptance in §11 remains valid until then. |
+| 8 | 8 IMMEDIATE SQLite sites not yet routed through `with_busy_retry` | `crates/sddk-storage/src/lib.rs:504, 607, 1039, 1140, 1233, 1335, 1391, 1538` | Out of R-SQLITE-1 scope by design; opportunistic adoption only. |
+| 9 | INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH (P2) and INC-DEBT-023 (P3) paperwork | `docs/debt/` | Paperwork; not blockers. |
+
+None of these falsify the certification. They are the explicit,
+honest boundary of what this cert covers and what it doesn't.
+
+## §14 See also
 
 - `A5-PRODUCTION-READINESS-CONTRACT.md` — the contract itself.
 - `A5-CURRENT-ROADMAP.md` — live roadmap.
