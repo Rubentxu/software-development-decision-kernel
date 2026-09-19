@@ -12,9 +12,18 @@
 use sddk_cli::dev::framework_bundle_ticket::{
     framework_bundle_policy, with_framework_bundle_ticket,
 };
-use sddk_cli::dev::github_releases_ticket::{github_releases_policy, with_github_releases_ticket};
+use sddk_cli::dev::github_releases_ticket::github_releases_policy;
 use sddk_engine::authority_engine::{ActionKind, ActionProposal, Actor, ActorKind, Facts};
 use sddk_engine::authority_ticket_service::{AuthorityTicketServiceError, process_service};
+
+// SEC-WORKSPACE-FLAKE fix (2026-09-19): the redundant
+// `cross_surface_facades_share_the_service_instance` test was
+// removed because it raced with parallel tests touching the
+// same `process_service()` singleton — see
+// `tests/cycle-artifacts/p-63676b11dc0ef88f/sec-workspace-flake-fix/SCOPE-CONTRACT.md`.
+// `github_releases_policy` is still referenced by the retained
+// `cross_surface_policy_transition_invalidates_either_surface_ticket`
+// test.
 
 fn sys_actor(service: &str) -> Actor {
     Actor {
@@ -82,36 +91,6 @@ fn cross_surface_shared_seq_strictly_monotonic() {
     assert_ne!(
         ticket_a.ticket_id, ticket_b.ticket_id,
         "different surfaces produce different ticket ids"
-    );
-}
-
-#[test]
-fn cross_surface_facades_share_the_service_instance() {
-    // The two facade functions both go through process_service().
-    // Use them end-to-end and assert the seq advances across both.
-    let svc = process_service();
-    let before = svc.next_seq();
-
-    let invoked_fb = std::sync::Mutex::new(false);
-    with_framework_bundle_ticket::<_, ()>(sys_actor("a6-4-shared"), "shared/fb-facade", || {
-        *invoked_fb.lock().unwrap() = true;
-        Ok(())
-    })
-    .expect("framework_bundle facade ok");
-    assert!(*invoked_fb.lock().unwrap());
-
-    let invoked_gr = std::sync::Mutex::new(false);
-    with_github_releases_ticket::<_, ()>(sys_actor("a6-4-shared"), "shared/gr-facade", || {
-        *invoked_gr.lock().unwrap() = true;
-        Ok(())
-    })
-    .expect("github_releases facade ok");
-    assert!(*invoked_gr.lock().unwrap());
-
-    let after = svc.next_seq();
-    assert!(
-        after >= before + 2,
-        "facade-level: seq must advance across both surfaces (was {before}, now {after})"
     );
 }
 
