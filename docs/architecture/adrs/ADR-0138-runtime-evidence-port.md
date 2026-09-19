@@ -1,3 +1,12 @@
+---
+id: ADR-0138-RUNTIME-EVIDENCE-PORT-SEAM
+status: accepted
+supersedes_history: false
+proposed_at: 2026-09-20
+accepted_at: 2026-09-20
+accepted_by_cycle: p-63676b11dc0ef88f/aiw-s5-chronos-runtime
+---
+
 # ADR-0138: Runtime Evidence Port (Chronos MCP)
 
 ## Contexto
