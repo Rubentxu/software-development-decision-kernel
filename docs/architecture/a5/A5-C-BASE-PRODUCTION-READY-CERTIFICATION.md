@@ -78,7 +78,9 @@ Gates outside this cycle's authority are honestly marked
 ### G0 — Baseline semantic conformance
 
 - **Contract** (§ contract.md baseline): SDDK 1.169.19 at `0c2ca56`
-  passes C0..C7 conformance at 100% — the 09/09 baseline.
+  passes C0..C7 conformance at 100% — the **2026-09-09** baseline
+  (the directory is named `08-BASELINE-CONFORMANCE-09-09` for
+  that date, not "9 of 9" acceptance).
 - **Receipt / SHA**: `docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`; commit `0c2ca56`.
 - **Executable proof** (kind **(c) historical document**): the 09/09
   conformance receipt is the durable evidence; the C0..C7 suite is
@@ -164,7 +166,12 @@ Gates outside this cycle's authority are honestly marked
 - **Contract** (§92): denied ⇒ zero side effect; no TOCTOU window.
 - **Receipt / SHA**: `A5-3-RECEIPT.md` v1.169.75 (R4-A, R5, R6);
   `INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY.md` CLOSED 2026-09-18
-  (R4-B via A5-3R0..A5-3R4 ticket-protected apply chain, ADR-0130..0134).
+  (R4-B via the **a6-0..a6-4** ticket-protected apply chain —
+  `44f82f1 a6-0 R4-B fenced admission tickets + FENCE matrix`,
+  `b6df82f a6-1 framework_bundle migration`, `1551ea4 a6-2
+  github_releases apply chain under AdmissionTicket`, `3362713
+  a6-3 AuthorityTicketService`, `dd67755 a6-4 migrate high-band
+  surfaces`; ADR-0130..0134).
 - **Executable proof** (kind **(a) workspace-resident**):
   `authority_fail_closed.rs` 6/6 green — passes in the §10
   external run.
@@ -615,9 +622,13 @@ This audit accepts G11 as `NOT VERIFIED` with R14 carried as
 OPEN_NON_BLOCKER, on the following evidence:
 
 - R14 has been OPEN_NON_BLOCKER since A5-C-RR2 (2026-09-18).
-- No leak path has surfaced in `v1.169.74..v1.169.87` (~14 days
-  of releases, 7 tagged releases, public binaries downloaded and
-  exercised).
+- No leak path has surfaced in `v1.169.74..v1.169.87` (**2026-09-17
+  → 2026-09-19, 2 days**, **10 tagged releases**: v1.169.74,
+  v1.169.75, v1.169.76, v1.169.80, v1.169.81, v1.169.82, v1.169.83,
+  v1.169.85, v1.169.86, v1.169.87 — verified via `git log -1
+  --format='%ad' --date=short $TAG` on 2026-09-19, public binaries
+  downloaded and exercised). Earlier-drafted "~14 days, 7 tagged
+  releases" was imprecise; the actual range is dense.
 - The 09/09 baseline conformance at `0c2ca56` did not surface a
   secrets leak path during C0..C7 acceptance.
 - A dedicated security cycle is a separate, scoped piece of work
