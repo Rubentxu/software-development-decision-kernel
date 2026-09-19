@@ -1,8 +1,11 @@
 # Handoff — SEC-1 closed, awaiting J2 proposal review
 
 Date: 2026-09-19
-Branch: `main` (HEAD local `f6e1906`, not pushed — release would
-require a `[workspace.package] version` bump, not in scope here).
+Branch: `main` (HEAD local `b442635`, not pushed — see §2.5
+INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION: the pre-push hook
+requires either a `[workspace.package] version` bump or a
+docs-only range; SEC-1 has code changes that need a release
+to ship).
 
 ## A5-C status (unchanged)
 
