@@ -210,6 +210,13 @@ pub(crate) fn stable_request_key(
     format!("{:x}", hasher.finalize())
 }
 
+/// Keys under which string values are additionally scanned for embedded
+/// secret-bearing substrings (e.g. `GITHUB_TOKEN=abc...` inside a stdout
+/// line). The key-name redaction (`SECRET_KEY_PATTERN`) does NOT cover
+/// these surfaces because they are *containers* of free-form output,
+/// not fields that *are* the secret.
+const STRING_LEVEL_KEY_PATTERN: [&str; 2] = ["stdout", "stderr"];
+
 /// Recursively masks values under secret-like keys.
 pub fn redact(value: Value) -> Value {
     match value {
@@ -224,11 +231,124 @@ pub fn redact(value: Value) -> Value {
                     object.insert(key, redact(inner));
                 }
             }
+            // Second pass: for string-bearing fields that act as free-form
+            // output containers (stdout/stderr), apply a string-level scan
+            // for embedded secret-bearing substrings.
+            for key in object.keys().cloned().collect::<Vec<_>>() {
+                let normalized = key.to_ascii_lowercase();
+                if STRING_LEVEL_KEY_PATTERN.contains(&normalized.as_str())
+                    && let Some(inner) = object.get(&key).cloned()
+                    && let Value::String(s) = inner
+                {
+                    let masked = redact_text(&s);
+                    if masked != s {
+                        object.insert(key, Value::String(masked));
+                    }
+                }
+            }
             Value::Object(object)
         }
         Value::Array(values) => Value::Array(values.into_iter().map(redact).collect()),
         other => other,
     }
+}
+
+/// Scans a free-form text surface (stdout, stderr) for substrings of the
+/// shape `<secret_key>=<value>` / `<secret_key>:<value>` / `<secret_key>: <value>`
+/// where `secret_key` is a member of [`SECRET_KEY_PATTERN`]. Any match has
+/// its value masked while preserving a short diagnostic prefix and the
+/// original value length, so engineers can still see *that* a credential
+/// shape was present without seeing the credential itself.
+///
+/// Pre-existing `<redacted>` tokens (case-insensitive) are left untouched.
+/// Lines without a recognised key pass through verbatim.
+fn redact_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut cursor = 0usize;
+    let lower = input.to_ascii_lowercase();
+    while let Some((rel_start, rel_matched_len)) =
+        find_next_secret_pair(&lower.as_bytes()[cursor..])
+    {
+        let matched_start = cursor + rel_start;
+        // Push free-form prefix verbatim.
+        out.push_str(&input[cursor..matched_start]);
+        // Push key + separator + post-separator spaces verbatim.
+        let key_sep_end = matched_start + rel_matched_len;
+        out.push_str(&input[matched_start..key_sep_end]);
+        // Walk forward to consume the value.
+        let value_end = scan_value_end(bytes, key_sep_end, input.len());
+        let value_len = value_end - key_sep_end;
+        if value_len > 0 {
+            out.push_str(&format!("<redacted:{}>", value_len));
+        }
+        cursor = value_end;
+    }
+    out.push_str(&input[cursor..]);
+    out
+}
+
+/// Returns `(start_byte, total_matched_len_of_key_plus_separator)` for the
+/// first occurrence of any secret key followed by `=` or `:` (optionally
+/// surrounded by whitespace). Only the key + separator are matched here;
+/// the value extent is computed by [`scan_value_end`].
+fn find_next_secret_pair(lower: &[u8]) -> Option<(usize, usize)> {
+    for (start, window) in lower.windows(1).enumerate() {
+        let _ = window;
+        for pattern in SECRET_KEY_PATTERN.iter() {
+            let pat = pattern.as_bytes();
+            if start + pat.len() > lower.len() {
+                continue;
+            }
+            if &lower[start..start + pat.len()] != pat {
+                continue;
+            }
+            // Word boundary: previous char is not lowercase ASCII alnum.
+            // (Uppercase, `_`, ` `, `=`, `:`, `.`, etc. all count as valid
+            // boundaries so that compound names like `GITHUB_TOKEN` or
+            // `my_token` correctly match the `token` segment.)
+            if start > 0 {
+                let prev = lower[start - 1];
+                if prev.is_ascii_lowercase() || prev.is_ascii_digit() {
+                    continue;
+                }
+            }
+            // Next char after the pattern is `=` or `:` (with optional spaces).
+            let after = start + pat.len();
+            let mut idx = after;
+            while idx < lower.len() && lower[idx] == b' ' {
+                idx += 1;
+            }
+            if idx >= lower.len() {
+                continue;
+            }
+            let sep = lower[idx];
+            if sep != b'=' && sep != b':' {
+                continue;
+            }
+            // Skip whitespace after separator.
+            let mut val_start = idx + 1;
+            while val_start < lower.len() && lower[val_start] == b' ' {
+                val_start += 1;
+            }
+            // Match length = bytes from `start` through `val_start` (exclusive of value).
+            return Some((start, val_start - start));
+        }
+    }
+    None
+}
+
+/// Walks forward from `start` until whitespace, end-of-line, or end-of-input.
+fn scan_value_end(bytes: &[u8], start: usize, max: usize) -> usize {
+    let mut idx = start;
+    while idx < max {
+        let b = bytes[idx];
+        if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+            break;
+        }
+        idx += 1;
+    }
+    idx
 }
 
 #[cfg(test)]
