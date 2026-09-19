@@ -37,3 +37,16 @@ mantiene ambas rutas de un rename).
 - Patrón de secreto exhaustivo: bloqueo heurístico de alta confianza
   (prefijos conocidos + asignación de claves), no un escáner completo.
 - Modificar el flujo de release o el admission semántico de versión.
+
+## Estado de publicación (2026-09-19)
+
+RED→GREEN local: 31/31 en `tests/test_push_prevention_hook.sh`,
+shellcheck OK. El commit `5f604e5` no puede auto-publicarse: el rango
+incluye `githooks/pre-push` y `tests/test_push_prevention_hook.sh`
+(fuera de toda allowlist por diseño). Conforme a la decisión del
+operador: el parche viaja con el próximo release funcional legítimo.
+A partir de ese release, los receipts documentales se publican por sí
+solos sin bump.
+
+Pendientes de publicar en ese momento: `5af4faa` (receipt final S1),
+`9493d67` (INC), `5f604e5` (este parche).
