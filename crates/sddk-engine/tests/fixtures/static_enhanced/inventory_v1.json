@@ -558,6 +558,7 @@
     "crates/sddk-engine/tests/a6_cc_s4_release_pipeline_contract.rs",
     "crates/sddk-engine/tests/a6_cognicode_protocol_spike.rs",
     "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs",
+    "crates/sddk-engine/tests/a7_s1_runtime_uat_fake.rs",
     "crates/sddk-engine/tests/ac2_ac3_substrate_isolation.rs",
     "crates/sddk-engine/tests/ac5_not_verify_full.rs",
     "crates/sddk-engine/tests/ac6_ac4_witness_bridge.rs",
@@ -730,6 +731,6 @@
     "crates/**/tests/**/*.rs",
     "tests/**/*.rs"
   ],
-  "revision": "87a095f0ce7c3c6c9c376e2db89346d534fc943a",
+  "revision": "5f6a07fe25bed7804ac537c534f640a2266d08bb",
   "rule_version": "1.0.0"
 }
