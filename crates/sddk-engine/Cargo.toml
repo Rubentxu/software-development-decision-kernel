@@ -9,6 +9,11 @@ rust-version.workspace = true
 [features]
 default = []
 std = []
+# CC-S2: gates `code_intelligence_port_fake` so production builds
+# never expose the in-process fake. Downstream consumers who want
+# the fake in their own integration tests enable this feature.
+# Enabled implicitly for in-crate `cargo test` runs via #[cfg(test)].
+test-support = []
 
 [dependencies]
 serde = { workspace = true }
@@ -35,3 +40,9 @@ tempfile = { workspace = true }
 sddk-storage = { path = "../sddk-storage" }
 # WHY: port_contracts.rs uses InMemoryLedger for byte-equivalence cross-checks
 sddk-testkit = { path = "../sddk-testkit" }
+# CC-S2: integration tests in `tests/` are compiled as a separate target
+# where `cfg(test)` is NOT set in the library crate. Re-importing the
+# crate itself with `features = ["test-support"]` makes the
+# `code_intelligence_port_fake` module available to those tests.
+# This is the canonical Cargo pattern for `pub` test-only APIs.
+sddk-engine = { path = ".", features = ["test-support"] }
