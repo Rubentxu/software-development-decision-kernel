@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-023-lints-advisory-no-expansion-cycle
 title: "Lints advisory sin ciclo de expansión programado (transition_outcome_used, execution_outcome_as_synthesis)"
-status: open
+status: closed
 severity: low
 priority: P3
 fingerprint: "b56d8742"
@@ -48,6 +48,41 @@ fingerprint `b56d8742…`).
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-13 | sddk-debt-verify | created | FIND-000007 (D7, pre_existing) from cycle conformance-closeout-2026-09-13 |
+| 2026-09-20 | orchestrator (auto-run) | closed — decision recorded, no expansion cycle scheduled | R17 diagnostics cycle follow-up; evidence below |
+
+## Resolution
+
+**Decision (2026-09-20): cerrado por decisión registrada, sin ciclo de
+expansión.** La deuda era de gobernanza (owner/deadline/criterio de
+cierre ausentes), no de código. La decisión técnica ya vivía en el
+propio `deprecated_patterns.toml`; este cierre la hace explícita y
+final:
+
+1. **`transition_outcome_used` queda como regression guard permanente
+   (`advisory` by design).** El M9.2 audit (v1.168.40) lo re-categorizó
+   `state_machine`: `TransitionOutcome` es el outcome autoritativo del
+   gate evaluator, co-currente y NO intercambiable con
+   `ExecutionOutcome`. Promoverlo a deny bloquearía maquinaria
+   legítima del ciclo. No habrá ciclo de promoción — el lint existe
+   para detectar una migración accidental que no debe ocurrir.
+   Criterio de reapertura: si una ADR futura redefine el modelo de
+   outcome de transición.
+
+2. **`execution_outcome_as_synthesis` sigue `advisory` con criterio de
+   expansión orgánico.** Baseline 0 hits verificado de nuevo hoy
+   (v1.169.121: 0 hits, sin cambio de superficie). El unblock está
+   definido en su propio campo `explanation`: re-auditar cuando llegue
+   el 2º proveedor (AX-S6) o cuando la superficie de uso de
+   `ExecutionOutcome` crezca; entonces estrechar el regex y evaluar
+   deny. No se programa ciclo: sigue el crecimiento del uso.
+
+3. **`asset_unregistered_cli_example`** (mismo clúster advisory, 0
+   hits): regex unsafe-by-design; sin cambio.
+
+Con esto el INC tiene owner (rubentxu74), decisión y criterio de
+reapertura. La cláusula "sin ciclo programado" del título queda
+resuelta: la respuesta es que no hay ciclo que programar — la decisión
+es mantener advisory.
 
 ## References
 
