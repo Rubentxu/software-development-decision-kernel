@@ -12,9 +12,9 @@
 //! release-pipeline infrastructure.
 
 use sddk_engine::code_intelligence_port::{
-    default_coverage_evaluation, CapabilityProfile, CapabilitySnapshot, CoverageBasis,
-    CoverageContract, CoverageGap, CoverageVerdict, DimensionValue, Inventory,
-    RequiredCapability, RequiredCapabilityKind, ScopeRef,
+    CapabilityProfile, CapabilitySnapshot, CoverageBasis, CoverageContract, CoverageGap,
+    CoverageVerdict, DimensionValue, Inventory, RequiredCapability, RequiredCapabilityKind,
+    ScopeRef, default_coverage_evaluation,
 };
 
 const HEAD_REV: &str = "cc4-test-rev";
@@ -143,10 +143,11 @@ fn t_ar_2_per_consumer_gaps_not_shared() {
     // contract is fully served by the same provider.
     assert_eq!(rp.semantics, DimensionValue::Demonstrated);
     // And no missing-class gaps leak from the other consumer.
-    assert!(rp
-        .gaps
-        .iter()
-        .all(|g| !matches!(g, CoverageGap::MissingSemanticClass(_))));
+    assert!(
+        rp.gaps
+            .iter()
+            .all(|g| !matches!(g, CoverageGap::MissingSemanticClass(_)))
+    );
 }
 
 #[test]
