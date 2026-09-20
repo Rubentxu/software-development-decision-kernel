@@ -559,6 +559,7 @@
     "crates/sddk-engine/tests/a6_cognicode_protocol_spike.rs",
     "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs",
     "crates/sddk-engine/tests/a7_s1_runtime_uat_fake.rs",
+    "crates/sddk-engine/tests/a7_s2_runtime_uat_hardening.rs",
     "crates/sddk-engine/tests/ac2_ac3_substrate_isolation.rs",
     "crates/sddk-engine/tests/ac5_not_verify_full.rs",
     "crates/sddk-engine/tests/ac6_ac4_witness_bridge.rs",
@@ -731,6 +732,6 @@
     "crates/**/tests/**/*.rs",
     "tests/**/*.rs"
   ],
-  "revision": "5f6a07fe25bed7804ac537c534f640a2266d08bb",
+  "revision": "1d13735bd8e4e1fd07056e3ce83805103e0811cd",
   "rule_version": "1.0.0"
 }
