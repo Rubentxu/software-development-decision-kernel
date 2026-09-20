@@ -561,6 +561,7 @@
     "crates/sddk-engine/tests/a7_s1_runtime_uat_fake.rs",
     "crates/sddk-engine/tests/a7_s2_runtime_uat_hardening.rs",
     "crates/sddk-engine/tests/a7_s3_runtime_uat_reconciliation.rs",
+    "crates/sddk-engine/tests/a8_s1_conformance_workbooks.rs",
     "crates/sddk-engine/tests/ac2_ac3_substrate_isolation.rs",
     "crates/sddk-engine/tests/ac5_not_verify_full.rs",
     "crates/sddk-engine/tests/ac6_ac4_witness_bridge.rs",
@@ -733,6 +734,6 @@
     "crates/**/tests/**/*.rs",
     "tests/**/*.rs"
   ],
-  "revision": "d1664e386520713c6c8c0553defad01359bd4037",
+  "revision": "98005a499706ce6526f5e6767c8131ddf8c6dd87",
   "rule_version": "1.0.0"
 }
