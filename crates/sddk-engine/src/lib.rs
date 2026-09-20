@@ -54,6 +54,7 @@ pub mod code_intelligence_port_fake;
 pub mod code_intelligence_port_mcp;
 pub mod cold_start;
 pub mod completion_provider_router;
+pub mod context_bridge;
 pub mod context_capsule;
 pub mod context_compiler;
 pub mod continuation_candidate;
