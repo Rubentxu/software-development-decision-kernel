@@ -1,5 +1,5 @@
 {
-  "revision": "f8f01ff5344e84a4f1dcb9b8eeb9ee442b5bdb44",
+  "revision": "aa8d64ee6ab0ad751ce12b465c9a8460bc62d351",
   "rule_version": "1.0.0",
   "expected_files": [
     "crates/sddk-cli/src/admission.rs",
@@ -729,6 +729,6 @@
   "exclude_paths": [
     "crates/sddk-engine/tests/fixtures/"
   ],
-  "generated_at": "2026-09-20T15:36:22Z",
+  "generated_at": "2026-09-20T15:54:05Z",
   "file_count": 713
 }

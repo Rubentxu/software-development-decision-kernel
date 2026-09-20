@@ -38,6 +38,17 @@ pub mod circuit_breaker;
 pub mod cockpit_observability;
 pub mod cockpit_views;
 pub mod code_intelligence_port;
+/// Deterministic in-process fake of `CodeIntelligencePort` used by the
+/// CC-S0 / CC-S1 falsification batteries. Gated under `#[cfg(test)]`
+/// (for `cargo test` integration tests in `tests/`) and the
+/// `test-support` Cargo feature (for downstream consumers who want to
+/// reuse the fake in their own integration tests without taking a
+/// transitive `cfg(test)` dependency on `sddk-engine`).
+///
+/// ADR-0137 / CC-S0 finding 1: the fake was `pub` and visible to
+/// downstream consumers unconditionally. CC-S2 closes that by gating
+/// the module so production builds never expose the fake.
+#[cfg(any(test, feature = "test-support"))]
 pub mod code_intelligence_port_fake;
 pub mod code_intelligence_port_mcp;
 pub mod cold_start;
