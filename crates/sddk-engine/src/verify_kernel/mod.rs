@@ -33,6 +33,7 @@ pub mod adapter_runtime_provider;
 pub mod adapter_static_provider;
 pub mod engine;
 pub mod evidence_source;
+pub mod evidence_source_static_provider;
 pub mod registry;
 pub mod tests;
 pub mod types;
@@ -42,6 +43,7 @@ pub use adapter_architecture::{
 };
 pub use engine::VerifyKernel;
 pub use evidence_source::EvidenceSource;
+pub use evidence_source_static_provider::{BridgedObservationSet, LOCATOR_PREFIX};
 pub use registry::{DomainNotFoundError, VerificationDomain, VerifyDomainRegistry};
 pub use types::{
     AffectedSubjects, ArchitectureConformanceClaim, BasisHash, ChangeBasis, ContradictionReason,

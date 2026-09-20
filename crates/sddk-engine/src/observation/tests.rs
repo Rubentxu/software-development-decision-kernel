@@ -522,3 +522,52 @@ fn acceptance_relation_id_domain_is_pinned() {
     assert_eq!(RelationId::DOMAIN, "sddk.software_relation.id.v1|");
     assert_eq!(ObservationId::DOMAIN, "sddk.software_observation.id.v1|");
 }
+
+// REGRESSION PIN (A6 / S3, 2026-09-20):
+// `ObservationSubject::canonical_tag()` is the join key used by
+// `verify_kernel::adapter_static_provider::StaticProviderDomain::evaluate`
+// to match a `VerificationClaim { subject_tag }` against observations in
+// the substrate. Two integration tests in
+// `a6_s3_ac10_verify_integration` were flaky because they asserted on
+// `"crates/sddk-cli/src/main.rs"` while the canonical form is
+// `"unit:crates/sddk-cli/src/main.rs"` (prefix `unit:` is part of the
+// identity, never stripped — see doc on `canonical_tag` in `types.rs`).
+// Pin all six namespaces here so any future contract drift fails here
+// rather than at integration boundaries.
+#[test]
+fn acceptance_observation_subject_canonical_tag_is_namespaced() {
+    use crate::architectural_contract::ContractId;
+    use crate::knowledge::KnowledgeId;
+
+    // Unit: prefix `unit:` — the static-provider join target.
+    let s_unit = ObservationSubject::Unit(SoftwareUnitRef::new("crates/sddk-cli/src/main.rs"));
+    assert_eq!(s_unit.canonical_tag(), "unit:crates/sddk-cli/src/main.rs");
+
+    // Component: prefix `component:` (typed binding target per A4-3R2).
+    let s_component = ObservationSubject::Component(ComponentRef::new("comp:auth").expect("comp"));
+    assert_eq!(s_component.canonical_tag(), "component:comp:auth");
+
+    // Entity: prefix `entity:` (typed binding target per A4-3R2).
+    let s_entity = ObservationSubject::Entity(EntityRef::new("ent:billing").expect("ent"));
+    assert_eq!(s_entity.canonical_tag(), "entity:ent:billing");
+
+    // Contract: prefix `contract:`.
+    let s_contract =
+        ObservationSubject::Contract(ContractId::new("contract:cli/bootstrap").expect("contract"));
+    assert_eq!(
+        s_contract.canonical_tag(),
+        "contract:contract:cli/bootstrap"
+    );
+
+    // Knowledge: prefix `knowledge:`.
+    let s_knowledge =
+        ObservationSubject::Knowledge(KnowledgeId::new("knowledge:k-42").expect("knowledge"));
+    assert_eq!(s_knowledge.canonical_tag(), "knowledge:knowledge:k-42");
+
+    // Cross-namespace collision check: equal inner string under Unit
+    // and Component must NOT collide. `unit:auth` and `component:auth`
+    // are distinct subjects, never equivalent.
+    let u = ObservationSubject::Unit(SoftwareUnitRef::new("auth"));
+    let c = ObservationSubject::Component(ComponentRef::new("auth").expect("comp"));
+    assert_ne!(u.canonical_tag(), c.canonical_tag());
+}

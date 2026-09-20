@@ -1,0 +1,131 @@
+# UAT evidence rows — S3 — AC10 Verify Integration
+#
+# Schema per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+# §I. Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s3-ac10-verify-integration`.
+# Cycle HEAD at slice close: <filled at commit>.
+#
+# Test binary: `crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs`.
+# Run command:
+#   cargo test -p sddk-engine --offline --test a6_s3_ac10_verify_integration
+# Result: 5 PASS / 0 FAIL / 0 ignored.
+#
+# Companion unit tests in
+# `crates/sddk-engine/src/verify_kernel/evidence_source_static_provider.rs`:
+#   build_translates_one_unit_two_texts
+#   build_carries_provider_version_in_producer
+#   build_handles_empty_units
+# All 3 PASS.
+#
+# Companion regression pin in `crates/sddk-engine/src/observation/tests.rs`:
+#   acceptance_observation_subject_canonical_tag_is_namespaced
+# PASS.
+
+uat_id: AC10
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider + code_intelligence_port_verify_bridge::build(analysis, rev, Some(\"0.97.1\")) -> BridgedObservationSet; StaticProviderDomain on VerifyKernel"
+command_or_test: "t_ac10_cognicode_observation_set_bridges_into_verify_kernel"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_cognicode_observation_set_bridges_into_verify_kernel"
+provider_basis: "AnalysisResult.digest (sha256, content-addressed)"
+notes: |
+  Round-trip end-to-end: a CogniCode-shaped `AnalysisResult` flows
+  through the bridge into a Verify-consumable
+  `observation::ObservationSet`. The `SoftwareObservation`s carry
+  `ObservationOrigin::StaticProvider`, `EvidenceRef{ kind=Adhoc,
+  locator='cognicode://<unit>' }`, and `subject =
+  ObservationSubject::Unit(SoftwareUnitRef)` whose `canonical_tag()`
+  is `unit:<locator>`. `StaticProviderDomain` matches the
+  `VerificationClaim::subject_tag` against `obs.subject.canonical_tag()`
+  (see `crates/sddk-engine/src/verify_kernel/adapter_static_provider.rs`
+  lines 70+). With `subject_tag = "unit:crates/sddk-cli/src/main.rs"`
+  the match is exact and the kernel produces `Verified` (single
+  `Affirms` observation present) or `Contradicted` (mixed Affirms+Denies),
+  never `Unknown`. The bridge is a pure translator: no DTO from
+  `code_intelligence_port` crosses into `observation`; only the typed
+  ADTs that already lived there.
+
+---
+
+uat_id: AC10
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "substrate with one observation text starting with 'CONTRADICTION:'"
+command_or_test: "t_ac10_verify_receipt_marks_observed_static_evidence"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_verify_receipt_marks_observed_static_evidence"
+provider_basis: "AnalysisResult.digest (sha256)"
+notes: |
+  When the provider emits one `Affirms` and one `Denies` observation
+  (the latter triggered by a text starting with `CONTRADICTION:`),
+  `StaticProviderDomain::evaluate` produces `Contradicted { reason }`.
+  The downstream VerifyReceipt therefore stamps `OBSERVED_STATIC`
+  (driven by `EvidenceRef.locator` prefix `cognicode://` and
+  `ObservationOrigin::StaticProvider`) — no `EvidenceKind` variant
+  added. The canonical contradiction mechanism remains
+  `KnowledgeBasis::invalidate(Contradicted, _)`; the
+  `CONTRADICTION:` text heuristic is best-effort free-text parsing.
+
+---
+
+uat_id: AC10
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "empty substrate (no observations); subject not in scope"
+command_or_test: "t_ac10_no_evidence_for_subject_yields_unknown_not_pass"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_no_evidence_for_subject_yields_unknown_not_pass"
+provider_basis: null
+notes: |
+  Verify never produces a false PASS. With an empty substrate,
+  `StaticProviderDomain` produces `Unknown { gap: EvidenceGap }` with
+  the subject not found. This pins `PR-UAT-019` (`Unknown`, never
+  `Verified` when evidence is absent).
+
+---
+
+uat_id: AC10
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "synthetic EvidenceRef{ locator='cognicode://u1' }"
+command_or_test: "t_ac10_observed_static_marker_is_locator_prefix"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_observed_static_marker_is_locator_prefix"
+provider_basis: null
+notes: |
+  Pins the `OBSERVED_STATIC` invariant: a VerifyReceipt marks the
+  evidence as observed-static iff `EvidenceRef.locator` starts with
+  `cognicode://` AND `ObservationOrigin == StaticProvider`. No
+  `EvidenceKind` variant added (closed vocabulary preserved per C1
+  of S3 SCOPE).
+
+---
+
+uat_id: PR-UAT-C04
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider returning 3 observations for a single changed unit (no full repo)"
+command_or_test: "t_ac10_localized_delta_no_full_graph_in_verify"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_localized_delta_no_full_graph_in_verify"
+provider_basis: "AnalysisResult.digest (sha256)"
+notes: |
+  The bridged `ObservationSet` contains exactly 3 observations, all
+  scoped to the changed unit's locator. No full graph transfer
+  occurred; the bridge carries only what `analyze_delta` returned.
+  This pins `PR-UAT-019` (delta scope, no full scan).
+
+---
+
+uat_id: PR-UAT-019
+sddk_commit: "<slice S3 closing commit>"
+profile: Static
+fixture: "BridgedObservationSet + VerifyKernel::evaluate with various subject_tag permutations"
+command_or_test: "t_ac10_cognicode_observation_set_bridges_into_verify_kernel + t_ac10_no_evidence_for_subject_yields_unknown_not_pass"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs::t_ac10_*"
+provider_basis: null
+notes: |
+  Combined re-pinning of PR-UAT-019: Verify is delta-scoped (see
+  PR-UAT-C04 row above) AND never produces a false PASS on missing
+  evidence (Unknown, never Verified).
