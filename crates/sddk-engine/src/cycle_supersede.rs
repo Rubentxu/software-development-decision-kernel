@@ -167,7 +167,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             correlation_id: None,
         };
 
-        let event_input_applied = LedgerEventInput {
+        let mut event_input_applied = LedgerEventInput {
             event_id: event_id_applied.clone(),
             project_id: current.project_id.clone(),
             cycle_id: Some(cycle_id.to_owned()),
@@ -193,6 +193,11 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         // Insert the two events and update cycle status to Closed
         let mut updated_manifest = current.clone();
         updated_manifest.status = sddk_domain::CycleStatus::Closed;
+
+        // Replay fidelity (AIW-S4 fix): carry the post-mutation manifest
+        // as `state_after` on the `.applied` event.
+        event_input_applied.state_after =
+            Some(serde_json::to_value(&updated_manifest).map_err(EngineError::StateSerialization)?);
 
         // Write supersede receipt using write_atomic.
         // REQ-Repair-Receipt-Supersede-Preservation: annotate this cycle's

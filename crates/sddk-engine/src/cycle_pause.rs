@@ -148,7 +148,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             correlation_id: None,
         };
 
-        let event_input_applied = LedgerEventInput {
+        let mut event_input_applied = LedgerEventInput {
             event_id: event_id_applied.clone(),
             project_id: current.project_id.clone(),
             cycle_id: Some(cycle_id.to_owned()),
@@ -185,6 +185,11 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             updated_manifest.pause_at = Some(pause_dt);
         }
         updated_manifest.last_pause_reason = Some(reason);
+
+        // Replay fidelity (AIW-S4 fix): carry the post-mutation manifest
+        // as `state_after` on the `.applied` event.
+        event_input_applied.state_after =
+            Some(serde_json::to_value(&updated_manifest).map_err(EngineError::StateSerialization)?);
 
         // Write pause receipt using write_atomic
         let receipt_input = CyclePauseInput {
@@ -296,7 +301,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             correlation_id: None,
         };
 
-        let event_input_applied = LedgerEventInput {
+        let mut event_input_applied = LedgerEventInput {
             event_id: event_id_applied.clone(),
             project_id: current.project_id.clone(),
             cycle_id: Some(cycle_id.to_owned()),
@@ -344,6 +349,11 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         updated_manifest.pause_at = None;
         updated_manifest.review_at = None;
         updated_manifest.last_pause_reason = None;
+
+        // Replay fidelity (AIW-S4 fix): carry the post-mutation manifest
+        // as `state_after` on the `.applied` event.
+        event_input_applied.state_after =
+            Some(serde_json::to_value(&updated_manifest).map_err(EngineError::StateSerialization)?);
 
         // Compute lease duration: use a default of 1 hour
         let now_ms = std::time::SystemTime::now()

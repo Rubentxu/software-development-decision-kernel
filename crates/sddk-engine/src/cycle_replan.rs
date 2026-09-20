@@ -146,7 +146,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             correlation_id: None,
         };
 
-        let event_input_applied = LedgerEventInput {
+        let mut event_input_applied = LedgerEventInput {
             event_id: event_id_applied.clone(),
             project_id: current.project_id.clone(),
             cycle_id: Some(cycle_id.to_owned()),
@@ -181,6 +181,13 @@ impl<L: sddk_domain::Ledger> Engine<L> {
             RestageTo::Tasks => sddk_domain::Phase::Plan,
             RestageTo::Apply => sddk_domain::Phase::Build,
         };
+
+        // Replay fidelity (AIW-S4 fix): the `.applied` event carries the
+        // post-mutation manifest as `state_after` so `replay_state` can
+        // reconstruct `replan_count` and the restaged phase from the
+        // canonical event log alone.
+        event_input_applied.state_after =
+            Some(serde_json::to_value(&updated_manifest).map_err(EngineError::StateSerialization)?);
 
         // Write replan receipt atomically BEFORE mutating the ledger so a
         // failed write leaves the ledger untouched (fail-closed ordering).

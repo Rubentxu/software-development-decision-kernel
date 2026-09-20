@@ -191,6 +191,44 @@ fn replan_success_increments_counter_and_writes_receipt() {
     assert!(types.contains(&"cycle.replan.applied"), "types: {types:?}");
 }
 
+// ── Replay fidelity (AIW-S4 fix) ─────────────────────────────────────────────
+
+/// `verify_cycle_snapshot` MUST re-apply `replan_count` (and the restaged
+/// phase) from the canonical event log. Previously `is_cycle_state_event`
+/// only recognized `cycle.created`/`cycle.transitioned`, so replay ignored
+/// `cycle.replan.applied` and diverged from the stored snapshot.
+#[test]
+fn replan_survives_snapshot_replay() {
+    let (dir, mut engine) = setup();
+    let manifest = start_cycle(&mut engine, "event-1");
+
+    engine
+        .acquire_cycle_lease(&manifest.cycle_id, "test-actor", 0, i64::MAX)
+        .unwrap();
+
+    call_replan(
+        &mut engine,
+        &manifest.cycle_id,
+        "event-replan-1",
+        dir.path(),
+    )
+    .expect("replan must succeed");
+    call_replan(
+        &mut engine,
+        &manifest.cycle_id,
+        "event-replan-2",
+        dir.path(),
+    )
+    .expect("second replan must succeed");
+
+    // Replay must reconstruct replan_count=2 and the restaged phase.
+    let replayed = engine
+        .verify_cycle_snapshot(&manifest.cycle_id)
+        .unwrap_or_else(|e| panic!("snapshot replay must match after replans: {e:?}"));
+    assert_eq!(replayed.manifest.replan_count, 2);
+    assert_eq!(replayed.manifest.phase, Phase::Design);
+}
+
 #[test]
 fn replan_sixth_attempt_fails_with_limit() {
     let (dir, mut engine) = setup();

@@ -1745,7 +1745,12 @@ fn event_input(
 fn is_cycle_state_event(event: &LedgerEvent) -> bool {
     matches!(
         event.event_type.as_str(),
-        "cycle.created" | "cycle.transitioned"
+        "cycle.created"
+            | "cycle.transitioned"
+            | "cycle.replan.applied"
+            | "cycle.pause.applied"
+            | "cycle.resume.applied"
+            | "cycle.supersede.applied"
     )
 }
 
