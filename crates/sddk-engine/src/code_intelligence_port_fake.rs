@@ -21,8 +21,9 @@ use std::collections::BTreeMap;
 
 use crate::code_intelligence_port::{
     AnalysisBasis, AnalysisResult, CapabilityProfile, CapabilitySnapshot, CodeIntelligencePort,
-    CodeIntelligencePortError, DigestSha256, ImpactRequest, Observation, ObservationSet,
-    ProviderKind, ProviderLifecycle, ScopeRequest,
+    CodeIntelligencePortError, CoverageBasis, CoverageContract, CoverageEvaluation, DigestSha256,
+    EvidenceGap, ImpactRequest, Observation, ObservationSet, ProviderKind, ProviderLifecycle,
+    ScopeRequest, default_coverage_evaluation,
 };
 
 /// Deterministic in-process provider used by the spike tests.
@@ -193,6 +194,27 @@ impl CodeIntelligencePort for FakeCodeIntelligenceProvider {
             observations,
         })
     }
+
+    fn coverage_evaluation(
+        &self,
+        contract: &CoverageContract,
+        basis: &CoverageBasis,
+    ) -> Result<CoverageEvaluation, EvidenceGap> {
+        // AR-4: provider Incompatible (forced protocol mismatch)
+        // -> EvidenceGap::ProviderIncompatible.
+        if let Some(provider_major) = self.forced_protocol_major {
+            return Err(EvidenceGap::ProviderIncompatible {
+                provider_major,
+                sddk_major: 1,
+            });
+        }
+        // AR-4: provider Ready -> default evaluation.
+        Ok(default_coverage_evaluation(
+            contract,
+            basis,
+            &self.snapshot(),
+        ))
+    }
 }
 
 /// Null provider — always advertises `BASE` and returns empty
@@ -256,6 +278,17 @@ impl CodeIntelligencePort for NullCodeIntelligenceProvider {
                 units: BTreeMap::new(),
                 restart_observed: false,
             },
+        })
+    }
+
+    fn coverage_evaluation(
+        &self,
+        _contract: &CoverageContract,
+        _basis: &CoverageBasis,
+    ) -> Result<CoverageEvaluation, EvidenceGap> {
+        // AR-4: provider Unavailable -> EvidenceGap, never Satisfied.
+        Err(EvidenceGap::ProviderUnavailable {
+            lifecycle: ProviderLifecycle::Unavailable,
         })
     }
 }

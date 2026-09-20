@@ -24,8 +24,9 @@ use std::time::Duration;
 
 use crate::code_intelligence_port::{
     AnalysisBasis, AnalysisResult, CapabilityProfile, CapabilitySnapshot, CodeIntelligencePort,
-    CodeIntelligencePortError, DigestSha256, ImpactRequest, Observation, ObservationSet,
-    ProviderKind, ProviderLifecycle, ScopeRequest,
+    CodeIntelligencePortError, CoverageBasis, CoverageContract, CoverageEvaluation, DigestSha256,
+    EvidenceGap, ImpactRequest, Observation, ObservationSet, ProviderKind, ProviderLifecycle,
+    ScopeRequest, default_coverage_evaluation,
 };
 
 /// Supported MCP protocol major. Mismatches fail closed
@@ -400,6 +401,15 @@ impl CodeIntelligencePort for CogniCodeMcpAdapter {
                 restart_observed: false,
             },
         })
+    }
+
+    fn coverage_evaluation(
+        &self,
+        contract: &CoverageContract,
+        basis: &CoverageBasis,
+    ) -> Result<CoverageEvaluation, EvidenceGap> {
+        let snapshot = self.snapshot.lock().expect("snapshot poisoned").clone();
+        Ok(default_coverage_evaluation(contract, basis, &snapshot))
     }
 }
 
