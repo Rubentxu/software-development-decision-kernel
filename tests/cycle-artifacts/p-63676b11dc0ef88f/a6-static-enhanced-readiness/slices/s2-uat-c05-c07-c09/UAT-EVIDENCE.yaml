@@ -1,0 +1,66 @@
+# UAT evidence rows — S2 — UAT C05, C07, C09
+#
+# Schema per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+# §I. Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s2-uat-c05-c07-c09`.
+# Cycle HEAD at slice close: <filled at commit>.
+#
+# Test binary: `crates/sddk-engine/tests/a6_s2_uat_c05_c07_c09.rs`.
+# Run command:
+#   cargo test -p sddk-engine --offline --test a6_s2_uat_c05_c07_c09
+# Result: 4 PASS / 0 FAIL / 0 ignored.
+
+uat_id: PR-UAT-C05
+sddk_commit: "<slice S2 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider::new(\"test\", &[\"rust-analyzer\"]); ImpactRequest { changed_units: [\"crates/sddk-cli/src/main.rs\"], depth: 3 }"
+command_or_test: "t_uat_c05_no_dto_leakage_through_analyze_impact"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s2_uat_c05_c07_c09.rs::t_uat_c05_no_dto_leakage_through_analyze_impact"
+provider_basis: null
+notes: "analyze_impact result's Debug and JSON-ish surface contain no token from the forbidden list {cognicode, cognicode_mcp, cognicode_mcp::, chronos, prost, tonic, rpc, wire::}. ProviderKind::Fake is the only producer marker; it is an SDDK enum, not a provider DTO. Stable ref is the digest (content-addressed)."
+
+---
+uat_id: PR-UAT-C07
+sddk_commit: "<slice S2 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider with arm_restart_after_one_unit(); ScopeRequest of 3 added units"
+command_or_test: "t_uat_c07_restart_preserves_prior_stable_refs"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s2_uat_c05_c07_c09.rs::t_uat_c07_restart_preserves_prior_stable_refs"
+provider_basis: null
+notes: "First analyze_delta returns AnalysisResult { digest, partial=true, restart_observed=true }. Second analyze_delta with identical (basis, request) returns byte-identical digest and partial/restart signals (stable ref preserved across reconnect). capabilities() snapshot digest is stable across calls. force_protocol_major(2) flips lifecycle to INCOMPATIBLE; capabilities().profile == Base (no inference from prior STATIC_ENHANCED)."
+
+---
+uat_id: PR-UAT-C09
+sddk_commit: "<slice S2 closing commit>"
+profile: Static
+fixture: "KnowledgeBasis with one KnowledgeAssertion A (id=symbol-42:usages, payload=Fact 'symbol-42 is referenced by symbol-7'); ObservationSet carrying a contradiction observation"
+command_or_test: "t_uat_c09_contradiction_preserves_prior_assertion_and_records_reconciliation + t_uat_c09_naive_replace_loses_contradiction_so_invalidate_is_required"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s2_uat_c05_c07_c09.rs::t_uat_c09_*"
+provider_basis: null
+notes: "KnowledgeBasis::invalidate(Contradicted, t>revised_at) consumes the basis into InvalidatedKnowledgeBasis whose basis_hash equals the pre-invalidation hash (Step 3). KMT::evaluate_invalidated returns Invalidated{Contradicted} (Step 5). Re-declaring the original assertion yields the same content-addressed basis_hash (Step 6) — the prior payload is recoverable via its hash. The negative fixture proves that naive insert(same_id, new_payload) DOES change basis_hash (replace semantics) and that the documented correct path is invalidate + record-reconciliation-note as a separate assertion with a distinct id."
+
+---
+# S2 also re-validates the following rows already covered by S1 as
+# supplementary cross-checks (no new evidence rows beyond S1's):
+uat_id: PR-UAT-C01
+sddk_commit: "<slice S2 closing commit>"
+profile: Static
+fixture: "NullCodeIntelligenceProvider (cross-check from S1)"
+command_or_test: "see S1 UAT-EVIDENCE.yaml"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c01_*"
+provider_basis: null
+notes: "Covered by S1; re-validated by the green workspace test in this slice."
+
+---
+uat_id: PR-UAT-C02
+sddk_commit: "<slice S2 closing commit>"
+profile: Static
+fixture: "NullCodeIntelligenceProvider (cross-check from S1)"
+command_or_test: "see S1 UAT-EVIDENCE.yaml"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c02_required_provider_unavailable_yields_typed_failure"
+provider_basis: null
+notes: "Covered by S1; re-validated by the green workspace test in this slice."
