@@ -1,0 +1,92 @@
+# UAT evidence rows — S1 — UAT Coverage via Fake
+#
+# Schema per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+# §I. Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s1-uat-coverage-fake`.
+# Cycle HEAD at slice close: <filled at commit>.
+#
+# This file is the durable evidence for the deterministic UAT subset of
+# A6 — Static Enhanced Readiness. The rows here cover the PR-UAT-C0X
+# scenarios that can be exercised without a real CogniCode binary.
+# Real-provider rows (S5) and AC10 (S3) are out of scope for this slice
+# and remain in their respective slices.
+#
+# Test binary: `crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs`.
+# Run command:
+#   cargo test -p sddk-engine --offline --test a6_s1_uat_coverage_fake
+# Result: 12 PASS / 0 FAIL / 0 ignored.
+
+uat_id: PR-UAT-C01
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s1-uat-coverage-fake/SCOPE-CONTRACT.md §2"
+command_or_test: "t_uat_c01_optional_provider_unavailable_yields_evidence_gap + t_uat_c01_preferred_provider_unavailable_yields_evidence_gap"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c01_optional_provider_unavailable_yields_evidence_gap"
+provider_basis: null
+notes: "Null provider -> EvidenceGap::ProviderUnavailable{Unavailable}. capabilities().profile == Base. No implicit promotion."
+
+---
+uat_id: PR-UAT-C02
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "same as PR-UAT-C01"
+command_or_test: "t_uat_c02_required_provider_unavailable_yields_typed_failure"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c02_required_provider_unavailable_yields_typed_failure"
+provider_basis: null
+notes: "Required consumer receives Err(EvidenceGap::ProviderUnavailable). Base state remains valid (profile == Base)."
+
+---
+uat_id: PR-UAT-C03
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider::new(\"test\", &[\"rust-analyzer\"])"
+command_or_test: "t_uat_c03_compatible_handshake_records_capabilities + t_uat_c03_capability_snapshot_is_content_addressed"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c03_*"
+provider_basis: null
+notes: "Snapshot advertises STATIC_ENHANCED, protocol_major=1, protocol_minor=0, analyzer_set_digest stable across runs, lifecycle_state == Ready. Snapshot digest is content-addressed (same analyzer set -> same digest regardless of order)."
+
+---
+uat_id: PR-UAT-C04
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "ScopeRequest { added_units: [\"crates/sddk-cli/src/main.rs\"] }"
+command_or_test: "t_uat_c04_localized_delta_typed_result_with_basis + t_uat_c04_no_full_graph_transfer_on_localized_delta"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c04_*"
+provider_basis: null
+notes: "analyze_delta returns typed ObservationSet keyed by source unit; basis provenance recorded (provider_build, protocol, source_revision, request_scope). Localized delta carries ONLY added/modified/removed units; 1 unit -> 1 observation; 5 units -> 5 observations. No 'full-graph' or '__all__' artefacts."
+
+---
+uat_id: PR-UAT-C06
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider with arm_cancel_after_one_unit()"
+command_or_test: "t_uat_c06_cancellation_yields_incomplete_not_satisfied + t_uat_c06_cancelled_delta_does_not_produce_partial_green_receipt"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c06_*"
+provider_basis: null
+notes: "Cancellation surfaces as typed CodeIntelligencePortError::Cancelled. CoverageEvaluation stays Incomplete (verdict is NOT Satisfied). gaps[] is non-empty and operational is Unknown/Incomplete/Partial."
+
+---
+uat_id: PR-UAT-C08
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "FakeCodeIntelligenceProvider with force_protocol_major(2)"
+command_or_test: "t_uat_c08_protocol_incompatible_no_capability_inference"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c08_*"
+provider_basis: null
+notes: "lifecycle_state == Incompatible. capabilities().profile == Base (no inference from product version). analyze_delta returns ProtocolMajorMismatch { provider_major: 2, sddk_major: 1 }. coverage_evaluation returns EvidenceGap::ProviderIncompatible with both majors. Never Satisfied."
+
+---
+uat_id: PR-UAT-C10
+sddk_commit: "<slice S1 closing commit>"
+profile: Static
+fixture: "Same basis + same request + same analyzer set, run twice."
+command_or_test: "t_uat_c10_repeat_deterministic_analysis_yields_stable_digest + t_uat_c10_coverage_evaluation_is_deterministic_across_runs"
+result: PASS
+result_ref: "crates/sddk-engine/tests/a6_s1_uat_coverage_fake.rs::t_uat_c10_*"
+provider_basis: null
+notes: "Two analyze_delta calls on identical (basis, request) -> identical digest. Different request_scope -> different digest. Two default_coverage_evaluation calls on identical (contract, basis, snapshot) -> identical evaluation (byte-equal)."
