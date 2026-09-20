@@ -42,7 +42,7 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 | R14 | Secret leaks into log / receipt / error / telemetry / CAS | P0 | G11 | `A5-R14-SECRETS-SWEEP-RECEIPT.md` | **SWEPT_SOURCE_LEVEL** (v1.169.119) | No leak path found; latent gap closed (error/message/reason now string-scanned); residual = static single-pass, adversarial cycle remains POST-BASE |
 | R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + UAT-1 clean-machine scenario 10 (rollback v1.169.86→v1.169.85, dev doctor all_present=true, bundle_coherence=present; receipt same as R8); release tag `v1.169.87`, commit `5ad25d1` |
 | R16 | An A5 change silently breaks an A4 certified contract | P0 | G1 | every cycle | **OPEN_NON_BLOCKER** | A4-CERTIFIED baseline (v1.169.68). Mechanism: cross-crate arch ratchets + ADR-0001 §3.2 promotion gates. No observed breach in A5-1..A5-5R, A5-4a/4b, A5-ITD |
-| R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 | **OPEN_NON_BLOCKER** | A5-4b partial: about-line + `sddk agent-help` pointer. Deeper diagnostics sweep pending A5-5 / A5-C |
+| R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 + R17 sweep | **SWEPT_SOURCE_LEVEL** (v1.169.120) | A5-4b about-line + `sddk agent-help`; R17 sweep: `dev doctor` failing checks now emit actionable `detail` remediation hints (text + JSON). Deeper failure-mode catalog remains POST-BASE |
 | R18 | Ignored tests become invisible debt | P2 | G13 | A5-ITD + A5-C-RR | **CLOSED** | A5-ITD-RECEIPT.md v1.169.84; A5-C-RR-A1 §3.4.1; per-ignored-test disposition with evidence pointers |
 | R19 | Deprecated-pattern lints stay `allow` with no disposition | P3 | G14 | A5-4b | **CLOSED** | A5-4b-RECEIPT.md v1.169.83; 3 advisory `allow` lints machine-pinned by `crates/sddk-cli/tests/a5_4b_lint_disposition_pin.rs` (3 tests green) |
 | R20 | Migration of persisted state breaks an upgrade | P1 | G6 | A5-2 | **CLOSED** (re-pinned) | A5-2-RECEIPT.md v1.169.74; G6 evidence preserved across v1.169.74; **MIGRATE_A5** follow-up closed by v1.169.85 — see `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md` §4.3 (CAS reopen test); **R-SQLITE-1** follow-up closed by v1.169.86 — `with_busy_retry` helper pins the gate-receipt flake 50/50, CAS-oracle orphan class closed, planning-substrate concurrency tests in `tests/concurrency_planning_substrate.rs`. |
@@ -66,19 +66,31 @@ the clean baseline that validates no hidden flaky tests. The
 `uat_stale_tests::stale_detects_geometry_change` flake was already
 closed by A5-5R (v1.169.81).
 
-### R14 / R16 / R17 — `OPEN_NON_BLOCKER`
+### R14 — `SWEPT_SOURCE_LEVEL` (v1.169.119)
 
-These are tracked, not blocking `BASE_PRODUCTION_READY`:
+- **R14 (secrets):** no leak path found; `STRING_LEVEL_KEY_PATTERN`
+  extended to error/message/reason (see
+  `A5-R14-SECRETS-SWEEP-RECEIPT.md`). A deeper adversarial cycle
+  remains optional POST-BASE scope.
 
-- **R14 (secrets):** SWEPT_SOURCE_LEVEL by
-  `A5-R14-SECRETS-SWEEP-RECEIPT.md` (v1.169.119): no leak path found;
-  `STRING_LEVEL_KEY_PATTERN` extended to error/message/reason. A deeper
-  adversarial cycle remains optional POST-BASE scope.
+### R16 — `OPEN_NON_BLOCKER`
+
 - **R16 (silent A5→A4 breach):** mechanism (cross-crate ratchets +
   ADR-0001 promotion gates) is in place and exercised. No observed
   breach in any A5 cycle.
-- **R17 (operator diagnostics):** partial mitigation in A5-4b.
-  Deeper sweep pending A5-5 or A5-C.
+
+### R17 — `SWEPT_SOURCE_LEVEL` (v1.169.120)
+
+- **R17 (operator diagnostics):** A5-4b delivered the about-line +
+  `sddk agent-help` surface. The R17 sweep (v1.169.120) closed the
+  diagnostic-actionability gap at source level: every failing `dev
+  doctor` check now carries a `detail` remediation hint (rendered as
+  `tool: missing — <hint>` in text; serialized in JSON). Framework
+  checks (`broken_agent_links`, `agent_name_frontmatter`,
+  `stale_agent_copies`, `workflow_origin`), surface brevity (line
+  budgets) and empty-dirs checks all emit actionable hints. A deeper
+  failure-mode catalog (runtime error taxonomy) remains optional
+  POST-BASE scope.
 
 ## §3 Future async/non-blocking Parallel — POST-BASE FEATURE (NOT R12)
 

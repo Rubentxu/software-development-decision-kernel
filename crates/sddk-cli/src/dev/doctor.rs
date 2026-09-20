@@ -40,11 +40,15 @@ struct DoctorOutput {
 struct DoctorCheck {
     tool: String,
     present: bool,
+    /// Optional operator-facing remediation hint. Emitted when present —
+    /// a failing check without a hint stays hint-free (R17 actionability).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
 }
 
-// `dead_code` allow: retained as API surface for future detailed checks;
-/// tracked for cleanup in phase2-hygiene-baseline.
-#[allow(dead_code)]
+// R17 (operator diagnostics): retained and consumed — the `detail` field
+// carries the remediation hint that `dev doctor` propagates to its output
+// (text renders it on failure; JSON serializes it when present).
 struct FrameworkCheck {
     name: String,
     status: String,
@@ -57,6 +61,7 @@ fn push_marker(checks: &mut Vec<DoctorCheck>, marker: &MarkerStatus) {
     checks.push(DoctorCheck {
         tool: marker.id.clone(),
         present: marker.present,
+        detail: None,
     });
 }
 
@@ -208,9 +213,13 @@ fn doctor_text(output: &DoctorOutput) -> String {
     let mut text = String::new();
     for check in &output.checks {
         text.push_str(&format!(
-            "{}: {}\n",
+            "{}: {}{}\n",
             check.tool,
-            if check.present { "present" } else { "missing" }
+            if check.present { "present" } else { "missing" },
+            match (&check.present, &check.detail) {
+                (false, Some(detail)) => format!(" — {detail}"),
+                _ => String::new(),
+            }
         ));
     }
     text.push_str(&format!("all_present: {}\n", output.all_present));
@@ -230,6 +239,7 @@ pub(super) fn run_dev_doctor(
         checks.push(DoctorCheck {
             tool: tool.to_owned(),
             present,
+            detail: None,
         });
     }
     // Framework asset integrity checks for detected editors.
@@ -254,6 +264,11 @@ pub(super) fn run_dev_doctor(
             checks.push(DoctorCheck {
                 tool: format!("{label}.{}", check.name),
                 present: check.status == "PASS",
+                detail: if check.status == "PASS" {
+                    None
+                } else {
+                    Some(check.detail)
+                },
             });
         }
     }
@@ -267,6 +282,7 @@ pub(super) fn run_dev_doctor(
         checks.push(DoctorCheck {
             tool: format!("editor.{label}_dir"),
             present: editor_dir.is_dir(),
+            detail: None,
         });
     }
     // Runtime assets integrity: the CLI resolves dashboard kit + UAT drivers
@@ -283,10 +299,12 @@ pub(super) fn run_dev_doctor(
         checks.push(DoctorCheck {
             tool: "assets.uat-driver".into(),
             present: driver_ok,
+            detail: None,
         });
         checks.push(DoctorCheck {
             tool: "assets.uat-dashboard-kit".into(),
             present: kit_ok,
+            detail: None,
         });
         if !driver_ok || !kit_ok {
             framework_warnings += 1;
@@ -304,6 +322,7 @@ pub(super) fn run_dev_doctor(
         checks.push(DoctorCheck {
             tool: "content.manifest".into(),
             present: manifest_ok,
+            detail: None,
         });
         if manifest_present && !manifest_ok {
             framework_warnings += 1;
@@ -382,6 +401,7 @@ pub(super) fn run_dev_doctor(
             checks.push(DoctorCheck {
                 tool: "binary.bundle_coherence".into(),
                 present: coherent,
+                detail: None,
             });
             if !coherent {
                 framework_warnings += 1;
@@ -412,6 +432,9 @@ pub(super) fn run_dev_doctor(
                 checks.push(DoctorCheck {
                     tool: format!("surface.briefness.{rel}"),
                     present,
+                    detail: (!present).then(|| {
+                        format!("{rel} exceeds agent line budget (300) — split or slim the surface")
+                    }),
                 });
             }
         }
@@ -438,6 +461,11 @@ pub(super) fn run_dev_doctor(
                     checks.push(DoctorCheck {
                         tool: format!("surface.briefness.{skill_name}/SKILL.md"),
                         present,
+                        detail: (!present).then(|| {
+                            format!(
+                                "{skill_name}/SKILL.md exceeds skill line budget (150) — split or slim the surface"
+                            )
+                        }),
                     });
                 }
             }
@@ -468,6 +496,11 @@ pub(super) fn run_dev_doctor(
                 checks.push(DoctorCheck {
                     tool: format!("surface.briefness.{rel}"),
                     present,
+                    detail: (!present).then(|| {
+                        format!(
+                            "{rel} exceeds prompt line budget (200) — split or slim the surface"
+                        )
+                    }),
                 });
             }
         }
@@ -497,6 +530,7 @@ pub(super) fn run_dev_doctor(
                     checks.push(DoctorCheck {
                         tool: format!("surface.empty_dirs.{rel}"),
                         present,
+                        detail: (!present).then(|| format!("{rel} is empty — remove it (ADR-016)")),
                     });
                 }
             }
@@ -656,6 +690,7 @@ pub(super) fn run_dev_doctor(
                     checks.push(DoctorCheck {
                         tool: "c4.authority_single_admission".into(),
                         present: false,
+                        detail: None,
                     });
                 }
             }
@@ -663,6 +698,7 @@ pub(super) fn run_dev_doctor(
                 checks.push(DoctorCheck {
                     tool: "m1.responsibilities_unreadable".into(),
                     present: false,
+                    detail: None,
                 });
             }
         }
@@ -670,6 +706,7 @@ pub(super) fn run_dev_doctor(
         checks.push(DoctorCheck {
             tool: "m1.responsibilities_missing".into(),
             present: false,
+            detail: None,
         });
     }
 

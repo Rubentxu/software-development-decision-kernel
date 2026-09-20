@@ -9848,6 +9848,70 @@ fn cli_dev_doctor_surface_briefness() {
 }
 
 #[test]
+fn cli_dev_doctor_emits_actionable_detail_on_failures() {
+    // R17 (operator diagnostics): failing checks must carry a remediation
+    // hint. Verifies three surfaces:
+    //   1. surface.briefness failing → JSON `detail` present with the budget.
+    //   2. surface.briefness passing → JSON `detail` absent (skip_serializing).
+    //   3. Text format renders `tool: missing — <detail>` for failing checks.
+    let fixture = CliFixture::new("doctor-detail");
+    let root = fixture.root.clone();
+
+    write(
+        root.join("agents/orchestrator.md"),
+        "---\nname: orchestrator\ndescription: Test orchestrator\nmodel: minimax-coding-plan/MiniMax-M3\n---\n# Orchestrator\n",
+    );
+    write(
+        root.join("permissions.yaml"),
+        "agents:\n  orchestrator:\n    phases: []\n    capabilities: []\n",
+    );
+    write(root.join("skills/demo/SKILL.md"), "# Demo Skill\n");
+    write(root.join("prompts/sddk/some-prompt.md"), "# Prompt\n");
+
+    // Over-budget agent (501 content lines).
+    let mut lines =
+        String::from("---\nname: _fixture_detail\ndescription: fixture\n---\n# Fixture Detail\n");
+    for i in 0..501 {
+        lines.push_str(&format!("line {}\n", i));
+    }
+    write(root.join("agents/_fixture_detail.md"), &lines);
+
+    // JSON: failing check carries detail; passing check omits it.
+    let doctor = run_doctor_from(&root, &["dev", "doctor", "--format", "json"]);
+    let output: serde_json::Value = serde_json::from_str(&doctor.stdout).unwrap();
+    let checks = output["checks"].as_array().unwrap();
+    let failing = checks
+        .iter()
+        .find(|c| c["tool"].as_str().unwrap() == "surface.briefness._fixture_detail.md")
+        .expect("over-budget agent check must exist");
+    let detail = failing["detail"]
+        .as_str()
+        .expect("failing check must carry detail");
+    assert!(
+        detail.contains("exceeds agent line budget (300)"),
+        "detail must state the budget, got: {detail}"
+    );
+    let passing = checks
+        .iter()
+        .find(|c| c["tool"].as_str().unwrap() == "surface.briefness.orchestrator.md")
+        .expect("in-budget agent check must exist");
+    assert!(
+        passing.get("detail").is_none(),
+        "passing checks must omit detail (skip_serializing_if)"
+    );
+
+    // Text: failing check renders the remediation inline.
+    let doctor_text = run_doctor_from(&root, &["dev", "doctor"]);
+    assert!(
+        doctor_text.stdout.contains(
+            "surface.briefness._fixture_detail.md: missing — _fixture_detail.md exceeds agent line budget (300)"
+        ),
+        "text output must render the actionable hint, got:\n{}",
+        doctor_text.stdout
+    );
+}
+
+#[test]
 fn cli_dev_doctor_surface_empty_dirs() {
     // RED test: surface.empty-dirs check (ADR-016).
     // Creates an empty agents/ directory and verifies the doctor reports it.

@@ -195,7 +195,11 @@ the deferred-post-base queue:
 - **R14 dedicated security cycle** (secrets matrix) — source-level sweep
   CLOSED by `A5-R14-SECRETS-SWEEP-RECEIPT.md` (v1.169.119);
   adversarial-level review remains optional POST-BASE scope.
-- **R17 deeper operator diagnostics sweep**.
+- **R17 deeper operator diagnostics sweep** — source-level sweep CLOSED
+  by the R17 cycle (v1.169.120): `dev doctor` failing checks now emit
+  actionable `detail` remediation hints (text + JSON; see
+  `A5-RISK-REGISTER.md` §2). Runtime error-taxonomy catalog remains
+  optional POST-BASE scope.
 - The 8 IMMEDIATE sites not yet routed through `with_busy_retry`
   (out of R-SQLITE-1 by design).
 - Future async/non-blocking Parallel (a POST-BASE feature, NOT R12).
@@ -207,13 +211,15 @@ ACCEPTED_NON_BLOCKER install.sh defects + INC P2/P3 paperwork).
 
 ### OPEN_NON_BLOCKER (no current blocker)
 
-- **R14 (secret leak path):** no observed leak; tracked for A5-5
-  or a future security cycle.
+- **R14 (secret leak path):** SWEPT_SOURCE_LEVEL (v1.169.119) by
+  `A5-R14-SECRETS-SWEEP-RECEIPT.md`; adversarial-level review remains
+  optional POST-BASE scope.
 - **R16 (silent A5→A4 contract breach):** mechanism (cross-crate
   ratchets + ADR-0001 promotion gates) in place; no observed
   breach in any A5 cycle.
-- **R17 (operator diagnostics):** partial mitigation in A5-4b;
-  deeper sweep pending A5-5 / A5-C.
+- **R17 (operator diagnostics):** SWEPT_SOURCE_LEVEL (v1.169.120) —
+  `dev doctor` failing checks emit actionable `detail` hints
+  (text + JSON). Deeper failure-mode catalog remains POST-BASE.
 
 ### A5-1 / A5-3 follow-up (paperwork)
 
