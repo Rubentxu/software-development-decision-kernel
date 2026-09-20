@@ -1,5 +1,5 @@
 {
-  "revision": "d2e7f261bf1298626a8d35c3e5a88b0030a2fabb",
+  "revision": "e73ea1d3bcc1e449f0488ff233287915a1642b44",
   "rule_version": "1.0.0",
   "expected_files": [
     "crates/sddk-cli/src/admission.rs",
@@ -393,7 +393,8 @@
     "crates/sddk-engine/src/cold_start.rs",
     "crates/sddk-engine/src/completion_provider_router.rs",
     "crates/sddk-engine/src/context_capsule.rs",
-    "crates/sddk-engine/src/context_compiler.rs",
+    "crates/sddk-engine/src/context_compiler/mod.rs",
+    "crates/sddk-engine/src/context_compiler/storage_adapter.rs",
     "crates/sddk-engine/src/continuation_candidate.rs",
     "crates/sddk-engine/src/converge_verification.rs",
     "crates/sddk-engine/src/cycle_narrative.rs",
@@ -558,6 +559,7 @@
     "crates/sddk-engine/tests/adoption.rs",
     "crates/sddk-engine/tests/agent_host_tests.rs",
     "crates/sddk-engine/tests/aiw_s1_cognicode_real.rs",
+    "crates/sddk-engine/tests/aiw_s3_storage_handoff.rs",
     "crates/sddk-engine/tests/aiw_s5_chronos_real.rs",
     "crates/sddk-engine/tests/alignment_lens_fixture.rs",
     "crates/sddk-engine/tests/arc_try_unwrap_sync_tests.rs",
@@ -726,6 +728,6 @@
   "exclude_paths": [
     "crates/sddk-engine/tests/fixtures/"
   ],
-  "generated_at": "2026-09-20T15:26:59Z",
-  "file_count": 710
+  "generated_at": "2026-09-20T15:32:42Z",
+  "file_count": 712
 }

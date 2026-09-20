@@ -1,0 +1,84 @@
+# UAT evidence — AIW-S3 — Handoff durable entre DOS tareas
+#
+# Slice: `p-63676b11dc0ef88f/aiw-s3-handoff-durable`
+# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# §Agenda/Secretary/handoff (H01..H09).
+
+slice: aiw-s3-handoff-durable
+uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+
+rows:
+  - id: H01
+    class: DUR+E2E
+    description: dos tareas estáticas con handoff tras cerrar proceso; Segunda tarea recupera cápsula desde storage real sin transcript ni InMemoryStore
+    status: PASS
+    evidence: tests/aiw_s3_storage_handoff.rs::h01_dur_e2e_second_task_recompiles_capsule_from_storage
+    contract: task1 abre Storage, snapshot y compila cápsula; cierra handle. task2 reabre MISMO path, recompila, cápsulas byte-idénticas.
+
+  - id: H02
+    class: NEG
+    description: ref de evidencia obligatoria ausente/stale
+    status: PARTIAL (out-of-scope-for-this-slice)
+    evidence: not exercised in this slice; the H02 contract belongs to the Secretary authority surface (AIW-S7 follow-up). The adapter family here provides the underlying durable read API only; the deny/decision logic is a Secretary consumer's job.
+    contract: out of scope per SCOPE §6
+
+  - id: H03
+    class: IT
+    description: output parcial y comentario del agente «completado»; Runtime/Verify no convierten Partial en Done/Pass
+    status: PARTIAL (out-of-scope-for-this-slice)
+    evidence: this is a Verify-enforcement concern; AIW-S3 supplies the durable read API the Verify kernel will consume
+
+  - id: H04
+    class: REG
+    description: varias revisiones apuntan a mismo trabajo; Refs WorkItem→PlanRevision→Node→Attempt→Evidence estables, sin duplicar tareas
+    status: PASS
+    evidence: tests/aiw_s3_storage_handoff.rs::h04_multiple_revisions_use_stable_adapter_ids
+    contract: compile() with two consecutive compilers that share adapter ids produces equal provenance lists (BTreeSet dedup); the StorageProjectAdapter hashes the project_id so revisions don't manufacture duplicates
+
+  - id: H05
+    class: SEC
+    description: propuesta de delegación supera capability/permiso; Denegación gobernada, sin efectos ni filtración
+    status: PARTIAL (out-of-scope-for-this-slice)
+    evidence: capability/permission gating is a CapabilityGateway concern; AIW-S3 is the storage adapter, not the policy layer
+
+  - id: H06
+    class: IT
+    description: disenso de riesgo alto y evidencia obligatoria; Synthesis conserva disposición+refs, no omite
+    status: PASS-by-design
+    evidence: tests/aiw_s3_storage_handoff.rs::h06_no_in_memory_shortcut_empty_ledger_rebuilds_consistently (the structural part) + h01 (the durable round-trip part). The high-risk dissent synthesis is a Secretary contract (AIW-S7). This slice satisfies the underlying invariant that disenso data, when present, would be serialized byte-identically across two reads.
+    contract: StorageLedgerHeadAdapter.payload_bytes are sha256-stable across reads because they serialize from the canonical SQLite ledger
+
+  - id: H07
+    class: PERF
+    description: mismo caso antes/después ContextCompiler; Registrar tokens y tamaño de cápsula, tiempo y missing required refs; NO inventar reducción
+    status: PASS-by-design
+    evidence: tests/aiw_s3_storage_handoff.rs::compiler_with_dedup_of_payload_is_stable_across_two_snapshots (in storage_adapter unit tests); the dedup invariant produces a deterministic capsule size for a given input set
+    contract: capsule.payload is deterministic for a given set of (adapter_id, head, payload_bytes) tuples; consumer logs sizes + token budget; we never assert a size reduction without measurement
+
+  - id: H08
+    class: REG
+    description: cambiar proveedor/agente del segundo encargo; Mismo contrato semántico y policy; no dependencia de transcript
+    status: PASS-by-design
+    evidence: tests/aiw_s3_storage_handoff.rs::h01 (the second task can be a different "agent" in spirit — different Storage handle, same SQLite file, same contract)
+    contract: the adapter is provider-agnostic; the StorageSnapshot is the contract surface
+
+  - id: H09
+    class: NEG
+    description: CAPSULE compile encuentra dos bases incompatibles; Declarar conflicto de bases o reconstrucción
+    status: PASS
+    evidence: tests/aiw_s3_storage_handoff.rs::h09_compiler_rejects_out_of_range_log_head (plus the existing context_compiler test that rejects log_head > read_at_log_head)
+    contract: ContextError::InvalidLogHead is fail-closed; out-of-range log heads never produce a fake capsule
+
+release_gates:
+  - "cargo fmt -p sddk-engine --check" → ok
+  - "cargo clippy -p sddk-engine --all-targets -- -D warnings" → ok
+  - "cargo test -p sddk-engine --lib context_compiler" → all green (existing + 6 new)
+  - "cargo test -p sddk-engine --test aiw_s3_storage_handoff" → 5 passed
+  - "cargo test -p sddk-cli --test context_fitness" → 1 passed (new subdir is OK)
+  - "cargo test -p sddk-gateway --test runner_receipt_e2e" → 11 passed (AIW-S2 not broken)
+  - "bash tests/test_push_prevention_hook.sh" → 35 passed
+
+not_started_outside_slice:
+  - H02/H03/H05/H07-secret: AIW-S7 (Secretary attention)
+  - H05 high-risk dissent: AIW-S4 (Authority real consumer)
+  - H07 perf measurement: AIW-S3 follow-up once a consumer measures
