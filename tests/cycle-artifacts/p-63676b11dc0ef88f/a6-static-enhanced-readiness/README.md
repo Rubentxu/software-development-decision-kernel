@@ -47,7 +47,7 @@ necessary to prevent the plan and the truth from drifting apart
 
 | Criterion | Status | Where |
 |---|---|---|
-| AC10 verified end-to-end | ✅ | S3 — 5 integration + 3 unit + 1 regression pin all PASS. The `AnalysisResult` → `ObservationSet` bridge is in `crates/sddk-engine/src/verify_kernel/evidence_source_static_provider.rs`. |
+| AC10 verified end-to-end | ✅ | S3 — 5 integration + 4 unit + 1 regression pin all PASS. The `AnalysisResult` → `ObservationSet` bridge is in `crates/sddk-engine/src/verify_kernel/evidence_source_static_provider.rs`. The 4th unit test (commit `6935aef`, post-S3 hot-fix) pins the empty-`Vec<Observation>` edge case. |
 | `PR-UAT-024` closed | ⏸ | S4 STOP. The honest partial closure is documented in `slices/s4-durability/SCOPE-CONTRACT.md` §4 with three options (A/B/C) for the operator. |
 
 **Honest read**: AC10 closes the in-process contract. `PR-UAT-024`
