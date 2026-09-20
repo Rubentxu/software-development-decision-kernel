@@ -129,6 +129,7 @@ pub mod spike_sp06;
 pub mod state_class_lint;
 pub mod strategy_comparison;
 pub mod strategy_experiments;
+pub mod structured_work;
 pub mod supply_chain_artifacts;
 pub mod target_task;
 pub mod task_executor;
