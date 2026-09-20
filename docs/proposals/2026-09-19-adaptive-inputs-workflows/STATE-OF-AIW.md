@@ -112,6 +112,7 @@ AIW-S1b opens. If Option C is chosen (defer), AIW-S1b remains
 | 1 | **S4 A/B/C** | `tests/cycle-artifacts/.../a6-static-enhanced-readiness/slices/s4-durability/SCOPE-CONTRACT.md` §4 | Unblocks AIW-S1b if A or B. |
 | 2 | **AIW adoption status** — partial (capability map) vs full (competing roadmap) | This file | Once decided, replace the README "proposed" label with the actual adoption status. |
 | 3 | **H4.7 push** — 4 SHAs (`b60eca5f`, `e2da4131`, `b036b5ad`, `5427beaf`) not in this checkout | (separate incidence) | Pending external bundle / cherry-pick / remote reference from operator. |
+| 4 | **`verify_cycle_snapshot` ignores `replan_count` on replay** — `is_cycle_state_event` only matches `cycle.created`/`cycle.transitioned`; `cycle.replan.applied` events don't carry `state_after`, so the manifest's bumped `replan_count` is dropped during `replay_state`. AIW-S4 works around this via `get_cycle().manifest` directly. | `crates/sddk-engine/src/lib.rs::is_cycle_state_event` + `crates/sddk-engine/src/cycle_replan.rs` | Fix touches ledger event format semantics (state-event filter + payload). **STOP material**: requires decision whether to (a) extend `is_cycle_state_event` to include `cycle.replan.applied`, or (b) add `state_after` to the replan events, or (c) leave AIW-S4 workaround in place. Each option is a contract change. |
 
 ## §7 What does not need operator decision (autonomously executable)
 
