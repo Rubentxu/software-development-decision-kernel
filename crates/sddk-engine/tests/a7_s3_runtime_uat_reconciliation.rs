@@ -15,8 +15,8 @@
 use sddk_engine::architecture_graph::SoftwareUnitRef;
 use sddk_engine::authority_engine::DigestSha256 as AuthDigest;
 use sddk_engine::authority_engine::{
-    ActionKind, ActionProposal, Actor, ActorKind, AuthorityEngine, DefaultAuthorityEngine,
-    DenyReason, Facts, PolicySnapshot,
+    ActionKind, ActionProposal, Actor, ActorKind, AuthorityEngine, DefaultAuthorityEngine, Facts,
+    PolicySnapshot,
 };
 use sddk_engine::code_intelligence_port::DigestSha256;
 use sddk_engine::observation::posture::{EvidencePosture, ObservationTargetRef};
@@ -52,7 +52,7 @@ impl RuntimeEvidencePort for RestartableRuntime {
 
     fn capture(
         &self,
-        req: &RuntimeCaptureRequest,
+        _req: &RuntimeCaptureRequest,
     ) -> Result<RuntimeCaptureResult, RuntimePortError> {
         let n = self.session.fetch_add(1, Ordering::SeqCst);
         let mut counts = BTreeMap::new();
