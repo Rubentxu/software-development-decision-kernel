@@ -563,6 +563,7 @@
     "crates/sddk-engine/tests/a7_s3_runtime_uat_reconciliation.rs",
     "crates/sddk-engine/tests/a8_s1_conformance_workbooks.rs",
     "crates/sddk-engine/tests/a8_s2_counterfactual_planning.rs",
+    "crates/sddk-engine/tests/a8_s3_proof_carrying_ratchets.rs",
     "crates/sddk-engine/tests/ac2_ac3_substrate_isolation.rs",
     "crates/sddk-engine/tests/ac5_not_verify_full.rs",
     "crates/sddk-engine/tests/ac6_ac4_witness_bridge.rs",
@@ -735,6 +736,6 @@
     "crates/**/tests/**/*.rs",
     "tests/**/*.rs"
   ],
-  "revision": "e3eff44c8f55d279cf777084fba6619e8c94ec0c",
+  "revision": "f631708f389b6a292f384b136e9faf8a89942ac6",
   "rule_version": "1.0.0"
 }
