@@ -199,4 +199,30 @@ mod tests {
         assert_eq!(bridged.count, 0);
         assert_eq!(bridged.provider_kind, ProviderKind::Fake);
     }
+
+    #[test]
+    fn build_handles_unit_with_empty_observation_vec() {
+        // Edge case: a unit key with an empty `Vec<Observation>` contributes
+        // 0 observations to the substrate and 0 to the count, but the unit
+        // key is still iterated. This is the loop-internal short-circuit
+        // (inner `for obs in observations` is a no-op on empty).
+        use crate::code_intelligence_port::{ObservationSet, ProviderKind};
+        let mut a = sample_analysis();
+        a.observations = ObservationSet {
+            provider_kind: ProviderKind::Fake,
+            units: BTreeMap::from([
+                ("crates/sddk-cli/src/main.rs".to_string(), Vec::new()),
+                (
+                    "crates/sddk-cli/src/commands/run.rs".to_string(),
+                    vec![Observation {
+                        text: "fn:cli_run".to_string(),
+                    }],
+                ),
+            ]),
+            restart_observed: false,
+        };
+        let bridged = build(&a, "rev-1", Some("0.97.1"));
+        assert_eq!(bridged.count, 1, "only the non-empty unit contributes");
+        assert_eq!(bridged.provider_kind, ProviderKind::Fake);
+    }
 }
