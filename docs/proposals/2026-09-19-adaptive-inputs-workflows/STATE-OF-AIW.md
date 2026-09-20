@@ -109,7 +109,7 @@ AIW-S1b opens. If Option C is chosen (defer), AIW-S1b remains
 
 | # | Decision | Where | Effect |
 |---|---|---|---|
-| 1 | **S4 A/B/C** | `tests/cycle-artifacts/.../a6-static-enhanced-readiness/slices/s4-durability/SCOPE-CONTRACT.md` §4 | Unblocks AIW-S1b if A or B. |
+| 1 | ~~S4 A/B/C~~ — **RESOLVED: Option B** (receipt en `tests/cycle-artifacts/.../s4-durability/RECEIPT.md`). La infraestructura de B (`EventSchemaRegistry`, `schema_struct!`, `CanonicalEventValidator`) ya existía con 26 tipos; solo faltaba `Deserialize` en el árbol de observación y el schema `observation.set.appended` v1. Envelope versionado congelado, roundtrip crash/reopen pinado por tests. Coste real de B colapsó respecto a la estimación del STOP — registrada como mejora sobre lo propuesto. | Unblocks AIW-S1b. |
 | 2 | **AIW adoption status** — partial (capability map) vs full (competing roadmap) | This file | Once decided, replace the README "proposed" label with the actual adoption status. |
 | 3 | **H4.7 push** — 4 SHAs (`b60eca5f`, `e2da4131`, `b036b5ad`, `5427beaf`) not in this checkout | (separate incidence) | Pending external bundle / cherry-pick / remote reference from operator. |
 | 4 | ~~`verify_cycle_snapshot` ignores `replan_count` on replay~~ — **RESOLVED** (commit `6b97202`). Root cause was `is_cycle_state_event` missing `cycle.replan.applied` + replan events carrying `state_after: None`. Fix: replan events are now state-bearing and the replay filter includes `cycle.replan.applied`. Contract test `verify_cycle_snapshot_succeeds_after_replan` pins the corrected behavior; pre-fix ledgers keep replaying as before (workaround still valid, its regression pin passes). | RESOLVED — no operator action needed. |

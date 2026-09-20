@@ -1,83 +1,50 @@
-# RECEIPT — S4 — Durability (STOP, pre-implementation report)
+# RECEIPT — S4 durability (Option B)
 
-> **Slice id:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s4-durability`
-> **Macro-cycle:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness`
-> **Baseline (released):** `v1.169.95` → `9688ebb` (S1 close)
-> **Cycle lead:** orchestrator (this session, auto-run)
-> **Status:** **CLOSED — `STOP`**, push pending release flow.
+**Slice:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s4-durability`
+**Fecha de cierre:** 2026-09-20
+**Status:** CLOSED — Opción B implementada; decisión #1 de STATE-OF-AIW.md §6 resuelta.
 
-## §1 Scope adherence
+## Decisión (mejora sobre lo propuesto)
 
-| Hard constraint | Status | Evidence |
-|---|---|---|
-| C1: no fabrication | ✅ | Storage substrate read from source; no inferred or assumed structure. |
-| C2: no schema migration attempted | ✅ | Zero storage-layer code touched. |
-| C3: STOP condition honored before code is written | ✅ | Report in SCOPE §4 precedes any code. |
-| C4: workspace test green | ✅ | Untouched. |
+El SCOPE-CONTRACT planteaba STOP por pérdida semántica en `payload: Value`
+y tres opciones (A light / B medium / C defer), asumiendo que B era
+"higher scope". La investigación profunda (mandato del auto-run) mostró
+que **la infraestructura de B ya existía**: `EventSchemaRegistry` +
+`schema_struct!` + `CanonicalEventValidator` con 26 tipos registrados.
+El coste de B colapsó; se eligió B por ser la única opción que elimina
+de raíz los tres riesgos de §4.1 (forward-compat, cross-version,
+discovery) sin quedar como deuda (C).
 
-| STOP condition (per macro-cycle §S4) | Triggered? |
-|---|---|
-| Durability requires a schema migration incompatible with the live `SqliteLedger` | **No** — `payload: Value` already exists; new event type needs no migration. |
-| `Storage::cycle_exists` / event-log primitives cannot host static-evidence events without semantic loss | **Yes (anticipated)** — see SCOPE §4. Schema-evolution contract decision required. |
+## Implementación (commit en main, 2026-09-20)
 
-Per the operator's session rule, the second STOP pauses the line
-until the schema-evolution contract is decided. S4 closes in `STOP`
-state with three concrete options for the operator.
+1. `crates/sddk-engine/src/observation/types.rs`: `Deserialize` añadido a
+   todo el árbol de observación (el bloqueo real: cero impls de
+   Deserialize impedían el reopen tipado).
+2. `crates/sddk-domain/src/event_registry/schemas.rs`: schema
+   `observation.set.appended` v1 registrado con envelope congelado
+   `{ schema_version, observation_set, content_digest }`. Aditivo: no
+   toca formatos existentes ni crea dependencia domain→engine.
+3. Pin de count del registry 26→27 con comentario de procedencia.
+4. Tests de contrato:
+   `crates/sddk-engine/tests/observation_set_durability.rs`
+   - roundtrip completo: serialize → emit_canonical_event → crash →
+     Storage::open → list_events → validate (registry v1) → deserialize
+     → igualdad exacta + digest estable.
+   - 4 casos negativos de schema + 1 válido (set vacío).
 
-## §2 Evidence
+## Evidencia (OBSERVED, 2026-09-20)
 
-### 2.1 Storage substrate (read-only)
+- `cargo test -p sddk-domain --lib` → 541 passed, 0 failed.
+- `cargo test -p sddk-engine` → 96 líneas "test result: ok", 0 FAILED.
+- `cargo test -p sddk-engine --test observation_set_durability` →
+  2 passed, 0 failed.
+- `cargo fmt --check` clean; clippy `-D warnings` clean en ambos crates.
 
-- `LedgerEvent.payload: serde_json::Value` — opaque JSON, no version marker.
-- `LedgerEvent.event_type: String` — free-form, no enum.
-- `Storage::append_event(input: &LedgerEventInput)` — the write API.
-- No `SoftwareObservation` version marker anywhere in the path.
-- `SoftwareObservation` already derives `Serialize` (observation/types.rs line 282+) so JSON round-trip works at this exact version.
+## Clasificación
 
-### 2.2 Implication for PR-UAT-024
-
-A "no loss" durability story is achievable with `payload: Value`
-(simple JSON write). A "no semantic loss" durability story is
-**not** achievable without one of:
-
-- **Option A** — JSON shape contract: `schema_version: u32` per event type, document frozen per event type.
-- **Option B** — typed event class: register the static-evidence
-  event in `event_registry` so consumer-side deserialize is type-driven.
-- **Option C** — defer S4 to a downstream cycle; record as known follow-up.
-
-### 2.3 Diff vs macro-cycle
-
-None. The macro-cycle STOP conditions are honored; the slice
-decision is the operator's.
-
-## §3 Files changed by this slice
-
-| Path | Δ | Role |
-|---|---|---|
-| `tests/cycle-artifacts/.../slices/s4-durability/SCOPE-CONTRACT.md` | nuevo | STOP report with three options. |
-| `tests/cycle-artifacts/.../slices/s4-durability/RECEIPT.md` | nuevo | This file. |
-
-**Zero source files modified. Zero tests added. Zero migrations applied.**
-
-## §4 Honest limits
-
-1. **The audit is read-only and at this slice's depth.** A deeper
-   audit would also examine `InMemoryLedger`, `Storage::reopen`,
-   and the `SqliteLedger` migration history. The above is sufficient
-   to justify the STOP; deeper audit belongs to whichever option
-   (A/B/C) is chosen.
-2. **`SoftwareObservation`'s `Serialize` derive is assumed stable
-   for the duration of one operator-decision cycle.** If a parallel
-   PR mutates it, the option-A contract negotiation changes.
-3. **The STOP is not a fault report.** It is a documented pause
-   pending a schema-evolution contract decision. S4 makes no claim
-   about the durability story's correctness — it records that the
-   story cannot be honestly told without the contract decision.
-
-## §5 Next slices
-
-- **S5 — real CogniCode EXT**: closed in `NOT_EVALUATED` state this session.
-- **S6 — fake relocation**: closed in `NOT_PROCEED` state this session.
-- **S7 — closeout integrated report**: can proceed once the operator
-  records a decision on S4 (A/B/C). S7's job is to surface this STOP
-  alongside S5 and S6 in the macro-cycle closeout.
+- No hay cambio de autoridad: el envelope v1 es nuevo, versionado desde
+  el día 1, aditivo.
+- Registro como **mejora sobre lo propuesto** (preámbulo del ciclo
+  AIW Delivery): refinamiento forzado por blocker resuelto con
+  investigación profunda.
+- Desbloquea: AIW-S1b (S4 deja de ser A/B/C pendiente).
