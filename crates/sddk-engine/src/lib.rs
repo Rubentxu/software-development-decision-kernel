@@ -17,6 +17,7 @@ mod adoption;
 pub mod agent_contribution_envelope;
 pub mod agent_host;
 pub mod agent_role_contract;
+pub mod agentic_session_binding;
 pub mod alignment_lens;
 pub mod architectural_contract;
 pub mod architecture_conformance;
