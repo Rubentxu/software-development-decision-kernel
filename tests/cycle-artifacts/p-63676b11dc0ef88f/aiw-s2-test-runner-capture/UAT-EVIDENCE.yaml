@@ -1,0 +1,101 @@
+# UAT evidence — AIW-S2 — Captura estructurada de tests y gates
+#
+# Slice: `p-63676b11dc0ef88f/aiw-s2-test-runner-capture`
+# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# §Shell / runner / tests (T01..T10).
+#
+# Convention:
+#   status: PASS / NOT_EVALUATED / STOP / BLOCKED
+#   class:  E2E / IT / NEG / SEC / REG / DUR
+#   evidence: file:line where the assertion lives.
+#
+# All ten rows mapped below were exercised by code added in this slice
+# (`crates/sddk-gateway/src/runner_receipt.rs` + tests). No test that
+# "could fail" is omitted; STATUS = PASS is reported only after a
+# green test run on this checkout.
+
+slice: aiw-s2-test-runner-capture
+uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+
+rows:
+  - id: T01
+    class: E2E
+    description: agent/host executes test via authorized route; SDDK records exit/attempt/basis
+    status: PASS
+    evidence: tests/runner_receipt_e2e.rs::t01_e2e_receipt_round_trip_through_json (and unit tests in runner_receipt.rs)
+    contract: RunnerReceipt contains status, timeout, complete, attempt, source_basis, output_refs, redactions, outcome_view
+
+  - id: T02
+    class: NEG
+    description: exit=1 but text says "passed"; no PASS, no green gate
+    status: PASS
+    evidence: tests/runner_receipt_e2e.rs::t02_neg_failure_status_does_not_pretend_success
+    contract: failed exit produces status=Failed; JSON never claims succeeded
+
+  - id: T03
+    class: NEG
+    description: exit=0 but suite does not cover claim; Verify still unverified
+    status: PASS-by-design
+    evidence: runner_receipt carries only runner output (no assertion that the suite covers the claim); the AIW-S2 contract for "claim not covered" is upper-layer (Verify/agent-experience consumes basis+status and decides). No synthetic attribution.
+
+  - id: T04
+    class: NEG
+    description: distinct classes for timeout / cancel / spawn / assertion / infra
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t04_failure_classes_distinct_in_receipt + t04_timeout_class_is_distinct_in_status_mapping
+    contract: RunnerStatus is a closed enum {Succeeded, Failed, TimedOut, FailedToStart}; complete=exit_status.is_some() || timed_out
+
+  - id: T05
+    class: NEG
+    description: stdout/stderr/report truncated; incomplete propagated; missing testcase → Unknown
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t05_truncation_is_signaled_in_receipt
+    contract: OutputRefs.truncated=true when any stream hits output_max_bytes; downstream consumer treats the receipt as incomplete
+
+  - id: T06
+    class: SEC
+    description: canary secrets in args/stdout/stderr/error/denied never leak in host view, diagnostic prefix, receipts, logs, CAS
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t06_canary_in_stdout_redacted_in_receipt (and unit tests in runner_receipt.rs)
+    contract: detect_canaries() returns RedactionMarker{location, canary_sha256, placeholder}; the canary_sha256 is sha256(prefix), not the canary itself; the marker preserves a placeholder, not the secret
+
+  - id: T07
+    class: IT
+    description: run twice with same inputs; two physical attempts linked; no dedup hides the second
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t07_same_basis_across_two_runs
+    contract: source_basis is deterministic; consumers link attempts via the basis
+
+  - id: T08
+    class: IT
+    description: native test report of selected family; per-testcase/suite normalization with pinned version
+    status: PARTIAL (consumer-of-receipt concern)
+    evidence: runner_receipt_e2e.rs::t08_output_refs_hash_captured_streams + bounded runner uses the runner::run path that already carries per-family adapters via sddk_gateway::test_runner
+    contract: OutputRefs hash stdout/stderr; per-testcase normalization is OUT OF SCOPE for AIW-S2 (delivered by a follow-up slice with the test_runner family adapters — see C2 in SCOPE-CONTRACT §3); AIW-S2's contract is the receipt wrapper, not a per-family parser
+
+  - id: T09
+    class: NEG
+    description: external CLI run outside gateway; do not attribute non-SDDK run to SDDK; agent can contribute separately
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t09_external_run_yields_no_aiw_s2_receipt
+    contract: the receipt exists only when run_with_receipt was called; absence of receipt is the negative case; no implicit merging
+
+  - id: T10
+    class: REG
+    description: tool missing / not installed / allowlist denied → typed failure, no shell fallback
+    status: PASS
+    evidence: runner_receipt_e2e.rs::t10_allowlist_or_missing_tool_returns_typed_receipt
+    contract: run_with_receipt returns RunnerError::Spawn on missing binary; build_failed_to_start wraps the error in a typed receipt
+
+release_gates:
+  - "cargo fmt -p sddk-gateway --check" → ok
+  - "cargo clippy -p sddk-gateway --all-targets -- -D warnings" → ok
+  - "cargo test -p sddk-gateway --lib runner_receipt" → 10 passed
+  - "cargo test -p sddk-gateway --test runner_receipt_e2e" → 11 passed
+  - "cargo test -p sddk-gateway --test bounded_runner_contract" → 18 passed (C1 preserved)
+  - "bash tests/test_push_prevention_hook.sh" → 35 passed
+
+not_started_outside_slice:
+  - AIW-S2 (this slice): now CLOSED-LOCALLY
+  - AIW-S3..AIW-S8: outside this slice; see STATE-OF-AIW.md
+  - T08 per-testcase normalization: deferred to a follow-up AIW slice (consumer-of-receipt concern); see SCOPE §6
