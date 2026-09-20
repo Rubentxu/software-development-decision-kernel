@@ -299,6 +299,69 @@ s_cycle_rename_receipt_to_docs() {
     git commit -qm "add receipt" >/dev/null
 }
 
+# ── INC-AIWS1-RECEIPT-PUSH-BLOCK canary purref (cycle inc-push-hook-canary-purref)
+# Documenting test canaries in RECEIPT.md must not trigger the secret screen.
+# Real secrets still must. Distinguish: redactable placeholders (<…>, {…},
+# <redacted:N>, ellipsis …) vs literal high-confidence credentials.
+
+s_cycle_receipt_with_test_canary() {
+    mk_cycle_dir
+    cat > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md <<'MDEOF'
+# Receipt
+
+| Test | Canary shape | Before | After |
+|------|--------------|--------|-------|
+| t1 | `api_key=CANARY_…` | RED | GREEN |
+| t2 | `token={CANARY_TOKEN}` | RED | GREEN |
+| t3 | `password=<USER_PROVIDED>` | RED | GREEN |
+MDEOF
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt with test canaries" >/dev/null
+}
+s_cycle_receipt_with_redacted_marker() {
+    mk_cycle_dir
+    cat > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md <<'MDEOF'
+# Receipt
+
+config: api_key=<redacted:23>
+other: token="<redacted:42>"
+MDEOF
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt with redacted markers" >/dev/null
+}
+s_cycle_receipt_with_literal_high_confidence_secret() {
+    mk_cycle_dir
+    cat > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md <<'MDEOF'
+# Receipt
+
+This MUST be rejected by the screen:
+
+ghp_aaaaaaaaaaaaaaaaaaaa
+github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+AKIAIOSFODNN7EXAMPLE
+xoxb-1234567890-abcdef
+sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaa
+-----BEGIN RSA PRIVATE KEY-----
+MIIBOgIBAAJBALR9vQyqQGQj...
+-----END RSA PRIVATE KEY-----
+config: api_key="abcdefghijklmnop"
+MDEOF
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt with literal secret" >/dev/null
+}
+s_cycle_receipt_with_real_github_pat() {
+    mk_cycle_dir
+    cat > tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md <<'MDEOF'
+# Receipt
+
+Real-looking github token below:
+
+token = ghp_4G2aBcDeFgHiJkLmNoPqRsTuVwXyZ0123
+MDEOF
+    git add tests/cycle-artifacts/p-example/some-cycle/RECEIPT.md
+    git commit -qm "docs(cycle): receipt with real-looking ghp_" >/dev/null
+}
+
 s_space_path_runtime() {
     mkdir -p crates/x; echo a > "crates/x/a b.rs"; git add "crates/x/a b.rs"
     git commit -qm "feat: spaced" >/dev/null
@@ -348,6 +411,11 @@ run_case "cycle non-documentary file (raw log)"                      REJECT s_cy
 run_case "stray file at tests/cycle-artifacts root"                  REJECT s_cycle_stray_top_level_file
 run_case "rename runtime -> cycle RECEIPT.md (no bump)"              REJECT s_cycle_rename_runtime_to_cycle p_runtime_add
 run_case "rename cycle receipt -> docs"                              ACCEPT s_cycle_rename_receipt_to_docs
+
+run_case "cycle RECEIPT.md with test canary placeholders"            ACCEPT s_cycle_receipt_with_test_canary
+run_case "cycle RECEIPT.md with <redacted:N> markers"                ACCEPT s_cycle_receipt_with_redacted_marker
+run_case "cycle RECEIPT.md with literal high-confidence secret"      REJECT s_cycle_receipt_with_literal_high_confidence_secret
+run_case "cycle RECEIPT.md with real-looking github PAT"             REJECT s_cycle_receipt_with_real_github_pat
 
 echo ""
 echo "=== matrix result: PASS=$PASS_COUNT FAIL=$FAIL_COUNT ==="
