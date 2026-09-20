@@ -192,7 +192,9 @@ the deferred-post-base queue:
 - **A7 Chronos / RUNTIME_ENHANCED**.
 - **A8 FULLY_ENHANCED** (blocked_by A6 + A7).
 - **J2..J6 JCODE_CORE_GA** (parallel track, P1).
-- **R14 dedicated security cycle** (secrets matrix).
+- **R14 dedicated security cycle** (secrets matrix) — source-level sweep
+  CLOSED by `A5-R14-SECRETS-SWEEP-RECEIPT.md` (v1.169.119);
+  adversarial-level review remains optional POST-BASE scope.
 - **R17 deeper operator diagnostics sweep**.
 - The 8 IMMEDIATE sites not yet routed through `with_busy_retry`
   (out of R-SQLITE-1 by design).

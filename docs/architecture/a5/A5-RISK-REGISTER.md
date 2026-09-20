@@ -39,7 +39,7 @@ The register is the *risk* view; `A5-DEBT-DISPOSITION.md` is the
 | R11 | Flaky test hidden by "couldn't reproduce → closed" | P1 | G13 | A5-5R + A5-5 | **CLOSED_A5** | A5-5R-RECEIPT.md (flake closed v1.169.81) + UAT-1 clean-machine (10/10 PASS, tests/clean_machine_uat.sh); release tag `v1.169.87`, commit `5ad25d1` |
 | R12 | Non-blocking Parallel path sender-drop bug | P1 | G4, G13 | A5-3 | **CLOSED** | A5-3-RECEIPT.md v1.169.75; commit `af346b9`; non-blocking path deleted (`operator.rs:1196-1356`, ~162 lines); 2 ignored `par_006_*` tests deleted; `parallel_spans_three_ticks_drain` deleted; runtime forces `pending_sender = None` per `operator.rs:1197-1205` |
 | R13 | Dead compatibility code (`paradigm_lens::evaluate_lens`) kept forever | P2 | G14 | A5-4a | **CLOSED** | A5-4a-RECEIPT.md v1.169.82; facade deleted; type deleted; ADR-0135 |
-| R14 | Secret leaks into log / receipt / error / telemetry / CAS | P0 | G11 | — | **OPEN_NON_BLOCKER** | No observed leak path; not addressed in A5 yet. Tracked for A5-5 or a future security cycle |
+| R14 | Secret leaks into log / receipt / error / telemetry / CAS | P0 | G11 | `A5-R14-SECRETS-SWEEP-RECEIPT.md` | **SWEPT_SOURCE_LEVEL** (v1.169.119) | No leak path found; latent gap closed (error/message/reason now string-scanned); residual = static single-pass, adversarial cycle remains POST-BASE |
 | R15 | Rollback to previous certified release fails | P1 | G15 | A5-1 + A5-5 | **CLOSED_A5** | A5-1 mechanism + UAT-1 clean-machine scenario 10 (rollback v1.169.86→v1.169.85, dev doctor all_present=true, bundle_coherence=present; receipt same as R8); release tag `v1.169.87`, commit `5ad25d1` |
 | R16 | An A5 change silently breaks an A4 certified contract | P0 | G1 | every cycle | **OPEN_NON_BLOCKER** | A4-CERTIFIED baseline (v1.169.68). Mechanism: cross-crate arch ratchets + ADR-0001 §3.2 promotion gates. No observed breach in A5-1..A5-5R, A5-4a/4b, A5-ITD |
 | R17 | Operator cannot diagnose a production failure | P2 | G10 | A5-4b + A5-5 | **OPEN_NON_BLOCKER** | A5-4b partial: about-line + `sddk agent-help` pointer. Deeper diagnostics sweep pending A5-5 / A5-C |
@@ -70,8 +70,10 @@ closed by A5-5R (v1.169.81).
 
 These are tracked, not blocking `BASE_PRODUCTION_READY`:
 
-- **R14 (secrets):** no observed leak path; out of scope for any
-  current cycle. Requires a dedicated security review cycle.
+- **R14 (secrets):** SWEPT_SOURCE_LEVEL by
+  `A5-R14-SECRETS-SWEEP-RECEIPT.md` (v1.169.119): no leak path found;
+  `STRING_LEVEL_KEY_PATTERN` extended to error/message/reason. A deeper
+  adversarial cycle remains optional POST-BASE scope.
 - **R16 (silent A5→A4 breach):** mechanism (cross-crate ratchets +
   ADR-0001 promotion gates) is in place and exercised. No observed
   breach in any A5 cycle.

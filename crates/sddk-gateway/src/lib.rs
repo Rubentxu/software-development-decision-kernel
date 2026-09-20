@@ -216,7 +216,12 @@ pub(crate) fn stable_request_key(
 /// line). The key-name redaction (`SECRET_KEY_PATTERN`) does NOT cover
 /// these surfaces because they are *containers* of free-form output,
 /// not fields that *are* the secret.
-const STRING_LEVEL_KEY_PATTERN: [&str; 2] = ["stdout", "stderr"];
+///
+/// R14 (secrets sweep cycle, v1.169.119): extended beyond stdout/stderr to
+/// the other free-form string containers that cross the receipt boundary —
+/// `error`, `message` and `reason` — since a leaked credential embedded in
+/// an error message or a proposal reason is the same leak class.
+const STRING_LEVEL_KEY_PATTERN: [&str; 5] = ["stdout", "stderr", "error", "message", "reason"];
 
 /// Recursively masks values under secret-like keys.
 pub fn redact(value: Value) -> Value {
@@ -380,6 +385,54 @@ mod tests {
         let output = redact(input);
         assert_eq!(output[0]["token"], "<redacted>");
         assert_eq!(output[1]["value"], 1);
+    }
+
+    // R14 secrets sweep (v1.169.119): error/message/reason are free-form
+    // containers and must get the same string-level scan as stdout/stderr.
+    #[test]
+    fn redaction_masks_secrets_embedded_in_error_message() {
+        let input = json!({
+            "error": "git push failed: remote: token=ghp_abcdefghijklmnopqrst"
+        });
+        let output = redact(input);
+        let masked = output["error"].as_str().unwrap();
+        assert!(
+            !masked.contains("ghp_abcdefghijklmnopqrst"),
+            "error surface leaked the credential"
+        );
+        assert!(
+            masked.contains("<redacted:"),
+            "error surface should keep a diagnostic marker"
+        );
+    }
+
+    #[test]
+    fn redaction_masks_secrets_embedded_in_reason() {
+        let input = json!({
+            "reason": "deploy using password: hunter2xyz before rollout"
+        });
+        let output = redact(input);
+        let masked = output["reason"].as_str().unwrap();
+        assert!(
+            !masked.contains("hunter2xyz"),
+            "reason surface leaked the credential"
+        );
+        assert!(
+            masked.contains("<redacted:"),
+            "reason surface should keep a diagnostic marker"
+        );
+    }
+
+    #[test]
+    fn redaction_leaves_plain_errors_verbatim() {
+        let input = json!({
+            "message": "connection refused by host example.com:443"
+        });
+        let output = redact(input);
+        assert_eq!(
+            output["message"].as_str().unwrap(),
+            "connection refused by host example.com:443"
+        );
     }
 
     #[test]
