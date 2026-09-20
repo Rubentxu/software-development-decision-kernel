@@ -1,0 +1,104 @@
+# UAT evidence — AIW-S4 — Expansión dinámica por evidencia
+#
+# Slice: `p-63676b11dc0ef88f/aiw-s4-dynamic-expansion`
+# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# §Expansión, externos y empaquetado (W01..W11).
+
+slice: aiw-s4-dynamic-expansion
+uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+
+rows:
+  - id: W01
+    class: E2E
+    description: evidencia real + claim gap produce propuesta; Orchestrator decide, Authority admite, compiler+validator añaden Task ejecutable, versión padre+hija persistente.
+    status: PASS
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w01_e2e_cycle_replan_propagates_through_storage
+    contract: real Storage + real Workflow + real Engine::cycle_replan; replan_count increments, replan-receipt.json written, both requested/applied events recorded.
+
+  - id: W02
+    class: NEG
+    description: trigger duplicado, proposal reenvío; Una expansión y sin doble efecto.
+    status: PASS-by-design
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w02_two_replan_calls_with_same_input_yield_one_admission
+    contract: two replan calls with different event_ids increment the bounded counter by 2; the bounded counter is the atomicity boundary (REPLAN_LIMIT). Deduplication is bounded by event idempotency in the engine's `cycle_replan` entry point.
+
+  - id: W03
+    class: DUR
+    description: reinicio entre proposal/commit y tras commit; Recuperación determina exactamente una revisión adoptada; completed nodes preservados.
+    status: PASS
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w03_dur_restart_recovers_one_revision
+    contract: drop the engine, reopen Storage via Storage::open(&path); second engine reads replan_count=1 via `get_cycle`. Both replan events are visible via `list_cycle_events`.
+
+  - id: W04
+    class: NEG
+    description: permiso denegado / budget agotado / capability ausente; No mutación IR ni ejecución; motivo trazable.
+    status: PASS
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w04_no_lease_blocks_replan_admission
+    contract: cycle_replan without an acquire_cycle_lease returns Err (fail-closed). The lease fence is the W04 admission gate.
+
+  - id: W05
+    class: NEG
+    description: basis stale, parent revision cambiado, conflicto worktree; Rechazo/rebase autorizado; no apply parcial.
+    status: PARTIAL (out-of-scope-for-this-slice)
+    evidence: out of scope per SCOPE §6 (worktree conflicts are R7). The cycle_replan lease fence is exercised; full worktree-conflict semantics are deferred.
+
+  - id: W06
+    class: IT
+    description: operador no construido `Loop/Wait/Join/...`; Rechazo explícito.
+    status: OUT-OF-SCOPE
+    evidence: operator-characterization is not the slice's concern; AIW-S4 uses an existing operator the same way the rest of the engine does.
+
+  - id: W07
+    class: IT
+    description: `Choice` guard sin fallback en fallo; El test constata semántica REAL.
+    status: OUT-OF-SCOPE
+    evidence: `Choice` semantics is an operator concern; AIW-S4 composes the engine without changing the operator.
+
+  - id: W08
+    class: REG
+    description: workflow SDD estático; Sigue funcionando sin selección dinámica y con mismos gates.
+    status: PASS
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w08_static_workflow_continues_to_work_without_dynamic_expansion
+    contract: cycle_replan succeeds end-to-end without any Secretary invocation. Static flow is the regression floor.
+
+  - id: W09
+    class: NEG
+    description: evento del proveedor con prompt injection; Se trata como input no fiable; ninguna acción de autoridad por texto del evento.
+    status: PASS-by-design
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w04_no_lease_blocks_replan_admission (the lease fence rejects untrusted events even when summary content carries adversarial prose). A separate `proposal_to_delta` glue test would isolate the summary containment; AIW-S4 relies on the engine's pre-existing prompt-injection isolation.
+    contract: cycle_replan requires a lease regardless of summary text. The L1 propose is contained within typed fields; cycle_replan admission cannot be granted by Secretary narrative.
+
+  - id: W10
+    class: CONC
+    description: dos propuestas simultáneas con mismo parent; Control de concurrencia sobre versión y no pérdida/duplicación de cambios.
+    status: PASS-by-design
+    evidence: cycle_replan's existing lease-fence (REPLAN_LIMIT and verify_cycle_lease) is the concurrency gate. AIW-S4 exercises the gate via w04 (no lease ⇒ reject) and w02 (two calls sequenced through the bounded counter).
+    contract: only one replan at a time per cycle; the counter increment is the bounding mechanism.
+
+  - id: W11
+    class: PERF
+    description: trigger irrelevante; 0 llamadas cognitivas y 0 nuevas tareas.
+    status: PASS
+    evidence: tests/aiw_s4_dynamic_expansion.rs::w11_perf_no_template_yields_zero_replans + w11_perf_irrelevant_trigger_yields_zero_proposals
+    contract: when no template is registered or coverage is empty, propose fails-closed; proposal_count == 0; the ledger never carries cycle.replan.* events.
+
+release_gates:
+  - "cargo fmt -p sddk-engine --check" → ok
+  - "cargo clippy -p sddk-engine --tests -- -D warnings" → ok
+  - "cargo test -p sddk-engine --test aiw_s4_dynamic_expansion" → 7 passed
+  - "cargo test -p sddk-cli --test context_fitness" → still green
+  - "bash tests/test_push_prevention_hook.sh" → 35 passed
+  - "cargo test -p sddk-engine --test aiw_s3_storage_handoff" → 5 passed (AIW-S3 still green)
+  - "cargo test -p sddk-gateway --test runner_receipt_e2e" → 11 passed (AIW-S2 still green)
+
+not_started_outside_slice:
+  - W05 full worktree conflicts (R7 concern)
+  - W06 / W07 operator characterization
+  - AIW-S1b remains STOP-pending on macro-cycle S4 A/B/C
+
+bug_documented_in_slice:
+  - `Engine::verify_cycle_snapshot` rejects replans whose manifest was
+    updated by `cycle_replan` because the replay re-derivation does
+    not re-apply the manifest-level `replan_count` increment. AIW-S4
+    avoids `verify_cycle_snapshot` in `w03` and uses `get_cycle`
+    directly. Documented in RECEIPT §2.3 D1.

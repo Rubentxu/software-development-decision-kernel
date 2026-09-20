@@ -1,5 +1,5 @@
 {
-  "revision": "e73ea1d3bcc1e449f0488ff233287915a1642b44",
+  "revision": "f8f01ff5344e84a4f1dcb9b8eeb9ee442b5bdb44",
   "rule_version": "1.0.0",
   "expected_files": [
     "crates/sddk-cli/src/admission.rs",
@@ -560,6 +560,7 @@
     "crates/sddk-engine/tests/agent_host_tests.rs",
     "crates/sddk-engine/tests/aiw_s1_cognicode_real.rs",
     "crates/sddk-engine/tests/aiw_s3_storage_handoff.rs",
+    "crates/sddk-engine/tests/aiw_s4_dynamic_expansion.rs",
     "crates/sddk-engine/tests/aiw_s5_chronos_real.rs",
     "crates/sddk-engine/tests/alignment_lens_fixture.rs",
     "crates/sddk-engine/tests/arc_try_unwrap_sync_tests.rs",
@@ -728,6 +729,6 @@
   "exclude_paths": [
     "crates/sddk-engine/tests/fixtures/"
   ],
-  "generated_at": "2026-09-20T15:32:42Z",
-  "file_count": 712
+  "generated_at": "2026-09-20T15:36:22Z",
+  "file_count": 713
 }
