@@ -1,7 +1,7 @@
 ---
 id: INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH
 title: "A derived-metadata commit (MANIFEST.sha256) has no admissible push path without a version bump"
-status: open
+status: closed
 severity: medium
 priority: P2
 fingerprint: "cb5e231d85cd8989"
@@ -68,11 +68,24 @@ legitimate derived-metadata change has **no** admitted path (too strict).
    ("regenerate and commit MANIFEST.sha256"), so the failure cannot be confused
    with a test regression.
 
+## Resolution (cycle inc-derived-metadata-push-path, v1.169.118)
+
+Adopted **Option 1**: `githooks/pre-push` now admits a third route (C) — a
+non-empty range whose changed paths are ALL `MANIFEST.sha256` (closed
+generated-only set) optionally combined with the (B) documentation-only
+allowlist. Any source path alongside the manifest still requires a real
+version bump (A): generated metadata can never smuggle source.
+
+Falsification: 4 new cases in `tests/test_push_prevention_hook.sh`
+(manifest only → ACCEPT, manifest+docs → ACCEPT, manifest+crates → REJECT,
+nested/MANIFEST.sha256 → REJECT). Matrix 39/39 PASS.
+
 ## Lifecycle
 
 | Date | Actor | Change | Evidence |
 |------|-------|--------|----------|
 | 2026-09-17 | config-model-v1 cycle | created | push rejection of `450e993`; release run 1 step-1 failure `prompts/sddk/orchestrator.md: hash mismatch` |
+| 2026-09-20 | inc-derived-metadata-push-path | closed (Option 1) | `githooks/pre-push` rule (C) + 4 test cases; matrix 39/39 |
 
 ## References
 

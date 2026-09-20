@@ -20,6 +20,13 @@
 #         AND no changed file contains a secret pattern (added by the
 #         same amendment: allowing a route is not certifying content).
 #
+#   (C) INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH (closed): a NON-EMPTY
+#       range whose changed paths are ALL generated-derived metadata
+#       (MANIFEST.sha256) plus documentation-only paths from (B). This
+#       admits a pure manifest-regeneration commit without burning a
+#       version number. Any source path alongside the manifest still
+#       requires (A) — generated metadata can never smuggle source.
+#
 # Only the three named documentary files are admitted under
 # tests/cycle-artifacts/ — raw logs, fixtures and dumps stay outside
 # the publishable surface.
@@ -59,6 +66,17 @@ is_allowed_path() {
         # Cycle documentary files only (INC-AIWS1-RECEIPT-PUSH-BLOCK).
         # Cycle id segment must be non-empty; project id is p- prefixed.
         tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT.md | tests/cycle-artifacts/p-*/*/DISCOVERY.md | tests/cycle-artifacts/p-*/*/RECEIPT.md) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Generated-derived metadata (INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH).
+# Closed set: files whose content is fully derived from bundle assets by
+# `sddk dev manifest`. Admissible only when NO source path changed in the
+# same range (checked by the caller).
+is_generated_path() {
+    case "$1" in
+        MANIFEST.sha256) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -171,7 +189,7 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     while IFS= read -r path; do
         [[ -z "$path" ]] && continue
         CHANGED_COUNT=$((CHANGED_COUNT + 1))
-        if ! is_allowed_path "$path"; then
+        if ! is_allowed_path "$path" && ! is_generated_path "$path"; then
             DOCS_ONLY=0
         fi
     done <<<"$CHANGED_PATHS"
@@ -203,7 +221,7 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
     echo "ERROR: A push to main requires EITHER:" >&2
     echo "ERROR:   (1) a commit that changes [workspace.package] version in $CARGO_TOML_PATH" >&2
-    echo "ERROR:   (2) a NON-EMPTY range whose changed paths are all under: docs/**, .sddk/followups/**, tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT.md|DISCOVERY.md|RECEIPT.md" >&2
+    echo "ERROR:   (2) a NON-EMPTY range whose changed paths are all under: docs/**, .sddk/followups/**, tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT.md|DISCOVERY.md|RECEIPT.md, MANIFEST.sha256 (generated-only)" >&2
     echo "ERROR: A commit subject (e.g. 'chore(release): bump version') is NOT authority." >&2
     echo "ERROR: ($INC_CEREMONIAL) — see INC-M7-9 for remediation options" >&2
     exit 1

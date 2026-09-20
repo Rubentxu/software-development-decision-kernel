@@ -9,7 +9,7 @@ This directory contains the canonical contracts for the durable debt remediation
 - **[debt-report.schema.json](./debt-report.schema.json)** (v1.0.0, draft-07) — JSON Schema for the per-cycle debt report.
 - **[INCIDENCE-TEMPLATE.md](./INCIDENCE-TEMPLATE.md)** — Template for `INC-NNN-{slug}.md` cross-cycle records.
 - **[INC-DEBT-023](./INC-DEBT-023-lints-advisory-no-expansion-cycle.md)** — Lints advisory sin ciclo de expansión programado (low/P3, open; cycle conformance-closeout-2026-09-13).
-- **[INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH](./INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH.md)** - Un commit de metadata derivada (`MANIFEST.sha256`) no tiene camino admisible de push sin quemar un bump (medium/P2, open; cycle config-model-v1-2026-09-17).
+- **[INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH](./INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH.md)** - Un commit de metadata derivada (`MANIFEST.sha256`) no tiene camino admisible de push sin quemar un bump (medium/P2, closed; regla (C) generated-only en `githooks/pre-push`, cycle inc-derived-metadata-push-path 2026-09-20).
 - **[INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW](./INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW.md)** - Commentario de anclaje DW-RUNTIME-003 en restart_survival.rs desalineado con lo que el test hace (low/P3, closed; cycle a5-2-2026-09-17).
 
 ## Source of truth

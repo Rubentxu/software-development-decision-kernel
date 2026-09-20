@@ -371,6 +371,34 @@ s_space_path_docs() {
     git commit -qm "docs: spaced" >/dev/null
 }
 
+# ── INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH: generated-only route ────────
+# MANIFEST.sha256 alone (or with docs) is admissible; with source it is not.
+
+s_manifest_only() {
+    echo "deadbeef  prompts/sddk/orchestrator.md" > MANIFEST.sha256
+    git add MANIFEST.sha256
+    git commit -qm "chore(manifest): regenerate" >/dev/null
+}
+s_manifest_plus_docs() {
+    echo "deadbeef  prompts/sddk/orchestrator.md" > MANIFEST.sha256
+    mkdir -p docs; echo hi > docs/m.md
+    git add MANIFEST.sha256 docs/m.md
+    git commit -qm "chore(manifest)+docs" >/dev/null
+}
+s_manifest_plus_crates() {
+    echo "deadbeef  prompts/sddk/orchestrator.md" > MANIFEST.sha256
+    mkdir -p crates/x; echo a > crates/x/a.rs
+    git add MANIFEST.sha256 crates/x/a.rs
+    git commit -qm "manifest+code smuggle" >/dev/null
+}
+s_manifest_like_source_path() {
+    # A similarly-named path outside the generated-only set stays rejected.
+    mkdir -p nested
+    echo x > nested/MANIFEST.sha256
+    git add nested/MANIFEST.sha256
+    git commit -qm "fake manifest path" >/dev/null
+}
+
 # ── matrix ──────────────────────────────────────────────────────────────────
 
 echo "=== A5-1 push-admission matrix ==="
@@ -396,6 +424,14 @@ run_case "Cargo.toml touched but version unchanged"             REJECT s_cargo_t
 run_case "rename runtime -> docs"                               REJECT s_rename_runtime_to_docs p_runtime_add
 run_case "rename docs -> runtime"                               REJECT s_rename_docs_to_runtime p_docs_add
 run_case "path with spaces under crates"                        REJECT s_space_path_runtime
+
+echo ""
+echo "=== generated-metadata route (INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH) ==="
+
+run_case "MANIFEST.sha256 only"                                    ACCEPT s_manifest_only
+run_case "MANIFEST.sha256 + docs"                                   ACCEPT s_manifest_plus_docs
+run_case "MANIFEST.sha256 + crates change (smuggle)"                REJECT s_manifest_plus_crates
+run_case "nested/MANIFEST.sha256 (not the generated set)"           REJECT s_manifest_like_source_path
 
 echo ""
 echo "=== cycle-artifacts documentary allowlist (INC-AIWS1-RECEIPT-PUSH-BLOCK) ==="
