@@ -69,11 +69,41 @@ pub struct GatePolicy {
     pub recorded_at: String,
 }
 
+impl GatePolicy {
+    /// Construct a signed policy (AC14). The signature must come from
+    /// a known signer; validity is enforced by the authority.
+    #[must_use]
+    pub fn new(
+        policy_id: impl Into<String>,
+        strictness: Strictness,
+        signed_by: impl Into<String>,
+        signature: impl Into<String>,
+        recorded_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            policy_id: policy_id.into(),
+            strictness,
+            signed_by: signed_by.into(),
+            signature: signature.into(),
+            recorded_at: recorded_at.into(),
+        }
+    }
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyRatchet {
     pub before: Strictness,
     pub after: Strictness,
+}
+
+impl PolicyRatchet {
+    /// Construct a ratchet transition (AC14: proof-carrying changes
+    /// consume ratchets from external callers).
+    #[must_use]
+    pub const fn new(before: Strictness, after: Strictness) -> Self {
+        Self { before, after }
+    }
 }
 
 #[non_exhaustive]
