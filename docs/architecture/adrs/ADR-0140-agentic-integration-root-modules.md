@@ -1,3 +1,14 @@
+---
+id: ADR-0140-AGENTIC-INTEGRATION-ROOT-MODULES
+status: accepted
+supersedes_history: false
+proposed_at: 2026-09-20
+accepted_at: 2026-09-20
+accepted_by_cycle: p-63676b11dc0ef88f/j2-j6-jcode-core-ga
+references:
+  - docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md
+---
+
 # ADR-0140: Módulos root de integración agéntica (J2–J6, JCODE_CORE_GA)
 
 - **Estado**: Accepted
