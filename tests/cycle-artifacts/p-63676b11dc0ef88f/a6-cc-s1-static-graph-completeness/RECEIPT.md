@@ -2,15 +2,15 @@
 
 Cycle id: `p-63676b11dc0ef88f/a6-cc-s1-static-graph-completeness`
 Baseline (released): `v1.169.93` → `99abe1a9cac99f07cd8af62bb0e1eae42af2362a`
-Closing commit (this cycle): `<filled at commit>` (feat engine; bump to 1.169.94 in a separate chore(release) commit per `githooks/pre-push` (A) contract).
+Closing commit (this cycle): `429f7f241acc02d01a985a6d4f5323e56e32622f` (`feat(engine): contrato de cobertura estática enhanced (CC-S1)`); bump to `1.169.94` en commit `99abe1a9cac99f07cd8af62bb0e1eae42af2362a` (`chore(release): bump version`) por condición A del `githooks/pre-push`.
 Cycle lead: orchestrator (this session, auto-run).
-Status: **CLOSED (LOCALLY)** — push pending release publication.
+Status: **CLOSED (locally, receipt regeneration at v1.169.95)** — regenerar el inventario durable a revisión `9688ebbfa4fd9c721ed905a05df91ec909ab4ee2` y re-verificar gates tras el sync a `origin/main`. Push posterior al release.
 
 ## §1 Scope adherence
 
 | MUST | Status | Evidence |
 |---|---|---|
-| **M1** Inventario durable, pin a revisión Git | ✅ | `crates/sddk-engine/tests/fixtures/static_enhanced/inventory_v1.json` regenerable; rule_version=1.0.0; 706 archivos esperados, calculado independientemente de CogniCode. `t_ar_5d_inventory_v1_artefact_loads_and_matches_repo` verde. |
+| **M1** Inventario durable, pin a revisión Git | ✅ | `crates/sddk-engine/tests/fixtures/static_enhanced/inventory_v1.json` regenerable; rule_version=1.0.0; **708 archivos esperados** (regenerado a revisión `9688ebbfa4fd9c721ed905a05df91ec909ab4ee2` durante este pase de sync a `origin/main` v1.169.95; original 706 a `74af75a`); calculado independientemente de CogniCode. `t_ar_5d_inventory_v1_artefact_loads_and_matches_repo` verde. |
 | **M2** `CoverageContract` versionado, no umbral global | ✅ | ADTs `CoverageContract`, `CoverageBasis`, `CoverageEvaluation`, `CoverageVerdict` SDDK-own. `t_ar_5b_no_global_threshold_constant_in_module` verde (no existen `0.9`/`threshold`/`coverage_ratio`/`STATIC_ENHANCED=true` en el módulo). |
 | **M3** Sin proveedor, no enhanced | ✅ | `t_ar_4_provider_unavailable_returns_evidence_gap` verde; `EvidenceGap::ProviderUnavailable` propagado por `NullCodeIntelligenceProvider`. |
 | **M4** Estrategia negociada contra capacidad exigida | ✅ | `t_ar_3b_lightweight_without_advertisement_yields_incomplete` verde; `lightweight` sin `available_strategies` declaradas no satisface claim. |
@@ -91,7 +91,7 @@ test result: ok. 6 passed; 0 failed; 0 ignored
 | `crates/sddk-engine/src/code_intelligence_port_fake.rs` | +37/-20 | Implementación de `coverage_evaluation` en `FakeCodeIntelligenceProvider` (usa `default_coverage_evaluation`) y `NullCodeIntelligenceProvider` (devuelve `EvidenceGap::ProviderUnavailable`). |
 | `crates/sddk-engine/src/code_intelligence_port_mcp.rs` | +14/0 | Implementación de `coverage_evaluation` en `CogniCodeMcpAdapter` (usa `default_coverage_evaluation`). |
 | `crates/sddk-engine/tests/a6_cc_s1_static_graph_completeness.rs` | nuevo | 12 tests + 1 EXT (ignored). |
-| `crates/sddk-engine/tests/fixtures/static_enhanced/inventory_v1.json` | nuevo | Artefacto durable (M1): revisión Git fijada, globs explícitos, 706 archivos esperados. |
+| `crates/sddk-engine/tests/fixtures/static_enhanced/inventory_v1.json` | nuevo | Artefacto durable (M1): revisión Git fijada, globs explícitos, **708 archivos esperados** (regenerado a `9688ebb` durante este pase; original 706 a `74af75a`). |
 | `docs/architecture/adrs/ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.md` | nuevo | ADR canónico (siguiente ID libre tras 0138). |
 | `docs/architecture/specs/arch-acceptance-coverage-001.md` | nuevo | Contrato de aceptación vinculado a `arch-spec-021 IPB-004`. |
 | `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cc-s1-static-graph-completeness/SCOPE-CONTRACT.md` | nuevo | Scope (este artefacto). |
@@ -127,6 +127,7 @@ La EXT requiere `COGNICODE_MCP_BIN` apuntando al binario real de CogniCode v0.97
 1. **CC-S2**: reubicar `code_intelligence_port_fake` bajo `dev-dependencies` con `#[cfg(any(test, feature = "test-support"))]` y un feature `test-support` explícito en `Cargo.toml`. Auditoría previa de qué crates consumen el fake. Los 6 tests de CC-S0 deben seguir verdes.
 2. **CC-S3**: ejecutar la EXT `t_ar_6_ext_real_cognicode_run` con `COGNICODE_MCP_BIN` disponible; validar la `CoverageContract` `static-enhanced-workspace-v1` contra `verify-kernel::static_evidence` y publicar `Satisfied` o reabrir si el surface de CogniCode ha cambiado desde el handshake AIW-S1.
 3. **AIW-S6 / CC-S4**: definir un `CoverageContract` de aceptación para un consumer real distinto de `verify-kernel` (p.ej. `release-pipeline::static_evidence`) para validar que el versionado por consumer funciona end-to-end.
+4. **CC-S5 (regen)**: regenerar `inventory_v1.json` cada vez que se bump-ea la versión (cuando el conjunto de archivos `.rs` cambie). El artefacto debe pinar la revisión HEAD del bump, no la revisión en la que se cerró CC-S1. Se puede automatizar con un `just inventory-static-enhanced` que emita el JSON; mientras no exista, la regeneración manual en cada release es aceptable (coste bajo).
 
 ## §6 References
 
