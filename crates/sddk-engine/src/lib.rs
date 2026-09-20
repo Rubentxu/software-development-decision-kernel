@@ -104,6 +104,7 @@ pub mod paradigm_profile;
 mod paths;
 pub mod production_hardening;
 pub mod projector_registry;
+pub mod reactive_verify;
 pub mod receipt_writers;
 pub mod release_readiness;
 pub mod replay_proof;
