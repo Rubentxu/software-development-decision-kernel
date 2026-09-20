@@ -52,7 +52,12 @@ fn t_pc1_suite_digest_is_portable_proof() {
             forbidden: vec!["tonic".into()],
         },
     };
-    let r1 = run_mutation_suite(&mk(), &[spec.clone()], &[guard.clone()]).unwrap();
+    let r1 = run_mutation_suite(
+        &mk(),
+        std::slice::from_ref(&spec),
+        std::slice::from_ref(&guard),
+    )
+    .unwrap();
     let r2 = run_mutation_suite(&mk(), &[spec], &[guard]).unwrap();
     assert!(r1.all_detected, "solved defect → immune guard detects it");
     assert_eq!(r1.digest, r2.digest, "proof is deterministic");
