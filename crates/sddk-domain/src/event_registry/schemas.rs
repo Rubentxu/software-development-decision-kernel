@@ -53,6 +53,17 @@ pub fn std_registry() -> Arc<EventSchemaRegistry> {
     registry.register(BacklogItemPromotedSchema);
     registry.register(BacklogItemDiscardedSchema);
 
+    // ── Static-evidence (observation) events — S4 durability (PR-UAT-024) ───
+    // Payload contract (frozen for v1):
+    //   {
+    //     "schema_version": 1,
+    //     "observation_set": { "observations": [ ...SoftwareObservation... ] },
+    //     "content_digest": "<hex sha256 of canonical ObservationSet digest>"
+    //   }
+    // SoftwareObservation JSON shape is owned by the Serialize/Deserialize
+    // impls in sddk-engine::observation::types (same crate version pin).
+    registry.register(StaticEvidenceObservationSetAppendedSchema);
+
     Arc::new(registry)
 }
 
@@ -375,5 +386,22 @@ schema_struct!(
             && has_string_field(p, "item_id")
             && has_string_field(p, "reason")
             && has_string_field(p, "discarded_at")
+    }
+);
+
+// ── Static-evidence (observation) events — S4 durability (PR-UAT-024) ─────────
+
+schema_struct!(
+    StaticEvidenceObservationSetAppendedSchema,
+    "observation.set.appended",
+    1,
+    "static-evidence observation set appended — payload must be an object with numeric 'schema_version', object 'observation_set' and string 'content_digest'",
+    |p: &serde_json::Value| {
+        p.is_object()
+            && p.get("schema_version").and_then(|v| v.as_u64()) == Some(1)
+            && p.get("observation_set")
+                .map(|v| v.is_object())
+                .unwrap_or(false)
+            && has_string_field(p, "content_digest")
     }
 );

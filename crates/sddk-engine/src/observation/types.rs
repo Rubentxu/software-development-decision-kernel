@@ -1,6 +1,6 @@
 //! Substrate types (REQ-A4S0-001..009).
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::architectural_contract::{ComponentRef, ContractId, EntityRef};
@@ -30,7 +30,7 @@ use crate::semantic_kind::CoreRelationKind;
 ///
 /// Reuses the refs that already exist rather than minting parallel ones: those
 /// three already name the things a relation can join.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "id")]
 pub enum SoftwareEntityRef {
     /// A software unit.
@@ -54,7 +54,7 @@ impl SoftwareEntityRef {
 }
 
 /// A software relation: an ADT, **never** a rendered string (REQ-A4S0-001).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SoftwareRelation {
     /// Source endpoint.
     pub from: SoftwareEntityRef,
@@ -94,7 +94,7 @@ impl SoftwareRelation {
 ///
 /// `sha256(domain | from | kind | to)`. Timestamps, messages, severities and
 /// rendered text are excluded (REQ-A4S0-002, REQ-A4S0-004).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct RelationId(pub String);
 
 impl RelationId {
@@ -124,7 +124,7 @@ impl RelationId {
 /// A different axis from "how strongly is this held": `AdvisoryProvenance` answers
 /// the latter. Collapsing them would force a producer to declare a storage location
 /// it does not have.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObservationOrigin {
     /// A deterministic analyzer inside SDDK. The strongest origin.
@@ -165,7 +165,7 @@ impl ObservationOrigin {
 ///
 /// This is what makes contradiction representable without overwriting: an affirm
 /// and a deny are two observations, not two versions of one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObservationStance {
     /// The producer observed the relation as holding.
@@ -188,7 +188,7 @@ impl ObservationStance {
 ///
 /// `revision` and `knowledge_basis` are clock-stable (A3 measured that
 /// `semantic_graph_digest` is not), which is why identity may include them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationBasis {
     /// Exact revision the observation was taken at.
     pub revision: String,
@@ -250,7 +250,7 @@ impl ObservationBasis {
 ///
 /// `SoftwareRelation`, `Contract`, and `Knowledge` are the other three
 /// subjects. The total is six closed variants.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "subject")]
 pub enum ObservationSubject {
     /// A software relation — the case `why architecture` needs.
@@ -293,7 +293,7 @@ impl ObservationSubject {
 ///
 /// `sha256(domain | subject | evidence | origin | stance | basis)`. No timestamp,
 /// no message, no severity, no rendered text (REQ-A4S0-004).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ObservationId(pub String);
 
 impl ObservationId {
@@ -329,7 +329,7 @@ impl ObservationId {
 }
 
 /// One observation, with its provenance (REQ-A4S0-007, 008, 009).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SoftwareObservation {
     /// Deterministic identity.
     pub id: ObservationId,
@@ -388,7 +388,7 @@ impl SoftwareObservation {
 ///
 /// There is **no** `replace` and no `latest`. Inserting never removes or supersedes
 /// anything.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationSet {
     observations: Vec<SoftwareObservation>,
 }

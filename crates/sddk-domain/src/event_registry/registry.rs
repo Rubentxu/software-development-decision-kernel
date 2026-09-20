@@ -106,8 +106,10 @@ mod tests {
     #[test]
     fn registry_len_matches_expected_count() {
         let registry = std_registry();
-        // We register 26 event types (22 prior + 4 backlog ledger events added in
-        // cycle p-63676b11dc0ef88f/backlog-ledger-substrate).
-        assert_eq!(registry.len(), 26);
+        // We register 27 event types (22 prior + 4 backlog ledger events added in
+        // cycle p-63676b11dc0ef88f/backlog-ledger-substrate + 1 static-evidence
+        // observation.set.appended v1 added in cycle p-63676b11dc0ef88f/
+        // a6-static-enhanced-readiness/slices/s4-durability).
+        assert_eq!(registry.len(), 27);
     }
 }
