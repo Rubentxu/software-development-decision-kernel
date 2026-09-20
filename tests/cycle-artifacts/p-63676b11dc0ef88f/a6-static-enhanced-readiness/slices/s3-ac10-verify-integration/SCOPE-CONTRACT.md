@@ -2,7 +2,7 @@
 
 > **Slice id:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s3-ac10-verify-integration`
 > **Macro-cycle:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness`
-> **Status:** planning + implementation in one session.
+> **Status:** CLOSED. Slice closed at commit `c917393`; post-close hot-fix at `6935aef`; this SCOPE status reconciled.
 
 ## §1 Goal
 
@@ -66,11 +66,22 @@ continue if S3 stops.
 | Deliverable | Path | Status |
 |---|---|---|
 | SCOPE-CONTRACT (this file) | `tests/cycle-artifacts/.../slices/s3-ac10-verify-integration/SCOPE-CONTRACT.md` | ✅ |
-| Adapter module + helpers | `crates/sddk-engine/src/code_intelligence_port/verify_bridge.rs` (or extend an existing module) | 🔲 |
-| Test binary with 3 UAT tests | `crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs` | 🔲 |
-| UAT evidence rows | `tests/cycle-artifacts/.../slices/s3-ac10-verify-integration/UAT-EVIDENCE.yaml` | 🔲 |
-| RECEIPT | `tests/cycle-artifacts/.../slices/s3-ac10-verify-integration/RECEIPT.md` | 🔲 |
-| 1 commit `feat(engine)` (source + tests + cycle docs) | — | 🔲 |
+| Adapter module + helpers | `crates/sddk-engine/src/verify_kernel/evidence_source_static_provider.rs` (re-homed from `code_intelligence_port/verify_bridge.rs`; documented deviation in RECEIPT §3.1) | ✅ |
+| Test binary with UAT tests | `crates/sddk-engine/tests/a6_s3_ac10_verify_integration.rs` (5 tests, not the 3 originally scoped; the additional 2 cover OBSERVED_STATIC marker and unknown-without-evidence, both under the same AC10 invariant) | ✅ |
+| UAT evidence rows | `tests/cycle-artifacts/.../slices/s3-ac10-verify-integration/UAT-EVIDENCE.yaml` | ✅ |
+| RECEIPT | `tests/cycle-artifacts/.../slices/s3-ac10-verify-integration/RECEIPT.md` | ✅ |
+| 1 commit `feat(engine)` (source + tests + cycle docs) | `c917393` (initial close) + `6935aef` (post-close hot-fix: empty-`Vec<Observation>` edge case pin) | ✅+ |
+
+> **Note on §5 reconciliation**: this SCOPE was the plan; the RECEIPT
+> records the actual closing state. The path deviation (bridge
+> re-homed into `verify_kernel/`) is documented in RECEIPT §3.1
+> and was necessary to satisfy
+> `crates/sddk-cli/tests/context_fitness.rs::no_new_root_level_context_module_without_adr`.
+> The test-count deviation (5 tests, not 3) is documented in
+> RECEIPT §2.1: 2 additional tests were added because they cover
+> invariants (OBSERVED_STATIC marker, unknown-without-evidence)
+> that were not in the original 3-test plan but are part of the
+> AC10 contract.
 
 ## §6 Out of scope
 
