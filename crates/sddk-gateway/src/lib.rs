@@ -53,6 +53,10 @@ pub use release::{
     plan_release, reconcile_pending,
 };
 pub use runner::{RunOutcome, RunSpec, RunnerError, run};
+pub use runner_receipt::{
+    OutputRefs, RedactionLocation, RedactionMarker, RunOutcomeView, RunnerReceipt, RunnerStatus,
+    build_failed_to_start, build_receipt, detect_canaries, run_with_receipt, source_basis,
+};
 pub use sddk_storage::CapabilityReceipt;
 pub use semantic::{
     SemanticOracleError, SemanticOracleOutcome, SemanticOracleSpec, run_semantic_oracle,
