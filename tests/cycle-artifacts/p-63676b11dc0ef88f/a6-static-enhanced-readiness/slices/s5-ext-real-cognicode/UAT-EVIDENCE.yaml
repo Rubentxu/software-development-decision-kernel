@@ -1,0 +1,154 @@
+# UAT evidence rows — S5 — Real CogniCode EXT (NOT_EVALUATED)
+#
+# Schema per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+# §I. Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s5-ext-real-cognicode`.
+#
+# Status of every row: `NOT_EVALUATED`. Rationale per macro-cycle rule
+# ("Si una prueba externa indispensable queda ignorada o no ejecutada,
+# mantener ese requisito como NOT_EVALUATED") and operator's hard rule
+# "no fabrication — if COGNICODE_MCP_BIN is unavailable for EXT, mark
+# NOT_EVALUATED; do not invent evidence."
+#
+# Environment audit (recorded 2026-09-20):
+#   $ env | grep COGNICODE         -> unset
+#   $ which cognicode-mcp          -> not found
+#   $ which cognicode              -> not found
+#   $ ls /usr/local/bin/cogni*     -> no such file
+#
+# The pinned test exists at
+# `crates/sddk-engine/tests/a6_cc_s1_static_graph_completeness.rs::t_ar_6_ext_real_cognicode_run`
+# and is `#[ignore]`-d when `COGNICODE_MCP_BIN` is absent. CC-S1 last
+# ran 12 PASS / 0 FAIL / 1 IGNORED; that 1 ignored is this row.
+
+uat_id: AC10
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp v0.97.1` handshake"
+command_or_test: "crates/sddk-engine/tests/a6_cc_s1_static_graph_completeness.rs::t_ar_6_ext_real_cognicode_run"
+result: NOT_EVALUATED
+result_ref: "ignored because COGNICODE_MCP_BIN is unset; see SCOPE-CONTRACT §3"
+provider_basis: null
+notes: |
+  Live EXT run requires `COGNICODE_MCP_BIN` pointing at a real
+  `cognicode-mcp` binary. Not available in this environment. HONEST
+  PARTIAL STATE — not a failure, not a fabricated PASS.
+
+---
+
+uat_id: PR-UAT-C01
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` NullProvider handshake"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against the fake provider in S1; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C02
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` required-unavailable path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S1; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C03
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` provider-version-mismatch path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S1; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C04
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` localized delta path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S3 (PR-UAT-C04 re-pin); live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C05
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` analyze_impact surface scan"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S2; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C06
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` cancellation path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S1; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C07
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` restart reconnect path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S2; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C08
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` protocol-incompatible path"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S1; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C09
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` contradiction preservation"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S2; live EXT not exercised."
+
+---
+
+uat_id: PR-UAT-C10
+sddk_commit: "<slice S5 closing commit>"
+profile: EXT
+fixture: "live `cognicode-mcp` deterministic coverage"
+command_or_test: "see CC-S1 live EXT (gated by COGNICODE_MCP_BIN)"
+result: NOT_EVALUATED
+result_ref: "ignored in this environment"
+provider_basis: null
+notes: "Covered against fake in S1; live EXT not exercised."
