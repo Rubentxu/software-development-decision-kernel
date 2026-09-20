@@ -48,6 +48,13 @@ fn basis() -> ObservationBasis {
         "input:abc",
     )
 }
+fn obs_basis(revision: &str, input: &str) -> ObservationBasis {
+    ObservationBasis::new(
+        revision,
+        KnowledgeBasis::empty(EventTime(1)).basis_hash().clone(),
+        input,
+    )
+}
 fn evidence(locator: &str) -> EvidenceRef {
     EvidenceRef::new(EvidenceKind::Adhoc, locator)
 }
@@ -201,4 +208,139 @@ fn schema_rejects_unversioned_or_malformed_payloads() {
         schema.validate_payload(&good).is_ok(),
         "empty set is valid v1"
     );
+}
+
+// ── AIW-S1b gate: UAT-A10 — probe the CURRENT writer before any successor shape ──
+//
+// Roadmap (MILESTONES.md, AIW-S1b): "Probar primero writer actual. Si no
+// permite guardar dos observaciones contradictorias con identity+basis+relation
+// sin pérdida, aprobar AIW-ADR-03 ... Si no se demuestra carencia, cancelar
+// slice."
+//
+// This test IS that probe. If it passes, the carencia is NOT demonstrated and
+// AIW-S1b must be CANCELLED per the roadmap (no successor shape needed).
+
+#[test]
+fn uat_a10_current_writer_preserves_two_contradictory_observations_across_reboot() {
+    let dir = tempdir().expect("tempdir");
+    let db_path = dir.path().join("s1b-probe.sqlite");
+
+    // Two observations of the SAME subject (same relation), with DIFFERENT
+    // stance AND different basis/evidence — a genuine contradiction
+    // (one producer affirms, another denies, each against its own basis).
+    let mut live = ObservationSet::new();
+    let id_affirm = {
+        let o = SoftwareObservation::declare(
+            ObservationSubject::SoftwareRelation(relation()),
+            ObservationStance::Affirms,
+            evidence("ev:affirm"),
+            ObservationOrigin::StaticProvider,
+            obs_basis("rev:1", "input:affirm"),
+            None,
+            "producer-a",
+        );
+        let id = o.id.clone();
+        live.insert(o);
+        id
+    };
+    let id_deny = {
+        let o = SoftwareObservation::declare(
+            ObservationSubject::SoftwareRelation(relation()),
+            ObservationStance::Denies,
+            evidence("ev:deny"),
+            ObservationOrigin::StaticProvider,
+            obs_basis("rev:1", "input:deny"),
+            None,
+            "producer-b",
+        );
+        let id = o.id.clone();
+        live.insert(o);
+        id
+    };
+
+    // Precondition for a genuine contradiction probe: both must coexist in
+    // memory (distinct identity — stance and basis participate in the id),
+    // and the relation must be queryable with BOTH observations attached.
+    assert_ne!(
+        id_affirm, id_deny,
+        "contradiction requires distinct identity"
+    );
+    assert_eq!(live.observations().len(), 2, "no latest-wins overwrite");
+    let rel_id = relation().id();
+    let for_rel = live.for_relation(&rel_id);
+    assert_eq!(
+        for_rel.len(),
+        2,
+        "both stances attached to the same relation"
+    );
+
+    // Persist via the canonical v1 event and reopen (crash/reboot path).
+    {
+        let storage = Storage::open(&db_path).expect("open");
+        storage
+            .emit_canonical_event(&observation_event_input("evt-s1b-1", payload_for(&live)))
+            .expect("emit");
+    }
+    let storage = Storage::open(&db_path).expect("reopen");
+    let events = storage.list_events().expect("list");
+    let stored = events
+        .iter()
+        .find(|e| e.event_type == "observation.set.appended")
+        .expect("event present");
+    std_registry()
+        .get("observation.set.appended", 1)
+        .expect("schema")
+        .validate_payload(&stored.payload)
+        .expect("schema-valid");
+
+    let rebooted: ObservationSet =
+        serde_json::from_value(stored.payload["observation_set"].clone()).expect("deserialize");
+
+    // DUR+COND assertions (UAT-A10): identities survive, both relations
+    // (stances) survive, no aggregation, no latest-wins.
+    assert_eq!(rebooted, live, "set survives reboot exactly");
+    assert_eq!(rebooted.observations().len(), 2);
+    assert!(rebooted.observations().iter().any(|o| o.id == id_affirm));
+    assert!(rebooted.observations().iter().any(|o| o.id == id_deny));
+    let for_rel_after = rebooted.for_relation(&rel_id);
+    assert_eq!(for_rel_after.len(), 2, "no score aggregation, no loss");
+    assert!(
+        for_rel_after
+            .iter()
+            .any(|o| o.stance == ObservationStance::Affirms)
+    );
+    assert!(
+        for_rel_after
+            .iter()
+            .any(|o| o.stance == ObservationStance::Denies)
+    );
+}
+
+#[test]
+fn uat_a10_probe_negative_duplicate_identity_collapses() {
+    // The ONE sanctioned collapse is byte-identical identity (dedup by id).
+    // This is not latest-wins: same id means same content hash; the insert is
+    // idempotent. Everything else coexists.
+    let mut set = ObservationSet::new();
+    let mk = || {
+        SoftwareObservation::declare(
+            ObservationSubject::SoftwareRelation(relation()),
+            ObservationStance::Affirms,
+            evidence("ev:same"),
+            ObservationOrigin::StaticProvider,
+            obs_basis("rev:1", "input:same"),
+            None,
+            "producer-same",
+        )
+    };
+    let first = mk();
+    let id = first.id.clone();
+    set.insert(first);
+    set.insert(mk());
+    assert_eq!(
+        set.observations().len(),
+        1,
+        "identical identity is idempotent insert"
+    );
+    assert!(set.observations().iter().any(|o| o.id == id));
 }
