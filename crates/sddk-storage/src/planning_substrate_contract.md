@@ -70,23 +70,28 @@ A write wrapped in `transaction_with_behavior(Immediate)` with bounded retry on
 - All other errors propagate immediately (no retry).
 - Fits inside the connection's existing `busy_timeout(5s)` budget.
 
-## IMMEDIATE Transaction Sites (9 total)
+## IMMEDIATE Transaction Sites
 
 SQLite's `IMMEDIATE` transaction behavior acquires a write lock at the start of
 the transaction (not at commit time), which serializes concurrent writers.
-The following methods open `transaction_with_behavior(Immediate)`:
+
+**As of SQLITE-BUSY-R2, ALL IMMEDIATE write sites route through
+`with_busy_retry`** (bounded retry, max 5 attempts, 100–500ms exponential
+backoff on `DatabaseBusy`). The only remaining direct call to
+`transaction_with_behavior(Immediate)` is inside the helper itself:
 
 | Line | Method | Routing |
-|------|--------|---------|
-| ~504 | `register_project_workspace` | Out of scope (registration surface) |
-| ~607 | `insert_cycle` | Out of scope (bootstrap path, runs inside `insert_cycle_with_event`'s IMMEDIATE) |
-| ~1039 | `begin_capability_receipt` | Out of scope (capability-receipt substrate) |
-| ~1140 | `finalize_capability_receipt` | Out of scope (capability-receipt substrate) |
-| ~1233 | `acquire_cycle_lease` | Out of scope (already fully transactional, lease semantics) |
-| ~1335 | `renew_cycle_lease` | Out of scope (already fully transactional) |
-| ~1391 | `release_cycle_lease` | Out of scope (already fully transactional) |
-| ~1474 | `insert_gate_receipt_next_seq` | Routes through `with_busy_retry` (bounded retry) |
-| ~1538 | `insert_gate_receipt` | Out of scope (bootstrap, caller-supplied seq) |
+|------|--------|--------|
+| ~1476 | `with_busy_retry` (helper) | Owns the single raw `Immediate` call; all sites below delegate here |
+| ~504 | `register_project_workspace` | `with_busy_retry` |
+| ~607 | `insert_cycle` | Bootstrap path; runs inside `insert_cycle_with_event`'s retry-wrapped IMMEDIATE |
+| ~1039 | `begin_capability_receipt` | `with_busy_retry` |
+| ~1140 | `finalize_capability_receipt` | `with_busy_retry` |
+| ~1233 | `acquire_cycle_lease` | `with_busy_retry` |
+| ~1335 | `renew_cycle_lease` | `with_busy_retry` |
+| ~1391 | `release_cycle_lease` | `with_busy_retry` (DELETE retried; `lease.released` event emitted outside the closure in its own transaction) |
+| ~1474 | `insert_gate_receipt_next_seq` | `with_busy_retry` |
+| ~1538 | `insert_gate_receipt` | `with_busy_retry` |
 
 ## Planning Substrate Write Sites (6 total)
 
@@ -118,5 +123,5 @@ These are the methods that write to the four planning tables:
 | `insert_artifact` (lib.rs) | Separate evidence-of-artifacts substrate; distinct write pattern |
 | `update_cycle_with_event` (lib.rs) | Split-transaction design is intentional (event-first for fail-closed semantics); audit deferred to OQ-SQLITE-1 (P3) |
 | `insert_cycle` (lib.rs) | Bootstrap path; runs inside `insert_cycle_with_event`'s IMMEDIATE transaction in production |
-| `begin/finalize_capability_receipt` (lib.rs) | Separate capability-receipt substrate, already fully transactional |
-| `cycle_leases` (lib.rs) | Already transactional; no flake observed |
+| `begin/finalize_capability_receipt` (lib.rs) | Capability-receipt substrate; now retry-wrapped via `with_busy_retry` (SQLITE-BUSY-R2) |
+| `cycle_leases` (lib.rs) | Lease writes; now retry-wrapped via `with_busy_retry` (SQLITE-BUSY-R2) |

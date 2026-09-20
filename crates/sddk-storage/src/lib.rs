@@ -499,73 +499,74 @@ impl Storage {
                 id: workspace.workspace_id.clone(),
             });
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing_project = project_optional_on(&transaction, &project.project_id)?;
-        match existing_project {
-            Some(existing)
-                if existing.remote_url != project.remote_url || existing.scope != project.scope =>
-            {
-                return Err(StorageError::RegistrationConflict {
-                    entity: "project",
-                    id: project.project_id.clone(),
-                });
-            }
-            Some(_) => {}
-            None => {
-                let has_other: bool =
-                    transaction.query_row("SELECT EXISTS(SELECT 1 FROM projects)", [], |row| {
-                        row.get(0)
-                    })?;
-                if has_other {
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            let existing_project = project_optional_on(transaction, &project.project_id)?;
+            match existing_project {
+                Some(existing)
+                    if existing.remote_url != project.remote_url
+                        || existing.scope != project.scope =>
+                {
                     return Err(StorageError::RegistrationConflict {
                         entity: "project",
                         id: project.project_id.clone(),
                     });
                 }
-                transaction.execute(
-                    "INSERT INTO projects (
-                        project_id, display_name, remote_url, scope, created_at
-                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        project.project_id,
-                        project.display_name,
-                        project.remote_url,
-                        project.scope,
-                        project.created_at
-                    ],
-                )?;
+                Some(_) => {}
+                None => {
+                    let has_other: bool = transaction.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM projects)",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    if has_other {
+                        return Err(StorageError::RegistrationConflict {
+                            entity: "project",
+                            id: project.project_id.clone(),
+                        });
+                    }
+                    transaction.execute(
+                        "INSERT INTO projects (
+                            project_id, display_name, remote_url, scope, created_at
+                         ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            project.project_id,
+                            project.display_name,
+                            project.remote_url,
+                            project.scope,
+                            project.created_at
+                        ],
+                    )?;
+                }
             }
-        }
-        let existing_workspace = workspace_optional_on(&transaction, &workspace.workspace_id)?;
-        match existing_workspace {
-            Some(existing)
-                if existing.project_id != workspace.project_id
-                    || existing.canonical_path != workspace.canonical_path =>
-            {
-                return Err(StorageError::RegistrationConflict {
-                    entity: "workspace",
-                    id: workspace.workspace_id.clone(),
-                });
+            let existing_workspace = workspace_optional_on(transaction, &workspace.workspace_id)?;
+            match existing_workspace {
+                Some(existing)
+                    if existing.project_id != workspace.project_id
+                        || existing.canonical_path != workspace.canonical_path =>
+                {
+                    return Err(StorageError::RegistrationConflict {
+                        entity: "workspace",
+                        id: workspace.workspace_id.clone(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    transaction.execute(
+                        "INSERT INTO workspaces (
+                            workspace_id, project_id, canonical_path, created_at
+                         ) VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            workspace.workspace_id,
+                            workspace.project_id,
+                            workspace.canonical_path,
+                            workspace.created_at
+                        ],
+                    )?;
+                }
             }
-            Some(_) => {}
-            None => {
-                transaction.execute(
-                    "INSERT INTO workspaces (
-                        workspace_id, project_id, canonical_path, created_at
-                     ) VALUES (?1, ?2, ?3, ?4)",
-                    params![
-                        workspace.workspace_id,
-                        workspace.project_id,
-                        workspace.canonical_path,
-                        workspace.created_at
-                    ],
-                )?;
-            }
-        }
-        transaction.commit()?;
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Inserts a cycle snapshot without a ledger event.
@@ -602,11 +603,8 @@ impl Storage {
                 status: cycle.manifest.status,
             });
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        insert_cycle_on(&transaction, cycle)?;
-        transaction.commit()?;
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| insert_cycle_on(transaction, cycle))?;
         self.emit_canonical_event(event)
     }
 
@@ -1034,66 +1032,62 @@ impl Storage {
         }
         let request_json = serde_json::to_string(&input.request)?;
         let request_hash = hash_capability_request(input)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            let existing = transaction
+                .query_row(
+                    "SELECT request_hash, receipt_id FROM idempotency_records
+                     WHERE project_id = ?1 AND idempotency_key = ?2",
+                    params![input.project_id, input.idempotency_key],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .optional()?;
 
-        let existing = transaction
-            .query_row(
-                "SELECT request_hash, receipt_id FROM idempotency_records
-                 WHERE project_id = ?1 AND idempotency_key = ?2",
-                params![input.project_id, input.idempotency_key],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-            )
-            .optional()?;
-
-        if let Some((existing_hash, receipt_id)) = existing {
-            if existing_hash != request_hash {
-                return Err(StorageError::IdempotencyConflict {
-                    key: input.idempotency_key.clone(),
-                });
+            if let Some((existing_hash, receipt_id)) = existing {
+                if existing_hash != request_hash {
+                    return Err(StorageError::IdempotencyConflict {
+                        key: input.idempotency_key.clone(),
+                    });
+                }
+                return get_capability_receipt_on(transaction, &receipt_id);
             }
-            let receipt = get_capability_receipt_on(&transaction, &receipt_id)?;
-            transaction.commit()?;
-            return Ok(receipt);
-        }
 
-        transaction.execute(
-            "INSERT INTO capability_receipts (
+            transaction.execute(
+                "INSERT INTO capability_receipts (
                 receipt_id, project_id, cycle_id, capability, request_hash,
                 request_json, status, result_json, started_at, completed_at,
                 agent_version_hash, behavior_version_hash
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                input.receipt_id,
-                input.project_id,
-                input.cycle_id,
-                input.capability,
-                request_hash,
-                request_json,
-                enum_string(&input.status)?,
-                optional_json(&input.result)?,
-                input.started_at,
-                input.completed_at,
-                input.agent_version_hash,
-                input.behavior_version_hash
-            ],
-        )?;
-        transaction.execute(
-            "INSERT INTO idempotency_records (
+                params![
+                    input.receipt_id,
+                    input.project_id,
+                    input.cycle_id,
+                    input.capability,
+                    request_hash,
+                    request_json,
+                    enum_string(&input.status)?,
+                    optional_json(&input.result)?,
+                    input.started_at,
+                    input.completed_at,
+                    input.agent_version_hash,
+                    input.behavior_version_hash
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO idempotency_records (
                 project_id, idempotency_key, request_hash, receipt_id, created_at
              ) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                input.project_id,
-                input.idempotency_key,
-                request_hash,
-                input.receipt_id,
-                input.started_at
-            ],
-        )?;
-        let receipt = get_capability_receipt_on(&transaction, &input.receipt_id)?;
-        transaction.commit()?;
-        Ok(receipt)
+                params![
+                    input.project_id,
+                    input.idempotency_key,
+                    request_hash,
+                    input.receipt_id,
+                    input.started_at
+                ],
+            )?;
+            let receipt = get_capability_receipt_on(transaction, &input.receipt_id)?;
+            Ok(receipt)
+        })
     }
 
     /// Finalizes a capability receipt from the started state.
@@ -1135,49 +1129,48 @@ impl Storage {
         if status == CapabilityStatus::Started {
             return Err(StorageError::InvalidReceiptBegin);
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let current = get_capability_receipt_on(&transaction, receipt_id)?;
-        if current.status != CapabilityStatus::Started {
-            return Err(StorageError::TerminalReceipt {
-                receipt_id: receipt_id.to_owned(),
-            });
-        }
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            let current = get_capability_receipt_on(transaction, receipt_id)?;
+            if current.status != CapabilityStatus::Started {
+                return Err(StorageError::TerminalReceipt {
+                    receipt_id: receipt_id.to_owned(),
+                });
+            }
 
-        // Build dynamic UPDATE based on which fields are provided
-        if agent_version_hash.is_some() || behavior_version_hash.is_some() {
-            transaction.execute(
-                "UPDATE capability_receipts
+            // Build dynamic UPDATE based on which fields are provided
+            if agent_version_hash.is_some() || behavior_version_hash.is_some() {
+                transaction.execute(
+                    "UPDATE capability_receipts
                  SET status = ?2, result_json = ?3, completed_at = ?4,
                      agent_version_hash = COALESCE(?5, agent_version_hash),
                      behavior_version_hash = COALESCE(?6, behavior_version_hash)
                  WHERE receipt_id = ?1",
-                params![
-                    receipt_id,
-                    enum_string(&status)?,
-                    optional_json(&result)?,
-                    completed_at,
-                    agent_version_hash,
-                    behavior_version_hash
-                ],
-            )?;
-        } else {
-            transaction.execute(
-                "UPDATE capability_receipts
+                    params![
+                        receipt_id,
+                        enum_string(&status)?,
+                        optional_json(&result)?,
+                        completed_at,
+                        agent_version_hash,
+                        behavior_version_hash
+                    ],
+                )?;
+            } else {
+                transaction.execute(
+                    "UPDATE capability_receipts
                  SET status = ?2, result_json = ?3, completed_at = ?4
                  WHERE receipt_id = ?1",
-                params![
-                    receipt_id,
-                    enum_string(&status)?,
-                    optional_json(&result)?,
-                    completed_at
-                ],
-            )?;
-        }
-        let receipt = get_capability_receipt_on(&transaction, receipt_id)?;
-        transaction.commit()?;
-        Ok(receipt)
+                    params![
+                        receipt_id,
+                        enum_string(&status)?,
+                        optional_json(&result)?,
+                        completed_at
+                    ],
+                )?;
+            }
+            let receipt = get_capability_receipt_on(transaction, receipt_id)?;
+            Ok(receipt)
+        })
     }
 
     /// Lists capability receipts for one project in insertion order.
@@ -1228,39 +1221,38 @@ impl Storage {
         if !self.cycle_exists(cycle_id)? {
             return Err(not_found("cycle", cycle_id));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing = get_cycle_lease_on(&transaction, cycle_id).optional()?;
-        let fencing_token = match existing {
-            Some(lease) if lease.expires_at_ms > now_ms => {
-                return Err(StorageError::LeaseConflict {
-                    cycle_id: cycle_id.to_owned(),
-                    owner: lease.owner,
-                    expires_at_ms: lease.expires_at_ms,
-                });
-            }
-            Some(lease) => lease.fencing_token + 1,
-            None => 1,
-        };
-        transaction.execute(
-            "INSERT INTO cycle_leases (
-                cycle_id, owner, acquired_at_ms, expires_at_ms, fencing_token
-             ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(cycle_id) DO UPDATE SET
-                owner = excluded.owner,
-                acquired_at_ms = excluded.acquired_at_ms,
-                expires_at_ms = excluded.expires_at_ms,
-                fencing_token = excluded.fencing_token",
-            params![cycle_id, owner, now_ms, expires_at_ms, fencing_token],
-        )?;
-        transaction.commit()?;
-        Ok(CycleLease {
-            cycle_id: cycle_id.to_owned(),
-            owner: owner.to_owned(),
-            acquired_at_ms: now_ms,
-            expires_at_ms,
-            fencing_token,
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            let existing = get_cycle_lease_on(transaction, cycle_id).optional()?;
+            let fencing_token = match existing {
+                Some(lease) if lease.expires_at_ms > now_ms => {
+                    return Err(StorageError::LeaseConflict {
+                        cycle_id: cycle_id.to_owned(),
+                        owner: lease.owner,
+                        expires_at_ms: lease.expires_at_ms,
+                    });
+                }
+                Some(lease) => lease.fencing_token + 1,
+                None => 1,
+            };
+            transaction.execute(
+                "INSERT INTO cycle_leases (
+                    cycle_id, owner, acquired_at_ms, expires_at_ms, fencing_token
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(cycle_id) DO UPDATE SET
+                    owner = excluded.owner,
+                    acquired_at_ms = excluded.acquired_at_ms,
+                    expires_at_ms = excluded.expires_at_ms,
+                    fencing_token = excluded.fencing_token",
+                params![cycle_id, owner, now_ms, expires_at_ms, fencing_token],
+            )?;
+            Ok(CycleLease {
+                cycle_id: cycle_id.to_owned(),
+                owner: owner.to_owned(),
+                acquired_at_ms: now_ms,
+                expires_at_ms,
+                fencing_token,
+            })
         })
     }
 
@@ -1330,37 +1322,36 @@ impl Storage {
         if !self.cycle_exists(cycle_id)? {
             return Err(not_found("cycle", cycle_id));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing = match get_cycle_lease_on(&transaction, cycle_id).optional()? {
-            Some(lease) => lease,
-            None => {
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            let existing = match get_cycle_lease_on(transaction, cycle_id).optional()? {
+                Some(lease) => lease,
+                None => {
+                    return Err(StorageError::LeaseNotRenewable {
+                        cycle_id: cycle_id.to_owned(),
+                        current_owner: String::new(),
+                        current_fencing_token: 0,
+                    });
+                }
+            };
+            if existing.owner != owner || existing.fencing_token != fencing_token {
                 return Err(StorageError::LeaseNotRenewable {
                     cycle_id: cycle_id.to_owned(),
-                    current_owner: String::new(),
-                    current_fencing_token: 0,
+                    current_owner: existing.owner,
+                    current_fencing_token: existing.fencing_token,
                 });
             }
-        };
-        if existing.owner != owner || existing.fencing_token != fencing_token {
-            return Err(StorageError::LeaseNotRenewable {
+            transaction.execute(
+                "UPDATE cycle_leases SET expires_at_ms = ?2 WHERE cycle_id = ?1",
+                params![cycle_id, new_expires_at_ms],
+            )?;
+            Ok(CycleLease {
                 cycle_id: cycle_id.to_owned(),
-                current_owner: existing.owner,
-                current_fencing_token: existing.fencing_token,
-            });
-        }
-        transaction.execute(
-            "UPDATE cycle_leases SET expires_at_ms = ?2 WHERE cycle_id = ?1",
-            params![cycle_id, new_expires_at_ms],
-        )?;
-        transaction.commit()?;
-        Ok(CycleLease {
-            cycle_id: cycle_id.to_owned(),
-            owner: owner.to_owned(),
-            acquired_at_ms: existing.acquired_at_ms,
-            expires_at_ms: new_expires_at_ms,
-            fencing_token,
+                owner: owner.to_owned(),
+                acquired_at_ms: existing.acquired_at_ms,
+                expires_at_ms: new_expires_at_ms,
+                fencing_token,
+            })
         })
     }
 
@@ -1386,24 +1377,29 @@ impl Storage {
         if !self.cycle_exists(cycle_id)? {
             return Err(not_found("cycle", cycle_id));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changes = transaction.execute(
-            "DELETE FROM cycle_leases
-             WHERE cycle_id = ?1 AND owner = ?2 AND fencing_token = ?3",
-            params![cycle_id, owner, fencing_token],
-        )?;
-        if changes == 0 {
-            transaction.commit()?;
-            return Ok(false);
-        }
-        let payload = serde_json::json!({
-            "cycle_id": cycle_id,
-            "owner": owner,
-            "fencing_token": fencing_token,
-            "actor": actor,
-        });
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        // Returns Some(LedgerEventInput) when the delete removed a row; the
+        // event emission happens outside the retry (its own transaction).
+        let released = self.with_busy_retry(|transaction| {
+            let changes = transaction.execute(
+                "DELETE FROM cycle_leases
+                 WHERE cycle_id = ?1 AND owner = ?2 AND fencing_token = ?3",
+                params![cycle_id, owner, fencing_token],
+            )?;
+            if changes == 0 {
+                return Ok(None);
+            }
+            Ok(Some(serde_json::json!({
+                "cycle_id": cycle_id,
+                "owner": owner,
+                "fencing_token": fencing_token,
+                "actor": actor,
+            })))
+        })?;
+        let payload = match released {
+            Some(payload) => payload,
+            None => return Ok(false),
+        };
         let event = LedgerEventInput {
             event_id: format!("evt-{}", uuid::Uuid::new_v4().hyphenated()),
             project_id: project_id.to_owned(),
@@ -1423,7 +1419,6 @@ impl Storage {
         // WU-C1.2 redirect (C1-REDIRECT-4): the lease row delete is committed
         // on the kernel tables while the `lease.released` event goes to the
         // canonical `cycle:<cycle_id>` events_v1 stream.
-        transaction.commit()?;
         self.emit_canonical_event(&event)?;
         Ok(true)
     }
@@ -1584,50 +1579,49 @@ impl Storage {
     /// rows from before `seq` existed); it does NOT assign `seq`.
     pub fn insert_gate_receipt(&mut self, input: &GateReceiptInput) -> Result<GateReceipt> {
         Self::validate_gate_name(&input.gate)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute(
-            "INSERT INTO gate_receipts (
+        // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
+        self.with_busy_retry(|transaction| {
+            transaction.execute(
+                "INSERT INTO gate_receipts (
                 receipt_id, project_id, cycle_id, gate, evaluator, transition_id,
                 plan_hash, outcome, evidence, actor, command_id, frame_id, evaluated_at, seq
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                input.receipt_id,
-                input.project_id,
-                input.cycle_id,
-                input.gate,
-                input.evaluator,
-                input.transition_id,
-                input.plan_hash,
-                enum_string(&input.outcome)?,
-                serde_json::to_string(&input.evidence)?,
-                input.actor,
-                input.command_id,
-                input.frame_id,
-                input.evaluated_at,
-                input.seq
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(GateReceipt {
-            receipt_id: input.receipt_id.clone(),
-            project_id: input.project_id.clone(),
-            cycle_id: input.cycle_id.clone(),
-            gate: input.gate.clone(),
-            evaluator: input.evaluator.clone(),
-            transition_id: input.transition_id.clone(),
-            plan_hash: input.plan_hash.clone(),
-            outcome: input.outcome,
-            evidence: input.evidence.clone(),
-            actor: input.actor.clone(),
-            actor_ref: input.actor_ref.clone(),
-            command_id: input.command_id.clone(),
-            frame_id: input.frame_id.clone(),
-            evaluated_at: input.evaluated_at.clone(),
-            seq: input.seq,
-            causation_id: input.causation_id.clone(),
-            correlation_id: input.correlation_id.clone(),
+                params![
+                    input.receipt_id,
+                    input.project_id,
+                    input.cycle_id,
+                    input.gate,
+                    input.evaluator,
+                    input.transition_id,
+                    input.plan_hash,
+                    enum_string(&input.outcome)?,
+                    serde_json::to_string(&input.evidence)?,
+                    input.actor,
+                    input.command_id,
+                    input.frame_id,
+                    input.evaluated_at,
+                    input.seq
+                ],
+            )?;
+            Ok(GateReceipt {
+                receipt_id: input.receipt_id.clone(),
+                project_id: input.project_id.clone(),
+                cycle_id: input.cycle_id.clone(),
+                gate: input.gate.clone(),
+                evaluator: input.evaluator.clone(),
+                transition_id: input.transition_id.clone(),
+                plan_hash: input.plan_hash.clone(),
+                outcome: input.outcome,
+                evidence: input.evidence.clone(),
+                actor: input.actor.clone(),
+                actor_ref: input.actor_ref.clone(),
+                command_id: input.command_id.clone(),
+                frame_id: input.frame_id.clone(),
+                evaluated_at: input.evaluated_at.clone(),
+                seq: input.seq,
+                causation_id: input.causation_id.clone(),
+                correlation_id: input.correlation_id.clone(),
+            })
         })
     }
 
