@@ -736,6 +736,6 @@
     "crates/**/tests/**/*.rs",
     "tests/**/*.rs"
   ],
-  "revision": "f631708f389b6a292f384b136e9faf8a89942ac6",
+  "revision": "2fdfe73b37bb383d84fb2cbf13f90a01b5a98944",
   "rule_version": "1.0.0"
 }
