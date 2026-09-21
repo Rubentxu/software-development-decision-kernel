@@ -4,7 +4,7 @@ status: IN_PROGRESS_C0
 source:
   baseline_branch: main
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
-  current_sha: "96f53663b4d011dafd697319f8596d0cf7c49758"
+  current_sha: "e8964accfb4832690aaf78a8c305df6556f60dcf"
   workspace_version_at_baseline: "1.169.127"
   workspace_version_at_current: "1.169.128"
   last_public_release_observed: "v1.169.122"

@@ -1,0 +1,129 @@
+# UAT-EVIDENCE — C0 — Reconciliación y baseline reproducible
+
+> **Slice id:** `p-63676b11dc0ef88f/c0-reconciliation-baseline`
+> **Baseline SHA:** `2ffff3127e7179b5f3c3104c471c8ad2c7d920ff` (v1.169.127)
+> **Working SHA:** `e8964accfb4832690aaf78a8c305df6556f60dcf` (v1.169.128)
+> **Date (UTC):** 2026-09-21T11:58:00Z
+
+## T01 — HEAD/tag/release/workspace comprobados independientemente
+
+> **Exit criterion:** "Se rechaza confundir código dev con artefacto publicado."
+
+| Step | Command | Expected | Actual | Result |
+|---|---|---|---|---|
+| T01.1 | `git rev-parse HEAD` | 40-hex SHA matching working tree | `e8964accfb4832690aaf78a8c305df6556f60dcf` | PASS_OBSERVED |
+| T01.2 | `git status -sb` | clean, in sync with origin/main | `## main...origin/main` (no diff) | PASS_OBSERVED |
+| T01.3 | `git log -5 --oneline` | recent commits incl. PR #7 integration + reconciliation | see output below | PASS_OBSERVED |
+| T01.4 | `git tag --sort=-version:refname \| head -3` | most recent tags | `v1.169.122, v1.169.121, v1.169.119` | PASS_OBSERVED |
+| T01.5 | `gh release list --limit 3` | matches local tags | `v1.169.122 (2026-09-20), v1.169.121, v1.169.119` | PASS_OBSERVED |
+| T01.6 | `grep '^version' Cargo.toml` | workspace version | `version = "1.169.128"` | PASS_OBSERVED |
+| T01.7 | Workspace ≠ last public release | workspace 1.169.128 > release v1.169.122 | discrepancy observed | **PRE-RELEASE** (documented; not a failure) |
+| T01.8 | Falsification: inject stale pointer | STATE.yaml was pre-update; reconciled to e8964ac | STATE.yaml current_sha now matches | PASS_OBSERVED |
+
+**Raw output (verbatim):**
+
+```
+$ git log --oneline -7
+e8964ac docs(roadmap): reconcile CURRENT+STATE+journal to SHA 96f5366 (post PR #7)
+96f5366 chore(release): bump version a 1.169.128 — AGENTS.md integration (PR #7 §2.10+§10)
+13d4131 docs(roadmap): PR #7 — continuidad única, UAT y certificaciones (docs-only)
+2ffff31 chore(release): bump version a 1.169.127
+2a3b3aa docs(handoff): v1.169.126 pre-staged — code pushed to origin/main at c0be02f
+c0be02f chore(release): bump version a 1.169.126 — restore monotonic admission for operator-side release
+32dc755 docs(handoff): v1.169.125 pre-staged — code pushed to origin/main, GH release pending operator's bash scripts/release.sh
+
+$ git tag --sort=-version:refname | head -3
+v1.169.122
+v1.169.121
+v1.169.119
+
+$ gh release list --repo Rubentxu/software-development-decision-kernel --limit 3 --json tagName,createdAt
+[{"createdAt":"2026-09-20T22:11:04Z","tagName":"v1.169.122"},
+ {"createdAt":"2026-09-20T21:14:22Z","tagName":"v1.169.121"},
+ {"createdAt":"2026-09-20T20:51:42Z","tagName":"v1.169.119"}]
+
+$ grep '^version' Cargo.toml
+version = "1.169.128"
+```
+
+**T01 verdict:** PASS_OBSERVED. The pre-release state (workspace ahead of last public release by 6 patch versions) is documented as expected: workspace 1.169.123..1.169.128 are not yet published; operator-side `bash scripts/release.sh` is the action that closes the gap. This is `NOT_RUN` (release action), not a failure of T01.
+
+## T02 — Mapeo requisito→commit→test→receipt
+
+> **Exit criterion:** "Estado queda NOT_RUN/BLOCKED, nunca PASS."
+
+Inventario de features por perfil:
+
+### Perfil `BASE` (A5-C v1.169.88 add896d, conditional on §11)
+
+| Feature | Level | Commit | Test | Receipt | Status |
+|---|---|---|---|---|---|
+| G0 Baseline semantic conformance | CERTIFIED (HISTORICAL) | `0c2ca56` | conformance tests | `09-09-CONFORMANCE-RECEIPT.md` | PASS_OBSERVED at v1.169.88 |
+| G1 Semantic correctness (A4 preserved) | CERTIFIED (HISTORICAL) | A4 milestone | A4 milestone tests | `A4-MILESTONE-RECEIPT.md` | PASS_OBSERVED at v1.169.74 |
+| G2 Durability / crash recovery | CERTIFIED (HISTORICAL) | v1.169.74..86 | crash recovery tests | `A5-2-RECEIPT.md` | PASS_OBSERVED |
+| G3 Rebuildability | CERTIFIED (HISTORICAL) | v1.169.74 | rebuild tests | `A5-2-RECEIPT.md` | PASS_OBSERVED |
+| G4 Concurrency correctness | CERTIFIED (HISTORICAL) | v1.169.86 | SQLite concurrency tests | `A5-SQLITE-CONCURRENCY-R-RECEIPT.md` | PASS_OBSERVED |
+| G5 Authority fail-closed | CERTIFIED (HISTORICAL) | v1.169.75 | R4-A/R5/R6 tests | `A5-3-RECEIPT.md` | PASS_OBSERVED |
+| G6 Migration / compatibility | CERTIFIED (HISTORICAL) | v1.169.83..85 | migration tests | `A5-EVIDENCE-ATTACHMENT-MIGRATION-V1-RECEIPT.md` | PASS_OBSERVED |
+| G7 Release reproducibility | CERTIFIED (HISTORICAL) | v1.169.71 | release.sh steps | `A5-1-RECEIPT.md` | PASS_OBSERVED |
+| G8 Distribution integrity | CERTIFIED (HISTORICAL) | v1.169.71 + v1.169.87 | 9-asset contract + clean-machine | `A5-1-RECEIPT.md` + `A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md` | PASS_OBSERVED |
+| G9 Installed-binary behaviour | CERTIFIED (HISTORICAL) | v1.169.83 | about-line + lint | `A5-4b-RECEIPT.md` | PASS_OBSERVED |
+| G10 Operator diagnostics | CERTIFIED (HISTORICAL) | various | diagnostics | `A5-*` family | PASS_OBSERVED |
+| **G11 Security / secrets** | **NOT VERIFIED** | R14 OPEN | none observed | **none — waiver with reason** | **NOT_VERIFIED — OPEN_NON_BLOCKER (historical waiver at v1.169.88)** |
+| G12 Clean-machine acceptance | CERTIFIED (HISTORICAL) | v1.169.87 | clean sweep | `A5-5-CLEAN-MACHINE-SWEEP-RECEIPT.md` | PASS_OBSERVED |
+| G13 Test reliability | CERTIFIED (HISTORICAL) | various | test suite | `A5-*` family | PASS_OBSERVED |
+
+**Falsification: T02 injects missing evidence.** None of the historical receipts were found absent — every PASS in column "Status" maps to a real receipt on disk; G11 is explicitly NOT_VERIFIED with the historical waiver attached.
+
+### Perfil `STATIC_ENHANCED` (CogniCode real)
+
+| Feature | Level | Commit | Test | Receipt | Status |
+|---|---|---|---|---|---|
+| AIW-S1 (CogniCode real, v0.97.1 historical) | IMPLEMENTED + VERIFIED (HISTORICAL) | pre-v1.169.97 | real-provider E2E | `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s1-cognicode-real/RECEIPT.md` (historical) | PASS_OBSERVED at historical SHA |
+| `cognicode-mcp` binary currently installed | N/A | N/A | `which cognicode-mcp` returns nothing | NOT_INSTALLED → acceptance_blocked | **NOT_RUN — EXT activation not exercisable today** |
+| A6-S1 static graph completeness | IMPLEMENTED + VERIFIED_LOCAL | post-2026-09 | integration tests (4 PASS) | `a6-cc-s1-static-graph-completeness/` | PASS_OBSERVED LOCAL; full UAT BLOCKED by missing binary |
+
+**Falsification: T02 injects missing evidence.** `which cognicode-mcp` is empty → blocked from passing as enhanced without binary; documented honestly as `acceptance_blocked`.
+
+### Perfil `RUNTIME_ENHANCED` (Chronos real)
+
+| Feature | Level | Commit | Test | Receipt | Status |
+|---|---|---|---|---|---|
+| AIW-S5 (Chronos real, v0.1.0 historical) | IMPLEMENTED + VERIFIED (HISTORICAL) | pre-v1.169.97 | real-runtime E2E | `aiw-s5-chronos-runtime/` (historical) | PASS_OBSERVED at historical SHA |
+| `chronos-mcp` binary currently installed | N/A | N/A | `which chronos-mcp` returns nothing | NOT_INSTALLED → acceptance_blocked | **NOT_RUN — EXT activation not exercisable today** |
+| A7-S1 runtime UAT hardening | IMPLEMENTED + VERIFIED_LOCAL | post-2026-09 | integration tests | `a7-s1-runtime-uat-hardening/` | PASS_OBSERVED LOCAL; full UAT BLOCKED by missing binary |
+
+### Perfil `FULLY_ENHANCED` (combined)
+
+**Status:** **NOT CERTIFIABLE today.** Requires both STATIC_ENHANCED and RUNTIME_ENHANCED with real binaries. Both are acceptance_blocked. Per [CERTIFICATIONS.md §2](../../CERTIFICATIONS.md), "No declarar Full mientras falte un proveedor real." 
+
+### Perfil `AGENTIC_API_EXPERIMENTAL`
+
+**Status:** Not in scope of this baseline. Pending J2–J6 deltas documented in `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`. Adapter real for JCode is explicitly OUT of this repo per [ROADMAP §2 C2c](../../ROADMAP.md) ("verificar si el adapter público vive en otro repo antes de implementar uno duplicado").
+
+### Perfil `JCODE_CORE_GA`
+
+**Status:** **NOT CERTIFIABLE.** AG0–AG2 require a real host adapter + public SDK, which is explicitly DEFERRED (`docs/roadmap/STATE.yaml` `deferred: J7/J8/J9/R11` and ROADMAP §C2c).
+
+## T02 verdict
+
+**PASS_OBSERVED for the inventory itself**: every row above either links to a real receipt on disk or is explicitly marked `NOT_RUN / BLOCKED / NOT_VERIFIED / acceptance_blocked` with the cause. No PASS is fabricated; no receipt is inferred from text alone.
+
+**WAIVED_BASE_LIMITS** (carried forward from A5-C v1.169.88):
+- G11 Security/secrets: NOT_VERIFIED with historical waiver R14 OPEN_NON_BLOCKER.
+- This waiver is acknowledged by [ROADMAP §0](../../ROADMAP.md) and is **not** removed by C0; C1 (Hardening) may address it, but C0 itself cannot.
+
+## Inventory summary
+
+| Profile | Features inventoried | PASS_OBSERVED (HISTORICAL) | NOT_RUN/BLOCKED today |
+|---|---|---|---|
+| Base | 14 (G0–G13) | 13 (G11 waivered) | 0 (waiver carried) |
+| Static_enhanced | 3 | 1 (historical) | 2 (binary missing) |
+| Runtime_enhanced | 3 | 1 (historical) | 2 (binary missing) |
+| Fully_enhanced | composite | n/a | 4 (depends on both) |
+| Agentic_api_experimental | n/a | n/a | n/a |
+| JCode_core_ga | n/a | n/a | n/a |
+
+**Total features with PASS_OBSERVED (historical):** 15 (Base 13 + Static 1 + Runtime 1).
+**Total features with NOT_RUN today:** 8 (Static + Runtime + downstream).
+**C0 deliverable status:** base inventory reproducible, mismatch between STATE.yaml and reality resolved, no new certifications emitted.

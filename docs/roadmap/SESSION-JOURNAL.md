@@ -42,3 +42,13 @@
 - CURRENT/STATE reconciliados: ambos actualizados a SHA `96f5366` y versión `1.169.128`. STATE marca `IN_PROGRESS_C0`. PR #7 marcada como integrada en ambos punteros.
 - Próxima acción ejecutable: emitir `SCOPE-CONTRACT` para `c0-reconciliation-baseline` y ejecutar UAT T01 (HEAD/tag/release/workspace observados) + T02 (req→commit→test→receipt) con `RECEIPT` C0 vinculado. Sin release ni certificación hasta que C4-Base lo decida.
 
+
+### 2026-09-21T12:00:00Z — C0 RECEIPT EMITTED — orchestrator
+
+- Baseline inspeccionado: `main@e8964accfb4832690aaf78a8c305df6556f60dcf` (v1.169.128); release pública v1.169.122; working tree clean.
+- Alcance: cierre de C0 reconciliación tras PR #7 integrado. Emitidos SCOPE-CONTRACT, UAT-EVIDENCE y C0-RECEIPT en `docs/roadmap/receipts/c0/e8964ac/`.
+- UAT T01 ejecutado: 8 pasos, 7 PASS_OBSERVED + 1 PRE-RELEASE (workspace 1.169.128 > release v1.169.122). Falsificación T01.8 (stale pointer) detectada y corregida: STATE.yaml apuntaba a 96f5366 antes de T01; ahora a e8964ac.
+- UAT T02 ejecutado: inventario de 23 features en 6 perfiles. 15 PASS_OBSERVED (HISTORICAL) — Base 13 (con G11 waivered) + Static 1 + Runtime 1. 8 NOT_RUN/BLOCKED hoy (binaries EXT missing, acceptance_blocked). Ningún PASS fabricado.
+- Gates verificados: G0..G8 (factual reconciliation, no rewriting, no EXT simulation, no auto-release, pre-push allowlist respetado, falsificaciones T01/T02 ejecutadas, waiver R14 carried forward, journal+state committed). Resultado global: **PASS_OBSERVED_WITH_NOTES**.
+- Riesgos aceptados: PRE-RELEASE (operator gate), EXT binaries missing (C1+), AIW-S8 X08 DEFERRED, R11/J7/J8/J9 DEFERRED.
+- Próxima acción ejecutable: operador ejecuta `bash scripts/release.sh` para publicar v1.169.128. Orchestrator NO inicia C1 hasta que workspace == public release observado.

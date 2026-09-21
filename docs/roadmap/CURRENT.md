@@ -4,7 +4,7 @@
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@96f53663b4d011dafd697319f8596d0cf7c49758` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
+| Fuente de la fotografía | `main@e8964accfb4832690aaf78a8c305df6556f60dcf` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
 | Workspace en esa fotografía | `1.169.128` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
 | Hito activo | `C0` — reconciliar SHA/tag/release/receipts y congelar casos UAT T01/T02 |
