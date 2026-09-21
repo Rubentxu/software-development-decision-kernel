@@ -1288,3 +1288,74 @@ threads:
 - (after this addendum: will commit `addendum_13_commit = <new-sha>`)
 
 HEAD after this addendum's commit will be ~17 commits ahead of `4ace5fb`.
+
+## Addendum 14 (19ª validation pass — operator-continued staleness sweep, 2026-09-21)
+
+19ª validation re-examined three structures that earlier passes had
+NOT revisited but Addenda 12/13 changed the underlying reality:
+
+1. **"Why A1 is still acceptable for C2" (line 649-655)** — was written
+   in pass 6, BEFORE Addendum 13 demonstrated C3 ALSO 5/5 PASSes on
+   the un-renumbered release.sh. At pass 6, the framing was
+   "A1 patches today; C3 is over-engineering because the script
+   doesn't get renumbered". By Addendum 13, the framing flipped:
+   "C3 fixes today's bug AND survives renumbering; A1 fixes today
+   only". The text in lines 649-655 is now technically outdated but
+   the conservative rule ("don't bundle pre-existing gaps unless
+   authorized") is still defensible because C3 is a structural-rather-
+   than literal-cosmetic change. Recording this as a known-stale
+   section rather than rewriting — operator should decide whether
+   C3 bundles into C2 or stays as backlog.
+
+2. **Recommended-next-actions line 348 'v1.169.135'** — addressed in
+   pass 18 (commit `b545307`) by reorganizing section into
+   "current plan" + "(historical snapshot)". Already corrected.
+
+3. **State-sync pattern (head_at_state_sync)** — re-verified at this
+   pass: every docs-only commit advances HEAD by 1. The pattern is
+   self-correcting across commits. No action needed.
+
+### NEW finding flagged for operator decision (not auto-applied)
+
+**Question for operator**: Given that pass 13 demonstrated C3
+validates 5/5 PASS today (no regression vs A1) AND 5/5 PASS under
+drastic renumbering (A1 fails), should C3 bundle into C2 or stay
+separate?
+
+Three positions are defensible:
+
+| Position | Pros | Cons |
+|----------|------|------|
+| C2 = A1 only, C3 separate | Smallest commit; preserves "one concern" strictly; A1 + bump is the minimum fix the operator asked to validate | Two-cycle churn; A1 ships a known-fragile literal anchor |
+| C2 = C3 directly (no A1) | Most durable; same commit; same validation profile; avoids fragmented fix | Skips A1's incremental value; bundles "fix" with "future-proof" if the operator disagrees on coupling |
+| C2 = A1 + immediate C3 follow-up commit | Tightens ship, durable fix within minutes; honors "one bug per turn" by splitting into 2 commits under one cycle | Two commits in one cycle; harder to revert if C3 regresses |
+
+Per operator's documented rule (one concern per commit) and AUTO mode
+("don't fabricate changes not asked for"), this is flagged as a
+DECISION rather than acted on. Awaiting operator's call.
+
+### Re-verification at HEAD = `90cd214`
+
+- State.yaml: current_sha = 4ace5fb, head_at_state_sync = 90cd214 (per
+  Addendum 13 chicken-and-egg pattern; current_sha lags by 1 commit).
+- H1 title: "17 validation passes (HEAD = b1d6230)" — refresh to
+  b545307/b1d6230 noted; the title IS updated but reads `b1d6230` (the
+  17th-pass HEAD), and `90cd214` is the 18th-pass state-sync commit.
+  Per established convention, the H1 title tracks the LAST PASS HEAD,
+  not every intermediate HEAD.
+- gh release list --limit 3: v1.169.122 still latest.
+
+### New commits from this pass
+
+- None yet — read-only investigation. Will commit this addendum as
+  `addendum_14_commit` immediately.
+
+After this addendum's commit, plan to:
+1. Update STATE.yaml `addendum_14_commit` + bump
+   `head_at_state_sync` to the new SHA
+2. Update STATE.yaml `validation_passes_completed: 18`
+3. Push (single docs-only commit)
+
+If operator wants C2 to bundle C3, both should be in the same cycle
+(one A1-style 1-line fix + one C3-style 4-line fix), and that cycle's
+handoff should be a NEW document (not session-10's).
