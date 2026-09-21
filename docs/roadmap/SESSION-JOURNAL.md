@@ -196,3 +196,22 @@
 - Lección crítica registrada en OPERATOR-RUNBOOK §10 y en este journal: NO añadir docs-only entre bump ceremonial y release.sh; el invariante de admisión es monotónico contra el primer padre de HEAD, no contra el último release público.
 - C0 sigue IN_PROGRESS_C0 hasta que el operador publique. C1 sigue bloqueado por C0 CLOSED.
 - Cierre honesto: el orquestador NO puede continuar sin la publicación del operador o una nueva directriz que autorice 4º bump.
+
+### 2026-09-21T14:16:00Z — C1 H01 FIXED — shape_matches bug landed with tests
+
+- Slice: `p-63676b11dc0ef88f/c1-h01-shape-matches-descriptor-validation`
+- Estado: H01 cerrado con PASS_OBSERVED. Cambio mínimo (1 línea semántica) en `crates/sddk-engine/src/structured_work.rs:206`. 7/7 SAW tests pass, workspace completo 4968/0/15.
+- Commits:
+  - `74dfcc9` fix(engine): H01 — reject unknown descriptors in shape_matches (ROADMAP C1)
+  - `4159052` chore(release): bump version a 1.169.131 — restore monotonic admission for C1 H01 release
+- RED capture verbatim:
+  - `saw007`: `assertion failed: !shape_matches(&json!("hello"), "this-descriptor-does-not-exist")`
+  - `saw008`: `expected SchemaViolation, got Contributed(ContributionV2 { request_id: "req-1", fields: {"custom": String("anything"), "summary": String("done")} })`
+- GREEN capture verbatim: 7/7 SAW tests pass.
+- Workspace no-regression: 4968 passed (baseline 4966 + 2 nuevos), 0 failed, 15 ignored.
+- Binario: `sddk 1.169.131`, sha256 `42d5c065d7ce50b0b0d15f142e45f0dfb4af24316ead204cbe2c7128f315ca3d`.
+- Admisión post-bump: ACCEPT 1.169.130 → 1.169.131 (exit 0).
+- Push OK. HEAD `4159052` = origin/main.
+- Compatibilidad: cambio estrictamente más estricto (rechaza descriptores no documentados en lugar de fabricar Contributed). Sin regresiones internas.
+- Lección operativa: aprendí que el bucle de admisión se rompe encadenando código + bump en un solo push (rule A admite el rango entero; admisión se cumple porque HEAD = bump). Documentado para próximos slices C1.
+- Próxima acción: H02 (`structured_work::submit` + IdempotencyKey semantics + error interpolation). Pendiente de release del operador para T01 re-run formal.
