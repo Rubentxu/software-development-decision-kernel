@@ -71,8 +71,14 @@ fn adv_06_empty_value_secret_eq() {
     println!("adv_06 empty: {s}");
     // Empty value: key shape detected but no redacted tag emitted
     // (nothing to mask, value_len == 0 short-circuits the formatter).
-    assert!(s.contains("secret="), "key+sep must stay verbatim, got: {s}");
-    assert!(!s.contains("<redacted:"), "no redacted tag for empty value, got: {s}");
+    assert!(
+        s.contains("secret="),
+        "key+sep must stay verbatim, got: {s}"
+    );
+    assert!(
+        !s.contains("<redacted:"),
+        "no redacted tag for empty value, got: {s}"
+    );
 }
 
 // 7. Two secrets on the same line: api_key=AAA password=BBB
