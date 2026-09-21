@@ -1,0 +1,47 @@
+# UAT-EVIDENCE — AIW-S8 X04: two-CLI concurrency
+
+slice: aiw-s8-x04-two-cli-concurrency
+cycle: p-63676b11dc0ef88f/aiw-s8
+date: 2026-09-21
+status: PASS
+
+scenarios:
+  - id: X04-S1
+    name: two_hosts_share_one_lease_store_first_wins
+    given: two AgentHosts (cli-a, cli-b) sharing one InMemoryLeaseStore
+    when: cli-a acquires cycle-1, then cli-b attempts the same cycle
+    then: cli-b gets LeaseError::Conflict naming owner cli-a and cli-a's fencing token
+    result: PASS
+
+  - id: X04-S2
+    name: loser_acquires_after_winner_releases
+    given: cli-a holds the cycle-1 lease
+    when: cli-a releases and cli-b acquires
+    then: cli-b wins with fencing token advanced to 2 (monotonic)
+    result: PASS
+
+  - id: X04-S3
+    name: different_cycle_ids_no_conflict
+    given: two hosts sharing one store
+    when: cli-a acquires cycle-1 and cli-b acquires cycle-2
+    then: both succeed, no conflict across distinct cycles
+    result: PASS
+
+  - id: X04-S4
+    name: lease_store_state_divergence_check
+    given: cli-a holds cycle-1, cli-b's acquire failed with conflict
+    when: store is inspected and mutated (re-fence by owner, release attempt by loser, re-acquire by loser)
+    then: owner remains cli-a, token only advanced by the owner's re-fence, loser release is a no-op, loser re-acquire still conflicts
+    result: PASS
+
+commands:
+  - cmd: cargo test -p sddk-engine --test aiw_s8_x04_two_cli_concurrency
+    observed: "test result: ok. 4 passed; 0 failed; 0 ignored"
+  - cmd: cargo fmt --check
+    observed: exit 0
+  - cmd: cargo clippy -p sddk-engine --all-targets -- -D warnings
+    observed: exit 0
+  - cmd: cargo build --release -p sddk-engine
+    observed: exit 0
+
+evidence_class: OBSERVED
