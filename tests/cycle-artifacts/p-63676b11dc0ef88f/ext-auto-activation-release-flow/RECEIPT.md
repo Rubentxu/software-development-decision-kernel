@@ -28,26 +28,66 @@ normally.
 
 ## §3 Real verification output (commit `5550fcf`)
 
+### §3.1 Syntax + lint (verifies the script change compiles clean)
+
 ```
 $ bash -n scripts/release.sh && echo "bash syntax: OK"
 bash syntax: OK
 
 $ shellcheck --severity=warning scripts/release.sh
 (exit 0, no output)
-
-$ bash scripts/release.sh --dry-run --skip-tests --skip-install
-==> 0/14 — preflight
-  ✗ release admission refused: REJECT non-monotonic 1.169.123 -> 1.169.123
 ```
 
-The release-admission refusal is the **expected** behaviour — the
-release admission contract (A5-1 §6) requires a real, monotonically
-increasing `[workspace.package]` version bump in HEAD; HEAD already
-carries `1.169.122 → 1.169.123` from `cace421`, so a release against
-`1.169.123` requires another bump to `1.169.124` (which is the
-operator's next release). The dry-run successfully **passes** the
-script through preflight and reaches the admission check, proving the
-new step 1d does not introduce syntax or structural errors.
+### §3.2 No-op branch behavior (UAT-1d-1)
+
+The dry-run flag hits the release-admission check at step 0/14 (a
+real, monotonically increasing `[workspace.package]` version bump is
+required). Because HEAD already carries `1.169.122 → 1.169.123` from
+`cace421`, the dry-run fails in **preflight** — before step 1d even
+runs. That does not prove step 1d's no-op branch; it proves preflight
+runs first. So I extracted the no-op branch and ran it in isolation:
+
+```
+$ env -u COGNICODE_MCP_BIN -u CHRONOS_MCP_BIN bash /tmp/step1d_noop_test.sh
+OK: no-op branch triggered, EXT tests stay #[ignore]
+EXT_FAIL=0 (must be 0)
+OK: no fail-closed triggered
+OK: no receipt dir created (no-op)
+exit=0
+```
+
+Result: **the no-op branch behaves as specified** (env vars unset →
+skip step 1d, do not create receipt, do not set EXT_FAIL, do not call
+`die`). C2 (opt-in / no-op) verified.
+
+### §3.3 Active branch behavior (UAT-1d-2..4)
+
+The active branch (`COGNICODE_MCP_BIN` and/or `CHRONOS_MCP_BIN` set)
+is `acceptance_blocked` in this environment: the `cognicode-mcp` and
+`chronos-mcp` binaries are not installed. The release script does NOT
+install them (operator responsibility per SCOPE §2). I verified by
+code reading (lines 294..321) that:
+
+- `cargo test --workspace --offline -- --include-ignored <filter>` is
+  invoked with the env var propagated;
+- on success, `result: PASS` is appended to EXT-RECEIPT.md and `test
+  result:` lines are extracted from the log;
+- on failure, `result: FAIL` and `EXT_FAIL=1` are set, then
+  `die "EXT tests failed against real binaries"` aborts the release.
+
+I did NOT exercise this branch end-to-end. It is **inference from
+code reading**, not observed behavior. To turn this into observed
+behavior, the operator must install the binaries, set the env vars,
+and re-run `bash scripts/release.sh`. When they do, the EXT-RECEIPT
+will be a real artifact and step 1d's active branch is exercised for
+the first time.
+
+### §3.4 Release admission (gate unrelated to this slice)
+
+The first release after the v1.169.123 bump requires another bump to
+v1.169.124 to pass the release-admission check. That is **not in
+scope** for this slice — the slice delivers a new step in
+`scripts/release.sh`, it does not itself trigger a release.
 
 ## §4 Acceptance vs scope
 
@@ -59,7 +99,7 @@ new step 1d does not introduce syntax or structural errors.
 | C2: opt-in / no-op without env vars | YES | Conditional `[ -n "$COGNICODE_MCP_BIN" ] || [ -n "$CHRONOS_MCP_BIN" ]`; else-branch prints `no EXT env vars set — skipping`. |
 | C3: fail-closed on EXT failure | YES | `EXT_FAIL=1` set on cargo-test failure; `die "EXT tests failed against real binaries — refusing to release"` aborts. |
 | C4: bash syntax + shellcheck clean | YES | `bash -n` exits 0; `shellcheck --severity=warning` exits 0 with no output. |
-| C5: dry-run no-env-vars path succeeds | PASS-WITH-ADMISSION-EXPECTED | Dry-run reaches the release-admission check (the next gate); failure at that gate is the expected behaviour, not a slice regression. |
+| C5: dry-run no-env-vars path succeeds | PARTIAL | Dry-run fails in preflight (admission needs a new bump) **before** step 1d runs; that does not prove C5. I extracted the no-op branch and ran it in isolation (see §3.2): the no-op branch behaves correctly. So C5 is verified for the no-op branch logic, but the full-script dry-run cannot be observed end-to-end without a new version bump. |
 
 ### §4.2 UAT coverage
 
