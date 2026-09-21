@@ -1,3 +1,7 @@
+> **DELTA / SNAPSHOT HISTÓRICO (anotación 2026-09-21).** Conserva cierres AIW y limitaciones tal como se documentaron; la expresión «live state» del cuerpo corresponde a su fecha, no a cada sesión futura. Para continuar y certificar, consultar [roadmap único](../../roadmap/ROADMAP.md), [CURRENT](../../roadmap/CURRENT.md) y [UAT](../../roadmap/UAT-MATRIX.md). No transformar `DELIVERED` en certificación de perfil por esta anotación.
+
+---
+
 # AIW — State of adoption (live reconciliation)
 
 > **Purpose:** this document is the live state of the AIW package

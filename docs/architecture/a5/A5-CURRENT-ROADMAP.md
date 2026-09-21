@@ -1,3 +1,7 @@
+> **FOTOGRAFÍA HISTÓRICA, NO ROADMAP VIGENTE (anotación 2026-09-21).** La tabla interna muestra estados de distintas fechas; el cierre A5-C queda certificado únicamente para v1.169.88 con sus excepciones documentadas. Para continuar usar [roadmap único](../../roadmap/ROADMAP.md) y [CURRENT](../../roadmap/CURRENT.md). El cuerpo original se conserva íntegro como evidencia histórica.
+
+---
+
 # A5 — Live Roadmap (post A5-C, sync at v1.169.88)
 
 > **Cycle:** `p-63676b11dc0ef88f/a5-c-base-production-ready-certification`

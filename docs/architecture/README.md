@@ -1,3 +1,7 @@
+> **Guía operativa vigente (2026-09-21):** [roadmap único de continuación](../roadmap/ROADMAP.md), [certificaciones](../roadmap/CERTIFICATIONS.md), [UAT](../roadmap/UAT-MATRIX.md) y [puntero de sesión](../roadmap/CURRENT.md). Este README sigue siendo autoridad arquitectónica; sus tablas M0–M9/A0–A8 son **históricas**, no un segundo roadmap ejecutable. [Archivo](../history/README.md).
+
+---
+
 # SDDK — Canonical Architecture & Roadmap
 
 > **This is the current normative architecture and roadmap for SDDK.**

@@ -1,0 +1,34 @@
+schema_version: 1
+updated_at: "2026-09-21"
+status: READY_C0
+source:
+  baseline_branch: main
+  baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
+  workspace_version_at_baseline: "1.169.127"
+  last_public_release_observed: "v1.169.122"
+  note: "Fotografía del 21/09; volver a consultar HEAD/tag/release en cada sesión."
+authority:
+  roadmap: "docs/roadmap/ROADMAP.md"
+  certifications: "docs/roadmap/CERTIFICATIONS.md"
+  uat_matrix: "docs/roadmap/UAT-MATRIX.md"
+  journal: "docs/roadmap/SESSION-JOURNAL.md"
+  rules: "AGENTS.md"
+active_milestone: C0
+active_slice: null
+verified_at_current_sha: false
+certification_claim_at_current_sha: null
+historical_evidence:
+  base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"
+  a6_a7: "Verticales reales históricas; enhanced completo no acreditado"
+  jcode: "J0-J6 cierre de alcance semántico; adapter real/AG0-AG2 pendiente de evidencia"
+next_action: "Reconciliar main/tag/release y congelar baseline y UAT T01/T02 con receipt observado."
+blockers:
+  - "No atribuir releases pendientes al repositorio publicado."
+  - "EXT exige binarios externos disponibles para ejecutar pruebas reales."
+  - "La integración de esta propuesta en main está pendiente de los gates/revisión del PR."
+deferred:
+  - {id: X08, revisit: "Corpus Jev etiquetado + baseline"}
+  - {id: J7, revisit: "Consumidor real MCP pull"}
+  - {id: J8, revisit: "Alcance capacidades host avanzadas"}
+  - {id: J9, revisit: "Segundo host real para API stable"}
+  - {id: R11, revisit: "Métricas sostenidas de coste de cambio/dependencias"}
