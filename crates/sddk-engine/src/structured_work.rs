@@ -386,7 +386,10 @@ mod tests {
         assert!(shape_matches(&json!(["a", "b"]), "array<string>"));
 
         // The unknown-descriptor cases (the bug).
-        assert!(!shape_matches(&json!("hello"), "this-descriptor-does-not-exist"));
+        assert!(!shape_matches(
+            &json!("hello"),
+            "this-descriptor-does-not-exist"
+        ));
         assert!(!shape_matches(&json!("hello"), ""));
         assert!(!shape_matches(&json!("hello"), "integer"));
         assert!(!shape_matches(&json!("hello"), "u32"));
@@ -407,7 +410,10 @@ mod tests {
         req.return_schema = ReturnSchema {
             fields: BTreeMap::from([
                 ("summary".to_string(), "string".into()),
-                ("custom".to_string(), "this-descriptor-does-not-exist".into()),
+                (
+                    "custom".to_string(),
+                    "this-descriptor-does-not-exist".into(),
+                ),
             ]),
         };
         ex.submit(req);
