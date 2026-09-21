@@ -21,8 +21,7 @@ const SCHEMA_JSON: &str = include_str!(
 );
 
 /// Path relative to this crate's manifest dir (for the regenerate helper).
-const FIXTURE_PATH: &str =
-    "../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl";
+const FIXTURE_PATH: &str = "../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl";
 
 /// Regenerates `uat-acceptance.jsonl` with real SHA-256 content_hash values.
 ///
