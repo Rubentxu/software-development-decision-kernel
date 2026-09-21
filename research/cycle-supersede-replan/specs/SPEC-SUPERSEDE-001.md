@@ -290,7 +290,7 @@ fn supersede_preserves_ledger_digest() {
 - `research/cycle-supersede-replan/evidence-cards/ec-css-007-recovery-action-contract.yml`
 - `research/cycle-supersede-replan/evidence-cards/ec-css-010-ledger-event-count-invariant.yml`
 - `crates/sddk-cli/src/cycle.rs:886` (`lease.released` event shape)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4
   (ledger invariant)
 - `docs/adr/ADR-0073-secretary-authority.md` (AgentKind closed-set)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` §4 (artefact conservation)

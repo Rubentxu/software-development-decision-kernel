@@ -94,7 +94,7 @@ on them alone).
 ## Conflicting signals detected at R3
 
 1. **`vault_cmd.rs` references ADR-0078 (line 172) but ADR-0078 does not
-   exist in `docs/adr/` or `docs/sddk-decision-kernel-architecture/03-adrs/`.**
+   exist in `docs/adr/` or `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/`.**
    - Conflict: code claim "verbatim `{VAULT003}` per ADR-0078" vs absence.
    - Resolution: ADR-0078 is missing; the substantive claim (allow-list = 1
      entry, code = VAULT003) is independently verifiable in

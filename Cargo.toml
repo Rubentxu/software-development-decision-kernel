@@ -10,13 +10,13 @@ members = [
     "crates/sddk-testkit",
     "crates/sddk-pack-uat",
 ]
-exclude = ["docs/sddk-stabilization-plan"]
+exclude = ["docs/history/legacy-packages/sddk-stabilization-plan"]
 
 [workspace.package]
 version = "1.169.133"
 edition = "2024"
-# A3-S3 closure marker: see docs/handoff/
-# A3-S4 closure marker: see docs/handoff/HANDOFF-2026-09-15-a3-s4-closure-and-v1.169.25-release.md
+# A3-S3 closure marker: see docs/history/handoffs/all-handoffs/
+# A3-S4 closure marker: see docs/history/handoffs/all-handoffs/HANDOFF-2026-09-15-a3-s4-closure-and-v1.169.25-release.md
 authors = ["SDDK Team"]
 license = "MIT"
 rust-version = "1.91"

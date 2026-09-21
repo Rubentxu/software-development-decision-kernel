@@ -2,7 +2,7 @@
 id: arch-spec-020-storage-schema-ownership
 status: proposed
 proposed_at: 2026-09-14
-source: docs/SDDK-Production-Readiness-Alignment-2026-09-14/01-GAP-AND-DRIFT-REGISTER.md#pr-gap-005
+source: docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/01-GAP-AND-DRIFT-REGISTER.md#pr-gap-005
 supersedes_history: false
 ---
 

@@ -1,7 +1,7 @@
 ---
 id: arch-spec-005-semantic-graph-and-why
 package_local_id: SPEC-005
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-005-SEMANTIC-GRAPH-AND-WHY.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-005-SEMANTIC-GRAPH-AND-WHY.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-005` |
 | Repository native | `arch-spec-005-semantic-graph-and-why` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-005-SEMANTIC-GRAPH-AND-WHY.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-005-SEMANTIC-GRAPH-AND-WHY.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

@@ -30,7 +30,7 @@ stale_after: 2027-09-12
 
 At v1.168.31, 17 ADRs in `docs/architecture/adrs/` carry
 `status: proposed` (ADR-0094 through ADR-0110, all adopted from
-`docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/`
+`docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/`
 during the `architecture-adoption-m0-supersession` cycle on 2026-09-09).
 Zero ADRs in that range carry `status: accepted`. The absence of a
 documented promotion process blocks:
@@ -84,7 +84,7 @@ evidence document:
    promotion. The cycle id MUST be recorded in `accepted_by_cycle`.
    The cycle's archive manifest MUST reference the ADR id.
 3. **Risk-register consideration.** If the ADR supersedes or
-   constrains an existing pattern, `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/RISK-REGISTER.md`
+   constrains an existing pattern, `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/RISK-REGISTER.md`
    MUST be reviewed and the relevant row updated (either confirmed
    in scope or explicitly waived). If no risk applies, the cycle
    that approves the promotion records "no risk-register impact" in

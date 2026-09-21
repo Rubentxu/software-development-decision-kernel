@@ -198,7 +198,7 @@ ArchitectureClaim
 ## Receipt and verification
 
 - Implementation receipt at
-  `docs/SDDK-Production-Readiness-Alignment-2026-09-14/A3-S2-AC1-RECEIPT.md`.
+  `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/A3-S2-AC1-RECEIPT.md`.
 - Independent verification report at
   `.sddk/cycles/p-63676b11dc0ef88f-a3-2-architectural-contract/verification-report.md`.
 - Targeted test run: `cargo test -p sddk-engine --lib knowledge:: architectural_contract:: semantic_kind::`

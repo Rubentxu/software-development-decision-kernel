@@ -8,7 +8,7 @@ related_adrs:
   - ADR-0138-runtime-evidence-port
 references:
   - arch-spec-021 IPB-004 (capability negotiation is runtime authority)
-  - docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md
+  - docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md
   - tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cc-s1-static-graph-completeness/SCOPE-CONTRACT.md
 ---
 
@@ -157,8 +157,8 @@ defecto está prohibido.
   un ciclo posterior con su propio contrato, ADR y ejecución. CC-S1 no
   cierra ese perfil.
 - La serie canónica de ADR mantiene numeración correlativa. ADR-022 está
-  usado en paquetes históricos (`docs/SDDK-Context-First-...-2026-09-10/`,
-  `docs/sddk-decision-kernel-architecture/`); la serie canónica llega hasta
+  usado en paquetes históricos (`docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`,
+  `docs/history/legacy-packages/sddk-decision-kernel-architecture/`); la serie canónica llega hasta
   `ADR-0138-runtime-evidence-port.md`. La siguiente libre es `ADR-0139`.
 
 ## Aceptación

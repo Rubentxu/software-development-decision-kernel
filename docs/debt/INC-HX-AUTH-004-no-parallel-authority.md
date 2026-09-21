@@ -61,7 +61,7 @@ This is severity **high** because it means the system's authority model is not e
 
 ## References
 
-- [ADR-069 §6](docs/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-5--no-parallel-authority-invariant) — no-parallel-authority invariant
+- [ADR-069 §6](docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-5--no-parallel-authority-invariant) — no-parallel-authority invariant
 - [emit.rs:259](crates/sddk-engine/src/event_bus/emit.rs:259) — forced Human
 - [engine/lib.rs:1111](crates/sddk-engine/src/lib.rs:1111) — apply_transition dual-writer
 - ARCH-HEX-001 (order 80, H0) — engine-side authority enforcement

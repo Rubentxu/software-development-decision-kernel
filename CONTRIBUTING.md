@@ -225,7 +225,7 @@ sddk system          # system installation
 ### 5.4. Design decisions have one canonical surface per scope
 
 - `docs/adr/` (this repo) — public-project ADRs.
-- `docs/sddk-decision-kernel-architecture/03-adrs/` — active target-architecture
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/` — active target-architecture
   ADRs; its roadmap lives in `02-roadmap/`.
 - `~/.sddk-knowledge/<project>/adrs/` — adopted-project ADRs.
 - Plan specs live in `~/.sddk-knowledge/<project>/specs/`.
@@ -276,7 +276,7 @@ Before modifying any of them:
 2. **Open an issue** describing the change with motivation, alternatives
    considered, and impact on existing cycles.
 3. **Write or update the relevant ADR** in `docs/adr/` for current-runtime
-   behavior, or in `docs/sddk-decision-kernel-architecture/03-adrs/` for the
+   behavior, or in `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/` for the
    target architecture.
 4. **Test locally** with at least one full A-lite cycle end-to-end
    (sddk new → verify → debt-verify → release → archive).
@@ -314,9 +314,9 @@ Releases follow `prompts/sddk/phases/release.md` and `MCW Phase 3`.
 ## 10. See also
 
 - Regression history: `docs/history/AGENTS-history.md`
-- Current handoff: `docs/handoff/HANDOFF-2026-08-13-sddk-framework.md`
+- Current handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-13-sddk-framework.md`
 - Architecture roadmap:
-  `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
+  `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md`
 - Conventional Commits:
   <https://www.conventionalcommits.org/en/v1.0.0/>
 - Keep a Changelog: <https://keepachangelog.com/en/1.1.0/>

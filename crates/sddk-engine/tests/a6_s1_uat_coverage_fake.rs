@@ -5,7 +5,7 @@
 //! Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s1-uat-coverage-fake`
 //!
 //! UAT rows covered (per
-//! `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+//! `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
 //! §E):
 //!
 //! - PR-UAT-C01 — Provider stopped, OPTIONAL/PREFERRED → Base

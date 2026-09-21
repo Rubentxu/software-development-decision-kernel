@@ -248,3 +248,36 @@ Verificación al cierre:
 - cargo clippy clean
 
 Próxima revisión: al inicio de la siguiente sesión y tras operator decision.
+
+### 2026-09-21T14:30:00Z — Reorganización documental completada (sesión de gobernanza)
+
+Motivación: el operador identificó que la reorganización anterior quedó incompleta (solo 4 evolutivos movidos; el resto de paquetes históricos seguía en sus rutas activas con cabecera "superseded"). El objetivo era UN solo roadmap ejecutable + UN solo puntero de continuidad; todo lo demás claramente separado.
+
+Inventario ejecutado:
+- 14 paquetes legacy movidos (sddk-complete-evolution, sddk-decision-kernel-architecture, sddk-2.0-architecture-consolidation, SDDK-Human-Agent-Collaboration-Evolution-Pack, SDDK-Semantic-Core-Agent-Experience-Consolidation, SDDK-Context-First-..., SDDK-CogniCode-Chronos-..., SDDK-Architecture-Conformance-Graph-Evolution, SDDK-Production-Readiness-Alignment, sddk-stabilization-plan, architecture-a5, architecture-a6, a4-4c, a4-4m).
+- 113 handoffs en `docs/handoff/` → `docs/history/handoffs/all-handoffs/`.
+- 7 proposals en `docs/proposals/` → `docs/history/proposals/all-proposals/`.
+- `docs/research/` → `docs/history/research/all-research/`.
+- `docs/cycles/` → `docs/history/cycles/all-cycles/`.
+- `docs/uat/PLAN-uat-v3-quality-control-plane.md` → `docs/history/uat-plans/`.
+- 9 archivos sueltos en raíz `docs/`: A3-MILESTONE-RECEIPT, ARCHITECTURE-MODEL, agent-models-registration, deep-research-integration, skill-categorization, 4 evolutivos (stubs).
+- `docs/architecture/a5/cycle-artifacts/` extraído antes del movimiento a `docs/architecture/cycle-artifacts/a5/` (evidencia operativa, no histórico).
+
+Refs documentales actualizadas: 184 reemplazos en 87 archivos (ADRs con `package_source`, propuestas, recibos, skills, agents, tests, manifests). `Cargo.toml` exclude actualizado. `AGENTS.md` autoridad única preservada. `docs/architecture/README.md` autoridad única preservada con ref nueva.
+
+Resultado: al comenzar una nueva sesión, un agente debe encontrar un único roadmap (`docs/roadmap/ROADMAP.md`), un único puntero de continuidad (`docs/roadmap/CURRENT.md` + `STATE.yaml` + `SESSION-JOURNAL.md`), y todo el resto claramente separado dentro de `docs/history/`.
+
+Verificación post-traslado:
+- `cargo check -p sddk-engine` pasa.
+- `cargo test -p sddk-engine --lib structured_work`: 7/7 ok (estructura intacta).
+- `release_admission_check HEAD`: REJECT 1.169.133 -> 1.169.133 (esperado, parent es 1.169.133).
+- Working tree: 1139 cambios (predominantemente git mv).
+
+Estado actual:
+- HEAD: 68f6788 (cycle-c SCOPE-CONTRACT + reorganización en mismo commit)
+- Documentación actual: docs/roadmap/, docs/architecture/, docs/audit/, docs/control-plane/, docs/debt/, docs/generated/, docs/releases/, docs/responsibility-separation/, docs/uat/GUIDED-UAT-DESIGN.md, docs/validation/, AGENTS.md, docs/RELEASING.md, docs/agent-reconciliation.md, docs/reconciliation-spec.md
+- Histórico completo: docs/history/legacy-packages/, docs/history/handoffs/, docs/history/proposals/, docs/history/research/, docs/history/cycles/, docs/history/uat-plans/, docs/history/legacy-evolutivos-2026/
+
+Próximo paso: commit único del catálogo + reconciliación + push.
+
+Próximo WorkItem (post-commit): implementar cycle-c (corrección de githooks/pre-push + release_admission.sh) en rama de trabajo. H02 (commit 9d4c249) se recupera del reflog tras tener vía de integración limpia.

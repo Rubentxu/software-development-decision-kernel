@@ -1,7 +1,7 @@
 ---
 id: arch-spec-016-skill-contract
 package_local_id: SPEC-016
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-016` |
 | Repository native | `arch-spec-016-skill-contract` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

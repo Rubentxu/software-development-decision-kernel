@@ -2,7 +2,7 @@
 id: arch-spec-021-intelligence-provider-boundary
 status: proposed
 proposed_at: 2026-09-14
-source: docs/SDDK-Production-Readiness-Alignment-2026-09-14/
+source: docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/
 supersedes_history: false
 ---
 
@@ -138,8 +138,8 @@ SDDK SHALL be able to invoke CogniCode/Chronos directly through their typed inte
 
 ## Provider-specific handoffs
 
-- CogniCode: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
-- Chronos: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/05-CHRONOS-HANDOFF.md`
+- CogniCode: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+- Chronos: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/05-CHRONOS-HANDOFF.md`
 
 ## Compatibility and publication
 

@@ -9,10 +9,10 @@ use sddk_domain::spine::{SpineStatus, canonicalize_spine_bytes, parse_spine_yaml
 fn spine_parses_current_execution_spine_file() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let spine_path = manifest_dir
-        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+        .join("../../docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
         // Fallback: try relative path from CWD
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+        std::fs::read("docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
             .unwrap()
     });
 
@@ -93,9 +93,9 @@ items:
 fn spine_roundtrip_is_stable() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let spine_path = manifest_dir
-        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+        .join("../../docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+        std::fs::read("docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
             .unwrap()
     });
 
@@ -120,9 +120,9 @@ fn spine_roundtrip_is_stable() {
 fn spine_cycle_binding_preserved() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let spine_path = manifest_dir
-        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+        .join("../../docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+        std::fs::read("docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
             .unwrap()
     });
 

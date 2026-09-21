@@ -55,4 +55,4 @@ failure mode.
 ## References
 
 - `crates/sddk-storage/tests/workflow_run_restart_survival.rs` (post-A5-2)
-- `docs/architecture/a5/A5-2-RECEIPT.md` §3 finding 1
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-2-RECEIPT.md` §3 finding 1

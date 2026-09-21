@@ -1,6 +1,6 @@
 //! Golden vector integration tests for EventEnvelopeV1 against uat-acceptance.jsonl.
 //!
-//! The fixture `docs/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl`
+//! The fixture `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl`
 //! carries placeholder `content_hash` values. Run the `regenerate_uat_acceptance_jsonl`
 //! ignored test to regenerate it with real SHA-256 hashes:
 //!
@@ -14,15 +14,15 @@ use std::fs;
 use std::path::PathBuf;
 
 const JSONL_FIXTURE: &str = include_str!(
-    "../../../docs/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl"
+    "../../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl"
 );
 const SCHEMA_JSON: &str = include_str!(
-    "../../../docs/sddk-2.0-architecture-consolidation/schemas/event-envelope.schema.json"
+    "../../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/schemas/event-envelope.schema.json"
 );
 
 /// Path relative to this crate's manifest dir (for the regenerate helper).
 const FIXTURE_PATH: &str =
-    "../../docs/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl";
+    "../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/examples/events/uat-acceptance.jsonl";
 
 /// Regenerates `uat-acceptance.jsonl` with real SHA-256 content_hash values.
 ///

@@ -1,7 +1,7 @@
 ---
 id: arch-spec-010-pack-sdk
 package_local_id: SPEC-010
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-010-PACK-SDK.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-010-PACK-SDK.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-010` |
 | Repository native | `arch-spec-010-pack-sdk` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-010-PACK-SDK.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-010-PACK-SDK.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

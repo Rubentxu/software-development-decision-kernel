@@ -116,7 +116,7 @@ Mirror cycle-34 pattern: split into category tasks, each with anti-tautology gua
 
 #### T6 — Closeout (docs only)
 - Update `docs/debt/INC-DEBT-014-...md`: status open → closed, add resolution summary.
-- Create `docs/handoff/HANDOFF-2026-08-26-cycle-40-inc-debt-014-sddk-engine-test-debt.md` mirroring cycle-34/37/38/39 format.
+- Create `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-26-cycle-40-inc-debt-014-sddk-engine-test-debt.md` mirroring cycle-34/37/38/39 format.
 - Add CHANGELOG.md entry.
 - Commit: `docs(debt+inc+handoff+changelog): cycle-40 closeout — INC-DEBT-014 closed (cycle-40)`.
 

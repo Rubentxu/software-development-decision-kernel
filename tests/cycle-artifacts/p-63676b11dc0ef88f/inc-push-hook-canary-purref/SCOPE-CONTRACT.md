@@ -140,7 +140,7 @@ La justificación del afinamiento queda documentada en:
 | `tests/cycle-artifacts/p-63676b11dc0ef88f/inc-push-hook-canary-purref/SCOPE-CONTRACT.md` | este contrato |
 | `tests/cycle-artifacts/p-63676b11dc0ef88f/inc-push-hook-canary-purref/RECEIPT.md` | al cierre del ciclo |
 
-No se crea ADR (ver §6). No se modifica `Cargo.toml`. No se añade entrada nueva en `docs/handoff/`.
+No se crea ADR (ver §6). No se modifica `Cargo.toml`. No se añade entrada nueva en `docs/history/handoffs/all-handoffs/`.
 
 ## 8. Falsification battery (a verificar antes de close)
 

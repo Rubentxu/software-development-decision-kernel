@@ -103,8 +103,8 @@ Orquestador (autonomous continuation, post-release):
 - `docs/roadmap/STATE.yaml` (reconciled at `e8964ac`)
 - `docs/roadmap/CURRENT.md` (reconciled at `e8964ac`)
 - `docs/roadmap/SESSION-JOURNAL.md` (entrada 2026-09-21T11:57:00Z)
-- `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` (histórica v1.169.88)
-- `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` (AIW snapshot)
-- `docs/research/2026-09-21-roadmap-gaps-deep-research.md`
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` (histórica v1.169.88)
+- `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` (AIW snapshot)
+- `docs/history/research/all-research/2026-09-21-roadmap-gaps-deep-research.md`
 - `githooks/pre-push` (release admission contract)
 - `scripts/release.sh` (operator-only)

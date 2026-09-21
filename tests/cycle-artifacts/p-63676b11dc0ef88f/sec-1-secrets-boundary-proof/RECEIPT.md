@@ -111,7 +111,7 @@ test architecture_rules_yaml_parse: 11 FAILED
 ```
 
 `architecture_rules_yaml_parse` (in `sddk-domain`) reads
-`docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
+`docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
 relative to `CARGO_MANIFEST_DIR/../..`. When run as part of
 `--workspace`, the test fails with `Os { code: 2, kind: NotFound }`
 even though the file exists on disk and the test passes when run

@@ -279,9 +279,9 @@ fn spine_import_body_ref_is_content_addressable() {
     // Re-read the spine file using manifest dir to find it
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let spine_path = manifest_dir
-        .join("../../docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
+        .join("../../docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml");
     let bytes_again = std::fs::read(&spine_path).unwrap_or_else(|_| {
-        std::fs::read("docs/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
+        std::fs::read("docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/EXECUTION-SPINE.yaml")
             .unwrap()
     });
     let canonical_again = sddk_domain::spine::canonicalize_spine_bytes(&bytes_again);

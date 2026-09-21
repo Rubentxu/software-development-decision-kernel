@@ -61,7 +61,7 @@ pub struct JournalEntry {
 ///
 /// # Severity policy cross-reference
 ///
-/// SPEC-027 (`docs/sddk-decision-kernel-architecture/04-specs/SPEC-027-EVENT-TAXONOMY.md`)
+/// SPEC-027 (`docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/SPEC-027-EVENT-TAXONOMY.md`)
 /// lists 8 event categories; this function's locked table has 7 rows because
 /// `evidence.*` and `uat.*` are consolidated (line 77) and `pack/runtime` is
 /// excluded by design (see module comment lines 40-51 — internal runtime events

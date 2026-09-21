@@ -49,7 +49,7 @@ whole-project verification boundary.
 ## References
 
 - `prompts/sddk/change-scoped-testing.md` — language-neutral SUT impact and progressive verification authority
-- `docs/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md` — target domain/service contract
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/SPEC-043-CHANGE-SCOPED-VERIFICATION-SERVICE.md` — target domain/service contract
 - `prompts/sddk/git-contract.md` — commit authority
 - `skills/_shared/sddk-phase-common.md` — shared executor protocol
 - `skills/_shared/persistence-contract.md` — XDG and ledger authority

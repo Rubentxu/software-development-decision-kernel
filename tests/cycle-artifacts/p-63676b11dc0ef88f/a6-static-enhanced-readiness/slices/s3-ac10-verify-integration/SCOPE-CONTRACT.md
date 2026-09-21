@@ -93,7 +93,7 @@ continue if S3 stops.
 ## §7 References
 
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/SCOPE-CONTRACT.md` §S3 (macro-cycle plan)
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md` (CC scope, AC10 mention)
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md` (CC scope, AC10 mention)
 - `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md` (AC10 / IPB-008)
 - `crates/sddk-engine/src/verify_kernel/adapter_static_provider.rs` (existing static-provider Verify domain)
 - `crates/sddk-engine/src/verify_kernel/evidence_source.rs` (substrate; must NOT be modified)

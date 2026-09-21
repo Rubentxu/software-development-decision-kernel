@@ -68,7 +68,7 @@ in `verify-report.md`.
 ## References
 
 - `crates/sddk-engine/tests/port_contracts.rs` (347 LOC) — the over-budget file
-- `docs/sddk-decision-kernel-architecture/03-adrs/ADR-0048-loc-budget-policy-reformulation.md` — policy
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-0048-loc-budget-policy-reformulation.md` — policy
 - `docs/adr/ADR-0047-inc01-cycle-8-loc-budget-exception.md` — exception precedent
 - `docs/adr/ADR-0047-inc02-cycle-9-apply-discipline-and-loc-reality.md` — LOC reality lesson
 - `~/.local/share/sddk/projects/p-52b95ef55999f9de/cycle-artifacts/p-52b95ef55999f9de/kernel-cycle-13-m1-hexagonal-ports/verify-report.md` — verify phase output

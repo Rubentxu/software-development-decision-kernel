@@ -1,7 +1,7 @@
 ---
 id: arch-spec-007-agent-protocol-and-handoff
 package_local_id: SPEC-007
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-007-AGENT-PROTOCOL-AND-HANDOFF.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-007-AGENT-PROTOCOL-AND-HANDOFF.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-007` |
 | Repository native | `arch-spec-007-agent-protocol-and-handoff` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-007-AGENT-PROTOCOL-AND-HANDOFF.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-007-AGENT-PROTOCOL-AND-HANDOFF.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

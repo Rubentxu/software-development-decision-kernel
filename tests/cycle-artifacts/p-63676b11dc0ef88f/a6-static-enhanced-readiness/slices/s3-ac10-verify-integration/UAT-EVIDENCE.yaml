@@ -1,6 +1,6 @@
 # UAT evidence rows — S3 — AC10 Verify Integration
 #
-# Schema per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+# Schema per `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
 # §I. Slice: `p-63676b11dc0ef88f/a6-static-enhanced-readiness/slices/s3-ac10-verify-integration`.
 # Cycle HEAD at slice close: <filled at commit>.
 #

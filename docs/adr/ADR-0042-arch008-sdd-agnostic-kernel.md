@@ -46,6 +46,6 @@ static ARCH008_PATTERNS: Lazy<RegexSet> = Lazy::new(|| RegexSet::new([
 ## References
 
 - `evaluate_arch008()` in `crates/sddk-engine/src/rules/evaluators.rs`
-- `ARCH008` rule definition in `docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
+- `ARCH008` rule definition in `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
 - `WV-0026` waiver in same file
 - ARCH006–015 evaluators stubbed as `NotApplicable` (substance deferred to cycle 3)

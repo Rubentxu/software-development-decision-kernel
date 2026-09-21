@@ -1,7 +1,7 @@
 ---
 id: ADR-0104-PACK-EXTENSION-BOUNDARY
 package_local_id: ADR-011
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-011-PACK-EXTENSION-BOUNDARY.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-011-PACK-EXTENSION-BOUNDARY.md
 status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -32,7 +32,7 @@ stale_after: 2027-09-12
 |---|---|
 | Package local | `ADR-011` |
 | Repository native | `ADR-0104-PACK-EXTENSION-BOUNDARY` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-011-PACK-EXTENSION-BOUNDARY.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-011-PACK-EXTENSION-BOUNDARY.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

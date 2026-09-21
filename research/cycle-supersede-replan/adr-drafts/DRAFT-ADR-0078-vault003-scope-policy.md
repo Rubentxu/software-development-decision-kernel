@@ -17,7 +17,7 @@
 
 `crates/sddk-cli/src/vault_cmd.rs:172` cites "verbatim `{VAULT003}` per
 ADR-0078", but ADR-0078 **does not exist** in `docs/adr/` or
-`docs/sddk-decision-kernel-architecture/03-adrs/`. The substantive
+`docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/`. The substantive
 decision (allow-list = 1 entry, code = VAULT003) was made in commit
 `87c5a97` (v1.65.6, `feat(vault): add VAULT003 per-cycle scope policy and
 RepairReceipt queue`).

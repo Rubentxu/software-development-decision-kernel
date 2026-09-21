@@ -3,7 +3,7 @@
 Date: 2026-09-20
 Provider: `cognicode-mcp` v0.97.1
 AIW-S1 reference: `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s1-cognicode-real/DISCOVERY.md` (predecessor)
-CC-S0 reference: `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md` (seam)
+CC-S0 reference: `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md` (seam)
 
 ## §1 What CogniCode actually reports (OBSERVED, against this repo)
 
@@ -149,7 +149,7 @@ declaration; it does not perform it.
 ## §7 References
 
 - AIW-S1 DISCOVERY (`tests/cycle-artifacts/.../aiw-s1-cognicode-real/DISCOVERY.md`) — handshake, tool catalog, latency.
-- CC-S0 RECEIPT (`docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md`) — falsification matrix T1..T6.
+- CC-S0 RECEIPT (`docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md`) — falsification matrix T1..T6.
 - arch-spec-021 IPB-002, IPB-004, IPB-005.
 - ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.
 - arch-acceptance-coverage-001.

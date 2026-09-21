@@ -18,7 +18,7 @@ in prose and IPB-001..IPB-012 requirements; the **trait does
 not** exist in `crates/sddk-engine/src/`.
 
 The live mini-roadmap
-(`docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`)
+(`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`)
 reserves **A6 CogniCode STATIC_ENHANCED** as the next P1
 parallel track after A5 BASE_READY. AC10 ("consume CogniCode
 call/dependency/impact/graph observations as Evidence through
@@ -137,10 +137,10 @@ No other file is modified.
 ## See also
 
 - `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md`
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
   (A6 paragraph)
-- `docs/proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
+- `docs/history/proposals/all-proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cognicode-protocol-spike/SCOPE-CONTRACT.md`
 
 ## Addendum (AIW-S1, 2026-09-19): CogniCode MCP stdio adapter

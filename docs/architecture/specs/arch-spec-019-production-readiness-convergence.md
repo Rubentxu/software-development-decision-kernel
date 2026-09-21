@@ -2,7 +2,7 @@
 id: arch-spec-019-production-readiness-convergence
 status: proposed
 proposed_at: 2026-09-14
-source: docs/SDDK-Production-Readiness-Alignment-2026-09-14/
+source: docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/
 supersedes_history: false
 ---
 
@@ -55,7 +55,7 @@ REJECTED(reason, decision-ref)
 
 Deleting it from a later roadmap is not a disposition.
 
-The project SHALL maintain the disposition register at `docs/SDDK-Production-Readiness-Alignment-2026-09-14/06-PROPOSAL-DISPOSITION-REGISTER.md` until final convergence.
+The project SHALL maintain the disposition register at `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/06-PROPOSAL-DISPOSITION-REGISTER.md` until final convergence.
 
 ### PRC-004 — Base readiness is provider-independent
 
@@ -112,8 +112,8 @@ Historical packages may remain available but cannot claim competing current auth
 
 The detailed gates and UAT matrix are normative companions:
 
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
 
 ## Acceptance
 

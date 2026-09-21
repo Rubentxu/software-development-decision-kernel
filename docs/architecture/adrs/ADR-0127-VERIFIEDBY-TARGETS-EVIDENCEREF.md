@@ -203,7 +203,7 @@ Negative:
 
 - `FU-A3-S15-3` (blocks A4-5b) → CLOSED with §0 evidence.
 - A3-S15 receipt: NOT rewritten. Addendum at
-  `docs/handoff/HANDOFF-2026-09-15-session-close.md` (or successor
+  `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-15-session-close.md` (or successor
   handoff) records A4-S15R's resolution of the deferred item.
 - A4-5b unblocks after A4-S15R closes + `FU-A3-S15-3` resolves. **A4-5b
   does NOT auto-open.**

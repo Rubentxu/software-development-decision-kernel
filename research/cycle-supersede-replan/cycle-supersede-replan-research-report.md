@@ -44,7 +44,7 @@ ADR-0022 reconciliation) se preservan íntegramente.
 **Decisión que NO se revierte**: `Phase::Review` no se elimina en este
 documento. Se clasifica como **problema estructural** y se delega a ADR-E
 para una decisión posterior (la investigación previa
-`docs/research/sddk-a-full-lifecycle-review-phase-research-report.md`
+`docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md`
 recomendó eliminación; esa recomendación se mantiene, pero la decisión se
 mantiene abierta hasta que se ejecute cycle-49+).
 
@@ -184,7 +184,7 @@ dynamic graph engine (Phase 4); secretary (ADR-0072/0073); release.sh
 
 `crates/sddk-cli/src/vault_cmd.rs:172` cita "verbatim `{VAULT003}` per
 ADR-0078", pero ADR-0078 **no existe** ni en `docs/adr/` ni en
-`docs/sddk-decision-kernel-architecture/03-adrs/`. La afirmación
+`docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/`. La afirmación
 sustantiva (allow-list = 1 entrada, código = VAULT003) está en
 `crates/sddk-vault/src/repair.rs:16`. La referencia es decorativa.
 **Recomendación**: emitir un ADR-0078 retroactivo para ligar la autoridad
@@ -255,7 +255,7 @@ encargo del usuario). Ver `research/cycle-supersede-replan/adr-drafts/`:
 
 **Importante**: estos son **borradores para decisión humana**, no ADRs
 aceptados. Se entregan en `research/.../adr-drafts/` y NO se mueven a
-`docs/adr/` ni a `docs/sddk-decision-kernel-architecture/03-adrs/` hasta
+`docs/adr/` ni a `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/` hasta
 que un ciclo formal los adopte.
 
 ### 4.4 Specs intermedias (2)

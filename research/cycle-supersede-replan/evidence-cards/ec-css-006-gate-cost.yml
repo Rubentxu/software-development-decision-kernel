@@ -25,7 +25,7 @@ EC-CSS-006
 | # | Source | Path / Symbol | Tier |
 |---|---|---|---|
 | 1 | L1.S19 | `crates/sddk-cli/src/metrics.rs` (Levels A-E + L1-L6 — referenced by L1.S8 but not directly inspected) | L1 |
-| 2 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated; no cost ceiling) | L1 |
+| 2 | L1.S8 | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated; no cost ceiling) | L1 |
 | 3 | GAP-5 | `crates/sddk-cli/src/metrics.rs` Levels A-E + L1-L6 not directly inspected in this research | (gap) |
 
 ## Decay date

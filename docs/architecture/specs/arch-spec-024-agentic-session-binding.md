@@ -2,7 +2,7 @@
 id: arch-spec-024-agentic-session-binding
 status: proposed
 proposed_at: 2026-09-14
-source: docs/SDDK-Production-Readiness-Alignment-2026-09-14/
+source: docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/
 supersedes_history: false
 ---
 

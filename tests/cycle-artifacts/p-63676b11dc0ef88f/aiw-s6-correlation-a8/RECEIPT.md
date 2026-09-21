@@ -9,7 +9,7 @@
 AIW-S6 is closed by **infrastructure**: A4-5a falsification suite
 (`crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs`)
 already pins the four rows P09..P12 of
-`docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`.
+`docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`.
 
 | UAT row | AIW-S6 contract | A4-5a coverage |
 |---|---|---|
@@ -39,5 +39,5 @@ already pins the four rows P09..P12 of
 - SCOPE-CONTRACT: `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s6-correlation-a8/SCOPE-CONTRACT.md`
 - UAT-EVIDENCE: `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s6-correlation-a8/UAT-EVIDENCE.md`
 - A4-5a tests: `crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs`
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §P09..P12
-- AIW state: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §P09..P12
+- AIW state: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`

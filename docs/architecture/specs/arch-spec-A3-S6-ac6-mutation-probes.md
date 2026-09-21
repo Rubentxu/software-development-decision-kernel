@@ -6,7 +6,7 @@ proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-6-ac6-mutation-probes
 source: arch-spec-038-architecture-mutation-and-counterfactual-probes + ADR-0116-ARCHITECTURE-MUTATION-AND-COUNTERFACTUAL-VERIFICATION
-based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/07-MUTATION-COUNTERFACTUAL-PROOF-CARRYING.md
+based_on: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/07-MUTATION-COUNTERFACTUAL-PROOF-CARRYING.md
 ---
 
 # arch-spec-A3-S6 — Critical Mutation Probes

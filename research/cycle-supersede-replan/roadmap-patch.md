@@ -4,7 +4,7 @@ author: deep-research-orchestrator
 date: 2026-08-31
 status: draft
 related: research/cycle-supersede-replan/cycle-supersede-replan-research-report.md
-applies_to: docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md
+applies_to: docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md
 ---
 
 # Parche de roadmap
@@ -249,7 +249,7 @@ launch plan con items 3.6 + 3.4.
 ## Patch instructions (para el humano)
 
 Si decides aplicar este parche, las modificaciones al
-`docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` son:
+`docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` son:
 
 1. Después de §Wave 5 — Hardening (deferred), añadir:
 

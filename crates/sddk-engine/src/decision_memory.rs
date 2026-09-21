@@ -10,7 +10,7 @@
 //! projections are deferred to CDD-MEMORY-002.
 //!
 //! Reference doc: REQ-DecisionMemory.md (RFC 2119) and
-//! docs/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md.
+//! docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/DECISION-MEMORY-GIT-MODEL.md.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

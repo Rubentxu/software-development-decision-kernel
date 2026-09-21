@@ -2,7 +2,7 @@
 
 > **Cycle id:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness`
 > **Document role:** SCOPE-CONTRACT of the macro-cycle (the operator authorised this macro-cycle with bounded autonomy; the SCOPE defines slices, dependencies, UAT, STOP conditions, and exit criteria).
-> **Status:** reconciling slices against `origin/main = e026511` (v1.169.94) and the canonical roadmap live at `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §"A6 — CogniCode STATIC_ENHANCED".
+> **Status:** reconciling slices against `origin/main = e026511` (v1.169.94) and the canonical roadmap live at `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §"A6 — CogniCode STATIC_ENHANCED".
 > **Mode:** auto-run between slices; STOP only on the conditions named by the operator in the macro-cycle authorisation.
 
 ## §1 Reconcile against canonical roadmap
@@ -18,7 +18,7 @@ Mini-roadmap live definition (excerpt verbatim):
 >
 > **Exit:** Base stays green with provider absent; **pinned enhanced UAT yields `STATIC_ENHANCED` receipt**.
 
-UAT matrix source: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E (PR-UAT-C01..C10).
+UAT matrix source: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E (PR-UAT-C01..C10).
 
 ### 1.1 What is already CLOSED (recognised, not re-done)
 
@@ -162,7 +162,7 @@ Each slice follows `SCOPE → caracterización/RED → implementación/GREEN →
 **Scope:**
 - Read-only synthesis across S1..S6 receipts.
 - Honest reporting of which `PR-UAT-C0X` rows passed against fake, which against real, which remained `NOT_EVALUATED`, which revealed STOP conditions.
-- Update `docs/architecture/a6/A6-CC-*-CLOSE-RECEIPT.md` with the macro-ciclo result.
+- Update `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-CC-*-CLOSE-RECEIPT.md` with the macro-ciclo result.
 - DO NOT declare A6 completed unless S5 produced a real-CogniCode `Satisfied` receipt AND all the named STOP conditions have been resolved.
 
 **Depends on:** S1..S6 (or as many as reachable).
@@ -223,10 +223,10 @@ The orchestrator emits a Human Feed at each slice close (per the global prompt o
 
 ## §8 References
 
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` (live roadmap)
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` (§E, §I)
-- `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md` (CLOSED)
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` (live roadmap)
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` (§E, §I)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md` (CLOSED)
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cc-s1-static-graph-completeness/RECEIPT.md` (CLOSED)
 - `docs/architecture/adrs/ADR-0137-CODE-INTELLIGENCE-PORT-SEAM.md`
 - `docs/architecture/adrs/ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.md`

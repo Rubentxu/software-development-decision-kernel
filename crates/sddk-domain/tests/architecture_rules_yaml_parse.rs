@@ -22,7 +22,7 @@ fn load_rules_yaml() -> String {
         .expect("crates has parent"); // sddk-framework/
 
     let path = workspace_root
-        .join("docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
+        .join("docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
     std::fs::read_to_string(&path).expect("architecture-rules.yaml must exist")
 }
 

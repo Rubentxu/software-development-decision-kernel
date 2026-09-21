@@ -90,7 +90,7 @@ impl ProjectIntentRef {
 
 /// Closed enum of paradigm profile kinds the overlay understands.
 ///
-/// Source: `docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/04-PARADIGM-LENSES.md`
+/// Source: `docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/04-PARADIGM-LENSES.md`
 /// §ParadigmProfile. The 11 variants match the canonical narrative verbatim.
 /// Custom is reserved for project-specific paradigms (does not grow the
 /// platform ontology — the lens stays in the project's namespace).

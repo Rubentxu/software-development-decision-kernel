@@ -169,7 +169,7 @@ Negative / honest risks:
 
 ## Acceptance (G5 closure evidence)
 
-The cycle's receipt (`docs/architecture/a6/A6-0-RECEIPT.md`) MUST show
+The cycle's receipt (`docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-0-RECEIPT.md`) MUST show
 all FENCE tests GREEN:
 
 | Test | Expected |

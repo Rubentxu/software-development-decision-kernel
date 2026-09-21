@@ -7142,7 +7142,7 @@ fn cli_phase_build_remediate_transitions_to_open_build() {
 ///   transition. Every pass through that check is simultaneously a
 ///   pass through the rejection path that S2 would have named.
 ///
-/// See `docs/architecture/a5/A5-ITD-RECEIPT.md` §3.1 for the
+/// See `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-ITD-RECEIPT.md` §3.1 for the
 /// disposition evidence.
 /// S3: phase.build.remediate is rejected without remediation-complete gate receipt.
 #[test]

@@ -1,7 +1,7 @@
 ---
 id: arch-spec-011-observability-views
 package_local_id: SPEC-011
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-011-OBSERVABILITY-VIEWS.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-011-OBSERVABILITY-VIEWS.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-011` |
 | Repository native | `arch-spec-011-observability-views` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-011-OBSERVABILITY-VIEWS.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-011-OBSERVABILITY-VIEWS.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

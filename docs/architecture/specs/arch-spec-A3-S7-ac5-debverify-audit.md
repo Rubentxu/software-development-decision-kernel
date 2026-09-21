@@ -6,7 +6,7 @@ proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-7-ac5-debverify-audit
 source: arch-spec-034-architecture-conformance-verification (AC-034-002)
-based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md
+based_on: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md
 ---
 
 # arch-spec-A3-S7 — DebVerify Architecture Audit

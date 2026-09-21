@@ -1,7 +1,7 @@
 ---
 id: ADR-0097-COMMON-REVISION-SUBSTRATE
 package_local_id: ADR-004
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-004-COMMON-REVISION-SUBSTRATE.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-004-COMMON-REVISION-SUBSTRATE.md
 status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -46,7 +46,7 @@ The 3 existing specialised revision types (`GraphRevision` u64-only, `PlanRevisi
 |---|---|
 | Package local | `ADR-004` |
 | Repository native | `ADR-0097-COMMON-REVISION-SUBSTRATE` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-004-COMMON-REVISION-SUBSTRATE.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-004-COMMON-REVISION-SUBSTRATE.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

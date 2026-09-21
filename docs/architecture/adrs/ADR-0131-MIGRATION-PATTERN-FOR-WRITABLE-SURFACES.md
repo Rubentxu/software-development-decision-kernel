@@ -173,6 +173,6 @@ Negative:
 
 - `docs/architecture/adrs/ADR-0130-FENCED-ADMISSION-TICKETS.md`
 - `docs/debt/INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY.md`
-- `docs/architecture/a6/A6-0-RECEIPT.md` (the primitive)
-- `docs/architecture/a6/A6-1-RECEIPT.md` (this cycle's evidence)
-- `docs/architecture/a6/A6-1-PLAN.md`
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-0-RECEIPT.md` (the primitive)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-1-RECEIPT.md` (this cycle's evidence)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-1-PLAN.md`

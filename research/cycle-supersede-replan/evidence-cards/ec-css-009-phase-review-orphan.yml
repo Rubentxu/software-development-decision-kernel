@@ -26,8 +26,8 @@ EC-CSS-009
 
 | # | Source | Path / Symbol | Tier |
 |---|---|---|---|
-| 1 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1-1.4, §3.1 | L1 |
-| 2 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan references A-full lifecycle) | L1 |
+| 1 | L1.S11 | `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1-1.4, §3.1 | L1 |
+| 2 | L1.S8 | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan references A-full lifecycle) | L1 |
 | 3 | GAP-4 | `sddk-domain::Phase` enum inspection pending | (gap) |
 
 ## Decay date

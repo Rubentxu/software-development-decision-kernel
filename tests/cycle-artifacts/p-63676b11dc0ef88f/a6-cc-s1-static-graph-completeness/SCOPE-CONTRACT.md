@@ -7,7 +7,7 @@ Mode: hybrid (code + docs; SDK-side changes + ADR-0139 + acceptance contract)
 
 ## 1. Tensión que cierra
 
-CC-S0 (`p-.../a6-cognicode-protocol-spike`, receipt `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md`) cerró el seam del proveedor estático: el trait `CodeIntelligencePort` y un fake determinista satisfacen IPB-001..010 con 6 tests de falsificación. Pero CC-S0 **no declara `STATIC_ENHANCED`**: la matriz documenta que el spike prueba el seam, no la capacidad.
+CC-S0 (`p-.../a6-cognicode-protocol-spike`, receipt `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md`) cerró el seam del proveedor estático: el trait `CodeIntelligencePort` y un fake determinista satisfacen IPB-001..010 con 6 tests de falsificación. Pero CC-S0 **no declara `STATIC_ENHANCED`**: la matriz documenta que el spike prueba el seam, no la capacidad.
 
 `arch-spec-021 IPB-004` dice textualmente:
 
@@ -25,7 +25,7 @@ Esta reubicación **no es requisito funcional de cobertura**: es tarea secundari
 
 ## 2. Decisión adoptada (resumen)
 
-- **ADR-0139** (no `ADR-022`: ese identificador ya está usado por `docs/SDDK-Context-First-...-2026-09-10/02-BOUNDED-CONTEXTS/knowledge/adrs/ADR-022-KNOWLEDGE-MERKLE-TREE-AND-SEMANTIC-OVERLAY.md` y `docs/sddk-decision-kernel-architecture/03-adrs/ADR-022-ACTIVE-GRAPH-PROJECTION.md`, fuera de la serie canónica). Verificado en HEAD local: la serie canónica `docs/architecture/adrs/` llega hasta `ADR-0138-runtime-evidence-port.md`. `ADR-0139` está libre.
+- **ADR-0139** (no `ADR-022`: ese identificador ya está usado por `docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/02-BOUNDED-CONTEXTS/knowledge/adrs/ADR-022-KNOWLEDGE-MERKLE-TREE-AND-SEMANTIC-OVERLAY.md` y `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-022-ACTIVE-GRAPH-PROJECTION.md`, fuera de la serie canónica). Verificado en HEAD local: la serie canónica `docs/architecture/adrs/` llega hasta `ADR-0138-runtime-evidence-port.md`. `ADR-0139` está libre.
 
 - **Contrato de aceptación normativo** `arch-acceptance-coverage-001` (nuevo) vinculado a `arch-spec-021 IPB-004`. La condición obligatoria para anunciar `STATIC_ENHANCED` no queda escondida en código ni en el ADR: queda reflejada en la especificación.
 

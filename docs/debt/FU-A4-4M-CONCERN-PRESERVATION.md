@@ -12,7 +12,7 @@
   `6f48e1cb6a2eb1f740e007c1bb99a327b38e7143`).
 - Cycle: `p-63676b11dc0ef88f-a4-4mr-concern-preserving`.
 - Scope contract: `.sddk/cycles/p-63676b11dc0ef88f-a4-4mr-concern-preserving/spec.md`.
-- Handoff: `docs/handoff/HANDOFF-2026-09-17-a4-4mr-concern-preserving.md`.
+- Handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-17-a4-4mr-concern-preserving.md`.
 - PublicReleaseGate: PASS (scenario 9 against the real release at the GH
   API).
 - `cargo test --workspace` → **4586 passed, 0 failed**; `cargo fmt

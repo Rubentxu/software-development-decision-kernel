@@ -60,5 +60,5 @@ For `store`: each Parallel child receives its OWN `Arc::new(Mutex::new(ScratchGr
 - `docs/adr/ADR-0050-true-concurrent-parallel.md` — INV-10 invariant origin
 - `docs/adr/ADR-0051-operator-arc-dyn-safety.md` — `Arc<dyn Operator>` precedent
 - `prompts/sddk-decision-kernel-architecture/` — forward-debt P1 origin
-- `docs/handoff/HANDOFF-2026-08-25-cycle-19-sddk-framework.md` §101-109 — original forward debt
+- `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-25-cycle-19-sddk-framework.md` §101-109 — original forward debt
 - design.md Decision 1 — REJECTED alternative that this ADR overrides

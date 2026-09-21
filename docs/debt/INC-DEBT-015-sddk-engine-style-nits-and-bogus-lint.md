@@ -78,7 +78,7 @@ Cycle-40 INC-DEBT-014 closed with 36 unique clippy warning messages (73 total oc
 #### T4 — Closeout (docs only)
 - Update INC-DEBT-015: status open → closed, add resolution summary.
 - Update INC-DEBT-014: append cycle-41 carry-forward resolution to clarify T4 scope deferral resolution.
-- Create `docs/handoff/HANDOFF-2026-08-26-cycle-41-inc-debt-015-sddk-engine-style-nits.md`.
+- Create `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-26-cycle-41-inc-debt-015-sddk-engine-style-nits.md`.
 - Add CHANGELOG.md entry.
 - Append cycle-41 narrative to ROADMAP.md.
 - Commit: `docs(debt+inc+handoff+changelog+roadmap): cycle-41 closeout — INC-DEBT-015 closed (cycle-41)`.
@@ -150,8 +150,8 @@ V2 adversarial revert must confirm each.
 ## References
 
 - Cycle-40 INC-DEBT-014 closure (carry-forward source): `docs/debt/INC-DEBT-014-sddk-engine-test-debt-sweep.md`
-- Cycle-40 cycle handoff: `docs/handoff/HANDOFF-2026-08-26-cycle-40-inc-debt-014-sddk-engine-test-debt.md`
-- Cycle-40 archive handoff: `docs/handoff/HANDOFF-2026-08-26-cycle-40-archive.md`
+- Cycle-40 cycle handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-26-cycle-40-inc-debt-014-sddk-engine-test-debt.md`
+- Cycle-40 archive handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-26-cycle-40-archive.md`
 - Cycle-40 release-receipt: `.sddk/cycles/p-52b95ef55999f9de/kernel-cycle-40-inc-debt-014-sddk-engine-test-debt-sweep/release-receipt.json`
 - Cycle-36 anti-tautology discipline: V2 adversarial revert per task
 - ADR-0064 §D-5 (lint annotation pattern)

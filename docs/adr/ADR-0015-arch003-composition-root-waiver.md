@@ -110,7 +110,7 @@ verde. Está dentro del scope del waiver WV-0015-ARCH003.
 - **Waiver ID**: `WV-0015-ARCH003-composition-root`
 - **Vigente hasta SHA**: `2efcebe86c75b1b1fbff7b0b571d509023d1448d`
 - **Mecanismo**: registrado en
-  `docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
+  `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml`
   bajo `waivers:`.
 - **Auditoría**: visible en CI output y `sddk dev check-architecture` output
   (rule_id=ARCH003, status=Waived, waiver_id=WV-0015-...).

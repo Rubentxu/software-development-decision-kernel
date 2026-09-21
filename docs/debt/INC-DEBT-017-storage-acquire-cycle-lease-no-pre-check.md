@@ -132,7 +132,7 @@ delivery (A-min path). No schema change. No new CLI flag.
   `crates/sddk-cli/tests/cli.rs::cli_cycle_lock_acquire_missing_own_project_returns_foreign_mismatch_when_cycle_does_not_exist`
   — documents that same-project-missing does NOT regress to typed mismatch
   (the test asserts `!stderr.contains("STORAGE_CYCLE_PROJECT_MISMATCH")`).
-- ROADMAP: GAP-6 entry (`docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md:857-861`)
+- ROADMAP: GAP-6 entry (`docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md:857-861`)
   documents the typed-error contract; this gap is adjacent but distinct.
 ## Resolution
 

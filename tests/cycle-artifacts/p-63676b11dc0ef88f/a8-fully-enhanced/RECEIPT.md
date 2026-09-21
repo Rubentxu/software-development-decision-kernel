@@ -66,7 +66,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 | AC13 counterfactual planning | ✅ | §3 above |
 | AC14 proof-carrying + ratchets | ✅ | §3 above |
 | Convergence: do not delay AC1..AC8 | ✅ | A1..A5 + AC6..AC9 + AC10 (A6) + AC11 (A7) shipped v1.169.96..122 |
-| Base readiness preserved | ✅ | `BASE_PRODUCTION_READY` cert in `docs/architecture/a5/A5-CURRENT-ROADMAP.md` |
+| Base readiness preserved | ✅ | `BASE_PRODUCTION_READY` cert in `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md` |
 
 **Honest read:** all five criteria close. No operator action required.
 
@@ -110,11 +110,11 @@ No `Cargo.lock` change. No new dependencies.
 
 ## §8 References
 
-- Mini-roadmap: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §A8.
-- G7 gate: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md` §9.
+- Mini-roadmap: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §A8.
+- G7 gate: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md` §9.
 - A8 tests: `crates/sddk-engine/tests/a8_s{1,2,3}_*.rs` (v1.169.122).
 - A8 release trail: `6896b44`, `3923a77`, `939a65e` (all in `origin/main`).
-- Production readiness: `docs/architecture/a5/A5-CURRENT-ROADMAP.md`.
-- AIW/A6/A7 crosswalk: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- Production readiness: `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md`.
+- AIW/A6/A7 crosswalk: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - Macro-cycle A6: `tests/cycle-artifacts/.../a6-static-enhanced-readiness/`.
 - Recovered backlog closeout: `tests/cycle-artifacts/.../recover-backup-2026-09-20/RECEIPT.md`.

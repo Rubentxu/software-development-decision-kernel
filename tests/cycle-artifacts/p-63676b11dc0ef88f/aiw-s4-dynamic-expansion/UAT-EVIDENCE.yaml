@@ -1,11 +1,11 @@
 # UAT evidence — AIW-S4 — Expansión dinámica por evidencia
 #
 # Slice: `p-63676b11dc0ef88f/aiw-s4-dynamic-expansion`
-# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# Source: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 # §Expansión, externos y empaquetado (W01..W11).
 
 slice: aiw-s4-dynamic-expansion
-uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+uat_source: docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
 
 rows:
   - id: W01

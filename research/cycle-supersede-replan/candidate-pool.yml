@@ -22,10 +22,10 @@ Sources discovered during R2, grouped by tier. Credibility assessment in
 | L1.S5 | Recover facade | `crates/sddk-cli/src/recover.rs` (35 lines) | 2028-08 |
 | L1.S6 | ADR-0047 durable debt | `docs/adr/ADR-0047-durable-debt-remediation.md` | stable |
 | L1.S7 | ADR-0068 bounded execution | `docs/adr/ADR-0068-bounded-execution.md` | stable |
-| L1.S8 | ROADMAP Wave plan | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (988 lines) | 2027-02 |
+| L1.S8 | ROADMAP Wave plan | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (988 lines) | 2027-02 |
 | L1.S9 | Debt taxonomy | `docs/debt/{SEVERITY,PRIORITY,README}.md` | stable |
 | L1.S10 | INC-DEBT-016 closed | `docs/debt/INC-DEBT-016-dm02-flaky-hang-parallel-sync-race.md` | stable |
-| L1.S11 | A-full lifecycle review | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (515 lines) | 2027-02 |
+| L1.S11 | A-full lifecycle review | `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (515 lines) | 2027-02 |
 | L1.S13 | Vault validate | `crates/sddk-vault/src/validate.rs` (`CycleScope`, `normalize_cycle_target`) | 2028-08 |
 | L1.S14 | UAT CLI | `crates/sddk-cli/src/uat.rs` (206 KB — most relevant: `xdg_from_env`, `uat_storage_root`) | 2028-08 |
 | L1.S15 | Gate outcome arg | `crates/sddk-cli/src/cycle.rs:305-315` (`GateOutcomeArg::{Passed,Failed,Waived}`) | 2028-08 |
@@ -54,9 +54,9 @@ Sources discovered during R2, grouped by tier. Credibility assessment in
 
 | ID | Source | Notes |
 |---|---|---|
-| L3.S31 | `docs/research/real-model-trials-runbook.md` | Background only |
-| L3.S32 | `docs/research/sddk-verify-agent-practices.md` | Background only |
-| L3.S33 | `docs/research/sddk-prompts-agents-workflow-evolution.md` (66 KB) | Adjacent domain |
+| L3.S31 | `docs/history/research/all-research/real-model-trials-runbook.md` | Background only |
+| L3.S32 | `docs/history/research/all-research/sddk-verify-agent-practices.md` | Background only |
+| L3.S33 | `docs/history/research/all-research/sddk-prompts-agents-workflow-evolution.md` (66 KB) | Adjacent domain |
 
 ## External sources consulted (background only)
 

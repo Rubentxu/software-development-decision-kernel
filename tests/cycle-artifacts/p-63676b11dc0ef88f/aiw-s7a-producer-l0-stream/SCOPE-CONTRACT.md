@@ -55,7 +55,7 @@ existing gateway lib tests pass.
 
 ## §6 Out of scope
 
-Engine changes, live MCP transport wiring, durable persistence, other AIW-S7 rows, manifest edits without authorization, releases and pushes. Concurrent changes in `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` are not owned by this slice.
+Engine changes, live MCP transport wiring, durable persistence, other AIW-S7 rows, manifest edits without authorization, releases and pushes. Concurrent changes in `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` are not owned by this slice.
 
 ## §7 References
 

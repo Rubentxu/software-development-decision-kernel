@@ -90,7 +90,7 @@ y se actualiza con `sddk dev install`.
 
 ### 2.7. Semantic ownership (canonical authority per concept)
 
-> Adopted from `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
+> Adopted from `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
 > (ADR-001..005, SPEC-001..006). Cycle
 > `p-63676b11dc0ef88f-architecture-adoption-m0-supersession`.
 
@@ -109,7 +109,7 @@ y se actualiza con `sddk dev install`.
 ### 2.8. Agent Experience (prompt text ≠ architecture)
 
 > Adopted from
-> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-013..018`
+> `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-013..018`
 > (M7 milestones) y
 > `07-AGENT-EXPERIENCE/OVERVIEW.md`.
 
@@ -128,12 +128,12 @@ y se actualiza con `sddk dev install`.
 ### 2.9. Extension discipline (single architecture-decision surface)
 
 > Adopted from
-> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/`
+> `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/`
 > (ADR-008, ADR-009, ADR-011).
 
 - **Una surface canónica de ADRs** por proyecto: las decisiones de diseño
   de SDDK-framework viven en `docs/adr/` o
-  `docs/sddk-decision-kernel-architecture/03-adrs/` o
+  `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/` o
   `~/.sddk-knowledge/<project>/adrs/`, no se mezclan.
 - **ADRs históricos permanecen.** Al integrar un paquete, *mapea* sus IDs
   locales a la numeración nativa del repositorio, no renumeres la historia.
@@ -144,7 +144,7 @@ y se actualiza con `sddk dev install`.
 ### 2.10. Roadmap authority — exactamente un plan ejecutable
 
 - `docs/roadmap/ROADMAP.md` es la **única** planificación activa de continuación C0–C5. `docs/architecture/README.md` gobierna los límites arquitectónicos; ADRs/specs aceptados y gates de producción existentes no se anulan.
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`, `docs/architecture/a5/A5-CURRENT-ROADMAP.md` y `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` son fotografías/historial para trazabilidad. No reabrir hitos cerrados ni adoptar propuestas de un paquete histórico sin SCOPE, ADR y evidencia del HEAD actual.
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`, `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md` y `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` son fotografías/historial para trazabilidad. No reabrir hitos cerrados ni adoptar propuestas de un paquete histórico sin SCOPE, ADR y evidencia del HEAD actual.
 - Archivo y política de traslados: `docs/history/README.md`. No mover ADRs, specs, recibos, pruebas ni archivos citados por rutas estables sin mapa de enlaces y gates correspondientes.
 - La vigencia de un perfil `CERTIFIED` siempre corresponde a su SHA/tag, environment, gates y receipt; nunca se infiere por un título de handoff o el número de tests.
 
@@ -173,7 +173,7 @@ y se actualiza con `sddk dev install`.
 ### 4.4. Las decisiones de diseño tienen una superficie canónica por alcance
 
 - `docs/adr/` (este repo) — ADRs del proyecto público.
-- `docs/sddk-decision-kernel-architecture/03-adrs/` — ADRs de la arquitectura
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/` — ADRs de la arquitectura
   objetivo activa; su roadmap vive en `02-roadmap/`.
 - `~/.sddk-knowledge/<project>/adrs/` — ADRs de proyectos adoptados.
 - Specs del plan en `~/.sddk-knowledge/<project>/specs/`.
@@ -226,15 +226,15 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
 - **Release & distribution:** `docs/RELEASING.md`
 - **Architecture model:** `docs/ARCHITECTURE-MODEL.md`
 - **Canonical architecture + roadmap:** `docs/architecture/README.md`
-  (current normative; supersedes `docs/sddk-decision-kernel-architecture/`,
-  `docs/sddk-2.0-architecture-consolidation/`, `docs/sddk-complete-evolution-2026-08-23/`,
-  `docs/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/` and others
+  (current normative; supersedes `docs/history/legacy-packages/sddk-decision-kernel-architecture/`,
+  `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/`, `docs/history/legacy-packages/sddk-complete-evolution-2026-08-23/`,
+  `docs/history/legacy-packages/SDDK-Human-Agent-Collaboration-Evolution-Pack-2026-08-28/` and others
   listed in that entry point's "Repository historical packages (superseded)").
 - **Package source (verbatim, 72 docs):**
-  `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
+  `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
 - **Scoped testing contract:** `prompts/sddk/change-scoped-testing.md`
 - **Scoped verification ADR:** `docs/architecture/adrs/ADR-0097-COMMON-REVISION-SUBSTRATE.md`
-  (formerly `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`,
+  (formerly `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`,
   now superseded; the canonical substrate ADR is ADR-0097).
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
 - **Puntero de sesión vigente:** `docs/roadmap/CURRENT.md` + `docs/roadmap/STATE.yaml` (revalidar Git en cada sesión).
@@ -368,7 +368,7 @@ Este invariante está pinado por el test
 `supersede_preserves_ledger_event_digests` en
 `crates/sddk-engine/tests/cycle_supersede.rs` (N+3, asserted).
 
-Ver `docs/sddk-decision-kernel-architecture/04-specs/SPEC-SUPERSEDE-001.md`
+Ver `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/SPEC-SUPERSEDE-001.md`
 §5 ("Ledger invariants preserved") para el contrato completo.
 
 ### Reglas de validación

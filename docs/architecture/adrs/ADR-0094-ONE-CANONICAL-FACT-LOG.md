@@ -1,7 +1,7 @@
 ---
 id: ADR-0094-ONE-CANONICAL-FACT-LOG
 package_local_id: ADR-001
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-001-ONE-CANONICAL-FACT-LOG.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-001-ONE-CANONICAL-FACT-LOG.md
 status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -32,7 +32,7 @@ stale_after: 2027-09-12
 |---|---|
 | Package local | `ADR-001` |
 | Repository native | `ADR-0094-ONE-CANONICAL-FACT-LOG` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-001-ONE-CANONICAL-FACT-LOG.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-001-ONE-CANONICAL-FACT-LOG.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

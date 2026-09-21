@@ -49,7 +49,7 @@ scope.
   was accepted in this initiative: the `sddk cycle inventory` subcommand
   (`crates/sddk-cli/src/inventory_cycle.rs`, schema authority
   `prompts/sddk/contracts/inventory.schema.json`). The investigation in
-  `docs/research/sddk-prompts-agents-workflow-evolution.md` confirmed
+  `docs/history/research/all-research/sddk-prompts-agents-workflow-evolution.md` confirmed
   no existing CLI surface produces the cycle-scoped files inventory; the
   alternative would have been a parallel Python/JS reducer outside the
   runtime, which would duplicate authority and bypass the zero-intrusion
@@ -83,8 +83,8 @@ scope.
 
 ## Evidence and Provenance
 
-- `docs/research/sddk-prompts-agents-workflow-evolution.md`
-- `docs/research/real-model-trials-runbook.md` (cycle-19 follow-up runbook)
+- `docs/history/research/all-research/sddk-prompts-agents-workflow-evolution.md`
+- `docs/history/research/all-research/real-model-trials-runbook.md` (cycle-19 follow-up runbook)
 - [Issue #93](https://github.com/Rubentxu/software-development-decision-kernel/issues/93)
 - `skills/_shared/cli-usage-contract.md`
 - `prompts/sddk/contracts/verify-finding.schema.json`

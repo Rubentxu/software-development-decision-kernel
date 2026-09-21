@@ -1,7 +1,7 @@
 ---
 id: arch-spec-015-command-registry-and-agent-surface
 package_local_id: SPEC-015
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-015-COMMAND-REGISTRY-AND-AGENT-SURFACE.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-015-COMMAND-REGISTRY-AND-AGENT-SURFACE.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-015` |
 | Repository native | `arch-spec-015-command-registry-and-agent-surface` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-015-COMMAND-REGISTRY-AND-AGENT-SURFACE.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-015-COMMAND-REGISTRY-AND-AGENT-SURFACE.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

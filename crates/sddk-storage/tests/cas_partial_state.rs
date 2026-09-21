@@ -11,7 +11,7 @@
 //!   must not affect reads of other valid blobs in the same store.
 //!
 //! See `crates/sddk-storage/src/cas.rs::FilesystemCas::get` and
-//! `docs/architecture/a5/A5-2-PLAN.md` (F4).
+//! `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-2-PLAN.md` (F4).
 
 use sddk_domain::ports::{CasError, CasPort};
 use sddk_storage::cas::FilesystemCas;

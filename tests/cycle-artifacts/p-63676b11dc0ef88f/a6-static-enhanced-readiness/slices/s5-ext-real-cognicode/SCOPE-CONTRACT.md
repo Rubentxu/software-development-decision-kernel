@@ -92,5 +92,5 @@ is a documented partial state, not a failure.
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/SCOPE-CONTRACT.md` §S5
 - `crates/sddk-engine/tests/a6_cc_s1_static_graph_completeness.rs::t_ar_6_ext_real_cognicode_run`
   (the env-gated live test, NOT_EVALUATED without `COGNICODE_MCP_BIN`).
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
   (live handshake contract).

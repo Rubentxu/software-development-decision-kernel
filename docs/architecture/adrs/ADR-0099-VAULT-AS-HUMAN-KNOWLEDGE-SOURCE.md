@@ -1,7 +1,7 @@
 ---
 id: ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE
 package_local_id: ADR-006
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-006-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-006-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE.md
 status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -33,7 +33,7 @@ stale_after: 2027-09-12
 |---|---|
 | Package local | `ADR-006` |
 | Repository native | `ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-006-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-006-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

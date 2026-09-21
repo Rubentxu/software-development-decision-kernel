@@ -4,7 +4,7 @@ status: proposed
 cycle: p-63676b11dc0ef88f/a3-1-kmt-foundation
 proposed_at: 2026-09-14
 supersedes_history: false
-source: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/
+source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/
 ---
 
 # arch-spec-A3-S1 — Knowledge + KMT substrate (cycle-bounded)

@@ -99,7 +99,7 @@ Inventario de features por perfil:
 
 ### Perfil `AGENTIC_API_EXPERIMENTAL`
 
-**Status:** Not in scope of this baseline. Pending J2–J6 deltas documented in `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`. Adapter real for JCode is explicitly OUT of this repo per [ROADMAP §2 C2c](../../ROADMAP.md) ("verificar si el adapter público vive en otro repo antes de implementar uno duplicado").
+**Status:** Not in scope of this baseline. Pending J2–J6 deltas documented in `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`. Adapter real for JCode is explicitly OUT of this repo per [ROADMAP §2 C2c](../../ROADMAP.md) ("verificar si el adapter público vive en otro repo antes de implementar uno duplicado").
 
 ### Perfil `JCODE_CORE_GA`
 

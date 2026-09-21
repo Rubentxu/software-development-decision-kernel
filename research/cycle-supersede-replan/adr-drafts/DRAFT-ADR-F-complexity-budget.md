@@ -131,7 +131,7 @@ Revisit when:
 ## References
 
 - `crates/sddk-cli/src/metrics.rs` (Levels A-E + L1-L6)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates)
 - `docs/debt/debt-report.schema.json` (report schema)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` (override discipline)
 - `research/cycle-supersede-replan/lateral-thinking-proposals.md` (L7 — "metric, not rule")

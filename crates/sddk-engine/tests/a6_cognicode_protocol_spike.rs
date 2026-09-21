@@ -11,7 +11,7 @@
 //! and become GREEN after the trait + fake land.
 //!
 //! Spec authority: `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md`
-//! Cycle plan: `docs/proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
+//! Cycle plan: `docs/history/proposals/all-proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
 //! ADR: `docs/architecture/adrs/ADR-0137-CODE-INTELLIGENCE-PORT-SEAM.md`
 
 use sddk_engine::code_intelligence_port::analyzer_token;

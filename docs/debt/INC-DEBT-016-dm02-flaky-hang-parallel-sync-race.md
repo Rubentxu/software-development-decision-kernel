@@ -84,7 +84,7 @@ This is a diagnosis-first cycle. Mechanical sweeps don't apply.
 
 #### T4 — Closeout (docs only)
 - Update INC-DEBT-016: status open → closed + resolution table (root cause, fix shape, regression strategy).
-- Create `docs/handoff/HANDOFF-2026-08-27-cycle-42-inc-debt-016-dm02-sync-race.md`.
+- Create `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-27-cycle-42-inc-debt-016-dm02-sync-race.md`.
 - Add CHANGELOG entry (v1.48.10 candidate).
 - Append cycle-42 narrative to ROADMAP.md.
 - If ADR-0056 guidance changes materially, append an amendment note to ADR-0056 (do NOT rewrite history).

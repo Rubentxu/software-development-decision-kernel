@@ -31,7 +31,7 @@ warning.
 
 ## Evidence it expects
 
-- `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md`
+- `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-016-SKILL-CONTRACT.md`
   (skill contract — the authority this skill enforces)
 - `docs/architecture/specs/arch-spec-015-command-registry-and-agent-surface.md`
   (CLI docs from one source — invariant #10)

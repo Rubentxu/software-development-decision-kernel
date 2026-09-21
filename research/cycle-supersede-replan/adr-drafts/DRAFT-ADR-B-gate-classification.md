@@ -155,6 +155,6 @@ Revisit when:
 - `docs/debt/PRIORITY.md` (priority taxonomy)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` (override discipline)
 - `crates/sddk-cli/src/cycle.rs:305-315` (GateOutcomeArg)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates)
 - `crates/sddk-vault/src/repair.rs:16` (VAULT003 allow-list — precedent for closed-set classification)
-- `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (orphan review)
+- `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (orphan review)

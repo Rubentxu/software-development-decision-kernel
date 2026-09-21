@@ -40,7 +40,7 @@ Short, immutable decisions that are hard to reverse. Each ADR is a timestamped r
 ## Adding an ADR
 
 1. Create `ADR-XXXX-title-slug.md` in this directory
-2. Use the template: `docs/sddk-2.0-architecture-consolidation/templates/ADR-TEMPLATE.md`
+2. Use the template: `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/templates/ADR-TEMPLATE.md`
 3. Add the entry to this index table in chronological position
 4. Commit with `docs(adr): ADR-XXXX — short title`
 

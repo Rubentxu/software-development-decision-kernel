@@ -23,7 +23,7 @@ The recurring pattern is visible in:
 - `docs/debt/INC-CYCLE-11-PYTEST-CONTRACT-P1.md` — pytest boundary debt.
 - `docs/adr/ADR-0022-sddk-testkit.md` (proposed) — Bats/shellspec mentions.
 - `docs/adr/ADR-0045-graph-store-contracts.md` — test references with mixed tooling.
-- `docs/sddk-decision-kernel-architecture/09-implementation/REPOSITORY-TARGET-LAYOUT.md` — Bats mentions.
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/09-implementation/REPOSITORY-TARGET-LAYOUT.md` — Bats mentions.
 
 Without an explicit ownership policy, each boundary decision is ad-hoc, and debt-verify has no anchor against which to flag drift.
 
@@ -115,6 +115,6 @@ Bats is **not** a strategic default for this repository. The historical mentions
 - `docs/adr/ADR-0022-sddk-testkit.md` (proposed) — superseded by this decision for Bats; testkit proposal pending supersession or acceptance separately.
 - `docs/adr/ADR-0060-prompt-layer-evidence-contracts.md` (accepted) — prompt-layer evidence contracts; related to CLI contract testing.
 - `docs/adr/ADR-0068-bounded-execution.md` (cycle-44 foundation) — bounded execution; cycle-46 lockstep behavior owned by Rust.
-- `docs/sddk-decision-kernel-architecture/03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md` (Accepted) — sequencing and migration plan; references this ADR for ownership policy.
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-042-TEST-TOOLING-BOUNDARY.md` (Accepted) — sequencing and migration plan; references this ADR for ownership policy.
 - `docs/debt/INC-CYCLE-11-PYTEST-CONTRACT-P1.md` — pytest boundary debt; evidence of historical accretion.
-- `docs/sddk-decision-kernel-architecture/09-implementation/TEST-TOOLING-EVIDENCE-AUDIT.md` — verified evidence, inventory, and audit of current test-tooling state.
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/09-implementation/TEST-TOOLING-EVIDENCE-AUDIT.md` — verified evidence, inventory, and audit of current test-tooling state.

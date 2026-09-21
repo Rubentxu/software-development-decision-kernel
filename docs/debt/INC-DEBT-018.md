@@ -35,7 +35,7 @@ Cluster: CL-CC-02 (coupling cluster, spec-impl drift).
 ## References
 
 - `crates/sddk-engine/src/cycle_supersede.rs:204-207` (release_lease_on_phase_change=true)
-- `docs/sddk-decision-kernel-architecture/04-specs/SPEC-SUPERSEDE-001.md` §2 (still reads N+2)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/SPEC-SUPERSEDE-001.md` §2 (still reads N+2)
 - `crates/sddk-engine/tests/cycle_supersede.rs` — `supersede_preserves_ledger_event_digests` asserts N+3
 - debt-report: `FIND-000002`, fingerprint `9b3e7f1a...`
 

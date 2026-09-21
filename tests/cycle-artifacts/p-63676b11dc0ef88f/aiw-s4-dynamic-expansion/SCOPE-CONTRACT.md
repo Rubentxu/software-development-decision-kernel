@@ -38,7 +38,7 @@ SDDK subsystems, not an architectural change:
 
 ## §2 UAT rows in scope
 
-Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+Per `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 §Expansión, externos y empaquetado (W01..W11):
 
 | UAT id | Class | Scenario | Expected invariant | In/Out of this slice |
@@ -87,7 +87,7 @@ Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 | Integration test W01 | `crates/sddk-engine/tests/aiw_s4_dynamic_expansion.rs` | 🔲 |
 | UAT evidence rows W01/W03/W08/W09/W11 | `tests/cycle-artifacts/.../aiw-s4-dynamic-expansion/UAT-EVIDENCE.yaml` | 🔲 |
 | RECEIPT | `tests/cycle-artifacts/.../aiw-s4-dynamic-expansion/RECEIPT.md` | 🔲 |
-| STATE-OF-AIW.md update | `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
+| STATE-OF-AIW.md update | `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
 | 1 commit `test(engine)` | — | 🔲 |
 
 ## §6 Out of scope
@@ -102,9 +102,9 @@ Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 
 ## §7 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S4.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §W01..W11.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S4.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §W01..W11.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - `Engine::cycle_replan`: `crates/sddk-engine/src/cycle_replan.rs` + tests in `crates/sddk-engine/tests/cycle_replan.rs`.
 - Secretary L0/L1: `crates/sddk-engine/src/secretary_l0.rs`, `crates/sddk-engine/src/secretary_l1.rs`.
 - `ContinuationCandidate`: `crates/sddk-engine/src/continuation_candidate.rs`.

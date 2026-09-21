@@ -280,8 +280,8 @@ not require `decision_id`**; it is independent of ADR-E.
 - `research/cycle-supersede-replan/evidence-cards/ec-css-003-replan-no-primitive.yml`
 - `research/cycle-supersede-replan/evidence-cards/ec-css-005-cycle-vs-hypothesis.yml`
 - `research/cycle-supersede-replan/evidence-cards/ec-css-010-ledger-event-count-invariant.yml`
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.4
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.4
   (scope binding)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4
   (ledger invariant)
 - `docs/adr/ADR-0073-secretary-authority.md` (AgentKind closed-set)

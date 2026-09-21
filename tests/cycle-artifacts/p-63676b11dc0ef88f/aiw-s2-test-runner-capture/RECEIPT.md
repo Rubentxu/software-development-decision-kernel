@@ -135,8 +135,8 @@ version.
 
 ## §8 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S2.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §Shell / runner / tests.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S2.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §Shell / runner / tests.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - Bounded runner: `crates/sddk-gateway/src/runner.rs`, contract test: `crates/sddk-gateway/tests/bounded_runner_contract.rs`.
 - Family adapters (reused, not modified): `crates/sddk-gateway/src/test_runner/`.

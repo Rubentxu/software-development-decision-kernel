@@ -5,7 +5,7 @@ supersedes_history: false
 proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-10-ac-cli-surface
-source: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/12-CLI-AGENT-UX.md + arch-spec-041 + arch-spec-033
+source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/12-CLI-AGENT-UX.md + arch-spec-041 + arch-spec-033
 based_on: ADR-0119-ARCHITECTURE-CONFORMANCE-RECEIPT
 ---
 
