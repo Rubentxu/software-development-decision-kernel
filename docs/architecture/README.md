@@ -4,34 +4,39 @@
 
 # SDDK — Canonical Architecture & Roadmap
 
-> **This is the current normative architecture and roadmap for SDDK.**
-> All other architecture, consolidation, and evolution packages in the
-> repository are **historical / superseded** unless explicitly imported as
-> current WorkItems through reconciliation.
+> **This document remains the architectural authority for SDDK** (contracts, ADRs, specs, lints, inventories). It is **NOT** the execution roadmap.
 >
-> **Roadmap authority (reconciled 2026-09-18, A5-C-RR):** the current
-> execution roadmap is the **Context-First 10/09** (R0→R11) executed
-> through the **Production-Readiness Alignment 14/09** mini-roadmap
-> (A0→A5 BASE_READY → A6 CogniCode / A7 Chronos / A8 FULLY_ENHANCED).
-> The 09/09 Semantic Core + Agent Experience package is the **certified
-> historical baseline** (M0→M9 closed by C0→C7 conformance at
-> `0c2ca56` / SDDK `1.169.19`); it is NOT the live execution roadmap.
-> See `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md` for the live A0–A8
-> + J0–J9 sequence.
+> **Roadmap authority (reconciled 2026-09-21):** the **only** live execution
+> roadmap is [`../roadmap/ROADMAP.md`](../roadmap/ROADMAP.md) (C0–C5
+> slices). All other roadmap narratives (Context-First 10/09, Production-
+> Readiness 14/09, Semantic-Core 09/09, Human-Agent-Collaboration
+> 08/28, etc.) are **archived** under `docs/history/legacy-packages/`
+> and referenced only for traceability of historical decisions. Their
+> verdicts and certifications remain valid **only for their own SHA
+> and profile** — they do not extend to the current development head.
+>
+> Para el plan de trabajo actual, leer siempre `docs/roadmap/ROADMAP.md`
+> y arrancar sesión desde `docs/roadmap/CURRENT.md` → `STATE.yaml`.
 
 ## Package
 
-- **Canonical architecture (live)**: `docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`
-  - Bounded context map, target source layout, canonical roadmap R0→R11
-  - Adoption requires a green `09-09-CONFORMANCE-RECEIPT.md`
-- **Canonical roadmap (live)**: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/`
-  - `02-MINI-ROADMAP.md` (A0→A5 BASE_READY → A6/A7/A8 + J0→J9)
-  - `03-PRODUCTION-READY-GATE.md` (acceptance gates G0–G6 + G8)
-- **Historical baseline (certified, not live)**: `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
-  - 72 documents, M0→M9 closed by C0→C7
+> **Importante:** el único roadmap ejecutable es [`../roadmap/ROADMAP.md`](../roadmap/ROADMAP.md).
+> Los paquetes listados abajo son **material histórico archivado** bajo
+> `docs/history/legacy-packages/`. Se conservan por trazabilidad y para
+> responder preguntas sobre decisiones pasadas, pero **NO** abren hitos
+> ni cambian el estado operativo. No los uses como guía de trabajo.
+
+- **Historical reference (no longer live)**: `docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`
+  - Bounded context map, target source layout, archived roadmap R0→R11
+  - Original adoption required a green `09-09-CONFORMANCE-RECEIPT.md`
+- **Historical reference (no longer live)**: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/`
+  - `02-MINI-ROADMAP.md` (A0→A5 BASE_READY → A6/A7/A8 + J0→J9) was a planning snapshot; superseded by `docs/roadmap/ROADMAP.md`
+  - `03-PRODUCTION-READY-GATE.md` (acceptance gates G0–G6 + G8) is preserved for traceability of historical A5 certification
+- **Historical baseline (certified for its SHA, not live)**: `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/`
+  - 72 documents, M0→M9 closed by C0→C7 (per their own historical narrative)
   - Conformance receipt: `docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`
   - Verdict: `PASS — 100% conformance`, commit `0c2ca56`, SDDK `1.169.19`
-  - **Not** the live execution roadmap.
+  - **Not** the live execution roadmap. The verdict is valid **only** for that SHA and profile.
 - **Supersedes (historical)**: prior competing roadmap narratives listed
   in `docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/05-INTEGRATION/SUPERSESSION.md`.
 
