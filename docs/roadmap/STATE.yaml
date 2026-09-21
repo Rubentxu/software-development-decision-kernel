@@ -1,17 +1,17 @@
 schema_version: 1
-updated_at: "2026-09-21T17:02:51Z"
-status: C1_AFTER_MERGE_PR9_PRS10_11_PENDING_MERGE
+updated_at: "2026-09-21T17:12:11Z"
+status: C1_THREE_PRS_INTEGRATED_AWAITING_FULL_PROFILE
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "cfe3766e46dabbb70c1d61a1ab26cb9bb35aa3a3"
+  current_sha: "c4c7e0a0677f48f8dcd20b87c8a99e49f5a17a47"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.169.134"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766e46dabbb70c1d61a1ab26cb9bb35aa3a3"
-  pr11_head_sha: "fd8a7ac3a2837091ef5fef6f9bcc89cba8c1a48d"
-  pr11_branch: "c1-cycle-c-implementation"
-  note: "PR #9 (H02) integrado en main como cfe3766 (sin bump ceremonial; el bump 1.169.134 ya vivía dentro del commit 8e467c3 dentro de PR #9). PR #10 (H05+H06) y PR #11 (cycle-c admisión v2) siguen mergeables. next_action: integrar PR #10 → reconciliar → integrar PR #11 → reconciliar → ejecutar full profile C1 (cargo fmt --check, clippy -D warnings, test --workspace) sobre el SHA final."
+  pr10_merge_commit: "1b3d7f0d99a7e4b7c5e9bfe8b3a3a8c97ad3f5b6"
+  pr11_merge_commit: "c4c7e0a0677f48f8dcd20b87c8a99e49f5a17a47"
+  note: "PR #9 (H02), PR #10 (H05+H06), PR #11 (cycle-c admisión v2) todos integrados en main. Sin bumps ceremoniales: el bump 1.169.134 entró con PR #9 (8e467c3) y se mantuvo en main; los commits fc418a7 (PR #10) y 5050e6f (PR #11) que eran commits de bump/docs/duplicados fueron deduplicados en rebase antes de merge. Reconciliación post-merge: 21/21 cycle-c admission tests PASS, 18/18 structured_work PASS, 14/14 SEC1+H06 PASS, 1/1 h05_seam_test_only PASS, 1/1 test_h05_isolation.sh PASS. Full profile (cargo fmt --check, clippy -D warnings, cargo test --workspace) pendiente como gate de cierre C1."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
