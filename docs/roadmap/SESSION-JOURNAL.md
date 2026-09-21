@@ -99,3 +99,14 @@
   - MANIFEST.sha256 stale para los nuevos docs/roadmap/receipts/c0/ pero `scripts/release.sh` step 4 lo regenera automáticamente — no requiere acción autónoma.
 - Anexo emitido: `C1-PREFLIGHT-3.md` con output verbatim de cargo test + mock probe + corrección de IdempotencyKey.
 - Probe en /tmp/ eliminado. Repo sin cambios de código.
+
+### 2026-09-21T12:16:00Z — C0-HANDOFF emitido — orquestador cierra sesión limpia — orchestrator
+
+- Estado: C0 cerrado en orquestador; release sigue pendiente del operador.
+- Trabajo autónomo final:
+  - C0-HANDOFF.md emitido: snapshot consolidado de C0 + sustancia para C1 + defended boundaries + STOP-CONT explícitos
+  - Estado: HEAD = a15dcdc, working tree limpio, in sync con origin/main
+  - 8 archivos en `docs/roadmap/receipts/c0/e8964ac/`: SCOPE-CONTRACT, UAT-EVIDENCE.yaml, C0-RECEIPT, C0-PRE-RELEASE-SMOKE, C1-RESEARCH-NOTES, C1-PREFLIGHT, C1-PREFLIGHT-2, C1-PREFLIGHT-3, C0-HANDOFF (9 total)
+- Decisión de cierre: NO se inicia C1 sin release confirmada (system-law git.release + ROADMAP §3). Toda la substance para el SCOPE-CONTRACT de C1 está preflight-1+2+3; el próximo orquestador (o esta sesión tras release) puede emitir SCOPE-CONTRACT directamente desde los preflights.
+- Próxima acción del operador: `bash scripts/release.sh` desde HEAD a15dcdc.
+- Próxima acción del orquestador post-release: re-correr T01, marcar C0 CLOSED, emitir C1 SCOPE-CONTRACT.
