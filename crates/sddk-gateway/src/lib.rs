@@ -15,7 +15,7 @@ pub mod denial_surface;
 mod evidence;
 mod filesystem;
 mod forge;
-mod gateway;
+pub mod gateway;
 mod git;
 mod oracles;
 mod permissions;
@@ -126,6 +126,7 @@ impl sddk_domain::SddkErrorCode for GatewayError {
             Self::Runner(..) => "GATEWAY_RUNNER",
             Self::Serialization(..) => "GATEWAY_SERIALIZATION",
             Self::Capability(..) => "GATEWAY_CAPABILITY",
+            Self::ArgsLimitExceeded { .. } => "GATEWAY_ARGS_LIMIT_EXCEEDED",
         }
     }
 
@@ -148,6 +149,7 @@ impl sddk_domain::SddkErrorCode for GatewayError {
             Self::Runner(..) => "check the typed runner executable and arguments".into(),
             Self::Serialization(..) => "fix the structured payload before retrying".into(),
             Self::Capability(..) => "check the capability execution and verification".into(),
+            Self::ArgsLimitExceeded { .. } => "reduce the count or aggregate bytes of arguments (and/or `reason`) below the documented limits".into(),
         }
     }
 }
@@ -274,7 +276,7 @@ pub fn redact(value: Value) -> Value {
 ///
 /// Pre-existing `<redacted>` tokens (case-insensitive) are left untouched.
 /// Lines without a recognised key pass through verbatim.
-fn redact_text(input: &str) -> String {
+pub(crate) fn redact_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let bytes = input.as_bytes();
     let mut cursor = 0usize;
