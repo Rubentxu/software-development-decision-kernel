@@ -66,3 +66,15 @@
   - `docs/roadmap/receipts/c0/e8964ac/C1-RESEARCH-NOTES.md` — preguntas concretas para que C1 arranque con substance (no es SCOPE-CONTRACT; no toca código).
 - Riesgo documentado: NO se abre C1 hasta release confirmada. C0-RECEIPT §4 fila 7 + §10 (en research-notes) registran la cadena.
 - Próxima acción ejecutable: operador corre `bash scripts/release.sh`; orquestador re-corre T01; si OK, marca C0 CLOSED y emite SCOPE-CONTRACT de C1 partiendo de `C1-RESEARCH-NOTES.md`.
+
+### 2026-09-21T12:09:00Z — C1 PREFLIGHT (READ-ONLY) — orchestrator
+
+- Estado: C0 sigue IN_PROGRESS_C0 hasta release del operador; preflight de C1 ejecutado (NO SCOPE-CONTRACT, NO código tocado).
+- Trabajo autónomo:
+  - `grep -rn "shape_matches\|structured_work" crates/` reveló que `shape_matches` está en `crates/sddk-engine/src/structured_work.rs:198` (NO en `sddk-domain` como decía la research-note inicial).
+  - Lectura del archivo: confirmado OBSERVED que `_ => true` (línea 206) hace pass-through a cualquier descriptor desconocido. Bug H01 confirmado en evidencia real.
+  - Único call site: línea 154 (dentro del loop de validación).
+  - Tests existentes NO cubren el path unknown-descriptor → gap identificable.
+- Anexo emitido: `C1-PREFLIGHT.md` documenta la corrección verbatim.
+- Corrección aplicada a `C1-RESEARCH-NOTES.md §1`: ubicación canónica del archivo + corrección del "Archivos candidatos".
+- Próxima acción ejecutable: operador corre `bash scripts/release.sh`; orquestador re-corre T01; si OK, emite C1 SCOPE-CONTRACT partiendo de C1-RESEARCH-NOTES corregido + C1-PREFLIGHT.

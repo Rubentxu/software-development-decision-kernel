@@ -15,15 +15,20 @@ Esto NO es un SCOPE-CONTRACT. NO es una propuesta. Es un cuaderno de investigaci
 
 ## §1 H01 — `structured_work::shape_matches` no debe devolver `true` para descriptor no soportado
 
-**Pregunta de investigación:**
-- ¿Cómo está implementado `shape_matches` hoy en `crates/sddk-domain/src/structured_work.rs`?
-- ¿Qué hace cuando recibe un descriptor con `schema_version` desconocido o campos requeridos faltantes?
-- ¿Cuál es la rama de retorno para "descriptor soportado" — por `==` con un set de descriptores conocidos, por hash, por nombre de tipo, por lista explícita?
+> **CORRECCIÓN POST-PREFLIGHT (2026-09-21T12:08Z):** la ubicación real del código es `crates/sddk-engine/src/structured_work.rs` (NO `sddk-domain` como se especuló inicialmente). El bug H01 está confirmado OBSERVED — ver [C1-PREFLIGHT.md §1-§3](./C1-PREFLIGHT.md) para evidencia verbatim (líneas 198-208 con el `_ => true` fallthrough).
 
-**Archivos candidatos a tocar:**
-- `crates/sddk-domain/src/structured_work.rs` (función `shape_matches`)
-- `crates/sddk-domain/tests/structured_work_negative.rs` o similar (tests de soporte)
-- ADRs 0011..0097 que documenten el contrato de schema
+**Pregunta de investigación (con preflight):**
+- `shape_matches` está en `crates/sddk-engine/src/structured_work.rs:198`.
+- Acepta solo 4 descriptores: `"string"`, `"u64"`, `"bool"`, `"array<string>"`.
+- Cualquier otro descriptor (e.g. `"integer"`, `"u32"`, `"my-shape"`, `"Object"`) cae en `_ => true` → BUG.
+- Único call site: línea 154 (dentro del loop de validación).
+- Tests existentes: cubren happy path + descriptor inválido con shape conocido, pero **NO** cubren el path unknown-descriptor.
+
+**Archivos candidatos a tocar (corregido post-preflight):**
+- **`crates/sddk-engine/src/structured_work.rs`** — función `shape_matches` (línea 198) y call site (línea 154).
+- `crates/sddk-engine/src/structured_work.rs` — bloque de tests `mod tests` (líneas 210+), añadir regression test para unknown-descriptor.
+- `crates/sddk-domain/src/structured_work.rs` — **NO EXISTE**. Eliminar de la lista.
+- ADRs 0011..0097 que documenten el contrato de schema.
 
 **Escenarios UAT a diseñar (T03–T07):**
 1. Descriptor con `schema_version` futura (e.g. `2.0` cuando el max conocido es `1.x`) → debe rechazar con error tipado.
