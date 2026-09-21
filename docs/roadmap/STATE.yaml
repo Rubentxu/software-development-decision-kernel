@@ -1,19 +1,17 @@
 schema_version: 1
-updated_at: "2026-09-21T15:13:30Z"
-status: C1_H01_PUSHED_HISTORY_INTEGRATED_VIA_PR8_CYCLE_C_NEXT
+updated_at: "2026-09-21T17:02:51Z"
+status: C1_AFTER_MERGE_PR9_PRS10_11_PENDING_MERGE
 source:
   baseline_branch: main
-  baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
-  current_sha: "544aa1186ad0894c1e50b222684330438cddf784"
-  workspace_version_at_baseline: "1.169.127"
-  workspace_version_at_current: "1.169.133"
+  baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
+  current_sha: "cfe3766e46dabbb70c1d61a1ab26cb9bb35aa3a3"
+  workspace_version_at_baseline: "1.169.133"
+  workspace_version_at_current: "1.169.134"
   last_public_release_observed: "v1.169.122"
-  pr8_merge_commit: "544aa1186ad0894c1e50b222684330438cddf784"
-  pr8_commits_integration:
-    - "8d785c4 docs(history): reorganización completa — 14 paquetes legacy + 113 handoffs + 87 proposals/research/cycles/uat-plans + 9 files sueltos → docs/history/"
-    - "deaae8e docs(authority): corrige contradicción — roadmap/ROADMAP.md es única autoridad ejecutable (architecture/README Package section)"
-    - "28eb948 fix(fmt): colapsar constante path largo en event_envelope_golden (gate release.sh step 1)"
-  note: "C1 H01 pusheado (74dfcc9+abca553 v1.169.133 admisión ACCEPT). cycle-c SCOPE-CONTRACT pusheado (68f6788). PR #8 integrado en 544aa11 vía gh pr merge --merge --delete-branch: reorganización documental + corrección autoridad + fmt gate-1 fix (autorizado operador 2026-09-21T15:07:10Z). v1.169.133 release candidate desde abca553 sigue siendo publicable."
+  pr9_merge_commit: "cfe3766e46dabbb70c1d61a1ab26cb9bb35aa3a3"
+  pr11_head_sha: "fd8a7ac3a2837091ef5fef6f9bcc89cba8c1a48d"
+  pr11_branch: "c1-cycle-c-implementation"
+  note: "PR #9 (H02) integrado en main como cfe3766 (sin bump ceremonial; el bump 1.169.134 ya vivía dentro del commit 8e467c3 dentro de PR #9). PR #10 (H05+H06) y PR #11 (cycle-c admisión v2) siguen mergeables. next_action: integrar PR #10 → reconciliar → integrar PR #11 → reconciliar → ejecutar full profile C1 (cargo fmt --check, clippy -D warnings, test --workspace) sobre el SHA final."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"

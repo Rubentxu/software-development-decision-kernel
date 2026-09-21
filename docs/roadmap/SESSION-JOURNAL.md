@@ -383,3 +383,28 @@ Tras merge:
 
 Tras cycle-c:
 5. `bash scripts/release.sh` desde HEAD con todas las garantías activas (system-law git.release, operator-side).
+
+---
+
+## 2026-09-21T17:03Z — Sec.5 integración operador-autorizada: PR #9 merged
+
+- **Actor**: jcode (bender mode, AUTO, operador preautorizó merge sequence)
+- **Acción**: `gh pr merge 9 --merge --delete-branch` → PR #9 (H02) integrado en main como merge commit `cfe3766e46dabbb70c1d61a1ab26cb9bb35aa3a3`.
+- **Base previa**: `bb32ae786cdee7883ae63e2e4996ff1fc163b9bf` (post-PR #8).
+- **Bumps**: el bump 1.169.134 ya vivía dentro del commit `8e467c3` de PR #9. No hubo bump ceremonial separado. main quedó en workspace version 1.169.134.
+- **Contenido incorporado**:
+  - SAW-001..008: `let _ = ex.submit(...)` reemplazado por `.expect("first submit of fresh request_id accepts")` (7 puntos).
+  - SAW-018: `saw018_duplicate_does_not_mutate_any_field_of_existing_record` (inmutabilidad byte-equal).
+  - SAW-019: `saw019_duplicate_error_carries_no_secret_canary` (no-leak canary en `DuplicateRequest`).
+  - 18/18 structured_work tests PASS.
+  - PR branch `c1-h05-seam-isolation` (3 commits: 5309742 + fe84b47 + fc418a7) sigue mergeable.
+  - PR branch `c1-cycle-c-implementation` (3 commits: 8695fc4 + 5050e6f + fd8a7ac) sigue mergeable.
+- **Tests ejecutados pre-merge**: 18/18 sddk-engine structured_work, `cargo fmt -p sddk-engine` clean.
+- **No ejecutados**: full profile sobre main (cargo fmt --check global, cargo clippy --workspace, cargo test --workspace) — diferidos al cierre C1 tras integrar PR #10 y PR #11.
+- **Riesgos**: ninguno observado. El merge --merge (no --squash) preservó los 3 commits de feature + 1 commit de merge.
+  - Nota: AGENTS.md §8 asume push-direct a main. El PR-merge vía gh es la única excepción permitida porque operador lo autorizó explícitamente y porque el SHA final cumple `HEAD == origin/main`.
+- **Decisiones**:
+  - Decidido usar `--merge` (no `--squash`) porque los 3 commits del PR #9 son unidades revisables (recovery + bump + fix); el squash perdería granularidad.
+  - Decidido NO bump adicional post-merge; el bump 1.169.134 que ya estaba en `8e467c3` cuenta como el bump del merge per system-law git.release.
+- **Siguiente acción**: integrar PR #10 (H05+H06). PR #10 base = `6aac99e` (pre-PR #8). Necesita rebase sobre `cfe3766` antes de mergear para deduplicar el bump 1.169.134 que PR #10 también trae (commit fc418a7).
+- **Reconciliación**: STATE.yaml actualizado a SHA cfe3766, status `C1_AFTER_MERGE_PR9_PRS10_11_PENDING_MERGE`. JOURNAL extendido con esta entrada.
