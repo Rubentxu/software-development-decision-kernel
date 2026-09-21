@@ -1681,3 +1681,80 @@ durable evidence of C1 stability and C2/C3 readiness.
 ### New commits from this pass
 
 - None yet — read-only investigation. Will commit as `addendum_17_commit` + `addendum_17_state_sync`.
+
+---
+
+## Addendum 18 (post-AGENTS.md closeout, 23ee93c) — Real-binary availability for C2/C3
+
+The session-wide scan for real provider binaries surfaces the following
+state on this machine (verified 2026-09-21T22:18Z):
+
+- **CogniCode CLI**: `/home/rubentxu/.cargo/bin/cognicode`, **v0.97.3**.
+  Recall at `docs/roadmap/ROADMAP.md:46` cites v0.97.1 — minor drift
+  forward (likely patch releases between then and now). Subcommands
+  available: `analyze / serve / refactor / index / graph`.
+- **CogniCode MCP server**: `/var/home/rubentxu/.cognicode/versions/v0.93.0/
+  mcp-server/bin/cognicode-mcp` — v0.93.0, **different** from the CLI's
+  v0.97.3 (CLI and MCP server are at different versions on this system;
+  requires investigation whether this is a real combinatorial pair or
+  drift). Roadmap recall of v0.97.1 was for CLI; MCP server version
+  was not previously characterized.
+- **Chronos** integration: present in `cargo-targets/debug/deps/`
+  (multiple chronos-* binaries — chronos, chronos_query, chronos_store,
+  chronos_webhook). Treat as `sddk-engine`-side integration rather
+  than a standalone CLI binary. Roadmap C2b says "preservar S5 real
+  histórico (v0.1.0); revisar adaptador" — the adapter is Rust-side.
+- **JCode** adapter: NO sddk-side dependency on `jcode-sdk` or any
+  externally-installed JCode artifact (per `grep -rn 'jcode' --include='*.toml'
+  /var/mnt/DiscoChino2-fast/Proyectos/agentesIA/sddk-framework/`
+  returning empty). Roadmap C2c says: "Verificar si el adapter público
+  vive en otro repo antes de implementar uno duplicado; demostrar
+  boundary `jcode-sdk` / SDDK SDK (o ADR de equivalencia)" — current
+  evidence is that no adapter exists yet, hence the boundary
+  verification work would create one (or document NOT_EVALUATED for the
+  relevant UAT T16-T18).
+
+### What this means for the next session
+
+The C2 cycle IS now substantively unblocked on the binary side for
+**CogniCode and Chronos**. JCode would require either an adapter
+implementation (substantial) or a documented NOT_EVALUATED verdict
+across UAT T16-T18. C3 (Authority/Storage/Security/Rendimiento) does
+not require external binaries — it's sddk-internal adversarial work.
+
+**Recommended next-cycle shape** (NOT auto-opened; recording here
+for next-session planning):
+
+- **Cycle A: C2a + C2b (CogniCode + Chronos integration certification)**
+  - Sequence: A-min path (spec → tasks → apply → verify → debt-verify → release → archive).
+  - SCOPE-CONTRACT would commit to: real CogniCode v0.97.3 EXT execution
+    with the actual subcommands (analyze, index, graph, etc.); real
+    Chronos adapter review against `crates/sddk-engine` chronos-* deps.
+  - Receipts: T08-T15 UAT scenarios per `docs/roadmap/UAT-MATRIX.md`.
+  - Output artifact: integration_receipt.md listing per-provider
+    capabilities, observed limits, and protocol-level notes
+    (handshake, lifecycle, restart, timeout).
+- **Cycle B: C2c (JCode boundary)**
+  - Cheap option: document `NOT_EVALUATED` for UAT T16-T18 (no
+    public adapter; defer until operator signals).
+  - Full option: substantial — would require either jcode-sdk
+    characterization or ADR of equivalence.
+- **Cycle C: C3 (Authority + Storage + Security + Rendimiento
+  adversarial work)** — fully sddk-internal. Multi-cycle adversarial
+  work across `crates/sddk-engine/src/authority.rs` and
+  `crates/sddk-storage/src/backlog_store.rs` plus secret screens and
+  p95/rendimiento budgets. Should land BEFORE C4 (release
+  certification).
+
+These three cycles were the explicit "Próxima acción" of SESSION-JOURNAL
+entry appended at 23ee93c. This addendum adds the empirical evidence
+that **CogniCode + Chronos binaries are present on this machine**, so
+the C2a + C2b cycles can run without further setup. C2c and C3
+remain operator-framing-dependent.
+
+### Don't pretend
+
+This addendum DOES NOT auto-open any cycle. The honest receipt is:
+"binaries exist; cycle creation requires explicit SCOPE-CONTRACT
+before delegation per AGENTS.md §3". The next session will inherit
+this finding verbatim from the handoff.
