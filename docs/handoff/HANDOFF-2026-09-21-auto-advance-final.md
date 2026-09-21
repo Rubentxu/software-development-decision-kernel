@@ -96,19 +96,19 @@ When `glm-5-turbo` returns empty, treat as BLOCKED and re-plan the slice.
 |---|---|
 | Working tree | clean |
 | Branch | `main` |
-| HEAD | `35dddd4` |
-| Session-commits (this session vs session-start `origin/main` `82eea3c`) | 22 |
-| Commits ahead of current `origin/main` (`35dddd4`) | 0 (push executed by dry-run step 1c/14) |
-| `Cargo.toml` workspace.package.version | `1.169.125` |
-| `release_admission_check HEAD` | ACCEPT `1.169.124 -> 1.169.125` exit 0 |
-| Dry-run steps executed (verified) | 1c push + 1d no-op + 2 version + 3 build + 4 manifest + 5 bundle + 6 BUNDLE.toml + 7 unified + 8 sha256/sbom + 8b vault ADR mirror |
+| HEAD | `c0be02f` |
+| Session-commits (this session vs session-start `origin/main` `82eea3c`) | 23 |
+| Commits ahead of current `origin/main` (`c0be02f`) | 0 (push executed by dry-run step 1c/14) |
+| `Cargo.toml` workspace.package.version | `1.169.126` |
+| `release_admission_check HEAD` | ACCEPT `1.169.125 -> 1.169.126` exit 0 |
+| Dry-run steps executed (verified at HEAD `c0be02f`) | 1c push + 1d no-op + 2 version + 3 build + 4 manifest (377 files) + 5 bundle (669133 B) + 6 BUNDLE.toml + 7 unified (12146147 B) + 8 sha256/sbom + 8b vault ADR mirror |
 | Rust tests PASS | **4966** |
 | Rust tests failed | **0** |
 | `cargo fmt --check` | exit 0 |
 | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
 | `bash -n scripts/release.sh` | exit 0 |
 | `shellcheck --severity=warning scripts/release.sh` | exit 0 |
-| GH release `v1.169.125` | **NOT YET CREATED** (`gh release view` returns "release not found") |
+| GH release `v1.169.126` | **NOT YET CREATED** (`gh release view` returns "release not found") |
 
 ## 9. Cycle artifacts created this session
 
