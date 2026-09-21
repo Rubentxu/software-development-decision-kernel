@@ -78,3 +78,13 @@
 - Anexo emitido: `C1-PREFLIGHT.md` documenta la corrección verbatim.
 - Corrección aplicada a `C1-RESEARCH-NOTES.md §1`: ubicación canónica del archivo + corrección del "Archivos candidatos".
 - Próxima acción ejecutable: operador corre `bash scripts/release.sh`; orquestador re-corre T01; si OK, emite C1 SCOPE-CONTRACT partiendo de C1-RESEARCH-NOTES corregido + C1-PREFLIGHT.
+
+### 2026-09-21T12:11:00Z — C1 PREFLIGHT-2 — H02/H05/H06 verified (READ-ONLY) — orchestrator
+
+- Estado: C0 sigue IN_PROGRESS_C0 hasta release; preflight extendido de C1 ejecutado.
+- Trabajo autónomo (sin tocar código, solo grep/read):
+  - **H02 dedup**: `IdempotencyKey` en `crates/sddk-domain/src/proposal.rs:39` con campos project_id/cycle_id/capability/request_hash → dedup ya usa hash de payload, NO solo request_id. Hallazgo adicional: existe SEGUNDO `IdempotencyKey` en `crates/sddk-domain/src/workflow_run.rs` (code smell).
+  - **H05 seam**: `set_process_service_for_tests` confirmado en `crates/sddk-engine/src/authority_ticket_service.rs:111`. **Gap de aislamiento**: solo `#[doc(hidden)]`, NO `#[cfg(test)]`. Sin embargo, grep confirma 0 callers → no exploit activo, pero puerta abierta.
+  - **H06 gateway/redaction**: `pub fn redact` canónico en `crates/sddk-gateway/src/lib.rs:233` + `fn redact_text:277`. Cobertura de tests: sec1_redactor_unit.rs + sec1_capability_receipt_redaction.rs + runner_receipt_e2e.rs t06. Defense gateway: 413 + PayloadTooLargeForInlineStorage.
+- Anexo emitido: `C1-PREFLIGHT-2.md` con evidencia verbatim de los tres gaps.
+- Próxima acción ejecutable: operador corre release; orquestador re-corre T01; C1 SCOPE-CONTRACT puede arrancar con substance real para H01-H06.
