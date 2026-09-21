@@ -1,4 +1,12 @@
-# HANDOFF-2026-09-21-session-10 — C1 closure + 3 validation passes
+# HANDOFF-2026-09-21-session-10 — C1 closure + 11 validation passes (HEAD = `e3905ce`, workspace v1.169.138)
+
+> **Status snapshot**: 11 validation passes complete, 8 addenda committed. C1 closed
+> (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and C3
+> (durable structural anchor) awaiting operator authorization. A platform-dependent
+> `usize::to_be_bytes()` bug in `framed_hash` was discovered and documented in
+> Addenda 7-8; parked for a future cycle (out of session-10 scope). The H1 title's
+> "3 validation passes" reflects the original commit `b342701`; see STATE.yaml for
+> the current state.
 
 ## Addendum 2 — 4th validation pass (operator-driven): corrections to prior characterisations
 
