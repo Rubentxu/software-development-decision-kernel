@@ -94,7 +94,7 @@ fn adv_07_two_secrets_same_line() {
 
 // 8. Uppercase: TOKEN= - lowercase normalize matches
 #[test]
-fn adv_08_uppercase_TOKEN_eq() {
+fn adv_08_uppercase_token_eq() {
     let input = json!({"stdout": "TOKEN=PRIVATE_VALUE_PQR"});
     let out = redact(input);
     let s = out["stdout"].as_str().unwrap();
