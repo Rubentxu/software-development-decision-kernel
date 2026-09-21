@@ -1359,3 +1359,126 @@ After this addendum's commit, plan to:
 If operator wants C2 to bundle C3, both should be in the same cycle
 (one A1-style 1-line fix + one C3-style 4-line fix), and that cycle's
 handoff should be a NEW document (not session-10's).
+
+## Addendum 15 (20ª validation pass — pipefail scope expansion + zero-collateral verification, 2026-09-21)
+
+20ª validation, prompted by operator's continuing pattern. Two threads:
+
+### A. Pipefail fragility: 4 MORE grep pipelines have the same latent risk
+
+Addendum 12 documented Bug 2: `set -euo pipefail` + a non-matching
+`grep` pipeline → silent exit 1. Surface area was limited to the
+`step "2/14"` literal. Re-examining the file reveals **5 grep
+pipelines** in `tests/test_release_tag_anchoring.sh` that all have
+the same fragility:
+
+```bash
+# Lines 48, 49, 50, 51, 110 — all use pipefail-affected grep:
+LINE_1B="$(grep -n 'step "1b/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"     # line 48
+LINE_1C="$(grep -n '^step "1c/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"   # line 49
+LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"      # line 50 ← the bug
+LINE_9="$(grep -n '^step "9/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"      # line 51
+SKIP_OPEN_LINE="$(grep -n '^if \[ "\$SKIP_TESTS" = "0" \]' ...)"             # line 110
+```
+
+A1 fixes the symptom of pipeline 50 but does NOT harden pipelines
+48, 49, 51, 110. Any of those labels could disappear in a future
+release.sh refactor and the test would silent-fail again.
+
+C3 (awk structural match) addresses pipeline 50's symptom AND
+collapses the literal-anchor risk in pipelines 48/49/51 (because
+`step "[0-9]\/[0-9]+"` regex matches all the integer-step labels).
+The SKIP_TESTS guard detection (110) still uses literal regex; a
+future "refactor the skip-tests switch" would still break it.
+
+**Proposed robust pattern** (C3-shape applied broadly):
+
+```bash
+LINE_1B="$(awk '/step "1b\/14/ { print NR; exit }' "$RELEASE_SH")"
+LINE_1C="$(awk '/^step "1c\/14/ { print NR; exit }' "$RELEASE_SH")"
+LINE_2="$(awk -v lc="$LINE_1C" '
+    NR > lc && /^step "[0-9]+\/14/ { print NR; exit }
+' "$RELEASE_SH")"
+LINE_9="$(awk '/^step "9\/14/ { print NR; exit }' "$RELEASE_SH")"
+SKIP_OPEN_LINE="$(awk '/^if \[ "\$SKIP_TESTS" = "0" \]/ { print NR; exit }' "$RELEASE_SH")"
+```
+
+`awk` returns 0 even when no match found (and prints nothing for
+`print NR; exit`). No silent-fail risk under `set -e`.
+
+**NOT applied now**: A1 narrowly fixes the current bug (line 50);
+C3 durable fix proposed in Addendum 6/13 hardens line 50 only. A
+full C3+ sweep across all 5 pipelines is "more than one concern"
+under AGENTS.md §2.1 and is parked for a separate cycle if/when a
+latent regression bites.
+
+### B. Zero-collateral verification across 19 passes
+
+Since `fc7223f` (pass-9 docs sync), ALL 19 validation passes' worth
+of commits are docs-only. Verified:
+
+- `git log --since='2026-09-21' --format='%H %s' | grep -v 'docs('`
+  → 0 non-doc commits today.
+- Binary `/var/home/rubentxu/cargo-targets/release/sddk` last modified
+  2026-09-21 22:10 (build from prior source changes).
+- HEAD `11d5216` timestamp 2026-09-21 23:46.
+- MANIFEST.sha256 hash unchanged across all 19 passes (verified by
+  comparing HEAD MANIFEST hash to last source-changing commit's
+  hash; identical at `32cfd79f5c2915d3d92e949ea02c2c719e7f22c53af575ed52410a4c03fff23a`).
+- 4 contract tests spot-checked at HEAD: `test_adr_promotion_format`
+  PASS, `test_advisory_lint_explanations` PASS, `test_deny_lint_zero_hits`
+  PASS, `test_release_receipt_authority` PASS.
+
+**Conclusion: docs-only churn over 19 passes has NOT regressed any
+runtime contract.** The bundle+install pipeline (C1-closure state)
+is preserved.
+
+### C. Latent pipefail fragility: also affects `tests/test_release_admission.sh`?
+
+Quick check: that test (commit `f2daa29` that fixed SDDK_RELEASE_ADMISSION_MODE
+isolation) — does it use pipefail too?
+
+```text
+$ grep -n 'set -' tests/test_release_admission.sh
+12:set -uo pipefail       # ← note: NO '-e'
+```
+
+`test_release_admission.sh` deliberately uses `set -uo pipefail`
+(WITHOUT `-e`). The design rationale (visible from how each scenario
+runs to completion even when some assertions fail): the script
+wants all 21 scenarios to RUN and the matrix result line
+(`PASS=N FAIL=M`) to summarize. With `-e`, the first failure would
+terminate and skip the rest.
+
+**Verdict**: `test_release_admission.sh` is NOT vulnerable to the
+same silent-fail bug. The pipefail option does nothing without
+`-e` to act on it.
+
+This is, ironically, an argument for **deliberate failure-mode design**
+when writing shell tests: `test_release_tag_anchoring.sh` chose
+`set -euo pipefail` because it pins hard contracts; the design
+sacrifice is silent-fail risk on bad data. `test_release_admission.sh`
+chose `set -uo pipefail` because it wants to enumerate all scenarios;
+the design sacrifice is coarser granularity on outcomes.
+
+**For the C2 fix (test_release_tag_anchoring.sh)**, the `set -e`
+contract is intentional, so the latent risk remains. The proposed
+`awk`-based pattern in section A eliminates the fragility without
+changing the contract model.
+
+### Lessons recorded
+
+- **Two valid failure-mode designs for shell contract tests**:
+  (a) hard contract — fail-fast on first violation (use `set -e`,
+      accept silent-fail risk on bad data; mitigate with robust awk
+      extraction).
+  (b) matrix summary — run all scenarios, count at the end (omit
+      `-e`, lose per-scenario pipefail precision; gain enumeration).
+- **A1 + Addendum 15.A pattern** (the operator-callable option):
+  apply A1 to fix the immediate bug, keep the hard-contract design,
+  and **separately** audit-and-harden the other 4 grep pipelines
+  if the operator considers it worth its own commit.
+
+### New commits from this pass
+
+- None yet — read-only investigation.
