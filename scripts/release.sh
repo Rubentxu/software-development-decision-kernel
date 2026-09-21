@@ -276,7 +276,7 @@ TAG="v$VERSION"
 
 EXT_RECEIPT_DIR=""
 EXT_FAIL=0
-if [ -n "$COGNICODE_MCP_BIN" ] || [ -n "$CHRONOS_MCP_BIN" ]; then
+if [ -n "${COGNICODE_MCP_BIN:-}" ] || [ -n "${CHRONOS_MCP_BIN:-}" ]; then
     require jq
     EXT_RECEIPT_DIR="tests/cycle-artifacts/p-63676b11dc0ef88f/ext-auto-activation-$VERSION"
     mkdir -p "$EXT_RECEIPT_DIR"
