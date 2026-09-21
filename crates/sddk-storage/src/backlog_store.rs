@@ -535,6 +535,7 @@ fn now_iso_for(e: &BacklogEvent) -> &str {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use tempfile::TempDir;
 
     fn fresh_db() -> rusqlite::Connection {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -810,29 +811,41 @@ mod tests {
 
     #[test]
     fn open_owned_creates_ledger_if_missing() {
-        let dir = std::env::temp_dir().join("sddk-backlog-test-open-owned");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut owned = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        // Use a per-test TempDir (auto-removed on drop) instead of a static
+        // path under std::env::temp_dir() — the latter is shared across all
+        // cargo test workers in /tmp and was causing intermittent
+        // 'sqlite storage error: disk I/O error' on parallel runs (root
+        // cause: contention over the rollback-journal between concurrent
+        // SQLite connections to the same file, NOT a SQLite behavior
+        // change). Per-test isolation makes the directory name unique.
+        // See session-10 addendum 11 of HANDOFF-2026-09-21-session-10.md.
+        let dir = TempDir::with_suffix("sddk-backlog-test-open-owned").expect("create tempdir");
+        let mut owned = SqliteBacklogStoreOwned::open(dir.path()).unwrap();
         let id = "B-300".to_string();
         owned.append_event(&reg_event(&id, "fresh")).unwrap();
         let row = owned.item(&id).unwrap().unwrap();
         assert_eq!(row.summary, "fresh");
-        let _ = std::fs::remove_dir_all(&dir);
+        // TempDir::drop removes the directory; no manual cleanup needed.
+        drop(owned);
+        drop(dir);
     }
 
     #[test]
     fn open_owned_is_idempotent() {
-        let dir = std::env::temp_dir().join("sddk-backlog-test-open-idempotent");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        // Use a per-test TempDir (auto-removed on drop) instead of a static
+        // path under std::env::temp_dir(). See comment above for rationale.
+        let dir =
+            TempDir::with_suffix("sddk-backlog-test-open-idempotent").expect("create tempdir");
         // First open creates and applies migrations.
-        let mut a = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        let mut a = SqliteBacklogStoreOwned::open(dir.path()).unwrap();
         a.append_event(&reg_event("B-A", "first")).unwrap();
         // Second open on same dir must not fail (idempotent migrations).
-        let mut b = SqliteBacklogStoreOwned::open(&dir).unwrap();
+        let mut b = SqliteBacklogStoreOwned::open(dir.path()).unwrap();
         let row = b.item(&"B-A".to_string()).unwrap().unwrap();
         assert_eq!(row.summary, "first");
-        let _ = std::fs::remove_dir_all(&dir);
+        // TempDir::drop removes the directory; no manual cleanup needed.
+        drop(a);
+        drop(b);
+        drop(dir);
     }
 }
