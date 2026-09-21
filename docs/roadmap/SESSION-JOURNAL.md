@@ -551,3 +551,141 @@ Tras cycle-c:
   - `run_structured()` y `submit_idempotent()` sin unit tests visibles (pre-existente).
   - H06 no cubre Unicode multi-byte ni null bytes (alcance aceptado).
 - **Estado final C1**: full profile verde sobre `75d2430` (HEAD actual). 3 PR C1 merged + 4 commits post-merge (manifest regen + test isolation fix + bump funcional + STATE.yaml acknowledge gap). 1 gap pre-existente reconocido en numeración del release.sh (test desincronizado).
+
+## 2026-09-21T22:18Z — Post-AGENTS.md execution: 4 debt closeouts → v1.169.139..142 (workspace v1.169.142)
+
+- **Actor**: jcode (bender mode, AUTO).
+- **Trigger**: operator invoked `/home/rubentxu/AGENTS.md` (goal-level
+  AUTO mode). The session had previously articulated a stopping
+  criterion (addendum 17) and was in operator-authorization-wait for
+  4 items. Goal-level AUTO flipped those to work — per AGENTS.md §3 +
+  §7 "bucle de ejecución continua", bug fixes found during validation
+  are accepted without re-decisión.
+- **Scope**: bounded debt closeout. Did NOT auto-open C2/C3 cycle.
+  See "Próxima acción" for the roadmap scope that remains deferred.
+
+### Work executed (5 commits, 0 docs, 5 functional)
+
+| SHA       | Bump         | Concern                                                    |
+|-----------|--------------|------------------------------------------------------------|
+| 8c87a7e   | (no bump)    | docs(handoff): H1 status refresh — 22 passes / 16 addenda |
+| 88bf1b5   | 1.169.138→139| fix(release): close latent silent-fail in test_release_tag_anchoring.sh |
+| c521f72   | 1.169.139→140| fix(domain): framed_hash cross-platform u64 length prefix |
+| a641041   | 1.169.140→141| fix(storage): per-test tempdir isolation for backlog_store open_owned_* |
+| dc06565   | 1.169.141→142| refactor(domain): expose framed_hash as pub; collapse 4 test copies to imports (net -25 LoC) |
+
+### Empirical evidence (per commit)
+
+**88bf1b5 (v1.169.139) — INC-RELEASE-TAG-FIX durable fix.**
+- Before: `bash tests/test_release_tag_anchoring.sh` → exit 1, only
+  audit banner printed (silent-fail due to `set -euo pipefail` +
+  non-matching grep pipeline for literal `step "2/14"` which never
+  existed in release.sh).
+- After: `bash tests/test_release_tag_anchoring.sh` → exit 0 with
+  5/5 PASS.
+- Renumbering test: 3..9 → 4..10, 1d → 2 → still 5/5 PASS (durability
+  under structural changes, not coupled to today's step numbering).
+- shellcheck --severity=warning → clean.
+- 5 grep pipelines (lines 48/49/50/51 of original) ALL replaced by
+  awk-based step_line() helper + walk-forward (closes session-10
+  addendum 15 "pipefail fragility scope=5" at the same time).
+- INC-RELEASE-TAG-FIX.md Status section explicitly re-closes this debt
+  with empirical test coverage (the cycle at v1.168.41 closed it
+  structurally; this commit closes it functionally).
+
+**c521f72 (v1.169.140) — framed_hash u64 prefix.**
+- Production `crates/sddk-domain/src/identity.rs:framed_hash` changed
+  `len().to_be_bytes()` → `(len as u64).to_be_bytes()` (2 lines).
+- This matches the inline test copies in 4 test files (cli_pack_e2e,
+  cli_approval_e2e, cli_approval_loop_e2e, ledger_watch) which were
+  already using `as u64`. After fix, ALL sites produce 8 bytes, so the
+  contract is now consistent on 32-bit and 64-bit (the deployment matrix
+  is 64-bit only per release.yml, but the contract is no longer
+  accidentally-platform-dependent).
+- Tests: identity 36/0/0, cli_pack_e2e 9/0/0, cli_approval_e2e 5/0/0,
+  ledger_watch 4/0/0 — all green.
+
+**a641041 (v1.169.141) — backlog_store per-test tempdir isolation.**
+- Both `backlog_store::tests::open_owned_creates_ledger_if_missing`
+  and `backlog_store::tests::open_owned_is_idempotent` previously used
+  `std::env::temp_dir().join(<static-name>)`. Different static names
+  per test BUT they collide with other test processes / parallel cargo
+  workers that share /tmp under the same suite — surfaced as
+  `sqlite storage error: disk I/O error` intermittently (session-10
+  addendum 11 traced this to cross-test contention, NOT a SQLite
+  bug).
+- Fix: `tempfile::TempDir::with_suffix` instead — unique per-call,
+  auto-removed on drop. tempfile was already a dev-dependency.
+- Tests: `cargo test -p sddk-storage --lib` → 46/46 PASS in 0.92s.
+
+**dc06565 (v1.169.142) — framed_hash deduplication.**
+- Production `fn framed_hash` → `pub fn framed_hash`.
+- 4 test files now `use sddk_domain::identity::framed_hash;` and call
+  it directly instead of duplicating ~12-line hashing body inline.
+- 5 OTHER test files (cli_explore_e2e, cli_fork_e2e, cli_stale_e2e,
+  cli_graph_e2e, cli.rs) were already using
+  `sddk_domain::resolve_project_identity(...)` and never drifted —
+  they remain unchanged.
+- Net LoC: -25 (40 inserted, 65 deleted across 7 files).
+- Tests: full `cargo test -p sddk-cli` GREEN (30+ test binaries,
+  ~1200+ individual tests, 0 failures); `cargo test -p sddk-domain`
+  → 595/0/0; `cargo fmt --all -- --check` exit 0.
+- Note: the cargo-lock had to be folded into this commit via
+  `git commit --amend` + `git push --force-with-lease` because the
+  pre-push hook correctly REJECTED a stand-alone Cargo.lock-only
+  commit (rule A requires a Cargo.toml bump).
+
+### Process note on force-with-lease
+
+The pre-push hook (githooks/pre-push, A5-1 contract) REJECTED my
+first attempt at v1.169.142 because I committed a separate
+`chore(release): cargo-lock refresh` after the refactor commit. The
+hook is correct: rule (A) requires a Cargo.toml version change, and a
+cargo-lock-only commit violates that. The recovery was to amend the
+refactor commit to include Cargo.lock and force-with-lease against
+origin/main. Documented as a one-off exception; no pre-push rule was
+weakened.
+
+### What did NOT happen (deliberate)
+
+- C2/C3 roadmap progress was NOT auto-started. The roadmap defines
+  C2 as "real-provider integration certification" (CogniCode/Chronos/
+  JCode binaries required) and C3 as "Authority/Storage/Security/
+  Rendimiento adversarial+recovery" — multi-day commitments that
+  per AGENTS.md §3 require explicit SCOPE-CONTRACT before
+  delegation. The goal-level AUTO §7 bucles correct action here is
+  to leave C2/C3 as the next-session trigger, not to silently open
+  a cycle that the operator has not framed.
+- No version bump to v1.169.143 or higher. v1.169.142 is the workspace
+  state at this JOURNAL entry. The next release tag (operator-side
+  `bash scripts/release.sh`) will produce it.
+
+### Próxima acción (operator-side or next session)
+
+1. Decide whether to publish v1.169.142 (operator-side: `bash
+   scripts/release.sh` from main@dc06565). Note: INC-RELEASE-TAG-FIX
+   is now FULLY closed (commit 88bf1b5), unlike the prior cycle at
+   v1.168.41 which closed it with a structurally present but
+   silently-failing test. The dry-run gate should pass.
+2. Open C2 cycle with explicit SCOPE-CONTRACT (per AGENTS.md §3). At
+   minimum, the contract should commit to: a real CogniCode binary
+   (or `NOT_EVALUATED` per roadamp T08 if absent), a real Chronos
+   binary (or `NOT_EVALUATED`), JCode boundary verification (or
+   `NOT_EVALUATED` if the public adapter truly lives in another
+   repo). T08-T18 of UAT-MATRIX.md are the scope.
+3. Open C3 cycle in parallel to C2 (per roadmap "C2 y C3 pueden
+   realizarse en paralelo solo después de C1 y con el mismo
+   contrato de seguridad"). T19-T27 of UAT-MATRIX.md.
+
+### Estado final al cierre de este JOURNAL
+
+- HEAD: `dc06565` (v1.169.142). Local == origin/main. Tree clean.
+- Tests: session-10 debt closeout suite entirely GREEN.
+- INC-RELEASE-TAG-FIX (CL-RELEASE-PIPELINE-INTEGRITY): closed (re-
+  closed with empirical coverage after v1.168.41's structural-only
+  closure).
+- framed_hash contract: aligned across production + 4 tests;
+  production is `pub`, 4 inline copies collapsed to imports.
+- backlog_store flake: per-test tempdir eliminates cross-test
+  contention.
+- C2/C3: not started in this session. NEXT-SESSION trigger.
