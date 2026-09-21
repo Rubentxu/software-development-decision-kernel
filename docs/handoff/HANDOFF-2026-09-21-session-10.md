@@ -347,21 +347,53 @@ becomes empty, causing `set -u` to abort silently before the assertion can run.
 
 ### Two fix approaches
 
-**Approach A — Minimal test fix (1 line change, low risk)**:
-Change the test's grep on line 50 from:
+**Approach A — Minimal test fix (REVISED after empirical validation)**:
+After applying my proposed grep change in a sandbox (`tests/` + `scripts/` siblings,
+release.sh from main), the test fails with:
+```
+step 1b at line: 159
+step 1c at line: 237
+step 2  at line: 237   ← same as 1c!
+FAIL (a): step 1c is not between step 1b and step 2
+        expected: 1b (159) < 1c (237) < 2 (237)
+```
+
+The naive grep change to `grep -nE '^step "(1c|2)/14'` makes `LINE_2 == LINE_1C`,
+which breaks the test's assertion `LINE_1B < LINE_1C < LINE_2` (strict inequality).
+
+A correct minimal fix requires TWO changes:
+1. Make `LINE_2` derive from `LINE_1C + N` (where N is the offset to the next step's
+   start line), or
+2. Compute `LINE_2` as the line of the next step AFTER 1c (which would be step 3/14).
+
+The second is simpler. Replace lines 49-50 of the test:
 ```bash
+LINE_1C="$(grep -n '^step "1c/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 ```
-to:
+with:
 ```bash
-LINE_2="$(grep -nE '^step "(1c|2)/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+LINE_1C="$(grep -n '^step "1c/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+LINE_2="$(grep -n '^step "3/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 ```
+
+This treats "step 2 logical" as ending where step 3 begins, which preserves the
+semantics the test was originally checking (range from after step 1c to start of
+step 3) without renumbering the script.
+
 - Pro: 1-line change, doesn't touch release.sh, doesn't affect numbering convention
   used by external callers.
-- Con: keeps the awkward `1c/14` numbering in the script, leaves the gap un-fixed
-  semantically.
+- Con: still keeps the awkward `1c/14` numbering in the script; semantics shift
+  slightly (LINE_2 is now step 3's line, not a missing step 2's line).
 - Bump required: YES (rule A — change to tests/ non-docs).
 - Estimated bump: 1.169.138 → 1.169.139 (or 1.169.140 to match session-10 cadence).
+- Empirically validated in sandbox at `/home/rubentxu/.jcode/scratch/tmp.LfXvpMJx31/`
+  on 2026-09-21: original test fails silent, A1-revised test PASSES.
+
+**Approach A0 — Original proposal, WITHDRAWN**:
+The naive change `grep '^step "2/14'` → `grep -nE '^step "(1c|2)/14'` (proposed in
+Addendum 4 first draft) makes `LINE_2 == LINE_1C` because both greps now match the
+same line (237). This breaks assertion (a). Withdrawn; not the right fix.
 
 **Approach B — Renumber the script (touches scripts/release.sh, more invasive)**:
 Shift step numbers so 1a/1b/1c → 2/3/4, 3 → 5, etc. — i.e., insert the missing `step
@@ -383,35 +415,44 @@ Shift step numbers so 1a/1b/1c → 2/3/4, 3 → 5, etc. — i.e., insert the mis
 | Confidence | high | medium |
 | **Recommendation** | **A** | only if renaming is a goal in itself |
 
-**Author's recommendation: Approach A** (minimal test fix). The script's numbering
-convention is documented inside the script as `1, 1b, 1c` because commit `5550fcf`
-explicitly chose sub-step numbering. The test's expectation of `2/14` is the
-anomaly. Fixing the test to accept the existing numbering preserves all other
-guarantees and is the smallest possible change.
+**Author's recommendation: Approach A1** (REVISED minimal test fix, empirically
+validated in sandbox). The script's numbering convention is documented inside the
+script as `1, 1b, 1c` because commit `5550fcf` explicitly chose sub-step numbering.
+The test's expectation of `2/14` is the anomaly. Fixing the test to use `step
+"3/14"` as the upper bound preserves all other guarantees and is the smallest
+possible change. Empirically validated at `/home/rubentxu/.jcode/scratch/tmp.LfXvpMJx31/`
+on 2026-09-21: 5/5 PASS (a, b, c, d, e).
 
 ### C2 commit shape (proposed, NOT applied)
 
 ```bash
 # Branch off main, then:
-$EDITOR tests/test_release_tag_anchoring.sh   # apply Approach A change
+$EDITOR tests/test_release_tag_anchoring.sh   # apply A1 fix on line 50:
+                                              # from:
+                                              #   LINE_2="$(grep -n '^step \"2/14' ..."
+                                              # to:
+                                              #   LINE_2="$(grep -n '^step \"3/14' ..."
 
-# Verify the test now passes
-bash tests/test_release_tag_anchoring.sh       # expect exit 0, message:
-#   "step 1b at line: <N>"
-#   "step 1c at line: <M>"
-#   "step 2  at line: <N>"   # = LINE_1C now
-#   ... assertions pass
+# Verify the test now passes (sandbox-validated: 5/5 PASS)
+bash tests/test_release_tag_anchoring.sh       # expect exit 0:
+#   step 1b at line: 159
+#   step 1c at line: 237
+#   step 2  at line: 349   (= line of step 3/14, the next step after 1c)
+#   step 9  at line: 479
+#   PASS (a) ... PASS (e)
 
 # Bump version (rule A — tests/ non-docs)
 $EDITOR Cargo.toml                              # 1.169.138 → 1.169.139
 cargo update --workspace
 git add tests/test_release_tag_anchoring.sh Cargo.toml Cargo.lock
-git commit -m "fix(test): release_tag_anchoring acepta step '1c/14' como '2/14'
+git commit -m "fix(test): release_tag_anchoring delimita con step 3/14 en lugar de 2/14
 
 El commit 5550fcf eliminó step 2/14 al reorganizar el script en sub-pasos
-1/1b/1c. El test seguía buscando el literal 2/14; el grep devolvía vacío
-y set -u abortaba silenciosamente. Cambiamos el grep para aceptar 1c/14
-como '2/14' (mismo rango de código que cubría antes el grep 2/14)."
+1/1b/1c. El test buscaba el literal 2/14; el grep devolvía vacío y set -u
+abortaba silenciosamente. Cambiamos el grep para apuntar a step 3/14, que
+es el step SIGUIENTE a 1c en el script actual, preservando la semántica
+del rango de auditoría (líneas desde después de step 1c hasta antes de
+step 3). Pineado en sandbox: 5/5 invariantes INC-RELEASE-TAG-FIX PASS."
 
 git push origin main                            # rule A admite: bump real + tests/ change
 ```
