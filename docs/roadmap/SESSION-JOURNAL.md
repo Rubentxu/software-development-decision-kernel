@@ -134,3 +134,18 @@
 - C0-PRE-RELEASE-SMOKE.md emitido bajo `docs/roadmap/receipts/c0/aff68b8/` (separado del v1.169.128 anterior).
 - Tag `v1.169.129` verificado: no existe ni local ni remoto → disponible.
 - Próxima acción del operador: `bash scripts/release.sh` desde HEAD `aff68b8` (admisión ACCEPT, ya no hay gate).
+
+### 2026-09-21T13:34:00Z — ADMISSION BROKEN POST-RECONCILE (39a4104) — orchestrator reports to operator
+
+- **HONEST ADMISSION**: el commit `39a4104 docs(roadmap): reconcile to 1.169.129 + annex updated smoke` rompió la admisión porque añadió un commit docs-only sobre el bump ceremonial `aff68b8`. Re-corrí `release_admission_check HEAD` (HEAD = 39a4104) → REJECT non-monotonic 1.169.129 → 1.169.129.
+- Esto es exactamente el error que el operador llamó: añadir docs entre bump y release rompe la monotonicidad de admisión.
+- **Diagnóstico exhaustivo**:
+  - `aff68b8` (último bump): ACCEPT 1.169.128 → 1.169.129 ✓
+  - `39a4104` (docs tras bump): REJECT 1.169.129 → 1.169.129 ✗
+- **Opciones para el operador** (NO elijo por él, solo presento):
+  1. **Publicar desde aff68b8 antes de mi reconciliación**: `git reset --hard aff68b8 && bash scripts/release.sh`. Esto reescribe el historial local del operador, pero es la acción canónica de release operator-side (AGENTS.md §5). Tras publicar, el operador puede volver a `git pull` y aceptar `39a4104` como nuevo HEAD, con la admisión regenerándose con un nuevo bump.
+  2. **Aceptar otro bump ceremonial** (`1.169.129 → 1.169.130`) para que la admisión vuelva a ser verde. Eso suma un tercer bump no publicado (96f5366 → aff68b8 → nuevo) — el operador previamente desaconsejó "bumps ceremoniales" sin publicar.
+  3. **Permitirme otra pasada de reconciliación**: yo emito un commit ceremonial `chore(release): bump version a 1.169.130` con Cargo.toml bumped, lo cual restaura admisión para que `release.sh` acepte.
+- **Recomendación honesta (no impuesta)**: la opción 1 es la más limpia porque no suma bumps. Pero el operador debe decidir.
+- **Si elijo la opción 3 (otro bump)**: lo haré en el siguiente turno si el operador lo autoriza.
+- Estado actual: HEAD `39a4104`, admisión rota, binario 1.169.129 verificado, todos los demás gates verde.
