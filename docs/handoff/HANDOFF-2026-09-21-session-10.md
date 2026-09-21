@@ -325,6 +325,108 @@ Functional confirmation (not by inspection):
 3. If dry-run is green, propose v1.169.135 (or v1.169.136 if C2 requires bump).
 4. Operator decides whether to publish GH release.
 
+## Addendum 4 — C2 decision matrix (after 4th validation pass + self-audit)
+
+After operator-driven self-audit (Addendum 3) and root-cause investigation of the
+`backlog_store::open_owned` flakea (Addendum 2 line 62-65), the C2 cycle has clearer
+scope:
+
+### C2 single-concern: fix `tests/test_release_tag_anchoring.sh` for current script numbering
+
+**Root cause** (verified at scripts/release.sh line 151, 159, 237, 349):
+```
+151:    step "1/14 — cargo fmt + clippy + test (workspace)"
+159:    step "1b/14 — shell contract tests (tests/test_*.sh)"
+237:step "1c/14 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"
+349:step "3/14 — cargo build --release --bin sddk"
+```
+The script's actual step sequence is `1, 1b, 1c, 3, 4, ...` — the literal `2/14`
+was deleted by commit `5550fcf` (the script now uses 1c/14 for what was conceptually
+"step 2: read version"). The test, however, greps for `^step "2/14"` and `LINE_2`
+becomes empty, causing `set -u` to abort silently before the assertion can run.
+
+### Two fix approaches
+
+**Approach A — Minimal test fix (1 line change, low risk)**:
+Change the test's grep on line 50 from:
+```bash
+LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+```
+to:
+```bash
+LINE_2="$(grep -nE '^step "(1c|2)/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+```
+- Pro: 1-line change, doesn't touch release.sh, doesn't affect numbering convention
+  used by external callers.
+- Con: keeps the awkward `1c/14` numbering in the script, leaves the gap un-fixed
+  semantically.
+- Bump required: YES (rule A — change to tests/ non-docs).
+- Estimated bump: 1.169.138 → 1.169.139 (or 1.169.140 to match session-10 cadence).
+
+**Approach B — Renumber the script (touches scripts/release.sh, more invasive)**:
+Shift step numbers so 1a/1b/1c → 2/3/4, 3 → 5, etc. — i.e., insert the missing `step
+"2/14"` in place of `step "1c/14"` and renumber subsequent steps.
+- Pro: cleaner numbering, matches test expectations.
+- Con: changes 14 lines minimum, affects any operator or automation that depends on
+  step-number messages, requires re-verifying release.sh end-to-end.
+- Bump required: YES.
+- Risk: high (any step-number parsing in external tooling breaks).
+
+### Operator decision matrix
+
+| Factor | Approach A | Approach B |
+|---|---|---|
+| Lines changed | 1 | ~14+ |
+| External risk | none | step-number parsing breaks |
+| Test passes | YES | YES |
+| Re-verify required | test only | full release.sh dry-run |
+| Confidence | high | medium |
+| **Recommendation** | **A** | only if renaming is a goal in itself |
+
+**Author's recommendation: Approach A** (minimal test fix). The script's numbering
+convention is documented inside the script as `1, 1b, 1c` because commit `5550fcf`
+explicitly chose sub-step numbering. The test's expectation of `2/14` is the
+anomaly. Fixing the test to accept the existing numbering preserves all other
+guarantees and is the smallest possible change.
+
+### C2 commit shape (proposed, NOT applied)
+
+```bash
+# Branch off main, then:
+$EDITOR tests/test_release_tag_anchoring.sh   # apply Approach A change
+
+# Verify the test now passes
+bash tests/test_release_tag_anchoring.sh       # expect exit 0, message:
+#   "step 1b at line: <N>"
+#   "step 1c at line: <M>"
+#   "step 2  at line: <N>"   # = LINE_1C now
+#   ... assertions pass
+
+# Bump version (rule A — tests/ non-docs)
+$EDITOR Cargo.toml                              # 1.169.138 → 1.169.139
+cargo update --workspace
+git add tests/test_release_tag_anchoring.sh Cargo.toml Cargo.lock
+git commit -m "fix(test): release_tag_anchoring acepta step '1c/14' como '2/14'
+
+El commit 5550fcf eliminó step 2/14 al reorganizar el script en sub-pasos
+1/1b/1c. El test seguía buscando el literal 2/14; el grep devolvía vacío
+y set -u abortaba silenciosamente. Cambiamos el grep para aceptar 1c/14
+como '2/14' (mismo rango de código que cubría antes el grep 2/14)."
+
+git push origin main                            # rule A admite: bump real + tests/ change
+```
+
+### Other open gaps (NOT in C2 scope; C3+)
+
+1. `run_structured` / `submit_idempotent` lack unit tests (pre-existing).
+2. H06 redactor does not cover Unicode multi-byte or null bytes (documented contract).
+3. `backlog_store::tests::open_owned_*` flakea with `sqlite storage error: disk I/O
+   error` under workspace-wide concurrency (pre-existing; passes in isolation).
+   Suggested C3: add SQLite busy_timeout / WAL mode / per-test tempdir cleanup.
+4. Commit chain `c8bc3cc/c7db0f8/e7968f8` is functionally fine but cosmetically
+   ugly (3 commits for what should be 1 clean commit + 1 bump). Force-rewriting
+   published history NOT recommended; consider for C4+ if a clean history matters.
+
 ## Files relevant for next session
 
 - `docs/handoff/HANDOFF-2026-09-21-session-10.md` — this file
