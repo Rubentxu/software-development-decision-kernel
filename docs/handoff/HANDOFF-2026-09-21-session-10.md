@@ -1,17 +1,27 @@
-# HANDOFF-2026-09-21-session-10 — C1 closure + 13 validation passes (HEAD = `e3905ce`, workspace v1.169.138)
+# HANDOFF-2026-09-21-session-10 — C1 closure + 16 validation passes (HEAD = `4ace5fb`, workspace v1.169.138)
 
-> **Status snapshot**: 13 validation passes complete, 9 addenda committed. C1 closed
-> (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and C3
-> (durable structural anchor) awaiting operator authorization. The H1 title's
-> "3 validation passes" reflects the original commit `b342701`; see STATE.yaml for
-> the current state.
+> **Status snapshot**: 16 validation passes complete, 11 addenda committed (Addenda 2-12).
+> C1 closed (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and
+> C3 (durable structural anchor + per-test tempdir cleanup) awaiting operator authorization.
+> The H1 title's "X validation passes" reflects the current HEAD; STATE.yaml current_sha
+> also lags HEAD (still at 94b8031) — operators cross-check `git log -1 --format=%h` instead.
 >
-> **Note**: Addenda 7-8 reported an "ID non-determinism bug" that 13ª validation
-> found to be a wrong symptom interpretation (scope-driven, not platform-driven
-> drift; the algorithm is deterministic for `(remote, scope)`). See Addendum 9
-> for the correction. The `usize::to_be_bytes()` platform-dependence identified
-> in Addendum 8 remains a real (but lower-severity) concern for cross-platform
-> releases.
+> **Stale claims in early status (corrected Addenda 9 + 11 + 12)**:
+> - Addenda 7-8 reported an "ID non-determinism bug" that 13ª validation found to be
+>   a wrong symptom interpretation (scope-driven, not platform-driven drift; the
+>   algorithm is deterministic for `(remote, scope)`). See Addendum 9 for the correction.
+>   The `usize::to_be_bytes()` platform-dependence identified in Addendum 8 remains
+>   a real (but lower-severity) concern for cross-platform releases.
+> - Addendum 11 corrected the "sqlite storage error: disk I/O error" attribution —
+>   the flakea is a parallel-test race on a shared `std::env::temp_dir()` pattern
+>   in `crates/sddk-storage/src/backlog_store.rs:812-836`, NOT a SQLite behavior
+>   bug. WAL/busy_timeout would NOT fix it; per-test tempdir cleanup would.
+> - Addendum 12 diagnosed the `test_release_tag_anchoring.sh` silent-fail as a
+>   two-bug compound: (a) `step "2/14"` was never created in release.sh (the
+>   script numbers 0,1,1a,1b,1c,1d,3..14), and (b) `set -euo pipefail` + a
+>   non-matching `grep` pipeline exits 1 BEFORE the diagnostic `if`-block runs.
+>   A1 fix targets the missing-anchor symptom (validated 5/5 PASS); C3 durable
+>   anchor (awk structural match) is the durable fix.
 
 ## Addendum 2 — 4th validation pass (operator-driven): corrections to prior characterisations
 
