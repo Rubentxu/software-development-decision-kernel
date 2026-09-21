@@ -409,7 +409,15 @@ pub fn stable_workspace_id(project: &ProjectId, canonical_path: &str) -> String 
     format!("w-{}", &hex[..24])
 }
 
-fn framed_hash(domain: &str, parts: &[&str]) -> String {
+/// Length-prefix framed hash. Same algorithm as `stable_fallback_project_id`
+/// / `stable_workspace_id`; exposed at crate visibility so test modules
+/// can use it instead of duplicating the body.
+///
+/// Algorithm: `SHA256(domain_len || domain || part_0_len || part_0 ||
+/// ... || part_n_len || part_n)`, where every length is encoded as a
+/// fixed-width u64 (platform-independent — see addendum 16 of
+/// HANDOFF-2026-09-21-session-10.md for the drift-history rationale).
+pub fn framed_hash(domain: &str, parts: &[&str]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     // Use u64 (not usize) for the length-prefix encoding so that the

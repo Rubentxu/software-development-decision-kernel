@@ -5,26 +5,18 @@
 //!
 //! Follows the XDG-isolation pattern from `cli_approval_e2e.rs`.
 
-use sha2::Digest;
-use sha2::Sha256;
+use sddk_domain::identity::framed_hash;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
 /// Computes the stable project ID for a fallback seed + scope.
+/// Delegates to the production `framed_hash` in sddk_domain::identity so
+/// this test cannot drift from the implementation it validates (single
+/// source of truth).
 #[allow(dead_code)]
 fn fallback_project_id(seed: &str, scope: &str) -> String {
-    let hex = {
-        let mut hasher = Sha256::new();
-        let domain = "sddk.project.fallback.v1";
-        hasher.update((domain.len() as u64).to_be_bytes());
-        hasher.update(domain.as_bytes());
-        hasher.update((seed.len() as u64).to_be_bytes());
-        hasher.update(seed.as_bytes());
-        hasher.update((scope.len() as u64).to_be_bytes());
-        hasher.update(scope.as_bytes());
-        format!("{:x}", hasher.finalize())
-    };
+    let hex = framed_hash("sddk.project.fallback.v1", &[seed, scope]);
     format!("p-{}", &hex[..16])
 }
 
