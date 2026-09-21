@@ -1,12 +1,17 @@
-# HANDOFF-2026-09-21-session-10 — C1 closure + 11 validation passes (HEAD = `e3905ce`, workspace v1.169.138)
+# HANDOFF-2026-09-21-session-10 — C1 closure + 13 validation passes (HEAD = `e3905ce`, workspace v1.169.138)
 
-> **Status snapshot**: 11 validation passes complete, 8 addenda committed. C1 closed
+> **Status snapshot**: 13 validation passes complete, 9 addenda committed. C1 closed
 > (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and C3
-> (durable structural anchor) awaiting operator authorization. A platform-dependent
-> `usize::to_be_bytes()` bug in `framed_hash` was discovered and documented in
-> Addenda 7-8; parked for a future cycle (out of session-10 scope). The H1 title's
+> (durable structural anchor) awaiting operator authorization. The H1 title's
 > "3 validation passes" reflects the original commit `b342701`; see STATE.yaml for
 > the current state.
+>
+> **Note**: Addenda 7-8 reported an "ID non-determinism bug" that 13ª validation
+> found to be a wrong symptom interpretation (scope-driven, not platform-driven
+> drift; the algorithm is deterministic for `(remote, scope)`). See Addendum 9
+> for the correction. The `usize::to_be_bytes()` platform-dependence identified
+> in Addendum 8 remains a real (but lower-severity) concern for cross-platform
+> releases.
 
 ## Addendum 2 — 4th validation pass (operator-driven): corrections to prior characterisations
 
@@ -775,3 +780,101 @@ addressed before the next release that ships to a new platform.**
 ### New commits from this pass
 
 None — this was a read-only investigation. HEAD remains `dee2f5e`.
+
+## Addendum 9 (13ª validation pass — Addenda 7+8 correction, 2026-09-21)
+
+Honest self-correction. Addenda 7 and 8 contained a real bug identification
+(`usize::to_be_bytes()` platform-dependence in `framed_hash`) but a wrong
+**symptom interpretation** — the historical/current ID drift was NOT caused by
+platform differences; it was caused by different `scope` inputs.
+
+### What Addenda 7+8 claimed
+
+- Addendum 7: "sddk project resolve produces different IDs across binary
+  versions despite same remote URL + same content" → framed as a bug.
+- Addendum 8: root-caused to `usize::to_be_bytes()` platform-dependence,
+  presented as a foundational reproducibility violation.
+
+### What 13ª validation actually discovered
+
+The `framed_hash` algorithm IS platform-dependent (real bug). But the
+historical/current drift was caused by me using different `--scope` values,
+not different platforms:
+
+```text
+$ sddk project resolve --root . --scope .
+  project_id: p-63676b11dc0ef88f   ← matches 86 historical refs, mode-index, handoff
+$ sddk project resolve --root . --scope project
+  project_id: p-01dda4adb16259ba   ← what I queried in 10ª pass
+$ sddk project resolve --root . --scope workspace
+  project_id: p-5feae951f5a4cbfe
+```
+
+All three are correct outputs of the same algorithm with different `scope`
+inputs. The algorithm IS deterministic for a given `(remote, scope)` pair on a
+given platform.
+
+### Verification
+
+Python-side, u64 BE prefix matches the binary for **every** scope:
+
+```python
+for scope in [".", "project", "workspace"]:
+    hex = sha256(u64_be(len("sddk.project.remote.v1")) +
+                 "sddk.project.remote.v1" +
+                 u64_be(len(remote)) + remote +
+                 u64_be(len(scope)) + scope)
+    p_id = "p-" + hex[:16]
+    # matches binary output exactly for all three scopes
+```
+
+So on this 64-bit Linux host, the binary uses u64 prefix (8 bytes) and is
+consistent with itself.
+
+### What's still true from Addenda 7+8
+
+- The `usize::to_be_bytes()` bug IS real (different IDs on 32-bit vs 64-bit
+  platforms — same source, different outputs).
+- This is a real reproducibility concern for cross-platform distribution.
+- The fix proposed in Addendum 8 (cast `len()` to `u32`) is correct and safe.
+
+### What's wrong from Addenda 7+8
+
+- The "drift between historical and current ID" was scope-driven, not
+  platform-driven. I should have tried `--scope .` before declaring a bug.
+- "Reproducibility violation with foundational impact" was overstated. The
+  bug is real but the impact on this single repo's workflow is zero (we
+  always run on 64-bit Linux).
+
+### Honest accounting
+
+This is the second time in session-10 that I proposed a wrong fix (Addendum 4
+proposed Approach A; 5ª validation caught it). The pattern: I should always
+try the simplest non-bug explanation (different scope, different flag, different
+input) before claiming a bug. The cost of the wrong claim is real:
+- Addenda 7+8 were committed (3 commits: `dee2f5e`, `e3905ce`, `847707b`).
+- They will need to be amended or follow-up-corrected to not mislead future
+  readers.
+
+### Follow-up action (NOT applied — out of session-10 scope)
+
+Two options for the next cycle that takes up the finding:
+
+1. **Leave Addenda 7+8 + Addendum 9** — preserves the full investigation
+   trail, including the wrong-then-corrected interpretation. Future readers
+   see both the symptom, the wrong root cause, AND the correct explanation.
+
+2. **Squash Addenda 7+8 into one corrected Addendum** — cleaner but loses
+   the iteration history. Loses evidence of how the analysis evolved.
+
+Per the operator's "honest receipt culture" rule, option 1 is preferred:
+**leave the record intact + add this correction as Addendum 9**.
+
+### Real concerns that remain
+
+- `usize::to_be_bytes()` IS platform-dependent. The fix should be applied
+  before any cross-platform release (e.g., aarch64-musl or armv7 builds).
+- The 86 in-code references to `p-63676b11dc0ef88f` only work when invoked
+  with `--scope .`. They break with `--scope project` or any other scope.
+  This is documented in the codebase as the canonical "current checkout"
+  scope, but a future maintainer might not realize this.
