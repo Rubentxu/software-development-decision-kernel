@@ -96,16 +96,19 @@ When `glm-5-turbo` returns empty, treat as BLOCKED and re-plan the slice.
 |---|---|
 | Working tree | clean |
 | Branch | `main` |
-| HEAD | `53df501` |
-| Session-commits (this session vs session-start `origin/main` 82eea3c) | 21 |
-| Commits ahead of current `origin/main` (f1357c2) | 2 (`38f84cb` + `53df501`) |
-| `Cargo.toml` workspace.package.version | `1.169.124` |
+| HEAD | `35dddd4` |
+| Session-commits (this session vs session-start `origin/main` `82eea3c`) | 22 |
+| Commits ahead of current `origin/main` (`35dddd4`) | 0 (push executed by dry-run step 1c/14) |
+| `Cargo.toml` workspace.package.version | `1.169.125` |
+| `release_admission_check HEAD` | ACCEPT `1.169.124 -> 1.169.125` exit 0 |
+| Dry-run steps executed (verified) | 1c push + 1d no-op + 2 version + 3 build + 4 manifest + 5 bundle + 6 BUNDLE.toml + 7 unified + 8 sha256/sbom + 8b vault ADR mirror |
 | Rust tests PASS | **4966** |
 | Rust tests failed | **0** |
 | `cargo fmt --check` | exit 0 |
 | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
 | `bash -n scripts/release.sh` | exit 0 |
 | `shellcheck --severity=warning scripts/release.sh` | exit 0 |
+| GH release `v1.169.125` | **NOT YET CREATED** (`gh release view` returns "release not found") |
 
 ## 9. Cycle artifacts created this session
 
@@ -113,7 +116,10 @@ When `glm-5-turbo` returns empty, treat as BLOCKED and re-plan the slice.
 tests/cycle-artifacts/p-63676b11dc0ef88f/
 ├── ext-auto-activation-release-flow/
 │   ├── SCOPE-CONTRACT.md    (FU-A6-EXT-AUTO)
-│   ├── UAT-EVIDENCE.yaml    (7 UAT rows)
+│   ├── UAT-EVIDENCE.yaml    (7 UAT rows, honestified)
+│   └── RECEIPT.md
+├── release-prep-v1.169.124/
+│   ├── SCOPE-CONTRACT.md    (bump 1.169.124 + nounset fix)
 │   └── RECEIPT.md
 └── (prior cycles unchanged)
 ```
@@ -121,20 +127,42 @@ tests/cycle-artifacts/p-63676b11dc0ef88f/
 ## 10. Stopping here
 
 The orchestrator has exhausted the executable roadmap in this repo. The
-release push is an operator decision (system-law human_gate). All
-remaining items in `docs/research/2026-09-21-roadmap-gaps-deep-research.md`
-are explicitly DEFERRED by design and require scope this repo cannot
-supply (external binaries, corpus, second host, sustained metrics).
+release-push to GitHub is an operator decision (system-law human_gate
+`git.release`). The code is **already pushed** to `origin/main` at SHA
+`35dddd4` (the dry-run's step 1c/14 fast-forwards origin before stopping
+at the gh release create gate). The GH release `v1.169.125` itself is
+NOT yet created. All remaining items in
+`docs/research/2026-09-21-roadmap-gaps-deep-research.md` are explicitly
+DEFERRED by design and require scope this repo cannot supply (external
+binaries, corpus, second host, sustained metrics).
 
-If the operator wants further work, possible directions:
+If the operator wants to publish the release now:
 
-- **Release prep**: pre-bump to `1.169.124` and stage the release run
-  locally (does NOT push; just stages the artifacts so a one-shot
-  release is one command).
+```bash
+# Pre-flight check (should be ACCEPT):
+source scripts/lib/release_admission.sh && release_admission_check HEAD
+
+# Real release (creates the v1.169.125 GitHub Release):
+bash scripts/release.sh
+```
+
+If `COGNICODE_MCP_BIN` / `CHRONOS_MCP_BIN` are exported, step 1d/14
+will auto-execute the EXT tests against the real binaries and include
+the EXT-RECEIPT.md as a release asset. Otherwise step 1d is a no-op.
+
+Possible further work directions (operator scope):
+
 - **AIW-S8 X08 scope**: open an X08 cycle with corpus + baseline
   threshold explicitly defined by the operator.
 - **R11 metrics**: run `cargo metadata` + a simple change-frequency
   tool over the last 90 days and decide whether the data justifies the
   split.
 
-Otherwise: session done. Waiting for operator.
+Otherwise: session done. Code at v1.169.125 ready for operator-side
+publish via `bash scripts/release.sh`.
+
+## 11. Operator follow-up (legacy text — preserved)
+
+The remaining items in `docs/research/2026-09-21-roadmap-gaps-deep-research.md`
+are explicitly DEFERRED by design and require scope this repo cannot
+supply (external binaries, corpus, second host, sustained metrics).
