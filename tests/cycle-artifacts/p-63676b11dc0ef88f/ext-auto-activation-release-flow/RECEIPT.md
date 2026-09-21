@@ -126,6 +126,14 @@ the prior session's `RECEIPT.md` for `cace421`).
   this slice. The current filter (`aiw_s5_chronos_real a7_s1_runtime_uat`)
   is a best-effort guess; if a future EXT test file appears, add it to
   the filter.
+- **Bonus discovery (2026-09-21 cycle-release-prep)**: the dry-run of
+  v1.169.124 revealed that `[ -n "$COGNICODE_MCP_BIN" ]` aborts with
+  `set -u` when the env var is unset (`scripts/release.sh: variable
+  sin asignar`). Fixed at commit `38f84cb` by switching to
+  `[ -n "${COGNICODE_MCP_BIN:-}" ]`. Without the fix, the no-op branch
+  was broken in CI / agent shells that set `nounset`. The fix is
+  tested: bash syntax OK, shellcheck OK, isolated reproduction under
+  `set -u` PASS.
 
 ## §7 References
 
