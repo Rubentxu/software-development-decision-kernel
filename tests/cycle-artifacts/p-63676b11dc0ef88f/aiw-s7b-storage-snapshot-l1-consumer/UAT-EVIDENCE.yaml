@@ -1,0 +1,32 @@
+UAT-EVIDENCE — AIW-S7b — StorageSnapshot → SecretaryL1 consumer
+generated: 2026-09-21
+scope: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s7-secretary-attention/SCOPE-CONTRACT.md §S7-STOP-2 (G01+G03)
+
+- id: G01
+  title: Snapshot planning reconciliado (A bloquea B)
+  status: PASS
+  evidence:
+    - test: sddk-gateway::storage_snapshot_l1_consumer::tests::empty_log_head_reduces_confidence (unit)
+    - test: aiw_s7b_snapshot_l1_consumer::empty_log_head_e2e (integration)
+    - observation: evidence_ref is derived from the reconciled (adapter_id, log_head) pair — "storage:storage.ledger_head:99" vs "storage:storage.ledger_head:0" — so proposals from different snapshot heads are never conflated; confidence tracks durability (0.95 with head > 0, 0.5 otherwise) via the real SecretaryL1Engine.
+  type: OBSERVED
+
+- id: G03
+  title: Proposal surfaces from durable state without holding live Storage
+  status: PASS
+  evidence:
+    - test: aiw_s7b_snapshot_l1_consumer::durable_snapshot_e2e (integration)
+    - test: sddk-gateway::storage_snapshot_l1_consumer::tests::accepts_durable_snapshot (unit)
+    - observation: consume() takes only &StorageSnapshot (built via from_ledger_events / from_bytes); no Storage handle exists anywhere in the test or module; the real SecretaryL1Engine::propose() issues the closed-set SuggestRehydrationStep proposal.
+  type: OBSERVED
+
+Negative coverage (supporting):
+  - empty_adapter_id (unit + integration): InvalidSnapshot("empty adapter_id")
+  - no_template (unit + integration): real SecretaryL1Engine UnknownTemplate rejection surfaced as ProposalRejected
+
+Commands (all exit 0, 2026-09-21):
+  cargo fmt --check
+  cargo clippy -p sddk-gateway --all-targets -- -D warnings
+  cargo test -p sddk-gateway --lib storage_snapshot_l1_consumer   # 4 passed
+  cargo test -p sddk-gateway --test aiw_s7b_snapshot_l1_consumer  # 4 passed
+  cargo build --release -p sddk-gateway

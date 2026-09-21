@@ -465,3 +465,5 @@ mod tests {
         assert_eq!(err.code(), "GATEWAY_APPROVAL_REASON_REQUIRED");
     }
 }
+
+pub mod storage_snapshot_l1_consumer;
