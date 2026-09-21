@@ -488,3 +488,66 @@ git push origin main                            # rule A admite: bump real + tes
 - `~/.local/share/sddk/framework/1.169.122/` — last installed bundle (currently
   `current` symlink target; v1.169.138 binary at `/var/home/rubentxu/cargo-targets/release/sddk`
   is newer but the runtime bundle is still 1.169.122)
+
+## Addendum 5 (5ª validation pass, 2026-09-21)
+
+Operator demanded a 5th validation pass on the addenda themselves. Found that my
+own Approach A in Addendum 4 was wrong — it would have caused `LINE_2 == LINE_1C`,
+breaking the strict-inequality assertion `LINE_1B < LINE_1C < LINE_2`. Empirically
+discovered in sandbox before applying. Corrected to **Approach A1**.
+
+### What was wrong with Approach A
+
+Original proposal (in Addendum 4): change grep from `^step "2/14"` to accept
+either `(1c|2)/14`. If accepted, both `LINE_1C` and `LINE_2` resolve to line 237
+(both regex matches point to `step "1c/14"`). Result: assertion `LINE_1B (159)
+< LINE_1C (237) < LINE_2 (237)` FAILS with `[ 237 -le 237 ]` error.
+
+### Approach A1 (REVISED, validated)
+
+Change grep on line 50 from `^step "2/14"` to `^step "3/14"`. `LINE_2` now
+resolves to line 349 (where step 3/14 begins), which is strictly greater than
+`LINE_1C` (237). The audit range (lines 1b..next step) is preserved semantically.
+
+### Empirical validation (sandbox)
+
+Sandbox: `/home/rubentxu/.jcode/scratch/tmp.LfXvpMJx31/{tests,scripts}/release.sh`
+
+```text
+$ bash tests/test_release_tag_anchoring.sh
+Auditing /home/rubentxu/.jcode/scratch/tmp.LfXvpMJx31/scripts/release.sh ...
+step 1b at line: 159
+step 1c at line: 237
+step 2  at line: 349    ← derived from step "3/14" via A1
+step 9  at line: 479
+PASS (a): step 1c is between step 1b and step 2
+PASS (b): step 1c pushes the branch (no tag, no --force)
+PASS (c): step 1c is outside the SKIP_TESTS guard
+PASS (d): step 1c delegates the predicate to the pre-push hook
+PASS (e): step 1c fail-closes with merge-base ancestor check
+Exit: 0
+```
+
+5/5 invariants of `INC-RELEASE-TAG-FIX` PASS. The fix is one line.
+
+### Full profile on HEAD `ee75ea6`
+
+After committing A1 + handoff update, ran the full profile to confirm no
+regression from any of the addenda work:
+
+```text
+cargo fmt --all -- --check                → exit 0
+cargo clippy --workspace --all-targets    → exit 0
+cargo test --workspace                    → 4998 passed; 0 failed; 15 ignored
+```
+
+Same totals as the 4th validation baseline on `e7968f8`. Deterministic.
+
+### Lesson recorded
+
+**Never propose a fix without empirical validation in a sandbox.** The 4th
+validation pass caught 2 honest-characterization issues (operator-driven); the
+5th pass caught a self-proposed fix that would have failed on its own assertions.
+The cost of the sandbox is small (~30s for a grep diff + test run); the cost
+of a wrong fix landing on `main` would have been a follow-up cycle and a hook
+rejection.
