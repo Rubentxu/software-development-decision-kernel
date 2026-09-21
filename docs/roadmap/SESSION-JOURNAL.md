@@ -510,10 +510,12 @@ Tras cycle-c:
   - **Causa raíz**: `tests/test_release_admission.sh` no aislaba `SDDK_RELEASE_ADMISSION_MODE` al inicio. Pre-existente desde `e9f6081` (A5-1 original), pero EXPONIBLE por PR #11 (f2c974c) que usa la misma variable para casos v2.
   - **Fix**: `unset SDDK_RELEASE_ADMISSION_MODE` al inicio del test (`f2daa29`). Los casos v2 lo re-setean explícitamente en cada `case_v2_run`.
   - **Bump acompañante**: 1.169.134 → 1.169.135 (`8d91ad6`) — funcional (acomaña fix de código en tests/), NO ceremonial.
-- **Gap pre-existente NO relacionado con C1, reconocido**:
-  - `tests/test_release_tag_anchoring.sh` (commit `a86e85d`, dentro de tag público `v1.168.41`/`v1.168.42`) busca `step "1c/14"` en `scripts/release.sh` que ya no existe. El step fue removido en algún punto entre `a86e85d` y `bb32ae78` (probablemente por el sync `2ffff3127e7179b5f3c3104c471c8ad2c7d920ff` o el rebase de PR #8).
-  - Impacto: `release.sh --dry-run` con `--dry-run` falla en step 1b (test_release_tag_anchoring.sh) después de pasar el resto de los shell tests.
-  - Estado: el **full profile workspace** (criterio de salida del ROADMAP C1) sigue PASS sobre `f4670bd`/`8d91ad6`. El gap es a nivel de **release pipeline integrity**, fuera del scope de H01/H02/H05/H06/cycle-c.
+- **Gap pre-existente NO relacionado con C1, reconocido (caracterización corregida tras segunda pasada de validación)**:
+  - El test `tests/test_release_tag_anchoring.sh` usa `grep '^step "2/14' scripts/release.sh` para localizar el step 2 (read version) y verificar orden. El commit `5550fcf feat(scripts): release.sh EXT auto-activation (closes FU-A6-EXT-AUTO)` del 2026-09-21 10:15 (mucho antes de C1 PR #9 merge a 2026-09-21 19:02) ELIMINÓ `step "2/14"` cuando añadió los sub-steps 1c/1d sin renumerar el resto.
+  - Resultado: el grep devuelve vacío, `LINE_2=""` y el test falla con exit 1 (fail-closed por set -e).
+  - **El step "1c/14" sí existe en línea 237** de scripts/release.sh (añadido por `a86e85d feat(release): sync HEAD to origin/main before publish (closes INC-RELEASE-TAG-FIX)`). El bug NO es que el step 1c falte; es que el test_release_tag_anchoring.sh tiene un grep hardcoded contra la numeración vieja.
+  - Impacto: `release.sh --dry-run` con SDDK_RELEASE_ADMISSION_MODE=v2 falla en step 1b (test_release_tag_anchoring.sh) después de pasar el resto.
+  - Estado: el **full profile workspace** (criterio de salida del ROADMAP C1) sigue PASS sobre `75d2430`. El gap es a nivel de **release pipeline integrity**, fuera del scope de H01/H02/H05/H06/cycle-c.
 - **Estado final C1**:
   - full profile: PASS (4989/0/15).
   - 3 PR merged (cfe3766, 1b3d7f0, c4c7e0a).
@@ -523,3 +525,29 @@ Tras cycle-c:
   1. Decidir si abre un nuevo ciclo para INC-RELEASE-TAG-FIX (re-aplicar `a86e85d` o re-diseñar el test).
   2. O congelar C1 con el gap acknowledged y abrir C2.
   3. O publicar v1.169.135 (operator-side, requiere resolver INC-RELEASE-TAG-FIX primero porque el dry-run falla).
+
+---
+
+## 2026-09-21T18:57Z — Segunda pasada de validación: corregí mi caracterización errónea del gap pre-existente
+
+- **Actor**: jcode (bender mode, AUTO).
+- **Acción**: el operador pidió "do more validation" — re-ejercité los paths públicos y descubrí que mi caracterización del gap INC-RELEASE-TAG-FIX en el JOURNAL anterior era **incorrecta**.
+- **Error previo**: dije que `scripts/release.sh había perdido el step "1c/14"`. **FALSO**: el step "1c/14" SÍ existe en línea 237 (`step "1c/14 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"`).
+- **Gap real**: el commit `5550fcf feat(scripts): release.sh EXT auto-activation (closes FU-A6-EXT-AUTO)` (2026-09-21 10:15) **eliminó `step "2/14" (read version)** cuando añadió los sub-steps 1c/1d sin renumerar. El test `tests/test_release_tag_anchoring.sh` usa `grep '^step "2/14'` para localizar el step 2; ese grep devuelve vacío, `LINE_2="""`, y el test falla con exit 1 (fail-closed por `set -euo pipefail`).
+- **No es regresión de C1**: el commit `5550fcf` es del 2026-09-21 10:15, MUCHO antes de mis PR de C1 (PR #9 merge = 2026-09-21 19:02). C1 NO tocó este test ni la numeración del release.sh.
+- **Validación adversaria adicional ejecutada en esta pasada**:
+  1. **H06 redacción adversaria**: probe con 9 casos disfrazados (uppercase, colon separator, suffix match, partial key, multi-line, empty value, two secrets). Todos detectaron el patrón esperado → contrato `SECRET_KEY_PATTERN` funciona como documentado.
+  2. **Pre-push hook adversario**: setup de sandbox con remote `file://` + 2 commits (código + bump separados). El push fue **REJECTED** porque mi `git fetch` no había descargado las refs al sandbox. Re-corrí con `git fetch origin` + branch tracking config → push EXIT 0 (rule A encontró el bump). Esto confirma que el hook funciona correctamente con el setup esperado; mis fallos previos eran por mi setup incompleto.
+  3. **Verificación de mi bump 1.169.135**: `git show 8d91ad6` confirma que Cargo.toml cambió `1.169.134 → 1.169.135`. El range `[f2daa29, 8d91ad6]` fue admitido por rule (A) — bump real acompaña el fix de `tests/`. No es bypass.
+- **Tests ejecutados (todos PASS)**:
+  - `cargo test --workspace`: 4989 passed / 0 failed / 15 ignored sobre `75d2430`.
+  - `cargo fmt --all --check`: PASS.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: PASS.
+  - `bash tests/test_release_admission.sh`: 21/21 PASS con y sin `SDDK_RELEASE_ADMISSION_MODE=v2`.
+  - `bash tests/test_push_prevention_hook.sh`: 39/39 PASS.
+  - `bash tests/test_h05_isolation.sh`: 2/2 PASS con `CARGO_TARGET_DIR` exportado.
+- **Limitaciones honestas reconocidas (sin cambios)**:
+  - `tests/test_release_tag_anchoring.sh` falla por gap pre-existente (linea 2 borrada por 5550fcf). Documentado; fuera de scope C1.
+  - `run_structured()` y `submit_idempotent()` sin unit tests visibles (pre-existente).
+  - H06 no cubre Unicode multi-byte ni null bytes (alcance aceptado).
+- **Estado final C1**: full profile verde sobre `75d2430` (HEAD actual). 3 PR C1 merged + 4 commits post-merge (manifest regen + test isolation fix + bump funcional + STATE.yaml acknowledge gap). 1 gap pre-existente reconocido en numeración del release.sh (test desincronizado).
