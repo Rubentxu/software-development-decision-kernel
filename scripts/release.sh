@@ -257,12 +257,90 @@ else
     die "origin/main ($REMOTE_MAIN) is ahead of HEAD ($LOCAL_HEAD); merge origin/main into HEAD and re-run"
 fi
 
-# --- 2. version ---
-
-step "2/14 — read version"
+# --- 1d. EXT auto-activation (closes FU-A6-EXT-AUTO) ---
+#
+# When the operator exports $COGNICODE_MCP_BIN and/or $CHRONOS_MCP_BIN
+# before invoking release.sh, run the previously-#[ignore] EXT tests
+# against the real provider binaries, capture pass/fail per provider, and
+# write an EXT-RECEIPT.md to the cycle artifacts. Without the env vars,
+# the step is a no-op (the EXT tests stay #[ignore] and the release
+# proceeds normally — operators without the binaries are not blocked).
+#
+# This step MUST run before version reading because the receipt dir
+# embeds the version string. We read VERSION early here.
+step "1d/14 — EXT auto-activation (cognicode-mcp / chronos-mcp, opt-in)"
 VERSION="$(awk '/^\[workspace\.package\]/{flag=1; next} flag && /^version = /{print $3; exit}' Cargo.toml \
     | tr -d '\"')"
 TAG="v$VERSION"
+[ -n "$VERSION" ] || die "could not parse version from Cargo.toml"
+
+EXT_RECEIPT_DIR=""
+EXT_FAIL=0
+if [ -n "$COGNICODE_MCP_BIN" ] || [ -n "$CHRONOS_MCP_BIN" ]; then
+    require jq
+    EXT_RECEIPT_DIR="tests/cycle-artifacts/p-63676b11dc0ef88f/ext-auto-activation-$VERSION"
+    mkdir -p "$EXT_RECEIPT_DIR"
+    : > "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+    {
+        echo "# EXT-RECEIPT — $TAG (release-time auto-activation)"
+        echo
+        echo "- HEAD: $LOCAL_HEAD"
+        echo "- COGNICODE_MCP_BIN: ${COGNICODE_MCP_BIN:-NOT SET}"
+        echo "- CHRONOS_MCP_BIN: ${CHRONOS_MCP_BIN:-NOT SET}"
+        echo "- date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+    } >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+
+    if [ -n "$COGNICODE_MCP_BIN" ]; then
+        echo "## CogniCode EXT (COGNICODE_MCP_BIN=$COGNICODE_MCP_BIN)" \
+            >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+        if COGNICODE_MCP_BIN="$COGNICODE_MCP_BIN" \
+            cargo test --workspace --offline -- \
+                --include-ignored \
+                a6_cc_s1 aiw_s1_cognicode_real 2>&1 \
+                | tee "$EXT_RECEIPT_DIR/cognicode-ext.log" >/dev/null; then
+            echo "- result: PASS" >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+        else
+            echo "- result: FAIL" >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+            EXT_FAIL=1
+        fi
+        # Extract test counts from the log.
+        grep -E 'test result:' "$EXT_RECEIPT_DIR/cognicode-ext.log" \
+            >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md" || true
+    fi
+
+    if [ -n "$CHRONOS_MCP_BIN" ]; then
+        echo "## Chronos EXT (CHRONOS_MCP_BIN=$CHRONOS_MCP_BIN)" \
+            >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+        if CHRONOS_MCP_BIN="$CHRONOS_MCP_BIN" \
+            cargo test --workspace --offline -- \
+                --include-ignored \
+                aiw_s5_chronos_real a7_s1_runtime_uat 2>&1 \
+                | tee "$EXT_RECEIPT_DIR/chronos-ext.log" >/dev/null; then
+            echo "- result: PASS" >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+        else
+            echo "- result: FAIL" >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+            EXT_FAIL=1
+        fi
+        grep -E 'test result:' "$EXT_RECEIPT_DIR/chronos-ext.log" \
+            >> "$EXT_RECEIPT_DIR/EXT-RECEIPT.md" || true
+    fi
+
+    ok "EXT receipt written to $EXT_RECEIPT_DIR/EXT-RECEIPT.md"
+    if [ "$EXT_FAIL" = "1" ]; then
+        die "EXT tests failed against real binaries — refusing to release (see $EXT_RECEIPT_DIR/EXT-RECEIPT.md)"
+    fi
+else
+    ok "no EXT env vars set — skipping (EXT tests stay #[ignore] in this release)"
+fi
+
+# --- 2. version ---
+
+# VERSION/TAG were already read in step 1d above. Re-read defensively in
+# case step 1d was added as an insert (the read is idempotent).
+VERSION="${VERSION:-$(awk '/^\[workspace\.package\]/{flag=1; next} flag && /^version = /{print $3; exit}' Cargo.toml \
+    | tr -d '\"')}"
+TAG="${TAG:-v$VERSION}"
 [ -n "$VERSION" ] || die "could not parse version from Cargo.toml"
 ok "version: $VERSION → tag: $TAG"
 
@@ -459,6 +537,14 @@ ASSETS=(
     "$BUNDLE_TARBALL.sha256"
     "$RECEIPT_PATH"
 )
+# If step 1d ran, include the EXT-RECEIPT.md as a release asset so the
+# provider-exercised evidence ships alongside the binary. The release
+# gate (step 9b) does not poll this asset — it is evidence-of-record,
+# not part of the 9-asset public-release contract — but adding it here
+# keeps the EXT profile auditable from the GitHub Release page itself.
+if [ -n "$EXT_RECEIPT_DIR" ] && [ -f "$EXT_RECEIPT_DIR/EXT-RECEIPT.md" ]; then
+    ASSETS+=("$EXT_RECEIPT_DIR/EXT-RECEIPT.md")
+fi
 
 if gh release view "$TAG" --repo "$REPO" \
         >/dev/null 2>&1; then
