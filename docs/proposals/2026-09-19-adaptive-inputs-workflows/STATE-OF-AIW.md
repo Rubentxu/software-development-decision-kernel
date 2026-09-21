@@ -49,12 +49,12 @@ Legend:
 | **AIW-S1** — CogniCode real → Verify | DELIVERED (real) | `tests/cycle-artifacts/.../aiw-s1-cognicode-real/RECEIPT.md` + commits `f65e182`, `427bbf4`, `f27f85b`. E2E CLI exit=0, verdict `Verified`, 10 observaciones, SHA-256 digest. EXT tests 5/5 contra binario real. Base green sin proveedor (A03+A06). Regresión 1251/0 passed. | Limitaciones documentadas: grafo lightweight ≠ absence de impacto; veredicto basado en find_usages. |
 | **AIW-S1b** — Forma sucesora de evidencia observacional, CONDICIONAL | **CANCELLED per roadmap** (2026-09-20) | Gate ejecutado: sonda UAT-A10 contra el writer actual PASA (`crates/sddk-engine/tests/observation_set_durability.rs`) — dos observaciones contradictorias (Affirms/Denies, bases distintas) sobreviven crash/reopen sin pérdida, sin latest-wins, sin agregación, vía `observation.set.appended` v1 (S4). Carencia NO demostrada → slice cancelado por su propia regla; AIW-ADR-03 NO se promueve. Receipt: `tests/cycle-artifacts/.../aiw-s1b-successor-shape/RECEIPT.md`. | Ninguno — cierre limpio, no requiere operador. |
 | **AIW-S2** — Captura estructurada de tests y gates | DELIVERED (locally) | `crates/sddk-gateway/src/runner_receipt.rs` + `crates/sddk-gateway/tests/runner_receipt_e2e.rs`. Slice: `tests/cycle-artifacts/.../aiw-s2-test-runner-capture/{SCOPE-CONTRACT,UAT-EVIDENCE,RECEIPT}.md`. Commit `ab9fe23`. 10 unit + 11 E2E tests; bounded_runner_contract 18/18 (C1 preserved). UAT-T01/T02/T04/T05/T06/T07/T08/T09/T10 PASS. T08 per-testcase normalization is **PARTIAL** (consumer-of-receipt concern, deferred to a follow-up AIW slice per SCOPE §6). Wrapper CLI NOT added (C3: optional per spec). Receipt surface: `RunnerReceipt` + `RunnerStatus` + `OutputRefs` + `RedactionMarker` + `RunOutcomeView` (wire mirror). | Waiting on `scripts/release.sh` push authorization. T08 per-testcase normalization to be folded into a follow-up AIW slice alongside AIW-S3. |
-| **AIW-S3** — Handoff durable entre DOS tareas | NOT_STARTED | No commit con identificador AIW-S3 en este CWD. Aceptación UAT-H01..H09 sin ejecutar. | Falta adaptador mínimo a `CapsuleInputs` / `ContextCompiler` desde store real + envelope/outcome/receipts efectivos; cierre/reapertura preservando WorkItem/PlanRevision/Attempt/evidence/dissent. |
-| **AIW-S4** — Expansión dinámica por evidencia | NOT_STARTED | Aceptación UAT-W01..W11 sin ejecutar. | Falta trigger Secretary → Authority → compiler/validator → PlanRevision → runtime sin repetir nodos. |
+| **AIW-S3** — Handoff durable entre DOS tareas | **DELIVERED** | `crates/sddk-engine/src/context_compiler/storage_adapter.rs` (276 LOC) + `crates/sddk-engine/tests/aiw_s3_storage_handoff.rs` (320 LOC). Slice: `tests/cycle-artifacts/.../aiw-s3-handoff-durable/{SCOPE-CONTRACT,UAT-EVIDENCE,RECEIPT}.md`. Commit `98614fc` (merge `b4768e7` into main). 6 in-module unit tests + 5 integration tests = 11 new tests. UAT-H01/H04/H06/H09 PASS; H02/H03/H05/H07-secret PARTIAL (covered by AIW-S7 follow-ups). v1.169.97. | None — closure clean. Follow-ups already delivered by AIW-S7a..S7c (in flight 2026-09-21). |
+| **AIW-S4** — Expansión dinámica por evidencia | **DELIVERED** | `crates/sddk-engine/tests/aiw_s4_dynamic_expansion.rs` (430 LOC, 7 integration tests W01/W02/W03/W04/W08/W11). Slice: `tests/cycle-artifacts/.../aiw-s4-dynamic-expansion/{SCOPE-CONTRACT,UAT-EVIDENCE,RECEIPT}.md`. Commit `648f23b` (merge `72d5ff3` into main). NO src change. C2 enforced: `<30 LOC` glue in tests/. Replay bug fix (`6b97202` + `fb1fc80`) landed in `v1.169.116`. | None — closure clean. |
 | **AIW-S5** — Chronos real | DELIVERED (real) | `tests/cycle-artifacts/.../aiw-s5-chronos-runtime/RECEIPT.md`. E2E CLI con `chronos-mcp` v0.1.0 real, 3 EXT tests passed, 4 unit tests passed, E2E exit=0. | No declara cierre A7 `RUNTIME_ENHANCED`; verificación es vertical (un programa, un contrato), no cobertura completa. |
 | **AIW-S6** — Correlación estático/runtime | DELIVERED (by-infrastructure) | A4-5a falsification suite (`crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs`) ya ejerce `compose_intelligence_loop` + `derive_advisory_context` con `happy_inputs`, `contradictory_composition_preserved`, `unknown_gap_composition` (10+ tests). Slice: `tests/cycle-artifacts/.../aiw-s6-correlation-a8/{SCOPE-CONTRACT,UAT-EVIDENCE,RECEIPT}.md`. P09/P10/P11/P12 cubiertos por A4-5a. No `src/` change; no nueva dependencia. | Cierre por infrastructure: añadir un test redundante violaría "no fake PASS, no inferred per-test data". AIW-S7/S8 pueden componerse contra la API pública ya probada. |
-| **AIW-S7** — Secretary y atención adaptativa | NOT_STARTED (auto-run blocked) | SCOPE-CONTRACT: `tests/cycle-artifacts/.../aiw-s7-secretary-attention/SCOPE-CONTRACT.md`. Las 9 filas G01..G09 son integración end-to-end (no módulo). Cierre requiere (1) wire producer→L0 stream adapter, (2) wire StorageSnapshot→SecretaryL1 consumer, (3) AuthorityContext negative-grant integration tests. Cada uno es un slice material (gateway adapter, snapshot consumer, authority surface). | STOP honesto pre-implementación: cerrar AIW-S7 en auto-run sería fabricación. Decisión operador: ¿abrir tres sub-slices con su propio scope, o aceptar AIW-S7 como NOT_STARTED en delivery? |
-| **AIW-S8** — CLI/host y límites de empaquetado | PARTIAL (X01/X03/X05 by-infrastructure; X02/X04/X06/X07/X08 NOT_STARTED) | SCOPE-CONTRACT: `tests/cycle-artifacts/.../aiw-s8-cli-host-evaluation/SCOPE-CONTRACT.md`. X01 cubierto por `decision_plane_cli_parity_tests::parity_check_passes_on_match`; X03 por `agent_host_tests::execute_with_retry_succeeds_on_attempt_2` (host offline by design); X05 por `decision_plane_cli_parity_tests::*` (read-only second plane, structurally analogous). X02/X04/X06/X07/X08 requieren src change o scope de operador. | Decisión operador: ¿abrir sub-slices denial surface (X02), concurrency (X04), schema versioning (X06), second-binary integration (X07), Jev corpus (X08)? |
+| **AIW-S7** — Secretary y atención adaptativa | **IN-FLIGHT** (sub-slices authorized 2026-09-21) | SCOPE-CONTRACT: `tests/cycle-artifacts/.../aiw-s7-secretary-attention/SCOPE-CONTRACT.md`. Las 9 filas G01..G09 son integración end-to-end. Sub-slices en ejecución: (a) AIW-S7a producer→L0 stream adapter (closes G04+G06); (b) AIW-S7b StorageSnapshot→SecretaryL1 consumer (closes G01+G03); (c) AIW-S7c AuthorityContext negative-grant integration tests (closes G05+G07). G02/G08/G09 dependen de L2 replan surface (covered by AIW-S4 already). | STOP original resuelto vía autorización de operador 2026-09-21; tres sub-slices delegados a swarm. Cierre completo al entregar todos los sub-slices. |
+| **AIW-S8** — CLI/host y límites de empaquetado | **IN-FLIGHT** (X02/X04/X06/X07/X08 sub-slices authorized) | SCOPE-CONTRACT: `tests/cycle-artifacts/.../aiw-s8-cli-host-evaluation/SCOPE-CONTRACT.md`. X01/X03/X05 cerrados por infrastructure (pre-existing tests). X08 (Jev corpus + baseline) requiere scope operativo explícito — defer hasta definir corpus. Resto en flight. | X02 denial surface, X04 two-CLI concurrency IT, X06 storage schema versioning, X07 second-binary integration. X08 bloqueado en scope genuino (no es human_gate sino definición de corpus+baseline). |
 
 ## §3 Cross-mapping with macro-cycle A6
 
@@ -129,6 +129,36 @@ executable within existing contracts:
 Each slice must respect the project's hard constraints (no
 auto-bumps, push via release.sh, STOP conditions named in the
 slice SCOPE, no closed-vocabulary extension unless justified).
+
+## §9 Active sub-slices (2026-09-21, post operator authorization)
+
+Operator authorization 2026-09-21 unblocks the AIW-S7 / S8 sub-slices that
+were declared STOP-honesto on the previous session. Each sub-slice has its
+own SCOPE-CONTRACT, UAT-EVIDENCE, and RECEIPT cycle, and shares the same
+release.sh pipeline as the prior slices.
+
+| Sub-slice | Closes | Path | Owner |
+|---|---|---|---|
+| **AIW-S7a** | G04+G06 | `tests/cycle-artifacts/.../aiw-s7a-producer-l0-stream/` | swarm (in flight) |
+| **AIW-S7b** | G01+G03 | `tests/cycle-artifacts/.../aiw-s7b-storage-snapshot-l1-consumer/` | swarm (queued) |
+| **AIW-S7c** | G05+G07 | `tests/cycle-artifacts/.../aiw-s7c-authority-negative-grant/` | swarm (queued) |
+| **AIW-S8 X02** | X02 | `tests/cycle-artifacts/.../aiw-s8-x02-denial-surface/` | swarm (queued) |
+| **AIW-S8 X04** | X04 | `tests/cycle-artifacts/.../aiw-s8-x04-two-cli-concurrency/` | swarm (queued) |
+| **AIW-S8 X06** | X06 | `tests/cycle-artifacts/.../aiw-s8-x06-storage-schema-versioning/` | swarm (queued) |
+| **AIW-S8 X07** | X07 | `tests/cycle-artifacts/.../aiw-s8-x07-second-binary-integration/` | swarm (queued) |
+| **AIW-S8 X08** | X08 | **DEFERRED** — requires corpus + baseline definition (operator scope, not human_gate) | none |
+
+A6-S5 / A7-S5 EXT (real CogniCode-MCP / Chronos-MCP binaries) are external
+to the repo and require package availability; no cycle is opened in this
+session.
+
+## §10 Reconciliation rule (v2)
+
+The §1 rule is preserved. Add: a slice's STATE-OF-AIW row is updated to
+`DELIVERED` only after the `feat`/`fix` commit lands on `origin/main` and
+the RECEIPT cites the real commit SHA. This prevents drift like the S3/S4
+marking the 2026-09-15 handoff noted as "still NOT_STARTED" while in fact
+landed at `v1.169.97` / `v1.169.98`.
 
 ## §8 References
 
