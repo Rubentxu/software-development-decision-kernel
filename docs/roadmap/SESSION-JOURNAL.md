@@ -185,3 +185,14 @@
   3. **Hacer `git reset --hard 6fda463` local antes de release.sh** — esto reescribe el historial local del operador (no del remoto), permitiéndole publicar desde 6fda463 sin que 39a4104/6668c3e le estorben.
 - **Recomendación**: opción 3, que es la canónica del flujo release operator-side.
 - **Lección crítica para futuros ciclos**: NO añadir docs-only entre bump ceremonial y release.sh. La admisión evalúa el primer padre de HEAD, no el último release público. Cualquier reconciliación debe ir ANTES del bump o DESPUÉS de la publicación.
+
+### 2026-09-21T13:48:00Z — OPERATOR-RUNBOOK emitido — orquestador se detiene — STOP honesto
+
+- Estado: admisión rota por docs-only commits sobre bump 6fda463. NO aplico más bumps (la directriz del operador explícitamente dice "No utilices bypasses, bumps ceremoniales...").
+- Emito `OPERATOR-RUNBOOK.md` con el comando exacto y minimal que el operador debe ejecutar para publicar:
+  - Opción A (recomendada): `git reset --hard 6fda463` local + admisión sanity + `bash scripts/release.sh`.
+  - Opción B: NO viable porque release.sh exige estar en main.
+  - Opción C: autorizar 4º bump (1.169.131) — desaconsejada por el patrón.
+- Lección crítica registrada en OPERATOR-RUNBOOK §10 y en este journal: NO añadir docs-only entre bump ceremonial y release.sh; el invariante de admisión es monotónico contra el primer padre de HEAD, no contra el último release público.
+- C0 sigue IN_PROGRESS_C0 hasta que el operador publique. C1 sigue bloqueado por C0 CLOSED.
+- Cierre honesto: el orquestador NO puede continuar sin la publicación del operador o una nueva directriz que autorice 4º bump.
