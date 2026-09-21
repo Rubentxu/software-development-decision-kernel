@@ -95,6 +95,107 @@ After operator prompted "Validate further... Confirm the result is actually bett
 - code + real bump (`[workspace.package] version = ...`) → ACCEPTED ✓
 - docs-only + no bump → ACCEPTED ✓
 
+## Addendum 3 — Self-audit of stale/overstated claims in this handoff's body
+
+After operator prompted "Re-read the request. Update the todo plan and goal assessments from the
+evidence gathered so far. Correct anything stale or overstated, then continue the work", this
+addendum audits the body of this handoff for stale or overstated claims that conflict with the
+evidence gathered in validation passes 2-4.
+
+### Stale claims in body (not silent — explicitly corrected here)
+
+1. **"## State at handoff time"** (line 105-109) reads:
+   ```
+   - HEAD: `5f42b57`
+   - Workspace version: `1.169.135`
+   ```
+   These were accurate AT THE MOMENT the section was written (commit `b342701`), BEFORE this
+   handoff was authored as a docs commit. The body was authored at `5f42b57` and the handoff
+   document was added in `b342701` (which is a docs-only commit on top of `5f42b57`). Reading
+   "state at handoff time" as "the state when this handoff document was finalised" is
+   ambiguous — it could mean:
+   (a) the state when the C1 work was completed (i.e., `5f42b57` / 1.169.135) — what the
+       section literally says;
+   (b) the state at the end of the handoff, including all addenda and the full session-10
+       commit chain (i.e., `f213eab` / 1.169.138) — what the operator likely reads.
+   The CORRECT interpretation depends on what the section is documenting. Per the section
+   title and the immediate context, (a) is the literal reading. The handoff author chose (a).
+   For clarity, the FINAL state of the session-10 close is documented in STATE.yaml
+   (`current_sha: e7968f8`, `workspace_version_at_current: 1.169.138` at `97d4ca2`) and in
+   Addendum 2 of this file (line 45-56).
+
+2. **"## Quality gates (full profile on `5f42b57`)"** (line 122-129) says:
+   ```
+   | tests | `cargo test --workspace` | 4989 passed / 0 failed / 15 ignored |
+   ```
+   The "4989 passed" reflects the count BEFORE the 9 new adversarial tests were added (in
+   `fb129d1`). The FULL profile on `e7968f8` (after all session-10 work) reports
+   **4998 passed / 0 failed / 15 ignored** (run on MANIFEST-correct tree; flakey under
+   workspace-wide concurrency, see below). The Addendum 2 line 62-65 records the corrected
+   figure.
+
+3. **"## Commits introduced this session"** (line 111-120) lists 6 commits. This list was
+   accurate at the time of authoring but does NOT include the 8 commits added by session-10
+   validation passes and the handoff itself:
+   - `b34270150c...` (docs: handoff session-10)
+   - `fb129d16d6...` (fix(uat): SHA handoff fix + H06 adversarial test)
+   - `9e540e9...` (chore: bump 1.169.136)
+   - `c8bc3cc...` (style(fmt))
+   - `c7db0f8...` (chore: bump 1.169.137)
+   - `e7968f8...` (chore: bump 1.169.138 + clippy fix)
+   - `97d4ca2...` (fix(roadmap): STATE.yaml sync)
+   - `f213eab...` (docs: handoff Addendum 2)
+   All eight are in the public `origin/main` history.
+
+4. **"### H06 secret redactor"** (line 145-150) lists "9/9 adversarial cases PASS" with a
+   description that doesn't exactly match the 9 tests I eventually landed in
+   `crates/sddk-gateway/tests/h06_adversarial.rs`. The final pinned contract:
+   | # | Test name | Input | Behaviour |
+   |---|---|---|---|
+   | adv_01 | TOKEN=caps (uppercase) | `TOKEN=PRIVATE_VALUE_ABC` | masked |
+   | adv_02 | token:colon | `token:PRIVATE_VALUE_DEF` | masked |
+   | adv_03 | suffix `my_token=` | `my_token=PRIVATE_VALUE_GHI` | masked (ends_with `_token`) |
+   | adv_04 | stoken= NO underscore | `stoken=PRIVATE_VALUE_JKL` | **passes verbatim** |
+   | adv_05 | multiline `api_key=` | multi-line input | masked |
+   | adv_06 | `secret=` empty value | `secret=` | **key+sep verbatim, no `<redacted:N>`** (N=0 short-circuits) |
+   | adv_07 | two secrets same line | `api_key=AAA password=BBB` | both masked |
+   | adv_08 | TOKEN=caps again | `TOKEN=PRIVATE_VALUE_PQR` | masked |
+   | adv_09 | `auth=` partial key | `auth=some_value` | **passes verbatim** (auth ∉ SECRET_KEY_PATTERN) |
+   The body listed "uppercase prefix" + "partial key" without distinguishing adv_04 (pass-through
+   contract) from adv_09 (also pass-through) — both are pinpoints for the contract, but they
+   check different rules (substring prefix vs key not in SECRET_KEY_PATTERN).
+
+5. **"## Recommended next actions"** (line 217-225) item 1 says:
+   ```
+   Cycle should be small (single commit) and not require bump if scripts/ only.
+   ```
+   INCORRECT. The fix for `tests/test_release_tag_anchoring.sh` is a change to `tests/`,
+   NOT `scripts/`. Per pre-push hook rule (A), any change outside the docs-only allowlist
+   (`docs/**`, `.sddk/followups/**`, `tests/cycle-artifacts/p-*/*/SCOPE-CONTRACT|DISCOVERY|RECEIPT.md`,
+   generated MANIFEST) requires a real `[workspace.package] version` bump in the same push
+   range. A fix to `tests/test_release_tag_anchoring.sh` WILL require a bump. The current
+   chain `c8bc3cc/c7db0f8/e7968f8` (1.169.137 + 1.169.138) is precedent: a single line of
+   `tests/` change requires a real bump to pass the hook.
+
+6. **"## Not exercised this session"** (line 210-215) — add: the entire session-10 extended
+   commit chain (`b342701` through `f213eab`) has not been exercised by a real `gh release
+   create`. The 4th validation pass did exercise the bundle+bin install flow end-to-end via
+   `sddk dev install --source <bundle>` (see Addendum 2 line 80-86), but no public release
+   has been published.
+
+### Honest summary
+
+- The body of this handoff was authored at `b342701` and reflects the operator's request
+  at the time ("C1 closure + 3 validation passes"). The body accurately describes what was
+  done — but the **state machine continues**: validation passes 3 and 4 happened AFTER
+  this body was committed, and those passes corrected 5+ characterisations (SHA, H06 contract,
+  SAW-018/019 scope, flakea, commit-chain ugliness, STATE.yaml sync).
+- Addenda 1, 2, and 3 together form the canonical correction log. Operators / next-session
+  agents should consult STATE.yaml for current SHA/version, Addendum 2 for evidence, and
+  Addendum 3 for stale-claim corrections.
+- This handoff is not a single point-in-time artefact; it is a living document that grew
+  with the session.
+
 ## Goal
 
 Close C1 (consolidación PR #9, #10, #11) under full AUTO authorization with full-profile
