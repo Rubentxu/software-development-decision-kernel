@@ -1,0 +1,35 @@
+# UAT-EVIDENCE — AIW-S8 X02 — Denial surface
+
+slice: p-63676b11dc0ef88f/aiw-s8-x02-denial-surface
+date: 2026-09-21
+scope_contract: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s8-cli-host-evaluation/SCOPE-CONTRACT.md §S8-STOP-1
+test_target: crates/sddk-gateway/tests/aiw_s8_x02_denial_surface.rs
+
+rows:
+  - id: X02
+    title: "host accede a raw/denied args/secretos; denegado en parse; 0 leak"
+    status: PASS
+    tests:
+      - empty_action_id_denied
+      - secret_prefix_denied
+      - oversized_payload_denied
+      - raw_bytes_arg_denied
+      - clean_request_allowed
+      - denial_zero_leak_no_payload_in_reason
+      - integration_empty_action_id_denied
+      - integration_secret_prefix_denied
+      - integration_oversized_payload_denied
+      - integration_raw_bytes_arg_denied
+      - integration_clean_request_allowed
+      - integration_with_host_action_request
+      - integration_denial_zero_leak_no_payload_in_reason
+    evidence: "cargo test -p sddk-gateway --lib denial_surface → 6 passed; 0 failed. cargo test -p sddk-gateway --test aiw_s8_x02_denial_surface → 7 passed; 0 failed"
+    evidence_class: OBSERVED
+
+gates:
+  - cmd: cargo fmt --check
+    result: exit 0
+  - cmd: cargo clippy -p sddk-gateway --all-targets -- -D warnings
+    result: "Finished `dev` profile, 0 warnings"
+  - cmd: cargo build --release -p sddk-gateway
+    result: "Finished `release` profile [optimized]"

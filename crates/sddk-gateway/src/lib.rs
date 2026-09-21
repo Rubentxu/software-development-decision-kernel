@@ -11,6 +11,7 @@
 mod artifact_store;
 mod capability;
 mod computer_use;
+pub mod denial_surface;
 mod evidence;
 mod filesystem;
 mod forge;
