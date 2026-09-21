@@ -1,14 +1,19 @@
 schema_version: 1
-updated_at: "2026-09-21T14:30:00Z"
-status: C1_H01_PUSHED_HISTORY_ORGANIZED_CYCLE_C_NEXT
+updated_at: "2026-09-21T15:13:30Z"
+status: C1_H01_PUSHED_HISTORY_INTEGRATED_VIA_PR8_CYCLE_C_NEXT
 source:
   baseline_branch: main
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
-  current_sha: "68f6788fe9d2a8d10fb4b1ec5d10b86d44d8d9c5"
+  current_sha: "544aa1186ad0894c1e50b222684330438cddf784"
   workspace_version_at_baseline: "1.169.127"
   workspace_version_at_current: "1.169.133"
   last_public_release_observed: "v1.169.122"
-  note: "C1 H01 pusheado (74dfcc9+abca553 v1.169.133 admisión ACCEPT). cycle-c SCOPE-CONTRACT pusheado (68f6788). Reorganización documental completada: 14 paquetes legacy, 113 handoffs, 87 proposals/research/cycles/uat plans, 9 archivos sueltos en raíz de docs/ → movidos a docs/history/. 184 refs documentales actualizadas. AGENTS.md y architecture/README.md mantienen docs/roadmap/ROADMAP.md como autoridad única. v1.169.133 release candidate desde abca553 sigue siendo publicable."
+  pr8_merge_commit: "544aa1186ad0894c1e50b222684330438cddf784"
+  pr8_commits_integration:
+    - "8d785c4 docs(history): reorganización completa — 14 paquetes legacy + 113 handoffs + 87 proposals/research/cycles/uat-plans + 9 files sueltos → docs/history/"
+    - "deaae8e docs(authority): corrige contradicción — roadmap/ROADMAP.md es única autoridad ejecutable (architecture/README Package section)"
+    - "28eb948 fix(fmt): colapsar constante path largo en event_envelope_golden (gate release.sh step 1)"
+  note: "C1 H01 pusheado (74dfcc9+abca553 v1.169.133 admisión ACCEPT). cycle-c SCOPE-CONTRACT pusheado (68f6788). PR #8 integrado en 544aa11 vía gh pr merge --merge --delete-branch: reorganización documental + corrección autoridad + fmt gate-1 fix (autorizado operador 2026-09-21T15:07:10Z). v1.169.133 release candidate desde abca553 sigue siendo publicable."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
@@ -16,8 +21,13 @@ authority:
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
 active_milestone: C1
-active_slice: "c1-cycle-c-implementation-next"
+active_slice: "c1-cycle-c-implementation"
 verified_at_current_sha: false
+verified_components_at_current_sha:
+  cargo_fmt_check: PASS
+  cargo_clippy_workspace_d_warnings: PASS
+  saw_tests_7_of_7: PASS
+  architecture_check_arch001_arch002: PASS
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"

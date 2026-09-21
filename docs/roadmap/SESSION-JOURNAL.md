@@ -281,3 +281,45 @@ Estado actual:
 Próximo paso: commit único del catálogo + reconciliación + push.
 
 Próximo WorkItem (post-commit): implementar cycle-c (corrección de githooks/pre-push + release_admission.sh) en rama de trabajo. H02 (commit 9d4c249) se recupera del reflog tras tener vía de integración limpia.
+
+---
+
+## [2026-09-21 sesión 6] PR #8 integrado — reorganización + autoridad + fmt en main
+
+**Estado:** PR #8 MERGED en 544aa11. CURRENT/STATE reconciliados con el nuevo HEAD. Próxima fase: cycle-c + H02 reflog + H05/H06.
+
+### Hechos observados (autorización operador 2026-09-21T15:07:10Z)
+
+- Operador aprueba integrar PR #8 sin nuevas decisiones.
+- Verificación pre-merge:
+  - git fetch origin main → main sin nuevos commits desde 47759a3.
+  - PR #8 state=OPEN, mergeable=MERGEABLE, baseRefOid=47759a3, headRefOid=28eb948.
+  - Sin cambios concurrentes en origin/main antes del merge.
+- Merge: `gh pr merge 8 --merge --delete-branch --repo Rubentxu/software-development-decision-kernel`. Resultado: state=MERGED, mergedAt=2026-09-21T15:07:34Z, mergeCommit=544aa11.
+- Local main actualizado vía `git checkout main && git pull --ff-only origin main`. HEAD local = 544aa11.
+- 4 commits ahead of 47759a3: 8d785c4 / deaae8e / 28eb948 / 544aa11 (merge commit).
+
+### Re-validación post-merge
+
+- `cargo fmt --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo test --release -p sddk-engine --lib structured_work` → 7/7 SAW ok (saw001-saw008).
+- Working tree limpio.
+- Branch `docs/history-organization` borrada en GitHub vía `--delete-branch` (el reflog local conserva los commits).
+
+### Decisiones tomadas
+
+1. Estrategia de merge: `--merge` (merge commit, no squash). Preserva la historia lineal del PR con los 3 commits atómicos.
+2. Branch borrada vía `gh pr merge --delete-branch` (no quedan refs colgantes en el servidor).
+3. CURRENT.md y STATE.yaml actualizados con HEAD real post-merge (544aa11).
+4. No bumpear (operador explícito). No fuerzo nada.
+
+### Resultado
+
+- main = 544aa11 (PR #8 integrado)
+- PR #7 = cerrado previo
+- PR #8 = MERGED 2026-09-21T15:07:34Z
+- Reorganización documental COMPLETA.
+- Único roadmap ejecutable: docs/roadmap/ROADMAP.md (sin cambios).
+- Ciclo-c implementación: próximo WorkItem.
+- H02 (commit 9d4c249) en reflog, pendiente de recuperación con vía de integración limpia (push range a main con cambios en crates/** requerirá bump legítimo que se hará tras implementar el fix de admisión y los tests RED→GREEN del nuevo contrato de push/release).
