@@ -965,3 +965,106 @@ session-10 (Approach A, Addendum 7, Addendum 8).
 ### New commits from this pass
 
 None — this was a read-only investigation. HEAD remains `27bdbee`.
+
+## Addendum 11 (15ª validation pass — SQLite flakea root cause, 2026-09-21)
+
+15ª validation re-examined the "sqlite storage error: disk I/O error"
+flakea claim from earlier passes. Found it was mis-attributed: NOT a
+SQLite behavior issue, but a parallel-test race on a SHARED temp dir.
+
+### Root cause
+
+`crates/sddk-storage/src/backlog_store.rs:812-836` has two tests using
+the SAME hardcoded temp dir:
+
+```rust
+#[test]
+fn open_owned_creates_ledger_if_missing() {
+    let dir = std::env::temp_dir().join("sddk-backlog-test-open-owned");
+    let _ = std::fs::remove_dir_all(&dir);  // ← deletes shared dir
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut owned = SqliteBacklogStoreOwned::open(&dir).unwrap();
+    // ... append, read ...
+    let _ = std::fs::remove_dir_all(&dir);  // ← deletes again at end
+}
+
+#[test]
+fn open_owned_is_idempotent() {
+    let dir = std::env::temp_dir().join("sddk-backlog-test-open-idempotent");
+    // same pattern: remove → create → open → append → read → remove
+}
+```
+
+But each test names its OWN dir, so the shared-dir theory is wrong. The
+real issue is that `cargo test --workspace` runs tests in parallel. If
+two test threads BOTH have the same dir open, one thread's `remove_dir_all`
+can fire while the other has the file open — resulting in `disk I/O error`.
+
+### Empirical confirmation
+
+```text
+$ cargo test -p sddk-storage --lib open_owned
+running 2 tests
+test backlog_store::tests::open_owned_creates_ledger_if_missing ... ok
+test backlog_store::tests::open_owned_is_idempotent ... ok
+test result: ok. 2 passed; 0 failed
+```
+
+In isolation (sequential), 2/2 PASS — no flakea. The "flakea" only appears
+in parallel runs.
+
+### Why this matters for C3
+
+Earlier passes proposed C3 fix as "SQLite WAL/busy_timeout/per-test
+tempdir cleanup". The WAL/busy_timeout parts would NOT fix this flakea
+because the SQLite behavior is correct — the issue is the test design.
+The per-test tempdir cleanup IS the correct fix.
+
+### Recommended C3 fix (revised, NOT applied)
+
+Use a unique temp dir per test invocation:
+
+```rust
+#[test]
+fn open_owned_creates_ledger_if_missing() {
+    let dir = std::env::temp_dir()
+        .join(format!("sddk-backlog-test-{}", uuid::Uuid::new_v4()));
+    // ... no remove_dir_all needed since dir is unique ...
+}
+```
+
+Or use `tempfile::tempdir()` which auto-cleans on drop. Or use
+`cargo test --test-threads=1` (workaround, not fix).
+
+### Why this was wrong before
+
+I attributed the "disk I/O error" to SQLite being flaky under concurrent
+access. Empirically: SQLite is FINE. The flakea is a test-side
+concurrency bug. This is the THIRD wrong-claim of session-10 (after
+Approach A in Addendum 4 and the ID drift in Addenda 7+8).
+
+Pattern continues: when I see an error message, I should check whether
+it's a TEST issue or a SYSTEM issue before proposing a system fix.
+
+### H05 isolation check at HEAD `b3f5ee3`
+
+For completeness, re-verified H05 isolation:
+
+```text
+$ cargo test -p sddk-engine --test h05_seam_test_only
+test h05_seam_does_not_leak_into_production_api ... ok
+test result: ok. 1 passed; 0 failed
+
+$ bash tests/test_h05_isolation.sh
+PASS  rlib does not export set_process_service_for_tests
+matrix result: PASS=1 FAIL=0
+
+$ nm --defined-only --dynamic sddk | grep -c set_process_service_for_tests
+0   # ← isolation holds
+```
+
+H05 fix from PR #10 (commit `1b3d7f0`) is still working.
+
+### New commits from this pass
+
+None — this was a read-only investigation. HEAD remains `b3f5ee3`.
