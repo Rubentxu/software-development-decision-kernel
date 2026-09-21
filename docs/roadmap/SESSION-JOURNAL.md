@@ -495,3 +495,31 @@ Tras cycle-c:
   - H06 no cubre Unicode multi-byte ni null bytes en args (limitación de alcance aceptada por operador al priorizar cierre C1).
   - Force-push de PR #10 y PR #11 pre-merge: documentado en JOURNAL como excepción a la política "no force-push". El push fue a ramas feature (no a main), y el motivo fue deduplicar commits de bump/docs antes del merge, no resolución de conflicto de integración.
 - **Siguiente acción**: bloqueada hasta operator-side. Sin trabajo pendiente que jcode deba ejecutar sin nueva instrucción.
+
+---
+
+## 2026-09-21T18:43Z — Validación profunda operador-redirecto: feed loops cerrados con path público + gap pre-existente revelado
+
+- **Actor**: jcode (bender mode, AUTO, operador demandó validación más profunda por fase).
+- **Acciones de validación ejecutadas**:
+  - **H05**: `nm --defined-only`, `nm --dynamic`, `strings` sobre `libsddk_engine.rlib` y `sddk` release binario. 0 ocurrencias del seam en símbolos definidos/dinámicos. 2 ocurrencias en `strings libsddk_engine.rlib` (literales del doc comment, no función ejecutable). 0 ocurrencias en `strings sddk`. Aislamiento FUNCIONAL confirmado; leak INFORMATIVO de nombre como string en rlib es aceptable porque el docstring documenta explícitamente que el seam está aislado.
+  - **H06**: `cargo test --lib` muestra `redaction_masks_secrets_embedded_in_reason` y `redaction_masks_secrets_embedded_in_error_message` PASS. Contrato `SECRET_KEY_PATTERN` (9 nombres) + `STRING_LEVEL_KEY_PATTERN` (5 campos free-form) implementado y verificado.
+  - **Cycle-c**: `bash scripts/release.sh --dry-run` con `SDDK_RELEASE_ADMISSION_MODE=v2` invoca `release_admission_check HEAD` end-to-end. Step 0 (preflight) retorna `ACCEPT last-publish=1.169.122 -> 1.169.134`. Step 1 (cargo fmt+clippy+test workspace 781 tests) PASS. Step 1b (shell contract tests) inicialmente falló por bug pre-existente.
+- **Bug pre-existente encontrado y arreglado**:
+  - **Síntoma**: `tests/test_release_admission.sh` falla 3 casos v1 cuando se invoca con `SDDK_RELEASE_ADMISSION_MODE=v2` en el env. Los casos v1 crean seed dirs sin remote `origin`, pero la variable de entorno se propaga y routea a v2 que requiere `git ls-remote origin --tags` → query-failed REJECT.
+  - **Causa raíz**: `tests/test_release_admission.sh` no aislaba `SDDK_RELEASE_ADMISSION_MODE` al inicio. Pre-existente desde `e9f6081` (A5-1 original), pero EXPONIBLE por PR #11 (f2c974c) que usa la misma variable para casos v2.
+  - **Fix**: `unset SDDK_RELEASE_ADMISSION_MODE` al inicio del test (`f2daa29`). Los casos v2 lo re-setean explícitamente en cada `case_v2_run`.
+  - **Bump acompañante**: 1.169.134 → 1.169.135 (`8d91ad6`) — funcional (acomaña fix de código en tests/), NO ceremonial.
+- **Gap pre-existente NO relacionado con C1, reconocido**:
+  - `tests/test_release_tag_anchoring.sh` (commit `a86e85d`, dentro de tag público `v1.168.41`/`v1.168.42`) busca `step "1c/14"` en `scripts/release.sh` que ya no existe. El step fue removido en algún punto entre `a86e85d` y `bb32ae78` (probablemente por el sync `2ffff3127e7179b5f3c3104c471c8ad2c7d920ff` o el rebase de PR #8).
+  - Impacto: `release.sh --dry-run` con `--dry-run` falla en step 1b (test_release_tag_anchoring.sh) después de pasar el resto de los shell tests.
+  - Estado: el **full profile workspace** (criterio de salida del ROADMAP C1) sigue PASS sobre `f4670bd`/`8d91ad6`. El gap es a nivel de **release pipeline integrity**, fuera del scope de H01/H02/H05/H06/cycle-c.
+- **Estado final C1**:
+  - full profile: PASS (4989/0/15).
+  - 3 PR merged (cfe3766, 1b3d7f0, c4c7e0a).
+  - 2 commits post-merge necesarios para cerrar el lazo: f2daa29 (fix test isolation) + 8d91ad6 (bump 1.169.135) + 8705e61 (STATE.yaml acknowledge gap).
+  - 1 gap pre-existente (INC-RELEASE-TAG-FIX) reconocido, fuera del scope C1.
+- **Próxima acción (operator-side)**:
+  1. Decidir si abre un nuevo ciclo para INC-RELEASE-TAG-FIX (re-aplicar `a86e85d` o re-diseñar el test).
+  2. O congelar C1 con el gap acknowledged y abrir C2.
+  3. O publicar v1.169.135 (operator-side, requiere resolver INC-RELEASE-TAG-FIX primero porque el dry-run falla).
