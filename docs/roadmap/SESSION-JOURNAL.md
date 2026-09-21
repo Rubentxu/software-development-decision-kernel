@@ -88,3 +88,14 @@
   - **H06 gateway/redaction**: `pub fn redact` canónico en `crates/sddk-gateway/src/lib.rs:233` + `fn redact_text:277`. Cobertura de tests: sec1_redactor_unit.rs + sec1_capability_receipt_redaction.rs + runner_receipt_e2e.rs t06. Defense gateway: 413 + PayloadTooLargeForInlineStorage.
 - Anexo emitido: `C1-PREFLIGHT-2.md` con evidencia verbatim de los tres gaps.
 - Próxima acción ejecutable: operador corre release; orquestador re-corre T01; C1 SCOPE-CONTRACT puede arrancar con substance real para H01-H06.
+
+### 2026-09-21T12:15:00Z — C1 PREFLIGHT-3 — executed evidence (READ-ONLY + cargo test) — orchestrator
+
+- Estado: C0 sigue IN_PROGRESS_C0 hasta release del operador; preflight-3 con evidencia EJECUTADA (no inspección).
+- Trabajo autónomo:
+  - `cargo test -p sddk-engine --lib structured_work` → 5/5 SAW tests pasan, 0 fail, 1313 otros tests filtered out. Compilation 1m 25s.
+  - Mock probe `/tmp/sddk_h01_probe.rs` (borrado después de ejecución): reproduce el control flow de `_ => true` y confirma bug H01 OBSERVED con output verbatim `mock result = true / H01 BUG CONFIRMED OBSERVED in equivalent control flow`.
+  - Verificación de las dos `IdempotencyKey` (proposal::IdempotencyKey vs workflow_run::IdempotencyKey): CONFIRMADAS estructuralmente distintas — son dos conceptos con propósitos diferentes, NO hay refactor pendiente (corrige sospecha de C1-PREFLIGHT-2 §1).
+  - MANIFEST.sha256 stale para los nuevos docs/roadmap/receipts/c0/ pero `scripts/release.sh` step 4 lo regenera automáticamente — no requiere acción autónoma.
+- Anexo emitido: `C1-PREFLIGHT-3.md` con output verbatim de cargo test + mock probe + corrección de IdempotencyKey.
+- Probe en /tmp/ eliminado. Repo sin cambios de código.
