@@ -1,5 +1,8 @@
 # AGENTS.md — sddk-framework
 
+> **LEE ESTO PRIMERO (actualizado 2026-09-21):** El único roadmap ejecutable nuevo es [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md). Para recuperar una sesión: [`docs/roadmap/CURRENT.md`](docs/roadmap/CURRENT.md) → [`docs/roadmap/STATE.yaml`](docs/roadmap/STATE.yaml) → último bloque de [`docs/roadmap/SESSION-JOURNAL.md`](docs/roadmap/SESSION-JOURNAL.md) → [certificaciones](docs/roadmap/CERTIFICATIONS.md) y [UAT](docs/roadmap/UAT-MATRIX.md). **No usar handoffs ni roadmap antiguo como estado actual.** Si algún apartado antiguo de AGENTS contradice esta regla de continuidad, reconciliarlo antes de implementar o certificar.
+
+
 > Convenciones, layout y reglas que todo agente (humano o IA) debe respetar.
 > Léelo antes de hacer cambios — la separación de directorios es **estructural**,
 > no cosmética, y romperla contamina el bundle runtime.
@@ -138,21 +141,13 @@ y se actualiza con `sddk dev install`.
   boundary, Configuration conventions, etc., están definidas por una ADR
   única y el resto se ajusta a ella.
 
-### 2.10. Consolidation rule (exactly one current roadmap)
+### 2.10. Roadmap authority — exactamente un plan ejecutable
 
-> Adopted from
-> `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/05-INTEGRATION/SUPERSESSION.md`.
+- `docs/roadmap/ROADMAP.md` es la **única** planificación activa de continuación C0–C5. `docs/architecture/README.md` gobierna los límites arquitectónicos; ADRs/specs aceptados y gates de producción existentes no se anulan.
+- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`, `docs/architecture/a5/A5-CURRENT-ROADMAP.md` y `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` son fotografías/historial para trazabilidad. No reabrir hitos cerrados ni adoptar propuestas de un paquete histórico sin SCOPE, ADR y evidencia del HEAD actual.
+- Archivo y política de traslados: `docs/history/README.md`. No mover ADRs, specs, recibos, pruebas ni archivos citados por rutas estables sin mapa de enlaces y gates correspondientes.
+- La vigencia de un perfil `CERTIFIED` siempre corresponde a su SHA/tag, environment, gates y receipt; nunca se infiere por un título de handoff o el número de tests.
 
-- **Exactamente un documento es "Current Roadmap".** Por defecto es
-  `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/ROADMAP.md`.
-- **Paquetes antiguos reciben banner `Historical / superseded`** en su
-  README, apuntando a
-  [`docs/architecture/README.md`](docs/architecture/README.md).
-- **Adopción incompleta mientras convivan roadmaps.** Antes de importar
-  un WorkItem de un paquete histórico, reconcilia con el actual.
-- **Migración strangler, no flag-day.** Nueva autoridad sobre concepto
-  compartido primero, adapter de compatibilidad durante ventana,
-  remoción sólo al cerrar la ventana.
 
 ---
 
@@ -242,8 +237,8 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
   (formerly `docs/sddk-decision-kernel-architecture/03-adrs/ADR-043-CHANGE-SCOPED-VERIFICATION.md`,
   now superseded; the canonical substrate ADR is ADR-0097).
 - **Historial de regresiones resueltas:** `docs/history/AGENTS-history.md`
-- **Handoff más reciente:** `docs/handoff/HANDOFF-2026-09-15-session-close.md`
-- **Estado actual del proyecto (handoff):** `docs/handoff/HANDOFF-2026-08-26-sddk-framework.md`
+- **Puntero de sesión vigente:** `docs/roadmap/CURRENT.md` + `docs/roadmap/STATE.yaml` (revalidar Git en cada sesión).
+- **Diario append-only:** `docs/roadmap/SESSION-JOURNAL.md`; handoffs anteriores son históricos y no estado actual.
 
 ---
 
@@ -439,3 +434,26 @@ qué está permitido
 qué es obligatorio
 qué bloquea
 qué waiver existe
+
+---
+
+## 10. Protocolo de recuperación y continuación entre sesiones (obligatorio)
+
+**Al ENTRAR** (antes de planificar o cambiar código):
+
+1. Leer `docs/roadmap/README.md`, CURRENT, STATE, ROADMAP, CERTIFICATIONS, UAT-MATRIX y la **última entrada** del SESSION-JOURNAL. No recorrer todas las propuestas históricas de nuevo.
+2. En el checkout real: `git fetch origin`; `git status -sb`; `git branch --show-current`; `git rev-parse HEAD`; `git log -5 --oneline`; `git tag --sort=-version:refname | head -3`; consultar último GitHub Release real. Identificar divergencias HEAD/branch/tag/workspace/binary/bundle y si el PR documental está integrado. No asumir que la versión de Cargo es pública.
+3. Contrastar el puntero con recibos de `tests/cycle-artifacts/`, el inventario de riesgos y la matriz UAT. `CLOSED` sin receipt/test observado no significa CERTIFIED. Si CURRENT/STATE, Git y recibos discrepan, STOP de implementación: emitir entrada `RECONCILIATION`, actualizar ambos punteros con SHA real y conservar la evidencia anterior sin reescribirla.
+4. Elegir **un** WorkItem READY de `docs/roadmap/ROADMAP.md` cuyas dependencias estén verificadas; congelar `SCOPE-CONTRACT`, tests negativos, UAT IDs, riesgos y stop conditions. No abrir simultáneamente un roadmap alternativo ni crear crate/gráfico/autoridad de escritura duplicados.
+
+**Durante**: desarrollar en el checkout fuente, registrar RED→GREEN y pruebas realmente ejecutadas; aplicar testing scoped durante apply y perfil completo al verificar; si falta binario externo, corpus, permiso o entorno, marcar `BLOCKED/NOT_RUN/DEFERRED` con razón. No fabricar PASS ni proclamar producción.
+
+**Al CERRAR** cada slice/sesión:
+
+1. Emitir `RECEIPT` con commit, comandos, resultados, contexto real/fake, UAT y riesgos; si hay release, registrar tag, manifest, hashes, verificación pública, aceptación y estado instalado. No publicar sin `bash scripts/release.sh` y autorización del operador conforme §8.
+2. Actualizar **en la misma concernencia** `docs/roadmap/CURRENT.md` y `STATE.yaml` con el mismo SHA/estado y siguiente acción ejecutable. Si un commit de documentación posterior cambia HEAD, consignarlo expresamente y no presentar el receipt anterior como prueba del nuevo SHA.
+3. Añadir entrada (nunca editar las anteriores) a `docs/roadmap/SESSION-JOURNAL.md` con fecha UTC, baseline/HEAD, WorkItem, decisiones, UAT observado/no ejecutado, bloqueos, riesgos y el primer paso preciso de la sesión siguiente.
+4. Ejecutar checks documentales/enlaces y gates que correspondan al alcance, `git diff --check`, revisar el diff y el estado del árbol; no etiquetar `CERTIFIED` hasta cumplir `docs/roadmap/CERTIFICATIONS.md`.
+5. Opcional: volcar resumen en Engram (regla §2.4), **pero nunca** sustituir los punteros y recibos versionados por memoria de chat.
+
+**Resolución de conflictos:** seguridad/Authority y ADRs/specs aceptados > contrato de certificación existente > roadmap operativo nuevo > CURRENT/STATE (estado mutable) > diario/handoff (historia). Las pruebas y el SHA observados prevalecen sobre afirmaciones documentales contradictorias. No reescribir historia; registrar una nueva reconciliación.

@@ -1,3 +1,7 @@
+> **ROADMAP HISTÓRICO / CONTRATO DE TRAZABILIDAD (anotación 2026-09-21).** La sección «current checkpoint» refleja el 14/09 y NO el HEAD actual. El plan ejecutable de continuación es [docs/roadmap/ROADMAP.md](../roadmap/ROADMAP.md), con [certificaciones](../roadmap/CERTIFICATIONS.md). Sus gates y especificaciones siguen siendo fuentes de requisitos, no tareas pendientes automáticas. Texto original conservado debajo.
+
+---
+
 # Mini-roadmap — Production Readiness, Architecture Conformance and Agentic GA
 
 This roadmap reconciles C0→C7, R0→R11, provider integration, Agentic Workspace/JCode and the Architecture Conformance (AC) evolution.
