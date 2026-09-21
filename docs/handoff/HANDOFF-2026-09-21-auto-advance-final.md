@@ -5,8 +5,8 @@
 > swarm workers and resolving blockers via deep research.
 > **Outcome**: roadmap is **closed in this repo** to the extent it can
 > be closed without external binaries, corpus, or a second host.
-> **Final state**: 15 commits ahead of `origin/main`, 4966 Rust tests
-> PASS / 0 failed, `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings` exit 0, working tree clean.
+> **Final state**: 21 commits this session (vs session-start origin/main 82eea3c); HEAD 53df501 vs current origin/main f1357c2 = 2 commits ahead; version 1.169.124; 4966 Rust tests
+> PASS / 0 failed; release script pre-staged for operator-side publish.
 
 ---
 
@@ -96,9 +96,10 @@ When `glm-5-turbo` returns empty, treat as BLOCKED and re-plan the slice.
 |---|---|
 | Working tree | clean |
 | Branch | `main` |
-| HEAD | `09b5631` |
-| Commits ahead of `origin/main` | 15 |
-| `Cargo.toml` workspace.package.version | `1.169.123` |
+| HEAD | `53df501` |
+| Session-commits (this session vs session-start `origin/main` 82eea3c) | 21 |
+| Commits ahead of current `origin/main` (f1357c2) | 2 (`38f84cb` + `53df501`) |
+| `Cargo.toml` workspace.package.version | `1.169.124` |
 | Rust tests PASS | **4966** |
 | Rust tests failed | **0** |
 | `cargo fmt --check` | exit 0 |
