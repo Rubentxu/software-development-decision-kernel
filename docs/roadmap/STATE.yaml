@@ -4,7 +4,7 @@ status: C1_CLOSED_FULL_PROFILE_GREEN
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "2bc04a2a31ee726f0ab397a1b55482567534fd3c"
+  current_sha: "440a81a95e56a26ef3271bd5566064cba77d4499"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.169.134"
   last_public_release_observed: "v1.169.122"
@@ -12,7 +12,7 @@ source:
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
   pr11_merge_commit: "c4c7e0ae7ef1a062fa18eafa891d41cc771e087d"
   manifest_regen_commit: "a1f0fa056394611c29a155f8607cd983e459234b"
-  full_profile_run_at_sha: "a1f0fa056394611c29a155f8607cd983e459234b"
+  full_profile_run_at_sha: "f4670bd2c136197ab4b3d464e7516ee5529f186f"
   full_profile_run_at: "2026-09-21T17:38:00Z"
   note: "C1 cerrado. Las 3 PR (H02/H05+H06/cycle-c) integradas en main; full profile C1 ejecutado sobre a1f0fa0: cargo fmt --all --check PASS, cargo clippy --workspace --all-targets -- -D warnings PASS, cargo test --workspace PASS (4989 passed, 0 failed, 15 ignored), sddk dev manifest --root . --verify PASS. Única acción adicional al merge: regeneración de MANIFEST.sha256 (a1f0fa0) por inconsistencia preexistente del commit 8d785c4 (PR #8) que modificó agents/sddk-apply.md sin regenerar el manifest. La deuda de no aplicar AGENTS.md §5 en PR #8 queda anotada en el JOURNAL. No hay bumps ceremoniales — el bump 1.169.134 entró con PR #9 (8e467c3) y se mantuvo estable. No publicar release — operador decidirá bash scripts/release.sh aparte. Próximo hito: C2 (no abrir hasta operator-side)."
 authority:
