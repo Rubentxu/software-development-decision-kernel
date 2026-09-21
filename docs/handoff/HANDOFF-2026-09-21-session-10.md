@@ -878,3 +878,90 @@ Per the operator's "honest receipt culture" rule, option 1 is preferred:
   with `--scope .`. They break with `--scope project` or any other scope.
   This is documented in the codebase as the canonical "current checkout"
   scope, but a future maintainer might not realize this.
+
+## Addendum 10 (14ª validation pass — A1 stress-test + scope="." default confirmation, 2026-09-21)
+
+14ª validation applied the lesson from 13ª (try simplest non-bug
+explanation first) and stress-tested A1 + verified the scope="." default
+in cycle commands.
+
+### A1 fragility confirmed empirically
+
+Ran A1 against a `release.sh` modified to REMOVE step `3/14`:
+
+```text
+$ bash tests/test_release_tag_anchoring.sh
+Auditing .../release-rm3.sh for INC-RELEASE-TAG-FIX closure
+====================================================
+Exit: 0
+```
+
+Silent fail — exit 0, NO PASS lines, NO step line numbers. Same pattern
+as the original `2/14` bug. This confirms the C2/C3 distinction:
+**A1 fixes the current bug; C3 makes the test resilient to future renumbering.**
+
+### C3 stress-test (same modified script)
+
+Same `release.sh` with step `3/14` removed, but test using the C3
+structural anchor:
+
+```text
+$ bash test-c3-rm3.sh
+step 1b at line: 159
+step 1c at line: 237
+step 2  at line: 360    ← next top-level step after 1c (was 4/14)
+step 9  at line: 478
+PASS (a) ... PASS (e)
+Exit: 0
+```
+
+C3 finds `LINE_2 = 360` (next top-level step after 1c, regardless of label)
+and passes 5/5. **Confirms C3 is the durable fix.**
+
+### Why this matters
+
+If only A1 is applied (C2 scope) and someone later removes or renumbers
+step `3/14`, the test silently regresses to exit-0-with-no-checks. The
+regression is invisible. C3 prevents this class of silent regression.
+
+The current scope of C2 (per the operator's authorization model: "don't
+fix pre-existing gaps in the same turn unless authorized") is A1 only.
+C3 is parked. **But this validation pass strengthens the case for
+applying C3 too, or at minimum documenting A1's fragility in
+`test_release_tag_anchoring.sh` itself** (e.g., as a code comment or
+in the test header).
+
+### scope="." default — internal consistency confirmed
+
+The 86 in-code references to `p-63676b11dc0ef88f` are valid at runtime
+because cycle commands default to `scope = "."`:
+
+```rust
+// crates/sddk-cli/src/cycle.rs:223-224
+// Step 2: Resolve scope — use explicit if provided, otherwise default to "."
+let scope = args.scope.clone().unwrap_or_else(|| ".".to_string());
+```
+
+So when an operator runs `sddk cycle <subcommand>` without `--scope`,
+the CLI uses `.` and produces `p-63676b11dc0ef88f`. The 86 in-code refs
+match this default. The system is internally consistent.
+
+The fragility is when someone runs `sddk project resolve --scope project`
+or `--scope workspace` — those produce different IDs that don't match
+the in-code refs. This is the only "wrong usage" pattern.
+
+### Honest accounting
+
+The 13ª "self-correction" pattern (try simplest non-bug explanation first)
+was reinforced by 14ª. This session has now had 2 self-corrections:
+- 5ª caught my Approach A wrong (proposed fix didn't work)
+- 13ª caught my Addenda 7+8 wrong (drift was scope-driven, not platform)
+- 14ª confirms A1 has documented fragility (the C3 case is real)
+
+Pattern: when I propose a "fix" or "bug", I should run the simplest
+alternative hypothesis first. Cost of skipping this: 3 wrong claims in
+session-10 (Approach A, Addendum 7, Addendum 8).
+
+### New commits from this pass
+
+None — this was a read-only investigation. HEAD remains `27bdbee`.
