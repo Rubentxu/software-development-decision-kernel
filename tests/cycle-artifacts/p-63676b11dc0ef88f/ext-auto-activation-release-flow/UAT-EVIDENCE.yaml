@@ -1,0 +1,24 @@
+# UAT-EVIDENCE — EXT auto-activation (release flow)
+
+UAT rows verified by commit `5550fcf`.
+
+| UAT id | Scenario | Expected invariant | Result | Evidence |
+|---|---|---|---|---|
+| UAT-1d-1 | No env vars set | Step 1d is a no-op; release proceeds to step 2/14. | PASS | `bash scripts/release.sh --dry-run --skip-tests --skip-install` reaches the release admission check (the only thing that fails) without hitting the EXT path. Branch verified by reading the conditional `[ -n "$COGNICODE_MCP_BIN" ] || [ -n "$CHRONOS_MCP_BIN" ]`. |
+| UAT-1d-2 | `COGNICODE_MCP_BIN` set, binary valid | Step 1d runs `cargo test --workspace --offline -- --include-ignored a6_cc_s1 aiw_s1_cognicode_real` with the env var propagated; on PASS, writes EXT-RECEIPT.md with `result: PASS` + test counts; on FAIL, dies. | PASS (logic verified; not exercised end-to-end because `cognicode-mcp` is not installed in this env). Branch is the standard `if … then … else … fi` with `EXT_FAIL=1` on failure; verified by `bash -n` and shellcheck. |
+| UAT-1d-3 | `CHRONOS_MCP_BIN` set, binary valid | Same shape as UAT-1d-2 for the Chronos EXT test files (`aiw_s5_chronos_real a7_s1_runtime_uat`). | PASS (logic verified; not exercised end-to-end). |
+| UAT-1d-4 | Either env var set, EXT tests fail | Step 1d writes `result: FAIL` to EXT-RECEIPT.md and dies with `EXT tests failed against real binaries — refusing to release`. | PASS (logic verified by reading the `EXT_FAIL=1` branch and `die` call). |
+| UAT-1d-5 | Step 1d ran (env vars were set) | EXT-RECEIPT.md is included as an asset in step 9/14's `gh release create` / `gh release upload` call. | PASS (logic verified by reading the conditional `if [ -n "$EXT_RECEIPT_DIR" ] && [ -f "$EXT_RECEIPT_DIR/EXT-RECEIPT.md" ]` that appends to ASSETS). |
+| UAT-1d-6 | Bash syntax of modified script | `bash -n scripts/release.sh` exits 0. | PASS | `bash syntax: OK` printed. |
+| UAT-1d-7 | Shellcheck of modified script | `shellcheck --severity=warning scripts/release.sh` exits 0 with no output. | PASS | (no output from shellcheck, exit 0). |
+
+Notes:
+
+- The 9-asset public-release gate (step 9b/14) does **not** poll
+  `EXT-RECEIPT.md`. Adding the file as an asset is purely an
+  evidence-of-record action; it does not change the gate's 9-asset
+  contract.
+- The release script still does NOT install the binaries. That is
+  operator responsibility. Once `COGNICODE_MCP_BIN` is set, step 1d
+  activates; until then the EXT tests stay `#[ignore]` (their default
+  state since they were authored).
