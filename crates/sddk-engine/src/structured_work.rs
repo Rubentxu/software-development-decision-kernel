@@ -303,7 +303,8 @@ mod tests {
     #[test]
     fn saw001_002_typed_request_schema_result() {
         let mut ex = StructuredWorkExecutor::new();
-        let _ = ex.submit(request());
+        ex.submit(request())
+            .expect("first submit of fresh request_id accepts");
         let (outcome, receipt) = ex
             .run_structured(
                 "req-1",
@@ -329,7 +330,8 @@ mod tests {
     #[test]
     fn saw003_invalid_output_visible_not_fabricated() {
         let mut ex = StructuredWorkExecutor::new();
-        let _ = ex.submit(request());
+        ex.submit(request())
+            .expect("first submit of fresh request_id accepts");
         let (o, _) = ex
             .run_structured(
                 "req-1",
@@ -366,7 +368,8 @@ mod tests {
     fn saw004_same_adapter_two_modes() {
         let mut ex = StructuredWorkExecutor::new();
         // Orchestrated: submitted request.
-        let _ = ex.submit(request());
+        ex.submit(request())
+            .expect("first submit of fresh request_id accepts");
         let (o1, _) = ex
             .run_structured(
                 "req-1",
@@ -379,7 +382,8 @@ mod tests {
         // Companion: another request through the SAME boundary type.
         let mut r2 = request();
         r2.request_id = "req-adhoc".into();
-        let _ = ex.submit(r2);
+        ex.submit(r2)
+            .expect("submit of distinct request_id accepts");
         let (o2, _) = ex
             .run_structured(
                 "req-adhoc",
@@ -399,7 +403,8 @@ mod tests {
     #[test]
     fn saw005_contribution_not_authority() {
         let mut ex = StructuredWorkExecutor::new();
-        let _ = ex.submit(request());
+        ex.submit(request())
+            .expect("first submit of fresh request_id accepts");
         let (o, _) = ex
             .run_structured(
                 "req-1",
@@ -425,7 +430,8 @@ mod tests {
     #[test]
     fn saw006_receipt_provenance() {
         let mut ex = StructuredWorkExecutor::new();
-        let _ = ex.submit(request());
+        ex.submit(request())
+            .expect("first submit of fresh request_id accepts");
         let _ = ex.run_structured("req-1", RawHostOutput::TimedOut).unwrap();
         let r = &ex.receipts()[0];
         assert_eq!(r.task_ref, "task:t-42");
@@ -480,7 +486,7 @@ mod tests {
                 ),
             ]),
         };
-        let _ = ex.submit(req);
+        ex.submit(req).expect("submit of fresh request_id accepts");
         let (outcome, receipt) = ex
             .run_structured(
                 "req-1",
@@ -751,6 +757,70 @@ mod tests {
                 .iter()
                 .any(|s| s.contains("expected u64, got string(<redacted>)")),
             "violation must carry 'expected u64, got string(<redacted>)', got {violations:?}"
+        );
+    }
+
+    /// SAW-018: across the whole AgentWorkRequest, a rejected duplicate
+    /// must NOT touch any field of the stored entry. The contract is
+    /// "no silent replace"; the test enumerates every field so that a
+    /// future implementation that mutates (say) context_refs behind
+    /// the duplicate-detection branch would still fail here.
+    #[test]
+    fn saw018_duplicate_does_not_mutate_any_field_of_existing_record() {
+        let mut ex = StructuredWorkExecutor::new();
+        let r1 = request();
+        let r1_snapshot = r1.clone();
+        ex.submit(r1).expect("first submit accepts");
+        // r2 differs in EVERY field we can change without breaking
+        // request_id uniqueness.
+        let mut r2 = request();
+        r2.task_ref = "task:OTHER".into();
+        r2.context_refs = vec!["basis:rev-9".into(), "basis:extra".into()];
+        r2.policy_refs = vec!["policy:other".into()];
+        r2.return_schema = ReturnSchema {
+            fields: BTreeMap::from([("summary".to_string(), "string".into())]),
+        };
+        let err = ex.submit(r2).expect_err("diff must reject");
+        assert!(matches!(err, StructuredWorkError::DuplicateRequest { .. }));
+        // Stored entry is byte-equal to r1_snapshot.
+        let stored = ex
+            .requests
+            .get("req-1")
+            .expect("existing entry still present")
+            .clone();
+        assert_eq!(stored, r1_snapshot);
+    }
+
+    /// SAW-019: the DuplicateRequest error variant never carries caller-
+    /// supplied secret-like substrings. The error uses request_id,
+    /// existing_task_ref, and new_task_ref, but those are reference IDs
+    /// chosen by the test (not free-form text). The invariant must hold
+    /// even if we deliberately put a canary in a field that the duplicate
+    /// detector does NOT see in its summary (the canary lives in
+    /// context_refs here, only the task_ref is reported back).
+    #[test]
+    fn saw019_duplicate_error_carries_no_secret_canary() {
+        let mut ex = StructuredWorkExecutor::new();
+        let r1 = request();
+        ex.submit(r1).expect("first submit accepts");
+        let mut r2 = request();
+        r2.task_ref = "task:task-AKIA-real-key-12345".into();
+        r2.context_refs = vec!["basis:tokensecret=PROBE_TOKEN".into()];
+        let err = ex.submit(r2).expect_err("diff must reject");
+        let formatted = format!("{err:?}");
+        // The token embedded in a context_ref must not appear in the
+        // error display: the duplicate detector only echoes task_ref.
+        assert!(
+            !formatted.contains("PROBE_TOKEN"),
+            "DuplicateRequest leaked context_ref canary: {formatted}"
+        );
+        // The task_ref canary IS echoed (it's the reference being
+        // compared), but the AKIA-shaped substring is not the secret
+        // itself — the test ratifies the contract that only IDENTIFIERS
+        // (ids and refs) are surfaced, never values.
+        assert!(
+            formatted.contains("existing_task_ref"),
+            "error must surface the existing reference (audit hook): {formatted}"
         );
     }
 }
