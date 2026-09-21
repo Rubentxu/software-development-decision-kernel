@@ -105,7 +105,49 @@ pub enum GatewayError {
     /// A capability execution or verification error occurred.
     #[error("capability error: {0}")]
     Capability(#[from] crate::capability::CapabilityError),
+    /// Aggregated-args limit exceeded (H06 / ROADMAP §2 C1).
+    ///
+    /// The gateway caps the count of arguments and their aggregate byte
+    /// length to keep the persisted receipt bounded and to bound the
+    /// surface area where redactable content can hide. The limits are
+    /// exposed as compile-time constants on `CapabilityGateway` so
+    /// callers and tests can reference them.
+    #[error(
+        "args aggregate limits exceeded: count={count} (max {max_count}), \
+         bytes={bytes} (max {max_bytes})"
+    )]
+    ArgsLimitExceeded {
+        /// Actual count of supplied arguments.
+        count: usize,
+        /// Configured maximum argument count.
+        max_count: usize,
+        /// Actual aggregate byte size.
+        bytes: usize,
+        /// Configured maximum aggregate bytes.
+        max_bytes: usize,
+    },
 }
+
+/// Default aggregated-argument limits (H06 / ROADMAP §2 C1).
+///
+/// `MAX_ARGS_COUNT`: bound the count of positional arguments. SDDK
+/// callers typically supply fewer than ten; 64 is generous enough for
+/// shell-pipeline emulation but breaks obvious DoS-shaped inputs.
+///
+/// `MAX_ARGS_BYTES_TOTAL`: bound the aggregate byte length. Receipts
+/// persist the redacted args verbatim, so this directly bounds the
+/// storage cost of a single request. 32 KiB matches typical run-spec
+/// envelopes and is well below the 64 KiB output cap that downstream
+/// runners enforce.
+pub const MAX_ARGS_COUNT: usize = 64;
+/// Maximum aggregate byte length of all positional arguments combined.
+/// 32 KiB matches typical run-spec envelopes and is well below the
+/// 64 KiB output cap that downstream runners enforce.
+pub const MAX_ARGS_BYTES_TOTAL: usize = 32 * 1024;
+/// Maximum byte length of the human-readable `reason` field on
+/// `CapabilityPlanInput` and `Proposal`. 4 KiB is far above the
+/// longest observed audit reason and well below the run-spec envelope.
+pub const MAX_REASON_BYTES: usize = 4 * 1024;
 
 /// Default-deny gateway combining policy, execution, and receipt persistence.
 pub struct CapabilityGateway {
@@ -124,8 +166,64 @@ impl CapabilityGateway {
         }
     }
 
+    /// H06 / ROADMAP §2 C1: aggregated-arg limit enforcement.
+    ///
+    /// Returns `ArgsLimitExceeded` when EITHER the count exceeds
+    /// `MAX_ARGS_COUNT` OR the aggregate byte length exceeds
+    /// `MAX_ARGS_BYTES_TOTAL`. `reason` is also size-checked against
+    /// `MAX_REASON_BYTES`.
+    ///
+    /// This is a static method (no `&self`) because the limit is a
+    /// compile-time constant of the gateway contract — it does NOT
+    /// depend on caller identity or policy, so it must be identical
+    /// across all gateway instances. Putting it on the type makes
+    /// future overrides (per-call overrides via builder, per-capability
+    /// overrides via policy) a single-source change.
+    pub fn enforce_aggregate_limits(args: &[String], reason: &str) -> Result<(), GatewayError> {
+        let count = args.len();
+        if count > MAX_ARGS_COUNT {
+            return Err(GatewayError::ArgsLimitExceeded {
+                count,
+                max_count: MAX_ARGS_COUNT,
+                bytes: 0,
+                max_bytes: MAX_ARGS_BYTES_TOTAL,
+            });
+        }
+        let mut bytes: usize = 0;
+        for a in args {
+            bytes = bytes.saturating_add(a.len());
+            if bytes > MAX_ARGS_BYTES_TOTAL {
+                return Err(GatewayError::ArgsLimitExceeded {
+                    count,
+                    max_count: MAX_ARGS_COUNT,
+                    bytes,
+                    max_bytes: MAX_ARGS_BYTES_TOTAL,
+                });
+            }
+        }
+        if reason.len() > MAX_REASON_BYTES {
+            // Reusing ArgsLimitExceeded is a stretch (the field is named
+            // `bytes`); we keep the variant for symmetry and report
+            // reason-length in the `bytes` slot. The error message
+            // already documents the semver-stable contract — the
+            // numeric fields are diagnostic.
+            return Err(GatewayError::ArgsLimitExceeded {
+                count,
+                max_count: MAX_ARGS_COUNT,
+                bytes: reason.len(),
+                max_bytes: MAX_REASON_BYTES,
+            });
+        }
+        Ok(())
+    }
+
     /// Evaluates policy and builds an executable plan.
     pub fn plan(&self, input: CapabilityPlanInput) -> Result<CapabilityPlan, GatewayError> {
+        // H06 / ROADMAP §2 C1: enforce aggregated-arg limits BEFORE policy
+        // authorization so an attacker cannot probe capabilities with
+        // giant requests. The receipt is never persisted for an
+        // over-limit input.
+        Self::enforce_aggregate_limits(&input.args, &input.reason)?;
         let decision = self.policy.authorize(&input.capability, input.approve);
         if !decision.allowed {
             if decision.requires_approval {
@@ -210,6 +308,10 @@ impl CapabilityGateway {
         &mut self,
         input: &CapabilityPlanInput,
     ) -> Result<CapabilityReceipt, GatewayError> {
+        // H06 / ROADMAP §2 C1: enforce aggregated-arg limits BEFORE
+        // policy authorization. The pre-policy gate must hold for any
+        // entry point that can persist a receipt.
+        Self::enforce_aggregate_limits(&input.args, &input.reason)?;
         let decision = self.policy.authorize(&input.capability, input.approve);
         if !decision.allowed {
             if decision.requires_approval {
@@ -289,6 +391,10 @@ impl CapabilityGateway {
         proposal: Proposal,
         approve: bool,
     ) -> Result<CapabilityReceipt, GatewayError> {
+        // H06 / ROADMAP §2 C1: enforce aggregated-arg limits BEFORE policy
+        // authorization. Proposals carry `args` and `reason` separately;
+        // they pass through the same limit check.
+        Self::enforce_aggregate_limits(&proposal.args, &proposal.reason)?;
         // Step 1: Evaluate policy
         // Build a ProposalPolicy from the workflow's forge capabilities
         let proposal_policy = ProposalPolicy::from_workflow(&self.workflow);
