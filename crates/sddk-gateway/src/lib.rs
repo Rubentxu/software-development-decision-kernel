@@ -20,6 +20,7 @@ mod oracles;
 mod permissions;
 mod playwright;
 mod policy;
+pub mod producer_l0_adapter;
 mod release;
 mod runner;
 pub mod runner_receipt;

@@ -1,0 +1,32 @@
+# UAT-EVIDENCE — AIW-S7a — Producer→L0 stream adapter
+slice: p-63676b11dc0ef88f/aiw-s7a-producer-l0-stream
+date: 2026-09-21
+generated_by: cargo test (real runs, sddk-gateway)
+
+- uat: G04
+  scenario: Producer evidence reaches L0
+  status: PASS
+  tests:
+    - crates/sddk-gateway/src/producer_l0_adapter.rs::tests::registered_rule_fires_persist_evidence
+    - crates/sddk-gateway/tests/aiw_s7a_producer_l0.rs::cognicode_finding_e2e
+    - crates/sddk-gateway/tests/aiw_s7a_producer_l0.rs::chronos_crash_e2e
+  evidence: >
+    Real engine.register + evaluate with CustomKey matcher against the
+    adapter-emitted ReactiveEvent shape yields the configured
+    PersistEvidence / OpenHumanDecision signals (4/4 lib, 4/4 integration
+    tests passed, cargo test output in RECEIPT.md).
+
+- uat: G06
+  scenario: Unknown producer input is silent
+  status: PASS
+  tests:
+    - crates/sddk-gateway/src/producer_l0_adapter.rs::tests::unknown_event_empty
+    - crates/sddk-gateway/tests/aiw_s7a_producer_l0.rs::unknown_event_e2e
+  evidence: >
+    ProducerEvent::Unknown returns an empty signal vector on the real
+    engine; no automatic WorkItem, no external side effect.
+
+notes: >
+  Evidence demonstrates the typed adapter boundary only. No live MCP
+  transport, no durable persistence. No broader AIW-S7 row is closed by
+  this slice.
