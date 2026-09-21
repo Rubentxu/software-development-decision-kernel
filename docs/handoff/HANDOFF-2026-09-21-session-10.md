@@ -1482,3 +1482,93 @@ changing the contract model.
 ### New commits from this pass
 
 - None yet — read-only investigation.
+
+## Addendum 16 (21ª validation pass — production vs test `framed_hash` drift, 2026-09-21)
+
+21ª validation, prompted by operator's continuing pattern. Refines
+Addenda 8-9 (the `usize::to_be_bytes()` finding) with empirical
+inspection of the actual code.
+
+### New finding: production ≠ test signedness, latent on 32-bit compiles
+
+```rust
+// crates/sddk-domain/src/identity.rs:412-422 (PRODUCTION)
+fn framed_hash(domain: &str, parts: &[&str]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(domain.len().to_be_bytes());    // ← usize → 8 bytes on 64-bit, 4 bytes on 32-bit
+    hasher.update(domain.as_bytes());
+    for part in parts {
+        hasher.update(part.len().to_be_bytes());  // ← same: usize
+        hasher.update(part.as_bytes());
+    }
+    let hash = hasher.finalize();
+    format!("{hash:x}")
+}
+```
+
+```rust
+// crates/sddk-cli/tests/cli_pack_e2e.rs (and 3 sibling test files)
+// inline test copy of framed_hash:
+hasher.update((domain.len() as u64).to_be_bytes());  // ← always 8 bytes (forced)
+hasher.update((seed.len() as u64).to_be_bytes());
+hasher.update((scope.len() as u64).to_be_bytes());
+```
+
+**The drift**:
+- Production: `usize::to_be_bytes()` — platform-dependent width
+- Test: `(usize as u64).to_be_bytes()` — always 8 bytes
+
+On **64-bit** (all CI targets per `.github/workflows/release.yml`:
+x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-apple-darwin,
+aarch64-apple-darwin): both produce 8 bytes. Identical.
+
+On **32-bit** (not currently in deployment matrix): production = 4 bytes,
+test = 8 bytes. Tests would compute a different hash than production.
+The test would no longer validate production's contract.
+
+**Severity re-appraisal**:
+
+Addendum 8 framed it as a "platform-dependence BUG" (overstated).
+Addendum 9 corrected it to "lower-severity, only 32-bit builds"
+(under-stated of the underlying issue).
+
+The honest characterization (this addendum):
+
+- **Real contract drift** between production and test code.
+- **Not exploitable in current deployment matrix** (all 64-bit).
+- **Fix is trivial**: change production to `(domain.len() as u64).to_be_bytes()`
+  and similar for `part.len()` to match what the tests already assume.
+- **Risk**: if the deployment matrix ever expands to 32-bit ARM
+  (e.g., embedded installers), production hashes won't match what
+  the tests validate.
+
+**Recommendation** (NOT applied): apply `(len as u64).to_be_bytes()`
+in production. This is a 2-line fix in `identity.rs:415,418`.
+Addendum 13's pattern would apply: change production code, bump
+workspace version (cycle), run tests to verify no regression.
+
+**Separate concern**: the test files duplicate `framed_hash` inline
+in 4 places (`cli_pack_e2e.rs`, `cli_approval_loop_e2e.rs`,
+`cli_approval_e2e.rs`, `ledger_watch.rs`). Production has ONE
+implementation. This is itself a maintenance hazard: if production
+`framed_hash` is fixed, the 4 test copies must be updated in lockstep,
+else the tests pass against the OLD production but the new production
+ships. The right structural fix is making `framed_hash` `pub` and
+importing it from `sddk_domain::identity` in tests.
+
+### Lessons recorded (in addition to Addenda 8/9 framing)
+
+- **The "test duplicates prod code" anti-pattern creates two
+  authorities for the same contract.** Single source of truth
+  reduces drift.
+- **Cross-platform determinism is a deployment-matrix property, not
+  an algorithmic property.** The algorithm produces platform-dependent
+  bytes; the deployment matrix is what makes it deterministic in
+  practice.
+- **`usize::to_be_bytes()` with no cast** is a portability hazard
+  even when deployment is homogeneous today.
+
+### New commits from this pass
+
+- None yet — read-only investigation.
