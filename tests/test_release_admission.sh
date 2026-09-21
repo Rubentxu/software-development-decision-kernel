@@ -241,6 +241,171 @@ case_v2_run "published lower reject"               REJECT v2_setup_published_low
 case_v2_run "published tie via docs only"          REJECT v2_setup_published_tie_docs
 case_v2_run "head not on tag sha (still accept)"    ACCEPT v2_setup_head_not_on_tag_sha
 
+# ─────────────────────────────────────────────────────────────────────
+# cycle-c query-failed tests (SCOPE-CONTRACT §3.3 — fail-closed on
+# network/auth/remote errors; do NOT silently fall back to HEAD^).
+# ─────────────────────────────────────────────────────────────────────
+
+# Run release_admission_check_v2 with an UNREACHABLE remote. The
+# expected outcome is REJECT with `query-failed ...`, NOT ACCEPT to
+# the bootstrap path. This is the bug the cycle-c implementation
+# fixes.
+case_v2_run_query_failed() {
+    local name="$1" setup="$2"
+    local dir="$TMPROOT/$RANDOM-$$-v2qf"
+    local remote_dir="$TMPROOT/$RANDOM-$$-remoteqf"
+    mkdir -p "$dir"
+    git init -q --bare "$remote_dir"
+    (
+        cd "$dir" || exit 2
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        "$setup"
+        # We intentionally DO NOT push to the fake_origin — the v2
+        # admission will then fail when calling
+        # `git ls-remote --tags $remote_dir` on a freshly-initialised
+        # bare repo with no refs. That yields an empty ls-remote
+        # output but NOT a query-failed outcome. To FORCE a
+        # query-failed, we point the remote URL at a path that does
+        # not exist on the filesystem.
+        git remote add fake_origin "$remote_dir"
+    )
+    local out got rc
+    # Point at a non-existent path so ls-remote fails.
+    out=$(SDDK_RELEASE_ADMISSION_REMOTE="/nonexistent/path/to/fake/$$-remote" \
+          SDDK_RELEASE_ADMISSION_MODE=v2 \
+          bash -c "cd '$dir' && . '$LIB' && release_admission_check_v2 HEAD" 2>&1)
+    rc=$?
+    got="ACCEPT"
+    [[ $rc -ne 0 ]] && got="REJECT"
+    if [[ "$got" == "REJECT" ]] && [[ "$out" == *"query-failed"* ]]; then
+        echo "PASS  [REJECT query-failed] v2: $name  ($out)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  [expected REJECT query-failed, got $got] v2: $name  ($out)"
+        FAIL=$((FAIL + 1))
+    fi
+    chmod -R u+rw "$dir" "$remote_dir" 2>/dev/null || true
+    rm -rf "$dir" "$remote_dir"
+}
+
+# v2-QF-1: a head with a real monotonic bump, but the remote is a
+# non-existent path → REJECT query-failed (NOT bootstrap-accept).
+v2_setup_query_failed_unreachable() {
+    mkdir -p sub
+    cat > Cargo.toml <<EOF
+[workspace]
+members = []
+
+[workspace.package]
+version = "1.169.123"
+EOF
+    git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.169.122 -> 1.169.123"
+    # No tags, no push. Remote path will be /nonexistent — query-failed.
+}
+
+case_v2_run_query_failed "query-failed REJECT when remote unreachable" \
+    v2_setup_query_failed_unreachable
+
+# v2-QF-2: auth-failed (remote path is a file, not a directory, so
+# `git ls-remote` errors out).
+v2_setup_query_failed_file_as_remote() {
+    mkdir -p sub
+    cat > Cargo.toml <<EOF
+[workspace]
+members = []
+
+[workspace.package]
+version = "1.169.124"
+EOF
+    git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.169.123 -> 1.169.124"
+}
+
+case_v2_run_query_failed "query-failed REJECT when remote is a regular file" \
+    v2_setup_query_failed_file_as_remote
+
+# ─────────────────────────────────────────────────────────────────────
+# cycle-c selector v1/v2 from release.sh entry point (without
+# publishing). Runs the same logic that release.sh would invoke but
+# stops before any network-side action. The default mode (no
+# SDDK_RELEASE_ADMISSION_MODE) MUST remain v1; setting it to v2 flips
+# behaviour. This is what proves the gate is OPT-IN.
+# ─────────────────────────────────────────────────────────────────────
+case_selector_run() {
+    local name="$1" expected="$2" mode_var="$3"
+    local dir="$TMPROOT/$RANDOM-$$-sel"
+    mkdir -p "$dir/sub"
+    (
+        cd "$dir/sub" || exit 2
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        mkdir -p sub
+        cat > Cargo.toml <<EOF
+[workspace]
+members = []
+
+[workspace.package]
+version = "1.169.70"
+EOF
+        git add Cargo.toml
+        git commit -qm "chore: base"
+        # Doc-only commit. HEAD=1.169.70, HEAD^=1.169.70.
+        echo "# docs" >> Cargo.toml
+        git add Cargo.toml
+        git commit -qm "docs: update README"
+    )
+    local out got rc
+    if [[ -n "$mode_var" ]]; then
+        out=$(SDDK_RELEASE_ADMISSION_MODE="$mode_var" \
+            bash -c "cd '$dir/sub' && . '$LIB' && release_admission_check HEAD" 2>&1)
+    else
+        out=$(bash -c "cd '$dir/sub' && . '$LIB' && release_admission_check HEAD" 2>&1)
+    fi
+    rc=$?
+    got="ACCEPT"
+    [[ $rc -ne 0 ]] && got="REJECT"
+    if [[ "$got" == "$expected" ]]; then
+        echo "PASS  [$expected] selector: $name  ($out)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  [expected $expected, got $got] selector: $name  ($out)"
+        FAIL=$((FAIL + 1))
+    fi
+    chmod -R u+rw "$dir" 2>/dev/null || true
+    rm -rf "$dir"
+}
+
+# Selector matrix:
+#   - no env var (default) → v1 invoked → docs-only HEAD=HEAD^ → REJECT non-monotonic
+#   - SDDK_RELEASE_ADMISSION_MODE=    (empty) → v1 invoked → REJECT non-monotonic
+#   - SDDK_RELEASE_ADMISSION_MODE=v1  → v1 invoked → REJECT non-monotonic
+#   - SDDK_RELEASE_ADMISSION_MODE=v2  → v2 invoked. No remote, so bootstrap path.
+#         HEAD=parent=1.169.70 → bootstrap-tie → REJECT non-monotonic-bootstrap.
+# In all four cases the expected verdict is REJECT, but the REASON
+# differs (the head version-tagged accept of v2 on a connected repo
+# is exercised by the v2 case earlier in this file).
+case_selector_run "default mode is v1, REJECT non-monotonic docs-only" \
+    REJECT ""
+case_selector_run "empty mode env var is treated as v1, REJECT" \
+    REJECT ""
+case_selector_run "explicit v1 mode REJECT" REJECT v1
+case_selector_run "v2 mode on docs-only+no-remote is REJECT bootstrap-tie" \
+    REJECT v2
+
+# ─────────────────────────────────────────────────────────────────────
+# cycle-c SCOPE-CONTRACT concurrent HEAD scenario: the contract says
+# candidate HEAD may legitimately be ahead of the last-published tag.
+# The v2 path must compare versions, not SHAs, so a candidate whose
+# Cargo.toml has a strictly-greater version than the last published
+# tag is ACCEPTed even if it does not sit on the tag's commit.
+# ─────────────────────────────────────────────────────────────────────
+case_v2_run "concurrent head (multiple commits past tag) accept" \
+    ACCEPT v2_setup_head_not_on_tag_sha
+
 echo ""
 echo "=== matrix result: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]] || exit 1

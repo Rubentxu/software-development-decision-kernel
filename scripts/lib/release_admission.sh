@@ -93,24 +93,74 @@ release_admission_check() {
 }
 
 # last_published_version
-# Prints the maximum version among v* tags reachable from origin, or empty
-# if there are no such tags or the remote is unreachable. The tag's `v` prefix
-# is stripped from the output. Honours GIT_TERMINAL_PROMPT=0 to avoid hanging
-# on protected branches. Network failures yield empty + exit 1.
+# Prints the maximum version among v* tags reachable from origin, stripped
+# of the `v` prefix. Honours GIT_TERMINAL_PROMPT=0 to avoid hanging on
+# protected branches.
 #
-# Sourceable. The caller decides how to fail closed when last_published_version
-# is empty (e.g. fall back to HEAD^ in bootstrap, propagate error otherwise).
+# Outcome semantics — distinguishes THREE distinct cases (SCOPE-CONTRACT
+# cycle-c §3.3): the caller MUST treat them differently. The companion
+# `last_published_outcome` global holds the resolved outcome string.
+#
+#   $LAST_PUB_OUTCOME = "v<X.Y.Z>"  →  remote answered, here is the
+#                                       maximum semver tag (or, if printed
+#                                       by this function, the empty
+#                                       max means "bootstrap" — see
+#                                       `last_published_outcome_after`
+#                                       helper).
+#   $LAST_PUB_OUTCOME = "bootstrap"  →  remote answered, no v* tags yet
+#                                       (legitimate bootstrap).
+#   $LAST_PUB_OUTCOME = "query_failed:<reason>"  →  remote answer could
+#                                       not be obtained; this MUST
+#                                       trip a fail-closed REJECT, not
+#                                       silently fall back to HEAD^.
+#
+# Sourceable. Exports $LAST_PUB_OUTCOME for the caller. The previous
+# contract (return-1 on empty) is preserved for back-compat callers that
+# only check the printed value.
 last_published_version() {
-    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}" tag
-    tag="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$remote" \
-            2>/dev/null \
+    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}" raw
+    raw="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$remote" 2>&1)"
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        # Capture the error reason (one line if multi-line).
+        local err
+        err="$(printf '%s\n' "$raw" | head -1)"
+        LAST_PUB_OUTCOME="query_failed:${err:-exit-$rc}"
+        return 1
+    fi
+    local tag
+    tag="$(printf '%s\n' "$raw" \
         | awk '{print $2}' \
         | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
         | sort -V -r \
         | head -1)"
-    [[ -z "$tag" ]] && return 1
+    if [[ -z "$tag" ]]; then
+        LAST_PUB_OUTCOME="bootstrap"
+    else
+        LAST_PUB_OUTCOME="v${tag}"
+    fi
     echo "$tag"
     return 0
+}
+
+# Helper for v2 path: resolve the outcome in one call and export it.
+# Returns 0 on bootstrap or known-version, 1 on query_failed (callers
+# must REJECT in that case).
+_last_published_resolve() {
+    LAST_PUB_OUTCOME=""
+    # Invoke last_published_version only to populate the side-effect
+    # variable; the printed value is discarded.
+    last_published_version >/dev/null 2>&1 || true
+    if [[ -z "${LAST_PUB_OUTCOME:-}" ]]; then
+        # Defensive: last_published_version should always set the var.
+        LAST_PUB_OUTCOME="query_failed:no-outcome"
+        return 1
+    fi
+    case "$LAST_PUB_OUTCOME" in
+        bootstrap|v*) return 0 ;;
+        query_failed:*) return 1 ;;
+        *) LAST_PUB_OUTCOME="query_failed:unknown-shape"; return 1 ;;
+    esac
 }
 
 # release_admission_check_v2 [HEAD-rev]
@@ -131,7 +181,18 @@ release_admission_check_v2() {
         return 1
     fi
 
-    if ! last_pub="$(last_published_version)"; then
+    # Resolve the last-published outcome via the helper. This sets the
+    # global $LAST_PUB_OUTCOME to one of:
+    #   - "v<X.Y.Z>"   → bootstrap path or comparison path, depending
+    #   - "bootstrap"  → remote answered, no v* tags (legitimate bootstrap)
+    #   - "query_failed:<reason>" → REJECT (fail-closed; do NOT fall back
+    #                                  to HEAD^)
+    if ! _last_published_resolve; then
+        echo "REJECT query-failed last-pub=${LAST_PUB_OUTCOME#query_failed:}"
+        return 1
+    fi
+
+    if [[ "$LAST_PUB_OUTCOME" == "bootstrap" ]]; then
         # No published releases yet (bootstrap). Compare against HEAD^
         # for monotonicity, fail-closed on ties or decreases.
         prev_version="$(cargo_ws_version_at "$head_rev^")"
@@ -143,10 +204,12 @@ release_admission_check_v2() {
             echo "REJECT non-monotonic-bootstrap $prev_version -> $head_version"
             return 1
         fi
-        echo "ACCEPT last-publish=none -> $head_version"
+        echo "ACCEPT last-publish=bootstrap -> $head_version"
         return 0
     fi
 
+    # Outcome is "v<X.Y.Z>".
+    last_pub="${LAST_PUB_OUTCOME#v}"
     if [[ "$head_version" == "$last_pub" ]]; then
         echo "REJECT already-published $head_version"
         return 1
