@@ -323,3 +323,63 @@ Próximo WorkItem (post-commit): implementar cycle-c (corrección de githooks/pr
 - Único roadmap ejecutable: docs/roadmap/ROADMAP.md (sin cambios).
 - Ciclo-c implementación: próximo WorkItem.
 - H02 (commit 9d4c249) en reflog, pendiente de recuperación con vía de integración limpia (push range a main con cambios en crates/** requerirá bump legítimo que se hará tras implementar el fix de admisión y los tests RED→GREEN del nuevo contrato de push/release).
+
+---
+
+## [2026-09-21 sesión 7] C1 H02/H05/H06 entregados vía PR (#9, #10)
+
+**Estado:** PR #9 (H02) y PR #10 (H05+H06) abiertos, mergeables. main sin avanzar.
+
+### Hechos observados
+
+- Tras integrar PR #8 (544aa11) y reconciliar punteros (6aac99e), procedí con la recuperación de H02 desde el reflog (tag backup/h02-pre-recovery-9d4c249) vía cherry-pick limpio a `f794c1d` en rama `c1-h02-recovery`. Bump gate-técnico a 1.169.134 (8e467c3). PR #9 abierto.
+- Implementé H05: `set_process_service_for_tests` con `#[cfg(test)]` en lugar de `#[doc(hidden)]`. Verificado aislamiento: 0 ocurrencias en binario (nm). Docstring honesto sobre bug semántico (OnceLock::set no devuelve previous). Tests in-crate: `h05_seam_is_reachable_from_tests` + `h05_seam_swaps_singleton`. Commit 5309742.
+- Implementé H06: redacción de args/reason en el `request` JSON del capability receipt en `begin_effect` y `execute_governed`. Visibilidad `redact_text` privatizada a `pub(crate)`. Test caracterizador RED→GREEN `h06_red_canary_in_args_does_not_leak_into_receipt` añadido a `tests/sec1_capability_receipt_redaction.rs` (canario: `--token=CANARY_CLI_TOKEN_42_DO_NOT_USE`; pre-fix: leaked verbatim; post-fix: replaced por `<redacted:32>`). Commit fe84b47.
+- Bump gate-técnico a 1.169.134 (fc418a7) — admisión ACCEPT 1.169.133 → 1.169.134. PR #10 abierto.
+
+### Verificación (observada)
+
+- cargo fmt --check PASS.
+- cargo clippy --workspace --all-targets -- -D warnings PASS.
+- cargo test --release -p sddk-engine --lib authority_ticket_service: 7/7 (5 fence_t + 2 h05).
+- cargo test --release -p sddk-engine --lib structured_work: 7/7 SAW (H02 recovery invocado desde rama local, sigue verde).
+- cargo test --release -p sddk-gateway --test sec1_capability_receipt_redaction: 7/7 (6 SEC1 preexistentes + 1 H06), 2.71s.
+- nm target/release/sddk: 0 ocurrencias de set_process_service_for_tests (H05 aislamiento).
+- nm target/release/libsddk_engine.rlib: 0 ocurrencias.
+- release_admission_check HEAD ambas ramas: ACCEPT 1.169.133 → 1.169.134.
+
+### Decisiones tomadas
+
+1. PR #9 y PR #10 con bumps a 1.169.134 sobre parent main@6aac99e. Si se mergean ambas, la versión final es 1.169.134.
+2. Branch naming: rama para PR #9 `c1-h02-recovery` (nombre operationally honest: "recovery" en lugar de "implementation" porque el código original vivía en reflog). Rama para PR #10 `c1-h05-seam-isolation` aunque contiene H05+H06 juntos — prefijo por la primera concernencia principal.
+3. Operator-side sigue siendo responsable del merge. Yo no he mergeado.
+4. No he publicado. v1.169.134 release candidate sigue siendo local.
+
+### Estado C1
+
+| Slice | Estado |
+|-------|--------|
+| H01 | ✅ pusheado (74dfcc9 + abca553) |
+| H02 | ✅ PR #9 abierto (recovery cherry-pick f794c1d + bump 8e467c3) |
+| H05 | ✅ PR #10 abierto (5309742) |
+| H06 | ✅ PR #10 abierto (fe84b47) |
+| cycle-c | SCOPE-CONTRACT pusheado (68f6788). Implementación pendiente post-merge. |
+
+### Resultado
+
+- PR #9 (H02) y PR #10 (H05+H06) ambos en estado MERGEABLE, esperando revisión operator-side.
+- main@6aac99e sin avanzar (reconciliación punteros PR #8 vive en main).
+- 16/16 SAW totales (cruzando ambos PRs), 7/7 SEC1+H06, 7/7 auth+H05.
+
+### Siguiente paso exacto
+
+Operator-side:
+1. Merge PR #9 (orden indiferente, pero si se mergen PR #9 primero, el bump 1.169.134 entra primero; si PR #10 primero, mismo bump).
+2. Merge PR #10.
+3. Reconciliar CURRENT/STATE/JOURNAL con el SHA final del merge (probablemente con dos merge commits consecutivos, ambos sobre main@6aac99e).
+
+Tras merge:
+4. Implementar cycle-c: correcciones en `githooks/pre-push` (admite rule A + rule B pero con invariante version_monotonic contra tag publicado más reciente) y `scripts/lib/release_admission.sh` (evalúa contra `gh release list --limit 1`, no contra HEAD^). Diseño en commit 68f6788 SCOPE-CONTRACT.
+
+Tras cycle-c:
+5. `bash scripts/release.sh` desde HEAD con todas las garantías activas (system-law git.release, operator-side).

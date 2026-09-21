@@ -1,16 +1,16 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado:** IN_PROGRESS_C0_PENDING → C1 activo. **Actualizado:** 2026-09-21T15:13:00Z. Este puntero NO acredita que los gates hayan pasado ni que exista una release posterior.
+**Estado:** C1 H01/H02/H05/H06 entregados vía PR (H01 ya en main, H02 y H05+H06 esperando merge). **Actualizado:** 2026-09-21T15:52:00Z. Este puntero NO acredita que los gates hayan pasado ni que exista una release posterior.
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@544aa1186ad0894c1e50b222684330438cddf784` (Merge PR #8) consultado 2026-09-21T15:13Z; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.133` (Cargo.toml) |
+| Fuente de la fotografía | `main@6aac99e` (post-PR#8 merge 544aa11) consultado 2026-09-21T15:52Z; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.133` (Cargo.toml); bump a 1.169.134 vive en ramas de trabajo (H02, H05+H06) sin mergear |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
-| Hito activo | `C1` — H01 pusheado (74dfcc9+abca553 v1.169.133); cycle-c SCOPE-CONTRACT pusheado (68f6788); reorganización documental integrada vía PR #8 (merge commit 544aa11 = 8d785c4 + deaae8e + 28eb948). Pendiente: implementar ciclo-c (fix push/release) + recuperar H02 reflog + H05 + H06. |
-| Estado PR #8 | INTEGRADO en `544aa11` (merge commit). PR #7 cerrado previo (13d4131 + 96f5366). |
+| Hito activo | `C1` — H01 pusheado (74dfcc9+abca553 v1.169.133); cycle-c SCOPE-CONTRACT pusheado (68f6788); reorganización documental integrada vía PR #8 (544aa11+6aac99e). H02 recovery: PR #9 abierto en `c1-h02-recovery` con cherry-pick (f794c1d) + bump 1.169.134 (8e467c3). H05+H06: PR #10 abierto en `c1-h05-seam-isolation` (5309742 + fe84b47 + bump 1.169.134 fc418a7). |
+| Estado PRs abiertos | #9 (H02) y #10 (H05+H06), ambos mergeables sin conflictos. Ambos bumps a 1.169.134, mismo parent main@6aac99e. |
 | Reorganización docs/history | COMPLETA. `docs/history/` contiene paquetes legacy, handoffs, proposals, research, cycles, uat-plans y evolutivos. `docs/history/README.md` es el catálogo. Único roadmap ejecutable: `docs/roadmap/ROADMAP.md`. |
-| Siguiente acción exacta | **Implementar cycle-c** (corrección del contrato de push/release en rama de trabajo). Plan: tests RED→GREEN del nuevo contrato (last_published_version + range-based allowlist), luego integrar vía PR o merge fast-forward. H02 se recupera en el reflog (commit 9d4c249) tras tener vía de integración limpia. NO bumpear, NO publicar, NO forzar push. |
+| Siguiente acción exacta | **Operator-side:** merge PR #9 y PR #10 (el orden no afecta a la versión final porque ambos bumps son a la misma versión). Tras merge, el operator-side reconcilia CURRENT/STATE/JOURNAL con el nuevo SHA. Tras eso, implementar cycle-c (corrección del contrato de push/release en `githooks/pre-push` y `scripts/lib/release_admission.sh`) usando el SCOPE-CONTRACT 68f6788 como diseño aprobado. NO bumpear más hasta `bash scripts/release.sh` desde HEAD post-merge. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados |
 | Bloqueos y decisiones | Release/push bajo política del operador; binarios reales EXT y adaptador host necesarios para sus perfiles; J7/J8/J9/X08/R11 siguen diferidos; v1.169.123..128 no publicadas (operator-side) |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
