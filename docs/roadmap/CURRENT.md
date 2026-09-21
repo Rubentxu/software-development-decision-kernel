@@ -4,8 +4,8 @@
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@aff68b8252249b95e230c311bf3e2abac834ddf1` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.129` (Cargo.toml) |
+| Fuente de la fotografía | `main@6fda463b481cd0c40d65f86ea0d61ed05d28e51c` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.130` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
 | Hito activo | `C0` — reconciliar SHA/tag/release/receipts y congelar casos UAT T01/T02 |
 | Estado PR #7 | INTEGRADO en `13d4131` (docs-only) + `96f5366` (AGENTS.md + bump 1.169.128); rama borrada vía `gh pr close --delete-branch` |

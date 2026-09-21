@@ -4,9 +4,9 @@ status: IN_PROGRESS_C0
 source:
   baseline_branch: main
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
-  current_sha: "aff68b8252249b95e230c311bf3e2abac834ddf1"
+  current_sha: "6fda463b481cd0c40d65f86ea0d61ed05d28e51c"
   workspace_version_at_baseline: "1.169.127"
-  workspace_version_at_current: "1.169.129"
+  workspace_version_at_current: "1.169.130"
   last_public_release_observed: "v1.169.122"
   note: "PR #7 integrated at 96f5366 (docs-only 13d4131 + AGENTS.md+v1.169.128 96f5366). Active: C0 reconciliation."
 authority:
