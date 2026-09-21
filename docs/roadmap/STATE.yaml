@@ -1,12 +1,12 @@
 schema_version: 1
-updated_at: "2026-09-21T18:42:00Z"
+updated_at: "2026-09-21T20:45:00Z"
 status: C1_CLOSED_FULL_PROFILE_GREEN_RELEASE_PIPELINE_GAP_ACKNOWLEDGED
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "8d91ad6c5cef9fd284a590099706ed1618b0ca8e"
+  current_sha: "e7968f810ab347a7d4b58ccad7c9f8aee8857f54"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.135"
+  workspace_version_at_current: "1.169.138"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
@@ -14,9 +14,11 @@ source:
   manifest_regen_commit: "a1f0fa056394611c29a155f8607cd983e459234b"
   test_isolation_fix_commit: "f2daa292ce3a22301919e27576af499b602d17ab"
   test_isolation_bump_commit: "8d91ad6c5cef9fd284a590099706ed1618b0ca8e"
-  full_profile_run_at_sha: "f4670bd2c136197ab4b3d464e7516ee5529f186f"
-  full_profile_run_at: "2026-09-21T17:38:00Z"
-  note: "C1 cerrado. Las 3 PR (H02/H05+H06/cycle-c) integradas en main. Full profile C1 ejecutado sobre f4670bd: cargo fmt --all --check PASS, cargo clippy --workspace --all-targets -- -D warnings PASS, cargo test --workspace PASS (4989 passed, 0 failed, 15 ignored), sddk dev manifest --root . --verify PASS. Workaround post-merge: regeneración de MANIFEST.sha256 (a1f0fa0) por inconsistencia preexistente del commit 8d785c4 (PR #8) que modificó assets/ sin regenerar el manifest (deuda AGENTS.md §5). Tras la validación profunda del operador, encontré un bug pre-existente en tests/test_release_admission.sh (los casos v1 no aislaban SDDK_RELEASE_ADMISSION_MODE, expuesto por PR #11 cuando el operador corre release.sh --dry-run con SDDK_RELEASE_ADMISSION_MODE=v2) — corregido en f2daa29 con bump funcional 1.169.134 → 1.169.135 (8d91ad6, NO ceremonial: acompaña el fix de código en tests/). Gap pre-existente NO relacionado con C1 (caracterización corregida tras validación profunda): el commit 5550fcf feat(scripts): release.sh EXT auto-activation (closes FU-A6-EXT-AUTO), 2026-09-21 10:15 (mucho antes de C1 PR #9 merge), ELIMINÓ step 2/14 (read version). El test tests/test_release_tag_anchoring.sh busca step 2/14 que ya no existe — el grep devuelve vacío, LINE_2 está unset, y el script falla con exit 1. El step 1c/14 SÍ existe (línea 237, añadido por a86e85d). El bug es que el grep del test usa literal 2/14 que fue borrado; INC-RELEASE-TAG-FIX sigue vivo en el código del step 1c, pero el test está desincronizado de la numeración actual del release.sh. Esto es un gap pre-existente, no introducido ni expuesto por C1 — reconocido para que el operador decida si abre un ciclo nuevo. Próximo hito: C2 (no abrir hasta operator-side) o arreglar el gap pre-existente primero. Post-C1: handoff session-10 (b342701, docs-only) pushed; SHA map consistente."
+  handoff_session10_commit: "b34270150c62b28ecefa2c1c8ac3c3384c9f76b0"
+  adversarial_test_commit: "fb129d16d65645f3aa640971a4771c34d7c0c211"
+  full_profile_run_at_sha: "e7968f810ab347a7d4b58ccad7c9f8aee8857f54"
+  full_profile_run_at: "2026-09-21T20:00:00Z"
+  note: "C1 cerrado. Las 3 PR (H02/H05+H06/cycle-c) integradas en main. Full profile C1 ejecutado sobre e7968f8: cargo fmt --all --check PASS, cargo clippy --workspace --all-targets -- -D warnings PASS, cargo test --workspace 4998/0/15 PASS (con flakea pre-existente: backlog_store::tests::open_owned_* con 'sqlite storage error: disk I/O error' bajo concurrencia workspace-wide; pasa solo). Workaround post-merge: regeneración de MANIFEST.sha256 (a1f0fa0) por inconsistencia preexistente del commit 8d785c4 (PR #8) que modificó assets/ sin regenerar el manifest (deuda AGENTS.md §5). Tras la validación profunda del operador, encontré un bug pre-existente en tests/test_release_admission.sh (los casos v1 no aislaban SDDK_RELEASE_ADMISSION_MODE, expuesto por PR #11 cuando el operador corre release.sh --dry-run con SDDK_RELEASE_ADMISSION_MODE=v2) — corregido en f2daa29 con bump funcional 1.169.134 → 1.169.135 (8d91ad6, NO ceremonial: acompaña el fix de código en tests/). Gap pre-existente NO relacionado con C1 (caracterización corregida tras validación profunda): el commit 5550fcf feat(scripts): release.sh EXT auto-activation (closes FU-A6-EXT-AUTO), 2026-09-21 10:15 (mucho antes de C1 PR #9 merge), ELIMINÓ step 2/14 (read version). El test tests/test_release_tag_anchoring.sh busca step 2/14 que ya no existe — el grep devuelve vacío, LINE_2 está unset, y el script falla con exit 1. El step 1c/14 SÍ existe (línea 237, añadido por a86e85d). El bug es que el grep del test usa literal 2/14 que fue borrado; INC-RELEASE-TAG-FIX sigue vivo en el código del step 1c, pero el test está desincronizado de la numeración actual del release.sh. Esto es un gap pre-existente, no introducido ni expuesto por C1 — reconocido para que el operador decida si abre un ciclo nuevo. Próximo hito: C2 (no abrir hasta operator-side) o arreglar el gap pre-existente primero. Post-C1: 4 validation passes, descubrí y corregí SHA incorrecto en handoff (fb129d1 fija STATE.yaml); pineé contrato adversarial H06 con 9 tests (crates/sddk-gateway/tests/h06_adversarial.rs); commit chain fb129d1/9e540e9/c8bc3cc/c7db0f8/e7968f8 con bumps 1.169.135→136→137→138 (los últimos 2 son style(fmt) y style(clippy) commits de limpieza tras push-reject loop — funcional pero feo). Bug crítico detectado y revertido durante la validación: regeneré MANIFEST.sha256 localmente con `find ... | xargs sha256sum` que incluyó archivos untracked (.atl/.skill-registry.cache.json y .yaml.bak), haciendo fallar manifest_contains_only_tracked_files — restaurado al MANIFEST commiteado en e7968f8 (commit a1f0fa0 original)."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
