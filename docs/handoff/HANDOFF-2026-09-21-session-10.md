@@ -1,6 +1,6 @@
-# HANDOFF-2026-09-21-session-10 — C1 closure + 16 validation passes (HEAD = `4ace5fb`, workspace v1.169.138)
+# HANDOFF-2026-09-21-session-10 — C1 closure + 17 validation passes (HEAD = `b1d6230`, workspace v1.169.138)
 
-> **Status snapshot**: 16 validation passes complete, 11 addenda committed (Addenda 2-12).
+> **Status snapshot**: 17 validation passes complete, 12 addenda committed (Addenda 2-13).
 > C1 closed (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and
 > C3 (durable structural anchor + per-test tempdir cleanup) awaiting operator authorization.
 > The H1 title's "X validation passes" reflects the current HEAD; STATE.yaml current_sha
@@ -339,6 +339,41 @@ Functional confirmation (not by inspection):
 - Release pipeline end-to-end (steps 0–13 sequential): blocked by pre-existing test gap.
 
 ## Recommended next actions
+
+> **Note (historical)**: items 1-4 below were written in the original handoff commit
+> `b3427015` (2026-09-21 21:17:40). Subsequent passes refined the C2/C3 plan. The
+> current operator-facing plan (per Addenda 6, 12, 13):
+
+1. **Open C2** (single concern) — apply **A1 fix** (Approach A1, NOT A) to
+   `tests/test_release_tag_anchoring.sh`: replace the literal `step "2/14"`
+   anchor with the literal `step "3/14"` anchor on line 50 (root cause: the
+   `step "2/14"` label was never created in release.sh; the script numbers
+   `0,1,1a,1b,1c,1d,3..14`; Addendum 12 documents a 2-bug compound, of which
+   A1 fixes Bug 1). Cycle must include a real `[workspace.package]` version
+   bump `1.169.138 → 1.169.139` (functionally paired with the test fix; NOT
+   ceremonial). Validated 5/5 PASS in sandbox and against real release.sh
+   (Addendum 13).
+2. **C3 BACKLOG** (operator may authorize alongside C2 or as a separate
+   cycle) — apply the **durable structural anchor** to the same test using
+   an `awk` structural match (`^step "[0-9]+\/14`) instead of a literal label.
+   Validated 5/5 PASS today AND 5/5 PASS under drastic release.sh renumbering
+   (Addendum 13 differential). Pair with **per-test tempdir cleanup** for
+   `crates/sddk-storage/src/backlog_store.rs:812-836` `open_owned_*` tests
+   (correct fix for the parallel-test race surfaced in Addendum 11; SQLite
+   WAL/busy_timeout would NOT fix it).
+3. After C2 lands, re-run `bash scripts/release.sh --dry-run` end-to-end (with
+   `SDDK_RELEASE_ADMISSION_MODE=v2`). Should pass all the way to step 13.
+4. If dry-run is green, propose **v1.169.139** (`1.169.138 → 1.169.139`,
+   functionally paired with the test fix).
+5. Operator decides whether to publish GH release (existing public release is
+   `v1.169.122` per `gh release list`; release pipeline not yet exercised).
+
+---
+
+## Recommended next actions (historical snapshot from `b3427015`)
+
+This section preserves the original recommendations for the historical record.
+It has been overtaken by passes 4-13; see the updated plan above.
 
 1. **Open C2** to fix the pre-existing test_release_tag_anchoring.sh mismatch. Single
    concern: either renumber script steps or update test grep. Cycle should be small
