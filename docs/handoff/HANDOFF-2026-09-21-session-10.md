@@ -1068,3 +1068,121 @@ H05 fix from PR #10 (commit `1b3d7f0`) is still working.
 ### New commits from this pass
 
 None — this was a read-only investigation. HEAD remains `b3f5ee3`.
+> Note (post-hoc): HEAD after Addendum 11's read-only commit was `b8c041d`,
+> not `b3f5ee3` as written here. Per `Addendum 9 correction principle` we
+> surface rather than fix historical records; readers cross-check STATE.yaml.
+
+## Addendum 12 (16ª validation pass — `test_release_tag_anchoring.sh` silent-fail diagnosis, 2026-09-21)
+
+16ª validation re-examined two paired questions:
+
+1. Was the "step 1b fail on `test_release_tag_anchoring.sh`" claim from
+   the 4ª validation pass actually a system bug, or a test bug?
+2. Is the A1 fix (already validated 5/5 PASS) the right scope, or did I
+   underspecify?
+
+Empirical answer: the bug is the test (and the release.sh script's
+numbering). A1 fixes the immediate symptom. C3 durable anchor is the
+right longer-term fix. **No fourth self-correction needed** — but
+earlier passes were vague about WHAT the bug was. This addendum makes
+it concrete.
+
+### Bug 1 — release.sh script numbering: `step "2/14"` doesn't exist
+
+```text
+$ grep -n 'step "' scripts/release.sh | head -20
+105:step "0/14 — preflight"
+151:    step "1/14 — cargo fmt + clippy + test (workspace)"
+159:    step "1b/14 — shell contract tests (tests/test_*.sh)"
+237:step "1c/14 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"
+271:step "1d/14 — EXT auto-activation (cognicode-mcp / chronos-mcp, opt-in)"
+349:step "3/14 — cargo build --release --bin sddk"
+...
+```
+
+The sequence is `1a → 1b → 1c → 1d → 3 → 4 → ... → 14`. The literal
+label `step "2/14"` was NEVER created. The semantic role of "step 2"
+(version read) is performed inside `step "1d/14"` (line 271).
+
+### Bug 2 — silent-fail in test_release_tag_anchoring.sh
+
+The test uses:
+
+```bash
+set -euo pipefail
+...
+LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+```
+
+When `grep` finds no match, it exits 1. With `pipefail` the pipeline
+inherits that 1. With `set -e` the script immediately exits 1, BEFORE
+the test's own `if [[ -z "$LINE_2" ]]; then echo FAIL; exit 1; fi`
+block runs. The diagnostic never prints.
+
+Verified empirically:
+
+```text
+$ bash tests/test_release_tag_anchoring.sh
+Auditing .../scripts/release.sh for INC-RELEASE-TAG-FIX closure
+====================================================
+Exit: 1   # ← exits 1 with only the precondition banner
+```
+
+### Why A1 (the validated 5/5 PASS fix) is the right scope
+
+A1 changes line 50:
+
+```diff
+- LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
++ LINE_2="$(grep -n '^step "3/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+```
+
+This anchors the test to `step "3/14"` (line 349), which DOES exist
+and IS the next top-level step after `step "1d/14"`. The pipeline
+returns 0, the diagnostic blocks run, the test reports FAIL/PASS
+explicitly.
+
+This is what I verified in earlier passes: 5/5 PASS with A1 applied
+to a sandbox copy.
+
+### Why C3 (durable anchor) is the right longer-term fix
+
+A1 anchors on the literal label `step "3/14"`. If the script is
+renumbered in the future (e.g., `1d → 2` and subsequent steps shift),
+A1 breaks again — same silent-fail.
+
+The C3 proposal uses a structural assertion:
+
+```bash
+LINE_2="$(awk -v lc="$LINE_1C" '
+    NR > lc && /^step "[0-9]+\/14/ { print NR; exit }
+' "$RELEASE_SH")"
+```
+
+This finds the next step-line after `step "1c/14"`, regardless of
+its label. No literal matching. Renumbering the script doesn't break
+it. Empirically validated 5/5 PASS in Addendum 6.
+
+### What's left for C2
+
+The C2 commit applies A1 only. C3 durable anchor remains in the
+backlog (separate cycle). Bundling both in C2 would expand scope;
+operator's rule is "one bug per turn unless authorized".
+
+### What's left as a latent pipefail fragility
+
+If anyone adds a future `grep` for a label that doesn't exist, the
+test will silent-fail again. Two options:
+
+1. Drop `set -o pipefail` from this test (the test only uses
+   pipelines for line extraction, never with `grep` whose exit code
+   matters semantically).
+2. Add explicit `|| true` after each `grep` pipeline.
+
+Both are 1-line changes. **NOT applied now** because A1 makes the
+current test pass; the pipefail fragility is a separate concern that
+belongs in a different cycle if/when it bites.
+
+### New commits from this pass
+
+None — read-only. HEAD remains `b8c041d`.
