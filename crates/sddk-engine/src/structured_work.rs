@@ -103,6 +103,19 @@ pub enum RawHostOutput {
 pub enum StructuredWorkError {
     #[error("unknown request {0}")]
     UnknownRequest(String),
+    /// H02 of ROADMAP §2 C1: a request_id already exists and the new
+    /// request is not structurally identical. The existing entry is
+    /// preserved (no silent replace); the caller must use a fresh
+    /// request_id or `submit_idempotent` to retry.
+    #[error(
+        "duplicate request_id {id}: existing task_ref={existing_task_ref}, \
+         new task_ref={new_task_ref} (use a fresh request_id or submit_idempotent)"
+    )]
+    DuplicateRequest {
+        id: String,
+        existing_task_ref: String,
+        new_task_ref: String,
+    },
 }
 
 /// Executor for structured work: validates raw host output against
@@ -121,8 +134,36 @@ impl StructuredWorkExecutor {
     }
 
     /// Register a request (SAW-001).
-    pub fn submit(&mut self, req: AgentWorkRequest) {
+    ///
+    /// H02 of ROADMAP §2 C1: strict mode. If `request_id` already
+    /// exists with a structurally different request, returns
+    /// `StructuredWorkError::DuplicateRequest` without mutating the
+    /// existing entry. For bit-exact duplicate re-submission use
+    /// `submit_idempotent` instead.
+    pub fn submit(&mut self, req: AgentWorkRequest) -> Result<(), StructuredWorkError> {
+        if let Some(existing) = self.requests.get(&req.request_id) {
+            if existing != &req {
+                return Err(StructuredWorkError::DuplicateRequest {
+                    id: req.request_id.clone(),
+                    existing_task_ref: existing.task_ref.clone(),
+                    new_task_ref: req.task_ref.clone(),
+                });
+            }
+            // Bit-exact duplicate: no-op (preserves existing entry).
+            return Ok(());
+        }
         self.requests.insert(req.request_id.clone(), req);
+        Ok(())
+    }
+
+    /// H02 of ROADMAP §2 C1: idempotent submit. Returns `Ok(true)` on
+    /// acceptance (new or bit-exact duplicate) or `Err(DuplicateRequest)`
+    /// if the request_id exists with a structurally different request.
+    pub fn submit_idempotent(
+        &mut self,
+        req: AgentWorkRequest,
+    ) -> Result<bool, StructuredWorkError> {
+        self.submit(req).map(|_| true)
     }
 
     /// run_structured: execute one request against raw host output
@@ -152,7 +193,10 @@ impl StructuredWorkExecutor {
                         None => violations.push(format!("missing field {name}")),
                         Some(v) => {
                             if !shape_matches(v, shape) {
-                                violations.push(format!("field {name} expected {shape}, got {v}"));
+                                violations.push(format!(
+                                    "field {name} expected {shape}, got {}",
+                                    redacted_value_repr(v)
+                                ));
                             }
                         }
                     }
@@ -192,6 +236,26 @@ impl StructuredWorkExecutor {
     #[must_use]
     pub fn receipts(&self) -> &[AgentExecutionReceipt] {
         &self.receipts
+    }
+}
+
+/// H02 of ROADMAP §2 C1: redact the JSON value carried by a
+/// schema-violation message. We never want host-controlled content
+/// (which could carry secrets, PII, or canary tokens) to leak into
+/// `StructuredRunOutcome::SchemaViolation(violations)` because that
+/// vector is logged, archived, and possibly surfaced to users.
+///
+/// The shape of the value is preserved (so the bug remains
+/// diagnosable); the content is not.
+fn redacted_value_repr(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(_) => "bool".to_string(),
+        serde_json::Value::Number(n) => format!("number({n})"),
+        serde_json::Value::String(s) if s.is_empty() => "string(\"\")".to_string(),
+        serde_json::Value::String(_) => "string(<redacted>)".to_string(),
+        serde_json::Value::Array(a) => format!("array[len={}]", a.len()),
+        serde_json::Value::Object(o) => format!("object[len={}]", o.len()),
     }
 }
 
@@ -239,7 +303,7 @@ mod tests {
     #[test]
     fn saw001_002_typed_request_schema_result() {
         let mut ex = StructuredWorkExecutor::new();
-        ex.submit(request());
+        let _ = ex.submit(request());
         let (outcome, receipt) = ex
             .run_structured(
                 "req-1",
@@ -265,7 +329,7 @@ mod tests {
     #[test]
     fn saw003_invalid_output_visible_not_fabricated() {
         let mut ex = StructuredWorkExecutor::new();
-        ex.submit(request());
+        let _ = ex.submit(request());
         let (o, _) = ex
             .run_structured(
                 "req-1",
@@ -302,7 +366,7 @@ mod tests {
     fn saw004_same_adapter_two_modes() {
         let mut ex = StructuredWorkExecutor::new();
         // Orchestrated: submitted request.
-        ex.submit(request());
+        let _ = ex.submit(request());
         let (o1, _) = ex
             .run_structured(
                 "req-1",
@@ -315,7 +379,7 @@ mod tests {
         // Companion: another request through the SAME boundary type.
         let mut r2 = request();
         r2.request_id = "req-adhoc".into();
-        ex.submit(r2);
+        let _ = ex.submit(r2);
         let (o2, _) = ex
             .run_structured(
                 "req-adhoc",
@@ -335,7 +399,7 @@ mod tests {
     #[test]
     fn saw005_contribution_not_authority() {
         let mut ex = StructuredWorkExecutor::new();
-        ex.submit(request());
+        let _ = ex.submit(request());
         let (o, _) = ex
             .run_structured(
                 "req-1",
@@ -361,7 +425,7 @@ mod tests {
     #[test]
     fn saw006_receipt_provenance() {
         let mut ex = StructuredWorkExecutor::new();
-        ex.submit(request());
+        let _ = ex.submit(request());
         let _ = ex.run_structured("req-1", RawHostOutput::TimedOut).unwrap();
         let r = &ex.receipts()[0];
         assert_eq!(r.task_ref, "task:t-42");
@@ -416,7 +480,7 @@ mod tests {
                 ),
             ]),
         };
-        ex.submit(req);
+        let _ = ex.submit(req);
         let (outcome, receipt) = ex
             .run_structured(
                 "req-1",
@@ -437,5 +501,256 @@ mod tests {
         }
         assert_eq!(receipt.outcome_kind, OutcomeKind::SchemaViolation);
         assert_eq!(receipt.validated_fields, 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SAW-009..SAW-017 — H02 of ROADMAP §2 C1:
+    //   request_id duplicado no sustituye silenciosamente una petición
+    //   no equivalente; errores de schema NUNCA interpolan valores.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// SAW-009: strict submit rejects duplicate request_id with a
+    /// visible error (existing vs new task_ref), not silent replace.
+    #[test]
+    fn saw009_duplicate_request_strict_rejects() {
+        let mut ex = StructuredWorkExecutor::new();
+        let r1 = request();
+        ex.submit(r1).expect("first submit accepts");
+        let mut r2 = request();
+        r2.task_ref = "task:WRONG".into();
+        let err = ex.submit(r2).expect_err("duplicate must reject");
+        match err {
+            StructuredWorkError::DuplicateRequest {
+                id,
+                existing_task_ref,
+                new_task_ref,
+            } => {
+                assert_eq!(id, "req-1");
+                assert_eq!(existing_task_ref, "task:t-42");
+                assert_eq!(new_task_ref, "task:WRONG");
+            }
+            other => panic!("expected DuplicateRequest, got {other:?}"),
+        }
+        // The original request is preserved (no silent replace).
+        assert_eq!(
+            ex.requests.get("req-1").map(|r| r.task_ref.clone()),
+            Some("task:t-42".to_string())
+        );
+    }
+
+    /// SAW-010: idempotent submit accepts structurally identical duplicate.
+    #[test]
+    fn saw010_duplicate_request_idempotent_accepts() {
+        let mut ex = StructuredWorkExecutor::new();
+        let r1 = request();
+        assert!(ex.submit_idempotent(r1.clone()).unwrap());
+        // Re-submitting the exact same request is a no-op (Ok(true)).
+        assert!(ex.submit_idempotent(r1).unwrap());
+        // Only one entry in the map.
+        assert_eq!(ex.requests.len(), 1);
+    }
+
+    /// SAW-011: idempotent submit rejects when the duplicate differs.
+    /// Same error variant as strict mode (per H02 contract).
+    #[test]
+    fn saw011_duplicate_request_idempotent_rejects_different() {
+        let mut ex = StructuredWorkExecutor::new();
+        let r1 = request();
+        ex.submit_idempotent(r1).unwrap();
+        let mut r2 = request();
+        r2.task_ref = "task:DIFFERENT".into();
+        let err = ex.submit_idempotent(r2).expect_err("diff must reject");
+        assert!(matches!(err, StructuredWorkError::DuplicateRequest { .. }));
+    }
+
+    /// SAW-012: duplicate rejection AFTER a successful run does not
+    /// corrupt the receipt trail (original receipt still present).
+    #[test]
+    fn saw012_duplicate_request_after_run() {
+        let mut ex = StructuredWorkExecutor::new();
+        ex.submit(request()).unwrap();
+        let _ = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([
+                    ("summary".to_string(), json!("done")),
+                    ("confidence".to_string(), json!(1)),
+                ])),
+            )
+            .unwrap();
+        assert_eq!(ex.receipts().len(), 1);
+        let mut r2 = request();
+        r2.task_ref = "task:AFTER-RUN".into();
+        let err = ex.submit(r2).expect_err("dup post-run must reject");
+        assert!(matches!(err, StructuredWorkError::DuplicateRequest { .. }));
+        // Receipts preserved.
+        assert_eq!(ex.receipts().len(), 1);
+        assert_eq!(ex.receipts()[0].outcome_kind, OutcomeKind::Contributed);
+    }
+
+    /// SAW-013: a host-provided string value (which could carry a secret)
+    /// MUST NOT appear verbatim in the violation message. The shape
+    /// mismatch message uses the redaction placeholder.
+    #[test]
+    fn saw013_schema_violation_does_not_leak_string() {
+        let mut ex = StructuredWorkExecutor::new();
+        let mut req = request();
+        req.return_schema = ReturnSchema {
+            fields: BTreeMap::from([("confidence".to_string(), "u64".into())]),
+        };
+        ex.submit(req).unwrap();
+        let (outcome, _) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([(
+                    "confidence".to_string(),
+                    json!("AKIA-real-key-12345"),
+                )])),
+            )
+            .unwrap();
+        let violations = match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => v,
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        };
+        assert!(
+            !violations.iter().any(|s| s.contains("AKIA-real-key-12345")),
+            "violation leaked the secret: {violations:?}"
+        );
+        assert!(
+            violations.iter().any(|s| s.contains("string(<redacted>)")),
+            "violation must carry the redaction placeholder: {violations:?}"
+        );
+    }
+
+    /// SAW-014: object values must be reported by length only; field
+    /// names and nested values must not appear.
+    #[test]
+    fn saw014_schema_violation_does_not_leak_object() {
+        let mut ex = StructuredWorkExecutor::new();
+        let mut req = request();
+        req.return_schema = ReturnSchema {
+            fields: BTreeMap::from([("confidence".to_string(), "u64".into())]),
+        };
+        ex.submit(req).unwrap();
+        let (outcome, _) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([(
+                    "confidence".to_string(),
+                    json!({"password": "hunter2", "token": "abc"}),
+                )])),
+            )
+            .unwrap();
+        let violations = match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => v,
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        };
+        for forbidden in ["password", "token", "hunter2", "abc"] {
+            assert!(
+                !violations.iter().any(|s| s.contains(forbidden)),
+                "violation leaked {forbidden:?}: {violations:?}"
+            );
+        }
+        assert!(
+            violations.iter().any(|s| s.contains("object[len=2]")),
+            "violation must report object length only: {violations:?}"
+        );
+    }
+
+    /// SAW-015: array values must be reported by length only.
+    #[test]
+    fn saw015_schema_violation_does_not_leak_array() {
+        let mut ex = StructuredWorkExecutor::new();
+        let mut req = request();
+        req.return_schema = ReturnSchema {
+            fields: BTreeMap::from([("confidence".to_string(), "u64".into())]),
+        };
+        ex.submit(req).unwrap();
+        let (outcome, _) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([(
+                    "confidence".to_string(),
+                    json!([1, 2, 3, 4, 5]),
+                )])),
+            )
+            .unwrap();
+        let violations = match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => v,
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        };
+        assert!(
+            violations.iter().any(|s| s.contains("array[len=5]")),
+            "violation must report array length only: {violations:?}"
+        );
+        for n in ["1", "2", "3", "4", "5"] {
+            // Numbers in array values must not be enumerated.
+            // (The number 5 in `array[len=5]` is allowed as length, not as value.)
+            let suspicious = violations
+                .iter()
+                .find(|s| s.contains(n) && !s.contains("array[len=5]"));
+            assert!(
+                suspicious.is_none(),
+                "violation enumerated array value {n}: {violations:?}"
+            );
+        }
+    }
+
+    /// SAW-016: missing-field messages keep their existing wording.
+    /// The redaction only applies to value-bearing messages.
+    #[test]
+    fn saw016_missing_field_message_unchanged() {
+        let mut ex = StructuredWorkExecutor::new();
+        ex.submit(request()).unwrap();
+        let (outcome, _) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([(
+                    "summary".to_string(),
+                    json!("only-summary"),
+                )])),
+            )
+            .unwrap();
+        let violations = match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => v,
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        };
+        assert!(
+            violations.iter().any(|s| s == "missing field confidence"),
+            "expected exact 'missing field confidence' line, got {violations:?}"
+        );
+    }
+
+    /// SAW-017: shape-mismatch on a known descriptor reports the type
+    /// only, never the value.
+    #[test]
+    fn saw017_known_descriptor_violation_unchanged() {
+        let mut ex = StructuredWorkExecutor::new();
+        ex.submit(request()).unwrap();
+        let (outcome, _) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([
+                    ("summary".to_string(), json!("ok")),
+                    ("confidence".to_string(), json!("not-a-number")),
+                ])),
+            )
+            .unwrap();
+        let violations = match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => v,
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        };
+        // No leak of the literal value.
+        assert!(
+            !violations.iter().any(|s| s.contains("not-a-number")),
+            "violation leaked string value: {violations:?}"
+        );
+        // Carries the redaction form for strings.
+        assert!(
+            violations
+                .iter()
+                .any(|s| s.contains("expected u64, got string(<redacted>)")),
+            "violation must carry 'expected u64, got string(<redacted>)', got {violations:?}"
+        );
     }
 }
