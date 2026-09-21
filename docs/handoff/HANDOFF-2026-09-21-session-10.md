@@ -551,3 +551,51 @@ validation pass caught 2 honest-characterization issues (operator-driven); the
 The cost of the sandbox is small (~30s for a grep diff + test run); the cost
 of a wrong fix landing on `main` would have been a follow-up cycle and a hook
 rejection.
+
+## Addendum 6 (6ª validation pass — independent axes, 2026-09-21)
+
+Operator auto-prompted another validation pass with independent axes (not
+redundant with the prior 5). All axes PASS. One C3 finding surfaced.
+
+### Axes validated (independent of prior 5 passes)
+
+| Axis | Evidence | Result |
+|------|----------|--------|
+| (a) MANIFEST.sha256 integrity | `sddk dev manifest --verify` → `manifest OK`; 377 entries, scope = `prompts/sddk skills agents assets` | PASS |
+| (b) C2 readiness (A1 against REAL release.sh) | Sandbox against actual `scripts/release.sh` from HEAD `5ab8e8c` → 5/5 PASS (a,b,c,d,e) | PASS |
+| (c) Bundle determinism (regen vs committed) | `sddk dev manifest --root .` regen → byte-identical to committed MANIFEST (git status: clean) | PASS |
+| (d) SHA map (14 cited SHAs) | All 14 cited SHAs reachable from `origin/main`; long-form SHA reconciliation verified | PASS |
+| (e) Pre-push hook on actual range | 8 recent commits each satisfy (A) bump + code OR (B) docs-only allowlist; local HEAD = origin/main = `5ab8e8c`; tree clean | PASS |
+| (cargo test on HEAD) | After binary rebuild: 4998 passed, 0 failed, 15 ignored — same totals as 4th and 5th validations on `e7968f8` and `ee75ea6` | PASS |
+
+Deterministic across three rebuilds. Full profile stable.
+
+### C3 finding (NOT applied) — A1 fix is one-shot, not durable
+
+A1 anchors on the literal label `step "3/14"`. If someone reorders the script
+in the future (e.g., renumber `1d/14` → `2/14` and shift subsequent steps), the
+literal anchor breaks again — same failure mode as the original `2/14`.
+
+**Durable structural fix (C3 candidate):** change the assertion from "literal
+label match" to "next top-level step after LINE_1C". Pattern:
+
+```bash
+LINE_2="$(awk -v lc="$LINE_1C" '
+  NR > lc && /^step "[0-9]+\/14/ { print NR; exit }
+' "$RELEASE_SH")"
+```
+
+This anchors on **position after 1c**, not on a hard-coded label. Would survive
+any renumbering within steps 1c..next.
+
+### Why A1 is still acceptable for C2
+
+A1 fixes the current bug (test fails silent). The C3 durable fix is a separate
+concern (test resilience to future renumbering). Bundling both in C2 would
+expand scope and risk regression; per the operator's rule (don't fix
+pre-existing gaps in the same turn unless authorized), A1 ships for C2 and the
+durable anchor is parked for C3.
+
+### New commits from this pass
+
+None — this was a read-only validation. The state remains HEAD = `5ab8e8c`.
