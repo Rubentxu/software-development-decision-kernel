@@ -12,8 +12,18 @@ cluster_id: CL-RELEASE-PIPELINE-INTEGRITY
 created: 2026-09-12
 created_by: orchestrator
 owner: release-pipeline
-closed_at: 2026-09-12
-closed_by: orchestrator (commit a86e85d "feat(release): sync HEAD to origin/main before publish (closes INC-RELEASE-TAG-FIX)" — released as v1.168.41)
+closed_at: 2026-09-21
+closed_by: orchestrator (re-closed at v1.169.139 — pin test had latent
+  silent-fail bug masked by set -euo pipefail + non-matching grep
+  pipeline; awk-based durable fix verified 5/5 PASS on
+  tests/test_release_tag_anchoring.sh, including under drastic
+  renumbering of release.sh steps. See "Status" section below for
+  details.)
+  Previous closure: 2026-09-12 (commit a86e85d, released as v1.168.41)
+  — at that time the pin test was structurally present but functionally
+  broken (silent-fail exit 1). The structural closure of INC-RELEASE-TAG-FIX
+  held, but the test coverage that should have detected future
+  regressions was itself non-observable. v1.169.139 closes that test gap.
 resolution_note: |
   Closed at v1.168.41 by adding step 1c/14 to scripts/release.sh. The
   step fetches origin/main, then either fast-forwards origin (the
@@ -38,7 +48,7 @@ resolution_note: |
   build) does not commit, so step 1c's push is still authoritative when
   step 9 runs. If the flow changes to commit during the build phase,
   step 1c would need a re-push or a pre-publish invariant.
-last_updated: 2026-09-12
+last_updated: 2026-09-21
 ---
 
 # INC-RELEASE-TAG-FIX — release script step 9 anchors tag to stale origin/main
@@ -146,5 +156,19 @@ test gate).
 
 ## Status
 
-Open. Tracked by cycle `p-63676b11dc0ef88f/release-tag-anchoring`
-(sequence 510, B-direct path).
+Fully closed at v1.169.139 (commit closing this exact debt pass; the
+cycle that opened it closed at v1.168.41, but the pin test
+`tests/test_release_tag_anchoring.sh` had a latent silent-fail bug —
+it referenced a literal `step "2/14"` that never existed in
+`scripts/release.sh`, masked by `set -euo pipefail` + non-matching grep
+pipeline). The v1.169.139 commit replaces the brittle `grep -n '^step
+"2/14"'` and equivalent literal-based lookups with a durable awk
+pattern (`step_line()` helper + `next step after step 1c` walk-forward).
+Verified empirically: (a) test now exits 0 with 5/5 PASS observed on
+the un-renumbered release.sh, (b) test still exits 0 with 5/5 PASS
+under drastic renumbering (3..9→4..10, 1d→2), (c) shellcheck --severity=warning
+clean. INC: INC-RELEASE-TAG-FIX (CL-RELEASE-PIPELINE-INTEGRITY) is
+therefore closed with **empirical test coverage**, not just structural
+assertion. The governance contract now has two tests in the chain:
+`tests/test_release_admission.sh` (21/21 PASS — unchanged) and
+`tests/test_release_tag_anchoring.sh` (5/5 PASS, durable form).

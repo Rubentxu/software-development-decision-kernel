@@ -41,21 +41,52 @@ fi
 echo "Auditing $RELEASE_SH for INC-RELEASE-TAG-FIX closure"
 echo "===================================================="
 
-# Capture line numbers for ordering assertions. Use grep -n which prints
-# "line:content"; awk extracts the line number. Numeric comparison is
-# done with bash arithmetic.
+# Capture line numbers for ordering assertions. The release.sh step
+# numbering uses non-sequential labels (0, 1b, 1c, 1d, 3..14) — there is
+# NO literal `step "2/14"` and no literal `step "2a/14"`. The semantic
+# invariant being tested is the ORDERING between steps, not the literal
+# labels, so we use awk to walk forward from a known anchor and pick the
+# next step line. The pattern is `step "<digits>/<digits>` (e.g. 1c/14,
+# 3/14, 14/14) — note the regex does not match `1b`, `1c`, `1d`, `8b` etc.
+# which intentionally preserves the alphabetic-suffix variants as
+# distinct step labels (not "the next one").
+#
+# This is the durable form (C3 in session-10 handoff). It survives any
+# reordering or renumbering of release.sh's step labels, including a
+# future introduction of `step "2/14"` itself (it would be picked up
+# automatically as the next step after 1d).
 
-LINE_1B="$(grep -n 'step "1b/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-LINE_1C="$(grep -n '^step "1c/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-LINE_2="$(grep -n '^step "2/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-LINE_9="$(grep -n '^step "9/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-# shellcheck disable=SC2034  # diagnostic only
-LINE_9_UNUSED="$LINE_9"
+# step_X_line <awk-pattern>: emit the first line number whose `step`
+# matches the given pattern. Empty if not found.
+step_line() {
+    awk -v pat="$1" '
+        $0 ~ "^[[:space:]]*step \"" pat {
+            print NR
+            exit
+        }
+    ' "$RELEASE_SH"
+}
+
+LINE_1B="$(step_line '1b/14')"
+LINE_1C="$(step_line '1c/14')"
+# "next step after step 1c": next `step "<digits>/<digits>` line. This
+# serves the same semantic role as the historical `step "2/14"` literal
+# did, but is robust to renumbering. Today the next is `step "3/14"`.
+NEXT_AFTER_1C="$(awk -v start="$LINE_1C" '
+    /^[[:space:]]*step "[0-9]+\/[0-9]+/ && NR > start {
+        print NR
+        exit
+    }
+' "$RELEASE_SH")"
+LINE_9="$(step_line '9/14')"
+# LINE_NEXT aliased to NEXT_AFTER_1C for terser reference at the assertion
+# sites below (the historic name was LINE_2 for the literal `step "2/14"`).
+LINE_NEXT="$NEXT_AFTER_1C"
 
 echo "step 1b at line: $LINE_1B"
 echo "step 1c at line: $LINE_1C"
-echo "step 2  at line: $LINE_2"
-echo "step 9  at line: $LINE_9"
+echo "next step after 1c at line: $NEXT_AFTER_1C (semantic step 2)"
+echo "step 9 at line: $LINE_9"
 
 # --- (a) step 1c ordering ---
 
@@ -64,27 +95,27 @@ if [[ -z "$LINE_1C" ]]; then
     exit 1
 fi
 
-if [[ -z "$LINE_1B" || -z "$LINE_2" ]]; then
+if [[ -z "$LINE_1B" || -z "$LINE_NEXT" ]]; then
     echo "FAIL (a): missing step 1b or step 2 — script structure changed"
     exit 1
 fi
 
-if ! [[ "$LINE_1B" -lt "$LINE_1C" && "$LINE_1C" -lt "$LINE_2" ]]; then
+if ! [[ "$LINE_1B" -lt "$LINE_1C" && "$LINE_1C" -lt "$LINE_NEXT" ]]; then
     echo "FAIL (a): step 1c is not between step 1b and step 2"
-    echo "        expected: 1b ($LINE_1B) < 1c ($LINE_1C) < 2 ($LINE_2)"
+    echo "        expected: 1b ($LINE_1B) < 1c ($LINE_1C) < 2 ($LINE_NEXT)"
     exit 1
 fi
 echo "PASS (a): step 1c is between step 1b and step 2"
 
 # --- (b) step 1c invokes `git push origin main` (branch, not tag) ---
 
-if ! sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q 'git push origin main'; then
     echo "FAIL (b): step 1c does not invoke 'git push origin main'"
     exit 1
 fi
 
-if sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q 'git push origin v\?[0-9]'; then
     echo "FAIL (b): step 1c pushes a tag directly — that bypasses the"
     echo "        pre-push hook and the branch-based target resolution."
@@ -93,7 +124,7 @@ if sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
     exit 1
 fi
 
-if sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q -- '--force'; then
     echo "FAIL (b): step 1c uses --force on the branch push — this masks"
     echo "        non-fast-forward failures and silently clobbers origin."
@@ -140,7 +171,7 @@ echo "PASS (c): step 1c is outside the SKIP_TESTS guard"
 # a second predicate (e.g. checking `git log -1 --format=%s` itself), it
 # creates two governance surfaces that can drift. We assert that step 1c
 # does not parse `git log -1 --format=%s` itself; it relies on the hook.
-if sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q 'git log -1 --format=%s'; then
     echo "FAIL (d): step 1c duplicates the bump-commit predicate"
     echo "        The pre-push hook is the single source of truth."
@@ -153,7 +184,7 @@ echo "PASS (d): step 1c delegates the predicate to the pre-push hook"
 # If origin/main has advanced concurrently, step 1c must refuse to
 # release (rather than silently force-pushing or skipping). The block
 # uses `git merge-base --is-ancestor` to detect divergence.
-if ! sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q 'git merge-base --is-ancestor'; then
     echo "FAIL (e): step 1c does not use merge-base ancestor check"
     echo "        Without that check, concurrent advances are not detected"
@@ -161,7 +192,7 @@ if ! sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
     exit 1
 fi
 
-if ! sed -n "${LINE_1C},$((LINE_2 - 1))p" "$RELEASE_SH" \
+if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
         | grep -q 'die.*origin/main.*ahead'; then
     echo "FAIL (e): step 1c does not fail-closed with a clear message"
     echo "        on origin/main ahead-of-HEAD."
