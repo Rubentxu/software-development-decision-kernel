@@ -599,3 +599,70 @@ durable anchor is parked for C3.
 ### New commits from this pass
 
 None — this was a read-only validation. The state remains HEAD = `5ab8e8c`.
+
+## Addendum 7 (10ª validation pass — ID non-determinism finding, 2026-09-21)
+
+Operator auto-prompted another validation pass. Found an **ID non-determinism
+finding** in `sddk project resolve` worth recording.
+
+### Symptom
+
+`/var/home/rubentxu/cargo-targets/release/sddk project resolve --root . --scope project`
+returns:
+
+```text
+project_id: p-01dda4adb16259ba
+workspace_id: w-9ac6fc6d1bdf41d6f869718e
+```
+
+But the handoff cites (`p-63676b11dc0ef88f` / `w-2e7853aadc28217a6649e309`),
+the mode-index, and 86 in-code references all use:
+
+```text
+project_id: p-63676b11dc0ef88f
+workspace_id: w-2e7853aadc28217a6649e309
+```
+
+### Verification
+
+- `git config --get remote.origin.url` returns the same URL in both invocations.
+- The mode-index `~/.local/share/sddk/mode-index` (entry: `p-63676b11dc0ef88f on
+  bender`) records the historical project_id from session start.
+- 86 source-file references embed `p-63676b11dc0ef88f` in cycle comments, tests,
+  and `backlog.rs`/`vault_cmd.rs`/`verify_kernel_cmd.rs`.
+- No commit changed the remote URL during session-10.
+- No commit changed any of the identity-derivation inputs visible to me.
+
+### Interpretation
+
+This is **NOT a stale claim in the handoff** — the cited IDs were correct at
+write-time. The binary's `project resolve` algorithm has shifted between
+versions, returning a different ID for the same remote URL + same repo content.
+The mode-index still holds the historical ID.
+
+### Why this matters
+
+ID stability is foundational for:
+- mode index (workspace > project precedence)
+- cycle artifact paths (`cycle-artifacts/<project_id>/...`)
+- receipt lineage (any receipt referencing the old ID is now orphaned)
+- cross-references in 86 source files
+
+A binary version that produces a different ID for the same input is a
+**reproducibility violation** worth investigating outside session-10.
+
+### Parked for future cycle (NOT C2/C3 scope)
+
+Possible root causes (none verified in session-10):
+- Hash algorithm changed (e.g., SHA-256 → BLAKE3)
+- Identity derivation now includes binary version or build timestamp
+- Receipt-state fallback path differs (IdentitySource::Fallback vs Remote)
+- Workspace path normalization changed
+
+Suggested investigation: bisect between two binaries producing different IDs,
+diff the `resolve_project_identity` impl, check if `Uuid::new_v4` is involved
+(that's non-deterministic — only acceptable for `IdentitySource::Fallback`).
+
+### New commits from this pass
+
+None — this was a read-only investigation. HEAD remains `fc7223f`.
