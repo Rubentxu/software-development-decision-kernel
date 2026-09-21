@@ -18,6 +18,7 @@ mod migrations;
 mod models;
 pub mod projection_store;
 pub mod rebuild;
+pub mod schema_guard;
 pub mod spine_import;
 pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore, SqliteBacklogStoreOwned};
 pub use cas::FilesystemCas;
@@ -27,6 +28,10 @@ pub use fork_store::SqliteForkStore;
 pub use graph_store::SqliteGraphStore;
 pub use projection_store::SqliteProjectionStore;
 pub use rebuild::rebuild;
+pub use schema_guard::{
+    COMPILED_SCHEMA_VERSION, GuardError, MIN_SUPPORTED_SCHEMA_VERSION, SchemaCompatibility,
+    assert_compatible, check_compatibility, classify,
+};
 
 use std::path::Path;
 use std::time::Duration;

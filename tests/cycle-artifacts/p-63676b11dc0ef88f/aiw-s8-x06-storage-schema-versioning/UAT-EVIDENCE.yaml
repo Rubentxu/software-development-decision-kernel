@@ -1,0 +1,26 @@
+slice: aiw-s8-x06-storage-schema-versioning
+cycle: p-63676b11dc0ef88f/aiw-s8
+scenario: X06
+status: PASS
+date: 2026-09-21
+base_head: 358686c9453f
+evidence:
+  - gate: cargo fmt --check
+    result: exit 0
+    class: OBSERVED
+  - gate: cargo clippy -p sddk-storage --all-targets -- -D warnings
+    result: 0 warnings
+    class: OBSERVED
+  - gate: cargo test -p sddk-storage --lib schema_guard
+    result: 5 passed; 0 failed
+    class: OBSERVED
+  - gate: cargo test -p sddk-storage --test aiw_s8_x06_schema_versioning
+    result: 4 passed; 0 failed
+    class: OBSERVED
+  - gate: cargo build --release -p sddk-storage
+    result: Finished release profile
+    class: OBSERVED
+verdict: |
+  El guard clasifica el esquema on-disk contra la versión compilada y
+  falla cerrado en mismatch no reconciliable (NewerThanSupported, TooOld).
+  Exact y Migratable pasan. Sin interpretación falsa posible.
