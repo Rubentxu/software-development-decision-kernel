@@ -6,7 +6,7 @@ source:
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
   current_sha: "41590524ddbf2dad8b07db1fdec2e62eeb53e21b"
   workspace_version_at_baseline: "1.169.127"
-  workspace_version_at_current: "1.169.131"
+  workspace_version_at_current: "1.169.132"
   last_public_release_observed: "v1.169.122"
   note: "PR #7 integrated at 96f5366 (docs-only 13d4131 + AGENTS.md+v1.169.128 96f5366). C1 H01 fix landed at 74dfcc9, bump a 1.169.131 at 4159052. Active: C1 cycle (H01 done, H02/H05/H06 pending)."
 authority:

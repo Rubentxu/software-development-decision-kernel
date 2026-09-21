@@ -5,7 +5,7 @@
 | Campo | Valor observado o pendiente |
 | --- | --- |
 | Fuente de la fotografía | `main@41590524ddbf2dad8b07db1fdec2e62eeb53e21b` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.131` (Cargo.toml) |
+| Workspace en esa fotografía | `1.169.132` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
 | Hito activo | `C1` — H01 fixed (74dfcc9); admisión verde en HEAD (4159052); pendiente H02/H05/H06 |
 | Estado PR #7 | INTEGRADO en `13d4131` (docs-only) + `96f5366` (AGENTS.md + bump 1.169.128); rama borrada vía `gh pr close --delete-branch` |
