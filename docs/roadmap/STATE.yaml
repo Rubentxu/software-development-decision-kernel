@@ -1,22 +1,22 @@
 schema_version: 1
-updated_at: "2026-09-21T11:56:00Z"
-status: IN_PROGRESS_C0
+updated_at: "2026-09-21T14:19:00Z"
+status: C1_H01_PUSHED_CYCLE_C_PUSHED_H02_LOCAL
 source:
   baseline_branch: main
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
-  current_sha: "41590524ddbf2dad8b07db1fdec2e62eeb53e21b"
+  current_sha: "68f6788fe9d2a8d10fb4b1ec5d10b86d44d8d9c5"
   workspace_version_at_baseline: "1.169.127"
-  workspace_version_at_current: "1.169.132"
+  workspace_version_at_current: "1.169.133"
   last_public_release_observed: "v1.169.122"
-  note: "PR #7 integrated at 96f5366 (docs-only 13d4131 + AGENTS.md+v1.169.128 96f5366). C1 H01 fix landed at 74dfcc9, bump a 1.169.131 at 4159052. Active: C1 cycle (H01 done, H02/H05/H06 pending)."
+  note: "C1 H01 pusheado (74dfcc9+abca553 v1.169.133 admisión ACCEPT). cycle-c SCOPE-CONTRACT pusheado (68f6788). H02 implementado en local (9d4c249) pero descartado por reset --hard 68f6788 tras push bloqueado por pre-push rule A+B. H02 recuperable via git reflog si el operador decide bumpear o implementar cycle-c. v1.169.133 release candidate desde abca553 sigue siendo publicable (binario sha256 4402c2e3...)."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
   uat_matrix: "docs/roadmap/UAT-MATRIX.md"
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
-active_milestone: C0
-active_slice: "c0-reconciliation-baseline"
+active_milestone: C1
+active_slice: "c1-h01-shipped-cycle-c-pending-operator-decision"
 verified_at_current_sha: false
 certification_claim_at_current_sha: null
 historical_evidence:

@@ -4,13 +4,13 @@
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@41590524ddbf2dad8b07db1fdec2e62eeb53e21b` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.132` (Cargo.toml) |
+| Fuente de la fotografía | `main@68f6788fe9d2a8d10fb4b1ec5d10b86d44d8d9c5` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.133` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
-| Hito activo | `C1` — H01 fixed (74dfcc9); admisión verde en HEAD (4159052); pendiente H02/H05/H06 |
+| Hito activo | `C1` — H01 pusheado (74dfcc9+abca553 v1.169.133); cycle-c SCOPE-CONTRACT pusheado (68f6788); H02 implementado en local pero descartado por push bloqueado |
 | Estado PR #7 | INTEGRADO en `13d4131` (docs-only) + `96f5366` (AGENTS.md + bump 1.169.128); rama borrada vía `gh pr close --delete-branch` |
 | Último hito histórico | A5-C Base v1.169.88 condicionado; closures A6/A7/A8/J/AIW por alcance documentado; NO declarar certificaciones enhanced/GA a partir de esto |
-| Siguiente acción exacta | Operador: `bash scripts/release.sh` desde HEAD `4159052` (admisión ACCEPT). Post-release: re-correr T01 + emitir SCOPE-CONTRACT de H02. Orquestador NO puede publicar (system-law git.release). |
+| Siguiente acción exacta | Operador decide sobre 4 caminos: (1) bumpear 1.169.134 + pushear H02 (código+receipts); (2) implementar cycle-c SCOPE-CONTRACT (rompe bucle); (3) publicar v1.169.133 desde abca553 sin H02; (4) mantener este estado. v1.169.133 release candidate desde abca553 sigue siendo publicable (binario sha256 4402c2e3...). |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados |
 | Bloqueos y decisiones | Release/push bajo política del operador; binarios reales EXT y adaptador host necesarios para sus perfiles; J7/J8/J9/X08/R11 siguen diferidos; v1.169.123..128 no publicadas (operator-side) |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
