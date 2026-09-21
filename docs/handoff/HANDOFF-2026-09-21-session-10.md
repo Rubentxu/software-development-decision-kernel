@@ -1196,3 +1196,60 @@ belongs in a different cycle if/when it bites.
 ### New commits from this pass
 
 None — read-only. HEAD remains `b8c041d`.
+
+## Addendum 13 (17ª validation pass — C3 durability differential + state-resync, 2026-09-21)
+
+17ª validation, prompted by operator's "Re-read the request. Update the
+todo plan and goal assessments from the evidence gathered so far.
+Correct anything stale or overstated, then continue the work." Two
+threads:
+
+1. **Stale-claim sweep**: H1 title showed "(13 validation passes,
+   HEAD = e3905ce)" — both stale. Status snapshot showed "9 addenda
+   committed" — should be 11 (Addenda 2-12). STATE.yaml current_sha
+   still at `94b8031` though HEAD had advanced to `4ace5fb`. State
+   resync committed as `3f51e9e` (with corrected addendum refs, real
+   SHAs verified against git log, validation_passes_completed: 16,
+   correction_pass_count: 3).
+
+2. **C3 durability differential**: empirically confirmed that A1
+   (literal `step "3/14"` anchor) and C3 (awk structural match) BOTH
+   pass today against un-renumbered release.sh. The differential
+   emerges only when release.sh is renumbered such that the literal
+   label disappears. Tested with drastic renumbering:
+
+   ```text
+   Drastic renumbering (3..9 → 4..10, plus 1d → 2):
+   - A1: LINE_2 = EMPTY (silent fail — pipefail+set-e)
+   - C3: LINE_2 = 271 (next step-line after 1c/14, correctly resolves
+     to step "2/14 — EXT auto-activation")
+   ```
+
+   This is the empirical justification for C3's claim of "survives
+   renumbering". The fix is structural (awk match against the actual
+   step-line pattern `^step "[0-9]+\/14`) rather than literal
+   (grep against one specific label).
+
+3. **STATE.yaml chicken-and-egg**: discovered that state-resync
+   commits necessarily advance HEAD, leaving `current_sha` stale by 1
+   commit. Documented with comment + `head_at_state_sync` field rather
+   than playing whack-a-mole. This is the same pattern AGENTS.md uses
+   (per-addendum "HEAD = X" claims are historical records, not stale).
+
+### Lessons recorded
+
+- **C3 durable anchor was always the right fix; A1 is a stopgap**.
+  The differential is only visible under renumbering, which doesn't
+  happen in this session. Choose A1 if speed-to-merge matters and
+  follow up with C3 in a separate cycle. Choose C3 directly if the
+  long-term resilience is the goal.
+- **Always test fixes against renumbered truth, not the current shape
+  of the script**. Either fix works on today's script; the renumber
+  test reveals C3's superiority.
+
+### New commits from this pass
+
+- `3f51e9e` — docs(roadmap+handoff): state-resync to 16 passes / HEAD 4ace5fb
+- (after this addendum: will commit `addendum_13_commit = <new-sha>`)
+
+HEAD after this addendum's commit will be ~17 commits ahead of `4ace5fb`.
