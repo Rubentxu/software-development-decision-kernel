@@ -110,3 +110,11 @@
 - Decisión de cierre: NO se inicia C1 sin release confirmada (system-law git.release + ROADMAP §3). Toda la substance para el SCOPE-CONTRACT de C1 está preflight-1+2+3; el próximo orquestador (o esta sesión tras release) puede emitir SCOPE-CONTRACT directamente desde los preflights.
 - Próxima acción del operador: `bash scripts/release.sh` desde HEAD a15dcdc.
 - Próxima acción del orquestador post-release: re-correr T01, marcar C0 CLOSED, emitir C1 SCOPE-CONTRACT.
+
+### 2026-09-21T12:50:00Z — C0-WORKSPACE-TESTS snapshot — orchestrator
+
+- Estado: workspace tests ejecutados live desde HEAD 62494ae, todos en verde.
+- Comando: `cargo test --workspace --no-fail-fast > /tmp/full_test.log 2>&1` (exit 0)
+- Resultado: 4966 passed, 0 failed, 15 ignored (255 suites, todas con `0 failed`)
+- Anexo emitido: `C0-WORKSPACE-TESTS.md` con el snapshot.
+- Implicación: el operador puede confiar en que `scripts/release.sh` step 1 ("Workspace green") verá exit 0 desde HEAD 62494ae. Si difiere, hay regresión introducida — investigar antes de publicar.
