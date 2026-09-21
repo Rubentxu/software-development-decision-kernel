@@ -14,12 +14,12 @@ thiserror = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
 sddk-domain = { path = "../sddk-domain" }
+sddk-engine = { path = "../sddk-engine" }
 sddk-storage = { path = "../sddk-storage" }
 time = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.11"
 tempfile = { workspace = true }
-sddk-engine = { path = "../sddk-engine" }
 sddk-testkit = { path = "../sddk-testkit" }
 time = { workspace = true }
