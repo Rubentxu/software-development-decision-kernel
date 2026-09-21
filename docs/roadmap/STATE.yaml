@@ -1,12 +1,14 @@
 schema_version: 1
-updated_at: "2026-09-21"
-status: READY_C0
+updated_at: "2026-09-21T11:56:00Z"
+status: IN_PROGRESS_C0
 source:
   baseline_branch: main
   baseline_sha: "2ffff3127e7179b5f3c3104c471c8ad2c7d920ff"
+  current_sha: "96f53663b4d011dafd697319f8596d0cf7c49758"
   workspace_version_at_baseline: "1.169.127"
+  workspace_version_at_current: "1.169.128"
   last_public_release_observed: "v1.169.122"
-  note: "Fotografía del 21/09; volver a consultar HEAD/tag/release en cada sesión."
+  note: "PR #7 integrated at 96f5366 (docs-only 13d4131 + AGENTS.md+v1.169.128 96f5366). Active: C0 reconciliation."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
@@ -14,18 +16,19 @@ authority:
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
 active_milestone: C0
-active_slice: null
+active_slice: "c0-reconciliation-baseline"
 verified_at_current_sha: false
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"
   a6_a7: "Verticales reales históricas; enhanced completo no acreditado"
   jcode: "J0-J6 cierre de alcance semántico; adapter real/AG0-AG2 pendiente de evidencia"
-next_action: "Reconciliar main/tag/release y congelar baseline y UAT T01/T02 con receipt observado."
+  c0_pr_integration: "PR #7 merged at 96f5366; no concurrent commits; pre-push gate satisfied via (A) version bump to 1.169.128"
+next_action: "C0: inventariar features IMPL/VER/CERT/DEF, enlazar commit+test+receipt, ejecutar UAT T01 (HEAD/tag/release/workspace) y T02 (req→commit→test→receipt) con receipt observado. Bloqueado por ausencia de tag v1.169.123..128 (releases pending operator's bash scripts/release.sh)."
 blockers:
-  - "No atribuir releases pendientes al repositorio publicado."
-  - "EXT exige binarios externos disponibles para ejecutar pruebas reales."
-  - "La integración de esta propuesta en main está pendiente de los gates/revisión del PR."
+  - "Release v1.169.128 no publicada — operator-side (system-law git.release); T01/T02 se ejecutan con observación real del estado actual (git, gh release list) sin requerir release nueva."
+  - "EXT exige binarios externos disponibles para ejecutar pruebas reales (A6/A7/AIW-S1/S5)."
+  - "J0-J6 semántico != JCODE_CORE_GA; AG0-AG2 pendientes."
 deferred:
   - {id: X08, revisit: "Corpus Jev etiquetado + baseline"}
   - {id: J7, revisit: "Consumidor real MCP pull"}

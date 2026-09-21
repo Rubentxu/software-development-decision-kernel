@@ -1,17 +1,18 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado:** READY_C0 (propuesta de documentación pendiente de integración). **Actualizado:** 2026-09-21. Este puntero NO acredita que los gates hayan pasado ni que exista una release posterior.
+**Estado:** IN_PROGRESS_C0 (PR #7 integrado, baseline reconciliándose). **Actualizado:** 2026-09-21T11:56:00Z. Este puntero NO acredita que los gates hayan pasado ni que exista una release posterior.
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@2ffff3127e7179b5f3c3104c471c8ad2c7d920ff` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.127` (Cargo.toml) |
+| Fuente de la fotografía | `main@96f53663b4d011dafd697319f8596d0cf7c49758` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.128` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
-| Hito activo propuesto | `C0` — reconciliar SHA/tag/release/receipts y congelar casos UAT |
+| Hito activo | `C0` — reconciliar SHA/tag/release/receipts y congelar casos UAT T01/T02 |
+| Estado PR #7 | INTEGRADO en `13d4131` (docs-only) + `96f5366` (AGENTS.md + bump 1.169.128); rama borrada vía `gh pr close --delete-branch` |
 | Último hito histórico | A5-C Base v1.169.88 condicionado; closures A6/A7/A8/J/AIW por alcance documentado; NO declarar certificaciones enhanced/GA a partir de esto |
-| Siguiente acción exacta | Leer AGENTS §«Recuperación», `git fetch`, `git status -sb`, `git rev-parse HEAD`, `git tag`, consultar GitHub Releases y revisar recibos; después emitir SCOPE y EVIDENCE para C0 |
+| Siguiente acción exacta | Ejecutar UAT T01 (HEAD/tag/release/workspace observados vs puntero) y T02 (req→commit→test→receipt) con receipt C0 vinculado. Generar `docs/roadmap/receipts/c0/<sha>/C0-RECEIPT.md`. Actualizar STATE al SHA observado tras los UAT. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados |
-| Bloqueos y decisiones | Release/push bajo política del operador; binarios reales EXT y adaptador host necesarios para sus perfiles; J7/J8/J9/X08/R11 siguen diferidos |
+| Bloqueos y decisiones | Release/push bajo política del operador; binarios reales EXT y adaptador host necesarios para sus perfiles; J7/J8/J9/X08/R11 siguen diferidos; v1.169.123..128 no publicadas (operator-side) |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
 
 ## Recuperación sin adivinar
