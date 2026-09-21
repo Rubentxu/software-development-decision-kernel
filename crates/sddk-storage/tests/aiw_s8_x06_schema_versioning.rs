@@ -24,6 +24,7 @@ fn assert_compatible_succeeds_on_fresh_storage() {
 }
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn compiled_version_is_current_and_minimum_is_sane() {
     assert!(COMPILED_SCHEMA_VERSION >= 1);
     assert!(MIN_SUPPORTED_SCHEMA_VERSION >= 1);
