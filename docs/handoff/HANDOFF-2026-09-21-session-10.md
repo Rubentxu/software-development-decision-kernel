@@ -1,17 +1,18 @@
-# HANDOFF-2026-09-21-session-10 — C1 closure + 17 validation passes (HEAD = `b1d6230`, workspace v1.169.138)
+# HANDOFF-2026-09-21-session-10 — C1 closure + 22 validation passes (HEAD = `05d6faf`, workspace v1.169.138)
 
-> **Status snapshot**: 17 validation passes complete, 12 addenda committed (Addenda 2-13).
+> **Status snapshot**: 22 validation passes complete, 16 addenda committed (Addenda 2-17).
 > C1 closed (full profile 4998/0/15 reproducible). C2 (apply A1 fix + bump 1.169.139) and
 > C3 (durable structural anchor + per-test tempdir cleanup) awaiting operator authorization.
 > The H1 title's "X validation passes" reflects the current HEAD; STATE.yaml current_sha
-> also lags HEAD (still at 94b8031) — operators cross-check `git log -1 --format=%h` instead.
+> also lags HEAD (still at 4ace5fb) — operators cross-check `git log -1 --format=%h` instead.
 >
-> **Stale claims in early status (corrected Addenda 9 + 11 + 12)**:
+> **Stale claims in early status (corrected Addenda 9, 11, 12, 15, 16, 17, 18, 19, 20, 21, 22)**:
 > - Addenda 7-8 reported an "ID non-determinism bug" that 13ª validation found to be
 >   a wrong symptom interpretation (scope-driven, not platform-driven drift; the
 >   algorithm is deterministic for `(remote, scope)`). See Addendum 9 for the correction.
 >   The `usize::to_be_bytes()` platform-dependence identified in Addendum 8 remains
->   a real (but lower-severity) concern for cross-platform releases.
+>   a real (but lower-severity) concern — refined in Addendum 16 as "contract drift
+>   between production and 4 test copies, masked by 64-bit-only deployment matrix".
 > - Addendum 11 corrected the "sqlite storage error: disk I/O error" attribution —
 >   the flakea is a parallel-test race on a shared `std::env::temp_dir()` pattern
 >   in `crates/sddk-storage/src/backlog_store.rs:812-836`, NOT a SQLite behavior
@@ -22,6 +23,12 @@
 >   non-matching `grep` pipeline exits 1 BEFORE the diagnostic `if`-block runs.
 >   A1 fix targets the missing-anchor symptom (validated 5/5 PASS); C3 durable
 >   anchor (awk structural match) is the durable fix.
+> - Addenda 14-22 added: C2-vs-C3 coupling question (3 defensible positions);
+>   pipefail fragility scope expanded to 5 pipelines (lines 48, 49, 50, 51, 110
+>   of test_release_tag_anchoring.sh); framed_hash contract drift between
+>   production and 4 test files; 4-dimension map (Knowledge / Software
+>   Alignment / Verification / Governance); explicit stopping criterion
+>   articulated (Addendum 17).
 
 ## Addendum 2 — 4th validation pass (operator-driven): corrections to prior characterisations
 
@@ -1582,7 +1589,7 @@ to the operator's 4-priority structure from the system prompt
 articulates a stopping criterion for the session.
 
 ### Knowledge
-- WHAT: 21 validation passes + 12 addenda (Addenda 2-13 + this addendum)
+- WHAT: 22 validation passes + 16 addenda (Addenda 2-17)
   documenting each pass + 3 honest self-corrections (A1, Addenda 7+8,
   SQLite attribution) + 5 surface findings (C2+A1, C3 durable,
   pipefail scope, framed_hash drift, state-sync chicken-and-egg).
