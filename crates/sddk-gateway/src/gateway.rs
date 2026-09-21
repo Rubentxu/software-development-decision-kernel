@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 use crate::capability::{Capability, EvidenceBundleWriteCapability};
 use crate::policy::{CapabilityPolicy, PolicyDecision};
 use crate::redact;
+use crate::redact_text;
 use crate::runner::{RunSpec, run};
 
 /// Caller input used to plan one capability execution.
@@ -229,8 +230,12 @@ impl CapabilityGateway {
         );
         let request = json!({
             "capability": input.capability,
-            "arguments": input.args,
-            "reason": input.reason,
+            "arguments": input
+                .args
+                .iter()
+                .map(|a| Value::String(redact_text(a)))
+                .collect::<Vec<_>>(),
+            "reason": redact_text(&input.reason),
         });
         Ok(self
             .storage
@@ -336,8 +341,12 @@ impl CapabilityGateway {
         // Begin receipt
         let request = json!({
             "capability": proposal.capability,
-            "arguments": proposal.args,
-            "reason": proposal.reason,
+            "arguments": proposal
+                .args
+                .iter()
+                .map(|a| Value::String(redact_text(a)))
+                .collect::<Vec<_>>(),
+            "reason": redact_text(&proposal.reason),
         });
         let begin_receipt = self
             .storage

@@ -21,6 +21,7 @@ use sddk_domain::{CapabilityDef, ForgeDef};
 use sddk_engine::load_workflow_str;
 use sddk_gateway::{CapabilityGateway, CapabilityPlanInput, CapabilityPolicy, GatewayError};
 use sddk_storage::{ProjectRecord, Storage};
+use serde_json::Value;
 
 const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
 
@@ -303,4 +304,87 @@ fn sec1_sanity_capability_is_allowed_and_terminates() {
     let _ = GatewayError::Denied {
         capability: "x".into(),
     };
+}
+
+// --- H06 — args redaction in persisted receipt ------------------------
+//
+// RED→GREEN characterisation for C1 H06: arguments passed to a
+// capability are themselves free-form surface (a caller may legitimately
+// pass `--token=abc --password=xyz`) and the persisted
+// `CapabilityReceipt.request.arguments` MUST NOT contain the secret
+// value when the argument is in `key=value` shape matching
+// `SECRET_KEY_PATTERN`.
+//
+// Today the gateway builds the request JSON with raw `input.args`
+// (`Vec<String>`), and `redact()` only scans string values that are
+// directly attached to a `SECRET_KEY_PATTERN`-named key or to a
+// `STRING_LEVEL_KEY_PATTERN` (stdout/stderr/error/message/reason).
+// Arguments inside an array are NOT scanned for embedded `key=value`
+// pairs because `Value::Array(values.into_iter().map(redact).collect())`
+// recurses but the string arm of `redact()` returns the value
+// unchanged. So a canary of the form `--token=CANARY_VALUE` placed
+// in `args[0]` survives intact in the persisted receipt.
+//
+// After the H06 fix the request JSON wraps each argument in
+// `redact_text(...)` before being passed through `redact()`. The
+// substring `CANARY_VALUE` must then be replaced by a length-only
+// diagnostic marker (currently `string(<redacted:NN>)`).
+
+const CANARY_ARGS: &str = "CANARY_CLI_TOKEN_42_DO_NOT_USE";
+
+fn args_with_canary() -> CapabilityPlanInput {
+    CapabilityPlanInput {
+        project_id: "project-sec1".into(),
+        cycle_id: None,
+        capability: "evidence.bundle.write".into(),
+        reason: "h06 args redaction falsification".into(),
+        program: "sh".into(),
+        args: vec![
+            "-c".into(),
+            "echo OK".into(),
+            // Synthetic canary-bearing argument. We do NOT actually invoke
+            // it (the body above is benign); we only verify it survives
+            // redacting when it reaches the persisted receipt.
+            format!("--token={CANARY_ARGS}"),
+        ],
+        env: Default::default(),
+        timeout_ms: 5_000,
+        output_max_bytes: 64 * 1024,
+        approve: true,
+        timestamp: "2026-09-19T12:00:00Z".into(),
+        actor: "system".into(),
+    }
+}
+
+#[test]
+fn h06_red_canary_in_args_does_not_leak_into_receipt() {
+    let (_dir, gateway) = gateway_with_project();
+    let plan = gateway.plan(args_with_canary()).expect("plan");
+    let mut gateway = gateway;
+    let receipt = gateway.apply(&plan).expect("apply");
+
+    // The persisted request.arguments is a JSON array of strings.
+    // Walk it and assert none of them contains the canary.
+    let args = receipt
+        .request
+        .get("arguments")
+        .and_then(|v| v.as_array())
+        .expect("receipt.request.arguments must be an array");
+
+    let mut found_canary = false;
+    let mut rendered = String::new();
+    for arg in args {
+        if let Value::String(s) = arg {
+            rendered.push_str(s.as_str());
+            rendered.push('\n');
+            if s.contains(CANARY_ARGS) {
+                found_canary = true;
+            }
+        }
+    }
+    assert!(
+        !found_canary,
+        "H06 RED: canary leaked into receipt.request.arguments. \
+         Persisted arguments:\n{rendered}"
+    );
 }

@@ -274,7 +274,7 @@ pub fn redact(value: Value) -> Value {
 ///
 /// Pre-existing `<redacted>` tokens (case-insensitive) are left untouched.
 /// Lines without a recognised key pass through verbatim.
-fn redact_text(input: &str) -> String {
+pub(crate) fn redact_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let bytes = input.as_bytes();
     let mut cursor = 0usize;
