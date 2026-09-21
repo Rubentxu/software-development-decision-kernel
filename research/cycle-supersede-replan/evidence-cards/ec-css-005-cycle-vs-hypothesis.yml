@@ -25,7 +25,7 @@ EC-CSS-005
 
 | # | Source | Path / Symbol | Tier |
 |---|---|---|---|
-| 1 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1 (Phase enum) and §1.2 (no review executor) | L1 |
+| 1 | L1.S11 | `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` §1.1 (Phase enum) and §1.2 (no review executor) | L1 |
 | 2 | L1.S4 | `crates/sddk-vault/src/repair.rs:19-26` (`RepairAction::{NodeCreation, PlainTextRewrite}` — narrow decision model) | L1 |
 | 3 | L1.S2 | `crates/sddk-cli/src/cycle.rs:485-558` (`run_cycle_start` takes `name` and derives `cycle_id`; no design-hypothesis field) | L1 |
 | 4 | GAP-4 | `crates/sddk-domain/src/cycle.rs` Phase enum not deeply inspected in this research | (gap) |

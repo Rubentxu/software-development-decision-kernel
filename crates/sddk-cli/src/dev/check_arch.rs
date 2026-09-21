@@ -49,7 +49,7 @@ pub(super) fn run_check_architecture(args: super::CheckArchitectureArgs) -> Comm
 
     // ── Resolve rules path ─────────────────────────────────────────────────
     let rules_path = args.rules.unwrap_or_else(|| {
-        root.join("docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml")
+        root.join("docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml")
     });
 
     let rules_yaml = match std::fs::read_to_string(&rules_path) {

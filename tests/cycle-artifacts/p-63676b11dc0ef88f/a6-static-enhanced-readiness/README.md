@@ -2,7 +2,7 @@
 
 > **Macro-cycle id:** `p-63676b11dc0ef88f/a6-static-enhanced-readiness`
 > **Macro-cycle SCOPE:** [`SCOPE-CONTRACT.md`](./SCOPE-CONTRACT.md) (the original 7-slice plan)
-> **Roadmap authority:** [`docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`](../../../../docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md) §A6
+> **Roadmap authority:** [`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`](../../../../docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md) §A6
 > **Canonical architecture index:** [`docs/architecture/README.md`](../../../../docs/architecture/README.md)
 > **Updated:** 2026-09-20 (session `a6-macro-cycle-closeout-2026-09-20`)
 
@@ -56,7 +56,7 @@ the operator picks A/B/C, the macro-cycle is **partially closed**.
 
 ## §5 G7 gate (CogniCode part of `STATIC_ENHANCED_PRODUCTION_READY`)
 
-Per [`docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`](../../../../docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md) §9:
+Per [`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md`](../../../../docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md) §9:
 
 > ### Static Enhanced
 > Must additionally pass CogniCode contract tests and end-to-end Verify/Alignment fixtures.

@@ -115,8 +115,8 @@ session.**
 
 ## §6 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S7.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §G01..G09.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S7.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §G01..G09.
 - `secretary_l0.rs` / `secretary_l1.rs` / `secretary_l2_replan.rs`:
   existing module-level coverage (NOT a substitute for the G-rows).
 - AIW-S3 (StorageSnapshot adapter): `crates/sddk-engine/src/context_compiler/storage_adapter.rs` —

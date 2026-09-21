@@ -7,10 +7,10 @@
 | Fuente de la fotografía | `main@68f6788fe9d2a8d10fb4b1ec5d10b86d44d8d9c5` consultado 2026-09-21; **revalidar al comenzar cada sesión** |
 | Workspace en esa fotografía | `1.169.133` (Cargo.toml) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** |
-| Hito activo | `C1` — H01 pusheado (74dfcc9+abca553 v1.169.133); cycle-c SCOPE-CONTRACT pusheado (68f6788); H02 implementado en local pero descartado por push bloqueado |
+| Hito activo | `C1` — H01 pusheado (74dfcc9+abca553 v1.169.133); cycle-c SCOPE-CONTRACT pusheado (68f6788); reorganización documental completada (docs/history poblado) |
 | Estado PR #7 | INTEGRADO en `13d4131` (docs-only) + `96f5366` (AGENTS.md + bump 1.169.128); rama borrada vía `gh pr close --delete-branch` |
 | Último hito histórico | A5-C Base v1.169.88 condicionado; closures A6/A7/A8/J/AIW por alcance documentado; NO declarar certificaciones enhanced/GA a partir de esto |
-| Siguiente acción exacta | Operador decide sobre 4 caminos: (1) bumpear 1.169.134 + pushear H02 (código+receipts); (2) implementar cycle-c SCOPE-CONTRACT (rompe bucle); (3) publicar v1.169.133 desde abca553 sin H02; (4) mantener este estado. v1.169.133 release candidate desde abca553 sigue siendo publicable (binario sha256 4402c2e3...). |
+| Siguiente acción exacta | **Implementar cycle-c** (corrección del contrato de push/release en rama de trabajo). Plan: tests RED→GREEN del nuevo contrato (last_published_version + range-based allowlist), luego integrar vía PR o merge fast-forward. H02 se recupera en el reflog (commit 9d4c249) tras tener vía de integración limpia. NO bumpear, NO publicar, NO forzar push. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados |
 | Bloqueos y decisiones | Release/push bajo política del operador; binarios reales EXT y adaptador host necesarios para sus perfiles; J7/J8/J9/X08/R11 siguen diferidos; v1.169.123..128 no publicadas (operator-side) |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |

@@ -20,7 +20,7 @@ finding_ref: A5-PLAN-push-contract-investigation
 
 > Durable cross-cycle record. Registered during A5-PLAN (cycle
 > `p-63676b11dc0ef88f/a5-plan-base-production-ready`). See
-> `docs/architecture/a5/A5-PUSH-CONTRACT-INVESTIGATION.md`.
+> `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-PUSH-CONTRACT-INVESTIGATION.md`.
 
 ## Context
 

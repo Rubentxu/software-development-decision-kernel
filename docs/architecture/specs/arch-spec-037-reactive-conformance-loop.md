@@ -2,7 +2,7 @@
 id: arch-spec-037-reactive-conformance-loop
 status: proposed
 proposed_at: 2026-09-14
-source: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/
+source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/
 supersedes_history: false
 ---
 

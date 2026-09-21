@@ -76,6 +76,6 @@ A6-0 primitive pins T2 at the engine layer; A6-1 and A6-2 pin T6
 
 - `docs/architecture/adrs/ADR-0130-FENCED-ADMISSION-TICKETS.md`
 - `docs/architecture/adrs/ADR-0131-MIGRATION-PATTERN-FOR-WRITABLE-SURFACES.md`
-- `docs/architecture/a6/A6-1-RECEIPT.md` (prior data point)
-- `docs/architecture/a6/A6-2-RECEIPT.md` (this cycle's evidence)
-- `docs/architecture/a6/A6-2-PLAN.md`
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-1-RECEIPT.md` (prior data point)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-2-RECEIPT.md` (this cycle's evidence)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-2-PLAN.md`

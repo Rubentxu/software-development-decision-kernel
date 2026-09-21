@@ -103,5 +103,5 @@ exit criterion is not met.
 - Macro-cycle plan: `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/SCOPE-CONTRACT.md`.
 - Per-slice SCOPE/RECEIPT/UAT-EVIDENCE: `tests/cycle-artifacts/.../slices/s{N}/`.
 - Operator feedback on no-auto-bumps: handoff history in
-  `docs/handoff/HANDOFF-2026-09-15-session-close.md` (operator rules).
+  `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-15-session-close.md` (operator rules).
 - Pre-push hook: `githooks/pre-push` (release-flow contract).

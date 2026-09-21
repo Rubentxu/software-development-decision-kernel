@@ -11,7 +11,7 @@
 - Release: **v1.169.62** (release tag `v1.169.62` → SHA `b9e928c6229e65dc141fb282c594931dc7ef7df3`).
 - Cycle: `p-63676b11dc0ef88f-a4-3r2-namespace-safe-targets`.
 - Scope contract: `.sddk/cycles/p-63676b11dc0ef88f-a4-3r2-namespace-safe-targets/spec.md`.
-- Handoff: `docs/handoff/HANDOFF-2026-09-17-a4-3r2-namespace-safe-targets.md`.
+- Handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-17-a4-3r2-namespace-safe-targets.md`.
 - PublicReleaseGate: PASS (scenario 9 against the real release at the GH
   API).
 - `cargo test --workspace` → **4570 passed, 0 failed**; `cargo fmt
@@ -219,7 +219,7 @@ This FU is closed only when ALL of:
 ## 9. Cross-references
 
 - A4-3R spec: `.sddk/cycles/p-63676b11dc0ef88f-a4-3r-typed-constraint-binding/spec.md`
-- A4-3R handoff: `docs/handoff/HANDOFF-2026-09-17-a4-3r-typed-constraint-binding-v1.169.61.md`
+- A4-3R handoff: `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-17-a4-3r-typed-constraint-binding-v1.169.61.md`
 - A4-5P spec: `.sddk/cycles/p-63676b11dc0ef88f-a4-5p-intelligence-loop-entry-gate/spec.md`
 - arch-spec-042: `docs/architecture/specs/arch-spec-042-evidence-observation-provenance.md`
 - Reducer code: `crates/sddk-engine/src/software_alignment/reducer.rs:125-140`

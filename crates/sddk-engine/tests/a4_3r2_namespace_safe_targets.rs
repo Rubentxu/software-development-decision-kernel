@@ -618,7 +618,7 @@ fn pin_a18_extension_kind_emits_typed_evidence_gap() {
 //
 // Durably reproducible conversion of the A4-5P randomized probe
 // (recorded as OBSERVED_SESSION_EVIDENCE). See
-// `docs/handoff/HANDOFF-2026-09-17-a4-3r2-namespace-safe-targets.md`
+// `docs/history/handoffs/all-handoffs/HANDOFF-2026-09-17-a4-3r2-namespace-safe-targets.md`
 // for the receipt.
 //
 // Generator: xorshift64 seeded with `0xA4_3R2_NS_SAFE`.

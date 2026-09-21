@@ -6,7 +6,7 @@ proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-5-ac4-verify-contracts
 source: arch-spec-034-architecture-conformance-verification + ADR-0112-TYPED-ARCHITECTURAL-CONTRACTS + ADR-0113-ARCHITECTURE-AS-SEMANTIC-GRAPH-OVERLAY
-based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/11-FITNESS-RECEIPTS.md
+based_on: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/11-FITNESS-RECEIPTS.md
 ---
 
 # arch-spec-A3-S5 — Verify Contracts + ArchitectureConformanceDelta
@@ -14,7 +14,7 @@ based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/11-FITNE
 ## Intent
 
 AC4 of the Architecture Conformance track (per
-`docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md`):
+`docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md`):
 
 > Given a change basis, compute affected contracts and execute the minimum
 > deterministic probes. Provider-dependent probes may remain unknown.

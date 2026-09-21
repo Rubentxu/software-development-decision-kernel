@@ -19,7 +19,7 @@ The runtime has 10 phases
 Plan, Build, Verify, Uat, Review, Release, Archive}`), but the prompt
 layer executes only `tasks → apply → verify → debt-verify → release →
 archive` — no `Phase::Review` executor exists
-(`docs/research/sddk-a-full-lifecycle-review-phase-research-report.md`
+(`docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md`
 L1.S11 documents this).
 
 A cycle represents a **product goal**. A design decision represents a
@@ -156,7 +156,7 @@ Revisit when:
 
 ## References
 
-- `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review orphan)
+- `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review orphan)
 - `crates/sddk-domain/src/cycle.rs::Phase` (10 phases)
 - `crates/sddk-cli/src/knowledge_ingest.rs:64` (Authority::Superseded precedent)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` §4 (artefact conservation)

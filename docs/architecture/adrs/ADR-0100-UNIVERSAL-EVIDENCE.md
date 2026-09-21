@@ -1,7 +1,7 @@
 ---
 id: ADR-0100-UNIVERSAL-EVIDENCE
 package_local_id: ADR-007
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-007-UNIVERSAL-EVIDENCE.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-007-UNIVERSAL-EVIDENCE.md
 status: accepted
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -43,7 +43,7 @@ This unlocks `evidence_kind_v1` lint promotion: the canonical EvidenceRef + `Ver
 |---|---|
 | Package local | `ADR-007` |
 | Repository native | `ADR-0100-UNIVERSAL-EVIDENCE` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-007-UNIVERSAL-EVIDENCE.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-ADRS/ADR-007-UNIVERSAL-EVIDENCE.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

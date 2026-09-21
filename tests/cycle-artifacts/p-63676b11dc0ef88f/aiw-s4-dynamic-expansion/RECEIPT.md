@@ -106,9 +106,9 @@ Pending `scripts/release.sh` push authorization.
 
 ## §6 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S4.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §W01..W11.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S4.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §W01..W11.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - `Engine::cycle_replan`: `crates/sddk-engine/src/cycle_replan.rs`.
 - Existing replan tests: `crates/sddk-engine/tests/cycle_replan.rs` (used as the implementation pattern).
 - AIW-S2: `crates/sddk-gateway/src/runner_receipt.rs`.

@@ -56,7 +56,7 @@ This is severity **critical** because it breaches the security boundary: approva
 
 ## References
 
-- [ADR-069 §4](docs/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-4--provenance-baseline) — provenance baseline
+- [ADR-069 §4](docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-4--provenance-baseline) — provenance baseline
 - [emit.rs:259](crates/sddk-engine/src/event_bus/emit.rs:259) — forced Human
 - [actor_authority_baseline_tests.rs](crates/sddk-domain/tests/actor_authority_baseline_tests.rs) — regression baseline
 - ARCH-HEX-001 (order 80, H0) — engine-side authority enforcement

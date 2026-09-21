@@ -16,15 +16,15 @@ This directory contains repository-native architecture specifications.
 
 The C7 receipt is:
 
-`docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`
+`docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/08-BASELINE-CONFORMANCE-09-09/09-09-CONFORMANCE-RECEIPT.md`
 
 Current convergence roadmap:
 
-`docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
+`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md`
 
 Architecture Conformance evolution:
 
-`docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/`
+`docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/`
 
 ## Status rule
 

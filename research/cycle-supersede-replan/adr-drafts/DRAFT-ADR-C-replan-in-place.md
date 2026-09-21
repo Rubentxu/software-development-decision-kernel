@@ -154,8 +154,8 @@ Revisit when:
 
 - `crates/sddk-cli/src/cycle.rs:128-147` (CycleCommand enum)
 - `crates/sddk-cli/src/recover.rs` (35 lines, shadows to rebuild — NOT replan)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.4 (scope binding)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4 (ledger invariant)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.4 (scope binding)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4 (ledger invariant)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` (artefact conservation)
 - `docs/adr/ADR-0073-secretary-authority.md` (AgentKind closed-set)
 - `research/cycle-supersede-replan/evidence-cards/ec-css-003-replan-no-primitive.yml`

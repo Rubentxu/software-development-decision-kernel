@@ -438,4 +438,4 @@ blocks the phase. Renew an expiring live lease before gate evaluation.
 - `skills/sddk-verify/SKILL.md`
 - `prompts/sddk/phases/strict-tdd-verify.md`
 - `skills/_shared/sddk-phase-common.md`
-- `docs/research/sddk-verify-agent-practices.md`
+- `docs/history/research/all-research/sddk-verify-agent-practices.md`

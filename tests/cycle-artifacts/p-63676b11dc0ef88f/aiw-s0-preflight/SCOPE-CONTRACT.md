@@ -33,7 +33,7 @@ demuestra carencia),parsers multi-familia, handoff (S3), expansión (S4),
 cualquier cambio a A5-C/SEC-1/CC-S0.
 
 **UAT rector:** A01 (EXT+E2E), A03 (NEG), A05 (IT), A06 (digest), A09 (REG) de
-`docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`.
+`docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`.
 Estado inicial: todas NOT_RUN.
 
 ## Condiciones de fallo

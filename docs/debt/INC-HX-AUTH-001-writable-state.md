@@ -52,5 +52,5 @@ This is severity **high** because it degrades core functionality without workaro
 
 ## References
 
-- [ADR-069 §3](docs/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-2--writable-surface-matrix)
+- [ADR-069 §3](docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-2--writable-surface-matrix)
 - ARCH-HEX-001 (order 80, H0) — engine-side authority enforcement

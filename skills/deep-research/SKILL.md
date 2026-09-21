@@ -108,7 +108,7 @@ Y 6 skills subordinadas adicionales de Systems Thinking (ver `references/index.m
 
 Cuando esta skill se carga, el SKILL.md instruye al agente a leer `references/index.md`, que lista las 22 sub-skills con sus nombres y descripciones. El agente puede entonces invocar cualquiera por su nombre (cargando `sub/<name>/SKILL.md`).
 
-**Nota de compatibilidad con el CLI actual** (SDDK 1.13.0): el CLI actual no escanea subdirectorios en `skills/` (asume 1 nivel). Hasta que se implemente SDDK2-411 (modificar CLI para recursar 1 nivel), el orquestador necesita descubrir las sub-skills manualmente leyendo `references/index.md` después de cargar la maestra. Ver `docs/sddk-2.0-architecture-consolidation/adrs/ADR-019-workflow-self-discovery.md` (Opción B propuesta para sddk-2.0).
+**Nota de compatibilidad con el CLI actual** (SDDK 1.13.0): el CLI actual no escanea subdirectorios en `skills/` (asume 1 nivel). Hasta que se implemente SDDK2-411 (modificar CLI para recursar 1 nivel), el orquestador necesita descubrir las sub-skills manualmente leyendo `references/index.md` después de cargar la maestra. Ver `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/adrs/ADR-019-workflow-self-discovery.md` (Opción B propuesta para sddk-2.0).
 
 ## References
 

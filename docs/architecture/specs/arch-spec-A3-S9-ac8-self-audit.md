@@ -6,7 +6,7 @@ proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-9-ac8-self-audit-receipt
 source: arch-spec-041-sddk-architecture-self-audit + ADR-0112/0113/0116/0117/0118
-based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/11-FITNESS-RECEIPTS.md
+based_on: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/11-FITNESS-RECEIPTS.md
 ---
 
 # arch-spec-A3-S9 — SDDK Self-Audit + ArchitectureConformanceReceipt

@@ -1,7 +1,7 @@
 ---
 id: arch-spec-017-agent-profiles-and-provider-adapters
 package_local_id: SPEC-017
-package_source: docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-017-AGENT-PROFILES-AND-PROVIDER-ADAPTERS.md
+package_source: docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-017-AGENT-PROFILES-AND-PROVIDER-ADAPTERS.md
 status: proposed
 supersedes_history: false
 adopted_at: 2026-09-09
@@ -18,7 +18,7 @@ adoption_cycle: p-63676b11dc0ef88f/architecture-adoption-m0-supersession
 |---|---|
 | Package local | `SPEC-017` |
 | Repository native | `arch-spec-017-agent-profiles-and-provider-adapters` |
-| Source | `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-017-AGENT-PROFILES-AND-PROVIDER-ADAPTERS.md` |
+| Source | `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/02-SPECS/SPEC-017-AGENT-PROFILES-AND-PROVIDER-ADAPTERS.md` |
 | Adoption cycle | `p-63676b11dc0ef88f/architecture-adoption-m0-supersession` |
 
 ---

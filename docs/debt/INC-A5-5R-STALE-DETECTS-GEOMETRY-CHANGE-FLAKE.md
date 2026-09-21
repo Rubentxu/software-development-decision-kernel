@@ -23,14 +23,14 @@ closed_reason: |
   to the python http.server warm-up cost under workspace concurrency).
   Evidence: `cargo test --workspace` → passed=4763 failed=0 ignored=18
   on 2026-09-18 after the change. The test still runs green when invoked
-  explicitly with `--ignored`. See `docs/architecture/a5/A5-5R-RECEIPT.md`.
+  explicitly with `--ignored`. See `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-5R-RECEIPT.md`.
 cycle_closed: "p-63676b11dc0ef88f/a5-5r-eliminate-stale-playwright-flake"
 ---
 
 # INC-A5-5R-STALE-DETECTS-GEOMETRY-CHANGE-FLAKE — P1 flake closed
 
 > Inherited as `MUST_CLOSE_A5 (P1, test reliability)` from
-> `docs/architecture/a5/A5-DEBT-DISPOSITION.md` §3.1.
+> `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-DEBT-DISPOSITION.md` §3.1.
 > Reproduces under `cargo test --workspace` (P-cores full load) but
 > passes 5/5 when run with `--test-threads=1` and `python3 http.server`
 > warm-up is unconstrained. Closure: `#[ignore]` + readiness poll fix.

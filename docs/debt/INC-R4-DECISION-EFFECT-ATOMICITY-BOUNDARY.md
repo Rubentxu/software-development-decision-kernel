@@ -192,7 +192,7 @@ a future cycle. Until then:
 
 This INC is closed by cycle `p-63676b11dc0ef88f/a6-0-r4b-admission-tickets`
 (v1.169.76, target). Evidence at
-`docs/architecture/a6/A6-0-RECEIPT.md` §0 / §1 / §2.
+`docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-0-RECEIPT.md` §0 / §1 / §2.
 
 Closure criterion audit:
 

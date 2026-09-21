@@ -120,9 +120,9 @@ Pending `scripts/release.sh` push authorization.
 
 ## §6 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S3.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §H01..H09.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S3.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §H01..H09.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - `ContextCompiler` / `ContextAdapter` / `ContextCapsuleV2`:
   `crates/sddk-engine/src/context_compiler.rs` (M3 arch-spec-006, unchanged).
 - `Storage`: `crates/sddk-storage/src/lib.rs` (read APIs only).

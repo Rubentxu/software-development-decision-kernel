@@ -105,8 +105,8 @@ None of those can be auto-resolved.
 
 ## §6 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S8.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §X01..X08.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S8.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §X01..X08.
 - Pre-existing infrastructure:
   - `crates/sddk-engine/tests/agent_host_tests.rs` (10 tests)
   - `crates/sddk-engine/tests/decision_plane_cli_parity_tests.rs` (10 tests)

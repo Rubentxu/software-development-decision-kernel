@@ -40,7 +40,7 @@ human.*           → Critical
 ```
 
 The driving spec, `SPEC-027-EVENT-TAXONOMY.md`
-(`docs/sddk-decision-kernel-architecture/04-specs/`), lists **8 categories**:
+(`docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/`), lists **8 categories**:
 
 ```text
 Workflow       → SPEC-027 §Categories
@@ -115,5 +115,5 @@ Closed by `p-63676b11dc0ef88f/cycle-50-housekeeping-p3` (v1.66.4).
 - `crates/sddk-domain/src/projections.rs:435-452` — module comment listing the 7-row mapping + the pack/runtime exclusion note
 - `crates/sddk-domain/src/projections.rs:454-486` — `severity_for_event_type` implementation
 - `crates/sddk-domain/src/projections.rs:915-952` — `journal_projection_severity_table_locked` test (7 rows asserted)
-- `docs/sddk-decision-kernel-architecture/04-specs/SPEC-027-EVENT-TAXONOMY.md` — 8-category enumeration
-- `docs/sddk-decision-kernel-architecture/04-specs/README.md` — SPEC-027 catalog entry
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/SPEC-027-EVENT-TAXONOMY.md` — 8-category enumeration
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/README.md` — SPEC-027 catalog entry

@@ -27,7 +27,7 @@ are satisfied with evidence on disk.
 
 ## §2 UAT rows in scope
 
-Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+Per `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 §Agenda/Secretary/handoff (H01..H09). AIW-S3's contracted slice focuses
 on the **durable handoff** kernel; full Secretary attention / advisory
 synthesis is AIW-S7's contracted slice.
@@ -79,7 +79,7 @@ slice; their T-row status remains "covered by AIW-S7/S4" in UAT-EVIDENCE.
 | Unit tests for adapter (negative cases H02/H09) | `crates/sddk-engine/src/context_compiler/storage_adapter.rs` `#[cfg(test)]` | 🔲 |
 | UAT evidence rows | `tests/cycle-artifacts/.../aiw-s3-handoff-durable/UAT-EVIDENCE.yaml` | 🔲 |
 | RECEIPT | `tests/cycle-artifacts/.../aiw-s3-handoff-durable/RECEIPT.md` | 🔲 |
-| STATE-OF-AIW.md update | `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
+| STATE-OF-AIW.md update | `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
 | 1 commit `feat(engine)` | — | 🔲 |
 
 ## §6 Out of scope
@@ -93,9 +93,9 @@ slice; their T-row status remains "covered by AIW-S7/S4" in UAT-EVIDENCE.
 
 ## §7 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S3.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §H01..H09.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S3.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §H01..H09.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - `ContextCompiler` and `ContextAdapter`: `crates/sddk-engine/src/context_compiler.rs`.
 - `Storage`: `crates/sddk-storage/src/lib.rs` (read APIs: `project_count`,
   `latest_log_head`, etc.).

@@ -159,7 +159,7 @@ waivers:
 fn shipped_catalog_parses_with_fifteen_rules() {
     // Phase 2: shipped architecture-rules.yaml now includes ARCH001..ARCH015 (10 rules).
     let yaml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
+        .join("../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
     let yaml = std::fs::read_to_string(&yaml_path).expect("shipped YAML must be readable");
     let registry =
         sddk_domain::RuleRegistry::from_yaml_str(&yaml).expect("shipped YAML must parse");
@@ -179,7 +179,7 @@ fn shipped_catalog_against_baseline_produces_fifteen_evaluations() {
     // ARCH001 Fail (engine→storage edges exist), ARCH002 Pass (domain clean),
     // ARCH003 Waived (WV-0015), ARCH004/005 NotApplicable, ARCH008 Pass (WV-0026 waiver).
     let yaml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
+        .join("../../docs/history/legacy-packages/sddk-2.0-architecture-consolidation/data/architecture-rules.yaml");
     let yaml = std::fs::read_to_string(&yaml_path).expect("shipped YAML must be readable");
     let registry =
         sddk_domain::RuleRegistry::from_yaml_str(&yaml).expect("shipped YAML must parse");

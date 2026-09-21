@@ -168,7 +168,7 @@ milestone.
 |---|---|
 | `docs/architecture/a4-4c-acceptance-receipt.md` | PROJECTION |
 | `docs/architecture/receipts/A4-5C-arch-spec-047-acceptance-receipt.md` | PROJECTION |
-| 20 per-cycle A4 handoffs (`docs/handoff/HANDOFF-*-a4-*`) | DOCUMENTED / handoff (not authority) |
+| 20 per-cycle A4 handoffs (`docs/history/handoffs/all-handoffs/HANDOFF-*-a4-*`) | DOCUMENTED / handoff (not authority) |
 | Release tags `v1.169.40..v1.169.67` | canonical Git facts (FACT) |
 | PublicReleaseGate evidence (release.sh step 9b) | OBSERVED at each release |
 | **This A4 Milestone Receipt** | PROJECTION / certification artifact |

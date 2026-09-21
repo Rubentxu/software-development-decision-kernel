@@ -157,10 +157,10 @@ Revisit when:
 - `crates/sddk-cli/src/recover.rs` (35 lines, shadows to rebuild)
 - `crates/sddk-cli/src/cycle.rs:886` (lease.released event)
 - `crates/sddk-cli/src/knowledge_ingest.rs:64` (Authority::Superseded precedent)
-- `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4 (ledger invariant)
+- `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 4 (ledger invariant)
 - `docs/adr/ADR-0047-durable-debt-remediation.md` (debt framework)
 - `docs/adr/ADR-0073-secretary-authority.md` (AgentKind closed-set)
-- `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review orphan)
+- `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review orphan)
 - `research/cycle-supersede-replan/evidence-cards/ec-css-001-cycle-supersede-vs-rebuild.yml`
 - `research/cycle-supersede-replan/evidence-cards/ec-css-007-recovery-action-contract.yml`
 - `research/cycle-supersede-replan/evidence-cards/ec-css-009-phase-review-orphan.yml`

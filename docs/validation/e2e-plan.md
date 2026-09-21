@@ -134,5 +134,5 @@ sddk archive/release → closing-report.html → screenshot
 
 - ADR: `docs/adr/ADR-0001-e2e-validation-sandbox.md`
 - Este plan: `docs/validation/e2e-plan.md`
-- Roadmap: `docs/sddk-stabilization-plan/ROADMAP.md` (milestone E2E-2026-08)
+- Roadmap: `docs/history/legacy-packages/sddk-stabilization-plan/ROADMAP.md` (milestone E2E-2026-08)
 - Vault: `milestones/M-NNN-e2e-validation.md` (creado por el ciclo formal)

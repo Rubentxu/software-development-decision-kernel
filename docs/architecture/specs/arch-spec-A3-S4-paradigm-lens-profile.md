@@ -6,7 +6,7 @@ proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-4-paradigm-lens-profile
 source: arch-spec-035-paradigm-lens-system + ADR-0114-PARADIGMS-AS-ALIGNMENT-LENSES
-based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/04-PARADIGM-LENSES.md
+based_on: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/04-PARADIGM-LENSES.md
 ---
 
 # arch-spec-A3-S4 — ParadigmProfile + Lens Selection as SemanticGraph Overlay
@@ -14,7 +14,7 @@ based_on: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/04-PARAD
 ## Intent
 
 AC3 of the Architecture Conformance track (per
-`docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md`):
+`docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/09-ROADMAP.md`):
 
 > Implement `ParadigmProfile`/lens selection and graph relations without
 > judging code yet. Exit: profiles can differ by bounded

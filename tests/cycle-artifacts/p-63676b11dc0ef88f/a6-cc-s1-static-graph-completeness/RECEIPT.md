@@ -136,7 +136,7 @@ La EXT requiere `COGNICODE_MCP_BIN` apuntando al binario real de CogniCode v0.97
 - `docs/architecture/adrs/ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.md`
 - `docs/architecture/specs/arch-acceptance-coverage-001.md`
 - `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md` (IPB-004)
-- `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md`
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md`
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s1-cognicode-real/DISCOVERY.md`
 - `crates/sddk-engine/tests/fixtures/static_enhanced/inventory_v1.json`
 - `githooks/pre-push` (push admission contract — condition A real bump + docs allowlist)

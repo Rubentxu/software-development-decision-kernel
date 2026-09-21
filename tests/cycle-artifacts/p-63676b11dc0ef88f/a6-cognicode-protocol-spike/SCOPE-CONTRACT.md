@@ -3,9 +3,9 @@
 Cycle: `p-63676b11dc0ef88f/a6-cognicode-protocol-spike`
 Baseline (released): `v1.169.88` → `add896d94274a7515254b8c195e2e78c3669108f`
 Development head at start: `aa6855e7cea1bf99992c55c9771e2bc51ed7894a`
-Plan: `docs/proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
+Plan: `docs/history/proposals/all-proposals/2026-09-19-a6-cognicode-cc-s0-protocol-spike-PROPOSAL.md`
 Spec: `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md`
-Handoff: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
+Handoff: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/04-COGNICODE-HANDOFF.md`
 
 ## Goal
 

@@ -39,8 +39,8 @@ Project the existing `ArchitecturalContract` (OBJECT) and `ArchitectureClaim`
   (`ArchitecturalContract`, `ArchitectureClaim`, `BasisHash`, `EvidenceRef`)
 - arch-spec-005 — `docs/architecture/specs/arch-spec-005-semantic-graph-and-why.md`
   (`SemanticGraphProjection`, `SemanticNode`, `SemanticRelation`)
-- Architecture Graph Model — `docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/02-ARCHITECTURE-GRAPH-MODEL.md`
-- Contracts and Claims — `docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/03-ARCHITECTURAL-CONTRACTS-AND-CLAIMS.md`
+- Architecture Graph Model — `docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/02-ARCHITECTURE-GRAPH-MODEL.md`
+- Contracts and Claims — `docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/03-ARCHITECTURAL-CONTRACTS-AND-CLAIMS.md`
 
 ## State classes (per ADR-0095)
 

@@ -1,11 +1,11 @@
 # UAT evidence — AIW-S3 — Handoff durable entre DOS tareas
 #
 # Slice: `p-63676b11dc0ef88f/aiw-s3-handoff-durable`
-# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# Source: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 # §Agenda/Secretary/handoff (H01..H09).
 
 slice: aiw-s3-handoff-durable
-uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+uat_source: docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
 
 rows:
   - id: H01

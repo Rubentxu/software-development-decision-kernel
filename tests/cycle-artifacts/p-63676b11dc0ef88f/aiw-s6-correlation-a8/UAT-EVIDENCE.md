@@ -8,7 +8,7 @@
 **CLOSED-by-infrastructure** (no new test required).
 
 AIW-S6's contract (P09..P12 in
-`docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`)
+`docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`)
 is **already enforced** by the pre-existing A4-5a falsification suite
 `crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs`:
 

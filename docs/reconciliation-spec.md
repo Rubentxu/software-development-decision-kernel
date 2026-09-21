@@ -290,5 +290,5 @@ Resumen:
 | SPEC-RECONCILE-001 | spec | este doc | propuesta aceptada (2026-08-26) |
 | REQ-RECONCILE-001 | spec | `/home/rubentxu/.sddk-knowledge/sddk-framework/specs/cli/REQ-Dev-Reconcile-Authoritative-IDE-Reconciliation.md` | proposed (cycle-29 sddk-spec output, sha256 `eb331ee2983ddf03d011c5e63b3bbebc52daa977f953e5ec72942630067161e2`, 12 REQ + 23 scenarios) |
 | ADR-0064 | decisión | `docs/adr/ADR-0064-sddk-authored-reconciliation.md` | aceptado (2026-08-26) |
-| ROADMAP-cycle-29-candidate | planificación | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` | aceptado (2026-08-26) |
+| ROADMAP-cycle-29-candidate | planificación | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` | aceptado (2026-08-26) |
 | cycle-29 (A-min) | ejecución | sddk-cli (TBD) | NO iniciado |

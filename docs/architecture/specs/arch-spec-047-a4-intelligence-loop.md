@@ -58,7 +58,7 @@ back to the relations and evidence that produced it.
 ## Spec-ID reconciliation (A4-0 record)
 
 The historical context-first package
-(`docs/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`)
+(`docs/history/legacy-packages/SDDK-Context-First-Semantic-Core-Agent-Experience-Software-Alignment-2026-09-10/`)
 defines Alignment/Verify/DebVerify under ids **SPEC-019 … SPEC-034**.
 
 Those numbers are **already owned** in the normative repository

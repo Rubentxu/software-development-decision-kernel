@@ -1201,7 +1201,7 @@ impl Operator for Parallel {
         // below. The two ignored tests at
         // `tests/parallel_spec_scenarios.rs::parallel_wfr4_par_006_{a,d}`
         // test this dead path + an empty IR; they were deleted in A5-3
-        // (R12). See `docs/architecture/a5/A5-3-PLAN.md` for the
+        // (R12). See `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-3-PLAN.md` for the
         // falsification record. The `pending_sender` field on
         // `OperatorContext` is retained as a public API placeholder for
         // any future async resume work; the runtime never sets it to

@@ -6,7 +6,7 @@ proposed_at: 2026-09-20
 accepted_at: 2026-09-20
 accepted_by_cycle: p-63676b11dc0ef88f/j2-j6-jcode-core-ga
 references:
-  - docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md
+  - docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md
 ---
 
 # ADR-0140: Módulos root de integración agéntica (J2–J6, JCODE_CORE_GA)
@@ -19,7 +19,7 @@ references:
 
 ## Contexto
 
-El mini-roadmap JCODE_CORE_GA (docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md)
+El mini-roadmap JCODE_CORE_GA (docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md)
 exige implementar los tracks J2..J6 como superficie semántica del
 engine: binding de sesión host↔SDDK (arch-spec-024), entrega de
 contexto por deltas (arch-spec-026), reactive verify / loop AC9

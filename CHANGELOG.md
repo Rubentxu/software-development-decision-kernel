@@ -352,7 +352,7 @@ Cycle path: A-min (smoke depth). 11 commits en rango `2aa5e36..669d7dc` (8 feat/
 
 ### Documentation
   - docs(release): notas v1.67.0 en `docs/releases/v1.67.0.md` documentan el slice 1 del Epic SD con escenarios S1-S7, live smoke de `sddk cycle status` zero-arg, evidencia de verify, y limitaciones conocidas.
-  - docs(roadmap): referencia a `docs/sddk-decision-kernel-architecture/02-roadmap/RESEARCH/state-driven-cli/RESEARCH.md` como fuente canónica del Epic SD.
+  - docs(roadmap): referencia a `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/RESEARCH/state-driven-cli/RESEARCH.md` como fuente canónica del Epic SD.
 
 Cycle path: B-direct (cycle-family + storage + testkit + domain-trait + propagación mecánica a 7 callers + 9 tests + release notes). 4 commits en rango `fc5d7b3..a34c882` (e24598a feat, a34c882 test) + bump 1.67.0. Verify verdict: PASS_WITH_WARNINGS (1 pre-existing flaky infra-noise test + 1 missing runtime cycle record — filesystem-artifacts-only closure; `archive-manifest.md` es ground-truth durable del cierre, igual que en cycle-51).
 
@@ -374,7 +374,7 @@ Cycle path: B-direct (cycle-family + storage + testkit + domain-trait + propagac
 
 ### Documentation
   - docs(adr): `ADR-0079-cycle-supersede` flip status → `accepted`. Cierra GAP-DOC-1.a.
-  - docs(spec): `SPEC-SUPERSEDE-001` promovido a `docs/sddk-decision-kernel-architecture/04-specs/`. Cierra GAP-DOC-1.b.
+  - docs(spec): `SPEC-SUPERSEDE-001` promovido a `docs/history/legacy-packages/sddk-decision-kernel-architecture/04-specs/`. Cierra GAP-DOC-1.b.
   - docs(agents): `AGENTS.md §9` cycle supersede workflow añadido. Cierra GAP-DOC-1.c.
   - docs(release): notas de release para v1.66.6 (`docs/releases/v1.66.6.md`) documentan los 11 gaps cerrados. Cierra GAP-DOC-1.d.
 
@@ -384,8 +384,8 @@ Cycle path: A-full (engine + CLI + domain feat + 7 tests + 4 docs promotions + r
 
 ### Documentation
   - docs(agents): corrige la narrativa de `AGENTS.md §8` sobre el cierre formal del ciclo. La nota que decía "actualmente roto" se elimina; el cierre CLI ya es operativo desde v1.66.1 (`validate_cycle_project`) y v1.66.2 (`Storage::cycle_exists`, INC-DEBT-017). Preserva el rol durable de `archive-manifest.md` como ground-truth del cierre (líneas 208 + 213).
-  - docs(roadmap): cierra el GAP-6 dentro de `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` bajo un heading `### GAP-6 — Closed by v1.66.1 + v1.66.2 (cycle-50 bis not needed)`. El texto original queda preservado dentro de un blockquote `> **Original (archived for audit):**` para audit trail. Rationale del cycle-57 + INC-DEBT-017 nombrados.
-  - docs(backlog): añade un candidato BSG (`## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)`) en `docs/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md`, posicionado tras el bloque `Out of scope (v1)` del Epic LF. Owner: orchestrator. Priority: P3. Incluye referencia sha256 al exploration-report para audit. Symptoma vivo documentado en el F4 gotcha de `AGENTS.md §8`.
+  - docs(roadmap): cierra el GAP-6 dentro de `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` bajo un heading `### GAP-6 — Closed by v1.66.1 + v1.66.2 (cycle-50 bis not needed)`. El texto original queda preservado dentro de un blockquote `> **Original (archived for audit):**` para audit trail. Rationale del cycle-57 + INC-DEBT-017 nombrados.
+  - docs(backlog): añade un candidato BSG (`## Candidate BSG — CLI bare-slug cycle-id acceptance (deferred)`) en `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/BACKLOG.md`, posicionado tras el bloque `Out of scope (v1)` del Epic LF. Owner: orchestrator. Priority: P3. Incluye referencia sha256 al exploration-report para audit. Symptoma vivo documentado en el F4 gotcha de `AGENTS.md §8`.
   - docs(roadmap): añade el Epic LF (Ledger Forensic) + candidatos cycle-55/56 (`pausa de ciclo` y `backlog como objetos del ledger`) a `ROADMAP.md`. Documenta la pausa de ciclo como objeto del ledger y el backlog como fuente viva de candidatos. 0 Rust, 0 Cargo, 0 tests; solo prosa.
   - docs(debt): flip de frontmatter `status: open → resolved` + `resolved_by` + `## Closure Evidence` para los 2 INC carry-over de v1.66.3 (`INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT`, `INC-CYCLE-13-LOC-OVERAGE`) que ya habían sido resueltos por cycle-13. Coherencia con el contrato de cierres INC definido en `docs/debt/INC-TEMPLATE.md`. Commit `bb263bd`.
 

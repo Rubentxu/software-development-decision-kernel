@@ -1,7 +1,7 @@
 # UAT evidence — AIW-S2 — Captura estructurada de tests y gates
 #
 # Slice: `p-63676b11dc0ef88f/aiw-s2-test-runner-capture`
-# Source: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+# Source: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 # §Shell / runner / tests (T01..T10).
 #
 # Convention:
@@ -15,7 +15,7 @@
 # green test run on this checkout.
 
 slice: aiw-s2-test-runner-capture
-uat_source: docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
+uat_source: docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md
 
 rows:
   - id: T01

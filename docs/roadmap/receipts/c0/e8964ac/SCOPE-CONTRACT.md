@@ -66,8 +66,8 @@ Ejecutar el primer hito del nuevo roadmap:
 - `docs/roadmap/ROADMAP.md` §2 C0
 - `docs/roadmap/CERTIFICATIONS.md` §1-§6
 - `docs/roadmap/UAT-MATRIX.md` T01, T02
-- `docs/architecture/a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` (A5-C Base v1.169.88)
-- `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` (AIW snapshot)
-- `docs/research/2026-09-21-roadmap-gaps-deep-research.md` (gap survey)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md` (A5-C Base v1.169.88)
+- `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` (AIW snapshot)
+- `docs/history/research/all-research/2026-09-21-roadmap-gaps-deep-research.md` (gap survey)
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/` (40 cycle dirs)
 - `githooks/pre-push` (release admission contract)

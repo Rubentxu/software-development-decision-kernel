@@ -7,7 +7,7 @@
 ## §1 Goal
 
 Cover `PR-UAT-C05, C07, C09` from
-`docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
 §E end-to-end. Three orthogonal invariants:
 
 - **C05 — no DTO leakage through `analyze_impact`.** SDDK surfaces are
@@ -82,7 +82,7 @@ dependencies allow.
 ## §7 References
 
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/SCOPE-CONTRACT.md` §S2 (macro-cycle plan)
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E, §I
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E, §I
 - `crates/sddk-engine/src/knowledge.rs` (existing `KnowledgeBasis`,
   `InvalidationReason::Contradicted`, `InvalidatedKnowledgeBasis`,
   `KMT`)

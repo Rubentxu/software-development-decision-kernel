@@ -7,7 +7,7 @@
 ## §1 Goal
 
 Cover `PR-UAT-C01, C02, C03, C04, C06, C08, C10` from
-`docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
+`docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md`
 §E end-to-end through `CoverageContract` evaluation. Convert the spike
 character of CC-S0/CC-S1 into a UAT-anchored coverage matrix using the
 fake provider.
@@ -69,7 +69,7 @@ Per macro-cycle plan §4:
 ## §7 References
 
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-static-enhanced-readiness/SCOPE-CONTRACT.md` (macro-cycle plan)
-- `docs/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E, §I
-- `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md` (CC-S0 close)
+- `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/07-UAT-EVIDENCE-MATRIX.md` §E, §I
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md` (CC-S0 close)
 - `tests/cycle-artifacts/.../a6-cc-s1-static-graph-completeness/RECEIPT.md` (CC-S1 close)
 - `docs/architecture/specs/arch-acceptance-coverage-001.md` (acceptance contract)

@@ -94,7 +94,7 @@ Scope (out, considered but deferred):
 | Policy Resistance | Runtime + prompt layer add verification independently | `Phase::Review` is orphan (A-full lifecycle research) | ADR-A: `phase.review` removal or formalization |
 | Shifting the Burden | Cycle lock acquire fails → manual editing | AGENTS.md §8 | Cycle lock acquire must work, or cycle start must surface the error |
 | Seeking the Wrong Goal | More gates = more safety (false) | 5 budget gates in Wave 1; additive growth | Complexity budget (insight #7) |
-| Drift to Low Performance | Cycle-42 agent claimed success, verification showed hang | `docs/handoff/HANDOFF-2026-08-26-cycle-42-archive.md` (cycle-43 anti-fabrication contract) | Tied to process gate recoverability |
+| Drift to Low Performance | Cycle-42 agent claimed success, verification showed hang | `docs/history/handoffs/all-handoffs/HANDOFF-2026-08-26-cycle-42-archive.md` (cycle-43 anti-fabrication contract) | Tied to process gate recoverability |
 | Eroding Goals | Phase review → bypass → drift | Runtime vs prompt layer | (insight #6: ciclo vs hipótesis) |
 
 ## Anti-patterns flagged (from R0 lens)
@@ -117,10 +117,10 @@ Scope (out, considered but deferred):
 | L1.S5 | `crates/sddk-cli/src/recover.rs` (35 lines) | L1 | 1-2y |
 | L1.S6 | `docs/adr/ADR-0047-durable-debt-remediation.md` | L1 | stable (ADR accepted) |
 | L1.S7 | `docs/adr/ADR-0068-bounded-execution.md` (cycle-44 foundation) | L1 | stable |
-| L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan) | L1 | 6-12mo (roadmap drift) |
+| L1.S8 | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` (Wave plan) | L1 | 6-12mo (roadmap drift) |
 | L1.S9 | `docs/debt/{SEVERITY,PRIORITY,README}.md` | L1 | stable |
 | L1.S10 | `docs/debt/INC-DEBT-016-dm02-flaky-hang-parallel-sync-race.md` | L1 | stable (closed) |
-| L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (A-full lifecycle review) | L1 | stable |
+| L1.S11 | `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (A-full lifecycle review) | L1 | stable |
 | L2.S12 | git log (v1.65.0..v1.65.7) — 13 commits, 1901 insertions | L2 | 6-12mo |
 | L2.S13 | `crates/sddk-vault/src/validate.rs` (CycleScope, Severity) | L1 | 1-2y |
 

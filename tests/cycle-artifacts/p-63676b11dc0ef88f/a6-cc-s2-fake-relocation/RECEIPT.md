@@ -123,7 +123,7 @@ hace que esta sea una solución real, no cosmética.
 
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cc-s2-fake-relocation/SCOPE-CONTRACT.md`
 - `tests/cycle-artifacts/p-63676b11dc0ef88f/a6-cc-s1-static-graph-completeness/RECEIPT.md` (§4.1 propone CC-S2)
-- `docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md` (§3 finding 1)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md` (§3 finding 1)
 - `docs/architecture/adrs/ADR-0137-CODE-INTELLIGENCE-PORT-SEAM.md`
 - `docs/architecture/specs/arch-spec-021-intelligence-provider-boundary.md`
 - `githooks/pre-push` (push admission contract — condition A real bump)

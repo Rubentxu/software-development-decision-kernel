@@ -167,5 +167,5 @@ Sin MCP: los agentes `analytics-researcher`/`analytics-judge`/`analytics-reporte
 - `crates/sddk-cli/src/metrics.rs` — `capture_cycle_metrics`, `derive_from_events`, `compute_aggregate`, `tuning_from_aggregate`.
 - `crates/sddk-cli/src/analytics.rs` — `ResearchPacket`, `run_analytics_research`.
 - `crates/sddk-vault/src/export.rs` — patrón `export_html` autocontenido.
-- `docs/sddk-stabilization-plan/adr/ADR-0009-telemetry-control-plane.md`, `ADR-0010-telemetry-dashboard-html.md`.
+- `docs/history/legacy-packages/sddk-stabilization-plan/adr/ADR-0009-telemetry-control-plane.md`, `ADR-0010-telemetry-dashboard-html.md`.
 - ROADMAP milestone CP-2026-08; BACKLOG épica E11 (SDDK-1101..1106).

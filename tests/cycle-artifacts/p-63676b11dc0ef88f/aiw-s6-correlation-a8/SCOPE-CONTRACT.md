@@ -28,7 +28,7 @@ proves the W09..W12 contract on top of pre-existing
 
 ## §2 UAT rows in scope
 
-Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+Per `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 §Expansión, externos y empaquetado (P01..P12). AIW-S6 contracts on
 P09..P12 specifically:
 
@@ -71,7 +71,7 @@ P01..P08 are providers/host concerns (AIW-S4 / S8); out of this slice.
 | Integration test P09..P12 | `crates/sddk-engine/tests/aiw_s6_correlation_a8.rs` | 🔲 |
 | UAT-EVIDENCE | `tests/cycle-artifacts/.../aiw-s6-correlation-a8/UAT-EVIDENCE.yaml` | 🔲 |
 | RECEIPT | `tests/cycle-artifacts/.../aiw-s6-correlation-a8/RECEIPT.md` | 🔲 |
-| STATE-OF-AIW.md update | `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
+| STATE-OF-AIW.md update | `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md` | 🔲 |
 | 1 commit `test(engine)` | — | 🔲 |
 
 ## §6 Out of scope
@@ -86,9 +86,9 @@ P01..P08 are providers/host concerns (AIW-S4 / S8); out of this slice.
 
 ## §7 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S6.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §P09..P12.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S6.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §P09..P12.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
 - `compose_intelligence_loop`: `crates/sddk-engine/src/intelligence_loop/mod.rs`.
 - Existing pattern: `crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs` (`happy_inputs` helper).
 - AIW-S1: `tests/cycle-artifacts/.../aiw-s1-cognicode-real/RECEIPT.md`.

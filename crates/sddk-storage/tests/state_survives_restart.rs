@@ -16,7 +16,7 @@
 //!   assert both `load_run.state` and `latest_workflow_run_state` reflect
 //!   Completed after the third commit.
 //!
-//! Refer to `docs/architecture/a5/A5-2-PLAN.md` (F1, F2, F3).
+//! Refer to `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-2-PLAN.md` (F1, F2, F3).
 
 use sddk_domain::{
     GraphStore,

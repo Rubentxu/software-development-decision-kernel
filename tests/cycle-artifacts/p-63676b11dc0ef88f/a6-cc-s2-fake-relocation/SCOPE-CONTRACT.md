@@ -7,7 +7,7 @@ Mode: hybrid (code + docs; library gating + Cargo feature + dev-dep self-referen
 
 ## 1. Tensión que cierra
 
-CC-S0 (`docs/architecture/a6/A6-COGNICODE-CC-S0-RECEIPT.md` §3 finding 1)
+CC-S0 (`docs/history/legacy-packages/architecture-a5-a6/architecture-a6/A6-COGNICODE-CC-S0-RECEIPT.md` §3 finding 1)
 dejó pendiente:
 
 > The fake provider module is not really "test-only". The fake is `pub`

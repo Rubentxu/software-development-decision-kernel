@@ -141,6 +141,6 @@ the prior session's `RECEIPT.md` for `cace421`).
 - `scripts/release.sh` lines 540..547 (EXT-RECEIPT in ASSETS).
 - `docs/architecture/adrs/ADR-0137-CODE-INTELLIGENCE-PORT-SEAM.md`
 - `docs/architecture/adrs/ADR-0138-runtime-evidence-port.md`
-- `docs/research/2026-09-21-roadmap-gaps-deep-research.md` (the session's
+- `docs/history/research/all-research/2026-09-21-roadmap-gaps-deep-research.md` (the session's
   research document confirming this slice closes the last executable
   FU on the roadmap).

@@ -26,7 +26,7 @@ consume a single, structured artefact".
 
 ## §2 UAT rows in scope
 
-Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+Per `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 §Shell / runner / tests (T01..T10):
 
 | UAT id | Scenario | Expected invariant |
@@ -92,9 +92,9 @@ Per `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
 
 ## §7 References
 
-- AIW milestone: `docs/proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S2.
-- AIW UAT matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §Shell / runner / tests (T01..T10).
-- AIW merge plan: `docs/proposals/2026-09-19-adaptive-inputs-workflows/integration/MERGE-PLAN.md`.
+- AIW milestone: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/roadmap/MILESTONES.md` §AIW-S2.
+- AIW UAT matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md` §Shell / runner / tests (T01..T10).
+- AIW merge plan: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/integration/MERGE-PLAN.md`.
 - Bounded runner contract: `crates/sddk-gateway/src/runner.rs` (REQ-WF-RT-018) + `crates/sddk-gateway/tests/bounded_runner_contract.rs`.
 - Existing family adapters: `crates/sddk-gateway/src/test_runner/{cargo_nextest,pytest,jest,go_test,maven_test,gradle_test}.rs`.
-- AIW state matrix: `docs/proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.
+- AIW state matrix: `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/STATE-OF-AIW.md`.

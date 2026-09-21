@@ -25,10 +25,10 @@ EC-CSS-002
 
 | # | Source | Path / Symbol | Tier |
 |---|---|---|---|
-| 1 | L1.S8 | `docs/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated, no classification) | L1 |
+| 1 | L1.S8 | `docs/history/legacy-packages/sddk-decision-kernel-architecture/02-roadmap/ROADMAP.md` §Wave 1.5 (5 budget gates enumerated, no classification) | L1 |
 | 2 | L1.S2 | `crates/sddk-cli/src/cycle.rs:305-315` (`GateOutcomeArg::{Passed,Failed,Waived}`, comment "defaults to `Failed` (fail-closed)") | L1 |
 | 3 | L1.S4 | `crates/sddk-vault/src/repair.rs:16` (`ALLOW_LIST = ["VAULT003"]` — implicit security/process distinction via allow-list) | L1 |
-| 4 | L1.S11 | `docs/research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review is orphan — gating a non-existent executor) | L1 |
+| 4 | L1.S11 | `docs/history/research/all-research/sddk-a-full-lifecycle-review-phase-research-report.md` (Phase::Review is orphan — gating a non-existent executor) | L1 |
 
 ## Decay date
 

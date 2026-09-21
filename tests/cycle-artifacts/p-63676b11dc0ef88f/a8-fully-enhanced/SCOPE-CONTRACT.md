@@ -1,7 +1,7 @@
 # SCOPE-CONTRACT — a8-fully-enhanced (macro-cycle, FULLY_ENHANCED)
 
 > **Cycle id:** `p-63676b11dc0ef88f/a8-fully-enhanced`
-> **Document role:** SCOPE-CONTRACT of the macro-cycle that consolidates A8 (Full Enhanced + Architecture Intelligence) per `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §"A8 — Full Enhanced + Architecture Intelligence".
+> **Document role:** SCOPE-CONTRACT of the macro-cycle that consolidates A8 (Full Enhanced + Architecture Intelligence) per `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §"A8 — Full Enhanced + Architecture Intelligence".
 > **Status:** reconciling slices against `origin/main = 94f7488` (v1.169.122).
 > **Mode:** auto-run between slices; STOP only on the conditions named by the macro-cycle authorisation.
 
@@ -45,7 +45,7 @@ Per `02-MINI-ROADMAP.md` §A8, the exit criterion is:
 | AC13 counterfactual refactor planning (isolation, violation-detected, compatible-viable) | ✅ | `a8_s2_counterfactual_planning.rs` (4 PASS) |
 | AC14 proof-carrying changes + ratchets (portable proof, monotonicity, signature, waiver expiry) | ✅ | `a8_s3_proof_carrying_ratchets.rs` (4 PASS) |
 | Convergence: do not delay AC1..AC8 | ✅ | A1..A5 + AC6..AC9 + AC10 (A6) + AC11 (A7) shipped in v1.169.96..122. |
-| Base readiness preserved (PRODUCTION_READY gate) | ✅ | `BASE_PRODUCTION_READY` certificate issued; A5 cert in `docs/architecture/a5/A5-CURRENT-ROADMAP.md`. |
+| Base readiness preserved (PRODUCTION_READY gate) | ✅ | `BASE_PRODUCTION_READY` certificate issued; A5 cert in `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md`. |
 
 ## §4 Hard constraints
 
@@ -78,9 +78,9 @@ Per `02-MINI-ROADMAP.md` §A8, the exit criterion is:
 
 ## §8 References
 
-- Mini-roadmap: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §A8.
-- G7 gate: `docs/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md` §9.
+- Mini-roadmap: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/02-MINI-ROADMAP.md` §A8.
+- G7 gate: `docs/history/legacy-packages/SDDK-Production-Readiness-Alignment-2026-09-14/03-PRODUCTION-READY-GATE.md` §9.
 - A8 tests: `crates/sddk-engine/tests/a8_s{1,2,3}_*.rs` (in main, v1.169.122).
 - A8 release trail: commits `6896b44` (A8-S1), `3923a77` (A8-S2), `939a65e` (A8-S3).
-- Production readiness: `docs/architecture/a5/A5-CURRENT-ROADMAP.md`.
+- Production readiness: `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-CURRENT-ROADMAP.md`.
 - Macro-cycle A6 (sister, STATIC_ENHANCED): `tests/cycle-artifacts/.../a6-static-enhanced-readiness/`.

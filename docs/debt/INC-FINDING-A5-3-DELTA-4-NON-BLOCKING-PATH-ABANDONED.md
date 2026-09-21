@@ -79,5 +79,5 @@ the dead code + the orphaned tests**, and document the choice.
 - `crates/sddk-engine/src/workflow_runtime.rs` (post-A5-3): Delta-4 comment updated
 - `crates/sddk-engine/tests/parallel_spec_scenarios.rs` (post-A5-3): 2 ignored tests removed
 - `crates/sddk-engine/tests/parallel_concurrency_tests.rs` (post-A5-3): `parallel_spans_three_ticks_drain` removed
-- `docs/architecture/a5/A5-3-PLAN.md` §R12 disposition (option C chosen)
-- `docs/architecture/a5/A5-3-RECEIPT.md` §3 finding 2
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-3-PLAN.md` §R12 disposition (option C chosen)
+- `docs/history/legacy-packages/architecture-a5-a6/architecture-a5/A5-3-RECEIPT.md` §3 finding 2

@@ -31,7 +31,7 @@ it, the gate emits a `MissingPlaceholderSkill` warning.
 - `AGENTS.md` §1 (session pre-flight + orchestrator gate)
 - `docs/architecture/specs/arch-spec-002-lifecycle-model.md`
   (the slim Cycle contract)
-- `docs/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/ROADMAP.md`
+- `docs/history/legacy-packages/SDDK-Semantic-Core-Agent-Experience-Consolidation-2026-09-09/03-ROADMAP/ROADMAP.md`
   (M0..M9 sequencing — the live authority)
 
 ## Pattern of orchestration

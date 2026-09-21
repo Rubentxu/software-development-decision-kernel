@@ -57,7 +57,7 @@ This is severity **high** because provenance — the ability to trace who perfor
 
 ## References
 
-- [ADR-069 §5](docs/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-4--provenance-baseline) — provenance baseline
+- [ADR-069 §5](docs/history/legacy-packages/sddk-decision-kernel-architecture/03-adrs/ADR-069-EXPLICIT-AUTHORITY-MATRIX.md#-decision-4--provenance-baseline) — provenance baseline
 - [ledger.rs:23-38](crates/sddk-domain/src/models/ledger.rs:23-38) — LedgerEvent.actor
 - [gate_receipt.rs:108-123](crates/sddk-domain/src/models/gate_receipt.rs:108-123) — GateReceipt.actor
 - [journal.rs:13-32](crates/sddk-domain/src/projections/journal.rs:13-32) — JournalEntry

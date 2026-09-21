@@ -5,7 +5,7 @@ supersedes_history: false
 proposed_at: 2026-09-15
 accepted_at: null
 proposed_by_cycle: p-63676b11dc0ef88f/a3-12-architecture-changed
-source: docs/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/12-CLI-AGENT-UX.md
+source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/12-CLI-AGENT-UX.md
 based_on: arch-spec-A3-S10-architecture-cli-surface + arch-spec-A3-S11-architecture-read-surfaces
 ---
 
