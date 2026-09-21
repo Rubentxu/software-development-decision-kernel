@@ -1,0 +1,28 @@
+# UAT-EVIDENCE — AIW-S8 X07 — Second-binary (read-only) integration
+
+slice: p-63676b11dc0ef88f/aiw-s8-x07-second-binary-integration
+date: 2026-09-21
+scope_contract: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s8-cli-host-evaluation/SCOPE-CONTRACT.md §S8-STOP-4
+test_target: crates/sddk-storage/tests/aiw_s8_x07_second_binary_integration.rs
+
+rows:
+  - id: X07
+    title: "fitness + segundo consumidor real (reader read-only sobre ledger del writer)"
+    status: PASS
+    tests:
+      - writer_and_reader_share_one_storage_path
+      - reader_cannot_write
+      - reader_schema_matches_writer
+      - reader_handles_empty_ledger_gracefully
+    evidence: "cargo test -p sddk-storage --test aiw_s8_x07_second_binary_integration → 4 passed; 0 failed"
+    evidence_class: OBSERVED
+
+gates:
+  - cmd: cargo fmt --check
+    result: exit 0 (FMT_OK)
+  - cmd: cargo clippy -p sddk-storage --test aiw_s8_x07_second_binary_integration -- -D warnings
+    result: "Finished `dev` profile, 0 warnings (note: crate-wide --all-targets fails on pre-existing aiw_s8_x06_schema_versioning assert!(true) warnings, not this slice)"
+  - cmd: cargo test -p sddk-storage --test aiw_s8_x07_second_binary_integration
+    result: "4 passed; 0 failed"
+  - cmd: cargo build --release -p sddk-storage
+    result: "Finished `release` profile [optimized]"
