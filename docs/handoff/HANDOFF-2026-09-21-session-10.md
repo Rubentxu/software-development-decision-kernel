@@ -666,3 +666,104 @@ diff the `resolve_project_identity` impl, check if `Uuid::new_v4` is involved
 ### New commits from this pass
 
 None — this was a read-only investigation. HEAD remains `fc7223f`.
+
+## Addendum 8 (11ª validation pass — ID non-determinism ROOT CAUSE, 2026-09-21)
+
+Empirically identified the exact bug behind Addendum 7's symptom.
+
+### Root cause: `usize::to_be_bytes()` is platform-dependent
+
+In `crates/sddk-domain/src/identity.rs:413-414`:
+
+```rust
+fn framed_hash(domain: &str, parts: &[&str]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(domain.len().to_be_bytes());    // ← usize, 4 or 8 bytes
+    hasher.update(domain.as_bytes());
+    for part in parts {
+        hasher.update(part.len().to_be_bytes()); // ← usize, 4 or 8 bytes
+        hasher.update(part.as_bytes());
+    }
+    ...
+}
+```
+
+`usize::to_be_bytes()` returns 4 bytes on 32-bit platforms and **8 bytes on
+64-bit platforms** (Rust's `usize` width matches the target platform). Same
+source produces different project_id on different platforms.
+
+### Empirical confirmation (this session)
+
+Computed `p-01dda4adb16259ba` exactly using `u64` BE length prefixes:
+
+```python
+domain = b"sddk.project.remote.v1"
+parts  = [b"https://github.com/Rubentxu/software-development-decision-kernel",
+          b"project"]
+h = sha256()
+h.update(struct.pack(">Q", len(domain)))  # 8 bytes for u64
+h.update(domain)
+for p in parts:
+    h.update(struct.pack(">Q", len(p)))  # 8 bytes
+    h.update(p)
+# hex[..16] = "01dda4adb16259ba"  ← matches current binary exactly
+```
+
+A `u32` BE prefix produces `p-dd65f4a2b6c68090`. Current binary on this
+64-bit Linux host uses u64 because `usize = 8 bytes` here.
+
+### Implications
+
+1. **Cross-platform non-determinism.** Same source compiled for:
+   - `x86_64-unknown-linux-gnu` → 8-byte usize → `p-01dda4adb16259ba`
+   - `i686-unknown-linux-gnu`  → 4-byte usize → `p-dd65f4a2b6c68090`
+   - `aarch64-apple-darwin`     → 8-byte usize → `p-01dda4adb16259ba`
+   - `armv7-unknown-linux-gnueabihf` → 4-byte usize → `p-dd65f4a2b6c68090`
+   The 86 in-code references to `p-63676b11dc0ef88f` would be wrong on a
+   32-bit target.
+
+2. **Receipt lineage broken.** A receipt produced on a 32-bit platform has a
+   project_id that doesn't match the current 64-bit binary's project_id.
+   `find_persisted_fallback_seed` and receipt validation would silently fail.
+
+3. **Mode-index portability.** The mode-index entry
+   `p-63676b11dc0ef88f on bender` would fail to match on a different platform.
+
+4. **Historical mismatch explained.** `p-63676b11dc0ef88f` doesn't match any
+   of the variants I computed. Most likely: was computed by a different
+   version of `framed_hash` (perhaps before the import commit `34d68c2`), or
+   with a different remote URL scope, or with a different hash algorithm.
+   The drift isn't purely platform-width.
+
+### Suggested fix (NOT applied — out of session-10 scope)
+
+Replace `usize` with an explicit fixed-width integer in the length prefix:
+
+```rust
+hasher.update((domain.len() as u32).to_be_bytes());    // 4 bytes always
+hasher.update(domain.as_bytes());
+for part in parts {
+    hasher.update((part.len() as u32).to_be_bytes());  // 4 bytes always
+    hasher.update(part.as_bytes());
+}
+```
+
+This makes project_id stable across 32-bit and 64-bit platforms. However, it
+will produce a NEW project_id (different from both `p-01dda4adb16259ba` and
+`p-63676b11dc0ef88f`), requiring a one-time migration of all 86 references
+and the mode-index.
+
+Alternatively: bump the domain string to `sddk.project.remote.v2` so the new
+hash is unmistakably tagged as a different version, and document the
+migration.
+
+### Severity
+
+Reproducibility violation with foundational impact. Mode-index, receipt
+lineage, and 86 cross-references depend on ID stability. **This should be
+addressed before the next release that ships to a new platform.**
+
+### New commits from this pass
+
+None — this was a read-only investigation. HEAD remains `dee2f5e`.
