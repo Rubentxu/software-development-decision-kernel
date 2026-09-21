@@ -11,6 +11,12 @@
 # shellcheck disable=SC2329  # functions are invoked indirectly (by name)
 set -uo pipefail
 
+# Isolation: v1 cases below MUST run with SDDK_RELEASE_ADMISSION_MODE unset
+# (otherwise `release_admission_check` would route to v2 and fail with
+# `query-failed` because the seed dirs have no remote). The v2 cases re-set
+# the variable explicitly per case (see case_v2_run).
+unset SDDK_RELEASE_ADMISSION_MODE
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LIB="$REPO_ROOT/scripts/lib/release_admission.sh"
