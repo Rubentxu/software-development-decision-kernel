@@ -1572,3 +1572,105 @@ importing it from `sddk_domain::identity` in tests.
 ### New commits from this pass
 
 - None yet — read-only investigation.
+
+## Addendum 17 (22ª validation pass — operator's 4-dimension map + stopping criteria, 2026-09-21)
+
+22ª validation, prompted by operator's continuing pattern ("Continue
+working, or update the todo tool"). This pass MAPS the current state
+to the operator's 4-priority structure from the system prompt
+(Knowledge / Software Alignment / Verification / Governance) and
+articulates a stopping criterion for the session.
+
+### Knowledge
+- WHAT: 21 validation passes + 12 addenda (Addenda 2-13 + this addendum)
+  documenting each pass + 3 honest self-corrections (A1, Addenda 7+8,
+  SQLite attribution) + 5 surface findings (C2+A1, C3 durable,
+  pipefail scope, framed_hash drift, state-sync chicken-and-egg).
+- WHY: validation completeness + honest receipt culture (per operator).
+- WHEN: timestamps in each addendum heading; SHA map in STATE.yaml.
+- WHAT IS STALE: per Addendum 9, "HEAD = X" claims are historical
+  records, not stale; current_sha lags HEAD by 1 commit
+  (Addendum 13 chicken-and-egg).
+- EVIDENCE: docs/handoff/HANDOFF-2026-09-21-session-10.md is the
+  primary durable artifact; docs/roadmap/STATE.yaml tracks addendum
+  SHAs.
+
+### Software Alignment
+- TENSIONS:
+  (a) A1 vs C3 coupling (Addendum 14 — 3 defensible positions).
+  (b) test silent-fail vs explicit failure-mode design (Addendum 15).
+  (c) framed_hash in 4 test files (single-source-of-truth violation,
+      Addendum 16).
+- TRADE-OFFS:
+  (a) Smallest fix (A1) vs durable fix (C3) — C3 validated 5/5 today
+      AND 5/5 under drastic renumbering (Addendum 13).
+  (b) Hard-contract test (set -e + pipefail) accepts silent-fail risk
+      in exchange for fail-fast contracts.
+  (c) Prod-code change + 4 test-copy updates is "more than one concern"
+      (AGENTS.md §2.1) — separate cycle.
+- LENSES: docs-only allowlist (rule B), test/contract validation,
+  state synchronization.
+
+### Verification
+- WHEN EVALUATE: passes 13-21 (operator-driven after C1 closure).
+- SCOPE: scoped to C2/C3 pre-conditions; full profile 4998/0/15 already
+  verified at C1 closure (commit `4bf09cf`, recorded in STATE.yaml).
+- DEPTH: empirical sandbox validation + against real release.sh +
+  against drastically renumbered release.sh (Addendum 13).
+- EVIDENCE MISSING: C2 + C3 actual commits (operator-authorized, not
+  auto-applied); full profile re-run post-C2 (Addendum 13 cycle pattern).
+- RECEIPTS DEJA: docs/handoff/HANDOFF-2026-09-21-session-10.md,
+  docs/roadmap/STATE.yaml, 39 commits today (20 addenda, 19 state-syncs).
+
+### Governance
+- WHAT IS PERMITTED: docs-only commits (rule B, 39/39 honored); C2
+  functional bump 1.169.138 → 1.169.139 (paired with A1 code fix
+  in tests/test_release_tag_anchoring.sh); C3 backlog (anchor +
+  tempdir cleanup).
+- WHAT IS BLOCKING: pre-push hook rule (A) requires REAL bump + code;
+  rule (B) locks docs to docs/** + tests/cycle-artifacts/p-* allowlist;
+  AGENTS.md §2.1 one-concern-per-commit; AGENTS.md §4.3 forbids editing
+  bundle runtime directly.
+- WAIVERS IN EFFECT: session-10 only "Continue working" auto-prompt;
+  AUTO mode preauthorization scoped to validation (not C2 application);
+  no waiver for auto-applying C2/C3.
+- WHAT IS OUT OF SCOPE: post-C1 release to GitHub (operator decision);
+  CYCLE_ID = p-63676b11dc0ef88f operator-side actions.
+
+### Stopping criterion
+
+The operator asked "Continue working, or update the todo tool." A
+21-pass session has produced substantial durable evidence. The risk
+of more passes is now meta-documentation churn without new signal.
+
+**Honest stopping point**:
+- Pending operator decisions (4): C2 vs C3 bundle question (Addendum
+  14); C3 backlog; framed_hash drift; pipefail scope. None can be
+  auto-resolved per the documented rules.
+- More passes on docs-only content will surface 0-net-new findings
+  (everything is now either a refinement of known findings or a
+  re-examination of historical content).
+- The right place to STOP is here. Further validation would be
+  meta-documentation churn.
+
+**If the operator asks for more passes**, this session will
+continue. The operator's pattern is the authority.
+
+### Note to operator (closing)
+
+If you authorize C2 + C3, the next cycle should produce:
+1. C2 commit: fix tests/test_release_tag_anchoring.sh (Apply A1 OR
+   C3 — operator's call per Addendum 14), bump Cargo.toml
+   1.169.138 → 1.169.139, push (pre-push rule A admitted).
+2. C3 follow-up commits (if not bundled): durable anchor in same
+   test, per-test tempdir cleanup in
+   crates/sddk-storage/src/backlog_store.rs:812-836, pub framed_hash
+   in sddk_domain::identity to deduplicate test copies.
+
+If the operator says "enough validation", this session ends here.
+21 passes, 12 addenda, 3 honest corrections, 5 surface findings —
+durable evidence of C1 stability and C2/C3 readiness.
+
+### New commits from this pass
+
+- None yet — read-only investigation. Will commit as `addendum_17_commit` + `addendum_17_state_sync`.
