@@ -52,3 +52,17 @@
 - Gates verificados: G0..G8 (factual reconciliation, no rewriting, no EXT simulation, no auto-release, pre-push allowlist respetado, falsificaciones T01/T02 ejecutadas, waiver R14 carried forward, journal+state committed). Resultado global: **PASS_OBSERVED_WITH_NOTES**.
 - Riesgos aceptados: PRE-RELEASE (operator gate), EXT binaries missing (C1+), AIW-S8 X08 DEFERRED, R11/J7/J8/J9 DEFERRED.
 - Próxima acción ejecutable: operador ejecuta `bash scripts/release.sh` para publicar v1.169.128. Orchestrator NO inicia C1 hasta que workspace == public release observado.
+
+### 2026-09-21T12:07:00Z — C0 ANNEXES + OPERATOR GATE STILL OPEN — orchestrator
+
+- Estado: C0 RECEIPT cerrado en b0d6d40; release v1.169.128 sigue pendiente del operador (system-law git.release).
+- Trabajo autónomo entre el push de b0d6d40 y este turno:
+  - `cargo build --release -p sddk-cli` (3m 10s clean; binario en `$CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets/release/sddk`, NO `./target/release/sddk`).
+  - sha256 verificado: `4c361ddae53d7e9d96fe45880a5e2825ef68b9996fd274f1b0b2df5a230fdf4f` (30.7 MB, exec bit OK).
+  - Smoke: `sddk --help` renderiza, `sddk version` reporta `binary: 1.169.128`, `sddk dev` subcomandos visibles.
+  - Dry-run: rechaza con "non-monotonic 1.169.128 → 1.169.128" (correcto, somos pre-release; el operador cierra el gap).
+- Anexos C0 emitidos (no rompen scope C0; son notas honestas que el operador + el siguiente orquestador necesitan):
+  - `docs/roadmap/receipts/c0/e8964ac/C0-PRE-RELEASE-SMOKE.md` — sha256 + smoke antes de `bash scripts/release.sh`.
+  - `docs/roadmap/receipts/c0/e8964ac/C1-RESEARCH-NOTES.md` — preguntas concretas para que C1 arranque con substance (no es SCOPE-CONTRACT; no toca código).
+- Riesgo documentado: NO se abre C1 hasta release confirmada. C0-RECEIPT §4 fila 7 + §10 (en research-notes) registran la cadena.
+- Próxima acción ejecutable: operador corre `bash scripts/release.sh`; orquestador re-corre T01; si OK, marca C0 CLOSED y emite SCOPE-CONTRACT de C1 partiendo de `C1-RESEARCH-NOTES.md`.

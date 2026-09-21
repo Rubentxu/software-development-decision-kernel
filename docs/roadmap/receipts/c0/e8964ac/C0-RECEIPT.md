@@ -54,6 +54,7 @@ Ninguna de las dos limitaciones es nueva ni introducida por C0; ambas son pre-ex
 | AIW-S8 X08 (Jev corpus + baseline) | DEFERRED per ROADMAP §A4; no addressed en C0 | Roadmap A4 |
 | R11 (crate split), J7/J8/J9 | DEFERRED per STATE.yaml; no in scope C0 | Roadmap C1+ / C2c+ |
 | SPEC-013..018 consolidation | Adopción ya realizada; C0 no intenta renormalización | Done |
+| C0 → C1 transition blocked on operator release | C0-RECEIPT §8 marca el camino; hasta que el operador publique v1.169.128 y el orquestador re-corra T01, no se abre C1. Este research preparatorio NO reemplaza al SCOPE-CONTRACT formal de C1 | Operator (release) + Orchestrator (T01 re-run) |
 
 ## §5 Limitations
 
