@@ -448,3 +448,31 @@ Tras cycle-c:
   3. `cargo test --workspace`.
   4. shellcheck sobre tests/*.sh scripts/*.sh tests-e2e/tui/run.sh.
 - **Reconciliación**: STATE.yaml actualizado a SHA c4c7e0a, status `C1_THREE_PRS_INTEGRATED_AWAITING_FULL_PROFILE`. CURRENT.md y JOURNAL extended.
+
+---
+
+## 2026-09-21T17:42Z — Sec.6 cierre C1: full profile PASS sobre a1f0fa0
+
+- **Actor**: jcode (bender mode, AUTO).
+- **Acción**: ejecutar full profile C1 sobre main@a1f0fa0 como gate de cierre.
+- **Gates ejecutados (todos PASS observado)**:
+  1. `cargo fmt --all --check`: PASS (sin warnings, exit 0).
+  2. `cargo clippy --workspace --all-targets -- -D warnings`: PASS (sin warnings, exit 0; 8 crates compiladas: sddk-domain, sddk-vault, sddk-storage, sddk-engine, sddk-testkit, sddk-pack-uat, sddk-gateway, sddk-cli).
+  3. `cargo test --workspace`: PASS (4989 passed, 0 failed, 15 ignored; 256 test result lines, 0 failures en aggregate).
+  4. `sddk dev manifest --root . --verify`: PASS (377 archivos hashed; manifest regenerado con sddk 1.169.134).
+  5. shellcheck sobre archivos de las 3 PR (`tests/test_h05_isolation.sh`, `tests/test_release_admission.sh`, `scripts/lib/release_admission.sh`): exit 0 (clean).
+- **Hallazgo durante gate**: `cli_dev_install_accepts_committed_manifest` falló inicialmente por 7 hashes divergentes entre MANIFEST.sha256 commiteado y los archivos actuales en `agents/`, `prompts/`, `skills/`. Causa raíz: el commit `8d785c4` (PR #8) modificó `agents/sddk-apply.md` (+1/-1, referencia de path durante reorganización docs/history/) sin regenerar el manifest. Deuda pre-existente que PR #8 debió aplicar AGENTS.md §5 ("sddk dev manifest --root .") pero no aplicó.
+- **Resolución**: construido binario sddk 1.169.134 workspace-built (`cargo build --release -p sddk-cli`, CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets, 2m53s), regenerado MANIFEST.sha256 con `sddk dev manifest --root .`, verificado con `--verify`. Commit `a1f0fa056394611c29a155f8607cd983e459234b` = `fix(bundle): regenerate MANIFEST.sha256 tras PR #8 (8d785c4)`. Push exitoso (pre-push hook admite el manifest-only commit per rule C).
+- **Cierre**: las 3 PR C1 integradas + full profile verde sobre main@a1f0fa0. C1 cerrado.
+- **No ejecutado**: bash scripts/release.sh — sistema-law git.release es operator-side. Operador decidirá si publica v1.169.134 desde a1f0fa0 o congela el cierre sin release.
+- **Decisiones**:
+  - Decidido regenerar el manifest en este cierre (no esperar a C2) porque el gate de cierre lo exige (test cli_dev_install_accepts_committed_manifest fallaría indefinidamente).
+  - Decidido NO abrir C2 — operador explícitamente dijo "No abrir C2"; el próximo paso queda en sus manos (release o freeze).
+  - Decidido NO bumpear a 1.169.135 — el bump ceremonial está prohibido por el operador y no hay release todavía. Si operator decide release, ese bump entrará con el `chore(release): bump version` commit del release script.
+- **Estado final**:
+  - main@a1f0fa056394611c29a155f8607cd983e459234b.
+  - workspace version 1.169.134.
+  - sin PR abiertas.
+  - sin ramas C1 remanentes (c1-h02-recovery, c1-h05-seam-isolation, c1-cycle-c-implementation todas eliminadas por --delete-branch en merge).
+- **Próxima acción**: bloqueada hasta operator-side. O `bash scripts/release.sh` desde main (publica v1.169.134), o congelar C1 y abrir C2 con nuevo plan.
+- **Reconciliación**: STATE.yaml actualizado a SHA a1f0fa0 (real, no inventado), status `C1_CLOSED_FULL_PROFILE_GREEN`. CURRENT.md extendido. JOURNAL con esta entrada.
