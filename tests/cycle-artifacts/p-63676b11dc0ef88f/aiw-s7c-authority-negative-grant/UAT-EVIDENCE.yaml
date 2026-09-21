@@ -1,0 +1,44 @@
+# UAT-EVIDENCE — AIW-S7c — AuthorityContext negative-grant
+
+slice: p-63676b11dc0ef88f/aiw-s7c-authority-negative-grant
+date: 2026-09-21
+scope_contract: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s7-secretary-attention/SCOPE-CONTRACT.md §S7-STOP-3
+test_target: crates/sddk-engine/tests/aiw_s7c_authority_negative_grant.rs
+
+rows:
+  - id: G05
+    title: "Secretary intenta release/gate/lease/receipt fuera closed-set"
+    status: PASS
+    tests:
+      - secretary_prohibited_on_all_four_exclusive_prefixes
+      - secretary_state_mutation_outside_closed_set_requires_escalation
+      - secretary_bound_to_role_only_for_agent_kind
+    evidence: "cargo test -p sddk-engine --test aiw_s7c_authority_negative_grant → 13 passed; 0 failed"
+    evidence_class: OBSERVED
+
+  - id: G07
+    title: "Autoridad de leer documento/capability no otorgada"
+    status: PASS
+    tests:
+      - human_rejected_on_framework_bundle_surface
+      - human_rejected_on_github_releases_surface
+      - human_rejected_on_dependency_edge_surface
+      - agent_rejected_on_decision_record_surface
+      - system_rejected_on_knowledge_graph_vault_surface
+      - cli_admitted_on_evidence_attachment_surface
+      - negative_grant_does_not_spill_to_admitted_surface
+      - secretary_l1_proposal_with_high_tier_requires_evidence
+      - secretary_l1_unknown_template_rejected
+      - secretary_proposal_kind_matches_template
+    evidence: "cargo test -p sddk-engine --test aiw_s7c_authority_negative_grant → 13 passed; 0 failed"
+    evidence_class: OBSERVED
+
+gates:
+  - cmd: cargo fmt --check
+    result: exit 0
+  - cmd: cargo clippy -p sddk-engine --all-targets -- -D warnings
+    result: "Finished `dev` profile, 0 warnings (deny warnings)"
+  - cmd: cargo test -p sddk-engine --test aiw_s7c_authority_negative_grant
+    result: "13 passed; 0 failed"
+  - cmd: cargo build --release -p sddk-engine
+    result: "Finished `release` profile in 34.67s"
