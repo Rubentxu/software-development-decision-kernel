@@ -1,20 +1,22 @@
 schema_version: 1
-updated_at: "2026-09-21T17:56:00Z"
-status: C1_CLOSED_FULL_PROFILE_GREEN
+updated_at: "2026-09-21T18:42:00Z"
+status: C1_CLOSED_FULL_PROFILE_GREEN_RELEASE_PIPELINE_GAP_ACKNOWLEDGED
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "0264d51d8b5d40e95e9b71f1a3c2f8e7b5a4d9c2e"
+  current_sha: "8d91ad6c5cef9fd284a590099706ed1618b0ca8e"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.134"
+  workspace_version_at_current: "1.169.135"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
   pr11_merge_commit: "c4c7e0ae7ef1a062fa18eafa891d41cc771e087d"
   manifest_regen_commit: "a1f0fa056394611c29a155f8607cd983e459234b"
+  test_isolation_fix_commit: "f2daa29f2cffd53b86f5a90f6dc147f1c9b8eb2c"
+  test_isolation_bump_commit: "8d91ad6c5cef9fd284a590099706ed1618b0ca8e"
   full_profile_run_at_sha: "f4670bd2c136197ab4b3d464e7516ee5529f186f"
   full_profile_run_at: "2026-09-21T17:38:00Z"
-  note: "C1 cerrado. Las 3 PR (H02/H05+H06/cycle-c) integradas en main; full profile C1 ejecutado sobre a1f0fa0: cargo fmt --all --check PASS, cargo clippy --workspace --all-targets -- -D warnings PASS, cargo test --workspace PASS (4989 passed, 0 failed, 15 ignored), sddk dev manifest --root . --verify PASS. Única acción adicional al merge: regeneración de MANIFEST.sha256 (a1f0fa0) por inconsistencia preexistente del commit 8d785c4 (PR #8) que modificó agents/sddk-apply.md sin regenerar el manifest. La deuda de no aplicar AGENTS.md §5 en PR #8 queda anotada en el JOURNAL. No hay bumps ceremoniales — el bump 1.169.134 entró con PR #9 (8e467c3) y se mantuvo estable. No publicar release — operador decidirá bash scripts/release.sh aparte. Próximo hito: C2 (no abrir hasta operator-side)."
+  note: "C1 cerrado. Las 3 PR (H02/H05+H06/cycle-c) integradas en main. Full profile C1 ejecutado sobre f4670bd: cargo fmt --all --check PASS, cargo clippy --workspace --all-targets -- -D warnings PASS, cargo test --workspace PASS (4989 passed, 0 failed, 15 ignored), sddk dev manifest --root . --verify PASS. Workaround post-merge: regeneración de MANIFEST.sha256 (a1f0fa0) por inconsistencia preexistente del commit 8d785c4 (PR #8) que modificó assets/ sin regenerar el manifest (deuda AGENTS.md §5). Tras la validación profunda del operador, encontré un bug pre-existente en tests/test_release_admission.sh (los casos v1 no aislaban SDDK_RELEASE_ADMISSION_MODE, expuesto por PR #11 cuando el operador corre release.sh --dry-run con SDDK_RELEASE_ADMISSION_MODE=v2) — corregido en f2daa29 con bump funcional 1.169.134 → 1.169.135 (8d91ad6, NO ceremonial: acompaña el fix de código en tests/). Gap pre-existente NO relacionado con C1: scripts/release.sh perdió el step 1c/14 (commit a86e85d feat(release): sync HEAD to origin/main before publish (closes INC-RELEASE-TAG-FIX)) — el test tests/test_release_tag_anchoring.sh busca ese step que ya no existe, así que release.sh --dry-run completo falla en step 1b. Esto es un gap de release-pipeline-integrity fuera del scope C1; el operador decidirá si abrir un nuevo ciclo para INC-RELEASE-TAG-FIX. Próximo hito: C2 (no abrir hasta operator-side) o arreglar INC-RELEASE-TAG-FIX primero."
 authority:
   roadmap: "docs/roadmap/ROADMAP.md"
   certifications: "docs/roadmap/CERTIFICATIONS.md"
