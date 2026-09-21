@@ -1,0 +1,138 @@
+# UAT-EVIDENCE — C1 H01 — reject unknown descriptors in shape_matches
+
+> **Slice id:** `p-63676b11dc0ef88f/c1-h01-shape-matches-descriptor-validation`
+> **Baseline SHA:** `eae4f7f`
+> **Working SHA:** TBD (post-fix commit)
+> **Date (UTC):** 2026-09-21T13:57:00Z
+> **Status:** RED → GREEN observed
+
+## §1 RED — Caracterización del bug
+
+**Comando:**
+```
+cargo test -p sddk-engine --lib structured_work
+```
+
+**Output (verbatim):**
+```
+running 7 tests
+test structured_work::tests::saw001_002_typed_request_schema_result ... ok
+test structured_work::tests::saw008_unknown_descriptor_violation_not_contribution ... FAILED
+test structured_work::tests::saw005_contribution_not_authority ... ok
+
+failures:
+
+---- structured_work::tests::saw007_unknown_descriptor_rejected stdout ----
+
+thread 'saw007_unknown_descriptor_rejected' (1376697) panicked at
+crates/sddk-engine/src/structured_work.rs:382:9:
+assertion failed: !shape_matches(&json!("hello"), "this-descriptor-does-not-exist")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- structured_work::tests::saw008_unknown_descriptor_violation_not_contribution stdout ----
+
+thread 'saw008_unknown_descriptor_violation_not_contribution' (1376698) panicked at
+crates/sddk-engine/src/structured_work.rs:423:22:
+expected SchemaViolation, got Contributed(ContributionV2 { request_id: "req-1",
+  fields: {"custom": String("anything"), "summary": String("done")} })
+
+failures:
+    structured_work::tests::saw007_unknown_descriptor_rejected
+    structured_work::tests::saw008_unknown_descriptor_violation_not_contribution
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 1313 filtered out; finished in 0.00s
+```
+
+**Interpretación:**
+- `saw007`: la función `shape_matches` con descriptor desconocido y valor válido devuelve `true` (incorrecto).
+- `saw008`: end-to-end, el `StructuredWorkExecutor` produce un `Contributed` (success fabricado) cuando el `return_schema` contiene un descriptor desconocido. Esto es exactamente el bug que ROADMAP H01 ataca.
+
+## §2 Aplicación del fix mínimo
+
+**Diff (verbatim):**
+```diff
+--- a/crates/sddk-engine/src/structured_work.rs
++++ b/crates/sddk-engine/src/structured_work.rs
+@@ -203,7 +203,14 @@
+         "array<string>" => v
+             .as_array()
+             .is_some_and(|a| a.iter().all(|x| x.is_string())),
+-        _ => true, // unknown descriptors are pass-through (coarse schema)
++        // H01 of ROADMAP §2 C1: unknown descriptors must NOT match.
++        // Previously this arm was `_ => true` (pass-through), which silently
++        // accepted any shape, allowing the executor to fabricate
++        // `Contributed` outcomes for descriptors that were not part of
++        // the supported allow-list ("string" | "u64" | "bool" |
++        // "array<string>"). Any future descriptor must be added here
++        // explicitly with its matcher.
++        _ => false,
+     }
+ }
+```
+
+Cambio de 1 línea: `_ => true, // unknown descriptors are pass-through (coarse schema)` → `_ => false,` con comentario explicativo del ROADMAP H01.
+
+## §3 GREEN — Verificación post-fix
+
+**Comando:**
+```
+cargo test -p sddk-engine --lib structured_work
+```
+
+**Output (verbatim):**
+```
+running 7 tests
+test structured_work::tests::saw007_unknown_descriptor_rejected ... ok
+test structured_work::tests::saw006_receipt_provenance ... ok
+test structured_work::tests::saw001_002_typed_request_schema_result ... ok
+test structured_work::tests::saw003_invalid_output_visible_not_fabricated ... ok
+test structured_work::tests::saw004_same_adapter_two_modes ... ok
+test structured_work::tests::saw008_unknown_descriptor_violation_not_contribution ... ok
+test structured_work::tests::saw005_contribution_not_authority ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1313 filtered out; finished in 0.00s
+```
+
+**7/7 SAW tests pass** (5 originales + 2 nuevos). Ningún test conocido se ha roto.
+
+## §4 No-regresión workspace completo
+
+**Comando:**
+```
+cargo test --workspace
+```
+
+**Output (sumarizado):**
+```
+TOTAL passed: 4968
+TOTAL failed: 0
+TOTAL ignored: 15
+```
+
+**Comparativa pre/post:**
+| Snapshot | passed | failed | ignored | delta |
+|---|---|---|---|---|
+| Pre-fix (`C0-WORKSPACE-TESTS.md` @ `62494ae`) | 4966 | 0 | 15 | baseline |
+| Post-fix (`eae4f7f` + H01 fix) | **4968** | 0 | 15 | +2 (SAW-007, SAW-008) |
+
+Cero regresiones. Los 15 ignored siguen siendo los mismos (decisiones `#[ignore]` documentadas, no relacionadas con H01).
+
+## §5 What H01 does NOT cover (deferred to other slices)
+
+- **H02** (`structured_work::submit` + `IdempotencyKey`): ver comportamiento con `request_id` duplicado. Slice independiente.
+- **H05** (`set_process_service_for_tests`): gate con `#[cfg(test)]`. Slice independiente.
+- **H06** (`redact()` coverage audit): verificación de cobertura transversal. Slice independiente.
+
+## §6 Compatibility assessment
+
+El cambio `_ => true` → `_ => false` en `shape_matches` es **estrictamente más estricto**. Cualquier descriptor desconocido que antes pasaba como match ahora falla. Esto puede romper consumidores que envíen descriptores no documentados. Análisis:
+
+- **Tests existentes**: 5 SAW tests + 1313 otros en `sddk-engine`. Todos siguen verdes. → No hay consumidor interno afectado.
+- **Host adapters**: `StructuredWorkExecutor::run_structured` es el boundary público. El cambio endurece el boundary (más estricto). Si un adapter envía un descriptor no soportado, antes obtenía `Contributed` (success fabricado), ahora obtiene `SchemaViolation`. Esto es la semántica correcta.
+- **Riesgo bajo**: el comportamiento "fabricated success" anterior era un bug; reemplazarlo por "rejection explícito" corrige la semántica sin perder funcionalidad útil.
+
+## §7 Decision
+
+**H01 PASS_OBSERVED.** El bug H01 está fixed con cambio mínimo, 7/7 SAW tests pass, workspace completo 4968/0/15.
+
+Siguiente slice: **H02** (`structured_work::submit` + IdempotencyKey semantics + error interpolation).

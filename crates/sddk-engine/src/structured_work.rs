@@ -203,7 +203,14 @@ fn shape_matches(v: &serde_json::Value, shape: &str) -> bool {
         "array<string>" => v
             .as_array()
             .is_some_and(|a| a.iter().all(|x| x.is_string())),
-        _ => true, // unknown descriptors are pass-through (coarse schema)
+        // H01 of ROADMAP §2 C1: unknown descriptors must NOT match.
+        // Previously this arm was `_ => true` (pass-through), which silently
+        // accepted any shape, allowing the executor to fabricate
+        // `Contributed` outcomes for descriptors that were not part of
+        // the supported allow-list ("string" | "u64" | "bool" |
+        // "array<string>"). Any future descriptor must be added here
+        // explicitly with its matcher.
+        _ => false,
     }
 }
 
@@ -361,5 +368,68 @@ mod tests {
         assert_eq!(r.context_basis, vec!["basis:rev-7".to_string()]);
         assert_eq!(r.host_compatibility, "structured-v1");
         assert_eq!(r.outcome_kind, OutcomeKind::TimedOut);
+    }
+
+    /// SAW-007 (H01 of ROADMAP §2 C1): unknown shape descriptor must
+    /// NOT match. A descriptor not in the allow-list
+    /// ("string" | "u64" | "bool" | "array<string>") must be rejected
+    /// instead of being silently accepted.
+    ///
+    /// Before the fix: `_ => true` in `shape_matches` accepted any unknown
+    /// descriptor (and any value type), which violates the contract.
+    #[test]
+    fn saw007_unknown_descriptor_rejected() {
+        // The same-shape-known cases still work (regression check).
+        assert!(shape_matches(&json!("hello"), "string"));
+        assert!(shape_matches(&json!(42), "u64"));
+        assert!(shape_matches(&json!(true), "bool"));
+        assert!(shape_matches(&json!(["a", "b"]), "array<string>"));
+
+        // The unknown-descriptor cases (the bug).
+        assert!(!shape_matches(&json!("hello"), "this-descriptor-does-not-exist"));
+        assert!(!shape_matches(&json!("hello"), ""));
+        assert!(!shape_matches(&json!("hello"), "integer"));
+        assert!(!shape_matches(&json!("hello"), "u32"));
+        assert!(!shape_matches(&json!("hello"), "i64"));
+        assert!(!shape_matches(&json!("hello"), "object"));
+        assert!(!shape_matches(&json!("hello"), "STRING")); // case-sensitive match
+    }
+
+    /// SAW-008 (H01 companion): unknown descriptor on a typed JSON value
+    /// surfaces as `SchemaViolation`, not as a fabricated `Contributed`.
+    /// This is the end-to-end manifestation of the bug at the executor
+    /// boundary.
+    #[test]
+    fn saw008_unknown_descriptor_violation_not_contribution() {
+        let mut ex = StructuredWorkExecutor::new();
+        let mut req = request();
+        // Inject a non-supported descriptor in the return schema.
+        req.return_schema = ReturnSchema {
+            fields: BTreeMap::from([
+                ("summary".to_string(), "string".into()),
+                ("custom".to_string(), "this-descriptor-does-not-exist".into()),
+            ]),
+        };
+        ex.submit(req);
+        let (outcome, receipt) = ex
+            .run_structured(
+                "req-1",
+                RawHostOutput::Fields(BTreeMap::from([
+                    ("summary".to_string(), json!("done")),
+                    ("custom".to_string(), json!("anything")),
+                ])),
+            )
+            .unwrap();
+        match outcome {
+            StructuredRunOutcome::SchemaViolation(v) => {
+                assert!(
+                    v.iter().any(|s| s.contains("custom")),
+                    "violation must mention the offending field, got {v:?}"
+                );
+            }
+            other => panic!("expected SchemaViolation, got {other:?}"),
+        }
+        assert_eq!(receipt.outcome_kind, OutcomeKind::SchemaViolation);
+        assert_eq!(receipt.validated_fields, 0);
     }
 }
