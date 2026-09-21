@@ -412,10 +412,19 @@ pub fn stable_workspace_id(project: &ProjectId, canonical_path: &str) -> String 
 fn framed_hash(domain: &str, parts: &[&str]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(domain.len().to_be_bytes());
+    // Use u64 (not usize) for the length-prefix encoding so that the
+    // hash output is platform-independent. On 64-bit (the project's
+    // deployment matrix: x86_64/aarch64-linux-musl, x86_64/aarch64-darwin
+    // per .github/workflows/release.yml), usize==u64 and both forms
+    // produce the same bytes. On a hypothetical 32-bit target, usize
+    // would be 4 bytes but u64 is always 8 — agreeing with the inline
+    // test copies in cli_approval_loop_e2e.rs / cli_pack_e2e.rs /
+    // cli_approval_e2e.rs / ledger_watch.rs. See addendum 16 of
+    // HANDOFF-2026-09-21-session-10.md for full rationale.
+    hasher.update((domain.len() as u64).to_be_bytes());
     hasher.update(domain.as_bytes());
     for part in parts {
-        hasher.update(part.len().to_be_bytes());
+        hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part.as_bytes());
     }
     let hash = hasher.finalize();
