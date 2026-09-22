@@ -1,3 +1,19 @@
+---
+id: ADR-0142-RELEASE-SCRIPT-SEMVER-CORRECTNESS
+status: accepted
+supersedes_history: false
+adopted_at: 2026-09-22
+adoption_cycle: p-63676b11dc0ef88f/c4-release-cut
+package_local_id: null
+package_source: null
+accepted_at: 2026-09-22
+accepted_by_cycle: p-63676b11dc0ef88f/c4-release-cut
+superseded_by: []
+related_adrs:
+  - ADR-0097-COMMON-REVISION-SUBSTRATE
+stale_after: 2027-09-22
+---
+
 # ADR-0142 — Release script SemVer-correctness via `release-bump.sh` integration
 
 - **Status:** accepted
