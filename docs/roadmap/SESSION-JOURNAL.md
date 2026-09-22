@@ -1780,3 +1780,58 @@ Si operador autoriza: `bash scripts/release.sh --dry-run` primero para previsual
 Si operador NO autoriza release: continuar con FC-* restantes (FC-4 `uat replay --release`, FC-7 `uat status --format json`, FC-8 `uat validate --format json`) o pausar para guidance explícita.
 
 **Override SemVer:** Sigue LIFTED en v1.171.0 (set allí por sobre-recuento de fixes). v1.171.2 es minor (1 feat) per algoritmo canónico — NO requiere operator-judgment override.
+
+---
+
+## Session-12 (continuación) — 2026-09-22T20:25Z — Release v1.172.0 publicado
+
+**Baseline:** `d89c2c0` HEAD en origin/main. Tag `v1.172.0` publicado en GH Releases 2026-09-22T20:23:49Z.
+
+**Decisión del operador:** autorizado "tienes permiso" → ejecuté `bash scripts/release.sh`.
+
+**Confusión inicial:** el primer dry-run rechazó con "non-monotonic 1.171.2 -> 1.171.2". Diagnóstico: el release script step 2.5 invoca `release-bump.sh --dry-run` que computó `v1.172.0` desde LAST_TAG=v1.171.0 + commits (1 feat → minor). El step 1d leyó workspace `1.171.2` para VERSION, pero step 2.5 sobrescribió TAG al SemVer-correcto. Mi suposición de que el tag sería v1.171.2 estaba mal: el algoritmo salta ceremonial 1.171.1/1.171.2 porque son workspace-versions, no published tags.
+
+**Operación ejecutada:**
+1. **`bash scripts/release.sh --dry-run` con SDDK_RELEASE_ADMISSION_MODE=v2`** → step 0 admisión ACCEPT 1.171.0→1.171.2, pero step 1 `cargo test --workspace` falló con flake pre-existente `concurrency_planning_substrate` (`Database is locked` esporádico bajo concurrencia workspace-wide).
+2. **Diagnóstico del flake:** `cargo test -p sddk-storage --test concurrency_planning_substrate --offline` → 5/5 PASS en isolation. Confirmado como flake pre-existente (no introducido por mis cambios). Sesión-10 lo documentó.
+3. **Re-ejecución de gates individuales por crate:**
+   - `cargo test -p sddk-storage --offline` → all-targets OK
+   - `cargo test -p sddk-domain` y `--engine` y `--cli` → OK individual
+4. **Justificación de `--skip-tests`:** flake pre-existente aislado a concurrencia workspace-wide; gates verificados por crate individual con 0 failed. AGENTS.md §8 autoriza `--skip-tests` "asume que ya corriste los gates".
+5. **`SDDK_RELEASE_ADMISSION_MODE=v2 bash scripts/release.sh --skip-tests`** → pipeline completo 0-13 PASS. Resultado:
+   - Tag `v1.172.0` creado en origin (apunta a `d89c2c0c722c09c9b2f330a50da904c1e97be297`).
+   - 9 assets en GH Release: sddk-linux-x86_64-musl, sha256, CHECKSUMS, sbom, gh-release-receipt, bundle tarball + sha, framework tarball + sha, binary.
+   - Binary version reportada: `1.171.2` (workspace version al build; mismatch con tag SemVer es by design).
+   - Instalación local: `~/.local/share/sddk/framework/1.171.2/`.
+   - Poda: bundle `1.171.0` eliminado, kept `1.171.2`.
+   - Doctor: `binary.bundle_coherence: present, all_present: true`.
+   - Distrib round-trip OK.
+
+**Confusión inicial con revert:** intenté `git revert 8a541c3` para "volver atrás" un bump ceremonial. Eso creó un commit revert que el admission v1 detectó como non-monotonic (HEAD=1.171.1 < HEAD^=1.171.2). Lo "deshice" con un segundo revert (reapply) que restauró el bump. Luego un commit adicional `chore(workspace): regenerate Cargo.lock at 1.171.2` para sincronizar lockfile con workspace. La cadena de commits final quedó con 9 commits (incluyendo los reverts), ruido aceptable en historial. Lección: **los bumps ceremoniales del pre-push hook deben quedarse; revertirlos rompe admisión v1**.
+
+**Decisiones técnicas notables:**
+
+- **admisión v2 (no v1):** con el revert+reapply, la admisión v1 (compara HEAD vs HEAD^) detectó non-monotonic. admisión v2 (compara contra last published tag) funcionó porque v1.171.2 > v1.171.0. `SDDK_RELEASE_ADMISSION_MODE=v2` se aplicó explícitamente.
+- **Salto de v1.171.0 a v1.172.0:** el release script computa NEXT desde `git tag --sort=-v:refname` (max published tag) + commits. Los workspace-versions `1.171.1` y `1.171.2` (ceremoniales, push-bump) NO SON tags publicados y por tanto NO entran en el cálculo. Resultado: `v1.171.0` minor → `v1.172.0` (no `v1.171.1`). El bump script comenta: "The workspace version above is a CEREMONIAL per-push pointer" — esto es by design.
+- **Skip-tests justificado:** flake pre-existente documentado (sesión-10 + sesión-12), reproducible en isolation. Gates verificados por crate con 0 failed.
+
+**Reconciliación de docs:**
+- `docs/roadmap/CURRENT.md`: estado v1.172.0 publicado, binary 1.171.2 instalado localmente, links a release.
+- `docs/roadmap/STATE.yaml`: `current_sha=d89c2c0`, `tag_v1_172_0_sha`, `last_public_release_observed=v1.172.0`, `c4_release_v1_172_0` bloque con detalles.
+- `docs/roadmap/SESSION-JOURNAL.md` (esta entrada).
+- `docs/roadmap/FEATURE-CANDIDATES.md`: FC-1 ya marcado IMPLEMENTED v2 en commit anterior; sin cambios.
+
+**Riesgos aún abiertos:**
+- **CERTIFICATION-RECEIPT.yaml para v1.172.0 NO creado.** El release se publicó con el mismo nivel de rigor que v1.171.0 (passes observados, distrib round-trip OK), pero la certificación formal a schema §5 sigue siendo deferred. Si operador quiere el mismo nivel de rigor que session-12 aplicó a v1.171.0, hay que crearlo manualmente en `docs/roadmap/receipts/c4-release-v1.172.0/CERTIFICATION-RECEIPT.yaml`.
+- **C2 sigue NOT_EVALUATED** (cognicode-mcp/chronos-mcp/jcode-sdk). Promotion a CERTIFIED_BASE bloqueada por G2.5 systemic.
+- **Flake pre-existente `concurrency_planning_substrate`:** diagnosticado pero NO cerrado por código. Requiere fix en `crates/sddk-storage/tests/concurrency_planning_substrate.rs` o en el locking pragma de SQLite. Mejor candidato para próximo ciclo.
+- **Historial "ruidoso":** 9 commits incluyen revert + reapply + lockfile regen. La historia refleja los intentos honestos; no es bonito pero no rompe nada.
+
+**Próxima acción — operator decision:**
+
+1. **Crear `docs/roadmap/receipts/c4-release-v1.172.0/CERTIFICATION-RECEIPT.yaml`** con schema §5, reusando el patrón de v1.171.0 (PASS_PARTIAL_OBSERVED, 4 PASS_OBSERVED gates + 12 HISTORICAL_CARRY_OVER + 1 NOT_VERIFIED).
+2. **Continuar con FC-4 `sddk uat replay --release <tag>`** (workitem siguiente del roadmap; usaría v1.172.0 como tag de prueba).
+3. **Diagnosticar flake `concurrency_planning_substrate`** y proponer fix (cierre INC pre-existente).
+4. **Pausar** para guidance explícita.
+
+**Override SemVer:** Sigue LIFTED en v1.171.0 retroactivamente. v1.172.0 es SemVer-correct minor (1 feat detectado) — algoritmo canónico coincidió con override (no fue necesaria override explícita).
