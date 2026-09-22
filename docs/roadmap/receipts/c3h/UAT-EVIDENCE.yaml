@@ -1,0 +1,87 @@
+cycle: c3h
+phase: evidence-collection
+date: 2026-09-22T10:21:00Z
+baseline_sha: 2f890ea
+post_fix_sha: 9560de1
+bump_sha: d906809
+
+evidence:
+  - id: c3h-evidence-01
+    type: OBSERVED
+    claim: "cargo-audit reports 2 vulnerabilities pre-fix (quinn-proto + time)"
+    command: cargo-audit audit
+    baseline_sha: 2f890ea
+    result: "Crate: quinn-proto Severity: 7.5 (high); Crate: time Severity: 6.8 (medium); error: 2 vulnerabilities found!"
+    timestamp: 2026-09-22T10:15:28Z
+
+  - id: c3h-evidence-02
+    type: OBSERVED
+    claim: "quinn-proto 0.11.14 is unreachable from any direct dependency"
+    command: cargo tree -i quinn-proto --target all
+    result: "warning: nothing to print."
+    timestamp: 2026-09-22T10:15:00Z
+
+  - id: c3h-evidence-03
+    type: OBSERVED
+    claim: "time 0.3.47 resolves in workspace after pin bump"
+    command: cargo tree --workspace | grep "time v"
+    result: "├── time v0.3.47 (×4 occurrences in dep graph)"
+    post_fix_sha: 9560de1
+    timestamp: 2026-09-22T10:20:24Z
+
+  - id: c3h-evidence-04
+    type: OBSERVED
+    claim: "cargo-audit reports 0 vulnerabilities post-fix"
+    command: cargo-audit audit
+    post_fix_sha: 9560de1
+    result: "exit code 0, no findings"
+    timestamp: 2026-09-22T10:20:51Z
+
+  - id: c3h-evidence-05
+    type: OBSERVED
+    claim: "cargo test --workspace --lib passes 2931 tests with no failures"
+    command: cargo test --workspace --lib --quiet
+    post_fix_sha: 9560de1
+    result: "2931 passed, 0 failed"
+    timestamp: 2026-09-22T10:21:00Z
+
+  - id: c3h-evidence-06
+    type: OBSERVED
+    claim: "cargo clippy --workspace --all-targets -- -D warnings is clean"
+    command: cargo clippy --workspace --all-targets -- -D warnings
+    post_fix_sha: 9560de1
+    result: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 28s"
+    timestamp: 2026-09-22T10:20:20Z
+
+  - id: c3h-evidence-07
+    type: OBSERVED
+    claim: "quinn-proto targeted update bumped 0.11.14 → 0.11.15"
+    command: cargo update -p quinn-proto --precise 0.11.15
+    result: "Updating quinn-proto v0.11.14 -> v0.11.15; 42 unchanged dependencies"
+    timestamp: 2026-09-22T10:20:32Z
+
+uat_decisions:
+  - id: UAT-C3H-01
+    criterion: "Direct or reachable transitive dependencies have no unpatched advisories"
+    verdict: PASS_OBSERVED
+    basis: c3h-evidence-04 (cargo-audit exit 0)
+
+  - id: UAT-C3H-02
+    criterion: "Upgrade does not break existing test suite"
+    verdict: PASS_OBSERVED
+    basis: c3h-evidence-05 (2931 pass)
+
+  - id: UAT-C3H-03
+    criterion: "Upgrade does not introduce clippy warnings"
+    verdict: PASS_OBSERVED
+    basis: c3h-evidence-06 (clippy clean)
+
+  - id: UAT-C3H-04
+    criterion: "Remediation is reproducible from baseline"
+    verdict: PASS_OBSERVED
+    basis: c3h-evidence-01 (pre-fix baseline captured); subsequent commands applied deterministically
+
+  - id: UAT-C3H-05
+    criterion: "Targeted update did not bump unrelated dependencies"
+    verdict: PASS_OBSERVED
+    basis: c3h-evidence-07 ("42 unchanged dependencies behind latest")

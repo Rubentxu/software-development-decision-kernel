@@ -1,0 +1,77 @@
+# C3h AUDIT-RESULTS
+# Supply-chain audit, pre/post remediation
+# Generated: 2026-09-22T10:21:00Z
+
+baseline:
+  sha: 2f890ea
+  command: cargo-audit audit
+  result: 2 vulnerabilities
+  findings:
+    - id: F1
+      crate: quinn-proto
+      version: 0.11.14
+      advisory: RUSTSEC-2026-0185
+      title: "Remote memory exhaustion in quinn-proto from unbounded out-of-order stream reassembly"
+      severity: 7.5 (high)
+      reachability: stale lock entry (cargo tree -i quinn-proto reports nothing)
+    - id: F2
+      crate: time
+      version: 0.3.36
+      advisory: RUSTSEC-2026-0009
+      title: "Denial of Service via Stack Exhaustion"
+      severity: 6.8 (medium)
+      reachability: direct dep, workspace pin
+
+remediation:
+  pre_commit_sha: 2f890ea
+  fix_commit_sha: 9560de1
+  bump_commit_sha: d906809
+  changes:
+    - file: Cargo.toml [workspace.dependencies]
+      before: 'time = { version = "=0.3.36", features = ["formatting", "parsing", "serde"] }'
+      after: 'time = { version = "=0.3.47", features = ["formatting", "parsing", "serde"] }'
+      reason: RUSTSEC-2026-0009 (F2)
+    - file: Cargo.lock
+      change: quinn-proto 0.11.14 → 0.11.15
+      reason: RUSTSEC-2026-0185 (F1, stale lock entry)
+      command: cargo update -p quinn-proto --precise 0.11.15
+
+post_fix:
+  sha: 9560de1
+  command: cargo-audit audit
+  result: 0 vulnerabilities
+  exit_code: 0
+  scan_summary: "297 crate dependencies scanned"
+
+verification:
+  - step: T3 cargo test --workspace --lib
+    result: 2931 passed, 0 failed
+  - step: T4 cargo clippy --workspace --all-targets -- -D warnings
+    result: clean
+  - step: T7 cargo build --workspace
+    result: clean
+  - step: cargo-audit audit
+    result: 0 vulnerabilities, exit 0
+
+narrative:
+  f1_quinn_proto:
+    The quinn-proto 0.11.14 entry was stale in Cargo.lock: cargo tree -i
+    shows no reverse dependency. A past bump or workspace restructuring
+    removed it from the dep graph but the lock entry persisted. The
+    targeted update (--precise 0.11.15) cleaned both the advisory and
+    the stale entry.
+
+  f2_time:
+    time was a direct dep pinned at exactly 0.3.36 by
+    Cargo.toml [workspace.dependencies]. The pin was set to address a
+    previous concern; it had not been revisited since. Bumping to 0.3.47
+    (the latest 0.3.x at audit time) addresses RUSTSEC-2026-0009
+    (stack exhaustion in date parsing) without API drift — usage is
+    limited to OffsetDateTime::now_utc(), .format(), .unix_timestamp(),
+    all stable APIs.
+
+out_of_scope:
+  - cargo-deny.toml configuration (no config file present; would need
+    separate cycle to set up deny.toml with allowlists for licenses)
+  - CI integration of cargo-audit (workflow change required)
+  - Upgrades of dependencies not flagged by advisory-db
