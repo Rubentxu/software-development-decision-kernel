@@ -1835,3 +1835,64 @@ Si operador NO autoriza release: continuar con FC-* restantes (FC-4 `uat replay 
 4. **Pausar** para guidance explícita.
 
 **Override SemVer:** Sigue LIFTED en v1.171.0 retroactivamente. v1.172.0 es SemVer-correct minor (1 feat detectado) — algoritmo canónico coincidió con override (no fue necesaria override explícita).
+
+---
+
+## Session-12 (continuación) — 2026-09-22T20:58Z — Cert formalization for v1.172.0
+
+**Baseline:** `00e7b56` HEAD al inicio (docs commit post-release). Tras este bloque, HEAD = `96da6db` (commit de cert receipts).
+
+**Motivación:** la honestidad certificada del release v1.172.0 depende de tener un `CERTIFICATION-RECEIPT.yaml` schema §5 compliant, no solo un `RECEIPT.md` narrativo. La audit finding del operador ("CLOSED != CERTIFIED") exige que el claim PASS_PARTIAL_OBSERVED de v1.172.0 esté pinado en un schema formal, mismo rigor que v1.171.0.
+
+**Trabajo ejecutado (1 commit):**
+
+1. **`96da6db docs(roadmap): v1.172.0 CERTIFICATION-RECEIPT + UAT-EVIDENCE (T29/T31)`** — 3 archivos:
+   - `docs/roadmap/receipts/c4-release-v1.172.0/CERTIFICATION-RECEIPT.yaml` (245 líneas, schema §5 compliant).
+   - `docs/roadmap/receipts/c4-release-v1.172.0/UAT-EVIDENCE-T29.yaml` (84 líneas, 6 falsifiers PASS).
+   - `docs/roadmap/receipts/c4-release-v1.172.0/UAT-EVIDENCE-T31.yaml` (111 líneas, 6 falsifiers PASS).
+
+**Cert status para v1.172.0:**
+
+- **Status:** PASS_PARTIAL_OBSERVED (mismo rigor que v1.171.0).
+- **Tag SHA certified:** `d89c2c0c722c09c9b2f330a50da904c1e97be297`.
+- **HEAD doc commit:** `96da6db` (post-release cert receipts, docs-only).
+- **Binary sha256:** `e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e`.
+- **Bundle manifest sha256 (publish-time):** `608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f`.
+
+**Gates (§5):**
+- 4 PASS_OBSERVED (G7/G8/G9/G16): re-verificados en tag SHA d89c2c0.
+- 12 HISTORICAL_CARRY_OVER: A5-C BASE carry-over (G0..G6, G10, G12..G15).
+- 1 NOT_VERIFIED (G11/R14): security cycle, pendiente desde A5-C.
+
+**UAT matrix (§6):**
+- T01, T02, T28, T29, T31, T33: PASS_OBSERVED.
+- T03..T07, T19..T22, T24..T25, T27: HISTORICAL.
+- T08..T18, T23, T26, T30, T32, T34, T35: NOT_RUN (provider MCP absent o systemic).
+
+**Riesgos aceptados:**
+- R14 (security): A5-C §11 carry-over.
+- R17 (perf baseline): A5-C §3 G10 carry-over.
+- FC-3 carry-forward (sddk cycle export).
+- R-flaw-concurrency-planning-substrate-flake: nuevo risk documentado, aceptado por flake acknowledgment.
+
+**Full profile re-run post-publish:** `cargo test --workspace --offline` = **5048 passed; 0 failed; 19 ignored** (vs 5037/0/5 en v1.171.0). Delta: +11 nuevos tests (FC-1 v2 filter predicates) + 14 ignored (chromium/tui prerequisites para full UAT render). El flake `concurrency_planning_substrate` NO se triggered en este re-run (5/5 PASS in isolation confirmado en sesión-10).
+
+**Discrepancia documentada honestamente:** v1.172.0 fue publicado con `--skip-tests` (flake acknowledgment, AGENTS.md §8 autoriza). El full profile re-ejecutado post-publish pasó 5048/5048, lo que demuestra que el release era válido, pero el contrato literal del release script (correr full profile inline) NO se cumplió para v1.172.0. Documentado como `R-flaw-concurrency-planning-substrate-flake` en `accepted_risks` y como limitation explícita en `limitations`.
+
+**Decisiones técnicas notables:**
+
+- **Manifest drift post-install:** el BUNDLE.toml `contents.manifest_sha256` es `608c...` (frozen at publish time), pero el MANIFEST.sha256 post-install local tiene primera línea `437a...` (cache file). Documentado en T29 obs-6 como "post-install regeneration artifact, not invalidating inconsistency". `sddk dev doctor` confirma coherencia (binary.bundle_coherence: present + all_present: true).
+- **Version triple intencional:** workspace/binary/bundle = 1.171.2, tag = v1.172.0. Por diseño: el algoritmo de release-bump.sh produce v1.172.0 directamente desde v1.171.0 (1 feat + 1 fix → minor). Los workspace versions 1.171.1 y 1.171.2 son anotaciones pre-publish que nunca fueron shipped como tags standalone.
+
+**Gates verificados antes del push del cert:**
+- `git status -sb` → clean (solo 3 untracked receipts que ahora se commitean).
+- `git diff --stat` → empty (no toqué código en este commit, solo receipts nuevos).
+- Pre-push hook NO rejectó (docs-only commit + cert receipts, ambos en allowlist B).
+
+**Próxima acción:**
+
+1. Continuar con FC-* restantes: FC-4 `sddk uat replay --release <tag>`, FC-7 `sddk uat status --format json`, FC-8 `sddk uat validate --format json`. Cada uno con pre-flight de duplicación (scan `sddk --help` + funciones existentes antes de diseñar).
+2. Diagnosticar flake `concurrency_planning_substrate` para cerrar R-flaw. Posible causa: shared SQLite connection pool o busy_timeout pragma insufficient. Verificar `crates/sddk-storage/src/backlog_store.rs` para pragma setup.
+3. Considerar promover v1.172.0 a `CERTIFIED_BASE` requiere: instalar cognicode-mcp + chronos-mcp + jcode-sdk + ejecutar C2 + re-run T01-T35 contra SHA release + `tests/clean_machine_uat.sh --tag v1.172.0` en podman.
+
+**Override SemVer:** Sigue LIFTED en v1.171.0 retroactivamente. v1.172.0 es SemVer-correct minor (1 feat detectado) — algoritmo canónico coincidió con override. Cert formal NO cambió override status.
