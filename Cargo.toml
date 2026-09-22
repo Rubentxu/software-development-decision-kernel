@@ -13,7 +13,7 @@ members = [
 exclude = ["docs/history/legacy-packages/sddk-stabilization-plan"]
 
 [workspace.package]
-version = "1.169.152"
+version = "1.169.153"
 edition = "2024"
 # A3-S3 closure marker: see docs/history/handoffs/all-handoffs/
 # A3-S4 closure marker: see docs/history/handoffs/all-handoffs/HANDOFF-2026-09-15-a3-s4-closure-and-v1.169.25-release.md

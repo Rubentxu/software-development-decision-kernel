@@ -344,6 +344,34 @@ TAG="${TAG:-v$VERSION}"
 [ -n "$VERSION" ] || die "could not parse version from Cargo.toml"
 ok "version: $VERSION → tag: $TAG"
 
+# --- 2.5 semver-correct tag (cycle-c2 bug fix) ---
+#
+# The workspace version above is a CEREMONIAL per-push pointer (incremented by
+# the pre-push hook for every source-touching commit, not SemVer-strict).
+# `scripts/release-bump.sh` computes the actual SemVer-correct next tag from
+# the conventional commits accumulated since the last published release tag.
+# Without this step the released tag would be the workspace version literal
+# (e.g. v1.169.152) instead of the SemVer-bumped tag (e.g. v1.170.0).
+#
+# Invocation: invoke release-bump.sh in dry-run mode and parse its output.
+# Honors the operator's --force-version flag (passed through if set).
+STEP2P5_OUTPUT="$(bash "$ROOT/scripts/release-bump.sh" --dry-run 2>&1)" \
+    || die "scripts/release-bump.sh failed (cannot compute SemVer tag)"
+SEMVER_TAG="$(echo "$STEP2P5_OUTPUT" \
+    | awk '/^new tag: / {print $3; exit}')"
+if [ -z "$SEMVER_TAG" ]; then
+    # release-bump.sh exits 0 with "no commits since <tag>" message — keep TAG.
+    warn "release-bump.sh did not produce a tag; keeping workspace-derived TAG=$TAG"
+else
+    if [ "$SEMVER_TAG" != "$TAG" ]; then
+        warn "semver tag overrides workspace-derived tag: $TAG → $SEMVER_TAG"
+        TAG="$SEMVER_TAG"
+    else
+        ok "semver tag matches workspace tag: $TAG"
+    fi
+fi
+ok "final tag: $TAG"
+
 # --- 3. build ---
 
 step "3/14 — cargo build --release --bin sddk"
