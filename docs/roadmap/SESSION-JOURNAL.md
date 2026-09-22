@@ -909,3 +909,39 @@ weakened.
 - CURRENT/STATE reconciliados a HEAD post-commit (`b562f5d`). C3f cerrado PASS_OBSERVED en STATE.
 - Próxima acción ejecutable: **C4 release cut** (operator-side, `bash scripts/release.sh` con workspace v1.169.148). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision. **Toda la session-11 está lista para push al origin/main**.
 - Estado final: HEAD post-commit, workspace `v1.169.148`, tree clean, push pendiente (operator-side).
+
+## 2026-09-22T08:35Z — session-11 housekeeping + bump ceremonial (post-C3f)
+
+Baseline: HEAD `5cc8ff6` (C3-EXEC-SUMMARY); workspace v1.169.148.
+
+### Decisiones y trabajo ejecutado
+
+- **Housekeeping section añadida** al C3-EXEC-SUMMARY (commit `d8ac424`):
+  - Documenta los resultados del doctor check (`319/338 present`, `all_present:true`)
+  - Lista los 12 shell contract tests con su status honesto (9 PASS, 1 SKIP, 1 FAIL→PASS, 1 FAIL por contrato)
+  - Registra el patrón obligatorio: cualquier nuevo ADR debe disparar `python3 scripts/mirror_adrs_to_vault.py`
+- **Vault mirror refreshed** (ADR-0141 era el único ADR nuevo en C3 y no estaba en el vault; ejecuté `mirror_adrs_to_vault.py` y verifiqué idempotencia).
+- **Bump ceremonial 1.169.148 → 1.169.149** (commit `60c8a82`):
+  - Requerido por el pre-push hook (`githooks/pre-push`) para cualquier push a `main`.
+  - No contiene cambios de código (el contenido real de C3f está en `b562f5d`).
+  - El bump precede al push y a la release cut (`bash scripts/release.sh`).
+- **CURRENT.md reconciliado** (commit `a5f4c00`): workspace bumped, "Siguiente acción" actualizada a 22 commits y `v1.169.149`.
+
+### Comandos ejecutados
+
+- `bash tests/test_vault_adr_mirror_coverage.sh` → FAIL inicial (ADR-0141 ausente del vault).
+- `python3 scripts/mirror_adrs_to_vault.py` → 47 ADRs mirrored.
+- `bash tests/test_vault_adr_mirror_coverage.sh` → OK (47, idempotent 0 new).
+- `cargo fmt --check` → clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean (1m 24s).
+- `sddk dev manifest --root .` → manifest written (377 files).
+- `sddk dev manifest --root . --verify` → manifest OK.
+
+### Estado final
+
+- HEAD: `a5f4c00` docs(roadmap): reconcile CURRENT to bump 60c8a82.
+- Workspace: `v1.169.149`.
+- Tree clean, push pendiente (operator-side per AUTO policy).
+- 24 commits acumulados en session-11; C3 (C3a-f) cerrado end-to-end.
+- Próxima acción: **Operator-side push + release cut**. AUTO no tiene más trabajo legítimo en el roadmap.
+
