@@ -1525,3 +1525,37 @@ support. Not done in this cycle (scope discipline).
 - C5 DEFERRED (no trigger criteria met).
 - FC-1, FC-3..FC-6 still in inventory; the JSON pattern is a low-effort
   extension of this work if operator wants more.
+
+### 2026-09-22T14:16:30Z — C4 RELEASE-CUT v1.170.3 — orchestrator
+
+- Baseline: main@95f2250 (post session-11 FC-8 deliver); origin/main落后 2 commits ahead (1b2795b feat + 0a59811 docs).
+- Alcance/autorizacion: operador autoriza via mensaje 2026-09-22T13:15Z "saltamos antes al 1.170.x" (decision documentada en este diario). Modo AUTO bajo AGENTS.md §GLOBAL (cualquier gate o decision aprobado).
+- Ejecutado (5 commits):
+  - `1b2795b` feat(uat): sddk uat validate --format json (FC-8)
+  - `0a59811` docs(roadmap): marca FC-2/FC-7/FC-8 IMPLEMENTED en FEATURE-CANDIDATES.md
+  - `de7b77d` chore(release): bump 1.169.158 → 1.170.1 (override SemVer, override documentado)
+  - `799d387` fix(release): --force-version flag passthrough a release-bump.sh (bug: el comentario prometa passthrough pero el codigo lo ignoraba)
+  - `8411b8f` fix(docs): frontmatter faltante en ADR-0142 (regression vs ADR-0001 §3.4)
+  - `b5d794f` test(release): exclude --force-version del grep de tag-anchoring (regex era ingenua)
+  - `fb9d712` chore(release): bump 1.170.1 → 1.170.2 (admission monotonicity)
+  - `7bedfe7` chore(release): bump 1.170.2 → 1.170.3 (post-test/docs push gate)
+- Release real ejecutado: `SDDK_RELEASE_ADMISSION_MODE=v2 bash scripts/release.sh --force-version 1.170.3`. Resultado: 14/14 steps PASS, exit 0, duracion 413s. v1.170.3 publicado en GH Releases como Latest (2026-09-22T14:16:07Z).
+- Binario instalado: sha256 `924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd` (en `~/.local/bin/sddk` y `cargo-targets/release/sddk`).
+- Bundle instalado: `1.170.3` con manifest `608c6d9c...` (mismo que v1.170.0; cambios solo en CLI).
+- Gates verificados:
+  - `cargo test --workspace` → 5037 pass / 0 fail (incluye el test nuevo `validate_plan_json_output_has_counts`).
+  - `cargo clippy -p sddk-cli --all-targets -- -D warnings` → exit 0.
+  - `cargo fmt --check` → exit 0.
+  - `cargo build --release --bin sddk` → exit 0, 3m12s incremental.
+  - 9 shell contract tests → exit 0 (test_release_admission / test_release_tag_anchoring / test_release_receipt_authority / test_authority_helper_lockstep / test_adr_promotion_format / test_advisory_lint_explanations / test_deny_lint_zero_hits / test_vault_adr_mirror_coverage / test_vault_mirror_auto / test_push_prevention_hook).
+  - release_admission v2 → ACCEPT 1.170.2 → 1.170.3 (comparado contra last_published v1.170.0).
+  - Public-release gate (step 9b) → PASS para 9/9 scenarios (incluye download real via CDN).
+- Riesgos/decisiones:
+  - Override SemVer (3 feat() commits sugieren v1.171.0 minor) → v1.170.3 patch por deseo explicito del operador "saltar al 1.170.x". Justificacion: continuidad con v1.170.0 recien publicado. Tradeoff: el SemVer del release tag deja de reflejar el algoritmo de conventional commits; queda registrado en este diario y en el commit body de `de7b77d`/`fb9d712`/`7bedfe7`.
+  - Admission v2 (en lugar de v1) para que el rango `origin/main..HEAD` admita cambios docs-only sin bump ceremonial por commit.
+  - Frontmatter faltante en ADR-0142 fue regression real (introducido en session-11 commit 8730252 sin pasar por el grep de `tests/test_adr_promotion_format.sh`). El test existia; el test fallo cuando llegamos a step 1b. Fix: añadir frontmatter canonico + regenerar vault mirror.
+  - El grep ingenuo `grep -q -- --force` de `test_release_tag_anchoring.sh` detectaba `--force-version` (subcadena). Fix: grep -v + regex anchored `--force|--force-with-lease`.
+- Divergencias detectadas y corregidas en este ciclo:
+  - `cargo-targets/release/sddk` stale (sha f7ff7530... = workspace 1.169.158 con FC-2 pero nunca publicado). Renombrado a `sddk.stale-1.169.158-f7ff7530` (cuarentena, no borrado). Reemplazado por sha 924f7de6... = v1.170.3 tras release real.
+- CURRENT/STATE pendientes de reconciliar en esta misma concernencia.
+- Proxima accion: actualizar STATE.yaml (current_sha=7bedfe7, last_public_release=v1.170.3, C4 v1.170.3 CERTIFIED), actualizar CURRENT.md (mismo), emitir RECEIPT C4 v1.170.3.
