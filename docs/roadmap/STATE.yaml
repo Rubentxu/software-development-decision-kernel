@@ -4,8 +4,8 @@ status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_B_C_D_E_F_PASS_OBSERVE
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "bd99480"  # session-11 C3f close
-  head_at_state_sync: "bd99480"
+  current_sha: "827ca6e"  # session-11 C3f close
+  head_at_state_sync: "827ca6e"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.169.148"
   last_public_release_observed: "v1.169.122"
