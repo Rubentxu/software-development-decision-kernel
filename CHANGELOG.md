@@ -1,6 +1,15 @@
 # Changelog
 
 All notable changes to this project are documented in this file.
+
+## [1.170.5] - 2026-09-22
+
+### Features
+  - feat(vault): sddk vault show <node-id>
+
+### Other
+  - test(cli): integration test for vault show end-to-end
+
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.170.1] - 2026-09-22
