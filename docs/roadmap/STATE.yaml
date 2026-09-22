@@ -1,13 +1,13 @@
 schema_version: 1
-updated_at: "2026-09-22T09:13:00Z"
-status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_C3B_C3C_C3D_PASS_OBSERVED_C3E_PENDING
+updated_at: "2026-09-22T09:29:00Z"
+status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_B_C_D_E_PASS_OBSERVED_C3F_PENDING_OPERATOR_DECISION
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "d039457"  # session-11 C3d close
-  head_at_state_sync: "d039457"
+  current_sha: "4dc2a08"  # session-11 C3e close
+  head_at_state_sync: "4dc2a08"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.146"
+  workspace_version_at_current: "1.169.147"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
@@ -45,6 +45,7 @@ source:
   c3b_code_commit: "7a5388a"  # C3b 7 tests + docs; no production change; bump 1.169.144
   c3c_code_commit: "775ec93"  # C3c 14 tests + docs; no production change; bump 1.169.145
   c3d_code_commit: "d039457"  # C3d 3 #[ignore] benches + docs; no production change; bump 1.169.146
+  c3e_code_commit: "4dc2a08"  # C3e 8 schema-resilience tests + docs + finding C3e-F1 DEFERRED_FIX; no production change; bump 1.169.147
   addendum_count_at_head: 18
   full_profile_run_at_sha: "4bf09cf64185444828b232829e250ee7ff50541c"
   full_profile_run_at: "2026-09-21T21:21:00Z"
@@ -83,7 +84,8 @@ c3_progress:
   c3b: "PASS_OBSERVED — Storage adversarial (T21+T22). 7 tests added (2 in cas, 5 in event_store); 53/53 storage lib green; 5/5 T22 contention runs without flake; clippy clean. Receipt at docs/roadmap/receipts/c3b/. Production code unchanged (0 lines)."
   c3c: "PASS_OBSERVED — Storage Security canarios (T23+T24+T25). 14 tests added (5 capability receipts, 5 cycle leases, 4 schema_guard); 67/67 storage lib green; clippy clean. Receipt at docs/roadmap/receipts/c3c/. Production code unchanged (0 lines). The 'surprises' were all FK constraint validations — the production schema is doing its job and the tests prove it."
   c3d: "PASS_OBSERVED — Storage Performance baseline (T26). 3 #[ignore] microbenchmarks added (append mean=339µs, cas mean=439µs, lease mean=15ms). Opt-in via 'cargo test -- --ignored --nocapture'. No criterion adoption (would require ADR). Receipt at docs/roadmap/receipts/c3d/. Production code unchanged (0 lines)."
-  c3e: "NOT_STARTED — Schema resilience (T27)."
+  c3e: "PASS_OBSERVED with DEFERRED_FIX finding C3e-F1 — Schema resilience (T27). 8 schema-resilience tests added (T27-1..T27-8); storage 75/75; clippy clean. Finding C3e-F1: 'run_migrations' re-application crashes on 17 of 20 migrations when user_version is rewound (MIGRATION_16 'duplicate column: spine_order'). T27-3 pins the failure mode. Receipt at docs/roadmap/receipts/c3e/. Production code unchanged (0 lines)."
+  c3f: "NOT_STARTED — Migrations idempotency hardening (fix C3e-F1). Pre-condition: ADR + operator approval. Recommendation in C3e-RECEIPT."
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"

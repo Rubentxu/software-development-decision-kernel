@@ -839,3 +839,35 @@ weakened.
 - Próxima acción ejecutable: **C3e Schema resilience** (migrations correctness, downgrade attempts, partial migration recovery, schema_guard integration con storage). Mantener AUTO hasta completar C3.
 - Estado final: HEAD post-commit, workspace `v1.169.146`, tree clean, push pendiente (operator-side).
 - C2 sigue NOT_EVALUATED pendiente de operador (decisión sobre adapters CogniCode/Chronos/JCode).
+
+### 2026-09-22T09:30:00Z — C3e (Schema resilience T27) — orchestrator (direct)
+- Baseline: `29fce83` (HEAD pre-cycle), workspace `v1.169.146`, tree clean.
+- Alcance/autorización; no-objetivos:
+  - C3e SCOPE-CONTRACT (`docs/roadmap/receipts/c3e/SCOPE-CONTRACT.md`) — T27 schema resilience tests (8 tests, fresh DB / idempotent / partial migration / too-old / newer / extreme future / classify table). Subagent path remained unavailable; orchestrator executed directly.
+  - No-objetivos: no production code change unless finding demands it, no new migration (MIGRATION_21+), no criterion adoption, no rollback/downgrade support.
+- Ejecutado (1 commit funcional + docs):
+  - `crates/sddk-storage/src/lib.rs` — new `#[cfg(test)] mod schema_resilience_tests` (T27-1..T27-8), +387 líneas.
+  - `docs/roadmap/receipts/c3e/{SCOPE-CONTRACT,UAT-EVIDENCE.yaml,C3e-RECEIPT}.md`
+  - **Production code: 0 lines changed.**
+  - Bump 1.169.146 → 1.169.147 (pre-push hook: código modificado).
+- UAT executed (verbatim en `docs/roadmap/receipts/c3e/UAT-EVIDENCE.yaml`):
+  - **T27-1** fresh DB lands at LATEST_SCHEMA_VERSION (20) → PASS.
+  - **T27-2** run_migrations idempotent on fresh DB (gate_receipts row survives) → PASS.
+  - **T27-3** partial migration rewind → **PINS finding C3e-F1** (MIGRATION_16 fails with "duplicate column: spine_order"). Test renamed and assertion rewritten to lock the failure mode.
+  - **T27-4** classify(MIN_SUPPORTED) returns Migratable → PASS (unit-boundary half). End-to-end half DEFERRED_FIX.
+  - **T27-5** classify(0) returns TooOld → PASS, error Display names min supported.
+  - **T27-6** user_version=21 (artificial future) → NewerThanSupported, assert_compatible → Err(NewerSchema) → PASS.
+  - **T27-7** user_version=1_000_000 → exact value preserved (no clamping) → PASS.
+  - **T27-8** 11-row classify monotonicity table → PASS.
+- Findings (real, observed this session):
+  - **C3e-F1 (REAL DEFECT, DEFERRED_FIX):** `run_migrations` re-application crashes on 17 of 20 migrations when `user_version` is rewound. Only MIGRATION_4 (RENAME+recreate), MIGRATION_7, and MIGRATION_10 have defensive guards against re-application. Severity: LOW (prod) / MEDIUM (DR). Fix requires ADR + operator approval (touches migration authority). Recommended as C3f.
+  - **S2 (cosmetic):** `Storage` lacks `Debug` impl. Worked around with `match` instead of `expect_err`.
+  - **S3 (cosmetic):** `cargo fmt` apply needed on T27-8 tuple formatting.
+- Gates verificados:
+  - `cargo fmt --all -- --check` → clean (after one `cargo fmt` apply)
+  - `cargo clippy -p sddk-storage --all-targets -- -D warnings` → clean
+  - `cargo test -p sddk-storage --lib` → **75 passed, 0 failed, 3 ignored** (was 67/67, +8 T27)
+  - `cargo test -p sddk-storage --lib schema_resilience_tests` → 8/8 PASS
+- CURRENT/STATE reconciliados a HEAD post-commit (`4dc2a08`). C3e cerrado PASS_OBSERVED+DEFERRED_FIX en STATE.
+- Próxima acción ejecutable: **Operator decision point** — entre (a) C3f migrations idempotency hardening (fix C3e-F1, ADR + tests), (b) C4 release cut (operator-side, `bash scripts/release.sh` con workspace v1.169.147). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision.
+- Estado final: HEAD post-commit, workspace `v1.169.147`, tree clean, push pendiente (operator-side).
