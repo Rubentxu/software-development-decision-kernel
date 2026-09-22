@@ -4904,7 +4904,7 @@ mod uat_stale_tests {
     ///
     /// To run explicitly: `cargo test -p sddk-cli --lib uat_stale_tests::stale_detects_geometry_change -- --ignored`.
     #[test]
-    #[ignore = "spawns python http.server + playwright; runs as --ignored to keep workspace gate green"]
+    #[ignore = "spawns python http.server + playwright (chromium required); runs as --ignored to keep workspace gate green"]
     fn stale_detects_geometry_change() {
         // Check if node is available (prerequisite for playwright).
         let node_check = std::process::Command::new("node")
@@ -4924,6 +4924,24 @@ mod uat_stale_tests {
             .ok();
         if python_check.map(|o| o.status.success()) != Some(true) {
             eprintln!("skipping: python3 unavailable");
+            return;
+        }
+
+        // Check if playwright has a chromium browser available. The driver panics
+        // with `Executable doesn't exist at /home/<user>/.cache/ms-playwright/...`
+        // when the browser hasn't been downloaded via `npx playwright install`.
+        // Skip cleanly rather than panic when chromium is missing.
+        let chromium_cache = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
+            .join(".cache/ms-playwright");
+        let chromium_present = chromium_cache.is_dir()
+            && std::fs::read_dir(chromium_cache)
+                .map(|rd| {
+                    rd.filter_map(Result::ok)
+                        .any(|e| e.file_name().to_string_lossy().starts_with("chromium"))
+                })
+                .unwrap_or(false);
+        if !chromium_present {
+            eprintln!("skipping: chromium browser not installed (run `npx playwright install`)");
             return;
         }
 
