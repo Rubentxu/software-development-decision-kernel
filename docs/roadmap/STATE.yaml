@@ -1,11 +1,11 @@
 schema_version: 1
-updated_at: "2026-09-22T10:42:00Z"
-status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_PRE_FLIGHT_PASSED_RELEASE_PENDING_OPERATOR
+updated_at: "2026-09-22T10:59:00Z"
+status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_PRE_FLIGHT_PASSED_SNAPSHOT_DOCUMENTED_RELEASE_PENDING_OPERATOR
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "67409da"  # session-11 C4 pre-flight + AUTO loop exhaustion honest
-  head_at_state_sync: "67409da"
+  current_sha: "c2f3f69"  # session-11 C4 release-pending snapshot + drift binary doc
+  head_at_state_sync: "c2f3f69"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.169.152"
   last_public_release_observed: "v1.169.122"
