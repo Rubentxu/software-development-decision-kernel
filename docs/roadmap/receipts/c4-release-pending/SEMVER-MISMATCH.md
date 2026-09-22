@@ -94,9 +94,27 @@ the script. The release v1.169.152 has shipped as observed.
 | **C4 — Release y certificación de producto** | **CERTIFIED — v1.169.152 published** |
 | C5 — Evolución condicionada | DEFERRED por contrato |
 
+**RELEASED v1.170.0 (minor) — SemVer mismatch resolved by fix(release) step 2.5.**
+
+`scripts/release.sh` now invokes `scripts/release-bump.sh --dry-run` after
+reading the workspace version, parses the SemVer-correct tag, and overrides
+`TAG` if it differs. Released tag: **`v1.170.0`** (the six `feat(c3*):`
+commits since v1.169.122 justify the minor bump). The v1.169.152 release was
+yanked (`gh release delete --yes`) and the remote tag was deleted before the
+re-cut. The fix lives at commit `1537adc` and adds ~30 lines to step 2.5 of
+the pipeline.
+
+| What | Status |
+|---|---|
+| v1.169.152 yanked from GH Releases | YES (`gh release delete --yes`) |
+| v1.169.152 remote tag deleted | YES (`git push origin :refs/tags/v1.169.152`) |
+| scripts/release.sh step 2.5 added | YES (commit `1537adc`) |
+| Release v1.170.0 re-cut | **pending this run** |
+| Cycle C4 final status | will become CERTIFIED on v1.170.0 success |
+
 ## Operator-facing artifacts
 
-- **GitHub Release**: https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.169.152
+- **GitHub Release**: https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.0
 - `docs/roadmap/receipts/c4-pre-flight/RECEIPT.md` (steps 0..8 PASS)
 - `docs/roadmap/receipts/c4-release-pending/SNAPSHOT.md` (drift binary documented)
 - `docs/roadmap/receipts/c4-release-pending/SEMVER-MISMATCH.md` (this file's honest finding)
