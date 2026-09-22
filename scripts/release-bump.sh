@@ -94,8 +94,14 @@ fi
 
 # --- Apply version bump ---
 
+# Anchor the sed to the version currently in workspace Cargo.toml, not the
+# last tag — workspace version may be ahead of the tag between releases
+# (AGENTS.md §2.3 makes workspace == release tag MANDATORY, but historical
+# commits kept the workspace 1+ patch ahead for testing). Without this,
+# `s/^version = "$CURRENT"/.../` silently misses when workspace ≠ last tag.
+WORKSPACE_VERSION="$(grep -A1 '^\[workspace\.package\]' Cargo.toml | grep '^version' | sed -E 's/.*"([^"]+)".*/\1/')"
 for f in Cargo.toml crates/*/Cargo.toml; do
-    sed -i "s/^version = \"$CURRENT\"/version = \"$NEXT\"/" "$f"
+    sed -i "s/^version = \"$WORKSPACE_VERSION\"/version = \"$NEXT\"/" "$f"
 done
 # manifest.toml can drift from the tag version across manual bumps; set its
 # single top-level `version = "…"` line unconditionally (`schema_version`
