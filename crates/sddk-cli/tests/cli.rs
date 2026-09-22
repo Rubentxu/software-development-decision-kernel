@@ -8332,10 +8332,10 @@ fn cli_vault_index_validate_search_and_export() {
 }
 
 /// FC-6 integration: `sddk vault show <node-id>` end-to-end via CliFixture
-/// + CANONICAL_WORKFLOW. Verifies that the JSON path emits the full
-/// VaultShowOutput (node + backlinks), the text path emits the
-/// expected metadata + body, and missing node_ids fail-closed with
-/// exit code 1.
+/// plus CANONICAL_WORKFLOW. Exercises the JSON path emitting the full
+/// VaultShowOutput (node fields plus backlinks), the text path emitting
+/// metadata header plus body footer, and the missing-node fail-closed
+/// exit code 1 path.
 #[test]
 fn cli_vault_show_resolves_node_and_renders_json_and_text() {
     let fixture = CliFixture::new("vault-show");
