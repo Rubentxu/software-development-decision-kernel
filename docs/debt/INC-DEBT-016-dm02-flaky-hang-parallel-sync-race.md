@@ -1,3 +1,11 @@
+---
+status: closed
+severity: medium
+priority: P2
+cluster_id: CL-DEBT-FOLLOWUP
+audit_note: "Frontmatter added by session-12 audit (commit pending) to formalize the existing body **status**: closed. No content change."
+---
+
 # INC-DEBT-016: flaky hang in dm02_execute_completes_all_nodes (Parallel sync race)
 
 **status**: closed

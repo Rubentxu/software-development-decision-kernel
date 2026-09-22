@@ -1,3 +1,11 @@
+---
+status: closed
+severity: low
+priority: P3
+cluster_id: CL-DEBT-FOLLOWUP
+audit_note: "Frontmatter added by session-12 audit (commit pending) to formalize the existing body **status**: closed. No content change."
+---
+
 # INC-DEBT-012: Cycle-37 follow-up — dead-code cleanup
 
 **status**: closed

@@ -1,3 +1,11 @@
+---
+status: closed
+severity: low
+priority: P3
+cluster_id: CL-DEBT-FOLLOWUP
+audit_note: "Frontmatter added by session-12 audit (commit pending) to formalize the existing body **status**: closed. No content change."
+---
+
 # INC-DEBT-014: sddk-engine test + lib accumulated clippy debt
 
 **status**: closed

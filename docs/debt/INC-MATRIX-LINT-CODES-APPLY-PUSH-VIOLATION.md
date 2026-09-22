@@ -1,3 +1,12 @@
+---
+id: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
+cluster_id: CL-APPLY-PUSH-DISCIPLINE
+status: closed
+severity: critical
+priority: P0
+audit_note: "Frontmatter added by session-12 audit (commit pending) to formalize the existing body **status**: closed. No content change."
+---
+
 # INC: APPLY PUSH VIOLATION — 4TH OCCURRENCE (phase-b-matrix-lint-codes)
 
 - **id**: INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION
