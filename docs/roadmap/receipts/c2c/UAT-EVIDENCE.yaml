@@ -1,0 +1,75 @@
+schema_version: 1
+profile_target: AGENTIC_API_EXPERIMENTAL_C2C
+cycle: C2c
+status: NOT_EVALUATED_ADAPTER_MISSING
+executed_by: orchestrator (delegated)
+executed_at_utc: "2026-09-22T08:03:00Z"
+source_sha_at_eval: "<post-c2b-commit>"
+workspace_version_at_eval: "1.169.142"
+last_public_release_observed: "v1.169.122"
+
+environment:
+  os: "linux x86_64"
+  rust: "(see rust-toolchain)"
+  host_jcode:
+    binary_searched:
+      - "/home/rubentxu/.local/bin/jcode"
+      - "which jcode"
+      - "cargo search jcode-sdk"
+      - "jcode --help (acp subcommand)"
+    binary_present:
+      name: "jcode"
+      version: "v0.86.0 (e589cbe5a)"
+      path: "/home/rubentxu/.local/bin/jcode"
+      relevant_subcommands:
+        - "serve (background daemon)"
+        - "acp (Agent Client Protocol adapter backed by daemon)"
+        - "session (Session management commands)"
+        - "memory (Memory management commands)"
+    sdk_present: false
+    adapter_in_sddk_repo: false
+    session10_finding:
+      ref: "docs/roadmap/CURRENT.md:15 (Addendum 18)"
+      quote: "JCode: NO sddk-side adapter dependency exists."
+
+scenarios:
+  T15:
+    description: "Adapter separado con SDK público, host real, connect + attach"
+    status: NOT_EVALUATED
+    reason: "Adapter lives outside this repo (per session-10 finding). No SDK crate located (cargo search jcode-sdk empty). Per CERTIFICATIONS.md §3, PASS_BY_CODE_READING is forbidden; no adapter/SDK present means no PASS possible."
+    evidence:
+      command: "jcode --version"
+      output: "jcode v0.86.0 (e589cbe5a)"
+      command2: "cargo search jcode-sdk"
+      output2: "(empty — no crates.io match)"
+      command3: "grep jcode crates/*/Cargo.toml"
+      output3: "(no matches — no jcode SDK dependency in workspace)"
+      command4: "find crates/sddk-engine/src crates/sddk-cli/src -name '*jcode*'"
+      output4: "(no files — no JCode adapter in repo)"
+  T16:
+    description: "Host event burst + turn_done + cambios irrelevantes"
+    status: NOT_EVALUATED
+    reason: "depends on T15 (adapter)."
+    evidence: "(inherited from T15)"
+  T17:
+    description: "ContextDelta stale/reordered + trabajo estructurado invalid/timeout"
+    status: NOT_EVALUATED
+    reason: "depends on T15 (adapter)."
+    evidence: "(inherited from T15)"
+  T18:
+    description: "Host sin capability opcional y proveedor ausente"
+    status: NOT_EVALUATED
+    reason: "depends on T15 (adapter)."
+    evidence: "(inherited from T15)"
+
+recovery_action:
+  primary: "Operator confirms the canonical location of the SDDK JCode adapter (likely the JCode product repo, not this one). Then vendor or link."
+  secondary: "Operator approves creating a new crate (e.g. sddk-jcode-adapter) that consumes JCode via ACP (Agent Client Protocol) over its documented wire format. Requires ADR."
+  documented_alternative: "Accept C2c as DEFERRED indefinitely; document that SDDK does not own the JCode adapter. Downstream consumers must integrate JCode on their own."
+
+not_evaluated_vs_failed:
+  distinction: "NOT_EVALUATED — the precondition (adapter + SDK) is missing. Not a failed test. Per UAT-MATRIX T33."
+
+scope_contract_ref: "../SCOPE-CONTRACT.md"
+parallel_finding_with: "C2a (CogniCode-mcp absent), C2b (Chronos-mcp absent)"
+systemic_note: "All three C2 sub-cycles (a, b, c) failed NOT_EVALUATED for provider/host-integration preconditions. This is systemic, not incidental. Roadmap C2 contract should be revisited: either the operator provides all integration artifacts, or SDDK adapters need an alternative transport strategy that does not depend on third-party binaries outside crates.io."

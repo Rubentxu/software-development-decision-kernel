@@ -1,0 +1,64 @@
+schema_version: 1
+profile_target: RUNTIME_ENHANCED_C2B
+cycle: C2b
+status: NOT_EVALUATED_PROVIDER_MISSING
+executed_by: orchestrator (delegated)
+executed_at_utc: "2026-09-22T08:02:00Z"
+source_sha_at_eval: "3c81239"  # post C2a commit
+workspace_version_at_eval: "1.169.142"
+last_public_release_observed: "v1.169.122"
+
+environment:
+  os: "linux x86_64"
+  rust: "(see rust-toolchain)"
+  provider_runtime:
+    binary_searched:
+      - "/usr/local/bin/chronos"
+      - "/usr/local/bin/chronos-mcp"
+      - "/home/rubentxu/.cargo/bin/chronos"
+      - "/home/rubentxu/.cargo/bin/chronos-mcp"
+      - "cargo install chronos-mcp"
+      - "cargo search chronos-mcp"
+    binary_present: null
+    binary_missing:
+      expected: "chronos-mcp"
+      cargo_installable: false
+      registry_match: false
+    historical_evidence:
+      ref: "crates/sddk-engine/src/runtime_evidence_port_mcp.rs:3"
+      cycle: "p-63676b11dc0ef88f/aiw-s5-chronos-runtime"
+      tag: "HISTORICAL"
+      protocol_discovered: "2025-03-26"
+      tools: ["probe_start", "get_execution_summary"]
+
+scenarios:
+  T12:
+    description: "Chronos real captura >0 y claim no satisfecha"
+    status: NOT_EVALUATED
+    reason: "provider binary (chronos-mcp) absent on host; no installable artifact found."
+    evidence:
+      command: "which chronos-mcp"
+      output: "(not found)"
+      command2: "cargo search chronos-mcp"
+      output2: "(empty — no crates.io match)"
+  T13:
+    description: "Capture 0, probe falla, timeout, restart"
+    status: NOT_EVALUATED
+    reason: "depends on T12 (binary)."
+    evidence: "(inherited from T12)"
+  T14:
+    description: "Dos programas y presupuestos recursos/protocolo"
+    status: NOT_EVALUATED
+    reason: "depends on T12 (binary)."
+    evidence: "(inherited from T12)"
+
+recovery_action:
+  primary: "Operator provides chronos-mcp binary (provider-side artifact). Once present, re-open C2b SCOPE-CONTRACT and execute T12–T14."
+  secondary: "Operator approves scope expansion for a Chronos-equivalent runtime evidence source (e.g. eBPF, ptrace wrapper) that ships in this workspace. Would require ADR."
+  documented_alternative: "Accept C2b as DEFERRED; rely on AIW-S5 historical evidence as HISTORICAL only (per UAT-MATRIX T33)."
+
+not_evaluated_vs_failed:
+  distinction: "Same as C2a — NOT_EVALUATED is the correct category when the precondition is missing. Not a failed test."
+
+scope_contract_ref: "../SCOPE-CONTRACT.md"
+parallel_finding_with: "C2a (CogniCode-mcp absent)"
