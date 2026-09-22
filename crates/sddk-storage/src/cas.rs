@@ -189,4 +189,67 @@ mod tests {
         assert!(root.to_str().unwrap().contains("sddk"));
         assert!(root.to_str().unwrap().ends_with("cas"));
     }
+
+    // C3b (session-11) — T21 CAS corruption detection
+
+    /// If a file at the CAS-addressed path is overwritten with bytes that
+    /// don't match the hash in the filename, `get` MUST detect it and
+    /// refuse to return the bytes. This is the A5-2 R2 path that
+    /// `cas.rs:115-121` implements but is not exercised by the existing
+    /// happy-path tests.
+    #[test]
+    fn get_detects_corrupted_blob_on_disk() {
+        use std::fs;
+        let (cas, dir) = temp_cas();
+        let content = b"original content for CAS corruption test";
+        let hash = cas.put(content).expect("put original");
+
+        // Locate the file the CAS wrote and overwrite it with a different
+        // (still parseable) payload that does NOT match the hash.
+        let hash_path = {
+            let stripped = hash.strip_prefix("sha256:").unwrap_or(&hash);
+            let p1 = &stripped[..2];
+            let p2 = &stripped[2..4];
+            dir.path().join(p1).join(p2).join(stripped)
+        };
+        assert!(hash_path.exists(), "CAS must have written the file");
+        fs::write(&hash_path, b"corrupted -- does not match sha256 above")
+            .expect("overwrite succeeds");
+
+        // `get` must refuse the corrupted blob, not silently return it.
+        let result = cas.get(&hash);
+        match result {
+            Err(CasError::HashMismatch { expected, computed }) => {
+                assert_eq!(expected, hash);
+                assert_ne!(expected, computed);
+            }
+            other => panic!("expected HashMismatch on corrupted blob, got {:?}", other),
+        }
+    }
+
+    /// Partial-truncation path: blob exists but is shorter than the
+    /// original. Hash recomputation must still detect the mismatch.
+    #[test]
+    fn get_detects_truncated_blob_on_disk() {
+        use std::fs;
+        let (cas, dir) = temp_cas();
+        let content = b"a]whole[document{that}is>longer<than:the;truncated,copy.";
+        let hash = cas.put(content).expect("put");
+        let hash_path = {
+            let stripped = hash.strip_prefix("sha256:").unwrap_or(&hash);
+            dir.path()
+                .join(&stripped[..2])
+                .join(&stripped[2..4])
+                .join(stripped)
+        };
+        // Truncate to half the content.
+        let truncated = &content[..content.len() / 2];
+        fs::write(&hash_path, truncated).expect("truncate write");
+        let result = cas.get(&hash);
+        assert!(
+            matches!(result, Err(CasError::HashMismatch { .. })),
+            "truncated blob must be rejected, got {:?}",
+            result
+        );
+    }
 }

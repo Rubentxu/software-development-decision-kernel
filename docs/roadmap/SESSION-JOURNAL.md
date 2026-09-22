@@ -746,3 +746,35 @@ weakened.
 - Próxima acción ejecutable: **C3b Storage adversarial (T21 + T22)**. Pre-flight sobre `crates/sddk-storage/src/{event_store, cas, backlog_store}.rs` para identificar los gaps más valiosos. C2 sigue NOT_EVALUATED pendiente de operador.
 - Estado final: HEAD `828b070`, workspace `v1.169.143`, **tree clean**, push pendiente (operator-side).
 - J7/J8/J9/X08/R11 siguen DEFERRED per ROADMAP §C5.
+
+### 2026-09-22T08:42:00Z — C3b (Storage adversarial T21+T22) — orchestrator (direct)
+- Baseline: `efe7c44` (HEAD pre-cycle), workspace `v1.169.143`, tree clean.
+- Alcance/autorización; no-objetivos:
+  - C3b SCOPE-CONTRACT (`docs/roadmap/receipts/c3b/SCOPE-CONTRACT.md`) — T21 crash/reopen + idempotency, T22 SQLite IMMEDIATE contention. Subagent path remained unavailable (`usage_limit_reached`); orchestrator executed directly per §4.
+  - No-objetivos: no production code changes, no schema/migrations/bump.
+- Ejecutado (1 commit en este concern, código + docs):
+  - `crates/sddk-storage/src/cas.rs` — +62 líneas, 2 tests nuevos: `get_detects_corrupted_blob_on_disk`, `get_detects_truncated_blob_on_disk`. Cubren el path A5-2 R2 que ya estaba implementado pero no se ejercitaba.
+  - `crates/sddk-storage/src/event_store.rs` — +302 líneas, `mod tests` añadido (no existía), 5 tests: idempotency-same, idempotency-different-content, reopen-chain, multi-stream-isolation, concurrent-append-no-loss.
+  - `docs/roadmap/receipts/c3b/{SCOPE-CONTRACT,UAT-EVIDENCE.yaml,C3b-RECEIPT}.md`
+  - **Production code: 0 lines changed.**
+- UAT executed (verbatim en `docs/roadmap/receipts/c3b/UAT-EVIDENCE.yaml`):
+  - **C3b-U1** `get_detects_corrupted_blob_on_disk` → PASS_OBSERVED. Blob overwritten with bytes not matching the sha256 filename hash → `Err(CasError::HashMismatch { .. })`.
+  - **C3b-U2** `get_detects_truncated_blob_on_disk` → PASS_OBSERVED. Truncated blob also rejected.
+  - **C3b-U3** `append_is_idempotent_for_same_event_id` → PASS_OBSERVED. Re-append returns identical `EventAppended` (sequence, chain_hash, recorded_at all equal); `count == 1`.
+  - **C3b-U4** `append_rejects_event_id_collision_with_different_content` → PASS_OBSERVED. Typed guard fires (`event_store:duplicate_event_id:<id>` en dup-probe, no `content_hash_mismatch` en pre-tx); payload stored is the original, NOT the tampered one.
+  - **C3b-U5** `reopen_preserves_chain_and_sequence` → PASS_OBSERVED. Drop+reopen, head_hash/head_chain_hash/last_sequence match pre-drop values; both `verify_chain_integrity` and `verify_stream_chain` return Ok(()).
+  - **C3b-U6** `multi_stream_isolates_sequences_and_lists_them` → PASS_OBSERVED.
+  - **C3b-U7** `concurrent_append_across_distinct_streams_loses_no_events` → PASS_OBSERVED. 4 threads × 10 events × distinct streams = 40 events, 0 losses, 0 duplicates, sequences 1..10 per stream. Flake check 5/5 runs (1.17s–1.92s wall).
+- Gates verificados:
+  - `cargo fmt --all -- --check` → clean
+  - `cargo clippy -p sddk-storage --all-targets -- -D warnings` → clean
+  - `cargo test -p sddk-storage --lib` → **53/53 passed** (was 46/46 pre-cycle).
+- Riesgos/decisiones, responsable y revisit trigger:
+  - Sorpresa #1: schema CHECK `recorded_at <> ''` rechaza el helper que setea `recorded_at=""`. Resuelto con timestamp fijo (la función hash ya lo resetea antes de hashear). No production change.
+  - Sorpresa #2: guard de colisión typed-correcto es `duplicate_event_id:<id>` (dup-probe path), no `content_hash_mismatch` (pre-tx). Test reescrito para aceptar cualquiera con invariante más fuerte: "stored payload is NOT overwritten". No production change.
+  - Sorpresa #3: race en `pragma journal_mode = WAL` cuando múltiples threads abren la misma path simultáneamente. Resuelto con pre-open antes del barrier; el barrier alinea los `append` (superficie de contención real). No production change.
+  - **Decisión clave**: el código de producción cumple T21+T22 antes del ciclo; este ciclo hizo los contratos OBSERVABLEMENTE verdes, no hipotéticamente verdes. **0 production lines changed**.
+- CURRENT/STATE reconciliados a HEAD post-commit (mismo concern). C3b cerrado PASS_OBSERVED en STATE.
+- Próxima acción ejecutable: **C3c Storage Security canarios** (capabilities, scopes, dev-keys, safe-mode). Pre-flight sobre `crates/sddk-storage/src/` para identificar superficies sensibles (encryption-at-rest, hash-truncation, JSON injection en subjects_json/actor_json). Mantener AUTO hasta completar C3.
+- Estado final: HEAD post-commit, workspace `v1.169.143`, tree clean, push pendiente (operator-side).
+- C2 sigue NOT_EVALUATED pendiente de operador (decisión sobre adapters CogniCode/Chronos/JCode).

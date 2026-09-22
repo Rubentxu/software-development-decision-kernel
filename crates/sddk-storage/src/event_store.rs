@@ -807,3 +807,292 @@ CREATE TABLE IF NOT EXISTS event_snapshots_v1 (
 CREATE INDEX IF NOT EXISTS event_snapshots_v1_stream_idx
     ON event_snapshots_v1(stream_id);
 "#;
+
+#[cfg(test)]
+mod tests {
+    //! C3b (session-11) — T21 idempotency + reopen + chain, T22 SQLite contention.
+    use super::*;
+    use sddk_domain::{ActorKind, ActorRef, EventEnvelopeV1, EventStore};
+    use serde_json::json;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use tempfile::TempDir;
+
+    /// Build a valid envelope with a correctly computed content_hash.
+    /// `sequence=0` is set so the hash is stable regardless of caller context
+    /// (per `compute_content_hash` semantics — sequence is excluded from the
+    /// hash). `recorded_at` is a fixed non-empty RFC-3339 timestamp because
+    /// the schema enforces `recorded_at <> ''`; the hash function resets
+    /// it to "" before hashing, so the value choice does not affect the hash.
+    fn envelope_with_event_id(event_id: &str, stream_id: &str) -> EventEnvelopeV1 {
+        let mut env = EventEnvelopeV1 {
+            event_id: event_id.to_string(),
+            event_type: "uat.acceptance.granted".to_string(),
+            schema_version: 1,
+            stream_id: stream_id.to_string(),
+            sequence: 0,
+            project_id: "p-c3b-test".to_string(),
+            occurred_at: "2026-09-22T00:00:00Z".to_string(),
+            recorded_at: "2026-09-22T00:00:00Z".to_string(),
+            actor: ActorRef {
+                kind: ActorKind::Human,
+                id: "operator-test".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+                role: None,
+            },
+            subjects: vec![],
+            payload: json!({ "fixed": true }),
+            evidence_refs: vec![],
+            content_hash: String::new(),
+            metadata: None,
+            causation_id: None,
+            correlation_id: None,
+            cycle_id: None,
+            frame_id: None,
+            fork_id: None,
+        };
+        env.content_hash = env.compute_content_hash();
+        env
+    }
+
+    /// T21 — re-append of the SAME event_id returns the original sequence
+    /// (idempotent) without allocating a new sequence or new chain link.
+    #[test]
+    fn append_is_idempotent_for_same_event_id() {
+        let mut store = SqliteEventStore::open_in_memory().expect("open");
+        let env = envelope_with_event_id("evt-dup-001", "stream-dup");
+        let first = store.append(&env).expect("first append");
+        let second = store.append(&env).expect("second append");
+
+        // Same sequence, same chain_hash, same recorded_at — the contract
+        // documented at ports.rs:330-332.
+        assert_eq!(first.sequence, 1);
+        assert_eq!(first.sequence, second.sequence);
+        assert_eq!(first.chain_hash, second.chain_hash);
+        assert_eq!(first.recorded_at, second.recorded_at);
+
+        // And only ONE row in the database.
+        assert_eq!(store.count().expect("count"), 1);
+        assert_eq!(store.last_sequence("stream-dup").expect("last"), Some(1));
+    }
+
+    /// T21 — a DIFFERENT envelope (different payload) colliding on event_id
+    /// MUST be rejected with the typed guard instead of silently overwriting
+    /// the stored event. The production code detects this at the dup-probe
+    /// after `INSERT OR IGNORE` (event_store.rs:287-303) and returns
+    /// `event_store:duplicate_event_id:<id>` — different from the
+    /// pre-transaction `content_hash_mismatch` guard, but equally typed.
+    /// Either guard is acceptable; the contract is "the stored event is
+    /// not silently overwritten".
+    #[test]
+    fn append_rejects_event_id_collision_with_different_content() {
+        let mut store = SqliteEventStore::open_in_memory().expect("open");
+        // First envelope with payload {fixed: true}
+        let env_a = envelope_with_event_id("evt-collide-001", "stream-c");
+        let first = store.append(&env_a).expect("first append");
+        assert_eq!(first.sequence, 1);
+
+        // Second envelope with the SAME event_id but DIFFERENT payload.
+        let mut env_b = envelope_with_event_id("evt-collide-001", "stream-c");
+        env_b.payload = json!({ "fixed": false, "tampered": true });
+        env_b.content_hash = env_b.compute_content_hash();
+        let result = store.append(&env_b);
+        // The stored event must not be silently overwritten. The exact
+        // error code depends on which guard fires first — both are typed
+        // and both are part of the documented contract.
+        match &result {
+            Err(sddk_domain::StorageError::Other(s))
+                if s.contains("event_store:content_hash_mismatch")
+                    || s.contains("event_store:duplicate_event_id") =>
+            {
+                // Acceptable: typed guard, content not overwritten.
+            }
+            other => panic!("expected typed content-collision guard, got {:?}", other),
+        }
+
+        // Original event must still be the only row.
+        assert_eq!(store.count().expect("count"), 1);
+        let reloaded = store
+            .load_by_event_id("evt-collide-001")
+            .expect("load")
+            .expect("present");
+        // Reloaded payload must be the FIRST one (not the tampered one).
+        assert_eq!(reloaded.payload, json!({ "fixed": true }));
+    }
+
+    /// T21 — drop the connection, reopen on the same file, verify the
+    /// chain_hash of the most-recent event matches what was computed at
+    /// append time. This proves append durability under reopen.
+    #[test]
+    fn reopen_preserves_chain_and_sequence() {
+        let dir = TempDir::new().expect("tempdir");
+        let db_path: PathBuf = dir.path().join("ledger.sqlite");
+
+        // Phase 1: append 5 events and capture the head-of-chain markers.
+        let (head_hash, head_chain, last_seq) = {
+            let mut store = SqliteEventStore::open_path(&db_path).expect("first open");
+            let mut head_hash = None;
+            let mut head_chain = None;
+            let mut last_seq = 0u64;
+            for i in 1..=5u64 {
+                let env = envelope_with_event_id(&format!("evt-reopen-{i:03}"), "stream-reopen");
+                let r = store.append(&env).expect("append");
+                assert_eq!(r.sequence, i, "sequence must be contiguous per stream");
+                head_hash = Some(r.content_hash);
+                head_chain = Some(r.chain_hash);
+                last_seq = r.sequence;
+            }
+            (head_hash, head_chain, last_seq)
+            // `store` drops here → WAL checkpoints.
+        };
+
+        // Phase 2: reopen and verify chain continuity.
+        let store = SqliteEventStore::open_path(&db_path).expect("reopen");
+        assert_eq!(store.count().expect("count after reopen"), 5);
+        assert_eq!(
+            store.last_sequence("stream-reopen").expect("last"),
+            Some(last_seq)
+        );
+        assert_eq!(
+            store.head_hash("stream-reopen").expect("head").as_deref(),
+            head_hash.as_deref()
+        );
+        assert_eq!(
+            store.head_chain_hash("stream-reopen").expect("head chain"),
+            head_chain
+        );
+
+        // Chain integrity must hold end-to-end.
+        store
+            .verify_chain_integrity("stream-reopen")
+            .expect("chain integrity");
+        store
+            .verify_stream_chain("stream-reopen")
+            .expect("stream chain");
+    }
+
+    /// T21 — multi-stream: distinct streams do not share sequence space
+    /// and list_streams reports them all.
+    #[test]
+    fn multi_stream_isolates_sequences_and_lists_them() {
+        let mut store = SqliteEventStore::open_in_memory().expect("open");
+        for i in 1..=3u64 {
+            let _ = store
+                .append(&envelope_with_event_id(
+                    &format!("evt-alpha-{i:03}"),
+                    "stream-alpha",
+                ))
+                .expect("alpha");
+            let _ = store
+                .append(&envelope_with_event_id(
+                    &format!("evt-beta-{i:03}"),
+                    "stream-beta",
+                ))
+                .expect("beta");
+        }
+        let streams = store.list_streams().expect("list_streams");
+        assert_eq!(streams, vec!["stream-alpha", "stream-beta"]);
+        // Each stream got sequences 1..3 in isolation.
+        assert_eq!(store.last_sequence("stream-alpha").expect("last"), Some(3));
+        assert_eq!(store.last_sequence("stream-beta").expect("last"), Some(3));
+    }
+
+    /// T22 — concurrent appends from N threads to N distinct streams,
+    /// each thread appending M events. Each thread opens its own
+    /// `SqliteEventStore` pointing at the same `ledger.sqlite` — the
+    /// production multi-connection model (rusqlite `Connection: Send`).
+    /// The contention surface is the SQLite IMMEDIATE transaction +
+    /// WAL + busy_timeout exercised on `append`.
+    ///
+    /// Open happens BEFORE the barrier so migrations run sequentially
+    /// (SQLite cannot change journal_mode concurrently); the barrier
+    /// aligns the threads so they enter `append` roughly simultaneously,
+    /// which is where the contention actually matters.
+    #[test]
+    fn concurrent_append_across_distinct_streams_loses_no_events() {
+        let dir = TempDir::new().expect("tempdir");
+        let db_path = Arc::new(dir.path().join("ledger.sqlite"));
+
+        const THREADS: usize = 4;
+        const PER_THREAD: usize = 10;
+
+        // Pre-open all stores BEFORE the barrier to serialize migrations
+        // and avoid the `journal_mode: database is locked` race on
+        // concurrent opens.
+        let mut stores = Vec::with_capacity(THREADS);
+        for _ in 0..THREADS {
+            let p = (*db_path).clone();
+            stores.push(SqliteEventStore::open_path(&p).expect("pre-open"));
+        }
+
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let mut handles = Vec::new();
+        for t in 0..THREADS {
+            let barrier = Arc::clone(&barrier);
+            // Move the pre-opened store into the thread by wrapping it.
+            // We use a `Vec<...>` index trick to avoid `&mut self` over
+            // the whole Vec — each thread owns its own `SqliteEventStore`.
+            let mut store = stores.pop().expect("store");
+            handles.push(std::thread::spawn(move || {
+                // Synchronize the start so all threads enter `append`
+                // roughly simultaneously — this is the contention
+                // surface we want to exercise.
+                barrier.wait();
+                let stream_id = format!("stream-t{t}");
+                for i in 0..PER_THREAD {
+                    let env = envelope_with_event_id(&format!("evt-t{t}-i{i:03}"), &stream_id);
+                    let r = store.append(&env).expect("append");
+                    assert_eq!(
+                        r.sequence,
+                        (i as u64) + 1,
+                        "per-stream sequence must be contiguous"
+                    );
+                }
+                store
+            }));
+        }
+
+        // Re-collect the stores (kept alive across the test for clean Drop).
+        let mut final_stores = Vec::new();
+        for h in handles {
+            final_stores.push(h.join().expect("thread join"));
+        }
+
+        // Single re-open to verify the post-condition.
+        let store = SqliteEventStore::open_path(&*db_path).expect("verify open");
+        let total = THREADS * PER_THREAD;
+        assert_eq!(store.count().expect("count"), total as u64);
+
+        // No duplicate event_ids.
+        let mut all_event_ids = HashSet::new();
+        for t in 0..THREADS {
+            let stream = format!("stream-t{t}");
+            let events = store
+                .load_stream(&stream, None, PER_THREAD as u32)
+                .expect("load");
+            assert_eq!(
+                events.len(),
+                PER_THREAD,
+                "stream {stream} must have all events"
+            );
+            for e in &events {
+                assert!(
+                    all_event_ids.insert(e.event_id.clone()),
+                    "duplicate event_id {}",
+                    e.event_id
+                );
+            }
+            // Sequences per stream are 1..PER_THREAD.
+            for (i, e) in events.iter().enumerate() {
+                assert_eq!(e.sequence, (i as u64) + 1);
+            }
+        }
+        assert_eq!(all_event_ids.len(), total);
+
+        // Suppress unused warning: the stores must outlive the joins.
+        drop(final_stores);
+    }
+}

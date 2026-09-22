@@ -1,0 +1,76 @@
+# C3b UAT-EVIDENCE — Storage adversarial (T21, T22)
+
+**Cycle:** C3b
+**Baseline:** `main@efe7c44`
+**HEAD (post-cycle):** committed in same concern; see C3b-RECEIPT
+**Date:** 2026-09-22T08:40:00Z
+**Status:** **PASS_OBSERVED** — 7 tests, 5/5 flake runs, 0 clippy warnings
+
+## Scenarios (UAT-C3b)
+
+### C3b-U1 — CAS detects corrupted blob on disk (T21)
+- **Expected**: `cas.get(&hash)` returns `Err(HashMismatch { .. })` when the file at the CAS-addressed path has been overwritten with bytes that don't match the filename hash.
+- **Observed**: PASS. `get_detects_corrupted_blob_on_disk` passes; error variant matches `CasError::HashMismatch { expected, computed }`, with `expected == hash` and `expected != computed`.
+- **Evidence**: `cargo test -p sddk-storage --lib cas::tests::get_detects_corrupted_blob_on_disk` → ok.
+
+### C3b-U2 — CAS detects truncated blob on disk (T21)
+- **Expected**: `cas.get(&hash)` rejects a file shorter than the original content.
+- **Observed**: PASS. `get_detects_truncated_blob_on_disk` passes.
+- **Evidence**: `cargo test -p sddk-storage --lib cas::tests::get_detects_truncated_blob_on_disk` → ok.
+
+### C3b-U3 — Append is idempotent for same event_id (T21)
+- **Expected**: Re-appending the same `EventEnvelopeV1` returns the original `EventAppended` (same sequence, same chain_hash, same recorded_at) without allocating a new sequence or new chain link.
+- **Observed**: PASS. `append_is_idempotent_for_same_event_id` passes; `count == 1`, `last_sequence == Some(1)`, `first == second`.
+- **Evidence**: `cargo test -p sddk-storage --lib event_store::tests::append_is_idempotent_for_same_event_id` → ok.
+
+### C3b-U4 — Append rejects event_id collision with different content (T21)
+- **Expected**: An envelope with the SAME `event_id` as a stored event but a DIFFERENT payload (different recomputed content_hash) MUST be rejected by a typed guard, not silently overwrite the stored event.
+- **Observed**: PASS. `append_rejects_event_id_collision_with_different_content` passes; the rejection comes from the dup-probe path (`event_store:duplicate_event_id:<id>`) rather than the pre-transaction `content_hash_mismatch` guard, but BOTH are typed and BOTH prevent silent overwrite. The reloaded payload is `{"fixed": true}` (the original), not `{"fixed": false, "tampered": true}` (the tampered version).
+- **Evidence**: `cargo test -p sddk-storage --lib event_store::tests::append_rejects_event_id_collision_with_different_content` → ok.
+
+### C3b-U5 — Reopen preserves chain and sequence (T21)
+- **Expected**: Drop the connection, reopen on the same `ledger.sqlite` file, verify the chain_hash of the most-recent event and the last_sequence match what was computed at append time. `verify_chain_integrity` and `verify_stream_chain` pass.
+- **Observed**: PASS. `reopen_preserves_chain_and_sequence` passes; both `head_hash` and `head_chain_hash` match pre-drop values; `verify_chain_integrity` and `verify_stream_chain` return `Ok(())`.
+- **Evidence**: `cargo test -p sddk-storage --lib event_store::tests::reopen_preserves_chain_and_sequence` → ok.
+
+### C3b-U6 — Multi-stream isolates sequences (T21)
+- **Expected**: Distinct streams get independent sequence spaces 1..N; `list_streams` returns them ordered.
+- **Observed**: PASS. `multi_stream_isolates_sequences_and_lists_them` passes.
+- **Evidence**: `cargo test -p sddk-storage --lib event_store::tests::multi_stream_isolates_sequences_and_lists_them` → ok.
+
+### C3b-U7 — Concurrent appends across distinct streams lose no events (T22)
+- **Expected**: 4 threads × 10 events each, each to a distinct stream, all appends succeed, total `count == 40`, no duplicate `event_id`, per-stream sequences contiguous 1..10.
+- **Observed**: PASS. `concurrent_append_across_distinct_streams_loses_no_events` passes.
+- **Flake check**: 5/5 PASS runs in succession (1.17s, 1.28s, 1.17s, 1.21s, 1.92s wall time). No flake.
+- **Note on design**: Open happens BEFORE the barrier (so migrations run sequentially — SQLite cannot change `journal_mode` concurrently); the barrier aligns `append` calls, which is the actual contention surface under test. Each thread owns its own `SqliteEventStore` (`rusqlite::Connection: Send`).
+- **Evidence**: `cargo test -p sddk-storage --lib event_store::tests::concurrent_append_across_distinct_streams_loses_no_events` → ok, 5 consecutive runs.
+
+## Summary table
+
+| Scenario | Module | Test | Status |
+|---|---|---|---|
+| C3b-U1 | cas | `get_detects_corrupted_blob_on_disk` | PASS_OBSERVED |
+| C3b-U2 | cas | `get_detects_truncated_blob_on_disk` | PASS_OBSERVED |
+| C3b-U3 | event_store | `append_is_idempotent_for_same_event_id` | PASS_OBSERVED |
+| C3b-U4 | event_store | `append_rejects_event_id_collision_with_different_content` | PASS_OBSERVED |
+| C3b-U5 | event_store | `reopen_preserves_chain_and_sequence` | PASS_OBSERVED |
+| C3b-U6 | event_store | `multi_stream_isolates_sequences_and_lists_them` | PASS_OBSERVED |
+| C3b-U7 | event_store | `concurrent_append_across_distinct_streams_loses_no_events` | PASS_OBSERVED (5/5 flake runs) |
+
+## Cross-check
+
+- `cargo test -p sddk-storage --lib` → **53/53 passed, 0 failed, 0 ignored** (was 46/46 pre-cycle, now 53/53 after adding 7 tests).
+- `cargo clippy -p sddk-storage --all-targets -- -D warnings` → **clean** (exit 0).
+- `cargo fmt --all -- --check` → **clean** (post `cargo fmt --all`).
+
+## STOP conditions
+
+None hit. The only mid-cycle surprise was:
+- **expected** `content_hash_mismatch` (pre-transaction guard) but **observed** `duplicate_event_id:<id>` (dup-probe guard). Both are typed; the test was rewritten to accept either guard, with the strong assertion that the stored payload is NOT overwritten. **No production code change required**.
+
+## Out-of-scope (NOT_RUN, DEFERRED, BLOCKED)
+
+- Performance benchmarks of `append` under contention — out of scope per SCOPE §9 (C3d).
+- Security canarios — out of scope per SCOPE §9 (C3c).
+- Migration correctness — out of scope per SCOPE §9.
+- `backlog_store` regression — already covered + de-flaked in v1.169.141 (F6 in SCOPE).

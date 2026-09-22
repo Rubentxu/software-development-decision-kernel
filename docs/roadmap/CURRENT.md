@@ -1,18 +1,18 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado:** C1 cerrado; session-10 debt closeout cerrado (5 commits: v1.169.139..142 + docs); session-11 closed C2 NOT_EVALUATED (3 cycles systemic) and **C3a PASS_OBSERVED** (Authority hardening, v1.169.143). **Actualizado:** 2026-09-22T08:25:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
+**Estado:** C1 cerrado; C2 NOT_EVALUATED (3 sub-cycles systemic); C3a PASS_OBSERVED (Authority hardening, 3 tests); **C3b PASS_OBSERVED** (Storage adversarial T21+T22, 7 tests, 53/53 storage verde). Actualizado: 2026-09-22T08:42:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@828b070` (session-11 C3a close) consultado 2026-09-22T08:25Z; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.143` (Cargo.toml) — bump desde 1.169.142 por C3a tests-only change |
+| Fuente de la fotografía | `main@<HEAD post-C3b>` (session-11 C3b close, same concern) consultado 2026-09-22T08:42Z; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.144` (Cargo.toml) — bump desde 1.169.143 por C3b tests (legítimo: el pre-push hook exige bump real para commits con código modificado, y los 7 tests cuentan como código nuevo en el módulo) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); workspace v1.169.143 NO está publicado (operator-side) |
-| Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a PASS_OBSERVED` (3 tests added, 11/11 verde). C3b-C3e pendientes. |
+| Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a PASS_OBSERVED` + **`C3b PASS_OBSERVED`** (7 tests, 53/53 verde). C3c/C3d/C3e pendientes. |
 | Estado PRs abiertos | Ninguno. |
-| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a code+tests+receipts. **All local; pending push to origin/main.** |
-| Tests verified this session | `cargo test -p sddk-engine --lib authority_admission_ticket` → 11/11 verde. `cargo test -p sddk-engine --lib authority` → 91/91 verde. `cargo test -p sddk-engine --test a6_0_admission_tickets` → 4/4 verde. T20 atomicity stress 5/5 PASS. `cargo clippy -p sddk-engine --all-targets -- -D warnings` clean. `cargo fmt --all -- --check` clean. |
+| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a code+tests+receipts → `<HEAD post-C3b>` C3b code+tests+receipts. **All local; pending push to origin/main.** |
+| Tests verified this session | C3a: `cargo test -p sddk-engine --lib authority_admission_ticket` → 11/11 verde; authority → 91/91; T20 atomicity 5/5. C3b: `cargo test -p sddk-storage --lib` → **53/53** verde (was 46/46 pre-cycle); T22 contention 5/5 sin flake. `cargo clippy -p sddk-{engine,storage} --all-targets -- -D warnings` clean. `cargo fmt --all -- --check` clean. |
 | Real-provider binary availability | `cognicode` CLI v0.97.3 presente; `cognicode-mcp` AUSENTE. `chronos-mcp` AUSENTE. `jcode` v0.86.0 presente con `acp`; `jcode-sdk` no publicado. **C2 sigue NOT_EVALUATED.** |
-| Siguiente acción exacta | **Operador decide.** Para C3 en esta sesión: continuar con C3b (Storage adversarial, T21+T22). Para C2: provee binarios, aprueba ADR, o acepta DEFERRED. C4 release sigue operator-side. |
+| Siguiente acción exacta | **C3c Storage Security canarios** (capabilities, scopes, safe-mode, hash-truncation, JSON injection en `actor_json`/`subjects_json`/`metadata_json`, encryption-at-rest surface). C2 NOT_EVALUATED y C4 release siguen operator-side. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados. Para C2/C3: per `docs/roadmap/CERTIFICATIONS.md §3` el estado `PASS_BY_CODE_READING` no existe — solo PASS_OBSERVED sobre evidencia real. |
 | Bloqueos y decisiones | **C2 cerrado honesto NOT_EVALUATED** (session-11). **C3a cerrado PASS_OBSERVED** con valor empírico (Mutex<FenceState> serializa correctamente bajo concurrencia). C3b-c-d-e pendientes. J7/J8/J9/X08/R11 siguen DEFERRED. Release v1.169.143 sigue pending operator. |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
