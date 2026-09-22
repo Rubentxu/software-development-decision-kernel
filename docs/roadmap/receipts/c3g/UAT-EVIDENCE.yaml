@@ -1,0 +1,84 @@
+schema_version: 1
+profile_target: BASE_PERF_BUDGET_C3G
+cycle: C3g
+status: PASS_OBSERVED
+executed_by: orchestrator (direct execution)
+executed_at_utc: "2026-09-22T10:07:00Z"
+source_sha_at_eval: "a89dde6"
+workspace_version_at_eval: "1.169.150"
+last_public_release_observed: "v1.169.122"
+
+# Cycle C3g: performance budget for Base profile per ROADMAP §C3.
+# Static and Runtime scenarios are NOT_EVALUATED_PROVIDER_MISSING (no providers).
+# This cycle measures Base only; the harness lives in
+# `crates/sddk-cli/tests/perf_budget_base.rs` as a #[ignore] opt-in test.
+
+environment:
+  os: "linux x86_64"
+  rust: "(see rust-toolchain)"
+  binary_path: "/var/home/rubentxu/cargo-targets/release/sddk"
+  binary_version: "1.169.150"
+  binary_size_bytes: 30682024
+  runs_per_scenario: 100
+  source_change_scope:
+    files_added: ["crates/sddk-cli/tests/perf_budget_base.rs"]
+    production_change: false  # test code only
+
+scenarios:
+  T0_fmt:
+    description: "cargo fmt --check"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo fmt --check"
+      result: "(no output → clean)"
+  T1_build_release:
+    description: "cargo build --release -p sddk-cli --bin sddk"
+    status: PASS_OBSERVED
+    evidence:
+      command: "CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo build --release -p sddk-cli --bin sddk"
+      result: "Finished `release` profile [optimized] target(s) (16.74s)"
+      binary: "/var/home/rubentxu/cargo-targets/release/sddk 30.7 MB exec+x"
+      version: "sddk 1.169.150"
+  T2_bench_run:
+    description: "Bench harness produces observable p50/p95/max + RSS for all 3 scenarios × N=100"
+    status: PASS_OBSERVED
+    evidence:
+      command: "CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo test -p sddk-cli --test perf_budget_base -- --ignored --nocapture"
+      stdout: |
+        [c3g] using binary: /var/home/rubentxu/cargo-targets/release/sddk
+        [c3g] S1-version: p50=4ms p95=5ms max=6ms peak_rss=24KiB (N=100)
+        [c3g] S2-cycle-status: p50=38ms p95=40ms max=42ms peak_rss=92KiB (N=100)
+        [c3g] S3-lint: p50=37ms p95=39ms max=43ms peak_rss=280KiB (N=100)
+        [c3g] soft-target check: S1<50ms=true S2<100ms=true S3<500ms=true
+        test c3g_perf_budget_base ... ok
+        test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.12s
+      result_file: "/tmp/c3g-bench-results.yaml (also copied to docs/roadmap/receipts/c3g/BENCH-RESULTS.yaml)"
+  T3_no_regression:
+    description: "cargo test -p sddk-cli --lib — existing tests still pass"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo test -p sddk-cli --lib"
+      result: "test result: ok. 780 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 12.19s"
+  T4_clippy:
+    description: "cargo clippy -p sddk-cli --all-targets -- -D warnings"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo clippy -p sddk-cli --all-targets -- -D warnings"
+      result: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 18s (no warnings)"
+
+soft_target_compliance:
+  S1_version_p95: "5ms <= 50ms → PASS"
+  S2_cycle_status_p95: "40ms <= 100ms → PASS"
+  S3_lint_p95: "39ms <= 500ms → PASS"
+
+acceptance:
+  build_clean: true
+  clippy_clean: true
+  existing_tests_pass: true
+  T0_T1_T2_T3_T4_all_pass: true
+  observable_numbers_produced: true
+  no_production_change: true
+  no_release: true
+
+scope_contract_ref: "../SCOPE-CONTRACT.md"
+bench_results_ref: "../BENCH-RESULTS.yaml"

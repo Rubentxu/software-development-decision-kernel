@@ -1,0 +1,62 @@
+# C3g — Performance budget for Base profile
+#
+# OBSERVED numbers, captured 2026-09-22T10:07Z on workspace v1.169.150.
+# Reproducible via:
+#   CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo test -p sddk-cli \
+#     --test perf_budget_base -- --ignored --nocapture
+#
+# Environment:
+#   - linux x86_64
+#   - single userland process (no concurrent workload pinned)
+#   - binary: /var/home/rubentxu/cargo-targets/release/sddk (1.169.150)
+#   - N=100 runs per scenario
+#
+# Scenarios:
+#   - S1: `sddk version` — instant read of resolved framework version
+#   - S2: `sddk cycle status` (no active cycle) — typical pre-flight check
+#   - S3: `sddk lint` — validation that exercises fmt + clippy + test lint
+#
+# Soft targets (SCOPE §2): S1<50ms, S2<100ms, S3<500ms (p95). All PASS.
+
+scenarios:
+  - scenario: S1-version
+    args: ["version"]
+    n: 100
+    p50_ms: 4
+    p95_ms: 5
+    max_ms: 6
+    peak_rss_kib: 24
+    env: "linux x86_64, single userland, cargo-targets/release/sddk 1.169.150"
+    soft_target_p95_ms: 50
+    soft_target_pass: true
+
+  - scenario: S2-cycle-status
+    args: ["cycle", "status"]
+    n: 100
+    p50_ms: 38
+    p95_ms: 40
+    max_ms: 42
+    peak_rss_kib: 92
+    env: "linux x86_64, single userland, cargo-targets/release/sddk 1.169.150"
+    soft_target_p95_ms: 100
+    soft_target_pass: true
+
+  - scenario: S3-lint
+    args: ["lint"]
+    n: 100
+    p50_ms: 37
+    p95_ms: 39
+    max_ms: 43
+    peak_rss_kib: 280
+    env: "linux x86_64, single userland, cargo-targets/release/sddk 1.169.150"
+    soft_target_p95_ms: 500
+    soft_target_pass: true
+
+budget_summary:
+  s1_version_p95_ms: 5       # target < 50
+  s2_cycle_status_p95_ms: 40 # target < 100
+  s3_lint_p95_ms: 39         # target < 500
+  max_peak_rss_kib: 280      # sddk lint, well under any reasonable budget
+  observed_at_utc: "2026-09-22T10:07:00Z"
+  workspace_version: "1.169.150"
+  binary_sha256: "(see /var/home/rubentxu/cargo-targets/release/sddk — checksum regenerated per release)"
