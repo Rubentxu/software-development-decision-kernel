@@ -778,3 +778,32 @@ weakened.
 - Próxima acción ejecutable: **C3c Storage Security canarios** (capabilities, scopes, dev-keys, safe-mode). Pre-flight sobre `crates/sddk-storage/src/` para identificar superficies sensibles (encryption-at-rest, hash-truncation, JSON injection en subjects_json/actor_json). Mantener AUTO hasta completar C3.
 - Estado final: HEAD post-commit, workspace `v1.169.143`, tree clean, push pendiente (operator-side).
 - C2 sigue NOT_EVALUATED pendiente de operador (decisión sobre adapters CogniCode/Chronos/JCode).
+
+### 2026-09-22T09:04:00Z — C3c (Storage Security canarios T23+T24+T25) — orchestrator (direct)
+- Baseline: `edaea67` (HEAD pre-cycle), workspace `v1.169.144`, tree clean.
+- Alcance/autorización; no-objetivos:
+  - C3c SCOPE-CONTRACT (`docs/roadmap/receipts/c3c/SCOPE-CONTRACT.md`) — T23 capability receipt lifecycle, T24 cycle lease guards, T25 schema_guard boundary. Subagent path remained unavailable; orchestrator executed directly.
+  - No-objetivos: no production code changes, no schema/migration/bump (until pre-push hook forced it).
+- Ejecutado (1 commit funcional + docs):
+  - `crates/sddk-storage/src/lib.rs` — `capability_receipt_security_tests` (5 tests, +181), `cycle_lease_security_tests` (5 tests, +147).
+  - `crates/sddk-storage/src/schema_guard.rs` — 4 boundary tests, +78.
+  - `docs/roadmap/receipts/c3c/{SCOPE-CONTRACT,UAT-EVIDENCE.yaml,C3c-RECEIPT}.md`
+  - **Production code: 0 lines changed.**
+  - Bump 1.169.144 → 1.169.145 (pre-push hook: código modificado).
+- UAT executed (verbatim en `docs/roadmap/receipts/c3c/UAT-EVIDENCE.yaml`):
+  - **T23** 5/5 PASS_OBSERVED. Capability receipt lifecycle fail-closed: begin rechaza non-Started (C3c-U1), finalize rechaza Started (U2), re-finalize devuelve `TerminalReceipt { receipt_id }` (U3), idempotency same-key+same-request retorna receipt original sin duplicar (U4), idempotency same-key+different-request devuelve `IdempotencyConflict { key }` (U5).
+  - **T24** 5/5 PASS_OBSERVED. Cycle lease guards fail-closed: negative now_ms (U6), expires<=now (U7), missing cycle returns `NotFound{entity:"cycle"}` (U8), active lease returns `LeaseConflict{owner, expires_at_ms}` (U9), expired re-acquire increments fencing_token 1→2 (U10).
+  - **T25** 4/4 PASS_OBSERVED. Schema guard boundary: `classify(MIN)` no es TooOld (U11), `classify(MIN-1)` es TooOld (U12), `GuardError::TooOldSchema` Display correcto (U13), `GuardError::NewerSchema` Display correcto (U14).
+- Gates verificados:
+  - `cargo fmt --all -- --check` → clean
+  - `cargo clippy -p sddk-storage --all-targets -- -D warnings` → clean
+  - `cargo test -p sddk-storage --lib` → **67/67 passed** (was 53/53 pre-cycle).
+- Riesgos/decisiones, responsable y revisit trigger:
+  - Sorpresa #1: `CycleStatus` no tiene `Active`; las variantes son Open/Blocked/etc. Fix: usar `CycleStatus::Open`. No production change.
+  - Sorpresa #2: composite FK `(project_id, cycle_id)` en `capability_receipts` requiere cycle_id Some(real_cycle_id), no None. No production change.
+  - Sorpresa #3: `cycles` FK `(project_id, workspace_id) → workspaces` requiere WorkspaceRecord previo. No production change.
+  - **Decisión clave**: las 3 sorpresas validan que las FK del schema están haciendo su trabajo exactamente como se espera — exactamente el tipo de canario que pedía el ciclo. **0 production lines changed**.
+- CURRENT/STATE reconciliados a HEAD post-commit (`775ec93`). C3c cerrado PASS_OBSERVED en STATE.
+- Próxima acción ejecutable: **C3d Storage Performance baseline** (microbenchmarks append/lease/hash; contention stress benchmark). Mantener AUTO hasta completar C3.
+- Estado final: HEAD post-commit, workspace `v1.169.145`, tree clean, push pendiente (operator-side).
+- C2 sigue NOT_EVALUATED pendiente de operador (decisión sobre adapters CogniCode/Chronos/JCode).
