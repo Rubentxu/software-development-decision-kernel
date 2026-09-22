@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.170.7] - 2026-09-22
+
+### Other
+  - test(cli): simplify FC-6 doc comment to satisfy clippy::doc_lazy_continuation
+
+
 ## [1.170.6] - 2026-09-22
 
 ### Fixes
