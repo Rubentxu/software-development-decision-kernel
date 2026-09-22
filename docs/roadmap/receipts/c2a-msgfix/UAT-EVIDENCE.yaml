@@ -1,0 +1,84 @@
+schema_version: 1
+profile_target: UX_HONESTY_FIX_C2A_MSGFIX
+cycle: C2a-MsgFix
+status: PASS_OBSERVED
+executed_by: orchestrator (direct execution)
+executed_at_utc: "2026-09-22T08:59:00Z"
+source_sha_at_eval: "902e696"
+workspace_version_at_eval: "1.169.149"
+last_public_release_observed: "v1.169.122"
+bump_commit_after: "3a09914"  # chore(release): bump 1.169.149 → 1.169.150
+
+# Cycle C2a-MsgFix: replace misleading literal 'cognicode-mcp path' /
+# 'chronos-mcp path' in --provider-bin error messages and --help doc comment
+# with the generic 'path-to-MCP-server-binary'. Evidence contract strings
+# (provider_build, evidence URIs, observation origin tags) UNCHANGED — they
+# require an ADR to modify.
+
+environment:
+  os: "linux x86_64"
+  rust: "(see rust-toolchain)"
+  source_change_scope:
+    files: ["crates/sddk-cli/src/verify_kernel_cmd.rs"]
+    lines_added: 4
+    lines_removed: 3
+    production_change: false  # UX-only, no behavior change
+
+scenarios:
+  T1_build:
+    description: "cargo build -p sddk-cli compiles cleanly"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo build -p sddk-cli"
+      result: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 18s"
+  T2_clippy:
+    description: "cargo clippy -p sddk-cli --all-targets -- -D warnings clean"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo clippy -p sddk-cli --all-targets -- -D warnings"
+      result: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 25s"
+  T3_tests:
+    description: "Existing sddk-cli tests still pass"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo test -p sddk-cli --lib"
+      result: "test result: ok. 780 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 11.13s"
+  T4_error_static:
+    description: "sddk verify-kernel --domain static_provider error message no longer hardcodes 'cognicode-mcp'"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo run -q -p sddk-cli -- verify-kernel --domain static_provider --claim foo"
+      stderr: "error: verify: --domain static_provider requires --provider-bin <path-to-MCP-server-binary>"
+      assert: "literal 'cognicode-mcp path' NOT present in stderr"
+  T5_error_runtime:
+    description: "sddk verify-kernel --domain runtime_provider error message no longer hardcodes 'chronos-mcp'"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo run -q -p sddk-cli -- verify-kernel --domain runtime_provider --claim foo"
+      stderr: "error: verify: --domain runtime_provider requires --provider-bin <path-to-MCP-server-binary>"
+      assert: "literal 'chronos-mcp path' NOT present in stderr"
+  T6_help_doc:
+    description: "sddk verify-kernel --help shows updated doc comment"
+    status: PASS_OBSERVED
+    evidence:
+      command: "cargo run -q -p sddk-cli -- verify-kernel --help"
+      output: "Static-provider mode: path to the static MCP server binary (currently `cognicode-mcp`; the adapter spawns it via stdio JSON-RPC). When set together with `--domain static_provider`, the claim is evaluated against a live provider observation (AIW-S1)"
+      assert: "doc comment describes 'static MCP server binary' and notes '(currently `cognicode-mcp`)' as informative context"
+
+evidence_contract_strings_unchanged:
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs:205  provider_build: 'cognicode-mcp/verify-cmd'"
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs:241  evidence URI: 'cognicode-mcp://find_usages/{symbol}#usages={...}'"
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs:253  observation origin tag: 'cognicode-mcp'"
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs:266  evidence URI: 'cognicode-mcp://find_usages/{symbol}#{file}:{line}'"
+  - "crates/sddk-cli/src/verify_kernel_cmd.rs:275  observation origin tag: 'cognicode-mcp'"
+  assertion: "all 5 evidence contract strings at the original commit hash remain unchanged at the new commit hash"
+
+acceptance:
+  build_clean: true
+  clippy_clean: true
+  existing_tests_pass: true
+  T4_T5_T6_pass: true
+  evidence_strings_unchanged: true
+  no_release: true  # workspace 1.169.149 → 1.169.150 bump ceremonial only
+
+scope_contract_ref: "../SCOPE-CONTRACT.md"
