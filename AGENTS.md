@@ -47,8 +47,20 @@ y se actualiza con `sddk dev install`.
 
 ### 2.3. Workspace y alcance de verificación
 
-- `Cargo.toml` `[workspace.package] version` = versión de desarrollo actual (puede ir
-  ahead del último tag hasta `chore(release)`).
+- **`Cargo.toml` `[workspace.package] version` debe estar alineado con el
+  release tag que se va a publicar** (o con el último tag ya publicado).
+  No puede ir ahead del último release tag: si el workspace dice `1.170.1`
+  y el último GH Release es `v1.170.0`, el contrato exige que la próxima
+  release sea `v1.170.1` (no `v1.171.0` aunque SemVer lo sugiera). El
+  workspace version es **puntero ceremonial del release** — es decir,
+  declara la versión que va a aparecer como tag, no una versión de
+  desarrollo arbitraria. Si el operador quiere un minor (`v1.171.0`),
+  bumpea workspace a `1.171.0` *antes* de `bash scripts/release.sh`.
+  Si hay override del algoritmo SemVer (`scripts/release-bump.sh
+  --force-version <X>`), el workspace version debe coincidir con `<X>`.
+  El release script (`scripts/release.sh` step 2.5) puede aplicar el
+  bump por sí mismo, pero el estado committed debe reflejar la versión
+  que se va a publicar.
 - **Durante `apply` no se exige `cargo test --workspace` después de cada cambio.**
   El agente sigue `prompts/sddk/change-scoped-testing.md`: ejecuta el lote mínimo
   justificado por el cambio/SUT y reserva el perfil completo para `verify`/release.

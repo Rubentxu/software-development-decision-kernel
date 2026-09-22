@@ -3,6 +3,20 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.170.1] - 2026-09-22
+
+### Features
+  - feat(uat): sddk uat validate --format json
+  - feat(uat): sddk uat status --format json
+  - feat(cli): sddk dev doctor --format json
+
+### Other
+  - docs(roadmap): registra FC-7/FC-8 implementadas y marca FC-2 done
+  - docs(roadmap): SESSION-JOURNAL + STATE.yaml \u2014 uat status JSON shipped
+  - docs(roadmap): SESSION-JOURNAL + STATE.yaml \u2014 FC-2 delivered, next v1.171.0
+  - docs(adr): ADR-0142 release script SemVer-correctness via release-bump.sh
+  - docs(roadmap): STATE.yaml reconciled \u2014 v1.170.0 CERTIFIED
+
 ## [1.169.11] - 2026-09-14
 
 No binary release. Test-only refactor delivered behind a `chore(release)`
