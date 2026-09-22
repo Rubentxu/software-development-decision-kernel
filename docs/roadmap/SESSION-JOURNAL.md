@@ -1730,3 +1730,53 @@ support. Not done in this cycle (scope discipline).
 - (C) Abrir nuevo ciclo C5 con feature genuina (FC-1 uat run --filter con valor confirmado; FC-4 uat replay --release pendiente de confirmar).
 
 **Override SemVer: LIFTED en v1.171.0 (session-11 close).** Próxima release con solo fix:/test:/docs:/chore: será patch (v1.171.1) sin override, retornando a SemVer-correct automático.
+
+---
+
+## Session-12 (continuación) — 2026-09-22T19:33Z — FC-1 v2 implementada + chromium-skip fix + bump a 1.171.2
+
+**Baseline:** `8a541c3` HEAD (push a origin/main: `e49ff38..8a541c3`). Workspace v1.171.2 ahead of last published tag v1.171.0.
+
+**Decisión de routing:** opción (A)+(C) combinadas — docs audit commiteados + FC-1 v2 implementado sobre `UatBatchArgs` existente (NO nuevo subcomando).
+
+**Work executed (4 commits nuevos sobre session-12 audit base `e2e211e`):**
+
+1. **`0974292 fix(test): skip stale_detects_geometry_change cleanly when chromium missing`** — INC-A5-5R closure evidence estaba obsoleta porque el test panicaba con `--ignored` cuando chromium no estaba instalado. Early-return guard añadido mirroring los existentes checks de node/python3. Convierte panic a skip limpio. NO fija el flake subyacente (eso requiere `npx playwright install` operacional).
+2. **`e49ff38 chore(release): bump 1.171.0 -> 1.171.1`** — patch auto (1 fix + 2 docs desde v1.171.0).
+3. **`3d24000 feat(cli): extend sddk uat batch with selective filters`** — FC-1 v2 implementación: extiende `UatBatchArgs` con 4 filtros opcionales (`--scenario`, `--flag`, `--priority`, `--exclude-flaky`). Helpers puros: `batch_filter_matches(scenario, args) -> bool` y `uat_priority_label(priority) -> &'static str`. Filtros combinan como AND; sin filtros, comportamiento previo preservado.
+4. **`3c93472 test(cli): add filter predicate coverage for uat batch`** — 7 tests predicate en módulo `uat_batch_filters_tests`: empty_args passthrough, scenario subset, flag set-semantics, priority case-insensitive, exclude_flaky single-flag drop, combined AND, priority label round-trip.
+5. **`8a541c3 chore(release): bump 1.171.1 -> 1.171.2`** — minor auto (1 feat + 1 test sobre v1.171.1).
+
+**Gates verificados localmente antes del push:**
+- `cargo test -p sddk-cli --lib uat_batch_filters_tests` → 7/7 PASS (RED→GREEN iteración internal).
+- `cargo test -p sddk-cli --lib` → **791 passed; 0 failed; 1 ignored** (chromium skip clean). Era 784 antes; +7 son los tests nuevos.
+- `cargo build -p sddk-cli --release` → OK.
+- `cargo clippy -p sddk-cli --all-targets -- -D warnings` → clean (tras eliminar doc comment huérfano de `run_uat_batch` que introdujo mi inserción inicial).
+- `cargo fmt --check` → clean.
+
+**Decisiones técnicas notables:**
+
+- **FC-1 como extensión, no subcomando:** `run_uat_batch` + `UatBatchArgs` ya existen en `crates/sddk-cli/src/uat.rs:3293`. Crear un `sddk uat run` separado habría duplicado la entrada batch. Se decidió extender `UatBatchArgs` con los 4 filtros opcionales. Esto satisface la regla del operador "evita código duplicado al plantear los cambios" (preocupación recurrente).
+- **P3 no existe:** investigando `UatPriority` descubrí que solo tiene P0/P1/P2 (no P3). Corregido doc del flag `--priority` para reflejar la realidad.
+- **Helpers puros:** `batch_filter_matches` y `uat_priority_label` son funciones puras sobre `UatScenario`/`UatBatchArgs` y `UatPriority`. Esto permite reutilización desde otros comandos sin arrastrar `run_uat_batch` completo.
+
+**Reconciliación de CURRENT/STATE/JOURNAL/FEATURE-CANDIDATES:**
+- `docs/roadmap/CURRENT.md` reescrito para reflejar nuevo SHA, nuevos commits, nuevo estado de working tree (vacío), y FC-1 v2 IMPLEMENTED.
+- `docs/roadmap/STATE.yaml` actualizado: `current_sha=8a541c3`, `workspace_version=1.171.2`, `next_planned_release=v1.171.2`. Bloque `verified_components_at_current_sha` extendido con `fc1_v2_uat_batch_filters_predicate_tests` y `chromium_skip_clean_at_v1_171_2`. Bloque `next_action` actualizado a "operator authorization for `bash scripts/release.sh`".
+- `docs/roadmap/SESSION-JOURNAL.md` (esta entrada).
+- `docs/roadmap/FEATURE-CANDIDATES.md`: FC-1 sección reescrita con "Descripción original" + "Rediseño v2 (session-12)" + "Estado: ✅ IMPLEMENTED v2".
+
+**Riesgos aún abiertos:**
+- v1.171.2 NO publicado todavía. El push cubre solo `main`; tag `v1.171.2` se corta con `bash scripts/release.sh` (autorización del operador).
+- C2 (cognicode-mcp/chronos-mcp/jcode-sdk) sigue NOT_EVALUATED — sin provider MCP bridge instalado, no se pueden ejecutar UAT reales (T08-T18).
+- Full CERTIFIED_BASE promotion requiere: instalar providers reales + re-run T01-T35 contra SHA release + ejecutar `tests/clean_machine_uat.sh --tag v1.171.0` en podman.
+- INC-A5-5R flake subyacente (chromium missing) NO resuelto por código — requiere `npx playwright install` operacional.
+- Riesgos menores ya identificados: `knowledge_cmd.rs::render_result` duplica `lib.rs::render_result` (low priority); `approval.rs::render_result` es especializada (no simple duplication); 2 pre-existing shellcheck warnings en `apply_banner.sh` (info-level); 7 INCs sin frontmatter `status` field (body format).
+
+**Próxima acción — operator decision:**
+
+Si operador autoriza: `bash scripts/release.sh --dry-run` primero para previsualizar; luego `bash scripts/release.sh` para publicar v1.171.2 con FC-1 v2 + chromium-skip fix. El release creará tag v1.171.2, publicará binario + bundle en GH Releases como Latest (sobre v1.171.0), instalará localmente en `~/.local/share/sddk/framework/1.171.2/`, podará bundles viejos, y emitirá un RECEIPT + UAT-EVIDENCE schema-compliant.
+
+Si operador NO autoriza release: continuar con FC-* restantes (FC-4 `uat replay --release`, FC-7 `uat status --format json`, FC-8 `uat validate --format json`) o pausar para guidance explícita.
+
+**Override SemVer:** Sigue LIFTED en v1.171.0 (set allí por sobre-recuento de fixes). v1.171.2 es minor (1 feat) per algoritmo canónico — NO requiere operator-judgment override.

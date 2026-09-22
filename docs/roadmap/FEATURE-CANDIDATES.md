@@ -33,25 +33,43 @@ git log $last_tag..HEAD --pretty=%s
 **Origen:** ROADMAP §C0 — "matriz UAT T01–T35 congelada"; observación operativa:
 ejecutar los 35 UATs cada vez es costoso.
 
-**Descripción:** Añadir un subcomando `sddk uat run` que acepte filtros:
+**Descripción original:** Añadir un subcomando `sddk uat run` que acepte filtros:
 - `--scenario T01,T05,T08` (lista explícita).
 - `--tag c0,c1` (por hito del roadmap).
 - `--exclude-flaky` (omite UATs marcados flakey).
 - `--format json|yaml` (machine-readable).
 
+**Rediseño v2 (session-12):** la capacidad ya existe como `sddk uat batch`
+(`run_uat_batch` + `UatBatchArgs` en `crates/sddk-cli/src/uat.rs`). Crear un
+subcomando nuevo `sddk uat run` duplicaría la entrada batch. Se decidió
+**extender** `UatBatchArgs` con cuatro filtros adicionales:
+
+- `--scenario <list>` — restringe por `scenario.id`.
+- `--flag <list>` — restringe por presencia de TODAS las flags listadas
+  (semántica de conjunto; vocabulario cerrado `smoke|warning|optional|data-verify|flaky`).
+- `--priority <list>` — restringe por `UatPriority` (P0/P1/P2; case-insensitive).
+- `--exclude-flaky` — descarta escenarios con flag `flaky`.
+
+Los filtros activos combinan como AND; sin filtros el comportamiento
+previo se preserva. Helpers puros (`batch_filter_matches`,
+`uat_priority_label`) son reutilizables desde otros comandos.
+
 **Superficie:**
-- `crates/sddk-cli/src/uat.rs` (existe, contiene la lógica actual).
-- Tests nuevos: `crates/sddk-cli/tests/uat_filter.rs`.
+- `crates/sddk-cli/src/uat.rs` (extensión, no archivo nuevo).
+- Tests: `mod uat_batch_filters_tests` con 7 predicados.
 
-**Tamaño estimado:** 80-150 líneas (no destructivo, no rompe CLI actual).
+**Tamaño final:** 205 líneas añadidas (68 feat + 137 tests) en `uat.rs`.
 
-**Tipo de commit:** `feat(uat):` → **MINOR bump**.
+**Tipo de commit:** `feat(cli):` → **MINOR bump**.
 
 **UAT relacionados:** T01-T35 (todos se benefician).
 
-**Bloqueos:** Ninguno. No requiere provider externo ni cambios arquitectónicos.
+**Bloqueos:** Ninguno.
 
-**Trigger:** Operador o usuario reporta "ejecutar 35 UATs cada vez es lento".
+**Trigger original:** Operador reporta "ejecutar 35 UATs cada vez es lento".
+
+**Estado:** ✅ IMPLEMENTED v2 (commits `3d24000` + `3c93472`, session-12;
+workspace 1.171.2; tag v1.171.2 pendiente de publish).
 
 ---
 
