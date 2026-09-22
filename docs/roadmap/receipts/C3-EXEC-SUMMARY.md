@@ -147,3 +147,28 @@ None from C3 sub-cycles. Known cross-cycle DEFERRED items remain:
   criterion adoption (operator-level decision, deferred).
 - C2 stays `NOT_EVALUATED` honestly. The auto-loop did not fabricate
   C2 evidence.
+
+## Post-cycle housekeeping (session-11 + 1 verification pass)
+
+After C3f close, a final end-to-end verification pass was run:
+
+| Check | Result |
+|---|---|
+| `sddk dev doctor --format json` | **319/338 present, `all_present: true`**. 19 missing are surface-briefness checks over optional skills (not blockers). |
+| `tests/test_*.sh` (12 contract tests) | 9 PASS, 1 SKIP (H05 expects `target/release/sddk`, ours is in cargo-targets), 1 FAIL pre-fix / PASS post-fix (vault ADR mirror — see below), 1 FAIL by contract (coherence — operator-side). |
+| `python3 scripts/mirror_adrs_to_vault.py` | Re-run after ADR-0141 was added. Created the missing vault mirror. Verified idempotent on second run. |
+
+**Action taken**: ran `mirror_adrs_to_vault.py` after C3f because the
+vault mirror test (`tests/test_vault_adr_mirror_coverage.sh`) failed on
+ADR-0141. The mirror is a projection of the repo's ADRs into
+`~/.sddk-knowledge/sddk-framework/adrs/`. This step is required for any
+future cycle that adds a new ADR. Documented here so future operators
+know to run it post-ADR-creation.
+
+**Outstanding by contract**:
+- `tests/test_vault_coherence_alignment.sh` fails because the coherence
+  report `release-archive-vault-complete.md` requires the
+  `sddk-coherence` agent to run, which is triggered after a release
+  publish. Since no release has been published for `v1.169.148`, this
+  is **expected**. The test must be run after `bash scripts/release.sh`
+  publishes a tag.
