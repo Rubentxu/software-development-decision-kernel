@@ -527,6 +527,21 @@ pub(crate) struct UatBatchArgs {
     /// Output report YAML path (default: `uat-report-<release>.yaml`).
     #[arg(long)]
     pub(crate) report: Option<PathBuf>,
+    /// Restrict to a comma-separated list of scenario ids (e.g. `S-01,S-02`).
+    /// Scenarios in the plan not present in this list are skipped.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) scenario: Vec<String>,
+    /// Restrict to scenarios whose `flags` field contains ALL listed flags
+    /// (e.g. `--flag smoke,warning`). Closed vocabulary: smoke|warning|optional|data-verify|flaky.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) flag: Vec<String>,
+    /// Restrict to scenarios whose priority is in the comma-separated list
+    /// (e.g. `--priority P0,P1`). Valid values: P0, P1, P2.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) priority: Vec<String>,
+    /// Drop scenarios whose `flags` field contains `flaky`.
+    #[arg(long)]
+    pub(crate) exclude_flaky: bool,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -3267,14 +3282,59 @@ fn run_uat_history(args: UatHistoryArgs) -> CommandOutput {
     }
 }
 
-/// Execute a scripted/automated scenario via its `automation.ref`.
+/// Apply the optional filters from `UatBatchArgs` to a scenario.
 ///
-/// The `ref` is parsed as a typed argv spec (never through a shell):
-/// whitespace-split into program + args. `automation.status` must be
-/// `scripted` or `automated`; `manual` scenarios are rejected. The outcome
-/// maps `exit 0 → PASS`, non-zero → FAIL, timeout/kill → BLOCKED, and a
-/// baseline `uat-session.yaml` is emitted so the standard
-/// ingest/report/history pipeline can consume the run.
+/// All active filters combine as AND. When no filter is set, the function
+/// returns `true` for every input (preserving the pre-filter behaviour of
+/// `sddk uat batch` without arguments).
+///
+/// Filter semantics:
+/// - `--scenario <list>`: scenario.id MUST be in the list.
+/// - `--flag <list>`: scenario.flags MUST contain EVERY listed flag (set semantics).
+/// - `--priority <list>`: scenario.priority MUST be in the listed priorities.
+/// - `--exclude-flaky`: scenario.flags MUST NOT contain `flaky`.
+fn batch_filter_matches(scenario: &sddk_domain::UatScenario, args: &UatBatchArgs) -> bool {
+    if !args.scenario.is_empty() && !args.scenario.iter().any(|id| id == &scenario.id) {
+        return false;
+    }
+    if !args.flag.is_empty()
+        && !args
+            .flag
+            .iter()
+            .all(|f| scenario.flags.iter().any(|sf| sf == f))
+    {
+        return false;
+    }
+    if !args.priority.is_empty()
+        && !args
+            .priority
+            .iter()
+            .any(|p| uat_priority_label(&scenario.priority).eq_ignore_ascii_case(p.trim()))
+    {
+        return false;
+    }
+    if args.exclude_flaky && scenario.flags.iter().any(|f| f == "flaky") {
+        return false;
+    }
+    true
+}
+
+/// Render `UatPriority` as the upper-case label used in plan YAML
+/// (`P0`/`P1`/`P2`). Used by `batch_filter_matches` to compare
+/// against `--priority` CLI values without forcing callers to know the
+/// enum variant names.
+fn uat_priority_label(priority: &sddk_domain::UatPriority) -> &'static str {
+    use sddk_domain::UatPriority;
+    match priority {
+        UatPriority::P0 => "P0",
+        UatPriority::P1 => "P1",
+        UatPriority::P2 => "P2",
+    }
+}
+
+/// Run every scripted/automated scenario declared in the UAT plan and
+/// emit per-scenario session records (`uat-session.yaml`). Maps
+/// `exit 0 → PASS`, non-zero → FAIL, timeout/kill → BLOCKED.
 fn run_uat_batch(args: UatBatchArgs) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<String> {
@@ -3309,6 +3369,7 @@ fn run_uat_batch(args: UatBatchArgs) -> CommandOutput {
                     });
                 !manual
             })
+            .filter(|s| batch_filter_matches(s, &args))
             .collect();
 
         let mut session_paths: Vec<PathBuf> = Vec::new();
