@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.171.1] - 2026-09-22
+
+### Fixes
+  - fix(test): skip stale_detects_geometry_change cleanly when chromium missing
+
+### Other
+  - docs(roadmap): session-12 audit reconcile v1.171.0 to PASS_PARTIAL_OBSERVED
+  - docs(roadmap): RECEIPT + UAT-EVIDENCE + CURRENT/STATE for v1.171.0
+
 ## [1.171.0] - 2026-09-22
 
 ### Features
