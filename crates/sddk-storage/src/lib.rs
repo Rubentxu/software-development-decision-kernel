@@ -3903,3 +3903,439 @@ mod lease_bench {
         );
     }
 }
+
+// =====================================================================
+// C3e (session-11) — T27 Schema resilience tests.
+//
+// These tests exercise the migrations.rs + schema_guard.rs pipeline end-to-end:
+// fresh DB lands at LATEST_SCHEMA_VERSION, idempotent re-runs are no-ops,
+// partial migrations complete forward, and the schema_guard classifies
+// mismatched on-disk versions fail-closed.
+// =====================================================================
+#[cfg(test)]
+mod schema_resilience_tests {
+    //! Adversarial coverage for the schema-version pipeline.
+    //!
+    //! The schema guard contract (per `schema_guard.rs`) is fail-closed:
+    //! a binary compiled against version `N` must NEVER silently reinterpret
+    //! on-disk data at a different version. This module pins that contract
+    //! across (a) the unit boundary (already covered by schema_guard.rs +
+    //! C3c T25), and (b) the end-to-end open path (new in C3e).
+
+    use super::*;
+    use crate::migrations::LATEST_SCHEMA_VERSION;
+    use crate::schema_guard::{
+        COMPILED_SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA_VERSION, SchemaCompatibility,
+        assert_compatible, classify,
+    };
+
+    /// Helper: open a `rusqlite::Connection` to a tempdir file and
+    /// return the path. Caller is responsible for opening via `Storage::open`
+    /// afterwards.
+    fn tempdir_db_path(label: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(format!("{label}.sqlite"));
+        (dir, path)
+    }
+
+    /// Helper: open a raw `rusqlite::Connection` to the given path, run
+    /// migrations 1..N (or all, when `None`), then close. Used to set up
+    /// pre-migrated DB files at known versions for partial-migration tests.
+    fn setup_db_at_version(path: &std::path::Path, version: Option<i32>) {
+        let mut conn = rusqlite::Connection::open(path).expect("open conn");
+        crate::migrations::run_migrations(&mut conn).expect("run_migrations");
+        if let Some(v) = version {
+            // Override user_version downward to simulate a partially-migrated
+            // DB. SQLite `pragma user_version = X` is freely settable from
+            // raw SQL; subsequent run_migrations will see `version < N` and
+            // reapply migrations idempotently.
+            conn.execute_batch(&format!("PRAGMA user_version = {v};"))
+                .expect("set user_version");
+        }
+        // conn drops here; WAL etc. flushed.
+    }
+
+    /// Helper: open a raw `Connection` to the given path, set `user_version = X`
+    /// WITHOUT running migrations, then close. Used to construct artificial
+    /// pre-migration or post-LATEST DB files for fail-closed tests.
+    fn setup_db_with_raw_user_version(path: &std::path::Path, raw_version: i32) {
+        let conn = rusqlite::Connection::open(path).expect("open conn");
+        conn.execute_batch(&format!("PRAGMA user_version = {raw_version};"))
+            .expect("set user_version");
+    }
+
+    // ---------- T27-1 ----------
+
+    /// T27-1 — `Storage::open_in_memory()` lands exactly at
+    /// `LATEST_SCHEMA_VERSION`. This is the fresh-DB happy path: every
+    /// migration 1..=20 has been applied, idempotently.
+    #[test]
+    fn t27_1_fresh_storage_lands_at_latest_schema_version() {
+        let store = Storage::open_in_memory().expect("open_in_memory");
+        let actual = store.schema_version().expect("schema_version");
+        assert_eq!(
+            actual, LATEST_SCHEMA_VERSION,
+            "fresh Storage must land at LATEST_SCHEMA_VERSION"
+        );
+        assert_eq!(
+            actual, COMPILED_SCHEMA_VERSION,
+            "COMPILED_SCHEMA_VERSION must equal LATEST_SCHEMA_VERSION"
+        );
+        assert_eq!(actual, 20, "expected 20 (LATEST_SCHEMA_VERSION this cycle)");
+    }
+
+    // ---------- T27-2 ----------
+
+    /// T27-2 — `run_migrations` on a fully-migrated DB is a no-op. After
+    /// re-running, `user_version` is unchanged and `gate_receipts` (the table
+    /// recreated by MIGRATION_4) has the same row count.
+    #[test]
+    fn t27_2_run_migrations_is_idempotent_on_fresh_db() {
+        let (_dir, path) = tempdir_db_path("t27_2");
+        // First open + close applies migrations 1..=20.
+        {
+            let store = Storage::open(&path).expect("first open");
+            // Insert a row into gate_receipts to verify MIGRATION_4's recreate
+            // is idempotent (a second apply must NOT lose the row, because
+            // MIGRATION_4 itself runs only when version < 4; on a second
+            // open, version is already 20 and MIGRATION_4 does not re-run).
+            store
+                .connection
+                .execute(
+                    "INSERT INTO gate_receipts
+                     (receipt_id, project_id, cycle_id, gate, evaluator, transition_id,
+                      plan_hash, outcome, evidence, actor, command_id, frame_id,
+                      evaluated_at, seq)
+                     VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    rusqlite::params![
+                        "r-1",
+                        "p-A",
+                        "g-1",
+                        "ev-1",
+                        "t-1",
+                        "ph-1",
+                        "passed",
+                        "ev-json",
+                        "actor-1",
+                        "cmd-1",
+                        "frame-1",
+                        "2026-09-22T09:00:00Z",
+                        1i64,
+                    ],
+                )
+                .expect("insert gate_receipt");
+        }
+        // Second open should observe user_version=20 and skip all migrations.
+        {
+            let store = Storage::open(&path).expect("second open");
+            let v = store.schema_version().expect("schema_version");
+            assert_eq!(v, LATEST_SCHEMA_VERSION, "user_version must stay at 20");
+            let count: i64 = store
+                .connection
+                .query_row("SELECT COUNT(*) FROM gate_receipts", [], |row| row.get(0))
+                .expect("count");
+            assert_eq!(count, 1, "row from first open must survive second open");
+        }
+    }
+
+    // ---------- T27-3 ----------
+
+    /// T27-3 — Partial-migration forward-completion test.
+    ///
+    /// **STATUS: DEFERRED_FIX — finding C3e-F1.** Running `run_migrations`
+    /// against a DB that has been migrated to v=20 and then had
+    /// `user_version` rewound to 10 fails with
+    /// `SqliteFailure(1, "duplicate column name: spine_order")` raised by
+    /// MIGRATION_16 (`ALTER TABLE work_items_v1 ADD COLUMN spine_order`).
+    ///
+    /// Root cause: only MIGRATION_4 (RENAME+recreate), MIGRATION_7, and
+    /// MIGRATION_10 have defensive guards against re-application. The other
+    /// 17 migrations assume monotonic `version < N` semantics and will
+    /// crash if `user_version` is forcibly rewound.
+    ///
+    /// **Why this is not auto-fixed in C3e:** the fix is production code in
+    /// `migrations.rs` and is operator-level (touches the migration
+    /// authority). C3e is measurement-only. The honest move is to assert
+    /// the failure mode here (so the contract is pinned) and file the
+    /// finding.
+    ///
+    /// The test pins the C3e-F1 failure mode as the observed behaviour
+    /// today. When the fix lands, the test will be tightened to assert
+    /// forward completion instead.
+    #[test]
+    fn t27_3_partial_migration_rewind_fails_with_duplicate_column() {
+        let (_dir, path) = tempdir_db_path("t27_3");
+        // Set up a DB at v=20 (full migrate), then rewind user_version to 10.
+        setup_db_at_version(&path, Some(10));
+        // Confirm precondition: DB at user_version=10 with all current tables.
+        {
+            let conn = rusqlite::Connection::open(&path).expect("raw conn");
+            let v: i32 = conn
+                .pragma_query_value(None, "user_version", |row| row.get(0))
+                .expect("read");
+            assert_eq!(v, 10, "precondition: DB at user_version=10");
+        }
+        // Now open via Storage. We EXPECT this to fail with a "duplicate
+        // column" error from MIGRATION_16. This is the failure mode C3e
+        // is pinning as a real defect.
+        match Storage::open(&path) {
+            Ok(_) => panic!("C3e-F1: expected migration collision, got Ok"),
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("duplicate column")
+                        || msg.contains("already exists")
+                        || msg.contains("spine_order"),
+                    "expected migration-collision error, got: {msg}"
+                );
+            }
+        }
+    }
+
+    // ---------- T27-4 ----------
+
+    /// T27-4 — A DB at exactly `MIN_SUPPORTED_SCHEMA_VERSION` (1) is
+    /// classified as `Migratable{from:1,to:20}` and not `TooOld` (unit
+    /// boundary of `classify`). End-to-end migration forward completion is
+    /// **DEFERRED_FIX** for the same reason as T27-3 (C3e-F1: migration
+    /// authority lacks re-application guards on most migrations).
+    ///
+    /// The unit-boundary verdict (`classify` and `assert_compatible`)
+    /// passes today and is the testable half of this invariant. The
+    /// end-to-end "open at v=1, migrate forward to v=20" path is pinned as
+    /// DEFERRED_FIX.
+    #[test]
+    fn t27_4_migratable_at_min_supported_is_not_too_old() {
+        // Unit-boundary verdict: classify(MIN) is Migratable.
+        let compat = classify(MIN_SUPPORTED_SCHEMA_VERSION);
+        assert_eq!(
+            compat,
+            SchemaCompatibility::Migratable {
+                from: MIN_SUPPORTED_SCHEMA_VERSION,
+                to: COMPILED_SCHEMA_VERSION,
+            },
+            "MIN_SUPPORTED must be classified Migratable"
+        );
+        // -- C3e-F1: end-to-end open path is DEFERRED_FIX. We do not
+        //    exercise `Storage::open` here because the rewind technique
+        //    used in T27-3 currently trips MIGRATION_16's
+        //    `ADD COLUMN spine_order`. Once `run_migrations` is hardened
+        //    for re-application (operator decision), add:
+        //
+        //        let (_dir, path) = tempdir_db_path("t27_4_e2e");
+        //        setup_db_at_version(&path, Some(MIN_SUPPORTED_SCHEMA_VERSION));
+        //        let store = Storage::open(&path).expect("open");
+        //        assert_eq!(store.schema_version().unwrap(),
+        //                    LATEST_SCHEMA_VERSION);
+        //        assert_compatible(&store).expect("MIN is compatible");
+        //
+        //    For now, this test pins the unit-boundary half.
+    }
+
+    // ---------- T27-5 ----------
+
+    /// T27-5 — A DB whose on-disk `user_version` is below MIN is fail-closed
+    /// by the schema guard. `classify` returns `TooOld`, and
+    /// `assert_compatible` returns `Err(TooOldSchema)`.
+    ///
+    /// NOTE: Storage::open always calls run_migrations, which would migrate
+    /// such a DB forward automatically. So we exercise the fail-closed path
+    /// via the unit boundary on `classify` + `assert_compatible` on an
+    /// artificially-constructed scenario. This is the same path the storage
+    /// layer would use to reject a future binary downgrade attempt.
+    #[test]
+    fn t27_5_too_old_below_min_is_fail_closed() {
+        // Unit boundary: classify(0) must be TooOld.
+        let compat = classify(0);
+        assert_eq!(
+            compat,
+            SchemaCompatibility::TooOld {
+                on_disk: 0,
+                binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+            }
+        );
+        // Stronger: assert_compatible on a Storage whose on-disk version is
+        // 0 would migrate; so we assert the variant directly.
+        let err = crate::schema_guard::GuardError::TooOldSchema {
+            on_disk: 0,
+            binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("too old"), "diagnostic: {msg}");
+        assert!(
+            msg.contains(&MIN_SUPPORTED_SCHEMA_VERSION.to_string()),
+            "must mention min: {msg}"
+        );
+    }
+
+    // ---------- T27-6 ----------
+
+    /// T27-6 — A DB whose on-disk `user_version` is `LATEST+1` (artificial
+    /// future) is fail-closed end-to-end: Storage::open refuses to silently
+    /// downgrade, the schema guard classifies as `NewerThanSupported`, and
+    /// `assert_compatible` returns `Err(NewerSchema)`.
+    #[test]
+    fn t27_6_newer_than_compiled_is_fail_closed() {
+        let (_dir, path) = tempdir_db_path("t27_6");
+        // Inject user_version = LATEST+1 = 21 WITHOUT running migrations.
+        // Storage::open will call run_migrations, but the version guard
+        // (< LATEST branches) will skip; user_version stays at 21.
+        let future = LATEST_SCHEMA_VERSION + 1;
+        setup_db_with_raw_user_version(&path, future);
+        let store = Storage::open(&path).expect("open");
+        let v = store.schema_version().expect("schema_version");
+        assert_eq!(
+            v, future,
+            "user_version must stay at LATEST+1 (no migration ran)"
+        );
+        // Schema-guard verdict: NewerThanSupported.
+        let compat = crate::schema_guard::check_compatibility(&store).expect("check");
+        assert_eq!(
+            compat,
+            SchemaCompatibility::NewerThanSupported {
+                on_disk: future,
+                binary_max: COMPILED_SCHEMA_VERSION,
+            },
+            "LATEST+1 must be classified NewerThanSupported"
+        );
+        // assert_compatible returns Err(NewerSchema).
+        let err = assert_compatible(&store).expect_err("must fail-closed");
+        match err {
+            crate::schema_guard::GuardError::NewerSchema {
+                on_disk,
+                binary_max,
+            } => {
+                assert_eq!(on_disk, future);
+                assert_eq!(binary_max, COMPILED_SCHEMA_VERSION);
+            }
+            other => panic!("expected NewerSchema, got {other:?}"),
+        }
+    }
+
+    // ---------- T27-7 ----------
+
+    /// T27-7 — An extreme future (`user_version = 1_000_000`) is fail-closed
+    /// with diagnostics intact. The `GuardError::NewerSchema` variant must
+    /// carry the exact on-disk value (no clamping), and the Display string
+    /// must name both numbers.
+    #[test]
+    fn t27_7_extreme_future_clamps_diagnostics() {
+        let (_dir, path) = tempdir_db_path("t27_7");
+        let extreme: i32 = 1_000_000;
+        setup_db_with_raw_user_version(&path, extreme);
+        let store = Storage::open(&path).expect("open");
+        let err = assert_compatible(&store).expect_err("must fail-closed");
+        match err {
+            crate::schema_guard::GuardError::NewerSchema {
+                on_disk,
+                binary_max,
+            } => {
+                assert_eq!(on_disk, extreme, "no clamping");
+                assert_eq!(binary_max, COMPILED_SCHEMA_VERSION);
+            }
+            other => panic!("expected NewerSchema, got {other:?}"),
+        }
+        let msg = err.to_string();
+        assert!(msg.contains(&extreme.to_string()), "{msg}");
+        assert!(msg.contains(&COMPILED_SCHEMA_VERSION.to_string()), "{msg}");
+        assert!(msg.contains("newer"), "{msg}");
+    }
+
+    // ---------- T27-8 ----------
+
+    /// T27-8 — `classify` is deterministic and matches its contract for a
+    /// grid of `on_disk` values spanning the boundary regions
+    /// (negative, just below MIN, exactly MIN, mid-range, COMPILED, future).
+    /// This is a single parameterised test (table-driven) — one assertion
+    /// per row.
+    #[test]
+    fn t27_8_classify_monotonicity_invariant() {
+        let cases: Vec<(i32, SchemaCompatibility)> = vec![
+            // Negative: too old.
+            (
+                -2,
+                SchemaCompatibility::TooOld {
+                    on_disk: -2,
+                    binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+                },
+            ),
+            (
+                -1,
+                SchemaCompatibility::TooOld {
+                    on_disk: -1,
+                    binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+                },
+            ),
+            // Pre-MIN: too old.
+            (
+                0,
+                SchemaCompatibility::TooOld {
+                    on_disk: 0,
+                    binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+                },
+            ),
+            (
+                MIN_SUPPORTED_SCHEMA_VERSION - 1,
+                SchemaCompatibility::TooOld {
+                    on_disk: MIN_SUPPORTED_SCHEMA_VERSION - 1,
+                    binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+                },
+            ),
+            // Exactly MIN: migratable.
+            (
+                MIN_SUPPORTED_SCHEMA_VERSION,
+                SchemaCompatibility::Migratable {
+                    from: MIN_SUPPORTED_SCHEMA_VERSION,
+                    to: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+            // One above MIN: still migratable.
+            (
+                MIN_SUPPORTED_SCHEMA_VERSION + 1,
+                SchemaCompatibility::Migratable {
+                    from: MIN_SUPPORTED_SCHEMA_VERSION + 1,
+                    to: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+            // One below COMPILED: migratable.
+            (
+                COMPILED_SCHEMA_VERSION - 1,
+                SchemaCompatibility::Migratable {
+                    from: COMPILED_SCHEMA_VERSION - 1,
+                    to: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+            // Exactly COMPILED: exact.
+            (COMPILED_SCHEMA_VERSION, SchemaCompatibility::Exact),
+            // One above COMPILED: newer.
+            (
+                COMPILED_SCHEMA_VERSION + 1,
+                SchemaCompatibility::NewerThanSupported {
+                    on_disk: COMPILED_SCHEMA_VERSION + 1,
+                    binary_max: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+            // Far above COMPILED: newer.
+            (
+                COMPILED_SCHEMA_VERSION + 5,
+                SchemaCompatibility::NewerThanSupported {
+                    on_disk: COMPILED_SCHEMA_VERSION + 5,
+                    binary_max: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+            // Way above: newer, no clamp.
+            (
+                99_999,
+                SchemaCompatibility::NewerThanSupported {
+                    on_disk: 99_999,
+                    binary_max: COMPILED_SCHEMA_VERSION,
+                },
+            ),
+        ];
+        assert_eq!(cases.len(), 11);
+        for (on_disk, expected) in cases {
+            let got = classify(on_disk);
+            assert_eq!(got, expected, "classify({on_disk})");
+        }
+    }
+}

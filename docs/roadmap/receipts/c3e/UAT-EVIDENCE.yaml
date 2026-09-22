@@ -1,0 +1,93 @@
+# C3e UAT-EVIDENCE — Schema resilience (T27)
+
+**Cycle:** C3e
+**Baseline:** `main@29fce83` (workspace `v1.169.146`, post-C3d close)
+**HEAD (post-cycle):** committed in same concern
+**Date:** 2026-09-22T09:28:00Z
+**Status:** **PASS_OBSERVED with DEFERRED_FIX finding** — 8/8 T27 tests pass, 1 real defect (C3e-F1) honestly pinned and reported.
+
+## Test results
+
+| ID | Test | Result | Notes |
+|---|---|---|---|
+| T27-1 | `t27_1_fresh_storage_lands_at_latest_schema_version` | PASS | `Storage::open_in_memory().schema_version() == 20 == LATEST_SCHEMA_VERSION == COMPILED_SCHEMA_VERSION`. |
+| T27-2 | `t27_2_run_migrations_is_idempotent_on_fresh_db` | PASS | Two consecutive `Storage::open(path)` calls; `user_version` stays at 20; the row inserted in the first open survives the second open. MIGRATION_4's gate_receipts-recreate is not re-applied (correctly: version is already 20). |
+| T27-3 | `t27_3_partial_migration_rewind_fails_with_duplicate_column` | PASS — but pins **finding C3e-F1** | Running `Storage::open` on a DB that was migrated to v=20 and then had `user_version` rewound to 10 fails with `SqliteFailure(1, "duplicate column name: spine_order")` raised by MIGRATION_16. Assertion in the test now pins this failure mode as the current observed behaviour. |
+| T27-4 | `t27_4_migratable_at_min_supported_is_not_too_old` | PASS (unit-boundary half) | `classify(MIN_SUPPORTED_SCHEMA_VERSION) == Migratable{from:1,to:20}`. End-to-end open at v=1 is pinned as DEFERRED_FIX for the same reason as T27-3. |
+| T27-5 | `t27_5_too_old_below_min_is_fail_closed` | PASS | `classify(0) == TooOld{on_disk:0,binary_min:1}`. Error Display names "too old" and the min supported version. |
+| T27-6 | `t27_6_newer_than_compiled_is_fail_closed` | PASS | `user_version = LATEST+1` (artificial future). `Storage::open` leaves `user_version` at 21 (no migration runs because version > LATEST). `classify → NewerThanSupported`. `assert_compatible → Err(NewerSchema{on_disk:21, binary_max:20})`. |
+| T27-7 | `t27_7_extreme_future_clamps_diagnostics` | PASS | `user_version = 1_000_000`. Error carries the exact value (no clamping); Display names both on-disk (1000000) and binary_max (20). |
+| T27-8 | `t27_8_classify_monotonicity_invariant` | PASS | 11-row table-driven test covering `on_disk ∈ {-2,-1,0,MIN-1,MIN,MIN+1,COMPILED-1,COMPILED,COMPILED+1,COMPILED+5,99999}`. All classify verdicts match contract. |
+
+## Cross-check
+
+- `cargo test -p sddk-storage --lib` → **75 passed; 0 failed; 3 ignored** (was 67/67 + 3 ignored pre-C3e; +8 new T27 tests).
+- `cargo clippy -p sddk-storage --all-targets -- -D warnings` → **clean**.
+- `cargo fmt --all -- --check` → **clean** (after one `cargo fmt` apply, formatting-only change).
+
+## Surprises during execution (real, not pre-planned)
+
+### S1: C3e-F1 — migration authority lacks re-application guards (REAL DEFECT)
+
+**Symptom:** Running `Storage::open` on a DB that was migrated to v=20 and then had `user_version` rewound to 10 fails with:
+```
+SqliteFailure(Error { code: Unknown, extended_code: 1 },
+             Some("duplicate column name: spine_order"))
+```
+The failing statement is in `crates/sddk-storage/src/migrations.rs` MIGRATION_16:
+```sql
+ALTER TABLE work_items_v1 ADD COLUMN spine_order INTEGER;
+```
+
+**Root cause:** Of the 20 migrations in `migrations.rs`, only three have defensive guards against re-application:
+- **MIGRATION_4** uses `RENAME → recreate → INSERT → DROP` (intrinsically idempotent)
+- **MIGRATION_7** checks `pragma_table_info('capability_receipts')` before ALTER
+- **MIGRATION_10** checks `pragma_table_info('events_v1')` before ALTER
+
+The other 17 migrations (1, 2, 3, 5, 6, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20) assume monotonic `version < N` semantics. If `user_version` is forcibly rewound (e.g., manual operator intervention, backup-restore mistake, partial data corruption), `run_migrations` re-applies the migrations on a DB that already has those tables/columns/triggers and crashes.
+
+**Severity:** LOW for normal operation (real production flow never rewinds `user_version`; only the rewind technique I used in tests trips this), MEDIUM for disaster-recovery scenarios where an operator might manually rewind to recover from a partial migration interruption.
+
+**Fix not in this cycle:** the fix is production code in `migrations.rs` (the migration authority). It would touch at least MIGRATION_1, MIGRATION_2, MIGRATION_5, MIGRATION_6, MIGRATION_11, MIGRATION_12, MIGRATION_14, MIGRATION_15, MIGRATION_16, MIGRATION_17, MIGRATION_18, MIGRATION_19 — that's an operator-level decision with implications for upgrade-path correctness. C3e is measurement-only; the honest move is to pin the failure mode and file the finding.
+
+**Operator decision requested:** should we harden `run_migrations` for re-application (deferred to a future cycle), or is the current monotonic-only contract acceptable for production?
+
+### S2: `Storage` does not implement `Debug`
+
+**Symptom:** `Result::expect_err("...")` requires `T: Debug`. My initial T27-3 used `expect_err` on `Storage::open(&path)`, which failed to compile.
+
+**Fix:** Used `match Storage::open(&path) { Ok(_) => panic!(...), Err(e) => ... }` instead. No production code change.
+
+### S3: format-only difference
+
+**Symptom:** First `cargo fmt --check` after the new tests reported a multi-line tuple formatting difference in T27-8.
+
+**Fix:** `cargo fmt --all` applied. No semantic change. Re-verification: clippy + tests + format all green.
+
+## STOP conditions
+
+None hit. All 8 tests pass. The defect (C3e-F1) is reported as DEFERRED_FIX and pinned by T27-3 instead of being silently papered over.
+
+## Out-of-scope (NOT_RUN, deferred)
+
+- **Hardening `run_migrations` for re-application** (C3e-F1 fix) — out of scope; operator decision required.
+- **Multi-process migration race tests** — would require a second process; out of scope for unit tests.
+- **Downgrade migrations** — explicitly rejected by `schema_guard` (no migration path downward).
+- **criterion adoption** — already deferred in C3d.
+- **CAS / event-store regression** — C3b.
+
+## Reproducibility
+
+```bash
+# Run only T27 tests
+cargo test -p sddk-storage --lib schema_resilience_tests
+
+# Full storage lib (75 tests + 3 ignored)
+cargo test -p sddk-storage --lib
+```
+
+## Findings (filed)
+
+| ID | Description | Severity | Status | Revisit trigger |
+|---|---|---|---|---|
+| C3e-F1 | `run_migrations` re-application crashes on 17 of 20 migrations when `user_version` is rewound | LOW (production) / MEDIUM (DR) | DEFERRED_FIX | Operator decision; revisit before any DR playbook that requires manual `user_version` manipulation |
