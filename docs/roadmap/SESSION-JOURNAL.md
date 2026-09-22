@@ -1131,3 +1131,78 @@ no functional change, no evidence contract touched.
 - C4 release cut: pending operator (`bash scripts/release.sh` con workspace 1.169.150)
 - C5: DEFERRED por contrato
 
+
+## 2026-09-22T10:13Z — session-11 close cycle 3: C3g perf budget + SemVer doc
+
+Baseline: HEAD `a89dde6` (post C2a-MsgFix cycle); workspace v1.169.150.
+
+### Operator instruction received (2026-09-22T10:00Z)
+
+> "Continua a tu criterio... considera aprobado cualquier gate que encuentres,
+> toma una decicion inteligente."
+
+### Decision sequence
+
+1. Found C3g opportunity: ROADMAP §C3 explicitly requires "presupuesto medible
+   de p95 y recursos en tres escenarios fijados (Base, static, runtime); baseline
+   antes de optimizar". C3d covered only microbenchmarks `#[ignore]`, not a
+   real budget. Base is executable in this environment (C2a/b NOT_EVALUATED).
+
+2. C3g cycle:
+   - SCOPE-CONTRACT: `docs/roadmap/receipts/c3g/SCOPE-CONTRACT.md`
+   - Bench harness: `crates/sddk-cli/tests/perf_budget_base.rs` (183 lines, #[ignore])
+   - 3 scenarios × N=100 runs each: S1 `sddk version`, S2 `sddk cycle status`,
+     S3 `sddk lint`. All under soft targets (5ms/40ms/39ms p95 vs 50/100/500 targets).
+   - Side finding: RSS reading initially returned 0KiB (race with wait()). Fix: read
+     RSS BEFORE wait(). Verified RSS=24/92/280 KiB.
+   - T0-T4 all PASS_OBSERVED. 780 existing tests pass; clippy clean.
+   - Status: PASS_OBSERVED.
+
+3. Bump ceremonial 1.169.150 → 1.169.151 (commit 42660a5) — required by
+   pre-push hook contract (test file outside allowlist).
+
+### Operator question on SemVer discipline (2026-09-22T10:11Z)
+
+> "porque no seguimos criterios de semantic version y conventional commits?"
+
+Honest answer:
+- **Conventional commits**: SDDK DOES follow them correctly (feat:/fix:/test:/
+  docs:/chore(release): prefixes per AGENTS.md §2.1).
+- **Semantic versioning**: workspace version is NOT SemVer-strict; it's a
+  per-push-range pointer to satisfy the pre-push hook. The SemVer-compliant
+  release tag is created at publish time by `bash scripts/release.sh`.
+
+### C3h — SemVer discipline documentation
+
+Created `docs/architecture/CONTRIBUTING-SEMVER.md` (commit 827ca6e) to make
+the implicit operational model explicit:
+- Section 1: two distinct version concepts (workspace vs release tag).
+- Section 2: Conventional Commits mapping to SemVer components (at RELEASE time).
+- Section 3: workspace version bumping rules (when + magnitude).
+- Section 4: release tag SemVer discipline (the actual contract).
+- Section 5: concrete example with session-11's 27-commit drift.
+- Section 6: common mistakes.
+- Section 7: cross-references to AGENTS.md, RELEASING.md, hook.
+
+NO changes to AGENTS.md (that is authority per §2.5).
+NO changes to pre-push hook (that is authority).
+
+### Commits
+
+- `b379a36` test(c3g): perf budget harness for Base profile
+- `42660a5` chore(release): bump version 1.169.150 → 1.169.151 (C3g perf budget)
+- `827ca6e` docs(architecture): CONTRIBUTING-SEMVER.md
+- `7cb660e` docs(roadmap): STATE.yaml reconciled
+- `dddc15c` docs(roadmap): CURRENT reconciled
+
+### Estado final (session-11 cycle 3)
+
+- HEAD: `dddc15c` (workspace 1.169.151; tree clean)
+- origin/main: `a5f279c` (15 commits behind; push operator-side)
+- 32 commits acumulados en session-11
+- C3a-f + C2a-MsgFix + C3g: PASS_OBSERVED
+- C2a/b/c: NOT_EVALUATED (systemic provider/adapter missing pattern)
+- C4 release cut: pending operator (`bash scripts/release.sh` con workspace 1.169.151;
+  SemVer decision documented in CONTRIBUTING-SEMVER.md)
+- C5: DEFERRED por contrato
+
