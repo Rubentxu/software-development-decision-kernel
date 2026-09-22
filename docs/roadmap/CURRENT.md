@@ -4,12 +4,12 @@
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@<HEAD post-C3b>` (session-11 C3b close, same concern) consultado 2026-09-22T08:42Z; **revalidar al comenzar cada sesión** |
+| Fuente de la fotografía | `main@7a5388a` (session-11 C3b close) consultado 2026-09-22T08:43Z; **revalidar al comenzar cada sesión** |
 | Workspace en esa fotografía | `1.169.144` (Cargo.toml) — bump desde 1.169.143 por C3b tests (legítimo: el pre-push hook exige bump real para commits con código modificado, y los 7 tests cuentan como código nuevo en el módulo) |
 | Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); workspace v1.169.143 NO está publicado (operator-side) |
 | Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a PASS_OBSERVED` + **`C3b PASS_OBSERVED`** (7 tests, 53/53 verde). C3c/C3d/C3e pendientes. |
 | Estado PRs abiertos | Ninguno. |
-| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a code+tests+receipts → `<HEAD post-C3b>` C3b code+tests+receipts. **All local; pending push to origin/main.** |
+| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a code+tests+receipts → `7a5388a` C3b code+tests+receipts+bump. **All local; pending push to origin/main.** |
 | Tests verified this session | C3a: `cargo test -p sddk-engine --lib authority_admission_ticket` → 11/11 verde; authority → 91/91; T20 atomicity 5/5. C3b: `cargo test -p sddk-storage --lib` → **53/53** verde (was 46/46 pre-cycle); T22 contention 5/5 sin flake. `cargo clippy -p sddk-{engine,storage} --all-targets -- -D warnings` clean. `cargo fmt --all -- --check` clean. |
 | Real-provider binary availability | `cognicode` CLI v0.97.3 presente; `cognicode-mcp` AUSENTE. `chronos-mcp` AUSENTE. `jcode` v0.86.0 presente con `acp`; `jcode-sdk` no publicado. **C2 sigue NOT_EVALUATED.** |
 | Siguiente acción exacta | **C3c Storage Security canarios** (capabilities, scopes, safe-mode, hash-truncation, JSON injection en `actor_json`/`subjects_json`/`metadata_json`, encryption-at-rest surface). C2 NOT_EVALUATED y C4 release siguen operator-side. |

@@ -4,8 +4,8 @@ status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_C3B_PASS_OBSERVED_C3C_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "<HEAD post-C3b>"  # session-11 C3b close (same concern as C3a + receipts)
-  head_at_state_sync: "<HEAD post-C3b>"
+  current_sha: "7a5388a"  # session-11 C3b close (same concern as C3a + receipts)
+  head_at_state_sync: "7a5388a"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.169.144"
   last_public_release_observed: "v1.169.122"
@@ -42,7 +42,7 @@ source:
   c2a_docs_commit: "3c81239014d3e35b78c64f3d8e8b46f3632dd06e"
   c2bc_docs_commit: "13460643f7f9e67034aeba88ee265ffe1cc00158"
   c3a_code_commit: "828b070"  # C3a tests + bump 1.169.143
-  c3b_code_commit: "<HEAD post-C3b>"  # C3b 7 tests + docs; no production change; no bump
+  c3b_code_commit: "7a5388a"  # C3b 7 tests + docs; no production change; bump 1.169.144
   addendum_count_at_head: 18
   full_profile_run_at_sha: "4bf09cf64185444828b232829e250ee7ff50541c"
   full_profile_run_at: "2026-09-21T21:21:00Z"
