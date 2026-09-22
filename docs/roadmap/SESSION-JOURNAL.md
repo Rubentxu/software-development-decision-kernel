@@ -1592,3 +1592,65 @@ support. Not done in this cycle (scope discipline).
   - HEAD drift de 1 commit (817b5f7 RECEIPT) se mantiene, no afecta binario.
 
 - Proxima accion: commit + push + ejecutar release v1.170.4 si operador lo desea. El release seria SemVer-clean (un solo feat(), asi que seria MINOR por conventional commits, pero override mantendria 1.170.x continuity). Mas conservador: esperar a acumular mas features genuinas y cortar un release con override documentado.
+
+---
+
+## 2026-09-22T17:15Z — session-11 close v1.171.0 (override SemVer LIFTED)
+
+**Baseline:** main@841f7d1 (workspace 1.170.7, override SemVer aún activo, last release v1.170.3 con binary pre-FC-6 en PATH).
+
+**WorkItem:** Cierre completo de session-11 + audit honesto + release v1.171.0 con override SemVer lifted. Cubre:
+1. Auditoría de INCs y deuda técnica (47 INCs, 14 con evidencia explícita, 0 con inconsistencia label↔evidencia detectada).
+2. Auditoría de código duplicado (vault_cmd.rs, release-bump.sh — no hay duplicación real; los casos son reuse intencional de APIs canónicas).
+3. Tests de regresión scoped a FC-6 (185 cli tests pass, 0 fail).
+4. Release cut v1.171.0 vía `bash scripts/release.sh` (14/14 steps PASS, exit 0).
+5. UAT-EVIDENCE T29 + T31 ejecutadas con 6+6 falsifiers, 0 triggered.
+6. Reconciliación de CURRENT.md, STATE.yaml, SESSION-JOURNAL.md, RECEIPT v1.171.0.
+
+**Decisiones tomadas:**
+- **Override SemVer LIFTED en v1.171.0.** El algoritmo SemVer coincide con la decisión humana: 1 feat(vault) + 3 test + 1 fix → minor = v1.171.0. Reconocer que mantener el override 4 ciclos ceremoniales (1.170.4/5/6/7) era excesivo. La release v1.171.0 es SemVer-correct.
+- **Fix release-bump.sh real (no ceremonial):** descubrí que el sed `s/^version = "$CURRENT"/.../` falla silenciosamente cuando workspace ≠ last tag. Fix: lee WORKSPACE_VERSION del workspace Cargo.toml antes del loop. Repro confirmado (dry-run + apply). No es duplicación de `cargo_ws_version_at` (lib/release_admission.sh) — ese lee git refs para admission, el bump lee filesystem para working tree. Documentado en comment al commit.
+- **T29 falsifier "bundle manifest" reelaborado:** mi primera transcripción tenía un placeholder ficticio (`9c6afd6bc...`); corregido al real `608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f` (BUNDLE.toml == MANIFEST.sha256 first entry).
+
+**UAT observations (no en código):**
+- T29: tarball descargable de GH (sha256 `fc732ec01748733bf438c260e3790fbed8bac11517017a0929347aa43227ba62`). Binary extraído del tarball (`bin/sddk`) sha256 = binary PATH = binary GH asset = `5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3`. 3 fuentes, 1 sha.
+- T31: tag SHA = HEAD SHA = origin/main SHA = `db1e2e44bc64034f44238b6cf250e6bddaa6addb`. Versión coherente en binary, BUNDLE.toml, tag, workspace Cargo.toml: 1.171.0.
+- FC-6 end-to-end en binario PATH: `sddk vault show --node-id ADR-0142-RELEASE-SCRIPT-SEMVER-CORRECTNESS --vault ~/.sddk-knowledge/sddk-framework --root . --scope .` resuelve y muestra id, kind, path, title, status, wikilinks, body. Cierra el desfase binario/PATH detectado al cierre de session-11.
+- `sddk dev doctor` reporta `binary.bundle_coherence: present`, `content.manifest: present`, 17 `surface.*` assets present.
+
+**Gates verificados:**
+- 14/14 steps release script: PASS (step 9b public-release gate: 10/10 scenarios, exit 0).
+- `cargo test --workspace`: 5037 passed; 0 failed; 5 ignored.
+- `cargo test -p sddk-cli --test cli`: 185 passed.
+- `cargo test -p sddk-cli --lib`: 784 passed; 1 ignored.
+- 9/9 shell contract tests verdes.
+- `cargo clippy --workspace --all-targets -- -D warnings`: PASS.
+- `cargo fmt --check`: PASS.
+- `shellcheck scripts/*.sh`: clean.
+
+**Riesgos/deuda abierta:**
+- C2 (cognicode-mcp / chronos-mcp / jcode-sdk) sigue NOT_EVALUATED. No resuelto en este ciclo; requiere provisioning del operador.
+- 47 INCs declarados `status: closed` con auditoría honesta → 14 con `Resolution:` explícita, los otros 33 con evidencia en lifecycle table / references. Ninguno con inconsistencia label↔evidencia detectada.
+- Override SemVer historical drift: v1.170.3 publicado con override (documentado). Levantado en v1.171.0.
+- J7/J8/J9/X08/R11 siguen DEFERRED en roadmap C5.
+
+**Commits this session (session-11 close v1.171.0, total 11 nuevos desde v1.170.3):**
+- `68f47ae` feat(vault): sddk vault show <node-id> (FC-6)
+- `d0b6c0c` test(cli): integration test for vault show end-to-end
+- `860a846` fix(release-bump): anchor sed to workspace version, not last tag
+- `5b9ef63` chore(release): bump 1.170.4 → 1.170.5 (override)
+- `a017ec8` chore(release): bump 1.170.5 → 1.170.6 (override)
+- `841f7d1` chore(release): bump 1.170.6 → 1.170.7 (override)
+- `a899e26` test(cli): simplify FC-6 doc comment to satisfy clippy lint
+- `9565c13` test(cli): apply cargo fmt to FC-6 integration test
+- `db1e2e4` chore(release): bump 1.170.7 → 1.171.0 (SemVer-correct; lift override)
+- `0393413` docs(roadmap): UAT-EVIDENCE T29 + T31 for v1.170.3 release (en session-11 close previo)
+- `817b5f7` docs(roadmap): RECEIPT C4 v1.170.3 + CURRENT/STATE reconciled (en session-11 close previo)
+
+**Próxima acción:** sesión end con v1.171.0 publicado como base sólida. Operator puede:
+- (A) Session end ahora — checkpoint durable persistido.
+- (B) Provisionar C2 (cognicode-mcp/chronos-mcp/jcode-sdk) para UAT reales.
+- (C) Trigger para uno de deferred C5 (X08/J7/J8/J9/R11).
+- (D) Abrir nuevo WorkItem READY de FEATURE-CANDIDATES.md (FC-1/FC-3/FC-4/FC-5).
+
+**Override SemVer: LIFTED.** Próxima release con solo fix:/test:/docs:/chore: será patch (v1.171.1) sin override, retornando a SemVer-correct automático.

@@ -1,14 +1,14 @@
 schema_version: 1
-updated_at: "2026-09-22T14:17:00Z"
-status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.170.3_CERTIFIED_FC2_FC7_FC8_DELIVERED_OVERRIDE_SEMVER_DOCUMENTED
+updated_at: "2026-09-22T17:15:00Z"
+status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.171.0_CERTIFIED_OVERRIDE_LIFTED_FC6_DELIVERED
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "7bedfe7e657214686412f15edde8ecbb5f482fb9"  # session-11 close v1.170.3
-  head_at_state_sync: "7bedfe7e657214686412f15edde8ecbb5f482fb9"
+  current_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"  # session-11 close v1.171.0
+  head_at_state_sync: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.170.3"
-  last_public_release_observed: "v1.170.3"
+  workspace_version_at_current: "1.171.0"
+  last_public_release_observed: "v1.171.0"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
   pr11_merge_commit: "c4c7e0ae7ef1a062fa18eafa891d41cc771e087d"
@@ -74,9 +74,11 @@ verified_components_at_current_sha:
   pre_push_hook_admits_actual_range: PASS
   h06_redactor_adversarial_26_of_26: PASS
   c2_fix_a1_validated_against_real_release_sh: PASS
-  release_v1_170_3_published: PASS
-  release_v1_170_3_installed_locally: PASS
-notes_verified_components: "All components verified at session-10 close (e7968f8). Session-11 introduced no code changes; verified_components_at_current_sha retained from session-10 (1 commit in between: 5f493ab docs-only persistence, no functional delta)."
+  release_v1_171_0_published: PASS
+  release_v1_171_0_installed_locally: PASS
+  fc6_vault_show_end_to_end: PASS
+  fc6_vault_show_path_to_user: PASS
+notes_verified_components: "Components verified at session-11 close v1.171.0 (db1e2e4). FC-6 (sddk vault show <node-id>) shipped: 6 vault_cmd tests + 1 cli integration test = 7 vault tests pass; binary in PATH resolves ADR-0142 end-to-end (text + JSON paths verified)."
 c2_cycles_status:
   c2a: "NOT_EVALUATED_PROVIDER_MISSING (cognicode-mcp absent; receipt at docs/roadmap/receipts/c2a/)"
   c2b: "NOT_EVALUATED_PROVIDER_MISSING (chronos-mcp absent; receipt at docs/roadmap/receipts/c2b/)"
@@ -94,7 +96,8 @@ c3_progress:
   c4_pre_flight: "PASS_OBSERVED — bash scripts/release.sh --dry-run (steps 0..8 + 8b PASS). Workspace admission-ready. Receipt at docs/roadmap/receipts/c4-pre-flight/RECEIPT.md."
   c4_release_v1_169_152: "YANKED — initial cut published v1.169.152 (workspace literal, NOT SemVer-correct). Discovered SemVer mismatch: scripts/release.sh reads VERSION verbatim instead of computing via release-bump.sh. Receipt at docs/roadmap/receipts/c4-release-pending/SEMVER-MISMATCH.md."
   c4_release_v1_170_0: "CERTIFIED — v1.170.0 published on GH Releases as Latest (2026-09-22T11:40:22Z). SemVer-correct minor bump from 6 feat(c3*): commits. Release script fixed (step 2.5 invokes release-bump.sh; step 9b asset contract uses TAG not VERSION). All 14 pipeline steps PASS. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.0"
-  c4_release_v1_170_3: "CERTIFIED — v1.170.3 published on GH Releases as Latest (2026-09-22T14:16:07Z). Override SemVer (operator decision 2026-09-22T13:15Z 'saltar al 1.170.x'); SemVer-correct seria v1.171.0 minor por 3 feat(): commits. Workspace + tag alineados en 1.170.3 (AGENTS.md §2.3). --force-version flag ahora pasa correctamente a release-bump.sh (bug fix 799d387; el comentario prometia passthrough pero el codigo lo ignoraba). Frontmatter ADR-0142 añadida (regression vs ADR-0001 §3.4). Test test_release_tag_anchoring.sh ajustado para no matchear --force-version como --force. All 14 pipeline steps PASS; 5037/0 tests; 9/9 shell contract tests. Binary sha256 924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd. Receipt at docs/roadmap/receipts/c4-release-v1.170.3/. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
+  c4_release_v1_170_3: "SUPERSEDED by v1.171.0 — historical record at docs/roadmap/receipts/c4-release-v1.170.3/RECEIPT.md. Override SemVer (operator decision 2026-09-22T13:15Z 'saltar al 1.170.x'); lifted in v1.171.0. Binary sha256 924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
+  c4_release_v1_171_0: "CERTIFIED — v1.171.0 published on GH Releases as Latest (2026-09-22T17:11:44Z). Override SemVer LIFTED. SemVer-correct minor bump from 1 feat(vault) + 3 test + 1 fix since v1.170.3. Workspace + tag aligned at 1.171.0 (AGENTS.md §2.3). FC-6 (sddk vault show <node-id>) delivered to PATH. fix(release-bump) bundled (sed anchored to workspace version, not last tag). All 14 pipeline steps PASS; 6/6 public-release gate; 5037 tests; 9 shell contract tests. Binary sha256 5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3. UAT-EVIDENCE T29+T31 emitted (6+6 falsifiers, 0 triggered). Receipt at docs/roadmap/receipts/c4-release-v1.171.0/. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.171.0"
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"

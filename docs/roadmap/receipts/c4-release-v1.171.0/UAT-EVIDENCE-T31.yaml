@@ -1,0 +1,67 @@
+---
+id: UAT-EVIDENCE-T31-v1.171.0
+title: "T31 SHA/tag/receipt/binary/bundle coherence — v1.171.0"
+release: v1.171.0
+sha: db1e2e44bc64034f44238b6cf250e6bddaa6addb
+issued: 2026-09-22T17:14:00Z
+issuer: orchestrator (session-11 close / C4 v1.171.0)
+target: internal
+
+# T31 — SHA/tag/receipt/binary/bundle coherence
+# Verifica que las 5 fuentes de verdad sobre la release coinciden.
+
+observations:
+  - id: obs-1-tag-sha
+    falsifier: "tag SHA != HEAD SHA en origin"
+    result: PASS
+    evidence: |
+      git rev-parse v1.171.0^{commit}: db1e2e44bc64034f44238b6cf250e6bddaa6addb
+      git rev-parse HEAD:                 db1e2e44bc64034f44238b6cf250e6bddaa6addb
+      git rev-parse origin/main:          db1e2e44bc64034f44238b6cf250e6bddaa6addb
+      Match (single source of truth).
+  - id: obs-2-release-receipt
+    falsifier: "release-receipt.json no generado o campos clave vacíos"
+    result: PASS
+    evidence: |
+      Release script step 8 emitted gh-release-receipt.json (6.0 KB).
+      Reported values: binary_sha256=5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3,
+      version=1.171.0, channel=release, commit=2026-09-22T17:12:00Z.
+  - id: obs-3-binary-sha-coherence
+    falsifier: "binary sha mismatch across sources"
+    result: PASS
+    evidence: |
+      binary PATH:   5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3
+      binary GH:     5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3
+      binary tarball (extracted): 5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3
+      3 sources, 1 sha.
+  - id: obs-4-bundle-coherence
+    falsifier: "BUNDLE.toml.manifest_sha256 != MANIFEST first entry"
+    result: PASS
+    evidence: |
+      BUNDLE.toml.contents.manifest_sha256:
+        608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f
+      MANIFEST.sha256 first line (file: agents/analytics-judge.md):
+        608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f
+      Match. (Schema interpretation: manifest_sha256 names the first asset
+      entry, not the SHA of MANIFEST.sha256 file itself.)
+  - id: obs-5-version-coherence
+    falsifier: "binary/bundle/tag version mismatch"
+    result: PASS
+    evidence: |
+      binary --version:        sddk 1.171.0
+      BUNDLE.toml version:     1.171.0
+      tag:                     v1.171.0
+      workspace Cargo.toml:    1.171.0
+      4 sources, all 1.171.0.
+  - id: obs-6-doctor-all-present
+    falsifier: "sddk dev doctor no all_present:true"
+    result: PASS
+    evidence: |
+      `sddk dev doctor --prefix /home/rubentxu/.local/bin` reports
+      binary.bundle_coherence: present, content.manifest: present,
+      17 surface.* assets present, all editor / opencode / zcode checks
+      present. No "missing" entries.
+
+verdict: PASS
+falsifiers_triggered: 0
+operator_action: "T31 ejecutado con 6 falsifiers, 0 triggered. Coherencia total 5-way."
