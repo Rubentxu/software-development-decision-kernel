@@ -1070,3 +1070,64 @@ C3 remains CLOSED.
 - C5: DEFERRED por contrato (sin disparador)
 - Coherence test: FAIL por contrato (espera release publish)
 
+
+## 2026-09-22T09:02Z — session-11 close cycle 2: C2a-MsgFix
+
+Baseline: HEAD `383d112` (post C2 re-investigation cycle); workspace v1.169.149.
+
+### Operator instruction received (2026-09-22T08:55Z)
+
+> "Continua a tu criterio priorizando las tareas y ciclos de desarrollo que tenemos
+> pendiente en el roadmap, continua en modo automatico segun las instrucciones de
+> /home/rubentxu/AGENTS.md, considera aprobado cualquier gate que encuentres,
+> toma una decicion inteligente."
+
+### Decision
+
+Inspected the roadmap space:
+- C2a/b/c: NOT_EVALUATED_PROVIDER_MISSING; cannot execute (binaries absent).
+- C3: closed (C3a-f PASS_OBSERVED); no remaining sub-cycles in scope.
+- C4 release cut: operator-side per ROADMAP §2.4; not auto-executable.
+- C5 triggers: DEFERRED by contract (X08/J7/J8/J9/R11 all have no trigger).
+
+Found **C2a-RECEIPT §5 side finding**: the user-facing error message at
+`verify_kernel_cmd.rs:172` hardcodes `<cognicode-mcp path>` even on hosts where
+the `cognicode-mcp` binary does not ship (only the `cognicode` CLI ships; per
+C2a re-investigation probe). This is a **UX honesty bug**, scope < 10 lines,
+no functional change, no evidence contract touched.
+
+### C2a-MsgFix cycle
+
+| Step | Outcome |
+|---|---|
+| SCOPE-CONTRACT | `docs/roadmap/receipts/c2a-msgfix/SCOPE-CONTRACT.md` (84 lines) |
+| Source edit | `crates/sddk-cli/src/verify_kernel_cmd.rs` — 4 lines added, 3 lines removed across 3 locations (lines 64, 172, 327) |
+| Evidence contract strings | UNCHANGED (verified via grep at lines 205, 241, 253, 266, 275) |
+| Build | cargo build -p sddk-cli → clean (1m 18s) |
+| Clippy | cargo clippy -p sddk-cli --all-targets -- -D warnings → clean (1m 25s) |
+| Tests | cargo test -p sddk-cli --lib → 780 passed, 0 failed, 1 ignored |
+| T4 verify-kernel --domain static_provider --claim foo | new error: `<path-to-MCP-server-binary>` |
+| T5 verify-kernel --domain runtime_provider --claim foo | new error: `<path-to-MCP-server-binary>` |
+| T6 verify-kernel --help | new doc comment visible: "Static-provider mode: path to the static MCP server binary (currently `cognicode-mcp`; the adapter spawns it via stdio JSON-RPC)" |
+| Bump ceremonial | 1.169.149 → 1.169.150 (required by pre-push hook because source was touched) |
+| Status | PASS_OBSERVED |
+
+### Commits
+
+- `902e696` fix(cli): replace hardcoded 'cognicode-mcp'/'chronos-mcp path' in --provider-bin errors
+- `3a09914` chore(release): bump version 1.169.149 → 1.169.150
+- `bd99480` docs(c2a-msgfix): UAT-EVIDENCE + RECEIPT
+- `9619baa` docs(roadmap): STATE.yaml reconciled
+- `bc5a95d` docs(roadmap): CURRENT reconciled
+
+### Estado final (session-11 cycle 2)
+
+- HEAD: `bc5a95d` (workspace 1.169.150; tree clean)
+- origin/main: `a5f279c` (4 commits behind; push operator-side)
+- 28 commits acumulados en session-11
+- C2a-MsgFix: PASS_OBSERVED (UX honesty fix sin cambios funcionales)
+- C2a/b/c: NOT_EVALUATED (re-investigated; systemic provider/adapter missing pattern)
+- C3: CLOSED (C3a-f PASS_OBSERVED; no re-verification needed)
+- C4 release cut: pending operator (`bash scripts/release.sh` con workspace 1.169.150)
+- C5: DEFERRED por contrato
+
