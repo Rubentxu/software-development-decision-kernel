@@ -782,9 +782,17 @@ fn run_uat_plan(args: UatPlanArgs, _environment: &crate::CliEnvironment) -> Comm
     })
 }
 
+#[derive(serde::Serialize, Debug)]
+struct UatValidateOutput {
+    schema_version: u64,
+    plan_features: usize,
+    scenarios_total: usize,
+    form_dsl_errors: Vec<String>,
+}
+
 fn run_uat_validate(args: UatValidateArgs) -> CommandOutput {
     let format = args.format;
-    let result = (|| -> anyhow::Result<()> {
+    let result: anyhow::Result<UatValidateOutput> = (|| -> anyhow::Result<UatValidateOutput> {
         let raw = std::fs::read_to_string(&args.file)
             .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", args.file.display()))?;
         // Accept JSON as an alias of YAML (both are valid serde_saphyr input).
@@ -837,9 +845,15 @@ fn run_uat_validate(args: UatValidateArgs) -> CommandOutput {
         if !dsl_errors.is_empty() {
             anyhow::bail!("form DSL validation failed:\n  {}", dsl_errors.join("\n  "));
         }
-        Ok(())
+        let scenarios_total: usize = plan.features.iter().map(|f| f.scenarios.len()).sum();
+        Ok(UatValidateOutput {
+            schema_version: kind,
+            plan_features: plan.features.len(),
+            scenarios_total,
+            form_dsl_errors: Vec::new(),
+        })
     })();
-    render_result(result, format, |()| "uat validate: OK\n".into())
+    render_result(result, format, |_| "uat validate: OK\n".into())
 }
 
 fn run_uat_dashboard(args: UatDashboardArgs, environment: &crate::CliEnvironment) -> CommandOutput {
@@ -5106,6 +5120,52 @@ features:
         };
         let out = run_uat_validate(args);
         assert_eq!(out.status, 0, "expected OK, got: {}", out.stderr);
+    }
+
+    /// JSON path returns machine-readable UatValidateOutput with counts.
+    #[test]
+    fn validate_plan_json_output_has_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("plan.yaml");
+        let plan_content = r#"
+schema_version: 3
+release: { candidate: v1.0.0 }
+generated_by: test
+generated_at: "2026-08-11T00:00:00Z"
+features:
+  - id: F1
+    name: Login
+    scenarios:
+      - id: S-1
+        title: Login works
+        priority: P0
+        plain_steps: []
+      - id: S-2
+        title: Login fails
+        priority: P1
+        plain_steps: []
+  - id: F2
+    name: Settings
+    scenarios:
+      - id: S-3
+        title: Settings load
+        priority: P2
+        plain_steps: []
+"#;
+        std::fs::write(&plan_path, plan_content).unwrap();
+        let args = UatValidateArgs {
+            file: plan_path,
+            format: OutputFormat::Json,
+        };
+        let out = run_uat_validate(args);
+        assert_eq!(out.status, 0, "expected OK, got: {}", out.stderr);
+        let parsed: serde_json::Value = serde_json::from_str(&out.stdout)
+            .unwrap_or_else(|e| panic!("stdout is not valid JSON: {e}; raw={}", out.stdout));
+        assert_eq!(parsed["schema_version"], 3);
+        assert_eq!(parsed["plan_features"], 2);
+        assert_eq!(parsed["scenarios_total"], 3);
+        assert!(parsed["form_dsl_errors"].is_array());
+        assert_eq!(parsed["form_dsl_errors"].as_array().unwrap().len(), 0);
     }
 
     /// Form DSL with goto pointing to non-existent item → exit 1.
