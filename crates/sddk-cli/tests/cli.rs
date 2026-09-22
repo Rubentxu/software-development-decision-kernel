@@ -8331,6 +8331,119 @@ fn cli_vault_index_validate_search_and_export() {
     assert_eq!(validation["diagnostics"][0]["code"], "VAULT003");
 }
 
+/// FC-6 integration: `sddk vault show <node-id>` end-to-end via CliFixture
+/// + CANONICAL_WORKFLOW. Verifies that the JSON path emits the full
+/// VaultShowOutput (node + backlinks), the text path emits the
+/// expected metadata + body, and missing node_ids fail-closed with
+/// exit code 1.
+#[test]
+fn cli_vault_show_resolves_node_and_renders_json_and_text() {
+    let fixture = CliFixture::new("vault-show");
+    fs::create_dir_all(fixture.root.join("workflow")).unwrap();
+    fs::write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    )
+    .unwrap();
+    let vault = fixture.root.join("vault");
+    fs::create_dir_all(vault.join("adrs")).unwrap();
+    fs::write(
+        vault.join("adrs/ADR-A.md"),
+        "---\nid: ADR-A\ntype: adr\nstatus: accepted\n---\n# ADR A\n\nLinks [[ADR-B]]\n",
+    )
+    .unwrap();
+    fs::write(
+        vault.join("adrs/ADR-B.md"),
+        "---\nid: ADR-B\ntype: adr\nstatus: accepted\n---\n# ADR B\n\nLinks [[ADR-A]]\n",
+    )
+    .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--fallback-seed",
+        "00000000-0000-0000-0000-000000000001",
+    ];
+
+    // JSON path: shows node metadata + backlinks resolved.
+    let showed_json = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "show",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--node-id",
+            "ADR-A",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert!(
+        showed_json.status.success(),
+        "{}",
+        String::from_utf8_lossy(&showed_json.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&showed_json.stdout)).unwrap();
+    assert_eq!(json["node"]["id"], "ADR-A");
+    assert_eq!(json["node"]["status"], "accepted");
+    assert_eq!(json["node"]["title"], "ADR A");
+    assert_eq!(json["backlinks"][0], "ADR-B");
+    assert!(json["node"]["body"]
+        .as_str()
+        .unwrap()
+        .contains("Links [[ADR-B]]"));
+
+    // Text path: renders metadata header + body footer.
+    let showed_text = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "show",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--node-id",
+            "ADR-B",
+        ],
+        &common,
+    );
+    assert!(
+        showed_text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&showed_text.stderr)
+    );
+    let text = String::from_utf8_lossy(&showed_text.stdout);
+    assert!(text.contains("id: ADR-B"));
+    assert!(text.contains("status: accepted"));
+    assert!(text.contains("backlinks (1): ADR-A"));
+    assert!(text.contains("--- body ---"));
+    assert!(text.contains("Links [[ADR-A]]"));
+
+    // Missing node_id: exit 1, error message names the missing id and
+    // reports vault node count.
+    let missing = run_with_root(
+        &fixture,
+        &[
+            "vault",
+            "show",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--node-id",
+            "ADR-NONEXISTENT",
+            "--format",
+            "json",
+        ],
+        &common,
+    );
+    assert_eq!(missing.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&missing.stderr);
+    assert!(err.contains("ADR-NONEXISTENT"));
+    assert!(err.contains("vault has 2 nodes"));
+}
+
 #[test]
 fn cli_dev_install_verify_uninstall_are_atomic() {
     let fixture = CliFixture::new("dev-install");
