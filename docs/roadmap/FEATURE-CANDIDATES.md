@@ -108,6 +108,39 @@ project) en formato JSONL con eventos, leases, gates. Simétrico a un eventual
 
 **Trigger:** Necesidad de backup/migración/auditoría.
 
+**Estado:** ⚠️ DEFERRED — DUPLICATED por `sddk ledger export` (sesión-12 audit).
+
+`sddk ledger export --cycle <id> --output <file>` ya cubre el caso de uso
+principal (volcar eventos del cycle a JSONL en archivo). Diff vs FC-3 propuesto:
+
+| Capacidad | `ledger export --cycle X` | FC-3 propuesto |
+|---|---|---|
+| Filtro por cycle | ✅ `--cycle X` | ✅ `--cycle X` |
+| Output a archivo | ✅ `--output <file>` (requerido) | ✅ `--output <file>` (opcional) |
+| Output a stdout | ❌ | ✅ |
+| Formato JSONL | ✅ (default) | ✅ |
+| Formato JSON envelope | ❌ | ✅ |
+| Formato texto human-readable | ❌ | ✅ |
+| Filtro por frame | ✅ `--frame` | ❌ |
+| Límite de eventos | ✅ `--limit` | ❌ |
+
+FC-3 como subcomando nuevo violaría "evita código duplicado" (regla del
+operador). Las 3 diferencias reales (stdout, JSON envelope, text) se cubren
+mejor extendiendo `ledger export` con `--format text|json|jsonl` y haciendo
+`--output` opcional.
+
+**Acción propuesta (futuro, no en este ciclo):**
+- Extender `LedgerExportArgs` con `--format text|json|jsonl` (default jsonl) y `--output <PathBuf>` opcional.
+- Reusar `run_ledger_export` y `ExportOutput`.
+- Marcar FC-3 como RESUELTO vía la extensión propuesta (cuando se haga).
+- Si la extensión no se ejecuta, mantener como DEFERRED con disparador "operador
+  necesita formato JSON envelope o text en backups".
+
+**Sesión-12 finding:** working tree de FC-3 con 251 líneas en `cycle.rs` y
+~120 líneas de integration test → RECHAZADO, no se commitea. Reproducción en
+sesión-11/12 cerraba sin haber ejecutado `sddk --help | grep -i "ledger"` para
+verificar que `ledger export` ya existía.
+
 ---
 
 ### FC-4: `sddk uat replay --release v1.169.122` (re-ejecutar UATs contra release pinned)
@@ -158,6 +191,24 @@ anterior exitoso.
 **Bloqueos:** Ninguno.
 
 **Trigger:** Debugging de cycles fallidos en producción.
+
+**Estado:** ⚠️ DEFERRED — DUPLICATED parcialmente por `sddk fork diff` y `sddk memory diff`.
+
+`sddk fork diff` compara el prefijo de un fork contra el parent state (cycle-scoped).
+`sddk memory diff` compara árboles de decisión memory.
+
+Diferencias reales vs FC-5 propuesto:
+- `sddk fork diff` requiere crear un fork (fork create) antes de poder diffear.
+  Está orientado a "qué cambia si yo divido el cycle aquí".
+- `sddk memory diff` opera sobre decision_memory trees, no sobre cycle events crudos.
+- FC-5 propuesto operaría sobre dos cycle IDs ya existentes sin necesidad de
+  fork o memory tree.
+
+**Acción propuesta (futuro, no en este ciclo):**
+- Validar con el operador si la necesidad de "comparar dos cycles sin fork" es
+  distinta de "comparar el prefijo de un fork contra parent".
+- Si es distinta, FC-5 tiene valor. Si no, mantener como DEFERRED.
+- No implementar hasta tener respuesta del operador.
 
 ---
 

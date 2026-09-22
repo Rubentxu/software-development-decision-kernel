@@ -1654,3 +1654,79 @@ support. Not done in this cycle (scope discipline).
 - (D) Abrir nuevo WorkItem READY de FEATURE-CANDIDATES.md (FC-1/FC-3/FC-4/FC-5).
 
 **Override SemVer: LIFTED.** Próxima release con solo fix:/test:/docs:/chore: será patch (v1.171.1) sin override, retornando a SemVer-correct automático.
+
+---
+
+## Session-12 — 2026-09-22T18:13Z — Reconciliación honesta post-CERTIFIED
+
+**Trigger:** Operador explícito: "los recuentos de cierres documentales y ciclos del roadmap que modificaron su estado a completado, No equivale a que todas las condiciones originales de aceptación del producto estén verificadas... Principal cuidado con las regresiones y código duplicado al plantear los cambios."
+
+**Contexto:** tras session-11 que cerró v1.171.0 como CERTIFIED y empezó FC-3 (`sddk cycle export`), arranca esta sesión para auditoría honesta de los cierres existentes antes de continuar con más features.
+
+**Acciones tomadas en esta sesión:**
+
+1. **Audit del estado del release v1.171.0 contra CERTIFICATIONS §5 schema.**
+   - Constaté que `RECEIPT.md` (session-11) era un release receipt, NO un CERTIFICATION-RECEIPT.
+   - Identifiqué que los gates G0..G16 no habían sido re-ejecutados en SHA `db1e2e44` para el release v1.171.0; el "CERTIFIED" de session-11 era ceremonial, no contractual.
+   - Emití nuevo `docs/roadmap/receipts/c4-release-v1.171.0/CERTIFICATION-RECEIPT.yaml` con schema_version=1, profile=BASE, status=PASS_PARTIAL_OBSERVED (4 PASS_OBSERVED gates, 12 HISTORICAL_CARRY_OVER, 1 NOT_VERIFIED para G11).
+   - Reclasifiqué C4 v1.171.0 de "CERTIFIED" a "PASS_PARTIAL_OBSERVED".
+
+2. **Audit de las 47 INCs declaradas `status: closed`.**
+   - Mi métrica inicial ("solo 14 con `Resolved by:`") era incorrecta: el formato del template pone evidencia en `## Lifecycle` table O `## Resolution/Closure/Disposition` sections, no requiere `Resolved by:`.
+   - Re-auditadas con criterios relajados (frontmatter `resolved_by:`, body `## Resolution`, frontmatter `closed_reason:`, lifecycle con entry "closed|PASS|verified"), las 40 INCs cerradas tienen evidencia real (commits, test names, exit codes, matrix case counts, sha256).
+   - Ninguna INC es cierre paperwork. Lo que el operador señaló aplica a cierres de **cycle** y a **certificaciones de perfil**, no a remediaciones per-finding.
+   - Emisión de `docs/debt/AUDIT-session-12.md` con la metodología y los resultados.
+
+3. **Audit del binario PATH v1.171.0 contra duplicación con código nuevo.**
+   - FC-3 (cycle export) implementado en working tree (251 líneas + 120 líneas test).
+   - Auditando con `sddk --help` y `sddk ledger --help` descubrí que **`sddk ledger export --cycle <id> --output <file>` ya cubre el caso de uso principal**.
+   - Las 3 diferencias reales (stdout, JSON envelope, text format) no justifican un subcomando nuevo; se cubren mejor extendiendo `LedgerExportArgs` con `--format text|json|jsonl` y `--output opcional`.
+   - WORKING TREE FC-3 RECHAZADO. Actualicé `FEATURE-CANDIDATES.md` marcando FC-3 como DUPLICATED-DEFERRED.
+   - FC-5 (cycle diff) marcado similarmente como DUPLICATED-DEFERRED (parcialmente cubierto por `sddk fork diff` y `sddk memory diff`).
+
+4. **Verificación del fix release-bump.sh contra escenarios exhaustivos.**
+   - Test 1: workspace == last tag → funciona.
+   - Test 2: workspace AHEAD del last tag (mi fix lo soporta) → funciona con `--force-version`.
+   - Fix read WORKSPACE_VERSION desde filesystem Cargo.toml (no git ref) — correcto para el contrato.
+
+5. **Reconciliación CURRENT.md + STATE.yaml + SESSION-JOURNAL.md.**
+   - CURRENT.md reescrito: afirmación "C4 v1.171.0 CERTIFIED" → "C4 v1.171.0 PASS_PARTIAL_OBSERVED".
+   - STATE.yaml: campo `c4_release_v1_171_0` actualizado; `certification_claim_at_current_sha: "BASE — PASS_PARTIAL_OBSERVED (not CERTIFIED)"`.
+   - Esta entrada del journal.
+
+**Decisiones tomadas:**
+- **RETRACTAR la etiqueta "CERTIFIED" de session-11** para v1.171.0. La certificación contractual requiere UAT-EVIDENCE T01-T35 ejecutado en SHA actual contra providers reales; no es el caso.
+- **RECHAZAR FC-3 working tree** por duplicación con `sddk ledger export`. La extensión propuesta es trabajo futuro, no de este ciclo.
+- **MARCAR FC-5 como DEFERRED-DUPLICATED** pendiente de validación con operador.
+- **MAINTAIN v1.171.0 como base honesta PASS_PARTIAL_OBSERVED** (no certificada, pero release OK con binary en PATH, FC-6 entregado, tests pass, UAT-EVIDENCE T29+T31 emitidas).
+
+**Gates verificados (session-12 audit):**
+- `cargo test -p sddk-cli --lib`: 787 passed; 0 failed (3 nuevos son de FC-3 working tree, no commiteados).
+- `cargo test -p sddk-cli --test cli`: 186 passed; 0 failed (1 nuevo es de FC-3 working tree, no commiteado).
+- `cargo fmt --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo build --release -p sddk-cli`: exit 0; binary con FC-3 disponible en `/var/home/rubentxu/cargo-targets/release/sddk` (NO en PATH).
+- `shellcheck scripts/*.sh`: clean (2 pre-existing en `apply_banner.sh`).
+- 5-way coherence (tag/HEAD/origin/asset/PATH) verificada: sha256 `5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3` consistente.
+
+**Working tree uncommitted (operator review pending):**
+- `docs/roadmap/receipts/c4-release-v1.171.0/CERTIFICATION-RECEIPT.yaml` (new, 236 lines, schema-compliant)
+- `docs/debt/AUDIT-session-12.md` (new, 62 lines)
+- `docs/roadmap/FEATURE-CANDIDATES.md` (modificado: FC-3 y FC-5 marcados DUPLICATED-DEFERRED)
+- `docs/roadmap/CURRENT.md` (modificado: PASS_PARTIAL_OBSERVED)
+- `docs/roadmap/STATE.yaml` (modificado: c4_release_v1_171_0 reclasificado)
+- `docs/roadmap/SESSION-JOURNAL.md` (esta entrada)
+- `crates/sddk-cli/src/cycle.rs` (FC-3 working tree, 251 líneas — RECHAZADO, no commitear)
+- `crates/sddk-cli/tests/cli.rs` (FC-3 integration test, ~120 líneas — RECHAZADO)
+
+**Riesgos abiertos:**
+- C2 (cognicode-mcp/chronos-mcp/jcode-sdk) sigue NOT_EVALUATED. Sin provider MCP bridge instalado, no se puede ejecutar UAT reales (T08-T18).
+- Full CERTIFIED_BASE promotion requiere: instalar providers reales + re-run T01-T35 contra SHA release + ejecutar `tests/clean_machine_uat.sh --tag v1.171.0` en podman.
+- 7 INCs abiertas (INC-DEBT-017, INC-FINDING-A5-3-DELTA-4, INC-CYCLE-13-DURABILITY-COMMENT-ACCURACY, INC-CYCLE-13-APPLY-TEST-COUNT-MISREPORT, INC-CYCLE-14-CORPUS-FIXTURE-DUPLICATION, INC-CYCLE-14-HELPER-DOC-GAP, INC-CYCLE-14-SEVERITY-SPEC-DRIFT).
+
+**Próxima acción — operator decision required:**
+- (A) Commitar los docs de audit (CERTIFICATION-RECEIPT.yaml + AUDIT-session-12.md + CURRENT/STATE/JOURNAL/FEATURE-CANDIDATES corrections), descartar el código FC-3 → release v1.171.1 (docs-only = patch auto, sin override).
+- (B) Descartar todo el working tree session-12 y volver al cierre session-11 con etiqueta CERTIFIED (acepta el gap honestamente).
+- (C) Abrir nuevo ciclo C5 con feature genuina (FC-1 uat run --filter con valor confirmado; FC-4 uat replay --release pendiente de confirmar).
+
+**Override SemVer: LIFTED en v1.171.0 (session-11 close).** Próxima release con solo fix:/test:/docs:/chore: será patch (v1.171.1) sin override, retornando a SemVer-correct automático.

@@ -1,14 +1,16 @@
 schema_version: 1
-updated_at: "2026-09-22T17:15:00Z"
-status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.171.0_CERTIFIED_OVERRIDE_LIFTED_FC6_DELIVERED
+updated_at: "2026-09-22T18:11:00Z"
+status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.171.0_PASS_PARTIAL_OBSERVED_FC3_REJECTED_DUPLICATION_FC6_DELIVERED
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"  # session-11 close v1.171.0
-  head_at_state_sync: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
+  current_sha: "a8e77f4b6c03276f62e7d8223ab50f293e3b4fff"  # HEAD = docs commit post-release v1.171.0
+  tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
+  head_at_state_sync: "a8e77f4b6c03276f62e7d8223ab50f293e3b4fff"
   workspace_version_at_baseline: "1.169.133"
   workspace_version_at_current: "1.171.0"
   last_public_release_observed: "v1.171.0"
+  binary_sha256_v1_171_0: "5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
   pr11_merge_commit: "c4c7e0ae7ef1a062fa18eafa891d41cc771e087d"
@@ -97,16 +99,17 @@ c3_progress:
   c4_release_v1_169_152: "YANKED — initial cut published v1.169.152 (workspace literal, NOT SemVer-correct). Discovered SemVer mismatch: scripts/release.sh reads VERSION verbatim instead of computing via release-bump.sh. Receipt at docs/roadmap/receipts/c4-release-pending/SEMVER-MISMATCH.md."
   c4_release_v1_170_0: "CERTIFIED — v1.170.0 published on GH Releases as Latest (2026-09-22T11:40:22Z). SemVer-correct minor bump from 6 feat(c3*): commits. Release script fixed (step 2.5 invokes release-bump.sh; step 9b asset contract uses TAG not VERSION). All 14 pipeline steps PASS. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.0"
   c4_release_v1_170_3: "SUPERSEDED by v1.171.0 — historical record at docs/roadmap/receipts/c4-release-v1.170.3/RECEIPT.md. Override SemVer (operator decision 2026-09-22T13:15Z 'saltar al 1.170.x'); lifted in v1.171.0. Binary sha256 924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
-  c4_release_v1_171_0: "CERTIFIED — v1.171.0 published on GH Releases as Latest (2026-09-22T17:11:44Z). Override SemVer LIFTED. SemVer-correct minor bump from 1 feat(vault) + 3 test + 1 fix since v1.170.3. Workspace + tag aligned at 1.171.0 (AGENTS.md §2.3). FC-6 (sddk vault show <node-id>) delivered to PATH. fix(release-bump) bundled (sed anchored to workspace version, not last tag). All 14 pipeline steps PASS; 6/6 public-release gate; 5037 tests; 9 shell contract tests. Binary sha256 5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3. UAT-EVIDENCE T29+T31 emitted (6+6 falsifiers, 0 triggered). Receipt at docs/roadmap/receipts/c4-release-v1.171.0/. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.171.0"
-certification_claim_at_current_sha: null
+  c4_release_v1_171_0: "PASS_PARTIAL_OBSERVED — v1.171.0 published on GH Releases as Latest (2026-09-22T17:11:44Z). Override SemVer LIFTED (SemVer-correct minor bump from 1 feat(vault) + 3 test + 1 fix since v1.170.3). Workspace + tag aligned at 1.171.0 (AGENTS.md §2.3). FC-6 (sddk vault show <node-id>) delivered to PATH. fix(release-bump) bundled (sed anchored to workspace version, not last tag). All 14 pipeline steps PASS; 6/6 public-release gate; 5037 tests; 9 shell contract tests. Binary sha256 5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3. UAT-EVIDENCE T29+T31 emitted (6+6 falsifiers, 0 triggered). Receipt at docs/roadmap/receipts/c4-release-v1.171.0/. https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.171.0. RECLASSIFIED from CERTIFIED to PASS_PARTIAL_OBSERVED by session-12 audit against CERTIFICATIONS.md §5 schema (RECEIPT.md was a release receipt, NOT a CERTIFICATION-RECEIPT; new CERTIFICATION-RECEIPT.yaml emitted schema-compliant with 4 PASS_OBSERVED gates, 12 HISTORICAL_CARRY_OVER, 1 NOT_VERIFIED for G11). Promotion to CERTIFIED_BASE blocked by C2 NOT_EVALUATED (provider MCP bridges absent)."
+  certification_claim_at_current_sha: "BASE — PASS_PARTIAL_OBSERVED (not CERTIFIED)"
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"
   a6_a7: "Verticales reales históricas; enhanced completo no acreditado"
   jcode: "J0-J6 cierre de alcance semántico; adapter real/AG0-AG2 pendiente de evidencia"
   c0_pr_integration: "PR #7 merged at 96f5366; no concurrent commits; pre-push gate satisfied via (A) version bump to 1.169.128"
-next_action: "C0: inventariar features IMPL/VER/CERT/DEF, enlazar commit+test+receipt, ejecutar UAT T01 (HEAD/tag/release/workspace) y T02 (req→commit→test→receipt) con receipt observado. Bloqueado por ausencia de tag v1.169.123..128 (releases pending operator's bash scripts/release.sh)."
+next_action: "Operator decision on session-12 working tree: (A) commit audit docs (CERTIFICATION-RECEIPT.yaml + AUDIT-session-12.md + FEATURE-CANDIDATES corrections) and discard FC-3 code, release v1.171.1 (docs-only = patch auto, no override); (B) discard session-12 working tree and revert to session-11 close; (C) open new C5 cycle with genuine value feature (FC-1 uat run --filter confirmed; FC-4 uat replay --release to confirm). FC-3 + FC-5 marked DEFERRED-DUPLICATED pending operator judgment."
 blockers:
-  - "Release v1.169.128 no publicada — operator-side (system-law git.release); T01/T02 se ejecutan con observación real del estado actual (git, gh release list) sin requerir release nueva."
+  - "Release v1.171.0 promoted to PASS_PARTIAL_OBSERVED (was CERTIFIED); full CERTIFIED_BASE promotion blocked by C2 NOT_EVALUATED (provider MCP bridges absent)."
+  - "FC-3 working tree REJECTED for duplication with `sddk ledger export --cycle`. Extension of LedgerExportArgs proposed as future work."
   - "EXT exige binarios externos disponibles para ejecutar pruebas reales (A6/A7/AIW-S1/S5)."
   - "J0-J6 semántico != JCODE_CORE_GA; AG0-AG2 pendientes."
 deferred:
