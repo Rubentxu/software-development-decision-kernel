@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.170.6] - 2026-09-22
+
+### Fixes
+  - fix(release-bump): anchor sed to workspace version, not last tag
+
+
 ## [1.170.5] - 2026-09-22
 
 ### Features
