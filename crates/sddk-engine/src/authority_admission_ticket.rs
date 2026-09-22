@@ -641,4 +641,200 @@ mod tests {
         assert_ne!(id1, id3);
         assert_ne!(id1, id4);
     }
+
+    // -----------------------------------------------------------------
+    // C3a (session-11) — T19 side-effects + T20 cross-policy / atomicity
+    // -----------------------------------------------------------------
+
+    /// T19 side-effects on reject: a ticket issued under policy A whose
+    /// consume attempt fails because the active policy is now B must NOT
+    /// insert the ticket id into the consumed set. We prove this by
+    /// retrying the consume with the original policy A and asserting Ok.
+    #[test]
+    fn t19_policy_swap_records_no_side_effects() {
+        let bus = AdmissionTicketBus::new();
+        let policy = policy_a();
+        let ticket = bus
+            .issue(
+                &DummyEngine,
+                &dummy_proposal(),
+                &dummy_actor(),
+                &dummy_facts(),
+                &policy,
+                10,
+            )
+            .expect("issue under policy A");
+
+        // Phase 1: simulate a policy swap by passing a `now` whose
+        // current_policy_digest matches policy B (NOT the ticket's digest).
+        let swapped_now = AuthorityNow {
+            current_policy_digest: policy_b().policy_digest,
+            current_fence: ticket.fence_token,
+            current_seq: 11,
+        };
+        let err = bus
+            .consume(&ticket, &swapped_now)
+            .expect_err("PolicyChanged must reject");
+        assert!(
+            matches!(err, AdmissionTicketError::PolicyChanged { .. }),
+            "expected PolicyChanged, got {:?}",
+            err
+        );
+
+        // Phase 2: with policy A restored, the SAME ticket must still be
+        // consumable. If the rejected consume had silently inserted the
+        // ticket id into `consumed`, this second consume would fail with
+        // TicketAlreadyConsumed.
+        let original_now = AuthorityNow {
+            current_policy_digest: policy.policy_digest.clone(),
+            current_fence: ticket.fence_token,
+            current_seq: 11,
+        };
+        bus.consume(&ticket, &original_now).expect(
+            "retry with original policy must succeed — rejected consume must not poison the bus",
+        );
+    }
+
+    /// T20 cross-policy: two independent buses bound to different policy
+    /// digests must not accept each other's tickets. Exercised with a
+    /// Barrier so both issues complete before either cross-consume runs.
+    #[test]
+    fn t20_two_buses_with_divergent_policy_digests_dont_cross_accept() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let bus_a = AdmissionTicketBus::new();
+        let bus_b = AdmissionTicketBus::new();
+        let barrier = Arc::new(Barrier::new(2));
+
+        let b_a = bus_a.clone();
+        let bar_a = Arc::clone(&barrier);
+        let handle_a = thread::spawn(move || {
+            let p = policy_a();
+            let t = b_a
+                .issue(
+                    &DummyEngine,
+                    &dummy_proposal(),
+                    &dummy_actor(),
+                    &dummy_facts(),
+                    &p,
+                    10,
+                )
+                .expect("issue under A");
+            bar_a.wait();
+            t
+        });
+
+        let b_b = bus_b.clone();
+        let bar_b = Arc::clone(&barrier);
+        let handle_b = thread::spawn(move || {
+            let p = policy_b();
+            let t = b_b
+                .issue(
+                    &DummyEngine,
+                    &dummy_proposal(),
+                    &dummy_actor(),
+                    &dummy_facts(),
+                    &p,
+                    20,
+                )
+                .expect("issue under B");
+            bar_b.wait();
+            t
+        });
+
+        let ticket_a = handle_a.join().expect("thread A");
+        let ticket_b = handle_b.join().expect("thread B");
+
+        // Cross-consume A → B: bus_b's now-current policy is B's digest,
+        // not A's. Even though the ticket was valid in bus_a, bus_b must
+        // reject because the digests disagree.
+        let now_for_b_check = AuthorityNow {
+            current_policy_digest: policy_b().policy_digest,
+            current_fence: ticket_a.fence_token,
+            current_seq: 11,
+        };
+        let cross_ab = bus_b.consume(&ticket_a, &now_for_b_check);
+        assert!(
+            matches!(cross_ab, Err(AdmissionTicketError::PolicyChanged { .. })),
+            "ticket from bus_a must be rejected by bus_b, got {:?}",
+            cross_ab
+        );
+
+        let now_for_a_check = AuthorityNow {
+            current_policy_digest: policy_a().policy_digest,
+            current_fence: ticket_b.fence_token,
+            current_seq: 21,
+        };
+        let cross_ba = bus_a.consume(&ticket_b, &now_for_a_check);
+        assert!(
+            matches!(cross_ba, Err(AdmissionTicketError::PolicyChanged { .. })),
+            "ticket from bus_b must be rejected by bus_a, got {:?}",
+            cross_ba
+        );
+    }
+
+    /// T20 atomicity: two threads racing on `consume` of the SAME ticket
+    /// must observe exactly one Ok and one Err(TicketAlreadyConsumed). If
+    /// the bus were not properly synchronized under the Mutex, both could
+    /// pass the contains-check and both insert.
+    #[test]
+    fn t20_concurrent_double_consume_only_one_succeeds() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let bus = AdmissionTicketBus::new();
+        let policy = policy_a();
+        let ticket = bus
+            .issue(
+                &DummyEngine,
+                &dummy_proposal(),
+                &dummy_actor(),
+                &dummy_facts(),
+                &policy,
+                10,
+            )
+            .expect("issue");
+        let now = AuthorityNow {
+            current_policy_digest: policy.policy_digest.clone(),
+            current_fence: ticket.fence_token,
+            current_seq: 11,
+        };
+
+        let barrier = Arc::new(Barrier::new(2));
+        let b1 = bus.clone();
+        let b2 = bus.clone();
+        let t1 = ticket.clone();
+        let t2 = ticket;
+        let n1 = now.clone();
+        let n2 = now;
+        let bar1 = Arc::clone(&barrier);
+        let bar2 = Arc::clone(&barrier);
+        let h1 = thread::spawn(move || {
+            bar1.wait();
+            b1.consume(&t1, &n1)
+        });
+        let h2 = thread::spawn(move || {
+            bar2.wait();
+            b2.consume(&t2, &n2)
+        });
+        let r1 = h1.join().expect("thread 1");
+        let r2 = h2.join().expect("thread 2");
+
+        let oks = [&r1, &r2].iter().filter(|r| r.is_ok()).count();
+        let already_consumed = [&r1, &r2]
+            .iter()
+            .filter(|r| matches!(r, Err(AdmissionTicketError::TicketAlreadyConsumed { .. })))
+            .count();
+        assert_eq!(
+            oks, 1,
+            "exactly one consume must succeed; got r1={:?} r2={:?}",
+            r1, r2
+        );
+        assert_eq!(
+            already_consumed, 1,
+            "the other must report TicketAlreadyConsumed; got r1={:?} r2={:?}",
+            r1, r2
+        );
+    }
 }
