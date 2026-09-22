@@ -61,7 +61,8 @@ pub struct VerifyArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub format: OutputFormat,
 
-    /// Static-provider mode: path to the real `cognicode-mcp` binary.
+    /// Static-provider mode: path to the static MCP server binary
+    /// (currently `cognicode-mcp`; the adapter spawns it via stdio JSON-RPC).
     /// When set together with `--domain static_provider`, the claim
     /// is evaluated against a live provider observation (AIW-S1).
     #[arg(long)]
@@ -169,7 +170,7 @@ fn run_verify_static_provider(args: VerifyArgs) -> CommandOutput {
         Some(b) if !b.is_empty() => b.to_string(),
         _ => {
             return crate::failure(
-                "verify: --domain static_provider requires --provider-bin <cognicode-mcp path>"
+                "verify: --domain static_provider requires --provider-bin <path-to-MCP-server-binary>"
                     .to_string(),
             );
         }
@@ -324,7 +325,7 @@ fn run_verify_runtime_provider(args: VerifyArgs) -> CommandOutput {
         Some(b) if !b.is_empty() => b.to_string(),
         _ => {
             return crate::failure(
-                "verify: --domain runtime_provider requires --provider-bin <chronos-mcp path>"
+                "verify: --domain runtime_provider requires --provider-bin <path-to-MCP-server-binary>"
                     .to_string(),
             );
         }
