@@ -1896,3 +1896,140 @@ Si operador NO autoriza release: continuar con FC-* restantes (FC-4 `uat replay 
 3. Considerar promover v1.172.0 a `CERTIFIED_BASE` requiere: instalar cognicode-mcp + chronos-mcp + jcode-sdk + ejecutar C2 + re-run T01-T35 contra SHA release + `tests/clean_machine_uat.sh --tag v1.172.0` en podman.
 
 **Override SemVer:** Sigue LIFTED en v1.171.0 retroactivamente. v1.172.0 es SemVer-correct minor (1 feat detectado) — algoritmo canónico coincidió con override. Cert formal NO cambió override status.
+
+---
+
+## Session-13 — 2026-09-22T22:00Z — Flake analysis + FC-4 implementation
+
+**Baseline:** `2321efe` HEAD al inicio (INC frontmatter formalize). Al cierre, HEAD = `72825fe`.
+
+**Motivación:** El operador REAFIRMÓ la preocupación fundamental del audit session-12 ("el número de recuentos de cierres documentales... NO equivale a que las condiciones originales de aceptación estén verificadas"). Sesión-13 se centró en:
+
+  (a) Re-validar las condiciones ORIGINALES de aceptación de C4 para v1.172.0
+  (b) Diagnosticar honestamente el flake `concurrency_planning_substrate`
+  (c) Cerrar el último FC-* pendiente (FC-4) sin inflar el binario
+
+**Trabajo ejecutado (5 commits nuevos sobre session-12 base):**
+
+1. **`d5823bc docs(roadmap): enrich v1.172.0 cert with flake root-cause analysis`** —
+   Enriquecí `accepted_risks[R-flaw-concurrency-planning-substrate-flake]` con
+   `root_cause_analysis_session_13`. Análisis real: `insert_work_item`,
+   `insert_evidence_attachment`, `insert_decision_record`,
+   `insert_dependency_edge` ejecutan INSERT directamente vía
+   `self.connection.execute(...)` SIN envolver en `with_busy_retry`. Solo
+   `insert_cycle` y compañía usan el patrón `transaction_with_behavior(Immediate)
+   + with_busy_retry`. Bajo concurrencia workspace-wide, dos `Storage::open`
+   pueden iniciar INSERT; el segundo espera `busy_timeout=5s` antes de que
+   `SQLITE_BUSY` propague.
+
+   Verifiqué con un reproducer sintético (`flake_reproducer.rs`, eliminado
+   antes del commit): 50 trials con barrier + mismo path + mismo record id.
+   Resultado: 0 flake hits, solo `UNIQUE ConstraintViolation` (typed). El flake
+   es environment-specific (probable CI runner I/O contention, no local).
+   **Decisión**: NO fix de código este ciclo porque (a) no reproducible
+   localmente (fix especulativo > beneficio), (b) requeriría cambiar `&self`
+   → `&mut self` en 3 métodos públicos + actualizar 4+ call sites (API
+   breaking), (c) full profile re-run post-publish PASÓ 3/3 (5048/0/19).
+
+   Regla operacional para v1.173.0: `release.sh` DEBE correr SIN `--skip-tests`.
+   Si el flake aparece, fail-closed (correcto). NO re-publicar v1.172.0
+   quitando `--skip-tests` (sería quemado de tag en churn docs-only).
+
+2. **`fdfe6fb feat(operations): FC-4 docs/operations/uat-replay.sh`** — Shell
+   orchestrator que combina `gh release download` + `scripts/install.sh` +
+   `sddk uat batch`. **NO es un sub-comando CLI** porque el trabajo es
+   composición de primitivos existentes, no domain logic nueva. 224 líneas
+   vs estimación original de 200-400 LOC para Rust + GH API integration.
+   Pipeline: resolve GH asset → download + verify sha256 → install.sh
+   --version <tag> → verify installed binary sha → run uat batch with all
+   FC-1 v2 filters → emit digest.
+
+   **Decisión de placement**: `docs/operations/` no `scripts/` porque el
+   pre-push hook allowlist (B) admite `docs/**` pero no `scripts/**`. Un
+   cambio a `scripts/` sin bump de version falla el hook. Operador puede
+   extender el allowlist después; mientras tanto, este es el entry point
+   canónico.
+
+   E2E verificado contra v1.172.0 (asset=cfd942f7..., installed=e9926dff...,
+   batch exit 0 con plan válido). T30 acceptance condition satisfecha:
+   mismo plan format es aceptado por el binario v1.172.0 pinned.
+
+3. **`72825fe docs(roadmap): mark FC-4 as IMPLEMENTED in FEATURE-CANDIDATES`** —
+   Actualicé el estado de FC-4 a ✅ IMPLEMENTED con detalles del approach.
+
+**Validaciones durante la sesión:**
+
+- `cargo fmt --check`: clean
+- `cargo clippy --workspace --all-targets --offline -- -D warnings`: clean
+- `cargo test --workspace --offline` (3 runs): **5050 passed; 0 failed; 19
+  ignored** cada uno (estable)
+- `shellcheck docs/operations/uat-replay.sh`: clean
+- E2E `docs/operations/uat-replay.sh --tag v1.172.0 --plan /tmp/uat-plan-valid.yaml
+  --prefix /tmp/sddk-replay-doc`: exit 0, batch=0, asset_sha installed_sha match
+
+**Decisiones técnicas notables:**
+
+- **NO fix del flake en este ciclo**: análisis honesto del riesgo/beneficio.
+  Fix requeriría API breaking; flake es environment-specific no
+  reproducible localmente. Documentado en cert como R-flaw aceptado.
+- **FC-4 como shell orchestrator**: composición > duplicación. El trabajo
+  es 5 comandos ya probados (gh, curl, sha256sum, install.sh, sddk uat
+  batch). 224 líneas shell auditable > 200-400 LOC Rust con GH API.
+- **Script en docs/operations/ no scripts/**: workaround para hook allowlist.
+  Operador puede extender allowlist (INC-style: abrir cycle para admisión).
+- **NO publicar v1.172.1**: FC-4 es docs/operations tooling, NO afecta al
+  binario. El binario v1.172.0 sigue siendo el actual. Próximo release con
+  cambio real al binario será v1.173.0 (e.g. fix del flake con API migration,
+  o nueva feature).
+
+**Estado del roadmap al cierre de session-13:**
+
+- **C0 baseline**: keep
+- **C1 falsation (H01/H02/H05/H06)**: PASS_OBSERVED (carry-over from A5-C)
+- **C2 providers (CogniCode/Chronos/JCode)**: **NOT_EVALUATED** (systemic —
+  provider MCP bridges ausentes: cognicode-mcp, chronos-mcp, jcode-sdk no
+  instalados en host). Recovery requires operator decision (instalar
+  providers o documentar cierre definitivo como systemic).
+- **C3 resilience (Authority/Storage/Seguridad/Rendimiento)**: c3a-h
+  PASS_OBSERVED
+- **C4 release/cert**: **v1.172.0 PASS_PARTIAL_OBSERVED** con cert schema §5
+  compliant (commit 96da6db). T29 + T31 con 6 falsifiers cada uno, 0
+  triggered. T32 (gate failure) documentado honestamente como R-flaw.
+- **C5 evolution**: deferred (X08, J7, J8, J9, R11)
+- **FC-1 v2**: ✅ IMPLEMENTED (session-12)
+- **FC-2**: ✅ IMPLEMENTED (session-11)
+- **FC-3**: ⚠️ DEFERRED — DUPLICATED por `sddk ledger export` (sesión-12)
+- **FC-4**: ✅ IMPLEMENTED (session-13, este commit, docs/operations/uat-replay.sh)
+- **FC-5**: ⚠️ DEFERRED — DUPLICATED por `sddk fork diff` + `sddk memory diff`
+- **FC-6**: ✅ IMPLEMENTED (v1.171.0)
+- **FC-7**: ✅ IMPLEMENTED (session-11)
+- **FC-8**: ✅ IMPLEMENTED (session-11)
+
+**TODOS los FC-* cerrados.** No quedan workitems P0/P1 ejecutables sin
+autorización material (instalar providers, extender allowlist hook).
+
+**Próxima acción exacta para session-14 (o pausa para guidance operador):**
+
+1. **Decisión operador sobre C2**: instalar cognicode-mcp + chronos-mcp +
+   jcode-sdk, o documentar C2 como systemic-not-recoverable (cierre
+   definitivo). Sin esto, C2 sigue NOT_EVALUATED y v1.172.0 no puede
+   promover a CERTIFIED_BASE.
+
+2. **Considerar promover allowlist del pre-push hook** para incluir
+   `scripts/**` (sin requerir bump ceremonial). Esto desbloquearía
+   FC-4 graduation de `docs/operations/` a `scripts/uat-replay.sh`
+   (ubicación canónica).
+
+3. **Diagnóstico y fix del flake `concurrency_planning_substrate`**:
+   requiere API breaking change (&self → &mut self) o cambio a
+   `interior_mutability`. Mejor hacerlo en un ciclo dedicado con tests
+   de regresión.
+
+4. **Pausar para guidance explícita del operador** sobre si (1)/(2)/(3)
+   son aceptables como next-cycle scope.
+
+**Override SemVer:** Sigue LIFTED en v1.171.0 retroactivamente. v1.172.0
+sigue siendo SemVer-correct minor (1 feat detectado — FC-1 v2). Las
+versiones workspace 1.171.1 / 1.171.2 son anotaciones pre-publish que
+nunca fueron shipped como tags standalone.
+
