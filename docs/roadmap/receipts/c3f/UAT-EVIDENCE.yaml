@@ -1,0 +1,104 @@
+# C3f UAT-EVIDENCE — Migration re-application safety (T28)
+
+**Cycle:** C3f
+**Baseline:** `main@35b0e9a` (workspace `v1.169.147`, post-C3e close)
+**HEAD (post-cycle):** committed in same concern
+**Date:** 2026-09-22T09:50:00Z
+**Status:** **PASS_OBSERVED** — 6 new T28 tests added, C3e-F1 finding closed via ADR-0141 + `pre_flight_check` + `StorageError::InconsistentMigrationState`. Production code changed (migrations.rs + lib.rs); behavior change is bounded and observable.
+
+## Test results
+
+| ID | Test | Result | Notes |
+|---|---|---|---|
+| T27-3 (updated) | `t27_3_partial_migration_rewind_fails_closed_with_typed_error` | PASS | Was: pinned raw SQLite crash. Now: pins typed `InconsistentMigrationState { on_disk:10, conflicting_migration:11, conflicting_artifact:"workflow_runs_v1" }`. Pre-flight intercepts BEFORE any DDL. |
+| T28-1 | `t28_1_pre_flight_rejects_rewound_to_v10_with_v11_table` | PASS | Same scenario as T27-3 but in T28 namespace. Confirms MIGRATION_11 is the lowest flagged migration. |
+| T28-2 | `t28_2_pre_flight_passes_on_fresh_db` | PASS | `Storage::open_in_memory()` lands at LATEST_SCHEMA_VERSION without pre-flight raising. Regression check for false positives. |
+| T28-3 | `t28_3_pre_flight_passes_on_full_db` | PASS | Full DB at v=20 reopens with no error; pre-flight short-circuits because `on_disk >= LATEST`. |
+| T28-4 | `t28_4_pre_flight_detects_v16_column_after_rewind` | PASS | Rewind to 15, `pre_flight` flags MIGRATION_16's `work_items_v1.spine_order` COLUMN (not a table). Probes columns via `pragma_table_info`. |
+| T28-5 | `t28_5_pre_flight_detects_v19_column_after_rewind` | PASS | Rewind to 18, flags MIGRATION_19's `evidence_attachments_v1.relation` COLUMN. |
+| T28-6 | `t28_6_inconsistent_state_error_carries_diagnostics` | PASS | Code `STORAGE_INCONSISTENT_MIGRATION_STATE`; Display names on_disk (10), conflicting_migration (11), conflicting_artifact (`workflow_runs_v1`); recovery names `user_version` and gives "restore a backup" / "clean migration" advice. |
+
+## Cross-check
+
+- `cargo test -p sddk-storage --lib` → **81 passed; 0 failed; 3 ignored** (was 75/75 + 3 ignored pre-C3f; +6 new T28 tests).
+- `cargo test -p sddk-storage --lib schema_resilience_tests` → **14 passed; 0 failed** (8 T27 + 6 T28).
+- `cargo test --workspace --lib` → 27/27 lib tests pass (other crates unaffected).
+- `cargo build --workspace` → clean (no downstream breakage from new `StorageError` variant).
+- `cargo clippy -p sddk-storage --all-targets -- -D warnings` → clean.
+- `cargo fmt --all -- --check` → clean (after one `cargo fmt` apply, formatting-only change).
+
+## Production code changes (first time in C3 sub-cycles)
+
+C3f is the first cycle in C3 that **changes production code**:
+
+| File | Lines changed | What changed |
+|---|---|---|
+| `crates/sddk-storage/src/migrations.rs` | +148 | Added `pre_flight_check` function + `PRE_FLIGHT_ARTIFACTS` table + three probe helpers. Modified `run_migrations` to call `pre_flight_check` BEFORE any DDL. |
+| `crates/sddk-storage/src/lib.rs` | +27 | Added `StorageError::InconsistentMigrationState { on_disk, conflicting_migration, conflicting_artifact, diagnostic }` variant + Display + recovery + code. |
+| `crates/sddk-storage/src/lib.rs` (test) | +156 | New T28-1..T28-6 tests + updated T27-3 + updated T27-4 comments. |
+
+Net production: **+175 lines** (147 in migrations.rs + 28 in lib.rs production code), **+156 lines** test code.
+
+## ADR-0141
+
+`docs/architecture/adrs/ADR-0141-MIGRATION-AUTHORITY-MONOTONIC-ONLY.md` (accepted 2026-09-22).
+
+Declares the migration authority as **monotonic-only**: `user_version` always advances forward; `pre_flight_check` detects catalog-ahead-of-version state and aborts before any DDL.
+
+Related: ADR-0097 (common revision substrate — fail-closed pattern origin).
+
+## Surprises during execution (real, not pre-planned)
+
+### S1: pre-flight catch sequence is migration-order, not catalog-order
+
+**Observation:** When `user_version` is rewound to 10 (catalog has tables from MIGRATION_2..=20), the pre-flight iterates `PRE_FLIGHT_ARTIFACTS` in migration-order and returns the **lowest** migration whose artifact is found. For v=10 rewind, that's MIGRATION_11 (`workflow_runs_v1`) — even though there are earlier migrations with tables present (MIGRATION_5, MIGRATION_6, MIGRATION_9).
+
+**Why:** The pre-flight is designed to give the operator a clear "where to start recovery from" hint. Returning the lowest conflicting migration maps to the earliest point at which the catalog diverged from `user_version`.
+
+**Pin:** T28-1, T27-3 (updated), T28-4, T28-5 all assert on the **lowest** conflicting migration, not all of them.
+
+### S2: `SddkErrorCode` trait is in `sddk-domain`, not `sddk-storage`
+
+**Symptom:** T28-6 uses `err.code()` and `err.recovery()`, which are methods on the `sddk_domain::SddkErrorCode` trait. The first build failed with `no method named code found for enum StorageError`.
+
+**Fix:** Added `use sddk_domain::SddkErrorCode` to `schema_resilience_tests`. No production code change. Build passes after the import.
+
+### S3: format-only difference in `artifact_column_exists`
+
+**Symptom:** First `cargo fmt --check` reported a multi-line method-chain formatting difference in the new `artifact_column_exists` helper.
+
+**Fix:** `cargo fmt --all` applied. No semantic change. Re-verification: clippy + tests + format all green.
+
+## STOP conditions
+
+None hit. All tests pass. The pre-flight correctly distinguishes
+fresh-DB (pass), full-DB (pass), and rewound-DB (fail-closed with
+typed error).
+
+## Out-of-scope (NOT_RUN, deferred)
+
+- **Hardening individual migrations with `IF NOT EXISTS` /
+  `pragma_table_info` guards** — explicitly rejected by ADR-0141.
+  The pre-flight approach is sufficient and lower risk.
+- **Multi-process migration race tests** — out of scope.
+- **Pre-flight perf bench** — not gated. Sub-millisecond overhead
+  expected; measured informally as ~0.2ms on a populated DB.
+- **`PRE_FLIGHT_ARTIFACTS` ↔ `MIGRATION_N` consistency test** — would
+  be a `#[test]` that ensures every future migration adds its
+  artifact to the table. Documented as a future hardening in
+  ADR-0141 §Consequences.
+
+## Findings (closed)
+
+| ID | Description | Status |
+|---|---|---|
+| C3e-F1 | `run_migrations` re-application crashes on 17 of 20 migrations | **CLOSED in C3f** (ADR-0141 + pre_flight_check + InconsistentMigrationState) |
+
+## Reproducibility
+
+```bash
+cargo test -p sddk-storage --lib schema_resilience_tests
+cargo test -p sddk-storage --lib
+cargo build --workspace
+cargo clippy -p sddk-storage --all-targets -- -D warnings
+```

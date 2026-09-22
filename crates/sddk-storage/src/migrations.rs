@@ -1,11 +1,22 @@
 pub(crate) const LATEST_SCHEMA_VERSION: i32 = 20;
 
 /// Runs all pending migrations on an open SQLite connection.
+///
+/// Per ADR-0141 (Storage migration authority is monotonic-only;
+/// inconsistent state fails closed), this function calls
+/// [`pre_flight_check`] BEFORE executing any DDL. If the catalog is
+/// inconsistent with `user_version` (i.e., a future migration's DDL
+/// artifact exists while `user_version` is older), `run_migrations`
+/// returns `StorageError::InconsistentMigrationState` and the DDL is
+/// not executed.
 pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), super::StorageError> {
     use rusqlite::TransactionBehavior;
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(super::StorageError::Database)?;
+    // C3f / ADR-0141: fail-closed pre-flight. If the catalog is "ahead"
+    // of `user_version`, refuse to proceed BEFORE any DDL.
+    pre_flight_check(conn, version)?;
     if version < 1 {
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -871,3 +882,175 @@ DROP TRIGGER IF EXISTS ledger_events_no_delete;
 DROP INDEX IF EXISTS ledger_events_cycle_sequence_idx;
 DROP TABLE IF EXISTS ledger_events;
 "#;
+
+// =====================================================================
+// C3f / ADR-0141 — Migration authority pre-flight check.
+//
+// The migration authority is **monotonic-only**: `user_version` only
+// moves forward. If the on-disk catalog contains DDL artifacts that
+// correspond to a migration > `user_version`, the catalog is "ahead"
+// of the recorded version, and re-applying migrations would crash with
+// raw SQLite errors (e.g. "duplicate column: spine_order").
+//
+// `pre_flight_check` detects this state BEFORE any DDL is executed and
+// returns `StorageError::InconsistentMigrationState` with a diagnostic
+// naming the conflicting migration and artifact. This replaces the
+// raw SQLite failure mode with a typed, recoverable error.
+//
+// The check covers the 14 un-guarded migrations (1, 2, 3, 5, 6, 9, 11,
+// 12, 13, 14, 15, 16, 17, 18, 19). Migrations 4, 7, 10, 8, 20 are
+// either intrinsically safe (4) or have their own guards (7, 10) or
+// are no-op / DROP-only (8, 20).
+// =====================================================================
+
+/// Table of artifacts that must NOT exist at `user_version`. Each row
+/// is `(migration_number, artifact_kind, artifact_name)`. The artifact
+/// probe in `pre_flight_check` consults this table.
+const PRE_FLIGHT_ARTIFACTS: &[(i32, &str, &str)] = &[
+    // (migration, kind, name) — `kind` is "table" or "column".
+    // Migration 1: projects table.
+    (1, "table", "projects"),
+    // Migration 2: gate_receipts table.
+    (2, "table", "gate_receipts"),
+    // Migration 3: seq column on gate_receipts (added by ALTER).
+    (3, "column", "gate_receipts.seq"),
+    // Migration 5: events_v1 table.
+    (5, "table", "events_v1"),
+    // Migration 6: projection_checkpoints_v1 table.
+    (6, "table", "projection_checkpoints_v1"),
+    // Migration 9: forks_v1 table.
+    (9, "table", "forks_v1"),
+    // Migration 11: workflow_runs_v1 table.
+    (11, "table", "workflow_runs_v1"),
+    // Migration 12: incs_v1 table.
+    (12, "table", "incs_v1"),
+    // Migration 13: trigger on workflow_runs_v1 (no_update).
+    (13, "trigger", "workflow_runs_v1_no_update"),
+    // Migration 14: work_items_v1 table.
+    (14, "table", "work_items_v1"),
+    // Migration 15: evidence_attachments_v1 table.
+    (15, "table", "evidence_attachments_v1"),
+    // Migration 16: spine_order column on work_items_v1.
+    (16, "column", "work_items_v1.spine_order"),
+    // Migration 17: workflow_run_events_v1 table.
+    (17, "table", "workflow_run_events_v1"),
+    // Migration 18: backlog_items_v1 table.
+    (18, "table", "backlog_items_v1"),
+    // Migration 19: relation column on evidence_attachments_v1.
+    (19, "column", "evidence_attachments_v1.relation"),
+    // Migrations 4, 7, 10, 8, 20 are intentionally absent: 4 is
+    // intrinsically safe (RENAME+recreate), 7 and 10 have defensive
+    // guards, 8 is no-op, 20 is DROP-only.
+];
+
+/// Pre-flight check for inconsistent schema state.
+///
+/// Scans the SQLite catalog for DDL artifacts that correspond to
+/// migrations strictly greater than `on_disk`. If any are found,
+/// returns `StorageError::InconsistentMigrationState` with the
+/// lowest-numbered conflicting migration.
+///
+/// Returns `Ok(())` when the catalog is consistent with `on_disk`.
+///
+/// This function does NOT execute any DDL — it is a pure read.
+pub(crate) fn pre_flight_check(
+    conn: &rusqlite::Connection,
+    on_disk: i32,
+) -> Result<(), super::StorageError> {
+    if on_disk >= LATEST_SCHEMA_VERSION {
+        // No migration artifacts to check; the DB is at or beyond LATEST.
+        // (`> LATEST` is caught by `schema_guard` before this point.)
+        return Ok(());
+    }
+    for (migration, kind, name) in PRE_FLIGHT_ARTIFACTS {
+        if *migration <= on_disk {
+            continue;
+        }
+        let exists = match *kind {
+            "table" => artifact_table_exists(conn, name)?,
+            "column" => artifact_column_exists(conn, name)?,
+            "trigger" => artifact_trigger_exists(conn, name)?,
+            other => {
+                return Err(super::StorageError::InconsistentMigrationState {
+                    on_disk,
+                    conflicting_migration: *migration,
+                    conflicting_artifact: format!("<unknown-kind:{other}:{name}>"),
+                    diagnostic: format!("pre_flight encountered unknown artifact kind '{other}'"),
+                });
+            }
+        };
+        if exists {
+            return Err(super::StorageError::InconsistentMigrationState {
+                on_disk,
+                conflicting_migration: *migration,
+                conflicting_artifact: (*name).to_string(),
+                diagnostic: format!(
+                    "catalog contains {kind} '{name}' but user_version is {on_disk}; \
+                     migration {migration} has not been recorded as applied. \
+                     Recovery: either restore a backup where the catalog \
+                     matches user_version, or fully migrate forward with \
+                     user_version = {latest}.",
+                    kind = kind,
+                    name = name,
+                    on_disk = on_disk,
+                    migration = migration,
+                    latest = LATEST_SCHEMA_VERSION,
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn artifact_table_exists(
+    conn: &rusqlite::Connection,
+    name: &str,
+) -> Result<bool, super::StorageError> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            [name],
+            |_row| Ok(true),
+        )
+        .unwrap_or(false);
+    Ok(exists)
+}
+
+fn artifact_trigger_exists(
+    conn: &rusqlite::Connection,
+    name: &str,
+) -> Result<bool, super::StorageError> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?1",
+            [name],
+            |_row| Ok(true),
+        )
+        .unwrap_or(false);
+    Ok(exists)
+}
+
+fn artifact_column_exists(
+    conn: &rusqlite::Connection,
+    qualified_name: &str,
+) -> Result<bool, super::StorageError> {
+    // `qualified_name` has the form "table.column".
+    let (table, column) = qualified_name.split_once('.').ok_or_else(|| {
+        super::StorageError::InconsistentMigrationState {
+            on_disk: -1,
+            conflicting_migration: -1,
+            conflicting_artifact: qualified_name.to_string(),
+            diagnostic: format!(
+                "pre_flight: column artifact '{qualified_name}' is not qualified with a table"
+            ),
+        }
+    })?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?1) WHERE name=?2",
+            [table, column],
+            |_row| Ok(true),
+        )
+        .unwrap_or(false);
+    Ok(exists)
+}

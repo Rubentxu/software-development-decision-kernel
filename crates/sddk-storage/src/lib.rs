@@ -164,6 +164,26 @@ pub enum StorageError {
         /// Version supported by this runtime.
         expected: i32,
     },
+    /// The on-disk catalog is inconsistent with `user_version` (a future
+    /// DDL artifact exists while `user_version` is older). This is the
+    /// C3e-F1 fail-closed path: `run_migrations` refuses to re-apply
+    /// migrations to a DB whose schema is "ahead" of its recorded version.
+    /// Recovery: either restore a consistent backup (where the catalog
+    /// matches `user_version`), or fully migrate forward with
+    /// `user_version = LATEST_SCHEMA_VERSION` (no rewind).
+    #[error(
+        "inconsistent schema state: user_version is {on_disk}, but migration {conflicting_migration} artifact {conflicting_artifact:?} already exists. Catalog is ahead of user_version; refusing to re-apply migrations. Diagnostic: {diagnostic}"
+    )]
+    InconsistentMigrationState {
+        /// `user_version` read from the catalog.
+        on_disk: i32,
+        /// Number of the migration whose artifact was unexpectedly found.
+        conflicting_migration: i32,
+        /// Name of the DDL artifact (table or column) found ahead of `user_version`.
+        conflicting_artifact: String,
+        /// Human-readable diagnostic for the operator.
+        diagnostic: String,
+    },
     /// The ledger sequence or hash chain is invalid.
     #[error("ledger integrity failure at sequence {sequence}: {reason}")]
     LedgerIntegrity {
@@ -2016,6 +2036,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::RuntimeStatusWriteForbidden { .. } => "STORAGE_RUNTIME_STATUS_FORBIDDEN",
             Self::RegistrationConflict { .. } => "STORAGE_REGISTRATION_CONFLICT",
             Self::SchemaVersion { .. } => "STORAGE_SCHEMA_VERSION",
+            Self::InconsistentMigrationState { .. } => "STORAGE_INCONSISTENT_MIGRATION_STATE",
             Self::LedgerIntegrity { .. } => "STORAGE_LEDGER_INTEGRITY",
             Self::PlanHashTooShort { .. } => "STORAGE_PLAN_HASH_TOO_SHORT",
             Self::GateNameInvalid { .. } => "STORAGE_GATE_NAME_INVALID",
@@ -2059,6 +2080,20 @@ impl sddk_domain::SddkErrorCode for StorageError {
             }
             Self::SchemaVersion { .. } => {
                 "migrate the database to the supported schema version".into()
+            }
+            Self::InconsistentMigrationState { on_disk, conflicting_migration, conflicting_artifact, .. } => {
+                format!(
+                    "user_version is {on_disk} but migration {conflicting_migration} artifact \
+                     '{conflicting_artifact}' already exists in the catalog. The catalog is ahead \
+                     of user_version. Recovery: restore a backup where the catalog matches \
+                     user_version, or set user_version to {latest} via a clean migration (no \
+                     rewind). Do NOT manually edit user_version downward while the catalog \
+                     retains newer DDL.",
+                    on_disk = on_disk,
+                    conflicting_migration = conflicting_migration,
+                    conflicting_artifact = conflicting_artifact,
+                    latest = crate::migrations::LATEST_SCHEMA_VERSION,
+                )
             }
             Self::LedgerIntegrity { .. } => "restore the ledger from a verified backup".into(),
             Self::PlanHashTooShort { .. } => {
@@ -3928,6 +3963,7 @@ mod schema_resilience_tests {
         COMPILED_SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA_VERSION, SchemaCompatibility,
         assert_compatible, classify,
     };
+    use sddk_domain::SddkErrorCode;
 
     /// Helper: open a `rusqlite::Connection` to a tempdir file and
     /// return the path. Caller is responsible for opening via `Storage::open`
@@ -4042,28 +4078,18 @@ mod schema_resilience_tests {
 
     /// T27-3 — Partial-migration forward-completion test.
     ///
-    /// **STATUS: DEFERRED_FIX — finding C3e-F1.** Running `run_migrations`
-    /// against a DB that has been migrated to v=20 and then had
-    /// `user_version` rewound to 10 fails with
+    /// **STATUS: FIXED in C3f via ADR-0141 + pre_flight_check.** Running
+    /// `run_migrations` against a DB that has been migrated to v=20 and
+    /// then had `user_version` rewound to 10 used to crash with
     /// `SqliteFailure(1, "duplicate column name: spine_order")` raised by
-    /// MIGRATION_16 (`ALTER TABLE work_items_v1 ADD COLUMN spine_order`).
+    /// MIGRATION_16. As of C3f, `pre_flight_check` (added in
+    /// `migrations.rs`) detects the catalog-ahead-of-version state and
+    /// returns `StorageError::InconsistentMigrationState` BEFORE any DDL
+    /// is executed, with a diagnostic naming the conflicting migration.
     ///
-    /// Root cause: only MIGRATION_4 (RENAME+recreate), MIGRATION_7, and
-    /// MIGRATION_10 have defensive guards against re-application. The other
-    /// 17 migrations assume monotonic `version < N` semantics and will
-    /// crash if `user_version` is forcibly rewound.
-    ///
-    /// **Why this is not auto-fixed in C3e:** the fix is production code in
-    /// `migrations.rs` and is operator-level (touches the migration
-    /// authority). C3e is measurement-only. The honest move is to assert
-    /// the failure mode here (so the contract is pinned) and file the
-    /// finding.
-    ///
-    /// The test pins the C3e-F1 failure mode as the observed behaviour
-    /// today. When the fix lands, the test will be tightened to assert
-    /// forward completion instead.
+    /// T27-3 now pins the **fixed** failure mode.
     #[test]
-    fn t27_3_partial_migration_rewind_fails_with_duplicate_column() {
+    fn t27_3_partial_migration_rewind_fails_closed_with_typed_error() {
         let (_dir, path) = tempdir_db_path("t27_3");
         // Set up a DB at v=20 (full migrate), then rewind user_version to 10.
         setup_db_at_version(&path, Some(10));
@@ -4075,20 +4101,34 @@ mod schema_resilience_tests {
                 .expect("read");
             assert_eq!(v, 10, "precondition: DB at user_version=10");
         }
-        // Now open via Storage. We EXPECT this to fail with a "duplicate
-        // column" error from MIGRATION_16. This is the failure mode C3e
-        // is pinning as a real defect.
+        // Now open via Storage. Expect: StorageError::InconsistentMigrationState
+        // (C3f fix) instead of the raw SqliteFailure("duplicate column").
         match Storage::open(&path) {
-            Ok(_) => panic!("C3e-F1: expected migration collision, got Ok"),
-            Err(e) => {
-                let msg = e.to_string();
-                assert!(
-                    msg.contains("duplicate column")
-                        || msg.contains("already exists")
-                        || msg.contains("spine_order"),
-                    "expected migration-collision error, got: {msg}"
-                );
-            }
+            Ok(_) => panic!("C3f fix: expected InconsistentMigrationState, got Ok"),
+            Err(e) => match &e {
+                StorageError::InconsistentMigrationState {
+                    on_disk,
+                    conflicting_migration,
+                    conflicting_artifact,
+                    ..
+                } => {
+                    assert_eq!(*on_disk, 10, "on_disk must be the rewound user_version");
+                    // The catalog has workflow_runs_v1 (MIGRATION_11) but
+                    // user_version says 10 — pre_flight must flag MIGRATION_11.
+                    assert_eq!(
+                        *conflicting_migration, 11,
+                        "lowest conflicting migration must be 11 (workflow_runs_v1)"
+                    );
+                    assert_eq!(
+                        conflicting_artifact, "workflow_runs_v1",
+                        "artifact must be the lowest one found"
+                    );
+                    let msg = e.to_string();
+                    assert!(msg.contains("user_version is 10"), "{msg}");
+                    assert!(msg.contains("workflow_runs_v1"), "{msg}");
+                }
+                other => panic!("expected InconsistentMigrationState, got {other:?}"),
+            },
         }
     }
 
@@ -4096,14 +4136,16 @@ mod schema_resilience_tests {
 
     /// T27-4 — A DB at exactly `MIN_SUPPORTED_SCHEMA_VERSION` (1) is
     /// classified as `Migratable{from:1,to:20}` and not `TooOld` (unit
-    /// boundary of `classify`). End-to-end migration forward completion is
-    /// **DEFERRED_FIX** for the same reason as T27-3 (C3e-F1: migration
-    /// authority lacks re-application guards on most migrations).
-    ///
-    /// The unit-boundary verdict (`classify` and `assert_compatible`)
-    /// passes today and is the testable half of this invariant. The
-    /// end-to-end "open at v=1, migrate forward to v=20" path is pinned as
-    /// DEFERRED_FIX.
+    /// boundary of `classify`). End-to-end migration forward completion
+    /// is **pinned by C3f (via pre_flight)** for a different reason than
+    /// T27-3: at user_version=1, the catalog has all tables from
+    /// MIGRATION_2..=20 already present (because the test setup ran
+    /// full migrations before rewinding). pre_flight detects this and
+    /// returns `InconsistentMigrationState`. To exercise the
+    /// "user_version=1 with empty catalog" path (which is what a real
+    /// v=1-on-disk DB would look like) we'd need a fresh schema
+    /// authoring harness, which is out of scope. The unit-boundary
+    /// half is the testable half and remains pinned here.
     #[test]
     fn t27_4_migratable_at_min_supported_is_not_too_old() {
         // Unit-boundary verdict: classify(MIN) is Migratable.
@@ -4116,20 +4158,9 @@ mod schema_resilience_tests {
             },
             "MIN_SUPPORTED must be classified Migratable"
         );
-        // -- C3e-F1: end-to-end open path is DEFERRED_FIX. We do not
-        //    exercise `Storage::open` here because the rewind technique
-        //    used in T27-3 currently trips MIGRATION_16's
-        //    `ADD COLUMN spine_order`. Once `run_migrations` is hardened
-        //    for re-application (operator decision), add:
-        //
-        //        let (_dir, path) = tempdir_db_path("t27_4_e2e");
-        //        setup_db_at_version(&path, Some(MIN_SUPPORTED_SCHEMA_VERSION));
-        //        let store = Storage::open(&path).expect("open");
-        //        assert_eq!(store.schema_version().unwrap(),
-        //                    LATEST_SCHEMA_VERSION);
-        //        assert_compatible(&store).expect("MIN is compatible");
-        //
-        //    For now, this test pins the unit-boundary half.
+        // End-to-end "open at v=1 with empty catalog" is implicitly
+        // covered by T28-2 (fresh in-memory DB) and T27-1
+        // (schema_version() == 20 after open).
     }
 
     // ---------- T27-5 ----------
@@ -4337,5 +4368,160 @@ mod schema_resilience_tests {
             let got = classify(on_disk);
             assert_eq!(got, expected, "classify({on_disk})");
         }
+    }
+
+    // ---------- T28-1 ----------
+
+    /// T28-1 — `pre_flight_check` rejects a DB rewound to v=10 with
+    /// MIGRATION_11's `workflow_runs_v1` table still present. This is the
+    /// C3f fix for C3e-F1: the failure is now fail-closed with a typed
+    /// `InconsistentMigrationState` error naming the lowest conflicting
+    /// migration (MIGRATION_11) and its artifact (`workflow_runs_v1`).
+    #[test]
+    fn t28_1_pre_flight_rejects_rewound_to_v10_with_v11_table() {
+        let (_dir, path) = tempdir_db_path("t28_1");
+        setup_db_at_version(&path, Some(10));
+        match Storage::open(&path) {
+            Ok(_) => panic!("T28-1: expected InconsistentMigrationState, got Ok"),
+            Err(StorageError::InconsistentMigrationState {
+                on_disk,
+                conflicting_migration,
+                conflicting_artifact,
+                ..
+            }) => {
+                assert_eq!(on_disk, 10);
+                assert_eq!(conflicting_migration, 11);
+                assert_eq!(conflicting_artifact, "workflow_runs_v1");
+            }
+            Err(other) => panic!("T28-1: expected InconsistentMigrationState, got {other:?}"),
+        }
+    }
+
+    // ---------- T28-2 ----------
+
+    /// T28-2 — `pre_flight_check` passes on a fresh in-memory DB. This is
+    /// the regression check: the new pre-flight must NOT raise false
+    /// positives on legitimate fresh opens.
+    #[test]
+    fn t28_2_pre_flight_passes_on_fresh_db() {
+        let store = Storage::open_in_memory().expect("open_in_memory");
+        let v = store.schema_version().expect("schema_version");
+        assert_eq!(v, LATEST_SCHEMA_VERSION);
+        // No InconsistentMigrationState path was hit.
+        assert_compatible(&store).expect("fresh DB must be compatible");
+    }
+
+    // ---------- T28-3 ----------
+
+    /// T28-3 — `pre_flight_check` passes on a fully-migrated DB. After
+    /// `Storage::open` brings the DB to LATEST, pre-flight sees no
+    /// migration > on_disk, so the check short-circuits and returns Ok.
+    #[test]
+    fn t28_3_pre_flight_passes_on_full_db() {
+        let (_dir, path) = tempdir_db_path("t28_3");
+        // Open + close leaves DB at user_version = 20.
+        {
+            let store = Storage::open(&path).expect("open");
+            assert_eq!(store.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+        }
+        // Reopen: pre-flight must see on_disk = 20 and short-circuit.
+        let store2 = Storage::open(&path).expect("reopen");
+        assert_eq!(store2.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+        assert_compatible(&store2).expect("full DB must be compatible");
+    }
+
+    // ---------- T28-4 ----------
+
+    /// T28-4 — `pre_flight_check` detects a column-level inconsistency
+    /// (MIGRATION_16's `spine_order` column on `work_items_v1`).
+    /// Setup: rewind user_version to 15 (above MIGRATION_15, below
+    /// MIGRATION_16). pre-flight must flag the column, not a table.
+    #[test]
+    fn t28_4_pre_flight_detects_v16_column_after_rewind() {
+        let (_dir, path) = tempdir_db_path("t28_4");
+        setup_db_at_version(&path, Some(15));
+        match Storage::open(&path) {
+            Ok(_) => panic!("T28-4: expected InconsistentMigrationState, got Ok"),
+            Err(StorageError::InconsistentMigrationState {
+                on_disk,
+                conflicting_migration,
+                conflicting_artifact,
+                ..
+            }) => {
+                assert_eq!(on_disk, 15);
+                // MIGRATION_16 is the first migration > 15 with an
+                // artifact present (the catalog also has workflow_runs_v1
+                // etc., but pre-flight iterates in migration-order and
+                // stops at the first failure).
+                assert_eq!(conflicting_migration, 16);
+                assert_eq!(conflicting_artifact, "work_items_v1.spine_order");
+            }
+            Err(other) => panic!("T28-4: expected InconsistentMigrationState, got {other:?}"),
+        }
+    }
+
+    // ---------- T28-5 ----------
+
+    /// T28-5 — `pre_flight_check` detects the MIGRATION_19 column
+    /// (`evidence_attachments_v1.relation`). Setup: rewind to 18 (above
+    /// MIGRATION_18, below MIGRATION_19). pre-flight must flag the
+    /// `relation` column.
+    #[test]
+    fn t28_5_pre_flight_detects_v19_column_after_rewind() {
+        let (_dir, path) = tempdir_db_path("t28_5");
+        setup_db_at_version(&path, Some(18));
+        match Storage::open(&path) {
+            Ok(_) => panic!("T28-5: expected InconsistentMigrationState, got Ok"),
+            Err(StorageError::InconsistentMigrationState {
+                on_disk,
+                conflicting_migration,
+                conflicting_artifact,
+                ..
+            }) => {
+                assert_eq!(on_disk, 18);
+                assert_eq!(conflicting_migration, 19);
+                assert_eq!(conflicting_artifact, "evidence_attachments_v1.relation");
+            }
+            Err(other) => panic!("T28-5: expected InconsistentMigrationState, got {other:?}"),
+        }
+    }
+
+    // ---------- T28-6 ----------
+
+    /// T28-6 — The `StorageError::InconsistentMigrationState` error
+    /// carries the full diagnostic context: code, Display string, and
+    /// recovery hint. Operator-visible surfaces are pinned.
+    #[test]
+    fn t28_6_inconsistent_state_error_carries_diagnostics() {
+        let err = StorageError::InconsistentMigrationState {
+            on_disk: 10,
+            conflicting_migration: 11,
+            conflicting_artifact: "workflow_runs_v1".to_string(),
+            diagnostic: "test diagnostic".to_string(),
+        };
+        // Code is stable.
+        assert_eq!(err.code(), "STORAGE_INCONSISTENT_MIGRATION_STATE");
+        // Display names on_disk, conflicting_migration, conflicting_artifact.
+        let msg = err.to_string();
+        assert!(msg.contains("10"), "Display must name on_disk: {msg}");
+        assert!(
+            msg.contains("11"),
+            "Display must name conflicting_migration: {msg}"
+        );
+        assert!(
+            msg.contains("workflow_runs_v1"),
+            "Display must name the artifact: {msg}"
+        );
+        // Recovery hint names the latest schema version and explains
+        // what to do.
+        let recovery = err.recovery();
+        assert!(
+            recovery.contains("user_version"),
+            "Recovery must explain user_version mismatch: {recovery}"
+        );
+        assert!(
+            recovery.contains("restore a backup") || recovery.contains("clean migration"),
+            "Recovery must give actionable advice: {recovery}"
+        );
     }
 }

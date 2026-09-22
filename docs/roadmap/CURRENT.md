@@ -1,18 +1,18 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado:** C1 cerrado; C2 NOT_EVALUATED (3 sub-cycles systemic); C3a/b/c/d/e PASS_OBSERVED (Authority + Storage adversarial + Security canarios + Performance baseline + Schema resilience + finding C3e-F1). Actualizado: 2026-09-22T09:29:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
+**Estado:** C1 cerrado; C2 NOT_EVALUATED (3 sub-cycles systemic); C3a/b/c/d/e/f PASS_OBSERVED (Authority + Storage adversarial + Security canarios + Performance baseline + Schema resilience + Migration re-application safety, ADR-0141). C3e-F1 closed. Actualizado: 2026-09-22T09:58:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@<HEAD post-C3e>` (session-11 C3e close) consultado 2026-09-22T09:29Z; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.147` (Cargo.toml) — bump desde 1.169.146 por C3e tests (pre-push hook exige bump real para código modificado) |
-| Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); workspace v1.169.147 NO está publicado (operator-side) |
-| Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a/b/c/d/e PASS_OBSERVED` + 75/75 storage verde + 3 microbenchmarks observados + 8 T27 schema-resilience tests verdes + finding C3e-F1 (DEFERRED_FIX). C3 completo; siguiente = C4 release o C3f hardening. |
+| Fuente de la fotografía | `main@<HEAD post-C3f>` (session-11 C3f close) consultado 2026-09-22T09:58Z; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.148` (Cargo.toml) — bump desde 1.169.147 por C3f (production code change: pre_flight_check + InconsistentMigrationState) |
+| Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); workspace v1.169.148 NO está publicado (operator-side) |
+| Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a/b/c/d/e/f PASS_OBSERVED` + 81/81 storage verde + 3 microbenchmarks + 14 schema-resilience tests + ADR-0141 closes C3e-F1. C3 COMPLETO. Siguiente = C4 release cut (operator-side). |
 | Estado PRs abiertos | Ninguno. |
-| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a → `7a5388a` C3b → `edaea67` reconcile C3b → `775ec93` C3c → `e308ddb` reconcile C3c → `d039457` C3d → `29fce83` reconcile C3d → **`<HEAD post-C3e>` C3e**. **All local; pending push to origin/main.** |
-| Tests verified this session | C3a: authority 11/11 + 91/91. C3b: storage 53/53 + T22 5/5. C3c: storage 67/67. C3d: storage 67/67 + 3 benches (append=339µs, cas=439µs, lease=15ms). C3e: storage 75/75 + 8 T27 schema-resilience tests. All clippy clean. |
+| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a → `7a5388a` C3b → `edaea67` reconcile C3b → `775ec93` C3c → `e308ddb` reconcile C3c → `d039457` C3d → `29fce83` reconcile C3d → `4dc2a08` C3e → `35b0e9a` reconcile C3e → **`<HEAD post-C3f>` C3f**. **All local; pending push to origin/main.** |
+| Tests verified this session | C3a: authority 11/11 + 91/91. C3b: storage 53/53 + T22 5/5. C3c: storage 67/67. C3d: storage 67/67 + 3 benches. C3e: storage 75/75 + 8 T27. **C3f: storage 81/81 + 14 schema_resilience_tests (8 T27 + 6 T28) + ADR-0141**. All clippy clean. |
 | Real-provider binary availability | `cognicode` CLI v0.97.3 presente; `cognicode-mcp` AUSENTE. `chronos-mcp` AUSENTE. `jcode` v0.86.0 presente con `acp`; `jcode-sdk` no publicado. **C2 sigue NOT_EVALUATED.** |
-| Siguiente acción exacta | **Operator decision point** — entre (a) **C3f migrations idempotency hardening** (fix C3e-F1, ADR + tests), (b) **C4 release cut** (operator-side, `bash scripts/release.sh` con workspace v1.169.147). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision. |
+| Siguiente acción exacta | **C4 release cut** (operator-side, `bash scripts/release.sh` con workspace v1.169.148). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision. **Toda la session-11 está lista para push; operador decide cuando**. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados. Para C2/C3: per `docs/roadmap/CERTIFICATIONS.md §3` el estado `PASS_BY_CODE_READING` no existe — solo PASS_OBSERVED sobre evidencia real. |
 | Bloqueos y decisiones | **C2 cerrado honesto NOT_EVALUATED** (session-11). **C3a cerrado PASS_OBSERVED** con valor empírico (Mutex<FenceState> serializa correctamente bajo concurrencia). C3b-c-d-e pendientes. J7/J8/J9/X08/R11 siguen DEFERRED. Release v1.169.143 sigue pending operator. |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
