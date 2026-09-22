@@ -1414,3 +1414,60 @@ correctly identifies MINOR.
 - Repo admits 1.170.0 (minor) release cut at any operator command.
 - Inventory ready for operator to pick a `feat()` from FC-1..FC-6 if desired.
 - C2/C3/C4/C5 status unchanged.
+
+### 2026-09-22T11:56:00Z — POST-C4: ADR-0142 + FC-2 IMPLEMENTED — orchestrator
+
+- Baseline: `main@21fcfff` (workspace 1.169.157); tree clean.
+- origin/main: `21fcfff` (local==origin after push); v1.170.0 latest tag.
+
+### Ejecutado (2 commits)
+
+1. `8730252` docs(adr): ADR-0142 release script SemVer-correctness via
+   release-bump.sh — documents the C4 incident + the architectural
+   decision (step 2.5 + step 9b asset-contract fix).
+2. `21fcfff` feat(cli): sddk dev doctor --format json — FC-2 from the
+   FEATURE-CANDIDATES inventory implemented. DoctorOutput now derives
+   serde::Serialize (DoctorCheck already had it); JSON output is
+   machine-readable for CI/dashboards.
+
+### ADR-0142 highlights
+
+- Two changes captured: step 2.5 invokes release-bump.sh --dry-run and
+  overrides TAG; step 9b asset contract uses $TAG not $VERSION.
+- Workspace version (build identity) and release tag (SemVer-bumped
+  outcome) may diverge; drift is documented.
+- Validated by v1.170.0 re-cut end-to-end.
+
+### FC-2 verification
+
+```
+$ sddk dev doctor --format json --prefix /home/rubentxu/.local/bin | head
+{
+  "checks": [
+    {"tool": "cargo", "present": true},
+    ...
+  ],
+  "all_present": true
+}
+```
+
+Tests 2931/0 unchanged. Clippy clean. Build clean.
+
+### Next SemVer
+
+`bash scripts/release-bump.sh --dry-run` (post-fetch-tags) reports:
+
+```
+release bump: v1.170.0 -> v1.171.0 (minor)
+new tag: v1.171.0
+```
+
+The `feat(cli):` commit (FC-2) is the trigger. The next operator-authorized
+`bash scripts/release.sh` will publish v1.171.0 with the doctor JSON
+output as a documented capability.
+
+### Outstanding (none blocking)
+
+- C2 NOT_EVALUATED (provider binaries absent; preserved receipts).
+- C5 DEFERRED (no trigger criteria met).
+- FC-1, FC-3..FC-6 still in inventory awaiting operator signal.

@@ -1,13 +1,13 @@
 schema_version: 1
-updated_at: "2026-09-22T11:41:00Z"
-status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_CERTIFIED_v1.170.0
+updated_at: "2026-09-22T11:56:00Z"
+status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_CERTIFIED_v1.170.0_FC2_DELIVERED_NEXT_v1.171.0
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "22d304f"  # session-11 C4 v1.170.0 release shipped
-  head_at_state_sync: "22d304f"
+  current_sha: "21fcfff"  # session-11 post-C4 FC-2 doctor JSON
+  head_at_state_sync: "21fcfff"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.156"
+  workspace_version_at_current: "1.169.157"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
