@@ -871,3 +871,41 @@ weakened.
 - CURRENT/STATE reconciliados a HEAD post-commit (`4dc2a08`). C3e cerrado PASS_OBSERVED+DEFERRED_FIX en STATE.
 - Próxima acción ejecutable: **Operator decision point** — entre (a) C3f migrations idempotency hardening (fix C3e-F1, ADR + tests), (b) C4 release cut (operator-side, `bash scripts/release.sh` con workspace v1.169.147). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision.
 - Estado final: HEAD post-commit, workspace `v1.169.147`, tree clean, push pendiente (operator-side).
+
+### 2026-09-22T09:58:00Z — C3f (Migration re-application safety T28) — orchestrator (direct)
+- Baseline: `35b0e9a` (HEAD pre-cycle), workspace `v1.169.147`, tree clean.
+- Alcance/autorización; no-objetivos:
+  - C3f SCOPE-CONTRACT (`docs/roadmap/receipts/c3f/SCOPE-CONTRACT.md`) — fix finding C3e-F1 via pre-flight detection + ADR-0141 + StorageError::InconsistentMigrationState. Subagent path remained unavailable; orchestrator executed directly.
+  - **First C3 sub-cycle to change production code** (approved by ADR-0141).
+  - No-objetivos: no migration hardening (`IF NOT EXISTS` en cada migration), no MIGRATION_21+, no criterion adoption, no multi-process migration race tests.
+- Ejecutado (1 commit funcional + docs):
+  - `crates/sddk-storage/src/migrations.rs` — `pre_flight_check` + `PRE_FLIGHT_ARTIFACTS` table + 3 probe helpers + call site at top of `run_migrations`. **+148 líneas producción**.
+  - `crates/sddk-storage/src/lib.rs` — `StorageError::InconsistentMigrationState { on_disk, conflicting_migration, conflicting_artifact, diagnostic }` + Display + code (`STORAGE_INCONSISTENT_MIGRATION_STATE`) + recovery. **+27 líneas producción**.
+  - `crates/sddk-storage/src/lib.rs::schema_resilience_tests` — T28-1..T28-6 + T27-3 actualizado + T27-4 comentarios. **+156 líneas test**.
+  - `docs/architecture/adrs/ADR-0141-MIGRATION-AUTHORITY-MONOTONIC-ONLY.md` — ADR accepted.
+  - `docs/roadmap/receipts/c3f/{SCOPE-CONTRACT,UAT-EVIDENCE.yaml,C3f-RECEIPT}.md`.
+  - Bump 1.169.147 → 1.169.148 (production code change).
+- UAT executed (verbatim en `docs/roadmap/receipts/c3f/UAT-EVIDENCE.yaml`):
+  - **T27-3** updated → typed error `InconsistentMigrationState { on_disk:10, conflicting_migration:11, conflicting_artifact:"workflow_runs_v1" }` → PASS.
+  - **T28-1** pre-flight rejects rewind to v=10 → PASS.
+  - **T28-2** fresh DB passes → PASS.
+  - **T28-3** full DB passes → PASS.
+  - **T28-4** column detection (MIGRATION_16 spine_order) → PASS.
+  - **T28-5** column detection (MIGRATION_19 relation) → PASS.
+  - **T28-6** error surface (code + Display + recovery) → PASS.
+- Surprises (real, observed this session):
+  - **S1**: pre-flight reports lowest conflicting migration in migration-order, not catalog-order. T28-1/T27-3/T28-4/T28-5 all assert this contract.
+  - **S2**: `SddkErrorCode` trait lives in `sddk-domain`, not `sddk-storage`. T28-6 first failed to compile without `use sddk_domain::SddkErrorCode` in test mod.
+  - **S3**: `cargo fmt` apply needed on `artifact_column_exists` chain.
+- Findings:
+  - **C3e-F1 CLOSED in C3f** via ADR-0141 + pre_flight_check + typed error. The raw SQLite crash (`duplicate column: spine_order`) is replaced with a typed, recoverable `InconsistentMigrationState`.
+- Gates verificados:
+  - `cargo fmt --all -- --check` → clean (after one `cargo fmt` apply)
+  - `cargo clippy -p sddk-storage --all-targets -- -D warnings` → clean
+  - `cargo test -p sddk-storage --lib` → **81 passed, 0 failed, 3 ignored** (was 75/75, +6 T28)
+  - `cargo test -p sddk-storage --lib schema_resilience_tests` → 14/14 PASS (8 T27 + 6 T28)
+  - `cargo test --workspace --lib` → 27/27 verde (other crates unaffected)
+  - `cargo build --workspace` → clean (no downstream breakage from new StorageError variant)
+- CURRENT/STATE reconciliados a HEAD post-commit (`b562f5d`). C3f cerrado PASS_OBSERVED en STATE.
+- Próxima acción ejecutable: **C4 release cut** (operator-side, `bash scripts/release.sh` con workspace v1.169.148). C2 NOT_EVALUATED sigue pendiente de CogniCode/Chronos/JCode decision. **Toda la session-11 está lista para push al origin/main**.
+- Estado final: HEAD post-commit, workspace `v1.169.148`, tree clean, push pendiente (operator-side).
