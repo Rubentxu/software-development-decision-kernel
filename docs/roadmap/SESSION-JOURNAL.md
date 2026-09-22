@@ -689,3 +689,31 @@ weakened.
 - backlog_store flake: per-test tempdir eliminates cross-test
   contention.
 - C2/C3: not started in this session. NEXT-SESSION trigger.
+
+### 2026-09-22T08:04:00Z — SESSION-11 / C2 ATTEMPT → SYSTEMIC NOT_EVALUATED — orchestrator
+
+- Baseline inspeccionado: `main@5f493ab` (workspace v1.169.142) al abrir sesión; cerrado a `main@1346064` tras 3 commits docs. Release pública observada `v1.169.122`. Adopt status: complete. Framework: sddk 1.169.122.
+- Alcance: ejecutar C2 (Real provider integration) bajo AUTO initiative + GOAL del operator. Pre-flight obligatorio antes de abrir SCOPE-CONTRACT por sub-cycle.
+- Ejecutado (3 commits docs, 0 commits código):
+  - `3c81239` docs(c2a): emit scope+evidence+receipt — NOT_EVALUATED provider missing
+  - `1346064` docs(c2b/c2c): emit scope+evidence+receipt — both NOT_EVALUATED
+  - `<post>` docs(roadmap): reconcile CURRENT/STATE to 1346064, append session-journal entry
+- Hallazgos OBSERVED (commands verbatim en receipts):
+  - **C2a — CogniCode**: `cognicode` CLI v0.97.3 presente con subcomandos `analyze/serve/refactor/index/graph/navigate/doctor`. `cognicode serve --help` confirma TCP port 8080 (no stdio). `cognicode doctor` reporta `❌ cognicode-mcp binary (install: cargo install cognicode)`. `cargo search cognicode-mcp` → vacío. **Adapter SDDK (`crates/sddk-engine/src/code_intelligence_port_mcp.rs:74-81`) hace `Command::new(binary).arg("--cwd")` esperando stdio JSON-RPC contra `cognicode-mcp` — binario ausente y no instalable.**
+  - **C2b — Chronos**: `which chronos-mcp` y `which chronos` ambos vacíos. `cargo search chronos-mcp` → vacío. **Adapter (`crates/sddk-engine/src/runtime_evidence_port_mcp.rs:53-67`) espera stdio contra `chronos-mcp` — binario ausente y no instalable.**
+  - **C2c — JCode**: `jcode v0.86.0` presente con subcomando `acp` (Agent Client Protocol adapter respaldado por daemon). Sin embargo: `cargo search jcode-sdk` vacío; `grep jcode crates/*/Cargo.toml` vacío; `find crates -name '*jcode*'` vacío. **arch-spec-031 (status: proposed) confirma `jcode-sdk published: false` desde 2026-09-14.** No hay adapter SDDK↔JCode en el repo.
+- UAT executed: T08/T09/T10/T11 (C2a), T12/T13/T14 (C2b), T15/T16/T17/T18 (C2c) — todos `NOT_EVALUATED`. Evidencia verbatim en `docs/roadmap/receipts/c2{a,b,c}/UAT-EVIDENCE.yaml`.
+- Gates: pre-flight `sddk version` (resolved=1.169.122), `sddk adopt status --root . --scope .` (complete), `git fetch origin main` (HEAD aligned). NO se ejecutó `cargo test --workspace` (no hay código que probar; scope C4, no C2).
+- Riesgos/decisiones:
+  - **Hallazgo sistémico**: los tres sub-cycles de C2 fallan NOT_EVALUATED por la misma clase de causa — adapters SDDK fueron escritos contra binarios/SDKs de proveedores que NO están en crates.io. No es incidental.
+  - Decisión de cierre honesto: NO se invoca el adapter desde código sin binario real; NO se declara PASS por code-reading; NO se finge "se podría escribir un adapter". Se emiten recibos con `NOT_EVALUATED_PROVIDER_MISSING` (C2a, C2b) y `NOT_EVALUATED_ADAPTER_MISSING` (C2c) con recovery action concreta por ciclo.
+  - Decisión deferred: NO se abre C3 en esta misma sesión (paralelo a C2 según roadmap; no bloqueado por binarios EXT — pero la regla §7 del AUTO sobre "no apilar ciclos en vuelo" aplica). C3 será siguiente WorkItem.
+  - Decisión deferred: NO se aprueba ni se inicia ningún ADR de "adapter fallback" sin decisión explícita del operador. La apertura de un ADR con cambio material de contrato es decisión de autoridad, no de continuidad.
+- CURRENT/STATE reconciliados: ambos actualizados a SHA `1346064` y versión `1.169.142` (sin bump). STATE incorpora `c2_cycles_status` y `c2_systemic_finding`. CURRENT refleja el estado real del hito activo (C2 cerrado NOT_EVALUATED).
+- Próxima acción ejecutable: **el operador decide**.
+  - Opción 1: instalar/proporcionar `cognicode-mcp`, `chronos-mcp`, y publicar/localizar `jcode-sdk` → reabrir C2a/C2b/C2c SCOPE-CONTRACTs.
+  - Opción 2: aprobar ADR(s) de revisión de adapter (TCP fallback a `cognicode serve`, ACP client para JCode, eBPF/ptrace para runtime) → re-autorizar C2 bajo scope revisado.
+  - Opción 3: aceptar C2 como DEFERRED y abrir C3 (resiliencia/seguridad) — ejecutable sin binarios EXT.
+  - C4 (release) sigue dependiendo de `bash scripts/release.sh` (operator-side).
+- Estado final: HEAD `1346064`, workspace `v1.169.142`, **tree clean pero push pendiente** (commits locales, no `git push origin main`). La decisión de push también es operator-side para no bumpear main sin necesidad.
+- J7/J8/J9/X08/R11 siguen DEFERRED per ROADMAP §C5.
