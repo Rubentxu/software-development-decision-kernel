@@ -717,3 +717,32 @@ weakened.
   - C4 (release) sigue dependiendo de `bash scripts/release.sh` (operator-side).
 - Estado final: HEAD `1346064`, workspace `v1.169.142`, **tree clean pero push pendiente** (commits locales, no `git push origin main`). La decisión de push también es operator-side para no bumpear main sin necesidad.
 - J7/J8/J9/X08/R11 siguen DEFERRED per ROADMAP §C5.
+
+### 2026-09-22T08:25:00Z — SESSION-11 / C3a PASS_OBSERVED — orchestrator
+
+- Baseline: session-11 close to C2 NOT_EVALUATED at `ec86423`. Subagent spawn attempt failed with `usage_limit_reached` (gpt-5.6-luna via OpenAI); orchestrator executed C3a directly per the AUTO initiative's "no apilar ciclos en vuelo" rule (subagent fallido no bloquea el valor para el código).
+- Alcance: ejecutar C3a — Authority hardening (T19 + T20) — bajo AUTO initiative.
+- Ejecutado (1 commit código + docs, 0 commits código en producción):
+  - `828b070` feat(c3a): T19+T20 — policy-swap no-side-effects + cross-policy and atomic concurrency tests
+    - 3 tests añadidos en `crates/sddk-engine/src/authority_admission_ticket.rs::tests`
+    - Cargo.toml workspace bump 1.169.142 → 1.169.143 (legítimo: product code gained tests)
+    - Cargo.lock updated
+    - 3 recibos: `docs/roadmap/receipts/c3a/{SCOPE-CONTRACT,UAT-EVIDENCE,C3a-RECEIPT}.md`
+- UAT executed (verbatim en `docs/roadmap/receipts/c3a/UAT-EVIDENCE.yaml`):
+  - **T19** `t19_policy_swap_records_no_side_effects` → PASS_OBSERVED. Ticket issued at digest A; consume with B rejects; retry with A succeeds → proves `consumed.insert` is NOT called on the reject path.
+  - **T20 cross-policy** `t20_two_buses_with_divergent_policy_digests_dont_cross_accept` → PASS_OBSERVED. Two `AdmissionTicketBus` instances, two policies; cross-consume always returns `Err(PolicyChanged)`.
+  - **T20 atomicity** `t20_concurrent_double_consume_only_one_succeeds` → PASS_OBSERVED. Stress 5/5 runs without flakiness. Bus `Mutex<FenceState>` serializes correctly under contention.
+- Gates verificados:
+  - `cargo test -p sddk-engine --lib authority_admission_ticket` → 11/11 PASS
+  - `cargo test -p sddk-engine --lib authority` → 91/0/0 PASS (no regresión)
+  - `cargo test -p sddk-engine --test a6_0_admission_tickets` → 4/4 PASS (integration regression clean)
+  - `cargo clippy -p sddk-engine --all-targets -- -D warnings` → clean
+  - `cargo fmt --all -- --check` → clean
+- Riesgos/decisiones:
+  - **Hallazgo de valor**: el bus Authority **ya cumplía** T19+T20 antes de este ciclo; la pieza que faltaba era verificación empírica. C3a cierra ese gap sin parchar producción.
+  - Subagent failure (`usage_limit_reached`) NO bloqueó el valor: el orchestrator tiene tools para ejecutar código directamente. Resuelto siguiendo §4 (investigar causa raíz, no detenerse ante el primer error).
+  - Bump de versión legítimo (no ceremonial): product code gained tests.
+- CURRENT/STATE reconciliados a `828b070` y workspace `1.169.143`. STATE incorpora `c3_progress` map.
+- Próxima acción ejecutable: **C3b Storage adversarial (T21 + T22)**. Pre-flight sobre `crates/sddk-storage/src/{event_store, cas, backlog_store}.rs` para identificar los gaps más valiosos. C2 sigue NOT_EVALUATED pendiente de operador.
+- Estado final: HEAD `828b070`, workspace `v1.169.143`, **tree clean**, push pendiente (operator-side).
+- J7/J8/J9/X08/R11 siguen DEFERRED per ROADMAP §C5.

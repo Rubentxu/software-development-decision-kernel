@@ -1,20 +1,20 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado:** C1 cerrado; session-10 debt closeout cerrado (5 commits: v1.169.139..142 + docs); session-11 opened C2a/C2b/C2c → all three NOT_EVALUATED (provider/adapter missing). **Actualizado:** 2026-09-22T08:04:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
+**Estado:** C1 cerrado; session-10 debt closeout cerrado (5 commits: v1.169.139..142 + docs); session-11 closed C2 NOT_EVALUATED (3 cycles systemic) and **C3a PASS_OBSERVED** (Authority hardening, v1.169.143). **Actualizado:** 2026-09-22T08:25:00Z. Este puntero se revalida al comienzo de cada sesión. NO acredita release publicada — eso es operator-side (`bash scripts/release.sh`).
 
 | Campo | Valor observado o pendiente |
 | --- | --- |
-| Fuente de la fotografía | `main@1346064` (session-11 C2 cierre honesto) consultado 2026-09-22T08:04Z; **revalidar al comenzar cada sesión** |
-| Workspace en esa fotografía | `1.169.142` (Cargo.toml) — sin cambios este ciclo |
-| Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); **no asumir que sigue siendo la última** — workspace v1.169.142 NO está publicado todavía (operator-side) |
-| Hito activo | `C1 CERRADO` + `SESSION-10 DEBT CLOSEOUT CERRADO` + `SESSION-11 C2 NOT_EVALUATED (systemic)`. C1 baseline: 4989/0/15 PASS sobre a1f0fa0. Session-11: 3 commits docs (C2a, C2b/c) sobre SHA 5f493ab → 1346064. |
+| Fuente de la fotografía | `main@828b070` (session-11 C3a close) consultado 2026-09-22T08:25Z; **revalidar al comenzar cada sesión** |
+| Workspace en esa fotografía | `1.169.143` (Cargo.toml) — bump desde 1.169.142 por C3a tests-only change |
+| Release pública comprobada en esa fotografía | `v1.169.122` (2026-09-20); workspace v1.169.143 NO está publicado (operator-side) |
+| Hito activo | `C1 CERRADO` + `C2 NOT_EVALUATED (systemic)` + `C3a PASS_OBSERVED` (3 tests added, 11/11 verde). C3b-C3e pendientes. |
 | Estado PRs abiertos | Ninguno. |
-| Commits this session (session-11) | `3c81239` docs(c2a): emit scope+evidence+receipt NOT_EVALUATED → `1346064` docs(c2b/c2c): emit scope+evidence+receipt NOT_EVALUATED. **All local; pending push to origin/main.** |
-| Tests verified this session | Pre-flight only (no `cargo test` invoked this session because no code changed). Provider/host binaries searched (commands listed in receipts). `cargo fmt --all --check` and full test profile intentionally deferred to C4. |
-| Real-provider binary availability (session-11 OBSERVED, supersedes Addendum 18) | `cognicode` CLI v0.97.3 present (subcommands: analyze, serve, refactor, index, graph, navigate, doctor). **`cognicode-mcp` ABSENT** (not on crates.io; `cargo search cognicode-mcp` empty). `chronos-mcp` ABSENT (not on crates.io). `jcode` v0.86.0 present with `acp` subcommand but **`jcode-sdk` not published** (arch-spec-031 confirms). **All three C2 paths blocked by missing integration artifacts.** |
-| Siguiente acción exacta | **Operator decides:** (1) install/provide `cognicode-mcp` + `chronos-mcp` binaries AND publish/locate `jcode-sdk` → re-open C2a/C2b/C2c SCOPE-CONTRACTs and execute T08–T18. OR (2) approve adapter-revision ADR(s) (TCP fallback to `cognicode serve`, ACP client for JCode, eBPF/ptrace for runtime) → re-author C2 under revised scope. OR (3) accept C2 as DEFERRED and open C3 (resiliencia/seguridad, no provider-binary dependency). C4 (release) still depends on operator `bash scripts/release.sh`. |
+| Commits this session (session-11) | `3c81239` C2a docs → `1346064` C2b/c docs → `ec86423` docs reconcile → `828b070` C3a code+tests+receipts. **All local; pending push to origin/main.** |
+| Tests verified this session | `cargo test -p sddk-engine --lib authority_admission_ticket` → 11/11 verde. `cargo test -p sddk-engine --lib authority` → 91/91 verde. `cargo test -p sddk-engine --test a6_0_admission_tickets` → 4/4 verde. T20 atomicity stress 5/5 PASS. `cargo clippy -p sddk-engine --all-targets -- -D warnings` clean. `cargo fmt --all -- --check` clean. |
+| Real-provider binary availability | `cognicode` CLI v0.97.3 presente; `cognicode-mcp` AUSENTE. `chronos-mcp` AUSENTE. `jcode` v0.86.0 presente con `acp`; `jcode-sdk` no publicado. **C2 sigue NOT_EVALUATED.** |
+| Siguiente acción exacta | **Operador decide.** Para C3 en esta sesión: continuar con C3b (Storage adversarial, T21+T22). Para C2: provee binarios, aprueba ADR, o acepta DEFERRED. C4 release sigue operator-side. |
 | Evidencia requerida para mover puntero | Recibo C0 firmado/aceptado, SHA nuevo, UAT T01/T02 observados, CURRENT y STATE reconciliados. Para C2/C3: per `docs/roadmap/CERTIFICATIONS.md §3` el estado `PASS_BY_CODE_READING` no existe — solo PASS_OBSERVED sobre evidencia real. |
-| Bloqueos y decisiones | **C2 cerrado honesto NOT_EVALUATED** (session-11). Recovery action: ver "Siguiente acción exacta". **C3 NO iniciado** (paralelo a C2 según roadmap; aún no aplicado). J7/J8/J9/X08/R11 siguen diferidos (roadmap C5 evolución condicionada). Release v1.169.142 sigue pending operator. |
+| Bloqueos y decisiones | **C2 cerrado honesto NOT_EVALUATED** (session-11). **C3a cerrado PASS_OBSERVED** con valor empírico (Mutex<FenceState> serializa correctamente bajo concurrencia). C3b-c-d-e pendientes. J7/J8/J9/X08/R11 siguen DEFERRED. Release v1.169.143 sigue pending operator. |
 | Próxima revisión | Al inicio de **cada** sesión y después de cada commit/release relevante |
 
 ## Recuperación sin adivinar
@@ -24,12 +24,14 @@
 3. Contrastar el último bloque de [SESSION-JOURNAL.md](SESSION-JOURNAL.md) con `git log -5` y el estado operativo; si difieren, registrar reconciliación como **nueva** entrada, sin editar el pasado.
 4. Solo entonces abrir/continuar el próximo WorkItem. Un resumen de sesión, un commit de docs o un dry-run no sustituyen un recibo de certificación.
 
-## Estado de certificación (al cierre de session-11 / 2026-09-22T08:04Z)
+## Estado de certificación (al cierre de session-11 / 2026-09-22T08:25Z)
 
 - **C1 (Base)**: cerrada con full profile 4998/0/15 sobre e7968f8; certificados H02/H05+H06/cycle-c.
-- **C2 (Integraciones reales)**: **NOT_EVALUATED_PROVIDER_MISSING (C2a, C2b) / NOT_EVALUATED_ADAPTER_MISSING (C2c)**. Cierre honesto documentado en `docs/roadmap/receipts/c2a/`, `c2b/`, `c2c/`. Status systemic; recovery requires operator decision (provide binaries OR approve adapter-revision ADR).
-- **C3 (Resiliencia/seguridad)**: NO INICIADA. Roadmap state: pendiente para ciclo paralelo a C2; no bloqueado por binarios EXT.
+- **C2 (Integraciones reales)**: **NOT_EVALUATED_PROVIDER_MISSING (C2a, C2b) / NOT_EVALUATED_ADAPTER_MISSING (C2c)**. Cierre honesto documentado en `docs/roadmap/receipts/c2a/`, `c2b/`, `c2c/`. Status systemic; recovery requires operator decision.
+- **C3a (Authority hardening)**: **PASS_OBSERVED** — 3 tests added (T19 side-effects, T20 cross-policy, T20 atomicity); 11/11 module tests green; 5/5 stress runs of T20 atomicity without flakiness; production code unchanged. Receipt at `docs/roadmap/receipts/c3a/`.
+- **C3b (Storage adversarial)**: NO INICIADO. Next WorkItem.
+- **C3c/C3d/C3e**: NO INICIADOS.
 - **C4 (Release y certificación de producto)**: NO INICIADA. Depende de C2+C3.
 - **C5 (Evolución condicionada)**: pendientes P2/P3 (J7/J8/J9/X08/R11), ninguno activo.
 
-**Distinción importante**: workspace v1.169.142 está en `main` (workspace = source code state, NO release publicada). Para que v1.169.142 se vuelva release pública, `bash scripts/release.sh` debe ejecutarse desde main@1346064 (operator-side, requiere las 9 pruebas del public-release gate per `tests/test_release_public_gate.sh` v1.169.53+).
+**Distinción importante**: workspace v1.169.143 está en `main` (workspace = source code state, NO release publicada). Para que v1.169.143 se vuelva release pública, `bash scripts/release.sh` debe ejecutarse desde main@828b070 (operator-side, requiere las 9 pruebas del public-release gate per `tests/test_release_public_gate.sh` v1.169.53+).

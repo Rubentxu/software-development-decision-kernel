@@ -1,13 +1,13 @@
 schema_version: 1
-updated_at: "2026-09-22T08:04:00Z"
-status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_SYSTEMIC_C3_NOT_STARTED
+updated_at: "2026-09-22T08:25:00Z"
+status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_PASS_OBSERVED_C3_PENDING
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "13460643f7f9e67034aeba88ee265ffe1cc00158"  # session-11 close (3 docs commits over 5f493ab)
-  head_at_state_sync: "1346064"
+  current_sha: "828b070"  # session-11 C3a close (code + receipts + bump 1.169.143)
+  head_at_state_sync: "828b070"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.142"
+  workspace_version_at_current: "1.169.143"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
@@ -41,6 +41,7 @@ source:
   addendum_18_commit: "f0f57d42ae9d8a293c59b384f658365000adc187"
   c2a_docs_commit: "3c81239014d3e35b78c64f3d8e8b46f3632dd06e"
   c2bc_docs_commit: "13460643f7f9e67034aeba88ee265ffe1cc00158"
+  c3a_code_commit: "828b070"  # C3a tests + bump 1.169.143
   addendum_count_at_head: 18
   full_profile_run_at_sha: "4bf09cf64185444828b232829e250ee7ff50541c"
   full_profile_run_at: "2026-09-21T21:21:00Z"
@@ -55,8 +56,8 @@ authority:
   uat_matrix: "docs/roadmap/UAT-MATRIX.md"
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
-active_milestone: C2
-active_slice: "c2-not-evaluated-systemic-recovery-needed"
+active_milestone: C3
+active_slice: "c3a-authority-hardening-completed-c3b-storage-next"
 verified_at_current_sha: true
 verified_components_at_current_sha:
   cargo_fmt_check: PASS
@@ -74,6 +75,12 @@ c2_cycles_status:
   c2b: "NOT_EVALUATED_PROVIDER_MISSING (chronos-mcp absent; receipt at docs/roadmap/receipts/c2b/)"
   c2c: "NOT_EVALUATED_ADAPTER_MISSING (jcode-sdk not published; no adapter in repo; receipt at docs/roadmap/receipts/c2c/)"
 c2_systemic_finding: "All three C2 sub-cycles fail NOT_EVALUATED for the same root-cause class: SDDK adapters authored against provider binaries/SDKs that are not on crates.io. Operator decision required: provide integration artifacts OR approve adapter-revision ADR(s)."
+c3_progress:
+  c3a: "PASS_OBSERVED — Authority hardening (T19+T20). 3 tests added; 11/11 module tests green; 5/5 stress runs of T20 atomicity. Receipt at docs/roadmap/receipts/c3a/. Production code unchanged."
+  c3b: "NOT_STARTED — Storage adversarial (T21+T22). Next WorkItem."
+  c3c: "NOT_STARTED — Security canarios (T23+T24+T25)."
+  c3d: "NOT_STARTED — Performance baseline (T26)."
+  c3e: "NOT_STARTED — Schema resilience (T27)."
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"
