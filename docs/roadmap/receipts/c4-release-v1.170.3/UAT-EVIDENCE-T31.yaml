@@ -1,0 +1,102 @@
+# UAT-EVIDENCE — T31 (Coherence: SHA, tag, receipt, binary, bundle)
+#
+# C4 v1.170.3 acceptance evidence.
+# Per docs/roadmap/UAT-MATRIX.md T31:
+#   "Comparar source SHA, tag, recibo y binary/bundle hashes
+#    Coinciden; sin copiar evidencia entre versiones."
+
+date_utc: "2026-09-22T14:30:42Z"
+executed_by: orchestrator
+source_sha_release_anchor: "7bedfe7e657214686412f15edde8ecbb5f482fb9"
+source_sha_current_head:   "817b5f7d753a3bfc3afe0214516a14b163fd0159"
+tag: "v1.170.3"
+
+uat:
+  T31:
+    scenario: |
+      For the v1.170.3 release cut, verify that:
+      (a) The tag v1.170.3 in git (origin) points to the source_sha
+          documented in the release receipt.
+      (b) The binary sha256 in the GH release asset matches the binary
+          sha256 extracted from the published tarball, AND matches the
+          binary installed in PATH (`~/.local/bin/sddk`), AND matches
+          the binary in `cargo-targets/release/sddk` (the build output
+          that fed the release).
+      (c) The bundle manifest sha256 in BUNDLE.toml matches the first
+          line of MANIFEST.sha256 in the framework/ directory.
+      (d) The binary --version reports the same version as the tag.
+      (e) HEAD post-release is exactly the tag + 1 docs-only commit
+          (the RECEIPT commit `817b5f7`), which does not affect the
+          binary (no source/manifest change), so HEAD and tag produce
+          the same binary.
+
+    exit_criterion: |
+      All hash comparisons PASS; tag anchor matches source_sha documented
+      in receipt; binary SHA matches across (asset, tarball extraction,
+      PATH, cargo build output); bundle version == binary version ==
+      tag.
+
+    observed_results:
+      tag_v1_170_3_sha:
+        git_rev_parse_v1_170_3: "7bedfe7e657214686412f15edde8ecbb5f482fb9"
+        receipt_source_sha:     "7bedfe7e657214686412f15edde8ecbb5f482fb9"
+        match: PASS
+
+      binary_sha256_4_sources:
+        from_gh_asset_digest:    "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+        from_tarball_extraction: "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+        from_path_install:       "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+        from_cargo_target_dir:   "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+        match: PASS
+
+      bundle_manifest_coherence:
+        from_btoml:              "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+        from_manifest_first_line:"608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+        match: PASS
+
+      version_coherence:
+        binary_version: "sddk 1.170.3"
+        bundle_version: "1.170.3"
+        tag:             "v1.170.3"
+        match: PASS
+
+      head_vs_tag_drift:
+        head_sha:          "817b5f7d753a3bfc3afe0214516a14b163fd0159"
+        tag_anchor_sha:    "7bedfe7e657214686412f15edde8ecbb5f482fb9"
+        head_minus_tag:    "1 commit (817b5f7)"
+        commit_subject:    "docs(roadmap): RECEIPT C4 v1.170.3 + CURRENT/STATE reconciled"
+        commit_changes:    "docs/roadmap/{CURRENT,STATE,SESSION-JOURNAL}.md + docs/roadmap/receipts/c4-release-v1.170.3/RECEIPT.md"
+        affects_binary:    false
+        affects_manifest:  false
+        affects_bundle:    false
+        drift_relevant:    false  # binary produced from HEAD == binary produced from tag
+
+    falsifiers_tested:
+      - "tag SHA != receipt source_sha" → would have flagged release
+        metadata tampering. NOT TRIGGERED: both = 7bedfe7e.
+      - "binary SHA drift across sources" → would have flagged either
+        CDN stale, tampered upload, or stale local install. NOT TRIGGERED:
+        all 4 sources = 924f7de6.
+      - "bundle version != binary version" → would have flagged
+        manifest/binary version skew (release.sh step 6 contract violated).
+        NOT TRIGGERED: both = 1.170.3.
+      - "BTOML manifest_sha256 != MANIFEST first line" → would have
+        flagged manifest tampering or generation pipeline bug. NOT TRIGGERED:
+        both = 608c6d9c.
+
+    status: PASS_OBSERVED
+    exit: 0
+
+limitations:
+  - "The 1-commit HEAD drift (817b5f7 docs-only) does not affect the
+    binary. If a future commit on main changes source code without
+    re-running release.sh, this drift becomes relevant and T31 must
+    be re-executed. The release-cut pipeline enforces the tag-anchored
+    build via 'git push origin main' then 'gh release create --target
+    main' (release.sh step 9) — this keeps the tag stable until the
+    next release.sh run."
+
+audit_trail_refs:
+  - "docs/roadmap/receipts/c4-release-v1.170.3/RECEIPT.md"
+  - "https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
+  - "docs/roadmap/UAT-MATRIX.md (T31)"

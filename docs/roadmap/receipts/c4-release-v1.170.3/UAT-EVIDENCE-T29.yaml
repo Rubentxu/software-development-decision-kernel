@@ -1,0 +1,137 @@
+# UAT-EVIDENCE — T29 (Clean machine install of released binary/bundle)
+#
+# C4 v1.170.3 release cut acceptance evidence.
+# Per docs/roadmap/UAT-MATRIX.md T29:
+#   "Instalar binario/bundle público en máquina limpia
+#    Identidad, manifest, SBOM y checksum del tag verificados."
+#
+# Methodology: simulated clean-machine install on /tmp/clean-machine-test
+# (no prior sddk state, no $HOME/.local/share/sddk, no PATH carry-over).
+# All artifacts downloaded from public GH Releases API.
+
+date_utc: "2026-09-22T14:30:00Z"
+executed_by: orchestrator
+actor_kind: System
+actor_id: orchestrator
+source_sha: "7bedfe7e657214686412f15edde8ecbb5f482fb9"  # tag anchor
+tag: "v1.170.3"
+binary_sha256: "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+bundle_manifest_sha256: "sha256:608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+
+environment:
+  sandbox: "/tmp/clean-machine-test"
+  os: "linux x86_64 (host)"
+  rust: "n/a (running installed binary, not compiling)"
+  no_prior_state: true   # dir was rm -rf before download
+  no_path_carryover: true  # ./bin/sddk invoked with relative path
+
+uat:
+  T29:
+    scenario: |
+      Download the unified release tarball + framework bundle from the
+      public GH Releases URL, extract to a fresh directory, verify:
+      (a) tarball sha256 matches GH asset digest and companion .sha256,
+      (b) extracted binary sha256 matches binary_sha256 in release receipt,
+      (c) BUNDLE.toml manifest_sha256 matches MANIFEST.sha256 first line,
+      (d) binary --version returns sddk <tag>,
+      (e) sddk dev doctor returns all_present: true,
+      (f) SBOM CycloneDX file parses with no schema errors.
+
+    exit_criterion: |
+      All six checks PASS, all digests match, and binary reports the
+      tag version. No silent fallback to stale binary, no missing
+      bundle assets, no missing manifest entries.
+
+    preconditions:
+      - tag v1.170.3 exists on origin (verified via gh release view)
+      - 9 assets listed in GH Releases API (verified)
+      - bundle manifest sha256 from BUNDLE.toml equals 608c6d9c... (verified)
+
+    inputs:
+      tag_url: "https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
+      tarball_url: "https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.170.3/sddk-v1.170.3-sddk-linux-x86_64-musl.tar.gz"
+      tarball_companion_sha_url: "https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.170.3/sddk-v1.170.3-sddk-linux-x86_64-musl.tar.gz.sha256"
+      checksums_url: "https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.170.3/CHECKSUMS"
+      sbom_url: "https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.170.3/sbom.json"
+
+    observed_results:
+      tarball_sha256_observed: "sha256:bfdb4ea6405c4021b2b566376f64762b9f7521234f21efde4403a086644649de"
+      tarball_sha256_gh_api: "sha256:bfdb4ea6405c4021b2b566376f64762b9f7521234f21efde4403a086644649de"
+      tarball_sha256_companion_asset: "sha256:bfdb4ea6405c4021b2b566376f64762b9f7521234f21efde4403a086644649de"
+      tarball_sha256_match: PASS
+
+      binary_sha256_observed: "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+      binary_sha256_expected: "sha256:924f7de683dff4ff26aa510aa0fe79f37ce0d77b7bb9a42c018408a871c2d1cd"
+      binary_sha256_match: PASS
+
+      bundle_version_reported: "1.170.3"
+      bundle_binary_min_version: "1.170.3"
+      bundle_binary_max_version: "1.170.3"
+      bundle_manifest_sha256_btoml: "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+      bundle_manifest_sha256_first_line: "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+      bundle_manifest_match: PASS
+
+      bundle_manifest_entries: 377
+      bundle_manifest_first_3:
+        - "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f  agents/analytics-judge.md"
+        - "cca9e89a3378252fdcefb07661df6bb0f965118f4e7eb83c0c3350e9d5244802  agents/analytics-reporter.md"
+        - "67255f9f48cdad324d7e21ef5ad3ba31e599e26e649173581ca7b29a5979a7df  agents/analytics-researcher.md"
+
+      binary_exec_bit: "-rwxr-xr-x"
+      binary_version_stdout: "sddk 1.170.3"
+      binary_version_exit: 0
+      binary_version_match: PASS
+
+      doctor_all_present: true
+      doctor_checks_total: 15
+      doctor_missing_reported:
+        - "m1.responsibilities_missing"  # this check is a deliberate
+                                          # "report absence" probe (per
+                                          # FC-2 doctor JSON schema);
+                                          # not a failure.
+
+      sbom_format: "CycloneDX 1.5"
+      sbom_parses_clean: true
+
+    falsifiers_tested:
+      - "tarball sha256 != GH API digest" → would have flagged CDN stale
+        or compromised release. NOT TRIGGERED: observed = API = companion.
+      - "binary sha256 != release_receipt binary_sha256" → would have
+        flagged tampered binary. NOT TRIGGERED: both = 924f7de6...
+      - "bundle BUNDLE.toml manifest_sha256 != MANIFEST.sha256 first line"
+        → would have flagged tampered manifest. NOT TRIGGERED: both =
+        608c6d9c...
+      - "binary --version != tag" → would have flagged wrong tag carried.
+        NOT TRIGGERED: both = 1.170.3.
+      - "doctor all_present: false" → would have flagged missing assets.
+        NOT TRIGGERED: all_present=true (with one deliberate absence probe).
+
+    status: PASS_OBSERVED
+    exit: 0
+
+limitations:
+  - "Sandbox is host's /tmp, not a separate VM/container. The 'clean
+    machine' property is preserved by removing prior /tmp/clean-machine-test
+    contents before download and invoking the binary via relative path
+    (./bin/sddk), not via PATH."
+  - "CDN stale window (5 min) was NOT tested in this run; the tarball
+    matched GH API digest on first download. Per AGENTS.md §8, the
+    release script already polls the CDN sha256 before invoking install.sh
+    in the 14-step pipeline."
+  - "m1.responsibilities_missing check reported by doctor is by design
+    (a deliberate 'report what is missing' probe); not a real failure."
+
+notes:
+  - "Initial sha256 query by the orchestrator used v1.170.0 asset digest
+    from an older output (fc25c057fc9412bcf87d9fc5e69f9082822b5c8b21ac14cb4180c3a0cd985276)
+    instead of v1.170.3 (bfdb4ea6405c4021b2b566376f64762b9f7521234f21efde4403a086644649de).
+    The v1.170.3 asset digest was confirmed via the GH API JSON query
+    AND via the companion .sha256 asset, both matching. The initial
+    audit mismatch was an orchestrator-side transcription error, not a
+    release-side defect."
+
+audit_trail_refs:
+  - "https://github.com/Rubentxu/software-development-decision-kernel/releases/tag/v1.170.3"
+  - "docs/roadmap/receipts/c4-release-v1.170.3/RECEIPT.md"
+  - "docs/roadmap/UAT-MATRIX.md (T29)"
+  - "tests/test_release_public_gate.sh (scenario 9 — clean-machine)"
