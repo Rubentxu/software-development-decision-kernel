@@ -1346,3 +1346,71 @@ Opté por:
   permitir evaluación real de los UAT C2
 - D) Definir trigger concreto para uno de los deferred (X08/J7/J8/J9/R11)
   → abrir nuevo ciclo C5
+
+### 2026-09-22T10:53:00Z — OPERATOR FEEDBACK: SemVer mechanics + FEATURE-CANDIDATES — orchestrator
+
+- Baseline: `main@3cb5927` (workspace 1.169.152; tree clean)
+- origin/main: `a5f279c` (~26 commits behind)
+
+### Operator signal
+
+Operator pushed back on "por qué aplicamos siempre patch y no minor?" — that
+question revealed that my own previous responses had been **incorrect** about
+the next SemVer release being a patch. The session-11 range from `v1.169.122`
+to HEAD contains **six `feat:` commits** (C3b/c/d/e/f + ADR-0141) that push
+MINOR, not PATCH.
+
+`bash scripts/release-bump.sh --dry-run` confirms:
+```
+release bump: v1.169.122 -> v1.170.0 (minor)
+```
+
+So the next `bash scripts/release.sh` (operator-authorized) will create the
+tag **`v1.170.0`**, not `v1.170.x` patch.
+
+### Ejecutado (1 commit)
+
+- `e9861a7` docs(roadmap,architecture): FEATURE-CANDIDATES + SemVer mechanics
+  corrected. 2 files, +293 lines.
+
+### Doc additions
+
+1. `docs/roadmap/FEATURE-CANDIDATES.md` (NEW, 234 lines):
+   - 6 capability candidates (FC-1..FC-6) — each a real `feat()` candidate
+     that would push MINOR if executed.
+   - C5 deferred items (X08/J7-J9/R11) listed with required triggers.
+   - NOT a backlog — explicit "no ejecutar sin operator signal".
+
+2. `docs/architecture/CONTRIBUTING-SEMVER.md` §4.3 (NEW, ~60 lines):
+   - Verbatim rules from `scripts/release-bump.sh` lines 51-63.
+   - Worked example with the session-11 range.
+   - Correction to §4.2 table: `feat(c3*):` commits are features, not tests.
+
+### Honest correction logged
+
+I had earlier told the operator that the next release would be PATCH because
+the most recent commits in this turn were `fix:/test:/docs:`. That answer was
+**wrong**: I had only looked at recent commits, not the full range since the
+last tag. `v1.169.122..HEAD` has 6 `feat:` commits. The release script
+correctly identifies MINOR.
+
+### What was NOT executed (and why)
+
+- Started a `C3g-static` cycle (added S4 to perf_budget_base.rs + bumped to
+  1.169.153). Reverted before committing because:
+  1. Operator's question redirected attention to the docs gap.
+  2. The C3g-static scope is legitimate but doesn't need to ship now; if the
+     operator wants a release cut, the perf-budget-static extension can be
+     re-applied later without conflict (extends an existing `#[ignore]` test).
+  3. Keeping the repo clean for the operator's next decision is more valuable
+     than landing marginal work.
+
+- Did NOT execute any `feat:` from FEATURE-CANDIDATES. Each requires operator
+  signal per the document's own contract. This is **intentional**.
+
+### Próxima acción ejecutable
+
+- HEAD: `e9861a7`, workspace 1.169.152 (unchanged from C4 pre-flight).
+- Repo admits 1.170.0 (minor) release cut at any operator command.
+- Inventory ready for operator to pick a `feat()` from FC-1..FC-6 if desired.
+- C2/C3/C4/C5 status unchanged.
