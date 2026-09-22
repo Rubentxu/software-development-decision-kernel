@@ -1471,3 +1471,57 @@ output as a documented capability.
 - C2 NOT_EVALUATED (provider binaries absent; preserved receipts).
 - C5 DEFERRED (no trigger criteria met).
 - FC-1, FC-3..FC-6 still in inventory awaiting operator signal.
+
+### 2026-09-22T12:34:00Z — POST-C4 cont: FC-2-sister UAT STATUS JSON — orchestrator
+
+- Baseline: `main@a06083c` (workspace 1.169.158); local==origin; tree clean.
+
+### Ejecutado (2 commits)
+
+- `13c9690` feat(uat): sddk uat status --format json — same pattern as
+  FC-2 (doctor). The CLI arg was already present; the JSON path was
+  unreachable because the output was a raw String (debug-escaped
+  serialization). New struct `UatStatusOutput` with serde::Serialize,
+  routed through `render_result(Ok(output), format, uat_status_text)`.
+- `a06083c` chore(release): sync Cargo.lock to 1.169.158.
+
+### Verified
+
+```
+$ sddk uat status --release v1.170.0 --format json
+{
+  "release": "v1.170.0",
+  "plan": "missing",
+  "report": "not-ready"
+}
+```
+
+Tests 2931/0. Clippy clean. Build clean (release).
+
+### Next SemVer
+
+`bash scripts/release-bump.sh --dry-run` post-fetch:
+```
+release bump: v1.170.0 -> v1.171.0 (minor)
+```
+
+Two `feat():` commits (doctor JSON + uat status JSON) justify the minor.
+Operator can cut v1.171.0 when ready.
+
+### Pattern observation
+
+The `render_result(Ok(struct), format, fn)` pattern is now used by:
+- sddk dev doctor (FC-2, this session)
+- sddk uat status (this commit)
+
+Both were broken because the output type lacked Serialize. The fix is
+mechanical: derive Serialize, route text rendering through a named fn.
+This pattern could be applied to other commands with `--format json`
+support. Not done in this cycle (scope discipline).
+
+### Outstanding (none blocking)
+
+- C2 NOT_EVALUATED (provider binaries absent; preserved receipts).
+- C5 DEFERRED (no trigger criteria met).
+- FC-1, FC-3..FC-6 still in inventory; the JSON pattern is a low-effort
+  extension of this work if operator wants more.
