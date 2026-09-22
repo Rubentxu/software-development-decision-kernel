@@ -125,7 +125,8 @@ if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
 fi
 
 if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q -- '--force'; then
+        | grep -v -- '--force-version' \
+        | grep -qE '(^|[[:space:],])(--force|--force-with-lease)([[:space:]]|$)'; then
     echo "FAIL (b): step 1c uses --force on the branch push — this masks"
     echo "        non-fast-forward failures and silently clobbers origin."
     exit 1
