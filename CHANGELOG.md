@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.171.0] - 2026-09-22
+
+### Features
+  - feat(vault): sddk vault show <node-id> — FC-6
+
+### Other
+  - test(cli): integration test for vault show end-to-end
+  - fix(release-bump): anchor sed to workspace version, not last tag
+  - test(cli): simplify FC-6 doc comment to satisfy clippy lint
+  - test(cli): apply cargo fmt to FC-6 integration test
+
+
 ## [1.170.7] - 2026-09-22
 
 ### Other
