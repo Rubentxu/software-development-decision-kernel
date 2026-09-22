@@ -2,12 +2,11 @@ schema_version: 1
 profile_target: AGENTIC_API_EXPERIMENTAL_C2C
 cycle: C2c
 status: NOT_EVALUATED_ADAPTER_MISSING
-executed_by: orchestrator (delegated; session-11 close re-investigation)
-executed_at_utc: "2026-09-22T08:50:00Z"
-source_sha_at_eval: "c669555"  # post C2b re-investigation
-workspace_version_at_eval: "1.169.149"
+executed_by: orchestrator (delegated)
+executed_at_utc: "2026-09-22T08:03:00Z"
+source_sha_at_eval: "<post-c2b-commit>"
+workspace_version_at_eval: "1.169.142"
 last_public_release_observed: "v1.169.122"
-prior_session_status: "NOT_EVALUATED_ADAPTER_MISSING"  # documented in c2c-prep/UAT-EVIDENCE-prep-2026-09-22T0850.yaml
 
 environment:
   os: "linux x86_64"
@@ -16,8 +15,6 @@ environment:
     binary_searched:
       - "/home/rubentxu/.local/bin/jcode"
       - "which jcode"
-      - "which jcode-sdk"
-      - "cargo search jcode"
       - "cargo search jcode-sdk"
       - "jcode --help (acp subcommand)"
     binary_present:
@@ -39,18 +36,16 @@ scenarios:
   T15:
     description: "Adapter separado con SDK público, host real, connect + attach"
     status: NOT_EVALUATED
-    reason: "Adapter lives outside this repo (per session-10 finding). No SDK crate located (cargo search jcode-sdk empty). Per CERTIFICATIONS.md §3, PASS_BY_CODE_READING is forbidden; no adapter/SDK present means no PASS possible. Session-11 pre-flight CONFIRMS: no jcode-sdk binary, no jcode crate on crates.io, no adapter file in sddk-engine/src or sddk-cli/src."
+    reason: "Adapter lives outside this repo (per session-10 finding). No SDK crate located (cargo search jcode-sdk empty). Per CERTIFICATIONS.md §3, PASS_BY_CODE_READING is forbidden; no adapter/SDK present means no PASS possible."
     evidence:
       command: "jcode --version"
       output: "jcode v0.86.0 (e589cbe5a)"
-      command2: "jcode --help"
-      output2: "(exposes serve, acp, session, memory — ACP not MCP)"
-      command3: "which jcode-sdk"
-      output3: "(not found)"
-      command4: "cargo search jcode"
-      output4: "(no jcode crates — only unrelated: cruise, hwatu, supercode-*)"
-      command5: "find crates/sddk-engine/src crates/sddk-cli/src -name '*jcode*' -o -name '*acp*'"
-      output5: "(no files — no JCode/ACP adapter in repo)"
+      command2: "cargo search jcode-sdk"
+      output2: "(empty — no crates.io match)"
+      command3: "grep jcode crates/*/Cargo.toml"
+      output3: "(no matches — no jcode SDK dependency in workspace)"
+      command4: "find crates/sddk-engine/src crates/sddk-cli/src -name '*jcode*'"
+      output4: "(no files — no JCode adapter in repo)"
   T16:
     description: "Host event burst + turn_done + cambios irrelevantes"
     status: NOT_EVALUATED
