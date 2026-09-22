@@ -179,4 +179,82 @@ mod tests {
         };
         assert!(err.to_string().contains("newer than binary supports"));
     }
+
+    // C3c (session-11) — T25 boundary tests at MIN_SUPPORTED_SCHEMA_VERSION.
+
+    /// T25-1 — The boundary value `MIN_SUPPORTED_SCHEMA_VERSION` MUST NOT
+    /// be classified as `TooOld`. The minimum-supported boundary is by
+    /// definition supported.
+    #[test]
+    fn classify_at_min_supported_version_is_not_too_old() {
+        let compat = classify(MIN_SUPPORTED_SCHEMA_VERSION);
+        // The classification must be Exact (if MIN == COMPILED) or
+        // Migratable (if MIN < COMPILED). It must NEVER be TooOld, because
+        // TooOld is defined as `on_disk < MIN_SUPPORTED_SCHEMA_VERSION`.
+        assert!(
+            matches!(
+                compat,
+                SchemaCompatibility::Exact | SchemaCompatibility::Migratable { .. }
+            ),
+            "classify(MIN) must be Exact or Migratable, got {:?}",
+            compat
+        );
+    }
+
+    /// T25-2 — One version below MIN_SUPPORTED_SCHEMA_VERSION MUST be
+    /// classified as `TooOld { on_disk: MIN - 1, binary_min: MIN }`. This
+    /// proves the boundary is exclusive on the lower side, matching the
+    /// guard's contract `on_disk < MIN_SUPPORTED_SCHEMA_VERSION`.
+    #[test]
+    fn classify_just_below_min_is_too_old() {
+        let compat = classify(MIN_SUPPORTED_SCHEMA_VERSION - 1);
+        assert_eq!(
+            compat,
+            SchemaCompatibility::TooOld {
+                on_disk: MIN_SUPPORTED_SCHEMA_VERSION - 1,
+                binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+            }
+        );
+    }
+
+    /// T25-3 — The `GuardError::TooOldSchema` variant produced by the
+    /// fail-closed path must carry the on-disk version and the binary's
+    /// minimum, and its Display string must mention both. This is the
+    /// observable surface the operator sees in logs/receipts.
+    #[test]
+    fn too_old_guard_error_carries_diagnostics() {
+        let on_disk = MIN_SUPPORTED_SCHEMA_VERSION - 1;
+        let err = GuardError::TooOldSchema {
+            on_disk,
+            binary_min: MIN_SUPPORTED_SCHEMA_VERSION,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&on_disk.to_string()),
+            "error must name the on-disk version: {msg}"
+        );
+        assert!(
+            msg.contains(&MIN_SUPPORTED_SCHEMA_VERSION.to_string()),
+            "error must name the binary's min supported: {msg}"
+        );
+        assert!(
+            msg.contains("too old"),
+            "error must classify the failure mode: {msg}"
+        );
+    }
+
+    /// T25-4 — The `GuardError::NewerSchema` variant must carry on-disk
+    /// and binary_max, and the Display string must mention "newer".
+    #[test]
+    fn newer_schema_guard_error_carries_diagnostics() {
+        let on_disk = COMPILED_SCHEMA_VERSION + 1;
+        let err = GuardError::NewerSchema {
+            on_disk,
+            binary_max: COMPILED_SCHEMA_VERSION,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains(&on_disk.to_string()));
+        assert!(msg.contains(&COMPILED_SCHEMA_VERSION.to_string()));
+        assert!(msg.contains("newer"));
+    }
 }

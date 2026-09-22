@@ -3387,3 +3387,372 @@ mod list_events_after_tests {
         assert_eq!(all.len(), 4);
     }
 }
+
+// ── C3c (session-11) — T23+T24 Storage Security canarios ───────────────────
+
+#[cfg(test)]
+mod capability_receipt_security_tests {
+    //! T23 — fail-closed contracts on `begin_capability_receipt` and
+    //! `finalize_capability_receipt`. These guards are security-critical
+    //! because they are the only thing standing between a caller and
+    //! rewriting a capability execution receipt's lifecycle state.
+
+    use super::*;
+    use sddk_domain::models::capability::{CapabilityReceiptInput, CapabilityStatus};
+    use serde_json::json;
+
+    fn base_input() -> CapabilityReceiptInput {
+        CapabilityReceiptInput {
+            receipt_id: "rec-001".to_string(),
+            project_id: "p-c3c".to_string(),
+            cycle_id: Some("c-cap".to_string()),
+            capability: "test.capability".to_string(),
+            idempotency_key: "key-001".to_string(),
+            request: json!({ "hello": "world" }),
+            status: CapabilityStatus::Started,
+            result: None,
+            started_at: "2026-09-22T00:00:00Z".to_string(),
+            completed_at: None,
+            agent_version_hash: None,
+            behavior_version_hash: None,
+        }
+    }
+
+    /// `capability_receipts.cycle_id` has a composite FK on `(project_id,
+    /// cycle_id)` → `cycles(project_id, cycle_id)`. Seed the project +
+    /// workspace + cycle so all FK constraints are satisfied before testing
+    /// the receipt guards.
+    fn storage_with_capability_cycle() -> Storage {
+        use sddk_domain::cycle::{CycleManifest, CyclePath, CycleStatus, Phase};
+        use sddk_domain::models::identity::{CycleRecord, ProjectRecord, WorkspaceRecord};
+        use std::collections::HashMap;
+
+        let store = Storage::open_in_memory().expect("open");
+        store
+            .insert_project(&ProjectRecord {
+                project_id: "p-c3c".to_string(),
+                display_name: "p-c3c".to_string(),
+                remote_url: None,
+                scope: ".".to_string(),
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("project");
+        store
+            .insert_workspace(&WorkspaceRecord {
+                workspace_id: "w-c3c".to_string(),
+                project_id: "p-c3c".to_string(),
+                canonical_path: "/work/c3c".to_string(),
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("workspace");
+        store
+            .insert_cycle(&CycleRecord {
+                manifest: CycleManifest {
+                    schema_version: 1,
+                    project_id: "p-c3c".to_string(),
+                    workspace_id: "w-c3c".to_string(),
+                    cycle_id: "c-cap".to_string(),
+                    display_name: "c-cap".to_string(),
+                    status: CycleStatus::Open,
+                    phase: Phase::Build,
+                    path: CyclePath::ALite,
+                    branch: "feat/cap".to_string(),
+                    base: "abc".to_string(),
+                    head: None,
+                    artifacts: HashMap::new(),
+                    release: None,
+                    delivery_kind: None,
+                    remediation_round: 0,
+                    remote_url: None,
+                    scope: None,
+                    pause_at: None,
+                    review_at: None,
+                    last_pause_reason: None,
+                    replan_count: 0,
+                },
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+                updated_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("cycle");
+        store
+    }
+
+    /// T23-1 — `begin_capability_receipt` MUST reject non-Started statuses
+    /// (the lifecycle only allows begin → terminal, never begin → terminal
+    /// directly). The guard returns `InvalidReceiptBegin` (typed).
+    #[test]
+    fn begin_with_terminal_status_is_rejected() {
+        let mut store = Storage::open_in_memory().expect("open");
+        let mut input = base_input();
+        input.status = CapabilityStatus::Succeeded;
+        let result = store.begin_capability_receipt(&input);
+        assert!(
+            matches!(result, Err(StorageError::InvalidReceiptBegin)),
+            "expected InvalidReceiptBegin, got {:?}",
+            result
+        );
+    }
+
+    /// T23-2 — `finalize_capability_receipt` MUST reject `Started` as a
+    /// target status. The transition is begin → terminal, never begin →
+    /// begin-via-finalize. The guard returns `InvalidReceiptBegin` (typed).
+    #[test]
+    fn finalize_with_started_status_is_rejected() {
+        let mut store = storage_with_capability_cycle();
+        let input = base_input();
+        let receipt = store.begin_capability_receipt(&input).expect("begin ok");
+        // Now try to finalize with Started (forbidden).
+        let result = store.finalize_capability_receipt(
+            &receipt.receipt_id,
+            CapabilityStatus::Started,
+            None,
+            "2026-09-22T00:01:00Z",
+        );
+        assert!(
+            matches!(result, Err(StorageError::InvalidReceiptBegin)),
+            "expected InvalidReceiptBegin on finalize(Started), got {:?}",
+            result
+        );
+    }
+
+    /// T23-3 — A terminal receipt MUST NOT be re-finalized. The guard
+    /// returns `TerminalReceipt { .. }` (typed, not a generic DB error).
+    /// This is the canary for "no double-finalize, no status rewind".
+    #[test]
+    fn finalize_already_terminal_rejected_with_typed_guard() {
+        let mut store = storage_with_capability_cycle();
+        let input = base_input();
+        let receipt = store.begin_capability_receipt(&input).expect("begin ok");
+        store
+            .finalize_capability_receipt(
+                &receipt.receipt_id,
+                CapabilityStatus::Succeeded,
+                Some(json!({"ok": true})),
+                "2026-09-22T00:01:00Z",
+            )
+            .expect("first finalize ok");
+        // Second finalize — different terminal status — must fail.
+        let result = store.finalize_capability_receipt(
+            &receipt.receipt_id,
+            CapabilityStatus::Failed,
+            Some(json!({"ok": false})),
+            "2026-09-22T00:02:00Z",
+        );
+        match result {
+            Err(StorageError::TerminalReceipt { receipt_id }) => {
+                assert_eq!(receipt_id, "rec-001");
+            }
+            other => panic!("expected TerminalReceipt, got {:?}", other),
+        }
+    }
+
+    /// T23-4 — Idempotency: same key + same request → returns the original
+    /// receipt without inserting a duplicate row. This is the "safe no-op"
+    /// contract documented at lib.rs:1026-1029.
+    #[test]
+    fn idempotent_retry_with_same_request_returns_existing_receipt() {
+        let mut store = storage_with_capability_cycle();
+        let input = base_input();
+        let first = store.begin_capability_receipt(&input).expect("first begin");
+        let second = store
+            .begin_capability_receipt(&input)
+            .expect("second begin");
+        // Same receipt_id, same request_hash, same started_at — the contract.
+        assert_eq!(first.receipt_id, second.receipt_id);
+        assert_eq!(first.request_hash, second.request_hash);
+        assert_eq!(first.started_at, second.started_at);
+        // And only ONE row in the table.
+        let all = store.list_capability_receipts("p-c3c").expect("list");
+        assert_eq!(all.len(), 1, "idempotent retry must not duplicate");
+    }
+
+    /// T23-5 — Idempotency conflict: same key + DIFFERENT request →
+    /// `IdempotencyConflict { key }` (typed guard, NOT silent overwrite).
+    /// This protects against replay attacks where a different payload is
+    /// smuggled under the same idempotency key.
+    #[test]
+    fn idempotent_retry_with_different_request_returns_conflict() {
+        let mut store = storage_with_capability_cycle();
+        let input = base_input();
+        store.begin_capability_receipt(&input).expect("first begin");
+        let mut tampered = base_input();
+        tampered.request = json!({ "hello": "WORLD", "tampered": true });
+        // The request_hash is automatically recomputed inside
+        // `begin_capability_receipt` from the request payload (see
+        // `hash_capability_request`); the caller does NOT pre-fill it.
+        let result = store.begin_capability_receipt(&tampered);
+        match result {
+            Err(StorageError::IdempotencyConflict { key }) => {
+                assert_eq!(key, "key-001");
+            }
+            other => panic!("expected IdempotencyConflict, got {:?}", other),
+        }
+        // And still only one row.
+        let all = store.list_capability_receipts("p-c3c").expect("list");
+        assert_eq!(all.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod cycle_lease_security_tests {
+    //! T24 — fail-closed contracts on `acquire_cycle_lease` and related
+    //! lifecycle operations. The cycle lease is the only authority for
+    //! "which runtime currently owns cycle X"; mis-handling it would let
+    //! two runtimes advance the same cycle in parallel.
+
+    use super::*;
+    use sddk_domain::cycle::{CycleManifest, CyclePath, CycleStatus, Phase};
+    use sddk_domain::models::identity::{CycleRecord, ProjectRecord, WorkspaceRecord};
+    use std::collections::HashMap;
+
+    const TIMESTAMP: &str = "2026-09-22T00:00:00Z";
+
+    fn manifest(cycle_id: &str) -> CycleManifest {
+        CycleManifest {
+            schema_version: 1,
+            project_id: "p-c3c".to_string(),
+            workspace_id: "w-c3c".to_string(),
+            cycle_id: cycle_id.to_string(),
+            display_name: "c3c canary".to_string(),
+            status: CycleStatus::Open,
+            phase: Phase::Build,
+            path: CyclePath::ALite,
+            branch: "feat/c3c".to_string(),
+            base: "abc123".to_string(),
+            head: None,
+            artifacts: HashMap::new(),
+            release: None,
+            delivery_kind: None,
+            remediation_round: 0,
+            remote_url: None,
+            scope: None,
+            pause_at: None,
+            review_at: None,
+            last_pause_reason: None,
+            replan_count: 0,
+        }
+    }
+
+    fn storage_with_cycle(cycle_id: &str) -> Storage {
+        let store = Storage::open_in_memory().expect("open");
+        store
+            .insert_project(&ProjectRecord {
+                project_id: "p-c3c".to_string(),
+                display_name: "p-c3c".to_string(),
+                remote_url: None,
+                scope: ".".to_string(),
+                created_at: TIMESTAMP.to_string(),
+            })
+            .expect("project");
+        store
+            .insert_workspace(&WorkspaceRecord {
+                workspace_id: "w-c3c".to_string(),
+                project_id: "p-c3c".to_string(),
+                canonical_path: "/work/c3c".to_string(),
+                created_at: TIMESTAMP.to_string(),
+            })
+            .expect("workspace");
+        store
+            .insert_cycle(&CycleRecord {
+                manifest: manifest(cycle_id),
+                created_at: TIMESTAMP.to_string(),
+                updated_at: TIMESTAMP.to_string(),
+            })
+            .expect("cycle");
+        store
+    }
+
+    /// T24-1 — `acquire_cycle_lease` MUST reject negative `now_ms`.
+    /// The guard returns `InvalidLease` (typed).
+    #[test]
+    fn acquire_with_negative_now_ms_is_rejected() {
+        let mut store = storage_with_cycle("c-neg");
+        let result = store.acquire_cycle_lease("c-neg", "owner-a", -1, 1000);
+        assert!(
+            matches!(result, Err(StorageError::InvalidLease)),
+            "expected InvalidLease on negative now_ms, got {:?}",
+            result
+        );
+    }
+
+    /// T24-2 — `acquire_cycle_lease` MUST reject `expires_at_ms <= now_ms`.
+    /// The lease must define a strictly positive interval.
+    #[test]
+    fn acquire_with_expires_at_or_before_now_is_rejected() {
+        let mut store = storage_with_cycle("c-zero");
+        let r1 = store.acquire_cycle_lease("c-zero", "owner-a", 100, 100);
+        assert!(
+            matches!(r1, Err(StorageError::InvalidLease)),
+            "expires == now must reject, got {:?}",
+            r1
+        );
+        let r2 = store.acquire_cycle_lease("c-zero", "owner-a", 100, 50);
+        assert!(
+            matches!(r2, Err(StorageError::InvalidLease)),
+            "expires < now must reject, got {:?}",
+            r2
+        );
+    }
+
+    /// T24-3 — `acquire_cycle_lease` MUST fail-closed when the cycle does
+    /// not exist. This prevents lease rows from being created against
+    /// orphan IDs.
+    #[test]
+    fn acquire_on_missing_cycle_returns_not_found() {
+        let mut store = Storage::open_in_memory().expect("open");
+        let result = store.acquire_cycle_lease("c-ghost", "owner-a", 1000, 2000);
+        match result {
+            Err(StorageError::NotFound { entity, id }) => {
+                assert_eq!(entity, "cycle");
+                assert_eq!(id, "c-ghost");
+            }
+            other => panic!("expected NotFound(cycle), got {:?}", other),
+        }
+    }
+
+    /// T24-4 — `acquire_cycle_lease` MUST reject a second acquire while a
+    /// previous lease is still active. The guard returns `LeaseConflict`
+    /// (typed, with the current owner and expiry).
+    #[test]
+    fn acquire_with_active_lease_returns_typed_conflict() {
+        let mut store = storage_with_cycle("c-conflict");
+        store
+            .acquire_cycle_lease("c-conflict", "owner-a", 1000, 5000)
+            .expect("first acquire ok");
+        let result = store.acquire_cycle_lease("c-conflict", "owner-b", 2000, 6000);
+        match result {
+            Err(StorageError::LeaseConflict {
+                cycle_id,
+                owner,
+                expires_at_ms,
+            }) => {
+                assert_eq!(cycle_id, "c-conflict");
+                assert_eq!(owner, "owner-a");
+                assert_eq!(expires_at_ms, 5000);
+            }
+            other => panic!("expected LeaseConflict, got {:?}", other),
+        }
+    }
+
+    /// T24-5 — After a lease expires, re-acquiring increments the fencing
+    /// token (1 → 2). This is the safety mechanism that invalidates stale
+    /// holders' authority even after expiry.
+    #[test]
+    fn expired_lease_reacquire_increments_fencing_token() {
+        let mut store = storage_with_cycle("c-expire");
+        let first = store
+            .acquire_cycle_lease("c-expire", "owner-a", 1000, 2000)
+            .expect("first acquire");
+        assert_eq!(first.fencing_token, 1);
+        // Re-acquire AFTER expiry (`now_ms=3000 > expires_at_ms=2000`).
+        let second = store
+            .acquire_cycle_lease("c-expire", "owner-b", 3000, 4000)
+            .expect("expired re-acquire");
+        assert_eq!(
+            second.fencing_token, 2,
+            "fencing token must increment after expiry"
+        );
+        assert_eq!(second.owner, "owner-b");
+        assert_eq!(second.expires_at_ms, 4000);
+    }
+}

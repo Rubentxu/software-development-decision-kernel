@@ -1,0 +1,72 @@
+# C3c UAT-EVIDENCE — Storage Security canarios (T23, T24, T25)
+
+**Cycle:** C3c
+**Baseline:** `main@edaea67`
+**HEAD (post-cycle):** committed in same concern
+**Date:** 2026-09-22T09:02:00Z
+**Status:** **PASS_OBSERVED** — 14 new tests (10 capability/lease + 4 schema_guard), 67/67 storage lib green, 0 clippy warnings
+
+## Scenarios (UAT-C3c)
+
+### T23 — Capability receipt lifecycle (fail-closed)
+
+| ID | Test | Expected | Observed | Status |
+|---|---|---|---|---|
+| C3c-U1 | `begin_with_terminal_status_is_rejected` | `Err(StorageError::InvalidReceiptBegin)` for status=Succeeded | matches | PASS_OBSERVED |
+| C3c-U2 | `finalize_with_started_status_is_rejected` | begin OK, then finalize(Started) → `Err(InvalidReceiptBegin)` | matches | PASS_OBSERVED |
+| C3c-U3 | `finalize_already_terminal_rejected_with_typed_guard` | begin, finalize(Succeeded), then finalize(Failed) → `Err(TerminalReceipt { receipt_id: "rec-001" })` | matches; `receipt_id == "rec-001"` asserted | PASS_OBSERVED |
+| C3c-U4 | `idempotent_retry_with_same_request_returns_existing_receipt` | second begin with same key+request returns first receipt; 1 row in DB | matches | PASS_OBSERVED |
+| C3c-U5 | `idempotent_retry_with_different_request_returns_conflict` | second begin with same key+different request → `Err(IdempotencyConflict { key: "key-001" })` | matches; `key == "key-001"` asserted | PASS_OBSERVED |
+
+### T24 — Cycle lease guards (fail-closed)
+
+| ID | Test | Expected | Observed | Status |
+|---|---|---|---|---|
+| C3c-U6 | `acquire_with_negative_now_ms_is_rejected` | `now_ms = -1` → `Err(InvalidLease)` | matches | PASS_OBSERVED |
+| C3c-U7 | `acquire_with_expires_at_or_before_now_is_rejected` | `expires == now` AND `expires < now` → `Err(InvalidLease)` (both) | matches | PASS_OBSERVED |
+| C3c-U8 | `acquire_on_missing_cycle_returns_not_found` | cycle not in DB → `Err(NotFound { entity: "cycle", id: "c-ghost" })` | matches | PASS_OBSERVED |
+| C3c-U9 | `acquire_with_active_lease_returns_typed_conflict` | second acquire before expiry → `Err(LeaseConflict { cycle_id, owner: "owner-a", expires_at_ms: 5000 })` | matches | PASS_OBSERVED |
+| C3c-U10 | `expired_lease_reacquire_increments_fencing_token` | first `fencing_token = 1`, re-acquire after expiry → `fencing_token = 2` | matches | PASS_OBSERVED |
+
+### T25 — Schema guard boundary
+
+| ID | Test | Expected | Observed | Status |
+|---|---|---|---|---|
+| C3c-U11 | `classify_at_min_supported_version_is_not_too_old` | `classify(MIN)` is Exact or Migratable, never TooOld | matches | PASS_OBSERVED |
+| C3c-U12 | `classify_just_below_min_is_too_old` | `classify(MIN - 1)` → `TooOld { on_disk: MIN-1, binary_min: MIN }` | matches | PASS_OBSERVED |
+| C3c-U13 | `too_old_guard_error_carries_diagnostics` | `GuardError::TooOldSchema { on_disk, binary_min }` Display mentions both numbers and "too old" | matches | PASS_OBSERVED |
+| C3c-U14 | `newer_schema_guard_error_carries_diagnostics` | `GuardError::NewerSchema { on_disk, binary_max }` Display mentions both numbers and "newer" | matches | PASS_OBSERVED |
+
+## Summary table
+
+| Suite | New tests | Total in module | Status |
+|---|---|---|---|
+| `capability_receipt_security_tests` | 5 | 5 | PASS_OBSERVED |
+| `cycle_lease_security_tests` | 5 | 5 | PASS_OBSERVED |
+| `schema_guard::tests` | 4 | 9 (was 5) | PASS_OBSERVED |
+| **Total new** | **14** | | |
+
+## Cross-check
+
+- `cargo test -p sddk-storage --lib` → **67/67 passed** (was 53/53 pre-C3c).
+- `cargo clippy -p sddk-storage --all-targets -- -D warnings` → **clean** (exit 0).
+- `cargo fmt --all -- --check` → **clean** (post `cargo fmt --all`).
+
+## Surprises during execution (real, not pre-planned)
+
+1. **`CycleStatus` variants**: my first attempt used `CycleStatus::Active` which doesn't exist; the actual variants are `Open`, `Blocked`, `Remediating`, `Paused`, etc. Fix: use `CycleStatus::Open`. **No production change.**
+2. **Composite FK `(project_id, cycle_id)` on `capability_receipts`**: `cycle_id: None` would NOT satisfy the FK (NULL doesn't match a real cycle row). Fix: set `cycle_id: Some("c-cap")` and seed the corresponding cycle. **No production change.**
+3. **`cycles` requires `(project_id, workspace_id) → workspaces`**: a `CycleRecord` insert fails with FK violation if no `WorkspaceRecord` exists for the (project_id, workspace_id) pair. The seed helper must insert project + workspace + cycle. **No production change.**
+
+These surprises validate that the FK constraints are doing real work — exactly the kind of canary the cycle asked for.
+
+## STOP conditions
+
+None hit. All 14 tests green; all contracts fail-closed with typed guards.
+
+## Out-of-scope (NOT_RUN, deferred)
+
+- Multi-receipt concurrent begin/finalize — separate cycle.
+- `renew_cycle_lease` fencing-token staleness — already covered at the engine level; not added here.
+- Encryption-at-rest review — not implemented in storage crate.
+- Capability lifecycle tests at integration level (engine crate) — already exist for the happy paths.
