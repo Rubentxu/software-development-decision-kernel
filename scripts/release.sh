@@ -643,8 +643,8 @@ else
     CANONICAL_ASSETS=(
         "sddk"
         "sddk.sha256"
-        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz"
-        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz.sha256"
+        "sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
+        "sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256"
         "CHECKSUMS"
         "sbom.json"
         "gh-release-receipt.json"
