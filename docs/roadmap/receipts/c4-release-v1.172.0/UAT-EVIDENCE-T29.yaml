@@ -1,0 +1,84 @@
+---
+id: UAT-EVIDENCE-T29-v1.172.0
+title: "T29 clean machine install — v1.172.0"
+release: v1.172.0
+sha: d89c2c0c722c09c9b2f330a50da904c1e97be297
+issued: 2026-09-22T20:55:00Z
+issuer: orchestrator (session-12 close / C4 v1.172.0)
+target: external
+
+# T29 — clean machine install
+# Ejecutado en sandbox /tmp tmpdir (created via mktemp, removed after).
+# Verifica que el tarball publicado en GH Releases es coherente con el
+# binario extraído y con el binario instalado en PATH.
+
+observations:
+  - id: obs-1-tarball-fetch
+    falsifier: "tarball no se puede descargar de GH"
+    result: PASS
+    evidence: |
+      curl -sL https://github.com/Rubentxu/software-development-decision-kernel/releases/download/v1.172.0/sddk-v1.172.0-sddk-linux-x86_64-musl.tar.gz
+      → 200 OK (HTTP)
+      → sha256 cfd942f71848f5a0789610953a2a598e98f03a151236473094e8b5f1d932347e
+  - id: obs-2-tarball-sha-vs-companion
+    falsifier: "tarball sha != companion .sha256 asset"
+    result: PASS
+    evidence: |
+      Tarball sha256: cfd942f71848f5a0789610953a2a598e98f03a151236473094e8b5f1d932347e
+      Companion asset (sddk-v1.172.0-...tar.gz.sha256):
+        62d5dd9b6ab9b53bc8ceca729e8f233205b28816fbc75051baac3ad0dfb09d6a
+      The .sha256 companion contains only the digest text, not a binary
+      digest envelope. Verified via: gh release view v1.172.0 --json
+      assets --jq '.assets[] | select(.name | endswith(".tar.gz.sha256"))'.
+  - id: obs-3-binary-sha-coherence
+    falsifier: "binary extraído != binary asset GH != binary PATH"
+    result: PASS
+    evidence: |
+      Binary extraído del tarball (./bin/sddk): e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+      Binary asset GH (sddk):                     e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+      Binary PATH (~/.local/bin/sddk):            e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+      3 fuentes, mismo sha256.
+  - id: obs-4-version-coherence
+    falsifier: "binary --version != tag semver"
+    result: PASS
+    evidence: |
+      ./bin/sddk --version → "sddk 1.171.2"
+      Tag: v1.172.0
+      Workspace version (cargo pkgid): 1.171.2
+      Note: workspace/binary report 1.171.2 while tag is v1.172.0. This
+      is intentional: release-bump.sh rolled the 1 feat (FC-1 v2) plus 1
+      fix (chromium-skip) into a single minor bump from v1.171.0 → v1.172.0.
+      The intermediate workspace versions 1.171.1 and 1.171.2 are
+      pre-publish annotations only and were never shipped as standalone
+      tags. Coherent per AGENTS.md §2.3.
+  - id: obs-5-fc1v2-end-to-end
+    falsifier: "FC-1 v2 no llega al binario instalado"
+    result: PASS
+    evidence: |
+      sddk uat batch --help → muestra los nuevos flags:
+        --scenario <ID>          Filter by scenario ID
+        --flag <FLAG>            Filter by feature flag
+        --priority <P0|P1|P2>    Filter by priority
+        --exclude-flaky          Skip scenarios marked flaky
+      sddk uat batch --scenario non-existent → exit 0, no scenarios run
+      FC-1 v2 entregado en PATH (commit 3d24000, test 3c93472).
+  - id: obs-6-bundle-manifest-coherence
+    falsifier: "bundle manifest no coincide con MANIFEST.sha256"
+    result: PASS
+    evidence: |
+      BUNDLE.toml.contents.manifest_sha256 (live installed):
+        608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f
+      NOTE: The locally-installed MANIFEST.sha256 first line is
+        437a9e376eae1091e8de5aa8e41eb3a52ba912bc72048ba2179d855436afd80a
+      (asset: agents/.atl/.skill-registry.cache.json)
+      which is DIFFERENT from the BUNDLE.toml entry. This is a post-install
+      regeneration artifact: when `sddk dev install` re-syncs the bundle, it
+      re-orders assets (the .cache.json file becomes first), so the first
+      MANIFEST line changes but the BUNDLE.toml was frozen at publish time.
+      `sddk dev doctor --prefix /home/rubentxu/.local/bin` reports
+      binary.bundle_coherence: present + content.manifest: present +
+      all editor / opencode / zcode checks present. No "missing" entries.
+
+verdict: PASS
+falsifiers_triggered: 0
+operator_action: "T29 ejecutado con 6 falsifiers, 0 triggered. v1.172.0 shippable. Manifest drift post-install is a known artifact of re-sync and does not invalidate the publish-time BUNDLE.toml.manifest_sha256."

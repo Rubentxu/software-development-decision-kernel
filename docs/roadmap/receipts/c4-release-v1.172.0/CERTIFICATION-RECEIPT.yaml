@@ -1,0 +1,245 @@
+---
+schema_version: 1
+profile: BASE
+status: PASS_PARTIAL_OBSERVED
+repository: Rubentxu/software-development-decision-kernel
+source_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
+tag: "v1.172.0"
+binary_sha256: "e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e"
+bundle_manifest_sha256: "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+schema_version_storage: 20
+policy_digest: "4bdd00e60a007e568ad72753c27b81ad6dffd2031c3649b42061deb7f0c0b918"
+command_registry_digest: "e96e67efbc78f6c86a569b642f8d96431ba023e2e02add8ee367f62eca2ee45e"
+spec_manifest_digest: "710872126cf6cc615ca5cf0d17a09506d0187437c622835902a17bea804606da"
+environment:
+  os: "Linux 7.2.4-ogc3.1.fc44.x86_64"
+  rust: "rustc 1.91.0 (f8297e351 2025-10-28)"
+  host: "bazzite-rubentxu"
+  provider_static: "cognicode 0.97.3 (binary present; MCP bridge NOT registered — provider integration NOT exercised)"
+  provider_runtime: "chronos-mcp NOT INSTALLED — provider_runtime integration NOT exercised"
+gates:
+  G0:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G0 (commit 0c2ca56 / SDDK 1.169.19). Baseline conformance verified 2026-09-09; A5 path does not re-run C0..C7 by design."
+    note: "Carry-over from A5-C; not re-executed at v1.172.0 SHA d89c2c0."
+  G1:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G1; cargo test --workspace at v1.172.0 SHA d89c2c0 (re-run post-publish, full profile) = 5048 passed; 0 failed (releases.sh full scope, exit 0). v1.171.0 baseline = 5037 passed; 0 failed. Delta = +11 tests (FC-1 v2 filter predicates). 19 ignored (vs 5 at v1.171.0): +14 ignored are chromium/tui prerequisites for full UAT render."
+    note: "Test corpus passes; A4 regression preservation confirmed. v1.172.0 was published with --skip-tests (flake acknowledgment, see LIMITATION below) and re-verified post-publish with full profile."
+  G2:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G2; storage tests at d89c2c0 (state_survives_restart.rs, cas_partial_state 4/4, event_store.rs) green via cargo test --workspace."
+    note: "Carry-over from A5-C; re-pinned by workspace test suite execution."
+  G3:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G3; ProjectionDigest + active_graph_digest tests green via cargo test --workspace."
+    note: "Carry-over from A5-C; re-pinned by workspace test suite execution."
+  G4:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G4; concurrency_record_attempt.rs (4), authority_fail_closed.rs (6/6), concurrency_planning_substrate.rs (5/5 PASS in isolation; pre-existing flake under workspace-wide concurrency) green via cargo test --workspace."
+    note: "Carry-over from A5-C; re-pinned by workspace test suite execution. Flake 'Database is locked' under workspace-wide concurrency is documented as pre-existing and accepted (release v1.172.0 was not the trigger; same flake present in v1.171.0 and earlier)."
+  G5:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G5; INC-R4-DECISION-EFFECT-ATOMICITY-BOUNDARY.md CLOSED 2026-09-18 (a6-0..a6-4 ticket-protected apply chain). ADR-0130..0134."
+    note: "Carry-over from A5-C; R4-B closure verified by commit trail at apply chain."
+  G6:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G6; with_busy_retry 50/50 pin; migration tests green."
+    note: "Carry-over from A5-C; re-pinned by workspace test suite execution."
+  G7:
+    status: PASS_OBSERVED
+    evidence: "UAT-EVIDENCE-T31-v1.172.0.yaml (5-way coherence: tag/HEAD/origin/asset/PATH). git ls-remote origin v1.172.0 → d89c2c0. gh release view v1.172.0 reports isDraft=false, isPrerelease=false."
+    note: "Re-verified at d89c2c0 for v1.172.0."
+  G8:
+    status: PASS_OBSERVED
+    evidence: "UAT-EVIDENCE-T29-v1.172.0.yaml (clean-machine install + bundle verification). 9-asset contract verified. SHA256 of downloaded binary = e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e matches sddk.sha256."
+    note: "Re-verified at d89c2c0 for v1.172.0 via T29 evidence + release.sh step 9b."
+  G9:
+    status: PASS_OBSERVED
+    evidence: "release.sh step 10 (install from real URL); release.sh step 11 (sddk dev doctor). Binary in PATH (sddk 1.171.2) executes without repo checkout reference."
+    note: "Re-verified at d89c2c0 for v1.172.0."
+  G10:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G10 (GREEN_PARTIAL — R17 OPEN_NON_BLOCKER)."
+    note: "Carry-over from A5-C; not re-executed at v1.172.0 SHA. Diagnostic surface unchanged."
+  G11:
+    status: NOT_VERIFIED
+    evidence: "No dedicated security cycle run at v1.172.0 SHA. No secret-leak path audit performed. R14 OPEN_NON_BLOCKER since A5-C."
+    note: "Explicit acceptance: G11 left at NOT VERIFIED with R14 as known-accepted risk per A5-C §11."
+  G12:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G12 (clean-machine UAT-1 10/10 PASS at v1.169.86). release.sh step 11 (sddk dev doctor) at v1.172.0 reports all_present=true, binary.bundle_coherence: present."
+    note: "Re-pinned for v1.172.0 by release.sh doctor step."
+  G13:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G13; cargo test --workspace at d89c2c0 = 5048 passed; 0 failed; 19 ignored (per-disposition inventory in A5-DEBT-DISPOSITION.md §3.4 + 14 new chromium/tui prerequisites for full UAT render)."
+    note: "Carry-over from A5-C; per-ignored-test disposition unchanged. Delta vs v1.171.0 = +14 ignored (chromium/tui), +0 added to disposition registry."
+  G14:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G14; a5_4b_lint_disposition_pin.rs (3 tests) green."
+    note: "Carry-over from A5-C; no deprecation code added in v1.172.0."
+  G15:
+    status: HISTORICAL_CARRY_OVER
+    evidence: "A5-C-BASE-PRODUCTION-READY-CERTIFICATION.md §3 G15; release.sh step 12 (sddk dev update --prune-only --keep 1) = rollback-safe mechanism preserved."
+    note: "Carry-over from A5-C; no rollback regression at v1.172.0."
+  G16:
+    status: PASS_OBSERVED
+    evidence: "Tag v1.172.0 → commit d89c2c0 (verified via git rev-list). HEAD 00e7b56 (docs commit post-release). Binary sha256 = e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e = assets/sddk sha256."
+    note: "Certifies d89c2c0; HEAD 00e7b56 is docs-only post-release commit (RECEIPT + UAT-EVIDENCE + CURRENT/STATE)."
+uat:
+  T01:
+    status: PASS_OBSERVED
+    command: "git rev-list -n 1 v1.172.0 + git status -sb + git rev-parse HEAD + gh release view v1.172.0"
+    evidence: "tag SHA = d89c2c0c722c09c9b2f330a50da904c1e97be297; HEAD = 00e7b563bcdfd97ee97a7a1b9c384aaeaded3346 (docs-only); GH tagName = v1.172.0; isDraft=false; isPrerelease=false. No stale pointer detected."
+  T02:
+    status: PASS_OBSERVED
+    command: "Mapping requirements → commit → test → receipt"
+    evidence: "FC-1 v2 (feat: extend sddk uat batch with --scenario/--flag/--priority/--exclude-flaky) → commit 3d24000 → test 3c93472 (uat_batch_filters_tests: 7 predicate tests) → docs/roadmap/receipts/c4-release-v1.172.0/RECEIPT.md. Mapping complete. Regression prevented by chromium-skip fix 0974292."
+  T03:
+    status: HISTORICAL
+    evidence: "structured_work::shape_matches contract from C1 cycle; not re-exercised at v1.172.0 SHA."
+  T04:
+    status: HISTORICAL
+    evidence: "Schema validation contract from C1 cycle; not re-exercised at v1.172.0 SHA."
+  T05:
+    status: HISTORICAL
+    evidence: "Request_id duplicate contract from C1 cycle; not re-exercised at v1.172.0 SHA."
+  T06:
+    status: HISTORICAL
+    evidence: "Canary secret contract from C1 cycle; not re-exercised at v1.172.0 SHA."
+  T07:
+    status: HISTORICAL
+    evidence: "Test seam contract from C1 cycle; not re-exercised at v1.172.0 SHA."
+  T08:
+    status: NOT_RUN
+    evidence: "CogniCode MCP server NOT registered (mcp list fails: typer not installed). cognicode 0.97.3 binary present locally but handshake/capabilities/protocol NOT exercised."
+    note: "C2a S2 verification requires MCP server integration; current env does not satisfy that."
+  T09:
+    status: NOT_RUN
+    evidence: "CogniCode NOT integrated at v1.172.0; cannot verify graph completeness, usage indexing, or claims."
+  T10:
+    status: NOT_RUN
+    evidence: "CogniCode NOT integrated; provider absence/timeout/restart scenarios NOT exercisable."
+  T11:
+    status: NOT_RUN
+    evidence: "CogniCode NOT integrated; full-dataset contract re-execution NOT possible."
+  T12:
+    status: NOT_RUN
+    evidence: "Chronos NOT installed; runtime capture scenarios NOT exercisable."
+  T13:
+    status: NOT_RUN
+    evidence: "Chronos NOT installed; capture 0/probe fail/timeout/restart scenarios NOT exercisable."
+  T14:
+    status: NOT_RUN
+    evidence: "Chronos NOT installed; multi-program contract scenarios NOT exercisable."
+  T15:
+    status: NOT_RUN
+    evidence: "JCode SDK integration NOT VERIFIED; AG0/AG2 boundary demonstration NOT performed at v1.172.0 SHA."
+  T16:
+    status: NOT_RUN
+    evidence: "JCode SDK integration NOT VERIFIED; event burst/dedup scenarios NOT exercisable."
+  T17:
+    status: NOT_RUN
+    evidence: "JCode SDK integration NOT VERIFIED; context delta stale scenarios NOT exercisable."
+  T18:
+    status: NOT_RUN
+    evidence: "JCode SDK integration NOT VERIFIED; host capability negotiation scenarios NOT exercisable."
+  T19:
+    status: HISTORICAL
+    evidence: "Deny + policy swap contract from C3 cycle; storage tests at d89c2c0 exercise this via cargo test --workspace."
+  T20:
+    status: HISTORICAL
+    evidence: "Double CLI + policy digest contract from C3 cycle; storage tests at d89c2c0 exercise this."
+  T21:
+    status: HISTORICAL
+    evidence: "Crash/reopen around event append contract from C3 cycle; state_survives_restart.rs at d89c2c0 exercises this."
+  T22:
+    status: HISTORICAL
+    evidence: "SQLite contention contract from C3 cycle; concurrency_planning_substrate.rs at d89c2c0 exercises this (5/5 PASS in isolation; pre-existing flake under workspace-wide concurrency)."
+  T23:
+    status: NOT_RUN
+    evidence: "Dedicated adversarial canary suite NOT executed at v1.172.0 SHA. R14 OPEN_NON_BLOCKER from A5-C."
+  T24:
+    status: HISTORICAL
+    evidence: "Bytes non-UTF8/NUL defense from C3 cycle; gateway argument defense tests at d89c2c0 cover this."
+  T25:
+    status: HISTORICAL
+    evidence: "Bypass of Authority/Storage contract from C3 cycle; authority_fail_closed.rs at d89c2c0 covers this."
+  T26:
+    status: NOT_RUN
+    evidence: "Performance baseline p50/p95 NOT measured at v1.172.0 SHA. R17 OPEN_NON_BLOCKER from A5-C."
+  T27:
+    status: HISTORICAL
+    evidence: "Schema future incompatibility from C3 cycle; storage migrations handle this via LATEST_SCHEMA_VERSION = 20."
+  T28:
+    status: PASS_OBSERVED
+    command: "cargo fmt --check + cargo clippy --workspace --all-targets -- -D warnings + cargo test --workspace + shellcheck (release.sh scoped subset)"
+    evidence: "fmt clean (release.sh step 1); clippy 0 issues (release.sh step 1); cargo test --workspace post-publish = 5048 passed 0 failed 19 ignored (no flake triggered). shellcheck scoped subset PASS per release.sh step 1. Note: `shellcheck scripts/*.sh` (AGENTS.md §5 full scope) emits 2 pre-existing style issues in scripts/apply_banner.sh (SC2016, SC2129) which are info-level and not part of release.sh's scoped static gate."
+    note: "Full profile re-executed post-publish at d89c2c0 (not via release.sh --skip-tests gate). Pre-publish run used --skip-tests (flake acknowledgment per AGENTS.md §8); the post-publish full-profile result is the durable evidence and supports G1 PASS_OBSERVED via historical carry-over."
+  T29:
+    status: PASS_OBSERVED
+    command: "release.sh step 10 (install from URL) + sha256 verification + sddk dev doctor"
+    evidence: "UAT-EVIDENCE-T29-v1.172.0.yaml (6 falsifiers, 0 triggered). Binary sha256 verified bit-exact against published."
+  T30:
+    status: NOT_RUN
+    evidence: "Cross-version compatibility/replay verification NOT performed at v1.172.0. v1.171.0 → v1.172.0 migration path NOT explicitly replayed (schema unchanged at LATEST_SCHEMA_VERSION = 20; the only schema-mutating change is FC-1 v2's extension to `sddk uat batch` which is CLI surface only, not storage). Replay skipped because no storage migration between v1.171.0 and v1.172.0."
+  T31:
+    status: PASS_OBSERVED
+    command: "5-way coherence: tag/HEAD/origin/asset/PATH"
+    evidence: "UAT-EVIDENCE-T31-v1.172.0.yaml (6 falsifiers, 0 triggered). tag=d89c2c0, asset sha256=e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e, PATH sha256=e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e. Coherent."
+    note: "Version triple is intentional: workspace version 1.171.2 / binary version 1.171.2 / bundle version 1.171.2 / tag v1.172.0. Per AGENTS.md §2.3 the workspace version is normally equal to the tag, but for FC-1 v2 a pre-existing patch (chromium-skip fix 0974292) and the FC-1 commit itself were rolled into a single v1.172.0 minor bump (1 feat detected → minor SemVer); the workspace versions 1.171.1 and 1.171.2 are pre-publish annotations only and not shipped tags. release-bump.sh produces v1.172.0 directly from v1.171.0 because only 1 feat and 1 fix appear between them."
+  T32:
+    status: NOT_RUN
+    evidence: "Failed-gate simulation NOT performed at v1.172.0. release.sh script structure enforces fail-closed but adversarial test not separately executed."
+  T33:
+    status: PASS_OBSERVED
+    evidence: "Enhanced profile gates (G7) reported as NOT_RUN/NOT_VERIFIED. Base certification does NOT require Enhanced. NOT_RUN preserves Base validity per CERTIFICATIONS.md §2."
+    note: "Base certified independently of Enhanced; absence of chronos-mcp does not invalidate Base."
+  T34:
+    status: NOT_RUN
+    evidence: "Second host real NOT implemented. AG4 not validated. AGENTIC_API_STABLE not declared."
+  T35:
+    status: NOT_RUN
+    evidence: "Jev corpus not labeled; benchmark baseline not established at v1.172.0."
+accepted_risks:
+  - id: "R14"
+    scope: "Security / secrets matrix over production surfaces"
+    approver: "A5-C §11 explicit acceptance (P0 OPEN_NON_BLOCKER)"
+    rationale: "A5-C explicitly accepts G11 left at NOT VERIFIED with R14 as known-accepted risk; no dedicated security cycle has been run since."
+    expires: "revisit when G11 dedicated cycle is scheduled"
+    revisit_trigger: "any PR adding new log/error/receipt/CAS/handoff surface"
+  - id: "R17"
+    scope: "Operator diagnostics deeper sweep (G10 GREEN_PARTIAL)"
+    approver: "A5-C §3 G10 (P2 OPEN_NON_BLOCKER)"
+    rationale: "Diagnostic surface exists and contract commands answered; deeper sweep deferred."
+    expires: "next operator diagnostics cycle"
+    revisit_trigger: "any PR adding new diagnostic surface"
+  - id: "FC-3 not yet certified"
+    scope: "sddk cycle export --format text|json|jsonl"
+    approver: "session-12 audit finding (operator concern: counts != verified) — carried forward to v1.172.0"
+    rationale: "FC-3 implemented in working tree but NOT in any released binary. Tests pass (3 unit + 1 integration) but no UAT-EVIDENCE produced; no commit yet."
+    expires: "before any v1.173.0 release"
+    revisit_trigger: "if v1.173.0 release is considered, FC-3 must first have UAT-EVIDENCE for applicable T scenarios (T01, T02, T05, T21, T23, T28)"
+  - id: "R-flaw-concurrency-planning-substrate-flake"
+    scope: "Pre-existing SQLite 'Database is locked' flake under workspace-wide concurrency in concurrency_planning_substrate.rs"
+    approver: "session-12 close (v1.172.0 publish with --skip-tests)"
+    rationale: "Flake appears in workspace-wide parallel test runs; in isolation the suite is 5/5 PASS. Did NOT trigger on the post-publish full profile re-run. Root cause unfixed (likely busy_timeout pragma or shared-state contention); deferring to dedicated cycle."
+    expires: "next storage concurrency hardening cycle"
+    revisit_trigger: "any PR that increases concurrency or modifies SQLite pragma defaults"
+limitations:
+  - "C2 (CogniCode / Chronos / JCode) NOT EVALUATED at v1.172.0 SHA: provider MCP servers not registered locally (typer not installed for MCP CLI; cognicode binary present but not integrated via bridge)."
+  - "T30 (cross-version compatibility/replay) NOT executed for v1.171.0 → v1.172.0 migration; current evidence is no-op by inspection (no schema change, no storage migration)."
+  - "T32 (failed-gate adversarial test) NOT executed; release.sh fail-closed mechanism enforced by script structure only."
+  - "v1.172.0 was published with `bash scripts/release.sh --skip-tests` because the workspace-wide test run had a flake acknowledgment on concurrency_planning_substrate (Database is locked under parallel threads). The full profile was re-executed post-publish at d89c2c0 (5048 passed; 0 failed; 19 ignored; no flake triggered), so the durable evidence is solid, but the literal contract of running the full profile inline at release time was not followed for v1.172.0."
+  - "v1.172.0 carries only FC-1 v2 (uat batch selective filters). FC-3 (cycle export) is uncommitted working tree code NOT in PATH; FC-4 (uat replay --release), FC-7 (uat status --format json), FC-8 (uat validate --format json) remain on the roadmap."
+operator_approval_ref: "session-12 close 2026-09-22T20:23:49Z (release v1.172.0); session-12 audit finding 2026-09-22T18:00:00Z (operator concern: CLOSED != CERTIFIED)"
+verified_at_utc: "2026-09-22T20:55:30Z"
+audit_metadata:
+  session: "session-12"
+  intent: "Honest re-verification of v1.172.0 status against CERTIFICATIONS.md §5 schema"
+  previous_state_label: "PUBLISHED 2026-09-22T20:23:49Z (per SESSION-JOURNAL.md closeout entry 00e7b56) — formalized to PASS_PARTIAL_OBSERVED after audit"
+  open_findings:
+    - "Release v1.172.0 was published with --skip-tests but the full profile was re-run post-publish and passed (5048/5048). The flake acknowledgment (R-flaw-concurrency-planning-substrate-flake) is documented as a pre-existing condition; the literal contract of running the full profile inline at release time was not followed."
+    - "RECEIPT.md (session-12 closeout at 00e7b56) is a release receipt, NOT a CERTIFICATION-RECEIPT (CERTIFICATIONS.md §5 schema). This document is the formal CERTIFICATION-RECEIPT schema-compliant version."
+    - "FC-3 working tree must NOT be committed without UAT-EVIDENCE; operator concern: counts of closes != verified acceptance conditions."
+    - "14 ignored tests in delta vs v1.171.0 (chromium/tui prerequisites for full UAT render) need disposition inventory next time a full UAT render is required."

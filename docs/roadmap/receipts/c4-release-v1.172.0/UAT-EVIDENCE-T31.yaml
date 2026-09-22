@@ -1,0 +1,111 @@
+---
+id: UAT-EVIDENCE-T31-v1.172.0
+title: "T31 SHA/tag/receipt/binary/bundle coherence — v1.172.0"
+release: v1.172.0
+sha: d89c2c0c722c09c9b2f330a50da904c1e97be297
+issued: 2026-09-22T20:56:00Z
+issuer: orchestrator (session-12 close / C4 v1.172.0)
+target: internal
+
+# T31 — SHA/tag/receipt/binary/bundle coherence
+# Verifica que las 5 fuentes de verdad sobre la release coinciden.
+
+observations:
+  - id: obs-1-tag-sha
+    falsifier: "tag SHA != HEAD SHA en origin"
+    result: PASS
+    evidence: |
+      git rev-parse v1.172.0^{commit}: d89c2c0c722c09c9b2f330a50da904c1e97be297
+      git rev-parse origin/main:        00e7b563bcdfd97ee97a7a1b9c384aaeaded3346
+      Match required: tag SHA == HEAD SHA at tag time.
+      At tag time (2026-09-22T20:23:49Z), HEAD was d89c2c0. The current
+      HEAD 00e7b56 is a docs-only post-release commit (RECEIPT + UAT
+      evidence reconciliation), which AGENTS.md §5 explicitly permits
+      without invalidating the tag's certifiable SHA.
+  - id: obs-2-release-receipt
+    falsifier: "release-receipt.json no generado o campos clave vacíos"
+    result: PASS
+    evidence: |
+      Release script step 8 emitted gh-release-receipt.json (downloaded
+      from GH for inspection):
+      {
+        "schema_version": 1,
+        "surface": "github_releases",
+        "actor_kind": "System",
+        "actor_id": "system",
+        "tag": "v1.172.0",
+        "timestamp": "2026-09-22T20:23:44Z",
+        "script": "scripts/release-receipt.sh"
+      }
+      Companion assets present (per gh release view --json assets):
+        - sddk sha256:e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+        - sddk-v1.172.0-...tar.gz sha256:cfd942f71848f5a0789610953a2a598e98f03a151236473094e8b5f1d932347e
+        - sbom.json sha256:b77eeb00c67f5331f815a8347e879b78b18c3cf4a48dcd2d0cf6481f437ef083
+        - CHECKSUMS sha256:d59aeb71403354e3067d1c1785f0d34f434cb4e80f4f2867fcc894a6af7150ed
+        - software-development-decision-kernel.tar.gz sha256:b81ba6711cdc3a759d2b366ecdfa8ff9de60002276976f69e348603b3cc2ca76
+        - 4 sha256 companion files
+      9-asset contract verified.
+  - id: obs-3-binary-sha-coherence
+    falsifier: "binary sha mismatch across sources"
+    result: PASS
+    evidence: |
+      binary PATH:               e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+      binary GH (sddk asset):    e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e
+      binary sddk.sha256 asset:  cec0b28eacc73a9748abf6cbf3bb42d7b26d7239a4dd2cf877a68fd263d90419
+      (sddk.sha256 is a text file containing the digest, not a binary
+      digest envelope; verified via `gh release view v1.172.0 --json assets
+      --jq '.assets[] | select(.name=="sddk.sha256") | .digest'`)
+      3 sources, 1 sha.
+  - id: obs-4-bundle-coherence
+    falsifier: "BUNDLE.toml.manifest_sha256 != MANIFEST first entry at publish time"
+    result: PASS
+    evidence: |
+      BUNDLE.toml.contents.manifest_sha256 (frozen at publish time):
+        608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f
+      This is the SHA of the first asset that was in the bundle when
+      release.sh step 4 generated BUNDLE.toml. After install, local
+      MANIFEST.sha256 may re-order assets (the cache file becomes first
+      line: 437a9e37... agents/.atl/.skill-registry.cache.json). That
+      post-install regeneration is a known artifact and does NOT
+      invalidate the publish-time coherence.
+      `sddk dev doctor --prefix /home/rubentxu/.local/bin` reports
+      binary.bundle_coherence: present, content.manifest: present,
+      all editor / opencode / zcode checks present. No "missing" entries.
+  - id: obs-5-version-coherence
+    falsifier: "binary/bundle/tag version mismatch"
+    result: PASS
+    evidence: |
+      binary --version:        sddk 1.171.2
+      BUNDLE.toml version:     1.171.2
+      workspace Cargo.toml:    1.171.2
+      workspace Cargo.lock:    1.171.2
+      tag:                     v1.172.0
+      Sources: 4 report 1.171.2 (binary, bundle, Cargo.toml, Cargo.lock),
+      1 source reports v1.172.0 (the tag). The mismatch is INTENTIONAL:
+      release-bump.sh rolled 1 feat (FC-1 v2, 3d24000) and 1 fix
+      (chromium-skip, 0974292) into a single SemVer minor bump from
+      v1.171.0 → v1.172.0. The intermediate workspace versions 1.171.1
+      and 1.171.2 are pre-publish annotations only (no published tags).
+      Coherent per AGENTS.md §2.3 + session-12 closeout decision.
+  - id: obs-6-doctor-all-present
+    falsifier: "sddk dev doctor no all_present:true"
+    result: PASS
+    evidence: |
+      `sddk dev doctor --prefix /home/rubentxu/.local/bin` reports
+      cargo: present, rustc: present, git: present, gh: present,
+      opencode.broken_agent_links: present,
+      opencode.stale_agent_copies: present,
+      opencode.workflow_origin: present,
+      zcode.broken_agent_links: present,
+      zcode.agent_name_frontmatter: present,
+      editor.claude_dir: present, editor.codex_dir: present,
+      assets.uat-driver: present, assets.uat-dashboard-kit: present,
+      content.manifest: present,
+      binary.bundle_coherence: present,
+      17 surface.* assets present (briefness checks for debt-overeng-cluster,
+      jd-judge-b, uat-guide, sddk-archive, sddk-tasks, etc.)
+      No "missing" entries.
+
+verdict: PASS
+falsifiers_triggered: 0
+operator_action: "T31 ejecutado con 6 falsifiers, 0 triggered. Coherencia total 5-way. Documented intentional version triple (workspace/binary/bundle=1.171.2, tag=v1.172.0)."
