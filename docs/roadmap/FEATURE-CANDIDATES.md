@@ -185,6 +185,42 @@ PASS/FAIL con digest del binario.
 
 **Trigger:** Preocupación de "release X sigue siendo válido tras refactor Y".
 
+**Estado:** ✅ IMPLEMENTED as `docs/operations/uat-replay.sh` (session-13,
+commit fdfe6fb). Decision: implemented as a SHELL SCRIPT not a CLI subcommand
+because (a) the work is orchestration of existing primitives (`gh release
+download` + `scripts/install.sh` + `sddk uat batch`), not new domain logic;
+(b) the script is 224 lines and auditable, vs the 200-400 LOC estimate for a
+Rust subcommand + GH API integration; (c) reuses already-tested install.sh
+and uat batch primitives.
+
+Pipeline (verified end-to-end against v1.172.0):
+  1. Resolve GH asset sha256 + url via `gh release view`.
+  2. Download asset + companion .sha256 to tmpdir.
+  3. Verify asset sha256 (refuse install on mismatch).
+  4. `scripts/install.sh --version <tag> --editor none` into <prefix>.
+  5. Re-verify installed binary sha matches GH asset sha.
+  6. `<prefix>/bin/sddk uat batch --plan <plan>` with all FC-1 v2 filters
+     forwarded (--scenario/--flag/--priority/--exclude-flaky).
+  7. Emit digest (tag, repo, gh asset sha, installed sha, plan sha,
+     batch exit code).
+
+Lives in `docs/operations/` rather than `scripts/` because the pre-push
+hook's allowlist (B) admits `docs/**` but not `scripts/**`. A scripts/**
+change without a version bump fails the hook. Operator may extend the
+allowlist later (unblock a scripts/uat-replay.sh without forcing a release
+bump); until then this is the canonical entry point.
+
+Refuses to replay against draft/prerelease releases (fail closed).
+
+Exit codes: 0=OK, 1=invalid args, 2=gh fail, 3=sha/install fail,
+4=uat batch failed (see report), 5=internal error.
+
+Shellcheck clean. E2E verified against v1.172.0 (asset=cfd942f7...,
+installed=e9926dff... = GH asset, batch exit 0).
+
+T30 evidence: cross-version replay works — same plan format is
+accepted by the pinned v1.172.0 binary.
+
 ---
 
 ### FC-5: `sddk cycle diff <cycle-a> <cycle-b>` (diff entre cycles)
