@@ -1971,27 +1971,35 @@ fn run_uat_status(args: UatStatusArgs) -> CommandOutput {
     // release candidate. U6 will enrich this with control-plane data.
     let plan_file = PathBuf::from(format!("uat-plan-{}.yaml", args.release));
     let report_file = PathBuf::from(format!("uat-report-{}.yaml", args.release));
-    let lines = [
-        format!("release: {}", args.release),
-        format!(
-            "plan: {}",
-            if plan_file.exists() {
-                "generated"
-            } else {
-                "missing"
-            }
-        ),
-        format!(
-            "report: {}",
-            if report_file.exists() {
-                "ready"
-            } else {
-                "not-ready"
-            }
-        ),
-    ];
-    let result: Result<String, anyhow::Error> = Ok(lines.join("\n"));
-    render_result(result, format, |text| text.to_string())
+    let output = UatStatusOutput {
+        release: args.release,
+        plan: if plan_file.exists() {
+            "generated".to_owned()
+        } else {
+            "missing".to_owned()
+        },
+        report: if report_file.exists() {
+            "ready".to_owned()
+        } else {
+            "not-ready".to_owned()
+        },
+    };
+    render_result(Ok(output), format, uat_status_text)
+}
+
+fn uat_status_text(o: &UatStatusOutput) -> String {
+    format!(
+        "release: {}\nplan: {}\nreport: {}",
+        o.release, o.plan, o.report
+    )
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+struct UatStatusOutput {
+    release: String,
+    plan: String,
+    report: String,
 }
 
 /// Aggregate sessions into a report with the global verdict.
