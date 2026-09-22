@@ -1096,3 +1096,97 @@ mod tests {
         drop(final_stores);
     }
 }
+
+// ── C3d (session-11) — T26-append microbench (opt-in via #[ignore]) ──────────
+
+#[cfg(test)]
+mod bench {
+    //! Lightweight performance baseline for `SqliteEventStore::append`.
+    //! Opt-in via `#[ignore]` because these tests do real I/O and take
+    //! meaningful wall time. Run with:
+    //!
+    //! ```text
+    //! cargo test -p sddk-storage --lib event_store::bench -- --ignored --nocapture
+    //! ```
+    use super::*;
+    use sddk_domain::{ActorKind, ActorRef, EventEnvelopeV1, EventStore};
+    use serde_json::json;
+    use std::time::Instant;
+
+    /// Local mirror of the helper in `super::tests`. Avoids exposing the
+    /// helper from a sibling test module purely for the benchmark.
+    fn bench_envelope(event_id: &str, stream_id: &str) -> EventEnvelopeV1 {
+        let mut env = EventEnvelopeV1 {
+            event_id: event_id.to_string(),
+            event_type: "uat.acceptance.granted".to_string(),
+            schema_version: 1,
+            stream_id: stream_id.to_string(),
+            sequence: 0,
+            project_id: "p-c3d".to_string(),
+            occurred_at: "2026-09-22T00:00:00Z".to_string(),
+            recorded_at: "2026-09-22T00:00:00Z".to_string(),
+            actor: ActorRef {
+                kind: ActorKind::Human,
+                id: "bench".to_string(),
+                definition_hash: None,
+                policy_hash: None,
+                model: None,
+                role: None,
+            },
+            subjects: vec![],
+            payload: json!({ "bench": true }),
+            evidence_refs: vec![],
+            content_hash: String::new(),
+            metadata: None,
+            causation_id: None,
+            correlation_id: None,
+            cycle_id: None,
+            frame_id: None,
+            fork_id: None,
+        };
+        env.content_hash = env.compute_content_hash();
+        env
+    }
+
+    /// T26-append: mean / p50 / p99 of `append` latency over 1000 events
+    /// on a single stream, single thread. Print to stdout.
+    #[test]
+    #[ignore]
+    fn bench_append_throughput() {
+        let mut store = SqliteEventStore::open_in_memory().expect("open");
+        const N: usize = 1000;
+
+        // Warm-up: 10 ops to amortize first-call costs (SQLite prepare cache,
+        // tempdir setup).
+        for i in 0..10 {
+            let env = bench_envelope(&format!("evt-warm-{i:04}"), "stream-bench");
+            let _ = store.append(&env).expect("warm");
+        }
+
+        // Measure.
+        let mut samples_us: Vec<u64> = Vec::with_capacity(N);
+        for i in 0..N {
+            let env = bench_envelope(&format!("evt-bench-{i:04}"), "stream-bench");
+            let t0 = Instant::now();
+            store.append(&env).expect("append");
+            samples_us.push(t0.elapsed().as_micros() as u64);
+        }
+
+        let total: u64 = samples_us.iter().sum();
+        let mean_us = total / N as u64;
+        let mut sorted = samples_us.clone();
+        sorted.sort_unstable();
+        let p50_us = sorted[N / 2];
+        let p99_us = sorted[(N as f64 * 0.99) as usize];
+
+        println!("T26-append over N={N}: mean={mean_us} µs, p50={p50_us} µs, p99={p99_us} µs");
+
+        // Sanity upper bound: 10 ms per append is conservative for SQLite
+        // INSERT under WAL+busy_timeout. A regression here would mean the
+        // path got catastrophically slower (e.g. unindexed scan).
+        assert!(
+            mean_us < 10_000,
+            "mean append latency {mean_us} µs exceeds 10ms threshold"
+        );
+    }
+}

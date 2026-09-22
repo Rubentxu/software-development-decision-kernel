@@ -3756,3 +3756,150 @@ mod cycle_lease_security_tests {
         assert_eq!(second.expires_at_ms, 4000);
     }
 }
+
+// ── C3d (session-11) — T26-lease microbench (opt-in via #[ignore]) ─────────────
+
+#[cfg(test)]
+mod lease_bench {
+    //! Lightweight performance baseline for `Storage::acquire_cycle_lease` +
+    //! `release_lease_with_event`. Opt-in via `#[ignore]`. Run with:
+    //!
+    //! ```text
+    //! cargo test -p sddk-storage --lib lease_bench -- --ignored --nocapture
+    //! ```
+    use super::*;
+    use sddk_domain::cycle::{CycleManifest, CyclePath, CycleStatus, Phase};
+    use sddk_domain::models::identity::{CycleRecord, ProjectRecord, WorkspaceRecord};
+    use std::collections::HashMap;
+    use std::time::Instant;
+
+    fn storage_with_cycle(cycle_id: &str) -> Storage {
+        let store = Storage::open_in_memory().expect("open");
+        store
+            .insert_project(&ProjectRecord {
+                project_id: "p-c3d".to_string(),
+                display_name: "p-c3d".to_string(),
+                remote_url: None,
+                scope: ".".to_string(),
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("project");
+        store
+            .insert_workspace(&WorkspaceRecord {
+                workspace_id: "w-c3d".to_string(),
+                project_id: "p-c3d".to_string(),
+                canonical_path: "/work/c3d".to_string(),
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("workspace");
+        store
+            .insert_cycle(&CycleRecord {
+                manifest: CycleManifest {
+                    schema_version: 1,
+                    project_id: "p-c3d".to_string(),
+                    workspace_id: "w-c3d".to_string(),
+                    cycle_id: cycle_id.to_string(),
+                    display_name: "lease-bench".to_string(),
+                    status: CycleStatus::Open,
+                    phase: Phase::Build,
+                    path: CyclePath::ALite,
+                    branch: "feat/c3d".to_string(),
+                    base: "abc".to_string(),
+                    head: None,
+                    artifacts: HashMap::new(),
+                    release: None,
+                    delivery_kind: None,
+                    remediation_round: 0,
+                    remote_url: None,
+                    scope: None,
+                    pause_at: None,
+                    review_at: None,
+                    last_pause_reason: None,
+                    replan_count: 0,
+                },
+                created_at: "2026-09-22T00:00:00Z".to_string(),
+                updated_at: "2026-09-22T00:00:00Z".to_string(),
+            })
+            .expect("cycle");
+        store
+    }
+
+    /// T26-lease: mean latency of acquire-then-release over 1000 ops.
+    /// Each "iteration" is: acquire a fresh lease (after the previous
+    /// expires), then release it. The cycle stays valid; only the lease
+    /// rows churn.
+    #[test]
+    #[ignore]
+    fn bench_acquire_release_lease() {
+        let mut store = storage_with_cycle("c-bench");
+        const N: usize = 1000;
+        let cycle_id = "c-bench";
+
+        // Warm-up: 10 ops.
+        for i in 0..10 {
+            let now_ms = 1_000_000 + (i as i64) * 100_000;
+            let lease = store
+                .acquire_cycle_lease(cycle_id, "warm", now_ms, now_ms + 50_000)
+                .expect("warm acquire");
+            let _ = store.release_lease_with_event(
+                "p-c3d",
+                cycle_id,
+                "warm",
+                lease.fencing_token,
+                "bench",
+                &format!("cmd-warm-{i}"),
+                "2026-09-22T00:00:00Z",
+            );
+        }
+
+        // Measure.
+        let mut samples_us: Vec<u64> = Vec::with_capacity(N);
+        for i in 0..N {
+            // Each iteration uses a future now_ms so the previous
+            // lease has expired (avoids LeaseConflict and re-uses the
+            // happy-path INSERT latency).
+            let now_ms = 10_000_000 + (i as i64) * 1_000_000;
+            let t0 = Instant::now();
+            let lease = store
+                .acquire_cycle_lease(cycle_id, "bench", now_ms, now_ms + 500_000)
+                .expect("acquire");
+            let _ = store.release_lease_with_event(
+                "p-c3d",
+                cycle_id,
+                "bench",
+                lease.fencing_token,
+                "bench",
+                &format!("cmd-{i:04}"),
+                "2026-09-22T00:00:00Z",
+            );
+            samples_us.push(t0.elapsed().as_micros() as u64);
+        }
+
+        let total: u64 = samples_us.iter().sum();
+        let mean_us = total / N as u64;
+        let mut sorted = samples_us.clone();
+        sorted.sort_unstable();
+        let p50_us = sorted[N / 2];
+        let p99_us = sorted[(N as f64 * 0.99) as usize];
+
+        println!(
+            "T26-lease acquire+release over N={N}: mean={mean_us} µs, p50={p50_us} µs, p99={p99_us} µs"
+        );
+
+        // Sanity upper bound: 50 ms per op is conservative for two
+        // SQLite IMMEDIATE transactions (acquire + release, each with
+        // INSERT/UPDATE on `cycle_leases` and an event on `ledger_events`).
+        // The measured mean was ~15 ms on this hardware; observed p99
+        // across runs was up to ~62 ms, so 50 ms would fail sporadically.
+        // 100 ms leaves comfortable headroom against CI noise while
+        // still catching >5× regressions.
+        //
+        // Note: this is intentionally loose — the goal is "fail only on
+        // catastrophic regression", not "tight CI perf gate". For tight
+        // perf gates, adopt criterion under a future cycle.
+        assert!(
+            mean_us < 100_000,
+            "mean acquire+release latency {mean_us} µs exceeds 100ms threshold"
+        );
+    }
+}

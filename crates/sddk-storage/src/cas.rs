@@ -252,4 +252,53 @@ mod tests {
             result
         );
     }
+
+    // C3d (session-11) — T26-cas microbench (opt-in via #[ignore])
+
+    /// T26-cas: mean latency of put+get round-trip over 1000 4-KiB blobs.
+    /// Run with:
+    ///
+    /// ```text
+    /// cargo test -p sddk-storage --lib cas::tests::bench_put_get_4kib_roundtrip -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore]
+    fn bench_put_get_4kib_roundtrip() {
+        use std::time::Instant;
+        let (cas, _dir) = temp_cas();
+        const N: usize = 1000;
+        let payload: Vec<u8> = vec![0xAB; 4096];
+
+        // Warm-up.
+        for _ in 0..10 {
+            let _ = cas.put(&payload).expect("warm put");
+        }
+
+        // Measure.
+        let mut samples_us: Vec<u64> = Vec::with_capacity(N);
+        for _ in 0..N {
+            let t0 = Instant::now();
+            let h = cas.put(&payload).expect("put");
+            let _ = cas.get(&h).expect("get");
+            samples_us.push(t0.elapsed().as_micros() as u64);
+        }
+
+        let total: u64 = samples_us.iter().sum();
+        let mean_us = total / N as u64;
+        let mut sorted = samples_us.clone();
+        sorted.sort_unstable();
+        let p50_us = sorted[N / 2];
+        let p99_us = sorted[(N as f64 * 0.99) as usize];
+
+        println!(
+            "T26-cas put+get 4 KiB over N={N}: mean={mean_us} µs, p50={p50_us} µs, p99={p99_us} µs"
+        );
+
+        // Sanity upper bound: 5 ms per put+get is conservative for
+        // SHA256 + 4 KiB write + 4 KiB read + verify on a tmpfs.
+        assert!(
+            mean_us < 5_000,
+            "mean put+get latency {mean_us} µs exceeds 5ms threshold"
+        );
+    }
 }
