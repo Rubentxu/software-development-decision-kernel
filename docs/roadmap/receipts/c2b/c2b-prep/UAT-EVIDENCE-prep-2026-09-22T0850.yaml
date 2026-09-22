@@ -2,29 +2,28 @@ schema_version: 1
 profile_target: RUNTIME_ENHANCED_C2B
 cycle: C2b
 status: NOT_EVALUATED_PROVIDER_MISSING
-executed_by: orchestrator (delegated; session-11 close re-investigation)
-executed_at_utc: "2026-09-22T08:50:00Z"
-source_sha_at_eval: "a03d5a9"  # post C2a re-investigation
-workspace_version_at_eval: "1.169.149"
+executed_by: orchestrator (delegated)
+executed_at_utc: "2026-09-22T08:02:00Z"
+source_sha_at_eval: "3c81239"  # post C2a commit
+workspace_version_at_eval: "1.169.142"
 last_public_release_observed: "v1.169.122"
-prior_session_status_at_3c81239: "NOT_EVALUATED_PROVIDER_MISSING"  # documented in c2b-prep/UAT-EVIDENCE-prep-2026-09-22T0850.yaml
 
 environment:
   os: "linux x86_64"
   rust: "(see rust-toolchain)"
   provider_runtime:
     binary_searched:
-      - "which chronos"
-      - "which chronos-mcp"
-      - "/usr/local/bin/chronos*"
-      - "/home/rubentxu/.cargo/bin/chronos*"
+      - "/usr/local/bin/chronos"
+      - "/usr/local/bin/chronos-mcp"
+      - "/home/rubentxu/.cargo/bin/chronos"
+      - "/home/rubentxu/.cargo/bin/chronos-mcp"
       - "cargo install chronos-mcp"
       - "cargo search chronos-mcp"
     binary_present: null
     binary_missing:
       expected: "chronos-mcp"
       cargo_installable: false
-      cargo_search_result: "(empty — no crates.io match; cargo search chronos returns unrelated crates: chronos, clickhouse, chrono-*)"
+      registry_match: false
     historical_evidence:
       ref: "crates/sddk-engine/src/runtime_evidence_port_mcp.rs:3"
       cycle: "p-63676b11dc0ef88f/aiw-s5-chronos-runtime"
@@ -38,12 +37,10 @@ scenarios:
     status: NOT_EVALUATED
     reason: "provider binary (chronos-mcp) absent on host; no installable artifact found."
     evidence:
-      command: "which chronos chronos-mcp"
-      output: "(both not found)"
+      command: "which chronos-mcp"
+      output: "(not found)"
       command2: "cargo search chronos-mcp"
       output2: "(empty — no crates.io match)"
-      command3: "cargo search chronos"
-      output3: "(only unrelated crates: chronos=0.0.0, clickhouse, chrono-*)"
   T13:
     description: "Capture 0, probe falla, timeout, restart"
     status: NOT_EVALUATED
@@ -61,7 +58,7 @@ recovery_action:
   documented_alternative: "Accept C2b as DEFERRED; rely on AIW-S5 historical evidence as HISTORICAL only (per UAT-MATRIX T33)."
 
 not_evaluated_vs_failed:
-  distinction: "Same as C2a — NOT_EVALUATED is the correct category when the precondition is missing. Not a failed test. Session-11 pre-flight (which + cargo search) CONFIRMS the original session-11 finding; no regression, no progress."
+  distinction: "Same as C2a — NOT_EVALUATED is the correct category when the precondition is missing. Not a failed test."
 
 scope_contract_ref: "../SCOPE-CONTRACT.md"
-parallel_finding_with: "C2a (CogniCode-mcp absent) — same provider-missing pattern"
+parallel_finding_with: "C2a (CogniCode-mcp absent)"
