@@ -8392,10 +8392,12 @@ fn cli_vault_show_resolves_node_and_renders_json_and_text() {
     assert_eq!(json["node"]["status"], "accepted");
     assert_eq!(json["node"]["title"], "ADR A");
     assert_eq!(json["backlinks"][0], "ADR-B");
-    assert!(json["node"]["body"]
-        .as_str()
-        .unwrap()
-        .contains("Links [[ADR-B]]"));
+    assert!(
+        json["node"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("Links [[ADR-B]]")
+    );
 
     // Text path: renders metadata header + body footer.
     let showed_text = run_with_root(
