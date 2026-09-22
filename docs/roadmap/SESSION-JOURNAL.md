@@ -1559,3 +1559,36 @@ support. Not done in this cycle (scope discipline).
   - `cargo-targets/release/sddk` stale (sha f7ff7530... = workspace 1.169.158 con FC-2 pero nunca publicado). Renombrado a `sddk.stale-1.169.158-f7ff7530` (cuarentena, no borrado). Reemplazado por sha 924f7de6... = v1.170.3 tras release real.
 - CURRENT/STATE pendientes de reconciliar en esta misma concernencia.
 - Proxima accion: actualizar STATE.yaml (current_sha=7bedfe7, last_public_release=v1.170.3, C4 v1.170.3 CERTIFIED), actualizar CURRENT.md (mismo), emitir RECEIPT C4 v1.170.3.
+
+### 2026-09-22T14:35:00Z — T29/T31 EVIDENCE + FC-6 IMPLEMENTED — orchestrator
+
+- Baseline: main@0393413 (post v1.170.3 RECEIPT + docs-only); local==origin/main.
+- Alcance/autorizacion: operador autoriza via mensaje 2026-09-22T14:22Z (mismo AUTO mode + "audita lo que esta cerrado"). Modo AUTO bajo AGENTS.md §GLOBAL.
+- Ejecutado (4 commits en vuelo):
+  - `0393413` docs(roadmap): UAT-EVIDENCE T29 + T31 (test commit previo)
+  - `feat(vault)` vault show <node-id> (FC-6) — añade `VaultCommand::Show(VaultShowArgs)`, `VaultShowOutput { node, backlinks }` con derive Serialize, `run_vault_show` con capability check (`vault.show` risk:low/read), `vault_show_text` rendering. Renombrada de `show_text` por conflicto con `backlog::show_text`. 3 tests nuevos (show_text_renders_node_metadata_and_body, vault_show_output_is_serializable_to_json, show_text_omits_backlinks_line_when_empty). Capability añadida a `workflow/workflow.yaml`.
+  - `docs(roadmap)` FC-6 marcada como IMPLEMENTED en FEATURE-CANDIDATES.md.
+  - `chore(release): bump 1.170.3 → 1.170.4` (ceremonial, gate A del pre-push hook por codigo).
+
+- UAT verificadas contra HEAD actual:
+  - **T29 (clean machine install)** ejecutado en /tmp/clean-machine-test: tarball sha256 = GH API digest = companion .sha256 = bfdb4ea6....; binary sha256 (extraido) = binary sha256 (asset) = 924f7de6....; bundle manifest match; binary --version = sddk 1.170.3; doctor all_present=true. 6 falsifiers probados, 0 triggered. UAT-EVIDENCE-T29.yaml emitido.
+  - **T31 (SHA/tag/receipt/binary/bundle coherence)** verificada: tag SHA = receipt source_sha = 7bedfe7e; binary SHA match entre 4 fuentes (asset, tarball extract, ~/.local/bin/sddk, cargo-targets/release/sddk) = 924f7de6; bundle manifest SHA match; version coherence (1.170.3 everywhere). HEAD vs tag drift: 1 commit docs-only (RECEIPT 817b5f7) que no afecta binario. UAT-EVIDENCE-T31.yaml emitido.
+
+- Verificado FC-6 con binario real:
+  - `sddk vault show --vault ~/.sddk-knowledge/sddk-framework --node-id ADR-0142-... --root . --scope . --remote <git-url>` → texto y JSON emiten metadata + body + wikilinks correctamente.
+  - JSON path: `node.id="ADR-0142-RELEASE-SCRIPT-SEMVER-CORRECTNESS", node.kind="adr", node.status="accepted", node.wikilinks=["ADR-0097-COMMON-REVISION-SUBSTRATE"], backlinks=[], body length=2570 chars`.
+  - node-not-found → exit 1 con mensaje claro: "node not found: ADR-NONEXISTENT (vault has 989 nodes)".
+
+- Gates verificados:
+  - `cargo build -p sddk-cli` → exit 0
+  - `cargo test -p sddk-cli --lib vault_cmd::tests` → 6/6 PASS (3 nuevos + 3 existentes normalize_cycle_target_*)
+  - `cargo fmt --check` → exit 0
+  - `cargo clippy -p sddk-cli --all-targets -- -D warnings` → exit 0
+  - `cargo check --workspace --quiet` → exit 0 (Cargo.lock sincronizado)
+
+- Riesgos/decisiones:
+  - Naming: `show_text` (propuesto inicialmente) choca con `backlog::show_text`. Renombrado a `vault_show_text` para mantener consistencia con el namespace del modulo (graph_text, search_text, index_text ya usan prefijo vault_* o module-specific). Sin embargo index_text/search_text/graph_text NO tienen prefijo - estan en el mismo modulo. La eleccion de prefijo fue defensiva para evitar el conflicto conocido.
+  - Override SemVer sigue activo desde v1.170.3. Bump a 1.170.4 mantiene override (v1.170.3 con override sigue siendo override en proximo release hasta que los commits sean SemVer-clean).
+  - HEAD drift de 1 commit (817b5f7 RECEIPT) se mantiene, no afecta binario.
+
+- Proxima accion: commit + push + ejecutar release v1.170.4 si operador lo desea. El release seria SemVer-clean (un solo feat(), asi que seria MINOR por conventional commits, pero override mantendria 1.170.x continuity). Mas conservador: esperar a acumular mas features genuinas y cortar un release con override documentado.

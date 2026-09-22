@@ -184,6 +184,12 @@ output).
 
 **Trigger:** "Quiero ver ADR-0141 sin buscar el archivo".
 
+**Estado:** ✅ IMPLEMENTED (commit post-release v1.170.3 / session-11 cierre).
+`VaultShowOutput { node, backlinks }` con `#[derive(serde::Serialize)]`;
+`vault_show_text` para rendering legible. Capability `vault.show` añadida
+a `workflow/workflow.yaml` (risk: low, consequence: read). 6 tests
+unitarios (3 nuevos + 3 existentes normalize_cycle_target_*).
+
 ---
 
 ### FC-7: `sddk uat status --format json` (machine-readable uat status)

@@ -932,6 +932,9 @@ forge:
     vault.graph:
       risk: low
       consequence: read
+    vault.show:
+      risk: low
+      consequence: read
     vault.export:
       risk: low
       consequence: creates

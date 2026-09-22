@@ -50,6 +50,8 @@ pub(crate) enum VaultCommand {
     Search(VaultSearchArgs),
     /// Show graph facts (cycles, topological order).
     Graph(VaultIndexArgs),
+    /// Show a single node by id, with body and backlinks.
+    Show(VaultShowArgs),
     /// Export a self-contained HTML inspector.
     Export(VaultExportArgs),
 }
@@ -68,6 +70,22 @@ pub(crate) struct VaultIndexArgs {
     /// Each value must match `project_id/cycle_id` form.
     #[arg(long, value_name = "SCOPE", value_delimiter = ',')]
     pub(crate) scope_cycles: Vec<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct VaultShowArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Vault directory.
+    #[arg(long)]
+    pub(crate) vault: PathBuf,
+    /// Node identifier (ADR-0099-VAULT-AS-HUMAN-KNOWLEDGE-SOURCE, ADR-0142-...,
+    /// or any node id from frontmatter `id` / file stem).
+    #[arg(long)]
+    pub(crate) node_id: String,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -112,6 +130,7 @@ pub(crate) fn run_vault(command: VaultCommand, environment: &CliEnvironment) -> 
         VaultCommand::Validate(args) => run_vault_index(args, environment, true),
         VaultCommand::Search(args) => run_vault_search(args, environment),
         VaultCommand::Graph(args) => run_vault_graph(args, environment),
+        VaultCommand::Show(args) => run_vault_show(args, environment),
         VaultCommand::Export(args) => run_vault_export(args, environment),
     }
 }
@@ -558,9 +577,74 @@ fn graph_text(view: &GraphView) -> String {
     text
 }
 
+#[derive(serde::Serialize, Debug)]
+struct VaultShowOutput {
+    node: sddk_vault::VaultNode,
+    backlinks: Vec<String>,
+}
+
+fn run_vault_show(args: VaultShowArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result: anyhow::Result<VaultShowOutput> = (|| -> anyhow::Result<VaultShowOutput> {
+        check_vault_capability(&args.runtime, environment, "vault.show")?;
+        let index = sddk_vault::parse_vault(&args.vault)?;
+        let node = index
+            .get(&args.node_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "node not found: {} (vault has {} nodes)",
+                    args.node_id,
+                    index.nodes.len()
+                )
+            })?
+            .clone();
+        let backlinks: Vec<String> = index
+            .backlinks_of(&args.node_id)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        Ok(VaultShowOutput { node, backlinks })
+    })();
+    render_result(result, format, vault_show_text)
+}
+
+fn vault_show_text(output: &VaultShowOutput) -> String {
+    let mut text = String::new();
+    text.push_str(&format!("id: {}\n", output.node.id));
+    text.push_str(&format!("kind: {:?}\n", output.node.kind));
+    text.push_str(&format!("path: {}\n", output.node.path));
+    text.push_str(&format!("title: {}\n", output.node.title));
+    if let Some(status) = &output.node.status {
+        text.push_str(&format!("status: {status}\n"));
+    }
+    if !output.node.tags.is_empty() {
+        text.push_str(&format!("tags: {}\n", output.node.tags.join(", ")));
+    }
+    if !output.backlinks.is_empty() {
+        text.push_str(&format!(
+            "backlinks ({}): {}\n",
+            output.backlinks.len(),
+            output.backlinks.join(", ")
+        ));
+    }
+    if !output.node.wikilinks.is_empty() {
+        text.push_str(&format!(
+            "wikilinks ({}): {}\n",
+            output.node.wikilinks.len(),
+            output.node.wikilinks.join(", ")
+        ));
+    }
+    text.push_str("\n--- body ---\n");
+    text.push_str(&output.node.body);
+    if !output.node.body.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalize_cycle_target;
+    use super::{VaultShowOutput, normalize_cycle_target, vault_show_text};
 
     #[test]
     fn normalize_cycle_target_valid() {
@@ -587,5 +671,84 @@ mod tests {
         assert_eq!(normalize_cycle_target("-leading-hyphen"), None);
         assert_eq!(normalize_cycle_target("trailing-hyphen-"), None);
         assert_eq!(normalize_cycle_target("double--hyphen"), None);
+    }
+
+    fn fixture_vault() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(vault.join("adrs")).unwrap();
+        std::fs::write(
+            vault.join("adrs/ADR-0001.md"),
+            "---\nid: ADR-0001\ntype: adr\nstatus: accepted\n---\n# ADR-0001\n\nLinks [[ADR-0002]]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            vault.join("adrs/ADR-0002.md"),
+            "---\nid: ADR-0002\ntype: adr\n---\n# ADR-0002\n\nLinks [[ADR-0001]] for cross-ref\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn show_text_renders_node_metadata_and_body() {
+        let dir = fixture_vault();
+        let index = sddk_vault::parse_vault(dir.path().join("vault").as_path()).unwrap();
+        let node = index.get("ADR-0001").unwrap().clone();
+        let backlinks: Vec<String> = index
+            .backlinks_of("ADR-0001")
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let output = VaultShowOutput { node, backlinks };
+        let text = vault_show_text(&output);
+        assert!(text.contains("id: ADR-0001"));
+        assert!(text.contains("status: accepted"));
+        assert!(text.contains("backlinks (1): ADR-0002"));
+        assert!(text.contains("--- body ---"));
+        assert!(text.contains("Links [[ADR-0002]]"));
+    }
+
+    #[test]
+    fn vault_show_output_is_serializable_to_json() {
+        let dir = fixture_vault();
+        let index = sddk_vault::parse_vault(dir.path().join("vault").as_path()).unwrap();
+        let node = index.get("ADR-0002").unwrap().clone();
+        let backlinks: Vec<String> = index
+            .backlinks_of("ADR-0002")
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let output = VaultShowOutput { node, backlinks };
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        assert!(json.contains("\"id\": \"ADR-0002\""));
+        assert!(json.contains("\"backlinks\""));
+        assert!(json.contains("\"body\""));
+        // Round-trip parse to verify valid JSON shape.
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["node"]["id"], "ADR-0002");
+        assert_eq!(parsed["backlinks"][0], "ADR-0001");
+    }
+
+    #[test]
+    fn show_text_omits_backlinks_line_when_empty() {
+        // Build an isolated vault with a single node that no other node links to.
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(vault.join("adrs")).unwrap();
+        std::fs::write(
+            vault.join("adrs/ADR-ISOLATED.md"),
+            "---\nid: ADR-ISOLATED\ntype: adr\n---\n# Isolated\n\nNo incoming links.\n",
+        )
+        .unwrap();
+        let index = sddk_vault::parse_vault(&vault).unwrap();
+        let node = index.get("ADR-ISOLATED").unwrap().clone();
+        let output = VaultShowOutput {
+            node,
+            backlinks: vec![],
+        };
+        let text = vault_show_text(&output);
+        assert!(!text.contains("backlinks"));
+        assert!(text.contains("--- body ---"));
     }
 }
