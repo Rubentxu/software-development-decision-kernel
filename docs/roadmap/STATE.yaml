@@ -1,13 +1,13 @@
 schema_version: 1
-updated_at: "2026-09-22T09:58:00Z"
-status: C1_CLOSED_FULL_PROFILE_GREEN_C2_NOT_EVALUATED_C3A_B_C_D_E_F_PASS_OBSERVED_C4_RELEASE_PENDING_OPERATOR
+updated_at: "2026-09-22T10:26:00Z"
+status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_RELEASE_PENDING_OPERATOR
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "827ca6e"  # session-11 C3f close
-  head_at_state_sync: "827ca6e"
+  current_sha: "a969df8"  # session-11 C3h close
+  head_at_state_sync: "a969df8"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.169.148"
+  workspace_version_at_current: "1.169.152"
   last_public_release_observed: "v1.169.122"
   pr9_merge_commit: "cfe3766bb832d39204f5224fd475088c97abb69f"
   pr10_merge_commit: "1b3d7f0d5bddb0b37a983f0c3892fa154c600fd3"
@@ -87,7 +87,8 @@ c3_progress:
   c3d: "PASS_OBSERVED — Storage Performance baseline (T26). 3 #[ignore] microbenchmarks added (append mean=339µs, cas mean=439µs, lease mean=15ms). Opt-in via 'cargo test -- --ignored --nocapture'. No criterion adoption (would require ADR). Receipt at docs/roadmap/receipts/c3d/. Production code unchanged (0 lines)."
   c3e: "PASS_OBSERVED with DEFERRED_FIX finding C3e-F1 — Schema resilience (T27). 8 schema-resilience tests added (T27-1..T27-8); storage 75/75; clippy clean. Finding C3e-F1: 'run_migrations' re-application crashes on 17 of 20 migrations when user_version is rewound (MIGRATION_16 'duplicate column: spine_order'). T27-3 pins the failure mode. Receipt at docs/roadmap/receipts/c3e/. Production code unchanged (0 lines)."
   c3f: "PASS_OBSERVED — Migration re-application safety (T28). CLOSES C3e-F1 via ADR-0141 + pre_flight_check + StorageError::InconsistentMigrationState. 6 new T28 tests + T27-3 updated to assert typed error. Storage 81/81; clippy clean. Receipt at docs/roadmap/receipts/c3f/. First C3 sub-cycle with production code change (migrations.rs +148, lib.rs +27)."
-  c3g: "NOT_STARTED"
+  c3g: "PASS_OBSERVED — Performance budget harness (T29). 3 scenarios × N=100 with p50/p95/max/RSS in tests/perf_budget_base.rs (#[ignore]). S1 sddk version p50=4ms/p95=5ms/RSS=24KiB; S2 sddk cycle status p50=38ms/p95=40ms/RSS=92KiB; S3 sddk lint p50=37ms/p95=39ms/RSS=280KiB. All soft targets met with 10x+ headroom. Receipt at docs/roadmap/receipts/c3g/."
+  c3h: "PASS_OBSERVED — Supply-chain audit + remediation (T30). cargo-audit pre-fix: 2 vulns (quinn-proto RUSTSEC-2026-0185 stale lock; time RUSTSEC-2026-0009 direct dep). Post-fix: time 0.3.36→0.3.47 (pin bump), quinn-proto 0.11.14→0.11.15 (targeted cargo update). cargo-audit exit 0; 2931 tests pass; clippy clean. Receipt at docs/roadmap/receipts/c3h/."
 certification_claim_at_current_sha: null
 historical_evidence:
   base: "A5-C v1.169.88: CERTIFIED condicionado (G11); R14 source-level posterior"
