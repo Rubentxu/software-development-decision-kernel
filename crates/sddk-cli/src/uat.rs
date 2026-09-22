@@ -5708,3 +5708,140 @@ features:
         assert_eq!(record_v2.justification, "after stale review");
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FC-1 v2 tests: `sddk uat batch` filter predicate.
+//
+// Scope: `batch_filter_matches` and `uat_priority_label` are pure functions
+// that take `&UatScenario` + `&UatBatchArgs`. Tests pin the AND-semantics
+// and the no-filter passthrough (regression guard for the pre-FC-1 default).
+// No I/O, no plan parsing, no CLI dispatch.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod uat_batch_filters_tests {
+    use super::*;
+    use sddk_domain::{UatPriority, UatScenario};
+
+    fn make_scenario(id: &str, priority: UatPriority, flags: Vec<&str>) -> UatScenario {
+        UatScenario {
+            id: id.to_owned(),
+            title: format!("scenario {id}"),
+            priority,
+            assignee: sddk_domain::UatAssignee::Developer,
+            preconditions: vec![],
+            plain_steps: vec![],
+            technical_steps: vec![],
+            rationale: None,
+            evidence_prompt: None,
+            flags: flags.into_iter().map(str::to_owned).collect(),
+            est_minutes: 0,
+            context: None,
+            evidence: None,
+            risk: None,
+            automation: None,
+            provenance: None,
+            executor: None,
+            evidence_bundle: None,
+            oracles: vec![],
+            review: None,
+            acceptance: None,
+            form: None,
+            form_checkpoint: None,
+            form_completion: None,
+            completion: None,
+            staleness: None,
+        }
+    }
+
+    fn empty_args() -> UatBatchArgs {
+        UatBatchArgs {
+            plan: PathBuf::from("/dev/null"),
+            timeout_ms: 60_000,
+            approve: false,
+            output_dir: None,
+            report: None,
+            scenario: vec![],
+            flag: vec![],
+            priority: vec![],
+            exclude_flaky: false,
+            format: OutputFormat::Text,
+        }
+    }
+
+    #[test]
+    fn empty_args_passes_every_scenario() {
+        let s = make_scenario("S-01", UatPriority::P1, vec!["smoke"]);
+        assert!(batch_filter_matches(&s, &empty_args()));
+    }
+
+    #[test]
+    fn scenario_filter_keeps_listed_ids_only() {
+        let mut args = empty_args();
+        args.scenario = vec!["S-01".into(), "S-03".into()];
+        let keep = make_scenario("S-01", UatPriority::P1, vec![]);
+        let skip = make_scenario("S-02", UatPriority::P1, vec![]);
+        assert!(batch_filter_matches(&keep, &args));
+        assert!(!batch_filter_matches(&skip, &args));
+    }
+
+    #[test]
+    fn flag_filter_requires_all_listed_flags_present() {
+        let mut args = empty_args();
+        args.flag = vec!["smoke".into(), "data-verify".into()];
+        let both = make_scenario("S-A", UatPriority::P1, vec!["smoke", "data-verify"]);
+        let one = make_scenario("S-B", UatPriority::P1, vec!["smoke"]);
+        let none = make_scenario("S-C", UatPriority::P1, vec![]);
+        assert!(batch_filter_matches(&both, &args));
+        assert!(!batch_filter_matches(&one, &args));
+        assert!(!batch_filter_matches(&none, &args));
+    }
+
+    #[test]
+    fn priority_filter_matches_listed_priorities_case_insensitive() {
+        let mut args = empty_args();
+        args.priority = vec!["p0".into(), "P1".into()];
+        let p0 = make_scenario("S-LOW", UatPriority::P0, vec![]);
+        let p1 = make_scenario("S-MID", UatPriority::P1, vec![]);
+        let p2 = make_scenario("S-HI", UatPriority::P2, vec![]);
+        assert!(batch_filter_matches(&p0, &args));
+        assert!(batch_filter_matches(&p1, &args));
+        assert!(!batch_filter_matches(&p2, &args));
+    }
+
+    #[test]
+    fn exclude_flaky_drops_flaky_scenarios_only() {
+        let mut args = empty_args();
+        args.exclude_flaky = true;
+        let flaky = make_scenario("S-F", UatPriority::P1, vec!["flaky"]);
+        let clean = make_scenario("S-C", UatPriority::P1, vec!["smoke"]);
+        assert!(!batch_filter_matches(&flaky, &args));
+        assert!(batch_filter_matches(&clean, &args));
+    }
+
+    #[test]
+    fn combined_filters_apply_as_and() {
+        let mut args = empty_args();
+        args.scenario = vec!["S-01".into()];
+        args.flag = vec!["smoke".into()];
+        args.priority = vec!["P0".into()];
+        args.exclude_flaky = true;
+        let hit = make_scenario("S-01", UatPriority::P0, vec!["smoke"]);
+        let wrong_id = make_scenario("S-02", UatPriority::P0, vec!["smoke"]);
+        let wrong_flag = make_scenario("S-01", UatPriority::P0, vec!["warning"]);
+        let wrong_priority = make_scenario("S-01", UatPriority::P1, vec!["smoke"]);
+        let flaky = make_scenario("S-01", UatPriority::P0, vec!["smoke", "flaky"]);
+        assert!(batch_filter_matches(&hit, &args));
+        assert!(!batch_filter_matches(&wrong_id, &args));
+        assert!(!batch_filter_matches(&wrong_flag, &args));
+        assert!(!batch_filter_matches(&wrong_priority, &args));
+        assert!(!batch_filter_matches(&flaky, &args));
+    }
+
+    #[test]
+    fn priority_label_round_trips_p0_p1_p2() {
+        assert_eq!(uat_priority_label(&UatPriority::P0), "P0");
+        assert_eq!(uat_priority_label(&UatPriority::P1), "P1");
+        assert_eq!(uat_priority_label(&UatPriority::P2), "P2");
+    }
+}
