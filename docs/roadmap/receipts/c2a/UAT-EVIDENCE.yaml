@@ -2,21 +2,21 @@ schema_version: 1
 profile_target: STATIC_ENHANCED_C2A
 cycle: C2a
 status: NOT_EVALUATED_PROVIDER_MISSING
-executed_by: orchestrator (delegated)
-executed_at_utc: "2026-09-22T07:58:00Z"
-source_sha_at_eval: "5f493abdfef653c69e1e3268d07532134ea75a37"
-workspace_version_at_eval: "1.169.142"
+executed_by: orchestrator (delegated; operator-instructed re-investigation session-11)
+executed_at_utc: "2026-09-22T08:49:00Z"
+source_sha_at_eval: "a5f279c1c3b6b686e8a6cbdece9c44acd76223a9"
+workspace_version_at_eval: "1.169.149"
 last_public_release_observed: "v1.169.122"
+prior_session_status_at_5f493ab: "NOT_EVALUATED_PROVIDER_MISSING"  # documented in UAT-EVIDENCE-prep-2026-09-22T0849.yaml
+
+# Re-investigation at session-11 close (operator instruction §3: "abrir C2a").
+# Hypothesis tested: secondary path SCOPE-CONTRACT §9.2 ("expand C2a scope to support
+# `cognicode serve --port N`"). Conclusion: hypothesis INVALIDATED — see T08 evidence.
 
 environment:
   os: "linux x86_64"
   rust: "(see rust-toolchain)"
   provider_static:
-    binary_searched:
-      - "/home/rubentxu/.cargo/bin/cognicode"
-      - "/home/rubentxu/.cargo/bin/cognicode-mcp"
-      - "cargo install cognicode-mcp"
-      - "cargo search cognicode-mcp"
     binary_present:
       name: "cognicode"
       version: "0.97.3"
@@ -25,35 +25,56 @@ environment:
     binary_missing:
       expected: "cognicode-mcp"
       cargo_installable: false
-      registry_match: false
-      doctor_output: "❌ cognicode-mcp binary (install: cargo install cognicode)"
+      cargo_search_result: "(empty for 'cognicode-mcp' and 'cognicode' queries)"
 
 scenarios:
   T08:
     description: "CogniCode binario real, handshake/capabilities/protocolo"
     status: NOT_EVALUATED
-    reason: "provider binary (cognicode-mcp) not present on host; cannot perform MCP stdio handshake. Available cognicode CLI exposes 'serve' (TCP port 8080) and 'analyze' (CLI mode) but the SDDK adapter expects stdio JSON-RPC against cognicode-mcp, which is neither installed nor installable via cargo registry."
+    reason: |
+      provider binary (cognicode-mcp) not present on host; cannot perform MCP stdio handshake.
+      RE-INVESTIGATION 2026-09-22T08:49Z: hypothesis that `cognicode serve --port 8080`
+      exposes MCP was TESTED and INVALIDATED.
     evidence:
       command: "cognicode --version"
       output: "cognicode 0.97.3"
       command2: "cognicode serve --help"
-      output2: "Start the MCP server ... Options: -p, --port <PORT> [default: 8080]"
-      command3: "cognicode doctor"
-      output3: "❌ cognicode-mcp binary (install: cargo install cognicode)"
-      command4: "cargo search cognicode-mcp"
-      output4: "(empty — no crates.io match)"
+      output2: "Start the MCP server ... -p, --port <PORT> [default: 8080]"
+      command3: "cognicode serve --port 8080 & (5s probe)"
+      output3: |
+        2026-09-22T08:49:27Z INFO Starting CogniCode CLI v0.97.3
+        2026-09-22T08:49:27Z INFO Rayon global thread pool initialized with 8 MB stack size
+        Use 'cognicode-mcp' binary to start the MCP server.
+        The MCP server uses stdio transport, not TCP ports.
+        Run: cognicode-mcp --cwd <workspace>
+      command4: "ss -tlnp | grep :8080"
+      output4: "(empty — port 8080 not listening while serve runs)"
+      command5: "cargo search cognicode-mcp"
+      output5: "(empty — no crates.io match)"
+      command6: "cargo search cognicode"
+      output6: "(empty — no crates.io match either)"
+
   T09:
     description: "Grafo incompleto / usage no indexado / claim sin prueba"
     status: NOT_EVALUATED
     reason: "depends on T08 (provider handshake); cannot evaluate without real binary."
     evidence: "(inherited from T08)"
+
   T10:
     description: "Proveedor ausente, timeout, crash/restart"
     status: NOT_EVALUATED
-    reason: "provider is absent (cognicode-mcp missing). The 'absent' branch can be evaluated by code-reading once code-path is verified, but this session honors AGENTS.md §2.3 (no PASS_BY_CODE_READING). Code-path evidence for the 'absent' branch should be exercised in a follow-up cycle that mocks the absent provider at the Adapter trait boundary, not by reading spawn() output."
+    reason: |
+      provider is absent (cognicode-mcp missing).
+      `cognicode serve --port 8080` was tested and CRASHES with explicit message pointing
+      operator to use `cognicode-mcp --cwd <workspace>` (which is not installed).
+      The 'absent' branch can be evaluated by code-reading once code-path is verified, but
+      this session honors AGENTS.md §2.3 (no PASS_BY_CODE_READING). Code-path evidence
+      for the 'absent' branch should be exercised in a follow-up cycle that mocks the
+      absent provider at the Adapter trait boundary, not by reading spawn() output.
     evidence:
       relevant_code: "crates/sddk-engine/src/code_intelligence_port_mcp.rs:74-81"
       note: "absent-provider branch in spawn() returns CodeIntelligencePortError::Unavailable. This is code-visible but not exercised by an actual missing-binary run."
+
   T11:
     description: "Re-ejecutar contrato estático en dataset/grafo completo acordado"
     status: NOT_EVALUATED
@@ -61,19 +82,63 @@ scenarios:
     evidence: "(inherited from T08)"
 
 cognicode_cli_capability_observation:
-  note: "SDDK adapter was written for cognicode-mcp (stdio JSON-RPC). Current CogniCode CLI v0.97.3 ships only a TCP MCP server (cognicode serve, default :8080) and a set of direct subcommands. Adapter↔CLI alignment gap is documented and is the root cause of NOT_EVALUATED, not a test failure."
+  note: |
+    RE-INVESTIGATION RESULT: `cognicode serve --port 8080` is NOT the MCP server. It is
+    another service (likely the Rayon-based HTTP/gRPC analysis backend) that explicitly
+    errors out with "Use 'cognicode-mcp' binary to start the MCP server". The SDDK
+    adapter targets `cognicode-mcp` (stdio JSON-RPC, IPB-001..012); the CogniCode CLI
+    v0.97.3 ships only the legacy `cognicode` CLI plus a non-MCP TCP service. There is
+    NO installed and NO installable binary that matches the SDDK adapter's contract.
+
   subcommands_alternative_to_mcp:
-    - "cognicode analyze [PATH]"
-    - "cognicode navigate (LSP)"
-    - "cognicode graph"
-    - "cognicode index"
+    - "cognicode analyze [PATH]   # direct CLI mode, not JSON-RPC"
+    - "cognicode navigate         # LSP, not MCP"
+    - "cognicode graph            # direct CLI"
+    - "cognicode index            # direct CLI"
+
+  adapter_cli_alignment_gap:
+    description: |
+      SDDK adapter (crates/sddk-engine/src/code_intelligence_port_mcp.rs:74-81) spawns
+      `cognicode-mcp` over stdio JSON-RPC. Hardcoded references:
+        - adapter doc comment: "Spawns the real `cognicode-mcp` binary over stdio"
+        - adapter line 290: `provider_build: format!("cognicode-mcp/{}", server_version)`
+        - cli line 64: doc `--provider-bin <cognicode-mcp path>`
+        - cli line 172: error message `verify: --domain static_provider requires --provider-bin <cognicode-mcp path>`
+        - cli lines 204,240,252,265,274: `provider_build` and `cognicode-mcp://` URI prefix
+      None of these can be exercised against the available `cognicode` v0.97.3 CLI.
 
 recovery_action:
-  primary: "Operator installs cognicode-mcp binary (provider-side artifact; not on crates.io). Once present, re-open C2a scope-contract and execute T08–T11."
-  secondary: "Operator approves scope expansion for C2a to add a TCP-mode adapter that targets `cognicode serve --port N` instead of stdio against cognicode-mcp. This would change Adapter contract and trigger an ADR; only justified if a second consumer needs it."
-  documented_alternative: "Accept C2a as DEFERRED for the current release; rely on T08-T11 historical evidence (a6_cognicode_protocol_spike, aiw_s1_cognicode_real) as HISTORICAL only, not as current UAT pass."
+  primary: |
+    Operator installs `cognicode-mcp` binary (provider-side artifact; not on crates.io,
+    not bundled with cognicode v0.97.3 CLI). CogniCode upstream must publish a separate
+    binary or Cargo package that implements stdio JSON-RPC per MCP 2025-03-26.
+    Once present, re-open C2a SCOPE-CONTRACT and execute T08–T11 as originally scoped.
+  secondary: |
+    Operator approves SCOPE EXPANSION for C2a.1 to target a different protocol than
+    stdio JSON-RPC (e.g. consume `cognicode analyze` output, or talk to the TCP service
+    if/when it speaks MCP). This WOULD change Adapter contract and require an ADR.
+    Not justified in current state because:
+      (a) The TCP service exposed by `cognicode serve --port 8080` does NOT speak MCP.
+      (b) No second consumer known for the SDDK adapter.
+  documented_alternative: |
+    Accept C2a as DEFERRED for the current release. Rely on T08-T11 historical evidence
+    (a6_cognicode_protocol_spike, aiw_s1_cognicode_real) as HISTORICAL only, not as
+    current UAT pass. Profile STATIC_ENHANCED stays NOT_EVALUATED for v1.169.149.
 
 not_evaluated_vs_failed:
-  distinction: "NOT_EVALUATED is the correct category here because the precondition (provider binary presence) is missing. This is not a failed test. PASS_OBSERVED is not granted; PASS_BY_CODE_READING is forbidden. The cycle is honestly parked waiting for the operator to unblock the dependency."
+  distinction: |
+    NOT_EVALUATED is the correct category because the precondition (provider binary
+    presence matching the adapter contract) is missing. This is NOT a failed test.
+    PASS_OBSERVED is NOT granted; PASS_BY_CODE_READING is forbidden. The cycle is
+    honestly parked waiting for the operator to unblock the dependency. The previous
+    session's `NOT_EVALUATED_PROVIDER_MISSING` finding is CONFIRMED by the
+    re-investigation: there is no technical path to evaluate C2a against the
+    available `cognicode` v0.97.3 binary.
 
 scope_contract_ref: "../SCOPE-CONTRACT.md"
+investigation_log: |
+  session-11 close (operator instruction §3): "abrir C2a" → reuse SCOPE-CONTRACT,
+  re-test hypothesis from §9.2. Hypothesis: cognicode serve --port 8080 exposes MCP.
+  Result: INVALIDATED by direct probe (output captured in T08 evidence).
+  Decision: keep C2a as NOT_EVALUATED_PROVIDER_MISSING; refresh UAT-EVIDENCE with
+  the new evidence; close investigation cycle without code changes (no apply).
