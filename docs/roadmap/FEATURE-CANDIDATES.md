@@ -78,6 +78,10 @@ etc. Útil para integrar con herramientas externas (CI, dashboards).
 
 **Trigger:** Necesidad de integración CI/dashboards (preguntar al operador).
 
+**Estado:** ✅ IMPLEMENTED (commit 21fcfff, session-11). `DoctorOutput` ahora
+tiene `#[derive(serde::Serialize)]`; el path JSON funciona y emite un payload
+machine-readable con `binary.bundle_coherence`, `all_present`, `missing[]`.
+
 ---
 
 ### FC-3: `sddk cycle export --to jsonl` (export de cycle state)
@@ -179,6 +183,58 @@ output).
 **Bloqueos:** Ninguno.
 
 **Trigger:** "Quiero ver ADR-0141 sin buscar el archivo".
+
+---
+
+### FC-7: `sddk uat status --format json` (machine-readable uat status)
+
+**Origen:** `sddk uat status` existe pero solo emite texto. Falta formato JSON
+para integración con CI dashboards y reportes automatizados.
+
+**Descripción:** Añadir flag `--format json` que devuelva un payload con
+`release`, `plan`, `report` (estado, escenarios, veredictos). Permite a UAT
+status ser consumido por herramientas externas.
+
+**Superficie:**
+- `crates/sddk-cli/src/uat.rs` (existe).
+
+**Tamaño estimado:** 30-60 líneas.
+
+**Tipo de commit:** `feat(uat):` → **MINOR bump**.
+
+**UAT relacionados:** T01, T05, T18 (status reports).
+
+**Bloqueos:** Ninguno.
+
+**Estado:** ✅ IMPLEMENTED (commits 13c9690/a06083c/95f2250, session-11).
+Estructura `UatStatusOutput { release, plan, report }` con `#[derive(serde::Serialize)]`,
+text rendering a través de fn nombrada `uat_status_text`.
+
+---
+
+### FC-8: `sddk uat validate --format json` (machine-readable validate)
+
+**Origen:** `sddk uat validate` tiene flag `--format` pero el JSON path era
+inactivo: devolvía `Ok(())` y `render_result` serializaba el unit como `null`.
+
+**Descripción:** Añadir `UatValidateOutput { schema_version, plan_features,
+scenarios_total, form_dsl_errors }` con `#[derive(serde::Serialize)]`. Path
+Text sigue emitiendo `uat validate: OK`.
+
+**Superficie:**
+- `crates/sddk-cli/src/uat.rs` (existe).
+
+**Tamaño estimado:** 30-50 líneas.
+
+**Tipo de commit:** `feat(uat):` → **MINOR bump**.
+
+**UAT relacionados:** T28 (full verify), T01 (matriz).
+
+**Bloqueos:** Ninguno.
+
+**Estado:** ✅ IMPLEMENTED (commit 1b2795b, session-11). El path JSON retorna
+conteos del plan parseado; nuevo test `validate_plan_json_output_has_counts`
+cubre el contrato.
 
 ---
 
