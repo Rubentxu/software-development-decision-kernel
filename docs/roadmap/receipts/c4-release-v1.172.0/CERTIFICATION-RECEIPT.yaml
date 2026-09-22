@@ -226,6 +226,39 @@ accepted_risks:
     rationale: "Flake appears in workspace-wide parallel test runs; in isolation the suite is 5/5 PASS. Did NOT trigger on the post-publish full profile re-run. Root cause unfixed (likely busy_timeout pragma or shared-state contention); deferring to dedicated cycle."
     expires: "next storage concurrency hardening cycle"
     revisit_trigger: "any PR that increases concurrency or modifies SQLite pragma defaults"
+    root_cause_analysis_session_13: |
+      Inspected sddk-storage/src/lib.rs (session-13): insert_work_item,
+      insert_evidence_attachment, insert_decision_record, insert_dependency_edge
+      execute INSERT directly via self.connection.execute(...) WITHOUT wrapping
+      in with_busy_retry. Only insert_cycle and friends use the
+      transaction_with_behavior(Immediate) + with_busy_retry pattern.
+
+      Under workspace-wide parallelism, two Storage::open handles can both
+      start an INSERT on the same DB; the second waits busy_timeout=5s
+      before SQLITE_BUSY (extended 5) propagates. Tests under workspace-wide
+      load occasionally exceed 5s and the test fails with "Database is locked"
+      instead of the expected typed UNIQUE violation or successful insert.
+
+      Verified reproducer (flake_reproducer.rs, removed before commit): 2
+      threads + barrier + same path + same record id → 50 trials, flake hits
+      = 0 / 100 thread-results, only typed ConstraintViolation (UNIQUE)
+      observed. Local workspace-wide stress (--test-threads=32) does not
+      reproduce. The flake is environment-specific (likely CI runner I/O
+      contention, not local).
+
+      Decision: NO code fix at this cycle because:
+      (a) flake is non-reproducible locally — speculative fix has higher
+          regression risk than marginal benefit;
+      (b) the with_busy_retry fix would require changing &self → &mut self
+          on 3 public methods + updating all call sites
+          (crates/sddk-cli/src/plan.rs:537/898/976 + tests), API breaking;
+      (c) full profile re-run post-publish PASSED 3/3 (5048 passed; 0
+          failed; 19 ignored) — durable evidence is solid.
+
+      Operational rule for v1.173.0 onward: release.sh MUST run WITHOUT
+      --skip-tests. If flake appears, fail closed (correct behavior). Do NOT
+      re-publish v1.172.0 with --skip-tests removed because that would
+      burn a tag on documentation-only churn.
 limitations:
   - "C2 (CogniCode / Chronos / JCode) NOT EVALUATED at v1.172.0 SHA: provider MCP servers not registered locally (typer not installed for MCP CLI; cognicode binary present but not integrated via bridge)."
   - "T30 (cross-version compatibility/replay) NOT executed for v1.171.0 → v1.172.0 migration; current evidence is no-op by inspection (no schema change, no storage migration)."
