@@ -132,6 +132,65 @@ The operator makes the final call. AGENTS.md §2.1 and CERTIFICATIONS.md
 §3 require that any release be honest: `PASS_BY_CODE_READING` does not
 exist, and `NOT_EVALUATED` cannot be silently flipped to PASS.
 
+### 4.3. Mechanized calculation via `scripts/release-bump.sh`
+
+The release script reads `scripts/release-bump.sh` to compute the next
+SemVer tag. This is **not** a heuristic — it is the actual algorithm
+that the script applies when called from `scripts/release.sh` (or
+manually via `bash scripts/release-bump.sh --dry-run`).
+
+The rules (verbatim from `release-bump.sh` lines 51-63):
+
+| Detected pattern in `git log $last_tag..HEAD` | Resulting bump |
+|---|---|
+| `BREAKING CHANGE` in any commit body, OR `<type>!:` prefix | **MAJOR** (`X+1.0.0`) |
+| Any commit matching `^[a-f0-9]+ feat` | **MINOR** (`X.Y+1.0`) |
+| Any commit matching `^[a-f0-9]+ (fix\|refactor\|perf\|docs\|ci\|chore\|style\|test\|build)` (and no feat) | **PATCH** (`X.Y.Z+1`) |
+| None of the above | "no release-worthy commits" — no release |
+
+Commits with prefix `chore(release):` are **filtered out** before the
+detection (line 47: `grep -vE 'chore\(release\)'`). This is why our
+ceremonial bumps in `main` do not skew the calculation.
+
+**Worked example (session-11, observed 2026-09-22T10:51Z):**
+
+```bash
+$ bash scripts/release-bump.sh --dry-run
+release bump: v1.169.122 -> v1.170.0 (minor)
+new tag: v1.170.0
+```
+
+Why **MINOR** and not PATCH? The script counts every commit since
+`v1.169.122` (the last public release tag) and detects:
+
+```
+b562f5d feat(c3f): T28 — fix C3e-F1 via ADR-0141 + pre_flight_check + InconsistentMigrationState
+4dc2a08 feat(c3e): T27 — schema resilience tests (8 added) + finding C3e-F1 (DEFERRED_FIX)
+d039457 feat(c3d): T26 — storage performance baseline (append, cas, lease) opt-in benches
+775ec93 feat(c3c): T23+T24+T25 — capability receipts, cycle leases, schema_guard boundary
+7a5388a feat(c3b): T21+T22 — CAS corruption detection, event idempotency, reopen, IMMEDIATE contention
+...
+```
+
+Six `feat:` commits (C3b/c/d/e/f + ADR-0141) push MINOR. PATCH would
+be wrong here — that is a feature-carrying release. The workspace
+version `1.169.152` is **misleading** because it incremented per
+ceremonial bump, but the **release tag** `v1.170.0` will correctly
+reflect SemVer.
+
+**Honest correction to §4.2 table:** A range with only `docs:`,
+`chore:`, `test:` commits yields PATCH. But `feat(c3*):` commits are
+**features** (new measurable behaviors: schema resilience, performance
+baseline, capability receipts, etc.), not "tests". The `test:` prefix
+is reserved for unit-test-only changes. The convention in SDDK is that
+a new measurable capability gets `feat:` even when its primary
+artifact is a test file (e.g. `tests/perf_budget_base.rs`).
+
+**Operator override:** `scripts/release-bump.sh --force-version X.Y.Z`
+bypasses the calculation and pins an explicit version. Use this when
+the auto-calculation would be misleading (e.g. hidden breaking changes
+not flagged in commit bodies).
+
 ## 5. Concrete examples
 
 ### 5.1. Workspace version drift example (session-11)
