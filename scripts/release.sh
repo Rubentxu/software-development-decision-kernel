@@ -73,13 +73,15 @@ DRY_RUN=0
 SKIP_TESTS=0
 SKIP_INSTALL=0
 FORCE=0
+FORCE_VERSION=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --dry-run)      DRY_RUN=1; shift ;;
-        --skip-tests)   SKIP_TESTS=1; shift ;;
-        --skip-install) SKIP_INSTALL=1; shift ;;
-        --force)        FORCE=1; shift ;;
+        --dry-run)         DRY_RUN=1; shift ;;
+        --skip-tests)      SKIP_TESTS=1; shift ;;
+        --skip-install)    SKIP_INSTALL=1; shift ;;
+        --force)           FORCE=1; shift ;;
+        --force-version)   FORCE_VERSION="$2"; shift 2 ;;
         -h|--help)
             sed -n '2,/^[^#]/p' "$0" | head -50
             exit 0
@@ -355,7 +357,12 @@ ok "version: $VERSION → tag: $TAG"
 #
 # Invocation: invoke release-bump.sh in dry-run mode and parse its output.
 # Honors the operator's --force-version flag (passed through if set).
-STEP2P5_OUTPUT="$(bash "$ROOT/scripts/release-bump.sh" --dry-run 2>&1)" \
+BUMP_ARGS=(--dry-run)
+if [ -n "$FORCE_VERSION" ]; then
+    BUMP_ARGS+=(--force-version "$FORCE_VERSION")
+    warn "operator forced version override: $FORCE_VERSION (SemVer algorithm bypassed)"
+fi
+STEP2P5_OUTPUT="$(bash "$ROOT/scripts/release-bump.sh" "${BUMP_ARGS[@]}" 2>&1)" \
     || die "scripts/release-bump.sh failed (cannot compute SemVer tag)"
 SEMVER_TAG="$(echo "$STEP2P5_OUTPUT" \
     | awk '/^new tag: / {print $3; exit}')"
