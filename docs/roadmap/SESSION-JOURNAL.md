@@ -1206,3 +1206,70 @@ NO changes to pre-push hook (that is authority).
   SemVer decision documented in CONTRIBUTING-SEMVER.md)
 - C5: DEFERRED por contrato
 
+
+### 2026-09-22T10:25:00Z — C3h SUPPLY-CHAIN AUDIT + REMEDIATION — orchestrator
+
+- Baseline: `main@2f890ea` (workspace 1.169.151; tree clean)
+- origin/main: `a5f279c` (15 commits behind)
+- Alcance: ciclo C3h del ROADMAP ("secret-screen y dependencias/supply chain")
+  - Ejecutar `cargo-audit` sobre Cargo.lock
+  - Identificar vulnerabilidades en deps directos o transitivos alcanzables
+  - Remediarlas via `cargo update` o bump de pin
+  - Documentar resultados
+- No-objetivos: cargo-deny.toml config, CI integration de cargo-audit,
+  upgrade de deps no flagged, release cut.
+
+### Ejecutado (3 commits)
+
+- `9560de1` fix(deps): upgrade time 0.3.36 → 0.3.47 (RUSTSEC-2026-0009) +
+  quinn-proto 0.11.14 → 0.11.15 (RUSTSEC-2026-0185, stale lock entry).
+- `d906809` chore(release): bump 1.169.151 → 1.169.152 (Ceremonial required by
+  pre-push hook for source-deps change).
+- `6f24ead` docs(roadmap): C3h SCOPE + AUDIT-RESULTS + UAT-EVIDENCE + RECEIPT.
+
+### Findings (OBSERVED)
+
+**Pre-fix (cargo-audit, baseline 2f890ea):**
+- F1: quinn-proto 0.11.14 — RUSTSEC-2026-0185 (7.5 high) — STALE LOCK ENTRY
+  (`cargo tree -i quinn-proto` reports nothing).
+- F2: time 0.3.36 — RUSTSEC-2026-0009 (6.8 medium) — DIRECT workspace dep,
+  pinned exactly in `[workspace.dependencies]`.
+
+**Post-fix (cargo-audit, sha 9560de1):**
+- 0 vulnerabilities, exit 0.
+- 297 deps scanned.
+
+### Verification
+
+- `cargo build --workspace` (T2) — clean (1m 21s)
+- `cargo test --workspace --lib` (T3) — 2931 passed, 0 failed
+- `cargo clippy --workspace --all-targets -- -D warnings` (T4) — clean (1m 28s)
+- `cargo update -p quinn-proto --precise 0.11.15` (T5) — bumped only quinn-proto,
+  42 deps unchanged
+- `cargo-audit audit` (T6) — exit 0, no findings
+- `cargo build --workspace` (T7 post-update) — clean (2.31s)
+
+### UAT executed (UAT-C3H-01..05)
+
+All PASS_OBSERVED. Evidence in
+`docs/roadmap/receipts/c3h/UAT-EVIDENCE.yaml`.
+
+### Risks
+
+- R1 (API drift on time 0.3.36 → 0.3.47): mitigated — usage is limited to
+  OffsetDateTime::now_utc(), .format(), .unix_timestamp(); all stable APIs.
+- R2 (cargo update bumping unrelated deps): mitigated — `--precise` kept the
+  update scoped to quinn-proto only.
+- R3 (new vuln from upgrade): not realized — post-fix audit clean.
+
+### CURRENT/STATE reconciliados
+
+STATE.yaml updated to `d906809`; final reconcile to `6f24ead` after docs commit.
+
+### Próxima acción ejecutable
+
+- HEAD: `6f24ead` (workspace 1.169.152)
+- origin/main: `a5f279c` (17 commits behind; push operator-side)
+- C3h closed. C3 fully covered (C3a-g + C3h).
+- Continue with next post-C3 WorkItem, or signal STOP if operator wants
+  release cut or session end.
