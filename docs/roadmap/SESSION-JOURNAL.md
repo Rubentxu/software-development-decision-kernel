@@ -2579,3 +2579,95 @@ asset (cambio major del contrato de distribución) o (c) ambos, y
 verificar si el toolchain musl está disponible en el host de release.
 Es el único finding de seguridad/high abierto que depende sólo de
 trabajo propio.
+
+---
+
+## Session 17 — 2026-09-27T20:17–20:34Z (orchestrator, autonomous)
+
+**Baseline de entrada**: `b451407` (== origin/main, tree limpio).
+**Workspace**: 2.0.3 (sin bump en esta sesión hasta el commit pendiente).
+**Último release**: v2.0.1.
+
+### WorkItem
+
+`INC-DEBT-021`: el asset que dice "musl" no es musl. Derivado del único
+high/critical abierto que depende sólo de trabajo propio.
+
+### Lo que seRumbralmente cambió: la causa raíz no era la que decía
+
+Session-16 lo registró como "el nombre del asset miente". Es cierto pero
+**incompleto**. La causa raíz es que **hay dos pipelines de release y sólo
+uno cumple el contrato**:
+
+| | `scripts/release.sh` | `.github/workflows/release.yml` |
+|---|---|---|
+| Autoridad | **sí** (produce los releases reales) | no |
+| Trigger | local, cada release | `workflow_dispatch`, nunca automático |
+| Build | un `cargo build --release` = glibc del host | musl estático real (`--target` + `musl-tools`) |
+| Asset | `sddk-<TAG>-sddk-linux-x86_64-musl.tar.gz` | `sddk-linux-x86_64-musl` |
+
+**El pipeline que construye el artefacto correcto existe y funciona, pero
+nunca corre.** El que corre no construye el artefacto correcto.
+
+Y esto explica INC-DEBT-022 de forma más limpia que "un typo": `install.sh`
+fue escrito contra el contrato de `release.yml` (que publica
+`sddk-linux-x86_64-musl`), y `release.sh` nunca публикова ese nombre.
+
+### Build musl en local: bloqueado, verificado
+
+```text
+$ cargo build --release --target x86_64-unknown-linux-musl --bin sddk
+error occurred in cc-rs: failed to find tool "x86_64-linux-musl-gcc"
+```
+
+El target de Rust **sí** está instalado; falta el linker de C que necesita
+`rusqlite bundled`. El host no tiene `sudo`, ni `apt`, ni `musl-gcc`. No
+es un problema del código: es del host de release.
+
+### Entregado
+
+- `scripts/release.sh`: cabecera nueva que **declara la autoridad de cada
+  pipeline** y documenta la divergencia y sus dos consecuencias. Antes no
+  mencionaba la existencia del workflow.
+- `tests/test_release_pipeline_consistency.sh`: guard de tres vías
+  (install.sh ↔ release.sh ↔ release.yml). Queda **RED** por dos hallazgos
+  reales. No se ajusta la aserción para hacerlo verde.
+- `INC-DEBT-021`: causa raíz corregida, tres salidas documentadas con su
+  coste y su bloqueo, más recomendación.
+
+### Autocorrección de un defecto del propio test
+
+La primera versión del check 1 buscaba `musl` en cualquier línea de
+`release.sh`. Al añadir la nota de autoridad (que **cita** el target musl
+del workflow) el check pasó a verde sin que el build musl existiera. El
+test se auto-decía. Corregido para inspeccionar el **comando `cargo
+build`** tras eliminar comentarios, no cualquier mención. Documentado en
+el propio test porque es la clase de fallo que se cuela en un guard.
+
+### Gates
+
+```text
+cargo fmt --check                       PASS
+cargo clippy --workspace -D warnings    0 diagnostics
+cargo test --workspace                  5041 passed, 0 failed, 19 ignored
+shellcheck (release, e2e, install,
+  los 2 tests nuevos)                    clean
+tests de release existentes (4)         PASS  (sin regresión)
+test_install_asset_contract.sh          9/9 ok, check 8 RED (INC-021)
+test_release_pipeline_consistency.sh    2 checks RED (INC-021)
+```
+
+### Estado honesto
+
+**No se arregla INC-021 en esta sesión.** Arreglarlo exige una decisión
+de arquitectura (qué pipeline manda) más toolchain en el host de release,
+y ninguna de las dos cosas me corresponde decidirlas solo. Lo que sí se
+entrega es: causa raíz correcta, autoridad documentada, y un guard que
+impide que el desfase vuelva a pasar inadvertido.
+
+### Primer paso de la sesión siguiente
+
+Decisión de arquitectura sobre el pipeline de release, o bien
+`musl-tools` en el host. Con una de esas dos, INC-021 pasa de "documentado"
+a "cerrado", y los dos checks RED del guard pueden volverse GREEN sin
+tocar sus aserciones.
