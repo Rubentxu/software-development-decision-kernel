@@ -2033,3 +2033,154 @@ sigue siendo SemVer-correct minor (1 feat detectado — FC-1 v2). Las
 versiones workspace 1.171.1 / 1.171.2 son anotaciones pre-publish que
 nunca fueron shipped como tags standalone.
 
+
+---
+
+## Session-14 — 2026-09-27 — Auditoría basada en código + quick wins P1
+
+**Baseline:** `main@7dbd8862162f9d8bd9b8d66481f665eebb2d30b2` == `origin/main`,
+0 ahead / 0 behind, working tree limpio al inicio. Release público
+`v1.172.0` en `d89c2c0`. Workspace version `1.171.2`.
+
+**Recovery:** `agent-session start` + `checkpoint` + contraste con Git.
+`MODE=undeclared` (no-entry) — reporting only, sin auto-run de ciclo.
+El roadmap declaraba FC-1..FC-8 **TODOS CERRADOS** y "no quedan
+workitems P0/P1 sin decisión de operador".
+
+### Objetivo de la sesión
+
+El operador pidió auditoría del estado real **sobre el código, no sobre
+los documentos**. Resultado: el roadmap estaba efectivamente cerrado, pero
+la auditoría encontró defectos que **ningún documento capturaba**.
+
+### Trabajo ejecutado (3 commits atómicos)
+
+| # | SHA | Tipo | Cambio |
+|---|---|---|---|
+| 1 | `d1cba1b` | `fix(gateway)` | `evidence.bundle.write` ahora escribe de verdad |
+| 2 | `506b7d2` | `chore(cli)` | Gate clippy `-D warnings` + 1.403 LOC de spikes muertos fuera |
+| 3 | este | `docs(debt)` | 3 INCs nuevos + corrección de la premisa stale de C2 |
+
+**Hallazgo principal (`d1cba1b`):** `EvidenceBundleWriteCapability::execute`
+(`sddk-gateway/src/capability.rs:192`) devolvía `CapabilityOutcome {
+succeeded: true }` **sin escribir nada**, y verificaba su propia
+postcondición contra el outcome sintético que acababa de fabricar. El
+doc comment del struct ya prometía *"writes the bundle to the evidence
+store"*; el código nunca lo hizo. Ahora escribe de verdad (idempotente por
+digest, vía `write_atomic`), verifica contra el fichero en disco, y falla
+cerrado ante cualquier error de IO. 2 tests nuevos pinean el
+comportamiento para que no pueda volver a regresionar a simular.
+
+**Hallazgo secundario (`506b7d2`):**
+- `sddk release` ejecutaba `cargo clippy -- -D errors` mientras el
+  contrato documentado (AGENTS.md, `scripts/release.sh`) exige
+  `-D warnings`. El gate ejecutado era más débil que el gate escrito.
+- 1.403 LOC de spikes muertos (`spike_axs3/4/5` en `sddk-cli`,
+  `spike_sp06` en `sddk-engine`) compilados y exportados como `pub mod`
+  con **0 referencias** en todo el repo. Findings preservados en
+  `docs/architecture/spikes/`.
+
+**Balance neto: −1.276 LOC.**
+
+### Evidencia (tests scoped al SUT, ejecutados)
+
+| Comando | Resultado |
+|---|---|
+| `cargo test -p sddk-gateway --test proposal_flow` | **10 passed, 0 failed** (8 previos + 2 nuevos) |
+| `cargo test -p sddk-gateway` | exit 0 |
+| `cargo test -p sddk-cli --lib` | **777 passed, 0 failed, 1 ignored** |
+| `cargo test -p sddk-engine --lib` | **1332 passed, 0 failed, 1 ignored** |
+| `cargo clippy -p sddk-gateway -p sddk-cli -p sddk-engine --all-targets -- -D warnings` | clean |
+| `cargo fmt --check` | clean (exit 0) |
+
+Tests re-ejecutados post-`cargo fmt`: 10/10 verdes.
+
+**NO se ejecutó** `cargo test --workspace` (perfil completo). El cambio
+está verificado a nivel de SUT (los 3 crates tocados), que es lo que
+`prompts/sddk/change-scoped-testing.md` admite en fase `apply`.
+
+### Corrección de premisa stale (importante)
+
+`docs/roadmap/CURRENT.md` declaraba `cognicode-mcp` **AUSENTE** como
+bloqueo de C2. **Verificado en esta sesión: está instalado y responde**
+(`~/.cognicode/shims/cognicode-mcp` → v0.97.3, binario real de 104 MB).
+La premisa de la cierre de session-13 era **stale**.
+
+C2 **sigue NOT_EVALUATED**, pero por `chronos-mcp` ausente (confirmado), no
+por `cognicode-mcp`. `CURRENT.md` corregido en esta sesión.
+
+### Deuda registrada (3 INCs nuevos, `status: open`)
+
+- `INC-AUDIT-S14-TEST-PORTS-UNCONSUMED` (high/P1) — 9 traits +
+  `test_apply.rs` ≈2.400 LOC con **0 consumidores** fuera de
+  `sddk-domain`. Regla propuesta: *un port no entra sin su primer
+  consumidor externo en el mismo commit*.
+- `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` (high/P1) — el `.sha256` que
+  valida el bundle se descarga del **mismo origen** que el bundle.
+  Integridad sí, autenticidad no. `cosign` ya está en el repo, sin usar
+  en esta ruta.
+- `INC-AUDIT-S14-NO-STRUCTURED-LOGGING` (medium/P2) — 0 `tracing` en
+  `sddk-cli`.
+
+### Decisiones del operador aplicadas en esta sesión
+
+Las 3 decisiones pendientes de session-13 quedaron pre-aprobadas. Estado
+de cada una:
+
+1. **C2 providers** — no ejecutable: requiere instalar `chronos-mcp` y
+   `jcode-sdk` en el host. `cognicode-mcp` ya presente (premise stale).
+   C2 sigue NOT_EVALUATED, correctamente.
+2. **Pre-push allowlist `scripts/**`** — no ejecutada. Bajo impacto
+   (FC-4 funciona desde `docs/operations/`). No era necesaria para el
+   WorkItem elegido.
+3. **Flake API breaking change** — no ejecutada. Verificada la premisa
+   (los 4 métodos son `&self`: `lib.rs:2429/2626/2758/2914`), pero sigue
+   siendo un cambio de API que merece su propio WorkItem con migration
+   path, no un efecto colateral de un ciclo de higiene.
+
+### Conocimiento negativo (lo que se verificó y NO es un problema)
+
+- **0 `unsafe` real** en todo el workspace. Los 8 matches del brief
+  original son `#![forbid(unsafe_code)]`, strings de error y comentarios.
+- **0 SQL inyectable**: 0 `format!("SELECT...")`, 89 sitios parametrizados.
+- **0 inyección de shell**: 17 sitios de subprocess, todos con `.args()`.
+- **Layering hexagonal correcto**: `sddk-domain` tiene 0 dependencias; los
+  4 refs a `sddk_storage` dentro de `sddk-engine` son **test-only**.
+- **Integraciones externas reales**, no simuladas: CogniCode y Chronos
+  hablan JSON-RPC real; Playwright spawnea `python3`; Fara/llama.cpp hace
+  HTTP real. Los fakes viven en `*_fake.rs` referenciados solo desde
+  `tests/`.
+- **`GraphStore` (22 métodos) NO es un riesgo de runtime**: parseo
+  brace-accurate confirma 10 requeridos + 12 defaulted, y
+  `SqliteGraphStore` implementa **los 12 y 9 de los 10**. Decisión
+  consciente: **no** hacer split del trait. El beneficio real de los 476
+  LOC de mock boilerplate se obtiene consolidando los 9 `MockStore` en
+  `sddk-testkit`, no rediseñando el puerto.
+- **8 de los tests `#[ignore]` tienen gating legítimo** (chromium,
+  CogniCode binario, microbenches). No hay cobertura silenciosamente
+  desactivada.
+
+### Deuda no resuelta (pendiente de WorkItem propio)
+
+- `knowledge.rs:1130` — anchor histórico invertido cuyo assert falla por
+  diseño, silenciado con `#[ignore]`. Deuda de ruido: el siguiente que lo
+  lea no sabrá si es señal oBaseline.
+- `docs/roadmap/FEATURE-CANDIDATES.md` FC-2 — el doc promete
+  `binary.bundle_coherence` y `missing[]` como claves; el shape real de
+  `DoctorOutput` es `{checks[], all_present}`. Deriva de forma, no feature
+  faltante.
+- `crates/sddk-pack-uat/` — 250 LOC, 0 tests, **0 consumidores**
+  (ningún `Cargo.toml` lo declara). Placeholder compilado.
+- `writer.rs:114` — `WriterXdgFailClosed` declarado, 0 implementadores,
+  `#[allow(dead_code)]`. Contrato XDG exportado sin cumplir.
+- `sddk-vault` — 1.841 src LOC / 63 test LOC (1.6%). Gap en
+  `repair.rs` (408 LOC, verificación de hash de receipts) y `export.rs`.
+
+### Primer paso preciso de la sesión siguiente
+
+1. Push de los 3 commits (el pre-push hook requiere un
+   `chore(release): bump version` en el rango — ver §8 de AGENTS.md).
+2. Decidir `test_ports.rs`: conectar con C5 o borrar. Es la mayor pieza de
+   deuda abierta (~2.400 LOC) y la decisión bloquea el inicio de C5.
+3. WorkItem de seguridad: firma out-of-band + allowlist de miembros del
+   tarball (`INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`).
