@@ -2801,3 +2801,127 @@ que no observar. Es correlacionar sobre lo que ya existe.
 Ejecutar `bash tests/test_release_state_pointer.sh` al abrir, y al cerrar
 de cada sesión. Si sale FAIL, la deriva existe y hay que reconciliar
 antes de tocar código. Es la primera comprobación, no la última.
+
+---
+
+## Session 19 — 2026-09-27T20:40–21:14Z (orchestrator, autonomous)
+
+**Baseline de entrada**: `418c7d9` (== origin/main, tree limpio).
+**Workspace**: 2.0.5 → 2.0.6.
+
+### WorkItem
+
+INC-DEBT-021, que session-17 dejó abierto por un blocker que$resultó
+falso.
+
+### La premisa de session-17 era falsa
+
+Session-17 escribió: *"falta el linker de C que necesita `rusqlite
+bundled`. El host no tiene sudo, ni apt, ni musl-gcc"* y lo registrou
+como blocker que impedía cerrar INC-021.
+
+`musl-gcc` es el wrapper de los toolchains **glibc cruzados**
+(Debian/Ubuntu vía `musl-tools`). No existe en Alpine, donde la libc
+**es** musl y el `gcc` nativo ya compila contra ella. Busqué un
+componente que solo existe en la plataforma que no estaba usando.
+
+Consecuencia: declaré "bloqueado" algo que se compilaba en 7 minutos.
+Un blocker falso no es neutro — paró trabajo que se podía hacer, y dejó
+una deuda P1 abierta por una razón inventada.
+
+### Build musl real: verificado
+
+```text
+$ podman run --rm --security-opt label=disable -v "$PWD":/src:z \
+    -w /src rust:1.91-alpine sh -c \
+    'apk add musl-dev build-base; CC=gcc \
+     cargo build --release --target x86_64-unknown-linux-musl --bin sddk'
+Finished `release` profile [optimized] target(s) in 6m 48s
+```
+
+Dos detalles no obvios, ambos por ejecución:
+
+1. El bind-mount de este host (ext4 con `seclabel`) necesita
+   `--security-opt label=disable` **y** `:z`. Sin ellos el montaje
+   aparece en `/proc/mounts` pero es inaccesible, y cargo falla con
+   "could not find Cargo.toml" — un error que miente sobre su causa.
+2. `cargo build` sin `--target` reutiliza `target/` y puede no dejar el
+   binario donde se espera. Con `--target` va a `target/<triple>/release/`.
+
+### Criterio de aceptación real: no "compila", "corre donde el otro no"
+
+| Artefacto | debian:12 (glibc 2.36) | alpine:3.20 (musl) |
+|---|---|---|
+| glibc del host (session-16) | **`GLIBC_2.39 not found`** | — |
+| musl de session-19 | `sddk 2.0.5` | `sddk 2.0.5` |
+
+`file`: `ELF 64-bit LSB pie executable, static-pie linked`.
+`sha256`: `e4dfb33ee9a4e23fe5a86c3191ec417f93620071f87a441212fbaf8972174252`.
+
+### Fix
+
+`release.sh` compila con `--target` musl (configurable) y **verifica
+`statically linked` con `file(1)` antes de publicar**. Falla cerrado en
+el paso 3 si el target no está instalado, y si el binario resulta
+dinámico. Publicar un asset mentiroso aborta antes de publicar, no
+después.
+
+### Los dos guards del RED de session-17, resueltos sin maquillar
+
+- **Check musl**: antes exigía un literal en la línea del `cargo build`.
+  El fix correcto usa `--target "$BUILD_TARGET"` con default musl, porque
+  el target debe ser configurable. Forzar el literal habría roto el
+  override. Ahora **resuelve la variable**.
+- **Check del asset**: no se unifican los nombres. El nombre desnudo
+  pertenece al contrato de `release.yml` (matriz por-arch, multi-OS);
+  duplicarlo daría dos rutas de descarga para un artefacto que volverían
+  a divergir. `install.sh` ya consume el unificado (INC-022).
+
+La autoridad se **deriva** de un hecho observable (`workflow_dispatch`
+presente + sin trigger automático), no de una constante puesta a 1.
+Poner ese flag a mano sería el mismo bug que el test existe para cazar.
+
+### Tres defectos míos en el camino
+
+1. Usé `$RELEASE_SH_WINS` sin definirlo. Lo derivé después.
+2. `grep /dev/null` como primera condición del `if`: código muerto.
+3. SC2094: leía `$RELEASE_SH` dentro del `while` que lo consumía.
+
+Ninguno lo cazó la lectura. Los cazó shellcheck y la ejecución.
+
+### Falsificación
+
+| Inyección | Resultado |
+|---|---|
+| Revertir a `cargo build --release` sin `--target` | FAIL |
+| Default del target cambiado a `x86_64-unknown-linux-gnu` | FAIL |
+
+`test_install_asset_contract.sh` pasó a verde **por el fix**, no por
+editar su check 8. Ese test afirma "release.sh builds a real musl target
+for the musl asset name" y ahora es verdad.
+
+### Gates
+
+```text
+cargo fmt --check   PASS
+cargo clippy        0 diagnostics
+cargo test          5041 passed, 0 failed, 19 ignored
+shellcheck          clean (release.sh + los 4 guards)
+pipeline_consistency   all checks passed
+install_asset_contract all checks passed
+public_gate / state_pointer  exit 0
+```
+
+### Estado honesto
+
+**INC-021 está cerrado en el código, no en la distribución.** El asset
+público `v2.0.1` sigue siendo glibc con nombre musl, y es el Latest en
+GitHub. Quien lo descargue hoy tiene un binario que no arranca en su
+máquina. El fix llega a usuarios en el próximo release, que está listo
+para correr.
+
+### Primer paso de la sesión siguiente
+
+Publicar `v2.0.6` con el fix, o seguir con
+INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (el único P1 que queda, que
+necesita trust root decidido).
