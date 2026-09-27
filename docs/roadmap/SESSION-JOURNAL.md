@@ -2671,3 +2671,133 @@ Decisión de arquitectura sobre el pipeline de release, o bien
 `musl-tools` en el host. Con una de esas dos, INC-021 pasa de "documentado"
 a "cerrado", y los dos checks RED del guard pueden volverse GREEN sin
 tocar sus aserciones.
+
+---
+
+## Session 18 — 2026-09-27T20:35–20:39Z (orchestrator, autonomous)
+
+**Baseline de entrada**: `971e0ea` (== origin/main, tree limpio).
+**Workspace**: 2.0.4 → 2.0.5.
+
+### WorkItem
+
+Ninguno del roadmap. Esta sesión laDedica a **deuda de proceso propia**,
+que es lo que salió al contrastar el puntero de estado antes de elegir
+trabajo.
+
+### RECONCILIATION: STATE.yaml llevaba 12 commits desfasado
+
+```text
+$ grep current_sha docs/roadmap/STATE.yaml
+  current_sha: "5ce4bca"        # el puntero dice esto
+$ git rev-parse --short HEAD
+971e0ea                         # la realidad es esto
+```
+
+Sessions 16 y 17 movieron `main` siete commits (`2a750b0..971e0ea`),
+actualizaron `CURRENT.md` y `SESSION-JOURNAL.md`... y **no tocaron
+`STATE.yaml`**. El puntero de autoridad se quedó en `5ce4bca` / `2.0.1`
+mientras el repo iba en `971e0ea` / `2.0.4`. Tres sesiones de deriva sin
+que nada lo notara, porque nada lo contrastaba contra git.
+
+Es deuda mía, no del repo. El protocolo (AGENTS.md §10.3) obliga a
+reconciliar cuando CURRENT/STATE, Git y recibos discrepan, y yo llevaba
+dos sesiones haciendo exactamente lo que el protocolo prohíbe.
+
+### Otros punteros obsoletos encontrados en la misma pasada
+
+- `certification_claim_at_current_sha` citando **1.171.2 / v1.172.0**,
+  tres majors de antigüedad. Reescrito como PASS_PARTIAL_OBSERVED para
+  v2.0.1, sefalando que el workspace va 4 PATCH por delante y que nada
+  de eso ha ejecutado un usuario final.
+- `next_action` diciendo **PAUSE** desde session-13. Reescrito con la
+  realidad de session-18.
+- `verified_at_current_sha_note` ": session-15" y `verified_components`
+  contando v1.172.0. Actualizado a session-18.
+
+### Entregado: un guard que hace el drift imposible de ignorar
+
+`tests/test_release_state_pointer.sh`. Compara el `current_sha` declarado
+contra el trunk, la versión declarada contra `Cargo.toml` y
+`manifest.toml`, y añade dos checks que no obvian:
+
+- **3b** el puntero debe ser ancestro de HEAD (no quedar en una rama
+  lateral o en un commit reescrito).
+- **3c** coherencia semántica: si el subject del puntero es un bump a X,
+  la versión declarada tiene que ser X.
+
+### Tres defectos del propio guard, encontrados y corregidos
+
+1. **Insatisfacible por construcción.** La v1 exigía `behind == 0`
+   contra `origin/main`. Imposible: el commit que corrige el puntero
+   queda siempre por detrás de `origin/main` en el instante de entrar.
+   Un guard que nadie puede dejar verde es un guard que se apaga. Ahora
+   mide contra la rama local con tolerancia explícita de 3 commits
+   (las sessions 16-17 dejaron 12; el criterio sale del dato).
+
+2. **Se declaraba FAIL contra sí mismo.** La extracción de la versión
+   usaba `tr -d ' ->'`, que borra caracteres individuales del resultado
+   y se lo come entero. Es **el mismo modo de fallo que el check de musl
+   de session-17**: un guard que se verifica a sí mismo en vez de contra
+   el mundo. Corregido a extracción por captura.
+
+3. **Ventana de auto-referencia.** Descubierta al commitear, no antes:
+   un puntero no puede contenerse a sí mismo, porque el bump ceremonial
+   viaja en su propio commit (exigido por `githooks/pre-push`). Hay una
+   ventana legítima de un commit. El guard la acepta **solo** si la
+   versión declarada coincide con la real de `Cargo.toml` y el puntero
+   está dentro de tolerancia; dos bumps seguidos sin reconciliar la
+   hacen caer.
+
+**La ventana se cerró de verdad**: el puntero ahora apunta a `e001e39`
+(el propio commit del bump), con 0 de retraso y coherencia semántica
+directa, sin excusas.
+
+### Falsificación
+
+Cuatro inyecciones de drift, cuatro detecciones, sobre el estado real
+como caso positivo:
+
+| Inyección | Resultado |
+|---|---|
+| Lag real de sessions 16-17 (puntero a `5ce4bca`) | FAIL, 2 checks |
+| SHA alucinado (`deadbeef…`) | FAIL |
+| Versión declarada `2.0.1` vs repo `2.0.5` | FAIL, 2 checks |
+| Puntero en rama lateral abandonada | FAIL |
+
+`shellcheck` clean. Tests hermanos sin cambio: `install_asset_contract`
+exit 0, `public_gate` exit 0, `pipeline_consistency` exit 1 (INC-021,
+RED intencional de session-17).
+
+### Gates
+
+```text
+cargo fmt --check            PASS
+cargo clippy --workspace     0 diagnostics
+cargo test --workspace       5041 passed, 0 failed, 19 ignored
+shellcheck                   clean (test nuevo + 3 hermanos)
+python3 yaml.safe_load       STATE.yaml parsea
+```
+
+### Deuda abierta (sin cambios, verificando que sigue abierta)
+
+7 INCs abiertos, ninguno P0. Los dos P1 siguen bloqueados por
+decisiones que no me corresponden:
+
+- **INC-DEBT-021** (musl asset lie): requiere decidir qué pipeline de
+  release manda + `musl-tools` en el host.
+- **INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY**: requiere trust root y
+  política de rotación.
+
+De paso, **matiz añadido** a INC-AUDIT-S14-NO-STRUCTURED-LOGGING: el
+título dice "0 tracing" y es cierto, pero ya existen `metrics.rs`,
+`telemetry.rs` y `analytics.rs` con **23 usos reales** entre ellos. La
+aceptación no es "meter la dependencia `tracing`": eso crearía dos
+sistemas de telemetría paralelos que no se correlacionan, que es peor
+que no observar. Es correlacionar sobre lo que ya existe.
+
+### Primer paso de la sesión siguiente
+
+Ejecutar `bash tests/test_release_state_pointer.sh` al abrir, y al cerrar
+de cada sesión. Si sale FAIL, la deriva existe y hay que reconciliar
+antes de tocar código. Es la primera comprobación, no la última.

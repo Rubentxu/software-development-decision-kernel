@@ -4,8 +4,8 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "971e0ea"  # session-18. NOTA: este puntero nombra el ultimo commit de TRABAJO ya publicado. El bump ceremonial 2.0.4->2.0.5 (commit de cierre) se reconcilia a su propio SHA en el commit siguiente; un puntero no puede contenerse a si mismo. Guard 3c detecta la ventana (puntero bumpea X, declara Y!=X) y por diseno el puntero declara 2.0.5 un commit antes de apuntar al bump — reconciliado en el siguiente.
-  head_at_state_sync: "971e0ea"
+  current_sha: "e001e39"  # session-18, reconciliado tras el bump ceremonial. chore(release): bump 2.0.4 -> 2.0.5, primer commit de main donde el puntero y la version declarada coinciden sin ventana. Cierra la deriva de sessions 16-17 (12 commits) y la ventana de auto-referencia documentada en el commit anterior.
+  head_at_state_sync: "e001e39"
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
   head_at_state_sync_prior_session13: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
