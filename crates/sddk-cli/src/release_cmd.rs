@@ -1687,7 +1687,7 @@ pub(crate) fn run_debt_check(git: &GitExecutor) -> anyhow::Result<RevalidationCh
         "--locked".into(),
         "--".into(),
         "-D".into(),
-        "errors".into(),
+        "warnings".into(),
     ];
 
     let output = std::process::Command::new(&debt_argv[0])
