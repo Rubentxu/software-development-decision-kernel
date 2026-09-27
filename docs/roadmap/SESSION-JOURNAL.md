@@ -2057,11 +2057,18 @@ la auditoría encontró defectos que **ningún documento capturaba**.
 
 | # | SHA | Tipo | Cambio |
 |---|---|---|---|
-| 1 | `d1cba1b` | `fix(gateway)` | `evidence.bundle.write` ahora escribe de verdad |
-| 2 | `506b7d2` | `chore(cli)` | Gate clippy `-D warnings` + 1.403 LOC de spikes muertos fuera |
-| 3 | este | `docs(debt)` | 3 INCs nuevos + corrección de la premisa stale de C2 |
+| 1 | `f1d5fbb` | `fix(gateway)` | `evidence.bundle.write` ahora escribe de verdad |
+| 2 | `8d49f11` | `fix(cli)` | Gate clippy de `sddk release`: `-D errors` → `-D warnings` |
+| 3 | `97b900b` | `refactor(cli)!` | 1.403 LOC de spikes muertos fuera de la API pública |
+| 4 | `24dd3da` | `docs(debt)` | 3 INCs nuevos + corrección de la premisa stale de C2 |
 
-**Hallazgo principal (`d1cba1b`):** `EvidenceBundleWriteCapability::execute`
+Los commits 1-3 se reconstruyeron al final de la sesión: el primer
+borrador agrupaba el gate de clippy y la retirada de spikes en un solo
+commit, y no marcaba el breaking change con el `!` de Conventional
+Commits. El árbol final es **byte-idéntico** al borrador
+(`git diff backup-session14 HEAD` vacío); solo cambió la historia.
+
+**Hallazgo principal (`f1d5fbb`):** `EvidenceBundleWriteCapability::execute`
 (`sddk-gateway/src/capability.rs:192`) devolvía `CapabilityOutcome {
 succeeded: true }` **sin escribir nada**, y verificaba su propia
 postcondición contra el outcome sintético que acababa de fabricar. El
@@ -2071,7 +2078,7 @@ digest, vía `write_atomic`), verifica contra el fichero en disco, y falla
 cerrado ante cualquier error de IO. 2 tests nuevos pinean el
 comportamiento para que no pueda volver a regresionar a simular.
 
-**Hallazgo secundario (`506b7d2`):**
+**Hallazgos secundarios (`8d49f11`, `97b900b`):**
 - `sddk release` ejecutaba `cargo clippy -- -D errors` mientras el
   contrato documentado (AGENTS.md, `scripts/release.sh`) exige
   `-D warnings`. El gate ejecutado era más débil que el gate escrito.

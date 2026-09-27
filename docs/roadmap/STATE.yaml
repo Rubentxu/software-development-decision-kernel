@@ -4,7 +4,7 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"  # HEAD = docs(roadmap): mark FC-4 as IMPLEMENTED in FEATURE-CANDIDATES
+  current_sha: "24dd3da"  # rebuilt; see session-14 block below for the 4 SHAs
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
   head_at_state_sync: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
@@ -70,9 +70,36 @@ authority:
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
 active_milestone: C3
-active_slice: "c3a-authority-hardening-completed-c3b-storage-next"
-verified_at_current_sha: true
-verified_components_at_current_sha:
+active_slice: "session-14-audit-closed-3-incs-open-p1-supply-chain-and-test-ports"
+session_14_audit:
+  date: "2026-09-27"
+  baseline_sha: "7dbd8862162f9d8bd9b8d66481f665eebb2d30b2"  # == origin/main at session start
+  commits:
+    - "f1d5fbb fix(gateway): evidence.bundle.write now really writes the bundle"
+    - "8d49f11 fix(cli): clippy gate de sddk release -> -D warnings"
+    - "97b900b refactor(cli)!: retira 1.403 LOC de spikes muertos (BREAKING)"
+    - "24dd3da docs(debt): 3 INCs + corrige premisa stale de C2"
+  history_rebuilt: "commits 1-3 reconstruidos desde backup-session14; árbol byte-idéntico (git diff backup-session14 HEAD vacío)"
+  net_loc: "+510 / -1421"
+  push_state: "NOT PUSHED — 4 commits ahead of origin/main; pre-push hook exige bump real de [workspace.package] version porque el rango toca source"
+  version_bump_pending: "workspace 1.171.2; último tag v1.172.0. El bump debe derivarse del breaking change de 97b900b, no de un minor trivial"
+  tests_scoped_executed:
+    proposal_flow: "10 passed; 0 failed"
+    sddk_gateway_suite: "PASS (exit 0)"
+    sddk_cli_lib: "777 passed; 0 failed; 1 ignored"
+    sddk_engine_lib: "1332 passed; 0 failed; 1 ignored"
+    clippy_3_crates_d_warnings: PASS
+    cargo_fmt_check: PASS
+    cargo_test_workspace: "NOT RUN — perfil completo reservado a verify/release; apply solo admite lote scoped"
+  open_incs:
+    - "INC-AUDIT-S14-TEST-PORTS-UNCONSUMED (high/P1)"
+    - "INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (high/P1)"
+    - "INC-AUDIT-S14-NO-STRUCTURED-LOGGING (medium/P2)"
+  stale_premise_corrected: "cognicode-mcp declarado AUSENTE en CURRENT.md; verificado PRESENTE (v0.97.3, responde). C2 sigue NOT_EVALUATED por chronos-mcp ausente"
+  negative_knowledge_verified: "0 unsafe real; 0 SQL inyectable (89 parametrizados); 0 shell concat (17 .args()); layering hexagonal correcto; GraphStore NO es riesgo (10 required + 12 defaulted, SqliteGraphStore implementa todos)"
+verified_at_current_sha: false
+verified_at_current_sha_note: "Session-14 solo ejecutó el lote scoped (los 3 crates tocados). El bloque verified_components_at_superseded_baseline_72825fe SIGUE describiendo el cierre de session-13 en 72825fe, NO el árbol actual: por eso este flag es false. No reutilizar ese bloque como evidencia del SHA actual."
+verified_components_at_superseded_baseline_72825fe:
   cargo_fmt_check: PASS
   cargo_clippy_workspace_d_warnings: PASS
   cargo_test_workspace: "5050 passed; 0 failed; 19 ignored (3/3 runs stable at session-13 close HEAD 72825fe)"
