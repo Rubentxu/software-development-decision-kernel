@@ -27,9 +27,6 @@ pub mod execution_receipt;
 pub mod instruction_compiler;
 pub mod skill_definition;
 pub mod skill_registry_bridge;
-pub mod spike_axs3;
-pub mod spike_axs4;
-pub mod spike_axs5;
 
 mod architecture_cmd;
 mod docs;

@@ -125,7 +125,6 @@ pub mod semantic_kind;
 pub mod semantic_node;
 pub mod signed_gates;
 pub mod software_alignment;
-pub mod spike_sp06;
 pub mod state_class_lint;
 pub mod strategy_comparison;
 pub mod strategy_experiments;
