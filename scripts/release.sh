@@ -408,16 +408,64 @@ fi
 ok "final tag: $TAG"
 
 # --- 3. build ---
+#
+# INC-DEBT-021: el nombre del asset decía "musl" y el contenido era glibc.
+# La causa era que este script compilaba con `cargo build --release` — el
+# target del host — y luego empaquetaba el resultado con nombre musl.
+#
+# Aqui se compila con el target musl REAL. El binario resultante es
+# static-pie: no necesita glibc y corre en cualquier distro, incluidos
+# Alpine y Debian 12 (verificado en session-19).
+#
+# El target es configurable porque no todos los hosts de release tienen el
+# toolchain. El default es musl porque es lo que el nombre del asset
+# promete. Si se pide musl y el toolchain no esta, el script ABORTA: es
+# preferible no publicar a publicar un binario con el nombre equivocado.
+# Esa era exactamente la mentira que INC-021 documentaba.
 
 step "3/14 — cargo build --release --bin sddk"
-cargo build --release --offline --bin sddk \
-    || die "cargo build failed"
+
+BUILD_TARGET="${SDDK_RELEASE_BUILD_TARGET:-x86_64-unknown-linux-musl}"
+
+if [ "$BUILD_TARGET" != "x86_64-unknown-linux-musl" ]; then
+    warn "SDDK_RELEASE_BUILD_TARGET=$BUILD_TARGET: el nombre del asset dice musl pero el target no es musl"
+    warn "esto reintroduce INC-021. Se requiere una decision explicita del operador."
+fi
+
+if ! rustup target list --installed 2>/dev/null | grep -qx "$BUILD_TARGET"; then
+    die "el target $BUILD_TARGET no esta instalado (rustup target add $BUILD_TARGET).
+         release.sh publica assets musl; compilar contra otro target rompe el
+         contrato del installer. Para publicar de otro modo, cambia tambien el
+         nombre del asset y el contrato de install.sh. Ver INC-DEBT-021."
+fi
+
+cargo build --release --offline --bin sddk --target "$BUILD_TARGET" \
+    || die "cargo build failed para target $BUILD_TARGET"
+
 # Locate the binary via cargo metadata so we respect CARGO_TARGET_DIR.
-BIN="$(cargo metadata --format-version 1 --offline \
+TARGET_DIR="$(cargo metadata --format-version 1 --offline \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' \
-        || true)/release/sddk"
+        || true)"
+BIN="$TARGET_DIR/$BUILD_TARGET/release/sddk"
 [ -x "$BIN" ] || die "binary not found at $BIN"
-ok "binary: $BIN ($("$BIN" --version))"
+
+# Verificar que el binario es REALMENTE lo que el nombre del asset promete.
+# Un binario dinamico en un asset llamado musl es INC-021 reincidente y
+# tiene que abortar ANTES de publicar, no despues. `file` es la fuente:
+# dice "statically linked" para static-pie y "dynamically linked" para
+# el build glibc del host, que es justo el caso que hay que cazar.
+if [ "$BUILD_TARGET" = "x86_64-unknown-linux-musl" ]; then
+    FILE_DESC="$(file -b "$BIN")"
+    if printf '%s' "$FILE_DESC" | grep -q 'statically linked'; then
+        ok "binario verificado estatico: $FILE_DESC"
+    else
+        die "el target de build es musl pero el binario NO es estatico.
+         file dice: $FILE_DESC
+         Publicar esto seria reincidir en INC-021. Verificar el linker
+         (musl-tools / CC=musl-gcc) antes de reintentar."
+    fi
+fi
+ok "binary: $BIN ($("$BIN" --version)), target=$BUILD_TARGET"
 
 # --- 4. manifest ---
 
