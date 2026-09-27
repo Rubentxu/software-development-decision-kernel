@@ -2476,3 +2476,106 @@ fuente. Resuelto bumpeando a `2.0.2` y llevando los tres ficheros
 **Conclusión operativa**: el bump y el lock deben editarse juntos, en el
 mismo commit, siempre. Es la misma razón por la que la convención del
 repo separa `feat` de `chore(release): bump`.
+
+---
+
+## Session 16 — 2026-09-27T19:48–20:17Z (orchestrator, autonomous)
+
+**Baseline de entrada**: `002bb61` (== origin/main, tree limpio).
+**HEAD de salida**: `631dd6c` (== origin/main, tree limpio).
+**Workspace**: 2.0.2 → **2.0.3**. **Último release**: v2.0.1 (sin publicar
+en esta sesión: el fix es del pipeline de instalación, se distribuye vía
+`install.sh`, no vía el binario del release).
+
+### WorkItem
+
+Cerrar la autenticidad de supply chain. Se derivó del único finding
+high/P1 abierto, y acabó siendo un bloque mucho mayor.
+
+### Lo que se descubrió (todo OBSERVED, ejecutando el e2e)
+
+La premisa de partida —"implementar la firma out-of-band reutilizando la
+infra de cosign existente"— era falsa en sus tres componentes:
+
+1. **La firma nunca existió.** `install.sh` no menciona cosign en ninguna
+   línea; sólo `verify_sha256` contra un `.sha256` descargado del mismo
+   `$BASE_URL` que el payload. `release.sh` no firma nada. `v2.0.1` no
+   publica ningún asset de firma. La única infra existente era cosign
+   instalado en un contenedor de test que no verificaba nada.
+
+2. **El e2e exigía una cadena que nadie imprimía.**
+   `grep -q "signature verified (cosign keyless)"` contra un log que sólo
+   puede contener `sha256 verified`. Variante b insatisfacible por
+   construcción.
+
+3. **Bajo eso, la instalación de usuario estaba rota.** La ruta
+   split-asset (sin `gh` en PATH = caso por defecto) pedía
+   `sddk-linux-x86_64-musl`; el asset publicado es `sddk`. HTTP 404 y
+   `exit 1` antes de enlazar nada. **critical/P1**, no high.
+
+4. **Y el e2e no podía pasar en verde por otra razón.** El binario
+   publicado se llama `musl` pero es un build **glibc 2.39** del host
+   (`release.sh` compila una vez y empaqueta ese binario). En
+   `debian:12-slim` (glibc 2.36) muere con `GLIBC_2.39 not found`, y esa
+   era la imagen base del propio e2e. Los 11 checks de la variante a
+   fallaban por una sola causa.
+
+### Correcciones aplicadas
+
+- `install.sh`: descarga `sddk`/`sddk.sha256` (los nombres reales).
+- `install.sh`: checksum del artefacto unificado pasa a **fail-closed**
+  (antes: "skipping checksum verification" e instalaba sin integridad).
+- `install.sh`: `probe_binary_version()` valida ejecución y formato
+  semver. Antes, `"$bin" --version | awk '{print $NF}'` devolvía su
+  propia entrada si el binario no corría, la asignación "tenía éxito" y
+  el instalador terminaba en `exit 1` **sin ningún mensaje**.
+- `tests/test_install_asset_contract.sh`: ata estáticamente los nombres
+  que pide `install.sh` con los que publica `release.sh`. Ese contrato no
+  tenía ninguna prueba, por eso el desfase del cycle-46 sobrevivió.
+- `e2e-install.sh`: la variante b comprueba el contrato real y reporta
+  la ausencia de firma como warning honesto; imagen base con glibc
+  suficiente (`SDDK_E2E_IMAGE` para override); cabecera corregida.
+
+### Verificación
+
+```text
+tests/test_install_asset_contract.sh   9/9 ok; check 8 RED a propósito (musl)
+e2e-install.sh --version v2.0.1        a/b/c/d PASS, N1 ALL PASS, exit 0
+   (antes: variante a FAIL(11), exit 1)
+install real en contenedor             sddk 2.0.1, bundle enlazado,
+                                       bundle_coherence present, all_present true
+shellcheck install+e2e+test            clean
+cargo fmt --check                      PASS
+cargo test --workspace                 5041 passed, 0 failed, 19 ignored
+```
+
+### Hipótesis propia falsada
+
+Se sospechó que `e2e-install.sh` reportaba FAIL pero salía 0, lo que
+enmascararía todo. **Falso**: hace `return "$failures"` y `exit 1` si
+`TOTAL_FAILURES != 0`. El "exit 0" era un artefacto de mi propia sonda
+(`| tail` con `PIPESTATUS` mal leído). Queda anotado en
+INC-DEBT-022 para no volver a "descubrirlo".
+
+### Deuda registrada
+
+- `INC-DEBT-021-MUSL-ASSET-NAME-LIE` (high/P1, **open**).
+- `INC-DEBT-022-INSTALLER-ASSET-NAME-404` (critical/P1, **closed**).
+- `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` (high/P1, open): opción (a)
+  re-evaluada, la estimación de session-14 queda **anulada**.
+
+### Distinción honesta sobre lo entregado
+
+`INC-DEBT-021` **no** se cierra. Se cambió la imagen del e2e, lo que
+valida el instalador, pero el artefacto publicado sigue siendo glibc
+con nombre musl. El check 8 del test queda RED deliberadamente para que
+no se pueda "arreglar" silenciosamente. Cerrarlo exige tocar el pipeline
+de build del release, que es otro bloque de trabajo.
+
+### Primer paso de la sesión siguiente
+
+`INC-DEBT-021`: decidir entre (a) build musl real, (b) renombrar el
+asset (cambio major del contrato de distribución) o (c) ambos, y
+verificar si el toolchain musl está disponible en el host de release.
+Es el único finding de seguridad/high abierto que depende sólo de
+trabajo propio.
