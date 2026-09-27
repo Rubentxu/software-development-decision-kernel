@@ -758,7 +758,13 @@ fi
 # canonical list below is a public-release gate and its shape is defined
 # elsewhere (tests/test_release_public_gate.sh).
 for sig_artifact in "${SIGN_ARTIFACTS[@]}"; do
-    for ext in .sig .bundle.json; do
+    # .bundle.json already carries the certificate, so the bundle path works
+    # on its own. The .pem is published anyway so the DETACHED path works
+    # too: the CI signs detached, and both consumers now require a
+    # certificate before accepting a detached signature. Shipping only the
+    # bundle would make the two signing paths produce releases that are
+    # mutually un-verifiable depending on which consumer fetched what.
+    for ext in .sig .bundle.json .pem; do
         if [ -f "$TMP/$sig_artifact$ext" ]; then
             ASSETS+=("$TMP/$sig_artifact$ext")
         fi

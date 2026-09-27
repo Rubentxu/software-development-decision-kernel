@@ -215,6 +215,17 @@ else
     fail "release.sh allows a partially signed release (SIGNED_COUNT -eq 0)"
 fi
 
+# release.sh must publish the certificate, not only the signature. The
+# CI signs detached, and both consumers now REFUSE a detached signature
+# that has no .pem. If release.sh ships only .sig + .bundle.json, a release
+# signed locally is verifiable only through the bundle path — and a
+# consumer that fetched the .sig gets a refusal instead of a verdict.
+if grep -qF 'for ext in .sig .bundle.json .pem; do' "$RELEASE_SH"; then
+    ok "release.sh publishes .sig, .bundle.json and .pem for every artifact"
+else
+    fail "release.sh does not publish the .pem certificate; detached verification is impossible"
+fi
+
 # The CI smoke test greps install.sh output for a success string. If the
 # two drift, the release FAILS at the smoke-test step on the first real tag
 # — and that string was already wrong once ("cosign keyless" vs "cosign,
