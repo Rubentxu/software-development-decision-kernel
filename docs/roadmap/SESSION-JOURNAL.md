@@ -2452,3 +2452,27 @@ de publicar. Queda registrado porque el primer `sed` fue un
 Definir el trust root de la firma out-of-band (ADR + spec) antes de
 volver a publicar: es el único riesgo de seguridad abierto que
 depende sólo de trabajo propio, sin proveedor externo.
+
+### Coda — lección del pre-push hook (session-15)
+
+Tras publicar `v2.0.1` quedó `Cargo.lock` en `1.175.0` (el commit del
+bump se hizo sobre el lock de la versión anterior). El commit de
+resincronización aislado fue **rechazado por `githooks/pre-push`**:
+
+```text
+ERROR: Push to main rejected — no real release contract found in range.
+ERROR: (2) a NON-EMPTY range whose changed paths are all under:
+       docs/**, .sddk/followups/**, tests/cycle-artifacts/.../,
+       MANIFEST.sha256 (generated-only)
+```
+
+`Cargo.lock` no está en la allowlist porque es fichero de fuente
+versionado. **El hook tiene razón**: un cambio de `Cargo.lock` exige un
+bump real de `[workspace.package]`, igual que cualquier otro fichero de
+fuente. Resuelto bumpeando a `2.0.2` y llevando los tres ficheros
+(Cargo.toml, manifest.toml, Cargo.lock) en un único commit coherente
+(`1e36db3`). Sin cambio de código.
+
+**Conclusión operativa**: el bump y el lock deben editarse juntos, en el
+mismo commit, siempre. Es la misma razón por la que la convención del
+repo separa `feat` de `chore(release): bump`.
