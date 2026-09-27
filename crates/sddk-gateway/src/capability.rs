@@ -12,6 +12,8 @@ use thiserror::Error;
 use sddk_domain::EvidenceBundle;
 use sddk_storage::Storage;
 
+use crate::artifact_store::write_atomic;
+
 /// Errors from capability execution and verification.
 #[derive(Debug, Error)]
 pub enum CapabilityError {
@@ -124,6 +126,57 @@ impl EvidenceBundleWriteCapability {
         format!("sha256:{:x}", hasher.finalize())
     }
 
+    /// Resolves the on-disk path for a bundle digest and writes the bundle.
+    ///
+    /// The filename is derived from the digest, so the write is idempotent: a
+    /// re-run of identical evidence overwrites the same artifact instead of
+    /// accumulating near-duplicates. The persisted document is the bundle JSON
+    /// with its content digest, so a later verifier can recompute the digest
+    /// from the artifact and confirm it independently. Any IO failure surfaces
+    /// as [`CapabilityError::ExecutionFailed`] — the capability never reports
+    /// success for work that did not land on disk.
+    fn write_bundle(
+        &self,
+        bundle: &EvidenceBundle,
+        digest: &str,
+    ) -> Result<std::path::PathBuf, CapabilityError> {
+        // `sha256:<64 hex>` — strip the algorithm prefix for the filename and
+        // reject anything that could escape the evidence dir.
+        let hex = digest.strip_prefix("sha256:").unwrap_or(digest);
+        if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(CapabilityError::ExecutionFailed(format!(
+                "malformed evidence digest: {digest}"
+            )));
+        }
+
+        let dir = &self.evidence_dir;
+        std::fs::create_dir_all(dir).map_err(|e| {
+            CapabilityError::ExecutionFailed(format!(
+                "cannot prepare evidence dir {}: {e}",
+                dir.display()
+            ))
+        })?;
+
+        // Persist the bundle itself, with the digest recorded alongside it.
+        let document = serde_json::json!({
+            "content_digest": digest,
+            "bundle": bundle,
+        });
+        let bytes = serde_json::to_vec_pretty(&document).map_err(|e| {
+            CapabilityError::EvidenceBundle(format!("cannot serialize evidence bundle: {e}"))
+        })?;
+
+        let path = dir.join(format!("{hex}.json"));
+        write_atomic(&path, &bytes).map_err(|e| {
+            CapabilityError::ExecutionFailed(format!(
+                "cannot write evidence {}: {e}",
+                path.display()
+            ))
+        })?;
+
+        Ok(path)
+    }
+
     /// Verifies the postcondition of an evidence bundle write.
     ///
     /// The postcondition holds if:
@@ -188,29 +241,31 @@ impl Capability for EvidenceBundleWriteCapability {
 
         // Compute digest before writing
         let digest = Self::compute_bundle_digest(&bundle);
-
-        // Write bundle to evidence dir (simulated - in real impl would write to disk)
-        // For now, we just verify the digest is valid
         if digest.is_empty() || !digest.starts_with("sha256:") {
             return Err(CapabilityError::ExecutionFailed(
                 "invalid digest computed".into(),
             ));
         }
 
+        // Write the bundle to the evidence dir. This is a real governed side
+        // effect: the capability may not report success for work it did not do.
+        let evidence_path = self.write_bundle(&bundle, &digest)?;
+
+        // Verify postcondition against the artifact actually on disk, not
+        // against the outcome we just synthesised.
+        let verification_request = VerificationRequest {
+            capability: self.capability_name().to_string(),
+            expected_digest: digest.clone(),
+            evidence_path: Some(evidence_path.to_string_lossy().into_owned()),
+            exit_status: Some(0),
+        };
+
         let outcome = CapabilityOutcome {
             succeeded: true,
-            evidence_digest: Some(digest.clone()),
+            evidence_digest: Some(digest),
             exit_status: Some(0),
             stdout: String::new(),
             stderr: String::new(),
-        };
-
-        // Verify postcondition before returning success
-        let verification_request = VerificationRequest {
-            capability: self.capability_name().to_string(),
-            expected_digest: digest,
-            evidence_path: None,
-            exit_status: Some(0),
         };
 
         Self::verify_postcondition(&outcome, &verification_request)?;

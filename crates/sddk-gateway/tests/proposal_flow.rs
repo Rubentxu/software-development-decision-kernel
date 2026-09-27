@@ -308,3 +308,79 @@ fn execute_governed_receipt_contains_version_hashes() {
         Some("behavior-hash-def")
     );
 }
+
+/// Regression pin: `evidence.bundle.write` must produce a real artifact.
+///
+/// This capability previously returned `succeeded: true` without writing
+/// anything, then verified its postcondition against the outcome it had just
+/// synthesised. A governed capability that reports a side effect it never
+/// performed is worse than one that fails, so the write is now real and the
+/// postcondition is checked against the file on disk.
+#[test]
+fn evidence_bundle_write_actually_persists_the_bundle() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cap = EvidenceBundleWriteCapability::new(dir.path());
+    let bundle_json = make_evidence_bundle_json();
+
+    let mut proposal = make_test_proposal(
+        "evidence.bundle.write",
+        "agent-abc123",
+        "behavior-def456",
+        false,
+    );
+    proposal.args = vec![bundle_json];
+
+    let mut storage = Storage::open_in_memory().expect("in-memory storage");
+    let outcome = cap
+        .execute(&proposal, &mut storage)
+        .expect("capability must succeed");
+
+    assert!(outcome.succeeded);
+    let digest = outcome.evidence_digest.expect("digest produced");
+    let hex = digest.strip_prefix("sha256:").expect("sha256 prefix");
+
+    // The artifact must exist, be named after its digest, and carry the bundle.
+    let artifact = dir.path().join(format!("{hex}.json"));
+    assert!(
+        artifact.is_file(),
+        "evidence artifact must exist at {}",
+        artifact.display()
+    );
+
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&artifact).expect("read artifact"))
+            .expect("artifact is valid JSON");
+    assert_eq!(
+        persisted.get("content_digest").and_then(|v| v.as_str()),
+        Some(digest.as_str()),
+        "artifact must record the digest it was named after"
+    );
+    assert!(
+        persisted.get("bundle").is_some(),
+        "artifact must carry the evidence bundle"
+    );
+}
+
+/// Regression pin: an unwritable evidence dir must fail, not fake success.
+#[test]
+fn evidence_bundle_write_fails_closed_when_dir_is_unwritable() {
+    // A regular file where a directory is required → create_dir_all must fail.
+    let blocker = tempfile::NamedTempFile::new().expect("temp file");
+    let cap = EvidenceBundleWriteCapability::new(blocker.path());
+
+    let mut proposal = make_test_proposal(
+        "evidence.bundle.write",
+        "agent-abc123",
+        "behavior-def456",
+        false,
+    );
+    proposal.args = vec![make_evidence_bundle_json()];
+
+    let mut storage = Storage::open_in_memory().expect("in-memory storage");
+    let result = cap.execute(&proposal, &mut storage);
+
+    assert!(
+        result.is_err(),
+        "capability must fail closed when it cannot write the artifact"
+    );
+}
