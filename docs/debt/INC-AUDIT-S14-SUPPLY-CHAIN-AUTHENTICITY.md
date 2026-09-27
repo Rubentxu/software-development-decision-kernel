@@ -68,5 +68,22 @@ lector validante en Rust.
 
 ## Estado
 
-Abierto. No ejecutado en este ciclo. Candidato a WorkItem propio de
-seguridad; no es quick win porque toca la ruta de instalación.
+**Parcialmente cerrado en session-14.**
+
+- **(b) Cerrado.** Allowlist de miembros del tarball implementada en
+  `crates/sddk-cli/src/dev/update.rs` antes de extraer
+  (`ensure_safe_tarball_members`, fail-closed) +
+  `--no-same-owner`/`--no-same-permissions`. 7 tests nuevos pinean el
+  comportamiento, incluido el exploit exacto
+  (`software-development-decision-kernel/../../etc/x` →
+  `../etc/x` tras `--strip-components=1`). Verificado: 784 passed en
+  `sddk-cli --lib`, clippy y fmt limpios.
+- **(a) Abierto.** La firma out-of-band sigue pendiente: el `.sha256`
+  se descarga del mismo origen que el payload, luego la cadena se
+  auto-autentica. Cerrarlo requiere una dependencia criptográfica
+  (Ed25519) que el crate hoy no tiene, más la integración de `cosign`
+  en esta ruta. Es trabajo de su propio, no un quick win.
+
+Nota: el guard de traversal no mitiga la ausencia de firma. Solo evita
+que un origen comprometido convierta la instalación en una primitiva de
+escritura arbitraria. La autenticidad del origen sigue sin resolver.
