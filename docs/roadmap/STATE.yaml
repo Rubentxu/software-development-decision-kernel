@@ -4,13 +4,13 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "c123036"  # chore(release): bump 1.173.0 -> 1.174.0 (PUSHED)
-  head_at_state_sync: "c123036"
+  current_sha: "87fef0e"  # chore(release): bump 1.174.0 -> 1.175.0 (PUSHED)
+  head_at_state_sync: "87fef0e"
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
   head_at_state_sync_prior_session13: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.174.0"
+  workspace_version_at_current: "1.175.0"
   last_public_release_observed: "v2.0.0"  # tag v2.0.0 -> db043b4; el software dentro reporta 1.173.0 (ver receipt c4-release-v2.0.0)
   binary_sha256_v1_171_0: "5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3"
   binary_sha256_v1_172_0: "e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e"
@@ -71,7 +71,7 @@ authority:
   journal: "docs/roadmap/SESSION-JOURNAL.md"
   rules: "AGENTS.md"
 active_milestone: C3
-active_slice: "session-14-release-v2.0.0-published-tar-guard-closed-signing-open"
+active_slice: "session-14-complete-roadmap-executable-closed"
 session_14_audit:
   date: "2026-09-27"
   baseline_sha: "7dbd8862162f9d8bd9b8d66481f665eebb2d30b2"  # == origin/main at session start
