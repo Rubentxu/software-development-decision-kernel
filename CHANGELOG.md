@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.175.0] - 2026-09-27
+
+### Fixes
+  - fix(cli): cierra la primitiva de escritura arbitraria en sddk dev update
+
+### Other
+  - docs(debt): indexa los 6 INCs de session-14 + corrige la deriva de FC-2
+  - docs(roadmap): punteros post-release v2.0.0 + veredicto sobre C2
+  - docs(roadmap): receipt de la release v2.0.0 + revisión del INC de test_ports
+
 ## [1.174.0] - 2026-09-27
 
 ### Features
