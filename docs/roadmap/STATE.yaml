@@ -4,13 +4,13 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "e001e39"  # session-18, reconciliado tras el bump ceremonial. chore(release): bump 2.0.4 -> 2.0.5, primer commit de main donde el puntero y la version declarada coinciden sin ventana. Cierra la deriva de sessions 16-17 (12 commits) y la ventana de auto-referencia documentada en el commit anterior.
-  head_at_state_sync: "e001e39"
+  current_sha: "ad22e5d"  # session-20. chore(release): bump 2.0.5 -> 2.0.6, ultimo commit de main. Session-19 movio 7 commits y dejo el puntero en e001e39/2.0.5; lo detecta test_release_state_pointer.sh, que asi se demuestra util en su primer uso real fuera de las inyecciones de falsificacion.
+  head_at_state_sync: "ad22e5d"
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
   head_at_state_sync_prior_session13: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "2.0.5"  # reconciled session-18; ver RECONCILIATION session-18
+  workspace_version_at_current: "2.0.6"  # Cargo.toml [workspace.package]. session-19 subio a 2.0.6 tras cerrar INC-021. NO publicar: v2.0.1 sigue siendo el ultimo tag publico y su asset 'musl' sigue siendo glibc.
   last_public_release_observed: "v2.0.1"  # tag v2.0.1 -> 5ce4bca; software dentro = 2.0.1 (ver receipt c4-release-v2.0.1). PUBLICA EL FIX DE SEGURIDAD 79e9e2d que v2.0.0 no contenia.
   tag_v2_0_1_sha: "5ce4bcacfb8ec4855cd6c543b59f6bda940b7872"
   binary_sha256_v2_0_1: "417a7163a286f75bcd3ece778e6d33eb7031f312626d2639513db47b9c672e22"

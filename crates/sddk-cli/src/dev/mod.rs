@@ -391,6 +391,13 @@ pub(super) struct LinkArgs {
     pub(super) format: OutputFormat,
 }
 
+/// Repository that release assets are published from.
+///
+/// Single source of truth: the `--repo` default below and the certificate
+/// identity in `crate::cosign` must name the same repository, or every
+/// release fails its own installer's pinning.
+pub(super) const DEFAULT_RELEASE_REPO: &str = "Rubentxu/software-development-decision-kernel";
+
 #[derive(Debug, Clone, Args)]
 pub(super) struct UpdateArgs {
     /// Framework root containing agents/skills/prompts (bundle install)
@@ -401,7 +408,7 @@ pub(super) struct UpdateArgs {
     #[arg(long)]
     pub(super) version: Option<String>,
     /// GitHub repository (owner/name) providing release assets.
-    #[arg(long, default_value = "Rubentxu/software-development-decision-kernel")]
+    #[arg(long, default_value = DEFAULT_RELEASE_REPO)]
     pub(super) repo: String,
     /// Release base URL override (testing with file://).
     #[arg(long)]
@@ -427,6 +434,14 @@ pub(super) struct UpdateArgs {
     /// install manually and you just want to drop stale version dirs.
     #[arg(long, conflicts_with = "version")]
     pub(super) prune_only: bool,
+    /// Accept a bundle with no cosign signature. Authenticity is then NOT
+    /// established: the .sha256 travels with the payload from the same
+    /// origin, so it only proves the bytes did not change in transit.
+    ///
+    /// SDDK_ALLOW_UNSIGNED_UPDATE=1 is honoured as the environment
+    /// equivalent, for scripted installs that cannot add a flag.
+    #[arg(long)]
+    pub(super) allow_unsigned: bool,
 }
 
 #[derive(Debug, Clone, Args)]

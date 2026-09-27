@@ -134,6 +134,168 @@ else
     ok "release.sh does not claim a musl asset"
 fi
 
+# ── signature contract (INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY) ──
+#
+# Both consumers now REFUSE an unsigned artifact. That is only safe if the
+# release actually signs, so the three sides have to agree: release.sh
+# signs, install.sh verifies, dev update verifies. A change on one side
+# without the others turns every install into a hard failure.
+# Match the SIGNING LOOP, not the string. `grep -q 'cosign sign-blob'` is
+# satisfied by the remediation hint inside the `die` message, so disabling
+# the real signing call while leaving the advice text in place keeps this
+# check green. Third recurrence of the same defect in this repo: a guard
+# satisfied by a comment while the code it guards is broken. Comments are
+# stripped before matching, and the call must sit inside the loop.
+if grep -vE '^[[:space:]]*#' "$RELEASE_SH" \
+     | grep -vE '^[[:space:]]*(die|warn|ok|echo) ' \
+     | grep -qE '^[[:space:]]*if cosign sign-blob'; then
+    ok "release.sh signs its artifacts with cosign (signing loop, not a comment)"
+else
+    fail "release.sh has no active cosign sign-blob call; installers now require signatures"
+fi
+
+# Count CALLS, not occurrences. `grep -q verify_signature` is satisfied by
+# the function DEFINITION alone, so deleting every call site leaves the
+# check green. That is precisely the failure mode this test exists to
+# catch, reproduced in its own body — so the assertion has to be stricter
+# than the thing it is asserting about.
+#
+# A call site is `verify_signature "$..."` with a quoted argument on the
+# same line; the definition ends with `) {` and takes no such argument.
+_verify_calls() {
+    grep -cE '^[[:space:]]*verify_signature[[:space:]]+"' "$1" || true
+}
+if [ "$(_verify_calls "$INSTALL_SH")" -ge 2 ]; then
+    ok "install.sh verifies a signature on BOTH download paths (unified + legacy)"
+else
+    fail "install.sh has only $(( $(_verify_calls "$INSTALL_SH") )) of 2 required verify_signature call sites — an artifact path is unprotected"
+fi
+
+if grep -q 'SDDK_ALLOW_UNSIGNED' "$INSTALL_SH"; then
+    ok "install.sh has a named, explicit opt-out (SDDK_ALLOW_UNSIGNED)"
+else
+    fail "install.sh has no opt-out: unsigned releases become uninstallable with no escape"
+fi
+
+# A call site ends in `?;`, a definition ends in `{`. Matching the bare
+# name is satisfied by the function definition on its own, which means the
+# check would pass with every call site deleted.
+if grep -qF 'verify_bundle_signature(&bundle, &url, args.allow_unsigned)?;' crates/sddk-cli/src/dev/update.rs 2>/dev/null; then
+    ok "sddk dev update verifies a signature before installing (call site, not definition)"
+else
+    fail "sddk dev update has no verify_bundle_signature call site (authenticity gap reopened)"
+fi
+
+# A present-but-invalid signature must be a hard failure in BOTH paths.
+# If either degrades to a warning, an attacker who controls the download
+# origin can serve a bad signature and downgrade the check themselves.
+# The bad-signature branch must abort, not warn. Checking only that the
+# string "exit 1" appears anywhere in the file is worthless — install.sh
+# has many exit 1 sites, so downgrading THIS branch to a warning leaves
+# the check green. Pin the branch: the FAILED message must be followed by
+# an abort in its own block.
+if awk '
+    /cosign verification FAILED/ { inbranch=1; next }
+    inbranch && /^[[:space:]]*exit 1/ { found=1; inbranch=0 }
+    inbranch && /^[[:space:]]*(fi|})/ { inbranch=0 }
+    END { exit(found ? 0 : 1) }
+' "$INSTALL_SH"; then
+    ok "install.sh aborts on a failed signature verification (not a warning)"
+else
+    fail "install.sh does not exit on a bad signature — an attacker can downgrade this to a warning"
+fi
+
+# Signing must be all-or-nothing. A release where the binary has a
+# signature and the bundle tarball does not passes an `-eq 0` guard, then
+# fails at install time for the user. The count is compared against the
+# size of the list, so adding an artifact cannot silently weaken the gate.
+if grep -qF '[ "$SIGNED_COUNT" -ne "${#SIGN_ARTIFACTS[@]}" ]' "$RELEASE_SH"; then
+    ok "release.sh requires ALL artifacts signed, not just one"
+else
+    fail "release.sh allows a partially signed release (SIGNED_COUNT -eq 0)"
+fi
+
+# The pinning constants live in crates/sddk-cli/src/cosign.rs and are
+# copied into install.sh. A silent divergence there means the CLI trusts a
+# signer the shell installer rejects, or worse both accept something nobody
+# intended. Extract both and compare, so drift is a test failure.
+COSIGN_RS="crates/sddk-cli/src/cosign.rs"
+_rust_identity=$(sed -n 's/^[[:space:]]*"\(.*@.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+_rust_issuer=$(sed -n 's/^pub const DEFAULT_CERT_ISSUER: &str = "\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+_shell_identity=$(sed -n 's/.*SDDK_COSIGN_IDENTITY:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
+_shell_issuer=$(sed -n 's/.*SDDK_COSIGN_ISSUER:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
+
+if [ -n "$_rust_identity" ] && [ "$_rust_identity" = "$_shell_identity" ]; then
+    ok "install.sh and cosign.rs pin the same certificate identity"
+else
+    fail "certificate identity drift: cosign.rs='$_rust_identity' install.sh='$_shell_identity'"
+fi
+
+if [ -n "$_rust_issuer" ] && [ "$_rust_issuer" = "$_shell_issuer" ]; then
+    ok "install.sh and cosign.rs pin the same OIDC issuer"
+else
+    fail "OIDC issuer drift: cosign.rs='$_rust_issuer' install.sh='$_shell_issuer'"
+fi
+
+# Both halves must always travel together. A script that passes only one
+# of the two flags is the original bug in a new location.
+_verify_flags() {
+    grep -cE -- '--certificate-identity=[^ ]+ --certificate-oidc-issuer=' "$1" || true
+}
+if [ "$(_verify_flags "$INSTALL_SH")" -ge 1 ]; then
+    ok "install.sh passes identity and issuer as a pair"
+else
+    fail "install.sh does not pass --certificate-identity and --certificate-oidc-issuer together"
+fi
+
+# Fixed-string grep, not -E: the format! macro is full of regex metacharacters
+# and the escaping needed to survive them is exactly where this went wrong
+# before. -F cannot misread the pattern.
+# Match the inner format! argument only, not the whole statement. The
+# real line is `cmd.arg(format!("--certificate-identity={identity}"));` —
+# including `cmd.arg(` or the trailing `))` makes the pattern miss on a
+# correct implementation, which is how this check produced a false FAIL.
+if grep -qF 'format!("--certificate-identity={identity}")' crates/sddk-cli/src/dev/update.rs \
+   && grep -qF 'format!("--certificate-oidc-issuer={issuer}")' crates/sddk-cli/src/dev/update.rs; then
+    ok "sddk dev update passes identity and issuer as a pair"
+else
+    fail "sddk dev update does not pin both certificate halves"
+fi
+
+# The unsigned opt-in must be reachable from the CLI, not only from an
+# environment variable, so an operator can see it in --help. A var-only
+# opt-in is invisible in the interface and gets "fixed" by exporting the
+# var in a shell profile.
+if grep -qF 'pub(super) allow_unsigned: bool' crates/sddk-cli/src/dev/mod.rs; then
+    ok "sddk dev update exposes an explicit --allow-unsigned flag"
+else
+    fail "the unsigned opt-in is env-var only; there is no discoverable flag"
+fi
+
+# Both rejection AND acceptance need coverage. Testing only the rejection
+# leaves the accepting branch unexercised, which is exactly where a typo
+# silently ships a dead branch.
+if grep -qF 'fn explicit_opt_in_accepts_an_unsigned_bundle()' crates/sddk-cli/src/dev/update.rs; then
+    ok "the accepting branch of the unsigned policy is covered by a test"
+else
+    fail "only the rejection path is tested; the opt-in branch is unexercised"
+fi
+
+# Same for the Rust path: cosign failure must be a bail, never a warning.
+# `bail!` opens BEFORE the message it prints, so anchor on the status
+# check and require a bail inside the same brace-delimited block. Anchoring
+# on the message text instead would miss the bail that guards it.
+if awk '
+    /^[[:space:]]*if !output\.status\.success\(\) \{/ { inbranch=1; next }
+    inbranch && /bail!/ { found=1; inbranch=0 }
+    inbranch && /^[[:space:]]*}$/ { inbranch=0 }
+    END { exit(found ? 0 : 1) }
+' crates/sddk-cli/src/dev/update.rs 2>/dev/null; then
+    ok "sddk dev update bails on a failed signature verification"
+else
+    fail "sddk dev update does not bail on a bad signature"
+fi
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "install asset contract: $failures check(s) FAILED"

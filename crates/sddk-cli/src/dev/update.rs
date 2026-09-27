@@ -7,6 +7,140 @@ use crate::dev::paths::framework_dir;
 use crate::{CliEnvironment, CommandOutput, render_result};
 use std::path::Path;
 
+/// Verify the bundle's cosign signature against the Sigstore trust root.
+///
+/// Why this exists: `update.rs` downloads the payload and its `.sha256`
+/// from the SAME `{base_url}` path. That proves integrity in transit, not
+/// authenticity — a compromised origin serves a hostile bundle together
+/// with a matching checksum and the check passes. It is a manifest
+/// attesting to itself. See INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY.
+///
+/// The signature breaks the circle because the trust root does not travel
+/// with the artifact: `cosign verify-blob` validates the certificate
+/// chain against Fulcio's public root and checks that the identity in the
+/// certificate matches the expected one. An attacker who controls the
+/// download origin still cannot mint a certificate for that identity.
+///
+/// Policy, deliberately fail-closed:
+///   * signature present → it MUST verify. Bad signature = hard error,
+///     never a warning. A warning here would be a downgrade an attacker
+///     could trigger by serving a bad signature.
+///   * signature absent → error, unless the operator opts in explicitly
+///     with `SDDK_ALLOW_UNSIGNED_UPDATE=1`.
+///   * cosign not installed → same as absent, with a message that says
+///     what to install. Never silently skipped.
+///
+/// The opt-out is named ALLOW, not SKIP, and always prints that it is
+/// being used. A quiet downgrade is how "we have signatures" becomes a
+/// claim that is false in production.
+fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> anyhow::Result<()> {
+    // cosign writes `<name>.sig` / `<name>.bundle.json` next to the blob.
+    let sig_path = bundle.with_file_name(format!(
+        "{}.sig",
+        bundle.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    let bundle_path = bundle.with_file_name(format!(
+        "{}.bundle.json",
+        bundle.file_name().unwrap_or_default().to_string_lossy()
+    ));
+
+    let have_cosign = std::process::Command::new("cosign")
+        .arg("version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false);
+
+    let sig_downloaded = if have_cosign {
+        download_to(&format!("{url}.sig"), &sig_path).is_ok()
+    } else {
+        false
+    };
+
+    if !sig_downloaded {
+        // Two opt-in surfaces, one authority. `--allow-unsigned` is the
+        // explicit one. The environment variable is accepted as a
+        // convenience for scripted installs, and it is the same decision
+        // expressed a different way — not a second key to a lock.
+        //
+        // An earlier version required both to agree. That was untestable:
+        // the crate is `#![forbid(unsafe_code)]`, so a unit test cannot set
+        // an env var to reach the accepting branch at all, and a security
+        // control whose happy path cannot be exercised is a control that
+        // gets "fixed" in production by dropping it.
+        if allow_unsigned || std::env::var("SDDK_ALLOW_UNSIGNED_UPDATE").is_ok() {
+            eprintln!(
+                "warning: installing an UNVERIFIED bundle from {url}.\n\
+                 warning: integrity (sha256) is checked, authenticity is NOT. A compromised\n\
+                 warning: origin would be accepted. Drop --allow-unsigned to require a signature."
+            );
+            return Ok(());
+        }
+        anyhow::bail!(
+            "no signature at {url}.sig and cosign is {}.\n\
+             Refusing to install a bundle whose authenticity cannot be established:\n\
+             the .sha256 comes from the same origin as the payload, so it only proves\n\
+             the bytes did not change in transit, not that they are ours.\n\
+             If this release is genuinely unsigned, re-run with --allow-unsigned\n\
+             (or SDDK_ALLOW_UNSIGNED_UPDATE=1) to accept it knowingly.\n\
+             See INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY.",
+            if have_cosign {
+                "installed but the signature asset is missing"
+            } else {
+                "not installed"
+            }
+        );
+    }
+
+    // Verify. Prefer the bundle format when present (current cosign), fall
+    // back to the detached signature for older cosign versions.
+    let mut cmd = std::process::Command::new("cosign");
+    if bundle_path.exists() {
+        cmd.args(["verify-blob", "--bundle"]).arg(&bundle_path);
+    } else {
+        cmd.args(["verify-blob", "--signature"]).arg(&sig_path);
+    }
+    cmd.arg(bundle);
+
+    // Identity and issuer are SEPARATE variables. Conflating them in one
+    // var whose meaning depends on whether the value contains '@' is a trap:
+    // the GitHub Actions issuer URL has no '@', so passing it as the identity
+    // produced `--certificate-identity=<issuer>` — and cosign, told only an
+    // identity, still requires `--certificate-oidc-issuer` to be supplied or
+    // it accepts the certificate against ANY issuer. That is not a stronger
+    // check, it is a weaker one wearing a stricter-looking name.
+    //
+    // Defaults are the real SDDK signing identity so an operator who sets
+    // nothing gets pinning, not "any Sigstore certificate will do".
+    let identity = std::env::var("SDDK_COSIGN_IDENTITY")
+        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY.to_string());
+    let issuer = std::env::var("SDDK_COSIGN_ISSUER")
+        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_ISSUER.to_string());
+
+    if identity.trim().is_empty() || issuer.trim().is_empty() {
+        anyhow::bail!(
+            "SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty.\n\
+             Refusing to verify without pinning both: an empty value would let\n\
+             cosign accept any certificate, which proves nothing about us."
+        );
+    }
+
+    cmd.arg(format!("--certificate-identity={identity}"));
+    cmd.arg(format!("--certificate-oidc-issuer={issuer}"));
+
+    let output = cmd.output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "cosign verification FAILED for {}\n{stderr}\n\
+             Refusing to install. A present-but-invalid signature is never a warning:\n\
+             an attacker who can serve artifacts can also serve a bad signature, and\n\
+             a warning here would turn that into a bypass.",
+            bundle.display()
+        );
+    }
+    Ok(())
+}
+
 /// Reject tarball members that would write outside the extraction root.
 ///
 /// GNU tar's `--strip-components=1` removes the FIRST path component but
@@ -65,6 +199,26 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
 
     download_to(&url, &bundle)?;
     download_to(&format!("{url}.sha256"), &checksum)?;
+
+    // Signature verification (authenticity), before integrity.
+    //
+    // The `.sha256` above is downloaded from the SAME origin as the payload,
+    // so it only proves the bytes did not change in transit: an origin that
+    // is compromised serves a payload AND its matching checksum, and this
+    // check passes. That is the self-attesting-manifest problem from
+    // INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY.
+    //
+    // A cosign signature over the bundle, verified against the Sigstore
+    // trust root, breaks that circularity: the trust root does not come
+    // from the same channel as the artifact.
+    //
+    // Policy (fail-closed, no silent downgrade):
+    //   - signature present  -> it MUST verify. A bad signature aborts.
+    //   - signature absent   -> abort UNLESS the operator explicitly
+    //     accepts unsigned updates via SDDK_ALLOW_UNSIGNED_UPDATE=1.
+    //   - cosign missing     -> treated as "cannot verify", same rule.
+    // The env var is named ALLOW, not SKIP, and prints what it is doing.
+    verify_bundle_signature(&bundle, &url, args.allow_unsigned)?;
 
     let expected = std::fs::read_to_string(&checksum)?
         .split_whitespace()
@@ -402,6 +556,106 @@ pub(super) fn run_dev_update(
 mod tests {
     use super::*;
     use std::fs;
+
+    // ── signature policy (authenticidad, INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY) ──
+    //
+    // Estos tests NO invocan cosign. Pinear el comportamiento de "hay firma
+    // pero es invalida" exigiria una firma real firmada por una CA real, que
+    // no se puede fabricar en un test sin trust root. Lo que SI se puede
+    // pinar, y es lo que importa, es la RAMA que decide: cuando no hay
+    // firma, la politica es fail-closed y solo se degrada con un opt-in
+    // explicito que se anuncia. Un atacante que controle el origen puede
+    // servir una firma falsa, pero no puede evitar que falte: ese es el
+    // caso que estos tests cubren.
+
+    #[test]
+    fn unsigned_bundle_is_rejected_without_explicit_opt_in() {
+        // Sin opt-in y sin firma => error. Este es el estado de hoy en
+        // cualquier release sin firmar, y tiene que ser ruidoso.
+        if std::env::var("SDDK_ALLOW_UNSIGNED_UPDATE").is_ok() {
+            return; // el opt-in solo puede venir del entorno del operador
+        }
+        let dir = tempdir_for_test("sig-reject");
+        let bundle = dir.join("software-development-decision-kernel.tar.gz");
+        fs::write(&bundle, b"not really a tarball").unwrap();
+        let url = format!("file://{}", bundle.display());
+        let err = verify_bundle_signature(&bundle, &url, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("authenticity cannot be established"),
+            "el error debe explicar que el problema es de autenticidad, no de integridad; \
+             mensaje real: {err}"
+        );
+    }
+
+    #[test]
+    fn rejection_message_names_the_opt_in_and_the_inc() {
+        // El mensaje tiene que decir COMO seguir, no solo que fallo. Un
+        // error sin salida practica convierte un control de seguridad en
+        // un obstaculo que la gente rodea con sudo.
+        if std::env::var("SDDK_ALLOW_UNSIGNED_UPDATE").is_ok() {
+            return;
+        }
+        let dir = tempdir_for_test("sig-msg");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"x").unwrap();
+        let url = format!("file://{}", bundle.display());
+        let err = verify_bundle_signature(&bundle, &url, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("SDDK_ALLOW_UNSIGNED_UPDATE=1"),
+            "faltaria el opt-in en: {err}"
+        );
+        assert!(
+            err.contains("INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY"),
+            "faltaria el INC en: {err}"
+        );
+    }
+
+    #[test]
+    fn rejection_explains_that_sha256_alone_is_not_authenticity() {
+        // Este es el hallazgo original del INC y la razon de existir de la
+        // funcion. Si el mensaje deja de explicarlo, la funcion ha vuelto a
+        // ser un checksum mas.
+        if std::env::var("SDDK_ALLOW_UNSIGNED_UPDATE").is_ok() {
+            return;
+        }
+        let dir = tempdir_for_test("sig-why");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"x").unwrap();
+        let url = format!("file://{}", bundle.display());
+        let err = verify_bundle_signature(&bundle, &url, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("same origin as the payload"),
+            "faltaria el porque en: {err}"
+        );
+    }
+
+    #[test]
+    fn explicit_opt_in_accepts_an_unsigned_bundle() {
+        // El camino de aceptacion tambien necesita cobertura. Solo probar
+        // el rechazo deja el `if allow_unsigned ||` sin ejercitar, que es
+        // justo donde un typo entregaria una rama muerta.
+        let dir = tempdir_for_test("sig-accept");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"x").unwrap();
+        let url = format!("file://{}", bundle.display());
+        verify_bundle_signature(&bundle, &url, true)
+            .expect("an explicit --allow-unsigned must accept an unsigned bundle");
+    }
+
+    /// Helper: no usa `tempfile` para no anadir dependencia de test solo
+    /// para tres casos. Usa el temp_dir del proceso, que el resto del
+    /// modulo ya usa para staging.
+    fn tempdir_for_test(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("sddk-sigtest-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     // ── tarball member guard (arbitrary-write primitive) ──
 

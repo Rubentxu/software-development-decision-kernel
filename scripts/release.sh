@@ -551,6 +551,7 @@ cat > "$TMP/sbom.json" <<EOF
 EOF
 ok "checksums + sbom ready (binary sha256: ${BIN_SHA:0:16}…)"
 
+
 # --- 8b. vault ADR mirror sync (best-effort, fail-soft) ---
 #
 # INC-VAULT-MIRROR-AUTO: vault mirrors at
@@ -583,6 +584,100 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "Assets staged in $TMP:"
     ls -la "$TMP"
     exit 0
+fi
+
+# --- 8c. cosign signatures (authenticity) ---
+#
+# INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY option (a). install.sh and
+# `sddk dev update` now refuse an unsigned artifact unless the operator
+# opts out explicitly. This step is what makes the default path work: the
+# release publishes the signatures both consumers require.
+#
+# Sign the three consumable artifacts: the bare binary, the unified
+# tarball, and the bundle tarball. Signatures travel as `.sig` (detached)
+# AND `.bundle.json` (the current cosign format), because the two
+# consumers probe for both — a signature published in only one format
+# would be a coin flip on which path works.
+#
+# KEYLESS IS THE DEFAULT and the only option that avoids a long-lived
+# signing key on the release host. It needs OIDC: in CI that is
+# ACTIONS_ID_TOKEN_REQUEST; locally cosign falls back to a device flow
+# that requires a human to open a browser. If neither is available, the
+# release ABORTS rather than shipping unsigned artifacts whose consumers
+# will reject — publishing artifacts that the installer refuses is
+# strictly worse than failing here.
+step "8c/14 — cosign signatures"
+
+# Pull the base64 signature out of a cosign bundle so a detached `.sig`
+# can be published alongside it. The bundle is the current format; the
+# detached form is what older cosign reads via `--signature`. Publishing a
+# file that merely *looks* like a signature would be worse than publishing
+# none: it either fails verification confusingly or, in the worst case,
+# gets treated as valid.
+extract_detached_sig() {
+    local bundle_path="$1" out_path="$2"
+    python3 - "$bundle_path" "$out_path" <<'PY'
+import base64, json, sys
+bundle = json.load(open(sys.argv[1]))
+sig = (bundle.get("base64Signature")
+       or bundle.get("signedBlob", {}).get("signature")
+       or bundle.get("dsseEnvelope", {}).get("payload"))
+if not sig:
+    sys.exit(1)
+open(sys.argv[2], "wb").write(base64.b64decode(sig))
+PY
+}
+
+SIGN_ARTIFACTS=(
+    "$(basename "$BIN")"
+    "$(basename "$UNIFIED")"
+    "$(basename "$BUNDLE_TARBALL")"
+)
+SIGNED_COUNT=0
+if command -v cosign >/dev/null 2>&1; then
+    for artifact in "${SIGN_ARTIFACTS[@]}"; do
+        src="$TMP/$artifact"
+        [ -f "$src" ] || { warn "artifact missing for signing: $artifact"; continue; }
+        # New bundle format is the current one. The detached `.sig` is
+        # extracted FROM the bundle so it is a real signature, not a copy of
+        # the artifact: consumers on older cosign read `--signature`, and a
+        # file that merely looks like a signature would either fail
+        # verification (confusing) or, worse, be treated as valid.
+        if cosign sign-blob --yes --new-bundle-format \
+             --bundle "$TMP/$artifact.bundle.json" "$src" 2>"$TMP/sign-$artifact.log"; then
+            extract_detached_sig "$TMP/$artifact.bundle.json" "$TMP/$artifact.sig" \
+                || warn "could not extract detached .sig from bundle for $artifact"
+            ok "signed: $artifact (.sig + .bundle.json)"
+            SIGNED_COUNT=$((SIGNED_COUNT + 1))
+        else
+            warn "cosign could not sign $artifact:"
+            sed 's/^/    /' "$TMP/sign-$artifact.log" | head -5
+        fi
+    done
+    # All-or-nothing. A partially signed release is worse than an unsigned
+    # one: the binary verifies while the bundle tarball does not, so the
+    # failure lands on the user at install time instead of here. The count
+    # is compared against the size of SIGN_ARTIFACTS, not against zero.
+    if [ "$SIGNED_COUNT" -ne "${#SIGN_ARTIFACTS[@]}" ]; then
+        die "signed $SIGNED_COUNT of ${#SIGN_ARTIFACTS[@]} artifacts. Refusing to publish a partial set: a release whose bundle tarball has no signature is a release that install.sh refuses, and the user finds out instead of us.
+
+         To sign, provide an OIDC identity. In GitHub Actions it is automatic
+         (id-token: write). Locally, cosign needs the browser device flow:
+           cosign sign-blob --yes --bundle <file>.bundle.json <file>
+         Or set SDDK_SKIP_SIGNING=1 to publish fully unsigned on purpose — the
+         installers will then require SDDK_ALLOW_UNSIGNED=1 / SDDK_ALLOW_UNSIGNED_UPDATE=1."
+    fi
+    ok "$SIGNED_COUNT/${#SIGN_ARTIFACTS[@]} artifacts signed"
+else
+    if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then
+        warn "SDDK_SKIP_SIGNING=1 — publishing UNSIGNED artifacts. Both installers"
+        warn "will refuse this release unless the operator opts out explicitly."
+    else
+        die "cosign is not installed and SDDK_SKIP_SIGNING is not set. Both
+         installers now require a signature, so an unsigned release would be
+         uninstallable. Install cosign, or set SDDK_SKIP_SIGNING=1 to accept
+         that knowingly. See INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY."
+    fi
 fi
 
 # --- 9. publish ---
@@ -656,6 +751,19 @@ ASSETS=(
 if [ -n "$EXT_RECEIPT_DIR" ] && [ -f "$EXT_RECEIPT_DIR/EXT-RECEIPT.md" ]; then
     ASSETS+=("$EXT_RECEIPT_DIR/EXT-RECEIPT.md")
 fi
+
+# Signature assets. Both consumers (install.sh and `sddk dev update`) look
+# for `.bundle.json` first and fall back to `.sig`, so both must ship. They
+# are additive to the 9-asset canonical contract, not part of it: the
+# canonical list below is a public-release gate and its shape is defined
+# elsewhere (tests/test_release_public_gate.sh).
+for sig_artifact in "${SIGN_ARTIFACTS[@]}"; do
+    for ext in .sig .bundle.json; do
+        if [ -f "$TMP/$sig_artifact$ext" ]; then
+            ASSETS+=("$TMP/$sig_artifact$ext")
+        fi
+    done
+done
 
 if gh release view "$TAG" --repo "$REPO" \
         >/dev/null 2>&1; then

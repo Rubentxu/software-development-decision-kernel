@@ -67,8 +67,12 @@ exec > >(tee -a "$OUT_ROOT/n1-master.log") 2>&1
 log() { echo "[$(date -u +%FT%TZ)] $*"; }
 fail() { echo "  ❌ $*"; return 1; }
 ok()   { echo "  ✅ $*"; }
-# A known, tracked gap that must stay visible without failing the suite.
-warn() { echo "  ⚠️  $*"; }
+# NOTE: `warn()` was removed in session-20. Its only caller was the
+# signature assertion, which previously degraded to a warning because
+# install.sh did not verify signatures. Now that it does (and refuses
+# unsigned artifacts), that assertion is a hard `fail()` and the helper
+# had no callers left. Keeping an unused helper in a test script invites
+# the next person to route a real failure through it by habit.
 
 # --- container helpers -------------------------------------------------------
 
@@ -159,31 +163,36 @@ run_variant() {
         fail "sha256 verification missing"; failures=$((failures+1))
     fi
 
-    # 3. Signature verification (variant b).
+    # 3. Signature verification.
     #
-    # HONESTY FIX (session-16): this check used to require the literal string
-    # "signature verified (cosign keyless)" in the install log. Nothing in
-    # install.sh ever printed that string — install.sh performs no signature
-    # verification at all, only sha256 — so variant b was permanently RED and
-    # had never been run. A test that can never pass is worse than no test: it
-    # teaches the reader that the install is broken.
+    # HISTORY (session-16 → session-20). This assertion originally required
+    # the literal string "signature verified (cosign keyless)". Nothing in
+    # install.sh ever printed it — install.sh performed no signature
+    # verification at all, only sha256 — so variant b was permanently RED
+    # and had never been run. Session-16 downgraded it to a warning.
     #
-    # The current truth is: install verifies integrity (sha256) but NOT
-    # authenticity. Variant b now asserts the *real* contract instead of a
-    # string nothing ever printed.
+    # Session-20 implemented the check (INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY
+    # option (a)), so the assertion is hard again — but on a DIFFERENT string,
+    # the one install.sh actually emits: "signature verified (cosign, sigstore
+    # trust root)". Asserting the old string again would be a test that cannot
+    # pass, i.e. the same bug wearing a different hat.
     #
-    # The missing signature check is a KNOWN, TRACKED gap, not a suite failure:
-    # it is INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (high/P1, open). The
-    # variant reports it as a warning so the gap stays visible on every run
-    # without making an unfixable-here condition mask real regressions. When
-    # out-of-band verification lands, this becomes a hard assertion again.
+    # The unsigned case is asserted too, and it is the one that matters: with
+    # the new fail-closed policy, an install from an unsigned release must
+    # REFUSE unless the operator opted in. A suite that only checks the happy
+    # path would not notice if that refusal regressed into a silent pass.
     if [ "$with_cosign" = "1" ]; then
-        if grep -q "signature verified" "$install_log"; then
+        if grep -q "signature verified (cosign, sigstore trust root)" "$install_log"; then
             ok "signature verification present in install log"
+        elif grep -q "cannot verify the authenticity" "$install_log"; then
+            # The honest, correct outcome when the release has no signature
+            # asset yet: refuse rather than install an unverified payload.
+            ok "unsigned release refused with an actionable message (fail-closed)"
         else
-            warn "no signature verification — known gap INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (integrity-only install)"
+            fail "install neither verified a signature nor refused for lack of one"
+            failures=$((failures+1))
         fi
-        # Integrity is what install.sh actually enforces. Assert it strictly.
+        # Integrity is asserted strictly in every variant.
         if grep -q "sha256 verified" "$install_log"; then
             ok "sha256 integrity verified"
         else

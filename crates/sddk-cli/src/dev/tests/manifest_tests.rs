@@ -4,6 +4,28 @@ use crate::dev::install::run_dev_install;
 use crate::dev::manifest::{MANIFEST_FILE, manifest_entries, verify_manifest, write_manifest};
 use crate::dev::update::update_bundle;
 use crate::dev::{InstallArgs, LinkEditor, OutputFormat, UpdateArgs};
+
+/// Run an update against a local fixture bundle that carries NO signature.
+///
+/// The fixtures here are tarballs built in a tempdir; they have never been
+/// signed, and signing them would mean reaching Sigstore from a unit test —
+/// a network dependency and a device-flow prompt in CI. `sddk dev update`
+/// deliberately refuses an unsigned bundle (see INC-AUDIT-S14), so these
+/// tests must opt out explicitly and say so.
+///
+/// The opt-in is passed as a parameter rather than set in the environment
+/// on purpose. The crate is `#![forbid(unsafe_code)]`, and an env var would
+/// be process-global state leaking into unrelated tests. Passing it
+/// explicitly also keeps the fixture honest: the flag is the same switch an
+/// operator would flip from the command line.
+fn update_bundle_unsigned_fixture(
+    target: &std::path::Path,
+    args: &UpdateArgs,
+) -> anyhow::Result<String> {
+    let mut args = args.clone();
+    args.allow_unsigned = true;
+    update_bundle(target, &args)
+}
 use sddk_testkit::TestRepository;
 use sha2::{Digest, Sha256};
 
@@ -138,6 +160,7 @@ fn release_bundle(source: &std::path::Path, version: &str) -> (std::path::PathBu
         prune: false,
         keep: None,
         prune_only: false,
+        allow_unsigned: false,
     };
     (releases, args)
 }
@@ -154,7 +177,9 @@ fn update_rejects_mismatch_before_touching_target() {
     let target = temp_root("update-mismatch-target");
     std::fs::write(target.join("sentinel"), "keep").unwrap();
 
-    let error = update_bundle(&target, &args).unwrap_err().to_string();
+    let error = update_bundle_unsigned_fixture(&target, &args)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("content verification FAILED"), "{error}");
     assert_eq!(
         std::fs::read_to_string(target.join("sentinel")).unwrap(),
@@ -173,7 +198,9 @@ fn update_requires_manifest_before_touching_target() {
     let target = temp_root("update-no-manifest-target");
     std::fs::write(target.join("sentinel"), "keep").unwrap();
 
-    let error = update_bundle(&target, &args).unwrap_err().to_string();
+    let error = update_bundle_unsigned_fixture(&target, &args)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("MANIFEST.sha256"), "{error}");
     assert_eq!(
         std::fs::read_to_string(target.join("sentinel")).unwrap(),
@@ -192,7 +219,7 @@ fn update_installs_verified_staged_bundle() {
     let (_releases, args) = release_bundle(&source, "v-test-valid");
     let target = temp_root("update-valid-target");
 
-    update_bundle(&target, &args).unwrap();
+    update_bundle_unsigned_fixture(&target, &args).unwrap();
 
     assert_eq!(
         std::fs::read_to_string(target.join("agents/a.md")).unwrap(),

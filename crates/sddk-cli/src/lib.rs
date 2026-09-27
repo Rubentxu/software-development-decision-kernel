@@ -19,6 +19,7 @@ pub mod cheat_sheet;
 pub mod command_spec;
 pub mod command_surface;
 pub mod config_cmd;
+pub mod cosign;
 mod cycle;
 mod debt;
 pub mod dev;

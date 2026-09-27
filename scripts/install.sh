@@ -199,6 +199,98 @@ verify_sha256() {
     echo "  sha256 verified: $actual"
 }
 
+# Verify a cosign signature for a downloaded artifact.
+#
+# Same reasoning as `sddk dev update` (see
+# INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY): the .sha256 and the payload
+# come from the SAME base URL, so the checksum only proves the bytes did
+# not change in transit. A compromised origin serves a hostile payload
+# WITH a matching checksum and this check passes. Integrity is not
+# authenticity.
+#
+# Policy, identical to the Rust path so the two consumers cannot drift:
+#   * signature present but invalid -> hard failure. Never a warning: an
+#     attacker who can serve artifacts can serve a bad signature, and a
+#     warning would turn that into a bypass.
+#   * signature absent            -> hard failure unless the operator sets
+#     SDDK_ALLOW_UNSIGNED=1, which prints what it is doing.
+#   * cosign absent               -> same as absent, with the install line.
+verify_signature() {
+    local file="$1" sig_url="$2" label="$3"
+    local sig_file bundle_file
+    sig_file="$file.sig"
+    bundle_file="$file.bundle.json"
+
+    if ! command -v cosign >/dev/null 2>&1; then
+        _signature_absent "cosign is not installed" "$label"
+        return $?
+    fi
+
+    # Current cosign emits a .bundle.json; older emits a detached .sig.
+    if ! fetch "$bundle_file" "$sig_url.bundle.json" 2>/dev/null; then
+        if ! fetch "$sig_file" "$sig_url.sig" 2>/dev/null; then
+            _signature_absent "no signature asset published" "$label"
+            return $?
+        fi
+    fi
+
+    local args
+    if [ -s "$bundle_file" ]; then
+        args="verify-blob --bundle $bundle_file"
+    else
+        args="verify-blob --signature $sig_file"
+    fi
+
+    # Pin BOTH halves of the certificate. Two variables, never one: a
+    # single value whose meaning depended on whether it contained '@' let
+    # the GitHub Actions issuer (which has no '@') be passed as the identity,
+    # and cosign without a pinned issuer accepts the certificate against
+    # ANY issuer. That is weaker than it looks, not stronger.
+    #
+    # The defaults must stay byte-identical to
+    # crates/sddk-cli/src/cosign.rs. tests/test_install_asset_contract.sh
+    # asserts that, so drift between the Rust and bash copies fails the
+    # suite instead of shipping a release only one of them trusts.
+    local cert_identity="${SDDK_COSIGN_IDENTITY:-Rubentxu/software-development-decision-kernel:.github/workflows/release.yml@refs/heads/main}"
+    local cert_issuer="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
+
+    if [ -z "$cert_identity" ] || [ -z "$cert_issuer" ]; then
+        echo "error: SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty" >&2
+        echo "  An empty value means 'accept any signer', which proves nothing." >&2
+        return 1
+    fi
+
+    args="$args --certificate-identity=$cert_identity --certificate-oidc-issuer=$cert_issuer"
+
+    # shellcheck disable=SC2086 # args is a deliberately word-split arg list
+    if cosign $args "$file" >/dev/null 2>&1; then
+        echo "  signature verified (cosign, sigstore trust root)"
+        return 0
+    fi
+
+    echo "error: cosign verification FAILED for $label" >&2
+    echo "  Refusing to install. A present-but-invalid signature is never a" >&2
+    echo "  warning: anyone who can serve artifacts can serve a bad signature," >&2
+    echo "  and warning here would make that a bypass." >&2
+    exit 1
+}
+
+_signature_absent() {
+    local why="$1" label="$2"
+    if [ "${SDDK_ALLOW_UNSIGNED:-0}" = "1" ]; then
+        echo "warning: SDDK_ALLOW_UNSIGNED=1 — installing $label with NO signature check." >&2
+        echo "warning: integrity (sha256) is verified, authenticity is NOT." >&2
+        echo "warning: a compromised download origin would be accepted." >&2
+        return 0
+    fi
+    echo "error: cannot verify the authenticity of $label: $why" >&2
+    echo "  The .sha256 is downloaded from the same origin as the payload, so it" >&2
+    echo "  proves the bytes did not change in transit, not that they are ours." >&2
+    echo "  If this release is genuinely unsigned, re-run with SDDK_ALLOW_UNSIGNED=1" >&2
+    echo "  to accept it knowingly. See INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY." >&2
+    exit 1
+}
+
 # Probe the staged binary for its version.
 #
 # The previous form was:  TMP_VERSION="$("$bin" --version 2>&1 | awk '{print $NF}')"
@@ -273,6 +365,10 @@ if [ "$RESOLVED_VERSION" != "latest" ] && \
         exit 1
     fi
     verify_sha256 "$TMP_DIR/$UNIFIED_TARBALL" "$TMP_DIR/$UNIFIED_TARBALL.sha256"
+    # Authenticity, after integrity. The .sha256 above came from the same
+    # origin, so it cannot distinguish "our artifact" from "an artifact the
+    # compromised origin chose to serve along with a matching checksum".
+    verify_signature "$TMP_DIR/$UNIFIED_TARBALL" "$(release_url "$UNIFIED_TARBALL")" "$UNIFIED_TARBALL"
     echo "  using unified artifact: $UNIFIED_TARBALL"
     # Stage: extract to a directory mirroring the prefix + framework layout.
     STAGE_ROOT="$TMP_DIR/unified-stage"
@@ -308,6 +404,7 @@ else
     download "$(release_url "sddk")" "$TMP_DIR/sddk"
     download "$(release_url "sddk.sha256")" "$TMP_DIR/sddk.sha256"
     verify_sha256 "$TMP_DIR/sddk" "$TMP_DIR/sddk.sha256"
+    verify_signature "$TMP_DIR/sddk" "$(release_url "sddk")" "sddk"
     chmod 0755 "$TMP_DIR/sddk"
     TMP_VERSION="$(probe_binary_version "$TMP_DIR/sddk")"
     echo "  binary reports version: $TMP_VERSION"
