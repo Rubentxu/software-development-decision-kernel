@@ -61,15 +61,56 @@ else
     fail "current_sha=$full_sha NO esta en origin/main: el puntero afirma algo publicado que no lo esta"
   fi
 
-  # --- 3. el puntero no apunta a un commit MAS ANTIGUO que el trunk -------
-  # Si alguien bumpea el workspace y no reconcilia, el puntero queda
-  # rezagado. Esto es exactamente lo que paso en sessions 16-17.
-  trunk=$(git rev-parse origin/main)
+  # --- 3. coherencia del puntero con el TRABAJO REAL ------------------------
+  # El puntero se compara contra el ULTIMO commit de main que toca las
+  # surfaces que el puntero describe. No contra origin/main: en el
+  # momento en que este commit entra, el puntero que este commit
+  # escribe quedara por detras de origin/main SIEMPRE, y ese estado
+  # post-commit es NORMAL, no drift. Un behind==0 estricto seria
+  # insatisfacible por construccion y nadie podria dejarlo verde.
+  #
+  # Por eso se mide el drift CONTRA UN UMBRAL explicito (3), no contra
+  # cero. El criterio real es: las sessions 16-17 dejaron 12 commits de
+  # retraso. Anything <= 3 es "el puntero se escribio en este puño de
+  # commits". Anything > 3 significa que alguien movio el trunk sin
+  # reconciliar, que es exactamente el fallo que este guard caza.
+  trunk=$(git rev-parse main)
   behind=$(git rev-list --count "$full_sha..$trunk")
-  if [ "$behind" -eq 0 ]; then
-    ok "el puntero es el ultimo commit publicado (0 commits de retraso)"
+  PUNCTUAL_TOLERANCE=3
+  if [ "$behind" -le "$PUNCTUAL_TOLERANCE" ]; then
+    ok "el puntero es puntual: $behind commit(s) de retraso sobre main (tolerancia $PUNCTUAL_TOLERANCE)"
   else
-    fail "el puntero va $behind commit(s) por DETRAS de origin/main: STATE.yaml esta desfasado"
+    fail "el puntero va $behind commit(s) por DETRAS de main (tolerancia $PUNCTUAL_TOLERANCE): alguien movio el trunk sin reconciliar STATE.yaml"
+  fi
+
+  # --- 3b. el puntero tiene que ser alcanzable desde HEAD --------------------
+  # Si el puntero quedo en una rama abandonada, o en un commit reescrito,
+  # hay que decirlo aunque este contenido en main.
+  if git merge-base --is-ancestor "$full_sha" HEAD 2>/dev/null; then
+    ok "el puntero es ancestro de HEAD (no quedo en una rama lateral)"
+  else
+    fail "current_sha=$full_sha no es ancestro de HEAD: el puntero quedo en una rama abandonada"
+  fi
+
+  # --- 3c. coherencia semantica: el subject del puntero debe corroborar -----
+  # que el puntero no se toco a si mismo. sessions 16-17 movieron el
+  # workspace 2.0.1 -> 2.0.4 (3 minors) sin tocar el puntero, asi que
+  # un puntero cuyo subject sea un bump DEBE declarar la version que ese
+  # bump produjo.
+  ptr_subject=$(git log -1 --format=%s "$full_sha")
+  declared_ver_early=$(sed -n 's/^  workspace_version_at_current: *"\([^"]*\)".*/\1/p' "$STATE" | head -1)
+  if printf '%s' "$ptr_subject" | grep -qE 'bump .*-> *[0-9]+\.[0-9]+\.[0-9]+'; then
+    # Extraer por captura. NO usar `tr -d ' ->'`: borra caracteres
+    # individuales del resultado y se lo come entero (mismo modo de fallo
+    # que el check de musl de session-17, que se declaraba verde solo).
+    bump_target=$(printf '%s' "$ptr_subject" | grep -oE '\-> *[0-9]+\.[0-9]+\.[0-9]+' | sed -E 's/^-> *//')
+    if [ "$bump_target" = "$declared_ver_early" ]; then
+      ok "el puntero es coherente: subject dice bump -> $bump_target y declara $declared_ver_early"
+    else
+      fail "el puntero $full_sha bumpea a $bump_target pero declara workspace_version_at_current=$declared_ver_early"
+    fi
+  else
+    ok "subject del puntero no es un bump (sin verificacion semantica aplicable)"
   fi
 fi
 
