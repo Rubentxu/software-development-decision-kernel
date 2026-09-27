@@ -96,9 +96,31 @@ etc. Útil para integrar con herramientas externas (CI, dashboards).
 
 **Trigger:** Necesidad de integración CI/dashboards (preguntar al operador).
 
-**Estado:** ✅ IMPLEMENTED (commit 21fcfff, session-11). `DoctorOutput` ahora
-tiene `#[derive(serde::Serialize)]`; el path JSON funciona y emite un payload
-machine-readable con `binary.bundle_coherence`, `all_present`, `missing[]`.
+**Estado:** ✅ IMPLEMENTED (commit 21fcfff, session-11). `DoctorOutput` tiene
+`#[derive(serde::Serialize)]` y el path JSON funciona.
+
+**Forma real del payload** (verificada empíricamente contra el binario
+instalado, session-14 — `sddk dev doctor --format json`):
+
+```json
+{
+  "checks": [ { "tool": "cargo", "present": true } ],
+  "all_present": true
+}
+```
+
+Claves top-level: `checks[]` y `all_present`. Cada `DoctorCheck` lleva
+`tool`, `present` y un `detail` opcional (omitido cuando no aplica, vía
+`skip_serializing_if`).
+
+**Corrección session-14.** La descripción original de este FC prometía
+`binary.bundle_coherence` y `missing[]`. **Ninguna de las dos existe en
+la implementación**: `DoctorOutput` es `{ checks, all_present }` y el
+rollup se hace por `tool`. La feature está implementada y es
+machine-readable, pero la forma documentada nunca existió — es deriva
+de especificación, no una feature faltante. `binary.bundle_coherence`
+aparece como *nombre de check* en el texto plano de `doctor`, no como
+clave del JSON.
 
 ---
 

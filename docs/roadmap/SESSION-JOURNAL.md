@@ -2303,3 +2303,47 @@ INC de supply chain).
 `fmt` clean · `clippy --workspace -D warnings` clean ·
 `cargo test --workspace --no-fail-fast` = **5041 passed; 0 failed;
 19 ignored** (delta: +7 de los nuevos guards).
+
+### Cierre de la sesión: auditoría de la enfermedad y de la deuda
+
+Busqué si la capability que mentía era un patrón o un caso aislado.
+**Es un caso aislado**: en `sddk-gateway/src/capability.rs` los otros
+`succeeded: true` (líneas 346, 366, 391) están en el módulo de tests, no
+en `execute`. La única capability real ya está corregida.
+
+Cerrados los items de deuda que son verificables y de coste bajo:
+
+- **FC-2 documentado contra la realidad.** El FC affirmaba emitir
+  `binary.bundle_coherence` y `missing[]`; verificado empíricamente
+  contra el binario instalado, la forma real es
+  `{checks[], all_present}`. Deriva de especificación, no feature
+  faltante. Corregido con el payload real documentado.
+- **sddk-pack-uat registrado como pack, no como código muerto.** 0
+  consumidores como crate, pero es un pack de ADR-0104 que se consume
+  vía bundle, en medio de la extracción Phase 4. La intuición inicial
+  de "borrar" era incorrecta — mismo error que con `test_ports.rs`, y
+  por eso queda escrito en el INC para que no se repita.
+- **WriterXdgFailClosed registrado.** Contrato XDG con 0
+  implementadores, pero el propio código ya lo declara como
+  foundation de un ADR en curso. Deuda declarada, no oculta.
+- **Índice de deuda arreglado.** Los 6 INCs de session-14 no estaban
+  listados en `docs/debt/README.md`. Indexados; 9/9 links resuelven;
+  6/6 frontmatters validan contra SEVERITY/PRIORITY.
+
+**Lección de la sesión, registrada dos veces porque ocurrió dos veces.**
+Medir "0 consumidores fuera del crate" como criterio de código muerto
+produjo una conclusión confidently wrong en `test_ports.rs` y en
+`sddk-pack-uat`. En ambos casos había arquitectura legítima detrás. La
+corrección cuesta un `git grep` interno.
+
+**Verificación**: los cambios son docs-only en este tramo, así que no
+requieren perfil completo. Los gates de código corrieron tras el guard
+de traversal: `fmt` clean, `clippy --workspace -D warnings` clean,
+`cargo test --workspace --no-fail-fast` = 5041 passed; 0 failed; 19
+ignored.
+
+**Estado final**: roadmap ejecutable cerrado. Abiertos y bloqueados
+por causas externas o por decisión de diseño: C2 (chronos-mcp no
+existe como artefacto instalable), C5 (depende del consumidor del SPI),
+firma out-of-band (requiere trust root), observabilidad (workitem
+propio).

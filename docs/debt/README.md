@@ -12,6 +12,17 @@ This directory contains the canonical contracts for the durable debt remediation
 - **[INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH](./INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH.md)** - Un commit de metadata derivada (`MANIFEST.sha256`) no tiene camino admisible de push sin quemar un bump (medium/P2, closed; regla (C) generated-only en `githooks/pre-push`, cycle inc-derived-metadata-push-path 2026-09-20).
 - **[INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW](./INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW.md)** - Commentario de anclaje DW-RUNTIME-003 en restart_survival.rs desalineado con lo que el test hace (low/P3, closed; cycle a5-2-2026-09-17).
 
+### Session-14 (2026-09-27) — auditoría basada en código
+
+Detalle y evidencia de reproducción en cada fichero.
+
+- **[INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY](./INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY.md)** (high/P1, open) — El `.sha256` que valida el bundle se descarga del mismo origen que el bundle: integridad sí, autenticidad no. La opción (b) (guard de traversal en `dev/update`) quedó **cerrada** en session-14; la firma out-of-band sigue abierta.
+- **[INC-AUDIT-S14-TEST-PORTS-UNCONSUMED](./INC-AUDIT-S14-TEST-PORTS-UNCONSUMED.md)** (medium/P2, open) — 9 traits del SPI de SPEC-043 §4 con implementadores internos pero sin consumidor externo. **Revisado** desde high/P1: la recomendación original de borrar queda anulada.
+- **[INC-AUDIT-S14-NO-STRUCTURED-LOGGING](./INC-AUDIT-S14-NO-STRUCTURED-LOGGING.md)** (medium/P2, open) — 0 `tracing` en `sddk-cli`; sin correlación de `cycle_id` ni `request_id` en fallos.
+- **[INC-AUDIT-S14-RELEASE-FORCE-VERSION-ERGONOMICS](./INC-AUDIT-S14-RELEASE-FORCE-VERSION-ERGONOMICS.md)** (low/P2, open) — El override de versión funciona pero su señal queda enterrada en un `warn` de un log de 400 líneas. No es un bug: el flag está plumbéado (`release.sh:361-363`).
+- **[INC-AUDIT-S14-PACK-UAT-NO-CRATE-CONSUMERS](./INC-AUDIT-S14-PACK-UAT-NO-CRATE-CONSUMERS.md)** (low/P3, open) — `sddk-pack-uat` tiene 0 consumidores como crate, pero es un pack de ADR-0104, no código muerto. No borrar.
+- **[INC-AUDIT-S14-WRITER-XDG-TRAIT-UNIMPLEMENTED](./INC-AUDIT-S14-WRITER-XDG-TRAIT-UNIMPLEMENTED.md)** (low/P3, open) — `WriterXdgFailClosed` exportado con 0 implementadores; deuda ya declarada en el propio código.
+
 ## Source of truth
 
 - [ADR-0047 — Remediación durable y priorizada de deuda técnica](../adr/ADR-0047-durable-debt-remediation.md)
