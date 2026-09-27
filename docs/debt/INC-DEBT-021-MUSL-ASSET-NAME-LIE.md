@@ -101,6 +101,81 @@ compatibilidad que no existe. Si se opta por (b) o (c), el cambio de
 nombre debe ser un cambio **major** del contrato de distribución, no un
 detalle cosmético.
 
+## Causa raíz real (corregida en sesión-17)
+
+Session-16 registró esto como "el nombre del asset miente". La
+formulación es correcta pero **incompleta**: el problema de fondo es que
+**existen dos pipelines de release en el repositorio, y sólo uno cumple el
+contrato de assets**.
+
+### Pipeline A — `scripts/release.sh` (el AUTORITATIVO)
+
+- Se ejecuta **localmente** y es el que produce los releases reales
+  (verificado: `v2.0.1` lo publicó este script, 14/14 pasos).
+- Step 3/14 compila **una** vez: `cargo build --release --offline --bin sddk`.
+  Eso produce un binario **glibc**, dinámicamente enlazado al host.
+- Empaqueta ese mismo binario glibc en
+  `sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz` (L436) y lo publica
+  junto a un `sddk` pelado con el mismo contenido glibc.
+- **No tiene toolchain musl**: compilar con
+  `--target x86_64-unknown-linux-musl` falla con
+  `cc-rs: failed to find tool "x86_64-linux-musl-gcc"`.
+
+### Pipeline B — `.github/workflows/release.yml` (manual, nunca automático)
+
+Este pipeline **SÍ hace las cosas bien**:
+
+```yaml
+- target: x86_64-unknown-linux-musl          # L29
+- name: Install musl cross tools             # L53
+  run: sudo apt-get install -y musl-tools    # L57
+  env: CARGO_TARGET_..._LINKER: musl-gcc     # L61-62
+  run: cargo build --release --target ...    # L63
+- cp dist-out/dist/sddk "assets/sddk-linux-x86_64-musl"   # L71
+```
+
+Compila musl estático de verdad y publica el asset **con el nombre que
+`install.sh` esperaba**.
+
+Pero su trigger es `workflow_dispatch` (L11-12) y su propio encabezado
+declara: *"MANUAL-ONLY: SDDK never depends on CI/CD. The automatic
+`push: tags: v*` trigger was removed so no run is ever queued by a
+release"*.
+
+**Consecuencia**: el pipeline que construye el artefacto correcto existe
+y funciona, pero nunca corre. El que corre no construye el artefacto
+correcto. Y `install.sh` fue escrito contra el contrato de **A** (el del
+pipeline B), que **A** nunca cumplió — de ahí el 404 de
+INC-DEBT-022: `install.sh` pedía `sddk-linux-x86_64-musl`, que es
+exactamente el nombre que publica B.
+
+### Las dos salidas
+
+- **(a) Build musl real en `release.sh`.** Requiere `musl-tools` en el
+  host de release. **Bloqueado en el entorno actual**: sin `sudo`, sin
+  `apt`, sin `musl-gcc` (`command -v musl-gcc` → ausente). El target de
+  Rust `x86_64-unknown-linux-musl` sí está instalado, pero sin el linker
+  de C `rusqlite bundled` no compila. Verificado empíricamente, no
+  supuesto.
+- **(b) Declarar `release.sh` como la autoridad y renombrar sus assets**
+  a lo que son (glibc), eliminando la palabra `musl` del contrato.
+  Rompe la URL pública del tarball: cambio **major** del contrato de
+  distribución.
+- **(c) Declarar `release.yml` como la autoridad** y hacer que el release
+  real pase por él. Contradice el principio de la propia cabecera del
+  workflow (*"SDDK never depends on CI/CD"*) y devuelve el gate a la
+  nube, que según AGENTS.md §2.5 **no debe** ser bloqueante.
+
+## Recomendación
+
+**(a) a medio plazo, (b) como parche inmediato si (a) no puede hacerse
+ya.** Instalar `musl-tools` en el host de release no debería requerir
+sudo en un host de build controlado; si lo requiere, eso es un problema
+de infraestructura del host, no del repo, y conviene resolverlo ahí.
+
+Lo que **no** es admisible es mantener el estado actual: un asset cuyo
+nombre afirma una propiedad técnica que su contenido no tiene.
+
 ## Estado
 
 **Abierto.** Session-16 aplicó sólo la mitigación del entorno de test

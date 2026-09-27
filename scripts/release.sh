@@ -6,6 +6,34 @@
 # manual equivalent — so that local install stays in lockstep with what
 # ships through GitHub Releases.
 #
+# ── PIPELINE AUTHORITY (read this before changing asset names) ────────────
+#
+# There is a SECOND release pipeline in this repository:
+# `.github/workflows/release.yml`. It is NOT part of the release gate and
+# is never triggered automatically (`workflow_dispatch` only, and its own
+# header states "SDDK never depends on CI/CD"). This script is the
+# authoritative publisher.
+#
+# The two currently disagree, which is tracked in
+# `docs/debt/INC-DEBT-021-MUSL-ASSET-NAME-LIE.md`:
+#
+#   * release.yml builds a real static musl binary
+#     (`--target x86_64-unknown-linux-musl` + musl-tools cross-linker) and
+#     publishes a per-arch bare asset `sddk-linux-x86_64-musl`.
+#   * THIS script builds ONE binary with `cargo build --release` — a
+#     host-glibc dynamic build — and republishes it under a name that says
+#     "musl": `sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz`.
+#
+# Consequences, both observed:
+#   1. Users on an older glibc cannot execute the published binary
+#      (debian:12 ships 2.36; the build host produced a 2.39 binary).
+#   2. Any installer expecting the per-arch bare asset gets HTTP 404,
+#      because only the never-triggered CI pipeline publishes it.
+#
+# `tests/test_release_pipeline_consistency.sh` keeps this divergence loud
+# rather than letting it drift silently. Do not "fix" that test by editing
+# the assertion: the RED is the finding.
+#
 # Pipeline (each step is gated on the previous one succeeding):
 #   1. Preflight  — workspace green: fmt, clippy -D warnings, tests
 #   2. Version    — read current version from Cargo.toml
