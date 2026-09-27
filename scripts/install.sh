@@ -217,28 +217,48 @@ verify_sha256() {
 #   * cosign absent               -> same as absent, with the install line.
 verify_signature() {
     local file="$1" sig_url="$2" label="$3"
-    local sig_file bundle_file
+    local sig_file bundle_file cert_file
     sig_file="$file.sig"
     bundle_file="$file.bundle.json"
+    cert_file="$file.pem"
 
     if ! command -v cosign >/dev/null 2>&1; then
         _signature_absent "cosign is not installed" "$label"
         return $?
     fi
 
-    # Current cosign emits a .bundle.json; older emits a detached .sig.
+    # The CI (.github/workflows/release.yml) signs in DETACHED form: it
+    # publishes <file>.sig AND <file>.pem. The bundle form is what current
+    # cosign emits with --bundle, and what `release.sh` produces locally.
+    # Both are accepted; the certificate file is required in the detached
+    # case for the reason in the flag below.
     if ! fetch "$bundle_file" "$sig_url.bundle.json" 2>/dev/null; then
         if ! fetch "$sig_file" "$sig_url.sig" 2>/dev/null; then
             _signature_absent "no signature asset published" "$label"
             return $?
         fi
+        # The detached form needs the certificate chain explicitly.
+        # `cosign verify-blob --signature` alone validates the signature
+        # against whatever certificate cosign decides to trust, which is
+        # the unpinned path this whole policy exists to close. Without
+        # --certificate-chain the --certificate-identity pin below has
+        # nothing to match, so the check would look strict and be weak.
+        fetch "$cert_file" "$sig_url.pem" 2>/dev/null || true
     fi
 
     local args
     if [ -s "$bundle_file" ]; then
         args="verify-blob --bundle $bundle_file"
+    elif [ -s "$cert_file" ]; then
+        args="verify-blob --signature $sig_file --certificate-chain $cert_file"
     else
-        args="verify-blob --signature $sig_file"
+        # A detached signature with no certificate cannot be pinned. Refuse
+        # rather than accept an unpinned verification, which would report
+        # success for a signature from any signer.
+        echo "error: detached signature for $label has no .pem certificate" >&2
+        echo "  Refusing to verify without a certificate chain: --certificate-identity" >&2
+        echo "  has nothing to match, so any signer would be accepted." >&2
+        return 1
     fi
 
     # Pin BOTH halves of the certificate. Two variables, never one: a
@@ -264,7 +284,7 @@ verify_signature() {
 
     # shellcheck disable=SC2086 # args is a deliberately word-split arg list
     if cosign $args "$file" >/dev/null 2>&1; then
-        echo "  signature verified (cosign, sigstore trust root)"
+        echo "  signature verified (cosign keyless, identity and issuer pinned)"
         return 0
     fi
 

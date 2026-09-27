@@ -43,6 +43,10 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
         "{}.bundle.json",
         bundle.file_name().unwrap_or_default().to_string_lossy()
     ));
+    let cert_path = bundle.with_file_name(format!(
+        "{}.pem",
+        bundle.file_name().unwrap_or_default().to_string_lossy()
+    ));
 
     let have_cosign = std::process::Command::new("cosign")
         .arg("version")
@@ -51,7 +55,15 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
         .unwrap_or(false);
 
     let sig_downloaded = if have_cosign {
-        download_to(&format!("{url}.sig"), &sig_path).is_ok()
+        // Fetch the detached certificate alongside the signature when the
+        // bundle form is not published. The CI signs detached; without the
+        // .pem the verification below cannot pin an identity.
+        if download_to(&format!("{url}.sig"), &sig_path).is_ok() {
+            let _ = download_to(&format!("{url}.pem"), &cert_path);
+            true
+        } else {
+            false
+        }
     } else {
         false
     };
@@ -93,11 +105,30 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
 
     // Verify. Prefer the bundle format when present (current cosign), fall
     // back to the detached signature for older cosign versions.
+    // The CI (.github/workflows/release.yml) signs DETACHED: it publishes
+    // <file>.sig and <file>.pem. The bundle form is what current cosign
+    // emits with --bundle. Both are accepted, but the detached form must
+    // carry the certificate explicitly.
+    //
+    // `cosign verify-blob --signature` on its own validates against whatever
+    // certificate cosign picks, which is the unpinned path this policy
+    // exists to close. Passing --certificate-identity without a
+    // --certificate-chain gives cosign nothing to match, so the check
+    // would report strictness it does not have.
     let mut cmd = std::process::Command::new("cosign");
     if bundle_path.exists() {
         cmd.args(["verify-blob", "--bundle"]).arg(&bundle_path);
+    } else if cert_path.exists() {
+        cmd.args(["verify-blob", "--signature", "--certificate-chain"])
+            .arg(&sig_path)
+            .arg(&cert_path);
     } else {
-        cmd.args(["verify-blob", "--signature"]).arg(&sig_path);
+        anyhow::bail!(
+            "detached signature for {} has no .pem certificate next to it.\n\
+             Refusing to verify without a certificate chain: --certificate-identity would\n\
+             have nothing to match, so a signature from ANY signer would be accepted.",
+            bundle.display()
+        );
     }
     cmd.arg(bundle);
 
@@ -646,6 +677,27 @@ mod tests {
         let url = format!("file://{}", bundle.display());
         verify_bundle_signature(&bundle, &url, true)
             .expect("an explicit --allow-unsigned must accept an unsigned bundle");
+    }
+
+    #[test]
+    fn detached_signature_without_a_certificate_is_refused() {
+        // The CI signs detached: .sig + .pem. If the .pem is missing there
+        // is nothing for --certificate-identity to match, and cosign would
+        // fall back to trusting whatever certificate it likes. Refusing is
+        // the only honest outcome; "verified" here would be a lie.
+        let dir = tempdir_for_test("sig-no-cert");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        // A .sig next to it, but deliberately NO .pem.
+        fs::write(dir.join("b.tar.gz.sig"), b"signature").unwrap();
+        let url = format!("file://{}", bundle.display());
+        let err = verify_bundle_signature(&bundle, &url, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("no .pem certificate") || err.contains("authenticity"),
+            "expected a refusal naming the missing certificate, got: {err}"
+        );
     }
 
     /// Helper: no usa `tempfile` para no anadir dependencia de test solo

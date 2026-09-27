@@ -300,7 +300,7 @@ jobs:
           fi
           bash scripts/install.sh --editor all --version "$TAG" 2>&1 | tee /tmp/smoke-install.log
           grep -q "sha256 verified" /tmp/smoke-install.log
-          grep -q "signature verified (cosign keyless)" /tmp/smoke-install.log
+          grep -Fq "signature verified (cosign keyless, identity and issuer pinned)" /tmp/smoke-install.log
           grep -q "agents: 67" /tmp/smoke-install.log || grep -q "agents: " /tmp/smoke-install.log
           grep -q "errors: 0" /tmp/smoke-install.log
           test -L /tmp/sddk-smoke-home/.config/opencode/agents/orchestrator.md

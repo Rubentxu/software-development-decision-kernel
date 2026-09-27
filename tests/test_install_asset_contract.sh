@@ -215,6 +215,36 @@ else
     fail "release.sh allows a partially signed release (SIGNED_COUNT -eq 0)"
 fi
 
+# The CI smoke test greps install.sh output for a success string. If the
+# two drift, the release FAILS at the smoke-test step on the first real tag
+# — and that string was already wrong once ("cosign keyless" vs "cosign,
+# sigstore trust root"). Extract the exact string each side uses and
+# compare, so the divergence fails here instead of at publish time.
+RELEASE_YML=".github/workflows/release.yml"
+_install_msg=$(sed -n 's/.*echo "  \(signature verified[^"]*\)".*/\1/p' "$INSTALL_SH" | head -1)
+_ci_msg=$(sed -n 's/.*grep -Fq "\(signature verified[^"]*\)".*/\1/p' "$RELEASE_YML" | head -1)
+
+if [ -n "$_install_msg" ] && [ "$_install_msg" = "$_ci_msg" ]; then
+    ok "release.yml smoke test greps the exact string install.sh prints"
+else
+    fail "smoke test and installer disagree on the success string: ci='$_ci_msg' installer='$_install_msg'"
+fi
+
+# The CI signs DETACHED (.sig + .pem). A verifier that only reads --bundle
+# falls through to --signature with no certificate, which cannot pin an
+# identity. Both consumers must fetch the .pem.
+if grep -qF -- '--certificate-chain $cert_file' "$INSTALL_SH"; then
+    ok "install.sh passes --certificate-chain on the detached path"
+else
+    fail "install.sh verifies a detached signature without a certificate chain (unpinned)"
+fi
+
+if grep -qF '"--certificate-chain"' crates/sddk-cli/src/dev/update.rs; then
+    ok "sddk dev update passes --certificate-chain on the detached path"
+else
+    fail "sddk dev update verifies a detached signature without a certificate chain (unpinned)"
+fi
+
 # The pinning constants live in crates/sddk-cli/src/cosign.rs and are
 # copied into install.sh. A silent divergence there means the CLI trusts a
 # signer the shell installer rejects, or worse both accept something nobody
