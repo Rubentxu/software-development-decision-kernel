@@ -2191,3 +2191,73 @@ de cada una:
    deuda abierta (~2.400 LOC) y la decisión bloquea el inicio de C5.
 3. WorkItem de seguridad: firma out-of-band + allowlist de miembros del
    tarball (`INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`).
+
+### Cierre de session-14: bump, perfil completo y push
+
+El operador autorizó continuar. Decisión de versión tomada con evidencia,
+no por intuición.
+
+**El algoritmo canónico propuso `2.0.0` y se sobreescribió a `1.173.0`.**
+`scripts/release-bump.sh` deriva `major` de cualquier `!` o
+`BREAKING CHANGE` en el rango, y `97b900b` lleva ambas marcas. Los hechos
+dicen que ese major sería falso:
+
+- ningún crate tiene campo `publish` → no hay publicación en crates.io
+- ningún crate del workspace depende de los módulos borrados (solo
+  `sddk-gateway` depende de `sddk-engine`, y nunca tocó `spike_sp06`)
+- la distribución es GitHub Releases, no registry
+- el contrato observable (CLI, bundle, install) no cambia
+
+Un `2.0.0` permanente en CHANGELOG afirmaría una ruptura de API de
+consumidor que no ocurrió. Se usa `--force-version 1.173.0`, el mismo
+camino de override que `v1.170.3`. El `!` se conserva en git porque es
+honesto a nivel de historia; lo que se corrige es la versión, que es la
+afirmación pública.
+
+**Regresión detectada por el perfil completo, antes del push.** La primera
+pasada de `cargo test --workspace` falló en
+`arch_ratchet_mutations::conf09_universal_evidence_only`:
+`CONF09_TYPE_ALLOWLIST` seguía listando `spike_sp06.rs`, que `97b900b`
+borró. El propio test lleva la aserción que lo cazó — *"shrink the
+allowlist instead of keeping dead entries"* — así que no era un test
+frágil: era el contrato avisando de que la limpieza estaba a medias.
+
+Se encontraron y corrigieron **4 referencias colgantes** (`b018ec5`):
+`arch_ratchet_mutations.rs` (allowlist), `context_fitness.rs` (lista de
+módulos), `inventory_v1.json` (golden file, 4 rutas + `file_count`
+resincronizado de 713 → 716, drift preexistente) y
+`deprecated_patterns.toml` (2 `exclude_paths` + sus comentarios). Las
+menciones en prosa histórica de auditoría se conservan a propósito.
+
+**Verificación sobre el árbol final** (post-`b018ec5`, pre-push):
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --workspace --offline --no-fail-fast` | **5034 passed; 0 failed; 19 ignored (exit 0)** |
+| `arch_ratchet_mutations` | 6 passed |
+| `context_fitness` | 7 passed |
+| `a6_cc_s1_static_graph_completeness` | 12 passed, 1 ignored |
+
+**Push**: `7dbd886..8a82d26` (7 commits) → `origin/main`, aceptado por el
+pre-push hook (condición A: cambio real de `1.171.2` → `1.173.0` en
+`Cargo.toml`). Local == remoto verificado con `git ls-remote`.
+
+Rango final de la sesión:
+`f1d5fbb` · `8d49f11` · `97b900b` · `24dd3da` · `701f73b` · `b018ec5` ·
+`8a82d26`.
+
+**Pendiente**: `v1.173.0` no tiene tag ni GH Release. El trabajo está
+verde y pusheado, pero la trazabilidad de release cierra con
+`bash scripts/release.sh`.
+
+### Primer paso preciso de la sesión siguiente
+
+1. `bash scripts/release.sh` para publicar `v1.173.0` (ya bumpeado,
+   verde y en remoto; solo falta el paso de publicación e install).
+2. Decidir `test_ports.rs` (~2.400 LOC, 0 consumidores): conectar con C5
+   o borrar. Bloquea el inicio de C5.
+3. WorkItem de seguridad: firma out-of-band + allowlist de miembros del
+   tarball (`INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`).
+4. Instalar `chronos-mcp` para desbloquear C2.

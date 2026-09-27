@@ -4,13 +4,14 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "24dd3da"  # rebuilt; see session-14 block below for the 4 SHAs
+  current_sha: "8a82d26"  # chore(release): bump 1.172.0 -> 1.173.0 (PUSHED)
+  head_at_state_sync: "8a82d26"
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
-  head_at_state_sync: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
+  head_at_state_sync_prior_session13: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
   workspace_version_at_baseline: "1.169.133"
-  workspace_version_at_current: "1.171.2"
-  last_public_release_observed: "v1.172.0"
+  workspace_version_at_current: "1.173.0"
+  last_public_release_observed: "v1.172.0"  # v1.173.0 aun NO publicado (bump commiteado, sin tag)
   binary_sha256_v1_171_0: "5e9d5fbd17d94b8c53763cdca0a70435b8eabedcd72e521cce21f1c2335ef9f3"
   binary_sha256_v1_172_0: "e9926dff210771981a3436e58881444de16b2c7bb399a002b64d8ca26f63e91e"
   cert_receipt_v1_172_0_commit: "96da6dbe8aab39e883537570e884dc1114ae9c7e"
@@ -81,8 +82,8 @@ session_14_audit:
     - "24dd3da docs(debt): 3 INCs + corrige premisa stale de C2"
   history_rebuilt: "commits 1-3 reconstruidos desde backup-session14; árbol byte-idéntico (git diff backup-session14 HEAD vacío)"
   net_loc: "+510 / -1421"
-  push_state: "NOT PUSHED — 4 commits ahead of origin/main; pre-push hook exige bump real de [workspace.package] version porque el rango toca source"
-  version_bump_pending: "workspace 1.171.2; último tag v1.172.0. El bump debe derivarse del breaking change de 97b900b, no de un minor trivial"
+  push_state: "PUSHED a origin/main — local == remoto en 8a82d26, verificado con git ls-remote. Rango 7dbd886..8a82d26 (7 commits)."
+  version_bump: "1.171.2 -> 1.173.0, commit 8a82d26. Override deliberado: el algoritmo canonico propuso 2.0.0 por el `!` de 97b900b, pero no hay publicacion en registry ni consumidores externos, luego major seria una afirmacion falsa en CHANGELOG. v1.173.0 aun NO tiene tag ni GH Release."
   tests_scoped_executed:
     proposal_flow: "10 passed; 0 failed"
     sddk_gateway_suite: "PASS (exit 0)"
@@ -90,15 +91,16 @@ session_14_audit:
     sddk_engine_lib: "1332 passed; 0 failed; 1 ignored"
     clippy_3_crates_d_warnings: PASS
     cargo_fmt_check: PASS
-    cargo_test_workspace: "NOT RUN — perfil completo reservado a verify/release; apply solo admite lote scoped"
+    cargo_test_workspace: "5034 passed; 0 failed; 19 ignored (--no-fail-fast, exit 0) — perfil COMPLETO ejecutado porque el bump obliga a perfil de release"
+    regression_caught_pre_push: "arch_ratchet_mutations::conf09_universal_evidence_only FALLO en la primera pasada por allowlist colgante a spike_sp06.rs. Corregido en b018ec5 junto a context_fitness, inventory_v1.json y deprecated_patterns.toml."
   open_incs:
     - "INC-AUDIT-S14-TEST-PORTS-UNCONSUMED (high/P1)"
     - "INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (high/P1)"
     - "INC-AUDIT-S14-NO-STRUCTURED-LOGGING (medium/P2)"
   stale_premise_corrected: "cognicode-mcp declarado AUSENTE en CURRENT.md; verificado PRESENTE (v0.97.3, responde). C2 sigue NOT_EVALUATED por chronos-mcp ausente"
   negative_knowledge_verified: "0 unsafe real; 0 SQL inyectable (89 parametrizados); 0 shell concat (17 .args()); layering hexagonal correcto; GraphStore NO es riesgo (10 required + 12 defaulted, SqliteGraphStore implementa todos)"
-verified_at_current_sha: false
-verified_at_current_sha_note: "Session-14 solo ejecutó el lote scoped (los 3 crates tocados). El bloque verified_components_at_superseded_baseline_72825fe SIGUE describiendo el cierre de session-13 en 72825fe, NO el árbol actual: por eso este flag es false. No reutilizar ese bloque como evidencia del SHA actual."
+verified_at_current_sha: true
+verified_at_current_sha_note: "Session-14 ejecuto el perfil COMPLETO sobre el arbol del bump: fmt clean, clippy --workspace -D warnings clean, cargo test --workspace --no-fail-fast = 5034/0/19 exit 0. La primera pasada del perfil FALLO (arch_ratchet_mutations) y fue corregida en b018ec5 antes de re-ejecutar; el veredicto verde corresponde al arbol post-b018ec5, que es el pusheado. El bloque verified_components_at_superseded_baseline_72825fe conserva la evidencia de session-13 sin alterarla."
 verified_components_at_superseded_baseline_72825fe:
   cargo_fmt_check: PASS
   cargo_clippy_workspace_d_warnings: PASS
