@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.174.0] - 2026-09-27
+
+### Features
+  - feat(operations): FC-4 docs/operations/uat-replay.sh — pinned-release replay
+
+### Fixes
+  - fix(cli): cierra la primitiva de escritura arbitraria en sddk dev update
+  - fix(engine): retira las referencias colgantes a los spikes borrados
+  - fix(cli): el gate de clippy de sddk release es -D warnings, no -D errors
+  - fix(gateway): evidence.bundle.write now really writes the bundle
+
+### Other
+  - docs(roadmap): receipt de la release v2.0.0 + revisión del INC de test_ports
+  - docs(roadmap): cierre de session-14 — push verificado, v1.173.0 pendiente de publicar
+  - docs(roadmap): punteros de session-14 — SHAs finales + claim de verificación corregido
+  - docs(debt): 3 INCs de la auditoría session-14 + corrige premisa stale de C2
+  - refactor(cli)!: retira 1.403 LOC de spikes muertos de la API pública
+  - docs(roadmap): session-13 handoff — full context for tomorrow's session-14
+  - docs(roadmap): session-13 closeout — FC-4 implemented + cert RCA + state sync at HEAD 72825fe
+  - docs(roadmap): mark FC-4 as IMPLEMENTED in FEATURE-CANDIDATES
+  - docs(roadmap): enrich v1.172.0 cert with flake root-cause analysis
+  - docs(debt): formalize legacy 'body **status**: closed' to frontmatter
+  - docs(roadmap): state sync — v1.172.0 cert formalized (HEAD 96da6db)
+  - docs(roadmap): v1.172.0 CERTIFICATION-RECEIPT + UAT-EVIDENCE (T29/T31)
+  - docs(roadmap): reconcile release v1.172.0 publication
+
 ## [1.173.0] - 2026-09-27
 
 ### Breaking changes (internal)

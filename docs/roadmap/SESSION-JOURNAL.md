@@ -2261,3 +2261,45 @@ verde y pusheado, pero la trazabilidad de release cierra con
 3. WorkItem de seguridad: firma out-of-band + allowlist de miembros del
    tarball (`INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`).
 4. Instalar `chronos-mcp` para desbloquear C2.
+
+### Continuación: release v2.0.0, workitem de seguridad, y una auditoría corregida
+
+**Release publicada**: `v2.0.0` → `db043b4`, 14/14 pasos verdes, gate
+público 9b 9/9, 9 assets, install local OK (`doctor
+all_present: true`). El tag quedó en `v2.0.0` y el software dentro es
+`1.173.0`. Detalle completo en
+`docs/roadmap/receipts/c4-release-v2.0.0/RELEASE-RECEIPT.md`.
+
+Por qué `v2.0.0` y no `v1.173.0`: el paso 2.5 de `release.sh` ejecuta
+`release-bump.sh` en dry-run, y sin `--force-version` vuelve a derivar
+`major` por el `!` de `refactor(cli)!`. El flag **ya está plumbéado**
+(`release.sh:361-363`) — no hay bug de implementación; fue una
+invocación incompleta mía. Se mantiene `v2.0.0` por decisión del
+operador: es defendible (4 módulos `pub` desaparecieron), y reetiquetar
+un release público es churn sin ganancia funcional.
+
+**Auditoría corregida (importante).** El INC de `test_ports.rs` estaba
+mal: severizado high/P1 y recomendaba borrar ~2.400 LOC por "0
+consumidores". El criterio usado (referencias fuera de `sddk-domain`)
+era el equivocado. Hay implementadores reales dentro del crate
+(`ProfileAdapterV1` implementa `ActiveChangeSetPort` y
+`ProjectTopologyPort`; `EvidenceStoreV1` implementa
+`TestEvidenceRepository`) y los 9 traits son requirement de
+`SPEC-043-...-VERIFICATION-SERVICE.md` §4, que gobierna C5. Es
+arquitectura hexagonal a medio construir, no generalidad especulativa.
+Revisado a **medium/P2** y la recomendación de borrar anulada. Moral:
+contar referencias cruzadas sin mirar los consumidores internos produce
+una conclusión confidently wrong.
+
+**Seguridad cerrada (parcialmente)**:
+`ensure_safe_tarball_members` en `dev/update.rs` inspecciona `tar tzf`
+antes de extraer y falla cerrado ante traversal y rutas absolutas, más
+`--no-same-owner/--no-same-permissions`. Cierra la primitiva de
+escritura arbitraria de `sddk dev update` (`79e9e2d`). 7 tests, incluido
+el exploit exacto. La firma out-of-band sigue abierta (opción (a) del
+INC de supply chain).
+
+**Verificación final del tramo**:
+`fmt` clean · `clippy --workspace -D warnings` clean ·
+`cargo test --workspace --no-fail-fast` = **5041 passed; 0 failed;
+19 ignored** (delta: +7 de los nuevos guards).
