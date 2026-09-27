@@ -2611,7 +2611,7 @@ nunca corre.** El que corre no construye el artefacto correcto.
 
 Y esto explica INC-DEBT-022 de forma más limpia que "un typo": `install.sh`
 fue escrito contra el contrato de `release.yml` (que publica
-`sddk-linux-x86_64-musl`), y `release.sh` nunca публикова ese nombre.
+`sddk-linux-x86_64-musl`), y `release.sh` nunca publicó ese nombre.
 
 ### Build musl en local: bloqueado, verificado
 
