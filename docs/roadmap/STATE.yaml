@@ -4,8 +4,8 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "87fef0e"  # chore(release): bump 1.174.0 -> 1.175.0 (PUSHED)
-  head_at_state_sync: "87fef0e"
+  current_sha: "3ed92ed"  # docs(roadmap): estado final (PUSHED, == origin/main)
+  head_at_state_sync: "3ed92ed"
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"
   head_at_state_sync_prior_session13: "72825fe44ae61e447996d29a0e19ef2336d7f2dd"
@@ -99,7 +99,7 @@ session_14_audit:
     - "INC-AUDIT-S14-NO-STRUCTURED-LOGGING (medium/P2)"
   stale_premise_corrected: "cognicode-mcp declarado AUSENTE en CURRENT.md; verificado PRESENTE (v0.97.3, responde). C2 sigue NOT_EVALUATED por chronos-mcp ausente"
   negative_knowledge_verified: "0 unsafe real; 0 SQL inyectable (89 parametrizados); 0 shell concat (17 .args()); layering hexagonal correcto; GraphStore NO es riesgo (10 required + 12 defaulted, SqliteGraphStore implementa todos)"
-verified_at_current_sha: true
+verified_at_current_sha: true  # perfil completo corrio en c123036; 3ed92ed y posteriores son docs-only, sin cambio de codigo
 verified_at_current_sha_note: "Session-14 ejecuto el perfil COMPLETO sobre el arbol del bump: fmt clean, clippy --workspace -D warnings clean, cargo test --workspace --no-fail-fast = 5034/0/19 exit 0. La primera pasada del perfil FALLO (arch_ratchet_mutations) y fue corregida en b018ec5 antes de re-ejecutar; el veredicto verde corresponde al arbol post-b018ec5, que es el pusheado. El bloque verified_components_at_superseded_baseline_72825fe conserva la evidencia de session-13 sin alterarla."
 verified_components_at_superseded_baseline_72825fe:
   cargo_fmt_check: PASS
