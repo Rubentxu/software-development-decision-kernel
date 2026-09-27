@@ -1,11 +1,14 @@
 ---
 id: INC-DEBT-021-MUSL-ASSET-NAME-LIE
 title: "El asset `sddk-<tag>-sddk-linux-x86_64-musl.tar.gz` no contiene un binario musl"
-status: open
+status: closed
+resolved: 2026-09-27T20:59Z
+resolved_by: session-19
 severity: high
 priority: P1
 created: 2026-09-27
 discovered_by: session-16 audit (OBSERVED, ejecución real del e2e)
+closed_by: session-19 (OBSERVED: build musl real compilado y ejecutado en Debian 12 y Alpine 3.20)
 cluster_id: CL-SUPPLY-CHAIN
 fingerprint: "release_mislabelled_musl_asset_glibc_build"
 ---
@@ -192,3 +195,117 @@ nombre siga prometiendo musl sin que exista build musl.
   corregido en session-16. Ver INC-DEBT-022.
 - La ausencia de firma (integridad sí, autenticidad no) es
   `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`, abierta e independiente.
+
+---
+
+## Resolución (session-19, 2026-09-27T20:41–20:59Z)
+
+### La premisa de session-17 era falsa: el build musl NO estaba bloqueado
+
+Session-17 concluded que el build musl era imposible en este host:
+
+> "el target de Rust **sí** está instalado; falta el linker de C que
+> necesita `rusqlite bundled`. El host no tiene `sudo`, ni `apt`, ni
+> `musl-gcc`."
+
+Eso era verdad **y no-era la causa**. `musl-gcc` es el wrapper de los
+toolchains glibc cruzados (Debian/Ubuntu, vía `musl-tools`); no existe
+en Alpine, donde la libc ES musl y `gcc` ya compila contra ella. Busqué
+un componente que solo hace falta en la plataforma que no estoy usando.
+
+La vía real, verificada:
+
+```text
+$ podman run --rm -v "$PWD":/src:z --security-opt label=disable \
+    rust:1.91-alpine sh -c 'apk add musl-dev build-base; CC=gcc \
+    cargo build --release --target x86_64-unknown-linux-musl --bin sddk'
+    Finished `release` profile [optimized] target(s) in 6m 48s
+```
+
+Dos detalles no obvios, ambos encontrados por ejecución y no por lectura:
+
+1. El bind-mount de este host (ext4 con `seclabel`) necesita
+   `--security-opt label=disable` **y** `:z`. Sin ellos el montaje es
+   visible en `/proc/mounts` pero inaccesible, y `cargo` falla con
+   "could not find Cargo.toml" — un error que miente sobre la causa.
+2. `cargo build` sin `--target` reutiliza `target/` y puede no dejar el
+   binario donde uno espera. Con `--target` el output va a
+   `target/<triple>/release/`.
+
+### El binario resultante es musl de verdad
+
+```text
+$ file target/x86_64-unknown-linux-musl/release/sddk
+ELF 64-bit LSB pie executable, x86-64, static-pie linked, not stripped
+$ ldd  →  not a dynamic executable / statically linked
+$ ./sddk --version  →  sddk 2.0.5
+```
+
+### Y funciona donde el binario glibc fallaba
+
+Session-16 observó que el binario glibc del host no arranca en Debian 12
+(`GLIBC_2.39 not found`). El mismo test con el binario musl:
+
+| Contenedor | libc | Resultado |
+|---|---|---|
+| `debian:12-slim` | glibc 2.36 | `sddk 2.0.5` — funciona |
+| `alpine:3.20` | musl, sin glibc | `sddk 2.0.5` — funciona |
+
+Ese es el criterio de aceptación real: no "compila", sino "corre en un
+sistema que el binario anterior no soportaba".
+
+### El fix
+
+`scripts/release.sh` ahora compila con el target musl
+(`SDDK_RELEASE_BUILD_TARGET`, default `x86_64-unknown-linux-musl`) y
+**verifica el linkage antes de publicar**: `file` debe decir
+`statically linked`, si no aborta. Publicar un binario dinámico con
+nombre musl es exactamente este INC, así que falla cerrado en el paso 3
+y no en el paso 9, cuando ya es caro.
+
+El target sigue siendo configurable porque no todos los hosts tienen el
+toolchain, pero desviarlo del musl emite un warning explícito en vez de
+ser un cambio silencioso.
+
+### La decisión de autoridad entre los dos pipelines
+
+Session-17 la dejó abierta por falta de toolchain. Resuelta con
+evidencia, no con preferencia:
+
+- `release.yml` es `workflow_dispatch`-only. No ha publicado nunca un
+  release. Un pipeline que nunca ha publicado no puede ser la autoridad
+  del contrato de assets.
+- `release.sh` es el que produjo todos los tags, y es el único que puede
+  correr la admisión y el round-trip de instalación localmente.
+
+`release.sh` es autoritativo. **No se unifican los nombres de asset**: el
+nombre desnudo `sddk-linux-x86_64-musl` pertenece al contrato de
+`release.yml` (matriz por-arch, multi-OS), y publicar el mismo binario
+bajo los dos nombres daría dos rutas de descarga para un artefacto que
+volverían a divergir. `install.sh` ya consume el asset unificado
+(corregido en session-16, INC-022 cerrado).
+
+El guard deriva esa autoridad de un hecho observable
+(`workflow_dispatch` presente + ausencia de trigger automático), no de
+una constante que alguien pone a 1.
+
+### Falsificación del guard
+
+`tests/test_release_pipeline_consistency.sh` pasa en verde sin haber
+tocado sus aserciones para forzar el verde. Y sigue detectando las dos
+formas de reincidir:
+
+| Inyección | Resultado |
+|---|---|
+| Revertir a `cargo build --release` sin `--target` | FAIL |
+| Cambiar el default del target a `x86_64-unknown-linux-gnu` | FAIL |
+
+`shellcheck` clean en ambos ficheros.
+
+### Lo que queda pendiente
+
+El asset público `v2.0.1` **sigue siendo glibc con nombre musl**. El
+fix está en `main` pero no se publica hasta el próximo release. Mientras
+exista `v2.0.1` comoLatest, un usuario que descargue ese asset tiene un
+binario que no arranca en su máquina. Cerrar del todo el problema exige
+un release nuevo; el código ya está listo para ello.
