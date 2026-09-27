@@ -77,6 +77,9 @@ else
   trunk=$(git rev-parse main)
   behind=$(git rev-list --count "$full_sha..$trunk")
   PUNCTUAL_TOLERANCE=3
+  # Se lee aqui porque el check 3c (abajo) lo necesita y alli todavia no
+  # estaria definido: leerlo mas abajo lo haria vacio en tiempo de uso.
+  real_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$CARGO" | head -1)
   if [ "$behind" -le "$PUNCTUAL_TOLERANCE" ]; then
     ok "el puntero es puntual: $behind commit(s) de retraso sobre main (tolerancia $PUNCTUAL_TOLERANCE)"
   else
@@ -106,8 +109,18 @@ else
     bump_target=$(printf '%s' "$ptr_subject" | grep -oE '\-> *[0-9]+\.[0-9]+\.[0-9]+' | sed -E 's/^-> *//')
     if [ "$bump_target" = "$declared_ver_early" ]; then
       ok "el puntero es coherente: subject dice bump -> $bump_target y declara $declared_ver_early"
+    elif [ "$declared_ver_early" = "$real_ver" ] && [ "$behind" -le "$PUNCTUAL_TOLERANCE" ]; then
+      # Auto-referencia. Un puntero no puede contenerse a si mismo: el commit
+      # que bumpea la version es el SIGUIENTE al puntero, porque el bump
+      # ceremonial viaja en su propio commit (exigido por el pre-push hook).
+      # En esa ventana el puntero declara la version ya bumpeada mientras su
+      # current_sha sigue siendo el commit de trabajo anterior. Es legitimo
+      # SOLO si la version declarada coincide con la real del repo Y el
+      # puntero esta a menos de `tolerance` commits del trunk. Si alguien
+      # bumpea dos veces sin reconciliar, `behind` sale de tolerancia y cae.
+      ok "ventana de auto-referencia aceptada: declara $declared_ver_early (= repo real) con el puntero a $behind commit(s) del trunk; se reconcilia al siguiente commit"
     else
-      fail "el puntero $full_sha bumpea a $bump_target pero declara workspace_version_at_current=$declared_ver_early"
+      fail "el puntero $full_sha bumpea a $bump_target pero declara workspace_version_at_current=$declared_ver_early (repo en $real_ver, $behind commit(s) de retraso)"
     fi
   else
     ok "subject del puntero no es un bump (sin verificacion semantica aplicable)"
@@ -116,7 +129,9 @@ fi
 
 # --- 4. workspace_version_at_current == version real de Cargo.toml ---------
 declared_ver=$(sed -n 's/^  workspace_version_at_current: *"\([^"]*\)".*/\1/p' "$STATE" | head -1)
-real_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$CARGO" | head -1)
+if [ -z "$real_ver" ]; then
+  real_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$CARGO" | head -1)
+fi
 
 if [ -z "$declared_ver" ] || [ -z "$real_ver" ]; then
   fail "no pude comparar versiones (declared='$declared_ver' real='$real_ver')"
