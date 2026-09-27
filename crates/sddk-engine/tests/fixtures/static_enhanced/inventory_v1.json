@@ -110,9 +110,6 @@
     "crates/sddk-cli/src/ship.rs",
     "crates/sddk-cli/src/skill_definition.rs",
     "crates/sddk-cli/src/skill_registry_bridge.rs",
-    "crates/sddk-cli/src/spike_axs3.rs",
-    "crates/sddk-cli/src/spike_axs4.rs",
-    "crates/sddk-cli/src/spike_axs5.rs",
     "crates/sddk-cli/src/stale_cmd.rs",
     "crates/sddk-cli/src/status.rs",
     "crates/sddk-cli/src/surface_integration.rs",
@@ -501,7 +498,6 @@
     "crates/sddk-engine/src/software_alignment/reducer.rs",
     "crates/sddk-engine/src/software_alignment/tests.rs",
     "crates/sddk-engine/src/software_alignment/types.rs",
-    "crates/sddk-engine/src/spike_sp06.rs",
     "crates/sddk-engine/src/state_class_lint.rs",
     "crates/sddk-engine/src/strategy_comparison.rs",
     "crates/sddk-engine/src/strategy_experiments.rs",
@@ -729,7 +725,7 @@
     "crates/sddk-vault/src/validate.rs",
     "crates/sddk-vault/tests/properties.rs"
   ],
-  "file_count": 713,
+  "file_count": 716,
   "generated_at": "2026-09-20T15:54:05Z",
   "include_globs": [
     "crates/**/src/**/*.rs",

@@ -54,10 +54,6 @@ paths = [
 exclude_paths = [
     "crates/sddk-cli/src/lib.rs",
     "crates/sddk-cli/src/result_cmd.rs",
-    # Spike SP-06 is a retrieval-evaluation knowledge corpus: it cites the
-    # legacy name *because* recovery questions ask about the deprecation.
-    # Citations there are intentional content, not production uses.
-    "crates/sddk-engine/src/spike_sp06.rs",
 ]
 replacement = [
     "Use `Contribution` + `ExecutionOutcome` from crates/sddk-engine/src/agent_contribution_envelope.rs",
@@ -112,8 +108,6 @@ exclude_paths = [
     # to the universal constructor in WU-C2 and no longer names the legacy type.
     # Historical docstring citing the deprecation (comment-only mention).
     "crates/sddk-engine/src/semantic_kind.rs",
-    # Spike SP-06 retrieval corpus cites the legacy name as content.
-    "crates/sddk-engine/src/spike_sp06.rs",
 ]
 replacement = [
     "Author evidence via resolve_planning_evidence_relation + EvidenceAttachmentRecord::from_universal_relation (relation: CoreRelationKind)",

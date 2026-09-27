@@ -371,7 +371,6 @@ const BASELINE_ROOT_MODULES: &[&str] = &[
     "semantic_kind",
     "semantic_node",
     "signed_gates",
-    "spike_sp06",
     "state_class_lint",
     "strategy_comparison",
     "strategy_experiments",

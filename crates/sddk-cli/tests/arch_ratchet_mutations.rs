@@ -222,11 +222,10 @@ const CONF09_CONSTRUCTION_FRAGMENT: &str = concat!("Planning", "EvidenceKind", "
 // semantic_kind.rs cites the legacy name only inside a doc comment, which
 // the comment-stripping scan does not see. Neither needs an entry here
 // (the evidence_kind_v1 lint exclude_paths keeps raw-text entries).
-const CONF09_TYPE_ALLOWLIST: [&str; 5] = [
+const CONF09_TYPE_ALLOWLIST: [&str; 4] = [
     "crates/sddk-domain/src/planning/mod.rs",
     "crates/sddk-domain/src/lib.rs",
     "crates/sddk-engine/src/evidence_relation_mapping.rs",
-    "crates/sddk-engine/src/spike_sp06.rs",
     // Post-A5-EVIDENCE-ATTACHMENT-MIGRATION-V1: the storage CRUD test
     // exercises the universal substrate end-to-end (CAS reopen, fail-closed
     // writes, legacy NULL-relation read path) and necessarily names the
