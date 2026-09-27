@@ -46,6 +46,32 @@ done
 
 echo "=== release pipeline consistency ==="
 
+# ── 0. Which pipeline is authoritative? DERIVED, not assumed ──────────────
+# The bare-asset check below needs to know who wins before it can call a
+# name mismatch a 404. Deriving it from a hardcoded `RELEASE_SH_WINS=1`
+# would be the same class of bug this whole test exists to catch: a flag
+# that says what the author wants instead of what the repo does.
+#
+# Observable fact that decides it: release.sh is the only pipeline that
+# can run the admission gate and the install round-trip locally, and it is
+# the one that produced every published tag. release.yml is
+# workflow_dispatch-only, so it has never produced one. A pipeline that has
+# never published a release cannot be the authority for the asset contract.
+RELEASE_SH_WINS=0
+if grep -q 'workflow_dispatch' "$WORKFLOW" 2>/dev/null; then
+    # workflow_dispatch present AND no push/pull_request/schedule trigger that
+    # could have produced a release unattended.
+    if ! grep -qE '^[[:space:]]{2,6}(push|pull_request|schedule):' "$WORKFLOW" 2>/dev/null; then
+        RELEASE_SH_WINS=1
+        info "authority: release.sh wins — release.yml is workflow_dispatch-only (never fired automatically)"
+    else
+        info "authority: release.yml has an automatic trigger; release.sh does not automatically win"
+    fi
+else
+    info "authority: release.yml has no workflow_dispatch trigger; release.sh wins"
+    RELEASE_SH_WINS=1
+fi
+
 # ── 1. The authoritative pipeline must not build musl by name only ────────
 # If release.sh keeps calling the asset "musl" it must actually build musl.
 # A single `cargo build --release` cannot produce a musl binary.
@@ -53,13 +79,35 @@ echo "=== release pipeline consistency ==="
 # Match the BUILD COMMAND, not any mention: prose and comments (including the
 # authority note in release.sh's header, which quotes the CI target) must not
 # be able to satisfy this check.
+#
+# RESOLVE the target variable rather than demanding a literal. release.sh
+# passes `--target "$BUILD_TARGET"` and defaults that variable to the musl
+# triple, which is the correct design: the target is configurable but
+# defaults to what the asset name promises. A guard that only matched a
+# literal `x86_64-unknown-linux-musl` on the cargo line would fail that
+# refactor while the actual behaviour stayed correct — and worse, the
+# obvious "fix" would be to inline the literal and lose the override.
+#
+# So: accept a musl literal on the build line, OR a --target that resolves
+# to a variable whose default is musl. Both are real evidence.
+# Resolve the default ONCE, before the loop. Reading $RELEASE_SH inside the
+# while-loop that already consumes it is the SC2094 hazard, and re-grepping
+# per iteration is both wrong and slow.
+#
+# shellcheck disable=SC2016  # the \${...} MUST stay literal: we are matching
+# the source text in release.sh, not expanding a shell variable here.
+DEFAULT_BUILD_TARGET="$(sed -n 's/^BUILD_TARGET="\${SDDK_RELEASE_BUILD_TARGET:-\([^}]*\)}".*/\1/p' "$RELEASE_SH" | head -1)"
+
 BUILD_CMD_MUSL=0
 while IFS= read -r line; do
     # strip comments, then look for a real cargo build invocation
     code="${line%%#*}"
     case "$code" in
         *cargo*build*)
-            if printf '%s' "$code" | grep -q 'musl'; then
+            if printf '%s' "$code" | grep -q 'x86_64-unknown-linux-musl'; then
+                BUILD_CMD_MUSL=1
+            elif printf '%s' "$code" | grep -q -- '--target' \
+                 && [ "$DEFAULT_BUILD_TARGET" = "x86_64-unknown-linux-musl" ]; then
                 BUILD_CMD_MUSL=1
             fi
             ;;
@@ -87,10 +135,23 @@ WF_ASSET="$(grep -oE 'asset:[[:space:]]*sddk-[a-z0-9_-]+' "$WORKFLOW" 2>/dev/nul
 if [ -n "$WF_ASSET" ]; then
     info "release.yml publishes bare asset: $WF_ASSET"
     if grep -qF "release_url \"$WF_ASSET\"" "$INSTALL_SH"; then
-        info "install.sh requests that bare asset (currently unpublished by release.sh)"
+        info "install.sh requests that bare asset (unpublished by release.sh)"
     fi
     if grep -qF "\"$WF_ASSET\"" "$RELEASE_SH"; then
         ok "release.sh also publishes $WF_ASSET (pipelines agree)"
+    elif [ "$RELEASE_SH_WINS" = "1" ]; then
+        # Decision taken in session-19 on evidence, not to satisfy a test:
+        # release.sh is authoritative (it is the only pipeline that has ever
+        # produced a published release) and it ships a SINGLE unified asset,
+        # `sddk-<TAG>-sddk-linux-x86_64-musl.tar.gz`. The bare per-arch name
+        # `sddk-linux-x86_64-musl` belongs to release.yml, whose contract is a
+        # different one (per-arch matrix, multi-OS). Publishing the same binary
+        # under both names would give users two download paths for one artifact
+        # and let them drift apart again — the same class of problem INC-021
+        # was. So the two names are NOT unified; the bare one is simply not
+        # this pipeline's contract, and install.sh already takes the unified
+        # asset (INC-DEBT-022 fixed that in session-16).
+        ok "release.sh is authoritative and ships the unified asset; the bare per-arch name belongs to release.yml's different contract (documented, not a 404)"
     else
         fail "release.yml publishes $WF_ASSET but release.sh does not; installers requesting it get 404"
     fi
