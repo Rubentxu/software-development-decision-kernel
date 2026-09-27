@@ -3011,3 +3011,84 @@ con opt-out.
 Firmar un artefacto real de punta a punta (release en CI con
 `id-token: write`, o el binario con clave) antes de publicar 2.0.7. Sin
 una firma verificada, la politica es codigo no ejercitado.
+
+## session-21 — INC-AUDIT-S14: el pin de identidad era incorrecto y los guards no eran deterministas
+
+**Fecha UTC**: 2026-09-27T22:27–22:47Z
+**Baseline**: `1de1caa` (origin/main) · **HEAD al cerrar**: `a030eed` · **Workspace**: 2.0.7
+**Ultimo release publico**: `v2.0.1` (sin assets de firma; su asset `musl` sigue siendo el binario glibc roto)
+
+### Que se hizo
+
+- Corregido el pin de identidad cosign: era `@refs/heads/main`, imposible
+  de satisfacer. `release-automation.yml` dispara `gh workflow run
+  release.yml --ref "$TAG"`, asi que el subject real de OIDC es el workflow
+  sobre `refs/tags/vX.Y.Z`. Nuevo pin:
+  `^Rubentxu/software-development-decision-kernel:\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$`.
+- 11 tests del patron cosign (acepta el subject real, rechaza ramas, otros
+  repos, otros workflows, prereleases, matches no anclados). Volver al pin
+  literal de rama rompe 3 de ellos.
+- Corregido el smoke test del CI, que grepeaba un mensaje que `install.sh`
+  nunca emitia. Ambos paths usan ahora exactamente
+  `signature verified (cosign keyless, identity and issuer pinned)`.
+- `tests/test_install_asset_contract.sh`: 27 checks, CWD-independiente,
+  determinista en 20/20 ejecuciones, y detecta la desactivacion de
+  `cosign sign-blob`.
+- `install.sh` y `dev/update.rs` descargan `.pem` y pasan
+  `--certificate-chain`; una `.sig` detached sin `.pem` se rechaza.
+
+### Premisas falsadas (esta sesion)
+
+3. **El pin original nunca habría funcionando.** `@refs/heads/main` no
+   puede ser el subject de un workflow disparado con `--ref $TAG`. Sin
+   este arreglo, todo release firmado habría fallado su instalador. El
+   defecto estaba en el pinning, no en el instalador.
+
+4. **Un guard sobre el propio codigo de firma era decorativo.** El guard
+   de `.pem` solo demostraba que el *loop de subida* intenta subirlo; no
+   que el bundle `keyless signing path` lo produzca. Queda como
+   `DISTRIBUTION_OPEN`: ver abajo.
+
+### Evidencia observada
+
+- `cargo fmt --check` exit 0; `shellcheck scripts/install.sh
+  scripts/release.sh` limpio; `cargo clippy --workspace --all-targets
+  -- -D warnings` con 0 errores.
+- `cargo test --workspace`: **1 FAILED observado** en
+  `inv10_grep_gate_no_mutex_on_workflow_state`
+  (crates/sddk-engine/tests/operator_snapshot_arc_tests.rs). Investigado:
+  el test es de `Operator`/`Mutex`/`Parallel` y no toca `dev/`, scripts ni
+  cosign. Aislado pasa 11/11 y 3/3 en tres repeticiones. **Clasificado
+  como flake de concurrencia pre-existente, no regresion de este cambio.**
+  NO re-ejecute el workspace completo a verde: el comando de
+  re-verificacion encadenaba dos passes de ~10 min y murio por timeout
+  (exit 124). El verde de workspace completo de esta sesion es
+  **NOT_REVERIFIED**; el ultimo verde completo observado sigue siendo el
+  de antes de este bloque de guards.
+- Contract test de instalacion: verde y determinista tras las
+  correcciones finales.
+
+### Deuda / bloqueos abiertos
+
+- **S14 sigue ABIERTA en distribucion.** Codigo cerrado; falta un release
+  real con firma obtenida y verificada end-to-end. `v2.0.7` NO se publico.
+  Publicar es irreversible y requiere autorizacion del operador.
+- **D-1 (nuevo, no resuelto):** `dev/update.rs` descarga `.sig`/`.pem` pero
+  no `.bundle.json`. Hay que alinear ese path con lo que `release.sh`
+  produce.
+- **D-2 (nuevo, no resuelto):** `release.sh` anadio `.pem` a la lista de
+  assets, pero no esta verificado que el bundle `keyless signing path` lo
+  **genere**. El guard no lo cubre.
+- **R-flake (nuevo):** `inv10_grep_gate_no_mutex_on_workflow_state` es
+  flaky. Necesita tripwire propia.
+
+### Siguiente paso preciso
+
+1. Resolver D-1 y D-2 (alinear `.bundle.json` y confirmar generacion de
+   `.pem`).
+2. Re-ejecutar el perfil completo como **un solo** `cargo test
+   --workspace` (no encadenar dos passes) hasta un verde observado.
+3. Commit atomico de la correccion regex/CWD/determinismo + docs, y push
+   a `origin/main` (hoy HEAD esta 2 commits por delante, sin pushear).
+4. Solo entonces decidir la publicacion irreversible de `v2.0.7`.
+5. Despues: INC-021, sustituir el `v2.0.1` publico roto por un musl real.

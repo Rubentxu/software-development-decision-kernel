@@ -24,6 +24,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SH="$ROOT/scripts/install.sh"
 RELEASE_SH="$ROOT/scripts/release.sh"
+RELEASE_YML="$ROOT/.github/workflows/release.yml"
+# Every source path is anchored to $ROOT. Relative paths made the whole
+# suite report "all checks passed" — or fail — depending on the CWD it was
+# invoked from: a CI runner that does not cd to the repo would read
+# non-existent files, and `grep` on a missing file returns 1, which in an
+# `if` reads exactly like "the thing is broken".
+UPDATE_RS="$ROOT/crates/sddk-cli/src/dev/update.rs"
+DEV_MOD_RS="$ROOT/crates/sddk-cli/src/dev/mod.rs"
 
 failures=0
 ok()   { printf '  ok   %s\n' "$1"; }
@@ -140,15 +148,18 @@ fi
 # release actually signs, so the three sides have to agree: release.sh
 # signs, install.sh verifies, dev update verifies. A change on one side
 # without the others turns every install into a hard failure.
-# Match the SIGNING LOOP, not the string. `grep -q 'cosign sign-blob'` is
-# satisfied by the remediation hint inside the `die` message, so disabling
-# the real signing call while leaving the advice text in place keeps this
-# check green. Third recurrence of the same defect in this repo: a guard
-# satisfied by a comment while the code it guards is broken. Comments are
-# stripped before matching, and the call must sit inside the loop.
-if grep -vE '^[[:space:]]*#' "$RELEASE_SH" \
-     | grep -vE '^[[:space:]]*(die|warn|ok|echo) ' \
-     | grep -qE '^[[:space:]]*if cosign sign-blob'; then
+# Read the file ONCE with awk instead of piping greps. `grep -q` exits as
+# soon as it matches and closes the pipe, so the upstream `grep -v` can be
+# killed by SIGPIPE; under `set -o pipefail` that turns into a non-zero
+# result. The failure was INTERMITTENT (2 of 5 runs failed here), which is
+# worse than a hard failure: a guard that is green half the time trains
+# everyone to ignore it. awk has no early exit, so the result is stable.
+if awk '
+    /^[[:space:]]*#/                 { next }
+    /^[[:space:]]*(die|warn|ok|echo) / { next }
+    /^[[:space:]]*if cosign sign-blob/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+' "$RELEASE_SH"; then
     ok "release.sh signs its artifacts with cosign (signing loop, not a comment)"
 else
     fail "release.sh has no active cosign sign-blob call; installers now require signatures"
@@ -180,7 +191,7 @@ fi
 # A call site ends in `?;`, a definition ends in `{`. Matching the bare
 # name is satisfied by the function definition on its own, which means the
 # check would pass with every call site deleted.
-if grep -qF 'verify_bundle_signature(&bundle, &url, args.allow_unsigned)?;' crates/sddk-cli/src/dev/update.rs 2>/dev/null; then
+if grep -qF 'verify_bundle_signature(&bundle, &url, args.allow_unsigned)?;' "$UPDATE_RS" 2>/dev/null; then
     ok "sddk dev update verifies a signature before installing (call site, not definition)"
 else
     fail "sddk dev update has no verify_bundle_signature call site (authenticity gap reopened)"
@@ -231,7 +242,6 @@ fi
 # — and that string was already wrong once ("cosign keyless" vs "cosign,
 # sigstore trust root"). Extract the exact string each side uses and
 # compare, so the divergence fails here instead of at publish time.
-RELEASE_YML=".github/workflows/release.yml"
 _install_msg=$(sed -n 's/.*echo "  \(signature verified[^"]*\)".*/\1/p' "$INSTALL_SH" | head -1)
 _ci_msg=$(sed -n 's/.*grep -Fq "\(signature verified[^"]*\)".*/\1/p' "$RELEASE_YML" | head -1)
 
@@ -250,7 +260,7 @@ else
     fail "install.sh verifies a detached signature without a certificate chain (unpinned)"
 fi
 
-if grep -qF '"--certificate-chain"' crates/sddk-cli/src/dev/update.rs; then
+if grep -qF '"--certificate-chain"' "$UPDATE_RS"; then
     ok "sddk dev update passes --certificate-chain on the detached path"
 else
     fail "sddk dev update verifies a detached signature without a certificate chain (unpinned)"
@@ -260,8 +270,16 @@ fi
 # copied into install.sh. A silent divergence there means the CLI trusts a
 # signer the shell installer rejects, or worse both accept something nobody
 # intended. Extract both and compare, so drift is a test failure.
-COSIGN_RS="crates/sddk-cli/src/cosign.rs"
-_rust_identity=$(sed -n 's/^[[:space:]]*"\(.*@.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+COSIGN_RS="$ROOT/crates/sddk-cli/src/cosign.rs"
+# rustfmt may keep the raw string on one line or wrap it, so match the
+# declaration by name and take everything between r" and "; regardless of
+# layout. A layout-specific extraction silently returns "" after a fmt run,
+# and then "cosign.rs == install.sh" compares empty to empty and passes.
+_rust_identity=$(sed -n 's/^pub const DEFAULT_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+if [ -z "$_rust_identity" ]; then
+    _rust_identity=$(tr '\n' ' ' < "$COSIGN_RS" \
+        | sed -n 's/.*DEFAULT_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";.*/\1/p')
+fi
 _rust_issuer=$(sed -n 's/^pub const DEFAULT_CERT_ISSUER: &str = "\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
 _shell_identity=$(sed -n 's/.*SDDK_COSIGN_IDENTITY:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
 _shell_issuer=$(sed -n 's/.*SDDK_COSIGN_ISSUER:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
@@ -281,12 +299,12 @@ fi
 # Both halves must always travel together. A script that passes only one
 # of the two flags is the original bug in a new location.
 _verify_flags() {
-    grep -cE -- '--certificate-identity=[^ ]+ --certificate-oidc-issuer=' "$1" || true
+    grep -cE -- '--certificate-identity-regexp=[^ ]+ --certificate-oidc-issuer=' "$1" || true
 }
 if [ "$(_verify_flags "$INSTALL_SH")" -ge 1 ]; then
-    ok "install.sh passes identity and issuer as a pair"
+    ok "install.sh pins identity and issuer as a pair (regexp form)"
 else
-    fail "install.sh does not pass --certificate-identity and --certificate-oidc-issuer together"
+    fail "install.sh does not pass --certificate-identity-regexp and --certificate-oidc-issuer together"
 fi
 
 # Fixed-string grep, not -E: the format! macro is full of regex metacharacters
@@ -296,9 +314,9 @@ fi
 # real line is `cmd.arg(format!("--certificate-identity={identity}"));` —
 # including `cmd.arg(` or the trailing `))` makes the pattern miss on a
 # correct implementation, which is how this check produced a false FAIL.
-if grep -qF 'format!("--certificate-identity={identity}")' crates/sddk-cli/src/dev/update.rs \
-   && grep -qF 'format!("--certificate-oidc-issuer={issuer}")' crates/sddk-cli/src/dev/update.rs; then
-    ok "sddk dev update passes identity and issuer as a pair"
+if grep -qF 'format!("--certificate-identity-regexp={identity}")' "$UPDATE_RS" \
+   && grep -qF 'format!("--certificate-oidc-issuer={issuer}")' "$UPDATE_RS"; then
+    ok "sddk dev update pins identity and issuer as a pair (regexp form)"
 else
     fail "sddk dev update does not pin both certificate halves"
 fi
@@ -307,7 +325,7 @@ fi
 # environment variable, so an operator can see it in --help. A var-only
 # opt-in is invisible in the interface and gets "fixed" by exporting the
 # var in a shell profile.
-if grep -qF 'pub(super) allow_unsigned: bool' crates/sddk-cli/src/dev/mod.rs; then
+if grep -qF 'pub(super) allow_unsigned: bool' "$DEV_MOD_RS"; then
     ok "sddk dev update exposes an explicit --allow-unsigned flag"
 else
     fail "the unsigned opt-in is env-var only; there is no discoverable flag"
@@ -316,7 +334,7 @@ fi
 # Both rejection AND acceptance need coverage. Testing only the rejection
 # leaves the accepting branch unexercised, which is exactly where a typo
 # silently ships a dead branch.
-if grep -qF 'fn explicit_opt_in_accepts_an_unsigned_bundle()' crates/sddk-cli/src/dev/update.rs; then
+if grep -qF 'fn explicit_opt_in_accepts_an_unsigned_bundle()' "$UPDATE_RS"; then
     ok "the accepting branch of the unsigned policy is covered by a test"
 else
     fail "only the rejection path is tested; the opt-in branch is unexercised"
@@ -331,7 +349,7 @@ if awk '
     inbranch && /bail!/ { found=1; inbranch=0 }
     inbranch && /^[[:space:]]*}$/ { inbranch=0 }
     END { exit(found ? 0 : 1) }
-' crates/sddk-cli/src/dev/update.rs 2>/dev/null; then
+' "$UPDATE_RS" 2>/dev/null; then
     ok "sddk dev update bails on a failed signature verification"
 else
     fail "sddk dev update does not bail on a bad signature"

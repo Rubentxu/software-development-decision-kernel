@@ -143,7 +143,7 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
     // Defaults are the real SDDK signing identity so an operator who sets
     // nothing gets pinning, not "any Sigstore certificate will do".
     let identity = std::env::var("SDDK_COSIGN_IDENTITY")
-        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY.to_string());
+        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY_REGEXP.to_string());
     let issuer = std::env::var("SDDK_COSIGN_ISSUER")
         .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_ISSUER.to_string());
 
@@ -155,7 +155,7 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
         );
     }
 
-    cmd.arg(format!("--certificate-identity={identity}"));
+    cmd.arg(format!("--certificate-identity-regexp={identity}"));
     cmd.arg(format!("--certificate-oidc-issuer={issuer}"));
 
     let output = cmd.output()?;

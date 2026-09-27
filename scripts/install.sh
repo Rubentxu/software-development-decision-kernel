@@ -267,11 +267,14 @@ verify_signature() {
     # and cosign without a pinned issuer accepts the certificate against
     # ANY issuer. That is weaker than it looks, not stronger.
     #
-    # The defaults must stay byte-identical to
-    # crates/sddk-cli/src/cosign.rs. tests/test_install_asset_contract.sh
-    # asserts that, so drift between the Rust and bash copies fails the
-    # suite instead of shipping a release only one of them trusts.
-    local cert_identity="${SDDK_COSIGN_IDENTITY:-Rubentxu/software-development-decision-kernel:.github/workflows/release.yml@refs/heads/main}"
+    # The subject is a REGEX, not a literal. See crates/sddk-cli/src/cosign.rs:
+    # a literal pin to one ref either matches nothing (branch ref) or breaks
+    # on the next tag, and the release workflow runs on TAGS.
+    # The defaults must stay byte-identical to that constant.
+    # tests/test_install_asset_contract.sh asserts that, so drift between the
+    # Rust and bash copies fails the suite instead of shipping a release only
+    # one of them trusts.
+    local cert_identity="${SDDK_COSIGN_IDENTITY:-^Rubentxu/software-development-decision-kernel:\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$}"
     local cert_issuer="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
 
     if [ -z "$cert_identity" ] || [ -z "$cert_issuer" ]; then
@@ -280,7 +283,7 @@ verify_signature() {
         return 1
     fi
 
-    args="$args --certificate-identity=$cert_identity --certificate-oidc-issuer=$cert_issuer"
+    args="$args --certificate-identity-regexp=$cert_identity --certificate-oidc-issuer=$cert_issuer"
 
     # shellcheck disable=SC2086 # args is a deliberately word-split arg list
     if cosign $args "$file" >/dev/null 2>&1; then

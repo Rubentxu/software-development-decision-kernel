@@ -1,9 +1,13 @@
 ---
 id: INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY
 title: "El checksum que valida el bundle se descarga del mismo origen que el bundle"
-status: open
+status: code-closed, distribution-open
 severity: high
 priority: P1
+# status real en session-21: la politica de firma y los consumidores estan
+# implementados y verificados (ver seccion "Actualizacion session-21"), pero
+# v2.0.1 no tiene ningun asset de firma y ninguna firma real se ha obtenido.
+# Cerrar en distribucion requiere publicar v2.0.7 con el workflow firmado.
 created: 2026-09-27
 discovered_by: session-14 audit (code-based, no documentado previamente)
 cluster_id: CL-SUPPLY-CHAIN
@@ -119,3 +123,67 @@ que un origen comprometido convierta la instalación en una primitiva de
 escritura arbitraria. La autenticidad del origen sigue sin resolver,
 y ahora está confirmado que **ninguna de las dos rutas de instalación
 la implementa**.
+
+## Actualización session-21 — (a) cerrado en código, abierto en distribución
+
+**Trust root decidido: Fulcio keyless vía GitHub Actions OIDC.** No hay
+clave que conservar ni que rotar: la autoridad es el issuer
+`https://token.actions.githubusercontent.com` y la identidad es el subject
+del workflow.
+
+### Lo implementado
+
+- `release.sh` firma los 3 artefactos con `cosign sign-blob` y exige
+  **todos** firmados (`-ne "${#SIGN_ARTIFACTS[@]}"`, no `-eq 0`).
+- `install.sh` y `dev update` rechazan por defecto un artefacto sin
+  firma; firma presente e inválida aborta; el opt-out es explícito
+  (`--allow-unsigned` / `SDDK_ALLOW_UNSIGNED*`) y anuncia lo que hace.
+- Fuente única del pinning en `crates/sddk-cli/src/cosign.rs`, con el
+  shell cotejado por `test_install_asset_contract.sh`.
+
+### Cuatro defectos encontrados al contrastar código contra CI
+
+1. **El pin de identidad no matcheaba nada.** Decía
+   `@refs/heads/main`, pero `release-automation.yml` despacha
+   `gh workflow run release.yml --ref v2.0.7`, así que el subject real
+   es `@refs/tags/v2.0.7`. Con el pin enviado, **toda instalación
+   habría fallado** con un error de firma indistinguible de un ataque.
+2. **Un pin literal a un tag se rompe en el siguiente release.** Fijado
+   a `v2.0.7` habría pasado hoy y fallado en 2.0.8: verde hasta el día
+   que no. Sustituido por `--certificate-identity-regexp` con el repo y
+   el fichero de workflow fijos y el ref como tag SemVer. Confirmado
+   contra `cosign verify-blob --help` en la versión fijada.
+3. **La firma detached se verificaba sin certificado.** El CI publica
+   `.sig` + `.pem`; ambos consumidores caían a
+   `verify-blob --signature` sin `--certificate-chain`, donde
+   `--certificate-identity` no tiene contra qué casar. El control
+   aparentaba ser estricto y era más débil. Ahora una firma detached
+   sin `.pem` se rechaza en vez de aceptarse.
+4. **El smoke test del CI grepeaba una cadena que el instalador nunca
+   imprimía** (`"cosign keyless"` vs `"cosign, sigstore trust root"`).
+   El workflow se caía en el smoke test **después de publicar los
+   assets**. Alineados, y el grep pasó a `-Fq` sobre la cadena exacta.
+
+### Verificación
+
+- `cosign::tests` (11): el subject real del workflow se acepta; los
+  tags futuros se aceptan sin editar el pin; **una rama se rechaza**
+  (el valor que se había enviado); otro repo y otro workflow se
+  rechazan; el patrón está anclado. Falsificado revirtiendo el pin al
+  literal de rama: 3 tests fallan.
+- 27 checks en `test_install_asset_contract.sh`, 5 de ellos nuevos,
+  falsificados con 7 mutaciones, todas detectadas.
+- `cargo test --workspace` sin FAILED; clippy `-D warnings` con 0
+  errores; shellcheck limpio.
+
+### Estado real: (a) NO cerrado en distribución
+
+`v2.0.1` **no tiene ningún asset de firma** — la rama `sign` del
+workflow nunca se ejecutó. No se ha obtenido ninguna firma real: la
+keyless local cae en el device flow de Fulcio y necesita intervención
+humana en navegador.
+
+Publicar `v2.0.7` cerraría esto, porque la automatización crea el tag y
+despacha el workflow firmado. Antes hay que decidir si se acepta esa
+publicación: es una acción irreversible sobre un repo público, y si el
+firmado falla a mitad, `v2.0.7` queda publicado sin assets firmados.
