@@ -2347,3 +2347,108 @@ por causas externas o por decisión de diseño: C2 (chronos-mcp no
 existe como artefacto instalable), C5 (depende del consumidor del SPI),
 firma out-of-band (requiere trust root), observabilidad (workitem
 propio).
+
+---
+
+## Session 15 — 2026-09-27T19:01–19:30Z (orchestrator, autonomous)
+
+**Baseline de entrada**: `3ed92ed` (== origin/main, tree limpio).
+**HEAD de salida**: `5ce4bca` (== origin/main, tree limpio).
+**Workspace**: 1.175.0 → **2.0.1**. **Último release al entrar**: v2.0.0.
+
+### WorkItem
+
+Cerrar el gap de distribución del fix de seguridad. No se eligió por
+inercia: se derivó de la divergencia observada entre `git tag` y el
+código commiteado.
+
+### Reconciliación previa (STOP de AGENTS.md §10 activado)
+
+`STATE.yaml` declaraba `current_sha: 87fef0e` mientras `HEAD` y
+`origin/main` estaban en `3ed92ed`. Causa: el commit de punteros se
+escribió **antes** del push de sí mismo, así que la sesión anterior
+sincronizó con un SHA que aún no era el HEAD real.
+
+Resuelto en `ee9064a` sin reescribir historia. La entrada anterior del
+journal se conserva intacta.
+
+### Hallazgo material: el fix de seguridad no estaba distribuido
+
+`79e9e2d` (guard de traversal en `sddk dev update`) estaba en `main`
+pero el tag `v2.0.0` apuntaba a `db043b4`, **siete commits antes**.
+Quien instalara desde la release seguía con la primitiva de escritura
+arbitraria expuesta. El bundle instalado era `1.173.0`, sin el fix.
+
+Esto es un gap de valor, no un pendiente documental: el trabajo estaba
+hecho, verificado y sin publicar.
+
+### Release v2.0.1
+
+- SemVer **derivado** por `scripts/release-bump.sh` (no forzado):
+  `v2.0.0` + `fix` → `v2.0.1` (patch, sin cambio de contrato).
+- Pipeline completo 14/14, exit 0, sin `--skip-tests`.
+- Tag `v2.0.1` → `5ce4bca`, `tag_sha == HEAD == origin/main` (vía
+  `git ls-remote`, no `origin/main`).
+- 9/9 assets, `isDraft=false`, `isPrerelease=false`.
+- Digest publicado por la API == sha256sum local
+  (`417a7163a286f75b…`), verificado de forma independiente al script.
+- Instalado: binario `2.0.1`, bundle `2.0.1`,
+  `binary.bundle_coherence: present`, `all_present: true`.
+- Receipt: `docs/roadmap/receipts/c4-release-v2.0.1/RELEASE-RECEIPT.md`.
+
+### Segunda reconciliación: series de versión divergentes
+
+El workspace arrastraba la serie `1.17x` mientras el tag publicado era
+`v2.0.0`, lo que dejaba el puntero **por debajo** del máximo de tags
+publicados. La admisión v2 lo rechazaba con
+`not-above-last-publish 2.0.0 -> 1.175.0` — comprobado, no supuesto.
+
+Corregido en `5ce4bca`: el workspace pasa a `2.0.1` y coincide por
+primera vez con el tag SemVer. La admisión pasa a
+`ACCEPT last-publish=2.0.0 -> 2.0.1`.
+
+### Gates observados sobre el árbol publicado
+
+```text
+cargo fmt --check                                  PASS
+cargo clippy --workspace --all-targets -D warnings PASS (0 diagnostics)
+cargo test --workspace --offline --no-fail-fast   5041 passed, 0 failed, 19 ignored
+```
+
+Verificado además que el fix está en el **código publicado**, no sólo en
+`main`: `git show v2.0.1:crates/sddk-cli/src/dev/update.rs` contiene
+`ensure_safe_tarball_members` (10 ocurrencias) y `no-same-owner` (1).
+
+### Desviación registrada (regla F3: decir la sorpresa)
+
+Durante el bump se cometió un error propio: se fijó el workspace a
+`1.173.0` (la versión *dentro* del release anterior) en lugar de
+derivarlo, y luego a `1.174.0`, ambos por debajo del tag publicado.
+Se detectó al ejecutar la comprobación de admisión y se corrigió antes
+de publicar. Queda registrado porque el primer `sed` fue un
+`bash` en lugar de `edit`, contra la convención del repo.
+
+### Decisiones
+
+- **Mantener v2.0.0** (no reetiquetar): decisión previa conservada.
+- **Patch, no minor**: un `fix` de seguridad sin cambio de contrato.
+- **`test_ports.rs` no se toca**: requiere el consumidor de C5
+  (change-scoped verification), y SPEC-043 §4 lo gobierna.
+- **No reescribir historia**: las reconciliaciones son entradas nuevas,
+  no ediciones de las anteriores.
+
+### Pendiente (sin cambio respecto a la entrada)
+
+- **Firma out-of-band**: el `.sha256` se descarga del mismo origen que
+  el payload. El traversal está cerrado; la **autenticidad** del
+  artefacto no. Es el siguiente hole real de seguridad y requiere
+  trust root, rotación y comportamiento sin firma.
+- **C2**: `chronos-mcp` sin artefacto instalable. `cognicode-mcp` sí
+  está presente; C2 sigue bloqueado sólo por chronos.
+- **C5**: change-scoped verification pendiente.
+
+### Primer paso de la sesión siguiente
+
+Definir el trust root de la firma out-of-band (ADR + spec) antes de
+volver a publicar: es el único riesgo de seguridad abierto que
+depende sólo de trabajo propio, sin proveedor externo.
