@@ -12,6 +12,14 @@ This directory contains the canonical contracts for the durable debt remediation
 - **[INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH](./INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH.md)** - Un commit de metadata derivada (`MANIFEST.sha256`) no tiene camino admisible de push sin quemar un bump (medium/P2, closed; regla (C) generated-only en `githooks/pre-push`, cycle inc-derived-metadata-push-path 2026-09-20).
 - **[INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW](./INC-FINDING-A5-2-DW-RUNTIME-003-CLOCK-SKEW.md)** - Commentario de anclaje DW-RUNTIME-003 en restart_survival.rs desalineado con lo que el test hace (low/P3, closed; cycle a5-2-2026-09-17).
 
+### Session-16 (2026-09-27) — auditoría con ejecución real del e2e
+
+Todos los hallazgos verificados ejecutando el instalador y la suite e2e en contenedor, no por lectura de código.
+
+- **[INC-DEBT-021-MUSL-ASSET-NAME-LIE](./INC-DEBT-021-MUSL-ASSET-NAME-LIE.md)** (high/P1, open) — El asset `sddk-<tag>-sddk-linux-x86_64-musl.tar.gz` contiene un binario **glibc**, no musl. `release.sh` compila con `cargo build --release` del host y lo empaqueta con nombre musl. Un usuario con glibc < 2.39 no puede ejecutarlo. Pineado por el check 8 de `tests/test_install_asset_contract.sh`.
+- **[INC-DEBT-022-INSTALLER-ASSET-NAME-404](./INC-DEBT-022-INSTALLER-ASSET-NAME-404.md)** (critical/P1, **closed**) — `install.sh` pedía el asset `sddk-linux-x86_64-musl`, que el release nunca publicó (el asset real es `sddk`). HTTP 404 y abort antes de enlazar nada, en la ruta que se toma sin `gh` en PATH. Corregido en session-16 y protegido por `tests/test_install_asset_contract.sh`.
+- **[INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY](./INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY.md)** (high/P1, open) — **Opción (a) re-evaluada**: session-14 la estimaba como "coste bajo, reutiliza infra existente". Falso. `install.sh` no menciona cosign, `release.sh` no firma nada, ningún release publica asset de firma, y el e2e exigía una cadena que nadie imprimía. Cerrar (a) es trabajo desde cero, con trust root por decidir.
+
 ### Session-14 (2026-09-27) — auditoría basada en código
 
 Detalle y evidencia de reproducción en cada fichero.
