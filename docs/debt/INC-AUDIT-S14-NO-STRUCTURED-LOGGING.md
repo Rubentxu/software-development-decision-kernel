@@ -64,3 +64,31 @@ justo cuando la correlación deja de ser trivial.
 Abierto. No es quick win. No se ejecuta en este ciclo: tocar 4 crates
 para observabilidad es un WorkItem propio con su propio baseline de
 tests.
+
+## Matiz añadido en session-18 (no cambia el veredicto, acota la solución)
+
+El título dice "0 tracing" y eso es literalmente cierto, pero tomarlo
+literalmente lleva a la solución equivocada. Verificado en el código:
+
+```text
+crates/sddk-cli/src/metrics.rs       -> 15 usos fuera del propio módulo
+crates/sddk-cli/src/telemetry.rs     ->  6 usos fuera del propio módulo
+crates/sddk-cli/src/analytics.rs     ->  2 usos fuera del propio módulo
+```
+
+**Ya existe una capa de observabilidad propia, cableada y en uso.** Añadir
+`tracing` sin integrarlo con esto produce dos sistemas de telemetría
+paralelos que no se correlate, que es un problema peor que el actual:
+no es "no observo", pasa a "observo dos veces en formatos que no se
+cruzan".
+
+Por tanto la aceptación de este INC **no** es "meter la dependencia
+`tracing`". Es, en orden de preferencia:
+
+1. Integrar `metrics`/`telemetry` con correlación por `cycle_id` y
+   `capability` (que es lo que el INC pide de verdad: poder correlacionar
+   un fallo con su ciclo), o
+2. Si se elige `tracing`, hacerlo **como fachada** sobre los módulos
+   existentes, no como sistema paralelo.
+
+Decisión de diseño, no de aplicación. Sin owner asignado.
