@@ -2925,3 +2925,89 @@ para correr.
 Publicar `v2.0.6` con el fix, o seguir con
 INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY (el único P1 que queda, que
 necesita trust root decidido).
+
+---
+
+## session-20 — INC-AUDIT-S14: firma cosign, pinning y guards que no se satisfacen a si mismos
+
+**Fecha UTC**: 2026-09-27T21:53Z
+**Baseline**: `ad22e5d` · **HEAD al cerrar**: `aaed465` · **Workspace**: 2.0.7
+**Ultimo release publico**: `v2.0.1` -> `5ce4bca` (sin cambios)
+
+### Que se hizo
+
+Cerrado en codigo `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY`, el unico P1
+abierto. `release.sh` firma con cosign, `install.sh` y `sddk dev update`
+verifican, y ambos rechazan por defecto un artefacto sin firma.
+
+Commits: `3a867ab` (fix), `aaed465` (bump 2.0.6 -> 2.0.7).
+
+### Premisas falsadas
+
+1. **La identidad de firma era inventada.** Escribi
+   `1jehuang/sddk-framework:...` como identidad. Contrastada contra
+   `git remote -v` y `gh release view`, el repo real es
+   `Rubentxu/software-development-decision-kernel`. Con el valor
+   anterior, cada release habria fallado su propio instalador.
+   Corregido, y `identity_names_the_repository_releases_are_published_from`
+   lo ata a `DEFAULT_RELEASE_REPO` para que no vuelva a divergir.
+
+2. **El pinning declaraba mas de lo que hacia.** `SDDK_COSIGN_IDENTITY`
+   decidia identity O issuer segun contuviera `@`. El issuer de GitHub
+   Actions no tiene `@`, asi que se uso como `--certificate-identity` y
+   el issuer quedo sin pinear: se aceptaba cualquier firmante de
+   Sigstore. Separados en dos variables, ambos obligatorios y con default.
+
+3. **Los guards nuevos no detectaban nada.** De 5 falsadores iniciais,
+   3 dejaron el test en verde. Causas: `grep -q verify_signature`
+   contaba la DEFINICION de la funcion, no las llamadas;
+   `grep -q 'cosign sign-blob'` lo satisfacia el texto de ayuda dentro
+   del `die`. Tercera reincidencia del mismo defecto en el repo (ya
+   ocurrio con el check de musl en session-17). Reescritos para contar
+   call sites y para ignorar comentarios. 14 mutaciones falsadoras,
+   14 detectadas.
+
+4. **`warn()` en e2e-install.sh ya estaba sin uso** en el HEAD previo
+   (0 ocurrencias). No lo introdujo este trabajo, pero quedo muerto tras
+   el cambio; eliminado.
+
+5. **Una regresion mia rompio 3 tests de `dev::manifest`.** Los fixtures
+   son tarballs sin firmar y la politica nueva los rechaza. Intentado
+   con env var + `unsafe`, imposible bajo `#![forbid(unsafe_code)]`.
+   Rediseñado: la politica es un parametro explicito
+   (`verify_bundle_signature(.., allow_unsigned)`) y `--allow-unsigned`
+   la expone en el CLI. El requisito original de "dos llaves" se
+   abandono por ser intestable en este crate.
+
+6. **Firma parcial.** `SIGNED_COUNT -eq 0` permitia publicar 1 de 3
+   artefactos firmados. Ahora `-ne "${#SIGN_ARTIFACTS[@]}"`.
+
+### Evidencia
+
+```
+cargo test --workspace  792 passed, 0 failed (sddk-cli lib)
+                      5041+ passed en el resto del workspace
+cargo clippy -D warnings   0 errores
+cargo fmt --check         limpio
+shellcheck                limpio en install.sh, release.sh, e2e-install.sh
+install_asset_contract    all checks passed (12 checks nuevos)
+release_pipeline_consistency / public_gate / state_pointer  exit 0
+```
+
+### Estado honesto
+
+**INC-S14 esta cerrado en codigo, NO en distribucion.** No se ha
+obtenido ninguna firma real: la firma keyless local cae en device flow
+y necesita intervencion humana en navegador. `v2.0.1` sigue siendo
+Latest, sin firmar, y su asset `musl` sigue siendo glibc (INC-021).
+Publicar 2.0.7 con la politica nueva exige signing real en CI o
+`SDDK_SKIP_SIGNING=1` explicito, que dejaria el release instalable solo
+con opt-out.
+
+**Los 5 INCs restantes siguen abiertos.** S14 era el unico P1.
+
+### Primer paso de la sesion siguiente
+
+Firmar un artefacto real de punta a punta (release en CI con
+`id-token: write`, o el binario con clave) antes de publicar 2.0.7. Sin
+una firma verificada, la politica es codigo no ejercitado.
