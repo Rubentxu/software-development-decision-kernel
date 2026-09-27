@@ -7,6 +7,39 @@ use crate::dev::paths::framework_dir;
 use crate::{CliEnvironment, CommandOutput, render_result};
 use std::path::Path;
 
+/// Reject tarball members that would write outside the extraction root.
+///
+/// GNU tar's `--strip-components=1` removes the FIRST path component but
+/// does not neutralise traversal: a member named
+/// `software-development-decision-kernel/../../etc/cron.d/x` strips to
+/// `../../etc/cron.d/x`, which escapes `-C <root>`. Any archive that
+/// reaches this point has already passed the sha256 check, so an
+/// attacker controlling the release origin can already serve an archive
+/// that passes verification — this guard is what stops that from turning
+/// into an arbitrary-write primitive.
+///
+/// Fails closed. The check is deliberately about path *shape* only:
+/// content integrity is the sha256 check's and `verify_manifest`'s job.
+pub(crate) fn ensure_safe_tarball_members(listing: &str) -> anyhow::Result<()> {
+    for member in listing.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if member.starts_with('/') {
+            anyhow::bail!("tarball contains absolute path: {member}");
+        }
+        if member.split('/').any(|c| c == "..") {
+            anyhow::bail!("tarball member escapes target directory: {member}");
+        }
+        if Path::new(member).components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir | std::path::Component::RootDir
+            )
+        }) {
+            anyhow::bail!("tarball member escapes target directory: {member}");
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Result<String> {
     let version = args.version.as_deref().unwrap_or("latest");
     let base_url = match &args.base_url {
@@ -43,12 +76,36 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
         anyhow::bail!("framework sha256 mismatch\n  expected: {expected}\n  actual:   {actual}");
     }
 
+    // Reject any tarball member that would escape `staged_bundle` before
+    // extraction. `--strip-components=1` alone does NOT prevent a hostile
+    // archive from writing outside the target: a member named
+    // `software-development-decision-kernel/../../etc/x` strips to
+    // `../etc/x`. This is a real write primitive, so the archive is
+    // inspected first and extraction is fail-closed on any suspicious
+    // member.
+    {
+        let listing = std::process::Command::new("tar")
+            .args(["tzf", bundle.to_str().unwrap_or_default()])
+            .output()?;
+        if !listing.status.success() {
+            anyhow::bail!("failed to list tarball members (corrupt archive)");
+        }
+        let listing = String::from_utf8(listing.stdout)
+            .map_err(|_| anyhow::anyhow!("tarball member list is not valid UTF-8"))?;
+        ensure_safe_tarball_members(&listing)?;
+    }
+
     let extract = std::process::Command::new("tar")
         .args([
             "xzf",
             bundle.to_str().unwrap_or_default(),
             "-C",
             staged_bundle.to_str().unwrap_or_default(),
+            // Do not let the archive carry ownership or permission bits
+            // into the staged bundle: a hostile tarball could otherwise set
+            // arbitrary modes on the files it writes.
+            "--no-same-owner",
+            "--no-same-permissions",
             // The release tarball wraps every entry under
             // `software-development-decision-kernel/`; strip that prefix so
             // the staged bundle root matches `MANIFEST_FILE`'s expected
@@ -345,6 +402,64 @@ pub(super) fn run_dev_update(
 mod tests {
     use super::*;
     use std::fs;
+
+    // ── tarball member guard (arbitrary-write primitive) ──
+
+    #[test]
+    fn tar_guard_accepts_a_normal_release_listing() {
+        let listing = "software-development-decision-kernel/MANIFEST.sha256\n\
+                       software-development-decision-kernel/agents/\n\
+                       software-development-decision-kernel/skills/sddk-apply/SKILL.md\n";
+        assert!(ensure_safe_tarball_members(listing).is_ok());
+    }
+
+    #[test]
+    fn tar_guard_accepts_dotdot_inside_a_filename() {
+        // `a..b` is a legitimate filename, not a traversal.
+        let listing = "software-development-decision-kernel/docs/a..b.md\n";
+        assert!(ensure_safe_tarball_members(listing).is_ok());
+    }
+
+    #[test]
+    fn tar_guard_rejects_traversal_after_strip_components() {
+        // The exact exploit: strip-components=1 turns this into `../etc/x`.
+        let listing = "software-development-decision-kernel/../../etc/x\n";
+        let err = ensure_safe_tarball_members(listing).unwrap_err();
+        assert!(
+            err.to_string().contains("escapes target directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn tar_guard_rejects_nested_traversal() {
+        let listing = "prefix/a/b/../../../outside\n";
+        assert!(ensure_safe_tarball_members(listing).is_err());
+    }
+
+    #[test]
+    fn tar_guard_rejects_absolute_paths() {
+        let listing = "/etc/cron.d/evil\n";
+        let err = ensure_safe_tarball_members(listing).unwrap_err();
+        assert!(
+            err.to_string().contains("absolute path"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn tar_guard_rejects_when_any_member_is_hostile() {
+        // One bad member poisons the whole archive: fail closed.
+        let listing = "software-development-decision-kernel/ok.md\n\
+                       software-development-decision-kernel/../../evil\n";
+        assert!(ensure_safe_tarball_members(listing).is_err());
+    }
+
+    #[test]
+    fn tar_guard_accepts_empty_listing() {
+        assert!(ensure_safe_tarball_members("").is_ok());
+        assert!(ensure_safe_tarball_members("\n\n  \n").is_ok());
+    }
 
     #[test]
     fn is_bundle_version_dir_accepts_canonical_and_prerelease() {
