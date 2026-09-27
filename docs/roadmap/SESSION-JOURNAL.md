@@ -2681,7 +2681,7 @@ tocar sus aserciones.
 
 ### WorkItem
 
-Ninguno del roadmap. Esta sesión laDedica a **deuda de proceso propia**,
+Ninguno del roadmap. Esta sesión la dedica a **deuda de proceso propia**,
 que es lo que salió al contrastar el puntero de estado antes de elegir
 trabajo.
 
