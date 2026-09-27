@@ -199,6 +199,37 @@ verify_sha256() {
     echo "  sha256 verified: $actual"
 }
 
+# Probe the staged binary for its version.
+#
+# The previous form was:  TMP_VERSION="$("$bin" --version 2>&1 | awk '{print $NF}')"
+# That silently reports garbage when the binary cannot execute (missing
+# loader, wrong libc, bad arch). `awk` then echoes its *input* back, the
+# command substitution "succeeds", and the caller stores a path string as if it
+# were a version — then aborts later with a bare `exit 1` and no message
+# (observed in session-16 against debian:12-slim + a glibc build).
+#
+# Fail loudly and specifically instead: an unrunnable binary is a broken
+# release, and the operator needs to know *why* rather than seeing rc=1.
+probe_binary_version() {
+    local bin="$1" out
+    if ! out="$("$bin" --version 2>&1)"; then
+        echo "error: staged binary could not be executed" >&2
+        echo "  binary: $bin" >&2
+        echo "  output: $out" >&2
+        echo "  this usually means the asset was built against a different libc" >&2
+        echo "  than the host (glibc vs musl) or a different architecture" >&2
+        exit 1
+    fi
+    # Require a plausible semver token; reject awk's input-echo behaviour.
+    if ! printf '%s' "$out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+        echo "error: staged binary reported no recognisable version" >&2
+        echo "  binary: $bin" >&2
+        echo "  output: $out" >&2
+        exit 1
+    fi
+    printf '%s' "$out" | awk '{print $NF}'
+}
+
 # ── Stage 1: download unified tarball OR legacy split assets ────────────────
 CURRENT_STEP="download"
 
@@ -231,11 +262,17 @@ if [ "$RESOLVED_VERSION" != "latest" ] && \
    download_optional "$(release_url "$UNIFIED_TARBALL")" "$TMP_DIR/$UNIFIED_TARBALL"; then
     # Unified artifact path (cycle-46 capa 3): a single tarball containing
     # bin/, framework/, BUNDLE.toml, INSTALL.toml.
-    if download_optional "$(release_url "$UNIFIED_TARBALL.sha256")" "$TMP_DIR/$UNIFIED_TARBALL.sha256"; then
-        verify_sha256 "$TMP_DIR/$UNIFIED_TARBALL" "$TMP_DIR/$UNIFIED_TARBALL.sha256"
-    else
-        echo "  warning: $UNIFIED_TARBALL.sha256 missing; skipping checksum verification"
+    # Fail closed: an artifact whose checksum is unavailable is an unverified
+    # payload. Silently continuing (session-15/16 audit) was an integrity
+    # downgrade that also hid upstream publishing gaps — the whole reason the
+    # broken asset name went unnoticed. A release that omits the .sha256 is a
+    # broken release, not a tolerated condition.
+    if ! download_optional "$(release_url "$UNIFIED_TARBALL.sha256")" "$TMP_DIR/$UNIFIED_TARBALL.sha256"; then
+        echo "error: $UNIFIED_TARBALL.sha256 missing — refusing to install an unverified artifact" >&2
+        echo "  the release is incomplete; report it rather than falling back to no integrity check" >&2
+        exit 1
     fi
+    verify_sha256 "$TMP_DIR/$UNIFIED_TARBALL" "$TMP_DIR/$UNIFIED_TARBALL.sha256"
     echo "  using unified artifact: $UNIFIED_TARBALL"
     # Stage: extract to a directory mirroring the prefix + framework layout.
     STAGE_ROOT="$TMP_DIR/unified-stage"
@@ -255,17 +292,24 @@ if [ "$RESOLVED_VERSION" != "latest" ] && \
         echo "error: unified tarball does not contain framework/" >&2
         exit 1
     fi
-    TMP_VERSION="$("$STAGE_BIN" --version 2>&1 | awk '{print $NF}')"
+    TMP_VERSION="$(probe_binary_version "$STAGE_BIN")"
     echo "  binary reports version: $TMP_VERSION"
 else
     # Legacy split-asset path (pre-cycle-46): separate binary + bundle.
+    #
+    # Asset-name contract (session-16): the release publishes the bare binary
+    # as `sddk` (basename of the built binary), NOT as `sddk-<os>-<arch>-musl`.
+    # `$ASSET` is only a component of the *unified tarball* name
+    # (`sddk-${VERSION}-${ASSET}.tar.gz`); it was never a published asset on its
+    # own. Requesting it here returned HTTP 404 and aborted the install before
+    # anything was linked, for every user without `gh` on PATH.
     echo "  using legacy split assets (binary + bundle)"
     CURRENT_STEP="download-binary"
-    download "$(release_url "$ASSET")" "$TMP_DIR/sddk"
-    download "$(release_url "$ASSET.sha256")" "$TMP_DIR/sddk.sha256"
+    download "$(release_url "sddk")" "$TMP_DIR/sddk"
+    download "$(release_url "sddk.sha256")" "$TMP_DIR/sddk.sha256"
     verify_sha256 "$TMP_DIR/sddk" "$TMP_DIR/sddk.sha256"
     chmod 0755 "$TMP_DIR/sddk"
-    TMP_VERSION="$("$TMP_DIR/sddk" --version 2>&1 | awk '{print $NF}')"
+    TMP_VERSION="$(probe_binary_version "$TMP_DIR/sddk")"
     echo "  binary reports version: $TMP_VERSION"
 
     CURRENT_STEP="download-bundle"
