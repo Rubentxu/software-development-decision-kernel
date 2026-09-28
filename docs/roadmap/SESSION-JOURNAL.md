@@ -4618,7 +4618,7 @@ definitiva que luego hay que revertir.
 
 ### Correccion: publicar 2.2.0 NO lleva el doble bump (session-29)
 
-En el mensaje de cierre de session-29 seurekcomendo "2.2.1 porque 2.2.0 se
+En el mensaje de cierre de session-29 se recomendo "2.2.1 porque 2.2.0 se
 publicaria con el doble bump". **Es falso**, y el error estaba en la
 premisa, no en el numero.
 
@@ -4652,7 +4652,7 @@ solo seria necesario si el operador hubiera publicado 2.2.0 antes de que
 existieran los fixes, y no es el caso.
 
 Lo que si queda real es el bloqueo tecnico: el pre-push hook exige un cambio
-de `[workspace.package] version` en el rango para_range con rutas de
+de `[workspace.package] version` en el rango para un range con rutas de
 codigo, y 2.2.0 ya fue declarado en `a9da3104`, que no esta en este rango.
 Ese es el punto que decide el operador: **bump real a 2.2.1 aunque 2.2.0
 nunca se publico**, o una excepcion de hook. La decision sigue siendo suya;
