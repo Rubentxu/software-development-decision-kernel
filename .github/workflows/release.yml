@@ -67,18 +67,26 @@ jobs:
 
       - name: Stage assets
         run: |
-          mkdir -p assets
-          cp dist-out/dist/sddk "assets/${{ matrix.asset }}"
-          cp dist-out/dist/sbom.json "assets/${{ matrix.asset }}.sbom.json"
-          cp dist-out/dist/attestation.json "assets/${{ matrix.asset }}.attestation.json"
-          cp dist-out/dist/checksums.txt "assets/${{ matrix.asset }}.CHECKSUMS"
-          (cd assets && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
+          # NOT `assets/`: that directory is part of the framework bundle
+          # (17 versioned files, 55 entries in MANIFEST.sha256). Staging there
+          # made `assets/*` glob the repo's own bundle surface into the
+          # release — observed on v2.2.6, which shipped `agent-models.yaml`
+          # (a bundle file) and then died on `assets/agent-models: is a
+          # directory` when `gh release upload` walked the subdirectory.
+          # (INC-DEBT-034)
+          STAGE="dist-out/release-assets"
+          mkdir -p "$STAGE"
+          cp dist-out/dist/sddk "$STAGE/${{ matrix.asset }}"
+          cp dist-out/dist/sbom.json "$STAGE/${{ matrix.asset }}.sbom.json"
+          cp dist-out/dist/attestation.json "$STAGE/${{ matrix.asset }}.attestation.json"
+          cp dist-out/dist/checksums.txt "$STAGE/${{ matrix.asset }}.CHECKSUMS"
+          (cd "$STAGE" && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
 
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.asset }}
-          path: assets/*
+          path: dist-out/release-assets/*
           if-no-files-found: error
 
       - name: Publish to GitHub Releases
@@ -89,7 +97,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             gh release create "$TAG" --generate-notes --title "$TAG" \
               --repo "${{ github.repository }}" || true
-            gh release upload "$TAG" assets/* --clobber --repo "${{ github.repository }}"
+            gh release upload "$TAG" dist-out/release-assets/* --clobber --repo "${{ github.repository }}"
           else
             echo "manual run (no tag): assets staged in workflow artifacts"
           fi
@@ -282,7 +290,12 @@ jobs:
             echo "manual run (no tag): signing skipped"
             exit 0
           fi
-          for f in assets/*; do
+          # Sign only the staged release assets. `assets/*` here would walk
+          # the repo's own bundle surface (assets/agent-models.yaml and its
+          # subdirectories) and sign files that are not release assets —
+          # the same collision that broke the publish step on v2.2.6.
+          # (INC-DEBT-034)
+          for f in dist-out/release-assets/*; do
             [ -f "$f" ] || continue
             case "$f" in
               *.sig|*.pem) continue ;;
@@ -292,7 +305,7 @@ jobs:
               --output-certificate "$f.pem"
             echo "signed: $f"
           done
-          gh release upload "$TAG" assets/*.sig assets/*.pem --clobber --repo "${{ github.repository }}"
+          gh release upload "$TAG" dist-out/release-assets/*.sig dist-out/release-assets/*.pem --clobber --repo "${{ github.repository }}"
 
   smoke-test:
     name: Smoke test installer (end-to-end)
