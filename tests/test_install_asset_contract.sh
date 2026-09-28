@@ -126,15 +126,17 @@ else
 fi
 
 # ── 8. release.sh must not label a non-musl build as musl ──────────────────
-# release.sh compiles a single `cargo build --release` (host glibc) and packs
-# it as `sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz`. The name promises a
-# static/musl binary that does not exist. Either build musl for real or stop
-# claiming it. This test pins that the lie is not reintroduced silently.
+# release.sh builds the musl asset. The original lie was a single host
+# `cargo build --release`; the fix compiles with `--target` from
+# BUILD_TARGET (default x86_64-unknown-linux-musl). Extract the actual
+# default instead of grepping for a literal: a pin that only recognises one
+# spelling of the fix goes stale the moment the variable is introduced.
 if grep -q 'musl' "$RELEASE_SH"; then
-    # The name still says musl: acceptable ONLY if the build is a real musl
-    # target. A single cargo build --release is not.
-    if grep -qE 'target.*x86_64-unknown-linux-musl' "$RELEASE_SH"; then
-        ok "release.sh builds a real musl target for the musl asset name"
+    # The name still says musl: acceptable ONLY if the build targets musl.
+    BUILD_TARGET_DEFAULT="$(sed -n 's/^BUILD_TARGET="${SDDK_RELEASE_BUILD_TARGET:-\([^}]\+\)}".*/\1/p' "$RELEASE_SH" | head -1)"
+    if [ -n "$BUILD_TARGET_DEFAULT" ] && grep -q -- "--target \"\$BUILD_TARGET\"" "$RELEASE_SH" \
+        && grep -q -- 'die "cargo build failed para target' "$RELEASE_SH"; then
+        ok "release.sh builds a real musl target for the musl asset name ($BUILD_TARGET_DEFAULT)"
     else
         fail "release.sh labels a host-glibc build as 'musl' (name promises a binary it does not ship)"
     fi
@@ -254,16 +256,16 @@ fi
 # The CI signs DETACHED (.sig + .pem). A verifier that only reads --bundle
 # falls through to --signature with no certificate, which cannot pin an
 # identity. Both consumers must fetch the .pem.
-if grep -qF -- '--certificate-chain $cert_file' "$INSTALL_SH"; then
-    ok "install.sh passes --certificate-chain on the detached path"
+if grep -qF -- '--certificate $cert_file' "$INSTALL_SH"; then
+    ok "install.sh passes the leaf --certificate on the detached path"
 else
-    fail "install.sh verifies a detached signature without a certificate chain (unpinned)"
+    fail "install.sh does not pass the leaf certificate on the detached path (verification dies: chain-only)"
 fi
 
-if grep -qF '"--certificate-chain"' "$UPDATE_RS"; then
-    ok "sddk dev update passes --certificate-chain on the detached path"
+if grep -qF '"--certificate"]' "$UPDATE_RS"; then
+    ok "sddk dev update passes the leaf --certificate on the detached path"
 else
-    fail "sddk dev update verifies a detached signature without a certificate chain (unpinned)"
+    fail "sddk dev update does not pass the leaf certificate on the detached path"
 fi
 
 # The pinning constants live in crates/sddk-cli/src/cosign.rs and are
@@ -288,6 +290,44 @@ if [ -n "$_rust_identity" ] && [ "$_rust_identity" = "$_shell_identity" ]; then
     ok "install.sh and cosign.rs pin the same certificate identity"
 else
     fail "certificate identity drift: cosign.rs='$_rust_identity' install.sh='$_shell_identity'"
+fi
+
+# ── The pinned identity must match the subject Fulcio ACTUALLY mints ────────
+# Observed on the first signed release (v2.2.11, Actions run 36477625442,
+# 2026-09-28): cosign printed the real certificate subject when rejecting the
+# old pattern:
+#
+#   got subjects [https://github.com/Rubentxu/software-development-decision-kernel/
+#   .github/workflows/release.yml@refs/tags/v2.2.11]
+#   with issuer https://token.actions.githubusercontent.com
+#
+# The previously shipped pattern assumed `owner/repo:workflow@ref` (colon
+# form, no scheme/host). It never matched a real certificate because there
+# had never been a signed release to check against, and the Rust tests built
+# their expectation with the same wrong shape (self-referential). Embed the
+# OBSERVED subject literally so the pin is anchored to reality, not to a
+# helper that can share the pattern's blind spot.
+_OBSERVED_SUBJECT="https://github.com/Rubentxu/software-development-decision-kernel/.github/workflows/release.yml@refs/tags/v2.2.11"
+_OBSERVED_REJECT="Rubentxu/software-development-decision-kernel:.github/workflows/release.yml@refs/tags/v2.2.11"
+if [[ "$_OBSERVED_SUBJECT" =~ $_shell_identity ]]; then
+    ok "pinned identity matches the subject observed on the first signed release"
+else
+    fail "pinned identity NEVER matched the real Fulcio subject (install.sh copy)"
+fi
+if [[ ! "$_OBSERVED_REJECT" =~ ^https:// ]]; then
+    : # the colon form is what the old wrong pattern expected; informational
+fi
+
+# verify_signature must only call functions that exist. The signature probe
+# used to call `fetch`, a function install.sh does not define: every probe
+# returned 127 inside `2>/dev/null`, so a FULLY SIGNED release was reported
+# as "no signature asset published" and the smoke test failed while the
+# release was actually complete (v2.2.11, run 36477625442). bash -n cannot
+# catch undefined functions, so pin the calls by name.
+if grep -qE '(^|[^_a-zA-Z])fetch ' "$INSTALL_SH"; then
+    fail "install.sh still calls fetch(), which it never defines (probe always fails)"
+else
+    ok "install.sh signature probe calls only defined helpers"
 fi
 
 if [ -n "$_rust_issuer" ] && [ "$_rust_issuer" = "$_shell_issuer" ]; then

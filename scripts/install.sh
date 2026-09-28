@@ -232,25 +232,28 @@ verify_signature() {
     # cosign emits with --bundle, and what `release.sh` produces locally.
     # Both are accepted; the certificate file is required in the detached
     # case for the reason in the flag below.
-    if ! fetch "$bundle_file" "$sig_url.bundle.json" 2>/dev/null; then
-        if ! fetch "$sig_file" "$sig_url.sig" 2>/dev/null; then
+    if ! download_optional "$sig_url.bundle.json" "$bundle_file"; then
+        if ! download_optional "$sig_url.sig" "$sig_file"; then
             _signature_absent "no signature asset published" "$label"
             return $?
         fi
-        # The detached form needs the certificate chain explicitly.
+        # The detached form needs the leaf certificate explicitly.
         # `cosign verify-blob --signature` alone validates the signature
         # against whatever certificate cosign decides to trust, which is
-        # the unpinned path this whole policy exists to close. Without
-        # --certificate-chain the --certificate-identity pin below has
-        # nothing to match, so the check would look strict and be weak.
-        fetch "$cert_file" "$sig_url.pem" 2>/dev/null || true
+        # the unpinned path this whole policy exists to close. Observed on
+        # cosign v3.1.3 (first signed release, v2.2.11): `--certificate-chain`
+        # carries ONLY the chain and cosign aborts with "provide a key … a
+        # certificate to verify against with --certificate, or a bundle" —
+        # the leaf must come via --certificate. That flag is what makes the
+        # identity/issuer pins below actually match something.
+        download_optional "$sig_url.pem" "$cert_file" || true
     fi
 
     local args
     if [ -s "$bundle_file" ]; then
         args="verify-blob --bundle $bundle_file"
     elif [ -s "$cert_file" ]; then
-        args="verify-blob --signature $sig_file --certificate-chain $cert_file"
+        args="verify-blob --signature $sig_file --certificate $cert_file"
     else
         # A detached signature with no certificate cannot be pinned. Refuse
         # rather than accept an unpinned verification, which would report
@@ -274,7 +277,7 @@ verify_signature() {
     # tests/test_install_asset_contract.sh asserts that, so drift between the
     # Rust and bash copies fails the suite instead of shipping a release only
     # one of them trusts.
-    local cert_identity="${SDDK_COSIGN_IDENTITY:-^Rubentxu/software-development-decision-kernel:\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$}"
+    local cert_identity="${SDDK_COSIGN_IDENTITY:-^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$}"
     local cert_issuer="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
 
     if [ -z "$cert_identity" ] || [ -z "$cert_issuer" ]; then
