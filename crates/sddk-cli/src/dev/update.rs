@@ -237,6 +237,38 @@ pub(crate) fn ensure_safe_tarball_members(listing: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Detect whether the archive members share a single top-level directory
+/// (the wrapped layout `software-development-decision-kernel/...` promised
+/// by AGENTS.md §8 step 5) or sit at the archive root (the layout the CI
+/// bundle job has actually shipped: `agents/`, `skills/`, `prompts/`,
+/// `assets/`, `MANIFEST.sha256`, observed on v2.2.17 run 36492642837 where
+/// a blind `--strip-components=1` swallowed `MANIFEST.sha256` and flattened
+/// `agents/*.md` to the root, failing the manifest check).
+///
+/// Wrapped = every non-empty member contains a separator AND its first
+/// component is the same for all members AND at least one member sits
+/// BELOW that component (so stripping it does not flatten the tree).
+fn tarball_wraps_all_members_under_one_dir(listing: &str) -> bool {
+    let mut wrapper: Option<&str> = None;
+    let mut any_nested = false;
+    for member in listing.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let Some((first, rest)) = member.split_once('/') else {
+            // A member with no separator at the archive root (e.g.
+            // `MANIFEST.sha256`) can never coexist with a wrapper layout.
+            return false;
+        };
+        if !rest.is_empty() {
+            any_nested = true;
+        }
+        match wrapper {
+            None => wrapper = Some(first),
+            Some(w) if w != first => return false,
+            _ => {}
+        }
+    }
+    wrapper.is_some() && any_nested
+}
+
 pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Result<String> {
     let version = args.version.as_deref().unwrap_or("latest");
     let base_url = match &args.base_url {
@@ -299,7 +331,10 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
     // `software-development-decision-kernel/../../etc/x` strips to
     // `../etc/x`. This is a real write primitive, so the archive is
     // inspected first and extraction is fail-closed on any suspicious
-    // member.
+    // member. Layout detection (wrapped vs root-level) also runs on the
+    // listing: the strip is applied only when a single wrapper directory
+    // actually exists.
+    let strip_components;
     {
         let listing = std::process::Command::new("tar")
             .args(["tzf", bundle.to_str().unwrap_or_default()])
@@ -310,27 +345,32 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
         let listing = String::from_utf8(listing.stdout)
             .map_err(|_| anyhow::anyhow!("tarball member list is not valid UTF-8"))?;
         ensure_safe_tarball_members(&listing)?;
+        strip_components = tarball_wraps_all_members_under_one_dir(&listing);
     }
 
-    let extract = std::process::Command::new("tar")
-        .args([
-            "xzf",
-            bundle.to_str().unwrap_or_default(),
-            "-C",
-            staged_bundle.to_str().unwrap_or_default(),
-            // Do not let the archive carry ownership or permission bits
-            // into the staged bundle: a hostile tarball could otherwise set
-            // arbitrary modes on the files it writes.
-            "--no-same-owner",
-            "--no-same-permissions",
-            // The release tarball wraps every entry under
-            // `software-development-decision-kernel/`; strip that prefix so
-            // the staged bundle root matches `MANIFEST_FILE`'s expected
-            // location. This is the legacy split-asset path; the unified
-            // artifact path used by install.sh extracts to bin/ + framework/.
-            "--strip-components=1",
-        ])
-        .output()?;
+    let mut tar_args: Vec<&std::ffi::OsStr> = vec![
+        "xzf".as_ref(),
+        bundle.as_os_str(),
+        "-C".as_ref(),
+        staged_bundle.as_os_str(),
+        // Do not let the archive carry ownership or permission bits
+        // into the staged bundle: a hostile tarball could otherwise set
+        // arbitrary modes on the files it writes.
+        "--no-same-owner".as_ref(),
+        "--no-same-permissions".as_ref(),
+    ];
+    if strip_components {
+        // The wrapped release tarball puts every entry under
+        // `software-development-decision-kernel/`; strip that wrapper so
+        // the staged bundle root matches `MANIFEST_FILE`'s expected
+        // location. The CI bundle job has also shipped a ROOT-LEVEL
+        // layout (`agents/`, `MANIFEST.sha256`, ... observed v2.2.17);
+        // stripping there DELETED the manifest and flattened the tree,
+        // so the wrapper is detected from the member listing and the
+        // strip is applied only when it actually exists.
+        tar_args.push("--strip-components=1".as_ref());
+    }
+    let extract = std::process::Command::new("tar").args(&tar_args).output()?;
     if !extract.status.success() {
         anyhow::bail!(
             "extract failed: {}",
@@ -949,6 +989,71 @@ mod tests {
         let listing = "software-development-decision-kernel/ok.md\n\
                        software-development-decision-kernel/../../evil\n";
         assert!(ensure_safe_tarball_members(listing).is_err());
+    }
+
+    // ── tarball layout detection (INC: v2.2.17 run 36492642837) ──
+    //
+    // Observed failure: the CI bundle job ships a ROOT-LEVEL tarball
+    // (`agents/`, `skills/`, `prompts/sddk/`, `assets/`, `MANIFEST.sha256`),
+    // but update_bundle stripped one component unconditionally. That
+    // DELETED MANIFEST.sha256 (single component) and flattened
+    // `agents/x.md` to the root, so the post-extract manifest check bailed
+    // with "bundle is missing required MANIFEST.sha256".
+
+    #[test]
+    fn root_level_ci_layout_is_not_detected_as_wrapped() {
+        // The exact v2.2.17 layout (top-level components observed via
+        // `tar tzf` on the published asset).
+        let listing = "agents/\n\
+                       skills/\n\
+                       prompts/sddk/\n\
+                       assets/\n\
+                       MANIFEST.sha256\n";
+        assert!(
+            !tarball_wraps_all_members_under_one_dir(listing),
+            "the CI root-level layout must NOT be treated as wrapped: \
+             stripping would delete MANIFEST.sha256"
+        );
+    }
+
+    #[test]
+    fn wrapped_layout_is_detected() {
+        // The documented AGENTS.md §8 shape: single wrapper dir.
+        let listing = "software-development-decision-kernel/MANIFEST.sha256\n\
+                       software-development-decision-kernel/agents/orchestrator.md\n";
+        assert!(tarball_wraps_all_members_under_one_dir(listing));
+    }
+
+    #[test]
+    fn multiple_top_level_dirs_are_not_wrapped() {
+        // Two different first components: no single wrapper exists.
+        let listing = "software-development-decision-kernel/agents/a.md\n\
+                       other/b.md\n";
+        assert!(!tarball_wraps_all_members_under_one_dir(listing));
+    }
+
+    #[test]
+    fn wrapper_dir_without_nested_members_is_not_wrapped() {
+        // Every member IS under one dir, but all are bare directory
+        // entries (no member below it). Stripping would flatten whatever
+        // lives in those dirs' first level only; treat as root-level so
+        // nothing is deleted.
+        let listing = "agents/\n";
+        assert!(!tarball_wraps_all_members_under_one_dir(listing));
+    }
+
+    #[test]
+    fn strip_components_flag_follows_detection() {
+        // Mutation guard for the wiring: with the ROOT-LEVEL layout the
+        // extraction must NOT carry --strip-components; with the WRAPPED
+        // layout it must. Pinned at the decision level (what the tar_args
+        // builder consumes) because invoking real tar in a unit test would
+        // re-test GNU tar, not our decision.
+        let root_level = "agents/\nMANIFEST.sha256\n";
+        let wrapped = "software-development-decision-kernel/MANIFEST.sha256\n\
+                       software-development-decision-kernel/agents/a.md\n";
+        assert!(!tarball_wraps_all_members_under_one_dir(root_level));
+        assert!(tarball_wraps_all_members_under_one_dir(wrapped));
     }
 
     #[test]
