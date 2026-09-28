@@ -4178,3 +4178,72 @@ el siguiente bloque es **publicar** 2.1.1, que es la unica via que puede
 cerrar `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` en distribucion. Es
 irreversible y requiere la firma keyless desde Actions
 (`gh workflow run release-automation.yml`).
+
+### Resultado observado del dry-run (session-27, sin adornos)
+
+El `--dry-run` completo llego hasta el **paso 3 de 14** y ahi se detuvo por
+entorno, no por codigo:
+
+```text
+✓ on main, clean tree, release admission: ACCEPT last-publish=2.0.1 -> 2.1.1
+✓ workspace green
+✓ shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)
+✓ shell test: test_push_prevention_hook.sh
+✓ shell test: test_release_admission.sh
+✓ shell test: test_release_receipt_authority.sh
+✓ shell test: test_authority_helper_lockstep.sh
+✓ shell test: test_adr_promotion_format.sh
+✓ shell test: test_advisory_lint_explanations.sh
+✓ shell test: test_deny_lint_zero_hits.sh
+✓ shell test: test_vault_adr_mirror_coverage.sh
+✓ shell test: test_release_tag_anchoring.sh
+==> 1c/14 — sync HEAD to origin/main
+==> 1d/14 — EXT auto-activation
+==> 3/14 — cargo build --release --bin sddk
+✗ cargo build failed para target x86_64-unknown-linux-musl
+  error occurred in cc-rs: failed to find tool "x86_64-linux-musl-gcc"
+EXIT=1
+```
+
+**La admision, que es lo que esta sesion arreglaba, pasa:**
+`ACCEPT last-publish=2.0.1 -> 2.1.1`. El gate que rechazaba el release
+valido ahora lo acepta, y sigue rechazando lo que debe (matriz 24/0).
+
+**Perfil completo: 5057 passed / 0 failed / 19 ignored**, identico al
+baseline de session-25. El bump a 2.1.1 no altero nada.
+
+### BLOQUEANTE session-27 — toolchain musl ausente (NOT_RUN, no NOT_EVALUATED)
+
+`x86_64-linux-musl-gcc` no esta instalado y el paquete `musl` no esta en el
+sistema. El paso 3 de `release.sh` construye el binario **musl estatico**,
+que es uno de los assets del contrato de 9. Sin el, el dry-run no puede
+pasar de 3/14 y **no se puede publicar**.
+
+Esto no es un defecto del codigo ni una decision pendiente: es una
+dependencia de toolchain ausente en esta maquina. Clasificado honestamente
+`NOT_RUN` (no `NOT_EVALUATED`: no se intento Evaluating nada, no se pudo
+construir).
+
+Lo que hace falta antes de cualquier intento de publicacion:
+
+```bash
+# Arch/Fedora:  sudo pacman -S musl
+# Debian/Ubuntu: sudo apt install musl-tools
+```
+
+Una vez instalado, re-ejecutar `bash scripts/release.sh --dry-run` y leer el
+log hasta el paso 8.
+
+**Lo que NO se ha verificado en esta sesion, y no se declara verde:** los
+pasos 3 a 8 (build musl, manifest, bundle tarball, BUNDLE.toml v2, unified
+tarball, sha256/CHECKSUMS/sbom). Ninguno se ha ejecutado. La afirmacion
+"el release esta listo" seria falsa hoy.
+
+### Estado final de session-27
+
+- `HEAD == origin/main == 473cf2f`. Arbol limpio.
+- Workspace **`2.1.1`**, sin publicar. Ultimo tag publico **`v2.0.1`**.
+- Commits: `241ada6` (reconciliacion del puntero), `a716953` (fix de
+  admision v2), `9a642e7` (bump 2.1.1), `473cf2f` (cierre documental).
+- Deuda abierta: **7 INCs** (los 6 previos +
+  `INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED`, nuevo en esta sesion).
