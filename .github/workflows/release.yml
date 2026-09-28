@@ -154,6 +154,21 @@ jobs:
           test -f "$BIN_FILE" || { echo "missing binary $BIN_FILE"; exit 1; }
           chmod 0755 "$BIN_FILE"
 
+          # BUNDLE.toml needs the version. The target binary itself CANNOT be
+          # executed here: on the three non-x86_64 targets it is a foreign
+          # ELF/Mach-O and running it on the x86_64 runner is `Exec format
+          # error`, exit 126 — all three unified jobs of the v2.2.9 run
+          # (36473855952) died exactly there and the sign/publish/smoke chain
+          # was skipped. Every unified job downloads the x86_64 binary too,
+          # and the x86_64 runner executes it, so the version comes from that
+          # one. Fail closed if it is unreadable rather than write a
+          # BUNDLE.toml with an empty version (a bundle the installer would
+          # reject anyway, but published and signed).
+          test -f downloads/sddk-linux-x86_64-musl || { echo "missing x86_64 binary for version probe"; exit 1; }
+          BINARY_VERSION="$(./downloads/sddk-linux-x86_64-musl --version 2>&1 | awk '{print $NF}')"
+          echo "  binary version: $BINARY_VERSION"
+          [ -n "$BINARY_VERSION" ] || { echo "BINARY_VERSION is empty — x86_64 binary did not report a version"; exit 1; }
+
           # Locate the framework bundle.
           BUNDLE="downloads/software-development-decision-kernel.tar.gz"
           test -f "$BUNDLE" || { echo "missing bundle $BUNDLE"; exit 1; }
@@ -171,9 +186,7 @@ jobs:
           mkdir -p "$WORK/bin"
           cp "$BIN_FILE" "$WORK/bin/sddk"
 
-          # Bundle version: read from the binary itself.
-          BINARY_VERSION="$("$WORK/bin/sddk" --version 2>&1 | awk '{print $NF}')"
-          echo "  binary version: $BINARY_VERSION"
+          # Bundle version: derived above from the runnable x86_64 binary.
 
           # Generate BUNDLE.toml from the bundle (manifest sha256 already
           # in MANIFEST.sha256; we record its hash here so install.sh

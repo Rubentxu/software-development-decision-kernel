@@ -92,6 +92,25 @@ for target in sddk-linux-x86_64-musl sddk-linux-aarch64-musl sddk-darwin-arm64 s
     fi
 done
 
+# The unified job must NOT execute the target binary to read its version.
+# Observed on the v2.2.9 run (36473855952): the three non-x86_64 unified
+# jobs ran `"$WORK/bin/sddk" --version` on a Mach-O/ELF aarch64 binary on
+# an x86_64 runner — `Exec format error`, exit 126, all three failed, and
+# the sign/publish/smoke chain was skipped. The x86_64 binary is already
+# downloaded into the same `downloads/` dir, so the version must come from
+# the one binary the runner can actually execute, guarded fail-closed.
+if printf '%s\n' "$UNIFIED" | grep -qE '\$\{?WORK\}?/bin/sddk"? +--version|bin/sddk" +--version'; then
+    fail "unified job executes the target binary on the runner (exit 126 on non-x86_64)"
+else
+    ok "unified job never executes the foreign-arch target binary"
+fi
+if printf '%s\n' "$UNIFIED" | grep -Fq 'downloads/sddk-linux-x86_64-musl --version' \
+    && printf '%s\n' "$UNIFIED" | grep -Fq 'BINARY_VERSION is empty'; then
+    ok "unified job derives the version from the runnable x86_64 binary, fail-closed"
+else
+    fail "unified job lacks the x86_64-derived version with an empty-version guard"
+fi
+
 # Exactly one publication point, after sign; smoke runs only after publish.
 PUBLISH_CALLS="$(grep -vE '^[[:space:]]*#' "$WF" | grep -cE 'gh release (create|upload)')"
 if [ "$PUBLISH_CALLS" -eq 2 ] \
