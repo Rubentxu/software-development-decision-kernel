@@ -4086,3 +4086,95 @@ streams `authority-gate_receipts` / `authority-cycle_state` /
 validar los pasos 0-8 sin publicar nada. Si el dry-run pasa, decidir con el
 operador si se autoriza el release real, que es el unico camino que puede
 cerrar `INC-AUDIT-S14`.
+
+## session-27 — 2026-09-28T09:40Z — la admision de release rechazaba un release valido
+
+WorkItem: gate de admision de release (`scripts/release.sh` +
+`scripts/lib/release_admission.sh`).
+
+### El defecto
+
+`bash scripts/release.sh --dry-run` rechazo el release con:
+
+```text
+release admission refused: REJECT non-monotonic 2.1.0 -> 2.1.0
+```
+
+Causa, no era un problema de version. `release.sh:171` llamaba a
+`release_admission_check` sin fijar modo, lo que rutea a **v1**, que compara
+**HEAD contra HEAD^**. El commit de bump vive legitimamente N commits atras de
+HEAD, porque los commits de docs, journal y puntero se landean despues por
+convencion del propio repo (asi lo exige la clausula (B) del hook
+`pre-push`). Con v1, HEAD y HEAD^ llevan la misma version, el gate ve un
+empate y rechaza un release perfectamente valido.
+
+**El defecto ya estaba escrito.** La cabecera de
+`scripts/lib/release_admission.sh:15-19` dice literalmente *"Fails when a
+docs-only commit follows a bump"*, y existia una variante **v2** correcta y
+probada que compara contra el maximo tag publicado. La ruta que publica
+**nunca la elegia**: v2 era opt-in tras una env var que nadie ponia. Sigo
+latente 7 sesiones porque solo se manifiesta cuando un release viene
+realmente due — que es exactamente cuando ya no queda margen para iterar.
+
+### Correccion
+
+`release.sh` invoca `release_admission_check_v2` directamente. v2 falla
+**cerrado** ante remote inaccesible (`REJECT query-failed`) en vez de degradar
+a la comparacion con HEAD^.
+
+### Falsificacion
+
+3 checks permanentes anadidos a `tests/test_release_admission.sh`, cada uno
+con su mutacion:
+
+| Mutacion | Checks que fallan |
+|---|---|
+| volver a `release_admission_check HEAD` (el defecto original) | 2 |
+| `die` -> `warn` en el rechazo | 1 |
+
+Matriz: **24 passed / 0 failed** (22 antes). `shellcheck -S error` limpio.
+
+**Correccion de una afirmacion mia que era falsa:** dije que el script salia
+con exit 0 al rechazar. Falso: el check `[ABORT]` resulto verde **sin tocar
+codigo**, porque `die` ya estaba en su sitio. El exit 0 que veia era del
+wrapper de invocacion en background, no de `release.sh`. El script aborta
+correctamente.
+
+### Estado de la sesion
+
+- Reconciliado el puntero de estado: el guard `test_release_state_pointer.sh`
+  daba FAIL por 4 commits de retraso (tolerancia 3). **Tercera** repeticion
+  del patron de session-18/22. Reconciliacion mecanica via
+  `scripts/reconcile_state_pointer.sh`, que preserva la nota de evidencia.
+- Bump `2.1.0 -> 2.1.1` producido por `scripts/release-bump.sh
+  --force-version 2.1.1`, no elegido a mano. `Cargo.lock` alineado en los 8
+  crates de sddk. (`rustc-hash 2.1.3` es dependencia de terceros, no version
+  del workspace: lo verifique antes de asumir corrupcion.)
+- **2.1.0 nunca fue tag ni release** — solo existio en el workspace. Publicar
+  2.1.1 no salta ninguna version publica. Ultimo tag publicado: `v2.0.1`.
+- Commits: `241ada6` (reconciliacion), `a716953` (fix), `9a642e7` (bump).
+- Adopcion real: `sddk adopt status` devuelve **`status: complete`**. Mi
+  PRE-FLIGHT de la sesion anterior decia "no adoptado" y era **falso**.
+- **6 INCs abiertos**, no uno: `SUPPLY-CHAIN-AUTHENTICITY`
+  (code-closed/distribution-open), `NO-STRUCTURED-LOGGING` (medium),
+  `TEST-PORTS-UNCONSUMED` (medium), y tres `low`. La nota de session-25 ("el
+  unico INC abierto") era de alcance mas estrecho.
+
+### Conocimiento negativo
+
+- El gate v1 no se borro: sigue existiendo y probado. Cambiar el default no
+  es eliminar la variante para un caso concreto. Se documento el por que en
+  el propio `release.sh`.
+- El fallo de admision tiene una clase general: **gates escritos, probados en
+  aislamiento y nunca conectados al punto donde se ejecutan**. La suite de
+  admission probaba v1 y v2 con 22 checks y aun asi el publishing path
+  usaba la variante equivocada. Merece un guard que verifique la *conexion*,
+  no solo las funciones. Este commit anade los 3 checks que faltaban.
+
+### Primer paso preciso de la sesion siguiente
+
+Leer `$JCODE_SCRATCH_DIR/dryrun.log` hasta el paso 8. Si el dry-run pasa,
+el siguiente bloque es **publicar** 2.1.1, que es la unica via que puede
+cerrar `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` en distribucion. Es
+irreversible y requiere la firma keyless desde Actions
+(`gh workflow run release-automation.yml`).

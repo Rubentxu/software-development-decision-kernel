@@ -1,6 +1,18 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-25 cierre, 2026-09-28T09:00Z):** `HEAD == origin/main == 3a142b8` (`chore(release): bump version a 2.1.0`). Workspace **`2.1.0`**, **no publicado**; `--dry-run` con árbol limpio dio **release admission ACCEPT 2.0.12 → 2.1.0** con 0 `✗`. Último tag público sigue **`v2.0.1` → `5ce4bca`**. Cierre de session-25: **`INC-DEBT-024` cerrado** (las tres mitigaciones, verificadas en ambos sentidos) y la deuda menor de la versión de cosign. Previous: session-24 (`d1973b1`) implementó el gate de issuer fail-closed.
+**Estado (session-27, 2026-09-28T09:40Z):** `HEAD == origin/main == 9a642e7` (`chore(release): bump version a 2.1.1`). Workspace **`2.1.1`**, **no publicado**. Último tag público **`v2.0.1`**. **`sddk adopt status` = `complete`** (session-26 dijo "no adoptado": era falso).
+
+**HALLAZGO session-27 — la admisión de release rechazaba un release válido.** `release.sh --dry-run` daba `REJECT non-monotonic 2.1.0 -> 2.1.0`. No era un problema de versión: `release.sh` llamaba a `release_admission_check` sin modo, que rutea a **v1** (HEAD vs HEAD^). El bump vive N commits atrás de HEAD porque los commits de docs/journal/puntero se landean después por convención del propio repo, así que HEAD y HEAD^ llevan la misma versión. El defecto ya estaba documentado en `release_admission.sh:15-19` y existía una variante **v2** correcta contra el último tag publicado, pero el publishing path nunca la elegía. **Corregido en `a716953`**: `release.sh` invoca `release_admission_check_v2`, que falla cerrado ante remote inaccesible. Falsificado con 3 checks en `test_release_admission.sh` (24/0 verde; mutación a v1 → 2 checks fallan, `die`→`warn` → 1).
+
+**Bump `2.1.0` → `2.1.1`** (`9a642e7`) producido por `scripts/release-bump.sh --force-version`, no a mano. **2.1.0 nunca fue tag ni release**, así que publicar 2.1.1 no salta ninguna versión pública.
+
+**Puntero de estado reconciliado** (`241ada6`): el guard daba FAIL por 4 commits de retraso (tolerancia 3) — tercera repetición del patrón session-18/22. Reconciliación mecánica que preserva la nota de evidencia previa.
+
+**Deuda abierta real: 6 INCs**, no uno. `SUPPLY-CHAIN-AUTHENTICITY` (code-closed/distribution-open), `NO-STRUCTURED-LOGGING` (medium), `TEST-PORTS-UNCONSUMED` (medium), tres `low`. La nota de session-25 ("el único INC abierto") era de alcance más estrecho.
+
+**Siguiente acción exacta:** leer el dry-run hasta el paso 8. Si pasa, **publicar 2.1.1** es el único camino que cierra `INC-AUDIT-S14` en distribución. Irreversible: requiere firma keyless desde Actions (`gh workflow run release-automation.yml`). `ADR-0143` sigue `proposed`.
+
+Previous: **Estado (session-25 cierre, 2026-09-28T09:00Z):** `HEAD == origin/main == 3a142b8` (`chore(release): bump version a 2.1.0`). Workspace **`2.1.0`**, **no publicado**; `--dry-run` con árbol limpio dio **release admission ACCEPT 2.0.12 → 2.1.0** con 0 `✗`. Último tag público sigue **`v2.0.1` → `5ce4bca`**. Cierre de session-25: **`INC-DEBT-024` cerrado** (las tres mitigaciones, verificadas en ambos sentidos) y la deuda menor de la versión de cosign. Previous: session-24 (`d1973b1`) implementó el gate de issuer fail-closed.
 
 **`INC-DEBT-024` — CERRADO en session-25.** Era el único INC abierto (20 de 21 cerrados). Cerrado por las tres vías, cada una con su falsificación:
 
