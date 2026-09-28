@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.10] - 2026-09-28
+
+### Features
+  - feat(ci): un solo publicador canónico con 9 payloads, firmas y smoke test
+
+### Fixes
+  - fix(ci): los unified no-x86_64 ejecutaban el binario del target y morian con 126
+  - fix(release): aceptar las firmas canonicas sin abrir el gate a extras
+  - fix(ci): el job de firma descargaba a un directorio y firmaba otro
+  - fix(ci): el staging de assets contaminaba el release con el bundle del repo
+
+### Other
+  - docs(journal): cierre de la segunda pasada de session-31
+  - docs(state): reconciliar el puntero a b88b5d79 / 2.2.8
+  - docs(debt): el gate de 9 assets rechaza las firmas que el instalador exige
+  - docs(state): registrar la publicacion de v2.2.6 y su resultado negativo
+
 ## [2.2.9] - 2026-09-28
 
 ### Fixes
