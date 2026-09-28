@@ -4811,3 +4811,114 @@ bash scripts/release.sh
 ```
 
 Publica 2.2.2 con los tres fixes. Sin root no hay via.
+
+---
+
+## Session-30 — 2026-09-28 — cierre de INC-DEBT-025 y bloqueo del publish en la firma
+
+**Baseline**: `origin/main = 8b8c9e31` (bump 2.2.4). **HEAD al cerrar**:
+`2c2d1bb0`. **Workspace version**: 2.2.4. **Release publica vigente**:
+**v2.0.1** (sin cambio: 2.2.4 **no** se publico, ver Blocker).
+
+### Desbloqueos verificados (OBSERVED)
+
+**Toolchain musl sin root (cierra INC-DEBT-027).** La conclusion de session-29
+("no recuperable sin operador") era incorrecta. Resuelto con Podman rootless:
+imagen `localhost/sddk-musl-toolchain:latest` + shim externo
+`~/.local/libexec/musl-shim/x86_64-linux-musl-gcc`, montajes estrechos con
+labels SELinux (montar todo `$HOME` con `:Z` fue **rechazado** por intentar
+reetiquetar un fichero protegido de FortiClient). Build real: ELF
+`static-pie linked`, ~30.8 MB, ejecutable. Commit `f57d7cd4`.
+
+**Concurrencia (cierra INC-DEBT-029).** Los 4 write sites ATOM-PER-ROW
+propagaban `DatabaseBusy` tras agotar `busy_timeout(5s)`; con WAL activo el
+timeout expira bajo contencion. Implementado `execute_with_busy_retry`
+(solo `DatabaseBusy`, 10 intentos, backoff 20-400 ms + jitter determinista).
+Test permanente `crates/sddk-storage/tests/planning_atomic_per_row_busy_retry.rs`
+fuerza un lock de 7 s; **mutacion observada**: sin retry ambos tests fallan.
+Workspace **5066 passed / 0 failed / 19 ignored**. Commit `be06ac9f`.
+
+**Guard de estaticidad (defecto del pipeline).** `release.sh` solo aceptaba
+`statically linked`, y `file` 5.46 describe el binario real como
+`static-pie linked`. Corregido para aceptar ambas formas y seguir rechazando
+`dynamically linked` y shared objects (4 casos verificados, 2 buenos y 2
+rechazados). Commit `b1d89743`.
+
+**Bump doble (procedimiento).** El hook pre-push exigia un cambio de version
+en `origin/main..HEAD`; 2.2.3 ya era la version pendiente y **nunca se
+publico**, asi que se uso el mecanismo del repo con `--force-version 2.2.4`.
+Commits `8b8c9e31` y `04647290`.
+
+### Verificacion adicional no prevista (OBSERVED)
+
+Al reexaminar **INC-DEBT-025** tras arreglar su parte 1, aparecio la parte 2:
+`manifest_sha256` se **escribia y se parseaba, pero ningun codigo comparaba
+ambos valores**. El ancla era decorativa — reescribir `MANIFEST.sha256`
+dentro de un bundle no rompia nada. Implementado `verify_manifest_anchor`
+(`bundle_manifest.rs`), invocado en `dev install` justo despues de
+`verify_bundle_compat` y **antes de escribir nada en disco**, fail-closed:
+declarado+coincide -> Ok; declarado+no coincide -> `ManifestShaMismatch`;
+declarado sin manifest -> `ManifestMissing`; **no declarado -> Ok** (los
+bundles ya publicados no afirman ningun ancla, y rechazarlos los haria
+instalables a nadie). 5 tests nuevos; **mutacion observada**: neutralizar la
+comprobacion falla los 2 tests de rechazo. Commit `bc53207e`.
+
+**La parte 1 quedo confirmada contra el artefacto real**: el `BUNDLE.toml`
+que escribio el release declara `manifest_sha256=32cfd79f5c2915d3...` y
+`sha256sum MANIFEST.sha256` da exactamente `32cfd79f5c2915d3...`. Coinciden.
+
+### Blocker: el publish local no puede publicar un release instalable
+
+`bash scripts/release.sh` recorrio **0/14 -> 8b/14 sin un solo fallo** (suite
+completa verde, binario musl construido, 377 ficheros hasheados, tarball
+unificado de 12.2 MB con exec bit, sbom y CHECKSUMS, 48 ADRs espejados) y
+aborto en **8c/14**:
+
+```
+the project's signing identity does not exist on this host.
+Required issuer: https://token.actions.githubusercontent.com
+This host: not a GitHub Actions runner (GITHUB_ACTIONS != true).
+```
+
+**No es un defecto**: es el guard de INC-DEBT-024 haciendo su trabajo. Sin el,
+`cosign sign-blob` en local emitiria un certificado keyless de **persona**,
+mientras que `install.sh` y `dev update` pinan issuer de Actions: el release
+quedaria publicado, firmado e instalable por nadie.
+
+**Sin estado parcial**, verificado tras el aborto: `gh release view v2.2.4`
+-> `release not found`; `git ls-remote origin refs/tags/v2.2.4` -> vacio;
+ningun proceso `cosign` vivo. Registrado como **INC-DEBT-030** (medium/P2,
+blocked). La restriccion es real, no de permisos: el issuer lo emite el OIDC
+provider de GitHub, no se fabrica en local.
+
+### Deuda tocada
+
+- `INC-DEBT-025` -> **resolved** (ambas partes), commit `bc53207e`.
+- `INC-DEBT-027` -> ya estaba `resolved` en su fichero, pero el indice
+  `docs/debt/README.md` lo seguia marcando **open**. Corregido.
+- `INC-DEBT-029` -> estaba `resolved` en su fichero y **ausente del indice**.
+  Indexado.
+- `INC-DEBT-030` -> nuevo, **blocked**.
+- Sigue abierto: `INC-DEBT-026` (contaminacion local del bundle), auditorias
+  media/baja, y el shim musl **sin versionar** (reproducibilidad en otros
+  hosts abierta).
+
+### Siguiente paso (operador, 1 linea)
+
+Elegir via de firma y publicar:
+
+```bash
+# Opcion A (correcta): push del tag y que Actions publique
+git push origin v2.2.4
+
+# Opcion B (degrada el contrato de instalacion, decision explicita)
+SDDK_SKIP_SIGNING=1 bash scripts/release.sh
+```
+
+### Conocimiento negativo (lo que NO se logra en local)
+
+- **No existe via local para producir una firma que los instaladores
+  acepten.** No es falta de permisos: el certificado lo emite GitHub.
+- `x86_64-linux-musl-gcc` **si** tiene via rootless (session-30), contra lo
+  que session-29 afirmo. La lesson: antes de escribir "no recuperable sin
+  operador", agotar la via sin root.
