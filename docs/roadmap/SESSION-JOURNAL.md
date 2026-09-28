@@ -3635,3 +3635,64 @@ Falsificación del script (6 escenarios, esta máquina):
 | 3 corridas encadenadas | idempotente, 0 cambios |
 | `--check` | no escribe |
 | opción inválida | exit 1 |
+
+### Cierre 3 — ADR-0143, y una corrección de mi propio registro
+
+Session-23 venía repitiendo, en el puntero y en cada informe, que "el trust
+root de la firma sigue sin definirse" y que ese era el bloqueo abierto.
+**Es falso, y lo comprobé antes de escribir una línea.**
+
+Session-21 ya lo decidió e implementó: Fulcio keyless, issuer
+`https://token.actions.githubusercontent.com`, subject regex anclado a
+`release.yml` sobre un tag SemVer, ambos extremos obligatorios, fail-closed
+en las dos rutas de consumo. Está todo en `crates/sddk-cli/src/cosign.rs`, con
+11 tests que falsifican la mutación, y en los 27 checks de
+`tests/test_install_asset_contract.sh`.
+
+La lección no es "tuve un error". Es que **un puntero de roadmap que nadie
+contrasta contra el código se convierte en ficción institucional**: llevaba
+dos sesiones diciendo como hecho algo que el repositorio ya contradecía,
+y yo lo repitía porque estaba escrito arriba. Por eso el reconciliador de la
+sesión anterior mueve campos mecánicos, pero la corrección de una *afirmación*
+sigue necesitando que alguien lea el código. Ninguna herramienta lo automatiza
+sin inventar criterio.
+
+Lo que faltaba de verdad era el documento que gobierna la política, y eso es
+`ADR-0143` (status `proposed`, no `accepted`):
+
+- fija la política (issuer + subject regex, ambos obligatorios, fail-closed,
+  firma detached sin `.pem` se rechaza) leyendo el código real, no
+  describiendo una intención;
+- **enuncia la contrapartida sin suavizar**: se confía en Fulcio, y no hay
+  operación criptográfica propia que verificar;
+- delimita con precisión lo que sigue abierto: (a) si la firma se obtiene antes
+  de publicar o se mantiene la rama `sign` con un guard; (b) cuándo puede un
+  usuario aceptar algo sin firma; (c) qué pasa si Fulcio o GitHub cambian; (d)
+  si un `.pem` antiguo sigue verificando con el cosign de hoy;
+- dice explícitamente que **no está falsificada** mientras no exista un release
+  firmado real, que hoy no existe.
+
+#### Contaminación corregida antes de commitear
+
+El primer borrador salió con fragmentos no castellanos metidos dentro
+("компактно", "sondern", "nayttnad", "证明", "限定"). Reescrito entero y
+verificado con un grep de rangos CJK/cirílico: ninguno. Un documento de
+autoridad que se cita como decisión no puede salir así.
+
+La regex documentada se comparó **carácter a carácter** contra la constante de
+`cosign.rs`: idénticas. Un ADR que documenta un pin distinto del que corre no
+describe la política, la falsifica.
+
+### RECEIPT (cierre 3)
+
+```
+docs/architecture/adrs/ADR-0143-RELEASE-SIGNATURE-TRUST-ROOT.md   nuevo, status: proposed
+tests/test_adr_promotion_format.sh           51 ADRs, 0 violaciones, rc=0
+tests/test_vault_adr_mirror_coverage.sh      48 accepted mirrored, rc=0 (proposed no se espeja)
+grep CJK/cirílico sobre el ADR               0 coincidencias
+regex del ADR vs cosign.rs                   IDENTICAS
+```
+
+Sin cambio de código Rust ni de scripts, así que el perfil completo de
+`2.0.11` (5057 passed / 0 failed / 19 ignored, 258 suites) sigue siendo la
+evidencia vigente del árbol publicado; esta concernencia es solo documental.
