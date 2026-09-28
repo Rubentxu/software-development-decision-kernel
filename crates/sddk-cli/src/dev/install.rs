@@ -8,7 +8,7 @@
 //! without re-parsing the source.
 
 use crate::dev::bundle_manifest::{
-    BUNDLE_MANIFEST_FILE, parse_bundle_manifest, verify_bundle_compat,
+    BUNDLE_MANIFEST_FILE, parse_bundle_manifest, verify_bundle_compat, verify_manifest_anchor,
 };
 use crate::dev::common::{
     CopyMode, MANIFEST_SURFACES, RECEIPT_FILE, atomic_write, copy_tree, receipt_text,
@@ -110,6 +110,21 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
                         "binary {} is not compatible with bundle {}: {}",
                         env!("CARGO_PKG_VERSION"),
                         manifest.bundle.version,
+                        e
+                    )
+                })?;
+                // INC-DEBT-025 part 2 (session-30): BUNDLE.toml declares a
+                // `manifest_sha256` anchor, and until now nothing compared it
+                // against the MANIFEST.sha256 actually shipped. A bundle whose
+                // manifest had been rewritten wholesale would still install
+                // clean. Fail closed here, before anything is written.
+                verify_manifest_anchor(&source, &manifest).map_err(|e| {
+                    anyhow::anyhow!(
+                        "bundle {} failed its manifest anchor check at {}: {}. \
+                     Refusing to install a bundle whose declared manifest hash \
+                     does not match the manifest it ships.",
+                        manifest.bundle.version,
+                        source.display(),
                         e
                     )
                 })?;

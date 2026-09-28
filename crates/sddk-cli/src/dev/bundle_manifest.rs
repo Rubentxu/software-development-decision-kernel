@@ -27,6 +27,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 /// Canonical name of the bundle manifest file inside every bundle root.
 pub(super) const BUNDLE_MANIFEST_FILE: &str = "BUNDLE.toml";
@@ -52,6 +53,20 @@ pub enum BundleManifestError {
         min: String,
         max: String,
     },
+    /// The `manifest_sha256` declared by `BUNDLE.toml` does not match the
+    /// actual sha256 of the bundle's `MANIFEST.sha256`.
+    ///
+    /// Added session-30 (INC-DEBT-025 part 2). The field was written and
+    /// parsed but never compared, so it was inert: a bundle whose
+    /// `MANIFEST.sha256` had been rewritten would still validate.
+    #[error(
+        "BUNDLE.toml manifest_sha256 mismatch: declares {declared} but MANIFEST.sha256 hashes to {actual}"
+    )]
+    ManifestShaMismatch { declared: String, actual: String },
+    /// The bundle declares a `manifest_sha256` but ships no `MANIFEST.sha256`
+    /// to compare it against.
+    #[error("BUNDLE.toml declares manifest_sha256 {declared} but MANIFEST.sha256 is missing")]
+    ManifestMissing { declared: String },
 }
 
 /// Declarative bundle manifest (top-level shape).
@@ -127,6 +142,60 @@ pub(super) fn verify_bundle_compat(
             binary: binary.to_owned(),
             min: min.to_owned(),
             max: max.to_owned(),
+        })
+    }
+}
+
+/// Verify that `BUNDLE.toml`'s `manifest_sha256` really anchors the bundle's
+/// `MANIFEST.sha256`.
+///
+/// Added session-30 (INC-DEBT-025 part 2). Until now the field was written by
+/// `dev manifest --bundle` and parsed by [`parse_bundle_manifest`], but no code
+/// ever compared the two, so the anchor was decorative: rewriting
+/// `MANIFEST.sha256` inside a bundle left the bundle validating.
+///
+/// Fail-closed, consistent with the rest of schema v2:
+///
+/// - Declared and matching → `Ok`.
+/// - Declared and mismatching → [`BundleManifestError::ManifestShaMismatch`].
+/// - Declared but `MANIFEST.sha256` absent → [`BundleManifestError::ManifestMissing`].
+/// - **Not declared** → `Ok`. A bundle that omits the field is not *claiming*
+///   an anchor, so rejecting it would break every already-published release
+///   whose `BUNDLE.toml` predates the anchor. This is the one case that stays
+///   permissive on purpose; `verify_manifest` still checks every file against
+///   whatever manifest is present.
+pub(super) fn verify_manifest_anchor(
+    bundle_root: &Path,
+    manifest: &BundleManifest,
+) -> Result<(), BundleManifestError> {
+    let Some(declared) = manifest
+        .contents
+        .manifest_sha256
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let declared = declared.trim();
+
+    let manifest_path = bundle_root.join(crate::dev::manifest::MANIFEST_FILE);
+    if !manifest_path.is_file() {
+        return Err(BundleManifestError::ManifestMissing {
+            declared: declared.to_owned(),
+        });
+    }
+    let bytes = std::fs::read(&manifest_path).map_err(|e| BundleManifestError::Parse {
+        path: manifest_path.display().to_string(),
+        message: format!("read error: {e}"),
+    })?;
+    let actual = format!("sha256:{:x}", sha2::Sha256::digest(&bytes));
+
+    if declared == actual {
+        Ok(())
+    } else {
+        Err(BundleManifestError::ManifestShaMismatch {
+            declared: declared.to_owned(),
+            actual,
         })
     }
 }
