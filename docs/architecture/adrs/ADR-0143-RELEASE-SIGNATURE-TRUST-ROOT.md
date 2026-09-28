@@ -137,7 +137,8 @@ operador a esperar un salto que no ocurre.
 
 ### (a) La ventana de publicación firmada: un tag sin assets firmados
 
-Este es el hueco real, y no tiene solución dentro del proceso actual.
+Este es el hueco real, y tiene una restricción que **no aparece hasta que se
+mira qué emite cosign** y que condiciona las dos opciones.
 
 `release-automation.yml` despacha `release.yml` sobre un tag. Si la rama
 `sign` falla a mitad —cosign caído, red, cuota de OIDC agotada—, el tag
@@ -145,19 +146,59 @@ Este es el hueco real, y no tiene solución dentro del proceso actual.
 fail-closed, así que el release existe, es público, es el `latest`, y es
 **ininstalable**.
 
-Dos salidas, y elegir entre ellas es política, no ingeniería:
+**La restricción: la identidad keyless depende de dónde se firma, y son
+mutuamente excluyentes.** El propio `cosign` lo dice en su ayuda, y lo
+verifiqué contra el binario instalado (`cosign v3.1.3`, `strings` sobre
+`/usr/bin/cosign`):
 
-1. **Firmar dentro de `release.sh` en el paso 8c, antes de `gh release
-   create`** (paso 9). Entonces el release solo se publica si la firma se
-   obtuvo. Un fallo deja un tag sin release — feo, pero honesto y recuperable.
-2. **Mantener la rama `sign` del workflow** y añadir un guard de publicación:
-   si el tag tiene assets sin firmar, `latest` no debe apuntar allí. Un release
-   sin firma es visible, pero no es el que la gente instala por defecto.
+```
+The OIDC issuer expected in a valid Fulcio certificate, e.g.
+https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth.
+```
 
-La opción 1 es la que quiero, y es exactamente por lo que `release.sh` ya
-tiene el paso 8c escrito. La opción 2 no requiere cambios de código pero deja
-un release roto en producción. **Esta decisión es del operador, porque cambia
-qué se publica en un repo público y es irreversible.**
+| Dónde se firma | Issuer del certificado | Subject resultante |
+|---|---|---|
+| GitHub Actions | `https://token.actions.githubusercontent.com` | `Rubentxu/…:release.yml@refs/tags/vX.Y.Z` |
+| Local, device flow | `https://oauth2.sigstore.dev/auth` | la **identidad de la persona** (email/usuario de Fulcio) |
+
+El pin de `cosign.rs` exige el issuer de GitHub Actions **y** el subject del
+workflow. Una firma hecha en local no satisface **ninguno** de los dos: no la
+verificaría ni el propio `install.sh` del proyecto, porque debe.
+
+Esto significa que la opción 1, tal como está escrita hoy, **no funciona en
+local**: `release.sh` paso 8c firmaría con el issuer equivocado, publicaría, y
+la instalación de ese release fallaría contra el pin. No es que falte
+intervención humana (el device flow la pide), es que la **identidad sería
+otra**, y el resultado sería un release firmado e inverificable por sus propios
+consumidores.
+
+Las dos opciones reales, entonces:
+
+1. **Firmar en `release.sh` paso 8c, pero solo cuando se ejecuta dentro de
+   GitHub Actions** (opción 1 original, con la condición añadida). Entonces el
+   release solo se publica si la firma se obtuvo con la identidad correcta: un
+   fallo deja un tag sin release, feo pero honesto. **Requiere** que
+   `release.sh` se ejecute en Actions, no en local — lo que cambia cómo se
+   publica, no solo cuándo.
+2. **Mantener la rama `sign` del workflow** (que ya firma con la identidad
+   correcta) y añadir un guard de publicación: si el tag tiene assets sin
+   firmar, `latest` no debe apuntar allí. No requiere cambios de firma, pero
+   deja un release roto visible en producción durante la ventana de fallo.
+
+La opción 1 es la que prefiero, **con la condición explícita**, porque es la
+única que hace imposible por construcción el "publicado pero ininstalable".
+Pero ya no es un detalle de implementación que se pueda cerrar escribiendo
+código: **cambia quién ejecuta el release**, y eso es política de proyecto.
+`scripts/release.sh` no debería poder publicar en local sin firma válida, y
+hoy puede: firmaría con la identidad equivocada y moriría en el paso 9b del
+gate, o peor, si el gate se relajara, publicaría algo inverificable.
+
+> **Hueco de implementación detectado (no cerrado aquí):** `release.sh` no
+> comprueba que el issuer del certificado que acaba de emitir coincida con
+> `DEFAULT_CERT_ISSUER` antes de publicar. Debería, y fallar-closed si no.
+> Es un fix pequeño y claramente correcto, pero tocar `release.sh` es código
+> de publicación y este commit es documental; se deja declarado aquí para que
+> no se pierda, en vez de colarse en un commit de ADR.
 
 ### (b) Cuándo puede un usuario aceptar un artefacto sin firma
 
@@ -217,11 +258,14 @@ obligatorio antes de considerarla verificada.
 ## Seguimiento requerido
 
 1. Publicar el **primer release firmado** — paso obligatorio, y decisión del
-   operador por ser irreversible sobre un repo público.
+   operador por ser irreversible sobre un repo público. Solo es viable
+   firmado en GitHub Actions por lo de §(a).
 2. Intentar verificar su `.pem` con el cosign de hoy. Si falla, §(d) es un bug
    real y la política de TTL necesita revisión antes de publicar más.
 3. Cerrar `INC-AUDIT-S14` en distribución solo después de (1) y (2).
 4. Decidir (a), (b), (c) y (d), con un ticket para cada uno.
+5. Añadir a `release.sh` la comprobación de que el issuer emitido coincide con
+   `DEFAULT_CERT_ISSUER` antes de publicar (declarado en §(a), no cerrado).
 
 ## Falsability
 

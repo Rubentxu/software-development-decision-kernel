@@ -3696,3 +3696,59 @@ regex del ADR vs cosign.rs                   IDENTICAS
 Sin cambio de código Rust ni de scripts, así que el perfil completo de
 `2.0.11` (5057 passed / 0 failed / 19 ignored, 258 suites) sigue siendo la
 evidencia vigente del árbol publicado; esta concernencia es solo documental.
+
+### Cierre 4 — verificar si la opción (a) de ADR-0143 es siquiera viable
+
+Escribí en la ADR que la opción 1 —firmar en el paso 8c antes de publicar— "es
+la que quiero, y es exactamente por lo que `release.sh` ya tiene el paso 8c
+escrito". No lo había comprobado. Ahora sí.
+
+**El paso 8c existe y está bien hecho:** todo-o-nada, `die` antes de publicar,
+compara contra el tamaño del array y no contra cero. Ese trabajo es real.
+
+**Pero firmarlo en local no puede funcionar**, y la razón no es que falte
+interacción humana. La identidad keyless depende de *dónde* se firma, y las
+dos son mutuamente excluyentes. Del propio binario instalado
+(`cosign v3.1.3`), texto literal de `verify-blob --help`:
+
+```
+The OIDC issuer expected in a valid Fulcio certificate, e.g.
+https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth.
+```
+
+| Dónde se firma | Issuer | Subject |
+|---|---|---|
+| Actions | `https://token.actions.githubusercontent.com` | `…:release.yml@refs/tags/vX.Y.Z` |
+| Local (device flow) | `https://oauth2.sigstore.dev/auth` | la identidad de la persona |
+
+`cosign.rs` fija el issuer de Actions **y** el subject del workflow. Una firma
+local no satisface ninguno de los dos: **no la verifica ni el propio
+`install.sh` del proyecto**, porque debe.
+
+El desenlace es el peor de los posibles y no es hipotético: en local hay cosign
+instalado, así que `command -v cosign` pasa, el device flow pide un navegador,
+una persona lo completa, y se publica un release que *parece* correcto y es
+**ininstalable** para cualquier consumidor del proyecto. Solo se detectaría en
+el gate 9b, con los assets ya subidos.
+
+Registrado como `INC-DEBT-024` (high/P1) con reproducción y mitigación. La
+ADR queda corregida: la opción 1 pasa a ser "firmar antes de publicar **desde
+Actions**", lo que cambia *quién* ejecuta el release, no solo cuándo. Eso la
+convierte en política de proyecto, que es justo por lo que le toca al operador.
+
+**Por qué el ID es 024 y no 023:** `INC-DEBT-023` ya existe
+(`lints-advisory-no-expansion-cycle`). Mi primer fichero chocó con él; lo
+renumeré. De paso, `INC-DEBT-021` y `INC-DEBT-022` tienen **duplicados
+preexistentes** en el directorio — dos ficheros cada uno. No lo toco aquí
+porque es ajeno a esta sesión, pero queda anotado: no es un ids que se pueda
+asumir único sin mirar.
+
+### Lo que sigue sin cerrar, y por qué es mío y no tuyo
+
+`release.sh` **no comprueba que el issuer del certificado que acaba de emitir
+coincida con `DEFAULT_CERT_ISSUER`** antes de publicar. Debería, y fail-closed.
+Es un fix pequeño y claramente correcto. No lo he hecho porque toca
+`scripts/release.sh`, que es código de publicación, y esta sesión ha sido
+documental: colar un fix de publicación dentro de un commit de ADR es
+exactamente el tipo de mezcla que luego nadie sabe revisar. Queda declarado en
+`ADR-0143 §(a)` y como punto 5 de su seguimiento, no escondido.
