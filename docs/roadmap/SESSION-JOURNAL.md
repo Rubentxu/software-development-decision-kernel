@@ -3217,3 +3217,62 @@ tests/test_release_state_pointer.sh               PASS (0 de retraso)
    veces, ya no es ruido).
 4. INC-021: sustituir el `v2.0.1` publico por un musl real, lo que implica
    publicar — y volver al punto 1.
+
+### Addendum session-22 — el lock stale NO era cosmético: rompe CI y el release
+
+**Registrado antes de cerrar, tras sondear el alcance del punto 7.**
+
+El `cargo test` de esta sesion regenero `Cargo.lock` en el arbol de
+trabajo, asi que un `cargo build --locked` local pasaba y no delataba nada.
+La pregunta correcta no es "rompe mi arbol" sino **"rompe un checkout
+limpio de HEAD"**. Sondeado en un worktree limpio sobre `427b513`:
+
+```
+$ grep -A1 'name = "sddk-cli"' Cargo.lock   ->  version = "2.0.7"
+$ grep -m1 '^version' Cargo.toml            ->  version = "2.0.8"
+
+$ cargo metadata --locked --format-version 1
+error: the lock file .../Cargo.lock needs to be updated
+       but --locked was passed to prevent this
+exit 101
+```
+
+**Consecuencia directa, y es lo que hay que decir sin suavizarlo:**
+
+| Sitio | Comando | Estado en un checkout limpio de HEAD |
+| --- | --- | --- |
+| `.github/workflows/ci.yml:36` | `cargo test --workspace --locked` | **ROMPE** (exit 101) |
+| `.github/workflows/release.yml:63` | `cargo build --release ... --locked` | **ROMPE** (exit 101) |
+
+O sea: **publicar 2.0.8 hoy falla en el paso 63 del pipeline, antes de
+firmar nada.** La decision de firma que planteo al operador no es la
+primera barrera; es la segunda. El lock stale tiene que arreglarse antes,
+y no es negociable con la secuencia actual.
+
+**Por que no se arreglo aqui, en spite de saberlo y tener el fix a mano:**
+
+El `githooks/pre-push` admite un rango si y solo si (A) hay un cambio real
+de `[workspace.package] version` en `Cargo.toml`, o (B) **todos** los paths
+cambiados estan en la allowlist cerrada `docs/**`,
+`.sddk/followups/**`, los tres ficheros de cycle-artifacts y
+`MANIFEST.sha256`. `Cargo.lock` no esta en ninguna de las dos, y un
+commit de docs no puede smugglingearlo. Las tres vias reales:
+
+1. **Bump de version + lock regenerado en el mismo rango** (p. ej.
+   `2.0.8 -> 2.0.9` tocando `Cargo.toml` y `Cargo.lock`). Admisible por
+   (A), pero **quema un PATCH del workspace** para corregir un archivo
+   derivado, que es justo el tipo de numero ceremonial que §2.3
+   desaconseja.
+2. **Amendment a la allowlist del hook** para `Cargo.lock`. Es la via
+   limpia, pero cambia una gate de admision de push, asi que es
+   decision del operador, no mia.
+3. **`--no-verify`**. Technically funciona. No lo hice: la gate existe
+   por una razon, y un verde obtenido saltandola no es un verde.
+
+**Decision del operador pendiente (sustituye a la anterior, que estaba
+incompleta):** primero la via 1 o la 2, y despues — y solo despues — la
+pregunta de la firma (skip-signing vs CI con `id-token: write`).
+
+Worktree de sondeo retirado; `git worktree list` limpio. El arbol de
+trabajo queda con `Cargo.lock` modificado y sin commitear, que es
+exactamente el estado honesto: el fix existe, la via de entrega no.

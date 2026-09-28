@@ -4,6 +4,8 @@
 
 **RECONCILIATION session-22 (deuda de proceso propia, segunda vez):** al abrir sesión, `STATE.yaml` declaraba `current_sha=aaed465` / `2.0.7` mientras el repo estaba en `62d4728` / `2.0.8` — **5 commits de deriva** (`1de1caa`, `206584b`, `a030eed`, `c9984b8`, `62d4728`) acumulados en session-21, que sí actualizó el journal pero saltó el puntero de autoridad. Corregido en el mismo ciclo; el guard pasó a `PASS (0 commit(s) de retraso)`. Patrón: session-18 y session-22 repiten exactamente la misma falla. Merece un guard que escriba el puntero, no solo que lo detecte.
 
+**BLOQUEANTE session-22:** `Cargo.lock` quedó en 2.0.7 mientras `Cargo.toml` está en 2.0.8 — el commit `62d4728` no lo tocó. En un checkout limpio de HEAD, `cargo metadata --locked` falla con **exit 101**, y tanto `ci.yml:36` (`cargo test --workspace --locked`) como `release.yml:63` (`cargo build --release --locked`) rompen. **Publicar 2.0.8 falla en el paso 63 antes de llegar a la firma.** `test_release_state_pointer.sh` no lo ve: valida `Cargo.toml` contra `manifest.toml` pero no contra el lock. Corregirlo es decisión del operador (bump 2.0.8→2.0.9 tocando ambos, o amending la allowlist de `githooks/pre-push`). No se resolvió con `--no-verify`.
+
 Previous: **C4 v1.172.0 — publicado y formalizado** (release v1.172.0 en GH Releases con FC-1 v2 + chromium-skip fix; tag apuntado a `d89c2c0`; `CERTIFICATION-RECEIPT.yaml` schema §5 compliant).
 
 | Campo | Valor observado o pendiente |
