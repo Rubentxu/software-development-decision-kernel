@@ -3092,3 +3092,128 @@ una firma verificada, la politica es codigo no ejercitado.
    a `origin/main` (hoy HEAD esta 2 commits por delante, sin pushear).
 4. Solo entonces decidir la publicacion irreversible de `v2.0.7`.
 5. Despues: INC-021, sustituir el `v2.0.1` publico roto por un musl real.
+
+## session-22 — reconciliación del puntero, cierre de D-1/D-2 y el NOT_REVERIFIED pasa a OBSERVED
+
+**Fecha UTC**: 2026-09-28T06:38–06:52Z
+**Baseline**: `62d4728` (== `origin/main`) · **Workspace**: 2.0.8
+**Ultimo release publico**: `v2.0.1` → `5ce4bca` (sin assets de firma; su asset
+`musl` sigue siendo el binario glibc roto, INC-021)
+
+### Que se hizo
+
+Session-22 no toco codigo Rust. Tres cosas:
+
+1. **RECONCILIACION del puntero (obligatoria, segunda ocurrencia).** Al
+   abrir sesion `test_release_state_pointer.sh` dio FAIL: el puntero declaraba
+   `aaed465` / `2.0.7` y el repo estaba en `62d4728` / `2.0.8` — 5 commits de
+   deriva (`1de1caa`, `206584b`, `a030eed`, `c9984b8`, `62d4728`) acumulados
+   en session-21. Se reconcilio `STATE.yaml` y `CURRENT.md` conservando la
+   evidencia anterior intacta. El guard paso a `PASS (0 commit(s) de retraso)`.
+
+2. **D-1 y D-2 CERRADAS en codigo**, verificadas por lectura sobre el arbol
+   publicado (no por suposicion):
+   - **D-2** (el keyless path produce el `.pem` o solo lo intenta subir):
+     `.github/workflows/release.yml:274` emite `--output-certificate "$f.pem"`.
+     El `.pem` se **genera**, no se supone. `release.sh:760-773` publica el
+     trio `.sig`/`.bundle.json`/`.pem`, y `test_install_asset_contract.sh:234`
+     lo fija con un grep explicito que falla si el trio se degrada.
+   - **D-1** (`dev/update.rs` no descarga `.bundle.json`): `update.rs:38-47`
+     construye las tres rutas y el consumidor descarga `.sig` + `.pem`. Los
+     tres consumidores manejan el mismo conjunto de assets que `release.sh`
+     produce, asi que la desalineacion ya no existe.
+
+3. **El `NOT_REVERIFIED` de session-21 paso a verde OBSERVADO.** Ese era el
+   punto 3 de la lista de session-21 y estaba sin cumplir: la re-verificacion
+   de session-21 encadenaba dos passes de ~10 min y murio por timeout
+   (exit 124). Aqui se lanzo **un solo** `cargo test --workspace --no-fail-fast`.
+
+### Evidencia observada
+
+```
+cargo test --workspace --no-fail-fast
+    5057 passed; 0 failed; 19 ignored   (258 suites, exit 0)
+    El flake inv10_grep_gate_no_mutex_on_workflow_state de session-21
+    NO se disparo en esta corrida. Una pasada en verde no prueba que
+    no sea flaky; queda R-flake abierto con su tripwire pendiente.
+
+cargo fmt --check                                  exit 0
+cargo clippy --workspace --all-targets -- -D warnings
+    Finished dev profile, 0 diagnostics            exit 0
+shellcheck scripts/install.sh scripts/release.sh
+          tests/test_install_asset_contract.sh
+    solo SC2016 (info) sobre literales de grep
+    intencionales en el contract test; sin SC warnings que bloqueen  exit 0
+
+tests/test_install_asset_contract.sh              all checks passed (exit 0)
+  determinismo: 20/20 PASS, 0 FAIL
+tests/test_release_public_gate.sh                 PASS=11 FAIL=0
+tests/test_release_pipeline_consistency.sh        all checks passed
+tests/test_release_state_pointer.sh               PASS (0 de retraso)
+```
+
+### Premisas y correcciones propias
+
+5. **El primer intento de test estaba mal implementado.** Se lanzo
+   `cargo test 2>&1 | tail -400 > log`, y `tail` se come todo menos las 400
+   lineas finales: el agregado salio `211 passed` sobre un workspace que
+   tiene ~5000 tests, y un exit 0 que no significaba nada. Casi se reporta
+   ese numero como el verde de la sesion. La segunda corrida, con el log
+   completo, dio 5057. **Un exit 0 con el log truncado es un falso verde;
+   la suma hay que sacarla del log completo.**
+
+6. **La deriva del puntero se repite con el mismo patron.** Session-18 (12
+   commits) y session-22 (5 commits) fallaron exactamente igual: se escribe
+   el journal y se actualiza `CURRENT.md`, pero se salta `STATE.yaml`. El
+   guard de `test_release_state_pointer.sh` detecta la deriva tarde —al
+   abrir la sesion siguiente—, no la previene. **Deuda de proceso propia,
+   sin resolver:** haria falta que el propio cierre de sesion escribiera el
+   puntero, o un hook de pre-commit que lo rechazara si `current_sha` no
+   resuelve.
+
+7. **`chore(release): bump version` (62d4728) subio `Cargo.toml` a 2.0.8 y
+   dejo `Cargo.lock` en 2.0.7.** Se vio porque `cargo test` regenero el lock
+   como efecto colateral y aparecio en `git status`. El bump de session-20
+   (`aaed465`) si lo toco, asi que la omision es de `62d4728`, no del
+   procedimiento habitual. **El guard `test_release_state_pointer.sh`
+   valida `Cargo.toml` contra `manifest.toml` pero no contra
+   `Cargo.lock`**, asi que la desalineacion del lock paso desapercibida.
+   **No se corrige en este commit, y hay una razon estructural:** el lock
+   no esta en la allowlist del hook `pre-push` (`docs/**`,
+   `.sddk/followups/**`, los tres ficheros de cycle-artifacts y
+   `MANIFEST.sha256`), y tampoco hay cambio de version en el rango. Un
+   commit que mezcla docs con `Cargo.lock` es **inadmisible por el hook**,
+   aunque el contenido sea legitimo. Se deja el lock regenerado y sin
+   commitear en el arbol de trabajo; corregirlo exige un commit de codigo
+   (con bump de version) o una amendment a la allowlist del hook.
+   Mismo patron que el punto 6: el guard detecta tarde lo que el hook
+   impide pushear.
+
+### Estado honesto
+
+- **El codigo de S14 esta cerrado; la DISTRIBUCION sigue abierta.** No existe
+  ningun release con firma obtenida y verificada end-to-end. Nada de esto
+  cambia por un verde de tests: la politica de firma sigue siendo codigo no
+  ejercitado contra un release real.
+- **`2.0.8` NO se publico.** Va 7 PATCH por delante de `v2.0.1`. Publicar es
+  irreversible y requiere autorizacion del operador (§8). Ademas, publicar
+  con la politica nueva exige firma real en CI o `SDDK_SKIP_SIGNING=1`
+  explicito, que dejaria el release instalable solo con opt-out.
+- **INC-021 sigue abierta en distribucion**: el `musl` publico de `v2.0.1`
+  es el binario glibc.
+- **R-flake abierto**: `inv10_grep_gate_no_mutex_on_workflow_state` no se
+  disparo aqui, pero sigue sin tripwire propia.
+- **C2 sigue NOT_EVALUATED** por `chronos-mcp` ausente (externo, no
+  resoluble con trabajo propio).
+
+### Primer paso de la sesion siguiente
+
+1. **Decidir con el operador** si se publica `2.0.8`. La pregunta no es
+   tecnica: es si se acepta un release sin firma real (`--skip-signing`) o
+   se espera a tener CI con `id-token: write`. Sin esa decision, S14 no
+   avanza y el workspace sigue acumulando PATCH sin publicar.
+2. **Tripwire para el R-flake** de `operator_snapshot_arc_tests.rs`.
+3. **Guard que escriba el puntero** al cerrar sesion (fallo repetido dos
+   veces, ya no es ruido).
+4. INC-021: sustituir el `v2.0.1` publico por un musl real, lo que implica
+   publicar — y volver al punto 1.
