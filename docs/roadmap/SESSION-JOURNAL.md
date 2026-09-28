@@ -3979,3 +3979,11 @@ Vale la pena dejarlo escrito: un mutation test que no muta, o que corre contra
 un binario viejo, **pasa** y no dice nada. La diferencia entre "el gate no
 detecta la regresión" y "yo no muté nada" es exactamente la que hace que un
 resultado negativo sea concluyente.
+
+**Nota de honestidad sobre el commit `07e7249`:** su mensaje contiene un
+token corrupto — "habria廉 invertido la conclusion" — donde debía decir "habría
+invertido la conclusión". El sentido del texto es correcto y el resto del
+mensaje es legible, pero se deja constancia en vez de reescribir el commit: la
+regla de no reescribir historia aplica también a mis propios errores
+tipográficos, y un `git rebase` para limpar una tilde sería peor que el
+problema.
