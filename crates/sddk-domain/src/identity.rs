@@ -409,6 +409,42 @@ pub fn stable_workspace_id(project: &ProjectId, canonical_path: &str) -> String 
     format!("w-{}", &hex[..24])
 }
 
+/// Derives a **deterministic** fallback seed from a canonical workspace path.
+///
+/// A project with no git remote still needs a stable identity, otherwise
+/// every invocation mints a fresh `project_id` and the ledger, receipts and
+/// `project resolve` output all drift. Deriving the seed from the canonical
+/// path makes the identity reproducible from the filesystem alone, without
+/// requiring a persisted adoption receipt to exist first.
+///
+/// The returned string is a well-formed hyphenated UUID (the shape
+/// `resolve_project_identity` requires), formed by stamping a constant
+/// version nibble onto the path hash. Only the *grammar* is RFC 4122: the
+/// variant bits are whatever the hash produced, so this is **not** an RFC
+/// 4122 namespace UUID and must not be fed to `Uuid::new_v5`. It exists only
+/// to satisfy the seed grammar at the domain boundary.
+///
+/// Domain string `sddk.project.fallback.seed.v1` is separate from
+/// `sddk.project.fallback.v1` (which hashes the seed) so that the two
+/// derivations can never collide.
+pub fn stable_fallback_seed(canonical_workspace_path: &str) -> String {
+    // framed_hash is SHA-256, so it yields 64 hex chars. A UUID needs 32
+    // (16 bytes), so take the first 32 and shape them 8-4-4-4-12.
+    let hex = framed_hash("sddk.project.fallback.seed.v1", &[canonical_workspace_path]);
+    let hex = &hex[..32];
+    // The constant version nibble REPLACES hex[16] (the first char of the
+    // 4th group), so the groups stay 8-4-4-4-12 and the tail is hex[20..32].
+    // Appending instead of replacing yields 37 chars and an unparseable UUID.
+    format!(
+        "{}-{}-{}-5{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[17..20],
+        &hex[20..32]
+    )
+}
+
 /// Length-prefix framed hash. Same algorithm as `stable_fallback_project_id`
 /// / `stable_workspace_id`; exposed at crate visibility so test modules
 /// can use it instead of duplicating the body.
@@ -552,6 +588,80 @@ mod tests {
         let id_owner = stable_project_id(remote, "owner");
         let id_other = stable_project_id(remote, "other");
         assert_ne!(id_owner, id_other);
+    }
+
+    // --- INC-DEBT-028: deterministic fallback seed ---------------------
+    //
+    // The regression these pin: the fallback seed used to be a fresh
+    // `Uuid::new_v4()` per invocation, so a remote-less workspace got a
+    // different `project_id` on every command and `adopt status` reported
+    // "not adopted" immediately after `adopt apply`.
+
+    #[test]
+    fn fallback_seed_is_deterministic_for_the_same_path() {
+        let path = "/home/dev/projects/my-app";
+        let a = stable_fallback_seed(path);
+        let b = stable_fallback_seed(path);
+        assert_eq!(a, b, "same canonical path must yield the same seed");
+    }
+
+    #[test]
+    fn fallback_seed_is_a_parseable_hyphenated_uuid() {
+        // resolve_project_identity rejects anything Uuid::parse_str cannot
+        // read, so the derived seed must satisfy that grammar.
+        let seed = stable_fallback_seed("/home/dev/projects/my-app");
+        assert!(
+            Uuid::parse_str(&seed).is_ok(),
+            "derived seed must be a valid UUID: {seed}"
+        );
+        assert_eq!(seed.len(), 36, "expected hyphenated form: {seed}");
+    }
+
+    #[test]
+    fn fallback_seed_round_trips_through_resolve_project_identity() {
+        let path = "/home/dev/projects/my-app";
+        let seed = stable_fallback_seed(path);
+        let first = resolve_project_identity(None, ".", Some(&seed)).unwrap();
+        let second = resolve_project_identity(None, ".", Some(&seed)).unwrap();
+        assert_eq!(first.project_id, second.project_id);
+        assert_eq!(first.identity_source, IdentitySource::Fallback);
+    }
+
+    #[test]
+    fn fallback_seed_differs_per_path() {
+        // Two different remote-less workspaces must not collide.
+        let a = stable_fallback_seed("/home/dev/projects/app-one");
+        let b = stable_fallback_seed("/home/dev/projects/app-two");
+        assert_ne!(a, b);
+        let id_a = resolve_project_identity(None, ".", Some(&a))
+            .unwrap()
+            .project_id;
+        let id_b = resolve_project_identity(None, ".", Some(&b))
+            .unwrap()
+            .project_id;
+        assert_ne!(id_a, id_b);
+    }
+
+    #[test]
+    fn fallback_seed_distinguishes_paths_that_share_a_prefix() {
+        // Framing matters: "/a/app" and "/a/app/x" must not hash alike.
+        let a = stable_fallback_seed("/a/app");
+        let b = stable_fallback_seed("/a/app/x");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn fallback_seed_is_pinned_to_known_value() {
+        // Golden pin. The domain string is part of the identity contract:
+        // changing it silently reassigns every remote-less project's
+        // project_id, orphaning its ledger and receipts. A structural test
+        // cannot catch that (nothing else in the derivation depends on the
+        // domain string), so the expected value is pinned explicitly.
+        //
+        // Recompute deliberately: see
+        // docs/debt/INC-DEBT-028-NONDETERMINISTIC-FALLBACK-IDENTITY.md.
+        let seed = stable_fallback_seed("/home/dev/projects/my-app");
+        assert_eq!(seed, "8ff7193a-954e-c498-5edd-2d9cb7416f7a");
     }
 
     #[test]

@@ -459,6 +459,84 @@ fn project_resolve_json_canonicalizes_equivalent_remotes() {
 }
 
 #[test]
+fn remote_less_workspace_keeps_one_identity_across_commands() {
+    // INC-DEBT-028 regression. Without `--remote`, the fallback seed used to
+    // be a fresh `Uuid::new_v4()` per invocation, so every command reported a
+    // different project_id and `adopt status` reported "not adopted" for a
+    // workspace that had just been adopted.
+    let fixture = CliFixture::new("adopt-no-remote");
+    let root = fixture.root.to_str().unwrap();
+    let common = [
+        "--root",
+        root,
+        "--scope",
+        ".",
+        "--timestamp",
+        "2026-08-04T10:00:00Z",
+        "--actor",
+        "cli-test",
+        "--format",
+        "json",
+    ];
+
+    // 1. Resolve is stable across repeated invocations.
+    let first = fixture.run(&[
+        "project", "resolve", "--root", root, "--scope", ".", "--format", "json",
+    ]);
+    assert!(first.status.success());
+    let first_json: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    for _ in 0..3 {
+        let again = fixture.run(&[
+            "project", "resolve", "--root", root, "--scope", ".", "--format", "json",
+        ]);
+        assert!(again.status.success());
+        let again_json: serde_json::Value = serde_json::from_slice(&again.stdout).unwrap();
+        assert_eq!(
+            first_json["project_id"], again_json["project_id"],
+            "project_id must not drift between invocations"
+        );
+    }
+
+    // 2. `adopt status` must not error before adoption; it reports "absent".
+    let absent = fixture.run_adopt("status", &common);
+    assert_eq!(absent.status.code(), Some(1));
+    let absent_json: serde_json::Value = serde_json::from_slice(&absent.stdout).unwrap();
+    assert_eq!(absent_json["status"], "absent");
+
+    // 3. Adopt, then come back: the status must be "complete" and the id
+    //    must be the same one `project resolve` reported beforehand.
+    let applied = fixture.run_adopt("apply", &common);
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let applied_json: serde_json::Value = serde_json::from_slice(&applied.stdout).unwrap();
+    assert_eq!(applied_json["status"], "complete");
+
+    let status = fixture.run_adopt("status", &common);
+    assert!(
+        status.status.success(),
+        "adopt status must not fail after adopt apply: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let status_json: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status_json["status"], "complete");
+    assert_eq!(status_json["project_id"], first_json["project_id"]);
+
+    // 4. A second `adopt plan` must agree too (it used to mint a third id).
+    //    `adopt plan` nests the identity one level deeper than
+    //    `project resolve`.
+    let planned = fixture.run_adopt("plan", &common);
+    assert!(planned.status.success());
+    let planned_json: serde_json::Value = serde_json::from_slice(&planned.stdout).unwrap();
+    assert_eq!(
+        planned_json["identity"]["project_id"],
+        first_json["project_id"]
+    );
+}
+
+#[test]
 fn adopt_json_exit_status_tracks_absent_complete_and_replay() {
     let fixture = CliFixture::new("adopt-remote");
     let common = [

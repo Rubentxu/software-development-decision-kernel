@@ -437,7 +437,13 @@ impl RuntimeContext {
             fallback_seed = crate::find_persisted_fallback_seed(environment, &root, scope)?;
         }
         if remote.is_none() && fallback_seed.is_none() && generate_seed {
-            fallback_seed = Some(Uuid::new_v4().hyphenated().to_string());
+            // Derive the seed from the canonical path instead of minting a
+            // random UUID. A random seed makes every invocation a different
+            // project, so `adopt status` afterwards reports "not adopted"
+            // for a workspace that was adopted one command earlier.
+            // INC-DEBT-028.
+            let canonical = crate::path_string(&root)?;
+            fallback_seed = Some(sddk_domain::stable_fallback_seed(&canonical));
         }
         let identity = sddk_domain::resolve_project_identity(
             remote.as_deref(),

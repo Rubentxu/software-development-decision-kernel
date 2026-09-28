@@ -121,7 +121,6 @@ pub fn now_ms_since_epoch() -> i64 {
 }
 use serde::Serialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use uuid::Uuid;
 use vault_cmd::VaultCommand;
 use walkdir::WalkDir;
 
@@ -1375,7 +1374,9 @@ pub(crate) fn resolve_project_ids(
     let root = canonical_root(root)?;
     let remote = resolve_remote(&root, explicit_remote)?;
     let fallback_seed = match (remote.as_ref(), explicit_seed) {
-        (None, None) => Some(Uuid::new_v4().hyphenated().to_string()),
+        // Derive from the canonical path: a random seed makes every call a
+        // different project. INC-DEBT-028.
+        (None, None) => Some(sddk_domain::stable_fallback_seed(&path_string(&root)?)),
         (_, seed) => seed,
     };
     let identity = resolve_project_identity(remote.as_deref(), scope, fallback_seed.as_deref())?;
@@ -1389,7 +1390,10 @@ fn run_project_resolve(args: ProjectResolveArgs) -> CommandOutput {
         let root = canonical_root(&args.root)?;
         let remote = resolve_remote(&root, args.remote)?;
         let fallback_seed = match (remote.as_ref(), args.fallback_seed) {
-            (None, None) => Some(Uuid::new_v4().hyphenated().to_string()),
+            // Derive from the canonical path: a random seed makes every
+            // invocation a different project, so the reported identity
+            // drifts between commands. INC-DEBT-028.
+            (None, None) => Some(sddk_domain::stable_fallback_seed(&path_string(&root)?)),
             (_, seed) => seed,
         };
         let identity =
@@ -1481,12 +1485,22 @@ fn prepare_adoption_plan(
     if remote.is_none() && fallback_seed.is_none() {
         fallback_seed = match operation {
             AdoptionOperation::Plan | AdoptionOperation::Apply => {
-                Some(Uuid::new_v4().hyphenated().to_string())
+                // Derive the seed from the canonical path instead of minting a
+                // random UUID: a random seed writes a receipt that no later
+                // invocation can rediscover, so the workspace immediately
+                // reads back as "not adopted". INC-DEBT-028.
+                let canonical = path_string(&root)?;
+                Some(sddk_domain::stable_fallback_seed(&canonical))
             }
             AdoptionOperation::Status | AdoptionOperation::Repair | AdoptionOperation::Refresh => {
-                anyhow::bail!(
-                    "fallback seed is required because no remote or matching adoption receipt exists"
-                )
+                // No remote and no persisted receipt, but the seed is now
+                // derivable from the canonical path, so these read-only
+                // operations resolve to the same identity `adopt apply` would
+                // write. Bailing here is what made a freshly-adopted
+                // workspace report "not adopted" on the next command.
+                // INC-DEBT-028.
+                let canonical = path_string(&root)?;
+                Some(sddk_domain::stable_fallback_seed(&canonical))
             }
         };
     }
