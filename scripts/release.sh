@@ -241,6 +241,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_deny_lint_zero_hits.sh \
              tests/test_vault_adr_mirror_coverage.sh \
              tests/test_release_tag_anchoring.sh \
+             tests/test_release_ci_manifest_anchor.sh \
+             tests/falsify-ci-anchor-real.sh \
              tests/test_vault_mirror_auto.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \

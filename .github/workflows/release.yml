@@ -196,7 +196,16 @@ jobs:
           # doctor can detect tampering). Use printf (not heredoc) so the
           # inner TOML body does not break the YAML `run: |` literal
           # scalar parser when the file is later re-validated.
-          MANIFEST_SHA="$(awk 'NR==1 {print $1}' "$WORK/framework/MANIFEST.sha256")"
+          #
+          # The digest is of MANIFEST.sha256 ITSELF, not of the first line it
+          # lists. `awk 'NR==1 {print $1}'` read the digest of
+          # agents/analytics-judge.md and published it as the manifest anchor,
+          # which `verify_manifest_anchor` (bundle_manifest.rs) rejects on any
+          # version not in LEGACY_PUBLISHED_ANCHORS. Same fix as release.sh
+          # (session-30); the `sha256:` prefix matches dev manifest's producer
+          # so the two formats stop diverging.
+          # Pinned by tests/test_release_ci_manifest_anchor.sh.
+          MANIFEST_SHA="$(sha256sum "$WORK/framework/MANIFEST.sha256" | cut -d' ' -f1)"
           printf '%s\n' \
             '[bundle]' \
             'schema_version = 2' \
@@ -205,7 +214,7 @@ jobs:
             "binary_max_version = \"$BINARY_VERSION\"" \
             '' \
             '[contents]' \
-            "manifest_sha256 = \"$MANIFEST_SHA\"" \
+            "manifest_sha256 = \"sha256:$MANIFEST_SHA\"" \
             > "$WORK/framework/BUNDLE.toml"
 
           # Pack the unified tarball (gz, reproducible layout).
