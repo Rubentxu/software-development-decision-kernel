@@ -1,14 +1,57 @@
 ---
 id: INC-DEBT-026-BUNDLE-CONTENT-NOT-IN-HISTORY
-title: "El bundle runtime instalado contiene texto que no corresponde a ningún commit del repositorio"
+title: "El bundle runtime local mezcla skills de otro proyecto (gentle-ai/sdd) y no satisface su manifest"
 status: open
-severity: high
-priority: P1
+severity: medium
+priority: P2
 created: 2026-09-28
 discovered_by: session-29 (coherencia del bundle instalado)
 cluster_id: CL-SUPPLY-CHAIN
 fingerprint: "sddk_runtime_bundle_diverges_from_published_manifest"
 ---
+
+## Resolucion del alcance (session-29, verificada contra el asset publicado)
+
+**El bundle publicado en GitHub Releases v2.0.1 esta limpio.** Descargado y
+verificado fichero a fichero:
+
+```console
+$ gh release download v2.0.1 --pattern 'software-development-decision-kernel.tar.gz*'
+$ sha256sum software-development-decision-kernel.tar.gz
+d31b9a534fdc0badc0f394998d6129870057087a93cada28d743107a160aef10   # coincide con el .sha256 publicado
+
+$ # recorriendo las 377 lineas de MANIFEST.sha256
+  ok=377  mismatch=0  faltantes=0
+```
+
+El repositorio coincide con el publicado. **La divergencia es exclusivamente
+local**, y la causa esta identificada: el `skills/` del bundle local es
+contenido de **otro proyecto**.
+
+```console
+$ for f en los 12 divergentes + el ausente:
+    local == ~/.config/kilo/skills/<f>     -> 11 de 12 IDENTICOS
+    local == skills/<f> del repo           ->  0 de 12
+
+$ grep -c 'agent opencode'  bundle local .../_shared/review-ledger-contract.md   -> 1
+$ grep -c 'agent kilocode'  ~/.config/kilo/.../_shared/review-ledger-contract.md -> 1
+```
+
+El 12 diverge de kilo solo en el token del editor (`kilocode` vs `opencode`):
+el bundle local guarda la variante de un editor y kilo la suya.
+
+`~/.config/kilo/` se declara `__managed_by: gentle-ai/sdd` en su
+`opencode.json` — un proyecto **distinto** de sddk-framework.
+
+### Por que baja de high/P1 a medium/P2
+
+- No hay incidente de distribucion: lo publicado verifica 377/377.
+- No hay contenido ajeno al ecosistema: es contenido de un proyecto hermano,
+  no desconocido.
+- Si el paquete o la instalacion de `gentle-ai/sdd` escribe en
+  `~/.local/share/sddk/framework/`, eso **si** es una intrusion en el bundle
+  de otro proyecto y contradice la regla de cero intrusion. Ese angulo sigue
+  abierto y es la accion recomendada.
 
 ## Qué es
 
@@ -19,12 +62,12 @@ El bundle instalado en
 - **12 ficheros** existen pero con un hash distinto al declarado.
 - **1 fichero** declarado no existe: `skills/_shared/SKILL.md`.
 - `BUNDLE.toml` declara un `manifest_sha256` que no es el hash del manifest
-  (defecto de cálculo aparte, registrado en
+  (defecto de calculo aparte, registrado en
   `INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE`).
 
-Y, más importante que el recuento: **el contenido que hay dentro no
-corresponde a ninguna versión de esos ficheros en el historial del
-repositorio**.
+Y, mas importante que el recuento: el contenido que hay dentro **no
+corresponde a ninguna version de esos ficheros en el historial de este
+repositorio**, y si a un proyecto ajeno.
 
 ## Evidencia (verificada, session-29)
 
@@ -95,34 +138,29 @@ $ ls -ld .../2.0.1/skills/skill-registry/SKILL.md
 -rw-r--r-- 1 rubentxu rubentxu 3715 sep 28 08:35 skill-registry/SKILL.md
 ```
 
-## Qué NO se afirma y qué NO se sabe
+## Qué se sabía cuando se abrió, y qué se sabe ahora
 
+- ~~No se sabe si el bundle publicado en GitHub Releases v2.0.1 tiene el
+  mismo contenido.~~ **Resuelto: el publicado verifica 377/377.** La
+  hipótesis de incidente de distribución queda descartada.
+- ~~No se sabe qué herramienta tocó el bundle a las 08:35.~~ **Parcial:
+  el contenido coincide con `~/.config/kilo/skills/` (11 de 12 ficheros
+  idénticos), que pertenece a `gentle-ai/sdd`.** Sigue sin haber un log
+  que lo confirme; es correlación de contenido, no prueba de causalidad.
 - **No se afirma** que haya un compromiso, ni que nadie adversarial
-  escribiera ahí. Una escritura local por una herramienta, un `sddk dev
-  install` parcial, un copiado manual, o un experimento de bootstrap producen
-  exactamente esta firma temporal. El contenido no está en el historial de
-  *este* repositorio, pero eso solo descarta "vino de un commit de aquí";
-  no identifica el origen.
-- **No se sabe** qué herramienta tocó el bundle a las 08:35. No hay log que
-  lo registre.
-- **No se sabe** si el bundle publicado en GitHub Releases v2.0.1 tiene el
-  mismo contenido. Esto solo se ha verificado contra la copia local. La
-  diferencia importa: si el remoto está limpio, el INC baja a
-  "entorno local modificado" y la prioridad cae; si el remoto tiene lo
-  mismo, es un incidente de distribución y sube a severidad crítica.
+  escribiera ahí. Una escritura local por una herramienta, un
+  `sddk dev install` parcial, un copiado manual, o un experimento de
+  bootstrap producen la misma firma temporal.
 
-## Comprobación pendiente (la siguiente acción, no una conclusión)
+## Comprobacion pendiente (la siguiente accion, no una conclusion)
 
-Descargar el asset publicado de v2.0.1 y verificar su `MANIFEST.sha256`
-contra los ficheros del tarball:
+**Resuelta en session-29**: el asset publicado verifica 377/377. Ver
+"Resolucion del alcance" arriba. No queda pendiente comprobar el remoto.
 
-```bash
-gh release download v2.0.1 --pattern 'bundle.tar.gz' --dir /tmp/sddk-verify
-cd /tmp/sddk-verify && sha256sum -c <(...)   # y el gate 9b ya exige HTTP 200
-```
-
-Mientras eso no se haga, el alcance correcto es **"copia local
-divergente, alcance remoto desconocido"**, y así queda escrito.
+Queda pendiente identificar **que proceso** escribio en el bundle a las
+08:35. La evidencia apunta a `gentle-ai/sdd` / `~/.config/kilo/`, pero eso
+es una correlacion de contenido, no un log: ningun registro dice que kilo
+escribiera ahi. Para cerrarlo hace falta el mecanismo (ver accion 1).
 
 ## Relación con otros INCs
 
@@ -138,13 +176,18 @@ divergente, alcance remoto desconocido"**, y así queda escrito.
   nadie actúa sobre él. Eso hace que este INC sea más de proceso que de
   código.
 
-## Acción recomendada
+## Accion recomendada
 
-1. `sddk dev install` para restaurar el bundle desde el origen de verdad y
+1. **Determinar el mecanismo**: comprobar si el `bootstrap.sh` de
+   `gentle-ai/sdd` (o su instalador) escribe en
+   `~/.local/share/sddk/framework/`. Si lo hace, está escribiendo en el
+   bundle de otro proyecto y hay que actuarlo: los dos proyectos comparten
+   `~/.local/share/sddk/`, que es territorio compartido por construcción.
+   Es la acción que decide si esto es ruido cosmético o una intrusión real.
+2. `sddk dev install` para restaurar el bundle desde el origen de verdad y
    confirmar que la divergencia desaparece. Si reaparece, ya no es un
    incidente aislado sino algo que escribe en el bundle de forma repetida.
-2. Verificar el asset remoto de v2.0.1 (comprobación pendiente de arriba).
-3. `reconcile`/documentar por qué `sddk dev doctor` reporta
-   `content.manifest: missing` durante varias sesiones sin que nadie lo
-   trifique. La señal estaba disponible; la respuesta fue descartarla como
-   "instalación vieja".
+3. Explicar por que `sddk dev doctor` reporta `content.manifest: missing`
+   durante varias sesiones sin que nadie lo trifique. La senal estaba
+   disponible; la respuesta fue descartarla como "instalacion vieja" — y
+   esa descriptora era incorrecta, como se ha visto.

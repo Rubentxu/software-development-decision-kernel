@@ -4577,3 +4577,41 @@ Nota aparte: durante esta sesion se ejecuto
 lo cual habria cambiado la release publica declarada de 2.2.0 a 2.2.1. Se
 revirtio de inmediato. Elegir el numero de version es decision del
 operador, no un efecto secundario de querer pushear.
+
+### Alcance de INC-DEBT-026 resuelto contra el asset publicado
+
+Session-29 abrio INC-DEBT-026 con el alcance honesto pero abierto: "copia
+local divergente, alcance remoto desconocido". Se resolvio descargando el
+bundle publicado de v2.0.1 y verificandolo fichero a fichero.
+
+**El bundle publicado esta limpio**: 377 de 377 entradas correctas, 0
+mismatch, 0 faltantes, y el sha256 del tarball coincide con el `.sha256`
+publicado. El repositorio coincide con el publicado. No hay incidente de
+distribucion, y el INC baja de high/P1 a medium/P2.
+
+Lo que si es real: el `skills/` del bundle local es contenido de **otro
+proyecto**.
+
+```
+  local == ~/.config/kilo/skills/<f>   ->  11 de 12 identicos
+  local == skills/<f> del repo         ->   0 de 12
+```
+
+`~/.config/kilo/opencode.json` declara `__managed_by: gentle-ai/sdd`. El
+duodecimo fichero diverge solo en el token del editor: el bundle local
+guarda `agent opencode` y kilo el suyo, `agent kilocode`.
+
+Queda abierto el mecanismo, que es la accion que decide si esto es ruido
+cosmetico o una intrusion real: comprobar si el bootstrap de
+`gentle-ai/sdd` escribe en `~/.local/share/sddk/framework/`. Si lo hace,
+esta escribiendo en el bundle de otro proyecto, y la regla de cero
+intrusion esta rota. **No hay log que lo confirme**: es correlacion de
+contenido, no causalidad probada, y asi queda escrito.
+
+Nota de proceso: el INC se abrio como high/P1 por la combinacion de "no
+verifica su manifest" + "contenido no esta en el historial", que es una
+combinacion alarming si no se separa. Lo que hacia falta antes de abrir un
+P1 era distinguir el activo en distribucion del activo local. El remoto
+verificaba perfecto y eso cambia la severidad entera. Abrir con el alcance
+dudoso y resolverlo con evidencia es mejor que abrir con una conclusion
+definitiva que luego hay que revertir.
