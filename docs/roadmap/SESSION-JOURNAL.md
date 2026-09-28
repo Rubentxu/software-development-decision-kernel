@@ -3987,3 +3987,102 @@ mensaje es legible, pero se deja constancia en vez de reescribir el commit: la
 regla de no reescribir historia aplica también a mis propios errores
 tipográficos, y un `git rebase` para limpar una tilde sería peor que el
 problema.
+
+## session-26 — 2026-09-28T09:10Z — falsificacion de `ledger verify` y censo real de ciclos
+
+Objetivo: no dar por valido el `SDDK PRE-FLIGHT` mientras dos afirmaciones
+suyas descansaran sobre una muestra y no sobre un censo.
+
+### 1. `sddk ledger verify` falsificado en los dos sentidos
+
+Metodo: copia aislada de la ledger real, corrupcion de un unico evento
+(`content_hash`), y ejecucion del verificador contra esa copia. La ledger real
+no se leyo para escribir ni se modifico en ningun momento.
+
+- **BAD** (1 evento con `content_hash` = `sha256:corrupt...`):
+
+  ```text
+  error[STORAGE_LEDGER_INTEGRITY]: ledger integrity failure at sequence -1:
+  canonical stream p-63676b11dc0ef88f/cycle-45-build-remediate-archive:
+  storage error: event_store:hash_drift:1
+    recovery: restore the ledger from a verified backup
+    exit=1
+  ```
+
+- **GOOD** (569 eventos intactos):
+
+  ```text
+  event_count: 569
+  last_hash: sha256:271e58f7c2ffa52e515a1703bac92a66a2de1072448440dd979371a5b5c37371
+    exit=0
+  ```
+
+Conclusión: el verificador **es** efectivo. Detecta la corrupcion y falla
+cerrado. No es un adorno.
+
+Tres correcciones de método que costaron tiempo y conviene no repetir:
+
+1. `SDDK_STATE_HOME` **no** es la variable que usa el binario. El propio
+   ejecutable contiene el literal `runner denied SDDK_STATE_HOME`. La variable
+   efectiva es `XDG_STATE_HOME`, y la ruta esperada es
+   `$XDG_STATE_HOME/sddk/projects/<project_id>/ledger.sqlite`. Con
+   `SDDK_STATE_HOME` mal puesto, `verify` devolvio `exit=0` leyendo la ledger
+   real y dando una falsa sensacion de exito.
+2. El error `UNIQUE constraint failed: events_v1.content_hash` es enganoso:
+   `content_hash` tiene indice **no unico**. El conflicto real era `sequence`,
+   donde 26 eventos comparten `sequence=5` (sequence es por stream, no global).
+3. `ledger verify-chain` devuelve `PASS` con `event_count: 0`. Es vacuo. No
+   debe citarse como evidencia de nada.
+
+### 2. Censo completo de ciclos: la afirmacion original era incorrecta
+
+La afirmacion "no hay ningun ciclo activo" es **correcta**, pero la razon
+dada antes no lo era. Se basaba en mirar 400 eventos con un default de `events`
+= 50, es decir una muestra.
+
+Censo real sobre la tabla `cycles` (175 filas, sin muestreo):
+
+```text
+status:  101 OPEN | 72 CLOSED | 1 RELEASED | 1 RELEASE_PENDING
+```
+
+O sea: **101 ciclos marcados OPEN**. La afirmacion de que no habia ciclo
+activo solo se sostiene por una definicion mas estrecha. Leyendo
+`crates/sddk-cli/src/cycle.rs:337-346`, un ciclo activo es **el que tiene
+lease**, no el que tiene `status != CLOSED`. Con la lease vacia no hay ciclo
+activo, y por eso `sddk cycle status` responde correctamente
+`no active cycle found for project p-63676b11dc0ef88f`.
+
+Cierre de la cadena en la capa de storage: `cycle_leases` tiene **29 filas**,
+las **29 expiradas** frente a `now = 1790586531542 ms`. Cero leases vigentes.
+CLI y storage coinciden, y el motivo es entendible sin ambiguedad.
+
+Los 6 eventos sin `cycle_id` son `authority.admission.decided` sobre los
+streams `authority-gate_receipts` / `authority-cycle_state` /
+`authority-transition_records`. No son ciclos.
+
+### Estado al cierre
+
+- `HEAD == origin/main == e579aae`, arbol limpio.
+- Workspace `2.1.0`, sin publicar. Ultimo tag publico `v2.0.1`.
+- `INC-DEBT-024` cerrado. `ADR-0143` sigue `proposed`.
+- `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` sigue `code-closed,
+  distribution-open`: requiere un release real firmado.
+- Fixtures de falsificacion eliminados. Ledger real confirmado intacto:
+  569 eventos, 0 corruptos, trigger `events_v1_no_update` presente.
+
+### Conocimiento negativo que queda
+
+- Los 101 ciclos `OPEN` son deuda de higiene, no trabajo vivo: en su mayoria
+  son imports de backlog del 2026-09-07 19:24:17 que nunca avanzaron de
+  fase. No bloquean el release, pero nadie los ha cerrado y el proximo que
+  haga `cycle start` los va a encontrar ahi. Queda anotado, sin resolver.
+- `sddk` no expone ninguna forma de listar ciclos OPEN. El censo hubo que
+  hacerlo por SQL directo sobre la projection. Falta comando.
+
+### Primer paso preciso de la sesion siguiente
+
+`bash scripts/release.sh --dry-run` con la version 2.1.0 ya bumpeada, para
+validar los pasos 0-8 sin publicar nada. Si el dry-run pasa, decidir con el
+operador si se autoriza el release real, que es el unico camino que puede
+cerrar `INC-AUDIT-S14`.
