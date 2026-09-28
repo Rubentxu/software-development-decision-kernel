@@ -21,19 +21,93 @@ use std::path::Path;
 /// certificate matches the expected one. An attacker who controls the
 /// download origin still cannot mint a certificate for that identity.
 ///
-/// Policy, deliberately fail-closed:
-///   * signature present → it MUST verify. Bad signature = hard error,
-///     never a warning. A warning here would be a downgrade an attacker
-///     could trigger by serving a bad signature.
-///   * signature absent → error, unless the operator opts in explicitly
-///     with `SDDK_ALLOW_UNSIGNED_UPDATE=1`.
-///   * cosign not installed → same as absent, with a message that says
-///     what to install. Never silently skipped.
-///
-/// The opt-out is named ALLOW, not SKIP, and always prints that it is
-/// being used. A quiet downgrade is how "we have signatures" becomes a
-/// claim that is false in production.
+/// Resolve the cosign argv for `verify-blob` WITHOUT executing it, so the
+/// split can be pinned by unit tests (this crate forbids unsafe code and
+/// `std::env::set_var` is `unsafe` in edition 2024, so no test can reach
+/// argv-shaping code that reads env vars inline).
+fn cosign_argv(
+    bundle: &Path,
+    sig_path: &Path,
+    cert_path: &Path,
+    bundle_path: &Path,
+) -> anyhow::Result<Vec<std::ffi::OsString>> {
+    // Prefer the bundle format when present (current cosign), fall back to
+    // the detached signature for older cosign versions. The CI signs
+    // DETACHED: it publishes <file>.sig and <file>.pem.
+    //
+    // `cosign verify-blob --signature` on its own validates against whatever
+    // certificate cosign picks, which is the unpinned path this policy
+    // exists to close. The leaf certificate must be passed explicitly.
+    // Observed on cosign v3.1.3 (first signed release, v2.2.11):
+    // --certificate-chain carries only the CHAIN and cosign aborts with
+    // "provide a key … a certificate to verify against with --certificate";
+    // the leaf flag is --certificate.
+    let mut argv: Vec<std::ffi::OsString> = if bundle_path.exists() {
+        let mut v: Vec<std::ffi::OsString> =
+            ["verify-blob", "--bundle"].iter().map(Into::into).collect();
+        v.push(bundle_path.into());
+        v
+    } else if cert_path.exists() {
+        // VALUE flags interleaved with their values: `--signature <sig>
+        // --certificate <cert>`. Flag-flag-value-value would make clap
+        // read the second flag as the first flag's value (or reject it).
+        let mut v: Vec<std::ffi::OsString> = Vec::with_capacity(6);
+        v.push("--signature".into());
+        v.push(sig_path.into());
+        v.push("--certificate".into());
+        v.push(cert_path.into());
+        v.insert(0, "verify-blob".into());
+        v
+    } else {
+        // Unreachable from verify_bundle_signature (it bails before calling
+        // here when neither exists); the detached shape is the safe default.
+        ["verify-blob", "--signature", "--certificate"]
+            .iter()
+            .map(Into::into)
+            .collect()
+    };
+
+    // Identity and issuer are SEPARATE variables. Conflating them in one
+    // var whose meaning depends on whether the value contains '@' is a trap:
+    // the GitHub Actions issuer URL has no '@', so passing it as the identity
+    // produced `--certificate-identity=<issuer>` — and cosign, told only an
+    // identity, still requires `--certificate-oidc-issuer` to be supplied or
+    // it accepts the certificate against ANY issuer. That is not a stronger
+    // check, it is a weaker one wearing a stricter-looking name.
+    //
+    // Defaults are the real SDDK signing identity so an operator who sets
+    // nothing gets pinning, not "any Sigstore certificate will do".
+    let identity = std::env::var("SDDK_COSIGN_IDENTITY")
+        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY_REGEXP.to_string());
+    let issuer = std::env::var("SDDK_COSIGN_ISSUER")
+        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_ISSUER.to_string());
+
+    if identity.trim().is_empty() || issuer.trim().is_empty() {
+        anyhow::bail!(
+            "SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty.\n\
+             Refusing to verify without pinning both: an empty value would let\n\
+             cosign accept any certificate, which proves nothing about us."
+        );
+    }
+
+    argv.push(format!("--certificate-identity-regexp={identity}").into());
+    argv.push(format!("--certificate-oidc-issuer={issuer}").into());
+    argv.push(bundle.into());
+    Ok(argv)
+}
+
 fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> anyhow::Result<()> {
+    // Policy, deliberately fail-closed:
+    //   * signature present → it MUST verify. Bad signature = hard error,
+    //     never a warning. A warning here would be a downgrade an attacker
+    //     could trigger by serving a bad signature.
+    //   * signature absent → error, unless the operator opts in explicitly
+    //     with `SDDK_ALLOW_UNSIGNED_UPDATE=1`.
+    //   * cosign not installed → same as absent, with a message that says
+    //     what to install. Never silently skipped.
+    // The opt-out is named ALLOW, not SKIP, and always prints that it is
+    // being used. A quiet downgrade is how "we have signatures" becomes a
+    // claim that is false in production.
     // cosign writes `<name>.sig` / `<name>.bundle.json` next to the blob.
     let sig_path = bundle.with_file_name(format!(
         "{}.sig",
@@ -103,28 +177,11 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
         );
     }
 
-    // Verify. Prefer the bundle format when present (current cosign), fall
-    // back to the detached signature for older cosign versions.
-    // The CI (.github/workflows/release.yml) signs DETACHED: it publishes
-    // <file>.sig and <file>.pem. The bundle form is what current cosign
-    // emits with --bundle. Both are accepted, but the detached form must
-    // carry the certificate explicitly.
-    //
-    // `cosign verify-blob --signature` on its own validates against whatever
-    // certificate cosign picks, which is the unpinned path this policy
-    // exists to close. The leaf certificate must be passed explicitly.
-    // Observed on cosign v3.1.3 (first signed release, v2.2.11):
-    // --certificate-chain carries only the CHAIN and cosign aborts with
-    // "provide a key … a certificate to verify against with --certificate";
-    // the leaf flag is --certificate.
-    let mut cmd = std::process::Command::new("cosign");
-    if bundle_path.exists() {
-        cmd.args(["verify-blob", "--bundle"]).arg(&bundle_path);
-    } else if cert_path.exists() {
-        cmd.args(["verify-blob", "--signature", "--certificate"])
-            .arg(&sig_path)
-            .arg(&cert_path);
-    } else {
+    // Verify. Shape argv via cosign_argv (unit-pinned) and run it.
+    // The CI signs detached (.sig + .pem). A .sig without a .pem gives
+    // cosign nothing to pin --certificate-identity against, so it would
+    // trust whatever certificate it likes: refuse before shaping argv.
+    if !bundle_path.exists() && !cert_path.exists() {
         anyhow::bail!(
             "detached signature for {} has no .pem certificate next to it.\n\
              Refusing to verify without a certificate chain: --certificate-identity would\n\
@@ -132,35 +189,8 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
             bundle.display()
         );
     }
-    cmd.arg(bundle);
-
-    // Identity and issuer are SEPARATE variables. Conflating them in one
-    // var whose meaning depends on whether the value contains '@' is a trap:
-    // the GitHub Actions issuer URL has no '@', so passing it as the identity
-    // produced `--certificate-identity=<issuer>` — and cosign, told only an
-    // identity, still requires `--certificate-oidc-issuer` to be supplied or
-    // it accepts the certificate against ANY issuer. That is not a stronger
-    // check, it is a weaker one wearing a stricter-looking name.
-    //
-    // Defaults are the real SDDK signing identity so an operator who sets
-    // nothing gets pinning, not "any Sigstore certificate will do".
-    let identity = std::env::var("SDDK_COSIGN_IDENTITY")
-        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY_REGEXP.to_string());
-    let issuer = std::env::var("SDDK_COSIGN_ISSUER")
-        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_ISSUER.to_string());
-
-    if identity.trim().is_empty() || issuer.trim().is_empty() {
-        anyhow::bail!(
-            "SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty.\n\
-             Refusing to verify without pinning both: an empty value would let\n\
-             cosign accept any certificate, which proves nothing about us."
-        );
-    }
-
-    cmd.arg(format!("--certificate-identity-regexp={identity}"));
-    cmd.arg(format!("--certificate-oidc-issuer={issuer}"));
-
-    let output = cmd.output()?;
+    let argv = cosign_argv(bundle, &sig_path, &cert_path, &bundle_path)?;
+    let output = std::process::Command::new("cosign").args(argv).output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
@@ -709,6 +739,164 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sddk-sigtest-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    // ── cosign argv shaping (INC-A5-FWDIR follow-up, v2.2.16 run 36490012790) ──
+    //
+    // Observed failure: cosign_argv emitted `verify-blob --bundle <blob>
+    // <identity> <issuer>` — the blob went where the BUNDLE belongs. Clap
+    // rejected it with "accepts 1 arg(s), received 3" because --bundle takes
+    // exactly one value, and the real cosign v2.4.3 in the smoke job failed
+    // BEFORE evaluating any pinning flag. The fix pins the SHAPE: flags take
+    // their values inline, the blob is the one and only positional.
+
+    #[test]
+    fn cosign_argv_bundle_form_puts_the_blob_in_the_one_positional_slot() {
+        let dir = tempdir_for_test("argv-bundle");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        let bundle_form = dir.join("b.tar.gz.bundle.json");
+        fs::write(&bundle_form, b"{}").unwrap();
+        let argv = cosign_argv(
+            &bundle,
+            &dir.join("b.tar.gz.sig"),
+            &dir.join("b.tar.gz.pem"),
+            &bundle_form,
+        )
+        .unwrap();
+        let s: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(s[0], "verify-blob");
+        assert!(
+            s.contains(&"--bundle".to_string()),
+            "bundle form must use --bundle: {s:?}"
+        );
+        assert_eq!(
+            *s.last().unwrap(),
+            bundle.to_string_lossy(),
+            "the LAST argv element (the single positional) must be the blob, got {s:?}"
+        );
+        let positionals = s
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| {
+                // A token is a flag VALUE only when the previous token is a
+                // bare flag (`--f`). An inline `--f=v` consumes its value
+                // inline and does NOT swallow the next token, so what follows
+                // it is a real positional. (Simplified per clippy.)
+                *i > 0
+                    && !a.starts_with('-')
+                    && (!s[i - 1].starts_with("--") || s[i - 1].contains('='))
+            })
+            .count();
+        assert_eq!(
+            positionals, 1,
+            "verify-blob takes exactly ONE positional (the blob); extra positionals \
+             are what made cosign die with 'accepts 1 arg(s), received 3': {s:?}"
+        );
+        assert!(
+            s.iter()
+                .any(|a| a.starts_with("--certificate-identity-regexp=")),
+            "identity pinning must be inline flag=value: {s:?}"
+        );
+        assert!(
+            s.iter()
+                .any(|a| a.starts_with("--certificate-oidc-issuer=")),
+            "issuer pinning must be inline flag=value: {s:?}"
+        );
+    }
+
+    #[test]
+    fn cosign_argv_detached_form_passes_sig_and_leaf_cert_before_the_blob() {
+        let dir = tempdir_for_test("argv-detached");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        let sig = dir.join("b.tar.gz.sig");
+        let cert = dir.join("b.tar.gz.pem");
+        fs::write(&sig, b"sig").unwrap();
+        fs::write(&cert, b"cert").unwrap();
+        let argv = cosign_argv(&bundle, &sig, &cert, &dir.join("absent.bundle.json")).unwrap();
+        let s: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !s.contains(&"--bundle".to_string()),
+            "no --bundle in detached form: {s:?}"
+        );
+        // --signature and --certificate are VALUE flags: their immediate
+        // successor must be the sig / cert path. A flag followed by another
+        // flag is how a path gets silently dropped.
+        let sig_idx = s.iter().position(|a| a == "--signature").unwrap();
+        assert_eq!(
+            s[sig_idx + 1],
+            sig.to_string_lossy(),
+            "--signature value: {s:?}"
+        );
+        let cert_idx = s.iter().position(|a| a == "--certificate").unwrap();
+        assert_eq!(
+            s[cert_idx + 1],
+            cert.to_string_lossy(),
+            "--certificate value: {s:?}"
+        );
+        assert_eq!(
+            *s.last().unwrap(),
+            bundle.to_string_lossy(),
+            "blob is the positional: {s:?}"
+        );
+        let positionals = s
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| {
+                *i > 0
+                    && !a.starts_with('-')
+                    && (!s[i - 1].starts_with("--") || s[i - 1].contains('='))
+            })
+            .count();
+        assert_eq!(
+            positionals, 1,
+            "exactly one positional in detached form too: {s:?}"
+        );
+    }
+
+    #[test]
+    fn cosign_argv_bundle_form_takes_exactly_one_bundle_value() {
+        // Mutation guard in the failing direction: a --bundle followed by
+        // TWO values (blob + any flag path confusion) is what cosign 2.4.3
+        // rejected with 'accepts 1 arg(s), received 3' on run 36490012790.
+        // cosign clap: --bundle <path>, then <blob> positional. The argv we
+        // emit must alternate flag/value with a single trailing positional.
+        let dir = tempdir_for_test("argv-arity");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"p").unwrap();
+        let bundle_form = dir.join("b.tar.gz.bundle.json");
+        fs::write(&bundle_form, b"{}").unwrap();
+        let argv = cosign_argv(
+            &bundle,
+            &dir.join("b.tar.gz.sig"),
+            &dir.join("b.tar.gz.pem"),
+            &bundle_form,
+        )
+        .unwrap();
+        let s: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let bundle_idx = s.iter().position(|a| a == "--bundle").unwrap();
+        assert_eq!(
+            s[bundle_idx + 1],
+            bundle_form.to_string_lossy(),
+            "--bundle must be immediately followed by the bundle path: {s:?}"
+        );
+        assert_ne!(
+            s[bundle_idx + 1],
+            bundle.to_string_lossy(),
+            "the blob must NEVER sit in the --bundle slot (this is the v2.2.16 \
+             failure: cosign saw the blob as the bundle value and the pinning \
+             flags as positionals): {s:?}"
+        );
     }
 
     // ── tarball member guard (arbitrary-write primitive) ──
