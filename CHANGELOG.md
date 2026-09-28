@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.18] - 2026-09-28
+
+### Fixes
+  - fix(cli): detectar el layout del tarball antes de aplicar --strip-components
+  - fix(cli): argv de cosign verify-blob con --bundle sin valor ni blob en su hueco
+  - fix(ci): el smoke step 2 buscaba el binario en $PREFIX/sddk y vive en $PREFIX/bin/sddk
+  - fix(ci): el pin de zcode en el smoke exige ficheros nativos, no symlinks
+
 ## [2.2.17] - 2026-09-28
 
 ### Fixes
