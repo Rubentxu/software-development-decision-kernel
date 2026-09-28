@@ -18,6 +18,7 @@ concurrency class, and documents the invariants that must hold under concurrent 
 | `insert_decision_record` | **ATOM-PER-ROW** | `decision_records_v1` (UNIQUE `id`) | SQLite row-level atomicity; concurrent inserts with distinct ids each succeed |
 | `backfill_spine_columns` | **ATOM-PER-ROW** | `work_items_v1` (AC-PLN4-04 guarded) | SQLite row-level atomicity; guarded by AC-PLN4-04 lifecycle guard |
 | `with_busy_retry` (helper) | **TRANSACTIONAL** | Wraps `transaction_with_behavior(Immediate)` | Bounded retry (max 5 attempts, 100–500ms exponential backoff) on `SQLITE_BUSY` (extended code 5); all other errors propagate immediately |
+| `execute_with_busy_retry` (helper) | **ATOM-PER-ROW** | Single autocommit statement | Bounded retry (max 10 attempts, 20–400ms exponential backoff **plus deterministic jitter**) on `DatabaseBusy`; added session-30, see below |
 | `insert_gate_receipt_next_seq` | **TRANSACTIONAL** | `gate_receipts` (via `with_busy_retry`) | Routes through `with_busy_retry`; bounded retry on `DatabaseBusy` |
 
 ## Class Definitions
@@ -38,6 +39,31 @@ of the individual row.
 - `work_item_dependencies_v1.from_id` → `work_items_v1.id`
 - `work_item_dependencies_v1.to_id` → `work_items_v1.id`
 - `decision_records_v1.work_item_id` → `work_items_v1.id`
+
+**Bounded-retry contract (`execute_with_busy_retry`), added session-30:**
+
+`busy_timeout(5s)` is a *per-attempt* budget, not a total budget. When a
+competing writer holds the write lock longer than 5s, the losing connection
+returns `DatabaseBusy` and the raw error propagates — the "each succeed"
+guarantee above was therefore false under sustained contention.
+
+Measured, not assumed:
+
+```text
+PROBE persisted journal_mode = wal
+PROBE write while held: ERR after 5.006s: database is locked
+PROBE Immediate tx while held: Some("database is locked") after 5.004s
+PROBE2 competitor after 11.7ms: OK        # short hold: busy_timeout absorbs it
+```
+
+- Max 10 attempts, 20–400ms exponential backoff, plus a deterministic
+  per-attempt jitter (`attempt * 37 % 25` ms).
+- Jitter is **load-bearing**: the concurrency tests synchronize their writers
+  on a `Barrier`, so an unjittered backoff lets both threads collide again on
+  the same schedule.
+- Retries only on `DatabaseBusy`; every other error propagates immediately.
+- Pinned by `tests/planning_atomic_per_row_busy_retry.rs`, which forces the
+  contention deterministically instead of relying on suite-level timing.
 
 ### CAS-ORACLE
 

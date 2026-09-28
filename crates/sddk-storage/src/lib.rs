@@ -1480,6 +1480,81 @@ impl Storage {
         Ok(format!("gate-{}-{}-{}", gate, &plan_hash[7..23], seq))
     }
 
+    /// Executes a single-statement write with bounded retry on `DatabaseBusy`.
+    ///
+    /// `with_busy_retry` covers the TRANSACTIONAL class, which fails when
+    /// *acquiring* the IMMEDIATE lock. This helper covers the ATOM-PER-ROW
+    /// class, where the lock is acquired implicitly by autocommit and the
+    /// competing writer can keep it longer than `busy_timeout` allows.
+    ///
+    /// Session-30 evidence (`concurrency_planning_substrate` under the full
+    /// workspace suite):
+    /// ```text
+    /// PROBE persisted journal_mode = wal
+    /// PROBE write while held: ERR after 5.006s: database is locked
+    /// PROBE Immediate tx while held: Some("database is locked") after 5.004s
+    /// ```
+    /// The 5s `busy_timeout` DOES wait and then genuinely expires: SQLite
+    /// grants writers the lock in turn, but the losing connection burns its
+    /// whole budget waiting for a turn that never arrives inside the window.
+    /// Retrying is what converts that timeout into a success, and it matches
+    /// the guarantee the concurrency contract already claims for these sites
+    /// ("concurrent inserts with distinct ids each succeed") — the contract
+    /// was correct and the implementation did not honour it.
+    ///
+    /// Backoff is deliberately jittered: the failing tests synchronize their
+    /// writers on a `Barrier`, so an unjittered backoff would have both
+    /// threads collide again on the same schedule.
+    ///
+    /// `sql` is a `&str` and `params` is rebuilt per attempt by `mk`, because
+    /// `rusqlite::Params` values are consumed by `execute` and a `params![..]`
+    /// binding is therefore not reusable across retries. The bound is
+    /// `&[&dyn ToSql]` rather than the `params!` tuple because that macro
+    /// yields references into temporaries, which cannot cross the closure
+    /// return.
+    fn execute_with_busy_retry(
+        &self,
+        sql: &str,
+        mut mk: impl FnMut() -> Vec<Box<dyn rusqlite::ToSql>>,
+    ) -> Result<usize> {
+        use std::time::Duration;
+
+        const MAX_RETRIES: u32 = 10;
+        const BASE_DELAY_MS: u64 = 20;
+        const MAX_DELAY_MS: u64 = 400;
+
+        let mut attempt: u32 = 0;
+        loop {
+            let owned = mk();
+            let bound: Vec<&dyn rusqlite::ToSql> = owned
+                .iter()
+                .map(|b| b.as_ref() as &dyn rusqlite::ToSql)
+                .collect();
+            match self.connection.execute(sql, bound.as_slice()) {
+                Ok(rows) => return Ok(rows),
+                Err(rusqlite::Error::SqliteFailure(code, _))
+                    if code.code == rusqlite::ErrorCode::DatabaseBusy =>
+                {
+                    if attempt >= MAX_RETRIES {
+                        return Err(StorageError::Database(rusqlite::Error::SqliteFailure(
+                            code,
+                            Some(String::new()),
+                        )));
+                    }
+                    let exp = BASE_DELAY_MS.saturating_mul(1u64 << attempt.min(5));
+                    let capped = exp.min(MAX_DELAY_MS);
+                    // Deterministic per-attempt spread: enough to break up
+                    // Barrier-synchronized writers without pulling in an RNG
+                    // dependency.
+                    let jitter = (attempt as u64 * 37) % 25;
+                    std::thread::sleep(Duration::from_millis(capped + jitter));
+                    attempt += 1;
+                }
+                Err(e) => return Err(StorageError::from(e)),
+            }
+        }
+    }
+
     /// Executes a closure inside an IMMEDIATE transaction with bounded retry on
     /// `DatabaseBusy`.
     ///
@@ -2427,29 +2502,31 @@ impl Storage {
     ///
     /// Fails with `IdempotencyConflict` if the id already exists.
     pub fn insert_work_item(&self, item: &sddk_domain::WorkItemRecord) -> Result<()> {
-        self.connection.execute(
+        self.execute_with_busy_retry(
             "INSERT INTO work_items_v1 (
                 id, cycle_id, title, description, status,
                 actor_ref_kind, actor_ref_id, actor_ref_label,
                 created_at, schema_version,
                 spine_order, spine_horizon, spine_status, exit_gate
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                item.id,
-                item.cycle_id,
-                item.title,
-                item.description,
-                serde_json::to_string(&item.status).unwrap(),
-                item.actor_ref_kind,
-                item.actor_ref_id,
-                item.actor_ref_label,
-                item.created_at,
-                item.schema_version,
-                item.spine_order,
-                item.spine_horizon,
-                item.spine_status,
-                item.exit_gate,
-            ],
+            || {
+                vec![
+                    Box::new(item.id.clone()),
+                    Box::new(item.cycle_id.clone()),
+                    Box::new(item.title.clone()),
+                    Box::new(item.description.clone()),
+                    Box::new(serde_json::to_string(&item.status).unwrap()),
+                    Box::new(item.actor_ref_kind.clone()),
+                    Box::new(item.actor_ref_id.clone()),
+                    Box::new(item.actor_ref_label.clone()),
+                    Box::new(item.created_at),
+                    Box::new(item.schema_version),
+                    Box::new(item.spine_order),
+                    Box::new(item.spine_horizon.clone()),
+                    Box::new(item.spine_status.clone()),
+                    Box::new(item.exit_gate.clone()),
+                ]
+            },
         )?;
         Ok(())
     }
@@ -2599,20 +2676,22 @@ impl Storage {
         spine_status: &str,
         exit_gate: &str,
     ) -> Result<()> {
-        self.connection.execute(
+        self.execute_with_busy_retry(
             "UPDATE work_items_v1 SET
                 spine_order = ?1,
                 spine_horizon = ?2,
                 spine_status = ?3,
                 exit_gate = ?4
              WHERE id = ?5",
-            params![
-                spine_order,
-                spine_horizon,
-                spine_status,
-                exit_gate,
-                work_item_id
-            ],
+            || {
+                vec![
+                    Box::new(spine_order),
+                    Box::new(spine_horizon.to_string()),
+                    Box::new(spine_status.to_string()),
+                    Box::new(exit_gate.to_string()),
+                    Box::new(work_item_id.to_string()),
+                ]
+            },
         )?;
         Ok(())
     }
@@ -2627,21 +2706,23 @@ impl Storage {
         if edge.from_id == edge.to_id {
             return Err(StorageError::SelfLoop(edge.from_id.clone()));
         }
-        self.connection.execute(
+        self.execute_with_busy_retry(
             "INSERT OR IGNORE INTO work_item_dependencies_v1 (
                 from_id, to_id, kind,
                 actor_ref_kind, actor_ref_id, actor_ref_label,
                 schema_version
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                edge.from_id,
-                edge.to_id,
-                serde_json::to_string(&edge.kind).unwrap(),
-                edge.actor_ref_kind,
-                edge.actor_ref_id,
-                edge.actor_ref_label,
-                edge.schema_version,
-            ],
+            || {
+                vec![
+                    Box::new(edge.from_id.clone()),
+                    Box::new(edge.to_id.clone()),
+                    Box::new(serde_json::to_string(&edge.kind).unwrap()),
+                    Box::new(edge.actor_ref_kind.clone()),
+                    Box::new(edge.actor_ref_id.clone()),
+                    Box::new(edge.actor_ref_label.clone()),
+                    Box::new(edge.schema_version),
+                ]
+            },
         )?;
         Ok(())
     }
@@ -2912,22 +2993,24 @@ impl Storage {
     ///
     /// The domain layer should have already validated that rationale is non-empty.
     pub fn insert_decision_record(&self, record: &sddk_domain::DecisionRecordRecord) -> Result<()> {
-        self.connection.execute(
+        self.execute_with_busy_retry(
             "INSERT INTO decision_records_v1 (
                 id, work_item_id, kind, rationale,
                 actor_ref_kind, actor_ref_id, actor_ref_label,
                 schema_version
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                record.id,
-                record.work_item_id,
-                serde_json::to_string(&record.kind).unwrap(),
-                record.rationale,
-                record.actor_ref_kind,
-                record.actor_ref_id,
-                record.actor_ref_label,
-                record.schema_version,
-            ],
+            || {
+                vec![
+                    Box::new(record.id.clone()),
+                    Box::new(record.work_item_id.clone()),
+                    Box::new(serde_json::to_string(&record.kind).unwrap()),
+                    Box::new(record.rationale.clone()),
+                    Box::new(record.actor_ref_kind.clone()),
+                    Box::new(record.actor_ref_id.clone()),
+                    Box::new(record.actor_ref_label.clone()),
+                    Box::new(record.schema_version),
+                ]
+            },
         )?;
         Ok(())
     }
