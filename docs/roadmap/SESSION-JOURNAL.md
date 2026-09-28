@@ -3488,3 +3488,95 @@ git status                                              limpio
 - **Cerrado:** la deriva del puntero (reconciliada dos veces mas).
 - **Abierto, y ya NO es tecnico:** una sola decision, la de publicar
   2.0.9. Todo lo que la precedia esta resuelto.
+
+---
+
+## session-23 — 2026-09-28T07:45Z — cierre del flake `R-flake-inv10`
+
+**Baseline de entrada:** `1e4af26` en `main`, `HEAD == origin/main`, árbol
+limpio. Workspace `2.0.9`, último release público `v2.0.1` → `5ce4bca`.
+
+**Objetivo:** cerrar el último item técnico abierto de session-22, el flake
+`R-flake-inv10` del gate `inv10_grep_gate_no_mutex_on_workflow_state`.
+
+### El diagnóstico
+
+El gate afirmaba `elapsed < 20ms` con hijos `SucceedOp` triviales. Es un
+umbral absoluto sin margen, así que mide la máquina y no el código. session-22
+lo reprodujo en 4 de 6 corridas bajo carga (22-31ms) frente a 0.00ms en
+aislamiento.
+
+La primera hipótesis — "subir el umbral" — era una trampa. A 200ms el test
+pasaba **también con `max_concurrency: 1`**, es decir con la serialización
+completa. Un gate que no distingue el caso bueno del caso que existe para
+detectar no es un gate: es decorado. Se descartó.
+
+El wall-clock no puede separar los dos casos en una máquina desconocida, porque
+las dos distribuciones se solapan: contención con hijos triviales (~30ms) y
+serialización genuina (~60ms). Lo que sí separa es el **ratio** entre el
+elapsed total y el coste de una corrida completamente serializada. Es
+adimensional, y por lo tanto independiente de núcleos, velocidad y carga
+ambiental: serializado da ~1.0, concurrente da ~1/N.
+
+### El segundo falso verde
+
+La primera versión del ratio usaba hijos de 4ms y una referencia de 200ms. Bajo
+carga dio **5/8**, con un ratio observado de 21%. La causa no era contención del
+mutex: una máquina saturada tardaba 42ms simplemente en agendar 50 duermes
+concurrentes. El gate estaba midiendo latencia de despertar de hilos.
+
+El arreglo es hacer que el trabajo del hijo domine ese coste fijo: con 20ms de
+sueño, agendar los hilos baja a ~2% de la referencia de 1000ms.
+
+### Falsificación (los dos sentidos)
+
+| Escenario | Resultado OBSERVED |
+| --- | --- |
+| concurrente, ocioso | pasa |
+| concurrente, `nproc` procesos en burn | **8/8** y **6/6** pasan |
+| mutación `max_concurrency: 1` | **FALLA**, ratio 100% |
+| mutación `max_concurrency: 2` | **FALLA**, ratio 50% |
+
+Un gate que solo pasa no prueba nada. Los dos FAIL son la evidencia de que el
+gate sigue detecting.
+
+### RECEIPT
+
+```
+commit                        982014e (test) + f8ef219 (bump 2.0.9 -> 2.0.10)
+clippy --workspace --all-targets -D warnings   exit 0
+cargo fmt --check                             clean
+cargo metadata --locked                       exit 0
+cargo test --workspace --locked --no-fail-fast  5057 passed / 0 failed / 19 ignored, 258 suites, exit 0
+test_release_state_pointer.sh                 PASS (9/9) tras reconciliar
+```
+
+Log completo sin truncar en la corrida de `2.0.10`; los totales se sacan con
+`grep -c '^test result: FAILED'` = 0, no de un `tail`.
+
+### Punteros reconciliados
+
+El bump a `2.0.10` volvió a dejar `STATE.yaml` 5 commits atrás, y el guard lo
+detectó por el check `workspace_version_at_current` vs `Cargo.toml` — el mismo
+check 6 que session-22 añadió para el `62d4728`. Puntero movido a `f8ef219` /
+`2.0.10` conservando la evidencia anterior en `superseded_pointer`.
+
+**Deuda de proceso, tercera repetición:** el patrón se repite porque el bump es
+siempre un commit posterior al que mueve el puntero, así que el puntero nunca
+puede señalar al bump sin quedar desfasado por los commits documentales de
+cierre. El guard detecta; no repara. Reconocido, no resuelto.
+
+### Conocimiento negativo (lo que NO funciona)
+
+- Subir un umbral wall-clock para tapar un flake no es arreglarlo. Si el
+  umbral se afloja tanto que el caso malo pasa, se ha desactivado el gate.
+- Con hijos demasiado cortos, un gate de ratio sigue midiendo laScheduling del
+  SO. El trabajo del hijo tiene que dominar el ruido.
+- "Pasó 8/8" sin un caso de mutación que falle no es evidencia de nada.
+
+### Estado de cierre de session-23
+
+- **Cerrado:** `R-flake-inv10`. Ya no queda trabajo técnico abierto.
+- **Cerrado:** la deriva del puntero (tercera reconciliación).
+- **Abierto, y sigue siendo una decisión del operador:** publicar `2.0.10`, y
+  con qué política de firma. Todo lo que la precedía está resuelto y verificado.
