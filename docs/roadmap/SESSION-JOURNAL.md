@@ -4922,3 +4922,99 @@ SDDK_SKIP_SIGNING=1 bash scripts/release.sh
 - `x86_64-linux-musl-gcc` **si** tiene via rootless (session-30), contra lo
   que session-29 afirmo. La lesson: antes de escribir "no recuperable sin
   operador", agotar la via sin root.
+
+---
+
+## session-31 — 2026-09-28T16:19Z → 16:51Z — CI sin ejecutar, dos defectos de publicación
+
+- **Baseline**: `origin/main` = `ed0e3c47`, local = `56df1ff3` (+4 commits sin
+  push de session-30). Workspace `2.2.5`, último tag público `v2.0.1`.
+- **WorkItem**: `p-63676b11dc0ef88f/release-ci-manifest-anchor` (B-direct,
+  `--path b-direct`). Ad-hoc por no existir WorkItem READY que cubriera esto.
+
+### Lo que se decidió y por qué
+
+1. **Refutar `INC-DEBT-030` antes de aceptar su premisa.** Daba por agotados
+   los minutos de Actions y ofrecía dos salidas, ambas con decisión del
+   operador. Se probó: repo público, Actions habilitado, run `36450601924`
+   arrancó. **Vía 1 viable.** No se tocó la vía 2 (`SDDK_SKIP_SIGNING=1`),
+   que degrada el contrato de instalación para todos los usuarios.
+2. **Corregir el defecto, no relajar el gate.** Al ver que el valor publicado
+   era una constante distinta por release, la corrección fácil era aceptar
+   cualquier valor sin prefijo. Se rechazó: reabría el agujero. Se hizo una
+   lista de pares exactos `(versión, valor)`, como ya hizo session-30.
+3. **No limpiar el CHANGELOG a medias.** 4 versiones duplicadas + una
+   fantasma, documentadas en `INC-DEBT-031`, sin tocar: los bloques difieren
+   y una fusión item a item merece revisión, no prisa.
+
+### Hallazgos (4, todos con evidencia observada)
+
+| # | Hallazgo | Commit |
+|---|----------|--------|
+| 1 | `release.yml:199` publicaba el digest del **primer fichero** del manifest, no del manifest. El bundle del CI era **rechazado por su propio instalador**. | `eae22737` |
+| 2 | `17d9b804` usaba `"$CHANGELOG.md"`, variable inexistente: el bump abortaba con `set -u`. Bisect: `ed0e3c47`/`cf481d11`/`e6998f01` verdes, `17d9b804` FAILED. | `a91c273f` |
+| 3 | Suite **no hermética**: 2 tests dependen de `env!("HOME")` y de ficheros del vault no versionados. Local verde, CI rojo, con tests **distintos**. | `INC-DEBT-032` |
+| 4 | Staging de CI en `assets/` = directorio de assets del bundle. El glob subió `agent-models.yaml` al release y murió en un subdirectorio, dejando `Sign`/`Unified`/`Smoke` en skipped. | `b6417047` |
+
+### Sorpresas (dos, sobre el método)
+
+- **El primer test escrito no detectaba su propio defecto.** La v1 de
+  `test_release_ci_staging.sh` casaba `release-assets/*` con `assets/*` y se
+  marcaba a sí misma como FAIL. Corregido anclando la regex a frontera de ruta.
+- **El test de staging encontró un segundo defecto que no buscaba.** El job de
+  firma recorría `assets/*` y habría firmado ficheros del bundle del repo. No
+  se vio porque el job nunca corrió, pero estaba ahí.
+
+### Publicación (OBSERVADA, con resultado negativo)
+
+Se publicó **v2.2.6** por Actions: tag `v2.2.6` → `be13b539` (= `origin/main`),
+`isDraft=false`, `isPrerelease=false`. Run `36452986413` terminó en
+**`failure`**: 4 jobs de binario en `failure`, `Bundle framework assets` en
+`success`, `Unified`/`Sign`/`Smoke test` en `skipped`.
+
+**Estado: v2.2.6 está publicado pero incompleto** — 11 assets, 0 firmas, y
+`agent-models.yaml` (fichero del bundle) entre ellos. **No se declara release
+completo.** Registrado en `INC-DEBT-034`, que queda abierto por una segunda
+causa raíz que no es de una línea: el layout de CI y el contrato de
+`tests/lib_public_release_gate.sh:68` divergen, y `gh-release-receipt.json`
+solo lo produce la vía local (bloqueada por la firma).
+
+**Mientras tanto: `v2.0.1` es el último release íntegro.** No instalar desde
+`v2.2.6`.
+
+### Evidencia ejecutada
+
+- `cargo test --workspace` → **5077 passed / 0 failed / 19 ignored**, exit 0
+  (post-fix; antes 184/2 en el subconjunto `cli`).
+- `bash tests/test_release_ci_manifest_anchor.sh` → PASS 3/3; mutación al
+  patrón viejo → FAIL 2/3; sin prefijo → FAIL 1/3.
+- `bash tests/test_release_ci_staging.sh` → PASS 4/4; mutación `STAGE="assets"`
+  → FAIL 2/4.
+- `bash tests/falsify-ci-anchor-real.sh` → PASS 3/3 con el binario release
+  real: el bundle del fix instala, el del bug es rechazado nombrando el ancla.
+- `bash tests/test_release_bump_derivation.sh` → PASS 7/7.
+- `bash tests/test_changelog_merge.sh` → PASS 5/5.
+- `shellcheck` limpio en los 5 ficheros tocados. YAML de `release.yml` válido.
+- `gh run view 36450601924` → `failure` con los 2 tests del vault (§3).
+
+### Conocimiento negativo (lo que NO se sabe)
+
+- Si el layout de assets de CI es intencionado o si el gate local está
+  desactualizado. **No se investigó**, es política de distribución.
+- Si `act` reproduce el fallo de staging localmente. No probado.
+- Por qué `2.1.0` y `2.2.0` no tienen entrada en el CHANGELOG. Sin mirar.
+
+### Deuda abierta real: 8 INCs
+
+`INC-DEBT-034` (P1, nuevo), `INC-DEBT-032` (P2, nuevo), `INC-DEBT-031` (P3),
+`INC-DEBT-030` (blocker **refutado**), `INC-DEBT-026`,
+`DEFAULT-GATE-DISCONNECTED`, `NO-STRUCTURED-LOGGING`,
+`TEST-PORTS-UNCONSUMED`, `RELEASE-FORCE-VERSION-ERGONOMICS`.
+
+### Primer paso preciso de la sesión siguiente
+
+Decidir el contrato único de assets (INC-DEBT-034 causa 2) y reemitir:
+`b6417047` ya está commiteado pero **no subido**, así que el primer paso es
+`git push origin main` (satisface la cláusula (A) del pre-push con el bump
+2.2.6 ya presente) **y a continuación** publicar `v2.2.7` con el staging
+corregido, para que exista un release íntegro por encima del contaminado.
