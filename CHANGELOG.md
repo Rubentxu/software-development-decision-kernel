@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.13] - 2026-09-28
+
+### Fixes
+  - fix(cli): el CLI ignoraba SDDK_FRAMEWORK_DIR y el smoke de CI no podia pasar
+  - fix(cli): identidad cosign y bandera de certificado hoja alineadas con Fulcio
+  - fix(install): la verificacion de firma no podia pasar nunca
+
 ## [2.2.12] - 2026-09-28
 
 ### Features
