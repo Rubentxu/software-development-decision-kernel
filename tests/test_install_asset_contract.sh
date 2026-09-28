@@ -427,6 +427,35 @@ else
     fail "the pre-check removed the declared unsigned escape hatch"
 fi
 
+# The cosign that signs a release must be a declared decision, not a third
+# party's default. `cosign-installer` pins the ACTION by SHA but leaves
+# `cosign-release` at its own default (v2.4.3), so without this the version
+# that produces a security control can change with nothing in the repo to
+# show it. Every installer step must state the version.
+missing_pins=$(python3 - "$RELEASE_YML" <<'PY'
+import sys, yaml
+try:
+    doc = yaml.safe_load(open(sys.argv[1]))
+except Exception as exc:
+    print(f"unreadable workflow: {exc}")
+    raise SystemExit(0)
+unpinned = []
+for jname, job in (doc.get("jobs") or {}).items():
+    for step in job.get("steps") or []:
+        uses = str(step.get("uses", ""))
+        if "cosign-installer" in uses:
+            ver = (step.get("with") or {}).get("cosign-release")
+            if not ver:
+                unpinned.append(f"{jname}/{step.get('name')}")
+print(",".join(unpinned))
+PY
+)
+if [ -z "$missing_pins" ]; then
+    ok "every cosign-installer step pins cosign-release explicitly"
+else
+    fail "cosign version left to the action default in: $missing_pins"
+fi
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "install asset contract: $failures check(s) FAILED"

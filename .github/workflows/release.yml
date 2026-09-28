@@ -248,6 +248,15 @@ jobs:
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@053f9b74638557590800a301da1ba82351507e2c # v3.8.1
+        with:
+          # Pinned EXPLICITLY. The action's built-in default is v2.4.3, but
+          # leaving it implicit means the cosign that signs a release is
+          # decided by a third party's default and can change under us with
+          # nothing in this repo to show it. The signature is a security
+          # control: the version that produces it is part of the contract.
+          # Update deliberately, in its own commit, with the version
+          # validated against the flags release.sh uses.
+          cosign-release: 'v2.4.3'
 
       - name: Download all build artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
@@ -286,6 +295,12 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@053f9b74638557590800a301da1ba82351507e2c # v3.8.1
+        with:
+          # Same explicit pin as the signing job. This one only installs cosign
+          # to VERIFY the release, so it must be able to read what the other
+          # one wrote; letting the two drift on a third-party default is how a
+          # verification step starts disagreeing with the thing it verifies.
+          cosign-release: 'v2.4.3'
 
       - name: Install via scripts/install.sh against the real release
         env:
