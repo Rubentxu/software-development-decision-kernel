@@ -4297,3 +4297,47 @@ sudo apt install musl-tools         # Debian/Ubuntu
 Esto es una accion del operador, no del agente. Queda como **accion
 humana requerida** y no como un fallo de codigo. El codigo del pipeline esta
 correcto: pide el compilador que el contrato de assets exige.
+
+### CORRECCION IMPORTANTE — el bloqueante musl NO bloquea la publicacion
+
+La sesion-27 cerro diciendo que sin toolchain musl local "no se puede
+publicar". **Eso es incorrecto**, y el propio repo lo contradice. Hay que
+separar dos rutas de publicacion que no son la misma.
+
+**Ruta A — CI (`.github/workflows/release-automation.yml` + `release.yml`).**
+Es la via prevista para publicar. El paso "Tag and dispatch release when main
+is ahead of the last tag" crea el tag leyendo la version de
+`origin/main:manifest.toml` y despacha `release.yml`, que en su linea 53-57
+hace:
+
+```yaml
+- name: Install musl cross tools
+  if: contains(matrix.target, 'linux-musl')
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y musl-tools
+```
+
+**CI instala su propio musl con su propio sudo.** El bloqueo local no la
+toca. Estado real ahora: `manifest.toml` en origin/main dice `2.1.1`, ultimo
+tag `v2.0.1` → el paso de CI tiene trabajo real que hacer.
+
+**Ruta B — local (`scripts/release.sh`).** Esta si construye musl de verdad
+(linea 430) y si publica (`gh release create`, paso 9). Aqui el bloqueo es
+real: sin toolchain local, el dry-run se para en 3/14.
+
+**Lo que cambia:** `release.sh --dry-run` es la validacion **local** de la
+ruta B. Su fallo en 3/14 dice "la ruta B no es ejecutable en esta maquina",
+no "el release no se puede publicar". Mi formulacion anterior confundio las
+dos, que es justo el error que `INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED`
+documenta: dos mecanismos parecidos, gates distintos, y el veredicto se
+extiende al que no corresponde.
+
+**Estado correcto:** la publicacion de 2.1.1 es **ejecutable por CI sin
+intervencion en la maquina local**. Lo que sigue requiriendo accion humana
+es distinto y mas pequeno de lo que dije:
+
+- Publicar es **irreversible** y requiere `gh workflow run
+  release-automation.yml` (workflow_dispatch, decision del operador).
+- La ruta B local sigue necesitando `musl` en el host si se quiere validar
+  o usar `release.sh` para publicar.
