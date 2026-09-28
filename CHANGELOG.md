@@ -2,6 +2,81 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.1] - 2026-09-28
+
+### Features
+  - feat(ops): script que reconcilia el puntero de estado, no solo lo detecta
+
+### Fixes
+  - fix(release): manifest_sha256 era el hash de la primera linea, no el del manifest
+  - fix(release): no re-bumpear cuando el workspace ya declara la release
+  - fix(release): derivar la version desde el workspace, no solo desde el tag
+  - fix(release): derivar la version desde el workspace, no solo desde el tag
+  - fix(release): usar la admision v2 (contra el ultimo tag publicado)
+  - fix(ci): fijar cosign v2.4.3 explicito en ambos pasos del workflow
+  - fix(release): negarse a firmar fuera de CI antes de intentarlo
+  - fix(release): verificar la identidad de firma antes de publicar (INC-DEBT-024)
+  - fix(uat): sustituir el umbral wall-clock del gate inv10 por un ratio
+  - fix(supply-chain): corrige el pin cosign a refs/tags y vuelve deterministas los guards
+  - fix(supply-chain): publica el .pem para que la firma detached sea verificable
+  - fix(supply-chain): alinea la firma del CI con la verificacion del instalador
+  - fix(supply-chain): exige firma cosign y pinea identidad e issuer
+  - fix(release): release.sh construye un binario musl real y verifica el linkage
+  - fix(tests): el guard del puntero era insatisfacible por construccion
+  - fix(roadmap): reconcilia STATE.yaml desfasado desde session-15 y lo ata a git
+  - fix(test): el e2e de instalacion llevaba la firma como verificada sin existir
+  - fix(install): el instalador pedia un asset que el release no publica (404)
+
+### Other
+  - docs(state): reconciliar puntero a 78876492
+  - docs(roadmap): dejar el estado real de session-29 en CURRENT.md
+  - docs(journal): tipografia en la correccion sobre la version de release
+  - docs(journal): corregir que publicar 2.2.0 no lleva el doble bump
+  - docs(debt): resolver el alcance de INC-DEBT-026 contra el asset publicado
+  - docs(journal): cobertura del paso 2.5, cinco mutaciones y dos falsos verdes
+  - test(release): cubrir el contrato de release.sh paso 2.5
+  - docs(state): reconciliar el puntero al estado real del repo
+  - docs(journal): el segundo defecto de release-bump y la leccion de proceso
+  - docs(journal): registrar el incidente de doble bump de session-28
+  - docs(roadmap): constancia de dos caracteres CJK en el mensaje de 6228ad12
+  - docs(roadmap): el bloqueante musl no bloquea la publicacion por CI
+  - docs(roadmap): el bloqueante musl requiere root, con el intento fallido documentado
+  - docs(roadmap): resultado observado del dry-run y el bloqueante musl
+  - docs(roadmap): cierre de session-27 y el INC de la clase 'gate desconectado'
+  - docs(roadmap): reconciliar puntero de estado a 2543da2
+  - docs(journal): falsificacion de ledger verify y censo real de ciclos
+  - docs(roadmap): dejar constancia de un token corrupto en el mensaje de 07e7249
+  - docs(roadmap): reverificar bajo carga el fix de flake de session-22
+  - docs(roadmap): cierre de session-25 — INC-DEBT-024 cerrado, 2.1.0 admission ACCEPT
+  - docs(adr): cerrar el hueco de implementacion de ADR-0143 §(a) (INC-DEBT-024)
+  - docs(roadmap): receipt de verificacion de session-24 (5057/0/19, 258 suites)
+  - docs(roadmap): sincronizar punteros al cierre de session-24 (identity gate de firma)
+  - docs(debt): INC-DEBT-024 — la firma keyless en local no puede satisfacer el pin
+  - docs(roadmap): puntero a 91e75c2 via el reconciliador propio
+  - docs(adr): ADR-0143 — trust root de la firma, y corrijo mi propio registro
+  - docs(roadmap): registra el cierre de la deuda del puntero (reconciliador)
+  - docs(roadmap): cierre de session-23 con el flake R-flake-inv10 resuelto
+  - docs(roadmap): evidencia final de session-22 a 2.0.9 con --locked
+  - docs(roadmap): registra el cierre del lock y la leccion de proceso
+  - docs(roadmap): puntero a 8136bbf y cierre del bloqueo del lock
+  - test(release): el guard de puntero tiene que ver Cargo.lock, no solo Cargo.toml
+  - docs(roadmap): tercera via para el lock, probada y estrecha
+  - docs(roadmap): el Cargo.lock stale rompe CI y release, no era cosmético
+  - docs(roadmap): reconcilia puntero a session-22 con la evidencia observada
+  - docs(roadmap): reconcilia puntero y registra session-20
+  - docs(roadmap): journal session-19 — premise falsada, INC-021 cerrada
+  - docs(debt): cierra INC-021 con la evidencia y la premisa falsada
+  - test(release): el guard de pipelines pasa a verde con la evidencia de session-19
+  - docs(roadmap): CURRENT.md a session-18 y corrige erratas propias
+  - docs(roadmap): journal session-18 y cierre de la ventana de auto-referencia
+  - docs(roadmap): journal session-17 + actualiza el indice de deuda
+  - docs(release): declara la autoridad de cada pipeline y corrige la causa raiz de INC-021
+  - test(release): guard de coherencia entre los dos pipelines de release
+  - docs(roadmap): journal session-16 — instalacion rota y premisa de firma falsada
+  - docs(debt): registra los hallazgos de session-16 (021 musl, 022 asset 404, correccion del S14)
+  - docs(roadmap): registra la leccion del pre-push hook sobre Cargo.lock
+  - docs(roadmap): receipt v2.0.1 + punteros post-release + journal session-15
+
 ## [2.2.0] - 2026-09-28
 
 ### Features
