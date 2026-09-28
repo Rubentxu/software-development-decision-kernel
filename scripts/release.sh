@@ -465,12 +465,21 @@ BIN="$TARGET_DIR/$BUILD_TARGET/release/sddk"
 
 # Verificar que el binario es REALMENTE lo que el nombre del asset promete.
 # Un binario dinamico en un asset llamado musl es INC-021 reincidente y
-# tiene que abortar ANTES de publicar, no despues. `file` es la fuente:
-# dice "statically linked" para static-pie y "dynamically linked" para
-# el build glibc del host, que es justo el caso que hay que cazar.
+# tiene que abortar ANTES de publicar, no despues. `file` es la fuente.
+#
+# INC-021-FALSE-NEGATIVE (session-30): este guard solo buscaba el literal
+# "statically linked", pero `file` 5.46 describe un binario static-pie como
+#
+#   ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped
+#
+# sin la palabra "statically". El guard por tanto RECHAZABA el binario musl
+# correcto — el fallo era del guard, no del toolchain. Se aceptan las dos
+# grafias ("statically linked" y "static-pie linked"), que son las dos
+# formas de un binario sin dependencias dinamicas, y se sigue rechazando
+# cualquier "dynamically linked".
 if [ "$BUILD_TARGET" = "x86_64-unknown-linux-musl" ]; then
     FILE_DESC="$(file -b "$BIN")"
-    if printf '%s' "$FILE_DESC" | grep -q 'statically linked'; then
+    if printf '%s' "$FILE_DESC" | grep -qE 'statically linked|static-pie linked'; then
         ok "binario verificado estatico: $FILE_DESC"
     else
         die "el target de build es musl pero el binario NO es estatico.
