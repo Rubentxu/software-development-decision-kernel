@@ -3832,3 +3832,114 @@ superficie de publicacion, asi que pide su propio slice y su propio bump.
   commit de bump pero declara 2.0.12. Es correcto — el bump real es
   `2f0482e`, inmediatamente anterior — pero conviene que la siguiente sesión
   no lo lea como una incoherencia de version sin resolver.
+
+---
+
+## session-25 — 2026-09-28T09:00Z — cierre de INC-DEBT-024 + bump a 2.1.0
+
+**Baseline / HEAD:** `3a142b8` (`chore(release): bump version a 2.1.0`), `HEAD == origin/main`.
+**WorkItem:** cierre completo de `INC-DEBT-024` (las 3 mitigaciones, no solo la 1) + la
+deuda menor de la versión de cosign que session-24 dejó anotada.
+
+### Pre-flight (SDDK)
+
+Modo efectivo `undeclared/no-entry` al abrir; con la autorización explícita del
+operador se fijó a `on` a nivel proyecto (`p-63676b11dc0ef88f`) para que las
+sesiones siguientes no dependan de este chat. Workspace `adopt status: complete`.
+Ledger: 569 eventos, `verify` OK. **Discrepancia registrada**: el prompt global
+pide `agent-session start|checkpoint|close`, subcomando que **no existe** en el
+binario instalado `sddk 2.0.1` (verificado, no supuesto). Se usó
+`sddk status --cycle` / `sddk ledger` / `sddk cycle` como autoridad equivalente.
+No se inventó el subcomando ni se simuló su salida.
+
+Todos los WorkItems de la ledger están `CLOSED` en fase archive: no había ciclo
+vivo. El backlog SDDK solo tiene 2 entradas de humo, sin trabajo real.
+
+### Hecho
+
+**Mitigación 2 (session-25, `ef0d5a6`)** — negarse a firmar fuera de CI. Sin
+`GITHUB_ACTIONS=true`, `release.sh` aborta **antes** de firmar. No es solo un
+mensaje mejor: el gate de issuer de la mitigación 1 corre *después* de que
+cosign firme, y para entonces en un portátil ya han pasado dos cosas malas —
+el device flow interactivo (un cuelgue en run desatendido) y un certificado de
+persona. El pre-check evita las dos. `SDDK_SKIP_SIGNING=1` se conserva como
+salida declarada; `SDDK_ALLOW_LOCAL_SIGNING=1` existe solo para falsificar el
+check sin runner de Actions y **no** es vía a un release bueno.
+
+**Mitigación 3** — `ADR-0143 §(a)` ya estaba redactada como "firmar antes de
+publicar **desde Actions**". Lo que quedaba era el *hueco de implementación*,
+que la ADR declaraba abierto y que ya no lo está. Actualizado, y añadido un
+`§(a-bis)` que separa lo que es código de lo que es política.
+
+**Deuda menor de session-24 (`314bc34`)** — `cosign-release: 'v2.4.3'` explícito
+en los dos pasos `cosign-installer`. El action va pineado por SHA, lo que da
+falsa sensación de control: lo que quedaba por defecto era la **versión**,
+que pertenece a un tercero.
+
+**`INC-DEBT-024` → closed**, con evidencia y refs reales en el frontmatter.
+
+### Evidencia (observada)
+
+| Mutación | Checks que fallan |
+|---|---|
+| Cambiar el pin del issuer | 2 |
+| Degradar `die` → `warn` (gate de issuer) | 1 |
+| Eliminar el pre-check entero | 3 |
+| Degradar `die` → `warn` (pre-check) | 1 |
+| Mover el pre-check después del bucle de firma | 1 (el de orden) |
+| Quitar el pin de cosign del job `sign` | 1, nombrando el job |
+
+Casos buenos: 4 combinaciones del pre-check (local / Actions / skip / allow) y
+las 2 identidades × 2 formatos de bundle del gate de issuer.
+
+- Suite de shell del paso 1 + public gate: **12/12 PASS**.
+- `cargo test --workspace --locked --no-fail-fast`: **5057 passed / 0 failed /
+  19 ignored**, 258 suites, exit 0 — idéntico al baseline, así que el bump no
+  alteró nada.
+- `cargo fmt --check`, `clippy -D warnings`, `shellcheck -S error`,
+  `diff --check`, `cargo metadata --locked`, YAML del workflow: limpios.
+- `--dry-run` en árbol limpio: **release admission ACCEPT 2.0.12 → 2.1.0**,
+  0 `✗`. (El run se cortó por timeout de 400s dentro del paso 1, no por un
+  fallo: el perfil completo ya estaba verde por separado.)
+
+### HALLAZGO QUE CAMBIA EL PLANTEAMIENTO
+
+`release.yml` **no invoca `release.sh`**. Firma en su propio job `sign`, con
+`id-token: write` y `cosign sign-blob --output-signature --output-certificate`.
+
+Dos consecuencias que session-24 y esta session tenían mal enfocadas:
+
+1. El pre-check de la mitigación 2 protege la **ruta local** sin tocar CI. Es
+   exactamente donde estaba el fallo, así que la defensa es la correcta, pero no
+   es un guard de producción.
+2. El gate de issuer de `08639ff` cubre `release.sh`, **no** la firma que CI
+   produce. La firma de CI la cubren la paridad de flags (verificada contra el
+   source de v2.4.3 en session-24) y el pin explícito de este session.
+
+Es decir: la identidad de la firma de producción ya está garantizada por
+diseño del workflow, y lo que session-24/25 cerraban era la ruta local, que era
+el agujero real y el no documentado.
+
+### Estado operativo
+
+Workspace **2.1.0**, admission ACCEPT, **no publicado**. Tag público sigue
+`v2.0.1`. El bump lo derivó `scripts/release-bump.sh` desde el historial
+(1 `feat` → minor), no a mano.
+
+**Lo que sigue abierto, y no es técnico:**
+
+- `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` está `code-closed,
+  distribution-open`: cerrarlo en distribución exige **publicar un release
+  firmado de verdad**. La vía existe y está verificada (`gh workflow run
+  release-automation.yml`, que crea el tag y despacha `release.yml`), pero crea
+  un tag y un release público irreversibles, así que no la ejecuto.
+- `ADR-0143` sigue `proposed`. Ratificarla, y elegir entre la opción 1 (firmar
+  en el paso 8c desde Actions) y la opción 2 (rama `sign` + guard de
+  publicación), es política del operador.
+
+### Primer paso preciso de la sesión siguiente
+
+Publicar `v2.1.0` firmado vía el workflow, o decidir explícitamente no hacerlo.
+Si se publica, el criterio de cierre es observable: los assets `.sig`/`.pem`
+publicados, `cosign verify-blob` con el issuer y subject pins, e instalación
+real contra el release. Eso es lo que cierra `INC-AUDIT-S14` en distribución.
