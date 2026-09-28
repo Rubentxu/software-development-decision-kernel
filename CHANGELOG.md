@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.14] - 2026-09-28
+
+### Fixes
+  - fix(ci): el smoke exigia un symlink de zcode que ADR-0081 elimino en sept
+  - fix(cli): el CLI ignoraba SDDK_FRAMEWORK_DIR y el smoke de CI no podia pasar
+  - fix(cli): identidad cosign y bandera de certificado hoja alineadas con Fulcio
+  - fix(install): la verificacion de firma no podia pasar nunca
+
 ## [2.2.13] - 2026-09-28
 
 ### Fixes
