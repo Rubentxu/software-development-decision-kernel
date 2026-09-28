@@ -4519,3 +4519,61 @@ siguiendo la conclusion de la session anterior sin contrastarla con
 siendo verde. El contrato (§2.3) estaba en AGENTS.md desde antes; la
 comprobacion que hacia falta era leer el consumidor, no re-derivar la
 aritmetica.
+
+### Cobertura del paso 2.5 y dos falsos verdes del propio harness
+
+El fix de session-29 cambia que rutas de `release.sh` se ejecutan: cuando el
+workspace ya declara la release, `release-bump.sh` no emite `new tag:` y
+`release.sh` cae en la rama que conserva el workspace-derived TAG (lineas
+411-413). Ese contrato no estaba cubierto, y es exactamente el punto donde
+un fix toca el pipeline real sin que nada lo note.
+
+Se anadio a `test_release_pipeline_consistency.sh` en dos capas, porque
+ninguna basta sola:
+
+- **Estatica**: `release.sh` conserva el TAG en vez de morir, y el
+  short-circuit sale con `exit 0` (un no-cero se convierte en
+  `die "cannot compute SemVer tag"`).
+- **Conductual**: se ejecuta la decision del paso 2.5 contra el
+  `release-bump.sh` real en un fixture aislado. Tres casos: la release
+  declarada publica v2.2.0 sin doble bump; un release normal sigue
+  adoptando el tag derivado (v2.1.0); el short-circuit no provoca `die`.
+
+Mutaciones comprobadas una a una:
+
+| mutacion | detectada por | resultado |
+|---|---|---|
+| M4 short-circuit `exit 0` -> `exit 1` | ambas capas | 3 fail |
+| M6 se reintroduce el doble bump | conductual | 1 fail |
+| M7 el short-circuit mata los releases normales | conductual | 1 fail |
+| M8 `release.sh` pasa de warn a `die` | estatica | 1 fail |
+| M9 el short-circuit se come `--force-version` | `test_release_bump_derivation.sh` | 1 fail |
+
+M7 es la que mas importa: demuestra que el fix no silencia tambien los
+releases normales. M9 la caza el test dueno de la derivacion, no este, y
+eso es correcto.
+
+**Dos fallos del propio harness, documentados porque son la leccion:**
+
+1. El fixture no hacia reset entre casos. En el segundo caso `git tag`
+   fallaba con "already exists", el subshell abortaba antes de copiar el
+   script, y `STEP2P5_OUTPUT` nunca se capturaba. Los tres casos daba
+   "PASS": un verde que no media nada. Ahora cada caso parte de un
+   directorio limpio.
+2. Las aserciones estaban **despues** de `echo "all checks passed"`, con su
+   `exit 1` antes. El verdict se imprimia antes de contar los fallos, y un
+   fallo no llegaba al exit code. Los tres casos se ejecutaban y pasaban
+   siempre, mutados o no.
+
+El limite del harness queda escrito dentro del propio test: `release.sh`
+no se puede invocar (exige `gh auth status`, remote verificado, main
+limpio, y pasado el paso 8 publica de forma irreversible), asi que la capa
+conductual reimplementa la decision en vez de ejecutar `release.sh`. Por
+eso existe la capa estatica, y por eso el limite se declara en vez de
+descubrirse mas tarde como garantia falsa.
+
+Nota aparte: durante esta sesion se ejecuto
+`release-bump.sh --force-version 2.2.1` para satisfacer el pre-push hook,
+lo cual habria cambiado la release publica declarada de 2.2.0 a 2.2.1. Se
+revirtio de inmediato. Elegir el numero de version es decision del
+operador, no un efecto secundario de querer pushear.
