@@ -105,10 +105,11 @@ else
     ok "unified job never executes the foreign-arch target binary"
 fi
 if printf '%s\n' "$UNIFIED" | grep -Fq 'downloads/sddk-linux-x86_64-musl --version' \
+    && printf '%s\n' "$UNIFIED" | grep -Fq 'chmod 0755 downloads/sddk-linux-x86_64-musl' \
     && printf '%s\n' "$UNIFIED" | grep -Fq 'BINARY_VERSION is empty'; then
-    ok "unified job derives the version from the runnable x86_64 binary, fail-closed"
+    ok "unified job derives the version from the runnable x86_64 binary, exec-bit and fail-closed"
 else
-    fail "unified job lacks the x86_64-derived version with an empty-version guard"
+    fail "unified job lacks the x86_64-derived version with exec-bit and empty-version guards"
 fi
 
 # Exactly one publication point, after sign; smoke runs only after publish.

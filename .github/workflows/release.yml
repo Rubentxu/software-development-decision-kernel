@@ -154,18 +154,32 @@ jobs:
           test -f "$BIN_FILE" || { echo "missing binary $BIN_FILE"; exit 1; }
           chmod 0755 "$BIN_FILE"
 
-          # BUNDLE.toml needs the version. The target binary itself CANNOT be
-          # executed here: on the three non-x86_64 targets it is a foreign
-          # ELF/Mach-O and running it on the x86_64 runner is `Exec format
-          # error`, exit 126 — all three unified jobs of the v2.2.9 run
-          # (36473855952) died exactly there and the sign/publish/smoke chain
-          # was skipped. Every unified job downloads the x86_64 binary too,
-          # and the x86_64 runner executes it, so the version comes from that
-          # one. Fail closed if it is unreadable rather than write a
-          # BUNDLE.toml with an empty version (a bundle the installer would
-          # reject anyway, but published and signed).
+          # BUNDLE.toml needs the version. Two rules learned on real runs:
+          #
+          # 1. NEVER execute the target binary to read its version. On the
+          #    three non-x86_64 targets it is a foreign ELF/Mach-O and the
+          #    x86_64 runner cannot run it (v2.2.9 run 36473855952: exit 126
+          #    in all three unified jobs, sign/publish/smoke skipped).
+          #    Every unified job downloads the x86_64 binary too, and the
+          #    runner executes that one, so the version comes from it.
+          #
+          # 2. chmod the probe binary FIRST. Artifacts uploaded by the build
+          #    jobs do not reliably carry the exec bit back through
+          #    download-artifact. In the v2.2.10 run (36476097594) the
+          #    x86_64 unified job passed precisely because its own BIN_FILE
+          #    (= the probe binary) got `chmod 0755` above, while the other
+          #    three jobs died with a SILENT exit 126: the probe ran inside
+          #    a command substitution whose `2>&1 | awk` swallowed the
+          #    "Permission denied" message, and set -e killed the step.
+          #    The probe below keeps stderr LOUD (echoed to the job log and
+          #    the error text preserved) while still failing closed.
           test -f downloads/sddk-linux-x86_64-musl || { echo "missing x86_64 binary for version probe"; exit 1; }
-          BINARY_VERSION="$(./downloads/sddk-linux-x86_64-musl --version 2>&1 | awk '{print $NF}')"
+          chmod 0755 downloads/sddk-linux-x86_64-musl
+          if ! RAW_VERSION="$(./downloads/sddk-linux-x86_64-musl --version 2>&1)"; then
+            echo "::error::version probe failed: $RAW_VERSION" >&2
+            exit 1
+          fi
+          BINARY_VERSION="$(printf '%s' "$RAW_VERSION" | awk '{print $NF}')"
           echo "  binary version: $BINARY_VERSION"
           [ -n "$BINARY_VERSION" ] || { echo "BINARY_VERSION is empty — x86_64 binary did not report a version"; exit 1; }
 
