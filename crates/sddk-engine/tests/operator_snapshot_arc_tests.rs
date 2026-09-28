@@ -262,12 +262,42 @@ fn public_operator_context_api_unchanged() {
 
 #[test]
 fn inv10_grep_gate_no_mutex_on_workflow_state() {
-    let children: Vec<Arc<dyn Operator>> = (0..50)
-        .map(|_| Arc::new(SucceedOp) as Arc<dyn Operator>)
+    // Each child sleeps a known amount so the gate below can compare total
+    // elapsed against the cost of a fully serialized run. See the ratio
+    // explanation at the assertion. Sleep (not busy-work) keeps the thread
+    // off the CPU, so the only cost measured is overlap of the critical
+    // sections, not the number of cores doing arithmetic.
+    const CHILD_MS: u64 = 20;
+    const CHILD_SLEEP: Duration = Duration::from_millis(CHILD_MS);
+    const CHILDREN_COUNT: u32 = 50;
+    struct SleepingOp(Duration);
+    impl std::fmt::Debug for SleepingOp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("SleepingOp")
+        }
+    }
+    impl Operator for SleepingOp {
+        fn kind(&self) -> &'static str {
+            "SleepingOp"
+        }
+        fn evaluate(
+            &self,
+            ctx: &mut OperatorContext,
+        ) -> Result<NodeOutcome, sddk_engine::operator::OperatorError> {
+            std::thread::sleep(self.0);
+            Ok(NodeOutcome::Succeeded {
+                node_id: ctx.node_run.lock().unwrap().node_id.clone(),
+                outputs: Default::default(),
+            })
+        }
+    }
+
+    let children: Vec<Arc<dyn Operator>> = (0..CHILDREN_COUNT)
+        .map(|_| Arc::new(SleepingOp(CHILD_SLEEP)) as Arc<dyn Operator>)
         .collect();
     let parallel = Parallel {
         children,
-        max_concurrency: 50,
+        max_concurrency: CHILDREN_COUNT,
     };
 
     let node_run_arc: Arc<Mutex<NodeRun>> = Arc::new(Mutex::new(NodeRun {
@@ -301,10 +331,62 @@ fn inv10_grep_gate_no_mutex_on_workflow_state() {
     let elapsed = start.elapsed();
 
     assert!(matches!(outcome, NodeOutcome::Succeeded { .. }));
-    assert_eq!(node_run_arc.lock().unwrap().attempts.len(), 50);
-    // If mutex serialized execution, 50 x ~1ms = ~50ms minimum
-    // Concurrent execution should be much faster
-    assert!(elapsed < Duration::from_millis(20), "took {:?}", elapsed);
+    assert_eq!(
+        node_run_arc.lock().unwrap().attempts.len(),
+        CHILDREN_COUNT as usize
+    );
+    // Concurrency gate (R-flake-inv10, session-22).
+    //
+    // This used to be `assert!(elapsed < Duration::from_millis(20))`. That
+    // was a wall-clock threshold with no headroom, so it measured the
+    // machine rather than the code: under CPU contention it fired at
+    // 4 failures in 6 runs (elapsed 22-31ms) while passing in 0.00ms in
+    // isolation. Loosening it does not fix that, it hides it. At 200ms the
+    // test passed even with `max_concurrency: 1` — i.e. fully serialized,
+    // 50 x 1ms = ~60ms — so the loosened bound had quietly stopped
+    // catching the very regression it exists to catch.
+    //
+    // Wall-clock alone cannot separate the two cases on an unknown
+    // machine: contention on trivial children (~30ms) and genuine
+    // serialization (~60ms) overlap. What separates them is the RATIO of
+    // total elapsed to the time a fully serialized run would need, which
+    // is dimensionless and therefore independent of CPU count, machine
+    // speed and ambient load:
+    //
+    //   serialized:  N children in sequence -> ratio ~ 1.0
+    //   concurrent:  N children in parallel  -> ratio ~ 1/N
+    //
+    // Children below sleep a known CHILD_MS, so the serialized reference
+    // is computed rather than guessed, and the bound sits far from both
+    // poles instead of between them. Anything under ~0.1 means the work
+    // overlapped; anything near 1.0 means the node_run mutex serialized it.
+    //
+    // CHILD_MS is deliberately long (20ms). A short child makes the gate
+    // flaky in the other direction: at 4ms, a loaded machine needed 42ms to
+    // schedule 50 concurrent sleeps (21% of serial) even though nothing was
+    // serialized — thread wakeup latency, not contention on the mutex, was
+    // being measured. Sleep is I/O-free so the OS does not preempt the
+    // thread, but 50 of them still need 50 runnable slots, and a saturated
+    // box does not hand them out instantly. A 20ms sleep puts that fixed
+    // scheduling cost at ~2% of the 1000ms serial reference, well clear of
+    // the bound, so the gate measures overlap rather than wakeup latency.
+    const MAX_RATIO_PERCENT: u128 = 20; // concurrent ~2%, serialized ~100%
+
+    let serialized = CHILD_SLEEP * CHILDREN_COUNT;
+    // Integer percent. The operands are u128 micros, so the multiply cannot
+    // overflow for any plausible elapsed time and no cast is needed.
+    let ratio_pct = elapsed.as_micros() * 100 / serialized.as_micros();
+
+    assert!(
+        ratio_pct < MAX_RATIO_PERCENT,
+        "50 children took {:?}, which is {}% of the ~{:?} a fully serialized run \
+         would need (bound {}%). The node_run mutex is serializing the children, \
+         which is exactly what this gate exists to catch.",
+        elapsed,
+        ratio_pct,
+        serialized,
+        MAX_RATIO_PERCENT
+    );
 }
 
 // ── TRIANGULATE: Multi-child variants ─────────────────────────────────────────
