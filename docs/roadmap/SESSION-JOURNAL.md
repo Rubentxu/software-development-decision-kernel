@@ -3752,3 +3752,68 @@ Es un fix pequeño y claramente correcto. No lo he hecho porque toca
 documental: colar un fix de publicación dentro de un commit de ADR es
 exactamente el tipo de mezcla que luego nadie sabe revisar. Queda declarado en
 `ADR-0143 §(a)` y como punto 5 de su seguimiento, no escondido.
+
+---
+
+## session-24 — 2026-09-28T08:11Z — identity gate de firma + correccion de la hipotesis de cosign
+
+**Baseline / HEAD:** `2f0482e` (`chore(release): bump version a 2.0.12`), `HEAD == origin/main`.
+**WorkItem:** `INC-DEBT-024` mitigacion 1 — el gate que session-23 dejo declarado y sin hacer.
+
+### Hecho
+
+`scripts/release.sh` ahora comprueba, **antes de publicar**, que el issuer del
+certificado que cosign acaba de acuñar sea `DEFAULT_CERT_ISSUER`. Commit `08639ff`.
+
+El issuer se extrae de la URI SAN, no del DN RFC4514: el DN lleva el nombre de la
+CA Fulcio, no el proveedor OIDC. Fail-closed en los tres casos (issuer distinto,
+bundle sin certificado, bundle ilegible). Tres checks nuevos en
+`tests/test_install_asset_contract.sh`, cada uno verificado por mutacion.
+
+### Evidencia (observada, no inferida)
+
+- Casos buenos: issuer de Actions en formato v2 y v3 → ambos aceptan.
+- Mutaciones que deben rechazarse y rechazan: issuer local
+  (`oauth2.sigstore.dev/auth`); bundle valido **sin** certificado
+  (`no certificate found in bundle`); JSON corrupto.
+- Mutaciones de los checks: cambiar el pin → 2 checks FALL; degradar `die` a
+  `warn` → 1 check FALL; restaurado → verde.
+- Suite de shell del paso 1 de `release.sh`: **11/11 PASS**
+  (incluye `test_install_asset_contract.sh`).
+- `bash -n`, `shellcheck -S error`, `git diff --check`, `cargo metadata --locked` → limpios.
+- Guard del puntero de estado → PASS tras reconciliar.
+
+### Correccion (importante)
+
+Segio una hipotesis que era **falsa** y que habia que corregir antes de que
+cristalizara. Afirmaba que la firma en CI fallaria por incompatibilidad de
+version, deducido del `cosign v3.1.3` del host. Falso por dos errores:
+
+1. `cosign-installer@053f9b74 # v3.8.1` es la version del **action**, no de
+   cosign. Ese SHA **si** existe: resuelve a `refs/tags/v3.8.1`.
+2. Su `cosign-release` por defecto es `v2.4.3` y el workflow no lo overridea.
+   CI instala v2.4.3, no v3.1.3.
+
+En v2.4.3 `--output-signature` y `--output-certificate` **si** existen
+(`sign_blob.go`, `SignBlobCmd(..., outputSignature, outputCertificate, ...)`).
+**El workflow de firma no estaba roto.** La incompatibilidad real es entre la
+v3 del host y la v2 de CI, y afecta a quien intente reproducir la firma en
+local, no a la publicacion. Queda escrito en el INC, no en un handoff.
+
+Deuda menor que esto abre, sin registrar como INC aparte: la version de cosign
+en CI es un default implicito del action. Fijarla explicita en el workflow la
+convierte en decision declarada. No se ha tocado el workflow: es superficie de
+publicacion y va en su propio slice.
+
+### Estado operativo
+
+Workspace `2.0.12`, **no publicado**. `v2.0.1` sigue siendo el ultimo tag
+publico. La ratificacion de `ADR-0143` y la publicacion siguen siendo del
+operador.
+
+### Primer paso preciso de la sesion siguiente
+
+Decidir si fijar `cosign-release: 'v2.4.3'` explicito en
+`.github/workflows/release.yml` (deuda menor que abre session-24) o dejarlo y
+cerrarlo como aceptado-en-CI-per-implicito. Es un cambio de una linea en
+superficie de publicacion, asi que pide su propio slice y su propio bump.
