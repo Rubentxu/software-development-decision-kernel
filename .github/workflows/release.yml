@@ -479,7 +479,13 @@ jobs:
           grep -q "agents: 67" /tmp/smoke-install.log || grep -q "agents: " /tmp/smoke-install.log
           grep -q "errors: 0" /tmp/smoke-install.log
           test -L /tmp/sddk-smoke-home/.config/opencode/agents/orchestrator.md
-          test -L /tmp/sddk-smoke-home/.zcode/agents/orchestrator.md
+          # INC-A5-FWDIR/ADR-0081: zcode registers PRIMARY_AGENTS as native
+          # command files under ~/.zcode/commands/ (since 9942b280, 2026-09-12);
+          # a symlink at ~/.zcode/agents/orchestrator.md stopped existing then.
+          # The old pin (34d68c21, 2026-08-31) went stale and failed every real
+          # smoke since; v2.2.13 run 36485603013 is the observed instance.
+          test -f /tmp/sddk-smoke-home/.zcode/commands/orchestrator.md
+          test -L /tmp/sddk-smoke-home/.zcode/agents/analytics-judge.md
 
       - name: Verify binary, completions, and dev update against the real release
         env:
