@@ -498,11 +498,18 @@ jobs:
             echo "manual run (no tag): smoke test skipped"
             exit 0
           fi
-          /tmp/sddk-smoke-prefix/sddk --version
-          /tmp/sddk-smoke-prefix/sddk completion bash | head -1 | grep -q "_sddk"
-          /tmp/sddk-smoke-prefix/sddk completion zsh | head -1 | grep -q "#compdef"
+          # INC-A5-FWDIR: the default SDDK_PREFIX is $HOME/.local/bin, which
+          # does NOT end in /bin, so the binary lands at $PREFIX/bin/sddk
+          # (rustup-style nesting, install.sh:488-495). The bare $PREFIX/sddk
+          # shape only exists when the prefix itself ends in /bin. Observed
+          # failing here on v2.2.15 run 36488888188 (exit 127) after the
+          # install step finally went green.
+          SDDK=/tmp/sddk-smoke-prefix/bin/sddk
+          "$SDDK" --version
+          "$SDDK" completion bash | head -1 | grep -q "_sddk"
+          "$SDDK" completion zsh | head -1 | grep -q "#compdef"
           mkdir -p /tmp/sddk-smoke-framework-2
-          /tmp/sddk-smoke-prefix/sddk dev update --root /tmp/sddk-smoke-framework-2 \
+          "$SDDK" dev update --root /tmp/sddk-smoke-framework-2 \
             --version "$TAG" --editor all | tee /tmp/smoke-update.log
           grep -q "sha256 verified" /tmp/smoke-update.log
           test -d /tmp/sddk-smoke-framework-2/agents
