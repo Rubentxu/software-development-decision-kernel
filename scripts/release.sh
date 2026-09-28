@@ -509,7 +509,20 @@ step "6/14 — inject BUNDLE.toml (schema v2)"
 BUNDLE_DIR="$TMP/bundle"
 mkdir -p "$BUNDLE_DIR"
 tar xzf "$BUNDLE_TARBALL" -C "$BUNDLE_DIR"
-MANIFEST_SHA="$(awk 'NR==1 {print $1}' MANIFEST.sha256)"
+# The manifest's OWN sha256, not the hash of its first line.
+#
+# `awk 'NR==1 {print $1}' MANIFEST.sha256` returned the sha256 of the first
+# FILE listed in the manifest (e.g. agents/analytics-judge.md), which has
+# nothing to do with the manifest itself — the field then named one bundled
+# file while claiming to be the manifest digest. The consumer's own doc
+# comment states the intent: "sha256 of MANIFEST.sha256 itself"
+# (crates/sddk-cli/src/dev/bundle_manifest.rs:24).
+#
+# Nothing validated the old value (install.sh never reads it; the Rust side
+# parses it as an Option and never compares), so the field was inert AND
+# wrong. Fixing it changes a published value, which is safe for that
+# reason. See INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE.
+MANIFEST_SHA="$(sha256sum MANIFEST.sha256 | awk '{print $1}')"
 FW_DIR="$BUNDLE_DIR/software-development-decision-kernel"
 printf '%s\n' \
     '[bundle]' 'schema_version = 2' \

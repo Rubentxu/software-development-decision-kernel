@@ -310,7 +310,69 @@ if [ "$got" != "DIE" ]; then
 else
     fail "release-bump.sh exited non-zero; release.sh would die on a valid release"
 fi
+# ─────────────────────────────────────────────────────────────────────────
+# session-29 — BUNDLE.toml manifest_sha256 must be the MANIFEST's own digest.
+#
+# release.sh computed it as `awk 'NR==1 {print $1}' MANIFEST.sha256`, which is
+# the sha256 of the first FILE listed in the manifest (agents/analytics-judge.md).
+# The field claimed to bind the bundle to its manifest and instead named a
+# bundled file — while nothing validated it, so it was both wrong and inert
+# (INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE).
+#
+# Behavioural, not a grep: it writes a real MANIFEST.sha256, SOURCES the real
+# assignment line out of release.sh, and compares the result against the
+# file's true digest. Sourcing (rather than grep-and-hope) is what makes this
+# falsifiable — mutating the line changes the outcome.
+# ─────────────────────────────────────────────────────────────────────────
 
+SHIM="$TMPD/manifest-sha"
+mkdir -p "$SHIM"
+# Two entries with DIFFERENT digests, so choosing the wrong one is
+# observable rather than coincidental.
+cat > "$SHIM/MANIFEST.sha256" <<'MANIFEST'
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  agents/analytics-judge.md
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  agents/orchestrator.md
+MANIFEST
+
+REAL_SHA="$(cd "$SHIM" && sha256sum MANIFEST.sha256 | awk '{print $1}')"
+FIRST_LINE_SHA="$(awk 'NR==1 {print $1}' "$SHIM/MANIFEST.sha256")"
+
+# Pull the real assignment out of release.sh and run it against the shim.
+EXTRACTED=""
+if grep -E '^MANIFEST_SHA=' "$ROOT/scripts/release.sh" > "$SHIM/assign.sh"; then
+    # shellcheck source=/dev/null   # runtime-generated, not a fixed file
+    EXTRACTED="$( cd "$SHIM" && MANIFEST_SHA='' && . ./assign.sh && printf '%s' "$MANIFEST_SHA" )"
+fi
+
+if [ -z "$EXTRACTED" ]; then
+    fail "release.sh has no MANIFEST_SHA= assignment line to check"
+elif [ "$EXTRACTED" = "$REAL_SHA" ]; then
+    ok "manifest_sha256 is the manifest's own sha256"
+else
+    fail "manifest_sha256 is $EXTRACTED; expected the manifest digest $REAL_SHA (the first-line value would be $FIRST_LINE_SHA)"
+fi
+
+# The fixture must actually be able to catch the BUG, not merely have two
+# unequal hashes. The previous version of this guard compared
+# REAL_SHA != FIRST_LINE_SHA, which stays true even for a one-line manifest:
+# it proved the two values differ, but never proved the buggy extraction
+# would FAIL against this fixture. Mutation M11 (collapse the fixture to one
+# line) slipped through it.
+#
+# So assert the discrimination the gate actually depends on: feeding the
+# buggy first-line extraction must NOT equal the correct answer.
+#
+# Note on a mutation that was tried and correctly does NOT fail here (M11,
+# collapsing the fixture to a single line): a one-line manifest still has a
+# file digest different from that line's literal value, so the gate keeps
+# discriminating. The guard is right to stay green — M11 is not a defect in
+# the code under test, only in the fixture's tidiness.
+BUGGY_EXTRACT="$(awk 'NR==1 {print $1}' "$SHIM/MANIFEST.sha256")"
+if [ "$BUGGY_EXTRACT" != "$REAL_SHA" ]; then
+    ok "fixture discriminates: the buggy first-line extraction fails against it"
+else
+    fail "fixture is vacuous: the buggy extraction would pass, so this gate proves nothing"
+fi
 
 echo
 if [ "$failures" -ne 0 ]; then
