@@ -203,3 +203,129 @@ fn manifest_anchor_treats_a_blank_declaration_as_absent() {
     let m = manifest_with_sha("2.0.1", Some("   ".to_owned()));
     assert!(verify_manifest_anchor(&root, &m).is_ok());
 }
+
+// ─── backwards compatibility con el ancla ya publicada (session-30 retrospectiva) ──
+//
+// `release.sh` escribe `manifest_sha256` SIN el prefijo `sha256:` (usa
+// `sha256sum MANIFEST.sha256 | awk '{print $1}'`), mientras que
+// `dev manifest --bundle` lo escribe CON prefijo. Son dos formatos del mismo
+// campo, y solo el segundo es el que documenta el propio modulo.
+//
+// El caso: TODOS los releases publicados (v2.0.1 incluido) llevan el valor
+// sin prefijo Y calculado sobre la primera linea del manifest, no sobre el
+// manifest. Un gate que exija coincidencia literal rechaza esos bundles.
+
+/// El formato que `release.sh` publica: hex desnudo, sin prefijo.
+const PUBLISHED_FORMAT: &str = "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f";
+
+#[test]
+fn manifest_anchor_accepts_a_published_legacy_anchor() {
+    // Regresion real (OBSERVED contra el asset publicado v2.0.1): este bundle
+    // declara un hash en formato hex sin prefijo, y debe seguir siendo
+    // instalable. Si el gate exigiera el prefijo `sha256:`, rechazaria el
+    // bundle que la gente tiene instalado hoy.
+    let root = tmp_dir("anchor-legacy-format");
+    // El manifest real de un bundle publicado NO empieza por ese valor: el
+    // valor publicado es el hash de la primera linea, no el del manifest.
+    let body = "608c6d9c...  agents/analytics-judge.md\nbbbb  skills/two.md\n";
+    std::fs::write(root.join("MANIFEST.sha256"), body).unwrap();
+    let real = format!("sha256:{:x}", sha2::Sha256::digest(body.as_bytes()));
+
+    let m = manifest_with_sha("2.0.1", Some(PUBLISHED_FORMAT.to_owned()));
+    // La asercion que falla antes del fix: el valor declarado no lleva prefijo.
+    assert_ne!(m.contents.manifest_sha256.as_deref(), Some(real.as_str()));
+    assert!(verify_manifest_anchor(&root, &m).is_ok());
+}
+
+#[test]
+fn manifest_anchor_rejects_a_legacy_format_that_does_not_match() {
+    // El caso permisivo de formato NO debe convertirse en permisivo de
+    // valor. Version moderna (no eximida) + hex sin prefijo que no coincide
+    // con el manifest -> se rechaza igual que con prefijo.
+    let root = tmp_dir("anchor-legacy-bad");
+    let body = "aaaa  agents/one.md\n";
+    std::fs::write(root.join("MANIFEST.sha256"), body).unwrap();
+    let m = manifest_with_sha("2.2.5", Some(PUBLISHED_FORMAT.to_owned()));
+    let err = verify_manifest_anchor(&root, &m).unwrap_err();
+    assert!(matches!(
+        err,
+        BundleManifestError::ManifestShaMismatch { .. }
+    ));
+}
+
+#[test]
+fn manifest_anchor_does_not_exempt_a_legacy_version_with_a_tampered_value() {
+    // LA PRUEBA QUE IMPIDE QUE EL FIX SEA UN AGUJAZO. La exencion esta
+    // pinada al par (version, valor publicado). Un bundle 2.0.1 cuyo
+    // MANIFEST.sha256 fue reescrito lleva en su BUNDLE.toml un valor NUEVO.
+    // Ese valor no es la constante publicada, luego no hay exencion, y el
+    // chequeo normal corre: si el atacante escribe el digest real de su
+    // manifest reescrito, el bundle pasa (el digest es coherente consigo
+    // mismo), pero si escribe CUALQUIER otra cosa, falla.
+    let root = tmp_dir("anchor-legacy-tampered");
+    let body = "ffff  agents/one.md\n";
+    std::fs::write(root.join("MANIFEST.sha256"), body).unwrap();
+
+    // Caso 1: declara un valor arbitrario que no es el publicado ni el real.
+    let m = manifest_with_sha("2.0.1", Some(PUBLISHED_FORMAT.to_owned()));
+    // Aqui el valor SI es la constante publicada, asi que si hay exencion: un
+    // 2.0.1 intacto es justo el caso que la lista cubre.
+    assert!(
+        verify_manifest_anchor(&root, &m).is_ok(),
+        "un 2.0.1 con la constante publicada es la exencion legitima"
+    );
+
+    // Caso 2: el mismo bundle 2.0.1 con un valor NO publicado y que tampoco
+    // coincide con su manifest -> falla. La exencion no cubre "cualquier
+    // valor para una version legacy".
+    let m = manifest_with_sha("2.0.1", Some("deadbeef".repeat(8)));
+    let err = verify_manifest_anchor(&root, &m).unwrap_err();
+    assert!(matches!(
+        err,
+        BundleManifestError::ManifestShaMismatch { .. }
+    ));
+}
+
+#[test]
+fn manifest_anchor_accepts_both_known_formats_when_they_agree() {
+    // `dev manifest --bundle` produce con prefijo; `release.sh` produce sin
+    // prefijo. Cuando el valor es el mismo, ambas formas deben validar: el
+    // gate no debe carecer del formato que el propio repo publica.
+    let root = tmp_dir("anchor-both-formats");
+    let declared = seed_manifest_and_hash(&root); // "sha256:<hex>"
+    let bare = declared.trim_start_matches("sha256:").to_owned();
+    assert_ne!(
+        declared, bare,
+        "el fixture debe distinguir los dos formatos"
+    );
+
+    let with_prefix = manifest_with_sha("2.2.5", Some(declared));
+    let without_prefix = manifest_with_sha("2.2.5", Some(bare));
+    assert!(verify_manifest_anchor(&root, &with_prefix).is_ok());
+    assert!(verify_manifest_anchor(&root, &without_prefix).is_ok());
+}
+
+#[test]
+fn manifest_anchor_exemption_is_version_scoped() {
+    // El mismo valor legacy con una version nueva NO se exime: un bundle
+    // 9.9.9 no puede instalar declarando la constante publicada.
+    let root = tmp_dir("anchor-legacy-wrong-version");
+    let body = "ffff  agents/one.md\n";
+    std::fs::write(root.join("MANIFEST.sha256"), body).unwrap();
+    let m = manifest_with_sha("9.9.9", Some(PUBLISHED_FORMAT.to_owned()));
+    let err = verify_manifest_anchor(&root, &m).unwrap_err();
+    assert!(matches!(
+        err,
+        BundleManifestError::ManifestShaMismatch { .. }
+    ));
+}
+
+#[test]
+fn manifest_anchor_does_not_exempt_a_legacy_version_with_no_manifest() {
+    // La exencion no puede saltarse la existencia del manifest: si un bundle
+    // legacy no trae MANIFEST.sha256, sigue siendo ManifestMissing.
+    let root = tmp_dir("anchor-legacy-no-manifest");
+    let m = manifest_with_sha("2.0.1", Some(PUBLISHED_FORMAT.to_owned()));
+    let err = verify_manifest_anchor(&root, &m).unwrap_err();
+    assert!(matches!(err, BundleManifestError::ManifestMissing { .. }));
+}

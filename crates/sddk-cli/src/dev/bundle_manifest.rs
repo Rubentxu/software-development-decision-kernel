@@ -146,6 +146,61 @@ pub(super) fn verify_bundle_compat(
     }
 }
 
+/// Bundles published before the anchor meant anything, whose declared
+/// `manifest_sha256` is **not** a manifest digest at all.
+///
+/// Added session-30 retrospectiva. Verified against the real published
+/// assets, not inferred: v1.172.0, v2.0.0 and v2.0.1 all declare
+///
+/// ```text
+/// manifest_sha256 = "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f"
+/// ```
+///
+/// and that value is the sha256 of `agents/analytics-judge.md` — a single
+/// *file* inside the bundle, because the buggy `awk 'NR==1 {print $1}'`
+/// took the first line of the manifest. It is the same constant in all three
+/// releases precisely because the same file sorted first each time. The real
+/// manifest digests differ: v2.0.1's is `32cfd79f…`.
+///
+/// So these bundles cannot satisfy a manifest-digest check, and the fix for
+/// the format/prefix divergence is deliberately **not** "accept any value" —
+/// that would silently re-open the hole the check exists to close. Instead the
+/// exemption is pinned to the exact (version, declared value) pairs that were
+/// actually published, so:
+/// - a new bundle gets a real anchor, checked normally;
+/// - a legacy bundle still installs;
+/// - a legacy *version* carrying any other value still fails, because a
+///   tampered bundle would have to keep the published constant to slip past.
+///
+/// Removing an entry from this list is a deliberate act of deprecation, not
+/// an accident.
+const LEGACY_PUBLISHED_ANCHORS: &[(&str, &str)] = &[
+    (
+        "1.172.0",
+        "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f",
+    ),
+    (
+        "2.0.0",
+        "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f",
+    ),
+    (
+        "2.0.1",
+        "608c6d9ced950456e9d453d8e54529b6c3dc06e45302189c3c15c01c738fd39f",
+    ),
+];
+
+/// True when `(version, declared)` is exactly one of the published legacy
+/// pairs in [`LEGACY_PUBLISHED_ANCHORS`].
+fn is_legacy_published_anchor(version: &str, declared: &str) -> bool {
+    let version = version.trim_start_matches('v');
+    // Compare the bare hex so the exemption is not sensitive to whether a
+    // given producer emitted the `sha256:` prefix.
+    let declared_bare = declared.trim().trim_start_matches("sha256:");
+    LEGACY_PUBLISHED_ANCHORS
+        .iter()
+        .any(|(v, sha)| *v == version && *sha == declared_bare)
+}
+
 /// Verify that `BUNDLE.toml`'s `manifest_sha256` really anchors the bundle's
 /// `MANIFEST.sha256`.
 ///
@@ -157,13 +212,20 @@ pub(super) fn verify_bundle_compat(
 /// Fail-closed, consistent with the rest of schema v2:
 ///
 /// - Declared and matching → `Ok`.
-/// - Declared and mismatching → [`BundleManifestError::ManifestShaMismatch`].
+/// - Declared and mismatching → [`BundleManifestError::ManifestShaMismatch`],
+///   unless the pair is an exactly-known legacy publication (see
+///   [`LEGACY_PUBLISHED_ANCHORS`]).
 /// - Declared but `MANIFEST.sha256` absent → [`BundleManifestError::ManifestMissing`].
 /// - **Not declared** → `Ok`. A bundle that omits the field is not *claiming*
 ///   an anchor, so rejecting it would break every already-published release
 ///   whose `BUNDLE.toml` predates the anchor. This is the one case that stays
 ///   permissive on purpose; `verify_manifest` still checks every file against
 ///   whatever manifest is present.
+///
+/// Both the `sha256:`-prefixed form (written by `dev manifest --bundle`) and
+/// the bare-hex form (written by `release.sh`, the actual publisher) are
+/// accepted, because the field has two producers with divergent formats in
+/// this very repo and requiring only one would reject the other's output.
 pub(super) fn verify_manifest_anchor(
     bundle_root: &Path,
     manifest: &BundleManifest,
@@ -184,13 +246,22 @@ pub(super) fn verify_manifest_anchor(
             declared: declared.to_owned(),
         });
     }
+
+    // Checked AFTER the manifest must exist, and before comparing: a legacy
+    // exemption is an excuse for a *wrong value*, never for a missing
+    // manifest. Ordering matters here — checking the exemption first would
+    // let a 2.0.1 bundle ship with no MANIFEST.sha256 at all and validate.
+    if is_legacy_published_anchor(&manifest.bundle.version, declared) {
+        return Ok(());
+    }
+
     let bytes = std::fs::read(&manifest_path).map_err(|e| BundleManifestError::Parse {
         path: manifest_path.display().to_string(),
         message: format!("read error: {e}"),
     })?;
     let actual = format!("sha256:{:x}", sha2::Sha256::digest(&bytes));
 
-    if declared == actual {
+    if normalise_digest(declared) == normalise_digest(&actual) {
         Ok(())
     } else {
         Err(BundleManifestError::ManifestShaMismatch {
@@ -198,6 +269,11 @@ pub(super) fn verify_manifest_anchor(
             actual,
         })
     }
+}
+
+/// Strip the optional `sha256:` prefix so both producer formats compare equal.
+fn normalise_digest(value: &str) -> &str {
+    value.trim().trim_start_matches("sha256:")
 }
 
 /// Write a BUNDLE.toml at `bundle_root/BUNDLE.toml` with the supplied metadata.
