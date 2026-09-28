@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.5] - 2026-09-28
+
+### Fixes
+  - fix(cli): validar el ancla `manifest_sha256` de BUNDLE.toml al instalar
+
+  `contents.manifest_sha256` se escribia (`dev manifest --bundle`) y se
+  parseaba, pero ningun codigo comparaba el valor declarado con el sha256 real
+  del `MANIFEST.sha256` incluido. El ancla era decorativa: reescribir el
+  manifest dentro de un bundle no rompia nada. `verify_manifest_anchor` cierra
+  el ciclo y `dev install` lo invoca despues de `verify_bundle_compat` y antes
+  de escribir nada en disco. Fail-closed, con caso permisivo para bundles ya
+  publicados que no declaran el campo. Cierra INC-DEBT-025 (parte 2).
+
+### Known blockers
+  - El publish local de 2.2.4/2.2.5 aborta en 8c/14: falta la identidad de
+    firma del proyecto en este host. Es el guard de INC-DEBT-024, no un
+    defecto. Sin estado parcial: no se publico tag ni assets. Ver
+    INC-DEBT-030. Publicar desde GitHub Actions, o usar
+    `SDDK_SKIP_SIGNING=1` asumiendo el cambio de contrato de instalacion.
+
 ## [2.2.4] - 2026-09-28
 
 ### Features
