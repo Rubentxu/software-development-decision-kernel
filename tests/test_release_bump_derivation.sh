@@ -92,19 +92,68 @@ check() {
     fi
 }
 
+# Same fixture as `derive`, but passes an explicit --force-version.
+#
+#   $1 = workspace version
+#   $2 = last tag version
+#   $3 = commit subject used for the level detection
+#   $4 = version to force
+derive_forced() {
+    local ws="$1" tag="$2" subject="$3" force="$4"
+    local dir="$TMPROOT/$RANDOM-$$"
+    mkdir -p "$dir/scripts"
+    (
+        cd "$dir" || exit 2
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        cp "$BUMP" scripts/release-bump.sh
+        mkdir -p crates/fake
+        cat > Cargo.toml <<EOF
+[workspace]
+members = ["crates/fake"]
+
+[workspace.package]
+version = "$ws"
+edition = "2021"
+EOF
+        cat > crates/fake/Cargo.toml <<EOF
+[package]
+name = "fake"
+version.workspace = true
+EOF
+        printf 'version = "%s"\n' "$ws" > manifest.toml
+        git add -A
+        git commit -qm "chore: base"
+        git tag "v$tag"
+        git commit -q --allow-empty -m "$subject"
+    )
+    local out
+    out=$(cd "$dir" && bash scripts/release-bump.sh --dry-run --force-version "$force" 2>&1)
+    rm -rf "$dir"
+    echo "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}'
+}
+
 # --- The regression: workspace ahead of the tag -----------------------------
 #
 # A manual `--force-version` bump (or a pending ceremonial release) leaves
-# the workspace ABOVE the last tag. Deriving from the tag would produce a
-# version LOWER than the current workspace — a rollback.
-check "workspace ahead of tag, minor commit does not roll back" \
-    "v2.2.0" "$(derive 2.1.1 2.0.1 'feat: something')"
+# the workspace ABOVE the last tag. AGENTS.md §2.3 makes the workspace
+# version the *ceremonial release pointer*: it declares the version that is
+# going to appear as the tag. So the release IS the workspace version and
+# there is nothing left to derive.
+#
+# Deriving from the tag alone rolls the workspace BACK (session-28).
+# Deriving max(workspace, tag) and then bumping SKIPS the declared release
+# (session-29: 2.2.0 -> v2.3.0, publishing a version nobody asked for).
+# Both are wrong; the answer is "no pending bump".
+check "workspace ahead of tag, minor commit derives no bump" \
+    "" "$(derive 2.1.1 2.0.1 'feat: something')"
 
-check "workspace ahead of tag, patch commit does not roll back" \
-    "v2.1.2" "$(derive 2.1.1 2.0.1 'fix: something')"
+check "workspace ahead of tag, patch commit derives no bump" \
+    "" "$(derive 2.1.1 2.0.1 'fix: something')"
 
-check "workspace ahead of tag, major commit bumps from workspace" \
-    "v3.0.0" "$(derive 2.1.1 2.0.1 'feat!: breaking change')"
+check "workspace ahead of tag, breaking commit derives no bump" \
+    "" "$(derive 2.1.1 2.0.1 'feat!: breaking change')"
 
 # --- The normal case: workspace == tag -------------------------------------
 #
@@ -119,6 +168,15 @@ check "workspace equals tag, patch commit" \
 # --- happened the tag must still win (never derive downward from nothing).
 check "workspace behind tag keeps tag as base" \
     "v2.0.2" "$(derive 2.0.0 2.0.1 'fix: something')"
+
+# --- --force-version still wins over the short-circuit ----------------------
+#
+# The short-circuit above stops the accidental double bump. But the operator
+# must keep a way to say "actually make it this", even with the workspace
+# already ahead of the tag. If --force-version were swallowed by the
+# short-circuit, the escape hatch documented in AGENTS.md §2.3 would be dead.
+check "--force-version overrides the declared-release short-circuit" \
+    "v2.5.0" "$(derive_forced 2.1.1 2.0.1 'feat: something' 2.5.0)"
 
 echo ""
 echo "=== matrix result: PASS=$PASS FAIL=$FAIL ==="

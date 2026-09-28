@@ -47,8 +47,20 @@ CURRENT="${LAST_TAG#v}"
 # Deriving the next version from the TAG alone is wrong: it cannot see a
 # manual bump, so a workspace at 2.1.1 with last tag v2.0.1 derived 2.1.0
 # and the CI release branch would have REGRESSED the workspace to 2.1.0
-# (session-28, reproduced in an isolated clone). Derive from whichever is
-# higher.
+# (session-28, reproduced in an isolated clone).
+#
+# But deriving max(workspace, tag) and then BUMPING it is also wrong, in the
+# opposite direction: if the workspace is already ahead of the tag, the
+# operator has declared the release version (AGENTS.md §2.3 — "el workspace
+# version es puntero ceremonial del release ... declara la versión que va a
+# aparecer como tag"). With workspace 2.2.0 and last tag v2.0.1, a minor
+# commit derived v2.3.0, and CI's "Open release PR when a bump is pending"
+# would have opened and auto-merged a PR taking 2.2.0 -> 2.3.0 — publishing
+# a version the operator never asked for, and desynchronising workspace,
+# tag and CHANGELOG (session-29).
+#
+# So: ahead of the tag means the workspace IS the pending release, and there
+# is nothing to derive. Equal means derive from the tag as usual.
 WORKSPACE_VERSION="$(grep -A1 '^\[workspace\.package\]' Cargo.toml | grep '^version' | sed -E 's/.*"([^"]+)".*/\1/')"
 
 # semver_gt <a> <b> → 0 when a > b
@@ -70,10 +82,15 @@ semver_gt() {
 }
 
 if [ -n "$WORKSPACE_VERSION" ] && semver_gt "$WORKSPACE_VERSION" "$CURRENT"; then
+    # The operator has already declared the release version by hand
+    # (`--force-version`, or the committed ceremonial bump). The release IS
+    # that version — re-deriving one on top would skip the declared release.
     BASE_VERSION="$WORKSPACE_VERSION"
-    echo "workspace ($WORKSPACE_VERSION) is ahead of last tag ($CURRENT); deriving from the workspace"
+    PENDING_RELEASE_IS_WORKSPACE=1
+    echo "workspace ($WORKSPACE_VERSION) is ahead of last tag ($CURRENT); the workspace declares the pending release ($WORKSPACE_VERSION), no bump to derive"
 else
     BASE_VERSION="$CURRENT"
+    PENDING_RELEASE_IS_WORKSPACE=0
 fi
 
 COMMITS="$(git log --oneline --no-merges "${LAST_TAG}..HEAD" 2>/dev/null | grep -vE 'chore\(release\)' || true)"
@@ -93,6 +110,15 @@ elif echo "$COMMITS" | grep -qE '^[a-f0-9]+ feat'; then
     LEVEL="minor"
 elif echo "$COMMITS" | grep -qE '^[a-f0-9]+ (fix|refactor|perf|docs|ci|chore|style|test|build)'; then
     LEVEL="patch"
+fi
+
+if [ -z "$FORCE_VERSION" ] && [ "$PENDING_RELEASE_IS_WORKSPACE" = "1" ]; then
+    # The workspace already declares the release version. There is nothing to
+    # derive — emitting a bump here would make CI publish a version the
+    # operator never declared. `--force-version` bypasses this on purpose:
+    # it is the explicit way to say "and actually make it this".
+    echo "no bump to derive: the workspace already declares the pending release ($WORKSPACE_VERSION)"
+    exit 0
 fi
 
 if [ "$LEVEL" = "none" ]; then
