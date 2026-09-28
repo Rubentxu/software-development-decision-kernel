@@ -3276,3 +3276,55 @@ pregunta de la firma (skip-signing vs CI con `id-token: write`).
 Worktree de sondeo retirado; `git worktree list` limpio. El arbol de
 trabajo queda con `Cargo.lock` modificado y sin commitear, que es
 exactamente el estado honesto: el fix existe, la via de entrega no.
+
+### Addendum session-22 (bis) — existe una TERCER via que no habia enumerado
+
+**Autocorreccion.** En el addendum anterior presenté dos vias para
+arreglar el lock. Sondee el hook en un worktree limpio y hay una tercera
+que no habia considerado, y es la mejor de las tres.
+
+**Lo que se asumia mal:** que amending el hook exige un bump de version
+detras, porque el propio hook no esta en su allowlist. Confirmado que
+hoy es cierto — un commit que toca SOLO `githooks/pre-push` es
+RECHAZADO (exit 1, "no real release contract found in range"). Pero eso
+es lo que hace el hook **nuevo**, y el hook se evalua desde el commit
+local. Se probeo la auto-admision:
+
+```
+TEST 1  commit que toca SOLO githooks/pre-push (sin amendarla)
+        -> RECHAZADO (exit 1). Confirma el punto ciego del hook.
+
+TEST 2  commit que AMENDA githooks/pre-push para admitir Cargo.lock
+        + el propio hook, y LLEVA Cargo.lock regenerado
+        -> ACEPTADO (exit 0)
+
+TEST 3  el mismo commit de TEST 2 + un fichero de codigo no relacionado
+        (crates/sddk-cli/src/main.rs) en el mismo rango
+        -> RECHAZADO. La admision es estrecha: no se convierte en un
+           puerta trasera generica.
+```
+
+La admision anadida es exactamente dos patrones y nada mas:
+
+```diff
+-        docs/* | .sddk/followups/*) return 0 ;;
++        docs/* | .sddk/followups/* | Cargo.lock | githooks/pre-push) return 0 ;;
+-    MANIFEST.sha256) return 0 ;;
++    MANIFEST.sha256 | Cargo.lock) return 0 ;;
+```
+
+TEST 3 es el que da la confianza: la via no compra SOURCE, solo compra
+un fichero derivado y el hook mismo. El riesgo real de auto-admision es
+que el hook se amplie a si mismo sin freno; aqui el freno es que ampliar
+la allowlist sin bump solo se sostiene si el resto del rango es
+estrictamente documental.
+
+**Lo que NO se hizo, y por que:** el commit sigue sin hacerse. Modificar
+una gate de admision de push, aunque sea para desatascar un fix
+legitimo, es decision del operador (`githooks/pre-push` esta bajo control
+de configuracion local y no hay precedent en el repo de que un agente lo
+amiende). Se entrega la via probada, con su evidencia, y la decision.
+
+Worktree de sondeo retirado; `git worktree list` con los dos worktrees
+previos, ninguno nuevo. Rama principal intacta en 27f255b con
+`Cargo.lock` modificado y sin commitear.
