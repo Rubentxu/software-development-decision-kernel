@@ -4354,3 +4354,87 @@ tipografico sin efecto semantico, y reescribir un commit ya publicado para
 corregir dos caracteres es peor que el problema: cuesta legibilidad del
 historia y anade un commit mas. La regla de no reescribir historia aplica
 tambien a mis propios errores de tecleo, igual que se aplico en session-23.
+
+## session-28 — 2026-09-28T10:08Z — el bump de CI rebajaria la version del workspace
+
+WorkItem: `scripts/release-bump.sh` (derivacion de version). Encontrado al
+auditar, antes de publicar, si el camino de CI publicaria lo que creo.
+
+### El defecto
+
+Session-27 bumpeo el workspace a **2.1.1** con
+`release-bump.sh --force-version`. Al revalidar el camino de CI, la
+derivacion de version seguia dando **2.1.0**:
+
+```text
+$ bash scripts/release-bump.sh --dry-run
+release bump: v2.0.1 -> v2.1.0 (minor)
+new tag: v2.1.0
+```
+
+**Menor que el workspace.** Causa: `next_version` derivaba siempre de
+`$CURRENT`, que es el ultimo **tag** (v2.0.1), y no de la version real del
+workspace. Un bump manual es invisible para esa derivacion.
+
+**Por que importa mas de lo que parece.** El paso "Open release PR when a
+bump is pending" de `release-automation.yml` corre este script en una rama
+`release/2.1.0` y hace `gh pr merge --auto --squash`. O sea, el rollback no
+se quedaba en una rama: **se mergearia solo sobre main**.
+
+Reproducido antes de arreglar, en un clon aislado (el repo real nunca se
+toco):
+
+```text
+$ git checkout -b release/2.1.0 && bash scripts/release-bump.sh
+version antes:    2.1.1
+version despues:  2.1.0        # regresion
+```
+
+### Correccion
+
+`release-bump.sh` lee la version real del workspace y deriva desde la mas
+alta entre esa y el tag:
+
+```text
+$ bash scripts/release-bump.sh --dry-run
+workspace (2.1.1) is ahead of last tag (2.0.1); deriving from the workspace
+release bump: v2.0.1 -> v2.2.0 (minor)
+```
+
+Tambien se elimino la segunda lectura de `WORKSPACE_VERSION` mas abajo, que
+podia divergir de la usada para derivar. Ahora el ancla del `sed` y la base
+de la derivacion son la misma variable por construccion.
+
+### Falsificacion
+
+`tests/test_release_bump_derivation.sh`, **nuevo**: no habia ninguna
+cobertura de `release-bump.sh`. 6 casos (workspace por delante del tag con
+minor/patch/major, workspace igual al tag, workspace por detras).
+
+| Logica | Resultado |
+|---|---|
+| original (deriva del tag) | **4 pass / 2 fail** — los 2 fallos son los rollbacks |
+| corregida (deriva del workspace) | **6 pass / 0 fail** |
+
+Mutaciones comprobadas ademas sobre el binario real: volver a
+`next_version "$CURRENT"` → v2.1.0; anular la rama `BASE_VERSION` →
+v2.1.0. El fix produce v2.2.0 en ambos casos de contraprueba.
+
+**Un fallo mio que el test destapo:** la primera version del test invocaba
+el script desde el fixture, pero el script hace `cd "$ROOT"` a *su propio*
+repo, asi que 所有 los casos devolvian la misma version real del repo y el
+test era vacio (fallaba al azar en vez de por el motivo correcto). Corregido
+copiando el script dentro de cada fixture, que es lo que hace CI. Sin ese
+detalle, el test habria dado verde sin comprobar nada.
+
+### Conocimiento negativo
+
+- Es la **misma clase** que `INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED` y que
+  la confusion de rutas de la session-27: dos mecanismos que se parecen y no
+  son el mismo. El de aqui es mas serio: no era un gate que no se ejecutaba,
+  era un gate que se ejecutaba y **devolvia la respuesta contraria** sin que
+  nadie lo comprobara.
+- La asimetria que se repite: el codigo de aplicacion del bump ya leia
+  `WORKSPACE_VERSION` correctamente (por el fix de `INC-DEBT-021`), pero el
+  de derivacion no. Alguien arreglo la mitad. Un invariante de una sola
+  fuente habria detectado la mitad que faltaba.

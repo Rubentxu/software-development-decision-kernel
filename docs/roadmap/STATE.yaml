@@ -4,8 +4,8 @@ status: C1_CLOSED_C2_NOT_EVALUATED_C3_A_B_C_D_E_F_G_H_PASS_OBSERVED_C4_v1.172.0_
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "2543da2"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main=2543da2 (2.1.0). El puntero anterior (3a142b8/2.1.0) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
-  head_at_state_sync: "2543da2"
+  current_sha: "546b3e9b"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main=546b3e9b (2.1.1). El puntero anterior (2543da2/2.1.1) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  head_at_state_sync: "546b3e9b"
   superseded_pointer: "8136bbf/2.0.9 (session-22). Flake R-flake-inv10 cerrado en 982014e: el gate `inv10_grep_gate_no_mutex_on_workflow_state` afirmaba `elapsed < 20ms` con hijos triviales, un umbral absoluto sin margen que media la maquina y no el codigo (fallo 4/6 bajo carga, 22-31ms). Subirlo a 200ms lo hacia verde pero dejaba pasar la serializacion completa (max_concurrency=1), o sea que habria dejado de detectar la regresion que existe para detectar; se descarto. Se sustituyo por un RATIO elapsed/coste-serializado, adimensional e independiente de nucleos, velocidad y carga. Los hijos duermen 20ms para que la referencia serializada se calcule en vez de estimarse, y para que el coste fijo de agendar hilos (~2% de 1000ms) no se confunda con contencion del mutex."
   tag_v1_171_0_sha: "db1e2e44bc64034f44238b6cf250e6bddaa6addb"
   tag_v1_172_0_sha: "d89c2c0c722c09c9b2f330a50da904c1e97be297"

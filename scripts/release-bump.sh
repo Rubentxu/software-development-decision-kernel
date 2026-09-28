@@ -40,6 +40,42 @@ if [ -z "$LAST_TAG" ]; then
 fi
 CURRENT="${LAST_TAG#v}"
 
+# The version the workspace is actually AT, which may be ahead of the last
+# tag (a manual `--force-version` bump, or the ceremonial-release-pending
+# state described in AGENTS.md §2.3).
+#
+# Deriving the next version from the TAG alone is wrong: it cannot see a
+# manual bump, so a workspace at 2.1.1 with last tag v2.0.1 derived 2.1.0
+# and the CI release branch would have REGRESSED the workspace to 2.1.0
+# (session-28, reproduced in an isolated clone). Derive from whichever is
+# higher.
+WORKSPACE_VERSION="$(grep -A1 '^\[workspace\.package\]' Cargo.toml | grep '^version' | sed -E 's/.*"([^"]+)".*/\1/')"
+
+# semver_gt <a> <b> → 0 when a > b
+semver_gt() {
+    local a="$1" b="$2" i
+    local -a av bv
+    IFS='.' read -r -a av <<<"$a"
+    IFS='.' read -r -a bv <<<"$b"
+    for i in 0 1 2; do
+        local ai bi
+        ai="${av[$i]:-0}"
+        bi="${bv[$i]:-0}"
+        [[ "$ai" =~ ^[0-9]+$ ]] || ai=0
+        [[ "$bi" =~ ^[0-9]+$ ]] || bi=0
+        if ((10#$ai > 10#$bi)); then return 0; fi
+        if ((10#$ai < 10#$bi)); then return 1; fi
+    done
+    return 1
+}
+
+if [ -n "$WORKSPACE_VERSION" ] && semver_gt "$WORKSPACE_VERSION" "$CURRENT"; then
+    BASE_VERSION="$WORKSPACE_VERSION"
+    echo "workspace ($WORKSPACE_VERSION) is ahead of last tag ($CURRENT); deriving from the workspace"
+else
+    BASE_VERSION="$CURRENT"
+fi
+
 COMMITS="$(git log --oneline --no-merges "${LAST_TAG}..HEAD" 2>/dev/null | grep -vE 'chore\(release\)' || true)"
 if [ -z "$COMMITS" ]; then
     echo "no commits since $LAST_TAG — nothing to release"
@@ -78,7 +114,7 @@ next_version() {
 if [ "$LEVEL" = "forced" ]; then
     NEXT="$FORCE_VERSION"
 else
-    NEXT="$(next_version "$CURRENT" "$LEVEL")"
+    NEXT="$(next_version "$BASE_VERSION" "$LEVEL")"
 fi
 NEW_TAG="v$NEXT"
 
@@ -99,7 +135,8 @@ fi
 # (AGENTS.md §2.3 makes workspace == release tag MANDATORY, but historical
 # commits kept the workspace 1+ patch ahead for testing). Without this,
 # `s/^version = "$CURRENT"/.../` silently misses when workspace ≠ last tag.
-WORKSPACE_VERSION="$(grep -A1 '^\[workspace\.package\]' Cargo.toml | grep '^version' | sed -E 's/.*"([^"]+)".*/\1/')"
+# Reuse the WORKSPACE_VERSION already read above so the anchor and the
+# derivation can never disagree.
 for f in Cargo.toml crates/*/Cargo.toml; do
     sed -i "s/^version = \"$WORKSPACE_VERSION\"/version = \"$NEXT\"/" "$f"
 done
