@@ -4459,3 +4459,63 @@ afirma otra son dos afirmaciones, y hay que comprobar las dos.
 Tambien se reescribieron dos commits locales con subject duplicado
 (`fix(release): derivar la version...` aparecia dos veces, uno con el fix y
 otro con el bump) para que cada commit fuera atomico y legible. Sin pushear.
+
+### Segundo defecto en release-bump.sh: el doble bump (session-29)
+
+El cierre de session-28 anoto el incidente del doble bump, pero al
+revisar el pre-publish contra el workflow aparecio el defecto de raiz: el
+fix de session-28 estaba mal orientado, no solo incompleto.
+
+Con el workspace en 2.2.0 y el ultimo tag en v2.0.1,
+`release-bump.sh --dry-run` respondia:
+
+```
+workspace (2.2.0) is ahead of last tag (2.0.1); deriving from the workspace
+release bump: v2.0.1 -> v2.3.0 (minor)
+new tag: v2.3.0
+```
+
+Es decir: el mismo defecto que provoco el incidente de proceso, pero ahora
+por via institucional. El paso "Open release PR when a bump is pending" de
+`release-automation.yml` hace exactamente esto:
+
+```
+OUTPUT="$(bash scripts/release-bump.sh --dry-run ...)"
+echo "$OUTPUT" | grep -q '^new tag:' || exit 0   # si no hay tag, no hay PR
+...
+gh pr merge "$PR" --auto --squash
+```
+
+Habria abierto un PR `release/2.3.0` y auto-mergeado 2.2.0 -> 2.3.0 en main,
+sin que nadie lo pidiera. La admision v2 (que session-28 arreglo) no lo
+habria detenido: la comparacion contra el ultimo tag es monotona, 2.2.0 y
+2.3.0 las dos la pasan. El gate era correcto y estaba desconectado de este
+caso, que es justo `INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED`.
+
+La causa es una lectura incompleta de AGENTS.md 2.3. El contrato dice que el
+workspace version es el **puntero ceremonial del release**: "declara la
+version que va a aparecer como tag". Si el workspace ya esta por delante del
+tag, esa version ES la release pendiente. Derivar una por encima se salta
+la release declarada; derivar solo desde el tag la revierte. Las dos
+mitades del error son la misma confusion: tratar el workspace como una
+version de desarrollo en vez de como una declaracion de release.
+
+Correccion: si el workspace esta por delante del tag, no hay nada que
+derivar y se sale con "no pending release". `--force-version` se salta el
+corte a proposito, porque es la via explicita para declarar otra version.
+
+Evidencia:
+- Matriz 7/7 (3 casos "ahead" pasan de exigir bump a exigir ninguno, mas
+  --force-version como caso nuevo).
+- Mutaciones: revertir al fix de session-28 -> 3 fallos; quitar la
+  excepcion de --force-version -> 1 fallo; volver a derivar solo desde el
+  tag -> 3 fallos. El gate se rompe en ambas direcciones.
+- Caso real: con 2.2.0 el dry-run ya no emite `new tag:`, asi que el gate
+  de CI cae en `exit 0` y no abre PR.
+
+Nota de proceso: los dos ultimos commits de session-28 fueron escritos
+siguiendo la conclusion de la session anterior sin contrastarla con
+`release-automation.yml`. Un test verde sobre la logica equivocada sigue
+siendo verde. El contrato (§2.3) estaba en AGENTS.md desde antes; la
+comprobacion que hacia falta era leer el consumidor, no re-derivar la
+aritmetica.
