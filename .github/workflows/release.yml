@@ -278,8 +278,31 @@ jobs:
       - name: Download all build artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          path: assets
+          # MUST match the STAGE path the build job uploaded from, and the
+          # glob the signing step below iterates. These were two different
+          # directories: the download landed in `assets/` while the loop
+          # signed `dist-out/release-assets/*`, which this job never
+          # creates. The result was a job that reported "signed: ..." for
+          # nothing and published zero signatures — silently, because the
+          # `[ -f "$f" ] || continue` guard swallows a missing directory
+          # the same way it skips a directory. A signature job that
+          # publishes nothing is worse than one that fails.
+          # Pinned by tests/test_release_ci_staging.sh.
+          path: dist-out/release-assets
           merge-multiple: true
+
+      - name: Verify the staging directory is populated
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=(dist-out/release-assets/*)
+          if [ "${#found[@]}" -eq 0 ]; then
+            echo "::error::no artifacts downloaded to dist-out/release-assets" >&2
+            echo "refusing to report a successful signing job over an empty staging dir" >&2
+            exit 1
+          fi
+          echo "  staged artifacts: ${#found[@]}"
+          ls -la dist-out/release-assets
 
       - name: Sign every asset (keyless)
         env:

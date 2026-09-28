@@ -80,10 +80,58 @@ else
     fail "gh release upload does not target the isolated staging root"
 fi
 
+# ── Case 5: the sign job must DOWNLOAD to the directory it SIGNS ──────────
+# Found by execution, not by reading (session-31, second pass). The sign job
+# downloaded artifacts to `path: assets` while its signing loop iterated
+# `dist-out/release-assets/*` — a directory that job never creates. The two
+# halves disagreed and the job published zero signatures.
+#
+# It failed SILENTLY, which is what makes it worth pinning: the loop body
+# opens with `[ -f "$f" ] || continue`, so a glob that matches nothing at all
+# and a glob that matches only directories are indistinguishable — the job
+# exits 0, prints nothing, and the release ships unsigned.
+#
+# This asserts the *relationship* between the two paths rather than restating
+# either one, so it survives a rename of the staging root.
+SIGN_JOB="$(awk '/^  sign:/{f=1} f{print} /^  smoke-test:/{exit}' "$WF")"
+# Anchor on the `with:` block of the download step, not a fixed line count:
+# the explanatory comment above `path:` grew, and a `grep -A6` window
+# silently started returning nothing. A pin that breaks when a comment
+# gets longer is a pin that gets deleted instead of fixed.
+DL_PATH="$(echo "$SIGN_JOB" | awk '/download-artifact@/{w=1} w && /path:/{sub(/^[[:space:]]*path:[[:space:]]*/,""); print; exit}')"
+SIGN_GLOB="$(echo "$SIGN_JOB" | grep -oE 'for f in [^;]+' | head -1 | sed -E 's/for f in //')"
+# `path:` names a DIRECTORY that download-artifact populates; the loop globs
+# its CONTENTS. Comparing them as strings reported a false mismatch
+# ('dist-out/release-assets' vs 'dist-out/release-assets/*') on a correct
+# workflow. Strip the glob tail so the comparison is between the two
+# directories the job actually uses. `%%/*` is wrong here — it truncates at
+# the FIRST slash and would reduce both to 'dist-out'.
+DL_DIR="${DL_PATH%/}"
+GLOB_DIR="${SIGN_GLOB%/*}"
+if [ -z "$SIGN_JOB" ]; then
+    fail "could not locate the sign job in release.yml"
+elif [ -z "$DL_PATH" ] || [ -z "$SIGN_GLOB" ]; then
+    fail "sign job: download path or signing glob not extractable (dl='$DL_PATH' glob='$SIGN_GLOB')"
+elif [ "$DL_DIR" = "$GLOB_DIR" ]; then
+    pass "sign job downloads to the directory it signs ($DL_DIR)"
+else
+    fail "sign job downloads to '$DL_DIR' but signs '$GLOB_DIR' — it would sign nothing"
+fi
+
+# ── Case 6: an empty staging dir must fail the sign job, not pass it ───────
+# The guard that makes case 5 survivable in production. Without it the job
+# is green and unsigned, which is the worst possible combination: the
+# signature is a security control, and its absence must be loud.
+if echo "$SIGN_JOB" | grep -qE 'refusing to report a successful signing job over an empty staging dir'; then
+    pass "sign job fails closed on an empty staging directory"
+else
+    fail "sign job has no empty-staging guard — a missing download would be reported as signed"
+fi
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
-    echo "RESULT: PASS (4 checks)"
+    echo "RESULT: PASS (6 checks)"
     exit 0
 fi
-echo "RESULT: FAIL ($FAILURES/4 checks failed)"
+echo "RESULT: FAIL ($FAILURES/6 checks failed)"
 exit 1
