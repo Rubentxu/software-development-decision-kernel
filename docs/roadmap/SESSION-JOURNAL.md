@@ -5018,3 +5018,115 @@ Decidir el contrato único de assets (INC-DEBT-034 causa 2) y reemitir:
 `git push origin main` (satisface la cláusula (A) del pre-push con el bump
 2.2.6 ya presente) **y a continuación** publicar `v2.2.7` con el staging
 corregido, para que exista un release íntegro por encima del contaminado.
+
+
+---
+
+## session-31 (2a pasada) — 2026-09-28T16:53Z → 16:59Z — el gate rechaza las firmas
+
+- **Baseline**: `origin/main` = `9b215d84`, workspace `2.2.7`, tag `v2.2.6`
+  (incompleto). WorkItem `p-63676b11dc0ef88f/release-ci-manifest-anchor`
+  (B-direct, RANURA 1 = causa raíz 2 de INC-DEBT-034).
+- **HEAD al cierre**: `b88b5d79` == `origin/main`, workspace `2.2.8`.
+  Puntero STATE.yaml reconciliado y **guard en PASS** (8/8 checks).
+
+### La premisa que cambió
+
+El PRE-FLIGHT de esta pasada sostuvo que "el contrato de scripts/release.sh
+es canónico y CI se adapta" por una razón equivocada: que era la lectura
+*coherente*, no la *observada*. Al ejecutarlo, el gate de 9 assets
+**rechaza las firmas** que el propio release.sh publica. La decisión de qué
+adaptar no era la primera pregunta; era la tercera.
+
+### Hallazgos (2, ambos por ejecución)
+
+| # | Hallazgo | Commit |
+|---|----------|--------|
+| 1 | Job `sign`: descarga a `assets/`, firma `dist-out/release-assets/` que no creaba → **0 firmas, en verde y en silencio** | `231b3eed` |
+| 2 | El gate de 9 assets **rechaza** un release correctamente firmado → `release.sh` se contradice en los pasos 9 y 9b | `a5fc0116` (INC-DEBT-035) |
+
+### El hallazgo 1 en detalle
+
+La corrección de la pasada anterior (`b6417047`) movió el glob de firma
+pero no el `path:` del `download-artifact`. El fallo era invisible porque
+el bucle abre con `[ -f "$f" ] || continue`: un glob que no casa con nada y
+uno que solo casa con directorios son indistinguibles. El job salía 0 sin
+imprimir nada.
+
+**No se encontró leyendo el workflow.** Se encontró porque el caso 5 del
+test compara la descarga contra la firma, y no porque nadie lo revisara.
+Tres correcciones de esta sesión salieron de ejecutar, ninguna de leer.
+
+### El hallazgo 2 en detalle
+
+Con los 9 assets canónicos + `sddk.sig` + `sddk.pem`:
+`✗ unexpected assets replacing canonical ones: sddk.pem sddk.sig`, `rc=1`.
+
+Las tres piezas se contradicen: `install.sh:303-312` **exige** firma,
+`release.sh:974-976` **sube** firmas en el paso 9, el gate del 9b las
+**rechaza**. Invisible por construcción: `INC-DEBT-030` aborta en el 8c
+(firmado), antes del 9b, así que la rama que firmaba nunca llegó al gate;
+y `v2.0.1` pasó el gate **porque no tiene firma ninguna**.
+
+**Corrección de una afirmación propia**: la pasada anterior llamó
+"íntegro" a `v2.0.1` sin comprobar la firma. Cumplía los 9 assets pero no
+es instalable sin `SDDK_ALLOW_UNSIGNED=1`. El índice de deuda está
+corregido.
+
+### Por qué NO se publicó v2.2.8
+
+Las dos condiciones son **excluyentes** con el estado actual: ningún release
+firmado pasa el gate, y ningún release sin firma es instalable. Publicar
+ahora produciría otro release que el instalador rechaza. Elegir A (firmas
+aditivas al contrato) o B (firmas dentro del contrato) es **relajar o
+endurecer un control de seguridad**, y este repo ya eligió fallar cerrado
+dos veces (INC-DEBT-024, INC-DEBT-030). No es una corrección que deba tomar
+el ejecutor de la sesión.
+
+### Evidencia ejecutada
+
+- `bash tests/test_release_ci_staging.sh` → PASS 6/6; mutaciones M1 (`path: assets`)
+  FAIL 1/6, M2 (borrar la guarda) FAIL 1/6, M3 (`STAGE="assets"`) FAIL 2/6.
+- `bash tests/test_release_ci_manifest_anchor.sh` → PASS.
+- `bash tests/test_release_public_gate.sh` → PASS (10 escenarios).
+- Gate ejecutado con mocks → **rc=1** con los 9 assets + 2 firmas.
+- `shellcheck`: 8 avisos antes, 8 después, **0 en las líneas añadidas**.
+- `python3 -c yaml.safe_load(release.yml)` → parsea OK.
+- `bash tests/test_release_state_pointer.sh` → **PASS 8/8** tras reconciliar.
+- `git status` limpio; `HEAD == origin/main == b88b5d79`.
+
+### Un fallo de método propio
+
+El primer `grep -A6` del caso 5 dejó de funcionar cuando el comentario de
+explicación creció por encima de 6 líneas, y el test falló sobre un workflow
+correcto. Peor: `%%/*` truncaba en la primera barra y reducía ambas rutas a
+`dist-out`, produciendo un falso positivo. Los dos se cazaron mirando el
+mensaje de fallo, que decía exactamente qué paths había extraído — un test
+falsy que dice qué comparó es mucho más fácil de depurar que uno que solo
+devuelve rojo.
+
+### Conocimiento negativo (lo que NO se sabe)
+
+- Si el layout de assets de CI es intencionado o si el gate está
+  desactualizado. Sin investigar.
+- Si `act` reproduce localmente el fallo de staging y el de firma.
+- Qué contiene un `gh-release-receipt.json` válido en CI (quién es el actor
+  cuando lo emite `github-actions` en vez de un humano).
+- Si `release-automation.yml` dispara `release.yml` de forma fiable: en
+  session-31 creó el tag pero el run posterior falló. No re-verificado.
+
+### Deuda abierta: 9 INCs (2 P1 nuevos en esta sesión)
+
+`INC-DEBT-035` (P1, nuevo — gate vs firmas), `INC-DEBT-034` (P1 — causa raíz 2
+abierta), `INC-DEBT-032` (P2 — suite no hermética), `INC-DEBT-031` (P3),
+`INC-DEBT-030` (blocker refutado), `INC-DEBT-026`,
+`DEFAULT-GATE-DISCONNECTED`, `NO-STRUCTURED-LOGGING`,
+`TEST-PORTS-UNCONSUMED`, `RELEASE-FORCE-VERSION-ERGONOMICS`.
+
+### Primer paso preciso de la sesión siguiente
+
+**Decidir A o B de INC-DEBT-035** (decisión de seguridad, operador). Con la
+decisión tomada: aplicar el cambio único + el test que falta (9 canónicos +
+firmas → PASS), luego alinear el layout de CI con el contrato (INC-DEBT-034
+causa 2) y recién entonces publicar v2.2.9. Publicar antes de eso produce un
+release que el instalador rechaza.
