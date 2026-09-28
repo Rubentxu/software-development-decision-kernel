@@ -214,15 +214,43 @@ trap 'rm -f "$ENTRY_FILE"' EXIT
 
 # Keep-a-Changelog ordering: newest first. Insert the new entry right after
 # the header, before the first existing `## [` section.
-if grep -qE '^## \[' CHANGELOG.md; then
-    FIRST="$(grep -n -m1 '^## \[' CHANGELOG.md | cut -d: -f1)"
+#
+# session-30 retrospectiva: insertar a ciegas creaba cabeceras duplicadas.
+# `--force-version` existe precisamente para re-declarar una version que ya
+# estaba declarada (asi se bumpeo 2.2.4 -> 2.2.5 cuando 2.2.4 nunca llego a
+# publicarse), y al no comprobar si la seccion existia ya, un re-bump dejaba
+# dos cabeceras `## [2.2.0]` identicas (observado: separadas por 53 lineas).
+# Una cabecera duplicada hace ambiguo cual entrada manda.
+if [ -n "$(grep -nE "^## \[$NEXT\]" "$CHANGELOG.md" 2>/dev/null | head -1)" ]; then
+    # La seccion de $NEXT ya existe: se AÑADEN sus items al final de la
+    # seccion existente, sin crear una segunda cabecera. El bloque va desde su
+    # cabecera hasta justo antes de la siguiente cabecera `## [` (o EOF).
+    EXIST_LINE="$(grep -nE "^## \[$NEXT\]" "$CHANGELOG.md" | head -1 | cut -d: -f1)"
+    AFTER_LINE="$(grep -nE '^## \[' "$CHANGELOG.md" | awk -F: -v s="$EXIST_LINE" '$1 > s {print $1; exit}')"
+    TOTAL="$(wc -l < "$CHANGELOG.md")"
+    [ -z "$AFTER_LINE" ] && AFTER_LINE="$((TOTAL + 1))"
+    TMP_MERGE="$(mktemp)"
     {
-        head -n "$((FIRST - 1))" CHANGELOG.md
+        # Todo hasta el final de la seccion existente, con las lineas en blanco
+        # finales recortadas para poder anadir sin acumular huecos.
+        head -n "$((AFTER_LINE - 1))" "$CHANGELOG.md" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+        # Los items nuevos, ya tal cual los genera $ENTRY_FILE (con su
+        # indentacion), pero sin repetir la cabecera `## [$NEXT]`.
+        echo
+        tail -n +2 "$ENTRY_FILE"
+        echo
+        [ "$AFTER_LINE" -le "$TOTAL" ] && tail -n "+$AFTER_LINE" "$CHANGELOG.md"
+    } > "$TMP_MERGE" && mv "$TMP_MERGE" "$CHANGELOG.md"
+    echo "  CHANGELOG.md: merged into the existing '## [$NEXT]' section (line $EXIST_LINE)"
+elif grep -qE '^## \[' "$CHANGELOG.md"; then
+    FIRST="$(grep -n -m1 '^## \[' "$CHANGELOG.md" | cut -d: -f1)"
+    {
+        head -n "$((FIRST - 1))" "$CHANGELOG.md"
         cat "$ENTRY_FILE"
-        tail -n "+$FIRST" CHANGELOG.md
+        tail -n "+$FIRST" "$CHANGELOG.md"
     } > CHANGELOG.md.new && mv CHANGELOG.md.new CHANGELOG.md
 else
-    cat "$ENTRY_FILE" >> CHANGELOG.md
+    cat "$ENTRY_FILE" >> "$CHANGELOG.md"
 fi
 
 echo "applied: $CURRENT -> $NEXT"
