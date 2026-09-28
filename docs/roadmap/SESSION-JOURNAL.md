@@ -4663,3 +4663,79 @@ Nota sobre el metodo: recomendé una version basandome en una afirmacion
 sobre lo que contendria el release que no habia verificado. Comprobarlo
 tomo dos comandos. Una recomendacion de version que no se ha comprobado es
 una opinion, y decirla con esa seguridad fue el error.
+
+---
+
+## 2026-09-28T11:55Z — session-29 (cierre): push de 2.2.1 hecho, publish local bloqueado por musl
+
+**Baseline**: `a048ddf1` (origin/main al inicio) → **HEAD al cierre**: `ebd3ed8d`.
+
+### Que se desbloqueo (y como)
+
+El bloqueo de session-29 era el pre-push hook. Lo resolvi leyendo el artefacto,
+no razonando sobre el. Tres correcciones mias en este tramo:
+
+1. **La opcion B (excepcion de hook) no existia.** La presente tres veces como
+   alternativa viva. Es circular: `githooks/pre-push` esta versionado y no esta
+   en la allowlist docs-only, asi que arreglar el hook tambien exige clause (A).
+   No se puede arreglar el hook para evitar necesitar un bump.
+2. **`release-bump.sh --force-version` es la via sancionada.** El propio script
+   lo documenta (`release-bump.sh:118`): "`--force-version` bypasses this on
+   purpose: it is the explicit way to say 'and actually make it this'". El
+   guard que yo mismo anadi en `7559a710` (no re-bumpear cuando el workspace ya
+   declara la release) tiene esa salida, y es la herramienta, no un numero
+   elegido a mano. Mi afirmacion previa de que hacia falta una decision del
+   operador era **falsa**.
+3. **Un test mio mintio.** Al ejecutar el hook a mano alimente stdin en el orden
+   de campos equivocado; el hook escaneo todo el historial, encontro el bump
+   viejo a 2.2.0 y salio 0. Lo leí como "el hook tiene un bug y el push pasa".
+   Era mi harness, no el hook. Con el orden correcto
+   (`<local_ref> <local_sha> <remote_ref> <remote_sha>`) rechaza, como dije al
+   principio. Misma clase de error que los dos falsos verdes que arregle antes en
+   esta sesion: un check construido para confirmar en vez de para fallar.
+
+### Lo ejecutado (OBSERVED)
+
+- Bump via `bash scripts/release-bump.sh --force-version 2.2.1`. Diff = 2 lineas
+  de `version` (`Cargo.toml`, `manifest.toml`) + `Cargo.lock` coherente +
+  `CHANGELOG.md` generado por la herramienta. Crates siguen en
+  `version.workspace=true`.
+- Gate pre-push ejecutado sobre el rango real: **EXIT=0**, y verificado que
+  admite por clause (A) (`ebd3ed8d  2.2.0 -> 2.2.1`), no por casualidad.
+- **Canario**: el mismo gate con el rango sin el bump sigue rechazando. El gate
+  no se debilito.
+- Scoped: `test_release_bump_derivation.sh` PASS,
+  `test_release_pipeline_consistency.sh` PASS.
+- `cargo fmt --check` OK, `cargo check --workspace --offline` OK.
+- `cargo test --workspace --offline`: **5057 passed / 0 failed** (8m33s).
+- `git push origin main`: `a048ddf1..ebd3ed8d` OK. `HEAD == origin/main`,
+  arbol limpio, 12 commits publicados.
+
+### Blocker nuevo (OBSERVED, no recuperable sin operador)
+
+`bash scripts/release.sh --skip-tests` **aborta en el paso 3/14**: falta
+`x86_64-linux-musl-gcc` que `ring v0.17.14` exige via cc-rs. El target Rust musl
+si esta instalado; el compilador C no. `sudo -n` falla (exige password), asi que
+no hay via no interactiva. Registrado como
+`INC-DEBT-027-MUSL-TOOLCHAIN-ABSENT-LOCAL-PUBLISH` (high/P1, open).
+
+**Nada publicado**: 0 tags v2.2.1, `gh release view v2.2.1` = not found, sin
+assets parciales. El guard hace `die` antes de cualquier paso que publique, que
+es lo correcto.
+
+### Estado final
+
+- Release publica: **v2.0.1** (sin cambios). Workspace 2.2.1 en main.
+- Los fixes de release (doble bump, `manifest_sha256`) siguen **sin publicar**.
+- **Siguiente paso**: publicar v2.2.1 por CI (opcion 2 del INC, menor friccion:
+  el push ya esta hecho y el guard de `release-automation.yml` es correcto), o
+  instalar `musl-tools` con sudo y reintentar el script local.
+
+### Leccion de proceso (la que mas me costo)
+
+Tres veces en una sesion afirme una premisa sin verificarla — la version de
+release, la excepcion de hook, el bug del hook — y las tres se desinflaron al
+leer el artefacto. Las mutaciones que escribi para el codigo de release
+funcionan precisamente porque estan diseñadas para **fallar**; mi razonamiento
+estaba diseñado para pasar. La leccion no es "verificar mas", es "construir el
+check que pueda contradecirme".
