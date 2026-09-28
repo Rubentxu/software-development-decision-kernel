@@ -1,18 +1,19 @@
 #!/bin/bash
 # Contract tests for the PublicReleaseGate (REL-1 / FU-A4-4A-REL-1).
 #
-# Pins 10 scenarios from .sddk/cycles/p-63676b11dc0ef88f-rel-1-public-release-gate/spec.md:
+# Pins 11 scenarios from .sddk/cycles/p-63676b11dc0ef88f-rel-1-public-release-gate/spec.md:
 #
 #   1. isDraft=false, all 9 assets present, tag SHA matches, public URLs 200 → PASS
 #   2. isDraft=true → FAIL
 #   3. isPrerelease=true on Base release → FAIL
 #   4. missing expected asset → FAIL
 #   5. unexpected asset replacing expected → FAIL
-#   6. tagName ≠ expected → FAIL
-#   7. refs/tags/$TAG SHA ≠ expected release SHA → FAIL
-#   8. any public URL returns non-200 → FAIL
-#   9. all public contract conditions satisfied → PASS (real release)
-#  10. --dry-run does not contact/mutate GH publish state → PASS (argv check)
+#   6. canonical assets plus release signatures → PASS
+#   7. tagName ≠ expected → FAIL
+#   8. refs/tags/$TAG SHA ≠ expected release SHA → FAIL
+#   9. any public URL returns non-200 → FAIL
+#  10. all public contract conditions satisfied → PASS (real release)
+#  11. --dry-run does not contact/mutate GH publish state → PASS (argv check)
 #
 # Strategy:
 #   - The gate logic lives in scripts/release.sh as a bash function block.
@@ -180,22 +181,39 @@ GH_JSON='{"tagName":"v1.169.53","isDraft":false,"isPrerelease":false,"assets":[
 {"name":"sbom.json"},{"name":"gh-release-receipt.json"},
 {"name":"software-development-decision-kernel.tar.gz"},
 {"name":"software-development-decision-kernel.tar.gz.sha256"},
-{"name":"rogue-asset.txt"}]}'
+{"name":"rogue-asset.txt"},{"name":"rogue-asset.sig"}]}'
 invoke_gate "v1.169.53" "abc123" "$GH_JSON" "abc123" "fail"
 
-# ─── Scenario 6: tagName drift → FAIL
-section "Scenario 6: tagName drift → FAIL"
+# ─── Scenario 6: canonical assets plus release signatures → PASS
+section "Scenario 6: allowed release signatures → PASS"
+GH_JSON='{"tagName":"v1.169.53","isDraft":false,"isPrerelease":false,"assets":[
+{"name":"sddk"},{"name":"sddk.sha256"},{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz"},
+{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.sha256"},{"name":"CHECKSUMS"},
+{"name":"sbom.json"},{"name":"gh-release-receipt.json"},
+{"name":"software-development-decision-kernel.tar.gz"},
+{"name":"software-development-decision-kernel.tar.gz.sha256"},
+{"name":"sddk.sig"},{"name":"sddk.pem"},{"name":"sddk.bundle.json"},
+{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.sig"},
+{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.pem"},
+{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.bundle.json"},
+{"name":"software-development-decision-kernel.tar.gz.sig"},
+{"name":"software-development-decision-kernel.tar.gz.pem"},
+{"name":"software-development-decision-kernel.tar.gz.bundle.json"}]}'
+invoke_gate "v1.169.53" "abc123" "$GH_JSON" "abc123" "pass"
+
+# ─── Scenario 7: tagName drift → FAIL
+section "Scenario 7: tagName drift → FAIL"
 GH_JSON='{"tagName":"v9.9.9","isDraft":false,"isPrerelease":false,"assets":[]}'
 invoke_gate "v1.169.53" "abc123" "$GH_JSON" "abc123" "fail"
 
-# ─── Scenario 7: refs/tags/$TAG SHA ≠ expected release SHA → FAIL
-section "Scenario 7: tag SHA drift → FAIL"
+# ─── Scenario 8: refs/tags/$TAG SHA ≠ expected release SHA → FAIL
+section "Scenario 8: tag SHA drift → FAIL"
 GH_JSON='{"tagName":"v1.169.53","isDraft":false,"isPrerelease":false,"assets":[]}'
 invoke_gate "v1.169.53" "abc123" "$GH_JSON" "deadbeef" "fail"
 
-# ─── Scenario 8: public URL 404 → FAIL
+# ─── Scenario 9: public URL 404 → FAIL
 # Special: override curl to return 404 always.
-section "Scenario 8: public URL 404 → FAIL"
+section "Scenario 9: public URL 404 → FAIL"
 GH_JSON='{"tagName":"v1.169.53","isDraft":false,"isPrerelease":false,"assets":[
 {"name":"sddk"},{"name":"sddk.sha256"},{"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz"},
 {"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.sha256"},{"name":"CHECKSUMS"},
@@ -252,7 +270,7 @@ PATH="$tmp:$PATH" bash -c '
 '
 rc=$?
 set -e
-# Scenario 8 with mocked 404 curls: gate should fail. Because the curl
+# Scenario 9 with mocked 404 curls: gate should fail. Because the curl
 # mock returns 404 immediately, CURL_FAIL_FAST short-circuits the retry
 # loop, the gate exits non-zero, and the runner wrapper appends GATE_RC=
 # so we can read the gate's exit code even with `2>&1`.
@@ -265,23 +283,23 @@ else
     gate_rc=0
 fi
 if [ "${gate_rc:-0}" != "0" ]; then
-    ok_t "scenario 8 fail (curl=404, gate_rc=$gate_rc)"
+    ok_t "scenario 9 fail (curl=404, gate_rc=$gate_rc)"
 else
-    bad_t "scenario 8 unexpectedly passed (rc=$rc gate_rc=$gate_rc)"
+    bad_t "scenario 9 unexpectedly passed (rc=$rc gate_rc=$gate_rc)"
 fi
 
-# ─── Scenario 9: all public contract conditions satisfied → PASS
+# ─── Scenario 10: all public contract conditions satisfied → PASS
 # Real acceptance test — run by scripts/release.sh itself during a real
 # release. We only verify that the gate block exists in the script.
-section "Scenario 9: real acceptance run during release (verified by gate presence)"
+section "Scenario 10: real acceptance run during release (verified by gate presence)"
 if grep -q 'public-release gate PASS' "$RELEASE_SCRIPT"; then
     ok_t "gate block present in scripts/release.sh"
 else
     bad_t "gate block MISSING from scripts/release.sh"
 fi
 
-# ─── Scenario 10: --dry-run does not contact/mutate GH publish state
-section "Scenario 10: --dry-run skips gate (no GH mutation)"
+# ─── Scenario 11: --dry-run does not contact/mutate GH publish state
+section "Scenario 11: --dry-run skips gate (no GH mutation)"
 if grep -A4 'DRY_RUN.*=.*1' "$RELEASE_SCRIPT" | grep -q 'skipping step 9b'; then
     ok_t "DRY_RUN guard skips gate"
 else
@@ -291,6 +309,16 @@ if grep -B1 -A2 'SKIP_INSTALL.*=.*1' "$RELEASE_SCRIPT" | grep -q 'skipping step 
     ok_t "SKIP_INSTALL guard skips gate"
 else
     bad_t "SKIP_INSTALL guard MISSING for gate"
+fi
+
+# ─── Scenario 12: production and test use the same contract source
+section "Scenario 12: shared production/test asset contract"
+if grep -Fq 'source "$ROOT/scripts/release-assets-contract.sh"' "$RELEASE_SCRIPT" \
+    && grep -Fq 'validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"' "$RELEASE_SCRIPT" \
+    && grep -Fq 'source "$SCRIPT_DIR/../scripts/release-assets-contract.sh"' "$LIB"; then
+    ok_t "release.sh and gate tests source the same asset contract helper"
+else
+    bad_t "production and tests no longer share the release asset contract"
 fi
 
 # ─── Summary

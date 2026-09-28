@@ -72,6 +72,7 @@ REPO="${SDDK_REPO:-Rubentxu/software-development-decision-kernel}"
 SDDK_PREFIX="${SDDK_PREFIX:-$HOME/.local/bin}"
 SDDK_FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-$HOME/.local/share/sddk/framework}"
 cd "$ROOT"
+source "$ROOT/scripts/release-assets-contract.sh"
 
 # Isolate TMPDIR for the whole release run so the test gate is deterministic
 # regardless of the ambient TMPDIR. The scratch MUST live OUTSIDE the repo
@@ -1043,29 +1044,11 @@ else
     fi
     ok "isPrerelease=false"
 
-    # 3. Asset contract: exactly the 9 canonical assets by basename.
-    CANONICAL_ASSETS=(
-        "sddk"
-        "sddk.sha256"
-        "sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
-        "sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz.sha256"
-        "CHECKSUMS"
-        "sbom.json"
-        "gh-release-receipt.json"
-        "software-development-decision-kernel.tar.gz"
-        "software-development-decision-kernel.tar.gz.sha256"
-    )
-    ACTUAL_ASSETS="$(echo "$RELEASE_JSON" | jq -r '.assets[].name' | sort -u)"
-    EXPECTED_ASSETS_SORTED="$(printf '%s\n' "${CANONICAL_ASSETS[@]}" | sort -u)"
-    MISSING_ASSETS="$(comm -23 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
-    EXTRA_ASSETS="$(comm -13 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
-    if [ -n "$MISSING_ASSETS" ]; then
-        die "missing canonical assets: $(echo "$MISSING_ASSETS" | tr '\n' ' ')"
-    fi
-    if [ -n "$EXTRA_ASSETS" ]; then
-        die "unexpected assets replacing canonical ones: $(echo "$EXTRA_ASSETS" | tr '\n' ' ')"
-    fi
-    ok "asset set matches 9-asset contract"
+    # 3. Asset contract. Keep the production rule in one place and exercise
+    #    the exact same function from tests/lib_public_release_gate.sh.
+    validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"
+    CANONICAL_ASSETS=("${RELEASE_CANONICAL_ASSETS[@]}")
+
 
     # 4. Public URL HTTP probes: each canonical asset must respond
     #    200 from the public releases/download/$TAG/<asset> URL.

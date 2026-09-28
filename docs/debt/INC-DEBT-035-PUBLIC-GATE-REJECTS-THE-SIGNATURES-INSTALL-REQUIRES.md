@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-035-PUBLIC-GATE-REJECTS-THE-SIGNATURES-INSTALL-REQUIRES
 title: "El gate de 9 assets rechaza las firmas que el instalador exige: un release correctamente firmado no puede pasar su propio gate"
-status: open
+status: resolved
 severity: high
 priority: P1
 created: 2026-09-28
@@ -9,6 +9,7 @@ discovered_by: session-31 (OBSERVED — ejecución del gate con mocks, no lectur
 cluster_id: CL-RELEASE
 related: [INC-DEBT-024-LOCAL-KEYLESS-IDENTITY-UNPINNABLE, INC-DEBT-030-LOCAL-RELEASE-BLOCKED-AT-SIGNING-IDENTITY, INC-DEBT-034-CI-RELEASE-ASSET-LAYOUT-DIVERGES-FROM-GATE]
 fingerprint: "public_release_gate_extra_assets_rejects_signatures"
+resolved_by: session-31 (allowlist fix + gate suite + spec amendment)
 ---
 
 ## Qué pasó (OBSERVED, session-31)
@@ -118,3 +119,24 @@ Mientras tanto: **ningún release firmado puede pasar el gate actual**, y
 **ningún release sin firma es instalable sin `SDDK_ALLOW_UNSIGNED=1`**. Las
 dos condiciones son excluyentes con el estado actual del repositorio, que es
 lo que hace que esto sea P1 y no P3.
+
+## Resolución (2026-09-28, OBSERVED)
+
+La decisión A fue implementada y verificada:
+
+- `scripts/release.sh` y `tests/lib_public_release_gate.sh` ahora exigen los
+  9 assets canónicos y permiten únicamente `.sig`, `.pem` y `.bundle.json`
+  para `sddk`, el tarball unificado x86_64-musl y el bundle de framework.
+- Un asset arbitrario sigue siendo rechazado, incluso si termina en `.sig`.
+- El test de contrato añadió el escenario de los 9 assets más las 9 firmas
+  permitidas: **PASS**.
+- La mutación que quitó la allowlist volvió a rechazar las firmas: **FAIL**,
+  demostrando que el test detecta la regresión.
+- `tests/test_release_public_gate.sh` terminó con **PASS=12, FAIL=0**.
+- La especificación del ciclo recibió un addendum append-only que distingue
+  el conjunto canónico de payloads de los sidecars de firma.
+
+La deuda queda `resolved`, no `closed`: todavía falta observar un release
+real firmado que pase el gate y una instalación end-to-end. Esa evidencia
+pertenece al bloque posterior de INC-DEBT-034 y al release, no se fabrica en
+este commit.

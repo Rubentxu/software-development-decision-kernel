@@ -6,6 +6,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../scripts/release-assets-contract.sh"
+
 # Helpers (mirrored from scripts/release.sh).
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
@@ -64,33 +67,11 @@ run_public_release_gate() {
     fi
     ok "isPrerelease=false"
 
-    # 3. Asset contract.
-    local CANONICAL_ASSETS=(
-        "sddk"
-        "sddk.sha256"
-        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz"
-        "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz.sha256"
-        "CHECKSUMS"
-        "sbom.json"
-        "gh-release-receipt.json"
-        "software-development-decision-kernel.tar.gz"
-        "software-development-decision-kernel.tar.gz.sha256"
-    )
-    local ACTUAL_ASSETS
-    ACTUAL_ASSETS="$(echo "$RELEASE_JSON" | jq -r '.assets[].name' | sort -u)"
-    local EXPECTED_ASSETS_SORTED
-    EXPECTED_ASSETS_SORTED="$(printf '%s\n' "${CANONICAL_ASSETS[@]}" | sort -u)"
-    local MISSING_ASSETS
-    MISSING_ASSETS="$(comm -23 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
-    local EXTRA_ASSETS
-    EXTRA_ASSETS="$(comm -13 <(echo "$EXPECTED_ASSETS_SORTED") <(echo "$ACTUAL_ASSETS"))"
-    if [ -n "$MISSING_ASSETS" ]; then
-        die "missing canonical assets: $(echo "$MISSING_ASSETS" | tr '\n' ' ')"
-    fi
-    if [ -n "$EXTRA_ASSETS" ]; then
-        die "unexpected assets replacing canonical ones: $(echo "$EXTRA_ASSETS" | tr '\n' ' ')"
-    fi
-    ok "asset set matches 9-asset contract"
+    # 3. Asset contract. This is the production helper sourced by
+    #    scripts/release.sh, not a second test-only implementation.
+    validate_release_asset_contract "$RELEASE_JSON" "$VERSION"
+    local CANONICAL_ASSETS=("${RELEASE_CANONICAL_ASSETS[@]}")
+
 
     # 4. Public URL HTTP probes.
     local CURL_MAX_ATTEMPTS="${CURL_MAX_ATTEMPTS:-6}"
