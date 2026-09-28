@@ -718,6 +718,49 @@ SIGN_ARTIFACTS=(
     "$(basename "$UNIFIED")"
     "$(basename "$BUNDLE_TARBALL")"
 )
+
+# --- Pre-check: is the project identity even reachable from here? ---
+#
+# INC-DEBT-024 mitigacion 2. The issuer gate below is the real defense, but
+# it runs AFTER cosign has already signed, which means two bad things happen
+# first when you sign from a laptop:
+#
+#   1. cosign falls back to the interactive device flow, which blocks on a
+#      human opening a browser. In an unattended run that is a hang, not a
+#      failure.
+#   2. If the operator does complete it, the certificate belongs to a PERSON
+#      and the release is still wrong — the gate then rejects it, but only
+#      after the work and the browser round-trip.
+#
+# So refuse early, with a message that says where the identity does exist.
+# Detect it the way GitHub sets it: `GITHUB_ACTIONS=true` on the runner.
+#
+# `SDDK_ALLOW_LOCAL_SIGNING=1` is NOT an escape hatch to a good release — it
+# only reaches the issuer gate, which will still reject a personal identity.
+# It exists so the check can be falsified without a live Actions runner.
+if [ "${SDDK_SKIP_SIGNING:-0}" != "1" ] && [ "${SDDK_ALLOW_LOCAL_SIGNING:-0}" != "1" ]; then
+    if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+        die "the project's signing identity does not exist on this host.
+               Required issuer: $RELEASE_CERT_ISSUER
+               This host: not a GitHub Actions runner (GITHUB_ACTIONS != true).
+
+               Keyless signing mints a certificate for whatever identity the
+               OIDC provider sees. Inside GitHub Actions that is the workflow
+               running on a tag, which is what install.sh and \`sddk dev
+               update\` pin. On a workstation cosign instead asks a human to
+               open a browser and mints a certificate for that PERSON — which
+               the installers reject, so the release would be signed and
+               uninstallable.
+
+               Run the release from GitHub Actions (see
+               .github/workflows/release-automation.yml) so the identity is
+               the project's. To publish fully unsigned on purpose, set
+               SDDK_SKIP_SIGNING=1 — the installers will then require
+               SDDK_ALLOW_UNSIGNED=1 / SDDK_ALLOW_UNSIGNED_UPDATE=1."
+    fi
+    ok "signing context: GitHub Actions runner (project identity available)"
+fi
+
 SIGNED_COUNT=0
 if command -v cosign >/dev/null 2>&1; then
     for artifact in "${SIGN_ARTIFACTS[@]}"; do

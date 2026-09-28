@@ -394,6 +394,39 @@ else
     fail "release.sh does not fail closed on a wrong signing identity"
 fi
 
+# The issuer gate runs AFTER cosign has signed, which is too late for two
+# reasons: the local device flow blocks on a human opening a browser (a hang
+# in an unattended run), and a personal certificate is still wrong. So the
+# host must be checked BEFORE any signing attempt.
+if grep -qF '[ "${GITHUB_ACTIONS:-}" != "true" ]' "$RELEASE_SH"; then
+    ok "release.sh refuses to sign outside a GitHub Actions runner"
+else
+    fail "release.sh does not check the Actions context before signing"
+fi
+
+# The pre-check must die, not warn, and it must run before the signing loop.
+# A warn here leaves the device-flow hang in place, which is the failure mode
+# the check exists to prevent.
+if awk '
+    /\[ "\$\{GITHUB_ACTIONS:-\}" != "true" \]/ && !seen { ctx=NR; seen=1 }
+    /for artifact in "\$\{SIGN_ARTIFACTS\[@\]\}"/ && seen && !loop { loop=NR }
+    seen && /die "the project'"'"'s signing identity does not exist/ { diefound=NR }
+    END { exit((ctx && diefound && loop && ctx < loop) ? 0 : 1) }
+' "$RELEASE_SH" 2>/dev/null; then
+    ok "the pre-check dies (not warns) and runs before the signing loop"
+else
+    fail "the signing pre-check is missing, non-fatal, or misplaced"
+fi
+
+# SDDK_SKIP_SIGNING must remain a way OUT (publish unsigned knowingly),
+# otherwise the pre-check would make local publishing impossible with no
+# declared escape.
+if grep -qF '[ "${SDDK_SKIP_SIGNING:-0}" != "1" ]' "$RELEASE_SH"; then
+    ok "SDDK_SKIP_SIGNING=1 still bypasses the pre-check (unsigned is a deliberate choice)"
+else
+    fail "the pre-check removed the declared unsigned escape hatch"
+fi
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "install asset contract: $failures check(s) FAILED"
