@@ -106,3 +106,87 @@ Previous: **C4 v1.172.0 — publicado y formalizado** (release v1.172.0 en GH Re
   - **v1.172.0 cert formal**: PASS_PARTIAL_OBSERVED con T29+T31 PASS_OBSERVED (0 falsifiers triggered de 12 totales). Acepta flake pre-existente `concurrency_planning_substrate` como R-flaw (workspace-wide concurrency, no en isolation). 5048 tests passed post-publish = evidencia durable sólida.
 
 **Distinción importante**: workspace v1.171.2 == binary-version 1.171.2 (alineado). Tag SemVer publicado = v1.172.0 (computed desde commits acumulados). El binario instalado en `~/.local/bin/sddk` corresponde a v1.172.0 (sha256 generado por pipeline). Próximo release: continuar con FC-* restantes.
+
+## Estado real al cierre de session-29 (2026-09-28) — PENDIENTE DE DECISION DEL OPERADOR
+
+> Esta seccion es mas nueva que la de arriba. El "Estado de certificacion"
+> de arriba refleja session-12 (v1.172.0) y **ya no describe el estado real**.
+
+### Git
+
+- `HEAD` local = `99bc6526`, arbol limpio, **9 commits sin push**.
+- `origin/main` = `a048ddf1`.
+- Workspace `2.2.0` (declarado en `a9da3104`, ya en `origin/main`).
+- Ultimo tag publicado = `v2.0.1`. **v2.2.0 nunca se publico** (no existe
+  tag ni release), asi que el numero 2.2.0 solo existio como commit.
+
+### Lo que hay sin publicar (9 commits)
+
+Tres defectos reales de la ruta de release, corregidos y con mutaciones que
+los detectan:
+
+1. `7559a710` — `release-bump.sh` re-bumpeaba cuando el workspace ya declara
+   la release. Con 2.2.0 y tag v2.0.1 derivaba v2.3.0, y
+   `release-automation.yml` habria auto-mergeado un PR 2.2.0 -> 2.3.0.
+   Matriz 7/7, 4 mutaciones.
+2. `df55db4c` — cobertura del contrato de `release.sh` paso 2.5, que es la
+   ruta que el fix anterior atraviesa. 3 checks conductuales + 2 estaticos,
+   4 mutaciones (M4, M6, M7, M8).
+3. `46666a3c` — `BUNDLE.toml` declaraba `manifest_sha256` con el hash de la
+   **primera linea** del manifest, no con el del manifest. El campo tampoco
+   se verificaba en ningun sitio. Mutacion M10.
+
+Ademas: `993def7b` (journal), `5324a528`, `48561746`, `d33e5f40`,
+`99bc6526` (documentales), y dos INCs nuevos:
+
+- `INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE` (high/P1, code-fixed)
+- `INC-DEBT-026-BUNDLE-CONTENT-NOT-IN-HISTORY` (medium/P2, open) — el bundle
+  local mezcla `skills/` de `gentle-ai/sdd` (`~/.config/kilo/`, declarado
+  `__managed_by: gentle-ai/sdd`). El asset publicado verifica 377/377, asi
+  que no hay incidente de distribucion. Queda abierto determinar si el
+  bootstrap de ese proyecto escribe en el bundle de este: seria una
+  intrusion y romperia la regla de cero intrusion.
+
+### Evidencia (OBSERVED, sobre el arbol actual)
+
+- `cargo fmt --check` OK, `cargo clippy --workspace --all-targets -D warnings`
+  OK, `cargo test --workspace` = **5057 passed / 0 failed / 19 ignored**,
+  exit 0.
+- Tests shell: 15 PASS / 2 FAIL. Los 2 fallos son preexistentes
+  (`test_vault_coherence_alignment` falla tambien sobre HEAD sin mis
+  cambios; `test_release_state_pointer` solo dice "aun no publicado").
+- shellcheck limpio en los 4 ficheros tocados.
+- 12 mutaciones nombradas, cada una falla el gate que la posee.
+
+### EL BLOQUEO (decision del operador)
+
+`githooks/pre-push` rechaza el push: `scripts/**` y `tests/**` no estan en la
+allowlist docs-only y el rango no tiene cambio real de
+`[workspace.package] version`. El hook no tiene bypass.
+
+Precedente del propio repo para este caso exacto: `a7169537` (fix de codigo
+en `scripts/release.sh` + `tests/`) se publico junto a un bump real,
+`3a142b86` a 2.1.0. Mismo patron, misma resolucion.
+
+**Correccion de session-29**: se recomendio 2.2.1 alegando que 2.2.0 se
+publicaria con el doble bump. Es falso — los 3 fixes estan en el arbol 2.2.0
+(8 commits de trabajo tras `a9da3104`, 4 ficheros, 308 inserciones). El
+numero 2.2.0 es correcto y nunca se publico.
+
+Dos salidas, ambas legítimas:
+
+- **A)** bump real a **2.2.1** en commit propio, siguiendo el precedente
+  `3a142b86`. El hook acepta y el push sale. Se salta un 2.2.0 que nunca
+  existio como release.
+- **B)** excepcion de hook para publicar **2.2.0** con los fixes dentro.
+
+La eleccion entre A y B cambia el numero publico y la politica del hook, no
+la calidad del codigo. **La decision es del operador y no se toma aqui.**
+
+### Siguiente paso ejecutable
+
+1. Operador elige A o B.
+2. `git push origin main` (con bump propio si A).
+3. `bash scripts/release.sh` (14 pasos) para publicar 2.2.0 o 2.2.1.
+4. Post-publish: `sddk dev install` y `sddk dev doctor` (que hoy reporta
+   `content.manifest: missing` por el bundle mezclado de INC-DEBT-026).
