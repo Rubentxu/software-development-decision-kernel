@@ -5130,3 +5130,130 @@ decisión tomada: aplicar el cambio único + el test que falta (9 canónicos +
 firmas → PASS), luego alinear el layout de CI con el contrato (INC-DEBT-034
 causa 2) y recién entonces publicar v2.2.9. Publicar antes de eso produce un
 release que el instalador rechaza.
+
+---
+
+## session-32 (3a pasada) — 2026-09-28T22:01Z → 23:05Z — v2.2.15 → v2.2.18, tres defectos de la ruta de instalación
+
+**Baseline / HEAD al cierre:** `origin/main` = `58bea01f` ("chore(release): bump version",
+workspace **2.2.18**). Árbol limpio al cierre. Último release público observado:
+**v2.2.17** (tag remoto `v2.2.17` → `447211e2`, publicado `2026-09-28T22:36:15Z`).
+`HEAD == origin/main` verificado tras el push.
+
+### Qué se hizo
+
+Cinco releases encadenados, cada uno con un único defecto real del anterior. Todos
+publicados, ninguno reescrito, y **ningún release ha pasado todavía el smoke end-to-end
+completo** (ver "Estado real" abajo).
+
+| tag | commit | run | Qué reveló |
+|-----|--------|-----|-----------|
+| v2.2.15 | `6a0b1317` | `36488888188` | Smoke **step 1 (install) PASÓ por primera vez**; step 2 murió con 127 |
+| v2.2.16 | `56c61046` | `36490012790` | Step 2 llegó a cosign: `accepts 1 arg(s), received 3` |
+| v2.2.17 | `447211e2` | `36492642837` | Cosign verificó OK; `bundle is missing required MANIFEST.sha256` |
+| v2.2.18 | `58bea01f` | — | **NO LANZADO**: el fix está commiteado y pusheado, pendiente de publicar |
+
+### HALLAZGO 1 — el smoke step 2 buscaba el binario en la ruta plana
+
+`$SDDK_PREFIX` por defecto es `$HOME/.local/bin`, que **no** acaba en `/bin`, así que
+`dev install` anida: el binario vive en `$PREFIX/bin/sddk` (`install.sh:488-495`).
+El smoke usaba `$PREFIX/sddk` y moría con 127. Corregido en `95ae29b8`.
+
+### HALLAZGO 2 — el argv de cosign nunca funcionó en ningún release publicado
+
+Este es el defecto de fondo. `dev update` emitía:
+
+```
+cosign verify-blob --bundle <BLOB> --certificate-identity-regexp=<ID> --certificate-oidc-issuer=<ISS>
+```
+
+El blob ocupaba el hueco que `--bundle` espera (un valor), y los flags de pinning
+quedaban como posicionales. cosign 2.4.3 lo rechazó con `accepts 1 arg(s), received 3`
+**antes de evaluar cualquier pin**. El comentario del código daba por bueno un argv que
+no había podido ejecutarse nunca.
+
+Corregido en `5e2ff10d` extrayendo `cosign_argv()` (testeable sin `unsafe`/env vars) con
+3 pins de forma: bundle → `--bundle <path>`, detached → `--signature <sig>
+--certificate <pem>` con valores intercalados, blob siempre como único posicional final.
+
+**Evidencia de mutación (dirección fallida) SÍ concluyente:** reinsertar el defecto
+exacto (blob en el hueco de `--bundle`) pone los pins en ROJO; restaurar deja 26/26 verde.
+Durante este proceso los propios tests atraparon dos bugs míos antes de commitear:
+`--bundle` sin valor, y el orden flag/flag/valor/valor en la rama detached.
+
+### HALLAZGO 3 — el productor de CI y el consumidor discrepan del layout del bundle
+
+Este es el defecto abierto de esta sesión. El job de CI construye el bundle **sin
+directorio envolvente** (`release.yml:107`):
+
+```bash
+tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256
+```
+
+mientras `AGENTS.md` §8 paso 5 documenta la forma **envuelta**
+`software-development-decision-kernel/...`. El consumidor (`update_bundle`) asumía la
+forma documentada y aplicaba `--strip-components=1` a ciegas. Verificado sobre el asset
+publicado de v2.2.17 con `tar tzf`: los componentes de primer nivel son `agents/`,
+`skills/`, `prompts/`, `assets/`, `MANIFEST.sha256`. Con strip a ciegas,
+`MANIFEST.sha256` (un solo componente) **se borra** y `agents/*.md` se aplana a la raíz →
+`error: bundle is missing required MANIFEST.sha256`.
+
+Corregido en `2f7d5064` con `tarball_wraps_all_members_under_one_dir()`: el strip se
+aplica solo si existe un envoltorio único real. 5 pins nuevos. El guard fail-closed de
+`verify_manifest` **no se toca**: el rechazo era correcto, lo que estaba mal era dónde
+se buscaba el manifest.
+
+### Conocimiento negativo (relevante para mañana)
+
+1. **La evidencia de mutación del HALLAZGO 3 NO es concluyente y está así declarado en
+   el propio commit.** El mutante "siempre devuelve `true`" **no puso los pins en rojo**:
+   `cargo test -p sddk-cli --lib root_level_ci` pasó con el mutante en disco, incluso
+   después de `cargo clean -p sddk-cli` y de forzar recompilación. Se investigó a fondo
+   (binario reconstruido, `strings` sobre el test binario, `md5sum`, `touch`, ejecuciones
+   directas del binario) sin reproducir el fallo del pin. La **lógica** se validó de
+   forma independiente compilando el detector aislado (`rustc`): `root_level -> false`,
+   `wrapped -> true`. Conclusión honesta: la lógica es correcta y está verificada, pero
+   **el mecanismo por el que el pin no detectaría ese mutante está sin explicar**. Nadie
+   debe citar el commit `2f7d5064` como "mutación falsificada en ambos sentidos".
+
+2. Sin verificar: si el layout raíz de CI es **intencional** o una divergencia
+   respecto del contrato de AGENTS.md §8. La corrección aplicada (detección en el
+   consumidor) es defendible en ambos casos, pero la **alineación del productor** con el
+   contrato no está hecha. `release.sh` (ruta local) sí usa el prefijo envolvente, así
+   que las dos rutas de producción siguen divergiendo.
+
+3. Sin verificar: si el bundle de la ruta **unificada** (`install.sh`, `bin/sddk` +
+   `framework/`) tiene el mismo problema. `install.sh` extrae **sin** `--strip-components`,
+   y el smoke **step 1 pasó** con v2.2.15, así que esa ruta funciona; no se ha auditado.
+
+### Estado real: NO hay release certificado todavía
+
+v2.2.17 tiene 27 assets, `isDraft=false`, `isPrerelease=false`, firmas cosign válidas
+(el log muestra que la verificación pasó en el smoke). **Pero su smoke falló en el paso
+de actualización**, así que la ruta `sddk dev update` no está probada contra un release
+real de extremo a extremo. La certificación completa (instalación real + receipt) **sigue
+pendiente**.
+
+### Deuda abierta
+
+`INC-DEBT-036` (cadena de 4 defectos de la ruta de instalación — **cerrada en código,
+requiere cierre formal**), `INC-DEBT-035` (decisión de seguridad pendiente del
+operador), `INC-DEBT-034` (causa raíz 2: layout productor vs consumidor — **abierta**),
+`INC-DEBT-032` (suite no hermética, tests dependientes de `$HOME`), `INC-DEBT-031`,
+`INC-DEBT-030` (refutado), `INC-DEBT-026`, `DEFAULT-GATE-DISCONNECTED`,
+`NO-STRUCTURED-LOGGING`, `TEST-PORTS-UNCONSUMED`, `RELEASE-FORCE-VERSION-ERGONOMICS`.
+
+### Primer paso preciso de la sesión siguiente
+
+1. `gh workflow run release-automation.yml --ref main` → publica **v2.2.18** (el fix de
+   layout ya está en `origin/main` = `58bea01f`). Vigilar el smoke: si el paso de
+   actualización pasa, se cierra la cadena de 4 defectos.
+2. Si vuelve a fallar: **`gh run view <run-id> --log-failed`**, no el log completo. El
+   log completo mezcla el contenido de todos los jobs y epistolaron tres veces antes de
+   llegar al mensaje real.
+3. Tras el verde: verificación post-publicación (URLs 200, `cosign verify`, instalación
+   e2e con red real) → cerrar formalmente `INC-DEBT-036` → cerrar `INC-DEBT-034` con la
+   **decisión sobre si el productor se alinea al contrato o el consumidor se fija**.
+4. Reconciliar `CURRENT.md` (sigue describiendo session-31 / v2.2.6) y este diario ya
+   escrito. `STATE.yaml` se actualizó por `scripts/reconcile_state_pointer.sh` pero su
+   campo `last_public_release_observed` sigue diciendo `v2.0.1` — **desactualizado**.

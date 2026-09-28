@@ -1,6 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-31, 2026-09-28T16:41Z):** Workspace **`2.2.6`**, **no publicado**. Último tag público **`v2.0.1`**. `origin/main` = `ed0e3c47`; local = `b0cff81e` + bump. Modo `on` / `declared:project`. `sddk adopt status` = **`complete`**. Suite completa **5077 passed / 0 failed / 19 ignored** (exit 0) en el árbol de session-31.
+**Estado (session-32, 2026-09-28T23:05Z):** Workspace **`2.2.18`**, `origin/main` = **`58bea01f`** (= local, árbol limpio). Último tag público observado: **`v2.2.17`** (`447211e2`, publicado `2026-09-28T22:36:15Z`) — **NO certificado**: su smoke falló en el paso de actualización. Modo `on` / `declared:project`. `sddk adopt status` = **`complete`**. Estado local en esta sesión: 31/31 tests de `dev::update`, fmt limpio, clippy sin hallazgos en el fichero tocado.
+
+**HALLAZGO session-32 — la ruta de instalación tenía 4 defectos encadenados, uno por release.** Ninguno se detectó en local: cada uno solo aparece al ejecutar el instalador contra un release real. La secuencia observada es la evidencia:
+
+| tag | run | qué reveló |
+|-----|-----|-----------|
+| v2.2.15 | `36488888188` | smoke step 1 (**install**) pasó por 1ª vez; step 2 murió con 127 (binario en `$PREFIX/sddk`, vive en `$PREFIX/bin/sddk`) |
+| v2.2.16 | `36490012790` | step 2 llegó a cosign: `accepts 1 arg(s), received 3` |
+| v2.2.17 | `36492642837` | cosign verificó OK; `bundle is missing required MANIFEST.sha256` |
+
+**HALLAZGO session-32 — el argv de cosign nunca funcionó en ningún release publicado.** `dev update` emitía `verify-blob --bundle <BLOB> --certificate-identity-regexp=… --certificate-oidc-issuer=…`: el blob ocupaba el hueco de `--bundle` y los flags de pinning quedaban como posicionales. cosign 2.4.3 rechazaba **antes de evaluar ningún pin**. El comentario del código daba por bueno un argv jamás ejecutado. Corregido en `5e2ff10d` con `cosign_argv()` + 3 pins de forma. Mutación falsada en dirección fallida (reinsertar el defecto → ROJO).
+
+**HALLAZGO session-32 — productor y consumidor discrepan del layout del bundle (ABIERTO).** CI construye el bundle sin directorio envolvente (`release.yml:107`), `AGENTS.md` §8 paso 5 documenta la forma envuelta. El consumidor aplicaba `--strip-components=1` a ciegas: **borraba `MANIFEST.sha256`** y aplanaba `agents/*.md`. Corregido en `2f7d5064` detectando el layout antes de aplicar el strip (5 pins). **Pendiente la decisión de política:** alinear el productor al contrato, o fijar el layout raíz como contrato y corregir AGENTS.md + `release.sh`.
+
+**⚠️ Conocimiento negativo obligatorio:** la evidencia de mutación del fix de layout (`2f7d5064`) **NO es concluyente y así consta en el propio commit**. El mutante "siempre `true`" no puso los pins en rojo pese a `cargo clean` y recompilación forzada; la lógica se validó aparte con un binario `rustc` autónomo (`root_level -> false`, `wrapped -> true`). **Nadie debe citar `2f7d5064` como mutación falsada en ambos sentidos.** El mecanismo por el que el pin no detectaría ese mutante sigue sin explicar y es el primer punto a investigar si la cadena vuelve a fallar.
+
+**Deuda abierta:** `INC-DEBT-034` (layout productor vs consumidor), `INC-DEBT-036` (cadena de 4 defectos — cerrada en código, cierre formal pendiente), `INC-DEBT-035` (decisión de seguridad del operador), `INC-DEBT-032` (suite no hermética), `INC-DEBT-031`, `INC-DEBT-030` (refutado), `INC-DEBT-026`, `DEFAULT-GATE-DISCONNECTED`, `NO-STRUCTURED-LOGGING`, `TEST-PORTS-UNCONSUMED`, `RELEASE-FORCE-VERSION-ERGONOMICS`.
+
+**Siguiente acción exacta:** `gh workflow run release-automation.yml --ref main` para publicar **v2.2.18** (fix de layout ya en `origin/main` = `58bea01f`). Si el smoke pasa el paso de actualización, se cierra la cadena de 4 defectos; después, verificación post-publicación (URLs 200, `cosign verify`, instalación e2e) y cierre formal de `INC-DEBT-036`. Al diagnosticar, usar **`gh run view <id> --log-failed`**: el log completo mezcla jobs y epistoló tres veces antes de llegar al mensaje real.
+
+Previous: **Estado (session-31, 2026-09-28T16:41Z):** Workspace **`2.2.6`**, **no publicado**. Último tag público **`v2.0.1`**. `origin/main` = `ed0e3c47`; local = `b0cff81e` + bump. Modo `on` / `declared:project`. `sddk adopt status` = **`complete`**. Suite completa **5077 passed / 0 failed / 19 ignored** (exit 0) en el árbol de session-31.
 
 **HALLAZGO session-31 — el blocker de firma NO era un blocker.** `INC-DEBT-030` daba por agotados los minutos de Actions (§2.5) y ofrecía solo dos salidas, ambas con decisión del operador. **Refutado por ejecución**: el repo es público, Actions está habilitado, y `gh workflow run ci.yml` arrancó el run `36450601924` real. La vía 1 (publicar desde Actions) es viable y es la correcta, porque produce el issuer `token.actions.githubusercontent.com` que los instaladores pinan. La vía 2 (`SDDK_SKIP_SIGNING=1`) sigue descartada: degrada el contrato de instalación para todos los usuarios.
 
