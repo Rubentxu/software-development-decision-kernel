@@ -4341,3 +4341,16 @@ es distinto y mas pequeno de lo que dije:
   release-automation.yml` (workflow_dispatch, decision del operador).
 - La ruta B local sigue necesitando `musl` en el host si se quiere validar
   o usar `release.sh` para publicar.
+
+### Constancia de proceso (session-27)
+
+El commit `6228ad12` lleva dos caracteres CJK espurios (`另一`) donde
+debia decir "la otra" en el cuerpo del mensaje. Se intento enmendar, y el
+hook `pre-push` lo impidio correctamente al ser un force-push sin cambio de
+version en el rango.
+
+Se decide **no enmendar** y dejar constancia aqui. Es un defecto
+tipografico sin efecto semantico, y reescribir un commit ya publicado para
+corregir dos caracteres es peor que el problema: cuesta legibilidad del
+historia y anade un commit mas. La regla de no reescribir historia aplica
+tambien a mis propios errores de tecleo, igual que se aplico en session-23.
