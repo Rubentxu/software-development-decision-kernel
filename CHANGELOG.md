@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.15] - 2026-09-28
+
+### Fixes
+  - fix(ci): el pin de zcode en el smoke exige ficheros nativos, no symlinks
+
 ## [2.2.14] - 2026-09-28
 
 ### Fixes
