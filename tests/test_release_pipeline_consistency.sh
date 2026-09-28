@@ -374,6 +374,69 @@ else
     fail "fixture is vacuous: the buggy extraction would pass, so this gate proves nothing"
 fi
 
+# ─────────────────────────────────────────────────────────────────────────
+# session-30 retrospective — the musl staticness guard must accept BOTH
+# static spellings and reject dynamic ones.
+#
+# INC-021-FALSE-NEGATIVE: the guard only looked for the literal "statically
+# linked", but `file` 5.46 describes a real static-pie musl binary as
+#
+#   ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped
+#
+# So the guard REJECTED the correct musl binary. It was fixed to accept both
+# spellings, but until now only by hand-verified cases, with no permanent
+# test. This is that test, and it is behavioural in the same sense as the
+# manifest-sha gate above: it sources the REAL pattern out of release.sh
+# rather than grep-and-hope, so mutating the pattern changes the outcome.
+# ─────────────────────────────────────────────────────────────────────────
+
+if grep -E "grep -qE '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-pattern.txt" 2>/dev/null; then
+    ok "release.sh has a staticness pattern to check"
+else
+    fail "release.sh has no staticness pattern line to check"
+fi
+
+# The real descriptions, verbatim from `file` on this host and from the
+# upstream musl toolchain. Both static spellings must pass; both dynamic ones
+# must fail.
+# The pattern is SOURCED from release.sh, never hardcoded here. Hardcoding it
+# makes the test vacuous: it would keep passing even after release.sh
+# regressed to the old single-spelling pattern, which is exactly the bug this
+# test exists to catch. (Observed while writing it: the first version
+# hardcoded the pattern and a mutation of release.sh survived it.)
+STATIC_PATTERN=""
+if grep -E "grep -qE '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-line.txt" 2>/dev/null; then
+    # Pull the -E pattern argument out of the real line.
+    STATIC_PATTERN="$( sed -n "s/.*grep -qE '\([^']*\)'.*/\1/p" "$TMPD/static-line.txt" | head -1 )"
+fi
+
+check_static() {
+    local desc="$1" want="$2" label="$3"
+    if [ -z "$STATIC_PATTERN" ]; then
+        fail "staticness guard: $label -> could not extract the pattern from release.sh"
+        return
+    fi
+    if printf '%s' "$desc" | grep -qE "$STATIC_PATTERN"; then
+        got=accept
+    else
+        got=reject
+    fi
+    if [ "$got" = "$want" ]; then
+        ok "staticness guard: $label -> $got"
+    else
+        fail "staticness guard: $label -> $got, expected $want"
+    fi
+}
+
+check_static "ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped" accept \
+    "static-pie (the real musl binary, the regression case)"
+check_static "ELF 64-bit LSB executable, x86-64, statically linked, stripped" accept \
+    "statically linked (plain static)"
+check_static "ELF 64-bit LSB pie executable, x86-64, dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2" reject \
+    "dynamically linked (INC-021 must not recur)"
+check_static "ELF 64-bit LSB shared object, x86-64, dynamically linked" reject \
+    "shared object"
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "release pipeline consistency: $failures check(s) FAILED"
