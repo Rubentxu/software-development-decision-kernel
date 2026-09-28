@@ -3817,3 +3817,18 @@ Decidir si fijar `cosign-release: 'v2.4.3'` explicito en
 `.github/workflows/release.yml` (deuda menor que abre session-24) o dejarlo y
 cerrarlo como aceptado-en-CI-per-implicito. Es un cambio de una linea en
 superficie de publicacion, asi que pide su propio slice y su propio bump.
+
+### Verificacion final de session-24 (anadida tras correr los gates)
+
+- `cargo test --workspace --locked --no-fail-fast` → **5057 passed / 0 failed /
+  19 ignored**, 258 suites, **exit 0**. Mismo conteo que el baseline de
+  session-23, lo que confirma que el cambio (shell) no toco nada de Rust.
+- `cargo fmt --check` → clean. `cargo clippy --workspace --all-targets -- -D
+  warnings` → clean (0 diagnostics).
+- Suite de shell del paso 1 de `release.sh` → **11/11 PASS**.
+- Guard del puntero de estado → PASS.
+- `HEAD == origin/main == 07aba96`. Working tree limpio.
+- NOTA: al reconciliar, el script de puntero avisó de que `07aba96` no es un
+  commit de bump pero declara 2.0.12. Es correcto — el bump real es
+  `2f0482e`, inmediatamente anterior — pero conviene que la siguiente sesión
+  no lo lea como una incoherencia de version sin resolver.
