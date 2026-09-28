@@ -157,10 +157,24 @@ fi
 # A5-1 §6 — release admission is semantic, not textual.
 #
 # A release HEAD MUST carry a REAL (and monotonically increasing)
-# [workspace.package] version change relative to its first parent. The commit
-# subject may follow the `chore(release): bump version` convention, but the
-# subject alone is NEVER the contract: an empty ceremonial marker commit is
-# refused here, so it can never be mistaken for a real release.
+# [workspace.package] version change. The commit subject may follow the
+# `chore(release): bump version` convention, but the subject alone is NEVER
+# the contract: an empty ceremonial marker commit is refused here, so it can
+# never be mistaken for a real release.
+#
+# The comparison is against the LAST PUBLISHED TAG, not against HEAD^.
+# This is the v2 check, and it is the default here because the v1 check
+# (HEAD vs HEAD^) is wrong for any release whose bump commit is not HEAD.
+# The bump legitimately sits N commits behind HEAD: docs, journal and
+# pointer commits land after it, by this repo's own convention. With v1,
+# HEAD and HEAD^ then carry the SAME version and the gate refuses a
+# perfectly valid release with `REJECT non-monotonic 2.1.0 -> 2.1.0`.
+# The v1 flaw was documented in scripts/lib/release_admission.sh but the
+# publishing path never opted in, so it stayed latent until a release
+# actually came due.
+#
+# v2 fails CLOSED on an unreachable or unauthenticated remote
+# (`REJECT query-failed`) rather than degrading to the HEAD^ comparison.
 #
 # Single source of the invariant: `scripts/lib/release_admission.sh`.
 # shellcheck source=lib/release_admission.sh
@@ -168,8 +182,8 @@ fi
 . "$ROOT/scripts/lib/release_admission.sh"
 
 LAST_SUBJECT="$(git log -1 --format=%s)"
-ADMISSION="$(release_admission_check HEAD)" \
-    || die "release admission refused: $ADMISSION — release requires a real, monotonic [workspace.package] version bump"
+ADMISSION="$(release_admission_check_v2 HEAD)" \
+    || die "release admission refused: $ADMISSION — release requires a real, monotonic [workspace.package] version bump above the last published release"
 if ! echo "$LAST_SUBJECT" | grep -qE '^chore\(release\): bump version'; then
     warn "HEAD subject does not follow the 'chore(release): bump version' convention: $LAST_SUBJECT"
 fi

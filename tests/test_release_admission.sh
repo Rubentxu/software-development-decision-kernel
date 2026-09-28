@@ -412,6 +412,85 @@ case_selector_run "v2 mode on docs-only+no-remote is REJECT bootstrap-tie" \
 case_v2_run "concurrent head (multiple commits past tag) accept" \
     ACCEPT v2_setup_head_not_on_tag_sha
 
+# ─────────────────────────────────────────────────────────────────────
+# session-27 — release.sh SELECTOR contract.
+#
+# The v1/v2 library matrix above proves both implementations are correct in
+# isolation. It does NOT prove release.sh picks the right one. It did not:
+# release.sh called `release_admission_check` with no mode set, which routes
+# to v1 (HEAD vs HEAD^). Since the bump commit legitimately sits N commits
+# behind HEAD (docs, journal and pointer commits land after it), HEAD and
+# HEAD^ carry the SAME version and v1 refuses a perfectly valid release with
+# `REJECT non-monotonic 2.1.0 -> 2.1.0`.
+#
+# These are STATIC checks on release.sh itself: the real gate that publishes
+# releases, asserted to select the last-published-tag comparison by default.
+# They fail if the selector is removed, flipped back to v1, or made opt-in
+# again behind an env var that nothing sets.
+# ─────────────────────────────────────────────────────────────────────
+
+RELEASE_SH="$REPO_ROOT/scripts/release.sh"
+
+if [[ ! -f "$RELEASE_SH" ]]; then
+    echo "FAIL: $RELEASE_SH missing"
+    FAIL=$((FAIL + 1))
+else
+    # The admission line release.sh actually executes.
+    admission_line="$(grep -nE 'release_admission_check(_v2)?[[:space:]]+HEAD' "$RELEASE_SH" \
+        | grep -v '^\s*#' | head -1 || true)"
+
+    # 1. release.sh must select the v2 comparison (against the last published
+    #    tag) by default. Accept either an explicit v2 call or an explicit
+    #    default export; reject a bare `release_admission_check HEAD`.
+    if echo "$admission_line" | grep -q 'release_admission_check_v2'; then
+        echo "PASS  [SELECTOR] release.sh invokes release_admission_check_v2 explicitly"
+        PASS=$((PASS + 1))
+    elif grep -qE '^\s*export SDDK_RELEASE_ADMISSION_MODE=v2' "$RELEASE_SH"; then
+        echo "PASS  [SELECTOR] release.sh defaults SDDK_RELEASE_ADMISSION_MODE=v2"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  [SELECTOR] release.sh does not select v2 — a bump followed by a"
+        echo "      docs/journal commit yields HEAD==HEAD^ and v1 rejects a valid release"
+        echo "      offending line: ${admission_line:-<none found>}"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # 2. The default must NOT be silently downgradable back to v1 by an
+    #    unset/empty environment. An explicit `:=` default assignment is the
+    #    only acceptable form of "default".
+    if grep -qE 'SDDK_RELEASE_ADMISSION_MODE:?[:=]' "$RELEASE_SH"; then
+        if grep -qE 'SDDK_RELEASE_ADMISSION_MODE:?=\$\{SDDK_RELEASE_ADMISSION_MODE:-v2\}' "$RELEASE_SH" \
+           || grep -qE '^\s*export SDDK_RELEASE_ADMISSION_MODE=v2' "$RELEASE_SH" \
+           || echo "$admission_line" | grep -q 'release_admission_check_v2'; then
+            echo "PASS  [SELECTOR] v2 default is not overridable to v1 by empty env"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  [SELECTOR] SDDK_RELEASE_ADMISSION_MODE is set but not to a v2 default"
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        # No env var at all: correct only if v2 is called directly.
+        if echo "$admission_line" | grep -q 'release_admission_check_v2'; then
+            echo "PASS  [SELECTOR] no env var needed; v2 called directly"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL  [SELECTOR] release.sh has no v2 default anywhere"
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+
+    # 3. A refused admission must abort the release with a non-zero exit.
+    #    Historically the REJECT was printed while the script still exited 0,
+    #    so a caller checking only the exit code saw success.
+    if grep -qE 'die[[:space:]]+"release admission refused' "$RELEASE_SH"; then
+        echo "PASS  [ABORT] refused admission calls die (non-zero exit)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  [ABORT] refused admission no longer routes through die"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
 echo ""
 echo "=== matrix result: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]] || exit 1
