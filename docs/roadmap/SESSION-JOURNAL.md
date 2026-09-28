@@ -4739,3 +4739,75 @@ leer el artefacto. Las mutaciones que escribi para el codigo de release
 funcionan precisamente porque estan diseñadas para **fallar**; mi razonamiento
 estaba diseñado para pasar. La leccion no es "verificar mas", es "construir el
 check que pueda contradecirme".
+
+---
+
+## 2026-09-28T12:28Z — session-30: INC-DEBT-028 (identidad no determinista) corregido; publish sigue bloqueado por musl
+
+**Baseline**: `7dbacd02` → **HEAD**: `9af0bb66` (= `origin/main`).
+
+### El bug reportado por el operador
+
+*"vuelvo al proyecto y consta como no adoptado"*, con el identificador
+cambiando constantemente. Reproducido antes de tocar nada: el mismo
+directorio devolvia un `project_id` distinto en cada invocacion, en 3 repos
+reales sin remote (`agent-workflows`, `conversational-games-studio`,
+`hodei-flow`).
+
+Causa: `fallback_seed` se acunaba con `Uuid::new_v4()` y `project_id =
+hash(seed, scope)`. **4 sitios**, no 1: `cycle.rs:440`,
+`resolve_project_ids`, `run_project_resolve`, `prepare_adoption_plan`.
+
+Arreglo: `sddk_domain::stable_fallback_seed(path)` deriva el seed del path
+canico con `framed_hash`. Ademas `adopt status|repair|refresh` ya no abortan
+sin remote ni recibo: derivan la identidad que habria escrito `adopt apply`.
+
+### Evidencia (OBSERVED)
+
+- Sintoma eliminado end-to-end: `adopt apply` → volver → `status: complete`,
+  mismo `project_id`. Verificado en los 3 repos reales.
+- `sddk-framework` (con remote) **sin cambio**: `p-63676b11dc0ef88f`,
+  `identity_source: remote`.
+- `cargo test --workspace --offline`: **5064 passed / 0 failed / 19 ignored**
+  (antes 5057: +7 tests nuevos).
+- 4 mutaciones, cada una detectada por el gate que la posee. M2 (colision del
+  string de dominio) **sobrevivio** a los tests estructurales: no habia test
+  que pudiera detectarla. Se sustituyo por un golden pin.
+
+### Dos errores mios, detectados por los tests y no por mi
+
+1. `framed_hash` devuelve 64 hex, no 32 → seed de 37 chars.
+2. El nibble de version debe **reemplazar** `hex[16]`, no pegarse delante.
+
+En ambos casos announce "arreglado" antes de ejecutar la prueba. Es el
+mismo patron que en session-29: la afirmacion sin verificar es lo que falla,
+siempre.
+
+### Version y push
+
+El hook exige un cambio de version **dentro** del rango. El bump a 2.2.1 ya
+estaba en `origin/main` de un push anterior, asi que no cuenta. Como el
+operador preaprobo los gates, se derivo con la herramienta del repo
+(`release-bump.sh --force-version 2.2.2`, patch por ser `fix`) y se pusho:
+`7dbacd02..9af0bb66`, gate admits por clause (A) verificado, y **canario** de
+que sigue rechazando sin el bump.
+
+### Blocker: sin cambios, el musl
+
+`bash scripts/release.sh --skip-tests` vuelve a abortar en el paso 3/14:
+`x86_64-linux-musl-gcc` ausente (lo necesita `ring v0.17.14` via cc-rs).
+Verificado que **no hay via rootless**: no hay headers musl
+(`/usr/include/x86_64-linux-musl`) ni libs musl de clang, y `sudo -n` falla.
+
+**Nada publicado**: 0 tags, `v2.2.2` no existe, sin assets parciales. La
+release publica sigue siendo **v2.0.1**, asi que los tres fixes
+(doble bump, `manifest_sha256`, identidad) siguen **sin publicar**.
+
+### Siguiente paso (operador, 1 linea)
+
+```bash
+sudo apt-get install -y musl-tools gcc-x86_64-linux-gnu
+bash scripts/release.sh
+```
+
+Publica 2.2.2 con los tres fixes. Sin root no hay via.
