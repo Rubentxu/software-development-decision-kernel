@@ -1,14 +1,37 @@
 ---
 id: INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE
 title: "BUNDLE.toml declara manifest_sha256 con el hash de la primera línea del manifest, y nadie lo verifica"
-status: open
+status: resolved
 severity: high
 priority: P1
 created: 2026-09-28
 discovered_by: session-29 (coherencia del bundle instalado)
+resolved_by: session-30 (commit bc53207e)
 cluster_id: CL-SUPPLY-CHAIN
 fingerprint: "sddk_bundle_manifest_sha_from_first_line_unverified"
 ---
+
+## Estado: resuelto en session-30 (2026-09-28)
+
+Los dos defectos de este INC están cerrados, por separado y con commits
+distintos:
+
+- **Parte 1 (cálculo).** `release.sh` pasó a calcular el hash real con
+  `sha256sum MANIFEST.sha256`. El valor publicado apunta al manifest, como
+  el comentario del código declaraba desde el principio.
+- **Parte 2 (verificación).** `verify_manifest_anchor` en
+  `crates/sddk-cli/src/dev/bundle_manifest.rs` compara el valor declarado con
+  el sha256 del `MANIFEST.sha256` realmente incluido, y `dev install` lo
+  invoca después de `verify_bundle_compat` y antes de escribir nada en disco.
+  Commit `bc53207e`.
+
+La sección "Corrección propuesta" de abajo se conserva como referencia del
+razonamiento original; el criterio de la compatibilidad que allí se exigía
+—que un bundle antiguo con el valor viejo siga siendo legible— se resolvió
+con el caso permisivo explícito de `verify_manifest_anchor`: un bundle que
+**no declara** `manifest_sha256` se acepta (no afirma ningún ancla), mientras
+que un bundle que **sí lo declara** y no coincide se rechaza.
+
 
 ## Qué es
 
