@@ -181,5 +181,11 @@ else
   echo "RESULT: FAIL — STATE.yaml miente sobre el estado del repo."
   echo "         Reconciliar segun AGENTS.md §10.3: actualizar el puntero con el"
   echo "         SHA real y CONSERVAR la evidencia anterior sin reescribirla."
+  echo "         Para los campos mecanicos (current_sha, head_at_state_sync,"
+  echo "         workspace_version_at_current) existe una reparacion:"
+  echo "           bash scripts/reconcile_state_pointer.sh --check   # inspecciona"
+  echo "           bash scripts/reconcile_state_pointer.sh          # repara"
+  echo "         Conserva la nota de evidencia existente y no reescribe historia;"
+  echo "         el juicio sobre QUE significa el estado sigue siendo humano."
 fi
 exit "$rc"
