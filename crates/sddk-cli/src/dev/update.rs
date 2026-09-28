@@ -112,14 +112,16 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
     //
     // `cosign verify-blob --signature` on its own validates against whatever
     // certificate cosign picks, which is the unpinned path this policy
-    // exists to close. Passing --certificate-identity without a
-    // --certificate-chain gives cosign nothing to match, so the check
-    // would report strictness it does not have.
+    // exists to close. The leaf certificate must be passed explicitly.
+    // Observed on cosign v3.1.3 (first signed release, v2.2.11):
+    // --certificate-chain carries only the CHAIN and cosign aborts with
+    // "provide a key … a certificate to verify against with --certificate";
+    // the leaf flag is --certificate.
     let mut cmd = std::process::Command::new("cosign");
     if bundle_path.exists() {
         cmd.args(["verify-blob", "--bundle"]).arg(&bundle_path);
     } else if cert_path.exists() {
-        cmd.args(["verify-blob", "--signature", "--certificate-chain"])
+        cmd.args(["verify-blob", "--signature", "--certificate"])
             .arg(&sig_path)
             .arg(&cert_path);
     } else {

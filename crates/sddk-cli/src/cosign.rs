@@ -65,7 +65,7 @@ pub const DEFAULT_CERT_ISSUER: &str = "https://token.actions.githubusercontent.c
 ///     `id-token: write` cannot produce a trusted signature;
 ///   - that the ref is a SemVer TAG, not a branch. Pushing a tag is the
 ///     release act; a feature branch is not.
-pub const DEFAULT_CERT_IDENTITY_REGEXP: &str = r"^Rubentxu/software-development-decision-kernel:\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$";
+pub const DEFAULT_CERT_IDENTITY_REGEXP: &str = r"^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$";
 
 #[cfg(test)]
 mod tests {
@@ -84,8 +84,14 @@ mod tests {
     }
 
     fn subject_for(ref_part: &str) -> String {
+        // The SHAPE FULCIO ACTUALLY MINTS. Observed on the first signed
+        // release (v2.2.11, Actions run 36477625442): cosign rejected the
+        // old colon-form pattern printing the real subject:
+        //   https://github.com/OWNER/REPO/.github/workflows/WF@REF
+        // The previous helper built `owner/repo:workflow@ref` and every
+        // test here validated the pattern against its own invention.
         format!(
-            "Rubentxu/software-development-decision-kernel:.github/workflows/release.yml@{ref_part}"
+            "https://github.com/Rubentxu/software-development-decision-kernel/.github/workflows/release.yml@{ref_part}"
         )
     }
 
@@ -138,8 +144,14 @@ mod tests {
         // The threat model: an attacker obtains a genuine Fulcio
         // certificate from the same issuer. Only the repo pin stops it.
         assert!(
-            !matches("attacker/evil:.github/workflows/release.yml@refs/tags/v2.0.7"),
+            !matches("attacker/evil/.github/workflows/release.yml@refs/tags/v2.0.7"),
             "another repository must not produce a trusted signature"
+        );
+        assert!(
+            !matches(
+                "https://github.com/attacker/evil/.github/workflows/release.yml@refs/tags/v2.0.7"
+            ),
+            "another repository with the real URI shape must not be trusted"
         );
     }
 
@@ -151,7 +163,7 @@ mod tests {
         for wf in ["ci.yml", "release-automation.yml", "auto-merge.yml"] {
             assert!(
                 !matches(&format!(
-                    "Rubentxu/software-development-decision-kernel:.github/workflows/{wf}@refs/tags/v2.0.7"
+                    "https://github.com/Rubentxu/software-development-decision-kernel/.github/workflows/{wf}@refs/tags/v2.0.7"
                 )),
                 "{wf} must not be able to sign a trusted release"
             );
@@ -185,13 +197,23 @@ mod tests {
 
     #[test]
     fn identity_names_the_repository_releases_are_published_from() {
-        let pattern_repo = DEFAULT_CERT_IDENTITY_REGEXP
-            .trim_start_matches('^')
-            .split(":")
+        // The pattern pins the full URI Fulcio mints
+        // (https://github.com/OWNER/REPO/...); extract the REPO segment
+        // between the host prefix and the workflow path and compare it to
+        // the UpdateArgs default, so the two can never name different repos.
+        let pattern = DEFAULT_CERT_IDENTITY_REGEXP.trim_start_matches('^');
+        let prefix = "https://github\\.com/";
+        assert!(
+            pattern.starts_with(prefix),
+            "pattern must pin the github host"
+        );
+        let rest = &pattern[prefix.len()..];
+        let repo = rest
+            .split("/\\.github")
             .next()
-            .expect("pattern must be ^owner/repo:workflow@ref");
+            .expect("pattern must pin owner/repo");
         assert_eq!(
-            pattern_repo,
+            repo,
             crate::dev::DEFAULT_RELEASE_REPO,
             "certificate identity must name the same repository UpdateArgs defaults to"
         );
