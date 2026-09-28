@@ -4438,3 +4438,24 @@ detalle, el test habria dado verde sin comprobar nada.
   `WORKSPACE_VERSION` correctamente (por el fix de `INC-DEBT-021`), pero el
   de derivacion no. Alguien arreglo la mitad. Un invariante de una sola
   fuente habria detectado la mitad que faltaba.
+
+### Incidente de proceso: doble bump, 2.3.0 con mensaje diciendo 2.2.0
+
+Session-28 cometio un error propio que casi llega a origin. En una linea de
+comando se encadenaron `release-bump.sh` (aplicar) y despues otra
+invocacion mas, de modo que el workspace paso de 2.1.1 a **2.3.0** en un
+solo paso, mientras el mensaje del commit de bump decia **2.2.0**.
+
+Se detecto al releer la derivacion: el propio `--dry-run` daba
+`release bump: v2.0.1 -> v2.4.0`, incoherente con 2.2.0. Correigido con
+`--force-version 2.2.0` y verificado: `Cargo.toml`, `manifest.toml` y los
+8 crates de sddk en 2.2.0.
+
+**Nada de esto habia llegado a origin.** Es la parte relevante: el error se
+detecto por verificacion, no por inspeccionar el commit. La leccion operativa
+es que un mensaje de commit que afirma una version y un contenido que
+afirma otra son dos afirmaciones, y hay que comprobar las dos.
+
+Tambien se reescribieron dos commits locales con subject duplicado
+(`fix(release): derivar la version...` aparecia dos veces, uno con el fix y
+otro con el bump) para que cada commit fuera atomico y legible. Sin pushear.
