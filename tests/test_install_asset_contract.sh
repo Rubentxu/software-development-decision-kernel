@@ -496,6 +496,41 @@ else
     fail "cosign version left to the action default in: $missing_pins"
 fi
 
+# --- Framework dir contract (INC-A5-FWDIR) -----------------------------
+#
+# install.sh documents SDDK_FRAMEWORK_DIR as the override (line 40) and the
+# CI smoke job sets it to a non-default path. The installer must pass that
+# dir to the CLI dev subcommands (dev use / dev doctor), and the CLI must
+# honor it. The v2.2.12 smoke failure (run 36482350538) was exactly this
+# passthrough missing: dev use resolved $SDDK_DATA_DIR/framework (= /tmp
+# + "framework") and the install rolled back.
+if grep -q 'FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-' "$INSTALL_SH"; then
+    ok "install.sh keeps SDDK_FRAMEWORK_DIR as the documented override"
+else
+    fail "install.sh no longer honors the SDDK_FRAMEWORK_DIR override"
+fi
+
+if grep -qE '^SDDK_FRAMEWORK_DIR="\$FRAMEWORK_DIR" .*dev use ' "$INSTALL_SH"; then
+    ok "dev use receives the installer's framework dir through SDDK_FRAMEWORK_DIR"
+else
+    fail "dev use is not passed the installer framework dir (INC-A5-FWDIR regression)"
+fi
+
+if grep -qE '^SDDK_FRAMEWORK_DIR="\$FRAMEWORK_DIR" .*dev doctor ' "$INSTALL_SH"; then
+    ok "dev doctor receives the installer's framework dir through SDDK_FRAMEWORK_DIR"
+else
+    fail "dev doctor is not passed the installer framework dir"
+fi
+
+# The old derivation ($(dirname FRAMEWORK_DIR) as SDDK_DATA_DIR) only worked
+# when the framework dir was literally <data-root>/framework; pin its removal
+# so the broken shape cannot come back silently.
+if grep -q 'SDDK_DATA_DIR_DATA_ROOT' "$INSTALL_SH"; then
+    fail "stale data-root derivation is back in install.sh (INC-A5-FWDIR)"
+else
+    ok "no stale data-root derivation in the symlink/doctor stages"
+fi
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "install asset contract: $failures check(s) FAILED"

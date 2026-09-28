@@ -2119,6 +2119,7 @@ mod tests {
             home: Some(PathBuf::from("/tmp")),
             data_home: None,
             sddk_data_dir: None,
+            framework_dir: None,
             state_home: None,
             cache_home: None,
             sddk_actor: None,

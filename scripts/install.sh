@@ -587,13 +587,15 @@ else
     echo "  framework extracted: $BUNDLE_DIR"
 fi
 
-# ── Stage 6: switch `current` symlink atomically ────────────────────────────
+# ── Stage 6: switch `current` symlink atomically ──────────────────────────
 
-# `dev use` resolves the framework dir from SDDK_DATA_DIR / XDG_DATA_HOME /
-# HOME — make sure it points at our FRAMEWORK_DIR.
-SDDK_DATA_DIR_DATA_ROOT="$(dirname "$FRAMEWORK_DIR")"
+# `dev use` resolves the framework dir from SDDK_FRAMEWORK_DIR (INC-A5-FWDIR,
+# honored by the CLI since v2.2.12) → SDDK_DATA_DIR / XDG_DATA_HOME / HOME.
+# Pass SDDK_FRAMEWORK_DIR through so a non-default FRAMEWORK_DIR (as set by
+# the CI smoke job) is the one the CLI sees; the data-root fallback stays
+# consistent for the default layout.
 CURRENT_STEP="symlink"
-SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$INSTALL_BIN" dev use --version "$BUNDLE_VERSION" --format text
+SDDK_FRAMEWORK_DIR="$FRAMEWORK_DIR" "${INSTALL_BIN}" dev use --version "$BUNDLE_VERSION" --format text
 APPLIED+=("symlink")
 
 # ── Stage 7: link into the chosen editor(s) ────────────────────────────────
@@ -604,7 +606,7 @@ echo
 # ── Stage 8: doctor ─────────────────────────────────────────────────────────
 
 echo
-SDDK_DATA_DIR="$SDDK_DATA_DIR_DATA_ROOT" "$INSTALL_BIN" dev doctor --prefix "$PREFIX" --format text || true
+SDDK_FRAMEWORK_DIR="$FRAMEWORK_DIR" "${INSTALL_BIN}" dev doctor --prefix "$PREFIX" --format text || true
 
 # ── Stage 9: completions hint ───────────────────────────────────────────────
 

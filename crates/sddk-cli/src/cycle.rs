@@ -2959,6 +2959,7 @@ mod tests {
             home: Some(project_root.to_path_buf()),
             data_home: Some(project_root.join(".local").join("data")),
             sddk_data_dir: None,
+            framework_dir: None,
             state_home: Some(project_root.join(".local").join("state")),
             cache_home: Some(project_root.join(".local").join("cache")),
             sddk_actor: None,

@@ -555,6 +555,7 @@ mod tests {
             home: Some(PathBuf::from("/home/tester")),
             data_home: Some(PathBuf::from("/home/tester/.local/share")),
             sddk_data_dir: None,
+            framework_dir: None,
             state_home: None,
             cache_home: None,
             sddk_actor: None,

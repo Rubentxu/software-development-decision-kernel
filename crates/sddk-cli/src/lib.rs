@@ -703,6 +703,9 @@ pub struct CliEnvironment {
     pub data_home: Option<PathBuf>,
     /// `SDDK_DATA_DIR`, when set and non-empty (takes precedence over data_home).
     pub sddk_data_dir: Option<PathBuf>,
+    /// `SDDK_FRAMEWORK_DIR`, when set and non-empty (installer contract,
+    /// ADR-0011; overrides the `framework/` dir inside the data root).
+    pub framework_dir: Option<PathBuf>,
     /// `XDG_STATE_HOME`, when set and non-empty.
     pub state_home: Option<PathBuf>,
     /// `XDG_CACHE_HOME`, when set and non-empty.
@@ -719,6 +722,7 @@ impl CliEnvironment {
             home: nonempty_env_path("HOME"),
             data_home: nonempty_env_path("XDG_DATA_HOME"),
             sddk_data_dir: nonempty_env_path("SDDK_DATA_DIR"),
+            framework_dir: nonempty_env_path("SDDK_FRAMEWORK_DIR"),
             state_home: nonempty_env_path("XDG_STATE_HOME"),
             cache_home: nonempty_env_path("XDG_CACHE_HOME"),
             sddk_actor: nonempty_env_string("SDDK_ACTOR"),
@@ -1350,8 +1354,14 @@ pub(crate) fn sddk_data_root(environment: &CliEnvironment) -> anyhow::Result<Pat
     Ok(data_root)
 }
 
-/// `$SDDK_DATA_DIR/framework` — same resolution as `dev use`.
+/// `$SDDK_FRAMEWORK_DIR` → `$SDDK_DATA_DIR/framework` — same resolution as
+/// `dev use` (INC-A5-FWDIR).
 fn sddk_framework_dir(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
+    // INC-A5-FWDIR: same precedence as `dev use` (dev/paths.rs): the explicit
+    // `$SDDK_FRAMEWORK_DIR` override wins over the data-root derived path.
+    if let Some(dir) = &environment.framework_dir {
+        return Ok(dir.clone());
+    }
     let data_root = sddk_data_root(environment)?;
     Ok(data_root.join("framework"))
 }

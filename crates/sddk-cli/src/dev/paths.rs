@@ -28,8 +28,29 @@ pub(super) fn sddk_data_dir(environment: &CliEnvironment) -> anyhow::Result<Path
     Ok(data_home.join("sddk"))
 }
 
+/// The framework directory override (`$SDDK_FRAMEWORK_DIR`).
+///
+/// INC-A5-FWDIR: `scripts/install.sh` documents and honors this variable
+/// (ADR-0011 names it as the override surface), and the CI smoke job sets it
+/// to a non-default path. The CLI ignored it, so every install whose
+/// framework dir did not resolve through the data root died at the
+/// `dev use` stage ("bundle version X not installed") and the installer
+/// rolled back. v2.2.11 (run 36477625442) hid this defect behind the
+/// signature-verification failure; v2.2.12 (run 36482350538, job
+/// "Smoke test installer (end-to-end)") exposed it on the real pipeline.
+fn framework_dir_override(environment: &CliEnvironment) -> Option<PathBuf> {
+    environment.framework_dir.clone()
+}
+
 /// The `framework/` dir inside the data root (bundles per version + `current`).
+///
+/// Resolution order: `$SDDK_FRAMEWORK_DIR` (installer contract, ADR-0011)
+/// → `$SDDK_DATA_DIR/framework` → `$XDG_DATA_HOME/sddk/framework` →
+/// `$HOME/.local/share/sddk/framework`.
 pub(super) fn framework_dir(environment: &CliEnvironment) -> anyhow::Result<PathBuf> {
+    if let Some(dir) = framework_dir_override(environment) {
+        return Ok(dir);
+    }
     Ok(sddk_data_dir(environment)?.join("framework"))
 }
 
@@ -85,4 +106,40 @@ pub(crate) fn resolve_assets_dir(environment: &CliEnvironment) -> anyhow::Result
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// INC-A5-FWDIR: the installer contract (ADR-0011, scripts/install.sh
+    /// line 40) honors `$SDDK_FRAMEWORK_DIR`; the CI smoke job sets it to a
+    /// non-default path (release.yml). The CLI must resolve `dev use`,
+    /// `dev doctor`, `dev link` and friends against that override, not
+    /// silently against `$SDDK_DATA_DIR/../framework`.
+    #[test]
+    fn framework_dir_override_wins_over_data_root() {
+        let environment = CliEnvironment {
+            sddk_data_dir: Some(PathBuf::from("/tmp/data-root")),
+            framework_dir: Some(PathBuf::from("/tmp/sddk-smoke-framework")),
+            ..CliEnvironment::default()
+        };
+        assert_eq!(
+            framework_dir(&environment).unwrap(),
+            PathBuf::from("/tmp/sddk-smoke-framework")
+        );
+    }
+
+    #[test]
+    fn framework_dir_falls_back_to_data_root() {
+        let environment = CliEnvironment {
+            sddk_data_dir: Some(PathBuf::from("/tmp/data-root")),
+            framework_dir: None,
+            ..CliEnvironment::default()
+        };
+        assert_eq!(
+            framework_dir(&environment).unwrap(),
+            PathBuf::from("/tmp/data-root/framework")
+        );
+    }
 }

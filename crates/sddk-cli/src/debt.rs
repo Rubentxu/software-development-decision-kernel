@@ -329,6 +329,7 @@ mod tests {
             home: Some(home.to_path_buf()),
             data_home: Some(PathBuf::from("/tmp/sddk-test-data")),
             sddk_data_dir: None,
+            framework_dir: None,
             state_home: None,
             cache_home: None,
             sddk_actor: None,
