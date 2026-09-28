@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.8] - 2026-09-28
+
+### Fixes
+  - fix(ci): el job de firma descargaba a un directorio y firmaba otro
+  - fix(ci): el staging de assets contaminaba el release con el bundle del repo
+
+### Other
+  - docs(debt): el gate de 9 assets rechaza las firmas que el instalador exige
+  - docs(state): registrar la publicacion de v2.2.6 y su resultado negativo
+
 ## [2.2.7] - 2026-09-28
 
 ### Features
