@@ -3580,3 +3580,58 @@ cierre. El guard detecta; no repara. Reconocido, no resuelto.
 - **Cerrado:** la deriva del puntero (tercera reconciliación).
 - **Abierto, y sigue siendo una decisión del operador:** publicar `2.0.10`, y
   con qué política de firma. Todo lo que la precedía está resuelto y verificado.
+
+### Cierre 2 — `scripts/reconcile_state_pointer.sh` (deuda de proceso, resuelta)
+
+Session-23 dejó escrito que el guard "detecta, no repara". Era verdad y era
+incompleto: la deuda era propia, sin dependencia externa, y se llevaba tres
+sesiones. Queda resuelta en `56eac21`.
+
+El diagnóstico de por qué se repetía era el punto: no era descuido. El
+pre-push hook exige que el bump viaje en commit propio, siempre posterior al
+de trabajo, y `STATE.yaml` no puede contenerse a sí mismo. El puntero nunca
+puede señalar al bump sin quedar al menos un commit atrás. Detectar era
+inevitablemente tarde por construcción, no por falta de atención.
+
+El script mueve solo los campos mecánicos (`current_sha`,
+`head_at_state_sync`, `workspace_version_at_current`). No toca `CURRENT.md` ni
+`SESSION-JOURNAL.md`, no bumpea, no commitea e inventa cero evidencia: el
+juicio sobre qué significa el estado sigue siendo humano.
+
+Dos bugsSolo aparecieron al falsificarlo, no al escribirlo:
+
+- La primera versión anunciaba **PASS con la versión rota mientras el guard
+  decía FAIL**, por un `exit` temprano en el caso "SHA sano". Para una
+  herramienta cuyo único trabajo es que ambos coincidan, ese es el peor
+  resultado posible. Drift de versión y de SHA se tratan ahora por separado.
+- Perseguir la punta de `main` —que era lo intuitivo— convertía un estado
+  sano en escritura y **borraba la nota de evidencia** a cambio de una marca
+  autogenerada. Respeta la misma tolerancia (3) que el guard ya acepta.
+
+Dogfood: la primera ejecución real del script fue sobre el puntero que el
+propio bump a `2.0.11` había dejado stale. Reconcilió la versión, dejó
+`current_sha` y su nota intactos, y el guard pasó 8/8.
+
+### RECEIPT (cierre 2)
+
+```
+commit                        56eac21 (script) + 6500402 (bump 2.0.10 -> 2.0.11)
+shellcheck (script + guard)   clean  (SC2015 corregido: mv puede fallar de verdad)
+bash -n                       OK
+cargo fmt --check             clean
+cargo clippy --workspace --all-targets -D warnings   exit 0
+cargo metadata --locked       exit 0, 0 stragglers de 2.0.10 en el lock
+cargo test --workspace --locked --no-fail-fast  5057 passed / 0 failed / 19 ignored, 258 suites
+tests/test_release_state_pointer.sh  PASS 8/8
+```
+
+Falsificación del script (6 escenarios, esta máquina):
+
+| Escenario | Resultado OBSERVED |
+| --- | --- |
+| puntero sano, 1 commit atrás | no-op, fichero byte a byte intacto |
+| solo la versión desalineada | repara versión; SHA y nota intactos |
+| 11 commits de deriva + versión falsa | repara ambos; guard PASS |
+| 3 corridas encadenadas | idempotente, 0 cambios |
+| `--check` | no escribe |
+| opción inválida | exit 1 |
