@@ -189,16 +189,40 @@ La opción 1 es la que prefiero, **con la condición explícita**, porque es la
 única que hace imposible por construcción el "publicado pero ininstalable".
 Pero ya no es un detalle de implementación que se pueda cerrar escribiendo
 código: **cambia quién ejecuta el release**, y eso es política de proyecto.
-`scripts/release.sh` no debería poder publicar en local sin firma válida, y
-hoy puede: firmaría con la identidad equivocada y moriría en el paso 9b del
-gate, o peor, si el gate se relajara, publicaría algo inverificable.
 
-> **Hueco de implementación detectado (no cerrado aquí):** `release.sh` no
-> comprueba que el issuer del certificado que acaba de emitir coincida con
-> `DEFAULT_CERT_ISSUER` antes de publicar. Debería, y fallar-closed si no.
-> Es un fix pequeño y claramente correcto, pero tocar `release.sh` es código
-> de publicación y este commit es documental; se deja declarado aquí para que
-> no se pierda, en vez de colarse en un commit de ADR.
+> **Hueco de implementación — CERRADO en `08639ff` y el pre-check de
+> session-25.**
+> Cuando esta ADR se escribió, `release.sh` no comprobaba que el issuer del
+> certificado que acababa de emitir coincidiera con `DEFAULT_CERT_ISSUER` antes
+> de publicar. Ya está cerrado, por las dos vias que importan:
+>
+> 1. **Pre-check de contexto** (session-25): sin `GITHUB_ACTIONS=true`,
+>    `release.sh` aborta antes de firmar, diciendo que la identidad del proyecto
+>    no existe en ese host, y remitiendo a `release-automation.yml`. Esto evita
+>    además el device flow interactivo, que en un run desatendido es un
+>    cuelgue, no un fallo.
+> 2. **Gate de issuer fail-closed** (`08639ff`): tras firmar, extrae el issuer
+>    del certificado real (del bundle) y hace `die` si no es el esperado, si el
+>    certificado falta, o si no se puede leer. Un certificado ilegible es un
+>    fallo, nunca un pase.
+>
+> `SDDK_SKIP_SIGNING=1` sigue siendo la salida deliberada para publicar sin
+> firma, asumiendo que los instaladores la rechazarán salvo que el operador lo
+> acepte a propósito. `SDDK_ALLOW_LOCAL_SIGNING=1` existe solo para poder
+> falsificar el pre-check sin un runner de Actions: **no** es una vía a un
+> release bueno, porque el gate de issuer la rechaza igual.
+
+### (a-bis) Lo que sigue abierto tras cerrar el hueco
+
+El código ya no puede publicar un release firmado con la identidad
+equivocada. Lo que queda no es ingeniería:
+
+- **Quién ejecuta el release.** La opción 1 (firmar en el paso 8c) solo es
+  válida desde GitHub Actions. Publicar desde local ya no es un error
+  técnico: es una ruta que el propio script declara no disponible.
+- **La elección entre las dos opciones** sigue siendo del operador, porque la
+  opción 2 (rama `sign` + guard de publicación) deja un release roto visible
+  durante la ventana de fallo, y aceptar eso es política, no código.
 
 ### (b) Cuándo puede un usuario aceptar un artefacto sin firma
 

@@ -1,15 +1,22 @@
 ---
 id: INC-DEBT-024-LOCAL-KEYLESS-IDENTITY-UNPINNABLE
-title: "Una firma keyless hecha en local no puede satisfacer el pin de identidad, y release.sh no lo comprueba"
-status: open
+title: "Una firma keyless hecha en local no puede satisfacer el pin de identidad del proyecto"
+status: closed
 severity: high
 priority: P1
 created: 2026-09-28
 created_by: session-23 (verificación de la viabilidad de ADR-0143 §(a))
-owner: unassigned
+owner: session-25
 cluster_id: CL-SUPPLY-CHAIN
 fingerprint: "sddk_local_keyless_issuer_mismatch"
 fingerprint_aliases: []
+closed: 2026-09-28
+closed_by: session-25
+closed_evidence:
+  - "scripts/release.sh — cert_issuer() + gate de issuer fail-closed (08639ff)"
+  - "scripts/release.sh — pre-check de contexto GITHUB_ACTIONS (session-25)"
+  - "tests/test_install_asset_contract.sh — 6 checks de identidad, 5 mutaciones"
+  - "docs/architecture/adrs/ADR-0143-RELEASE-SIGNATURE-TRUST-ROOT.md — §(a) reescrita"
 ---
 
 ## Qué es
@@ -91,9 +98,12 @@ cosign verify-blob --help | grep 'Fulcio certificate'
 
 ## Estado
 
-**Mitigación 1 IMPLEMENTADA (session-24).** `scripts/release.sh` ahora
-comprueba el issuer del certificado realmente emitido antes de publicar, y
-hace `die` (fail-closed) si no es el esperado o si no se puede leer.
+**CERRADO (session-25).** Las tres mitigaciones están implementadas y
+falsificadas en ambos sentidos.
+
+**Mitigación 1 — gate de issuer fail-closed (session-24, `08639ff`).**
+`scripts/release.sh` comprueba el issuer del certificado realmente emitido
+antes de publicar, y hace `die` si no es el esperado o si no se puede leer.
 
 - `RELEASE_CERT_ISSUER` en `release.sh` es byte-idéntico a
   `DEFAULT_CERT_ISSUER` en `crates/sddk-cli/src/cosign.rs`. Un check de
@@ -104,19 +114,59 @@ hace `die` (fail-closed) si no es el esperado o si no se puede leer.
   Fulcio, no el proveedor OIDC.
 - **Un certificado ilegible es un fallo, nunca un pase.** Un control que no
   puede leer lo que verifica no ha verificado nada.
-- Falsificado en los dos sentidos: issuer de Actions → pasa; issuer local
+- Falsificado: issuer de Actions (v2 y v3) → pasa; issuer local
   (`oauth2.sigstore.dev/auth`) → rechaza; bundle válido sin certificado →
-  `no certificate found in bundle`; JSON corrupto → falla. Cubierto por 3
-  checks en `tests/test_install_asset_contract.sh`, con mutaciones que
-  confirman que detectan tanto la deriva del pin como la degradación de
-  `die` a `warn`.
+  `no certificate found in bundle`; JSON corrupto → falla.
 
-Siguen abiertas las mitigaciones 2 y 3.
+**Mitigación 2 — negarse a firmar fuera de CI (session-25).** Sin
+`GITHUB_ACTIONS=true`, `release.sh` aborta **antes de firmar**, diciendo que la
+identidad del proyecto no existe en ese host y remitiendo a
+`release-automation.yml`.
 
-**No es el mismo incidente que `INC-AUDIT-S14`** (autenticidad ausente: falta
-publicar cualquier firma). Es un fallo latente en la ruta de firma: afecta a
-un release local firmado, que nadie ha ejecutado todavía, y que fallaría de
-una forma silenciosa y confusa.
+No es solo un mensaje más limpio. El gate de issuer de la mitigación 1 corre
+*después* de que cosign firme, y para entonces ya han pasado dos cosas malas en
+un portátil: cosign cae al device flow interactivo (que en un run desatendido es
+un cuelgue, no un fallo) y, si el operador lo completa, el certificado es de una
+persona y el release sigue siendo incorrecto. El pre-check evita las dos.
+
+- `SDDK_SKIP_SIGNING=1` sigue siendo la salida deliberada para publicar sin
+  firma. Sin ella, el pre-check haría la publicación local imposible sin
+  escape declarado.
+- `SDDK_ALLOW_LOCAL_SIGNING=1` existe **solo** para poder falsificar el
+  pre-check sin un runner de Actions. No es una vía a un release bueno: el
+  gate de issuer la rechaza igual, y así se documenta.
+- El dry-run corta en la línea 586, antes del pre-check (línea 722), así que
+  `--dry-run` sigue funcionando en local. Verificado ejecutándolo.
+
+**Mitigación 3 — ADR-0143 §(a) reescrita.** La opción 1 ya está redactada como
+"firmar antes de publicar **desde Actions**", no "firmar antes de publicar". El
+hueco de implementación que la ADR declaraba abierto está actualizado para
+reflejar que el código ya no puede publicar con la identidad equivocada, y se
+dice explícitamente que lo que queda (quién ejecuta el release, y la elección
+entre las dos opciones) es política, no ingeniería.
+
+**Falsificación permanente.** `tests/test_install_asset_contract.sh` tiene
+ahora **6 checks** de identidad de firma (3 de la sesión-24, 3 de esta). Cada
+uno verificado por mutación:
+
+| Mutación | Checks que fallan |
+|---|---|
+| Cambiar el pin del issuer | 2 |
+| Degradar `die` → `warn` (gate de issuer) | 1 |
+| Eliminar el pre-check entero | 3 |
+| Degradar `die` → `warn` (pre-check) | 1 |
+| Mover el pre-check después del bucle de firma | 1 (el de orden) |
+
+Ese último importa: un pre-check correcto pero colocado después del bucle de
+firma no evitaría el device flow, y el check lo detecta.
+
+**Lo que NO se cierra aquí.** Este INC era sobre la *ruta de firma*. No es el
+mismo incidente que `INC-AUDIT-S14` (autenticidad ausente: falta publicar
+cualquier firma), que sigue abierto en distribución: hasta que exista un
+release real firmado por la identidad correcta, esto es una defensa probada
+sobre un camino que nadie ha recorrido entero. La evidencia de que el flujo
+completo funciona es un release firmado real, y eso requiere ejecutar el
+release desde GitHub Actions.
 
 ## Corrección: versión de cosign en CI (session-24)
 
