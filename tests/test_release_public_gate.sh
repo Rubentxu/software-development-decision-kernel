@@ -198,7 +198,19 @@ GH_JSON='{"tagName":"v1.169.53","isDraft":false,"isPrerelease":false,"assets":[
 {"name":"sddk-v1.169.53-sddk-linux-x86_64-musl.tar.gz.bundle.json"},
 {"name":"software-development-decision-kernel.tar.gz.sig"},
 {"name":"software-development-decision-kernel.tar.gz.pem"},
-{"name":"software-development-decision-kernel.tar.gz.bundle.json"}]}'
+{"name":"software-development-decision-kernel.tar.gz.bundle.json"},
+{"name":"sddk-v1.169.53-sddk-linux-aarch64-musl.tar.gz"},
+{"name":"sddk-v1.169.53-sddk-linux-aarch64-musl.tar.gz.sha256"},
+{"name":"sddk-v1.169.53-sddk-darwin-arm64.tar.gz"},
+{"name":"sddk-v1.169.53-sddk-darwin-arm64.tar.gz.sha256"},
+{"name":"sddk-v1.169.53-sddk-darwin-x86_64.tar.gz"},
+{"name":"sddk-v1.169.53-sddk-darwin-x86_64.tar.gz.sha256"},
+{"name":"sddk-v1.169.53-sddk-linux-aarch64-musl.tar.gz.sig"},
+{"name":"sddk-v1.169.53-sddk-linux-aarch64-musl.tar.gz.pem"},
+{"name":"sddk-v1.169.53-sddk-darwin-arm64.tar.gz.sig"},
+{"name":"sddk-v1.169.53-sddk-darwin-arm64.tar.gz.pem"},
+{"name":"sddk-v1.169.53-sddk-darwin-x86_64.tar.gz.sig"},
+{"name":"sddk-v1.169.53-sddk-darwin-x86_64.tar.gz.pem"}]}'
 invoke_gate "v1.169.53" "abc123" "$GH_JSON" "abc123" "pass"
 
 # ─── Scenario 7: tagName drift → FAIL

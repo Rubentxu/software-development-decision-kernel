@@ -8,31 +8,19 @@
 #
 # ── PIPELINE AUTHORITY (read this before changing asset names) ────────────
 #
-# There is a SECOND release pipeline in this repository:
-# `.github/workflows/release.yml`. It is NOT part of the release gate and
-# is never triggered automatically (`workflow_dispatch` only, and its own
-# header states "SDDK never depends on CI/CD"). This script is the
-# authoritative publisher.
+# `.github/workflows/release.yml` is a manually dispatched distribution
+# workflow. `release-automation.yml` dispatches it after pushing a release
+# tag, so it is an active publisher path even though it is not the local
+# SDDK release gate. This script remains the canonical local release gate.
 #
-# The two currently disagree, which is tracked in
-# `docs/debt/INC-DEBT-021-MUSL-ASSET-NAME-LIE.md`:
-#
-#   * release.yml builds a real static musl binary
-#     (`--target x86_64-unknown-linux-musl` + musl-tools cross-linker) and
-#     publishes a per-arch bare asset `sddk-linux-x86_64-musl`.
-#   * THIS script builds ONE binary with `cargo build --release` — a
-#     host-glibc dynamic build — and republishes it under a name that says
-#     "musl": `sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz`.
-#
-# Consequences, both observed:
-#   1. Users on an older glibc cannot execute the published binary
-#      (debian:12 ships 2.36; the build host produced a 2.39 binary).
-#   2. Any installer expecting the per-arch bare asset gets HTTP 404,
-#      because only the never-triggered CI pipeline publishes it.
-#
-# `tests/test_release_pipeline_consistency.sh` keeps this divergence loud
-# rather than letting it drift silently. Do not "fix" that test by editing
-# the assertion: the RED is the finding.
+# Both paths share `scripts/release-assets-contract.sh`. The local path
+# publishes the canonical 9 payloads; the Actions path stages those same 9
+# plus three explicitly allowlisted non-x86 unified packages. It signs all
+# installable payloads before its single publish job, writes the authority
+# receipt through `release-receipt.sh`, and runs the same asset contract plus
+# the end-user installer smoke test. The workflow contract is pinned by
+# `tests/test_release_pipeline_consistency.sh` and
+# `tests/test_release_ci_contract.sh`.
 #
 # Pipeline (each step is gated on the previous one succeeding):
 #   1. Preflight  — workspace green: fmt, clippy -D warnings, tests
@@ -227,6 +215,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_deny_lint_zero_hits.sh \
             tests/test_vault_adr_mirror_coverage.sh \
             tests/test_release_tag_anchoring.sh \
+            tests/test_release_ci_contract.sh \
+            tests/test_release_pipeline_consistency.sh \
             tests/test_vault_mirror_auto.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
@@ -244,6 +234,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_tag_anchoring.sh \
              tests/test_release_ci_manifest_anchor.sh \
              tests/test_release_ci_staging.sh \
+             tests/test_release_ci_contract.sh \
+             tests/test_release_pipeline_consistency.sh \
              tests/falsify-ci-anchor-real.sh \
              tests/test_vault_mirror_auto.sh; do
         if [ -x "$t" ]; then

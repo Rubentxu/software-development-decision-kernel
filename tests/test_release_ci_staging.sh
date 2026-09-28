@@ -99,23 +99,37 @@ SIGN_JOB="$(awk '/^  sign:/{f=1} f{print} /^  smoke-test:/{exit}' "$WF")"
 # silently started returning nothing. A pin that breaks when a comment
 # gets longer is a pin that gets deleted instead of fixed.
 DL_PATH="$(echo "$SIGN_JOB" | awk '/download-artifact@/{w=1} w && /path:/{sub(/^[[:space:]]*path:[[:space:]]*/,""); print; exit}')"
-SIGN_GLOB="$(echo "$SIGN_JOB" | grep -oE 'for f in [^;]+' | head -1 | sed -E 's/for f in //')"
-# `path:` names a DIRECTORY that download-artifact populates; the loop globs
-# its CONTENTS. Comparing them as strings reported a false mismatch
-# ('dist-out/release-assets' vs 'dist-out/release-assets/*') on a correct
-# workflow. Strip the glob tail so the comparison is between the two
-# directories the job actually uses. `%%/*` is wrong here — it truncates at
-# the FIRST slash and would reduce both to 'dist-out'.
+# The signing loop hardened into `for f in "${SIGNED[@]}"` over an explicit
+# array whose entries each fail closed via `test -s`. Extracting the loop
+# variable alone now yields the literal string '"${SIGNED[@]}"', which
+# compares as a mismatch against any real directory — a false RED on a
+# correct workflow. So: take the SIGNED=( ... ) block when present and
+# derive the common directory of its entries; fall back to the inline-glob
+# form only for older loop shapes. This asserts the *relationship* between
+# the download directory and the signed payloads' directory instead of
+# restating either path, so it survives a rename of the staging root.
+SIGN_ARR_BLOCK="$(echo "$SIGN_JOB" | sed -n '/^[[:space:]]*SIGNED=(/,/^[[:space:]]*)/p')"
+if [ -n "$SIGN_ARR_BLOCK" ]; then
+    ENTRIES="$(echo "$SIGN_ARR_BLOCK" | sed -n 's/.*"\([^"]*\)".*/\1/p' | grep .)"
+else
+    ENTRIES="$(echo "$SIGN_JOB" | grep -oE 'for f in [^;]+' | head -1 | sed -E 's/for f in //')"
+fi
+# `path:` names a DIRECTORY that download-artifact populates; each signed
+# entry is a FILE inside such a directory. Compare the download directory
+# against the distinct set of entry directories: exactly one distinct
+# directory, equal to the download path, means the loop signs what the job
+# actually downloaded. `%%/*` is wrong here — it truncates at the FIRST
+# slash and would reduce everything to 'dist-out'.
 DL_DIR="${DL_PATH%/}"
-GLOB_DIR="${SIGN_GLOB%/*}"
+ENTRY_DIRS="$(printf '%s\n' "$ENTRIES" | grep . | xargs -r -n1 dirname | sort -u)"
 if [ -z "$SIGN_JOB" ]; then
     fail "could not locate the sign job in release.yml"
-elif [ -z "$DL_PATH" ] || [ -z "$SIGN_GLOB" ]; then
-    fail "sign job: download path or signing glob not extractable (dl='$DL_PATH' glob='$SIGN_GLOB')"
-elif [ "$DL_DIR" = "$GLOB_DIR" ]; then
+elif [ -z "$DL_PATH" ] || [ -z "$ENTRIES" ]; then
+    fail "sign job: download path or signing payload list not extractable (dl='$DL_PATH' entries='$ENTRIES')"
+elif [ "$(printf '%s\n' "$ENTRY_DIRS" | grep -c .)" -eq 1 ] && [ "$DL_DIR" = "$ENTRY_DIRS" ]; then
     pass "sign job downloads to the directory it signs ($DL_DIR)"
 else
-    fail "sign job downloads to '$DL_DIR' but signs '$GLOB_DIR' — it would sign nothing"
+    fail "sign job downloads to '$DL_DIR' but signs {$(printf '%s, ' "$ENTRY_DIRS" | sed 's/, $//')} — it would sign nothing"
 fi
 
 # ── Case 6: an empty staging dir must fail the sign job, not pass it ───────

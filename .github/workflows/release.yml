@@ -1,12 +1,14 @@
 name: Optional tag distribution
 
-# This workflow consumes an already-pushed release tag. It is not an SDDK
-# release gate: local Git verification of main SHA plus annotated remote tag is
-# authoritative, and this optional distribution may run later or not at all.
+# This workflow consumes an already-pushed release tag. It is not the local
+# SDDK release gate: local Git verification of main SHA plus the remote tag is
+# authoritative. `release-automation.yml` dispatches this workflow after the
+# tag is pushed to distribute signed platform assets and run a real installer
+# smoke test before treating the Actions distribution as complete.
 #
-# MANUAL-ONLY (2026-08-10): SDDK never depends on CI/CD. The automatic
-# `push: tags: v*` trigger was removed so no run is ever queued by a release;
-# distribution is triggered explicitly by a human via workflow_dispatch.
+# MANUAL-ONLY (2026-08-10): no automatic `push: tags: v*` trigger. Distribution
+# is invoked explicitly through `workflow_dispatch`, including the explicit
+# dispatch performed by release-automation.yml after it pushes a release tag.
 
 on:
   workflow_dispatch:
@@ -89,19 +91,6 @@ jobs:
           path: dist-out/release-assets/*
           if-no-files-found: error
 
-      - name: Publish to GitHub Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            gh release create "$TAG" --generate-notes --title "$TAG" \
-              --repo "${{ github.repository }}" || true
-            gh release upload "$TAG" dist-out/release-assets/* --clobber --repo "${{ github.repository }}"
-          else
-            echo "manual run (no tag): assets staged in workflow artifacts"
-          fi
-
   framework-bundle:
     name: Bundle framework assets
     runs-on: ubuntu-latest
@@ -125,19 +114,6 @@ jobs:
           name: sddk-framework
           path: bundle/*
           if-no-files-found: error
-
-      - name: Publish to GitHub Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            gh release create "$TAG" --generate-notes --title "$TAG" \
-              --repo "${{ github.repository }}" || true
-            gh release upload "$TAG" bundle/* --clobber --repo "${{ github.repository }}"
-          else
-            echo "manual run (no tag): framework staged in workflow artifacts"
-          fi
 
   unified-artifact:
     # Cycle-46 (install-coherence-v1.63) capa 3 — single coherent artifact
@@ -243,24 +219,83 @@ jobs:
           path: downloads/sddk-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz*
           if-no-files-found: error
 
-      - name: Publish unified artifact to GitHub Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
+
+  canonical-assets:
+    name: Assemble canonical release contract
+    needs: [build, framework-bundle, unified-artifact]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download build, framework, and unified artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: downloads
+          merge-multiple: true
+
+      - name: Assemble canonical payloads, receipt, and platform packages
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF#refs/tags/}"
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            gh release upload "$TAG" \
-              downloads/sddk-"$TAG"-${{ matrix.asset }}.tar.gz \
-              downloads/sddk-"$TAG"-${{ matrix.asset }}.tar.gz.sha256 \
-              --clobber --repo "${{ github.repository }}"
-            echo "published unified sddk-${TAG}-${{ matrix.asset }}.tar.gz"
-          else
-            echo "manual run (no tag): unified artifact staged in workflow artifacts"
-          fi
+          VERSION="${TAG#v}"
+          STAGE="release-assets"
+          mkdir -p "$STAGE"
+
+          # The 9 canonical payloads consumed by scripts/install.sh and
+          # scripts/release-assets-contract.sh. The source binary is the
+          # actual x86_64-musl output from the build matrix.
+          cp downloads/sddk-linux-x86_64-musl "$STAGE/sddk"
+          chmod 0755 "$STAGE/sddk"
+          (cd "$STAGE" && sha256sum sddk > sddk.sha256)
+          cp downloads/sddk-linux-x86_64-musl.sbom.json "$STAGE/sbom.json"
+
+          UNIFIED="sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
+          cp "downloads/$UNIFIED" "$STAGE/$UNIFIED"
+          cp "downloads/$UNIFIED.sha256" "$STAGE/$UNIFIED.sha256"
+          cp downloads/software-development-decision-kernel.tar.gz "$STAGE/"
+          cp downloads/software-development-decision-kernel.tar.gz.sha256 "$STAGE/"
+          (cd "$STAGE" && sha256sum "$UNIFIED" software-development-decision-kernel.tar.gz > CHECKSUMS)
+
+          # Preserve the other three built platform packages as an explicit,
+          # finite extension to the 9-payload contract. The shared gate
+          # allowlists these exact names; arbitrary extra assets still fail.
+          for asset in sddk-linux-aarch64-musl sddk-darwin-arm64 sddk-darwin-x86_64; do
+            name="sddk-${TAG}-${asset}.tar.gz"
+            cp "downloads/$name" "$STAGE/$name"
+            cp "downloads/$name.sha256" "$STAGE/$name.sha256"
+          done
+
+          bash scripts/release-receipt.sh \
+            --actor-id github-actions \
+            --tag "$TAG" \
+            --out "$STAGE/gh-release-receipt.json"
+
+          expected=(
+            sddk sddk.sha256 "$UNIFIED" "$UNIFIED.sha256" CHECKSUMS sbom.json
+            gh-release-receipt.json software-development-decision-kernel.tar.gz
+            software-development-decision-kernel.tar.gz.sha256
+          )
+          for name in "${expected[@]}"; do
+            test -s "$STAGE/$name" || { echo "missing canonical payload: $name" >&2; exit 1; }
+          done
+          jq -e --arg tag "$TAG" '.surface == "github_releases" and .actor_kind == "System" and .actor_id == "github-actions" and .tag == $tag' \
+            "$STAGE/gh-release-receipt.json" >/dev/null
+          echo "canonical payload count: ${#expected[@]}"
+          ls -la "$STAGE"
+
+      - name: Upload canonical payloads for the signing job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: canonical-release-assets
+          path: release-assets/*
+          if-no-files-found: error
 
   sign:
     name: Sign release assets (cosign keyless)
-    needs: [build, framework-bundle, unified-artifact]
+    needs: [canonical-assets]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Install cosign
@@ -275,64 +310,117 @@ jobs:
           # validated against the flags release.sh uses.
           cosign-release: 'v2.4.3'
 
-      - name: Download all build artifacts
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download canonical release assets
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          # MUST match the STAGE path the build job uploaded from, and the
-          # glob the signing step below iterates. These were two different
-          # directories: the download landed in `assets/` while the loop
-          # signed `dist-out/release-assets/*`, which this job never
-          # creates. The result was a job that reported "signed: ..." for
-          # nothing and published zero signatures — silently, because the
-          # `[ -f "$f" ] || continue` guard swallows a missing directory
-          # the same way it skips a directory. A signature job that
-          # publishes nothing is worse than one that fails.
-          # Pinned by tests/test_release_ci_staging.sh.
-          path: dist-out/release-assets
+          name: canonical-release-assets
+          path: release-assets
           merge-multiple: true
 
       - name: Verify the staging directory is populated
         run: |
           set -euo pipefail
           shopt -s nullglob
-          found=(dist-out/release-assets/*)
+          found=(release-assets/*)
           if [ "${#found[@]}" -eq 0 ]; then
-            echo "::error::no artifacts downloaded to dist-out/release-assets" >&2
+            echo "::error::no artifacts downloaded to release-assets" >&2
             echo "refusing to report a successful signing job over an empty staging dir" >&2
             exit 1
           fi
           echo "  staged artifacts: ${#found[@]}"
-          ls -la dist-out/release-assets
+          ls -la release-assets
 
       - name: Sign every asset (keyless)
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
             echo "manual run (no tag): signing skipped"
             exit 0
           fi
-          # Sign only the staged release assets. `assets/*` here would walk
-          # the repo's own bundle surface (assets/agent-models.yaml and its
-          # subdirectories) and sign files that are not release assets —
-          # the same collision that broke the publish step on v2.2.6.
-          # (INC-DEBT-034)
-          for f in dist-out/release-assets/*; do
-            [ -f "$f" ] || continue
-            case "$f" in
-              *.sig|*.pem) continue ;;
-            esac
+          SIGNED=(
+            "release-assets/sddk"
+            "release-assets/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
+            "release-assets/sddk-${TAG}-sddk-linux-aarch64-musl.tar.gz"
+            "release-assets/sddk-${TAG}-sddk-darwin-arm64.tar.gz"
+            "release-assets/sddk-${TAG}-sddk-darwin-x86_64.tar.gz"
+            "release-assets/software-development-decision-kernel.tar.gz"
+          )
+          for f in "${SIGNED[@]}"; do
+            test -s "$f" || { echo "::error::missing signed payload: $f" >&2; exit 1; }
             cosign sign-blob --yes "$f" \
               --output-signature "$f.sig" \
               --output-certificate "$f.pem"
             echo "signed: $f"
           done
-          gh release upload "$TAG" dist-out/release-assets/*.sig dist-out/release-assets/*.pem --clobber --repo "${{ github.repository }}"
+          # Exercise the same asset contract used by release.sh before any
+          # public release is created. An unsigned/partial set never leaks.
+          source scripts/release-assets-contract.sh
+          die() { echo "::error::$*" >&2; exit 1; }
+          ok() { echo "  ok: $*"; }
+          FILES_JSON="$(find release-assets -maxdepth 1 -type f -printf '%f\n' | jq -R . | jq -s 'map({name:.})')"
+          RELEASE_JSON="$(jq -n --arg tag "$TAG" --argjson assets "$FILES_JSON" '{tagName:$tag,isDraft:false,isPrerelease:false,assets:$assets}')"
+          validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"
+
+      - name: Upload signed assets for smoke test evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the fully staged and signed release
+    needs: [sign]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download signed release assets
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: signed-release-assets
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish complete release atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            # Never delete unknown historical assets. A retry may overwrite only
+            # names in this staged set; the post-upload exact allowlist fails
+            # closed if the existing release contains anything else.
+            gh release upload "$TAG" release-assets/* --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" release-assets/* --generate-notes --title "$TAG" \
+              --repo "${{ github.repository }}"
+          fi
+
+          source scripts/release-assets-contract.sh
+          die() { echo "::error::$*" >&2; exit 1; }
+          ok() { echo "  ok: $*"; }
+          RELEASE_JSON="$(gh release view "$TAG" --repo "${{ github.repository }}" --json tagName,isDraft,isPrerelease,assets)"
+          [ "$(echo "$RELEASE_JSON" | jq -r '.tagName')" = "$TAG" ] || die "published tagName mismatch"
+          [ "$(echo "$RELEASE_JSON" | jq -r '.isDraft')" = false ] || die "release remained draft"
+          [ "$(echo "$RELEASE_JSON" | jq -r '.isPrerelease')" = false ] || die "release is prerelease"
+          validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"
+          for asset in "${RELEASE_CANONICAL_ASSETS[@]}"; do
+            code="$(curl -fsSL -o /dev/null -w '%{http_code}' "https://github.com/${{ github.repository }}/releases/download/$TAG/$asset")"
+            [ "$code" = 200 ] || die "canonical asset $asset returned HTTP $code"
+          done
 
   smoke-test:
     name: Smoke test installer (end-to-end)
-    needs: [sign]
+    needs: [publish]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

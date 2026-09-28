@@ -1,32 +1,23 @@
 #!/usr/bin/env bash
 # tests/test_release_pipeline_consistency.sh
+# shellcheck disable=SC2016  # assertions compare literal workflow source fragments.
 #
-# The repository has TWO release pipelines and they do not agree:
+# The repository has two release execution paths with different roles:
 #
-#   A. scripts/release.sh          — AUTHORITATIVE. Runs locally, produces
-#                                     the real releases. Compiles ONE binary
-#                                     with `cargo build --release` (host glibc)
-#                                     and publishes it as
-#                                     `sddk-<tag>-sddk-linux-x86_64-musl.tar.gz`.
-#   B. .github/workflows/release.yml — manual-only (workflow_dispatch). Builds
-#                                     a real static musl binary and publishes
-#                                     `sddk-linux-x86_64-musl`.
+#   A. scripts/release.sh — the canonical local release pipeline and public
+#      asset gate. It stages the 9 required payloads and signs installable
+#      assets before publication.
+#   B. .github/workflows/release.yml — the Actions distribution path that
+#      release-automation.yml dispatches after pushing a version tag. It builds
+#      four targets and must assemble the same canonical payloads plus its
+#      explicitly allowlisted non-x86 unified packages.
 #
-# B is never triggered by a release ("SDDK never depends on CI/CD"). So the
-# artifact that the name promises (musl) is never produced by the pipeline
-# that actually runs, and the asset name the installer expects comes from
-# the pipeline that never runs.
+# Both paths use scripts/release-assets-contract.sh. This test pins the
+# workflow dispatch, actual musl build, canonical alias/receipt assembly and
+# the single-publisher invariant so comments cannot silently drift from the
+# executable workflow.
 #
-# This test pins the three-way contract so the drift is loud:
-#
-#   install.sh  --requests-->  ?  release.sh  --publishes-->
-#   release.yml --builds--------------------^
-#
-# It does NOT decide which pipeline should win (that is an architecture
-# decision, see INC-DEBT-021). It fails when the pipelines disagree in a way
-# that breaks users, and it reports the musl claim explicitly.
-#
-# Exit 0 = consistent. Non-zero = pipelines drifted.
+# Exit 0 = contract consistent. Non-zero = distribution can diverge or break users.
 
 set -uo pipefail
 
@@ -46,30 +37,21 @@ done
 
 echo "=== release pipeline consistency ==="
 
-# ── 0. Which pipeline is authoritative? DERIVED, not assumed ──────────────
-# The bare-asset check below needs to know who wins before it can call a
-# name mismatch a 404. Deriving it from a hardcoded `RELEASE_SH_WINS=1`
-# would be the same class of bug this whole test exists to catch: a flag
-# that says what the author wants instead of what the repo does.
-#
-# Observable fact that decides it: release.sh is the only pipeline that
-# can run the admission gate and the install round-trip locally, and it is
-# the one that produced every published tag. release.yml is
-# workflow_dispatch-only, so it has never produced one. A pipeline that has
-# never published a release cannot be the authority for the asset contract.
-RELEASE_SH_WINS=0
-if grep -q 'workflow_dispatch' "$WORKFLOW" 2>/dev/null; then
-    # workflow_dispatch present AND no push/pull_request/schedule trigger that
-    # could have produced a release unattended.
-    if ! grep -qE '^[[:space:]]{2,6}(push|pull_request|schedule):' "$WORKFLOW" 2>/dev/null; then
-        RELEASE_SH_WINS=1
-        info "authority: release.sh wins — release.yml is workflow_dispatch-only (never fired automatically)"
-    else
-        info "authority: release.yml has an automatic trigger; release.sh does not automatically win"
-    fi
+# ── 0. The release robot must actually dispatch the distribution workflow ──
+AUTOMATION="$ROOT/.github/workflows/release-automation.yml"
+if grep -Fq 'gh workflow run release.yml --ref "$TAG"' "$AUTOMATION"; then
+    ok "release-automation dispatches release.yml on the pushed tag"
 else
-    info "authority: release.yml has no workflow_dispatch trigger; release.sh wins"
-    RELEASE_SH_WINS=1
+    fail "release-automation no longer dispatches release.yml for tagged releases"
+fi
+
+# The asset contract is shared by both publishers, not inferred from a stale
+# claim about which workflow has run most often.
+if grep -Fq 'source "$ROOT/scripts/release-assets-contract.sh"' "$RELEASE_SH" \
+    && grep -Fq 'validate_release_asset_contract "$RELEASE_JSON"' "$RELEASE_SH"; then
+    ok "release.sh uses the shared public asset contract"
+else
+    fail "release.sh does not use scripts/release-assets-contract.sh"
 fi
 
 # ── 1. The authoritative pipeline must not build musl by name only ────────
@@ -127,36 +109,30 @@ else
     BUILD_IS_MUSL=0
 fi
 
-# ── 2. The two pipelines must agree on the bare-binary asset name ─────────
-# release.yml publishes `sddk-linux-x86_64-musl`. If install.sh is going to
-# ask for a bare per-arch asset, that asset must be published by whichever
-# pipeline is authoritative.
-WF_ASSET="$(grep -oE 'asset:[[:space:]]*sddk-[a-z0-9_-]+' "$WORKFLOW" 2>/dev/null | head -1 | awk '{print $2}')"
-if [ -n "$WF_ASSET" ]; then
-    info "release.yml publishes bare asset: $WF_ASSET"
-    if grep -qF "release_url \"$WF_ASSET\"" "$INSTALL_SH"; then
-        info "install.sh requests that bare asset (unpublished by release.sh)"
-    fi
-    if grep -qF "\"$WF_ASSET\"" "$RELEASE_SH"; then
-        ok "release.sh also publishes $WF_ASSET (pipelines agree)"
-    elif [ "$RELEASE_SH_WINS" = "1" ]; then
-        # Decision taken in session-19 on evidence, not to satisfy a test:
-        # release.sh is authoritative (it is the only pipeline that has ever
-        # produced a published release) and it ships a SINGLE unified asset,
-        # `sddk-<TAG>-sddk-linux-x86_64-musl.tar.gz`. The bare per-arch name
-        # `sddk-linux-x86_64-musl` belongs to release.yml, whose contract is a
-        # different one (per-arch matrix, multi-OS). Publishing the same binary
-        # under both names would give users two download paths for one artifact
-        # and let them drift apart again — the same class of problem INC-021
-        # was. So the two names are NOT unified; the bare one is simply not
-        # this pipeline's contract, and install.sh already takes the unified
-        # asset (INC-DEBT-022 fixed that in session-16).
-        ok "release.sh is authoritative and ships the unified asset; the bare per-arch name belongs to release.yml's different contract (documented, not a 404)"
-    else
-        fail "release.yml publishes $WF_ASSET but release.sh does not; installers requesting it get 404"
-    fi
+# ── 2. The workflow must map its real x86_64-musl output to the canonical
+# generic binary, and build its canonical receipt and unified tarball names. ─
+if grep -Fq 'cp downloads/sddk-linux-x86_64-musl "$STAGE/sddk"' "$WORKFLOW" \
+    && grep -Fq 'gh-release-receipt.json' "$WORKFLOW" \
+    && grep -Fq 'scripts/release-receipt.sh' "$WORKFLOW" \
+    && grep -Fq 'sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz' "$WORKFLOW"; then
+    ok "release.yml builds the canonical binary alias, receipt, and unified asset"
 else
-    info "release.yml bare-asset name not parseable; skipping cross-pipeline name check"
+    fail "release.yml omits one of the canonical installer payloads"
+fi
+
+# Only the dedicated publish job may mutate GitHub Release state. Building,
+# bundling, and signing must finish before an asset is made public.
+PUBLISH_STEPS="$(grep -vE '^[[:space:]]*#' "$WORKFLOW" | grep -cE 'gh release (create|upload)')"
+if [ "$PUBLISH_STEPS" -eq 2 ] && grep -Fq 'needs: [sign]' "$WORKFLOW"; then
+    ok "release.yml has one post-sign publisher (create + retry upload only)"
+else
+    fail "release.yml publishes before signing or has multiple competing publishers"
+fi
+
+if grep -Fq 'validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"' "$WORKFLOW"; then
+    ok "release.yml executes the shared contract before smoke installation"
+else
+    fail "release.yml does not validate the published asset set"
 fi
 
 # ── 3. The workflow must not be the only place the contract is defined ───

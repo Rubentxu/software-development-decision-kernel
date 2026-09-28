@@ -19,11 +19,26 @@ validate_release_asset_contract() {
         "software-development-decision-kernel.tar.gz"
         "software-development-decision-kernel.tar.gz.sha256"
     )
+    # release.yml publishes the three non-x86 unified packages as optional
+    # platform payloads. Keep these exact names, not a wildcard, so the gate
+    # can accept all built targets without accepting arbitrary release files.
+    local CI_PLATFORM_ASSETS=(
+        "sddk-linux-aarch64-musl"
+        "sddk-darwin-arm64"
+        "sddk-darwin-x86_64"
+    )
+    local supplemental_assets=()
     local signed_base_assets=(
         "sddk"
         "sddk-v$version-sddk-linux-x86_64-musl.tar.gz"
         "software-development-decision-kernel.tar.gz"
     )
+    local ci_asset
+    for ci_asset in "${CI_PLATFORM_ASSETS[@]}"; do
+        local unified="sddk-v$version-$ci_asset.tar.gz"
+        supplemental_assets+=("$unified" "$unified.sha256")
+        signed_base_assets+=("$unified")
+    done
     local allowed_signature_assets=()
     local signed_base
     local signature_suffix
@@ -38,7 +53,7 @@ validate_release_asset_contract() {
     local expected_assets_sorted
     expected_assets_sorted="$(printf '%s\n' "${canonical_assets[@]}" | sort -u)"
     local allowed_assets_sorted
-    allowed_assets_sorted="$(printf '%s\n' "${allowed_signature_assets[@]}" | sort -u)"
+    allowed_assets_sorted="$(printf '%s\n' "${supplemental_assets[@]}" "${allowed_signature_assets[@]}" | sort -u)"
 
     local missing_assets
     missing_assets="$(comm -23 <(echo "$expected_assets_sorted") <(echo "$actual_assets"))"
@@ -57,5 +72,5 @@ validate_release_asset_contract() {
     # Consumed by the sourcing gate function after this helper returns.
     # shellcheck disable=SC2034
     RELEASE_CANONICAL_ASSETS=("${canonical_assets[@]}")
-    ok "asset set matches 9-asset contract plus allowed signatures"
+    ok "asset set matches 9-asset contract plus known platform packages and allowed signatures"
 }
