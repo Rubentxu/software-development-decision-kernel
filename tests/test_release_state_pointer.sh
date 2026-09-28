@@ -151,6 +151,29 @@ else
   fail "manifest.toml dice '$man_ver', Cargo.toml dice '$real_ver'"
 fi
 
+# --- 6. Cargo.lock no puede ir por detras de Cargo.toml ---------------------
+# INC-LOCK-POINTER-GAP (session-22). El commit 62d4728 subio Cargo.toml a
+# 2.0.8 y dejo Cargo.lock en 2.0.7. Los checks 4 y 5 de este guard no lo
+# ven porque comparan Cargo.toml contra STATE.yaml y contra manifest.toml,
+# nunca contra el lock. El dano no fue cosmético: .github/workflows/ci.yml
+# y .github/workflows/release.yml construyen con --locked, asi que un
+# checkout limpio de ese commit rompia ambos con exit 101. Un guard que
+# valida la version pero no valida el lock que la build realmente usa es
+# medio guard.
+lock_ver=$(awk '
+    /^\[\[package\]\]/ { name=""; ver="" }
+    /^name = "sddk-cli"$/   { hit=1; next }
+    hit && /^version = "/    { match($0, /"[^"]*"/)
+                              print substr($0, RSTART+1, RLENGTH-2); exit }
+' Cargo.lock)
+if [ -z "$lock_ver" ]; then
+  fail "no pude leer la version de sddk-cli en Cargo.lock"
+elif [ "$lock_ver" = "$real_ver" ]; then
+  ok "Cargo.lock ($lock_ver) alineado con Cargo.toml"
+else
+  fail "Cargo.lock dice '$lock_ver', Cargo.toml dice '$real_ver' -- el build con --locked va a fallar (ci.yml y release.yml)"
+fi
+
 echo
 if [ "$rc" -eq 0 ]; then
   echo "RESULT: PASS — el puntero de estado describe el estado real."

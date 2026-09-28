@@ -3328,3 +3328,54 @@ amiende). Se entrega la via probada, con su evidencia, y la decision.
 Worktree de sondeo retirado; `git worktree list` con los dos worktrees
 previos, ninguno nuevo. Rama principal intacta en 27f255b con
 `Cargo.lock` modificado y sin commitear.
+
+### Addendum session-22 (ter) — mi claim de "no hay precedent" era FALSO
+
+**Segunda autocorreccion de la sesion, y la mas grave de las dos.** En
+el addendum bis escribí: *"no hay precedent en el repo de que un agente
+lo amine"*. Lo afirme sin mirar. Mirado:
+
+```
+$ git log --oneline -- githooks/pre-push
+41b4bc1 fix(githooks): admitir ruta generated-only para MANIFEST.sha256 (INC-PUSH-DERIVED-METADATA-NO-ADMISSIBLE-PATH)
+74af75a fix(githooks): afina file_contains_secret_pattern para admitir placeholders de canaria
+5f604e5 fix(governance): admite documentos de ciclo en el push admission (INC-AIWS1-RECEIPT-PUSH-BLOCK)
+e9f6081 feat(release): A5-1 — semantic push/release admission (kill the ceremonial marker)
+e214177 fix(githooks): pre-push accepts Cargo.toml version bump (INC-M7-9 Option 3)
+```
+
+**Seis commits al hook. Cuatro son exactamente la maniobra que yo declare
+fuera de mi alcance**: ensanchar la allowlist de admision de push. Dos de
+ellos (5f604e5, 41b4bc1) anaden un path generated-only a `is_allowed_path`
+/ `is_generated_path` — la misma forma que necesito para `Cargo.lock`.
+Ademas cada uno traia su battery de falsificacion en
+`tests/test_push_prevention_hook.sh` (41b4bc1: "matriz 39/39 PASS").
+
+**Que es exactamente el precedente operacional que yo negaba:**
+ampliar la allowlist, accompanying de un INC en `docs/debt/` y de casos
+nuevos de falsificacion en el test del hook. No es tocar la gate a
+sopetacostas; es el procedimiento documentado de este repo.
+
+**Lo que si queda en pie, y por que no lo cambie:**
+
+Al simular el rango real de `41b4bc1` (`docs/** + githooks/pre-push +
+tests/test_push_prevention_hook.sh`, sin cambio de version), el hook de
+HOY lo RECHAZA (exit 1). Es decir: ese commit se pusheo por una via que
+ya no reproduces con el hook actual — probablemente `--no-verify`, o
+contra un hook que aun no existia. **Mi probe empirico (TEST 1/2/3) sigue
+siendo la unica evidencia valida**, porque prueba el hook que hay hoy, no
+una reconstruccion.
+
+**Correccion de encuadre, entonces:** no es "no hay precedent y por eso
+decides tu". Es "hay un procedimiento establecido para esto (INC +
+falsificadores + test), y el hook de hoy admite la maneuver por la via
+(c) que ya probe". La decision sigue siendo del operador porque publicar
+y tocar gates son decisiones suyas por AGENTS.md §2.1, pero mi frase
+"no hay precedent" era falsa y la retiro.
+
+**Lo que si es meu, y es lo que aporta valor sin tocar la gate:** el test
+de regresion. `tests/test_release_state_pointer.sh` no menciona
+`Cargo.lock` en absoluto (verificado: cero referencias), y por eso no
+detecto el commit 62d4728. Anadir la comparacion `Cargo.toml` vs
+`Cargo.lock` es test puro, sin codigo, sin hook, sin version. Ese si lo
+puedo hacer en la siguiente sesion sin decision del operador.
