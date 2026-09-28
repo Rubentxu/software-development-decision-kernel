@@ -3943,3 +3943,39 @@ Publicar `v2.1.0` firmado vía el workflow, o decidir explícitamente no hacerlo
 Si se publica, el criterio de cierre es observable: los assets `.sig`/`.pem`
 publicados, `cosign verify-blob` con el issuer y subject pins, e instalación
 real contra el release. Eso es lo que cierra `INC-AUDIT-S14` en distribución.
+
+### Reverificación del fix de session-22 (cierre de lazo, session-25)
+
+Session-22 cerró el flake `R-flake-inv10` sustituyendo el umbral wall-clock por
+un ratio `elapsed / coste-serializado`, y registró 8/8 y 6/6 bajo carga. **Ese
+reconto nunca se re-observó en session-25**: no se había ejecutado el test,
+solo se había re-verificado el reconciliador de puntero y `cargo metadata`. Un
+"cerrado" sin observación repetida bajo la condición que lo rompía es una
+afirmación, no un hecho. Cerrado:
+
+| Condición | Corridas | Resultado |
+|---|---|---|
+| Código restaurado, 64 procesos en burn (`nproc`) | 10 | **10 pass / 0 fail** |
+| Mutación `max_concurrency: 1` (ratio ~100%) | 5 | **0 pass / 5 fail** |
+| Mutación `max_concurrency: 2` (ratio ~50%) | 5 | **0 pass / 5 fail** |
+
+El fallo original de session-22 era 4 de 6 bajo carga. El código restaurado da
+10 de 10 bajo la misma clase de presión, y ambas mutaciones se rechazan 5 de 5.
+El gate sigue detectando lo que existe para detectar.
+
+**Dos trampas encontradas al hacerlo, que habrían producido un "PASS" falso:**
+
+1. La primera mutación usó `sed 's/max_concurrency: 64/.../'`, pero la línea 300
+   dice `max_concurrency: CHILDREN_COUNT`, no un literal. **El sed no cambió
+   nada** y la corrida dio "5 pass / 0 fail", que con la lectura equivocada
+   significa "el gate no detecta la regresión". Era el test que no mutaba, no el
+   test que fallaba.
+2. `cargo test --no-run` reportaba `Finished in 1.04s` sin recompilar, con el
+   mismo hash de binario. Cargo no estaba viendo el cambio. Borrando el binario
+   del test sí recompila (`Compiling sddk-engine`, hash nuevo) y la mutación
+   entonces falla 5 de 5.
+
+Vale la pena dejarlo escrito: un mutation test que no muta, o que corre contra
+un binario viejo, **pasa** y no dice nada. La diferencia entre "el gate no
+detecta la regresión" y "yo no muté nada" es exactamente la que hace que un
+resultado negativo sea concluyente.
