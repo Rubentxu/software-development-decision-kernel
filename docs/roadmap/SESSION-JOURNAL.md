@@ -3450,3 +3450,41 @@ ya estaba definida en el hook. **Regla que sale de aqui: cuando un
 bloqueo se puede resolver con un mecanismo ya existente y probado,
 enumerar "es decision tuya" no es prudencia, es no haber terminado de
 buscar.**
+
+### Evidencia final session-22 — perfil completo a 2.0.9, con --locked
+
+Todo lo de abajo es OBSERVED sobre el arbol de `1e478e2`, que es lo
+mismo que `origin/main`. El `--locked` no es decorativo: es exactamente
+el flag con el que construyen `ci.yml:36` y `release.yml:63`, o sea que
+esta corrida es la precondicion que fallaba antes de este trabajo.
+
+```
+cargo test --workspace --locked --no-fail-fast
+    5057 passed; 0 failed; 19 ignored   (258 suites, exit 0)
+    R-flake inv10_grep_gate_no_mutex_on_workflow_state NO se disparo
+    (tampoco en la corrida de las 06:52, ya sin --locked: dos corridas
+    limpias. No es prueba de que no sea flaky; la tripwire sigue abierta)
+
+cargo fmt --check                                       exit 0
+cargo clippy --workspace --all-targets --locked -D warnings
+    0 diagnostics                                        exit 0
+cargo metadata --locked                                 exit 0   (era 101)
+sddk dev manifest --root . --verify      manifest OK: 377 files hashed
+
+tests/test_release_state_pointer.sh                     PASS (8/8, incluye el check 6 nuevo)
+tests/test_install_asset_contract.sh                    all checks passed
+tests/test_release_public_gate.sh                       PASS=11 FAIL=0
+tests/test_release_pipeline_consistency.sh              all checks passed
+shellcheck (los 3 scripts + el guard)                   exit 0
+git status                                              limpio
+```
+
+### Estado de cierre de session-22
+
+- **Cerrado:** el lock stale (el hallazgo de esta sesion), con su test de
+  regresion y su evidencia de cierre.
+- **Cerrado:** el `NOT_REVERIFIED` de session-21 (5057/0/19 OBSERVED).
+- **Cerrado:** D-1 y D-2 de session-21.
+- **Cerrado:** la deriva del puntero (reconciliada dos veces mas).
+- **Abierto, y ya NO es tecnico:** una sola decision, la de publicar
+  2.0.9. Todo lo que la precedia esta resuelto.
