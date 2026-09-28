@@ -4247,3 +4247,53 @@ tarball, sha256/CHECKSUMS/sbom). Ninguno se ha ejecutado. La afirmacion
   admision v2), `9a642e7` (bump 2.1.1), `473cf2f` (cierre documental).
 - Deuda abierta: **7 INCs** (los 6 previos +
   `INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED`, nuevo en esta sesion).
+
+### El bloqueante musl, investigado a fondo (session-27)
+
+Antes de declararlo "instalar musl y ya", se intento resolverlo **sin root**,
+porque instalar un paquete del sistema sin permiso es decision del operador.
+Resultado: no hay via limpia, y el motivo es concreto.
+
+**1. `sudo` no es utilizable en agente desatendido.** `sudo -n true` →
+`a password is required`. Bazzite 44 (Kinoite).
+
+**2. `zig cc` funciona como compilador, pero no encaja con `ring`.** `zig`
+0.16.0 esta instalado y produce un binario musl estatico correcto:
+
+```text
+$ zig cc -target x86_64-linux-musl -static -o t /tmp/t.c
+ELF 64-bit LSB executable, x86-64, statically linked
+```
+
+Con un shim `x86_64-linux-musl-gcc` en el PATH, el build avanza pero muere en
+`ring v0.17.14`:
+
+```text
+ring@0.17.14: error: unable to parse target query
+  'x86_64-unknown-linux-musl': UnknownOperatingSystem
+error: failed to run custom build command for `ring v0.17.14`
+```
+
+`ring` compila C y ensamblador con su propio build script via `cc-rs`, que
+**parsea el target triple con una tabla propia** y no reconoce el target de
+zig. No es un problema de flags: el shim no se registra como toolchain
+musl-gcc para `cc-rs`. Hacerlo funcionar exigiria interceptar el parseo del
+triple, que es exactamente el tipo de arreglo fragil que no debe entrar en
+una ruta de publicacion.
+
+**3. linuxbrew no tiene `musl`.** `brew info musl` →
+`No available formula with the name "musl"`. Instalarlo tampoco daria el
+`musl-gcc` con el layout que `cc-rs` espera.
+
+**Conclusion:** la unica via es el paquete del sistema, y requiere root:
+
+```bash
+sudo rpm-ostree install musl        # Bazzite/Kinoite (ostree)
+# o, si el entorno lo permite:
+sudo pacman -S musl                 # Arch
+sudo apt install musl-tools         # Debian/Ubuntu
+```
+
+Esto es una accion del operador, no del agente. Queda como **accion
+humana requerida** y no como un fallo de codigo. El codigo del pipeline esta
+correcto: pide el compilador que el contrato de assets exige.
