@@ -176,6 +176,142 @@ if [ "$BUILD_IS_MUSL" = "0" ] && grep -q 'musl' "$RELEASE_SH"; then
     info "         Users on glibc < build host cannot run it. See INC-DEBT-021."
 fi
 
+# ─────────────────────────────────────────────────────────────────────────
+# session-29 — step 2.5 BEHAVIOURAL contract.
+#
+# The checks above are static. They did not catch two real mutations:
+#   M4  short-circuit exit 0 -> exit 1  (aborts a legitimate release)
+#   M5  release.sh "keep TAG" warn -> die (changes the outcome)
+# A grep cannot see either, so this section EXECUTES the real decision.
+#
+# What is actually under test: release.sh step 2.5 runs
+# `release-bump.sh --dry-run`, parses `new tag:`, and if empty KEEPS the
+# workspace version as the release tag. After session-29's short-circuit
+# there is a THIRD way to produce no tag — the workspace already declares
+# the release. These must not be confused: the tag published has to be the
+# workspace version, and the pipeline must not die.
+#
+# The decision is reproduced verbatim from release.sh lines 402-421 against
+# the real release-bump.sh in an isolated fixture. Both scripts are copied
+# in, exactly as CI does (CI checks out the repo, so its ROOT is the repo).
+#
+# KNOWN LIMIT, stated rather than hidden: release.sh cannot be invoked here.
+# It requires `gh auth status`, a verified remote and a clean main, and past
+# step 8 it publishes irreversibly. So the behavioural harness re-implements
+# step 2.5's decision instead of executing release.sh. A mutation applied ONLY
+# to release.sh's copy of that logic (M8: turning the "keep TAG" warn into a
+# die) is therefore not visible to the behavioural cases — which is why the
+# two static checks above exist and why the limit is written down instead of
+# being discovered later as a false guarantee.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Static: release.sh must KEEP the workspace tag (not die) when
+# release-bump.sh derives none. This is the branch the session-29
+# short-circuit now reaches on the declared-release path.
+if grep -q 'release-bump.sh did not produce a tag; keeping workspace-derived TAG' "$ROOT/scripts/release.sh"; then
+    ok "release.sh keeps the workspace TAG when release-bump derives none"
+else
+    fail "release.sh no longer keeps the workspace tag; M8-shaped mutation"
+fi
+
+# Static: the short-circuit must exit 0. release.sh line 408 turns a
+# non-zero exit into `die "cannot compute SemVer tag"`, which would abort a
+# legitimate release. The behavioural CASE C below proves the same thing by
+# execution; this pins it without running the fixture.
+if grep -A2 'no bump to derive: the workspace already declares' "$ROOT/scripts/release-bump.sh" \
+   | grep -qE '^\s*exit 0$'; then
+    ok "the declared-release short-circuit exits 0, so release.sh does not die"
+else
+    fail "the declared-release short-circuit must exit 0, not error out"
+fi
+
+step25_tag() {
+    # Reproduce release.sh step 2.5. Echoes the final TAG it would release.
+    local dir="$1" workspace_ver="$2" tag_ver="$3" commit_subject="$4"
+    # NOTE: each case needs a FRESH directory. A leftover fixture makes
+    # `git tag` fail ("already exists"), the subshell aborts before the
+    # script is copied, and the harness then measures whatever was left
+    # behind — a green check that tested nothing.
+    chmod -R u+rw "$dir" 2>/dev/null || true
+    rm -rf "$dir"
+    mkdir -p "$dir/scripts"
+    (
+        cd "$dir" || exit 2
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        cp "$ROOT/scripts/release-bump.sh" scripts/release-bump.sh
+        mkdir -p crates/fake
+        cat > Cargo.toml <<EOF
+[workspace]
+members = ["crates/fake"]
+
+[workspace.package]
+version = "$workspace_ver"
+edition = "2021"
+EOF
+        cat > crates/fake/Cargo.toml <<'EOF'
+[package]
+name = "fake"
+version.workspace = true
+EOF
+        git add -A
+        git commit -qm "chore: base"
+        git tag "v$tag_ver"
+        git commit -q --allow-empty -m "$commit_subject"
+    ) >/dev/null 2>&1
+
+    # ---- verbatim from scripts/release.sh step 2.5 ----
+    local VERSION TAG STEP2P5_OUTPUT SEMVER_TAG
+    VERSION="$workspace_ver"
+    TAG="v$VERSION"
+    if STEP2P5_OUTPUT="$(cd "$dir" && bash scripts/release-bump.sh --dry-run 2>&1)"; then
+        :
+    else
+        # release.sh: die "cannot compute SemVer tag"
+        echo "DIE"
+        return 0
+    fi
+    SEMVER_TAG="$(echo "$STEP2P5_OUTPUT" | awk '/^new tag: / {print $3; exit}')"
+    if [ -z "$SEMVER_TAG" ]; then
+        :                  # release.sh warns and KEEPS TAG
+    else
+        [ "$SEMVER_TAG" != "$TAG" ] && TAG="$SEMVER_TAG"
+    fi
+    echo "$TAG"
+}
+
+TMPD="$(mktemp -d)"
+trap 'chmod -R u+rw "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
+
+# CASE A: workspace declares the release (2.2.0 ahead of v2.0.1).
+# The published tag MUST be the workspace version, and step 2.5 must not die.
+got="$(step25_tag "$TMPD/a" 2.2.0 2.0.1 'feat: something')"
+if [ "$got" = "v2.2.0" ]; then
+    ok "step 2.5 publishes the declared workspace version (v2.2.0), no double bump"
+else
+    fail "step 2.5 published '$got'; the declared release v2.2.0 must win"
+fi
+
+# CASE B: workspace == tag (normal flow). release-bump.sh derives a bump and
+# release.sh adopts it. This guards the fix from silencing NORMAL releases.
+got="$(step25_tag "$TMPD/b" 2.0.1 2.0.1 'feat: something')"
+if [ "$got" = "v2.1.0" ]; then
+    ok "step 2.5 still adopts the derived semver tag on a normal release"
+else
+    fail "step 2.5 produced '$got'; a normal release must still bump to v2.1.0"
+fi
+
+# CASE C: the short-circuit must not error out. A non-zero exit from
+# release-bump.sh makes release.sh `die` and abort a legitimate release.
+got="$(step25_tag "$TMPD/c" 2.2.0 2.0.1 'feat: something')"
+if [ "$got" != "DIE" ]; then
+    ok "step 2.5 does not die on the declared-release short-circuit"
+else
+    fail "release-bump.sh exited non-zero; release.sh would die on a valid release"
+fi
+
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "release pipeline consistency: $failures check(s) FAILED"
