@@ -91,12 +91,70 @@ cosign verify-blob --help | grep 'Fulcio certificate'
 
 ## Estado
 
-Abierto. No se cierra aquí porque el fix toca `scripts/release.sh`, que es
-código de publicación, y esta sesión es documental. Declarado en
-`ADR-0143 §(a)` y como punto 5 de su "Seguimiento requerido" para que no se
-pierda.
+**Mitigación 1 IMPLEMENTADA (session-24).** `scripts/release.sh` ahora
+comprueba el issuer del certificado realmente emitido antes de publicar, y
+hace `die` (fail-closed) si no es el esperado o si no se puede leer.
+
+- `RELEASE_CERT_ISSUER` en `release.sh` es byte-idéntico a
+  `DEFAULT_CERT_ISSUER` en `crates/sddk-cli/src/cosign.rs`. Un check de
+  contrato falla si divergen.
+- `cert_issuer()` lee el certificado del bundle (formato v2 en `.cert`,
+  formato nuevo en `verificationMaterial.x509CertificateChain`) y extrae el
+  issuer de la URI SAN, no del DN RFC4514 — el DN lleva el nombre de la CA
+  Fulcio, no el proveedor OIDC.
+- **Un certificado ilegible es un fallo, nunca un pase.** Un control que no
+  puede leer lo que verifica no ha verificado nada.
+- Falsificado en los dos sentidos: issuer de Actions → pasa; issuer local
+  (`oauth2.sigstore.dev/auth`) → rechaza; bundle válido sin certificado →
+  `no certificate found in bundle`; JSON corrupto → falla. Cubierto por 3
+  checks en `tests/test_install_asset_contract.sh`, con mutaciones que
+  confirman que detectan tanto la deriva del pin como la degradación de
+  `die` a `warn`.
+
+Siguen abiertas las mitigaciones 2 y 3.
 
 **No es el mismo incidente que `INC-AUDIT-S14`** (autenticidad ausente: falta
 publicar cualquier firma). Es un fallo latente en la ruta de firma: afecta a
 un release local firmado, que nadie ha ejecutado todavía, y que fallaría de
 una forma silenciosa y confusa.
+
+## Corrección: versión de cosign en CI (session-24)
+
+Se siguió una hipótesis que era **incorrecta** y que conviene no dejar escrita
+en ningún sitio sin corregir: se afirmaba que la firma en CI iba a fallar.
+
+Se afirmaba, a partir del `cosign v3.1.3` instalado en esta máquina, que
+`--output-signature` y `--output-certificate` no existían y por tanto que
+`.github/workflows/release.yml` estaba roto. **Falso**, por dos errores:
+
+1. `sigstore/cosign-installer@053f9b74…` comentado como `v3.8.1` es la versión
+   del **action**, no la de cosign. Ese SHA sí existe y resuelve a
+   `refs/tags/v3.8.1` del propio `cosign-installer`.
+2. Ese action define `cosign-release: default 'v2.4.3'`, y el workflow **no
+   overridea** `cosign-release`. CI instala, por tanto, **cosign v2.4.3**, no
+   v3.1.3.
+
+En v2.4.3 los dos flags existen y funcionan como el workflow espera. Firma
+en `cmd/cosign/cli/sign/sign_blob.go`:
+
+```go
+func SignBlobCmd(ro *options.RootOptions, ko options.KeyOpts, payloadPath string,
+                 b64 bool, outputSignature string, outputCertificate string,
+                 tlogUpload bool) ([]byte, error)
+```
+
+y ambos se escriben a disco (`Wrote signature to file` /
+`Wrote certificate to file`).
+
+**Conclusión observada:** el workflow de firma **no** está roto por
+compatibilidad de versión. La incompatibilidad real es entre la v3 del host y
+la v2 de CI, y afecta a quien intente reproducir la firma en local con
+cosign v3, no a la publicación.
+
+**Deuda menor que esto deja abierta** (no registrada como INC aparte por ser
+menor): la versión de cosign que instala CI es un **default implícito** del
+action. Si sigstore cambia ese default, la versión usada por la firma cambia
+sin que nada en este repositorio lo refleje. Fijar `cosign-release:
+'v2.4.3'` explícito en el workflow lo convierte en una decisión declarada y
+visible. No se ha tocado el workflow: eso es cambio de superficie de
+publicación y va en su propio slice.

@@ -355,6 +355,45 @@ else
     fail "sddk dev update does not bail on a bad signature"
 fi
 
+# --- Signing identity (INC-DEBT-024) -------------------------------
+#
+# The local keyless identity cannot satisfy the pin, and cosign being
+# installed is not evidence the right identity was used. release.sh must
+# therefore check the issuer of the certificate it actually minted BEFORE
+# publishing, and must fail closed when it cannot read it.
+#
+# A control that is not asserted here is a control that quietly stops
+# controlling the first time someone refactors the block.
+if grep -q 'RELEASE_CERT_ISSUER="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"' "$RELEASE_SH"; then
+    ok "release.sh pins the Actions OIDC issuer as the required signing identity"
+else
+    fail "release.sh does not pin the required signing issuer"
+fi
+
+# The pin must be byte-identical to what the consumers verify against.
+# Drift here means the release signs with one identity and install.sh and
+# \`sddk dev update\` demand another.
+release_pin=$(grep -oE 'SDDK_COSIGN_ISSUER:-[^}]+' "$RELEASE_SH" | head -1 | sed 's/SDDK_COSIGN_ISSUER:-//')
+rust_pin=$(grep -oP '(?<=DEFAULT_CERT_ISSUER: &str = ")[^"]+' "$COSIGN_RS")
+if [ -n "$release_pin" ] && [ "$release_pin" = "$rust_pin" ]; then
+    ok "the signing issuer in release.sh matches DEFAULT_CERT_ISSUER in the consumer"
+else
+    fail "signing issuer drift: release.sh [$release_pin] vs cosign.rs [$rust_pin]"
+fi
+
+# Fail-closed on a wrong identity, not a warning. A warn-and-continue here
+# publishes a release that this project's own installer refuses.
+if awk '
+    /emitted_issuer.*cert_issuer/ { readcert=1 }
+    readcert && /signing identity verified/ { okbranch=1 }
+    readcert && /die .*WRONG identity/ { diefound=1 }
+    END { exit((okbranch && diefound) ? 0 : 1) }
+' "$RELEASE_SH" 2>/dev/null; then
+    ok "release.sh dies when the signing identity is not the pinned one"
+else
+    fail "release.sh does not fail closed on a wrong signing identity"
+fi
+
 echo
 if [ "$failures" -ne 0 ]; then
     echo "install asset contract: $failures check(s) FAILED"

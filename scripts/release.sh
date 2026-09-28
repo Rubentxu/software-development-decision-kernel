@@ -628,6 +628,91 @@ open(sys.argv[2], "wb").write(base64.b64decode(sig))
 PY
 }
 
+# The OIDC issuer the certificate MUST carry. Byte-identical to
+# DEFAULT_CERT_ISSUER in crates/sddk-cli/src/cosign.rs, which is the single
+# source of truth both consumers verify against. If these drift, the release
+# signs with one identity and the installers demand another.
+#
+# Why this is a hard failure and not a warning: INC-DEBT-024. The keyless
+# identity depends on WHERE you sign, and the two are mutually exclusive —
+# GitHub Actions mints issuer token.actions.githubusercontent.com, the local
+# device flow mints oauth2.sigstore.dev/auth with a PERSON's subject. cosign
+# is installed either way, so `command -v cosign` passes locally and the
+# signing step runs. The result is a release that looks correctly signed and
+# that this project's own install.sh refuses, because the pin cannot match.
+# Publishing that is the worst outcome available: the failure surfaces at the
+# user's install, with a signature error that reads like tampering.
+RELEASE_CERT_ISSUER="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
+
+# Extract the issuer from the certificate cosign just minted, and refuse to
+# continue if it is not the pinned one.
+#
+# The certificate lives inside the bundle: v2 bundle format carries it as
+# base64 in `.cert` (confirmed in cosign v2.4.3 sign_blob.go, which is what
+# CI installs via cosign-installer v3.8.1's default `cosign-release`).
+# Anything unparseable is a FAILURE, never a pass: a check that cannot read
+# the certificate has not verified anything, and treating that as success is
+# how a control silently stops controlling.
+cert_issuer() {
+    local bundle_path="$1"
+    python3 - "$bundle_path" <<'PY'
+import base64, json, re, subprocess, sys, tempfile, os
+
+try:
+    bundle = json.load(open(sys.argv[1]))
+except Exception as exc:
+    sys.exit(f"unreadable bundle: {exc}")
+
+raw = None
+# v2 bundle: base64 PEM in `.cert`.
+cert = bundle.get("cert")
+if cert:
+    try:
+        raw = base64.b64decode(cert)
+    except Exception:
+        raw = None
+
+# New bundle format: the certificate chain is already PEM inside
+# `verificationMaterial.x509CertificateChain.certificates[].rawBytes`.
+if raw is None:
+    certs = (bundle.get("verificationMaterial") or {}).get(
+        "x509CertificateChain", {}).get("certificates", [])
+    for entry in certs:
+        candidate = entry.get("rawBytes")
+        if candidate:
+            try:
+                raw = base64.b64decode(candidate)
+                break
+            except Exception:
+                continue
+
+if not raw:
+    sys.exit("no certificate found in bundle")
+
+with tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False) as fh:
+    fh.write(raw)
+    pem = fh.name
+try:
+    out = subprocess.run(
+        ["openssl", "x509", "-noout", "-issuer"],
+        input=raw, capture_output=True, check=True).stdout.decode()
+finally:
+    os.unlink(pem)
+
+# `issuer=CN=...,O=...` or a URI SAN. The OIDC issuer rides in the SAN as
+# a URI, so read that rather than the RFC4514 DN, which carries the Fulcio
+# CA's name and not the OIDC provider.
+sans = subprocess.run(
+    ["openssl", "x509", "-noout", "-ext", "subjectAltName"],
+    input=raw, capture_output=True).stdout.decode()
+m = re.search(r"URI:(\S+)", sans)
+if m:
+    print(m.group(1))
+else:
+    print(out.strip())
+PY
+}
+
 SIGN_ARTIFACTS=(
     "$(basename "$BIN")"
     "$(basename "$UNIFIED")"
@@ -654,6 +739,46 @@ if command -v cosign >/dev/null 2>&1; then
             sed 's/^/    /' "$TMP/sign-$artifact.log" | head -5
         fi
     done
+
+    # Identity gate (INC-DEBT-024). Signing succeeding is NOT the same as
+    # signing with the identity this project pins. Check the issuer of the
+    # certificate that was actually minted, before anything is uploaded.
+    #
+    # One artifact is enough to establish it: every signature in this release
+    # comes from the same `cosign sign-blob` invocation shape in the same
+    # loop, so they share the identity. Checking all three would be theatre.
+    if [ "$SIGNED_COUNT" -gt 0 ]; then
+        first_artifact="${SIGN_ARTIFACTS[0]}"
+        if emitted_issuer=$(cert_issuer "$TMP/$first_artifact.bundle.json"); then
+            if [ "$emitted_issuer" = "$RELEASE_CERT_ISSUER" ]; then
+                ok "signing identity verified: issuer $emitted_issuer"
+            else
+                die "signed with the WRONG identity.
+               expected issuer: $RELEASE_CERT_ISSUER
+               actual issuer:   $emitted_issuer
+
+               This release would be published signed, but unusable: install.sh
+               and \`sddk dev update\` pin the issuer above and would refuse every
+               artifact, with a signature error that reads like tampering.
+
+               The keyless identity depends on WHERE you sign. GitHub Actions
+               mints a certificate for the workflow ($RELEASE_CERT_ISSUER);
+               the local device flow mints one for a PERSON. cosign being
+               installed is not evidence that the right identity was used.
+
+               Refusing to publish. To sign with the project identity, run the
+               release from GitHub Actions (release-automation.yml). To publish
+               unsigned on purpose, set SDDK_SKIP_SIGNING=1."
+            fi
+        else
+            die "could not read the signing identity from $first_artifact.bundle.json.
+
+               A check that cannot read the certificate has verified nothing,
+               and reporting success here is how a control silently stops
+               controlling. Refusing to publish."
+        fi
+    fi
+
     # All-or-nothing. A partially signed release is worse than an unsigned
     # one: the binary verifies while the bundle tarball does not, so the
     # failure lands on the user at install time instead of here. The count
