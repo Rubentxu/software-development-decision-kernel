@@ -4615,3 +4615,51 @@ P1 era distinguir el activo en distribucion del activo local. El remoto
 verificaba perfecto y eso cambia la severidad entera. Abrir con el alcance
 dudoso y resolverlo con evidencia es mejor que abrir con una conclusion
 definitiva que luego hay que revertir.
+
+### Correccion: publicar 2.2.0 NO lleva el doble bump (session-29)
+
+En el mensaje de cierre de session-29 seurekcomendo "2.2.1 porque 2.2.0 se
+publicaria con el doble bump". **Es falso**, y el error estaba en la
+premisa, no en el numero.
+
+Los tres fixes (doble bump, cobertura del paso 2.5, `manifest_sha256`) estan
+todos en el arbol que lleva el workspace en 2.2.0:
+
+```
+$ git log --oneline a9da3104..HEAD | wc -l
+8 commits de trabajo despues del commit de bump a 2.2.0
+$ git diff --stat a9da3104..HEAD -- scripts/ tests/
+ 4 files changed, 308 insertions(+), 13 deletions(-)
+```
+
+Ademas, v2.2.0 **nunca se publico**: no existe tag `v2.2.0` ni release en
+GitHub. El numero 2.2.0 solo existio en un commit local. Publicarlo ahora
+publica el arbol con los fixes dentro, que es exactamente lo que se quiere.
+
+Ademas se verifico que el fix de `manifest_sha256` no rompe la ruta de
+upgrade, que era la preocupacion razonada del INC-DEBT-025:
+
+- `install.sh` comprueba la **existencia** de `BUNDLE.toml` y su
+  compatibilidad de version binaria, nunca el valor `manifest_sha256`.
+- El lado Rust parsea el campo como `Option<String>` y no lo compara con
+  nada.
+
+Asi que el valor viejo (2.0.1, hash de la primera linea) y el nuevo conviven
+sin colision: no hay nada que compare. Publicar 2.2.0 con el fix es seguro.
+
+**Conclusion corregida: 2.2.0 es la version correcta.** El bumping a 2.2.1
+solo seria necesario si el operador hubiera publicado 2.2.0 antes de que
+existieran los fixes, y no es el caso.
+
+Lo que si queda real es el bloqueo tecnico: el pre-push hook exige un cambio
+de `[workspace.package] version` en el rango para_range con rutas de
+codigo, y 2.2.0 ya fue declarado en `a9da3104`, que no esta en este rango.
+Ese es el punto que decide el operador: **bump real a 2.2.1 aunque 2.2.0
+nunca se publico**, o una excepcion de hook. La decision sigue siendo suya;
+lo que cambia es que el motivo ya no es "2.2.0 lleva el doble bump", porque
+no lo lleva.
+
+Nota sobre el metodo: recomendé una version basandome en una afirmacion
+sobre lo que contendria el release que no habia verificado. Comprobarlo
+tomo dos comandos. Una recomendacion de version que no se ha comprobado es
+una opinion, y decirla con esa seguridad fue el error.
