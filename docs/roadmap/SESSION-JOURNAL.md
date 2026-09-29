@@ -5875,3 +5875,39 @@ Se eligio `e62da1bc` porque es lo que hace `scripts/reconcile_state_pointer.sh` 
 **El guard queda en ROJO por el check de publicacion y se declara como tal.** NO se maquilla bajando `PUNCTUAL_TOLERANCE` ni adelantando el puntero a un commit viejo: las dos cosas harian el test verde sin que la realidad lo estuviera. Se cierra sola al publicar (push con bump) o al mergear el trunk.
 
 **Conocimiento negativo reutilizable:** el reconciliador y el guard **no comparten criterio** cuando hay commits sin publicar — el reconciliador pone el puntero en HEAD local, y eso hace caer el check de "esta en origin/main". La proxima sesion que cierre estos commits va a ver este rojo y debe leerlo como consecuencia esperada, no como un fallo nuevo que "arreglar" moviendo el puntero.
+
+---
+
+## Adenda session-36 — 2026-09-29T18:28Z — Adopcion hypermedia: roadmap delta + primer slice C3i
+
+**Baseline / HEAD:** parte de `3cd9d5c7`; HEAD tras esta sesion = `2c5a4760` (delta roadmap) + `efa18c64` (slice C3i). Origen: paquete `docs/sddk-hypermedia-workflow-platform-evolution-2026-09-29/`, integrado al repo (untracked -> versionado en `efa18c64`).
+
+### Que se integro y como (sin segundo roadmap, sin big bang)
+
+1. **Delta de roadmap (`2c5a4760`):** C3i/C3j anadidos como hitos de `docs/roadmap/ROADMAP.md` (la autoridad unica), C6/C7 como PROPOSED condicionado. C4/C5 intactos. UAT-MATRIX: CTX-UAT-001..005 + MIG-UAT-001 abiertas para C3i; CTX-UAT-006..015 y HYP-UAT-001..004 reservadas.
+2. **Inspeccion real previa (principio 1):** el G2 del paquete es CORRECTO y se verifico en codigo: `resolve_cycle_context_with_cwd` (cycle.rs) infiere 0/1/N con errores tipados (`NoActiveCycle`, `AmbiguousCycle` con candidates) desde antes de esta sesion; la skill `sddk-cycle-resume`, `mcw.md` y `cli-usage-contract.md` ensenaban lo contrario, y el pin de `test_workflow_contract.py` linea 1086 congelaba el token stale `runtime-active-cycle-discovery-unavailable`.
+3. **Slice C3i-1 (`efa18c64`):** solo superficie de orquestacion. El motor NO se toco (sus tests S3b/NoActiveCycle ya cubren 0/1/N). Skill paso 2 descubre sin ID de confianza; mcw hard gate usa inferencia tipada y mantiene el check de unmerged branches (la inferencia no puede excluir un ciclo competidor sin lease); contract compartido igual; pin de clausula requerida cambiado al token nuevo + 10 pins nuevos.
+
+### Evidencia observada
+
+- `tests/test_workflow_contract.py`: **508/508** (498 + 10 pins). Mutation-tested en ambas direcciones: re-anadir token stale -> FAIL en la skill; eliminar `AmbiguousCycle` de mcw -> FAIL; restaurado -> 508/508.
+- CTX-UAT-001..005 **PASS contra runtime real** en ledger aislado (`SDDK_STATE_HOME=/tmp/c3i`, mecanismo verificado en `e62da1bc`): 1 lease infiere (`p-4305a39d4f2f20ff/c3i-uat` OPEN), 2 leases dan `AmbiguousCycle` con los 2 candidates, 0 leases dan `NoActiveCycle` con hint, adopt status x3 = `complete` estable. MIG-UAT-001 **NOT_RUN** con razon declarada en el recibo (`docs/roadmap/receipts/session-35b/UAT-EVIDENCE-2026-09-29T1822.yaml`).
+- **Ledger real intacto:** sha256 `58745880051db0a5...` re-verificado tras todas las ejecuciones.
+- `cargo test -p sddk-cli --lib`: 824 passed. `sddk dev manifest` regenerado (377 files) y commiteado.
+
+### Conocimiento negativo / hallazgos
+
+1. **El `BUNDLE.toml` del checkout es un fosil (v1.145.1, commit `d572547b`, sin tocar desde 2026-09-08).** `sddk dev install --source .` lo lee y falla con "binary 2.2.27 is not compatible with bundle 1.145.1". `release.sh` genera el BUNDLE.toml fresco en el stage (paso 5) y por eso los releases publicados nunca lo sufrieron. Workaround usado: stage temporal que imita el paso 5. **Deuda nueva que esto revela:** el fosil deberia regenerarse o eliminarse del checkout; documentado, NO arreglado aqui (fuera de scope del slice).
+2. **`sddk dev install --source` con staging NO versionado deja el recibo parcialmente incoherente:** `sddk-install.json` dice `bundle_version: 2.2.32` pero `framework/current` sigue apuntando a `framework/2.2.27/`; `sddk dev doctor --prefix` reporta `binary.bundle_coherence: missing`. Las superficies del prefix (skills/prompts) SI llevan el contenido nuevo (verificado: `AmbiguousCycle` presente en skill y mcw instalados). La via canonica (release.sh + install.sh) no pasa por aqui.
+3. **`sddk dev doctor` briefness: 19 superficies exceden budget** (agents >300, skills >150, prompts >200 lineas). `mcw.md` ya excedia con 393 lineas ANTES de esta sesion (mi cambio +2). `impeccable-primary.md` (439) y `studio-orchestrator.md` (364) vienen del import inicial `34d68c21`. Deuda preexistente, NO causada por esta slice.
+4. **SDDK_STATE_HOME funciono de punta a punta** en todos los UAT: cero escrituras al ledger real.
+
+### Estado de los WorkItems
+
+- **C3i-S1: IMPLEMENTED + VERIFIED** (slice 1: alineacion resume/mcw/contract). Restante de C3i: objetivos 2 (service `bootstrap`/`ensure` idempotente en sddk-cli que init.md/orchestrator.md consuman), 4 (no re-pedir adopcion por sesion), 5 (identidad unica del bootstrap), y automatizar CTX-UAT-001 a 20 reinicios.
+- **C3j/C6/C7: PROPOSED** — no abrir hasta cerrar C3i completo.
+- **Pendiente del operador (sin cambio):** recuperacion del ledger real (`c0-t01-pointer-mutation` sigue PAUSED) y push (siete commits sin publicar).
+
+### Siguiente paso exacto
+
+Cerrar C3i objetivo 2: service `bootstrap`/`ensure` en sddk-cli que llame a adopt-converge + inference y que init.md/orchestrator.md consuman, con CTX-UAT-001 automatizado a 20 reinicios. O, si el operador prefiere publicar primero: bump + push de la cadena pendiente.
