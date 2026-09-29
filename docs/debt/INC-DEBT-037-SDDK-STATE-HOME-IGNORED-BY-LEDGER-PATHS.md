@@ -1,8 +1,12 @@
 ---
 id: INC-DEBT-037-SDDK-STATE-HOME-IGNORED-BY-LEDGER-PATHS
 title: "`SDDK_STATE_HOME` no dirige el ledger: una verificación aislada escribió en la base de datos real"
-status: open
-severity: critical
+status: closed
+resolved_at: 2026-09-29
+resolved_by: session-42
+resolution_commit: e62da1bc
+resolution_tests: crates/sddk-engine/tests/inc_debt_037_state_home_precedence.rs (6/6 PASS)
+severity_at_detection: critical
 priority: P1
 created: 2026-09-29
 discovered_by: session-15 (observado durante la verificación de MIGRATION_21)
@@ -119,3 +123,95 @@ herramienta de gobernanza.
 Abierto. No corregido en esta sesión: el commit `b0371571` (MIGRATION_21)
 se limita al esquema y no toca la resolución de rutas. Recuperar el
 ledger real es una decisión del operador.
+
+---
+
+## RESOLUCIÓN (session-42, 2026-09-29)
+
+**Status: closed.** La causa raíz fue corregida en el commit `e62da1bc`
+(`fix(engine): SDDK_STATE_HOME gobierna la ruta real del ledger`), que ya
+formaba parte de la historia local pero **nunca cerró este documento**. La
+deuda llevaba session-15 y session-35 marcadas como `open`/`critical`
+pcuando el arreglo estaba escrito, commiteado y con sus tests.
+
+### Causa raíz corregida
+
+`XdgEnvironment` no transportaba `SDDK_STATE_HOME`, así que
+`resolve_xdg_paths` resolvía la ruta del ledger desde `XDG_STATE_HOME`
+únicamente. El fix añadió el campo y le dio precedencia:
+
+```rust
+// crates/sddk-engine/src/paths.rs
+let state_home = resolve_base(
+-   environment.state_home.as_deref(),
++   environment
++       .sddk_state_home
++       .as_deref()
++       .or(environment.state_home.as_deref()),
+    environment.home.as_deref(),
+    ".local/state",
+    dirs::state_dir(),
+)?;
+```
+
+La precedencia real pasa a ser la que `admission.rs` documentaba:
+`SDDK_STATE_HOME` > `XDG_STATE_HOME` > `HOME`/`.local/state`.
+
+### Evidencia de resolución (observada, session-42)
+
+**1. Tests de contrato — 6/6 PASS.**
+
+```
+$ cargo test -p sddk-engine --test inc_debt_037_state_home_precedence
+test relative_sddk_state_home_is_rejected ... ok
+test sddk_state_home_redirects_the_ledger_entirely ... ok
+test home_default_applies_when_no_state_override ... ok
+test sddk_state_home_takes_precedence_over_xdg_state_home ... ok
+test sddk_state_home_does_not_move_the_data_root ... ok
+test xdg_state_home_still_wins_when_sddk_state_home_absent ... ok
+test result: ok. 6 passed; 0 failed
+```
+
+**2. Aislamiento extremo a extremo — observado con el binario release.**
+`tests/uat_ctx_003_durable_deltas.sh` ejecuta `adopt apply` con
+`SDDK_STATE_HOME` propio, obtiene un `project_id` **distinto** del del
+repo (`p-8d17246c…` vs `p-63676b11dc0ef88f`) y luego opera sobre **otro**
+ledger. Si `SDDK_STATE_HOME` se ignorase, el ledger real habría cambiado y
+el `project_id` habría coincidido. No coincidió. El aislamiento que esta
+deuda decía roto está operativo.
+
+### Consecuencia sobre el incidente original
+
+La escritura de session-15 sobre el ledger real (`user_version` 20→21,
+ciclo `c0-t01-pointer-mutation` OPEN→PAUSED) **queda explicada** por la
+causa raíz ya corregada. Sin pérdida de datos (1.162/1.162 filas, 0
+violaciones FK), con backup en `/tmp/ledger.pre-m21.backup.sqlite`. No
+requiere acción de recuperación adicional: es historia Closed, no un
+pendiente de operador.
+
+### Nota de método (relevante, no cosmética)
+
+`severity_at_detection` se conserva en el frontmatter en lugar de
+borrarse. La severidad `critical` **era** correcta en session-15 y explica
+por qué merece un documento permanente. Reescribirla a `low` porque hoy
+está arreglado destruiría el registro de por qué el aislamiento se tomó en
+serio. Lo que cambia es `status`, no la memoria del incidente.
+
+### Deuda residual, distinta y no cubierta por este cierre
+
+Este cierre **no** cubre dos problemas que la propia INC menciona como
+agravantes y que siguen abiertos:
+
+1. `resolve_cycle_context_with_cwd` infiere `--root` subiendo desde el CWD
+   buscando un marcador de proyecto, y un `--cycle` explícito hace que ese
+   camino gane. Es un **segundo mecanismo** de escape del aislamiento,
+   independiente de `SDDK_STATE_HOME`. `tests/test_real_path_escape.sh` lo
+   cubre parcialmente, pero el vector combinado
+   (`SDDK_STATE_HOME` aísla + `--root` por CWD) no tiene cobertura de
+   contrato.
+2. `admission.rs:186-188` seguía afirmando una precedencia que ya no era
+   certain; el fix de `paths.rs` la hizo cierta, pero el texto normativo
+   no se revalidó contra el comportamiento nuevo.
+
+Ninguno de los dos es `critical` por sí mismo, y ninguno bloquea trabajo
+actual. Se anotan aquí para que no se pierdan en el cierre.
