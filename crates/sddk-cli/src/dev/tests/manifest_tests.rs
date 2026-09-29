@@ -229,6 +229,41 @@ fn update_installs_verified_staged_bundle() {
     assert!(verify_manifest(&target).unwrap().is_empty());
 }
 
+/// A bundle carrying a BUNDLE.toml with `bundle.version` must install into
+/// `framework/<version>/`, NOT into the framework root. Mixing the two
+/// layouts is the root cause of the session-33b installer defect: a later
+/// install.sh expecting `framework/<version>/` found it empty and every
+/// editor symlink broke (69 broken links, all_present false).
+#[test]
+fn update_installs_versioned_bundle_into_version_dir() {
+    let source = temp_root("update-versioned-source");
+    std::fs::create_dir_all(source.join("agents")).unwrap();
+    std::fs::write(source.join("agents/a.md"), "content").unwrap();
+    write_manifest(&source).unwrap();
+    std::fs::write(
+        source.join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE),
+        format!(
+            "[bundle]\nid = \"sddk-framework\"\nversion = \"9.9.9\"\nschema_version = 2\nbinary_min_version = \"2.0.0\"\nbinary_max_version = \"99.0.0\"\ncompatibility = \">=1.91\"\n"
+        ),
+    )
+    .unwrap();
+    // The manifest must cover BUNDLE.toml itself (it is a bundle file).
+    let (_releases, args) = release_bundle(&source, "v-test-versioned");
+    let target = temp_root("update-versioned-target");
+
+    let out = update_bundle_unsigned_fixture(&target, &args).unwrap();
+
+    // The files land in the VERSION dir, not the root.
+    assert!(
+        target.join("9.9.9/agents/a.md").is_file(),
+        "bundle must install into version dir, output was: {out}"
+    );
+    assert!(!target.join("agents").exists(), "root must stay clean");
+    assert!(target.join("9.9.9").join(MANIFEST_FILE).is_file());
+    assert!(out.contains("9.9.9"));
+    std::fs::remove_dir_all(&target).ok();
+}
+
 #[test]
 fn manifest_inside_worktree_excludes_untracked() {
     let repo = TestRepository::new().unwrap();
@@ -537,4 +572,22 @@ fn install_admits_plain_actor_as_system_on_bundle_surface() {
     };
     let result = run_dev_install(args);
     assert_eq!(result.status, 0, "plain actor is System: {}", result.stderr);
+}
+
+/// A bundle WITHOUT BUNDLE.toml (legacy root layout) must keep installing
+/// into the root: the fix must not break the legacy layout contract.
+#[test]
+fn update_legacy_root_layout_bundle_still_installs_at_root() {
+    let source = temp_root("update-legacy-source");
+    std::fs::create_dir_all(source.join("agents")).unwrap();
+    std::fs::write(source.join("agents/a.md"), "content").unwrap();
+    write_manifest(&source).unwrap();
+    let (_releases, args) = release_bundle(&source, "v-test-legacy");
+    let target = temp_root("update-legacy-target");
+
+    let out = update_bundle_unsigned_fixture(&target, &args).unwrap();
+
+    assert!(target.join("agents/a.md").is_file());
+    assert!(!out.contains(" into "));
+    std::fs::remove_dir_all(&target).ok();
 }

@@ -401,11 +401,43 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
             anyhow::bail!("bundle manifest unreadable: {e}");
         }
     }
-    let count = count_manifest_entries(root).unwrap_or(0);
-    copy_tree(&staged_bundle, root, CopyMode::Always)?;
+    let count = count_manifest_entries(&staged_bundle).unwrap_or(0);
+    // Resolve the bundle's own version from BUNDLE.toml when present and
+    // install into a VERSIONED directory (`framework/<version>/`), matching
+    // what install.sh does. Extracting into the framework ROOT (the old
+    // behaviour) plus `current -> root` mixed two layouts: a later
+    // install.sh expecting `framework/<version>/` found it empty and every
+    // editor symlink broke (observed 2026-09-29, session-33b: 69 broken
+    // links, all_present false). Root-layout bundles without BUNDLE.toml
+    // keep the legacy root extraction.
+    let bundle_version = staged_bundle
+        .join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE)
+        .is_file()
+        .then(|| {
+            crate::dev::bundle_manifest::parse_bundle_manifest(
+                &staged_bundle.join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE),
+            )
+            .ok()
+            .map(|m| m.bundle.version)
+        })
+        .flatten();
+    let install_root: std::path::PathBuf = match &bundle_version {
+        Some(v) if !v.is_empty() => {
+            let dir = root.join(v);
+            std::fs::create_dir_all(&dir)?;
+            dir
+        }
+        _ => root.to_path_buf(),
+    };
+    copy_tree(&staged_bundle, &install_root, CopyMode::Always)?;
     let _ = std::fs::remove_dir_all(&tmp);
+    let location = if install_root == root {
+        String::new()
+    } else {
+        format!(" into {}", install_root.display())
+    };
     Ok(format!(
-        "framework: {version} ({asset}) sha256 verified: {actual}; {count} files content-verified via {MANIFEST_FILE}\n"
+        "framework: {version} ({asset}) sha256 verified: {actual}; {count} files content-verified via {MANIFEST_FILE}{location}\n"
     ))
 }
 
@@ -584,14 +616,39 @@ pub(super) fn run_dev_update(
             ));
         }
 
-        // The extracted bundle lands in a version dir; update_bundle extracts
-        // directly into bundle_root, so if the user passed the framework root
-        // we additionally fix the `current` symlink to point at it.
-        // Guard this with !prune && !prune_only so the prune paths
-        // can manage the symlink themselves.
+        // The extracted bundle lands in a version dir (or the root for
+        // legacy root-layout bundles); update_bundle returns where it
+        // installed. Point `current` at the INSTALL ROOT, not at the
+        // framework root: `current -> framework/` mixed layouts and broke
+        // every editor symlink for install.sh-style installs (observed
+        // 2026-09-29, session-33b).
         if args.root.as_os_str() == "." && !args.prune && !args.prune_only {
-            crate::dev::swap_current_to(&bundle_root, &bundle_root);
-            output.push_str("framework: current -> bundle root (dev link resolves it)\n");
+            // Prefer the newest version dir that now exists (the one we
+            // just installed) over the root.
+            let newest = std::fs::read_dir(&bundle_root)
+                .map(|entries| {
+                    let mut versions: Vec<String> = entries
+                        .filter_map(|e| e.ok())
+                        .filter_map(|e| e.file_name().to_str().map(String::from))
+                        .filter(|n| is_bundle_version_dir(n))
+                        .collect();
+                    versions.sort_by(|a, b| cmp_bundle_version(b, a));
+                    versions.into_iter().next()
+                })
+                .ok()
+                .flatten();
+            match newest {
+                Some(v) => {
+                    let dir = bundle_root.join(&v);
+                    crate::dev::swap_current_to(&bundle_root, &dir);
+                    output
+                        .push_str(&format!("framework: current -> {v} (versioned layout)\n"));
+                }
+                None => {
+                    crate::dev::swap_current_to(&bundle_root, &bundle_root);
+                    output.push_str("framework: current -> bundle root (legacy root layout)\n");
+                }
+            }
         }
 
         // Cycle-47 D2: --prune [--keep N] removes stale bundle version dirs
