@@ -269,3 +269,51 @@ republicar, o publicar 2.2.7 encima), y publicar es irreversible.
 
 Mientras tanto: **v2.0.1 sigue siendo el último release íntegro.** Cualquier
 instalación debe apuntar a esa etiqueta, no a v2.2.6.
+
+---
+
+## Reconciliación session-43 — la "causa raíz 2" estaba obsoleta
+
+Este documento ya figuraba `status: closed` desde session-33, pero
+`docs/debt/README.md` lo seguía listando como `high/P1 open` y repetía
+que la divergencia de layout seguía abierta. **Verificado en
+session-43: la divergencia no existe.**
+
+Lo que el documento daba por roto era que el layout de CI y el contrato
+de `tests/lib_public_release_gate.sh` no coincidieran. Hoy ambos
+sourcean `scripts/release-assets-contract.sh`, que es la fuente única, y
+el escenario 12 de la suite lo comprueba explícitamente:
+
+```console
+$ bash tests/test_release_public_gate.sh
+=== Scenario 12: shared production/test asset contract ===
+  ✓ release.sh and gate tests source the same asset contract helper
+  PASS=13  FAIL=0
+```
+
+Y los nombres que CI publica son exactamente los que el contrato exige
+(`.github/workflows/release.yml`):
+
+```rust
+UNIFIED="sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"     # línea 314
+(cd "$STAGE" && sha256sum "$UNIFIED" software-development-decision-kernel.tar.gz > CHECKSUMS)   # 319
+for asset in sddk sddk.sha256 "$UNIFIED" "$UNIFIED.sha256" CHECKSUMS sbom.json; do           # 336
+```
+
+El release real más reciente lo confirma de forma independiente:
+`v2.2.27` publica los 9 assets canónicos con esos nombres, más los
+paquetes de plataforma y las firmas.
+
+**El aviso "no instalar desde v2.2.6" sigue siendo válido** como hecho
+histórico de esa tag concreta. Lo que caducó es la premisa de que el
+defecto siga abierto en el HEAD actual.
+
+### Lección de método
+
+El índice de deuda y los documentos de deuda divergen, y **el índice es
+lo que se lee** para priorizar. Una entrada que dice `open` cuando el
+fichero dice `closed` no es un error de redacción: es un work item
+falso que consume atención en cada sesión que lo revise. La regla que
+sugiere este caso es que una reconciliación de deuda debería incluir un
+check mecánico de coherencia índice↔documento, no sólo la corrección
+manual. Queda anotado como candidato, no implementado.
