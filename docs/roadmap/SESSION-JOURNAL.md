@@ -6281,3 +6281,77 @@ en el flujo real todavía.
 CTX-003 paso 5 y requiere una decisión de modelo (`frontier` con
 `node_runs_v1` vacía) antes de escribir código. Alternativa de valor
 inmediato: el check mecánico de coherencia índice↔documento.
+
+---
+
+## session-43b — 2026-09-29 — Release v2.2.32 preparado, NO publicado
+
+**Baseline** `90ec494b` → **HEAD** `061afe26` (`origin/main` `5440b2e8`).
+**Autorización**: el operador pidió "disponibiliza lo necesario para la
+release" y después "cerramos sesion" antes del push.
+
+> **Estado real al cierre: NO se ejecutó `git push` ni
+> `scripts/release.sh`. No existe tag `v2.2.32`. Último release público
+> sigue siendo `v2.2.27`.** El bump quedó commiteado, que es lo que
+> desbloquea el `pre-push` hook para mañana.
+
+**Hallazgo principal — el perfil completo destapó trabajo invisible.**
+`cargo test --workspace` dio `TEST_EXIT=101` con 4 FAILED en
+`run_view_cli.rs`. No eran regresión: los 4 tests **afirmaban `exit 0`
+y una `RunStateView` bien formada para run ids inexistentes**, es decir
+fijaban la fabricación de INC-DEBT-039 como contrato. Sin fuente real,
+"exit 0" sólo puede significar "invento". Un test así no falla cuando
+correges el defecto — **falla al revés**, y como nadie lo corrió tras
+session-42, el rojo vivió una sesión sin que nadie lo notara.
+
+**Segundo defecto, por el falsador y no por lectura**: el payload de
+error de `run-view` **no era JSON válido** (`;` crudo dentro de un
+`format!`). Session-42 arregló el código de salida pero nunca comprobó
+que la carga útil fuera parseable. En canal legible por máquina, no-JSON
+es indistinguible de un fallo de transporte. Corregido con
+`serde_json::json!`, válido por construcción.
+
+**Falsación**: mutación de `load_run_state_view` reintroduciendo
+`RunStateView::for_test(Declared, …, vec![], vec![], vec![])` ⇒ **4/4
+RED**; revertido ⇒ **4/4 GREEN**. Repetida tras el fix del JSON para
+descartar que el fix ablandara las aserciones. La primera mutación no
+compiló (campos privados) y se descartó como falsación inválida antes
+de darla por buena.
+
+**Gates observados**: `cargo fmt --check` OK; `clippy --workspace
+--all-targets -D warnings` exit 0; `cargo test --workspace`
+**5150 passed / 0 failed / 19 ignored** en 264 suites; `cargo metadata
+--locked` exit 0 (Cargo.lock no stale, donde se hundió session-22).
+
+**Método — un exit 0 sin log no es evidencia.** La primera corrida dio
+`TEST_EXIT=0` pero el `tail -30` había truncado el output a 33 líneas y
+el agregado decía `PASSED=0`. Se reejecutó redirigiendo el log entero
+(6780 líneas) y sólo entonces se leyó el total. Casi se reporta
+"todo verde" sobre un log que no contenía los resultados.
+
+**Versión**: el histórico pedía MINOR (6 feats, 12 fixes), pero
+`release-bump.sh` deriva del último tag (v2.2.27) y el workspace ya
+declaraba 2.2.32, así que se negaba a derivar. Se usó
+`--force-version 2.2.32` per `AGENTS.md §2.3` (workspace version = puntero
+ceremonial del release). El bump **fusionó** el bloque de CHANGELOG en
+la sección `## [2.2.32]` existente en vez de duplicarla.
+
+**Commits**: `34355f47` (fix run-view + tests falsados), `061afe26`
+(chore(release): bump version).
+
+**UAT**: sin UAT nuevos; los de C3j siguen `NOT_RUN`.
+
+**Deuda**: 0 nueva. Siguen 3 P1/critical reales de 24 (INC-DEBT-039,
+INC-DEBT-030, INC-DEBT-026).
+
+**Estado no tocado**: `c0-t01-pointer-mutation` PAUSED, backup intacto.
+**El ledger real no fue escrito** en session-42, session-43 ni 43b.
+
+**Primer paso de la sesión siguiente (verbatim)**:
+```bash
+git push origin main     # 42 commits; 061afe26 desbloquea el hook
+bash scripts/release.sh  # 0-13, con gates 9b y 9c
+```
+Después, `test_release_state_pointer.sh` debe pasar solo al publicar: es
+el rojo declarado desde session-35 y se cierra con push + tag. No
+maquillar la tolerancia.

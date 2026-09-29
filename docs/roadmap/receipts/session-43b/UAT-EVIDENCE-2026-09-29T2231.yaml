@@ -1,0 +1,183 @@
+---
+session: 43b
+date_utc: 2026-09-29
+branch: main
+baseline: 90ec494b
+head_after: 061afe26
+origin_main: 5440b2e8
+workspace_version: 2.2.32
+pending_release_tag: v2.2.32
+release_published: false
+push_executed: false
+acceptance: PARTIAL_RELEASE_PREPARED_NOT_PUBLISHED
+---
+
+# Receipt session-43b — preparación del release v2.2.32 (autorizado, NO publicado)
+
+> **Lo que NO se hizo, declarado de entrada:** no se ejecutó
+> `git push` ni `scripts/release.sh`. No existe tag `v2.2.32` ni release
+> en GitHub. El último release público sigue siendo **`v2.2.27`**. La
+> sesión se cerró por instrucción del operador en el punto exacto
+> anterior al push, con el perfil completo verde y el commit de bump ya
+> escrito.
+
+## Qué sí quedó hecho y verificado
+
+1. **Un defecto de test y otro de producción, ambos encontrados por el
+   perfil completo del release** (no por el trabajo de la sesión).
+2. **Perfil completo en verde** con recuento real.
+3. **Commit `chore(release): bump version`** escrito: condición necesaria
+   para que el `pre-push` hook acepte mañana.
+
+## Commits de esta sesión
+
+| SHA | Concern |
+|---|---|
+| `34355f47` | `fix(cli)`: run-view falla cerrado con JSON válido y tests que lo comprueban |
+| `061afe26` | `chore(release)`: bump version (prepara v2.2.32) |
+
+## El hallazgo: el perfil completo destapó trabajo que nadie había visto
+
+`cargo test --workspace` dio `TEST_EXIT=101` con **4 tests FAILED** en
+`crates/sddk-cli/tests/run_view_cli.rs`. No eran una regresión: eran
+**tests que codificaban como correcto el defecto que session-42
+eliminó**.
+
+Los cuatro afirmaban `exit 0` y una `RunStateView` bien formada para
+run ids que no existen en ningún store. Es decir: **fijaban la
+fabricación de INC-DEBT-039 como contrato.** Y no es un detalle
+cosmético — sin fuente real, "exit 0" sólo puede significar "invento",
+así que el test defendía exactamente el comportamiento peligroso.
+
+Un test así no falla cuando el defecto se corrige: **falla en la
+dirección opuesta**, y como nadie lo ejecutó tras session-42, el rojo
+vivió 1 sesión sin que nadie lo notara.
+
+Los tests reescritos ahora fijan el contrato fail-closed. El test de
+texto pasó de *exigir* las dos cabeceras de sección a **prohibirlas**:
+exigirlas era exigir que el comando anunciara un run state que no había
+leído.
+
+### Segundo defecto, encontrado por el falsador y no por lectura
+
+Al construir el test que exige "error JSON tipado", resultó que el
+payload **no era JSON válido**: se armaba con `format!` y contenía un
+`;` crudo dentro del mensaje. Session-42 arregló el código de salida
+pero nunca comprobó que la carga útil fuera parseable.
+
+En un canal legible por máquina ese es el peor modo de fallo: un
+consumidor ve no-JSON y no tiene forma de distinguirlo de un fallo de
+transporte — indistinguible de "el proceso murió".
+
+Corregido construyendo el payload con `serde_json::json!`, válido por
+construcción y no por escaping.
+
+## Falsación (RED → GREEN, mutación de producción)
+
+Se mutó `load_run_state_view` para devolver
+`RunStateView::for_test(RunOrigin::Declared, …, vec![], vec![], vec![])`
+— es decir, reintroducir la vista fabricada.
+
+| Estado | Resultado observado |
+|---|---|
+| Con mutante | **FAILED. 0 passed; 4 failed** |
+| Revertido | **ok. 4 passed; 0 failed** |
+
+Repetido **después** del fix del JSON para comprobar que arreglar el
+payload no ablandó las aserciones: 4 RED con mutante, 4 GREEN
+revertido. La primera mutación no compiló (campos privados), lo que se
+registra como FALSACIÓN NO VÁLIDA y se corrigió usando el constructor
+`for_test` real antes de darla por buena.
+
+## Gates del perfil completo (observados)
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --check` | OK |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo clippy -p sddk-cli --all-targets -- -D warnings` | exit 0 |
+| `cargo test --workspace` | **5150 passed / 0 failed / 19 ignored**, 264 suites |
+| `cargo metadata --locked` | exit 0 — `Cargo.lock` **no** stale |
+
+Sobre el recuento: la primera ejecución dio `TEST_EXIT=0` pero el
+`tail -30` había truncado el log a 33 líneas, y el agregado daba
+`PASSED=0`. **Un exit 0 sin log completo no es evidencia**, así que se
+reejecutó redirigiendo el log entero (6780 líneas) y sólo entonces se
+leyó el total. El `5150/0/19` viene de ese log completo.
+
+## Decisión de versión
+
+El histórico sugería **MINOR** por 6 `feat` + 12 `fix`. Pero
+`release-bump.sh` deriva del último **tag** (`v2.2.27`) y el workspace
+ya declaraba `2.2.32` por delante, así que se negaba a derivar bumped:
+
+```
+workspace (2.2.32) is ahead of last tag (2.2.27); the workspace
+declares the pending release (2.2.32), no bump to derive
+```
+
+Se aplicó `--force-version 2.2.32`. Según `AGENTS.md §2.3` el
+workspace version es el **puntero ceremonial del release**: cualquier
+otra opción habría saltado la versión pendiente que el contrato exige
+publicar. El bump **fusionó** el bloque de CHANGELOG en la sección
+`## [2.2.32]` existente en vez de duplicarla (74 líneas añadidas).
+
+## UAT
+
+Sin UAT nuevos ni re-ejecutados. Los de C3j siguen `NOT_RUN` (sin
+cambio respecto a session-41/42). El trabajo de esta sesión no toca
+rutas de UAT.
+
+## Contexto real vs fake
+
+- **Real**: suite completa compilada y ejecutada en este checkout;
+  mutación aplicada y revertida sobre código real; `gh release view`
+  para confirmar que el último tag público es `v2.2.27`.
+- **Fake / inferido**: nada. Lo que no se ejecutó se declara como no
+  ejecutado.
+
+## Deuda
+
+Sin deuda nueva introducida. Sigue abierta la misma de session-43:
+**3 P1/critical reales** de 24 entradas (INC-DEBT-039, INC-DEBT-030,
+INC-DEBT-026).
+
+El candidato anotado en session-43 (check mecánico de coherencia
+índice↔documento de deuda) sigue **no implementado**. Este bloque
+refuerza el caso: los tests de `run_view_cli` eran un cuarto ejemplo de
+un artefacto que afirmaba algo que el código ya no hacía.
+
+## Bloqueos
+
+Ninguno técnico. Los gates que bloquean son humanos y están pendientes.
+
+## GATES PENDIENTES (no ejecutados, por cierre de sesión)
+
+1. `git push origin main` — **42 commits sin publicar**, `HEAD 061afe26`
+   vs `origin/main 5440b2e8`. El hook `githooks/pre-push` exige un
+   commit `chore(release): bump version`; **ya existe `061afe26`**, así
+   que el push está desbloqueado.
+2. `bash scripts/release.sh` — flujo 0-13, no ejecutado. Con `cosign`
+   presente en `/usr/bin/cosign`, el paso 9c no abortará.
+3. Verificación de `9b` (assets públicos) y `9c` (autenticidad).
+4. `sddk dev doctor` / `dev update --prune-only`.
+
+## Estado no tocado
+
+- `c0-t01-pointer-mutation` sigue `PAUSED`; backup intacto. **El ledger
+  real no fue escrito en session-42, session-43 ni session-43b** (esta
+  sesión no ejecutó ningún comando que escriba en el ledger).
+- INC-DEBT-038 sin cambios (medium/P2).
+- C4/C6/C7 no abiertos.
+
+## Primer paso de la sesión siguiente
+
+```bash
+git push origin main          # 42 commits; el bump 061afe26 desbloquea el hook
+bash scripts/release.sh       # 0-13, con gates 9b y 9c
+```
+
+Después: `test_release_state_pointer.sh` debe pasar solo al publicar
+(el puntero `current_sha` va 39 commits por detrás, tolerancia 3). Es
+el rojo que venía declarado desde session-35 y **se cierra solo** con el
+push + tag; no hay que maquillar la tolerancia.
