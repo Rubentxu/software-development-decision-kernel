@@ -5477,3 +5477,16 @@ Anclar igual el resto de hitos con tests ya verdes (C0 T01/T02 y C2 receipts
 históricos) o abrir el primer slice pendiente de C3 (Authority interleavings
 o contención SQLite), según qué entrada del DAG se prefiera; C1 ya no debe
 ninguna deuda de re-anclaje.
+
+### Adenda session-34 (12:47Z) — release v2.2.21 publicado y verificado
+
+El push del fix en `tests/` activó la cláusula del hook pre-push (rango con
+cambios fuera de docs/** exige bump real). Bump `2.2.20 -> 2.2.21`
+(`02c552bf`), tag `v2.2.21` anclado a `11a166f1`, release publicado vía
+`gh workflow run release.yml --ref v2.2.21` (run `36569406144`, todos los
+jobs success, 27 assets). Verificación observada: cosign Verified OK con
+identidad `release.yml@refs/tags/v2.2.21`; digest del binario instalado
+`a1288be8…` idéntico al publicado bit a bit; `install.sh` ->
+`all_present: true`, `current -> framework/2.2.21`; prune de 2.2.20; 5 URLs
+de distribución muestreadas HTTP 200. Puntero guard: PASS. Los receipt del
+lote C1 siguen válidos: el test H05 reparado está EN este release.
