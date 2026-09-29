@@ -127,6 +127,32 @@ else
   fi
 fi
 
+# --- 3d. el comentario del puntero no puede afirmar una version ---------
+# session-34f. El guard compara current_sha y
+# workspace_version_at_current CONTRA CARGO.TOML, y cuando eso es coherente
+# el guard da PASS. Correcto: en b3034111 el puntero decia 2.2.30 y
+# Cargo.toml decia 2.2.30, luego no habia drift real de version.
+#
+# Lo que si mentia era un COMENTARIO en prosa libre dentro del propio campo
+# current_sha ("main = 2e404e28 (workspace 2.2.30, NO publicado)"), que
+# sobrevivia a un bump posterior sin que nada lo contrastara. Un campo
+# estructurado no puede llevar una segunda version en texto: dos fuentes de
+# verdad para el mismo hecho, y solo una verificable.
+#
+# El contrato es "el comentario no afirma versiones", no "el comentario es
+# correcto": parsear prosa para extraer una version y compararla reintroduce
+# el problema que se intenta cerrar. Se exige que no haya ninguna.
+declared_ver_ptr=$(sed -n 's/^  workspace_version_at_current: *"\([^"]*\)".*/\1/p' "$STATE" | head -1)
+ptr_comment=$(sed -n 's/^  current_sha: *"[^"]*" *# *\(.*\)$/\1/p' "$STATE" | head -1)
+stray_versions=$(printf '%s' "$ptr_comment" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u | tr '\n' ' ')
+if [ -z "$ptr_comment" ]; then
+  ok "current_sha no lleva comentario (la version vive solo en workspace_version_at_current)"
+elif [ -n "$stray_versions" ]; then
+  fail "el comentario de current_sha afirma version(es) $stray_versions en prosa libre; ese texto no se contrasta con nada y la version ya vive en workspace_version_at_current=$declared_ver_ptr"
+else
+  ok "el comentario de current_sha no afirma versiones"
+fi
+
 # --- 4. workspace_version_at_current == version real de Cargo.toml ---------
 declared_ver=$(sed -n 's/^  workspace_version_at_current: *"\([^"]*\)".*/\1/p' "$STATE" | head -1)
 if [ -z "$real_ver" ]; then
