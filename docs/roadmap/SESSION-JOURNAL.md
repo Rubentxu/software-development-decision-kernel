@@ -5431,3 +5431,49 @@ reaparece, investigar con el entorno del bucle completo, no en aislado.
 - `STATE.yaml`: `last_public_release_observed: v2.2.20`, current_sha reconciliado,
   guard en PASS. Journal y CURRENT actualizados en este mismo push.
 - Suite: 22/22. Ceros rojos documentados.
+
+---
+
+## session-34 — 2026-09-29 — C1 re-verificada en HEAD y guard H05 reparado
+
+**Baseline de entrada:** `7f7d8698` (cierre de session-33b, v2.2.20).
+**HEAD de salida:** `6bcb69af`.
+
+### Qué se hizo
+
+1. **Lote C1 completo re-ejecutado en el HEAD actual** (el recibo de C1
+   estaba anclado a `eae4f7f` del 21/09; VERIFIED no se hereda entre SHAs):
+   - T03/T04/T05: `structured_work` 18/18 (saw001–saw019).
+   - T06: sec1_receipt_redaction 14/14 + redactor_unit 3/3 + h06_adversarial
+     9/9 = 26/26.
+   - T07: h05_seam_test_only 1/1 + `test_h05_isolation.sh` (ver abajo).
+2. **Defecto nuevo: `test_h05_isolation.sh` era un paseo vacuo** en este
+   entorno. Solo leía `$CARGO_TARGET_DIR`; cargo resuelve el target dir
+   también desde `~/.cargo/config.toml [build] target-dir`. Resultado
+   observado con artefactos release construidos: `PASS=0 FAIL=0`, exit 0,
+   sin mirar nada. Misma familia que el falso positivo del test de
+   coherencia (session-33b): guard que no mira y aprueba.
+3. **Fix (`89f60190`):** precedencia env explícito → `cargo metadata`
+   (fuente única de verdad) → default. Falsado en ambas direcciones:
+   - ELF real con el símbolo → FAIL exit 1 en ambas ramas (rlib y binario).
+   - Fake no-ELF con el canary → PASS: `nm` falla en silencio con formato
+     no reconocido. **Límite documentado del guard**: artefactos corruptos
+     no disparan FAIL; el modelo de amenaza es el build real, no bytes
+     plantados. Declarado en el recibo, no oculto.
+   - shellcheck limpio; árbol verde → PASS=2 exit 0 re-confirmado.
+4. **Recibo nuevo:** `docs/roadmap/receipts/c1/89f60190/UAT-EVIDENCE.yaml`
+   con el lote, las falsaciones y el estado resultante de H01/H02/H05/H06
+   como VERIFIED en `89f60190`.
+
+### Decisión de scope
+
+H06 tiene una parte en C3 (T24: no-UTF8/NUL, límites de `reason`) que NO
+se ha tocado: pertenece a su hito y sigue pendiente de su propio recibo.
+No se ha mezclado aquí.
+
+### Siguiente paso ejecutable
+
+Anclar igual el resto de hitos con tests ya verdes (C0 T01/T02 y C2 receipts
+históricos) o abrir el primer slice pendiente de C3 (Authority interleavings
+o contención SQLite), según qué entrada del DAG se prefiera; C1 ya no debe
+ninguna deuda de re-anclaje.
