@@ -1,0 +1,61 @@
+schema_version: 1
+profile_target: BASE_PERF_BUDGET_C3G_ADDENDUM
+cycle: C3g-addendum
+status: PASS_OBSERVED_STATIC_AND_RUNTIME_PROVIDERS_REAL
+executed_by: orchestrator (session-34 continuation, autonomous mode)
+executed_at_utc: "2026-09-29T15:16:30Z"
+source_sha_at_eval: "624cef9a (workspace 2.2.28, unreleased)"
+workspace_version_at_eval: "2.2.28"
+last_public_release_observed: "v2.2.27"
+prior_session_status_at_a89dde6: "PASS_OBSERVED (Base only); static/runtime NOT_EVALUATED_PROVIDER_MISSING"
+
+# RE-OPEN (session-34): the C3g blocking condition ("no providers") fell the
+# same way C2a/C2b did: cognicode-mcp 0.97.3 and chronos-mcp 0.1.4 are now
+# real on this host. The three-scenario budget (ROADMAP §C3: Base, static,
+# runtime) is now complete.
+
+environment:
+  sddk_binary: "/var/home/rubentxu/cargo-targets/release/sddk (release build of 2.2.28 workspace)"
+  sddk_version: "sddk 2.2.28"
+  provider_static: "~/.cognicode/shims/cognicode-mcp 0.97.3"
+  provider_runtime: "chronos-mcp 0.1.4 (built from ~/Proyectos/rust/chronos @ a744e8c0, includes SDDK adapter fix 4666a118 compatibility)"
+  method: "/usr/bin/time -f '%e s, %M KB' (wall-clock seconds, peak RSS KB); N=3 per provider scenario (providers are expensive: each run spawns graph build/capture)"
+
+scenarios:
+  S1-S2-S3-base:
+    status: PASS_OBSERVED_PRIOR_SESSION_UNCHANGED
+    note: "Base numbers from the 2026-09-22 receipt stand (S1-version p50=4ms p95=5ms; harness crates/sddk-cli/tests/perf_budget_base.rs). CLI surface unchanged for those commands; not re-measured."
+
+  S-static:
+    description: "verify-kernel --domain static_provider (real cognicode graph + find_usages on 43862-symbol graph)"
+    status: PASS_OBSERVED
+    runs:
+      - "3.04 s, 172728 KB  verdict: Verified"
+      - "2.98 s, 170488 KB  verdict: Verified"
+      - "3.01 s, 175860 KB  verdict: Verified"
+    p50_ms: 3010
+    p95_ms: 3040
+    peak_rss_kb: 175860
+    budget_assessment: "p95 ~3.0s dominated by provider-side graph build (52ms) + find_usages + process spawn; bounded by the adapter's own 180s handshake timeout — well within. RSS ~171MB peak (provider rayon pool included)."
+
+  S-runtime:
+    description: "verify-kernel --domain runtime_provider (real chronos ebpf capture of /tmp/c2b-prog.sh)"
+    status: PASS_OBSERVED
+    runs:
+      - "4.64 s, 163672 KB  events=64  verdict: Verified"
+      - "4.44 s, 166984 KB  events=128 verdict: Verified"
+      - "4.54 s, 165324 KB  events=128 verdict: Verified"
+    p50_ms: 4540
+    p95_ms: 4640
+    peak_rss_kb: 166984
+    budget_assessment: "p95 ~4.6s dominated by probe lifecycle (spawn target + eBPF attach + drain + stop). events vary 64..128 between runs (race between target exit and drain); every run still Verified — the min_events=10 gate absorbs capture variance by design. RSS ~164MB peak."
+
+honesty:
+  observed:
+    - "all six provider runs above are real processes on this host, verdicts Verified"
+    - "caveat: single-run-per-invocation timing includes process spawn + handshake, which is the honest end-to-end operator cost"
+  not_run:
+    - "N=100 repetition for provider scenarios (costly; N=3 suffices for a first budget baseline; p95 over N=3 is indicative, not statistical)"
+    - "memory-constrained environment variations"
+  known_limitations:
+    - "the runtime event-count variance (64 vs 128) is a real observation: drain/stop racing target exit; bounded by claim min_events, worth a dedicated contention test if C3 reopens"
