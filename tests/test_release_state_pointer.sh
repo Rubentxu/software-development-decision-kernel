@@ -155,7 +155,7 @@ fi
 
 # --- 4. workspace_version_at_current == version real de Cargo.toml ---------
 declared_ver=$(sed -n 's/^  workspace_version_at_current: *"\([^"]*\)".*/\1/p' "$STATE" | head -1)
-if [ -z "$real_ver" ]; then
+if [ -z "${real_ver:-}" ]; then
   real_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$CARGO" | head -1)
 fi
 

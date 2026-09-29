@@ -75,6 +75,9 @@ jobs:
       - name: Run pointer integrity
         run: bash tests/test_pointer_integrity.sh
 
+      - name: Run state pointer guard mutation self-test
+        run: bash tests/test_release_state_pointer_mutation.sh
+
       - name: Run hard sizing regression
         run: bash tests/test_hard_sizing_regression.sh
 
