@@ -1,0 +1,145 @@
+receipt:
+  id: UAT-EVIDENCE-2026-09-29T1552
+  session: session-34
+  observed_at: 2026-09-29T15:52:00Z
+  head_at_observation: 84a304f2
+  workspace_version: 2.2.30
+  published_release: v2.2.27
+  scope: "perfil completo de verificacion + hunt de defectos en gates rojos"
+
+context:
+  trigger: >-
+    El perfil completo se lanzo tras el bump a 2.2.30. La suite inicial murio
+    por un reload del servidor; se relanzo con nohup y log en disco. El
+    resultado inicial era ambiguo (el log solo conservaba la cola), asi que se
+    re-ejecutaron los gates que faltaban uno a uno para obtener evidencia por
+    comando, no heredada.
+  baseline: ae0cf264
+  release_pointer_commit: d47a1766
+
+observed_results:
+  - gate: "cargo test --workspace"
+    command: "cargo test --workspace"
+    result: PASS
+    evidence: "TEST_EXIT=0 en /tmp/full-profile-test.log (cargo devuelve no-cero si cualquier test falla)"
+    caveat: >-
+      El log solo guardaba los ultimos 60 lineas (cola de doctests). Por eso
+      no se firmo el resultado sin re-ejecutar los gates secara.
+
+  - gate: "cargo fmt --check"
+    command: "cargo fmt --check"
+    result: PASS
+    evidence: "FMT_OK tras aplicar cargo fmt; clippy limpio en el mismo paso"
+
+  - gate: "cargo clippy --workspace --all-targets -- -D warnings"
+    command: "cargo clippy --workspace --all-targets -- -D warnings"
+    result: PASS
+    evidence: "CLIPPY_OK"
+
+  - gate: "tests/test_release_public_gate.sh"
+    command: "bash tests/test_release_public_gate.sh"
+    result: PASS
+    evidence: "PASS=13 FAIL=0 (incluye scenario 9 = release real)"
+
+  - gate: "tests/test_workflow_contract.py"
+    command: "python3 tests/test_workflow_contract.py"
+    result: FAIL->PASS
+    evidence: "PASSED=498 FAILED=0 tras corregir el anclaje del verify post-transicion"
+    defect: WORKFLOW-CONTRACT-1
+
+  - gate: "sddk lint --root ."
+    command: "cargo run --locked -q -p sddk-cli -- lint --root . --format json"
+    result: FAIL (preexistente, reducido)
+    evidence: "errors 72 -> 70 tras los fixes de este recibo"
+    defect: LINT-PATH-1, LINT-HINT-1
+
+  - gate: "shellcheck"
+    command: "shellcheck tests/test_*.sh scripts/*.sh tests-e2e/tui/run.sh"
+    result: FAIL (preexistente)
+    evidence: >-
+      Solo severidad info/style (SC2012, SC2016, SC2129, SC2034) en
+      tests/test_vault_adr_mirror_coverage.sh, tests/test_vault_mirror_auto.sh y
+      scripts/apply_banner.sh. Ninguno de esos tres ficheros fue tocado en los
+      ultimos 20 commits. CI ejecuta el mismo comando con `|| exit 1`, asi que
+      el gate esta rojo en la rama principal.
+
+defects_found_and_fixed:
+  - id: LINT-PATH-1
+    title: "SDDK011/SDDK013/SDDK018 reportaban un path inexistente"
+    root_cause: >-
+      lint_agent_registry y lint_agent_model_registry reconstruian el path del
+      diagnostico como agents/{stem}.md, descartando el directorio real. Los
+      tres ficheros agents/skills/*/SKILL.md se reportaban como agents/SKILL.md,
+      que no existe en el repo.
+    why_it_mattered: >-
+      Un diagnostico que senala un fichero inexistente es inaccionable: el
+      operador no puede abrir lo que el gate le dice que abra.
+    fix: "strip_prefix(root) en ambos walks, mas test que fija el contrato"
+    files:
+      - crates/sddk-cli/src/lint.rs
+      - crates/sddk-cli/tests/cli.rs
+    test: "agent_registry_reports_the_real_path_of_nested_agent_files"
+
+  - id: LINT-HINT-1
+    title: "El hint de SDDK009/SDDK010 no regeneraba el fichero del repo"
+    root_cause: >-
+      El hint decia `sddk generate docs --root .`, pero sin `--in-repo` el
+      comando escribe en XDG (politica zero-intrusion, ADR-0011) y nunca
+      refresca docs/generated/. El comando con el flag correcto no cambia nada
+      en el fichero sin `--in-repo`, lo que hace el hint indistingible de un bug.
+    why_it_mattered: "El gate era irrecuperable siguiendo su propia instruccion."
+    fix: "Anadido --in-repo y la razon en ambos hints"
+    side_effect: >-
+      Al regenerar correctamente, docs/generated/workflow.md perdio 4 estados
+      (REMEDIATING, RECOVERING, UAT_WAITING, APPROVAL_PENDING) y 1 fase
+      (review) que el doc commiteado contenia y workflow/workflow.yaml no
+      declara. El doc estaba generado desde un manifest obsoleto.
+    files:
+      - crates/sddk-cli/src/lint.rs
+      - docs/generated/workflow.md
+      - docs/generated/inventory.md
+
+  - id: WORKFLOW-CONTRACT-1
+    title: "El contract test anclaba el verify post-transicion en el indice equivocado"
+    root_cause: >-
+      La condicion exigia archive_verifies[1] > archive_post_transition_status.
+      El prompt verifica tres veces antes del status post-transicion (verificacion
+      inicial, archive.vault.complete, evaluacion), por lo que el indice [1]
+      apuntaba a un paso pre-transicion y la condicion fallaba contra un prompt
+      correcto.
+    fix: "Anclado en archive_verifies[-1]"
+    mutation_test: >-
+      Se elimino el verify post-transicion de prompts/sddk/phases/archive.md y
+      el test sigo fallando; se restauro y volvio a 498/498. El test detecta la
+      regresion que dice detectar.
+    files:
+      - tests/test_workflow_contract.py
+
+known_debt_not_touched:
+  - id: AGENTS-SKILLS-PLACEHOLDER
+    evidence: "9 errores SDDK011/013/018 sobre agents/skills/*/SKILL.md"
+    origin: "dc297ca2 feat(skills): materialize three M7.5 placeholder skills"
+    reason: >-
+      Los tres ficheros usan frontmatter de skill (name: core.*,
+      user-invocable: false) pero viven bajo agents/, que el lint trata como
+      directorio de agentes. Es una decision de layout, no un bug de tooling.
+      Corregirlo exige decidir si se mueven a skills/ o se declaran como
+      agentes, y ambas son cambios de superficie de bundle.
+    blocking_for: "lint gate verde en la rama principal"
+
+limitations:
+  - >-
+    La suite completa se ejecuto con `cargo test --workspace` (sin --locked);
+    el CI usa --locked. No es el mismo comando exacto.
+  - >-
+    El shellcheck rojo no se investigo mas alla de confirmar que los tres
+    ficheros afectados son preexistentes y ajenos al scope de esta sesion.
+  - >-
+    La regeneracion de docs/generated se hizo sobre el estado actual del
+    manifest; no se evaluo si el manifest mismo deberia declarar mas fases.
+
+post_fix_verification:
+  - gate: "cargo test --workspace --locked"
+    result: PASS
+    evidence: "TEST_EXIT=0, 259 suites ok, 0 FAILED en /tmp/full2.log"
+    note: "reejecutado tras tocar lint.rs, porque el CI ejecuta la suite completa"
