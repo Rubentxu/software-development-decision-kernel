@@ -57,6 +57,11 @@ impl ChronosMcpAdapter {
     ) -> Result<Self, RuntimePortError> {
         let mut cmd = Command::new(binary);
         if let Some(store) = store_path {
+            // chronos-mcp >= 0.1.4 reads CHRONOS_DB_PATH (C2B-DRIFT-1, receipt
+            // c2b/UAT-EVIDENCE-2026-09-29T1504.yaml). Older builds read
+            // CHRONOS_STORE_PATH; setting both keeps compatibility and removes
+            // the silent fall back to the default store.
+            cmd.env("CHRONOS_DB_PATH", store);
             cmd.env("CHRONOS_STORE_PATH", store);
         }
         let mut child = cmd
