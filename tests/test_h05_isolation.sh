@@ -30,9 +30,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE/.."
 
 REPO_ROOT="$(pwd)"
-# Honour CARGO_TARGET_DIR (the sandbox may redirect it). When unset,
-# `cargo build --release` writes to `target/release/`.
-CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+# Resolve the EFFECTIVE cargo target dir. Precedence: explicit env var,
+# then cargo's own resolution (honours ~/.cargo/config.toml [build]
+# target-dir, which sandboxes use), then the default location. Asking
+# cargo matters: if we only read $CARGO_TARGET_DIR, an environment that
+# redirects via config.toml makes every check silently skip while the
+# script still exits 0 (a vacuous pass — observed 2026-09-29).
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-}"
+if [[ -z "$CARGO_TARGET_DIR" ]]; then
+    CARGO_TARGET_DIR="$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+        | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p' || true)"
+    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+fi
 RLIB="$CARGO_TARGET_DIR/release/libsddk_engine.rlib"
 BIN="$CARGO_TARGET_DIR/release/sddk"
 
