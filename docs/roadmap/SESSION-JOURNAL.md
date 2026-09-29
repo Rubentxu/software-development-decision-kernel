@@ -6074,3 +6074,56 @@ El segundo falsador no compilaba al principio (el `return` temprano dejaba `stat
 **Gates NO ejecutados (honestos):** `cargo test --workspace` completo (perfil de verify/release, no de apply); `scripts/release.sh`; `git push`. Los tres son gates humanos o de release.
 
 **Siguiente paso exacto:** C3j objetivo 5 — `sddk context delta` observable entre procesos a nivel CLI: compilar un `ContextDelta` ligado al basis persistido, persistirlo, y que un segundo proceso lo lea y lo aplique con `ContextBridge` (rechazando stale). Reutiliza el binding durable del objetivo 3, así que es el siguiente eslabón natural. Después: paso 5 de CTX-003 (compile capsule en el bootstrap) y objetivo 6 (hipermedia).
+
+## session-41 — 2026-09-29T21:06Z — C3j objetivo 5: deltas durables entre procesos
+
+**Baseline / HEAD al iniciar:** `dca39e5d` (close-out documental de session-40).
+**Workspace version:** 2.2.32 · **Último release público:** v2.2.27.
+**Commits de esta sesión:** `90612d86` (DeltaStore durable), `8ff09e25` (`sddk context delta`), `1ee19f21` (ADR-0146).
+**Commits sin publicar respecto a origin/main:** 25 (push sigue siendo gate humano).
+**Receipt:** `docs/roadmap/receipts/session-41/UAT-EVIDENCE-2026-09-29T2106.yaml`.
+
+**WorkItem:** C3j objetivo 5 — hacer que un `ContextDelta` sobreviva al proceso que lo produjo y que un `ContextBridge` rehidratado lo consuma (CTX-008).
+
+**Decisiones tomadas:**
+
+1. **`durable_delta_store.rs` es módulo raíz y NO es autoridad sobre la base.** El store persiste y reproduce; el binding durable sigue siendo lo que declara qué cree la sesión. ADR-0146 registra el módulo y esa no-autoridad.
+2. **La rehidratación rebobina al ORIGEN del stream, no a la base actual.** `ContextBridge::bootstrap(&binding, store.origin_basis())`. El stream es lo único que sabe dónde empezó. Ésta es la decisión que hace posible CTX-008.
+3. **Un delta sin payload o sin cambio de revisión se rechaza.** Un delta vacío ocuparía un slot de secuencia y avanzaría la base sin cambiar nada, indistinguible de corrupción una vez persistido.
+4. **Todo delta es `advisory_only: true`.** Un delta nunca es instruction authority (CDD-004); convertirlo en hecho es una decisión distinta y gateada.
+5. **Rechazos y corrupciones se REPORTAN, no se ocultan.** `apply_to` devuelve `applied` + `rejected` (con razón) + `replay_skipped` (ficheros nombrados). Un fichero corrupto nunca se convierte en contexto válido.
+6. **Sin binding durable, `context delta` falla con motivo tipado.** No inventa una base.
+
+**El bug que hacía el handoff durable imposible (encontrado por test, no por lectura):** el primer `drain` devolvía `applied: 0` con todos los deltas rechazados como stale. La causa era rehidratar en la base *actual*, lo que hace que todo delta ya consumido parezca stale y el bridge vuelva vacío. 4 tests lo detectaron a la vez. El fallo era real, no un test demasiado estricto.
+
+**Segundo defecto (encontrado por `git status`, no por test):** un `delta-2.json` en la raíz del repo, de una ejecución fallida temprana que escribía en el CWD. El helper `deltas_dir` ahora hace `assert!(dir.is_dir())` y falla ruidosamente. No se reproduce con el código actual.
+
+**Falsadores observados RED → GREEN (3, todos revertidos):**
+
+| Falsador | Tests RED |
+|----------|-----------|
+| Rebobinar a la base actual en vez del origen | 4 |
+| Corrupción ignorada en silencio en `replay()` | 1 exacto |
+| Delta `advisory_only: false` (rompería CDD-004) | 5 |
+
+**Verificación (scoped, observado):** `cargo test -p sddk-cli --lib` **843 GREEN** (0 failed, 1 ignored); `cargo test -p sddk-engine --lib` **1351 GREEN** (0 failed, 1 ignored); service tests del delta **19/19**; store **9/9**; `context_fitness` **7/7** tras ADR-0146; `cli` integración **187/187**; `agent_surface_golden` **3/3** (sin drift: la superficie es por comando top-level, `delta` no añade entrada); `cargo fmt --check` limpio; `clippy -p sddk-engine -p sddk-cli --all-targets -- -D warnings` sin warnings; `shellcheck` limpio; `bash tests/uat_ctx_003_durable_deltas.sh` **7/7 PASS** con binario release 2.2.32.
+
+**Goldens:** sin cambios, y no es un descuido. `agent-surface.golden.json` indexa comandos top-level, y `delta` es un subcomando de `context`, que ya tiene entrada. `help-top-level.txt` tampoco cambia. Un drift aquí habría sido inventar una entrada falsa.
+
+**UAT observado:** escenario 5 (delta stale) muestra el rechazo con su razón exacta: `delta from_revision revision-que-nunca-existio does not match current basis s1`, contenido stale NO entregado, base intacta. Escenario 6 reporta `replay_skipped: [delta-000000000002.json]` y entrega el resto. Escenario 7 confirma `facts: 0`.
+
+**UAT NOT_RUN:** CTX-UAT-002/003 (heredado: requieren leases reales, cuya única vía es escribir en el ledger real). CTX-UAT-007..012 y 015: el objetivo 5 cubre CTX-008, pero las filas de la matriz que le corresponden necesitan que el operador confirme su UAT exacta antes de marcarlas. **No se declaran PASS sin observación.**
+
+**Conocimiento negativo (esta sesión):**
+
+- **Rehidratar no es "arrancar en la base actual".** `ContextBridge` rechaza deltas cuyo `from_revision` no coincide; correcto en memoria, fatal al reconstruir desde disco. Un store durable necesita exponer su origen, no sólo su contenido.
+- El servicio rehidrata al origen pero `publish` sigue la base actual. Son direcciones opuestas; confundirlas rompe una de las dos.
+- Un `python3 -c` con `str.replace` sobre escapados de shell no es herramienta de edición: dos intentos dejaron escapes que `bash -n` aceptaba. Reescrito el helper del UAT con `sys.argv` y sin `eval`.
+- Los ficheros del stream llevan 12 dígitos de seq (`delta-000000000002.json`). Un UAT que busque `delta-2.json` falla con un mensaje engañoso.
+- Un fichero sin trackear en la raíz del repo es evidencia de un test que escribió fuera de su sandbox.
+
+**Estado:** **C3j objetivo 5 IMPLEMENTED+VERIFIED.** CTX-008 observable entre procesos a nivel de CLI. Restante de C3j: objetivo 3 pasos 5 (compile capsule) y 7 (hipermedia), objetivo 6 (hipermedia). C4/C6/C7 intactos. INC-DEBT-038 ABIERTO. INCIDENTE session-35 sin cambios: `c0-t01-pointer-mutation` PAUSED, backup `/tmp/ledger.pre-m21.backup.sqlite` intacto, hash real `58745880051db0a5…` constante (no escrito en esta sesión).
+
+**Gates NO ejecutados (honestos):** `cargo test --workspace` completo (perfil de verify/release, no de apply); `scripts/release.sh`; `git push`. Los tres son gates humanos o de release.
+
+**Siguiente paso exacto:** C3j objetivo 3 **paso 5** — compilar la `ContextCapsule` dentro de `sddk context bootstrap` reutilizando `ContextCompiler` + `CapsuleTarget`. Ya existe `durable_capsule_is_recovered_as_basis`, que la lee; lo que falta es producirla. Después, objetivo 6 (hipermedia = paso 7).
