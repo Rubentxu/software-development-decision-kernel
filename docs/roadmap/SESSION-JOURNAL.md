@@ -5955,3 +5955,33 @@ Cerrar C3i objetivo 2: service `bootstrap`/`ensure` en sddk-cli que llame a adop
 ### Siguiente paso exacto
 
 Cerrar C3i objetivo 5: pin de identidad unica (golden test de project_id estable entre reinicios y tras refresh), y convertir el probe de CTX-UAT-001 en script reutilizable bajo tests/. Alternativa si el operador prefiere publicar: bump (MINOR sugerido: feat + fix acumulados) + push de la cadena.
+
+---
+
+### 2026-09-29T19:30Z — C3i cierre (objetivo 5 + CTX-UAT-001 automatizado) — session-38 — jcode
+
+**Baseline / HEAD:** inició en `14c3601f` (tras close-out session-37); cierra en `e99631cb` + commit documental. `origin/main = 5440b2e8` (sin push, gate humano). Ledger real intacto (backup `0ebc44c20ec06eb5…` verificado).
+
+**WorkItem:** C3i objetivo 5 (identidad única del bootstrap) + automatización de CTX-UAT-001.
+
+**Hecho:**
+
+1. `c2a170b4` — `crates/sddk-engine/tests/adoption_identity.rs`: pin `bootstrap_identity_is_unique_and_stable_across_restarts_and_refresh`. 4 rederivaciones del plan con runtime metadata distinta ⇒ mismos project_id/workspace_id/ledger/receipt; re-apply y refresh solo convergen metadata, jamás identidad. Falsador observado: drift de remote_url ⇒ `p-9269c465 ≠ p-7b71d07a`, FAIL con diagnóstico correcto; revertido, GREEN.
+2. `e99631cb` — `tests/uat_ctx_001_adoption_convergence.sh`: CTX-UAT-001 reutilizable (--bin/--repeats/--keep; sandbox aislado; ShellCheck limpio). Ejecutado con binario release 2.2.32: 20/20 complete, recibo `467017c5997b31cd…` byte-estable, identidad `p-8d17246ca8f65f32` estable.
+3. `docs/roadmap/UAT-MATRIX.md` — fila CTX-UAT-001 actualizada con automatización y evidencia session-38.
+4. Recibo: `docs/roadmap/receipts/session-38/UAT-EVIDENCE-2026-09-29T1930.yaml`.
+
+**Decisiones:**
+
+- El pin de identidad afirma estabilidad de IDENTIDAD bajo runtime metadata cambiante, no byte-estabilidad (eso es del pin obj 2 con fingerprint idéntico). Hallado al fallar mi propia aserción de bytes: re-apply con runtime_version distinta reescribe metadata por contrato — correcto, no bug.
+- Cobertura no duplicada: hueco real entre INC-DEBT-028 (identidad entre comandos CLI) y apply_is_strict_about_identity_after_refresh (drift ⇒ recibo nuevo): no existía pin de identidad completa entre reinicios de proceso y a través de refresh a nivel engine.
+
+**Verificación (scoped, observado):** engine lib 1333 GREEN; engine adoption 13/13; adoption_identity 1/1; cli `--test cli adopt` 6/6; superficie adopt-convergence 6/6; fmt/clippy -p sddk-engine limpios; ShellCheck OK.
+
+**UAT observado:** CTX-UAT-001 PASS (automatizado). CTX-UAT-002..004, 005: sin cambio (PASS session-35b/37). MIG-UAT-001: NOT_RUN (sigue requiriendo dos versiones conviviendo; sin release nuevo).
+
+**Conocimiento negativo:** mutación quirúrgica de tests con python inline + cp/restauración produjo un fichero roto (no compilaba) y quedó sin demostrar; repetida con `edit`/revert y el falsador SÍ se detectó. Lección: mutaciones de falsación solo con edit tool.
+
+**Estado:** **C3i COMPLETO (objetivos 1–5 implementados + verificados).** C3j/C6/C7 siguen sin abrir hasta release/cierre formal. INC-DEBT-038 ABIERTO. Pendiente operador: recuperación del ledger real (PAUSED) y push (15 commits sin publicar; hook exige `chore(release): bump version`; MINOR sugerido).
+
+**Siguiente paso exacto:** decisión del operador entre (a) bump MINOR + `bash scripts/release.sh` para cerrar C3i formalmente con release, o (b) abrir C3j (resume/recovery coherence) sin publicar. Por defecto del roadmap, C3j no se abre hasta que C3i quede cerrado en punteros; el cierre formal requiere release o decisión explícita de operador.

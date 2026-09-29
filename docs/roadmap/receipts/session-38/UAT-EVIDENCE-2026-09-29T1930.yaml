@@ -1,0 +1,73 @@
+# UAT-EVIDENCE — session-38 — 2026-09-29T19:30Z
+
+**Baseline / HEAD al iniciar:** `14c3601f` (session-37 close-out).
+**Commits de esta sesión:** `c2a170b4` (pin identidad única, C3i obj 5),
+`e99631cb` (script reutilizable CTX-UAT-001).
+**Workspace version:** 2.2.32 · **Último release público:** v2.2.27.
+**Binario usado en e2e:** 2.2.32 release (`/var/home/rubentxu/cargo-targets/release/sddk`, contiene fix `a5987c63`).
+
+## C3i objetivo 5 — Pin de identidad única del bootstrap
+
+- **Artefacto:** `crates/sddk-engine/tests/adoption_identity.rs`
+  (`bootstrap_identity_is_unique_and_stable_across_restarts_and_refresh`).
+- **Contrato pineado:** 4 rederivaciones completas del plan de adopción
+  (simulando reinicios de proceso) con runtime metadata DISTINTA
+  (runtime_version 2.2.32→2.2.35, timestamp, actor a→d) producen
+  idénticos `project_id`, `workspace_id`, ruta de ledger y ruta de recibo.
+  Re-apply converge runtime metadata sin tocar identidad; refresh también.
+- **OBSERVED (runtime):** GREEN (`test result: ok. 1 passed`, 0.2s).
+- **Falsador ejecutado:** drift de `remote_url` en el reinicio 0 ⇒
+  `p-9269c4650d4800ed ≠ p-7b71d07a56d80c7d`, el pin FALLA con el
+  diagnóstico esperado. Revertido; GREEN restaurado.
+- **No duplicación documentada:** cubre el hueco entre INC-DEBT-028
+  (`remote_less_workspace_keeps_one_identity_across_commands`, estabilidad
+  entre comandos CLI) y `apply_is_strict_about_identity_after_refresh`
+  (drift crea recibo nuevo): la estabilidad de identidad COMPLETA entre
+  reinicios de proceso y a través de `refresh` no estaba pineada a nivel engine.
+- **Hallazgo durante redacción (contraste con obj 2):** re-apply con
+  runtime_version distinta SÍ reescribe el runtime metadata del recibo —
+  correcto por contrato de converge (byte-estabilidad solo con fingerprint
+  idéntico, pineado en
+  `apply_on_converged_adoption_is_byte_stable_across_repeats`). El pin de
+  identidad afirma estabilidad de identidad, no de bytes, bajo metadata cambiante.
+
+## CTX-UAT-001 — automatización reutilizable
+
+- **Artefacto:** `tests/uat_ctx_001_adoption_convergence.sh` (ShellCheck limpio).
+- **OBSERVED (e2e, 2026-09-29T19:25Z):** 20/20 applies `complete`; recibo
+  `467017c5997b31cd01bd52c480d73a2d7517b917ee3e550dcd1a4a0213c4eaee`
+  byte-estable; identidad `p-8d17246ca8f65f32` estable en `adopt status`
+  tras la tormenta. Sandbox aislado (`SDDK_STATE_HOME`/`XDG_*` bajo mktemp),
+  ledger real nunca tocado.
+- **Fricción del entorno documentada:** el git-wrapper fail-closed del host
+  exige identidad en el repo semilla del sandbox; resuelto con
+  `git config user.name/email` locales al sandbox (dentro del script).
+
+## Verificación scoped ejecutada
+
+- `cargo test -p sddk-engine --test adoption_identity` — 1/1 GREEN.
+- `cargo test -p sddk-engine --test adoption` — 13/13 GREEN.
+- `cargo test -p sddk-engine --lib` — 1333 passed, 0 failed.
+- `cargo test -p sddk-cli --test cli adopt` — 6/6 GREEN.
+- `python3 tests/test_adopt_convergence_contract.py` — 6/6 OK.
+- `cargo fmt --check -p sddk-engine` OK; `cargo clippy -p sddk-engine --all-targets` limpio.
+- ShellCheck del script nuevo: limpio.
+
+## Guardañas del entorno (para la próxima sesión)
+
+- El gate de riesgo de bash bloqueó reiteradamente `VAR=$(...)` y mutaciones
+  quirúrgicas con python inline: usar `edit`/`replace`/`apply_patch` para
+  mutaciones de tests; para el falsador funcionó `edit` + revert con `edit`.
+- La mutación falsadora hecha con python inline en un `cp`/restauración
+  falló al compilar (cirugía rota): repetida con `edit` y detectada correctamente.
+
+## Estado de WorkItems
+
+- **C3i: COMPLETO.** Objetivos 1–5 implementados y verificados (1–4 en
+  session-36/37, 5 en esta sesión); CTX-UAT-001 automatizado y PASS.
+- **C3j/C6/C7: siguen sin abrir** (esperan cierre formal de C3i en release).
+- **INC-DEBT-038:** ABIERTO (necesita ciclo de diseño propio).
+- **Pendiente del operador (sin cambio):** recuperación del ledger real
+  (`c0-t01-pointer-mutation` PAUSED) y push (ahora **15 commits sin publicar**,
+  `origin/main = 5440b2e8`; hook exige bump de release; MINOR sugerido por
+  feat+fix acumulados).
