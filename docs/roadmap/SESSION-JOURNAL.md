@@ -5562,3 +5562,32 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
    Punteros STATE/CURRENT sincronizados a `5ee68265` / `2.2.27` / `v2.2.27`.
 8. **Gap abierta registrada:** `dev update --root <dir>` explícito no repunta `current`
    (solo lo hace con root `.`). Candidata a deuda para próxima sesión.
+
+### Adenda session-34b (15:07Z) — C2a y C2b re-ejecutados contra providers reales
+
+1. **C2a (CogniCode)**: el bloqueo de 2026-09-22 (`cognicode-mcp` ausente) cayó — el
+   binario 0.97.3 está en `~/.cognicode/shims/`. T08-T11 PASS observados: handshake
+   2025-03-26, 20 tools, build_graph 43862 símbolos, find_usages 67 usages == grep
+   ground truth por fichero, absent-binary tipado, kill -9/restart, E2E
+   `verify-kernel --domain static_provider` **verdict Verified** con OBSET digest
+   estable en 2 corridas. Recibo: `receipts/c2a/UAT-EVIDENCE-2026-09-29T1441.yaml`
+   (commit `8cced222`). Footgun documentado: el subject requiere namespace completo
+   `unit:symbol:<name>`.
+2. **C2b (Chronos)**: provider ausente también obsoleto — fuente en
+   `~/Proyectos/rust/chronos @ a744e8c0` (0.1.4), binario construido. T12 handshake
+   OK (43 tools), T13 captura real (spawn ebpf_user, 256 eventos syscall,
+   execution_query), T14 E2E **falló y destapó drift**: el renombre C5.3.2
+   (`get_execution_summary` → `execution_query kind=execution_summary`) rompía
+   `capture()`. Fix `4666a118` (dual-name con fallback) + clippy preexistente en
+   manifest_tests. Post-fix: **verdict Verified**, 128 eventos, digest `bc715d88…`;
+   absent-binary tipado; `aiw_s5_chronos_real` 3/3 y `a7_s2_runtime_uat_hardening`
+   3/3. Recibo con 4 drift findings (uno FIXED, tres OPEN): 
+   `receipts/c2b/UAT-EVIDENCE-2026-09-29T1504.yaml` (`a3e9a9a6`).
+3. **Contrato de push**: el rango con código exigió bump real → **2.2.28** (`3474ef90`)
+   SIN publicar (el release esperará flujo canónico/autorización). La entrada de
+   CHANGELOG generada por release-bump quedó en stash (`stash@{0}`) porque
+   `CHANGELOG.md` en raíz no cae bajo `docs/**` y el hook (B) la rechaza en solitario.
+   Recordatorio: incluir esa entrada en el próximo push de release.
+4. **Deuda nueva registrada**: C2B-DRIFT-1 (adapter usa `CHRONOS_STORE_PATH`, el
+   provider 0.1.4 lee `CHRONOS_DB_PATH` — silenciosamente ignorado), C2B-DRIFT-3/4
+   informativas. Pendiente C2c (JCode) y C2d (evaluation), C3 (Authority/Storage).
