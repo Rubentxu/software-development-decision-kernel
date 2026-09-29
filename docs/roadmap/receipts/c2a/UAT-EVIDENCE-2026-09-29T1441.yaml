@@ -1,0 +1,114 @@
+schema_version: 1
+profile_target: STATIC_ENHANCED_C2A
+cycle: C2a
+status: OBSERVED_PROVIDER_VERIFIED
+executed_by: orchestrator (session-34 continuation, autonomous mode)
+executed_at_utc: "2026-09-29T14:41:00Z"
+source_sha_at_eval: "c834c0006fea2523f2c54751e506fc99cfcec9e7"
+workspace_version_at_eval: "2.2.27"
+last_public_release_observed: "v2.2.27"
+prior_session_status_at_a5f279c: "NOT_EVALUATED_PROVIDER_MISSING"  # receipt UAT-EVIDENCE.yaml 2026-09-22
+
+# RE-OPEN 2026-09-29T14:36Z (session-34): the blocking condition of the 2026-09-22
+# receipt ("provider binary cognicode-mcp not present on host") is NO LONGER TRUE.
+# `~/.cognicode/shims/cognicode-mcp --version` -> `cognicode-mcp 0.97.3` (OBSERVED).
+# The recovery_action.primary of the prior receipt ("operator installs cognicode-mcp")
+# has been satisfied by the environment. All T08-T11 re-executed against the real
+# provider per the ORIGINAL scope; no SCOPE EXPANSION (prior secondary) needed.
+
+environment:
+  os: "linux x86_64"
+  provider_mcp:
+    binary: "/home/rubentxu/.cognicode/shims/cognicode-mcp"
+    version_observed: "cognicode-mcp 0.97.3"
+    transport: "stdio JSON-RPC, protocolVersion 2025-03-26"
+  sddk_cli:
+    binary: "/home/rubentxu/.local/bin/sddk"
+    version_observed: "sddk 2.2.27"
+    binary_sha256: "a3b76113bea07a8903a5969cb51e6b038ee70317e71654976265a1c86bca2cbd"
+
+scenarios:
+  T08:
+    description: "CogniCode binario real, handshake/capabilities/protocolo"
+    status: PASS
+    evidence:
+      command: "echo initialize-req | cognicode-mcp --cwd ."
+      output: |
+        {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26",
+        "capabilities":{"resources":{},"tools":{}},
+        "serverInfo":{"name":"cognicode","version":"0.97.3"}}}
+      command2: "tools/list after initialize + notifications/initialized"
+      output2: "20 tools advertised (build_graph, find_usages, analyze_impact, get_call_hierarchy, get_complexity, ...). Identity and capabilities REGISTERED from the wire, not inferred."
+      protocol_major_match: "2025-03-26 == adapter SUPPORTED_PROTOCOL_MAJOR (code_intelligence_port_mcp.rs)"
+
+  T09:
+    description: "Grafo completo / usages verificadas contra ground truth"
+    status: PASS
+    evidence:
+      command: "build_graph path=crates/sddk-engine/src (real provider)"
+      output: |
+        stderr: "handle_build_graph: 43862 symbols, 17926 edges in 5214ms (source: built)"
+        tool_call duration_ms=22160 status=ok
+      command2: "find_usages symbol_name=CodeIntelligencePortError"
+      output2: |
+        67 usages returned. Per-file cross-check vs grep ground truth — EXACT match:
+          code_intelligence_port_mcp.rs  37 (grep: 37)
+          code_intelligence_port.rs      13 (grep: 13)
+          code_intelligence_port_fake.rs 10 (grep: 10)
+          tests/a6_s1_uat_coverage_fake.rs 3 (grep: 3)
+          tests/a6_cognicode_protocol_spike.rs 2 (grep: 2)
+          tests/aiw_s1_cognicode_real.rs 2 (grep: 2)
+      command3: "verify-kernel --subject unit:symbol:DefinitelyNotARealSymbolXYZ123"
+      output3: |
+        "error: verify: provider produced no usable usage observations
+        (empty or malformed payload)" — fail-closed; never Verified on 0 usages.
+      graph_freshness: "built on demand from current source (source: built), 43k symbols on sddk-engine"
+
+  T10:
+    description: "Proveedor ausente, crash/restart"
+    status: PASS
+    evidence:
+      command: "sddk verify-kernel --provider-bin /tmp/nonexistent-cognicode-mcp --domain static_provider --claim T08 --subject symbol:X"
+      output: |
+        "error: verify: provider spawn failed: provider unavailable
+        (spawn failure or pipe closed)" — typed CodeIntelligencePortError::Unavailable,
+        no false PASS, Base CLI continues (exit non-zero, no panic).
+      command2: "kill -9 provider pid mid-session, then respawn + re-initialize"
+      output2: |
+        crash: killed pid, exit code -9; restart handshake ok:
+        serverInfo cognicode/0.97.3 — provider is stateless per-session,
+        restart recovers clean. (OBSERVED via python driver, /tmp scripts.)
+      note: "timeout branch not exercised this session; typed Unavailable + crash/restart cover the scenario's core. NOT_RUN: sustained-hang timeout."
+
+  T11:
+    description: "Contrato estático E2E en dataset real (sddk-engine src)"
+    status: PASS
+    evidence:
+      command: "sddk verify-kernel --domain static_provider --claim T08 --provider-bin ~/.cognicode/shims/cognicode-mcp --subject unit:symbol:CodeIntelligencePortError --root crates/sddk-engine/src"
+      output: |
+        verdict: Verified
+        observation_set: 61 (1 subject + 60 relation observations)
+        usages found: 60
+        OBSET digest prefix: 03944165e41fcb80...
+      digest_stability:
+        run1: "OBSET|03944165e41fcb80"
+        run2: "OBSET|03944165e41fcb80"
+        conclusion: "digest IDENTICAL across two independent spawns — determinism observable"
+      caveat: "usages found: 60 in this path because --root was crates/sddk-engine/src (grep 60 in src/ vs provider's 67 repo-wide earlier with a different --cwd scope); per-file ratios consistent. The 67-vs-60 delta is scope, not provider error — both counts reproduce exactly on repeat."
+
+claims_contract_note: |
+  The subject tag MUST be fully namespaced: `unit:symbol:<name>` (ObservationSubject
+  canonical_tag prefixes `unit:` on Unit refs; the CLI's subject flows into
+  StaticProviderClaim.subject_tag compared against obs.subject.canonical_tag()).
+  Using `symbol:<name>` alone yields `Unknown { MissingForSubject }` — correct
+  fail-closed behavior, first observed as an operator footgun then explained by
+  reading adapter_static_provider.rs:88-108.
+
+honesty:
+  not_run:
+    - "T10 sustained-hang timeout branch (kill/restart and absent-binary branches OBSERVED)"
+  derived:
+    - "provider is stateless per-session: inferred from kill/restart success, not from vendor docs"
+  known_limitations:
+    - "Single symbol deep-check (CodeIntelligencePortError); T11's 'full agreed dataset' interpretation for this re-open = whole sddk-engine/src graph (43862 symbols) + one symbol's usage set cross-checked against grep. A wider multi-symbol sweep remains open for a later slice."
+    - "CogniCode v0.97.3 (up from v0.97.1 historical S1); version drift re-validated here by handshake, not assumed."
