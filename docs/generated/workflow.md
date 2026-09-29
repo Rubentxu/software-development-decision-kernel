@@ -17,14 +17,11 @@
 | ---: | --- |
 | 1 | `OPEN` |
 | 2 | `BLOCKED` |
-| 3 | `REMEDIATING` |
-| 4 | `RELEASE_PENDING` |
-| 5 | `RELEASED` |
-| 6 | `CLOSED` |
-| 7 | `ABANDONED` |
-| 8 | `RECOVERING` |
-| 9 | `UAT_WAITING` |
-| 10 | `APPROVAL_PENDING` |
+| 3 | `RELEASE_PENDING` |
+| 4 | `RELEASED` |
+| 5 | `CLOSED` |
+| 6 | `ABANDONED` |
+| 7 | `PAUSED` |
 
 ## Phases
 
@@ -37,15 +34,14 @@
 | 5 | `build` |
 | 6 | `verify` |
 | 7 | `uat` |
-| 8 | `review` |
-| 9 | `release` |
-| 10 | `archive` |
+| 8 | `release` |
+| 9 | `archive` |
 
 ## Paths
 
 | Path | Debt verification | Phase sequence | Description |
 | --- | --- | --- | --- |
-| `A-full` | `mandatory` | `explore` → `specify` → `design` → `plan` → `build` → `verify` → `review` → `release` | Full path A - complete workflow with all phases |
+| `A-full` | `mandatory` | `explore` → `specify` → `design` → `plan` → `build` → `verify` → `release` | Full path A - complete workflow with all phases |
 | `A-lite` | `mandatory` | `explore` → `specify` → `design` → `build` → `verify` → `release` | Lite path - standard with minimal design |
 | `A-min` | `mandatory` | `explore` → `specify` → `build` → `verify` → `release` | Minimal path - fastest route through workflow |
 | `B-direct` | `disabled` | `build` → `verify` → `release` | Direct path B - disabled by default |
@@ -64,44 +60,48 @@
 | `phase.plan.complete` | `A-full` | `OPEN/plan` | `OPEN/build` | `artifact:implementation-plan`<br>`gate:plan-executable` | `implementation-plan` | — |
 | `phase.build.complete` | `A-min`<br>`A-lite`<br>`A-full` | `OPEN/build` | `OPEN/verify` | `artifact:implementation-receipt`<br>`gate:implementation-complete` | `implementation-receipt` | — |
 | `phase.build.complete.b-direct` | `B-direct` | `OPEN/build` | `OPEN/verify` | `artifact:implementation-receipt`<br>`gate:implementation-complete` | `implementation-receipt` | — |
-| `phase.verify.complete` | `A-full` | `OPEN/verify` | `OPEN/review` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `REMEDIATING/verify` |
-| `phase.verify.complete.a-min` | `A-min` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `REMEDIATING/verify` |
-| `phase.verify.complete.a-lite` | `A-lite` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `REMEDIATING/verify` |
-| `phase.verify.complete.b-direct` | `B-direct` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant` | `verification-report` | `REMEDIATING/verify` |
-| `phase.verify.remediate` | `A-min`<br>`A-lite`<br>`A-full`<br>`B-direct` | `REMEDIATING/verify` | `OPEN/verify` | `gate:remediation-complete` | — | — |
-| `phase.verify.uat.sync` | `A-full` | `OPEN/verify` | `UAT_WAITING/uat` | `gate:uat-activated` | `uat-plan` | `OPEN/verify` |
-| `phase.uat.complete` | `A-full` | `UAT_WAITING/uat` | `OPEN/review` | `artifact:uat-report`<br>`gate:uat-verdict` | `uat-report` | `REMEDIATING/verify` |
-| `phase.review.complete` | `A-full` | `OPEN/review` | `RELEASE_PENDING/release` | `artifact:review-report`<br>`gate:review-approved` | `review-report` | — |
+| `phase.verify.complete` | `A-full` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `OPEN/verify` |
+| `phase.verify.complete.a-min` | `A-min` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `OPEN/verify` |
+| `phase.verify.complete.a-lite` | `A-lite` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant`<br>`gate:debt-severity-assigned`<br>`gate:debt-priority-assigned` | `verification-report` | `OPEN/verify` |
+| `phase.verify.complete.b-direct` | `B-direct` | `OPEN/verify` | `RELEASE_PENDING/release` | `artifact:verification-report`<br>`gate:tests-pass`<br>`gate:policy-compliant` | `verification-report` | `OPEN/verify` |
+| `phase.verify.remediate` | `A-min`<br>`A-lite`<br>`A-full`<br>`B-direct` | `OPEN/verify` | `OPEN/verify` | `gate:remediation-complete` | — | — |
+| `phase.build.remediate` | `A-min`<br>`A-lite`<br>`A-full`<br>`B-direct` | `OPEN/build` | `OPEN/build` | `gate:remediation-complete` | — | — |
+| `phase.verify.uat.sync` | `A-full` | `OPEN/verify` | `OPEN/uat` | `gate:uat-activated` | `uat-plan` | `OPEN/verify` |
+| `phase.uat.complete` | `A-full` | `OPEN/uat` | `RELEASE_PENDING/release` | `artifact:uat-report`<br>`gate:uat-verdict` | `uat-report` | `OPEN/verify` |
 | `release.complete` | — | `RELEASE_PENDING/release` | `RELEASED/archive` | `artifact:merge-receipt`<br>`artifact:release-receipt`<br>`gate:no-pending-effects`<br>`gate:release-uat-approved` | `merge-receipt`<br>`release-receipt` | — |
+| `release.recover` | `A-min`<br>`A-lite`<br>`A-full`<br>`B-direct` | `RELEASE_PENDING/release` | `OPEN/build` | `artifact:release-failure-evidence`<br>`gate:release-recovery-authorized` | `release-failure-evidence` | — |
 | `archive.complete` | — | `RELEASED/archive` | `CLOSED/archive` | `artifact:archive-manifest`<br>`gate:ledger-valid`<br>`gate:vault-index-current` | `archive-manifest` | — |
-| `phase.build.approval.requested` | `A-min`<br>`A-lite`<br>`A-full` | `OPEN/build` | `APPROVAL_PENDING/build` | `gate:approval-requested` | `approval-receipt` | `OPEN/build` |
-| `phase.build.approval.resolved` | `A-min`<br>`A-lite`<br>`A-full` | `APPROVAL_PENDING/build` | `OPEN/build` | `gate:approval-resolved` | `approval-receipt` | `OPEN/build` |
-| `phase.uat.approval.requested` | `A-full` | `OPEN/uat` | `APPROVAL_PENDING/uat` | `gate:approval-requested` | `approval-receipt` | `OPEN/uat` |
-| `phase.uat.approval.resolved` | `A-full` | `APPROVAL_PENDING/uat` | `OPEN/uat` | `gate:approval-resolved` | `approval-receipt` | `OPEN/uat` |
-| `phase.review.approval.requested` | `A-full` | `OPEN/review` | `APPROVAL_PENDING/review` | `gate:approval-requested` | `approval-receipt` | `OPEN/review` |
-| `phase.review.approval.resolved` | `A-full` | `APPROVAL_PENDING/review` | `OPEN/review` | `gate:approval-resolved` | `approval-receipt` | `OPEN/review` |
-| `phase.release.approval.requested` | `A-full` | `OPEN/release` | `APPROVAL_PENDING/release` | `gate:approval-requested` | `approval-receipt` | `OPEN/release` |
-| `phase.release.approval.resolved` | `A-full` | `APPROVAL_PENDING/release` | `OPEN/release` | `gate:approval-resolved` | `approval-receipt` | `OPEN/release` |
+| `archive.vault.complete` | `A-min`<br>`A-lite`<br>`A-full`<br>`B-direct` | `BLOCKED/*` | `CLOSED/archive` | `artifact:vault-receipt`<br>`artifact:archive-manifest`<br>`gate:vault-receipt-verified`<br>`gate:vault-index-current`<br>`gate:release-bypass-declared` | `vault-receipt`<br>`archive-manifest` | — |
+| `phase.build.approval.requested` | `A-min`<br>`A-lite`<br>`A-full` | `OPEN/build` | `OPEN/build` | `gate:approval-requested` | `approval-receipt` | `OPEN/build` |
+| `phase.build.approval.resolved` | `A-min`<br>`A-lite`<br>`A-full` | `OPEN/build` | `OPEN/build` | `gate:approval-resolved` | `approval-receipt` | `OPEN/build` |
+| `phase.uat.approval.requested` | `A-full` | `OPEN/uat` | `OPEN/uat` | `gate:approval-requested` | `approval-receipt` | `OPEN/uat` |
+| `phase.uat.approval.resolved` | `A-full` | `OPEN/uat` | `OPEN/uat` | `gate:approval-resolved` | `approval-receipt` | `OPEN/uat` |
+| `phase.release.approval.requested` | `A-full` | `OPEN/release` | `OPEN/release` | `gate:approval-requested` | `approval-receipt` | `OPEN/release` |
+| `phase.release.approval.resolved` | `A-full` | `OPEN/release` | `OPEN/release` | `gate:approval-resolved` | `approval-receipt` | `OPEN/release` |
 | `cycle.block` | — | `OPEN/*` | `BLOCKED/*` | `gate:block-condition-met` | — | — |
 | `cycle.unblock` | — | `BLOCKED/*` | `OPEN/*` | `gate:unblock-condition-met` | — | — |
+| `cycle.pause` | — | `OPEN/*` | `PAUSED/*` | — | — | — |
+| `cycle.pause.from_blocked` | — | `BLOCKED/*` | `PAUSED/*` | — | — | — |
+| `cycle.resume` | — | `PAUSED/*` | `OPEN/*` | — | — | — |
 
 ## Artifacts
 
 | Artifact | Producer | Consumers | Required | Terminal | Description |
 | --- | --- | --- | --- | --- | --- |
 | `approval-receipt` | `human` | `engine` | yes | no | Receipt confirming a human approval decision for a governed capability |
-| `archive-manifest` | `archiver` | — | yes | yes | Final archive manifest |
+| `archive-manifest` | `archiver` | — | yes | yes | Final archive manifest; release_receipt_id binds to vault-receipt for managed-closure cycles |
 | `cycle-manifest` | `runtime` | `engine` | yes | no | Initial canonical cycle state |
 | `design` | `designer` | `planner`<br>`verifier` | yes | no | Technical design document |
 | `exploration-report` | `agent` | `reviewer` | yes | no | Report documenting exploration findings |
 | `implementation-plan` | `planner` | `builder` | yes | no | Implementation plan with tasks |
 | `implementation-receipt` | `builder` | `verifier` | yes | no | Receipt confirming implementation completion |
 | `merge-receipt` | `local-git` | — | yes | yes | Receipt confirming the local HEAD SHA was pushed and verified on origin/main; no PR or CI/CD authority is required |
+| `release-failure-evidence` | `agent` | `engine` | yes | no | Typed evidence of release precondition failure, including failure kind, message, and affected precondition field; persisted for audit trail |
 | `release-receipt` | `local-git` | — | yes | yes | Receipt confirming an annotated tag for the verified main SHA exists on the remote; external distribution is optional post-tag work |
-| `review-report` | `reviewer` | `release-manager` | yes | no | Review approval report |
 | `specification` | `agent` | `designer` | yes | no | Requirements specification document |
 | `uat-plan` | `agent` | `uat-runner`<br>`human` | no | no | UAT acceptance plan (YAML canonical, ADR-012) |
 | `uat-report` | `agent` | `human`<br>`release` | no | no | UAT aggregated report with verdict (ADR-012) |
+| `vault-receipt` | `cli` | — | yes | yes | Receipt confirming vault-side authority for managed-closure cycle |
 | `verification-report` | `verifier` | `reviewer` | yes | no | Report documenting verification results |
 
 ## Gates
@@ -120,15 +120,17 @@
 | `no-pending-effects` | `binary` | No pending required local Git effects; CI/CD, GitHub Actions, forge releases, and distribution are optional post-tag consumers and are excluded |
 | `plan-executable` | `binary` | Implementation plan is executable |
 | `policy-compliant` | `binary` | Implementation complies with policies |
+| `release-bypass-declared` | `binary` | cycle.delivery_kind == ManagedClosureDelivery declared verbatim in spec |
+| `release-recovery-authorized` | `binary` | Explicit authorization for release recovery transition; gate receipt required before recovering from RELEASE_PENDING to OPEN/build |
 | `release-uat-approved` | `binary` | Release UAT gate passed for the configured release type (ADR-012) |
 | `remediation-complete` | `binary` | Remediation addressed failures |
 | `requirements-testable` | `binary` | Requirements are testable |
-| `review-approved` | `binary` | Review approved the work |
 | `tests-pass` | `binary` | All tests pass |
 | `uat-activated` | `binary` | Orchestrator decided to run UAT (activation function, ADR-012) |
 | `uat-verdict` | `binary` | UAT report has a human verdict (release gate per config, ADR-012) |
 | `unblock-condition-met` | `binary` | Unblock condition is satisfied |
 | `vault-index-current` | `binary` | Vault index is current |
+| `vault-receipt-verified` | `binary` | vault-receipt signature + content verify |
 
 ## State Diagram
 
@@ -144,38 +146,39 @@ stateDiagram-v2
     OPEN_plan --> OPEN_build: phase.plan.complete
     OPEN_build --> OPEN_verify: phase.build.complete
     OPEN_build --> OPEN_verify: phase.build.complete.b-direct
-    OPEN_verify --> OPEN_review: phase.verify.complete
-    OPEN_verify --> REMEDIATING_verify: phase.verify.complete (failure)
+    OPEN_verify --> RELEASE_PENDING_release: phase.verify.complete
+    OPEN_verify --> OPEN_verify: phase.verify.complete (failure)
     OPEN_verify --> RELEASE_PENDING_release: phase.verify.complete.a-min
-    OPEN_verify --> REMEDIATING_verify: phase.verify.complete.a-min (failure)
+    OPEN_verify --> OPEN_verify: phase.verify.complete.a-min (failure)
     OPEN_verify --> RELEASE_PENDING_release: phase.verify.complete.a-lite
-    OPEN_verify --> REMEDIATING_verify: phase.verify.complete.a-lite (failure)
+    OPEN_verify --> OPEN_verify: phase.verify.complete.a-lite (failure)
     OPEN_verify --> RELEASE_PENDING_release: phase.verify.complete.b-direct
-    OPEN_verify --> REMEDIATING_verify: phase.verify.complete.b-direct (failure)
-    REMEDIATING_verify --> OPEN_verify: phase.verify.remediate
-    OPEN_verify --> UAT_WAITING_uat: phase.verify.uat.sync
+    OPEN_verify --> OPEN_verify: phase.verify.complete.b-direct (failure)
+    OPEN_verify --> OPEN_verify: phase.verify.remediate
+    OPEN_build --> OPEN_build: phase.build.remediate
+    OPEN_verify --> OPEN_uat: phase.verify.uat.sync
     OPEN_verify --> OPEN_verify: phase.verify.uat.sync (failure)
-    UAT_WAITING_uat --> OPEN_review: phase.uat.complete
-    UAT_WAITING_uat --> REMEDIATING_verify: phase.uat.complete (failure)
-    OPEN_review --> RELEASE_PENDING_release: phase.review.complete
+    OPEN_uat --> RELEASE_PENDING_release: phase.uat.complete
+    OPEN_uat --> OPEN_verify: phase.uat.complete (failure)
     RELEASE_PENDING_release --> RELEASED_archive: release.complete
+    RELEASE_PENDING_release --> OPEN_build: release.recover
     RELEASED_archive --> CLOSED_archive: archive.complete
-    OPEN_build --> APPROVAL_PENDING_build: phase.build.approval.requested
+    BLOCKED_any --> CLOSED_archive: archive.vault.complete
+    OPEN_build --> OPEN_build: phase.build.approval.requested
     OPEN_build --> OPEN_build: phase.build.approval.requested (failure)
-    APPROVAL_PENDING_build --> OPEN_build: phase.build.approval.resolved
-    APPROVAL_PENDING_build --> OPEN_build: phase.build.approval.resolved (failure)
-    OPEN_uat --> APPROVAL_PENDING_uat: phase.uat.approval.requested
+    OPEN_build --> OPEN_build: phase.build.approval.resolved
+    OPEN_build --> OPEN_build: phase.build.approval.resolved (failure)
+    OPEN_uat --> OPEN_uat: phase.uat.approval.requested
     OPEN_uat --> OPEN_uat: phase.uat.approval.requested (failure)
-    APPROVAL_PENDING_uat --> OPEN_uat: phase.uat.approval.resolved
-    APPROVAL_PENDING_uat --> OPEN_uat: phase.uat.approval.resolved (failure)
-    OPEN_review --> APPROVAL_PENDING_review: phase.review.approval.requested
-    OPEN_review --> OPEN_review: phase.review.approval.requested (failure)
-    APPROVAL_PENDING_review --> OPEN_review: phase.review.approval.resolved
-    APPROVAL_PENDING_review --> OPEN_review: phase.review.approval.resolved (failure)
-    OPEN_release --> APPROVAL_PENDING_release: phase.release.approval.requested
+    OPEN_uat --> OPEN_uat: phase.uat.approval.resolved
+    OPEN_uat --> OPEN_uat: phase.uat.approval.resolved (failure)
+    OPEN_release --> OPEN_release: phase.release.approval.requested
     OPEN_release --> OPEN_release: phase.release.approval.requested (failure)
-    APPROVAL_PENDING_release --> OPEN_release: phase.release.approval.resolved
-    APPROVAL_PENDING_release --> OPEN_release: phase.release.approval.resolved (failure)
+    OPEN_release --> OPEN_release: phase.release.approval.resolved
+    OPEN_release --> OPEN_release: phase.release.approval.resolved (failure)
     OPEN_any --> BLOCKED_any: cycle.block
     BLOCKED_any --> OPEN_any: cycle.unblock
+    OPEN_any --> PAUSED_any: cycle.pause
+    BLOCKED_any --> PAUSED_any: cycle.pause.from_blocked
+    PAUSED_any --> OPEN_any: cycle.resume
 ```

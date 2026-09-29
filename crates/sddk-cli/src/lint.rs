@@ -1009,7 +1009,7 @@ fn lint_generated_docs(
         Path::new(GENERATED_WORKFLOW_DOC),
         None,
         "generated workflow documentation is missing or stale",
-        "run `sddk generate docs --root .` and commit the result",
+        "run `sddk generate docs --root . --in-repo` and commit the result (without `--in-repo` the render targets XDG and never refreshes this file)",
     ));
 }
 
@@ -1038,7 +1038,7 @@ fn lint_generated_inventory(root: &Path, diagnostics: &mut Vec<Diagnostic>) {
         Path::new(GENERATED_INVENTORY_DOC),
         None,
         "generated repository inventory is missing or stale",
-        "run `sddk generate inventory --root .` and commit the result",
+        "run `sddk generate inventory --root . --in-repo` and commit the result (without `--in-repo` the render targets XDG and never refreshes this file)",
     ));
 }
 
@@ -1195,13 +1195,16 @@ fn lint_agent_registry(root: &Path, diagnostics: &mut Vec<Diagnostic>) {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or_default();
+        let Some(relative) = entry.path().strip_prefix(root).ok() else {
+            continue;
+        };
         if let Some(frontmatter_name) = agent_frontmatter_name(entry.path())
             && frontmatter_name != stem
         {
             diagnostics.push(diagnostic(
                 AGENT_NAME_MISMATCH,
                 Severity::Error,
-                &Path::new("agents").join(format!("{stem}.md")),
+                relative,
                 None,
                 format!(
                     "agent frontmatter name {frontmatter_name:?} does not match file name {stem:?}"
@@ -1213,7 +1216,7 @@ fn lint_agent_registry(root: &Path, diagnostics: &mut Vec<Diagnostic>) {
             diagnostics.push(diagnostic(
                 AGENT_NOT_IN_REGISTRY,
                 Severity::Error,
-                &Path::new("agents").join(format!("{stem}.md")),
+                relative,
                 None,
                 format!("agent {stem} is not declared in permissions.yaml"),
                 "add the agent to the permission registry (default-deny unless declared)",
@@ -1693,11 +1696,13 @@ fn lint_agent_model_registry(root: &Path, diagnostics: &mut Vec<Diagnostic>) {
             .and_then(|s| s.to_str())
             .unwrap_or_default();
         if !registered.contains(stem) {
-            let relative = Path::new("agents").join(format!("{stem}.md"));
+            let Some(relative) = path.strip_prefix(root).ok() else {
+                continue;
+            };
             diagnostics.push(diagnostic(
                 AGENT_REGISTRY_UNREGISTERED,
                 Severity::Error,
-                &relative,
+                relative,
                 None,
                 format!("agent `{stem}` is not registered in assets/agent-models.yaml"),
                 "add the agent to the `agents` mapping in assets/agent-models.yaml",

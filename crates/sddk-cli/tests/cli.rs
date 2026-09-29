@@ -147,6 +147,42 @@ fn agent_registry_checks_cover_declaration_orphans_and_names() {
 }
 
 #[test]
+fn agent_registry_reports_the_real_path_of_nested_agent_files() {
+    let repository = repository_fixture();
+    generate_workflow_docs(repository.path(), false).unwrap();
+    repository
+        .write(
+            "agents/skills/nested-skill/SKILL.md",
+            "---\nname: nested-skill\n---\n# Skill\n",
+        )
+        .unwrap();
+    repository
+        .write(
+            "permissions.yaml",
+            "agents:\n  SKILL:\n    phases: []\n    capabilities: []\n",
+        )
+        .unwrap();
+
+    let report = lint_repository(repository.path()).unwrap();
+    let reported = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| matches!(diagnostic.code.as_str(), "SDDK011" | "SDDK013" | "SDDK018"))
+        .map(|diagnostic| diagnostic.file.clone())
+        .collect::<Vec<_>>();
+
+    // The nested file must be reported at its real location, not collapsed onto
+    // the non-existent `agents/SKILL.md`.
+    assert!(
+        !reported.is_empty(),
+        "the nested agent file must be reported"
+    );
+    for file in &reported {
+        assert_eq!(file, "agents/skills/nested-skill/SKILL.md");
+    }
+}
+
+#[test]
 fn typed_yaml_references_cover_repository_owned_entities_and_paths() {
     let repository = repository_fixture();
     generate_workflow_docs(repository.path(), false).unwrap();

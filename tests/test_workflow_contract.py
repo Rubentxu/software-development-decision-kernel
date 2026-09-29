@@ -1215,8 +1215,12 @@ archive_finalization_requirements = {
         and archive_transition > archive_initial_manifest
         and archive_post_transition_status > archive_transition
         and len(archive_verifies) >= 2
-        and archive_verifies[1] > archive_post_transition_status
-        and archive_finalization > archive_verifies[1]
+        # The post-transition verification is the LAST ledger verify in the
+        # prompt, not the second one: the prompt also verifies once before the
+        # transition and once for `archive.vault.complete`, so indexing [1]
+        # pinned a pre-transition step and failed a correct contract.
+        and archive_verifies[-1] > archive_post_transition_status
+        and archive_finalization > archive_verifies[-1]
     ),
 }
 for description, present in archive_finalization_requirements.items():

@@ -6,10 +6,10 @@
 
 | Type | Count |
 | --- | ---: |
-| Agents | 69 |
-| Skills | 111 |
+| Agents | 72 |
+| Skills | 114 |
 
-## Agents (69)
+## Agents (72)
 
 - `agents/analytics-judge.md`
 - `agents/analytics-reporter.md`
@@ -61,6 +61,9 @@
 - `agents/sddk-status.md`
 - `agents/sddk-tasks.md`
 - `agents/sddk-verify.md`
+- `agents/skills/core-contract-review/SKILL.md`
+- `agents/skills/core-release-planning/SKILL.md`
+- `agents/skills/core-workflow-orchestration/SKILL.md`
 - `agents/studio-analyzer.md`
 - `agents/studio-block.md`
 - `agents/studio-component.md`
@@ -81,7 +84,7 @@
 - `agents/uat-ux-form.md`
 - `agents/ui-auditor.md`
 
-## Skills (111)
+## Skills (114)
 
 - `skills/_shared/SKILL.md`
 - `skills/accessibility-reviewer/SKILL.md`
@@ -109,6 +112,9 @@
 - `skills/cognicode-sdd/SKILL.md`
 - `skills/cognitive-doc-design/SKILL.md`
 - `skills/comment-writer/SKILL.md`
+- `skills/core-contract-review/SKILL.md`
+- `skills/core-release-planning/SKILL.md`
+- `skills/core-workflow-orchestration/SKILL.md`
 - `skills/cua-test-orchestrator/SKILL.md`
 - `skills/curriculum-designer/SKILL.md`
 - `skills/deep-research/SKILL.md`
