@@ -5756,3 +5756,39 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
 6. **Estado**: `4cf78bfd`, `shellcheck` limpio en el fichero modificado, árbol
    limpio. Workspace **2.2.31** sin publicar; último release público
    **v2.2.27** (`5ee68265`).
+
+### Adenda session-34i (16:31Z) — verificacion del guard 3d y una mentira por omision mia
+
+1. **La suite completa se re-ejecuto DESPUES de tocar `tests/`.** El guard
+   `test_release_state_pointer.sh` cambio en `4cf78bfd`, y la ultima corrida
+   verde (`TEST_EXIT=0`, adenda 34f) era ANTERIOR a ese cambio. Afirmar el
+   perfil completo en verde sin re-correrlo habria sido exactamente el tipo de
+   evidencia heredada que este proyecto prohibe. Re-ejecutada: `TEST_EXIT=0`,
+   259 suites, 0 fallos, ya con el guard modificado y el bump a 2.2.32 dentro.
+2. **HALLAZGO DE METODO — un log truncado parecia un cuelgue.** La primera
+   re-ejecucion arranco con un wrapper de 20s que mato al `cargo` hijo: el log
+   se quedo en 460 bytes con cuatro lineas de "Compiling" y sin `TEST_EXIT`.
+   Mi polling estuvo **14 minutos** esperando a un corpse, porque la carga del
+   sistema (load 7-11) hacia verosimil una compilacion lenta. La senal que lo
+   delata no era el log sino que **`pgrep cargo` devolvia 0 procesos con un log
+   sin avanzar**: compilacion lenta deja procesos vivos. Regla: un log que no
+   crece Y no tiene proceso que lo escriba esta muerto, no lento. Relanzado
+   con `setsid` para desacoplarlo del shell, que es lo que evita que un
+   timeout del wrapper mate al hijo.
+3. **El check 3d se verifico contra casos borde, no solo contra el caso que
+   lo motivo.** Sondeados: `main = 6f909de2 (bump)` -> 0 coincidencias (ok);
+   `eff37cee` -> 0 (ok); `workspace 2.2.31` -> 1 (dispara, correcto);
+   `v1.168.3 release` -> 1 (dispara, y debe: una version antigua en el
+   comentario sigue siendo una afirmacion sin contrastar). **Cero falsos
+   positivos sobre 2000 SHAs reales**: un hash hex no puede casar con el
+   patron semver porque no contiene puntos, luego el check no puede dispararse
+   por un SHA. Es una garantia estructural, no una waterproof.
+4. **Verificado tambien lo que NO rompo**: `scripts/reconcile_state_pointer.sh`
+   menciona el guard unicamente en comentarios, no lo ejecuta, asi que el
+   cambio no afecta al reparador. Y se reconfirmo la autocorreccion de la
+   adenda 34h contra el commit: en `b3034111`, `STATE.yaml`, `Cargo.toml` y
+   `manifest.toml` decian los tres 2.2.30, luego no habia drift de version y el
+   PASS del guard era correcto. Mi diagnostico previo seguia siendo falso.
+5. **Estado**: workspace **2.2.32** sin publicar, ultimo release publico
+   **v2.2.27** (`5ee68265`). Perfil completo re-verificado en verde sobre el
+   estado final de la cadena.
