@@ -1,10 +1,12 @@
 ---
 id: INC-DEBT-031-CHANGELOG-DUPLICATE-AND-PHANTOM-VERSIONS
 title: "CHANGELOG.md tiene 4 versiones duplicadas y una version fantasma (2.3.0) que nunca existio como release"
-status: open
+status: closed
 severity: low
 priority: P3
 created: 2026-09-28
+closed: 2026-09-29 (session-34, commit changelog-dedup)
+closed_by: session-34
 discovered_by: session-30 retrospectiva (OBSERVED, sobre el fichero real)
 cluster_id: CL-TRACEABILITY
 related: [INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE]
@@ -105,3 +107,29 @@ o marcarla explícitamente como "nunca publicada"), y **añadir la línea 2.0.x
 que hoy no existe en absoluto** (v2.0.0 y v2.0.1 sí están publicadas). Es
 trabajo de bajo riesgo pero no trivial, así que queda explícitamente
 **fuera del alcance de la session-30** y no se hizo a medias.
+
+## Cierre (session-34, 2026-09-29)
+
+**Reparación aplicada (OBSERVED):** los 5 defectos originales más uno
+nuevo descubierto al reparar.
+
+1. `2.2.0` duplicado → conservado el primero (línea 701); eliminado el
+   segundo (subset estricto).
+2. `2.3.0` fantasma (764-826) → eliminado; su único item exclusivo
+   (`fix(release): derivar la version desde el workspace`) ya estaba en
+   el bloque válido de 2.2.0 (2 copias ahí, deduplicadas a 1).
+3. `2.1.0` duplicado → conservado el primero; el segundo era subset
+   estricto.
+4. `1.4.0` duplicado → fusionados los 6 items únicos del bloque pequeño
+   dentro del bloque grande; un solo bloque 1.4.0.
+5. `1.8.0` header huérfano de fin de fichero → eliminado.
+
+**Hallazgo nuevo (no estaba en esta INC):** el generador de CHANGELOG
+arrastraba items hacia atrás en merges fallidos: 122 items aparecían en
+múltiples secciones (el mismo item hasta 12-17 veces, p.ej.
+"derivar la version desde el workspace" x17). Criterio de limpieza:
+cada item se conserva solo en su sección más antigua (la release que
+realmente lo contuvo). 752 items finales vs 1499 originales.
+
+**Evidencia:** `git diff` del commit changelog-dedup; conteos antes/después
+en la sesión; `tests/test_changelog_merge.sh` verde tras el cambio.
