@@ -568,6 +568,9 @@ enum ContextCommand {
     /// Resolve identity, converge adoption, infer the cycle, rebuild the
     /// context basis and bind the session (SPEC-005 CTX-003).
     Bootstrap(ContextBootstrapArgsCli),
+    /// Publish or drain material context changes for a bound session
+    /// (SPEC-005 CTX-008).
+    Delta(ContextDeltaArgsCli),
 }
 
 #[derive(Debug, Args)]
@@ -584,6 +587,37 @@ struct ContextBootstrapArgsCli {
     /// Explicit cycle id, skipping inference.
     #[arg(long)]
     cycle: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ContextDeltaArgsCli {
+    /// Checkout or worktree root. Inferred from the current directory when absent.
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// Required monorepo scope, using `.` for the repository root.
+    #[arg(long)]
+    scope: Option<String>,
+    /// Host session identity; must already have a durable binding.
+    #[arg(long)]
+    session: String,
+    /// Publish a change to the session's durable delta stream.
+    #[arg(long)]
+    publish: bool,
+    /// Semantic content to deliver. Repeatable.
+    #[arg(long = "add")]
+    add: Vec<String>,
+    /// Semantic content that is no longer true. Repeatable.
+    #[arg(long = "remove")]
+    remove: Vec<String>,
+    /// Why this change is relevant to the session (CDD-002).
+    #[arg(long)]
+    reason: Option<String>,
+    /// The revision this delta produces. Required when publishing.
+    #[arg(long)]
+    to_revision: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
@@ -1487,6 +1521,34 @@ fn run_context(command: ContextCommand, environment: &CliEnvironment) -> Command
                 Err(error) => failure(error.to_string()),
             }
         }
+        ContextCommand::Delta(args) => {
+            let service_args = context_cmd::ContextDeltaArgs {
+                root: args.root,
+                scope: args.scope,
+                session: args.session,
+                add: args.add,
+                remove: args.remove,
+                reason: args.reason,
+                to_revision: args.to_revision,
+                mode: if args.publish {
+                    context_cmd::DeltaMode::Publish
+                } else {
+                    context_cmd::DeltaMode::Drain
+                },
+                format: args.format,
+            };
+            match context_cmd::delta(&service_args, environment) {
+                Ok(result) => match render(&result, service_args.format, context_delta_text) {
+                    Ok(stdout) => CommandOutput {
+                        status: 0,
+                        stdout,
+                        stderr: String::new(),
+                    },
+                    Err(error) => failure(error.to_string()),
+                },
+                Err(error) => failure(error.to_string()),
+            }
+        }
     }
 }
 
@@ -1519,6 +1581,27 @@ fn context_bootstrap_text(result: &context_cmd::ContextBootstrapResult) -> Strin
         "binding: {} (written: {})\n",
         result.binding_ref, result.binding_written
     ));
+    out
+}
+
+fn context_delta_text(result: &context_cmd::ContextDeltaResult) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("status: {}\n", result.status));
+    out.push_str(&format!("project: {}\n", result.project_id));
+    out.push_str(&format!("session: {}\n", result.session));
+    out.push_str(&format!("operation: {}\n", result.operation));
+    out.push_str(&format!("basis: {}\n", result.basis_revision));
+    out.push_str(&format!("last_seq: {}\n", result.last_seq));
+    out.push_str(&format!("applied: {}\n", result.applied));
+    out.push_str(&format!("rejected: {}\n", result.rejected.len()));
+    for rejected in &result.rejected {
+        out.push_str(&format!("  - seq {}: {}\n", rejected.seq, rejected.reason));
+    }
+    if !result.replay_skipped.is_empty() {
+        out.push_str(&format!("skipped: {}\n", result.replay_skipped.join(", ")));
+    }
+    out.push_str(&format!("facts: {}\n", result.facts));
+    out.push_str(&format!("advisory: {}\n", result.advisory));
     out
 }
 

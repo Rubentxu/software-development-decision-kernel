@@ -23,7 +23,9 @@ use sddk_domain::stable_workspace_id;
 use sddk_engine::agentic_session_binding::{
     AgenticBinding, AgenticSessionRef, BindingTarget, ContextBasis,
 };
+use sddk_engine::context_bridge::{ContextBridge, ContextDelta};
 use sddk_engine::durable_capsule_store::FilesystemCapsuleStore;
+use sddk_engine::durable_delta_store::FilesystemDeltaStore;
 use sddk_engine::durable_session_binding::{load_binding, save_binding};
 use sddk_engine::{AdoptionPaths, CapsuleStore, XdgEnvironment};
 use sddk_storage::Storage;
@@ -47,6 +49,67 @@ pub(crate) struct ContextBootstrapArgs {
     pub format: OutputFormat,
     /// Current wall-clock in milliseconds (injected for determinism).
     pub now_ms: i64,
+}
+
+/// Which side of the durable delta stream this invocation acts on (CTX-008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeltaMode {
+    /// Publish a new material change to the session's stream.
+    Publish,
+    /// Drain everything the session has not seen yet.
+    Drain,
+}
+
+/// Arguments of `sddk context delta`.
+#[derive(Debug, Clone)]
+pub(crate) struct ContextDeltaArgs {
+    /// Checkout or worktree root (inferred when absent).
+    pub root: Option<PathBuf>,
+    /// Monorepo scope, using `.` for the repository root.
+    pub scope: Option<String>,
+    /// Host session identity, must match an existing binding.
+    pub session: String,
+    /// `--publish`: the new content (advisory semantic refs, not transcript).
+    pub add: Vec<String>,
+    /// `--publish`: content that is no longer true for this session.
+    pub remove: Vec<String>,
+    /// `--publish`: why this change matters to the session.
+    pub reason: Option<String>,
+    /// `--publish`: new context revision this delta produces.
+    pub to_revision: Option<String>,
+    /// Publish or drain.
+    pub mode: DeltaMode,
+    /// Output format.
+    pub format: OutputFormat,
+}
+
+/// Result of `sddk context delta` (CTX-008).
+#[derive(Debug, Serialize)]
+pub(crate) struct ContextDeltaResult {
+    pub status: &'static str,
+    pub project_id: String,
+    pub session: String,
+    /// Basis the session currently believes (from the durable binding).
+    pub basis_revision: String,
+    /// `published` or `drained`.
+    pub operation: &'static str,
+    /// Sequence assigned (publish) or highest sequence on disk (drain).
+    pub last_seq: u64,
+    /// Deltas applied to the rehydrated bridge.
+    pub applied: usize,
+    /// Deltas the bridge rejected: `[{seq, reason}]`.
+    pub rejected: Vec<RejectedDeltaOut>,
+    /// Delta files that could not be read or parsed.
+    pub replay_skipped: Vec<String>,
+    /// Content facts in the bridge after applying (advisory content only).
+    pub facts: usize,
+    pub advisory: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct RejectedDeltaOut {
+    pub seq: u64,
+    pub reason: String,
 }
 
 /// Typed cycle resolution outcome (CTX-004).
@@ -333,6 +396,191 @@ fn xdg_of(environment: &CliEnvironment) -> XdgEnvironment {
 /// (`resolve_xdg_paths`) that adoption uses, never a second path authority.
 fn capsule_root(project_data: &Path) -> PathBuf {
     project_data.join("context").join("capsules")
+}
+
+/// Run the durable delta operation (C3j objetivo 5, CTX-008).
+///
+/// `Publish` appends a material change to the session's durable stream;
+/// `Drain` rehydrates a `ContextBridge` from the session's **durable binding
+/// basis** and replays everything on disk onto it. Rejections are reported,
+/// not hidden: a delta whose `from_revision` no longer matches the basis is
+/// the CTX-008 stale case and the caller has to see it.
+pub(crate) fn delta(
+    args: &ContextDeltaArgs,
+    environment: &CliEnvironment,
+) -> Result<ContextDeltaResult, ContextBootstrapError> {
+    let identity = resolve_identity(args.root.as_deref(), args.scope.as_deref())?;
+    let paths = sddk_engine::resolve_xdg_paths(
+        &xdg_of(environment),
+        identity.project_id.as_str(),
+        &identity.workspace_id,
+    )
+    .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+
+    let session = AgenticSessionRef::new(args.session.clone());
+    // The binding is the authority on what the session believes. A delta
+    // against a session with no binding has no basis to bind to, so this is a
+    // typed failure rather than a silent no-op.
+    let binding = load_binding(&bindings_root(&paths.project_data), &session)
+        .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?
+        .ok_or_else(|| {
+            ContextBootstrapError::Durable(format!(
+                "no durable binding for session {}: run `sddk context bootstrap --session {}` first",
+                args.session, args.session
+            ))
+        })?;
+    let basis_revision = binding
+        .context_basis
+        .as_ref()
+        .map_or_else(|| "empty".to_string(), |basis| basis.revision.clone());
+
+    let store = FilesystemDeltaStore::open(&deltas_root(&paths.project_data, &args.session))
+        .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+
+    // A publish's `from_revision` is the session's CURRENT basis, so a
+    // publish is a forward step from what the session believes.
+    let mut published_seq = store.last_seq();
+    if args.mode == DeltaMode::Publish {
+        let (to_revision, additions, removals) = publish_payload(args, &basis_revision)?;
+        let delta = ContextDelta {
+            from_revision: basis_revision.clone(),
+            to_revision,
+            relevance_reason: args
+                .reason
+                .clone()
+                .unwrap_or_else(|| "material change for the active session".to_string()),
+            additions,
+            deletions: removals,
+            seq: 0, // allocated by the store
+            // Advisory-only: a delta never becomes instruction authority
+            // (CDD-004). Making it a fact is a separate, gated decision.
+            advisory_only: true,
+        };
+        let stored = store
+            .append(delta)
+            .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+        published_seq = stored.seq;
+    }
+
+    // Rehydration rewinds to where the stream STARTED, not to where the
+    // session currently is. Bootstrapping at the current basis would make
+    // every already-consumed delta look stale and rebuild an empty bridge.
+    let origin = store
+        .origin_basis()
+        .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+    let (mut bridge, _bootstrap_context) =
+        ContextBridge::bootstrap(&binding, origin.unwrap_or_else(|| basis_revision.clone()));
+
+    let outcome = store
+        .apply_to(&mut bridge)
+        .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+
+    // The basis only moves when the delivered stream actually advanced it.
+    // That keeps `context delta` as honest as `context bootstrap`: a
+    // rejected stream leaves the session believing what it believed.
+    let new_basis = bridge.current_revision().to_string();
+    if new_basis != basis_revision {
+        let mut next = binding.clone();
+        next.context_basis = Some(next_basis(binding.context_basis.as_ref(), &new_basis));
+        if next != binding {
+            save_binding(&bindings_root(&paths.project_data), &next)
+                .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+        }
+    }
+
+    Ok(ContextDeltaResult {
+        status: "complete",
+        project_id: identity.project_id.as_str().to_string(),
+        session: args.session.clone(),
+        basis_revision: new_basis,
+        operation: match args.mode {
+            DeltaMode::Publish => "published",
+            DeltaMode::Drain => "drained",
+        },
+        last_seq: published_seq.max(outcome.last_seq_on_disk),
+        applied: outcome.applied.len(),
+        rejected: outcome
+            .rejected
+            .iter()
+            .map(|r| RejectedDeltaOut {
+                seq: r.seq,
+                reason: r.reason.clone(),
+            })
+            .collect(),
+        replay_skipped: outcome.replay_skipped,
+        facts: bridge.facts().len(),
+        advisory: bridge.advisory().len(),
+    })
+}
+
+/// Build the payload of a publish.
+///
+/// A delta with neither additions nor deletions is refused: it would occupy a
+/// sequence slot and advance the basis without changing any context, which is
+/// indistinguishable from corruption once persisted.
+fn publish_payload(
+    args: &ContextDeltaArgs,
+    basis_revision: &str,
+) -> Result<(String, Vec<String>, Vec<String>), ContextBootstrapError> {
+    if args.add.is_empty() && args.remove.is_empty() {
+        return Err(ContextBootstrapError::Durable(
+            "publish needs at least one --add or --remove".to_string(),
+        ));
+    }
+    // The revision is named by the caller, not invented here: an empty
+    // `to_revision` would make every delta advance the basis to the same
+    // value and stop being distinguishable.
+    let to_revision = args.to_revision.clone().ok_or_else(|| {
+        ContextBootstrapError::Durable(format!(
+            "publish needs --to-revision (the new content revision; current basis is {basis_revision})"
+        ))
+    })?;
+    if to_revision == basis_revision {
+        return Err(ContextBootstrapError::Durable(format!(
+            "to_revision {to_revision} equals the current basis: a delta must change the basis"
+        )));
+    }
+    Ok((to_revision, args.add.clone(), args.remove.clone()))
+}
+
+/// Resolve project/workspace identity with the SAME resolver as `adopt`.
+fn resolve_identity(
+    root: Option<&Path>,
+    scope: Option<&str>,
+) -> Result<ResolvedContextIdentity, ContextBootstrapError> {
+    let root = match root {
+        Some(root) => canonical_root(root).map_err(|e| ContextBootstrapError::Io(e.to_string()))?,
+        None => std::env::current_dir()
+            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?
+            .canonicalize()
+            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?,
+    };
+    let scope = scope.unwrap_or(".").to_string();
+    let remote =
+        resolve_remote(&root, None).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let canonical = path_string(&root).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let fallback_seed = if remote.is_none() {
+        Some(sddk_domain::stable_fallback_seed(&canonical))
+    } else {
+        None
+    };
+    let identity =
+        sddk_domain::resolve_project_identity(remote.as_deref(), &scope, fallback_seed.as_deref())
+            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
+    Ok(ResolvedContextIdentity {
+        project_id: identity.project_id,
+        workspace_id,
+    })
+}
+
+struct ResolvedContextIdentity {
+    project_id: sddk_domain::ProjectId,
+    workspace_id: String,
+}
+
+fn deltas_root(project_data: &Path, session: &str) -> PathBuf {
+    project_data.join("context").join("deltas").join(session)
 }
 
 fn bindings_root(project_data: &Path) -> PathBuf {
@@ -678,6 +926,248 @@ mod tests {
             hash(&std::fs::read(&after).expect("read receipt")),
             first_hash
         );
+    }
+
+    /// Delta args rooted at the same isolated checkout as the bootstrap.
+    fn delta_args(root: &Path, session: &str) -> ContextDeltaArgs {
+        ContextDeltaArgs {
+            root: Some(root.to_path_buf()),
+            scope: None,
+            session: session.to_string(),
+            add: Vec::new(),
+            remove: Vec::new(),
+            reason: None,
+            to_revision: None,
+            mode: DeltaMode::Drain,
+            format: OutputFormat::Json,
+        }
+    }
+
+    /// Publish a change that the test controls completely.
+    fn publish(root: &Path, session: &str, to_revision: &str, add: &[&str]) -> ContextDeltaArgs {
+        ContextDeltaArgs {
+            add: add.iter().map(|s| (*s).to_string()).collect(),
+            to_revision: Some(to_revision.to_string()),
+            mode: DeltaMode::Publish,
+            ..delta_args(root, session)
+        }
+    }
+
+    /// Deltas on disk for this checkout, so a test can inspect the raw
+    /// sequence instead of trusting the service's own counters.
+    ///
+    /// Panics loudly if the directory does not exist. A test that corrupts or
+    /// injects a delta must never be able to write into the current working
+    /// directory because a path resolved to something unexpected.
+    fn deltas_dir(tmp: &Path, environment: &CliEnvironment, session: &str) -> PathBuf {
+        let canonical = std::fs::canonicalize(tmp)
+            .expect("canonicalize tmp")
+            .to_string_lossy()
+            .to_string();
+        let identity = sddk_domain::resolve_project_identity(
+            None,
+            ".",
+            Some(&sddk_domain::stable_fallback_seed(&canonical)),
+        )
+        .expect("identity");
+        let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
+        let paths = sddk_engine::resolve_xdg_paths(
+            &xdg_of(environment),
+            identity.project_id.as_str(),
+            &workspace_id,
+        )
+        .expect("xdg paths");
+        let dir = deltas_root(&paths.project_data, session);
+        assert!(
+            dir.is_dir(),
+            "deltas dir does not exist: {dir:?} (refusing to write into an unexpected path)"
+        );
+        dir
+    }
+
+    /// CTX-008: a delta published by one process must be visible to the next
+    /// one. Two separate service calls in the same test stand in for two
+    /// processes, because the only shared state is the filesystem.
+    #[test]
+    fn delta_survives_between_invocations() {
+        let tmp = tempdir("delta-survive");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-d"), &environment).expect("bootstrap");
+
+        let published = delta(
+            &publish(&tmp, "s-d", "r1", &["the ledger is locked"]),
+            &environment,
+        )
+        .expect("publish");
+        assert_eq!(published.operation, "published");
+        assert_eq!(published.applied, 1);
+        assert_eq!(published.basis_revision, "r1");
+
+        // A brand new service invocation: the stream is rehydrated from disk.
+        let drained = delta(&delta_args(&tmp, "s-d"), &environment).expect("drain");
+        assert_eq!(drained.operation, "drained");
+        assert_eq!(drained.applied, 1, "delta was not replayed from disk");
+        assert_eq!(drained.advisory, 1, "advisory content was lost");
+        assert_eq!(drained.basis_revision, "r1");
+    }
+
+    /// The basis must only move when the stream actually advanced it. A drain
+    /// over an empty stream leaves the session believing what it believed.
+    #[test]
+    fn drain_over_empty_stream_keeps_basis() {
+        let tmp = tempdir("delta-empty");
+        let environment = environment(&tmp);
+        let booted = bootstrap(&args_at(&tmp, "s-e"), &environment).expect("bootstrap");
+
+        let drained = delta(&delta_args(&tmp, "s-e"), &environment).expect("drain");
+        assert_eq!(drained.applied, 0);
+        assert_eq!(drained.basis_revision, booted.basis_revision);
+    }
+
+    /// A delta against a session with no durable binding has no basis to bind
+    /// to. Failing is the honest answer; inventing a basis is not.
+    #[test]
+    fn delta_without_binding_is_refused() {
+        let tmp = tempdir("delta-nobind");
+        let environment = environment(&tmp);
+        let error = delta(
+            &publish(&tmp, "s-unknown", "r1", &["anything"]),
+            &environment,
+        )
+        .expect_err("must refuse without a binding");
+        assert!(
+            error.to_string().contains("no durable binding"),
+            "unhelpful error: {error}"
+        );
+    }
+
+    /// A publish with no content would burn a sequence slot and advance the
+    /// basis without changing anything.
+    #[test]
+    fn publish_without_payload_is_refused() {
+        let tmp = tempdir("delta-nopayload");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-n"), &environment).expect("bootstrap");
+        let error = delta(&publish(&tmp, "s-n", "r1", &[]), &environment)
+            .expect_err("must refuse an empty delta");
+        assert!(
+            error.to_string().contains("at least one --add or --remove"),
+            "unhelpful error: {error}"
+        );
+    }
+
+    /// A delta that does not change the revision is not a change.
+    #[test]
+    fn publish_must_change_the_revision() {
+        let tmp = tempdir("delta-samerev");
+        let environment = environment(&tmp);
+        let booted = bootstrap(&args_at(&tmp, "s-s"), &environment).expect("bootstrap");
+        let error = delta(
+            &publish(&tmp, "s-s", &booted.basis_revision, &["same revision"]),
+            &environment,
+        )
+        .expect_err("must refuse a no-op revision");
+        assert!(
+            error.to_string().contains("must change the basis"),
+            "unhelpful error: {error}"
+        );
+    }
+
+    /// The monotonic sequence is a real contract, not an implementation
+    /// detail: a second delta must be seq 2, and both must survive.
+    #[test]
+    fn published_deltas_are_monotonic() {
+        let tmp = tempdir("delta-seq");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-q"), &environment).expect("bootstrap");
+
+        let first =
+            delta(&publish(&tmp, "s-q", "r1", &["first change"]), &environment).expect("first");
+        assert_eq!(first.last_seq, 1);
+        let second = delta(
+            &publish(&tmp, "s-q", "r2", &["second change"]),
+            &environment,
+        )
+        .expect("second");
+        assert_eq!(second.last_seq, 2);
+        assert_eq!(second.advisory, 2, "the first change was lost");
+        assert_eq!(second.basis_revision, "r2");
+    }
+
+    /// A delta is never instruction authority (CDD-004). Every published delta
+    /// is advisory-only, so `facts` must stay at whatever the binding carried.
+    #[test]
+    fn deltas_stay_advisory_only() {
+        let tmp = tempdir("delta-advisory");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-a"), &environment).expect("bootstrap");
+        let published = delta(
+            &publish(&tmp, "s-a", "r1", &["something material"]),
+            &environment,
+        )
+        .expect("publish");
+        assert_eq!(published.advisory, 1);
+        assert_eq!(published.facts, 0, "a delta became a fact");
+    }
+
+    /// Corruption on disk must surface as skipped, never as delivered
+    /// context. A truncated delta file is the cheapest honest corruption.
+    #[test]
+    fn corrupted_delta_is_skipped_not_delivered() {
+        let tmp = tempdir("delta-corrupt");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-x"), &environment).expect("bootstrap");
+        delta(&publish(&tmp, "s-x", "r1", &["first change"]), &environment).expect("first");
+        let dir = deltas_dir(&tmp, &environment, "s-x");
+        std::fs::write(dir.join("delta-2.json"), b"{ not json").expect("corrupt a delta file");
+
+        let drained = delta(&delta_args(&tmp, "s-x"), &environment).expect("drain");
+        assert_eq!(
+            drained.replay_skipped,
+            vec!["delta-2.json".to_string()],
+            "corruption must be reported, not silently applied"
+        );
+        assert_eq!(drained.applied, 1);
+        assert_eq!(drained.advisory, 1);
+    }
+
+    /// CTX-008 stale case: a delta whose `from_revision` no longer matches the
+    /// basis is rejected and reported, not applied on top of a moving target.
+    #[test]
+    fn stale_delta_is_rejected_and_reported() {
+        let tmp = tempdir("delta-stale");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-st"), &environment).expect("bootstrap");
+        delta(
+            &publish(&tmp, "s-st", "r1", &["first change"]),
+            &environment,
+        )
+        .expect("first");
+
+        // Hand-write a delta that claims to start from a revision the
+        // session never had. Only the store can be blamed for this, and only
+        // the store can catch it.
+        let dir = deltas_dir(&tmp, &environment, "s-st");
+        let bogus = ContextDelta {
+            from_revision: "not-a-revision".to_string(),
+            to_revision: "r9".to_string(),
+            relevance_reason: "hand written".to_string(),
+            additions: vec!["stale content".to_string()],
+            deletions: Vec::new(),
+            seq: 2,
+            advisory_only: true,
+        };
+        std::fs::write(
+            dir.join("delta-2.json"),
+            serde_json::to_vec_pretty(&bogus).expect("serialize"),
+        )
+        .expect("write stale delta");
+
+        let drained = delta(&delta_args(&tmp, "s-st"), &environment).expect("drain");
+        assert_eq!(drained.rejected.len(), 1, "stale delta was not rejected");
+        assert_eq!(drained.rejected[0].seq, 2);
+        assert_eq!(drained.advisory, 1, "stale content was delivered");
+        assert_eq!(drained.basis_revision, "r1");
     }
 
     /// Adoption receipt path for this checkout, via the shared resolver.
