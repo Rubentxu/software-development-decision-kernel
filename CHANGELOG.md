@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.25] - 2026-09-29
+
+### Fixes
+  - fix(ci): el bundle tarball standalone lleva BUNDLE.toml (layout versionado en dev update)
+
+### Other
+  - docs(roadmap): reconciliar puntero mecanico a 2fb5f738 / 2.2.24
+
 ## [2.2.24] - 2026-09-29
 
 ### Fixes
