@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.28] - 2026-09-29
+
+### Fixes
+  - fix(engine): adapter chronos soporta execution_query (renombre 0.1.4) con fallback legacy
+
+### Other
+  - docs(uat): C2b re-ejecutado contra chronos-mcp 0.1.4 real (T12-T14 PASS con fix de adapter)
+  - docs(uat): C2a re-ejecutado contra cognicode-mcp real 0.97.3 (T08-T11 PASS observados)
+  - docs(roadmap): punteros a v2.2.27/5ee68265 y adenda de cierre session-34
+
 ## [2.2.27] - 2026-09-29
 
 ### Fixes
