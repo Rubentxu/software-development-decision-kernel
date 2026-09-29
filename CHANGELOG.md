@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.21] - 2026-09-29
+
+### Fixes
+  - fix(tests): test_h05_isolation resuelve el target dir real via cargo metadata
+
+### Other
+  - docs(roadmap): punteros a session-34 con C1 re-anclada a 89f60190
+  - docs(roadmap): entrada session-34 con el lote C1 re-anclado y el guard H05 reparado
+  - docs(uat): recibo C1 re-anclado a 89f60190 con lote T03-T07 observado hoy
+  - docs(roadmap): puntero CURRENT a session-33b con suite 22/22
+  - docs(roadmap): cerrar la extension session-33b con la suite en 22/22
+  - docs(state): registrar v2.2.20 como release observado y verificado
+
 ## [2.2.20] - 2026-09-29
 
 ### Other
