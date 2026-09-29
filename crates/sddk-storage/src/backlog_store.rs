@@ -735,7 +735,7 @@ mod tests {
         let v: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(v, 20);
+        assert_eq!(v, 21);
         let _ = conn2;
     }
 

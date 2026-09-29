@@ -54,8 +54,8 @@ fn migration_16_schema_version_16() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        20,
-        "LATEST_SCHEMA_VERSION must be 20 (MIGRATION_20 legacy ledger_events drop)"
+        21,
+        "LATEST_SCHEMA_VERSION must be 21 (MIGRATION_21 cycles.status PAUSED)"
     );
 }
 
@@ -204,8 +204,8 @@ fn migration_16_preserves_existing_rows() {
         storage
             .schema_version()
             .expect("schema_version must be queryable"),
-        20,
-        "schema version must be 20 after migration"
+        21,
+        "schema version must be 21 after migration"
     );
 
     // Verify legacy row survived

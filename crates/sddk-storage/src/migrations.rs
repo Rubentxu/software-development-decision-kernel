@@ -1,4 +1,4 @@
-pub(crate) const LATEST_SCHEMA_VERSION: i32 = 20;
+pub(crate) const LATEST_SCHEMA_VERSION: i32 = 21;
 
 /// Runs all pending migrations on an open SQLite connection.
 ///
@@ -281,8 +281,142 @@ pub(crate) fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), supe
             .map_err(super::StorageError::Database)?;
         tx.commit().map_err(super::StorageError::Database)?;
     }
+    if version < 21 {
+        // The table rebuild inside MIGRATION_21 needs foreign-key enforcement
+        // suspended: `DROP TABLE cycles` is performed as an implicit
+        // `DELETE FROM`, which would otherwise trip `artifacts -> cycles
+        // ON DELETE RESTRICT`. RESTRICT is checked immediately, unlike
+        // NO ACTION, so a deferred foreign key would not rescue it. SQLite
+        // treats `PRAGMA foreign_keys` as a no-op inside a transaction, so it
+        // must be set on the connection before the transaction opens.
+        conn.pragma_update(None, "foreign_keys", false)
+            .map_err(super::StorageError::Database)?;
+
+        let migrated = (|| -> Result<(), rusqlite::Error> {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+            // Defensive guard, same rationale as MIGRATION_7: databases created
+            // by SqliteEventStore ran only migrations 5-6 and never had a
+            // `cycles` table, so its `user_version` can be below 21 without the
+            // table existing. Rebuilding a non-existent table would fail the
+            // whole open with "no such table: cycles".
+            let cycles_exists: bool = tx
+                .query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cycles'",
+                    [],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if cycles_exists {
+                tx.execute_batch(MIGRATION_21)?;
+                // Verify the rebuilt schema before committing: a dangling or
+                // re-pointed FK here would otherwise surface much later as a
+                // confusing runtime error on an unrelated write. The pragma
+                // returns one row per violation and no rows at all when clean.
+                let violations = {
+                    let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
+                    let mut rows = stmt.query([])?;
+                    let mut out: Vec<String> = Vec::new();
+                    while let Some(row) = rows.next()? {
+                        let t: String = row.get(0)?;
+                        out.push(t);
+                    }
+                    out
+                };
+                if !violations.is_empty() {
+                    // A dangling or re-pointed FK must abort the migration instead
+                    // of escaping into the live database. The whole transaction
+                    // rolls back, leaving the database at the previous
+                    // user_version and the table untouched.
+                    return Err(rusqlite::Error::InvalidParameterName(violations.join(", ")));
+                }
+            }
+            tx.pragma_update(None, "user_version", 21)?;
+            tx.commit()
+        })();
+
+        // Restore enforcement regardless of outcome: leaving it off would make
+        // every later write on this connection skip FK validation.
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(super::StorageError::Database)?;
+
+        migrated.map_err(super::StorageError::Database)?;
+    }
     Ok(())
 }
+
+/// Widens the `cycles.status` CHECK to accept `PAUSED` on databases created
+/// before `PAUSED` was added to `MIGRATION_1`.
+///
+/// `MIGRATION_1` creates `cycles` with `CREATE TABLE IF NOT EXISTS`, so editing
+/// that DDL only reaches databases created afterwards. Existing ledgers kept
+/// the original CHECK forever, because SQLite cannot ALTER a CHECK constraint
+/// and no migration rebuilt the table. The result was that `sddk cycle pause`
+/// failed on exactly the installations with the most history:
+///
+/// ```text
+/// ENGINE_STORAGE: CHECK constraint failed: status IN ('OPEN', 'BLOCKED',
+/// 'REMEDIATING', 'RELEASE_PENDING', 'RELEASED', 'CLOSED', 'ABANDONED',
+/// 'RECOVERING')
+/// ```
+///
+/// Both the source DDL and the `cycle.pause` transition in
+/// `workflow/workflow.yaml` declared `PAUSED`; only the live schema disagreed.
+///
+/// Shape of the rebuild. This follows the SQLite-documented table-rebuild
+/// procedure: build the replacement under a temporary name, copy the rows,
+/// drop the original, then rename the replacement into place. The order is
+/// deliberate — it never renames the *original* table, which is what keeps
+/// referencing foreign keys intact:
+///
+/// * `ALTER TABLE cycles RENAME TO cycles_old` would make SQLite rewrite the
+///   referencing FK clause inside `artifacts` so it names `cycles_old`
+///   (this happens by default on SQLite >= 3.25; the `legacy_alter_table`
+///   pragma is what *disables* that rewriting, not enables it). Dropping
+///   `cycles_old` afterwards would leave `artifacts` pointing at a table that
+///   no longer exists, failing later at runtime far from the migration.
+/// * Renaming the *replacement* into place is safe because nothing references
+///   the temporary name, so there is no clause to rewrite. `artifacts` keeps
+///   its original `REFERENCES cycles` and now resolves to the new table.
+///
+/// The caller must set `foreign_keys = OFF` on the connection before opening
+/// the transaction that runs this batch, and the migration driver runs
+/// `PRAGMA foreign_key_check` before committing so a re-pointed or dangling FK
+/// aborts the migration instead of escaping into the live database.
+///
+/// The replacement DDL is kept byte-identical to the `cycles` definition in
+/// `MIGRATION_1` apart from the added `'PAUSED'`, so both paths converge on
+/// the same schema. `tests/migration_21_cycles_paused.rs` pins that agreement.
+pub(crate) const MIGRATION_21: &str = r#"
+CREATE TABLE cycles_m21_widened (
+    cycle_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN (
+        'OPEN', 'BLOCKED', 'REMEDIATING', 'PAUSED', 'RELEASE_PENDING',
+        'RELEASED', 'CLOSED', 'ABANDONED', 'RECOVERING'
+    )),
+    phase TEXT NOT NULL CHECK (phase IN (
+        'explore', 'specify', 'design', 'plan', 'build',
+        'verify', 'review', 'release', 'archive'
+    )),
+    manifest_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (project_id, workspace_id)
+        REFERENCES workspaces(project_id, workspace_id) ON DELETE RESTRICT,
+    UNIQUE (project_id, cycle_id)
+);
+
+INSERT INTO cycles_m21_widened SELECT * FROM cycles;
+
+DROP TABLE cycles;
+
+ALTER TABLE cycles_m21_widened RENAME TO cycles;
+
+CREATE INDEX IF NOT EXISTS cycles_project_status_idx ON cycles(project_id, status);
+"#;
 
 pub(crate) const MIGRATION_1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (

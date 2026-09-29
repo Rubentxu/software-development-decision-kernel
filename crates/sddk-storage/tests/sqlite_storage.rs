@@ -34,7 +34,7 @@ fn persists_canonical_records_across_reopen() {
         // MIGRATION_7 adds agent/behavior_version_hash to capability_receipts
         // MIGRATION_15 adds evidence_attachments_v1 + decision_records_v1 (schema 15)
         // MIGRATION_17 adds workflow_run_events_v1 (schema 17)
-        assert_eq!(storage.schema_version().unwrap(), 20);
+        assert_eq!(storage.schema_version().unwrap(), 21);
         storage.insert_project(&project_record()).unwrap();
         storage.insert_workspace(&workspace_record()).unwrap();
         storage.insert_cycle(&cycle).unwrap();
@@ -923,7 +923,9 @@ fn storage_migration_3_backfills_seq_default_one() {
                 workspace_id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(project_id),
                 canonical_path TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, canonical_path),
+                UNIQUE(project_id, workspace_id)
             );
             CREATE TABLE cycles (
                 cycle_id TEXT PRIMARY KEY,
@@ -995,7 +997,7 @@ fn storage_migration_3_backfills_seq_default_one() {
     // Open with current code — MIGRATION_3..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
 
     // The pre-existing row now carries seq = 1
     let receipt = storage
@@ -1025,7 +1027,9 @@ fn storage_get_gate_receipt_handles_v1914_id_without_seq_suffix() {
                 workspace_id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(project_id),
                 canonical_path TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, canonical_path),
+                UNIQUE(project_id, workspace_id)
             );
             CREATE TABLE cycles (
                 cycle_id TEXT PRIMARY KEY,
@@ -1446,7 +1450,9 @@ fn legacy_receipt_without_version_columns_returns_none() {
                 workspace_id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(project_id),
                 canonical_path TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, canonical_path),
+                UNIQUE(project_id, workspace_id)
             );
             CREATE TABLE cycles (
                 cycle_id TEXT PRIMARY KEY,
@@ -1504,7 +1510,7 @@ fn legacy_receipt_without_version_columns_returns_none() {
     // Open with current code — MIGRATION_7..MIGRATION_17 all run (including MIGRATION_17)
     let storage = Storage::open(&database_path).unwrap();
     // MIGRATION_17 bumps to schema 17
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
 
     // Read back the legacy receipt — new columns must be None
     let receipt = storage.get_capability_receipt("legacy-receipt-1").unwrap();
@@ -1570,7 +1576,7 @@ fn fresh_v0_database_has_no_legacy_ledger_events_table() {
     let database_path = directory.path().join("ledger.sqlite");
 
     let storage = Storage::open(&database_path).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
 
     let legacy_objects: i64 = storage
         .connection_for_tests()
@@ -1610,7 +1616,9 @@ fn v19_database_with_legacy_ledger_events_upgrades_to_v20_and_drops_table() {
                 workspace_id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(project_id),
                 canonical_path TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, canonical_path),
+                UNIQUE(project_id, workspace_id)
             );
             CREATE TABLE cycles (
                 cycle_id TEXT PRIMARY KEY,
@@ -1682,7 +1690,7 @@ fn v19_database_with_legacy_ledger_events_upgrades_to_v20_and_drops_table() {
 
     // First open with v20 code: MIGRATION_20 runs and drops the legacy corpus.
     let storage = Storage::open(&database_path).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
     let legacy_objects: i64 = storage
         .connection_for_tests()
         .query_row(
@@ -1711,7 +1719,7 @@ fn v19_database_with_legacy_ledger_events_upgrades_to_v20_and_drops_table() {
 
     // Re-open is idempotent: version stays 20, no legacy objects reappear.
     let reopened = Storage::open(&database_path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 20);
+    assert_eq!(reopened.schema_version().unwrap(), 21);
     let legacy_objects: i64 = reopened
         .connection_for_tests()
         .query_row(

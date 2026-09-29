@@ -114,7 +114,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     // Canonical stream is the only writer: new events live in events_v1.
     // (WU-C15-4: `ledger_events` ya no existe físicamente; no hay tabla
     // legacy que contar — el schema v20 lo garantiza.)
-    assert_eq!(fresh.schema_version().unwrap(), 20);
+    assert_eq!(fresh.schema_version().unwrap(), 21);
 
     // Merged readers expose the canonical events with per-stream sequences.
     let all = fresh.list_events().unwrap();
@@ -199,7 +199,7 @@ fn fresh_and_migrated_repo_read_canonical_stream_identically() {
     drop(migrated); // close → re-open simula la migración post-v20
 
     let migrated = Storage::open(&migrated_path).unwrap();
-    assert_eq!(migrated.schema_version().unwrap(), 20);
+    assert_eq!(migrated.schema_version().unwrap(), 21);
     let merged = migrated.list_events().expect("list_events");
     assert_eq!(
         merged.len(),

@@ -144,8 +144,8 @@ fn reader_schema_matches_writer() {
     let ledger = run_writer(&dir, project_id);
 
     let reader = Storage::open_read_only(&ledger).expect("reader open");
-    // 20 = LATEST_SCHEMA_VERSION (post MIGRATION_20 canonical redirect).
-    assert_eq!(reader.schema_version().expect("reader schema version"), 20);
+    // 21 = LATEST_SCHEMA_VERSION (post MIGRATION_21 cycles.status PAUSED).
+    assert_eq!(reader.schema_version().expect("reader schema version"), 21);
 }
 
 #[test]

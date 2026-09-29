@@ -4100,7 +4100,7 @@ mod schema_resilience_tests {
             actual, COMPILED_SCHEMA_VERSION,
             "COMPILED_SCHEMA_VERSION must equal LATEST_SCHEMA_VERSION"
         );
-        assert_eq!(actual, 20, "expected 20 (LATEST_SCHEMA_VERSION this cycle)");
+        assert_eq!(actual, 21, "expected 21 (LATEST_SCHEMA_VERSION this cycle)");
     }
 
     // ---------- T27-2 ----------
@@ -4144,11 +4144,11 @@ mod schema_resilience_tests {
                 )
                 .expect("insert gate_receipt");
         }
-        // Second open should observe user_version=20 and skip all migrations.
+        // Second open should observe user_version=21 and skip all migrations.
         {
             let store = Storage::open(&path).expect("second open");
             let v = store.schema_version().expect("schema_version");
-            assert_eq!(v, LATEST_SCHEMA_VERSION, "user_version must stay at 20");
+            assert_eq!(v, LATEST_SCHEMA_VERSION, "user_version must stay at 21");
             let count: i64 = store
                 .connection
                 .query_row("SELECT COUNT(*) FROM gate_receipts", [], |row| row.get(0))
@@ -4243,7 +4243,7 @@ mod schema_resilience_tests {
         );
         // End-to-end "open at v=1 with empty catalog" is implicitly
         // covered by T28-2 (fresh in-memory DB) and T27-1
-        // (schema_version() == 20 after open).
+        // (schema_version() == 21 after open).
     }
 
     // ---------- T27-5 ----------
@@ -4502,7 +4502,7 @@ mod schema_resilience_tests {
     #[test]
     fn t28_3_pre_flight_passes_on_full_db() {
         let (_dir, path) = tempdir_db_path("t28_3");
-        // Open + close leaves DB at user_version = 20.
+        // Open + close leaves DB at user_version = 21.
         {
             let store = Storage::open(&path).expect("open");
             assert_eq!(store.schema_version().unwrap(), LATEST_SCHEMA_VERSION);

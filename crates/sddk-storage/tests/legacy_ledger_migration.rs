@@ -195,7 +195,7 @@ fn fresh_v0_schema_has_no_legacy_table() {
     let path = dir.path().join("ledger.sqlite");
     let storage = Storage::open(&path).expect("open fresh storage");
 
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
 
     let conn = storage.connection_for_tests();
     let legacy_objects: i64 = conn
@@ -235,7 +235,9 @@ fn migrated_v19_database_drops_legacy_table_on_upgrade() {
                 workspace_id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(project_id),
                 canonical_path TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, canonical_path),
+                UNIQUE(project_id, workspace_id)
             );
             CREATE TABLE cycles (
                 cycle_id TEXT PRIMARY KEY,
@@ -307,7 +309,7 @@ fn migrated_v19_database_drops_legacy_table_on_upgrade() {
 
     // First open with v20 code: MIGRATION_20 runs and drops the corpus.
     let storage = Storage::open(&path).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.schema_version().unwrap(), 21);
     let conn = storage.connection_for_tests();
     let legacy_objects: i64 = conn
         .query_row(
@@ -324,7 +326,7 @@ fn migrated_v19_database_drops_legacy_table_on_upgrade() {
 
     // Re-open is idempotent: version stays 20, no error from the IF EXISTS DDL.
     let reopened = Storage::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 20);
+    assert_eq!(reopened.schema_version().unwrap(), 21);
     let conn = reopened.connection_for_tests();
     let legacy_objects: i64 = conn
         .query_row(
