@@ -5371,3 +5371,63 @@ OK, `cargo test --workspace` **0 fallos**, suite shell de contratos **21/22**.
 3. Si se toca la ruta de release, **verificar con `install.sh` dos veces** cuando se
    actualiza una versión ya instalada: la primera pasada puede escribir enlaces hacia un
    directorio de versión que aún no existe si el estado viene de la versión anterior.
+
+---
+
+## session-33b — 2026-09-29 (extension) — coherencia resuelta y v2.2.20
+
+**Baseline de entrada:** `268aeea2` (cierre de session-33). **HEAD de salida:**
+`d6abb855` (`== origin/main`, árbol limpio).
+
+### Qué se hizo
+
+1. **`test_vault_coherence_alignment.sh` resuelto de forma honesta**, no maquillada:
+   - Se reprodujo primero el defecto del test original con un fixture: un informe SIN
+     veredicto, con "aligned" solo en prosa ("release-preconditions-aligned"), hacia
+     que el fallback `grep -E "(aligned|misaligned|n/a)"` declarara
+     **"Verdict detected: aligned"** y PASS. El test aprobaba informes vacios.
+   - Reescrito con `evaluate_report()`: una sola función de veredicto, pinada contra
+     6 fixtures hermeticos (aligned, misaligned con y sin INC/block, n/a, la
+     prosa-trampa, veredicto malformado). `misaligned` sin mencion de bloqueo ahora
+     RECHAZA; la prosa-trampa da `verdict=missing` y se rechaza.
+   - Si el informe real no existe, el test declara **NOT_RUN** en vez de fallar duro:
+     la ausencia de un artefacto generado por un agente bajo demanda no es un
+     incumplimiento del contrato.
+   - **El informe real se produjo de verdad**: el agente `sddk-coherence` (leaf
+     evaluator, delegado via swarm, modelo heredado tras fallar la ruta MiniMax)
+     ejecutó el trigger `release->archive-vault-complete` leyendo los artefactos
+     reales y concluyo **veredicto `n/a`**: session-33 cerro por la ruta estandar de
+     release (GitHub Releases), no por la ruta vault (`ManagedClosureDelivery`
+     + `archive.vault.complete` + `vault-receipt`), que no existe en ningun manifest
+     del repo. Informe commiteado en
+     `.sddk-cycle-artifacts/coherence/release-archive-vault-complete.md`. El test
+     pasa 11/11 contra ese informe.
+
+2. **Defecto real del instalador reproducido y diagnosticado con causa raiz**: mezclar
+   `sddk dev update` (semantica del binario 2.2.19: extrae en la RAIZ del framework y
+   apunta `current` a la raiz) con `install.sh` v2.2.20 (directorios por version) deja
+   `2.2.20/` vacio y 69 enlaces de editor rotos, con `all_present: false`. La
+   reinstalacion limpia con `install.sh` lo restauro todo (`all_present: true`,
+   0 enlaces rotos). **Regla practica**: no mezclar las dos rutas de actualizacion;
+   si se mezclan, reinstalar con `install.sh`.
+
+3. **v2.2.20 publicado y verificado** (contiene el test de coherencia y el informe):
+   run `36565787996` 13/13 jobs, sha == HEAD (`46608302`), 27 assets, cosign Verified
+   OK, digest del binario instalado **identico** al publicado (`fc23bad5...`),
+   `all_present: true`, `current -> framework/2.2.20`.
+
+### Estado final de la suite
+
+**22/22 en dos rondas consecutivas** — primera vez en la historia observada del repo
+que la suite completa de contratos shell esta toda verde. Nota honesta: durante una
+ventana post-install, `test_vault_mirror_auto.sh` fallo 3 veces dentro del bucle de la
+suite y 10/10 aislado inmediatamente despues, y en suite x2 limpio. Clasificado como
+**transitorio sensible al entorno (posible carrera con el estado de disco tras el
+install), no reproducible fuera de esa ventana**. No se parcheo nada a ciegas. Si
+reaparece, investigar con el entorno del bucle completo, no en aislado.
+
+### Punteros
+
+- `STATE.yaml`: `last_public_release_observed: v2.2.20`, current_sha reconciliado,
+  guard en PASS. Journal y CURRENT actualizados en este mismo push.
+- Suite: 22/22. Ceros rojos documentados.
