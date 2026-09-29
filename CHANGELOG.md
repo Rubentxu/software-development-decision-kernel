@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.23] - 2026-09-29
+
+### Fixes
+  - fix(cli): dev update instala en version-dir y apunta current ahi
+
 ## [2.2.22] - 2026-09-29
 
 ### Fixes
