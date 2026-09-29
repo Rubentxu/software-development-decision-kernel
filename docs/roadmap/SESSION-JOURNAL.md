@@ -5257,3 +5257,117 @@ operador), `INC-DEBT-034` (causa raíz 2: layout productor vs consumidor — **a
 4. Reconciliar `CURRENT.md` (sigue describiendo session-31 / v2.2.6) y este diario ya
    escrito. `STATE.yaml` se actualizó por `scripts/reconcile_state_pointer.sh` pero su
    campo `last_public_release_observed` sigue diciendo `v2.0.1` — **desactualizado**.
+
+---
+
+## session-33 — 2026-09-29 — cierre de la cadena v2.2.12→v2.2.19
+
+**Baseline de entrada:** `ee5ca2d2` (v2.2.18 publicado, `origin/main` sincronizado,
+`HEAD == origin/main`). **HEAD de salida:** `1cf5d535` (v2.2.19, `HEAD == origin/main`
+verificado tras push).
+
+### Objetivo
+
+Cerrar la deuda crítica que session-32 dejó abierta: publicar el release pendiente,
+demostrar que la ruta de instalación funciona de extremo a extremo y **explicar el
+conocimiento negativo** que session-32.NO pudo explicar.
+
+### Lo que se hizo
+
+1. **Resuelto el conocimiento negativo de session-32.** Session-32 escribió que la
+   mutación "siempre `true`" no ponía los pins en rojo y que "el mecanismo por el que
+   el pin no detectaría ese mutante sigue sin explicar" (commit `2f7d5064`).
+   **Explicado:** el pin existente (`root_level_ci_layout_is_not_detected_as_wrapped`)
+   prueba la **función** del detector, no el **sitio** donde se invoca. El detector sigue
+   siendo correcto bajo el mutante, así que el pin sigue verde. La forma del defecto es
+   *"función correcta detrás de un `if` equivocado"*. Confirmado por ejecución: con
+   `if true` en el call site, el pin da PASS y el detector unitario da verde.
+
+2. **`tests/test_release_bundle_layout.sh` creado** (6 checks) para cruzar productor
+   (`release.yml`), consumidor CI, consumidor Rust y documentación. El case 5 —"el
+   strip está condicionado por el veredicto del detector"— se reescribió **cuatro
+   veces**: las tres primeras pasaban la mutación. Se documentan los tres approaches
+   fallidos porque un guard no falsificado no está verificado.
+
+3. **`INC-DEBT-034` cerrada.** Decisión: el **layout raíz es el contrato canónico**,
+   forzado por `release.yml` (extrae sin `--strip-components`, exige
+   `framework/MANIFEST.sha256`); `AGENTS.md §8` actualizado. El consumidor Rust además
+   tolera las dos formas.
+
+4. **`INC-DEBT-032` cerrada** con dos tests herméticos que sustituyen a los que leían
+   `~/.sddk-knowledge`.
+
+5. **`test_release_state_pointer.sh` pasa** (llevaba rojo desde antes de session-33).
+   Causa: el puntero declaraba `v2.2.17` y "v2.2.18 NO publicado", y apuntaba a un
+   commit no publicado. Reparado con `scripts/reconcile_state_pointer.sh --repair` más
+   la corrección del dato de release.
+
+6. **v2.2.19 publicado y verificado por seis vías independientes** (ver abajo).
+
+### Hallazgo operativo (no trivial)
+
+`~/.local/share/sddk/bin/sddk` es un binario **viejo de la v1.145.1 (2026-09-09)** que
+sigue en disco. Comprobar el digest del release vigente por esa ruta produce una
+**discrepancia falsa**. El binario vigente es `~/.local/bin/sddk`. Queda anotado en
+`STATE.yaml` para que nadie más lo lea como un fallo de distribución.
+
+### Release v2.2.19 — evidencia OBSERVADA
+
+| Vía | Resultado |
+|---|---|
+| Workflow `release.yml` run `36562863987` | `conclusion=success`, **13/13 jobs**, `sha=1cf5d535` == HEAD |
+| Release publicada | `isDraft=false`, `isPrerelease=false`, **27 assets**, 2026-09-29T11:44:52Z |
+| URLs de distribución (nombres reales) | **11/11 HTTP 200** |
+| `cosign verify-blob` binario | **Verified OK**, identidad `release.yml@refs/tags/v2.2.19` |
+| `cosign verify-blob` bundle | **Verified OK** |
+| Digest instalado vs publicado | **MATCH bit a bit** (`4f5ec5b5…`) |
+| Instalación real `install.sh` | `all_present: true`, `current -> framework/2.2.19`, 0 enlaces rotos |
+| `sddk dev update` | **377 ficheros** content-verified via `MANIFEST.sha256` |
+| Layout del bundle | root-level con `MANIFEST.sha256` en la raíz (contrato INC-DEBT-034) |
+| Receipt | `gh-release-receipt.json`: `surface=github_releases`, `actor=github-actions` |
+
+Gates previos: `cargo fmt --check` OK, `cargo clippy --workspace --all-targets -D warnings`
+OK, `cargo test --workspace` **0 fallos**, suite shell de contratos **21/22**.
+
+### Falsificación del guard nuevo (OBSERVED)
+
+| Dirección | Mutación | Resultado |
+|---|---|---|
+| Verde | árbol correcto | PASS 6/6, identifica `if strip_components` (línea 362) |
+| ROJO (productor) | reenvolver el bundle con `--xform` | **FAIL** check 1 |
+| ROJO (consumidor) | `if true` en el call site del strip | **FAIL** check 5, nombrando la condición |
+
+### Deuda que queda
+
+- **`test_vault_coherence_alignment.sh` en rojo** — preexistente, **no causado por esta
+  sesión** (el test no se toca desde el import inicial, `34d68c21`). Exige un artefacto
+  en `.sddk-cycle-artifacts/coherence/<trigger>.md` que genera el agente de coherencia y
+  que no se ejecutó aquí. **NO se fabricó.** Marcado `BLOCKED/NOT_RUN` con razón.
+- `INC-DEBT-035` (decisión de seguridad del operador), `INC-DEBT-031`, `INC-DEBT-026`,
+  `DEFAULT-GATE-DISCONNECTED`, `NO-STRUCTURED-LOGGING`, `TEST-PORTS-UNCONSUMED`,
+  `RELEASE-FORCE-VERSION-ERGONOMICS`.
+- Asimetría conocida del instalador (documentada, no arreglada): con un `SDDK_PREFIX`
+  distinto del real se escriben enlaces que no resuelven.
+
+### Notas de proceso que valen para sesiones futuras
+
+1. `scripts/release.sh` **aborta en el paso 8c** en una workstation: la firma keyless
+   exige la identidad del proyecto desde GitHub Actions. Publicar es por
+   `gh workflow run release.yml --ref <tag>`, no con el script local.
+2. `release-bump.sh` se apoya en el **último tag local**. Los tags locales pueden ir
+   atrasados respecto a los remotos: hacer `git fetch --tags origin` antes de calcular el
+   bump o bumpea desde una base equivocada.
+3. El hook pre-push **rechaza** un push a `main` cuyo rango toque `crates/` o `tests/`
+   sin bump de `[workspace.package] version`. El asunto `chore(release): bump version`
+   no es autoridad; la autoridad es el cambio real de versión.
+
+### Primer paso preciso de la sesión siguiente
+
+1. Resolver `test_vault_coherence_alignment.sh`: ejecutar el agente de coherencia para
+   producir el artefacto, o decidir explícitamente si el test debe degradar a WARN cuando
+   el artefacto no existe (hoy falla duro y bloquea la suite por un artefacto externo).
+2. Continuar el roadmap desde `docs/roadmap/ROADMAP.md` con el siguiente WorkItem READY
+   cuyas dependencias estén verificadas.
+3. Si se toca la ruta de release, **verificar con `install.sh` dos veces** cuando se
+   actualiza una versión ya instalada: la primera pasada puede escribir enlaces hacia un
+   directorio de versión que aún no existe si el estado viene de la versión anterior.
