@@ -3,7 +3,7 @@
 **Baseline / HEAD al iniciar:** `dca39e5d` (close-out documental de session-40).
 **Workspace version:** 2.2.32 · **Último release público:** v2.2.27.
 **Commits de esta sesión:** `90612d86` (DeltaStore durable), `8ff09e25` (`sddk context delta`), `1ee19f21` (ADR-0146).
-**Commits sin publicar respecto a origin/main:** 28 al cierre de la sesión (24 heredados + los 4 de esta sesión) (push sigue siendo gate humano).
+**Commits sin publicar respecto a origin/main:** 29 al cierre de la sesión (24 heredados + los 5 de esta sesión) (push sigue siendo gate humano).
 
 ## WorkItem: C3j objetivo 5 — `ContextDelta` observable entre procesos
 
@@ -145,3 +145,5 @@ son gates humanos o de release.
 `ContextCapsule` dentro de `sddk context bootstrap` reutilizando
 `ContextCompiler` + `CapsuleTarget` (ya existe `durable_capsule_is_recovered_as_basis`
 que la lee; falta producirla). Después, objetivo 6 (hipermedia = paso 7).
+
+> **El conteo de commits sin publicar es auto-referencial:** cada commit que lo declara se cuenta a sí mismo. Medir con `git log --oneline origin/main..HEAD | wc -l`.
