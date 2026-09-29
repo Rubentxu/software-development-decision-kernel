@@ -5792,3 +5792,86 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
 5. **Estado**: workspace **2.2.32** sin publicar, ultimo release publico
    **v2.2.27** (`5ee68265`). Perfil completo re-verificado en verde sobre el
    estado final de la cadena.
+
+---
+
+## Adenda session-35 — 2026-09-29T17:54Z — MIGRATION_21 + INC-DEBT-037
+
+**Baseline / HEAD:** `main`, `HEAD = e62da1bc`, `origin/main = 3d4e457a` (este commit y los dos anteriores **NO publicados**). Workspace `2.2.32` sin publicar; ultimo release publico sigue siendo `v2.2.27`.
+
+### Que se rompió y por que
+
+`sddk cycle pause` fallaba en **toda** base de datos existente: la restriccion `CHECK` de `cycles.status` en el esquema v20 no admitia `PAUSED`. Solo las bases creadas desde cero (esquema vigente) lo aceptaban. MIGRATION_21 reconstruye la tabla y ensancha la restriccion conservando filas y claves foraneas.
+
+### INCIDENTE — mutacion no autorizada del ledger real (declarado, no fabrication)
+
+Intentando verificar la migracion sobre una **copia**, los intentos iniciales otakieron `SDDK_STATE_HOME` como mecanismo de aislamiento. **El CLI no lo respetaba para el ledger**, asi que la verificacion escribio sobre el ledger real del proyecto:
+
+- ledger: `~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite`
+- `user_version` 20 → 21
+- `c0-t01-pointer-mutation` `OPEN` → `PAUSED`
+- leases 31 → 30 (consistente con pausar)
+- **sin perdida de datos**; backup byte-exacto en `/tmp/ledger.pre-m21.backup.sqlite`
+
+Causa raiz, desde el fuente: `SDDK_STATE_HOME` solo lo leia `admission.rs`; las rutas del ledger se construyen con `resolve_xdg_paths` via `XDG_STATE_HOME`; el CLI solo rellenaba `XdgEnvironment.state_home` desde `XDG_STATE_HOME`. El preambulado documentado (`SDDK_STATE_HOME > XDG_STATE_HOME > HOME`) **no aplicaba a la ruta que realmente abria el ledger**.
+
+**NO se ha escrito en el ledger real desde entonces.** Verificado por hash: `58745880051db0a59ae7e944f19da450c199ab77ef98f228ccc56adb6fd8410f` identico antes y despues de la verificacion final de aislamiento.
+
+### Correccion (e62da1bc)
+
+`sddk_state_home` en `XdgEnvironment` y `CliEnvironment`, con precedencia sobre `XDG_STATE_HOME` en `resolve_xdg_paths`. `resolve_base` usa el override tal cual, sin anadir sufijos — misma semantica que la rama previa de `admission.rs`.
+
+**Fuera de alcance, deliberadamente:** la deduplicacion de `admission.rs` que delegaria en el resolver canonico **rompio** `admission_deny_e2e::human_evaluate_gate_denied_with_zero_side_effects` (0 eventos de admision donde se esperaba 1) porque el consumidor espera la raiz **desnuda** y anade `sddk/projects` por su cuenta. **Se revirtio.** Ademas el consumidor cae en `dirs::state_dir()` mientras la rama previa caia en `~/.local/state`; unificar eso cambia comportamiento en maquinas sin `XDG_STATE_HOME` y exige decision propia. Queda como trabajo pendiente, no como deduplicacion gratuita.
+
+### Conocimiento negativo (lo que NO se debe volver a intentar)
+
+1. **No aislar con `SDDK_STATE_HOME` antes de `e62da1bc`.** Era un no-op silencioso. Ese fue el fallo real, no un descuido de flag.
+2. **La copia aislada debe ir a `<root>/sddk/projects/<project_id>/ledger.sqlite`.** A un nivel de profundidad equivocado el CLI **crea un ledger vacio nuevo** en vez de fallar: la verificacion "pasa" sobre una base vacia y no prueba nada. Se observo exactamente eso.
+3. **Los slugs de ciclo necesitan el prefijo de proyecto** (`p-63676b11dc0ef88f/c0-t01-pointer-mutation`); el slug desnudo da `STORAGE_NOT_FOUND` (gotcha F4 ya conocido).
+4. **`sddk cycle pause` exige `--reason`, `--lease-owner` y `--fencing-token`**, y el token debe ser el vigente: un lease expirado falla con un guard de dominio legitimo que **no** debe confundirse con un fallo de rutas.
+
+### Evidencia observada
+
+| Perfil | Resultado |
+|---|---|
+| `cargo test -p sddk-engine -p sddk-cli` | **155 suites, 3619 tests, 0 fallos** |
+| `cargo test -p sddk-storage` | **35 suites, 279 tests, 0 fallos** |
+| `cargo fmt --check` | limpio |
+| `cargo clippy -D warnings` (3 crates tocados) | limpio |
+| `git diff --check` | limpio |
+
+Prueba de aislamiento end-to-end, con copia v20 genuina (`user_version=20`, `c0-t01=OPEN`) colocado en la profundidad correcta: la copia migra a `v21` y devuelve `status: PAUSED` (177 filas de ciclos, `foreign_key_check` vacio) mientras el **ledger real conserva el mismo sha256**. 6 tests de contrato nuevos en `crates/sddk-engine/tests/inc_debt_037_state_home_precedence.rs`, mutation-tested (sin la precedencia fallan 3).
+
+### Lo que NO se hizo
+
+- **NO** se ejecuto `cargo test --workspace` completo como gate de release de este trabajo: los tres crates tocados mas las pruebas end-to-end verdes son el lote acotado justificado por el cambio. El perfil completo corresponde a `verify`/release, no a `apply`.
+- **NO** se publico nada. **NO** se toco el ledger real. **NO** se fabrico evidencia de la recuperacion.
+
+### Siguiente paso exacto
+
+**Dos decisiones del operador, ambas bloqueantes:**
+
+1. **Recuperacion del ledger real.** `c0-t01-pointer-mutation` sigue en `PAUSED` cuando deberia estar `OPEN`. Dos vias: `sddk cycle resume` (reversible, conserva v21) o restaurar `/tmp/ledger.pre-m21.backup.sqlite` (byte-exacto, pero revierte a v20 y la migracion se re-ejecuta al reabrir). **Ninguna se ha ejecutado.**
+2. **Push.** Hay commits sin publicar y el hook pre-push exige bump real (ver nota de proceso de session-33: el asunto `chore(release): bump version` no es autoridad; lo que cuenta es el bump de `[workspace.package] version`). Publicar implica un release, que es decision del operador.
+
+Despues: continuar el WorkItem READY que elegia el operador en `docs/roadmap/ROADMAP.md`, y tratar la unificacion de los dos resolvers de state root como trabajo propio con su propia evidencia.
+
+### HALLAZGO session-35b — el guard del puntero tiene dos requisitos que con trabajo sin publicar son INCOMPATIBLES
+
+Al reconciliar el puntero (`tests/test_release_state_pointer.sh`) aparecio un rojo que **no** era drift ajeno: lo causo esta misma sesion.
+
+- Al inicio: `current_sha=3d810c48`, `main=e01bc66c`, `behind=2` (tolerancia 3) → **verde**, y `3d810c48` estaba en `origin/main`.
+- Mis 3 commits dejaron `main=e62da1bc`: `behind=4` → el check de puntualidad cae.
+
+El guard exige a la vez (a) `current_sha` **contenido en `origin/main`** y (b) `current_sha` a **≤3 commits de `main` local**. Con 4 commits sin publicar no hay valor que satisfaga ambos:
+
+| `current_sha` | (a) en `origin/main` | (b) ≤3 detras de main |
+|---|---|---|
+| `5440b2e8` (baseline publicado) | ok | **FAIL** (4) |
+| `e62da1bc` (HEAD local) | **FAIL** | ok (0) |
+
+Se eligio `e62da1bc` porque es lo que hace `scripts/reconcile_state_pointer.sh` (el script de reconciliacion oficial) y porque un puntero atras 4 commits es la senal de "el trunk se movio sin reconciliar", mientras que un puntero en HEAD con el publish pendiente ya **esta** declarado explicitamente en `development_head` y en el propio bloque de este puntero.
+
+**El guard queda en ROJO por el check de publicacion y se declara como tal.** NO se maquilla bajando `PUNCTUAL_TOLERANCE` ni adelantando el puntero a un commit viejo: las dos cosas harian el test verde sin que la realidad lo estuviera. Se cierra sola al publicar (push con bump) o al mergear el trunk.
+
+**Conocimiento negativo reutilizable:** el reconciliador y el guard **no comparten criterio** cuando hay commits sin publicar — el reconciliador pone el puntero en HEAD local, y eso hace caer el check de "esta en origin/main". La proxima sesion que cierre estos commits va a ver este rojo y debe leerlo como consecuencia esperada, no como un fallo nuevo que "arreglar" moviendo el puntero.
