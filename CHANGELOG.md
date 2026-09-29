@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.27] - 2026-09-29
+
+### Fixes
+  - fix(ci): el smoke test aserta el layout versionado (contrato nuevo del tar con BUNDLE.toml)
+
 ## [2.2.26] - 2026-09-29
 
 ### Fixes
