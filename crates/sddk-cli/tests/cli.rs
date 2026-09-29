@@ -13865,57 +13865,145 @@ fn sddk032_silent_on_real_repo() {
     );
 }
 
+/// REQ-DKA-004 S1 — the invariant `INC-DKA-ORPHAN-REVIEW-PHASE` closed on,
+/// certified hermetically.
+///
+/// The previous version of this test read
+/// `~/.sddk-knowledge/sddk-framework/incs/INC-DKA-ORPHAN-REVIEW-PHASE.md`
+/// through `env!("HOME")` and asserted the file existed and parsed. That
+/// certified a property of the machine that compiled the binary, not of the
+/// project: it passed only on a host whose vault had been populated, and
+/// failed on a clean CI runner over identical code (INC-DEBT-032, observed on
+/// run 36450601924).
+///
+/// It was also a policy inversion. AGENTS.md §2.7 states the vault is a human
+/// source and never runtime authority. A test that reads the vault to certify
+/// runtime behaviour makes the vault authority for the thing it is
+/// documenting — exactly the inversion §2.7 forbids.
+///
+/// What the INC actually resolved to was a runtime invariant: `Phase::Review`
+/// does not exist, and the count is pinned in the domain crate. That invariant
+/// is what is certified here, against the compiled enum itself.
 #[test]
-fn cli_incidence_dka_orphan_review_phase_exists() {
-    // REQ-DKA-004 S1: Orphan review phase incidence file must exist and be valid.
-    let inc_path = std::path::PathBuf::from(env!("HOME"))
-        .join(".sddk-knowledge/sddk-framework/incs/INC-DKA-ORPHAN-REVIEW-PHASE.md");
-    assert!(
-        inc_path.exists(),
-        "INC-DKA-ORPHAN-REVIEW-PHASE.md must exist at {}",
-        inc_path.display()
+fn cli_phase_enum_has_no_orphan_review_variant() {
+    use sddk_domain::cycle::Phase;
+
+    // The INC's resolution records exactly nine variants after the
+    // ADR-0074 cleanup. Enumerating them here is the whole contract: adding
+    // Phase::Review back, or dropping any of the nine, fails this test.
+    const EXPECTED_PHASES: [Phase; 9] = [
+        Phase::Explore,
+        Phase::Specify,
+        Phase::Design,
+        Phase::Plan,
+        Phase::Build,
+        Phase::Verify,
+        Phase::Uat,
+        Phase::Release,
+        Phase::Archive,
+    ];
+
+    // The count assertion is the part that survives a regression: if
+    // Phase::Review is re-added, EXPECTED_PHASES still names nine, but the
+    // rendered set grows to ten and the comparison below fails.
+    //
+    // Serialisation is the right surface to certify here, not Debug: Phase is
+    // `#[serde(rename_all = "lowercase")]` and that lowercase name is what
+    // workflow.yaml, the prompts and every persisted artifact use. A variant
+    // that exists but serialises under a different name is a real break.
+    let declared: Vec<String> = EXPECTED_PHASES
+        .iter()
+        .map(|p| serde_json::to_string(p).unwrap_or_else(|e| panic!("Phase must serialise: {e}")))
+        .map(|quoted| quoted.trim_matches('"').to_string())
+        .collect();
+
+    assert_eq!(
+        declared.len(),
+        9,
+        "REQ-DKA-004 S1: the Phase contract pins exactly nine lifecycle \
+         phases; a tenth is an uncontracted addition"
     );
-    let content = std::fs::read_to_string(&inc_path).unwrap();
-    assert!(
-        content.contains("id: INC-DKA-ORPHAN-REVIEW-PHASE"),
-        "INC must have correct id frontmatter"
+    assert_eq!(
+        declared,
+        vec![
+            "explore", "specify", "design", "plan", "build", "verify", "uat", "release", "archive"
+        ],
+        "REQ-DKA-004 S1: the Phase lifecycle vocabulary changed; every \
+         downstream consumer (workflow.yaml, prompts/sddk/phases/, the \
+         bootstrap importer) is pinned to these names"
     );
     assert!(
-        content.contains("status: open")
-            || content.contains("status: resolved")
-            || content.contains("status: closed"),
-        "INC must have a status field"
-    );
-    assert!(
-        content.contains("fingerprint:"),
-        "INC must have a fingerprint"
+        !declared.iter().any(|name| name == "review"),
+        "REQ-DKA-004 S1: Phase::Review was removed as an orphan by ADR-0074 \
+         (INC-DKA-ORPHAN-REVIEW-PHASE, status: closed) and must not return"
     );
 }
 
+/// REQ-DKA-004 S3 — the invariant `INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE`
+/// closed on, certified hermetically.
+///
+/// Same defect and same policy inversion as the Phase test above: the previous
+/// version read `~/.sddk-knowledge/.../INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE.md`
+/// through `env!("HOME")` and asserted the file parsed, which fails on a clean
+/// runner over identical code (INC-DEBT-032, run 36450601924).
+///
+/// The INC's own resolution states what the invariant actually is: the
+/// `archive.vault.complete` transition IS declared in `workflow/workflow.yaml`
+/// with the expected gates. That is a property of the repository, so it is
+/// certified from the repository.
 #[test]
-fn cli_incidence_dka_managed_closure_vault_route_exists() {
-    // REQ-DKA-004 S3: Managed closure vault route incidence file must exist and be valid.
-    let inc_path = std::path::PathBuf::from(env!("HOME"))
-        .join(".sddk-knowledge/sddk-framework/incs/INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE.md");
+fn cli_archive_vault_complete_transition_declares_its_gates() {
+    let workflow_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../workflow/workflow.yaml");
+    let workflow = std::fs::read_to_string(&workflow_path).unwrap_or_else(|e| {
+        panic!(
+            "REQ-DKA-004 S3: {} must be readable to certify the \
+             archive.vault.complete transition ({e})",
+            workflow_path.display()
+        )
+    });
+
+    // Isolate the transition block: from its id to the next transition id.
+    let block = workflow
+        .split_once("- id: archive.vault.complete")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split("\n  - id: ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "REQ-DKA-004 S3: workflow.yaml must still declare the \
+                 `archive.vault.complete` managed-closure transition; the \
+                 vault route is the alternate archive path for BLOCKED \
+                 cycles with DeliveryKind=ManagedClosureDelivery"
+            )
+        });
+
+    // The INC's resolution enumerates these three gates explicitly. All three
+    // are required: dropping one lets a managed closure close without proving
+    // the receipt was verified, the index is current, or the release bypass
+    // was declared on purpose.
+    for gate in [
+        "vault-receipt-verified",
+        "vault-index-current",
+        "release-bypass-declared",
+    ] {
+        assert!(
+            block.contains(gate),
+            "REQ-DKA-004 S3: archive.vault.complete must require the \
+             `{gate}` gate (INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE, status: closed)"
+        );
+    }
+
+    // The route is the non-release archive path: it starts from BLOCKED and
+    // produces a vault-receipt, not a release-receipt.
     assert!(
-        inc_path.exists(),
-        "INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE.md must exist at {}",
-        inc_path.display()
+        block.contains("status: BLOCKED"),
+        "REQ-DKA-004 S3: archive.vault.complete must start from BLOCKED; the \
+         managed-closure route exists so a cycle can close WITHOUT a release"
     );
-    let content = std::fs::read_to_string(&inc_path).unwrap();
     assert!(
-        content.contains("id: INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE"),
-        "INC must have correct id frontmatter"
-    );
-    assert!(
-        content.contains("status: open")
-            || content.contains("status: resolved")
-            || content.contains("status: closed"),
-        "INC must have a status field"
-    );
-    assert!(
-        content.contains("fingerprint:"),
-        "INC must have a fingerprint"
+        block.contains("vault-receipt"),
+        "REQ-DKA-004 S3: archive.vault.complete must produce/require a \
+         vault-receipt as its delivery artifact"
     );
 }
 
