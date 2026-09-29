@@ -95,9 +95,9 @@ fn worktrees_share_project_storage_and_have_distinct_workspace_receipts() {
     assert!(storage.get_workspace(&second.workspace_id).is_ok());
 }
 
-// durability-required: second apply_adoption reopens same ledger path for idempotency verification.
+// durability-required: adoption_status reopens same ledger path to verify persisted fallback_seed.
 #[test]
-fn apply_replay_is_idempotent_and_preserves_original_receipt_metadata() {
+fn apply_replay_keeps_converged_receipt_and_refresh_moves_runtime_metadata() {
     let fixture = Fixture::new();
     let first = fixture.remote_plan("repo", "https://example.com/acme/repo", ".");
     let first_status = apply_adoption(
@@ -107,14 +107,16 @@ fn apply_replay_is_idempotent_and_preserves_original_receipt_metadata() {
     .unwrap();
     let bytes = fs::read(&first.paths.receipt).unwrap();
 
-    // Replay with identical identity but a different timestamp/actor.
-    // This is the runtime-metadata-only drift case — apply must be idempotent
-    // and converge to the new metadata without changing identity.
+    // C3i objetivo 2: replay de apply con identidad identica (aunque el
+    // timestamp/actor difieran) NO reescribe el recibo: el bootstrap repetido
+    // es un no-op semantico. El runtime pin vive en
+    // `apply_on_converged_adoption_is_byte_stable_across_repeats`.
     let mut replay_input = fixture.input("repo");
     replay_input.remote_url = Some("https://example.com/acme/repo".into());
     replay_input.timestamp = "2026-08-04T11:00:00Z".into();
     replay_input.actor = "second-actor".into();
-    let replay = plan_adoption(replay_input).unwrap();
+    let replay_timestamp = replay_input.timestamp.clone();
+    let replay = plan_adoption(replay_input.clone()).unwrap();
     let replayed_status = apply_adoption(
         &replay,
         &mut sddk_storage::Storage::open(&replay.paths.ledger).unwrap(),
@@ -123,15 +125,31 @@ fn apply_replay_is_idempotent_and_preserves_original_receipt_metadata() {
 
     assert_eq!(first_status.status, AdoptionStatusKind::Complete);
     assert_eq!(replayed_status.status, AdoptionStatusKind::Complete);
-    assert_ne!(
+    assert_eq!(
         fs::read(&first.paths.receipt).unwrap(),
         bytes,
-        "apply must rewrite the receipt to update timestamp/actor"
+        "apply sobre un workspace convergido es no-op: el recibo no se reescribe aunque el timestamp/actor del plan difieran"
     );
+
+    // El verbo para runtime metadata es refresh: convergente, explicito y
+    // respeta la identidad ("Always refreshes the on-disk receipt when the
+    // identity matches").
+    let refresh_plan = sddk_engine::plan_adoption(replay_input.clone()).unwrap();
+    let refreshed = sddk_engine::refresh_adoption(
+        &refresh_plan,
+        &mut sddk_storage::Storage::open(&refresh_plan.paths.ledger).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(refreshed.status, AdoptionStatusKind::Complete);
     assert_eq!(
-        replayed_status.receipt.unwrap().timestamp,
-        "2026-08-04T11:00:00Z",
-        "apply must converge timestamp to the latest invocation"
+        refreshed.receipt.unwrap().timestamp,
+        replay_timestamp,
+        "refresh converge el timestamp del plan (via explicita de runtime metadata)"
+    );
+    assert_ne!(
+        fs::read(&refresh_plan.paths.receipt).unwrap(),
+        bytes,
+        "refresh SI reescribe el recibo: ese es su contrato, no el de apply"
     );
 }
 

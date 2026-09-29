@@ -322,7 +322,7 @@ fn converge(plan: &AdoptionPlan, ledger: &mut impl Ledger) -> Result<(), Adoptio
     fs::create_dir_all(&plan.paths.artifacts)?;
     fs::create_dir_all(&plan.paths.cache)?;
     ledger.register_project_workspace(&project_record(plan), &workspace_record(plan))?;
-    let overwrite = if plan.paths.receipt.exists() {
+    if plan.paths.receipt.exists() {
         let existing = read_adoption_receipt(&plan.paths.receipt)?;
         if !same_identity(&existing, &plan.receipt) {
             return Err(AdoptionError::UnsafeState {
@@ -330,11 +330,28 @@ fn converge(plan: &AdoptionPlan, ledger: &mut impl Ledger) -> Result<(), Adoptio
                 detail: "existing receipt has a different identity".into(),
             });
         }
-        true
-    } else {
-        false
-    };
-    write_receipt_atomically(&plan.paths.receipt, &plan.receipt, overwrite)?;
+        // C3i objetivo 2: bootstrap repetido sobre un proyecto convergido es
+        // un no-op semantico. La identidad ya coincide y el runtime solo
+        // converge cuando algo puede cambiar: si el recibo en disco ya
+        // representa el mismo estado (identidad + runtime metadata), NO se
+        // reescribe. Sin esto cada re-apply reescribia el recibo con un
+        // timestamp nuevo (observado en session-37: hash del recibo distinto
+        // en cada apply), convirtiendo el bootstrap en un refresh encubierto.
+        // PIN C3i: eliminar este short-circuit hace fallar
+        // apply_on_converged_adoption_is_byte_stable_across_repeats (RED
+        // observado al revertirlo en session-37).
+        if existing.runtime_version == plan.receipt.runtime_version
+            && existing.sddk_version == plan.receipt.sddk_version
+            && existing.configuration_hash == plan.receipt.configuration_hash
+        {
+            write_knowledge_profile(plan)?;
+            return Ok(());
+        }
+        write_receipt_atomically(&plan.paths.receipt, &plan.receipt, true)?;
+        write_knowledge_profile(plan)?;
+        return Ok(());
+    }
+    write_receipt_atomically(&plan.paths.receipt, &plan.receipt, false)?;
     write_knowledge_profile(plan)?;
     Ok(())
 }
@@ -351,7 +368,22 @@ pub fn refresh_adoption(
         AdoptionStatusKind::Complete | AdoptionStatusKind::ReceiptOnly => {
             let existing = read_adoption_receipt(&plan.paths.receipt)?;
             if same_identity(&existing, &plan.receipt) {
-                converge(plan, ledger)?;
+                // C3i: refresh es el verbo EXPLICITO de runtime metadata. A
+                // diferencia de apply (no-op sobre convergido), refresh SI
+                // reescribe el recibo con el timestamp/actor del plan cuando
+                // difieren ("Always refreshes the on-disk receipt when the
+                // identity matches"). El pin de byte-estabilidad de apply vive
+                // en apply_on_converged_adoption_is_byte_stable_across_repeats;
+                // este bypass es lo que mantiene el contrato de refresh.
+                let metadata_differs = existing.runtime_version != plan.receipt.runtime_version
+                    || existing.sddk_version != plan.receipt.sddk_version
+                    || existing.timestamp != plan.receipt.timestamp
+                    || existing.actor != plan.receipt.actor
+                    || existing.configuration_hash != plan.receipt.configuration_hash;
+                if metadata_differs {
+                    write_receipt_atomically(&plan.paths.receipt, &plan.receipt, true)?;
+                }
+                write_knowledge_profile(plan)?;
                 require_complete(adoption_status(plan, ledger)?)
             } else {
                 Ok(invalid_status(
@@ -781,5 +813,49 @@ mod tests {
             legacy_bytes,
             "apply must rewrite the receipt to converge on the canonical vault"
         );
+    }
+
+    /// C3i objetivo 2 (CTX-UAT-001): aplicar adopcion sobre un proyecto ya
+    /// convergido debe ser un no-op semantico a nivel de BYTES del recibo.
+    /// El timestamp del plan es fijo, asi que la unica fuente de mutacion es
+    /// `converge` reescribiendo lo que ya esta escrito. Los 20 re-apply del
+    /// exit gate del roadmap se modelan con 3 (mismo contrato: byte-estable).
+    #[test]
+    fn apply_on_converged_adoption_is_byte_stable_across_repeats() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("repo");
+        fs::create_dir_all(&root).unwrap();
+        let plan = plan_adoption(AdoptionPlanInput {
+            remote_url: Some("https://example.com/acme/repo.git".into()),
+            scope: ".".into(),
+            fallback_seed: None,
+            canonical_workspace_path: root,
+            display_name: "repo".into(),
+            xdg: XdgEnvironment {
+                home: Some(directory.path().join("home")),
+                data_home: Some(directory.path().join("data")),
+                state_home: Some(directory.path().join("state")),
+                cache_home: Some(directory.path().join("cache")),
+                ..XdgEnvironment::default()
+            },
+            sddk_version: "3.6".into(),
+            runtime_version: "2.2.32".into(),
+            timestamp: "2026-09-29T00:00:00Z".into(),
+            actor: "test".into(),
+        })
+        .unwrap();
+        let mut ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        apply_adoption(&plan, &mut ledger).unwrap();
+        let after_first = fs::read(&plan.paths.receipt).unwrap();
+
+        for repeat in 0..3 {
+            let status = apply_adoption(&plan, &mut ledger).unwrap();
+            assert_eq!(status.status, AdoptionStatusKind::Complete);
+            let after_repeat = fs::read(&plan.paths.receipt).unwrap();
+            assert_eq!(
+                after_repeat, after_first,
+                "re-apply #{repeat} reescribio el recibo byte-identicamente convergido: el bootstrap repetido debe ser un no-op, no un refresh"
+            );
+        }
     }
 }
