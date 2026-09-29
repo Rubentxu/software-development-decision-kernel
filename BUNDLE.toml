@@ -1,12 +1,12 @@
 [bundle]
 schema_version = 2
-version = "1.145.1"
-binary_min_version = "1.145.1"
-binary_max_version = "1.145.1"
+version = "2.2.32"
+binary_min_version = "2.2.32"
+binary_max_version = "2.2.32"
 
 [contents]
-agents_count = 70
-skills_count = 241
+agents_count = 73
+skills_count = 244
 prompts_count = 0
 assets_count = 18
-manifest_sha256 = "sha256:60d7a3e424c12dccdd3cbc82a742ad040c78a522c0f42f73929b8d3b128b4e9d"
+manifest_sha256 = "sha256:fde8f9751394388065e749053f2fd45ad371c5e41a585d81a9ba32bdcd7adb93"
