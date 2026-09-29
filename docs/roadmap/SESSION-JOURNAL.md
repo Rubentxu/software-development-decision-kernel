@@ -5985,3 +5985,33 @@ Cerrar C3i objetivo 5: pin de identidad unica (golden test de project_id estable
 **Estado:** **C3i COMPLETO (objetivos 1–5 implementados + verificados).** C3j/C6/C7 siguen sin abrir hasta release/cierre formal. INC-DEBT-038 ABIERTO. Pendiente operador: recuperación del ledger real (PAUSED) y push (15 commits sin publicar; hook exige `chore(release): bump version`; MINOR sugerido).
 
 **Siguiente paso exacto:** decisión del operador entre (a) bump MINOR + `bash scripts/release.sh` para cerrar C3i formalmente con release, o (b) abrir C3j (resume/recovery coherence) sin publicar. Por defecto del roadmap, C3j no se abre hasta que C3i quede cerrado en punteros; el cierre formal requiere release o decisión explícita de operador.
+
+---
+
+### 2026-09-29T19:55Z — C3j slice 1: contexto durable (stores) — session-39 — jcode
+
+**Baseline / HEAD:** inició en `16f2b7f8`; cierra en commits `f35c5e82` + `42fad823` + documental. `origin/main = 5440b2e8` (sin push, gate humano). Ledger real intacto (backup `0ebc44c20ec06eb5…` verificado al inicio).
+
+**WorkItem:** C3j objetivos 1+2 (y sustrato del 4): CapsuleStore y SessionBindingStore persistentes detrás de los seams existentes.
+
+**Hecho:**
+
+1. `f35c5e82` — `crates/sddk-engine/src/durable_session_binding.rs` (CTX-002): persistencia del modelo canónico `AgenticBinding` (JSON por sesión, write+rename atómico, corrupción tipada, listing, `load_all` para reattach ASB-005 sin transcript — CTX-011). Y `crates/sddk-engine/src/durable_capsule_store.rs` (CTX-001): `FilesystemCapsuleStore` implementa el trait `CapsuleStore` de cold_start; índice reconstruido desde disco en `open()`, upsert atómico, semántica idéntica a `InMemoryCapsuleStore`, corrupto ⇒ None nunca basura. Stop condition respetada: sin BD canónica nueva.
+2. `42fad823` — `crates/sddk-engine/tests/durable_context_e2e.rs`: 5 escenarios e2e sobre stores reales: CTX-UAT-006 (restart recupera la misma capsule; segundo cold_start = FromRecovery no Fresh), CTX-UAT-013 (reattach sin transcript, asertado por contenido), CTX-UAT-014 (progressive disclosure preservado), session≠run en round-trip, bridge rechaza delta stale sobre binding recuperado (CTX-008).
+
+**Decisiones:**
+
+- Un fichero JSON por identidad bajo root inyectado por el caller (un solo resolver de rutas cuando llegue el wiring CLI); sin SQLite nuevo ni tabla de ledger nueva: los stores durables no son hechos canónicos, son proyecciones de session/capsule que el sustrato ya define.
+- La corrupción en disco NUNCA se entrega como cápsula (None), y el drift se devuelve tal cual (llamador compara): decidido así para que el error sea observable en el llamador, no silenciado en el store.
+
+**Verificación (scoped, observado):** engine lib 1342 GREEN (16 tests nuevos); durable_context_e2e 5/5; vecinos: cold_start_tests 10/10, context_capsule_tests 10/10, bridge 6/6, binding 7/7; workflow contract 508/508; adopt-convergence 6/6; clippy/fmt limpios; CTX-UAT-001 re-ejercitado con binario release 2.2.32 reconstruido post-cambio: 20/20, recibo `4926c6bece9f8c9f…` byte-estable, identidad estable (regresión de adoption descartada).
+
+**Falsadores observados:** (1) elidir `rebuild_index()` en `open()` ⇒ CTX-UAT-006 FAILED (capsule no sobrevive restart); revertido ⇒ GREEN. (2) drift de `project_id` en disco ⇒ store devuelve lo persistido (detectable). (3) fichero corrupto ⇒ None. Nota: la mutación se hizo con env-gate temporal en el código, aplicada y revertida con edit; sin restos.
+
+**UAT observado:** CTX-UAT-006/013/014 PASS a nivel sustrato. 007..012, 015, MIG-UAT-001: NOT_RUN (esperan wiring del `context bootstrap` service — objetivo 3).
+
+**Conocimiento negativo:** (1) index.lock de git stale una vez (sin proceso git real); reintento lo resolvió. (2) ContextCapsule no deriva Default a propósito: tests construyen literales completos; no tocar el modelo por comodidad. (3) cargo fmt reordena `pub mod` alfabéticamente: el diff muestra el módulo en otro sitio, no es pérdida.
+
+**Estado:** **C3j slice 1 IMPLEMENTED+VERIFIED.** Restante de C3j: objetivo 3 (`context bootstrap` service + wiring CLI/XDG), 5 (delta durable observable entre procesos a nivel CLI), 6 (hipermedia). C4/C6/C7 intactos. INC-DEBT-038 ABIERTO.
+
+**Siguiente paso exacto:** C3j objetivo 3 — application service `context bootstrap`: resolver project/workspace (reusa adoption), converger adoption sin interacción (reusa apply), inferir 0/1/N ciclos (reusa `resolve_cycle_context_with_cwd`), reconstruir basis (reusa ContextBridge::bootstrap) y servir capsule del store durable; exponer como subcomando `sddk context bootstrap` con JSON tipado (estados NoActiveCycle/AmbiguousCycle tipados). Después: superficie contract pins + CTX-UAT-007..012/015.

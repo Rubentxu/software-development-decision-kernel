@@ -1,0 +1,87 @@
+# UAT-EVIDENCE — session-39 — 2026-09-29T19:54Z
+
+**Baseline / HEAD al iniciar:** `16f2b7f8` (close-out session-38).
+**Commits de esta sesión:** `f35c5e82` (stores durables), `42fad823` (e2e CTX-UAT-006/013/014).
+**Workspace version:** 2.2.32 · **Último release público:** v2.2.27.
+**Binario release reconstruido:** 2.2.32 (contiene el código nuevo; usado para re-ejercitar CTX-UAT-001).
+
+## WorkItem: C3j slice 1 — contexto durable (objetivos 1, 2 y 4 a nivel sustrato)
+
+**SCOPE-CONTRACT congelado al inicio:** stores durables detrás de los seams
+EXISTENTES (`CapsuleStore` de cold_start, modelo `AgenticBinding`); sin base
+de datos canónica nueva (stop condition del bundle); sin cutover de
+control-flow; C3j objetivos 3 (bootstrap service CLI), 5 (delta durable
+entre procesos vía CLI) y 6 (representación hipermedia) quedan para slices
+siguientes. C4/C6/C7 intactos.
+
+## Entregado
+
+1. **`durable_session_binding`** (C3j obj 2, CTX-002): persistencia del
+   modelo canónico `AgenticBinding` (un JSON por sesión, atomic write+rename).
+   Restart recupera bindings sin importar transcript (CTX-011). Corrupción
+   es error tipado, nunca pánico ni silencio.
+2. **`durable_capsule_store`** (C3j obj 1, CTX-001): `FilesystemCapsuleStore`
+   implementa el trait `CapsuleStore` existente. Índice reconstruido desde
+   disco en `open()` (un segundo proceso ve lo que el primero escribió sin
+   estado compartido), upsert atómico, semántica de consulta idéntica a
+   `InMemoryCapsuleStore`, corrupción devuelve None (nunca basura).
+
+## Evidencia OBSERVED
+
+- Engine lib: **1342 passed, 0 failed** (16 nuevos: 5 binding + 4 capsule +
+  neighbours intactos).
+- e2e `durable_context_e2e` **5/5 GREEN**:
+  - **CTX-UAT-006** (reinicio conserva capsule): cold_start en "proceso A",
+    store nuevo en "proceso B" recupera la MISMA capsule por id y `last_capsule`;
+    el segundo cold_start devuelve `FromRecovery`, no `Fresh`.
+  - **CTX-UAT-013** (reattach sin transcript): binding WorkItem sobrevive
+    restart; aserción de contenido: el transcript del host NO aparece en el
+    estado recuperado (CTX-011).
+  - **CTX-UAT-014** (progressive disclosure): el body persistido conserva las
+    capas de refs del compilador, sin dump expandido.
+  - session ≠ run sobrevive el round-trip (target `Ephemeral` intacto).
+  - ContextBridge sobre binding recuperado rechaza delta con `from_revision`
+    stale (CTX-008 sobre el sustrato durable).
+- **Mutación falsadora observada:** eliminar `rebuild_index()` de
+  `FilesystemCapsuleStore::open` ⇒ CTX-UAT-006 **FAILED**
+  (`resolve_ref: capsule must survive process restart`); revertido ⇒ GREEN.
+- **Mutaciones de módulo:** drift de `project_id` en disco ⇒ el store devuelve
+  exactamente lo persistido (llamador detecta); fichero corrupto ⇒ `None`,
+  nunca cápsula inventada.
+- **CTX-UAT-001 re-ejercitado** con el binario release 2.2.32 reconstruido
+  (post-cambio): 20/20 applies `complete`, recibo `4926c6bece9f8c9f…`
+  byte-estable, identidad `p-8d17246ca8f65f32` estable. El código nuevo no
+  alteró los invariantes de adoption (regresión descartada).
+- Vecinos del seam: `cold_start_tests` 10/10, `context_capsule_tests` 10/10,
+  bridge lib 6/6, binding lib 7/7. Superficies: workflow contract 508/508,
+  adopt-convergence 6/6. clippy --all-targets limpio, fmt limpio.
+
+## MIG-UAT-001 / CTX-UAT-007..012, 015
+
+**NOT_RUN** — requieren el slice de wiring (objetivo 3: `context bootstrap`
+service) y dos procesos reales secuenciados; este slice cubre el sustrato.
+Declarado, no ocultado.
+
+## Conocimiento negativo
+
+1. El `index.lock` de git apareció stale una vez (ningún proceso git real
+   sobre el repo); reintentar el commit lo resolvió. No fue colisión real.
+2. `ContextCapsule` y sub-structs no derivan `Default` (con razón: campos con
+   significado); construir cápsulas de test requiere literales explícitos.
+   No se cambió el modelo para comodidad de test.
+3. `cargo fmt` reordena declaraciones `pub mod` — el módulo nuevo aterrizó en
+   orden lexicográfico, no en el punto de edición; irrelevante pero confunde
+   el diff review si no se sabe.
+
+## Estado de WorkItems
+
+- **C3j: slice 1 IMPLEMENTED+VERIFIED** (objetivos 1+2, y el sustrato de 4).
+  Restantes: objetivo 3 (`context bootstrap` service + wiring CLI), 5 (delta
+  durable observable entre procesos a nivel CLI), 6 (representación
+  hipermedia). El roadmap C3j sigue el orden de objetivos; no se abre nada de
+  C4/C6/C7.
+- **INC-DEBT-038:** ABIERTO sin cambio. **Ledger real:** intacto (hash
+  constante toda la sesión; probes solo en /tmp).
+- **Pendiente operador (sin cambio):** recuperación del ledger (`c0-t01`
+  PAUSED), push (ahora **19 commits sin publicar**, `origin/main = 5440b2e8`)
+  y autorización de release (bump MINOR sugerido).

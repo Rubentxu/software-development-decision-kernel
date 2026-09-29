@@ -45,7 +45,7 @@
 | CTX-UAT-004 | C3i / T1 | Cero leases activos | `NoActiveCycle` tipado con hint de recuperación. |
 | CTX-UAT-005 | C3i / T1 | Skill resume contra runtime real (0/1/N) | La skill enseña inferencia y recoveries, no bloqueo por "no discovery"; legacy callers intactos. |
 | MIG-UAT-001 | C3i / T1 | Migration: skill vieja vs nueva con el mismo ledger | Misma identidad y ciclo; sin pérdida de contexto. |
-| CTX-UAT-006..015 | C3j | Capsule/SessionBinding persistentes, delta entre procesos, session ≠ run | Reservadas; no abrir antes de cerrar C3i. |
+| CTX-UAT-006..015 | C3j | Capsule/SessionBinding persistentes, delta entre procesos, session ≠ run | Reservadas; no abrir antes de cerrar C3i. **Sustrato session-38→39 (`f35c5e82`, `42fad823`): CTX-UAT-006/013/014 PASS a nivel sustrato** (stores durables reales, mutación falsadora observada: `rebuild_index` elidido rompe 006). 007..012 y 015 NOT_RUN (esperan wiring del `context bootstrap` service). |
 | HYP-UAT-001..004 | C3j/C6 | Affordances hipermedia de Project/Run/Step | Reservadas; no abrir antes de cerrar C3i. |
 
 **Criterio de cierre:** no marcar un hito VERIFIED por contar tests. Vincular cada fila aplicable a un resultado ejecutado, al SHA exacto y a un recibo verificable. Un fallo requiere incidencia y corrección RED→GREEN; un blocker debe tener owner y revisit trigger. Los gates de [CERTIFICATIONS.md](CERTIFICATIONS.md) deciden las promociones.
