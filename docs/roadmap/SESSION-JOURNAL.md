@@ -5591,3 +5591,26 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
 4. **Deuda nueva registrada**: C2B-DRIFT-1 (adapter usa `CHRONOS_STORE_PATH`, el
    provider 0.1.4 lee `CHRONOS_DB_PATH` — silenciosamente ignorado), C2B-DRIFT-3/4
    informativas. Pendiente C2c (JCode) y C2d (evaluation), C3 (Authority/Storage).
+
+### Adenda session-34c (15:17Z) — C2c re-ejecutado con SDK público; C3g completado
+
+1. **C2c (JCode)**: el hallazgo clave es que el roadmap pedía verificar si el
+   adapter público vive en otro repo ANTES de duplicar — y ahora existe:
+   `@1jehuang/jcode-sdk` 1.1.0 en npm (protocolo v1 estable). Ejecutado contra
+   jcode v0.89.1 real con `inheritLogins:false`: T15 (launch/session/run/
+   getRuntimeInfo/aislamiento de instancias), T16 (noReply persiste contexto sin
+   turno; sin provider -> typed error), T17 (schema inválido rechazado localmente),
+   T18 (capabilities y límites del workdir, unknown_session tipado). NOT_RUN solo
+   lo que exige turnos de modelo reales (cuota agotada). Recibo `624cef9a` con
+   `decision_request`: ADR de equivalencia (sidecar Node vs adapter Rust).
+   Deliberadamente NO se construyó un adapter Rust duplicado.
+2. **C3g addendum**: presupuesto p50/p95/RSS para los escenarios static y runtime
+   con providers reales (N=3): static p95 3.04s/172MB, runtime p95 4.64s/165MB,
+   todos `verdict: Verified`. Varianza de eventos 64..128 observada y anotada.
+   Recibo `38ed1bd4`.
+3. **Estado C2/C3 tras esta sesión**: T08-T18 todos ejecutados contra providers/
+   hosts reales (con NOT_RUN honestos donde falta cuota de modelo). T19-T28 ya
+   estaban PASS_OBSERVED de session-11. C3g ahora cubre los tres escenarios.
+4. **Siguiente**: ADR del boundary jcode-sdk (petición de decisión en el recibo
+   C2c), deuda C2B-DRIFT-1 (env var del store), o release v2.2.28 (changelog en
+   stash) con autorización del operador.
