@@ -1,0 +1,85 @@
+# UAT-EVIDENCE — C1 re-anclada al HEAD actual (T03–T07)
+
+> **Slice id:** `p-63676b11dc0ef88f/c1-reverify-at-head`
+> **Baseline SHA:** `7f7d8698` (v2.2.20, == origin/main al entrar)
+> **Commit de este slice:** `89f60190` (fix del test H05, unico cambio de codigo)
+> **Date (UTC):** 2026-09-29T12:30:00Z
+> **Status:** VERIFIED (observado hoy, en este SHA)
+
+## Por qué este recibo existe
+
+El recibo anterior de C1 (`docs/roadmap/receipts/c1/eae4f7f/`) documenta el
+RED→GREEN original del 21/09 anclado a `eae4f7f`. Entre entonces y ahora
+median ~200 commits y 2 releases publicados (v2.2.19, v2.2.20). Por el
+contrato de certificación, VERIFIED nunca se hereda entre SHAs: este recibo
+re-ejecuta el lote C1 completo en `7f7d8698` y registra lo observado.
+
+## Lote ejecutado (scoped, C1)
+
+| UAT | Comando | Resultado observado |
+| --- | --- | --- |
+| T03/T04/T05 | `cargo test -p sddk-engine --lib structured_work` | **18 passed; 0 failed** (saw001–saw019, incluye unknown-descriptor, duplicate request_id, sin interpolación de secretos) |
+| T06 | `cargo test -p sddk-gateway --test sec1_capability_receipt_redaction --test sec1_redactor_unit --test h06_adversarial` | **14+3+9 = 26 passed; 0 failed** |
+| T07 (rust) | `cargo test -p sddk-engine --test h05_seam_test_only` | **1 passed; 0 failed** |
+| T07 (binario) | `bash tests/test_h05_isolation.sh` | **PASS=2 FAIL=0, exit 0** (con artefactos release reales) |
+
+Todos los comandos ejecutados 2026-09-29 sobre `7f7d8698`/`89f60190`,
+salida capturada en la sesión; sin mocks, sin skip.
+
+## Defecto nuevo encontrado y corregido en este slice: test H05 vacuo
+
+**Síntoma observado:** `bash tests/test_h05_isolation.sh` con los artefactos
+release construidos reportaba `PASS=0 FAIL=0` con exit 0 — ambos checks
+saltaban porque el test solo leía `$CARGO_TARGET_DIR` del entorno y este
+sandbox redirige el target dir via `~/.cargo/config.toml [build] target-dir`
+(`/var/home/rubentxu/cargo-targets`). El test preguntaba al entorno; cargo
+leía su config. Dos fuentes de verdad, y el test usaba la equivocada.
+Un guard que no mira nada y sale 0 es un paseo vacuo (misma familia que el
+falso positivo de `test_vault_coherence_alignment` de session-33b).
+
+**Fix (`89f60190`):** el test resuelve ahora el target dir con precedencia
+env explícito → `cargo metadata` (fuente única de verdad de cargo) →
+default `./target`.
+
+**Falsación en ambas direcciones (observed):**
+
+1. Fake no-ELF con el canary dentro (printf de 50 bytes): `nm` falla
+   silenciosamente (formato no reconocido) → PASS. **Hallazgo:** el guard
+   asume artefactos bien formados; un fichero corrupto no dispara FAIL.
+   Aceptado: el modelo de amenaza es "el símbolo se exporta en un build
+   real", no "alguien planta bytes arbitrarios en target/".
+2. ELF real compilado con `void set_process_service_for_tests(void){}`:
+   `FAIL binary leak … found in 1 line(s)` en la rama binario; copiado como
+   `.rlib`, `FAIL` también en la rama rlib. Exit code real bajo `set -e`:
+   **1** en ambos casos. El guard falla cerrado con artefactos reales.
+3. Árbol verde + fix: PASS=2, exit 0 (re-confirmado tras las falsaciones).
+4. `shellcheck tests/test_h05_isolation.sh`: limpio.
+
+## Contexto de release
+
+- Última release pública observada: **v2.2.20** (tag anclado a `46608302`,
+  verificado en session-33b: cosign OK, digest instalado `fc23bad5…`
+  idéntico al publicado, `all_present: true`).
+- Este slice NO publica release: es verificación + fix de un test shell.
+  El próximo bump lo recogerá.
+
+## Estado resultante de C1
+
+- H01 (descriptores desconocidos): VERIFIED en `89f60190` (saw007/saw008
+  en el lote de hoy).
+- H02 (request_id duplicado, sin interpolación de secretos): VERIFIED en
+  `89f60190` (saw009–saw019).
+- H05 (seam + aislamiento binario): VERIFIED en `89f60190` (1 rust + 2
+  checks binarios, con el test reparado y falsado).
+- H06 (límites agregados + redacción): VERIFIED en `89f60190` (26 tests
+  gateway: canarios stdout/stderr, adversariales, límites MAX_ARGS).
+- Nota honesta H06: el límite de bytes del `reason` y la denegación de
+  payloads no-UTF8/NUL (fila T24, C3/T6) NO están en este lote; pertenecen
+  a C3 y siguen pendientes de su propio recibo.
+
+## Riesgos y límites
+
+- La falsación 1 documenta un límite del guard (no-ELF no dispara FAIL);
+  se declara, no se oculta.
+- El lote es scoped (C1), no el perfil completo de release. T28 (full
+  verify) sigue ligado al flujo de release, no a este recibo.
