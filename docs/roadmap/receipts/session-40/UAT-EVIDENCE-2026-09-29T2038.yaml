@@ -1,0 +1,138 @@
+# UAT-EVIDENCE — session-40 — 2026-09-29T20:38Z
+
+**Baseline / HEAD al iniciar:** `04a97a2b` (close-out session-39).
+**Workspace version:** 2.2.32 · **Último release público:** v2.2.27.
+**Commits de esta sesión:** `3e8b6031` (ADR-0145), `aff0a498` (`sddk context bootstrap`).
+**Commits sin publicar respecto a origin/main:** 23 (push sigue siendo gate humano).
+
+## WorkItem: C3j objetivo 3 — `context bootstrap` como operación de alto nivel
+
+**SCOPE-CONTRACT congelado al inicio:** componer identidad, convergencia de
+adopción, inferencia de ciclo, base de contexto y binding durable reusing los
+resolvers existentes. Sin segunda autoridad: `resolve_project_identity`,
+`stable_workspace_id`, `resolve_xdg_paths`, `resolve_cycle_context`,
+`plan_adoption`/`apply_adoption` y los stores durables de slice 1. C3j
+objetivos 5 (delta durable entre procesos vía CLI) y 6 (representación
+hipermedia) siguen PENDIENTES. C4/C6/C7 intactos.
+
+## Entregado
+
+1. **`crates/sddk-cli/src/context_cmd.rs`** — servicio de aplicación con
+   10 tests unitarios sobre XDG aislado.
+2. **Superficie CLI** — `sddk context bootstrap` registrado en el parser, el
+   dispatch, el gate de admisión (`cli_top_level_name`) y el registro canónico
+   `command_spec.rs` (establecido `Experimental`, side-effect `Governed`,
+   `spec_ref: SPEC-005`).
+3. **`tests/uat_ctx_002_context_bootstrap.sh`** — UAT end-to-end reutilizable
+   (4 escenarios) sobre el binario release, con sandbox `SDDK_STATE_HOME` /
+   `XDG_DATA_HOME` / `XDG_CACHE_HOME` / `HOME` propios. NUNCA toca el ledger real.
+4. **`ADR-0145`** — cierra deuda arquitectónica heredada (ver abajo).
+
+## CTX-003: cobertura honesta de los 7 pasos
+
+| Paso | Estado | Evidencia |
+|------|--------|-----------|
+| 1. resolver project/workspace | CUBIERTO | `bootstrap_without_active_cycle_creates_project_binding` |
+| 2. converger adoption sin interacción | CUBIERTO | `bootstrap_converges_adoption_on_disk` |
+| 3. inferir cycle cuando no es ambiguo | CUBIERTO | UAT escenario 1 y 3; estados tipados |
+| 4. reconstruir context basis | CUBIERTO | `durable_capsule_is_recovered_as_basis` |
+| 5. compilar capsule | **PENDIENTE** | no hay compilación en el servicio |
+| 6. persistir/read-reuse por digest | CUBIERTO | `FilesystemCapsuleStore` + read-reuse por `capsule_id` |
+| 7. hypermedia representation | **PENDIENTE** | la salida es un informe CLI, no hypermedia |
+
+Los pasos 5 y 7 no están implementados y NO se declaran cubiertos. El paso 5
+necesita `ContextCompiler` con inputs reales; el 7 es el objetivo 6 de C3j.
+
+## CTX-004 — inferencia tipada
+
+- 0 leases → `no_active_cycle` (con `project_id` y hint).
+- 1 lease → `resolved` con el `cycle_id`.
+- N leases → `ambiguous` con la lista de `candidates` (cycle_id, owner, expires_at_ms).
+- `--cycle <id>` → `explicit`, sin inferencia.
+
+El último estado (1 lease) no tiene test dedicado: la única vía para dejar un
+lease activo es escribir en el ledger, que es gate humano. Queda como
+`NOT_RUN` declarado, no como PASS.
+
+## CTX-005 — repeated bootstrap es no-op semántico
+
+- `repeated_bootstrap_is_idempotent`: el replay no reescribe el binding.
+- UAT escenario 2: el sha256 del binding es idéntico antes y después del replay.
+- UAT escenario 4: el recibo de adopción se escribe y es byte-stable.
+
+## CTX-011 — frontera de transcript
+
+`persisted_binding_carries_no_transcript` y UAT escenario 1 (grep del JSON
+persistido) verifican que el binding sólo lleva semantic refs.
+
+## Bugs reales encontrados por los tests
+
+1. **Replay no idempotente**: el `seq` de `ContextBasis` se incrementaba en
+   cada llamada, así que el binding mutaba siempre. El servicio ahora deriva el
+   basis con `next_basis()`, que sólo avanza cuando la revisión cambia.
+2. **Clave de capsule irresoluble**: `cycle_key` devolvía `cycle:<id>`, pero
+   `FilesystemCapsuleStore` indexa por `<workflow_run>:<node>:<attempt>.json` y
+   compara el **primer** componente. La `:` hacía la búsqueda imposible: el
+   read-reuse de capsule NUNCA habría funcionado en producción. Corregido a
+   `cycle-<id>`, con el sentinel `no-active-cycle` para el scope de proyecto.
+
+## Falsadores (RED observado, revertido)
+
+| Falsador | Test que cayó | Resultado |
+|----------|---------------|-----------|
+| Eliminar la guarda `previous.revision == revision` de `next_basis` | `repeated_bootstrap_is_idempotent` | RED: "replay must not rewrite" |
+| Elidir `apply_adoption` en `converge_adoption` | `bootstrap_converges_adoption_on_disk` | RED: "adoption receipt was not written" |
+
+El segundo falsador eludió `converge_adoption` de forma que compilaba, porque un
+`return` temprano dejaba `status` sin definir. Sin la observación en disco, el
+falsador habría pasado inadvertido: el service reportaba `complete` sin haber
+convergido nada. Por eso existe `bootstrap_converges_adoption_on_disk`.
+
+## Deuda cerrada en esta sesión
+
+**Guard arquitectónico RED desde `f35c5e82`** (slice 1):
+`no_new_root_level_context_module_without_adr` fallaba por
+`durable_capsule_store.rs` y `durable_session_binding.rs`. Verificado con
+`git stash` que ya fallaba en HEAD antes de este trabajo, luego es deuda
+heredada y no regresión. Cerrada con `ADR-0145`, que registra la decisión y
+rechaza explícitamente esquivar el guard moviendo los ficheros.
+
+## Evidencia OBSERVED
+
+- `cargo test -p sddk-cli --lib`: **834 passed, 0 failed, 1 ignored**
+  (10 nuevos en `context_cmd`, golden de superficie regenerado).
+- `cargo test -p sddk-engine --lib`: **1342 passed, 0 failed, 1 ignored**.
+- `cargo test -p sddk-cli --test '*'`: todas las suites green
+  (incluye `context_fitness` 7/7, `cli_compatibility` 6/6, `cli_golden` 1/1).
+- `cargo fmt --check`: limpio. `cargo clippy -p sddk-cli --all-targets`: sin
+  warnings.
+- `bash tests/uat_ctx_002_context_bootstrap.sh`: **4/4 PASS** con
+  `/var/home/rubentxu/cargo-targets/release/sddk` (binario release
+  reconstruido en esta sesión).
+- `bash tests/uat_ctx_001_adoption_convergence.sh --repeats 3`: PASS,
+  receipt `9ff3d751…`, project_id `p-8d17246ca8f65f32` (identidad estable).
+- `shellcheck` limpio en `tests/uat_ctx_001` y `tests/uat_ctx_002`.
+
+## Golden surfaces actualizados (drift esperado y revisado)
+
+- `crates/sddk-cli/tests/fixtures/agent-surface.golden.json`: `total` 60 → 61,
+  una entrada `context`. Diff de 8 líneas.
+- `crates/sddk-cli/tests/fixtures/cli/help-top-level.txt` y
+  `docs/architecture/tests/fixtures/cli_golden/1.168.8/sddk-help.txt`: una
+  línea cada uno (el nuevo comando en `--help`).
+
+## UATMatrix / pointers
+
+- `docs/roadmap/UAT-MATRIX.md`: CTX-UAT-002/003/004 pasan a PASS con
+  referencia a este receipt.
+- `docs/roadmap/CURRENT.md` y `STATE.yaml`: siguiente paso ejecutable =
+  C3j objetivo 5 (delta durable entre procesos vía CLI) o objetivo 6
+  (hypermedia), según prioridad del operador.
+
+## Gates NO ejecutados (honestos)
+
+- `cargo test --workspace` completo: no ejecutado (gate de release/verify, no
+  de apply). Scoped profile ejecutado según §2.3.
+- `scripts/release.sh`: NO ejecutado (release es gate humano).
+- `git push`: NO ejecutado (gate humano). 23 commits sin publicar.
+- Estado 1-lease de CTX-004: `NOT_RUN` (requiere escribir en el ledger real).

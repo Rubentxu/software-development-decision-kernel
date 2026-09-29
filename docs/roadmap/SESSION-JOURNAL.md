@@ -6015,3 +6015,62 @@ Cerrar C3i objetivo 5: pin de identidad unica (golden test de project_id estable
 **Estado:** **C3j slice 1 IMPLEMENTED+VERIFIED.** Restante de C3j: objetivo 3 (`context bootstrap` service + wiring CLI/XDG), 5 (delta durable observable entre procesos a nivel CLI), 6 (hipermedia). C4/C6/C7 intactos. INC-DEBT-038 ABIERTO.
 
 **Siguiente paso exacto:** C3j objetivo 3 — application service `context bootstrap`: resolver project/workspace (reusa adoption), converger adoption sin interacción (reusa apply), inferir 0/1/N ciclos (reusa `resolve_cycle_context_with_cwd`), reconstruir basis (reusa ContextBridge::bootstrap) y servir capsule del store durable; exponer como subcomando `sddk context bootstrap` con JSON tipado (estados NoActiveCycle/AmbiguousCycle tipados). Después: superficie contract pins + CTX-UAT-007..012/015.
+
+---
+
+## session-40 — 2026-09-29T20:38Z — C3j objetivo 3: `sddk context bootstrap`
+
+**Baseline:** `04a97a2b` (close-out session-39) → **HEAD** `aff0a498`, `origin/main = 5440b2e8`, **23 commits sin publicar**. Workspace 2.2.32, último release público v2.2.27.
+
+**WorkItem:** C3j objetivo 3 — operación de alto nivel `context bootstrap` (SPEC-005 CTX-003/004/005/011).
+
+**SCOPE-CONTRACT:** componer identidad + convergencia de adopción + inferencia de ciclo + basis + binding durable reusando los resolvers canónicos. Sin segunda autoridad. Sin tocar el ledger real. C3j objetivos 5 y 6, y C4/C6/C7, fuera de scope.
+
+**Entregado:**
+
+1. `3e8b6031` — **ADR-0145**: acepta `durable_capsule_store.rs` y `durable_session_binding.rs` como módulos raíz del engine. Cierra deuda arquitectónica **heredada**.
+2. `aff0a498` — `crates/sddk-cli/src/context_cmd.rs` (servicio, 10 tests) + wiring CLI completo (parser, dispatch, gate de admisión, `command_spec.rs`, goldens) + `tests/uat_ctx_002_context_bootstrap.sh` (UAT e2e, 4 escenarios).
+
+**Decisiones:**
+
+- **Sin `ContextBridge::bootstrap` en el camino del bootstrap.** El servicio deriva el basis desde la capsule durable. Razón observada: `ContextBridge::bootstrap(binding, revision)` parte de `binding.semantic_refs` para construir `facts`/`advisory`, y en el momento del bootstrap el binding está vacío; usarlo habría producido un contexto vacío con apariencia de reconstruido. La preservación de `semantic_refs` y el rechazo de deltas stale ya están cubiertos por `durable_context_e2e`. Deuda consciente, no accidental.
+- **Clave de capsule colon-free.** `cycle-<id>` y sentinel `no-active-cycle`. El scope de proyecto (sin ciclo) **no lee ninguna capsule** en vez de leer una ajena: progressive disclosure es por target.
+- **El seq de `ContextBasis` sólo avanza si la revisión cambia.** Es la definición operativa de "no-op semántico" de CTX-005.
+- **Registro como `Experimental` + `Governed`**, no `Stable`: CTX-003 está incompleto (pasos 5 y 7).
+
+**Bugs reales encontrados por los tests (no por lectura):**
+
+1. El `seq` de `ContextBasis` se incrementaba en cada llamada ⇒ el replay **no era idempotente**. Falsador: elidir la guarda tumba `repeated_bootstrap_is_idempotent`.
+2. `cycle_key` devolvía `cycle:<id>`. `FilesystemCapsuleStore` indexa por `<workflow_run>:<node>:<attempt>.json` y compara el **primer** componente, luego `:` hacía la búsqueda **imposible**: el read-reuse de capsule nunca habría funcionado en producción, y los tests lo detectaron al no recuperar la capsule plantada.
+
+**Falsadores observados (RED → revertido → GREEN):**
+
+| Falsador | Test que cayó |
+|---|---|
+| Elidir la guarda `previous.revision == revision` de `next_basis` | `repeated_bootstrap_is_idempotent` |
+| Elidir `apply_adoption` en `converge_adoption` | `bootstrap_converges_adoption_on_disk` |
+
+El segundo falsador no compilaba al principio (el `return` temprano dejaba `status` sin definir); se ajustó hasta que compiló, porque un falsador que no compila **no demuestra** que el test observe la línea. Sin `bootstrap_converges_adoption_on_disk`, el servicio habría reportado `complete` sin converger nada y ningún test lo habría notado.
+
+**Deuda cerrada:** guard arquitectónico `no_new_root_level_context_module_without_adr` RED desde `f35c5e82` (session-39). Verificado con `git stash` que ya fallaba en HEAD antes de este trabajo ⇒ deuda heredada, no regresión. Cerrada con ADR-0145, que además **rechaza explícitamente** esquivar el guard moviendo los ficheros a un subdirectorio (el guard lo aceptaría sin ADR).
+
+**Verificación (scoped, observado):** `cargo test -p sddk-cli --lib` **834 GREEN**; `cargo test -p sddk-engine --lib` **1342 GREEN**; `cargo test -p sddk-cli --test '*'` todas las suites verdes (`context_fitness` 7/7 tras la ADR, `cli_compatibility` 6/6, `cli_golden` 1/1); `cargo fmt --check` limpio; `clippy -p sddk-cli --all-targets` sin warnings; `shellcheck` limpio en ambos UAT; `bash tests/uat_ctx_002_context_bootstrap.sh` **4/4 PASS** con binario release; `bash tests/uat_ctx_001_adoption_convergence.sh --repeats 3` PASS (recibo `9ff3d751…`, identidad `p-8d17246c…`).
+
+**Goldens actualizados** (drift esperado, diff revisado): `agent-surface.golden.json` total 60→61 con una entrada `context`; `help-top-level.txt` y `cli_golden/1.168.8/sddk-help.txt` con una línea cada uno.
+
+**UAT observado:** CTX-UAT-004 PASS (0 leases ⇒ `no_active_cycle` tipado, con hint, y el binding se persiste igual). **CTX-UAT-002 y CTX-UAT-003 NOT_RUN**: requieren 1 y 2 leases reales, y la única vía de crearlos es escribir en el ledger real, que es gate humano. El estado `resolved` y `ambiguous` están implementados y cableados, pero **no se declaran PASS sin observación**. 007..012 y 015 NOT_RUN.
+
+**CTX-003: cobertura honesta.** Pasos 1, 2, 3, 4 y 6 cubiertos. **Paso 5 (compile capsule) y paso 7 (hypermedia representation) PENDIENTES** — la salida del comando es un informe CLI, no una representación hipermedia. Declarado en el receipt, el commit, CURRENT y STATE.
+
+**Conocimiento negativo (esta sesión):**
+
+- El repo compila a un target dir externo (`/var/home/rubentxu/cargo-targets`), no a `$REPO_ROOT/target`. Los UAT que hardcodeaban `target/release/sddk` fallaban con exit 2 aunque el binario existiera. Ambos scripts ahora resuelven el target dir vía `cargo metadata`.
+- `project_data` es a nivel de proyecto y `workspace_data` a nivel de workspace: el binding y el recibo de adopción **no** comparten directorio. El UAT los localiza con `find` en vez de adivinar la ruta — si el layout cambia, el UAT sigue diciendo la verdad.
+- Un `python3 -c` con `str.replace` silencioso **no aplica nada** y el comando sale 0. Un falsador que no se aplica no es un falsador: hay que asertar que el patrón se encontró.
+- `resolve_cycle_context` con `cycle_arg = Some(id)` resuelve el id **sin verificar existencia**: cualquier cadena es un ciclo explícito válido. Es el contrato actual de S2 (explícito gana sobre inferencia) y la inferencia tipada lo respeta, pero significa que `--cycle` no valida.
+
+**Estado:** **C3j objetivo 3 IMPLEMENTED+VERIFIED (parcial respecto a CTX-003: pasos 5 y 7 pendientes).** Restante de C3j: objetivo 5 (delta durable CLI, CTX-008), objetivo 6 (hipermedia = paso 7), paso 5 (compile capsule). C4/C6/C7 intactos. INC-DEBT-038 ABIERTO. INCIDENTE session-35 sin cambios: `c0-t01-pointer-mutation` PAUSED, backup `/tmp/ledger.pre-m21.backup.sqlite` intacto, hash real `58745880051db0a5…` constante (no escrito en esta sesión).
+
+**Gates NO ejecutados (honestos):** `cargo test --workspace` completo (perfil de verify/release, no de apply); `scripts/release.sh`; `git push`. Los tres son gates humanos o de release.
+
+**Siguiente paso exacto:** C3j objetivo 5 — `sddk context delta` observable entre procesos a nivel CLI: compilar un `ContextDelta` ligado al basis persistido, persistirlo, y que un segundo proceso lo lea y lo aplique con `ContextBridge` (rechazando stale). Reutiliza el binding durable del objetivo 3, así que es el siguiente eslabón natural. Después: paso 5 de CTX-003 (compile capsule en el bootstrap) y objetivo 6 (hipermedia).
