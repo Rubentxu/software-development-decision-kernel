@@ -485,6 +485,7 @@ impl Fixture {
                 data_home: Some(self.data.clone()),
                 sddk_data_dir: None,
                 state_home: Some(self.state.clone()),
+                sddk_state_home: None,
                 cache_home: Some(self.cache.clone()),
             },
             sddk_version: "3.6".into(),

@@ -18,6 +18,14 @@ pub struct XdgEnvironment {
     pub sddk_data_dir: Option<PathBuf>,
     /// Optional `XDG_STATE_HOME` override.
     pub state_home: Option<PathBuf>,
+    /// Optional `SDDK_STATE_HOME` override (takes precedence over
+    /// `XDG_STATE_HOME` for the state root; this is where the ledger lives).
+    ///
+    /// Added by INC-DEBT-037. The variable was already read by
+    /// `admission.rs` and documented as "used for ledger access", but this
+    /// resolver never consulted it, so redirecting it silently did nothing
+    /// and an end-to-end verification wrote to the real ledger.
+    pub sddk_state_home: Option<PathBuf>,
     /// Optional `XDG_CACHE_HOME` override.
     pub cache_home: Option<PathBuf>,
 }
@@ -96,6 +104,7 @@ pub fn resolve_xdg_paths(
     validate_optional("XDG_DATA_HOME", environment.data_home.as_deref())?;
     validate_optional("SDDK_DATA_DIR", environment.sddk_data_dir.as_deref())?;
     validate_optional("XDG_STATE_HOME", environment.state_home.as_deref())?;
+    validate_optional("SDDK_STATE_HOME", environment.sddk_state_home.as_deref())?;
     validate_optional("XDG_CACHE_HOME", environment.cache_home.as_deref())?;
 
     let data_home = resolve_base(
@@ -108,7 +117,10 @@ pub fn resolve_xdg_paths(
         dirs::data_dir(),
     )?;
     let state_home = resolve_base(
-        environment.state_home.as_deref(),
+        environment
+            .sddk_state_home
+            .as_deref()
+            .or(environment.state_home.as_deref()),
         environment.home.as_deref(),
         ".local/state",
         dirs::state_dir(),
@@ -307,6 +319,7 @@ mod tests {
             data_home: Some("/xdg/data".into()),
             sddk_data_dir: Some("/sddk-root".into()),
             state_home: Some("/xdg/state".into()),
+            sddk_state_home: None,
             cache_home: Some("/xdg/cache".into()),
         };
         let paths = resolve_xdg_paths(&environment, "p-project", "w-workspace").unwrap();

@@ -708,6 +708,10 @@ pub struct CliEnvironment {
     pub framework_dir: Option<PathBuf>,
     /// `XDG_STATE_HOME`, when set and non-empty.
     pub state_home: Option<PathBuf>,
+    /// `SDDK_STATE_HOME` override. Takes precedence over `XDG_STATE_HOME`
+    /// and governs where the project ledger is opened
+    /// (`crates/sddk-engine/src/paths.rs`). INC-DEBT-037.
+    pub sddk_state_home: Option<PathBuf>,
     /// `XDG_CACHE_HOME`, when set and non-empty.
     pub cache_home: Option<PathBuf>,
     /// `SDDK_ACTOR`, when set and non-empty.
@@ -724,6 +728,7 @@ impl CliEnvironment {
             sddk_data_dir: nonempty_env_path("SDDK_DATA_DIR"),
             framework_dir: nonempty_env_path("SDDK_FRAMEWORK_DIR"),
             state_home: nonempty_env_path("XDG_STATE_HOME"),
+            sddk_state_home: nonempty_env_path("SDDK_STATE_HOME"),
             cache_home: nonempty_env_path("XDG_CACHE_HOME"),
             sddk_actor: nonempty_env_string("SDDK_ACTOR"),
             user: nonempty_env_string("USER"),
@@ -736,6 +741,7 @@ impl CliEnvironment {
             data_home: self.data_home.clone(),
             sddk_data_dir: self.sddk_data_dir.clone(),
             state_home: self.state_home.clone(),
+            sddk_state_home: self.sddk_state_home.clone(),
             cache_home: self.cache_home.clone(),
         }
     }

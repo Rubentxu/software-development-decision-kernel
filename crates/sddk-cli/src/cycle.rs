@@ -2961,6 +2961,7 @@ mod tests {
             sddk_data_dir: None,
             framework_dir: None,
             state_home: Some(project_root.join(".local").join("state")),
+            sddk_state_home: None,
             cache_home: Some(project_root.join(".local").join("cache")),
             sddk_actor: None,
             user: Some("tester".to_string()),

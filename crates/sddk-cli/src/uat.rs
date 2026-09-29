@@ -1342,6 +1342,7 @@ fn xdg_from_env(environment: &crate::CliEnvironment) -> sddk_engine::XdgEnvironm
         data_home: environment.data_home.clone(),
         sddk_data_dir: environment.sddk_data_dir.clone(),
         state_home: environment.state_home.clone(),
+        sddk_state_home: environment.sddk_state_home.clone(),
         cache_home: environment.cache_home.clone(),
     }
 }
@@ -4776,6 +4777,7 @@ mod uat_signoff_tests {
             sddk_data_dir: Some(data_dir.to_path_buf()),
             framework_dir: None,
             state_home: Some(data_dir.to_path_buf()),
+            sddk_state_home: None,
             cache_home: Some(data_dir.to_path_buf()),
             sddk_actor: Some("tester".into()),
             user: Some("test".into()),
@@ -4952,6 +4954,7 @@ mod uat_stale_tests {
             sddk_data_dir: Some(data_dir.to_path_buf()),
             framework_dir: None,
             state_home: Some(data_dir.to_path_buf()),
+            sddk_state_home: None,
             cache_home: Some(data_dir.to_path_buf()),
             sddk_actor: Some("tester".into()),
             user: Some("test".into()),
@@ -5494,6 +5497,7 @@ mod uat_f13_integration_tests {
             sddk_data_dir: Some(data_dir.to_path_buf()),
             framework_dir: None,
             state_home: Some(data_dir.to_path_buf()),
+            sddk_state_home: None,
             cache_home: Some(data_dir.to_path_buf()),
             sddk_actor: Some("tester".into()),
             user: Some("test".into()),

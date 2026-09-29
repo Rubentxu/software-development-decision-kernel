@@ -28,6 +28,7 @@ fn test_environment(temp_root: &std::path::Path) -> CliEnvironment {
         sddk_data_dir: Some(temp_root.to_path_buf()),
         framework_dir: None,
         state_home: None,
+        sddk_state_home: None,
         cache_home: None,
         sddk_actor: None,
         user: None,
