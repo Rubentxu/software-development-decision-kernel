@@ -5530,3 +5530,35 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
    `scripts/reconcile_state_pointer.sh`, test `test_release_state_pointer` PASS).
 8. **Gap registrada, no fixeada:** `dev update --root <dir>` explícito no repunta
    `current` (solo lo hace con root `.`). Candidata a deuda.
+
+### Adenda session-34 (14:35Z) — v2.2.24..v2.2.27: cadena de fixes del BUNDLE.toml y del smoke, estado final limpio
+
+1. **v2.2.24** (`2fb5f738`, binario `6c84b702…`): fix del swap destructivo `a409fe45` + recibo
+   `0179545d`. Run 36577888371 success completo. Cosign OK ×2, digest instalado idéntico,
+   fire test en la máquina real conservó todo.
+2. **Descubrimiento clave:** el workflow de release NO usa `scripts/release.sh`. El job
+   "Bundle framework assets" empaquetaba el tar standalone SIN BUNDLE.toml (el único
+   BUNDLE.toml del release vivía en los unified). El fix de `release.sh` no llegaba al CI.
+3. **v2.2.25 nunca publicó:** `101f1b45` añadió BUNDLE.toml al job CI pero copié la aserción
+   de `release.sh` (que exige el prefijo `software-development-decision-kernel/`); el tar del
+   workflow es root-level → la aserción mató el bundle job. Tag fantasma `v2.2.25` eliminado
+   (local y remoto); no hubo release.
+4. **v2.2.26** (`ebaecc8f`, fix `fbc5d08c`): aserción corregida a root-level (falsada en
+   local). Run 36580580136: bundle job SUCCESS, pero el smoke E2E falló — el assert viejo
+   `test -d <root>/agents` pedía el layout raíz que el contrato nuevo ya no produce. El
+   log del CI confirma el éxito del contrato: "into /tmp/sddk-smoke-framework-2/2.2.26",
+   377 files verified. Los panics "Broken pipe" de `completion | head -1` son ruido benigno
+   (repro local: pipeline exit 0, grep matchea; 30/30 intentos).
+5. **v2.2.27** (`5ee68265`, fix `87dd08a2`): smoke E2E aserta el layout versionado (exige
+   BUNDLE.toml en el version-dir, rechaza root-layout como regresión). Run 36582257284
+   **success completo**. Verificado bit a bit: cosign OK ×2, digest `a3b76113…` idéntico,
+   `install.sh` → `all_present: true`, fire test `dev update` → instala en
+   `framework/2.2.27/` limpio, `current -> 2.2.27`.
+6. **Estado local final:** framework root contiene SOLO `2.2.27/` + `current` (residuo
+   legacy de los fire tests intermedios eliminado a mano; regenerable, sin consumers).
+   69 symlinks de editores intactos apuntando a `2.2.27`. `dev verify` valid, doctor
+   `all_present: true`.
+7. **Suite shell:** 22/22 ×2 (tras el reconcile del puntero mecánico intermedio).
+   Punteros STATE/CURRENT sincronizados a `5ee68265` / `2.2.27` / `v2.2.27`.
+8. **Gap abierta registrada:** `dev update --root <dir>` explícito no repunta `current`
+   (solo lo hace con root `.`). Candidata a deuda para próxima sesión.
