@@ -1103,6 +1103,49 @@ else
         die "public URL probes failed after 60s-per-asset budget:$URL_FAILS"
     fi
     ok "9/9 canonical assets reachable from public CDN (HTTP 200)"
+
+    # --- 9c. supply-chain authenticity against the PUBLISHED release ------
+    # The 9b gate proves the assets EXIST and are the right names. This
+    # proves they are AUTHENTIC: that a Fulcio certificate minted by
+    # release.yml on a SemVer tag of this repo verifies them under the
+    # exact pin the product ships.
+    #
+    # INC-AUDIT-S14 sat at `distribution-open` for several sessions because
+    # nothing in the release path ever performed this verification, so the
+    # one property that makes a signed release trustworthy was never
+    # observed at the moment of release. It is cheap (it re-uses the CDN
+    # round trip already paid for) and it is the difference between "the
+    # upload worked" and "the upload is trustworthy".
+    step "9c/14 — verify supply-chain authenticity of the published release"
+    if [ "${SDDK_SKIP_AUTHENTICITY_CHECK:-0}" = "1" ]; then
+        warn "skipping step 9c (SDDK_SKIP_AUTHENTICITY_CHECK=1) — authenticity NOT verified"
+    elif ! command -v cosign >/dev/null 2>&1; then
+        die "cosign not found — refusing to publish a signed release whose authenticity cannot be verified. Install cosign, or set SDDK_SKIP_AUTHENTICITY_CHECK=1 to acknowledge the gap."
+    else
+        AUTH_TMP="$(mktemp -d)"
+        trap 'rm -rf "$AUTH_TMP"' RETURN
+        for asset in sddk sddk.sig sddk.pem \
+            "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz" \
+            "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz.sig" \
+            "sddk-v$VERSION-sddk-linux-x86_64-musl.tar.gz.pem" \
+            software-development-decision-kernel.tar.gz \
+            software-development-decision-kernel.tar.gz.sig \
+            software-development-decision-kernel.tar.gz.pem; do
+            curl -fsSL -o "$AUTH_TMP/$asset" \
+                "https://github.com/$REPO/releases/download/$TAG/$asset" \
+                || die "9c: could not fetch $asset for authenticity verification"
+        done
+
+        SDDK_RELEASE_REPO="$REPO" bash tests/test_supply_chain_authenticity.sh \
+            --tag "$TAG" --assets-dir "$AUTH_TMP" >"$AUTH_TMP/auth.out" 2>&1 || {
+                cat "$AUTH_TMP/auth.out"
+                die "9c: supply-chain authenticity check FAILED — the published release does not verify under the shipped trust root"
+            }
+        grep -E "PASS=[0-9]+ FAIL=0" "$AUTH_TMP/auth.out" >/dev/null \
+            || die "9c: authenticity check did not report FAIL=0"
+        ok "published release verifies under the pinned trust root (9c)"
+        ok "9c verified the CDN-served bytes, not a separate download"
+    fi
     ok "public-release gate PASS"
 fi
 # <<< REL-1 public-release gate end <<<
