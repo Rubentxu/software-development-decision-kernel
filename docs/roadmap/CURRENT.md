@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-34f, 2026-09-29T15:55Z):** Workspace **`2.2.30`**, puntero `2e404e28`. Último release público: **`v2.2.27`** (`5ee68265`, binario `a3b76113…`). **Nada publicado en esta adenda.**
+**Estado (session-34f, 2026-09-29T15:57Z):** Workspace **`2.2.31`**. Último release público: **`v2.2.27`** (`5ee68265`, binario `a3b76113…`). **Nada publicado en esta adenda**; 2.2.28/29/30/31 siguen esperando el flujo canónico con autorización del operador. El bump a 2.2.31 fue **forzado** (`release-bump.sh --force-version`) porque `release-bump.sh` sin flags se niega a derivar: el workspace ya estaba 2.2.30 y por diseño eso significa "2.2.30 es el release pendiente", no "hay que bumpear". Forzarlo consume el pendiente y abre 2.2.31, que es lo que corresponde a una cadena de tooling ya commiteada.
 
 **PERFIL COMPLETO OBSERVADO EN VERDE** (session-34f, evidencia en `docs/roadmap/receipts/session-34/UAT-EVIDENCE-2026-09-29T1552.yaml`): `cargo test --workspace --locked` → `TEST_EXIT=0`, 259 suites ok, 0 fallos (reejecutado tras tocar `lint.rs`); `cargo fmt --check` OK; `cargo clippy --workspace --all-targets -- -D warnings` OK; `tests/test_release_public_gate.sh` **13/13**; `tests/test_workflow_contract.py` **498/498**.
 

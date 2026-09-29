@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.31] - 2026-09-29
+
+### Fixes
+  - fix(lint): reportar la ruta real de agents anidados y el hint que si regenera
+  - fix(engine): C2B-DRIFT-1 - adapter fija CHRONOS_DB_PATH ademas de CHRONOS_STORE_PATH
+  - fix(engine): adapter chronos soporta execution_query (renombre 0.1.4) con fallback legacy
+
+### Other
+  - docs(roadmap): punteros de sesion-34f alineados con la evidencia observada
+  - docs(receipts): evidencia del perfil completo session-34 y hunt de gates rojos
+  - docs(adr): ADR-0144 propuesto - boundary de integracion con el host JCode
+  - docs(journal): adenda session-34e (guard en verde, 2.2.30 alineado y commiteado)
+  - docs(roadmap): punteros a d47a1766 / 2.2.30 con el guard de estado en PASS
+  - docs(journal): adenda session-34d (DRIFT-1 fix, leccion del bump manual, stash de release)
+  - docs(roadmap): CURRENT a 2.2.29/cfa477cf con C2 completo y C3g cerrado
+  - docs(roadmap): puntero a d83bc120 / 2.2.29 (sin publicar) con cadena de la sesion
+  - docs(journal): adenda session-34c (C2c con SDK publico, C3g completo)
+  - docs(uat): C3g addendum - presupuesto estatico y runtime con providers reales
+  - docs(uat): C2c re-ejecutado con el SDK público de jcode (T15-T18, decision_request ADR)
+  - docs(journal): adenda session-34b (C2a/C2b re-ejecutados, drift chronos, bump 2.2.28 sin publicar)
+  - docs(uat): C2b re-ejecutado contra chronos-mcp 0.1.4 real (T12-T14 PASS con fix de adapter)
+  - docs(uat): C2a re-ejecutado contra cognicode-mcp real 0.97.3 (T08-T11 PASS observados)
+  - docs(roadmap): punteros a v2.2.27/5ee68265 y adenda de cierre session-34
+
 ## [2.2.28] - 2026-09-29
 
 ### Fixes
