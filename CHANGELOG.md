@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.20] - 2026-09-29
+
+### Other
+  - docs(coherence): informar el trigger release-archive-vault-complete con veredicto n/a
+  - test(coherence): pinar la logica de veredicto con fixtures hermeticos
+  - docs(roadmap): cerrar session-33 con el release v2.2.19 verificado
+
 ## [2.2.19] - 2026-09-29
 
 ### Fixes
