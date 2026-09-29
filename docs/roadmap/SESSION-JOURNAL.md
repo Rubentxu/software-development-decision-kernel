@@ -6127,3 +6127,13 @@ El segundo falsador no compilaba al principio (el `return` temprano dejaba `stat
 **Gates NO ejecutados (honestos):** `cargo test --workspace` completo (perfil de verify/release, no de apply); `scripts/release.sh`; `git push`. Los tres son gates humanos o de release.
 
 **Siguiente paso exacto:** C3j objetivo 3 **paso 5** — compilar la `ContextCapsule` dentro de `sddk context bootstrap` reutilizando `ContextCompiler` + `CapsuleTarget`. Ya existe `durable_capsule_is_recovered_as_basis`, que la lee; lo que falta es producirla. Después, objetivo 6 (hipermedia = paso 7).
+
+### Addendum session-41 — la cifra de commits sin publicar es auto-referencial
+
+Al cerrar la sesión, el conteo real de `git log --oneline origin/main..HEAD | wc -l` era **28**, y los punteros declaraban 25 (calculado antes del commit documental, que se cuenta a sí mismo). Se reconcilió a 28, luego a 29, luego a 30, y el commit de reconciliación sumo otro.
+
+**El patrón es la lección, no la cifra:** cada commit que corrige el número lo vuelve a desactualizar. Dos commits de reconciliación consecutivos fueron un síntoma del problema, no su solución.
+
+**Lo que sí funciona:** anclar la cifra al SHA donde se midió. `CURRENT.md` dice ahora "**30 commits sin publicar (medido en `e05f67aa`)**". Un lector puede comprobar ese SHA y obtener la verdad, en vez de confiar en un número que se desactualiza solo. El commit que ancla es `b503efa4`, así que el conteo real en el momento de leer esta entrada es **31**.
+
+**Regla para las próximas sesiones:** no escribir el conteo de commits sin publicar sin el SHA de medición. Si el número importa, se mide y se ancla; si no importa, se dice "sin publicar respecto a origin/main" y se deja que `git` lo diga.
