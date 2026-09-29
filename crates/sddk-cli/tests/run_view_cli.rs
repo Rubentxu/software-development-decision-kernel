@@ -1,8 +1,30 @@
-//! RED tests for the `sddk run-view` CLI handler (integration-level).
+//! Contract tests for the `sddk run-view` CLI handler (integration-level).
 //!
-//! Spec: ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-CurrentRunView-Boundary.md
+//! Spec: `REQ-CurrentRunView-Boundary.md` + `REQ-CurrentRunView-Shape.md`.
+//!
+//! **These expectations changed with the fail-closed fix (session-42), and the
+//! change was not cosmetic — it inverted the contract.** The previous version
+//! of this file asserted exit 0 and a well-formed `RunStateView` for run ids
+//! that exist nowhere in any store. That was INC-DEBT-039: the scaffold
+//! guessed `origin` from the `run_id` prefix and passed `frontier`,
+//! `blockers` and `pending_decisions` as constant `vec![]`, so a fabricated
+//! view reached policy evaluation and `available_actions`.
+//!
+//! With no real `RunStateViewInputs` implementation, asserting exit 0 here
+//! would pin the fabrication in place forever: there is nothing to produce
+//! a view, so "succeeds" can only mean "invents". The tests below assert the
+//! fail-closed contract instead, and they are mutation-tested — relaxing
+//! `load_run_state_view` back to a fabricated view turns all four RED.
 
 use std::process::Command;
+
+/// Exit code the CLI uses for a typed, fail-closed refusal.
+///
+/// Distinct from 2 (`POLICY_NOT_FOUND`): availability of the *source* is
+/// decided before the *policy* is resolved, so an unknown policy name on a
+/// run with no source reports the missing source, not a missing policy.
+const EXIT_SOURCE_UNAVAILABLE: i32 = 4;
+const MARKER_SOURCE_UNAVAILABLE: &str = "RUN_STATE_SOURCE_UNAVAILABLE";
 
 /// Locate the compiled `sddk` binary.
 fn sddk_bin() -> std::path::PathBuf {
@@ -28,65 +50,85 @@ fn run(args: &[&str]) -> (i32, String, String) {
 }
 
 #[test]
-fn json_output_round_trips_through_serde() {
-    // Scenario: JSON output round-trips through serde
-    let (status, stdout, _stderr) = run(&["run-view", "R-decl-cli-001", "--format", "json"]);
-    assert_eq!(status, 0, "exit code must be 0");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
-    assert!(parsed.get("run_state").is_some());
-    assert!(parsed.get("action_surface").is_some());
-    assert_eq!(parsed["run_state"]["run_id"], "R-decl-cli-001");
-    assert_eq!(parsed["action_surface"]["run_id"], "R-decl-cli-001");
+fn no_source_fails_closed_and_emits_nothing_on_stdout() {
+    // Scenario: a run id with no durable state is refused, not invented.
+    //
+    // The stdout assertion is the load-bearing one: a JSON view on stdout is
+    // exactly what a consumer parses and trusts, so "fail closed" has to mean
+    // no parseable payload at all, not a view with empty fields.
+    let (status, stdout, stderr) = run(&["run-view", "R-decl-cli-001", "--format", "json"]);
+    assert_eq!(
+        status, EXIT_SOURCE_UNAVAILABLE,
+        "must fail closed when no RunStateViewInputs source exists"
+    );
+    assert!(
+        stdout.is_empty(),
+        "fail-closed must not emit a parseable view on stdout, got: {stdout}"
+    );
+    assert!(
+        stderr.contains(MARKER_SOURCE_UNAVAILABLE),
+        "stderr must carry the typed marker, got: {stderr}"
+    );
+    assert!(
+        serde_json::from_str::<serde_json::Value>(stderr.trim()).is_ok(),
+        "stderr must be a typed JSON error, got: {stderr}"
+    );
 }
 
 #[test]
-fn unknown_policy_yields_policy_not_found() {
-    // Scenario: Unknown policy yields POLICY_NOT_FOUND
-    let (status, _stdout, stderr) = run(&[
+fn source_availability_is_decided_before_policy() {
+    // Scenario: an unknown policy on a source-less run reports the source.
+    //
+    // Order matters. If policy resolution ran first, this would report
+    // POLICY_NOT_FOUND and point the operator at a name typo instead of at
+    // the real defect: there is no view source at all.
+    let (status, stdout, stderr) = run(&[
         "run-view",
         "R-cli-policy",
         "--policy",
         "definitely-not-a-policy",
     ]);
-    assert_eq!(status, 2, "exit code must be 2 (POLICY_NOT_FOUND)");
+    assert_eq!(
+        status, EXIT_SOURCE_UNAVAILABLE,
+        "missing source must outrank an unresolvable policy"
+    );
+    assert!(stdout.is_empty());
     assert!(
-        stderr.contains("POLICY_NOT_FOUND"),
-        "stderr must contain POLICY_NOT_FOUND marker, got: {stderr}"
+        !stderr.contains("POLICY_NOT_FOUND"),
+        "must not blame the policy when the real gap is the missing source: {stderr}"
     );
+    assert!(stderr.contains(MARKER_SOURCE_UNAVAILABLE));
 }
 
 #[test]
-fn default_policy_matches_explicit_default() {
-    // Scenario: --policy default is the same as no flag
-    let (s1, out1, _) = run(&["run-view", "R-cli-default-eq", "--format", "json"]);
-    let (s2, out2, _) = run(&[
-        "run-view",
-        "R-cli-default-eq",
-        "--policy",
-        "default",
-        "--format",
-        "json",
-    ]);
-    assert_eq!(s1, 0);
-    assert_eq!(s2, 0);
-    let p1: serde_json::Value = serde_json::from_str(&out1).unwrap();
-    let p2: serde_json::Value = serde_json::from_str(&out2).unwrap();
-    assert_eq!(
-        p1["action_surface"]["available_actions"], p2["action_surface"]["available_actions"],
-        "available_actions must be identical"
-    );
-    assert_eq!(
-        p1["action_surface"]["policy_digest"], p2["action_surface"]["policy_digest"],
-        "policy_digest must be identical"
-    );
-}
-
-#[test]
-fn text_output_contains_two_section_headers() {
-    // Scenario: Default invocation emits human-readable text on TTY
+fn text_output_never_reports_a_run_state_section_it_did_not_read() {
+    // Scenario: the human-readable form must not claim a section it did not read.
     let (status, stdout, _stderr) = run(&["run-view", "R-cli-text"]);
-    assert_eq!(status, 0);
-    assert!(stdout.contains("# Run state"));
-    assert!(stdout.contains("# Action surface"));
+    assert_eq!(status, EXIT_SOURCE_UNAVAILABLE);
+    assert!(
+        !stdout.contains("# Run state"),
+        "must not print a run-state section derived from no source, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("# Action surface"),
+        "must not print an action surface derived from no source, got: {stdout}"
+    );
+}
+
+#[test]
+fn fabricated_view_shape_is_not_reachable_from_the_cli() {
+    // Scenario: the exact shape the scaffold used to fabricate stays unreachable.
+    //
+    // Pins the field that made the defect dangerous rather than merely wrong:
+    // a constant empty `frontier` cannot distinguish "nothing ready" from
+    // "never consulted", which is what REQ-CurrentRunView-Shape.md:43 forbids.
+    let (_status, stdout, _stderr) = run(&["run-view", "R-cli-default-eq", "--format", "json"]);
+    assert!(
+        stdout.is_empty(),
+        "no CLI path may emit a RunStateView while no real source exists, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"frontier\""),
+        "a constant empty frontier must not be observable, got: {stdout}"
+    );
 }

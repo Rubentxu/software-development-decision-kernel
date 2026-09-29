@@ -49,13 +49,22 @@ fn load_run_state_view(
     _as_of: Option<u64>,
     _environment: &CliEnvironment,
 ) -> Result<RunStateView, String> {
-    Err(format!(
-        "{{\"error\":\"RUN_STATE_SOURCE_UNAVAILABLE\",\
-         \"message\":\"no run_state source is wired for `{run_id}\"; \
-         frontier, blockers and pending_decisions cannot be reported without one\",\
-         \"run_id\":\"{run_id}\",\
-         \"debt\":\"INC-DEBT-039\"}}"
-    ))
+    // Built with `serde_json` rather than `format!` so the payload is valid
+    // JSON by construction. The hand-rolled version had a raw `;` inside the
+    // message and emitted something that looked like a typed error but did
+    // not parse — the worst failure mode for a machine-readable channel,
+    // because a consumer sees non-JSON and has no way to tell it apart from
+    // a transport fault.
+    let payload = serde_json::json!({
+        "error": "RUN_STATE_SOURCE_UNAVAILABLE",
+        "message": format!(
+            "no run_state source is wired for `{run_id}`: frontier, blockers \
+             and pending_decisions cannot be reported without one"
+        ),
+        "run_id": run_id,
+        "debt": "INC-DEBT-039",
+    });
+    Err(payload.to_string())
 }
 
 /// Run the `sddk run-view` command.
