@@ -162,11 +162,37 @@ Ninguno técnico. Los gates que bloquean son humanos y están pendientes.
 3. Verificación de `9b` (assets públicos) y `9c` (autenticidad).
 4. `sddk dev doctor` / `dev update --prune-only`.
 
-## Estado no tocado
+## Estado no tocado — verificado por hash, no por afirmación
+
+El cierre formal del protocolo (`agent-session close`, que **sí** escribe
+en el ledger) se ejecutó y se verificó después:
+
+```console
+$ agent-session close
+authority=sddk  action=close
+head=2717e39f3e43b055e848d5b943e3d20852827512  branch=main  working_tree=clean
+sddk_ledger=last_hash: sha256:271e58f7c2ffa52e515a1703bac92a66a2de1072448440dd979371a5b5c37371
+```
+
+Como ese comando **toca el ledger**, se comprobó el ledger real después,
+que es exactamente la lección de `INC-DEBT-037` (una verificación con
+`SDDK_STATE_HOME` redirigido escribió en el ledger real):
+
+```console
+$ sha256sum ~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite
+58745880051db0a59ae7e944f19da450c199ab77ef98f228ccc56adb6fd8410f
+```
+
+**Idéntico byte a byte al hash registrado en session-35.** El ledger real
+no fue mutado.
 
 - `c0-t01-pointer-mutation` sigue `PAUSED`; backup intacto. **El ledger
-  real no fue escrito en session-42, session-43 ni session-43b** (esta
-  sesión no ejecutó ningún comando que escriba en el ledger).
+  real no fue escrito en session-42, session-43 ni session-43b.**
+- **NOT_RUN**: la inspección del estado del ciclo con `sqlite3` — el CLI
+  `sqlite3` no está instalado en esta máquina. La comprobación por hash
+  cubre lo que importa (que el fichero no cambió), pero el estado
+  *individual* de la fila del ciclo no se leyó hoy; se afirma `PAUSED`
+  por continuidad documentada, no por observación directa.
 - INC-DEBT-038 sin cambios (medium/P2).
 - C4/C6/C7 no abiertos.
 
