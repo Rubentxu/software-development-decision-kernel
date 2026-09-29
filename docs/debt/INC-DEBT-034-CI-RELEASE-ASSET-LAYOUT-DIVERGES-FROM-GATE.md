@@ -1,15 +1,142 @@
 ---
 id: INC-DEBT-034-CI-RELEASE-ASSET-LAYOUT-DIVERGES-FROM-GATE
 title: "La publicación por Actions produce un layout de assets que el gate local rechaza, y arrastra el directorio assets/ del repo al release"
-status: open
+status: closed
 severity: high
 priority: P1
 created: 2026-09-28
 discovered_by: session-31 (OBSERVED, publicación real de v2.2.6)
+resolved: 2026-09-29 (session-33)
 cluster_id: CL-RELEASE
 related: [INC-DEBT-030-LOCAL-RELEASE-BLOCKED-AT-SIGNING-IDENTITY, INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY]
 fingerprint: "ci_release_assets_star_globs_repo_assets_dir"
 ---
+
+## Decisión de política (session-33) — el layout raíz ES el contrato
+
+El INC pedía una decisión explícita: ¿se adapta el gate local al layout de CI,
+o al revés? La pregunta estaba mal planteada, porque daba por hecho que eran
+dos layouts en conflicto. **No lo son: hay un layout, y el de CI es el
+correcto. Lo que estaba mal era la documentación que describía el otro.**
+
+### Por qué el layout raíz no es arbitrario
+
+Es **forzado por la estructura del propio pipeline**, no una elección de
+estilo. El job `unified-artifact` de `release.yml` consume el bundle así:
+
+```bash
+tar xzf "$BUNDLE" -C "$WORK/framework"      # línea 193, SIN --strip-components
+test -f "$WORK/framework/MANIFEST.sha256"   # línea 196, gate de fallo
+```
+
+Si el bundle se publicara envuelto bajo `software-development-decision-kernel/`,
+el manifest caería en `$WORK/framework/software-development-decision-kernel/`
+y el `test -f` de la línea 196 **fallaría**. El layout raíz no es una
+convención: es la única forma que el consumidor del pipeline admite sin
+desempaquetar.
+
+`release.sh` (ruta local) sí envuelve, y por eso necesita desempaquetar a mano
+para escribir `BUNDLE.toml` y rearmar el unified (`cp -r "$FW_DIR/." ...`).
+Es más trabajo, no un contrato distinto: el envoltorio es un detalle interno
+de cómo el script prepara el unified, y el artefacto final
+(`framework/BUNDLE.toml`, `framework/MANIFEST.sha256`) sale idéntico.
+
+### Qué se cambió
+
+**El contrato documentado, no el productor.** `AGENTS.md` §8 paso 5 describía
+la forma envuelta como si fuese la del bundle publicado. Se alineó con lo que
+se publica y se consume.
+
+El consumidor ya era correcto: `tarball_wraps_all_members_under_one_dir()`
+(`2f7d5064`) detecta el layout antes de aplicar `--strip-components=1`, así que
+tolera ambos y no borra el manifest en ninguno. Se conserva la tolerancia
+deliberadamente: un consumidor que acepta las dos formas no se rompe cuando
+la otra ruta de producción (local) produce la envuelta.
+
+### Lo que NO se cambió, y por qué
+
+- El gate de `verify_manifest` fail-closed. El rechazo de v2.2.17 fue
+  **correcto**: el manifest no estaba donde el guard lo buscaba. Lo que estaba
+  mal era la búsqueda, no el guard.
+- El staging de CI. La causa raíz 1 (el glob `assets/*`) ya estaba corregida
+  en `release.yml` con el staging `dist-out/release-assets/`, y v2.2.18 lo
+  confirma: 27 assets, contrato de 9 canónicos + paquetes de plataforma
+  + firmas, sin `agent-models.yaml`.
+
+### Verificación de la decisión contra el release real
+
+Sobre el `software-development-decision-kernel.tar.gz` publicado en v2.2.18
+(descargado de la release, no de un artefacto local):
+
+| Comprobación | Observado |
+|---|---|
+| Miembros bajo `software-development-decision-kernel/` | **0** |
+| `MANIFEST.sha256` en la raíz | **1** |
+| `agents/` con sus subdirectorios | sí (`agents/sddk-archive.md`, …) |
+| `dev update` extrae y verifica | `369 files content-verified via MANIFEST.sha256` |
+| Instalación real | `all_present: true`, `binary.bundle_coherence: present` |
+
+La línea de releases v2.2.12→v2.2.18 (siete publicaciones) consumió seis
+ciclos de CI en revelar seis defectos encadenados de la ruta de instalación.
+Este era el último. La causa de fondo era que **el contrato del bundle estaba
+escrito en un sitio y el bundle se producía en otro, y nada cruzaba ambos
+campos**. Ahora coinciden y el consumidor tolera las dos formas.
+
+## HALLAZGO session-33 — resuelto el conocimiento negativo de session-32
+
+Session-32 dejó escrito, y así consta en su commit `2f7d5064`, que la
+mutación "siempre `true`" **no puso los pins en rojo** pese a `cargo clean` y
+recompilación forzada, y que "el mecanismo por el que el pin no detectaría ese
+mutante sigue sin explicar". **Está explicado, y la explicación no es la
+rutina.**
+
+La causa: **`root_level_ci_layout_is_not_detected_as_wrapped` prueba la
+FUNCIÓN, no el SITIO donde se la invoca.** El detector
+`tarball_wraps_all_members_under_one_dir` sigue siendo correcto bajo el
+mutante, así que el pin — que lo llama directamente — sigue verde. El
+defecto que session-32 insertó estaba en el `if` del call site
+(`if true { ... push("--strip-components=1") }`), y ningún test que ejercite
+la función puede verlo.
+
+**La forma del defecto es "función correcta detrás de un `if` equivocado"**,
+que es justo la forma que session-32 no sospechó: se buscó un fallo en la lógica
+y la lógica estaba bien.
+
+Confirmado por ejecución en session-33: con `if true` en el call site, el
+guard da **6/6 PASS** y el test unitario del detector da **verde**. Ninguna de
+las dos capas existentes lo detecta. De ahí nace
+`tests/test_release_bundle_layout.sh` (6 checks), que sí lo detecta, porque
+parsea el bloque del push y exige que su condición nombre el flag que el
+detector asigna.
+
+### Falsificación del guard nuevo (OBSERVED, session-33)
+
+| Dirección | Mutación | Resultado |
+|---|---|---|
+| Verde | árbol correcto | PASS 6/6, identifica `if strip_components` (línea 362) |
+| **ROJO (productor)** | reenvolver el bundle en `release.yml` con `--xform` | **FAIL** check 1 |
+| **ROJO (consumidor)** | `if true` en el call site del strip | **FAIL** check 5, nombrando la condición |
+
+El case 5 se escribió **cuatro veces** y las tres primeras versiones eran
+débiles, todas demostradas por la misma mutación:
+
+1. "el detector aparece antes del push" → pasa con `if true`.
+2. "el `if` de menor indentación arriba" → se sale de la función y coge uno
+   de la ruta de firma (línea 85): **falso positivo** sobre código correcto.
+3. "el `if` más cercano a indent-4" → igual: el cuerpo de la función es
+   indent 4, así que un `if` sin relación en la misma función gana.
+4. "el `if` más cercano **a la indentación del bloque**" → correcta.
+
+Las tres primeras pasaban la mutación. Se documentan porque un guard que no
+ha sido mutado no está verificado, y uno que se desataca de la mutación
+produce falsos positivos que acaban borrados.
+
+Nota sobre el primitive: buscar "el `if` más cercano" es la primitiva
+equivocada. Lo que identifica la guarda es que el push esté dentro del bloque
+que abre la condición, así que el `if` debe estar exactamente a la indentación
+del bloque que contiene el push (4 espacios por debajo).
+
+
 
 ## Qué pasó (OBSERVED, session-31)
 

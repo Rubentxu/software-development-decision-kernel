@@ -281,7 +281,7 @@ hagas un release a medias**.
 | 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
 | 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
 | 4 | Manifest | `$BIN dev manifest --root .` + `--verify` | `verify_manifest` sin mismatches (RDI) |
-| 5 | Bundle tarball | `tar czf` con prefix `software-development-decision-kernel/` | `bundle.tar.gz.sha256` |
+| 5 | Bundle tarball | `tar czf` en **layout raíz** (`agents/`, `skills/`, `prompts/sddk/`, `assets/`, `MANIFEST.sha256` sin directorio envolvente) | `bundle.tar.gz.sha256` |
 | 6 | BUNDLE.toml (v2) | `schema_version=2`, `bundle.{version,binary_min_version,binary_max_version}`, `contents.manifest_sha256` | `sddk dev install` lo valida (fail-closed) |
 | 7 | Unified tarball | `bin/sddk` + `framework/` con `chmod 0755` defensivo sobre el binario | `tar tvzf …` muestra `-rwxr-xr-x` |
 | 8 | sha256 + CHECKSUMS + sbom | CycloneDX 1.5 mínimo | existe `sddk.sha256`, `CHECKSUMS`, `sbom.json` |
@@ -291,6 +291,26 @@ hagas un release a medias**.
 | 11 | `sddk dev doctor` | `--prefix $SDDK_PREFIX` | `binary.bundle_coherence: present` + `all_present: true` |
 | 12 | `sddk dev update --prune-only --keep 1` | elimina `<version>/` stale | "removed N, kept 1.X.Y" |
 | 13 | Final state | print binary version, bundle version, current symlink, framework layout | output legible |
+
+**Por qué el bundle va en layout raíz y no envuelto** (decidido en
+session-33, cierra `INC-DEBT-034`). No es una convención: es forzado por el
+consumidor. El job `unified-artifact` de `release.yml:193` extrae el bundle
+con `tar xzf -C "$WORK/framework"` **sin** `--strip-components` y gatea con
+`test -f "$WORK/framework/MANIFEST.sha256"` (línea 196). Un bundle envuelto
+dejaría el manifest un nivel más abajo y ese `test -f` fallaría.
+
+`release.sh` (ruta local) sí envuelve con `--xform` y luego desempaqueta a
+mano para escribir `BUNDLE.toml` y rearmar el unified; el artefacto final sale
+idéntico, así que ambas rutas de producción emiten el mismo contrato. El
+consumidor (`crates/sddk-cli/src/dev/update.rs`,
+`tarball_wraps_all_members_under_one_dir`) detecta el layout antes de aplicar
+`--strip-components=1` y tolera **ambas** formas, para que cambiar de ruta de
+producción no rompa la actualización.
+
+Un `--strip-components=1` a ciegas es lo que rompió v2.2.17: borraba
+`MANIFEST.sha256` (un solo componente) y aplanaba `agents/*.md` a la raíz. El
+`verify_manifest` fail-closed que lo rechazó hacía bien su trabajo; lo que
+estaba mal era dónde se buscaba el manifest.
 
 **Importante sobre 9b.** El gate vuelve a verificar el release publicado en
 la API de GH antes de permitir instalar localmente — atrapa drafts,
