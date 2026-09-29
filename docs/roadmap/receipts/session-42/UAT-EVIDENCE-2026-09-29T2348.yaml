@@ -1,0 +1,139 @@
+---
+session: 42
+date_utc: 2026-09-29
+branch: main
+baseline: 8812bd7c
+head_after: 0f74b21f
+origin_main: 5440b2e8
+workspace_version: 2.2.32
+binary: /var/home/rubentxu/cargo-targets/release/sddk (release, 2.2.32)
+acceptance: PARTIAL
+verdict: debt_reconciled_and_one_defect_fixed
+---
+
+# Receipt session-42 — reconciliación de deuda + fallo cerrado de `run-view`
+
+## Alcance
+
+**Trabajo completado:** reconciliación de dos deudas y corrección de un
+defecto de producción.
+
+1. **INC-DEBT-037 cerrada** (SDDK_STATE_HOME, critical/P1). La causa raíz
+   ya estaba corregida en `e62da1bc` (session-35); el documento llevaba dos
+   sesiones diciendo `open` con el fix commiteado al lado.
+2. **INC-DEBT-039 registrada y parcialmente resuelta**
+   (RunStateView, high/P1, bloquea CTX-003 paso 5). Deuda no declarada,
+   invisible hasta chocar con el objetivo.
+3. **Opción (b) de INC-DEBT-039 implementada**: `sddk run-view` falla
+   cerrado con error tipado en vez de fabricar una vista autoritativa.
+
+## Commits
+
+| SHA | Concern |
+|---|---|
+| `3055aeae` | `fix(cli)`: sddk run view falla cerrado en vez de fabricar una RunStateView |
+| `0636f875` | `docs(debt)`: cierra INC-DEBT-037 y registra INC-DEBT-039 |
+| `0f74b21f` | `fix(cli)`: aclara el mensaje de RUN_STATE_SOURCE_UNAVAILABLE |
+
+## Evidencia observada
+
+### INC-DEBT-037 — cierre
+
+```console
+$ cargo test -p sddk-engine --test inc_debt_037_state_home_precedence
+test result: ok. 6 passed; 0 failed
+```
+
+Aislamiento e2e con binario release: `adopt apply` con `SDDK_STATE_HOME`
+propio produce `p-8d17246c…` ≠ `p-63676b11dc0ef88f` y opera sobre otro
+ledger. Si la variable se ignorase, el id habría coincidido.
+
+### INC-DEBT-039 — falsador RED→GREEN
+
+```console
+# ANTES del arreglo
+test result: FAILED. 1 passed; 4 failed
+# El stdout del fallo mostraba el defecto:
+#   "origin": "Declared",
+#   "available_actions": ["Abort"]
+# para el run inexistente `R-decl-anything`.
+
+# DESPUÉS del arreglo
+test result: ok. 5 passed; 0 failed
+```
+
+E2E con binario release, `SDDK_STATE_HOME` aislado:
+
+```console
+$ sddk run-view R-decl-fake-run --format json >out 2>err ; echo $?
+4
+$ wc -c <out
+0
+```
+
+### Gates del lote afectado
+
+| Gate | Resultado |
+|---|---|
+| `cargo test -p sddk-cli --lib` | 843 passed, 0 failed, 1 ignored |
+| `cargo test -p sddk-cli` (integration) | 187 passed, 0 failed |
+| `cargo test -p sddk-cli --test context_fitness` | 7 passed, 0 failed |
+| `cargo test -p sddk-engine --test inc_debt_037_state_home_precedence` | 6 passed, 0 failed |
+| `cargo fmt --check` | limpio |
+| `cargo clippy -p sddk-cli --all-targets -- -D warnings` | limpio |
+| `cargo build --release --bin sddk` | OK |
+
+## UAT
+
+| ID | Estado | Nota |
+|---|---|---|
+| UAT 001 | PASS (session-41) | No re-ejecutado; sin cambio en adopt/paths en esta sesión |
+| UAT 002 | PASS (session-41) | No re-ejecutado; sin cambio en bootstrap |
+| CTX-UAT-002/003/007..012/015 | `NOT_RUN` | Sin cambio respecto a session-41 |
+
+**No se ha añadido UAT para `run-view`.** El contrato está cubierto por
+`inc_debt_039_run_view_provenance.rs` (5/5) y verificado e2e con binario
+release. Declarado aquí para no insinuar cobertura que no existe.
+
+## Contexto
+
+- **Real**: ledger del operador (`p-63676b11dc0ef88f`), binario release
+  local, `git log`/`git show` del propio repo, `cargo test`.
+- **Fake**: nada. El `CliEnvironment::for_test()` añadido construye un
+  entorno con todos los paths a `None` a propósito; es aislamiento, no
+  suplantación de datos.
+
+## Deuda
+
+- **INC-DEBT-039** abierta (high/P1). Opción (b) hecha; **(a) pendiente y
+  bloqueante**. Antes de escribir el adaptador hay que responder una
+  pregunta de modelo: qué es `frontier` cuando `node_runs_v1` está vacía
+  (medido: 0 filas en el ledger del operador, junto a
+  `workflow_run_events_v1: 0` y `decision_records_v1: 0`).
+- **INC-DEBT-037** residual anotada, no cubierta por el cierre: el
+  mecanismo `resolve_cycle_context_with_cwd` (infiere `--root` subiendo
+  desde el CWD) es un segundo vector de escape del aislamiento y no tiene
+  cobertura del vector combinado con `SDDK_STATE_HOME`.
+- **INC-DEBT-038** sin cambios (medium/P2, open).
+
+## Gates NO ejecutados
+
+- `cargo test --workspace` completo — perfil de verify/release, no de apply.
+- `scripts/release.sh` — sin ejecutar.
+- `git push` — 35 commits sin publicar; gate humano.
+
+## Estado no tocado
+
+- `c0-t01-pointer-mutation` sigue `PAUSED`; backup
+  `/tmp/ledger.pre-m21.backup.sqlite` intacto. **El ledger real no fue
+  escrito en esta sesión.**
+- CTX-UAT pendientes siguen `NOT_RUN`.
+- C4/C6/C7 no abiertos.
+
+## Siguiente paso exacto
+
+Responder la pregunta de modelo de INC-DEBT-039 opción (a): **qué es
+`frontier` cuando no hay `node_runs`**. Es decisión de semántica de spec
+(ADR-075 / REQ-CurrentRunView-Shape), no de implementación. Sólo después
+tiene sentido escribir `RunStateViewInputs` sobre el ledger y
+desbloquear CTX-003 paso 5.

@@ -6137,3 +6137,89 @@ Al cerrar la sesión, el conteo real de `git log --oneline origin/main..HEAD | w
 **Lo que sí funciona:** anclar la cifra al SHA donde se midió. `CURRENT.md` dice ahora "**30 commits sin publicar (medido en `e05f67aa`)**". Un lector puede comprobar ese SHA y obtener la verdad, en vez de confiar en un número que se desactualiza solo. El commit que ancla es `b503efa4`, así que el conteo real en el momento de leer esta entrada es **31**.
 
 **Regla para las próximas sesiones:** no escribir el conteo de commits sin publicar sin el SHA de medición. Si el número importa, se mide y se ancla; si no importa, se dice "sin publicar respecto a origin/main" y se deja que `git` lo diga.
+
+---
+
+## Session 42 — reconciliación de deuda y `run-view` deja de mentir
+
+**Fecha UTC:** 2026-09-29 · **baseline:** `8812bd7c` → **head:** `0f74b21f`
+· **origin/main:** `5440b2e8` · **workspace:** 2.2.32
+
+### Qué cambió
+
+**INC-DEBT-037 cerrada.** `SDDK_STATE_HOME` estaba marcada
+`critical/P1 open` desde session-15, pero la causa raíz se corrigió en
+`e62da1bc` (session-35) y el documento nunca se actualizó. Verificado:
+`inc_debt_037_state_home_precedence.rs` **6/6 PASS** y aislamiento e2e con
+binario release (`adopt apply` con `SDDK_STATE_HOME` propio produce
+`p-8d17246c…`, distinto del `p-63676b11dc0ef88f` del repo).
+
+**INC-DEBT-039 registrada y parcialmente resuelta.** No estaba en el
+índice: apareció al chocar con CTX-003 paso 5. `sddk run-view` no leía el
+ledger — resolvía `origin` por el prefijo del `run_id` y pasaba
+`frontier`/`blockers`/`pending_decisions` como `vec![]` constantes. La spec
+define `frontier` como vacío *"iff the run is terminal or no node is
+ready"*, así que un vector constante no distingue "nada listo" de "no se
+consultó". Como `ActionSurfaceView` se deriva de ahí, la fabricación
+llegaba a la evaluación de políticas.
+
+Falsador RED→GREEN: **RED 4/5** antes, **GREEN 5/5** después. El stdout
+del RED mostraba `"origin": "Declared"` y `"available_actions": ["Abort"]`
+para un run inexistente. E2E con binario release: exit 4, stdout vacío,
+JSON tipado `RUN_STATE_SOURCE_UNAVAILABLE`; antes exit 0 con vista
+inventada.
+
+### Lo que NO se hizo, y por qué
+
+**No se implementó la opción (a)** —el adaptador `RunStateViewInputs`
+sobre el ledger— porque exige responder antes una pregunta de modelo:
+qué es `frontier` cuando `node_runs_v1` tiene **0 filas** (medido, junto
+a `workflow_run_events_v1: 0` y `decision_records_v1: 0`). Escribir el
+adaptador sin eso sería inventar la semántica de la spec, que es
+exactamente el defecto que se acaba de eliminar.
+
+Se implementó la **opción (b)**: fallar cerrado. `load_run_state_view` es
+ahora el seam único donde aterrizará la lectura real; `Ok` es
+inalcanzable hasta que exista fuente real.
+
+### Lección
+
+Un objetivo puede estar "listo" y estar bloqueado por deuda que nadie
+anotó porque nadie llegó lo bastante lejos. El síntoma es siempre el
+mismo: al intentar ejecutar el objetivo, aparece una dependencia que no
+figura en ningún índice. Es la tercera vez en este repo
+(INC-DEBT-033, INC-DEBT-037, INC-DEBT-039).
+
+Corolario de esta sesión: **el inventario de deuda es tan飞到able como
+el roadmap**, y se desactualiza en silencio. Un documento que dice
+`critical/P1 open` con el fix commiteado al lado es peor que ninguno,
+porque consume atención y confidence en algo ya resuelto.
+
+### UAT
+
+UAT 001 y 002: PASS de session-41, **no re-ejecutados** (sin cambios en
+adopt/paths ni en bootstrap). CTX-UAT-002/003/007..012/015: `NOT_RUN`.
+**No hay UAT para `run-view`**: el contrato lo cubren los 5 tests de
+`inc_debt_039_run_view_provenance.rs` más la verificación e2e.
+
+### Gates
+
+CLI lib 843/0/1 · integration 187/0 · `context_fitness` 7/7 ·
+`inc_debt_037_state_home_precedence` 6/6 · fmt limpio · clippy limpio ·
+build release OK.
+
+**No ejecutados:** `cargo test --workspace` (perfil de verify, no de
+apply), `scripts/release.sh`, `git push`.
+
+### Estado intocado
+
+`c0-t01-pointer-mutation` sigue `PAUSED`, backup
+`/tmp/ledger.pre-m21.backup.sqlite` intacto. **El ledger real no fue
+escrito en esta sesión.** INC-DEBT-038 sin cambios. C4/C6/C7 no abiertos.
+
+### Siguiente paso exacto
+
+Responder la pregunta de modelo de INC-DEBT-039 opción (a): **qué es
+`frontier` sin `node_runs`**. Decisión de semántica (ADR-075 /
+REQ-CurrentRunView-Shape), no de implementación. Sólo después tiene
+sentido escribir `RunStateViewInputs` y desbloquear CTX-003 paso 5.
