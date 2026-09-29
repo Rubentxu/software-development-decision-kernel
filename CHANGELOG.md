@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.19] - 2026-09-29
+
+### Fixes
+  - fix(test): certificar los invariantes de REQ-DKA-004 sin leer el vault
+
+### Other
+  - docs(state): reconciliar el puntero con el release v2.2.18 verificado
+  - test(release): fijar el contrato del layout del bundle y explicar el pin ciego de session-32
+  - docs(debt): cerrar INC-DEBT-036 con la verificacion de v2.2.18 en red
+
 ## [2.2.18] - 2026-09-28
 
 ### Fixes
