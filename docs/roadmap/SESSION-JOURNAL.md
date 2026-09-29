@@ -5652,3 +5652,49 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
    falla el guard — que es exactamente donde lo detecté.
 4. **Estado**: 2.2.28/29/30 commiteados y alineados, sin publicar. El release
    publica la cadena completa con un solo tag. Cero stashes pendientes.
+
+### Adenda session-34f (15:55Z) — perfil completo: 3 defectos de tooling, no de contenido
+
+1. **La suite completa NO estaba observada**. La primera corrida murio con un
+   reload del servidor y su log solo conservaba la cola (doctests). Relanzada con
+   `nohup` y log completo en disco. `cargo test --workspace` → `TEST_EXIT=0`,
+   259 suites ok. Re-ejecutada tras tocar `lint.rs` (el CI corre la suite
+   completa): `TEST_EXIT=0` de nuevo, con `--locked` esta vez.
+2. **Tres gates estavam rojos y ninguno era mio**:
+   - `test_workflow_contract.py` (1 fallo de 499) — el test ancla el verify
+     post-transicion en `archive_verifies[1]`, pero el prompt verifica 3 veces
+     antes del status post-transicion. Índice `[1]` apuntaba a un paso
+     pre-transición y fallaba un prompt **correcto**. Anclado en `[-1]`.
+   - `sddk lint` (72 errores) — 9 de ellos no-SDDK001. `SDDK011/013/018`
+     reconstruían el path como `agents/{stem}.md` y descartaban el directorio
+     real, así que `agents/skills/*/SKILL.md` se reportaba como
+     `agents/SKILL.md`, **un fichero que no existe**. Un diagnóstico que señala
+     un path inexistente es inaccionable.
+   - `SDDK009/SDDK010` — el hint decía `sddk generate docs --root .`, pero sin
+     `--in-repo` el comando escribe en XDG (ADR-0011) y nunca refresca el
+     fichero del repo. **El gate era irrecuperable siguiendo su propia
+     instrucción**, y el síntoma (idempotencia aparente) es indistinguible de un
+     bug de render.
+3. **Efecto colateral real al arreglar el hint**: al regenerar con `--in-repo`,
+   `docs/generated/workflow.md` perdió 4 estados y 1 fase que el doc commiteado
+   tenía y `workflow/workflow.yaml` no declara. El doc llevaba tiempo generado
+   desde un manifest obsoleto; el gate lo detectaba desde entonces pero era
+   irrecuperable.
+4. **Evidencia de que el test fixado sirve**: muté `archive.md` borrando el
+   verify post-transición → el test siguió fallando; restaurado → 498/498. Un
+   test que no falla bajo mutación no es un test.
+5. **Deuda preexistente, NO tocada** (scope distinto, decisión de layout):
+   9 errores SDDK011/013/018 de `agents/skills/*/SKILL.md`, que usan frontmatter
+   de *skill* (`name: core.*`, `user-invocable: false`) pero viven bajo
+   `agents/`. Vienen de `dc297ca2 feat(skills): materialize three M7.5
+   placeholder skills` y nadie los declaró. Corregirlo = mover a `skills/` o
+   declararlos como agentes; ambas cambian la superficie del bundle.
+   También rojo el shellcheck (solo info/style, 3 ficheros preexistentes que
+   no toqué; CI corre el mismo comando con `|| exit 1`).
+6. **ADR-0144 propuesto** para el `decision_request` de C2c: el adapter público
+   vive fuera (`@1jehuang/jcode-sdk` 1.1.0). Recomienda sidecar Node sobre el
+   SDK, con la alternativa Rust y **las obligaciones que esa alternativa
+   exigiría** (filtro de unknown frames, tabla de eventos, test de paridad).
+   `status: proposed` — la elección es del operador, no mía.
+7. **Estado**: `2.2.30` sin publicar; último release público sigue siendo
+   **v2.2.27** (`5ee68265`). Nada se publicó en esta adenda.
