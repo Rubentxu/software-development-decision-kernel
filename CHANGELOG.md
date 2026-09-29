@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.22] - 2026-09-29
+
+### Fixes
+  - fix(changelog): dedup de cabeceras fantasma e items arrastrados por merges (INC-DEBT-031)
+
+### Other
+  - docs(uat): recibo C3 re-anclado a b3160ae9 con lote T19-T28 observado hoy
+  - docs(uat): recibo C0 re-anclado a 28ea2910 con T01/T02 observados hoy
+  - docs(state): last_public_release_observed a v2.2.21 con evidencia de verificacion
+  - docs(state): current_sha reconciliado a eaf43061 (docs-only)
+  - docs(roadmap): punteros a v2.2.21 publicado y verificado
+
 ## [2.2.21] - 2026-09-29
 
 ### Fixes
