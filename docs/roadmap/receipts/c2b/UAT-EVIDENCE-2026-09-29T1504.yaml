@@ -1,0 +1,109 @@
+schema_version: 1
+profile_target: RUNTIME_ENHANCED_C2B
+cycle: C2b
+status: OBSERVED_PROVIDER_VERIFIED_WITH_ADAPTER_FIX
+executed_by: orchestrator (session-34 continuation, autonomous mode)
+executed_at_utc: "2026-09-29T15:04:00Z"
+source_sha_at_eval: "4666a118 (adapter fix included)"
+workspace_version_at_eval: "2.2.27"
+last_public_release_observed: "v2.2.27"
+prior_session_status: "NOT_EVALUATED_PROVIDER_MISSING"  # receipts/c2b/ 2026-09-22
+
+# RE-OPEN 2026-09-29T14:42Z (session-34): the C2b blocking condition
+# ("chronos-mcp binary absent on host") is NO LONGER TRUE. The provider source
+# lives at /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos (git a744e8c0,
+# workspace 0.1.4, main ahead of origin by 4) and builds locally:
+# cargo build -p chronos-mcp -> debug binary OK.
+
+environment:
+  provider_chronos:
+    source: "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos @ a744e8c0"
+    version_observed: "Starting Chronos MCP Server v0.1.4" (stderr banner)
+    serverInfo_version_reported: "0.1.0"  # internal engine_version string; banner says 0.1.4
+    binary: "/var/home/rubentxu/cargo-targets/debug/chronos-mcp"
+    store_env: "CHRONOS_DB_PATH (CHRONOS_STORE_PATH is NOT honored by 0.1.4 — see drift_findings)"
+    fail_closed: "refuses to start with locked/absent store unless CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 (m9-75)"
+  sddk_cli:
+    binary: "target/debug/sddk (fresh build, includes adapter fix 4666a118)"
+    version: 2.2.27
+
+scenarios:
+  T12:
+    description: "Handshake/protocolo con binario real"
+    status: PASS
+    evidence:
+      command: "echo initialize | chronos-mcp (CHRONOS_DB_PATH=/tmp/c2b-chronos.redb)"
+      output: |
+        {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26",
+        "capabilities":{"tools":{}},"serverInfo":{"name":"chronos-mcp","version":"0.1.0"},
+        "instructions":"Time-travel debugging server ... v1 read aliases removed in C5.3.2"}}
+      command2: "tools/list"
+      output2: "43 tools (session_start, events_read, execution_query, causal_slice, state_query, observe, session_compare, probe_*, counterexample_*, ...)"
+      protocol_major_match: "2025-03-26 == adapter contract"
+
+  T13:
+    description: "Captura runtime real + lectura de eventos"
+    status: PASS
+    evidence:
+      command: "session_start action=spawn spawn_fields={program:/tmp/c2b-prog.sh}"
+      output: |
+        session_id=1eabfbb6... capability_snapshot(probe_type=ebpf_user),
+        stderr: "Live probe started ... session 1eabfbb6"
+      command2: "events_read mode=query"
+      output2: |
+        completeness status=complete, 100 events examined, provenance
+        source=execution_log, syscall enter/exit events present
+      command3: "execution_query kind=execution_summary"
+      output3: |
+        total_events=256 (128 syscall_enter + 128 syscall_exit),
+        duration_ns=36979791, thread_count=1, potential_issues=[]
+      note: "capture is session/server-context bound; same-connection or same-store reads work"
+
+  T14:
+    description: "E2E sddk verify-kernel runtime_provider con captura real"
+    status: PASS_AFTER_ADAPTER_FIX
+    evidence:
+      initial_run: |
+        FAILED: "runtime capture failed: runtime provider error:
+        {\"code\":-32602,\"message\":\"tool not found\"}" — the adapter called
+        `get_execution_summary`, renamed to `execution_query` in chronos
+        C5.3.2 (v1 read aliases removed).
+      fix: "4666a118 — adapter tries execution_query{kind:execution_summary} first, falls back to get_execution_summary on provider 'tool not found' (covers both JSON-RPC error and isError content shapes)"
+      post_fix_command: "sddk verify-kernel --domain runtime_provider --claim 'T13-CAPTURE:10' --provider-bin .../chronos-mcp --subject /tmp/c2b-prog.sh"
+      post_fix_output: |
+        verdict: Verified
+        capture: session=33148b9e-1f3a-4459-80e0-07de361114ed events=128
+        duration_ns=Some(24702668) digest=bc715d8805168ed39c4a0d0a7482251580f05d8e9f4d7199c7533608c9f9ebf0
+        observation_set: 1
+      absent_provider: "verify-kernel with /tmp/nonexistent-chronos-mcp -> 'provider spawn failed: runtime provider unavailable' (typed, fail-closed)"
+      regression_tests: "aiw_s5_chronos_real 3/3 ok; a7_s2_runtime_uat_hardening 3/3 ok (capture digest stability, zero budget fail-closed, missing binary fail-closed)"
+
+drift_findings:
+  - id: C2B-DRIFT-1
+    finding: "SDDK adapter sets env CHRONOS_STORE_PATH; chronos-mcp 0.1.4 reads CHRONOS_DB_PATH"
+    impact: "store_path parameter silently ignored; provider falls back to default store (~/.local/share/chronos/sessions.redb)"
+    status: "OPEN — logged as debt; workaround: export CHRONOS_DB_PATH in environment"
+  - id: C2B-DRIFT-2
+    finding: "tool rename get_execution_summary -> execution_query (C5.3.2)"
+    impact: "capture() broken against 0.1.4"
+    status: "FIXED in 4666a118 (dual-name compatibility)"
+  - id: C2B-DRIFT-3
+    finding: "session_start/session_stop vs probe_start/probe_stop duality; session_stop on a probe session reports 'not found (may have been stopped)'"
+    impact: "none for capture(); probe_* path works"
+    status: "OPEN — informational; probe flow validated"
+  - id: C2B-DRIFT-4
+    finding: "serverInfo reports 0.1.0 while the banner reports 0.1.4"
+    impact: "version-string drift in receipts if taken from serverInfo alone"
+    status: "OPEN — receipts record BOTH; adapter server_version carries what the wire says"
+
+honesty:
+  observed:
+    - "all commands quoted above ran against real processes on this host"
+    - "exit-status stays None in canonical capture (adapter does NOT infer it) — re-confirmed in code and payload"
+  not_run:
+    - "chronos crash/restart mid-capture (T10-equivalent for C2b) — only absent-binary and clean flows exercised"
+    - "timeout branch with a hanging target"
+  known_limitations:
+    - "ebpf probe needs privileges; capture ran with the default probe_type=ebpf_user on this host successfully"
+    - "chronos repo is 4 commits ahead of its origin — provider artifact is NOT published; binary built from local source"
+    - "C2b drift C2B-DRIFT-1 (env var name) remains unfixed in the adapter"
