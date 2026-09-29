@@ -43,36 +43,40 @@ sddk --version
 sddk adopt status --root "$PROJECT_ROOT" --scope . --format json
 sddk knowledge status --root "$PROJECT_ROOT" --scope . --format json
 
-# 2. Rebuild cycle state only from a trusted cycle ID supplied by the launch
-# packet, persisted cycle artifact, or explicit user continuation request.
-sddk cycle status --root "$PROJECT_ROOT" --scope . \
-  --cycle "$CYCLE_ID" --format json
-sddk cycle artifacts-dir --root "$PROJECT_ROOT" --scope . \
-  --cycle "$CYCLE_ID" --format json
+# 2. Discover the active cycle WITHOUT a trusted ID (S-NEXT-INFERENCE):
+#    the CLI infers from active leases and degrades typographically.
+#    - exactly one active lease -> cycle resolved; then fetch status/artifacts:
+sddk cycle status --root "$PROJECT_ROOT" --scope . --format json
+sddk cycle artifacts-dir --root "$PROJECT_ROOT" --scope . --format json
+#    - zero active leases -> typed NoActiveCycle with a recovery hint:
+#      run `sddk cycle start ...` or leave cycle fields null (fresh project).
+#    - multiple active leases -> typed AmbiguousCycle with a candidates list:
+#      ask the human to choose; never guess. Leave cycle fields null until
+#      one is chosen explicitly.
+#    - if a TRUSTED cycle ID exists (launch packet, persisted artifact, or
+#      explicit user request), pass it explicitly instead of inferring:
+sddk cycle status --root "$PROJECT_ROOT" --scope . --cycle "$CYCLE_ID" --format json
+sddk cycle artifacts-dir --root "$PROJECT_ROOT" --scope . --cycle "$CYCLE_ID" --format json
 
 # 3. Reconstruct the recent causal chain.
-sddk ledger events --root "$PROJECT_ROOT" --scope . \
-  --limit 10 --format json
+sddk ledger events --root "$PROJECT_ROOT" --scope . --limit 10 --format json
 
 # 4. Validate the exact vault_path parsed from knowledge status.
 sddk vault validate --root "$PROJECT_ROOT" --scope . \
   --vault "{vault_path parsed from knowledge status}" --format json
 ```
 
-Steps 2a and 2b are omitted when no trusted cycle ID exists. Parse
-`PROJECT_ID`, `KNOWLEDGE_VAULT_PATH`, profile presence, vault presence, and
-Engram status from the successful knowledge-status object before step 4. Set
-`cli_version` from step 1 and `observed_at` at completion. Every field in
+Parse `PROJECT_ID`, `KNOWLEDGE_VAULT_PATH`, profile presence, vault presence,
+and Engram status from the successful knowledge-status object before step 4.
+Set `cli_version` from step 1 and `observed_at` at completion. Every field in
 `source_commands` comes from the captured command record; no command may be
 listed unless it actually ran.
 
-The baseline has no global active-cycle discovery command. `cycle lock status`
-requires a known `--cycle`, and `cycle status` already returns that cycle's
-lease. The current runtime does not serialize distinct cycle IDs project-wide.
-Without a trusted cycle ID, leave cycle fields null and return `blocked` for
-automated start/resume with `runtime-active-cycle-discovery-unavailable`. A
-human may explicitly accept that unresolved conflict risk, but the result must
-not claim project-wide serialization.
+Active-cycle discovery is **inference, not serialization**: the runtime resolves
+exactly one active lease when there is one and fails with a typed error otherwise
+(`NoActiveCycle` with a recovery hint, `AmbiguousCycle` with the candidate
+list). It does NOT serialize distinct cycle IDs project-wide, so ambiguity is
+always resolved by a human, never by the agent.
 
 ## cli_context envelope
 
@@ -102,7 +106,9 @@ cycle state.
 |-----------|--------|
 | Adoption is absent | BLOCK with `next_recommended=/sddk-adopt` |
 | Knowledge profile or vault validation is invalid | BLOCK and return the exact CLI recovery action |
-| Cycle ID is unknown | Leave cycle/lease/artifact fields null; block automated start/resume and request trusted-ID recovery or explicit human risk acceptance |
+| Inference returns exactly one active lease | Resolve cycle/lease/artifacts from it; no human input needed |
+| Inference returns `NoActiveCycle` (zero leases) | Leave cycle/lease/artifact fields null; legal next action is `cycle start` or a fresh project, not a block |
+| Inference returns `AmbiguousCycle` (multiple leases) | Leave cycle/lease/artifact fields null; present the candidates list and ask the human to choose; never guess |
 | Cycle status is closed | Return the legal next action derived from status/phase; do not resume a worker |
 | Lease is absent or expired for a mutation | BLOCK or renew under `cli-usage-contract.md`; never fabricate lease flags |
 | Fencing token differs from the prior trusted context | BLOCK as lease desynchronization; do not mutate cycle state |
@@ -113,8 +119,8 @@ cycle state.
 - status: success | partial | blocked
 - executive_summary: one sentence describing the rebuilt state
 - cli_context: the JSON envelope above
-- next_recommended: phase to dispatch, trusted-ID recovery, or explicit human risk decision
-- risks: "vault-invalid" / "cycle-id-unknown" / "lease-desync" or "None"
+- next_recommended: phase to dispatch, or the typed recovery (`cycle start` on NoActiveCycle, human disambiguation on AmbiguousCycle)
+- risks: "vault-invalid" / "cycle-ambiguous" / "lease-desync" or "None"
 - rebuild_source: ["cli:adopt-status", "cli:knowledge-status", "cli:cycle-status", "cli:cycle-artifacts-dir", "cli:ledger-events", "cli:vault-validate"]
 
 ## Difference from existing patterns

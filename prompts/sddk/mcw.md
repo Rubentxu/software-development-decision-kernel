@@ -46,11 +46,13 @@ UNMERGED=$(git branch -r --no-merged "$PRIMARY_REMOTE/$DEFAULT_BRANCH" \
 ```
 
 Hard gate: a supplied cycle ID is either resumed or closed **AND** there are no
-matching unmerged cycle branches. On a cold start without a trusted cycle ID,
-block automated start with `runtime-active-cycle-discovery-unavailable`: the
-runtime cannot discover or serialize distinct cycle IDs project-wide. Recover a
-trusted ID or request explicit human acceptance of that unresolved risk. A
-historical tag never overrides an active lock.
+matching unmerged cycle branches. Without a trusted cycle ID, cycle commands
+infer the active cycle from leases (typed `NoActiveCycle` / single-lease
+resolution / `AmbiguousCycle` with candidates). A single resolved lease may
+resume; ambiguity is resolved by a human, never by the agent. Inference does
+not serialize distinct cycle IDs project-wide: it cannot exclude a competing
+cycle that holds no lease, so the unmerged-branch check above remains
+mandatory. A historical tag never overrides an active lock.
 Provider pull-request state is optional external context and is never queried as
 an SDDK cycle gate.
 

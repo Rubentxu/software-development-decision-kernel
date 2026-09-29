@@ -1,0 +1,44 @@
+# UAT-EVIDENCE — C3i slice 1 (alineacion sddk-cycle-resume/mcw/contract con la inferencia real)
+
+sha_base: 3cd9d5c7  # + cambios de esta slice sin commitear al momento de la captura
+workitem: C3i-S1
+environment: local workstation, sddk 2.2.32 debug (cargo target /var/home/rubentxu/cargo-targets)
+isolated_ledger: SDDK_STATE_HOME=/tmp/c3i (mecanismo corregido y verificado en e62da1bc)
+real_ledger_untouched: "sha256 58745880051db0a59ae7e944f19da450c199ab77ef98f228ccc56adb6fd8410f re-verificado tras todas las ejecuciones"
+
+CTX-UAT-001:
+  scenario: bootstrap repetido en proyecto convergido (sddk-framework real)
+  command: "sddk adopt status --root $ROOT --scope . --format json x3"
+  observed: "status=complete en las 3 invocaciones"
+  result: PASS
+
+CTX-UAT-002:
+  scenario: un lease activo, inferir ciclo sin --cycle
+  setup: "adopt apply + cycle start en /tmp/c3i/sddk/projects/p-test/proj (aislado)"
+  command: "sddk cycle status --root <abs> --scope . --format json"
+  observed: "cycle_id p-4305a39d4f2f20ff/c3i-uat resuelto, status OPEN, lease owner=uat"
+  result: PASS
+
+CTX-UAT-003:
+  scenario: dos leases activos sin --cycle
+  observed: "error multiple active cycles for project p-4305a39d4f2f20ff; pass one explicitly: + lista de los 2 candidatos"
+  result: PASS
+
+CTX-UAT-004:
+  scenario: cero leases activos
+  observed: "error no active cycle found for project p-63676b11dc0ef88f + hint cycle start (proyecto real, 0 leases activas verificadas por SQL read-only)"
+  result: PASS
+
+CTX-UAT-005:
+  scenario: skill/mcw/contract ensenan inferencia tipada
+  evidence: "tests/test_workflow_contract.py ALL 508 PASSED (498 previos + 10 pins nuevos); pins mutation-tested en ambas direcciones (stale token re-anadido -> FAIL; AmbiguousCycle eliminado -> FAIL)"
+  result: PASS
+
+MIG-UAT-001:
+  scenario: comparativa skill vieja vs nueva con el mismo ledger
+  result: NOT_RUN
+  reason: "la skill es un documento; la migracion se valida por los pins de contrato (CTX-UAT-005) que impiden que la afirmacion vieja vuelva. Comparativa lado a lado no ejecutada."
+
+limitations:
+  - "20 reinicios completos de sesion no se automatizaron; CTX-UAT-001 observo 3 invocaciones del mismo estado"
+  - "los casos 0/1/N ya estaban cubiertos por tests Rust de cycle.rs (S3b y NoActiveCycle); esta slice no duplico esos tests"

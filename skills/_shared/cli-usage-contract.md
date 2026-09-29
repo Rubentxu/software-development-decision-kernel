@@ -59,14 +59,15 @@ When a trusted `cycle_id` is available, resume resolves cycle status and its
 artifact directory. Phase coordinators refresh only mutable cycle state under
 the freshness policy below.
 
-The baseline has no global active-cycle discovery command. `cycle lock status`
-requires `--cycle`, and `cycle status` already includes the lease when the cycle
-ID is known. The current runtime does not serialize distinct cycle IDs
-project-wide. On a cold start without a trusted cycle ID, leave cycle fields and
-`cycle_artifacts_dir` null and block automated cycle start with
-`runtime-active-cycle-discovery-unavailable`. Recover a trusted ID or obtain an
-explicit human override that acknowledges an active conflict cannot be
-excluded; never claim that `cycle start` proves project-wide serialization.
+When no trusted `cycle_id` is available, cycle commands **infer** the active
+cycle from leases (S-NEXT-INFERENCE): exactly one active lease resolves the
+cycle; zero leases fail with typed `NoActiveCycle` (recovery: `cycle start` or
+a fresh project); multiple leases fail with typed `AmbiguousCycle` carrying the
+candidate list (recovery: a human picks one; never guess). Inference is NOT
+project-wide serialization of distinct cycle IDs: it cannot exclude a competing
+cycle that holds no lease. On `NoActiveCycle`, leave cycle fields and
+`cycle_artifacts_dir` null and proceed with a fresh or `cycle start` recovery;
+on `AmbiguousCycle`, leave them null and request explicit human disambiguation.
 Never treat an invalid invocation as "no active cycle".
 
 ## Freshness And Lease

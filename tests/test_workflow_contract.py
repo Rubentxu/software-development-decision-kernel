@@ -1083,7 +1083,7 @@ for required_clause in [
     "expires_at_ms",
     "invalid_invocation",
     "output_digest",
-    "runtime-active-cycle-discovery-unavailable",
+    "NoActiveCycle",
     "direct process API with an argv array",
 ]:
     if literal_has(cli_contract, required_clause):
@@ -1137,6 +1137,47 @@ if "2>/dev/null || echo" in mcw_text or "2>/dev/null || echo" in resume_text:
     inc_fail("Authoritative MCW/resume CLI errors are hidden by shell fallbacks")
 else:
     inc_pass("Authoritative MCW/resume CLI errors remain visible")
+
+# REGRESSION (C3i / CTX-UAT-005): orchestration surfaces must teach the real
+# typed active-cycle inference, not the removed "no global discovery" block.
+# The runtime (cycle.rs S-NEXT-INFERENCE) resolves a single active lease and
+# degrades with typed NoActiveCycle / AmbiguousCycle; the skill, mcw gate, and
+# shared contract must match that behavior. Mutation-tested: reverting any of
+# these claims in the surfaces (or re-adding the stale token) must go RED.
+stale_discovery_token = "runtime-active-cycle-discovery-unavailable"
+for rel_path, content, stale_ok in [
+    ("skills/sddk-cycle-resume/SKILL.md", resume_text, False),
+    ("prompts/sddk/mcw.md", mcw_text, False),
+    ("skills/_shared/cli-usage-contract.md", cli_contract, False),
+]:
+    if stale_discovery_token in content:
+        inc_fail(f"{rel_path}: stale claim '{stale_discovery_token}' re-appeared")
+    else:
+        inc_pass(f"{rel_path}: no stale '{stale_discovery_token}' claim")
+
+required_inference_terms = {
+    "skills/sddk-cycle-resume/SKILL.md": ["NoActiveCycle", "AmbiguousCycle"],
+    "prompts/sddk/mcw.md": ["NoActiveCycle", "AmbiguousCycle"],
+    "skills/_shared/cli-usage-contract.md": ["NoActiveCycle", "AmbiguousCycle"],
+}
+for rel_path, terms in required_inference_terms.items():
+    content = {
+        "skills/sddk-cycle-resume/SKILL.md": resume_text,
+        "prompts/sddk/mcw.md": mcw_text,
+        "skills/_shared/cli-usage-contract.md": cli_contract,
+    }[rel_path]
+    for term in terms:
+        if term in content:
+            inc_pass(f"{rel_path}: teaches typed '{term}' recovery")
+        else:
+            inc_fail(f"{rel_path}: missing typed inference term '{term}'")
+
+# The skill must never present ambiguity as guessable: the candidate list is
+# resolved by a human, never by the agent.
+if "never guess" in resume_text or "never by the agent" in resume_text:
+    inc_pass("skills/sddk-cycle-resume/SKILL.md: ambiguity resolves by human, never guessed")
+else:
+    inc_fail("skills/sddk-cycle-resume/SKILL.md: missing human-disambiguation rule")
 
 phase_cli_files = {
     name: SDDK_ROOT / f"prompts/sddk/phases/{name}.md"
