@@ -6223,3 +6223,61 @@ Responder la pregunta de modelo de INC-DEBT-039 opción (a): **qué es
 `frontier` sin `node_runs`**. Decisión de semántica (ADR-075 /
 REQ-CurrentRunView-Shape), no de implementación. Sólo después tiene
 sentido escribir `RunStateViewInputs` y desbloquear CTX-003 paso 5.
+
+---
+
+## session-43 — 2026-09-29 — Auditoría de vigencia de deuda + paso 9c
+
+**Baseline** `4d586754` → **HEAD** `90ec494b` (`origin/main` `5440b2e8`).
+**WorkItem**: auditoría de deuda (no de roadmap). Criterio del operador:
+*alerta de deuda sin verificar si sus criterios siguen vigentes no es
+deuda real*.
+
+**Decisiones**
+
+1. Se aplicó el criterio de vigencia **antes** de elegir trabajo. De 3
+   P1/high listadas como `open`, dos no eran deuda vigente y una sí.
+2. `INC-AUDIT-S14` → **closed** (alta/P1), incluida la parte de
+   distribución. El código ya estaba; faltaba la *observación*.
+3. `INC-DEBT-034` → reconciliada. El documento decía `closed` (session-33),
+   el índice decía `open`.
+4. Se añadió el **paso 9c** a `release.sh`: verificar autenticidad con
+   los bytes que el CDN sirvió en 9b, fail-closed sin `cosign`, opt-out
+   explícito y fuera de dry-run/`--skip-install`.
+5. Se eliminó una **entrada duplicada** de S14 en el índice que afirmaba
+   *"release.sh no firma nada"`, falsa desde session-21.
+
+**UAT observado**: ninguno nuevo. Los de C3j siguen `NOT_RUN`.
+**UAT no ejecutado**: `cargo test --workspace` (no se tocó Rust),
+`scripts/release.sh` (gate humano), `git push` (gate humano).
+
+**Evidencia**: `test_supply_chain_authenticity.sh` 13/0 y 14/0;
+`test_release_public_gate.sh` 13/0; `test_release_admission.sh` 24/0;
+`test_install_asset_contract.sh`, `test_release_pipeline_consistency.sh`,
+`test_release_ci_contract.sh` verdes; `shellcheck` del guard limpio;
+`bash -n release.sh` OK. Falsación del guard en ambos ejes de la trust
+root (pin→`.*` FAIL=1, issuer→`.*` FAIL=4), revertida.
+
+**Descubrimiento no obvio**: el guard nuevo encontró **dos bugs en sí
+mismo** al ejecutarse — un `sed` codicioso que devolvía el pin más el
+resto del fichero, y un `verified 0/2` que reportaba `ok`. Ninguno
+visible por lectura. Es la tercera vez que el falsador encuentra lo que
+la inspección no (INC-DEBT-033, INC-DEBT-037, y ahora esto).
+
+**Conocimiento negativo**: la divergencia índice↔documento de deuda no es
+cosmética. Produjo 2 de las 3 alertas P1 que motivaron esta sesión. La
+regla operativa es que el índice manda para priorizar, así que cuando
+difieren, el índice miente y alguien gasta una sesión en auditar deuda ya
+cerrada.
+
+**Riesgos**: 39 commits sin publicar. `release.sh` cambia el camino de
+publicación: un operador sin `cosign` en el PATH verá abortar el release
+(el opt-out existe y es explícito). Ningún release se ha ejecutado con 9c
+en el flujo real todavía.
+
+**Bloqueos**: ninguno para esta sesión.
+
+**Primer paso de la sesión siguiente**: INC-DEBT-039 sigue bloqueando
+CTX-003 paso 5 y requiere una decisión de modelo (`frontier` con
+`node_runs_v1` vacía) antes de escribir código. Alternativa de valor
+inmediato: el check mecánico de coherencia índice↔documento.

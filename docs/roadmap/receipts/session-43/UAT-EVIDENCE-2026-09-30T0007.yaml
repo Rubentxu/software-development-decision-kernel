@@ -1,0 +1,160 @@
+---
+session: 43
+date_utc: 2026-09-29
+branch: main
+baseline: 4d586754
+head_after: 90ec494b
+origin_main: 5440b2e8
+workspace_version: 2.2.32
+acceptance: PARTIAL
+verdict: debt_audited_two_closed_one_authenticity_gate_added
+---
+
+# Receipt session-43 — auditoría de vigencia de deuda + paso 9c
+
+## Criterio aplicado
+
+El operador fijó la regla: **alerta de deuda sin verificar si sus
+criterios siguen vigentes no es deuda real.** Se aplicó antes de elegir
+trabajo, no después. Resultado: de las 3 P1/high que el índice listaba
+como `open`, **una era real, dos no lo eran**.
+
+## Trabajo completado
+
+1. **INC-AUDIT-S14 cerrada** (high/P1). Cerrada también en la parte de
+   distribución, que era lo único que quedaba.
+2. **INC-DEBT-034 reconciliada.** El documento decía `closed` desde
+   session-33; el índice lo listaba `open`.
+3. **Guard reutilizable de autenticidad** (`tests/test_supply_chain_authenticity.sh`).
+4. **Paso 9c en `release.sh`**: la autenticidad pasa a comprobarse en
+   cada release, fail-closed.
+
+## Commits
+
+| SHA | Concern |
+|---|---|
+| `51d3619b` | `test(release)`: guard end-to-end de autenticidad de un release real |
+| `4531744d` | `feat(release)`: paso 9c verifica la autenticidad del release publicado |
+| `90ec494b` | `docs(debt)`: cierra INC-AUDIT-S14 y reconcilia el índice |
+
+## Evidencia observada
+
+### INC-AUDIT-S14 — la condición de cierre, satisfecha
+
+Criterio de session-21: *"publicar con el workflow firmado Y observar que
+la firma verifica"*.
+
+```console
+$ bash tests/test_supply_chain_authenticity.sh --tag v2.2.27
+  ✓ signature verifies under the pinned trust root: sddk
+  ✓ signature verifies under the pinned trust root: software-development-decision-kernel.tar.gz
+  ✓ verified 2/2 signed payload(s) for v2.2.27
+  ✓ pin rejects a branch ref where a tag is required (control)
+  ✓ pin rejects a different OIDC issuer (control)
+  ✓ control: a wildcard pattern WOULD accept this certificate (so the pin is what rejects)
+  PASS=13 FAIL=0 SKIP=0
+```
+
+Subject real leído del certificado:
+`https://github.com/Rubentxu/software-development-decision-kernel/.github/workflows/release.yml@refs/tags/v2.2.27`
+
+Ruta con assets pre-descargados (la que usa 9c): **PASS=14 FAIL=0**.
+
+### INC-DEBT-034 — la divergencia ya no existe
+
+```console
+$ bash tests/test_release_public_gate.sh
+=== Scenario 12: shared production/test asset contract ===
+  ✓ release.sh and gate tests source the same asset contract helper
+  PASS=13  FAIL=0
+```
+
+`release.sh` y el gate sourcean `scripts/release-assets-contract.sh`
+(una sola fuente). CI publica `sddk-v${TAG}-sddk-linux-x86_64-musl.tar.gz`
+y `CHECKSUMS` (`release.yml:314/319/336`), los nombres exactos del contrato.
+
+### Falsación del guard — dos ejes, revertidos
+
+| Mutación | Resultado observado |
+|---|---|
+| `DEFAULT_CERT_IDENTITY_REGEXP` → `.*` | **FAIL=1** |
+| `DEFAULT_CERT_ISSUER` → `.*` | **FAIL=4** (0/2 payloads) |
+
+`cosign.rs` restaurado sin cambios (verificado con `git diff`).
+
+### Dos bugs del propio guard, encontrados al ejecutarlo
+
+1. `sed` codicioso: al plegar newlines devolvía el pin **más el resto
+   de `cosign.rs`**, y cosign rechazaba con `malformed subject in
+   identity` — diagnóstico que no tiene que ver con la firma real.
+2. `verified 0/2` reportaba `ok`. Un check que verifica cero y dice PASS
+   es justo el fallo que este guard existe para impedir.
+
+Ninguno se habría detectado leyendo el script.
+
+### Gates del lote afectado
+
+| Gate | Resultado |
+|---|---|
+| `test_supply_chain_authenticity.sh --tag v2.2.27` | 13/0 (standalone), 14/0 (con caché) |
+| `test_release_public_gate.sh` | PASS=13 FAIL=0 |
+| `test_install_asset_contract.sh` | all checks passed |
+| `test_release_pipeline_consistency.sh` | all checks passed |
+| `test_release_admission.sh` | PASS=24 FAIL=0 |
+| `test_release_ci_contract.sh` | exit 0 |
+| `shellcheck test_supply_chain_authenticity.sh` | limpio |
+| `bash -n scripts/release.sh` | OK |
+| `shellcheck scripts/release.sh` | 2× SC1091 **preexistente** (confirmado con `git stash`) |
+
+**No se tocó código Rust**, así que no se ejecutó `cargo test`. Es
+correcto según `prompts/sddk/change-scoped-testing.md`: el cambio es
+shell puro.
+
+## UAT
+
+Sin UAT nuevos ni re-ejecutados. Los UAT de C3j siguen `NOT_RUN`
+(heredado de session-41/42). Este trabajo no toca ninguna ruta de UAT.
+
+## Contexto
+
+- **Real**: `v2.2.27` descargado de GitHub Releases, verificado con
+  `cosign` y los pins del repo; `gh release view` para el inventario.
+- **Fake**: nada. Los pins se extraen de `cosign.rs`, nunca del script.
+
+## Deuda tras esta sesión
+
+**P1/critical reales: 3 de 24 entradas.**
+
+| Deuda | Estado | Nota |
+|---|---|---|
+| INC-DEBT-039 | open, **bloqueante** | Requiere decisión de modelo antes de código |
+| INC-DEBT-030 | blocked | Firma keyless local; el camino de Actions ya funciona |
+| INC-DEBT-026 | open (medium/P2) | Bundle local de otro proyecto |
+
+Cerradas en esta sesión: INC-AUDIT-S14, INC-DEBT-034 (índice).
+Cerradas en session-42: INC-DEBT-037.
+
+**Candidato no implementado**: check mecánico de coherencia
+índice↔documento de deuda. Este sesión la divergencia índice/fichero fue
+la causa de ruido en 2 de 3 entradas P1.
+
+## Gates NO ejecutados
+
+- `cargo test --workspace` — no se tocó Rust.
+- `scripts/release.sh` — no ejecutado (gate humano, 9c ahora es parte).
+- `git push` — 39 commits sin publicar; gate humano.
+
+## Estado no tocado
+
+- `c0-t01-pointer-mutation` sigue `PAUSED`; backup intacto. **El ledger
+  real no fue escrito en esta sesión.**
+- INC-DEBT-038 sin cambios (medium/P2).
+- C4/C6/C7 no abiertos.
+
+## Siguiente paso exacto
+
+INC-DEBT-039 sigue bloqueando CTX-003 paso 5 y **no** es trabajo de
+apply: exige responder qué es `frontier` cuando `node_runs_v1` está
+vacía (ADR-075 / REQ-CurrentRunView-Shape). Alternativa de valor
+inmediato: el check mecánico de coherencia índice↔documento, que
+cerraría la clase de ruido encontrada aquí.
