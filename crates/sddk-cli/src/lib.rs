@@ -52,7 +52,7 @@ mod release_cmd;
 mod result_cmd;
 mod rules_cmd;
 mod run;
-mod run_view;
+pub mod run_view;
 mod ship;
 mod stale_cmd;
 mod status;
@@ -788,6 +788,23 @@ pub struct CliEnvironment {
 }
 
 impl CliEnvironment {
+    /// A fully-populated environment with no real host paths, so tests
+    /// exercise isolation behaviour instead of inheriting the operator's
+    /// `HOME`, `XDG_*` and `SDDK_*` values.
+    pub fn for_test() -> Self {
+        Self {
+            home: None,
+            data_home: None,
+            sddk_data_dir: None,
+            framework_dir: None,
+            state_home: None,
+            sddk_state_home: None,
+            cache_home: None,
+            sddk_actor: None,
+            user: None,
+        }
+    }
+
     fn current() -> Self {
         Self {
             home: nonempty_env_path("HOME"),

@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use sddk_engine::{
     ActionKind, ActionSurfaceView, FrontierProjection, PolicySnapshot, RunOrigin, RunStateView,
-    ViewError, build_action_surface_view_with_frontier, build_run_state_view, empty_projection,
+    ViewError, build_action_surface_view_with_frontier, empty_projection,
 };
 
 use crate::{CliEnvironment, CommandOutput, OutputFormat};
@@ -29,15 +29,79 @@ fn resolve_policy(name: &str) -> Result<PolicySnapshot, ViewError> {
     }
 }
 
+/// Load a `RunStateView` for `run_id` from a real source.
+///
+/// This is the **single seam** where a ledger-backed read will land
+/// (option (a) of INC-DEBT-039). While it has no source, it must refuse
+/// rather than synthesize: the scaffold it replaces guessed `origin` from
+/// the `run_id` prefix and passed constant empty vectors for `frontier`,
+/// `blockers` and `pending_decisions`, so the emitted view was
+/// indistinguishable from a real one. `ActionSurfaceView` derives its
+/// available actions from that view, so the fabrication propagated into
+/// policy evaluation.
+///
+/// The error is typed and names the missing capability, so an operator
+/// sees "there is no run-state source yet" instead of a plausible view.
+/// `Ok` is unreachable today; when a real `RunStateViewInputs` lands, it
+/// becomes reachable here and nowhere else.
+fn load_run_state_view(
+    run_id: &str,
+    _as_of: Option<u64>,
+    _environment: &CliEnvironment,
+) -> Result<RunStateView, String> {
+    Err(format!(
+        "{{\"error\":\"RUN_STATE_SOURCE_UNAVAILABLE\",\
+         \"message\":\"no ledger-backed run_state source is available for `{run_id}\"; \
+         frontier, blockers and pending_decisions cannot be reported without one\",\
+         \"run_id\":\"{run_id}\",\
+         \"debt\":\"INC-DEBT-039\"}}"
+    ))
+}
+
 /// Run the `sddk run-view` command.
-pub(crate) fn run_run_view(
+///
+/// INC-DEBT-039: the v0 scaffold built a `RunStateView` without reading
+/// the ledger — `frontier`, `blockers` and `pending_decisions` were
+/// constant `vec![]` and `origin` was guessed from the `run_id` prefix.
+/// `REQ-CurrentRunView-Shape.md:43` defines `frontier` as empty *"iff the
+/// run is terminal or no node is ready"*, so a constant empty vector
+/// cannot distinguish "nothing is ready" from "nothing was consulted".
+/// The command emitted an authoritative-looking view over data it had
+/// not read, and `ActionSurfaceView` derived its actions from that.
+///
+/// Until a ledger-backed `RunStateViewInputs` exists (option (a) of the
+/// INC), this command **fails closed with a typed error** (option (b))
+/// rather than fabricating a view. A view that says "I have no source" is
+/// visible; a view that says "nothing is ready" when it never looked is
+/// used in silence.
+pub fn run_run_view(
     run_id: String,
     as_of: Option<u64>,
     policy: String,
     format: OutputFormat,
     _environment: &CliEnvironment,
 ) -> CommandOutput {
-    // Resolve policy first (cheap, deterministic).
+    // Source availability is decided FIRST. The scaffold resolved the
+    // policy first, so an unknown policy name on a source-less run
+    // reported `POLICY_NOT_FOUND` — pointing the operator at the wrong
+    // defect.
+    //
+    // `load_run_state_view` is the single place that will grow a real
+    // ledger-backed read. Until it returns a sourced view, it must
+    // refuse. See INC-DEBT-039 for the model decision (what is
+    // "frontier" when `node_runs_v1` is empty) that must precede it.
+    let state = match load_run_state_view(&run_id, as_of, _environment) {
+        Ok(s) => s,
+        Err(source_error) => {
+            return CommandOutput {
+                status: 4,
+                stdout: String::new(),
+                stderr: source_error,
+            };
+        }
+    };
+
+    // Resolve policy second, only once we have a real view to apply it to.
     let policy_snapshot = match resolve_policy(&policy) {
         Ok(p) => p,
         Err(ViewError::PolicyNotFound(name)) => {
@@ -58,45 +122,15 @@ pub(crate) fn run_run_view(
         }
     };
 
-    // For the v0 scaffold we read no storage; the run is "found" if a
-    // view can be built. Real implementation will query the ledger.
-    let as_of = as_of.unwrap_or(0);
-
-    // Heuristic for the scaffold: declared vs generated based on run_id prefix.
-    let origin = if run_id.starts_with("R-decl") {
-        RunOrigin::Declared
-    } else {
-        RunOrigin::Generated
-    };
-
-    // Build a minimal RunStateView from the run_id. Real impl reads ledger.
-    let state = match build_run_state_view(
-        run_id.clone(),
-        as_of,
-        origin,
-        vec![],
-        vec![],
-        vec![],
-        as_of,
-    ) {
-        Ok(s) => s,
-        Err(ViewError::Storage(msg)) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!(
-                    "{{\"error\":\"STORAGE_ERROR\",\"message\":\"{msg}\",\"run_id\":\"{run_id}\"}}"
-                ),
-            };
-        }
-        Err(e) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("view build failed: {e}"),
-            };
-        }
-    };
+    // INC-DEBT-039: the v0 scaffold read no storage here. It resolved
+    // `origin` from the `run_id` prefix and passed constant empty
+    // vectors as `frontier`, `blockers` and `pending_decisions`. That
+    // produced a view indistinguishable from a real one, and
+    // `ActionSurfaceView` derived its available actions from it. The
+    // state is now loaded by `load_run_state_view` above, which refuses
+    // until a ledger-backed source exists.
+    //
+    // `as_of` is forwarded to the loader and is no longer read here.
 
     // DEC-PLANE-002: build a frontier projection from the CLI runtime.
     // When a workflow manifest is present, the projection is authoritative.
