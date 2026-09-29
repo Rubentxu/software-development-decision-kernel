@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.24] - 2026-09-29
+
+### Fixes
+  - fix(cli): dev update en layout legacy hace merge, no swap destructivo
+
+### Other
+  - docs(uat): recibo del fix dev update legacy merge (RED->GREEN + falsaciones E2E)
+  - docs(uat): recibo del fix de layout del instalador (RED->GREEN observado)
+
 ## [2.2.23] - 2026-09-29
 
 ### Fixes
