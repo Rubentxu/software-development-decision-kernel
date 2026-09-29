@@ -45,6 +45,15 @@ Resolve adoption, project identity, knowledge profile, and vault once. Resolve
 `cycle_artifacts_dir` once after a valid cycle ID exists; before cycle start it
 is `null`. Never infer a field that the CLI did not return.
 
+Adoption bootstrap is a **converge, not a ritual**: `sddk adopt status` reads
+classification (idempotent, run every session inside cycle-resume); `sddk adopt
+apply` converges absent/partial state and is a byte-level no-op on an already
+converged workspace (C3i objetivo 2, pinned by
+`apply_on_converged_adoption_is_byte_stable_across_repeats`); `sddk adopt
+refresh` is the ONLY verb that intentionally rewrites runtime metadata
+(timestamp/actor). No surface may prescribe running `apply` or `refresh` as a
+per-session step.
+
 ## Bootstrap
 
 Run `skills/sddk-cycle-resume/SKILL.md` inline. It is the sole owner of exact
