@@ -132,9 +132,13 @@ jobs:
             > BUNDLE.toml
           tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256 BUNDLE.toml
           (cd bundle && sha256sum software-development-decision-kernel.tar.gz > software-development-decision-kernel.tar.gz.sha256)
-          # Contract check: the standalone tarball MUST carry BUNDLE.toml.
-          tar tzf bundle/software-development-decision-kernel.tar.gz | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
-            || { echo "::error::bundle tarball is missing software-development-decision-kernel/BUNDLE.toml"; exit 1; }
+          # Contract check: this tarball is ROOT-LEVEL (no wrapper prefix),
+          # so BUNDLE.toml must appear at the archive root. (The release.sh
+          # local path uses a wrapper prefix + xform; the consumer,
+          # update_bundle, handles both layouts via
+          # tarball_wraps_all_members_under_one_dir.)
+          tar tzf bundle/software-development-decision-kernel.tar.gz | grep -qx "BUNDLE.toml" \
+            || { echo "::error::bundle tarball is missing root-level BUNDLE.toml"; exit 1; }
           ls -la bundle/
 
       - name: Upload artifacts

@@ -5490,3 +5490,43 @@ identidad `release.yml@refs/tags/v2.2.21`; digest del binario instalado
 `all_present: true`, `current -> framework/2.2.21`; prune de 2.2.20; 5 URLs
 de distribución muestreadas HTTP 200. Puntero guard: PASS. Los receipt del
 lote C1 siguen válidos: el test H05 reparado está EN este release.
+
+### Adenda session-34 (14:05Z) — v2.2.22/v2.2.23 verificadas, swap destructivo de `dev update` descubierto y corregido
+
+**Baseline de esta adenda:** `93c3956a` → `bd52f99b` (main), tags `v2.2.24` (`2fb5f738`) y `v2.2.25` (`bd52f99b`) despachados.
+
+1. **INC-DEBT-031 cerrada y publicada** (`b323f808`, release **v2.2.22** `de400a97…`): dedup del
+   CHANGELOG 1499→752 items; cosign OK, digest instalado idéntico, `all_present: true`.
+2. **v2.2.23 verificada bit a bit** (`d5ef41ab`, binario `b1f3b94d…`): cosign Verified OK ×2
+   pinned a `refs/tags/v2.2.23`, run 36574195748 success, digest instalado idéntico.
+3. **DEFECTO NUEVO observado en vivo al usar `dev update` v2.2.23:** el update borró
+   `framework/2.2.21/`, `framework/2.2.22/` y `current` de un golpe y extrajo en la raíz.
+   Causa raíz doble: (a) el tarball standalone del release NUNCA llevó `BUNDLE.toml`
+   (el de `release.sh` se escribía después del tar; el del workflow vive solo en los
+   unified), así que el fix `2bc92c20` caía siempre al path legacy; (b) en ese path,
+   `copy_tree(Always)` con target == raíz renombra la raíz COMPLETA (con los version
+   dirs y `current` dentro) a `.old-<pid>` y la borra en el swap. El RED→GREEN de ayer
+   era honesto para el mecanismo pero la asunción de integración del productor era falsa.
+4. **Fix doble (`a409fe45` + recibo `0179545d`):** (a) legacy root-layout ahora hace MERGE
+   (`IfChanged`) en vez de swap destructivo (seguro: el staged bundle ya pasó
+   `verify_manifest` completo); (b) `release.sh` step 5 empaqueta BUNDLE.toml en el tar
+   (stage único + xform uniforme) y step 6 pasa a aserción. RED→GREEN: test nuevo
+   `update_legacy_root_layout_preserves_existing_root_content` rojo con swap, verde con
+   merge; `dev::` 409/409; falsaciones documentadas (path absoluto con xform filtra el
+   prefijo mktemp; `tar -C A -C B` doble namespace; `cp -r prompts/sddk` aplana sin el
+   padre). Falsación negativa: el tar de v2.2.23 publicado NO lleva BUNDLE.toml, la
+   aserción nueva lo habría abortado.
+5. **Fix del productor CI (`101f1b45`, release v2.2.25):** el workflow NO usa
+   `release.sh`; su job "Bundle framework assets" empaquetaba sin BUNDLE.toml. Ahora
+   escribe BUNDLE.toml (version de Cargo.toml con gate contra el tag) y assertion
+   post-tar. El hook pre-push exigió bump (`.github/**` no está en la lista blanca) →
+   v2.2.25, run 36579731401.
+6. **Fire test en la máquina real (binario 2.2.24 instalado):** `dev update --version
+   v2.2.24` desde el framework con `2.2.24/` + `current` — el escenario exacto que ayer
+   destruyó el layout — conservó TODO (`all_present: true`, `valid: true`, root y
+   version-dir byte a byte en sync). El path legacy sigue dejando una copia redundante
+   en la raíz (híbrido coherente); con el tar de v2.2.25+ será version-dir limpio.
+7. **Suite shell:** 22/22 en dos rondas (tras reconciliar el puntero mecánico con
+   `scripts/reconcile_state_pointer.sh`, test `test_release_state_pointer` PASS).
+8. **Gap registrada, no fixeada:** `dev update --root <dir>` explícito no repunta
+   `current` (solo lo hace con root `.`). Candidata a deuda.
