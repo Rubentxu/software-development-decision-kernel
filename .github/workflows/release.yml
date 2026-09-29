@@ -104,8 +104,37 @@ jobs:
           # The release SHA must already contain the canonical manifest produced
           # by `sddk dev manifest`; never maintain a second producer here.
           test -f MANIFEST.sha256
-          tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256
+          # BUNDLE.toml must ship INSIDE the standalone bundle tarball.
+          # `sddk dev update` resolves its layout from that file: without it
+          # the update falls back to the legacy ROOT layout, whose destructive
+          # swap deleted existing version dirs and `current` (observed live
+          # against v2.2.23, session-34; receipt c3/a409fe45). The unified
+          # jobs generate their own BUNDLE.toml later; this one covers the
+          # standalone tarball consumed by `dev update`.
+          #
+          # Version source: the checked-out Cargo.toml. The tag-anchoring
+          # contract already forces workspace version == tag at bump time,
+          # and this job has no binary to probe (the build jobs run in
+          # parallel; the unified jobs probe the x86_64 binary instead).
+          FW_VERSION="$(awk '/^\[workspace\.package\]/{flag=1; next} flag && /^version = /{gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+          test -n "$FW_VERSION" || { echo "::error::could not read workspace version from Cargo.toml"; exit 1; }
+          [ "$FW_VERSION" = "${GITHUB_REF_NAME#v}" ] || { echo "::error::workspace version $FW_VERSION != tag ${GITHUB_REF_NAME#v}"; exit 1; }
+          MANIFEST_SHA="$(sha256sum MANIFEST.sha256 | cut -d' ' -f1)"
+          printf '%s\n' \
+            '[bundle]' \
+            'schema_version = 2' \
+            "version = \"$FW_VERSION\"" \
+            "binary_min_version = \"$FW_VERSION\"" \
+            "binary_max_version = \"$FW_VERSION\"" \
+            '' \
+            '[contents]' \
+            "manifest_sha256 = \"sha256:$MANIFEST_SHA\"" \
+            > BUNDLE.toml
+          tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets MANIFEST.sha256 BUNDLE.toml
           (cd bundle && sha256sum software-development-decision-kernel.tar.gz > software-development-decision-kernel.tar.gz.sha256)
+          # Contract check: the standalone tarball MUST carry BUNDLE.toml.
+          tar tzf bundle/software-development-decision-kernel.tar.gz | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
+            || { echo "::error::bundle tarball is missing software-development-decision-kernel/BUNDLE.toml"; exit 1; }
           ls -la bundle/
 
       - name: Upload artifacts
