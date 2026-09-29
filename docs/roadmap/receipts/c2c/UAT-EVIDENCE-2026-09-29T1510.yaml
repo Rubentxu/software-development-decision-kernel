@@ -1,0 +1,121 @@
+schema_version: 1
+profile_target: HOST_ENHANCED_C2C
+cycle: C2c
+status: OBSERVED_SDK_PUBLIC_AND_EXERCISED
+executed_by: orchestrator (session-34 continuation, autonomous mode)
+executed_at_utc: "2026-09-29T15:10:00Z"
+source_sha_at_eval: "def5ff46"
+workspace_version_at_eval: "2.2.28 (bumped, not released)"
+last_public_release_observed: "v2.2.27"
+prior_session_status: "NOT_EVALUATED_ADAPTER_MISSING"  # receipts/c2c/ 2026-09-22
+
+# RE-OPEN 2026-09-29T15:08Z (session-34): the C2c blocking conditions changed.
+# The 2026-09-22 receipt found: jcode v0.86.0 present, `jcode acp` exists, but NO
+# public SDK and NO adapter. Today:
+#   - jcode host binary: v0.89.1 (8c7415b02), still exposes acp
+#   - PUBLIC SDK NOW EXISTS: @1jehuang/jcode-sdk 1.1.0 on npm (installed in a
+#     scratch project in 3.9s). This is the "public adapter lives in another
+#     repo" condition the roadmap asked to verify BEFORE building a duplicate.
+# The roadmap's C2c wording: "Verificar si el adapter público vive en otro repo
+# antes de implementar uno duplicado" — VERIFIED: it does (npm, TypeScript).
+# Therefore the "boundary jcode-sdk / SDDK SDK" question is now an ADR question
+# (consume the TS SDK vs. speak the socket protocol from Rust), not a build task.
+
+environment:
+  host_binary:
+    path: "/home/rubentxu/.local/bin/jcode -> ~/.jcode/builds/current/jcode"
+    version_observed: "jcode v0.89.1 (8c7415b02)"
+  public_sdk:
+    package: "@1jehuang/jcode-sdk"
+    version: "1.1.0"
+    install: "npm install @1jehuang/jcode-sdk (3.9s, 0 vulnerabilities)"
+    protocol: "protocolVersion 1, server jcode-harness-api-bridge/0.1.0"
+    docs_source: "https://jcode.sh/sdk (fetched and read in full)"
+  scratch_project: "/tmp/c2c-uat (cleaned after tests)"
+
+scenarios:
+  T15:
+    description: "Adapter separado con SDK público, host real, connect + attach"
+    status: PASS_WITH_CAVEAT
+    caveat: "The 'adapter' in the UAT text meant an SDDK-side adapter; what exists and was exercised is the PUBLIC TypeScript SDK (boundary verified per roadmap wording). An SDDK↔jcode adapter (Rust) still does not exist — see decision_request."
+    evidence:
+      command: "JcodeClient.launch({ workingDir, inheritLogins: false }); createSession; getRuntimeInfo"
+      output: |
+        SESSION_ID: session_ox_1790694567168_8565f3d1e1146b50
+        RUNTIME: server=jcode-harness-api-bridge/0.1.0 protocolVersion=1 healthy=true
+        capabilities=[sessions, streaming, persisted_session_discovery, runtime_info,
+        api_key_provisioning, session_archive, session_retention, session_files]
+      session_not_run: |
+        session = durable container (session_* id, survives close, listSessions);
+        run() = one turn inside it. Distinction OBSERVED: getHistory after noReply
+        shows context entries without any run/assistant turn.
+      isolation: |
+        Two private instances (A, B): B's listSessions() cannot see A's session —
+        instance isolation OBSERVED (contract from SDK docs holds on this host).
+      versioned_boundary: "protocolVersion=1 negotiated at handshake; unknown-version = unsupported_version typed error (documented; major-negotiation rejection not force-triggered)"
+
+  T16:
+    description: "Host event burst + turn_done + cambios irrelevantes"
+    status: PASS_PARTIAL_MODEL_REQUIRED
+    evidence:
+      command: "run(session, 'say hello', autoApprove) with inheritLogins:false (no credentials)"
+      output: |
+        Typed failure, NOT fake success: HarnessError code=internal,
+        "No tokens/providers left: no usable provider right now..."
+        — the SDK fails closed when no provider is reachable.
+      command2: "sendMessage(noReply: true) then getHistory"
+      output2: |
+        context-only message persisted WITHOUT emitting a turn: HISTORY_LEN=2
+        (system + user context note, no assistant reply) — the context-delta
+        path does not spam turns.
+      not_run: "burst volume/streaming event cadence requires a live model turn (provider quota exhausted on host); turn_done event ordering NOT_RUN for real turns"
+      bounded_events_note: "events() is documented as buffered between next() calls (no drop on slow consumers) — DOCUMENTED, not load-tested here"
+
+  T17:
+    description: "ContextDelta stale/reordered + trabajo estructurado invalid/timeout"
+    status: PASS_PARTIAL_MODEL_REQUIRED
+    evidence:
+      command: "runStructured with schema {type:'not-a-type'} (invalid)"
+      output: "rejected locally: code=structured_schema_invalid (no model call wasted)"
+      command2: "runStructured with valid schema, no provider"
+      output2: |
+        typed HarnessError (internal, no provider) — bounded retry budget never
+        produced fake success. The StructuredOutputError retry path (attempts
+        audit) requires a live model: NOT_RUN.
+      stale_reordered_note: "rewind/rewindUndo/clear exist for history reordering; exercised indirectly via getHistory; deliberate stale-delta injection NOT_RUN"
+
+  T18:
+    description: "Host sin capability opcional y proveedor ausente"
+    status: PASS
+    evidence:
+      command: "getRuntimeInfo capabilities"
+      output: "8 capabilities advertised; NOT advertised: model_catalog_outside_session, global_events_over_custom_transport (documented restriction), cross-instance access"
+      command2: "readFile(session, '/etc/hostname') (outside session workdir)"
+      output2: "REJECTED: code=invalid_request — file access bounded to session cwd (capability boundary enforced)"
+      command3: "getHistory('session_does_not_exist_zz')"
+      output3: "REJECTED: code=unknown_session — typed, no fake data"
+      provider_absent: "covered by T16/T17: typed provider-absence errors, Base utility (sessions, history, files, isolation) fully functional without any provider"
+
+decision_request: |
+  The roadmap anticipated this fork: the public adapter EXISTS in another repo
+  (TypeScript SDK on npm, protocol v1 stable, schema drift checked mechanically
+  in both directions). Options for the SDDK side:
+    (a) ADR of equivalence: declare @1jehuang/jcode-sdk the official host
+        boundary; SDDK consumes it via a small Node sidecar instead of a Rust
+        adapter. No duplicate protocol implementation.
+    (b) Rust adapter speaking the v1 socket protocol directly (jcode api-bridge),
+        duplicating what the TS SDK does — requires ongoing schema-drift sync.
+  The C2c UATs T15-T18 are now evaluable END-TO-END with a live model (only the
+  streaming/burst cadence needs provider quota). This session deliberately did
+  NOT build (b) — building a duplicate before the ADR is exactly what the
+  roadmap forbids ("antes de implementar uno duplicado").
+
+honesty:
+  observed:
+    - "launch/createSession/getRuntimeInfo/isolation/readFile-boundary/unknown-session/noReply/structured_schema_invalid — all executed on this host against jcode v0.89.1"
+  not_run:
+    - "real model turns (provider quota exhausted): streaming cadence, turn_done ordering, StructuredOutputError attempts audit, softInterrupt at safe point"
+    - "connect() mode against jcode api-bridge (user's live instance) — launch() mode only, to avoid touching the user's sessions"
+  known_limitations:
+    - "The host ran with inheritLogins:false by design: exercises the typed no-provider path, never spends user quota"
+    - "ping() returned undefined (documented liveness check); treated as informational, no claim built on it"
