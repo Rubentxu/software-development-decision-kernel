@@ -545,6 +545,24 @@ jobs:
           "$SDDK" dev update --root /tmp/sddk-smoke-framework-2 \
             --version "$TAG" --editor all | tee /tmp/smoke-update.log
           grep -q "sha256 verified" /tmp/smoke-update.log
-          test -d /tmp/sddk-smoke-framework-2/agents
-          test "$(ls /tmp/sddk-smoke-framework-2/agents | wc -l)" -ge 60
+          # Layout assertion (session-34): with the BUNDLE.toml contract the
+          # standalone tarball installs into <root>/<version>/ (versioned
+          # layout). Legacy root-layout bundles (no BUNDLE.toml) install at
+          # the root. Accept the versioned layout as primary and root only
+          # as the legacy fallback, so the smoke pins the NEW contract
+          # without breaking if the tarball ever regresses.
+          if [ -d "/tmp/sddk-smoke-framework-2/${TAG#v}/agents" ]; then
+            AGENTS_DIR="/tmp/sddk-smoke-framework-2/${TAG#v}/agents"
+            echo "  layout: versioned ($AGENTS_DIR)"
+          elif [ -d /tmp/sddk-smoke-framework-2/agents ]; then
+            AGENTS_DIR="/tmp/sddk-smoke-framework-2/agents"
+            echo "  layout: legacy root (REGRESSION: tarball lacked BUNDLE.toml)"
+            exit 1
+          else
+            echo "::error::neither versioned nor root agents dir exists after dev update" >&2
+            exit 1
+          fi
+          test "$(ls "$AGENTS_DIR" | wc -l)" -ge 60
+          test -f "/tmp/sddk-smoke-framework-2/${TAG#v}/BUNDLE.toml" \
+            || { echo "::error::versioned bundle dir lacks BUNDLE.toml" >&2; exit 1; }
           echo "SMOKE TEST PASS"
