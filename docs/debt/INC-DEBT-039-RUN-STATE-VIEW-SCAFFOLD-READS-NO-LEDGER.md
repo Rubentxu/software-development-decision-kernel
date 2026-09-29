@@ -128,6 +128,62 @@ autoritativa sobre datos que no leyó es peor que un comando que dice "no
 tengo fuente": el primero se usa en silencio y contamina decisiones; el
 segundo se nota. (c) es el refuerzo natural cuando (a) llegue.
 
+## Progreso — opción (b) IMPLEMENTADA en session-42
+
+Commit `3055aeae` (`fix(cli): sddk run view falla cerrado en vez de
+fabricar una RunStateView`).
+
+Qué cambió:
+
+- `load_run_state_view` es ahora el **seam único** donde aterrizará la
+  lectura real del ledger. Hoy devuelve `Err` tipado
+  `RUN_STATE_SOURCE_UNAVAILABLE`; `Ok` es inalcanzable hasta que exista
+  un `RunStateViewInputs` respaldado por ledger.
+- La disponibilidad de la fuente se decide **antes** de resolver la
+  policy. El scaffold resolvía policy primero, así que un nombre de
+  policy inexistente sobre un run sin fuente reportaba
+  `POLICY_NOT_FOUND` y señalaba el defecto equivocado.
+- Eliminados la heurística de origen por prefijo y los `vec![]`
+  constantes.
+
+Falsador RED→GREEN observado: **RED 4/5** antes del arreglo, **GREEN
+5/5** después. El stdout del fallo RED es la prueba del defecto: para un
+run `R-decl-anything` inexistente emitía con confianza
+`"origin": "Declared"` y `"available_actions": ["Abort"]`.
+
+Sin regresiones: CLI lib 843/0/1, integration 187/0, `context_fitness`
+7/7, `cargo fmt --check` y `cargo clippy --all-targets -D warnings`
+limpios.
+
+Verificado además con el **binario release** y `SDDK_STATE_HOME` aislado:
+
+```console
+$ sddk run-view R-decl-fake-run --format json >out 2>err ; echo $?
+4
+$ wc -c <out
+0
+$ cat err
+{"error":"RUN_STATE_SOURCE_UNAVAILABLE","message":"no run_state source
+is wired for `R-decl-fake-run`; frontier, blockers and pending_decisions
+cannot be reported without one","run_id":"R-decl-fake-run",
+"debt":"INC-DEBT-039"}
+```
+
+Exit 4, stdout vacío, JSON de error válido en stderr. Antes del arreglo
+el mismo comando devolvía **exit 0** con
+`"available_actions": ["Abort"]` para un run inexistente.
+
+### Lo que queda abierto
+
+- **Opción (a) sigue pendiente** y sigue bloqueando CTX-003 paso 5. Antes
+  de escribir el adaptador hay que responder la pregunta de modelo: qué
+  es `frontier` cuando `node_runs_v1` está vacía. Responder eso con
+  código sería inventar la semántica de la spec.
+- **Opción (c) no implementada.** `RunStateView` sigue sin campo de
+  procedencia. Con (b) aplicado el riesgo baja —ya no se emite una vista
+  falsa— pero cuando (a) llegue, distinguir `Sourced` de `Unsourced` en
+  el tipo sigue siendo defence in depth.
+
 ## Nota de método
 
 Este hallazgo **no** era una deuda declarada: no estaba en

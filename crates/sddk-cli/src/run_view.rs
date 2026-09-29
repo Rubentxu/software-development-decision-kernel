@@ -51,7 +51,7 @@ fn load_run_state_view(
 ) -> Result<RunStateView, String> {
     Err(format!(
         "{{\"error\":\"RUN_STATE_SOURCE_UNAVAILABLE\",\
-         \"message\":\"no ledger-backed run_state source is available for `{run_id}\"; \
+         \"message\":\"no run_state source is wired for `{run_id}\"; \
          frontier, blockers and pending_decisions cannot be reported without one\",\
          \"run_id\":\"{run_id}\",\
          \"debt\":\"INC-DEBT-039\"}}"
