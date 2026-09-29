@@ -1,0 +1,42 @@
+# UAT-EVIDENCE — C3 re-anclada al HEAD actual (T19–T28)
+
+> **Slice id:** `p-63676b11dc0ef88f/c3-reverify-at-head`
+> **Baseline SHA:** `b3160ae9` (v2.2.21 + recibo C0/C1)
+> **Date (UTC):** 2026-09-29T12:59:00Z
+> **Status:** VERIFIED (observado hoy, en este SHA)
+
+## Por qué
+
+Los recibos c3a–c3h (21-22/09) están anclados a SHAs de la línea 1.169.x.
+Este recibo re-ejecuta sus baterías en la línea 2.2.x actual y registra lo
+observado. Los recibos históricos conservan sus RED→GREEN originales.
+
+## Lote re-ejecutado (2026-09-29)
+
+| UAT | Sub-ciclo | Comando | Resultado observado |
+| --- | --- | --- | --- |
+| T19/T20 | C3a | `cargo test -p sddk-engine --lib authority_admission_ticket` | **11 passed; 0 failed** (t19 policy swap sin side-effects, t20 digests divergentes + atomicidad) |
+| T21/T22 | C3b | `cargo test -p sddk-storage --lib` | **81 passed; 0 failed; 3 ignored** (CAS corrupto/truncado, append idempotente, chain reopen, contention) |
+| T23/T24/T25 | C3c | `cargo test -p sddk-storage --lib -- capability_receipt_security_tests cycle_lease_security_tests schema_guard` | **19 passed; 0 failed** |
+| T26 | C3d | `cargo test -p sddk-storage --lib -- --ignored` | 3 bench **verdes**; p50: append=330 µs, cas=436 µs, lease=15.4 ms — dentro del baseline de c3d (339/439/15000 µs) con varianza <5% |
+| T27/T28 | C3e/f | `cargo test -p sddk-storage --lib schema_resilience` | **14 passed; 0 failed** (t27_1..t27_8 + t28 pre-flight/ADR-0141) |
+
+C3g (perf budget, T29 del recibo) y C3h: mediciones del mismo mecanismo,
+cubiertas por la fila T26 de este lote.
+
+## Comparativa con el baseline original
+
+- Storage lib pasó de 53 tests (pre-C3c, 21/09) a **84 hoy** — los ciclos
+  añadieron tests, ninguno roto por las ~200 commits intermedias.
+- Perf: los tres benchmarks mantienen los órdenes de magnitud del
+  baseline c3d. Lease p50 15.4 ms vs 15 ms original (+2.7%): varianza de
+  máquina, no regresión (umbral de alarma del presupuesto: aún lejos).
+- C3e-F1 sigue cerrado: t27_3 + t28 pre_flight rechazan el rewind con
+  error tipado (InconsistentMigrationState).
+
+## Alcance y límites
+
+- Lote scoped C3: storage + engine authority. NO cubre T29–T33 (C4).
+- Los tests de contention (T22) corrieron 1 vez en este lote (la suite
+  completa); el original fue 5/5. No hay indicio de flake; si reaparece,
+  el protocolo del transitorio del mirror test aplica.
