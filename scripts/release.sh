@@ -502,15 +502,52 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$RELEASE_SCRATCH"' EXIT
 
 BUNDLE_TARBALL="$TMP/software-development-decision-kernel.tar.gz"
+# Stage the EXACT tarball contents (repo surfaces + injected BUNDLE.toml) in
+# one directory, then pack with the uniform `--xform` wrapper. Packing repo
+# paths and an external file in one command does NOT work: the xform applies
+# to every member, so an absolute second path leaks its mktemp prefix (two
+# falsation runs failed before this layout; see session-34 receipt).
+BUNDLE_STAGE="$TMP/bundle-stage/software-development-decision-kernel"
+mkdir -p "$BUNDLE_STAGE/prompts"
+cp -r agents skills assets MANIFEST.sha256 "$BUNDLE_STAGE/"
+# prompts/sddk needs its parent created first: `cp -r prompts/sddk dst/`
+# nests correctly only when dst/prompts exists (falsated: without it, the
+# surface lands flat as dst/sddk and the tarball misses prompts/sddk/*).
+cp -r prompts/sddk "$BUNDLE_STAGE/prompts/"
+# BUNDLE.toml must ship INSIDE the standalone bundle tarball. It used to be
+# written only AFTER the tar was created (step 6), so the published tarball
+# never contained it: `sddk dev update` resolves its layout from BUNDLE.toml,
+# finds it missing, and falls back to the legacy ROOT layout, whose
+# destructive swap deleted the version dirs and `current` that a previous
+# install.sh had created (observed live against v2.2.23, session-34). The
+# unified tarball (step 7) picked BUNDLE.toml up via `cp -r`, which is why
+# install.sh installs were unaffected.
+# The manifest's OWN sha256, not the hash of its first line (INC-DEBT-025,
+# long comment in step 6 below).
+MANIFEST_SHA="$(sha256sum MANIFEST.sha256 | awk '{print $1}')"
+printf '%s\n' \
+    '[bundle]' 'schema_version = 2' \
+    "version = \"$VERSION\"" \
+    "binary_min_version = \"$VERSION\"" \
+    "binary_max_version = \"$VERSION\"" \
+    '' '[contents]' "manifest_sha256 = \"$MANIFEST_SHA\"" \
+    > "$BUNDLE_STAGE/BUNDLE.toml"
 tar czf "$BUNDLE_TARBALL" \
     --xform "s|^|software-development-decision-kernel/|" \
-    -C . agents skills prompts/sddk assets MANIFEST.sha256
+    -C "$BUNDLE_STAGE" agents skills prompts/sddk assets MANIFEST.sha256 BUNDLE.toml
 sha256sum "$BUNDLE_TARBALL" | awk '{print $1}' > "$BUNDLE_TARBALL.sha256"
-ok "bundle: $(basename "$BUNDLE_TARBALL") ($(stat -c%s "$BUNDLE_TARBALL") bytes)"
+# Contract check: the standalone tarball MUST carry BUNDLE.toml now.
+tar tzf "$BUNDLE_TARBALL" | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
+    || { echo "FATAL: bundle tarball is missing software-development-decision-kernel/BUNDLE.toml" >&2; exit 1; }
+ok "bundle: $(basename "$BUNDLE_TARBALL") ($(stat -c%s "$BUNDLE_TARBALL") bytes, BUNDLE.toml included)"
 
 # --- 6. BUNDLE.toml ---
 
-step "6/14 — inject BUNDLE.toml (schema v2)"
+step "6/14 — BUNDLE.toml in tarball (verified in step 5)"
+# BUNDLE.toml is now written INTO the standalone tarball by step 5 (the
+# stage-then-pack layout); this step only re-derives FW_DIR for the unified
+# tarball below. Kept as an extraction+assertion so a future refactor of
+# step 5 that drops the file fails here, loudly, before anything publishes.
 BUNDLE_DIR="$TMP/bundle"
 mkdir -p "$BUNDLE_DIR"
 tar xzf "$BUNDLE_TARBALL" -C "$BUNDLE_DIR"
@@ -527,16 +564,11 @@ tar xzf "$BUNDLE_TARBALL" -C "$BUNDLE_DIR"
 # parses it as an Option and never compares), so the field was inert AND
 # wrong. Fixing it changes a published value, which is safe for that
 # reason. See INC-DEBT-025-MANIFEST-SHA-FROM-FIRST-LINE.
-MANIFEST_SHA="$(sha256sum MANIFEST.sha256 | awk '{print $1}')"
 FW_DIR="$BUNDLE_DIR/software-development-decision-kernel"
-printf '%s\n' \
-    '[bundle]' 'schema_version = 2' \
-    "version = \"$VERSION\"" \
-    "binary_min_version = \"$VERSION\"" \
-    "binary_max_version = \"$VERSION\"" \
-    '' '[contents]' "manifest_sha256 = \"$MANIFEST_SHA\"" \
-    > "$FW_DIR/BUNDLE.toml"
-ok "BUNDLE.toml written (manifest_sha256=$MANIFEST_SHA)"
+[ -f "$FW_DIR/BUNDLE.toml" ] || { echo "FATAL: step 5 did not ship BUNDLE.toml inside the tarball" >&2; exit 1; }
+SHIPPED_VERSION="$(awk -F'"' '/^version = /{print $2; exit}' "$FW_DIR/BUNDLE.toml")"
+[ "$SHIPPED_VERSION" = "$VERSION" ] || { echo "FATAL: BUNDLE.toml version $SHIPPED_VERSION != $VERSION" >&2; exit 1; }
+ok "BUNDLE.toml inside tarball (version=$SHIPPED_VERSION)"
 
 # --- 7. unified tarball ---
 

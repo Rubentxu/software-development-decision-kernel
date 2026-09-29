@@ -591,3 +591,46 @@ fn update_legacy_root_layout_bundle_still_installs_at_root() {
     assert!(!out.contains(" into "));
     std::fs::remove_dir_all(&target).ok();
 }
+
+/// REGRESSION (session-34, observed on the real machine against v2.2.23):
+/// a legacy root-layout update must NOT destroy sibling content that
+/// already lives in the framework root. `copy_tree(CopyMode::Always)` with
+/// target == framework ROOT renames the whole root (version dirs from a
+/// previous install.sh, the `current` symlink) to `.old-<pid>` and DELETES
+/// it in the atomic swap. Observed: `dev update --version v2.2.23` removed
+/// `2.2.21/`, `2.2.22/` and `current` in one shot. A root-layout update
+/// must merge into the existing root instead.
+#[test]
+fn update_legacy_root_layout_preserves_existing_root_content() {
+    let source = temp_root("update-legacy-preserve-source");
+    std::fs::create_dir_all(source.join("agents")).unwrap();
+    std::fs::write(source.join("agents/a.md"), "content").unwrap();
+    write_manifest(&source).unwrap();
+    let (_releases, args) = release_bundle(&source, "v-test-legacy2");
+    let target = temp_root("update-legacy-preserve-target");
+
+    // Simulate a machine where install.sh already created a versioned
+    // layout plus the `current` symlink, and the incoming bundle is a
+    // legacy root-layout tarball (no BUNDLE.toml).
+    std::fs::create_dir_all(target.join("2.2.22/agents")).unwrap();
+    std::fs::write(target.join("2.2.22/agents/old.md"), "old").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target.join("2.2.22"), target.join("current")).unwrap();
+
+    update_bundle_unsigned_fixture(&target, &args).unwrap();
+
+    assert!(
+        target.join("agents/a.md").is_file(),
+        "new bundle content must land in the root"
+    );
+    assert!(
+        target.join("2.2.22/agents/old.md").is_file(),
+        "pre-existing version dir must survive the root-layout update"
+    );
+    #[cfg(unix)]
+    assert!(
+        target.join("current").exists(),
+        "pre-existing current symlink must survive"
+    );
+    std::fs::remove_dir_all(&target).ok();
+}

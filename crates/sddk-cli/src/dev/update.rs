@@ -429,7 +429,21 @@ pub(crate) fn update_bundle(root: &Path, args: &super::UpdateArgs) -> anyhow::Re
         }
         _ => root.to_path_buf(),
     };
-    copy_tree(&staged_bundle, &install_root, CopyMode::Always)?;
+    if install_root == root {
+        // Legacy root layout: MERGE into the existing framework root instead
+        // of the atomic swap. `copy_tree(CopyMode::Always)` renames the whole
+        // target to a sibling `.old-<pid>` and deletes it afterwards; with
+        // target == root that rename parks and DESTROYS everything else that
+        // lives in the framework root (version dirs installed earlier by
+        // install.sh, the `current` symlink). Observed live against v2.2.23
+        // (session-34): one `dev update` removed `2.2.21/`, `2.2.22/` and
+        // `current` in a single shot. A merge cannot be all-or-nothing, but
+        // the staged bundle was already fully verified against its manifest
+        // above, so a partial copy cannot ship half a bundle.
+        copy_tree(&staged_bundle, &install_root, CopyMode::IfChanged)?;
+    } else {
+        copy_tree(&staged_bundle, &install_root, CopyMode::Always)?;
+    };
     let _ = std::fs::remove_dir_all(&tmp);
     let location = if install_root == root {
         String::new()
@@ -641,8 +655,7 @@ pub(super) fn run_dev_update(
                 Some(v) => {
                     let dir = bundle_root.join(&v);
                     crate::dev::swap_current_to(&bundle_root, &dir);
-                    output
-                        .push_str(&format!("framework: current -> {v} (versioned layout)\n"));
+                    output.push_str(&format!("framework: current -> {v} (versioned layout)\n"));
                 }
                 None => {
                     crate::dev::swap_current_to(&bundle_root, &bundle_root);
