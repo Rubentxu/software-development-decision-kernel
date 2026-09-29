@@ -1,15 +1,92 @@
 ---
 id: INC-DEBT-032-SUITE-NOT-HERMETIC-VAULT-DEPENDENCY
 title: "La suite del workspace pasa en local y falla en CI por tests que dependen de $HOME/.sddk-knowledge, fuera del repo"
-status: open
+status: closed
 severity: medium
 priority: P2
 created: 2026-09-28
 discovered_by: session-31 (OBSERVED, fallo remoto-independent + lectura)
+resolved: 2026-09-29 (session-33)
 cluster_id: CL-VERIFICATION
 related: [INC-AUDIT-S14-DEFAULT-GATE-DISCONNECTED]
 fingerprint: "cli_incidence_dka_vault_tests_read_home_not_repo"
 ---
+
+## Resolución (session-33, 2026-09-29) — cerrado
+
+El INC planteaba tres opciones y decía que elegir una sería inventar política
+de gobernanza del vault. **No hacía falta inventarla: `AGENTS.md` §2.7 ya dice
+que el vault es fuente humana y nunca autoridad del runtime.** Leer el vault
+desde un test para certificar comportamiento del runtime es exactamente la
+inversión que §2.7 prohíbe. La política ya existía; solo faltaba aplicarla.
+
+Los dos ficheros del vault, además, están `status: closed` y su campo
+`resolution` describe **invariantes de runtime**, no objetos del vault:
+
+- `INC-DKA-ORPHAN-REVIEW-PHASE` → "Phase::Review no existe; hay 9 variantes".
+- `INC-DKA-MANAGED-CLOSURE-VAULT-ROUTE` → "la transición `archive.vault.complete`
+  está declarada en `workflow/workflow.yaml` con los gates esperados".
+
+O sea: los tests certificaban la **fuente humana** de un invariante que el
+proyecto ya cumple por otra vía. Se sustituyeron por la certificación de la
+invariante real:
+
+| Antes (no hermético) | Ahora (hermético) |
+|---|---|
+| `cli_incidence_dka_orphan_review_phase_exists` — leía `~/.sddk-knowledge/…` vía `env!("HOME")` | `cli_phase_enum_has_no_orphan_review_variant` — enum `Phase` compilado + su forma serializada (serde) |
+| `cli_incidence_dka_managed_closure_vault_route_exists` — leía `~/.sddk-knowledge/…` vía `env!("HOME")` | `cli_archive_vault_complete_transition_declares_its_gates` — transición de `workflow/workflow.yaml` con sus 3 gates |
+
+El test de Phase certifica el **nombre serializado** (`#[serde(rename_all =
+"lowercase")]`), que es lo que consumen `workflow.yaml`, los prompts y cada
+artefacto persistido. No `Debug`, que no es contrato de nadie.
+
+## Falsificación (OBSERVED, session-33)
+
+Cada test se probó con la mutación que debe detectarlo. Esto importa porque el
+primer intento de mutación **no aplicó** (la cadena buscada no coincidía con el
+fichero real) y el test dio verde sobre un fichero sin cambios: un verde que
+no prueba nada. Se repitió contra la mutación real.
+
+| Dirección | Mutación | Resultado |
+|---|---|---|
+| Verde | árbol restaurado | 2 passed / 0 failed |
+| **ROJO (gates)** | eliminar el gate `vault-index-current` del bloque `archive.vault.complete` | **FAILED** con el mensaje nombrando el gate |
+| **ROJO (Phase)** | `#[serde(rename = "uat-stage")]` sobre `Phase::Uat` | **FAILED**: `left: [… "uat-stage" …] right: [… "uat" …]` |
+
+**La segunda mutación es la que importa, y su resultado fue una sorpresa
+instruccional.** Se eligió deliberadamente una mutación que **sí** compila:
+`assert_variant_count_eq!(Phase, 9, …)` y los `match` exhaustivos siguen
+verdes, porque ni el conteo ni la exhausividad ven un cambio de *nombre
+serializado*. Ese hueco es exactamente el que cubre el test nuevo, y la
+aserción lo detecta.
+
+Mutaciones descartadas por no ser concluyentes, con el motivo (para que nadie
+las repita como evidencia):
+
+- **Reintroducir `Phase::Review`**: no compila (match exhaustivo, E0004) y
+  rompe `assert_variant_count_eq`. Es un guard **de tiempo de compilación**,
+  más fuerte que un test rojo, pero no prueba la aserción del test.
+- **Renombrar el *variante* `Uat` → `Uat2`**: tampoco compila (E0599 en
+  `execution_scope.rs`, `compiler.rs` y en el propio test). Sigue sin ser una
+  prueba de la aserción.
+
+Conclusión honesta: la suite ya tenía dos guards de compilación que impiden
+cambios de *variante*; lo que faltaba era el nombre serializado, y es lo
+único que el test nuevo verifica.
+
+## Lo que sigue siendo verdad de este INC
+
+El gate de CI ya no está rojo por esto, pero la impureza era real y la clase
+de defecto no desaparece: cualquier test futuro que lea `$HOME` para certificar
+el proyecto reintroduce el mismo problema. El guard permanente que lo
+impide es `grep -rnE 'env!\("HOME"\)|home_dir\(\)' crates/*/tests/*.rs`.
+
+Resultado observado tras el cambio (session-33): **2 coincidencias, ambas
+comentarios** que describen el defecto en los tests nuevos — ninguna llamada.
+Antes había 2 llamadas. El grep por sí solo no distingue una cosa de la otra,
+así que el guard definitivo debe filtrar comentarios; queda anotado como
+mejora del guard, no como deuda abierta.
+
 
 ## Qué pasó (OBSERVED, session-31)
 
