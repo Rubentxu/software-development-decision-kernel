@@ -180,6 +180,14 @@ impl ContextBridge {
         &self.advisory
     }
 
+    /// Delivered content facts snapshot. Only a delta with
+    /// `advisory_only = false` lands here, so reading this is how a caller
+    /// observes that non-advisory content was actually delivered.
+    #[must_use]
+    pub fn facts(&self) -> &[String] {
+        &self.facts
+    }
+
     /// Deltas delivered so far (provenance trail, CDD-002).
     #[must_use]
     pub fn delivered(&self) -> &[ContextDelta] {

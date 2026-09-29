@@ -70,6 +70,7 @@ pub mod decision_lab_experimental;
 pub mod decision_memory;
 pub mod decision_plane_gate;
 pub mod durable_capsule_store;
+pub mod durable_delta_store;
 pub mod durable_map_fanout;
 pub mod durable_session_binding;
 pub mod engineering_assurance;
