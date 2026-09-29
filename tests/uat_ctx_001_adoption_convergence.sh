@@ -29,7 +29,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-BIN="${SDDK_BIN:-$REPO_ROOT/target/release/sddk}"
+# El target dir puede venir de CARGO_TARGET_DIR, de la config de cargo o del
+# repo; no hardcodear `target/release` porque el binario puede no estar ahí.
+TARGET_DIR="$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' \
+    || printf '%s/target' "$REPO_ROOT")"
+BIN="${SDDK_BIN:-$TARGET_DIR/release/sddk}"
 REPEATS=20
 KEEP="false"
 

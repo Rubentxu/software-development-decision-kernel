@@ -7,6 +7,7 @@ Commands:
   agent-help     M7.1 — render the agent-facing command cheat sheet (SPEC-015)
   project        Resolve deterministic project and workspace identity
   adopt          Plan, apply, inspect, or repair project adoption
+  context        Bootstrap durable context: identity, adoption convergence, cycle inference and session binding in one typed operation
   lint           Validate repository contracts and generated workflow documentation
   generate       Generate deterministic repository documentation
   cycle          Plan and apply workflow cycles under the local authority

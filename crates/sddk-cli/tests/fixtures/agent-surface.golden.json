@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "total": 60,
+  "total": 61,
   "entries": [
     {
       "name": "version",
@@ -24,6 +24,14 @@
       "side_effect_class": "pure",
       "required_authority": "none",
       "machine": "AdoptReportV1",
+      "examples_n": 0
+    },
+    {
+      "name": "context",
+      "stability": "experimental",
+      "side_effect_class": "governed",
+      "required_authority": "none",
+      "machine": "ContextReportV1",
       "examples_n": 0
     },
     {

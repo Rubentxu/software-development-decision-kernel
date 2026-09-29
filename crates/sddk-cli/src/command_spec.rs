@@ -326,6 +326,17 @@ pub fn all_command_specs() -> Vec<CommandSpec> {
             None,
         ),
         spec(
+            "context",
+            "Resolve durable context: identity, adoption, cycle, basis and session binding",
+            OutputFormatKind::Both,
+            vec![],
+            true,
+            None,
+            Some("SPEC-005"),
+        )
+        .with_side_effect(SideEffectClass::Governed)
+        .with_stability(Stability::Experimental),
+        spec(
             "lint",
             "Validate repository contracts and generated workflow documentation",
             OutputFormatKind::Text,

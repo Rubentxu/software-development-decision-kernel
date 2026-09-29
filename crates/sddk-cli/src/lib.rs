@@ -19,6 +19,7 @@ pub mod cheat_sheet;
 pub mod command_spec;
 pub mod command_surface;
 pub mod config_cmd;
+pub mod context_cmd;
 pub mod cosign;
 mod cycle;
 mod debt;
@@ -208,6 +209,12 @@ enum Command {
     Adopt {
         #[command(subcommand)]
         command: AdoptCommand,
+    },
+    /// Bootstrap durable context: identity, adoption convergence, cycle
+    /// inference and session binding in one typed operation.
+    Context {
+        #[command(subcommand)]
+        command: ContextCommand,
     },
     /// Validate repository contracts and generated workflow documentation.
     Lint {
@@ -556,6 +563,32 @@ enum AdoptCommand {
     Refresh(AdoptionArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum ContextCommand {
+    /// Resolve identity, converge adoption, infer the cycle, rebuild the
+    /// context basis and bind the session (SPEC-005 CTX-003).
+    Bootstrap(ContextBootstrapArgsCli),
+}
+
+#[derive(Debug, Args)]
+struct ContextBootstrapArgsCli {
+    /// Checkout or worktree root. Inferred from the current directory when absent.
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// Required monorepo scope, using `.` for the repository root.
+    #[arg(long)]
+    scope: Option<String>,
+    /// Stable host session identity (opaque to SDDK).
+    #[arg(long)]
+    session: String,
+    /// Explicit cycle id, skipping inference.
+    #[arg(long)]
+    cycle: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
+}
+
 #[derive(Debug, Clone, Args)]
 struct ProjectResolveArgs {
     /// Checkout or worktree root.
@@ -785,6 +818,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             command: ProjectCommand::Resolve(args),
         } => run_project_resolve(args),
         Command::Adopt { command } => run_adopt(command, environment),
+        Command::Context { command } => run_context(command, environment),
         Command::Lint { root, format } => match lint_repository(&root) {
             Ok(report) => {
                 let status = i32::from(report.has_errors());
@@ -1429,6 +1463,65 @@ fn run_project_resolve(args: ProjectResolveArgs) -> CommandOutput {
     render_result(result, args.format, project_resolution_text)
 }
 
+/// Dispatch `sddk context <subcommand>` (C3j objetivo 3).
+fn run_context(command: ContextCommand, environment: &CliEnvironment) -> CommandOutput {
+    match command {
+        ContextCommand::Bootstrap(args) => {
+            let service_args = context_cmd::ContextBootstrapArgs {
+                root: args.root,
+                scope: args.scope,
+                session: args.session,
+                cycle: args.cycle,
+                format: args.format,
+                now_ms: now_ms_since_epoch(),
+            };
+            match context_cmd::bootstrap(&service_args, environment) {
+                Ok(result) => match render(&result, service_args.format, context_bootstrap_text) {
+                    Ok(stdout) => CommandOutput {
+                        status: 0,
+                        stdout,
+                        stderr: String::new(),
+                    },
+                    Err(error) => failure(error.to_string()),
+                },
+                Err(error) => failure(error.to_string()),
+            }
+        }
+    }
+}
+
+fn context_bootstrap_text(result: &context_cmd::ContextBootstrapResult) -> String {
+    use context_cmd::BootstrapCycleState;
+    let mut out = String::new();
+    out.push_str(&format!("status: {}\n", result.status));
+    out.push_str(&format!("project: {}\n", result.project_id));
+    out.push_str(&format!("workspace: {}\n", result.workspace_id));
+    out.push_str(&format!("adoption: {}\n", result.adoption));
+    match &result.cycle {
+        BootstrapCycleState::Resolved { cycle_id } => out.push_str(&format!("cycle: {cycle_id}\n")),
+        BootstrapCycleState::Explicit { cycle_id } => {
+            out.push_str(&format!("cycle: {cycle_id} (explicit)\n"));
+        }
+        BootstrapCycleState::NoActiveCycle { hint, .. } => {
+            out.push_str(&format!("cycle: none ({hint})\n"));
+        }
+        BootstrapCycleState::Ambiguous { candidates, .. } => {
+            let ids: Vec<&str> = candidates.iter().map(|c| c.cycle_id.as_str()).collect();
+            out.push_str(&format!("cycle: ambiguous [{}]\n", ids.join(", ")));
+        }
+    }
+    out.push_str(&format!("context: {}\n", result.context_source));
+    if let Some(capsule_id) = &result.capsule_id {
+        out.push_str(&format!("capsule: {capsule_id}\n"));
+    }
+    out.push_str(&format!("basis: {}\n", result.basis_revision));
+    out.push_str(&format!(
+        "binding: {} (written: {})\n",
+        result.binding_ref, result.binding_written
+    ));
+    out
+}
+
 fn run_adopt(command: AdoptCommand, environment: &CliEnvironment) -> CommandOutput {
     let (operation, args) = match command {
         AdoptCommand::Plan(args) => (AdoptionOperation::Plan, args),
@@ -1801,6 +1894,7 @@ fn cli_top_level_name(cli: &Cli) -> Option<&'static str> {
         AgentHelp { .. } => return None,
         Project { .. } => "project",
         Adopt { .. } => "adopt",
+        Context { .. } => "context",
         Lint { .. } => "lint",
         Generate { .. } => "generate",
         Cycle { .. } => "cycle",
