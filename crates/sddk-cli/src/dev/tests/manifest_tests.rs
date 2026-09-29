@@ -242,9 +242,7 @@ fn update_installs_versioned_bundle_into_version_dir() {
     write_manifest(&source).unwrap();
     std::fs::write(
         source.join(crate::dev::bundle_manifest::BUNDLE_MANIFEST_FILE),
-        format!(
-            "[bundle]\nid = \"sddk-framework\"\nversion = \"9.9.9\"\nschema_version = 2\nbinary_min_version = \"2.0.0\"\nbinary_max_version = \"99.0.0\"\ncompatibility = \">=1.91\"\n"
-        ),
+        "[bundle]\nid = \"sddk-framework\"\nversion = \"9.9.9\"\nschema_version = 2\nbinary_min_version = \"2.0.0\"\nbinary_max_version = \"99.0.0\"\ncompatibility = \">=1.91\"\n",
     )
     .unwrap();
     // The manifest must cover BUNDLE.toml itself (it is a bundle file).

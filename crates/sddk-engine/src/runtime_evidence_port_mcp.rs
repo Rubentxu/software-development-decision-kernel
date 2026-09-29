@@ -282,12 +282,33 @@ impl RuntimeEvidencePort for ChronosMcpAdapter {
             timeout,
         );
 
-        // 4. get_execution_summary (authoritative typed summary)
-        let summary = self.call_tool(
-            "get_execution_summary",
-            serde_json::json!({"session_id": session_id}),
+        // 4. typed summary. Chronos >= 0.1.4 renamed the tool to
+        // `execution_query` with `kind: "execution_summary"` (same typed
+        // payload shape); older providers exposed `get_execution_summary`.
+        // Try the new name first, fall back to the legacy one. The summary
+        // payload contract (total_events / duration_ns /
+        // event_counts_by_type) is identical in both.
+        let summary = match self.call_tool(
+            "execution_query",
+            serde_json::json!({"session_id": session_id, "kind": "execution_summary"}),
             timeout,
-        )?;
+        ) {
+            Ok(s) => s,
+            // Chronos >= 0.1.4 answers a missing tool as a JSON-RPC error
+            // ("tool not found"); older providers may answer with an
+            // isError content payload instead. Both mean: fall back to the
+            // legacy tool name.
+            Err(RuntimePortError::ProviderError(msg))
+                if msg.contains("tool not found") || msg.contains("not found") =>
+            {
+                self.call_tool(
+                    "get_execution_summary",
+                    serde_json::json!({"session_id": session_id}),
+                    timeout,
+                )?
+            }
+            Err(e) => return Err(e),
+        };
 
         let total_events = summary
             .get("total_events")
