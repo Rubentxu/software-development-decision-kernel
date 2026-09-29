@@ -5614,3 +5614,24 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
 4. **Siguiente**: ADR del boundary jcode-sdk (petición de decisión en el recibo
    C2c), deuda C2B-DRIFT-1 (env var del store), o release v2.2.28 (changelog en
    stash) con autorización del operador.
+
+### Adenda session-34d (15:27Z) — DRIFT-1 fixeada; lecciones del hook de push
+
+1. **C2B-DRIFT-1 cerrada** (`278d1577`): el adapter ahora fija ambos env vars
+   (CHRONOS_DB_PATH + CHRONOS_STORE_PATH). Bump a 2.2.29 (`d83bc120`) por contrato
+   de push. E2E post-fix: verdict Verified, 128 eventos. aiw_s5 3/3, clippy limpio.
+2. **Defecto del propio bump descubierto por el guard**: el segundo bump manual
+   (2.2.28 -> 2.2.29 via sed en Cargo.toml) dejó `manifest.toml` stale en 2.2.28 y
+   `tests/test_release_state_pointer.sh` lo detectó (FAIL). Corregido a 2.2.29.
+   Lección: usar `scripts/release-bump.sh`, nunca sed manual — actualiza Cargo.toml,
+   Cargo.lock, manifest.toml y CHANGELOG de forma consistente.
+3. **Fricción del hook (docs-only allowlist)**: `manifest.toml` y `CHANGELOG.md`
+   viven en la raíz, fuera de `docs/**`; un commit que solo los toca no pasa (B) ni
+   (A) (el hook solo lee Cargo.toml para la versión). Solución aplicada: ambos
+   archivos viajan en el STASH `stash@{0}` y se incorporarán al commit de bump del
+   release real, cuyo rango sí cambia Cargo.toml. El guard del puntero da FAIL
+   mientras `manifest.toml` local (2.2.29) difiera del commiteado (2.2.28): estado
+   temporal CONOCIDO y documentado aquí, se resuelve con el push del release.
+4. **Estado**: HEAD `8c3cec99` == origin/main, árbol limpio, stash@{0} = CHANGELOG
+   (2.2.28 entry) + manifest.toml (2.2.29). Puntero STATE en d83bc120/2.2.29,
+   CURRENT en cfa477cf. agent-session close ejecutado.
