@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.26] - 2026-09-29
+
+### Fixes
+  - fix(ci): la asercion post-tar busca BUNDLE.toml a raiz (el tar del workflow es root-level)
+
 ## [2.2.25] - 2026-09-29
 
 ### Fixes
