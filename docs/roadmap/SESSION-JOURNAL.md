@@ -5698,3 +5698,28 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
    `status: proposed` — la elección es del operador, no mía.
 7. **Estado**: `2.2.30` sin publicar; último release público sigue siendo
    **v2.2.27** (`5ee68265`). Nada se publicó en esta adenda.
+
+### Adenda session-34g (16:02Z) — bump a 2.2.31 y una brecha del guard de puntero
+
+1. **El bump fue forzado, y el motivo importa**: `release-bump.sh` sin flags se
+   niega a derivar con el mensaje "the workspace already declares the pending
+   release (2.2.30)". Eso es **por diseño** (AGENTS.md §2.3): workspace por
+   encima del último tag significa que esa versión *es* el release pendiente.
+   Como esta adenda añade tooling commiteado, correspondía consumir ese
+   pendiente: `--force-version 2.2.31`, nunca `sed`. Aplicado: Cargo.toml,
+   Cargo.lock, manifest.toml y CHANGELOG (sección `## [2.2.31]` con la cadena
+   completa) alineados en `6f909de2`.
+2. **HALLAZGO — brecha real del guard `test_release_state_pointer.sh`.** Con el
+   puntero en `2e404e28` y HEAD en `6f909de2` (2.2.31), el guard dale **PASS**:
+   comprueba que el SHA sea un ancestro alcanzable de HEAD, no que la versión
+   narrada en el puntero case con la real. Un puntero que dice "2.2.30" mientras
+   el workspace está en "2.2.31" es exactamente la deriva que el guard dice
+   vigilar, y no la caza. **No se cambió el guard** (sería otro cambio de
+   contrato con su propio análisis); se corrigió el puntero y se registra la
+   brecha. Candidato a work item propio: el guard debería comparar
+   `workspace_version_at_current` con la versión de `Cargo.toml` en el SHA que
+   el puntero afirma.
+3. **Estado**: `main` = `461fed92` == `origin/main`, árbol limpio, cero stashes.
+   Workspace **2.2.31** sin publicar; último release público **v2.2.27**
+   (`5ee68265`). Guards `test_release_state_pointer.sh` **PASS** y
+   `test_release_tag_anchoring.sh` **PASS**. Nada publicado.
