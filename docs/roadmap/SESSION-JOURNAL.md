@@ -5723,3 +5723,36 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
    Workspace **2.2.31** sin publicar; último release público **v2.2.27**
    (`5ee68265`). Guards `test_release_state_pointer.sh` **PASS** y
    `test_release_tag_anchoring.sh` **PASS**. Nada publicado.
+
+### Adenda session-34h (16:05Z) — correccion del diagnostico de la adenda anterior
+
+1. **La adenda 34g se equivocó en la mitad de su hallazgo.** Reporté una
+   "brecha del guard" diciendo que `test_release_state_pointer.sh` no comparaba
+   la versión narrada con la real. **Falso**: el check 4 ya compara
+   `workspace_version_at_current` contra `Cargo.toml`, y en `b3034111` ambos
+   decían 2.2.30, luego el PASS era correcto y no había drift de versión.
+   Añadir otra comparación de versión habría sido redundante. Lo comprobé
+   contra el commit antes de tocar nada, y por eso el arreglo salió distinto.
+2. **El hueco real era de otro tipo, y es el mismo patrón que los tres gates
+   anteriores**: el campo `current_sha` llevaba un comentario en **prosa libre**
+   que afirmaba "workspace 2.2.30" *después* de que el workspace pasara a
+   2.2.31. Ese texto no lo contrasta nadie, por construcción. Dos fuentes de
+   verdad para el mismo hecho y solo una verificable.
+3. **El contrato añadido no es "el comentario es correcto" sino "el comentario
+   no afirma versiones"**. La diferencia importa: parsear la prosa para
+   extraer una versión y compararla reintroduce exactamente el problema que se
+   intenta cerrar, con la fragilidad de un parser de texto libre encima.
+4. **Mutation-tested**: metí `workspace 9.9.9` en el comentario → el guard
+   falló; restaurado → PASS. El puntero **mío** estaba en estado inválido
+   (afirmaba 2.2.27, 2.2.30 y 2.2.31 simultáneamente en una línea) y ahora
+   afirma el hecho por referencia a los campos estructurados.
+5. **Lección de método**: reporté el síntoma ("el guard dio PASS con una
+   versión que no era la real") como si fuera el defecto ("falta una
+   comparación"). Leer el guard entero antes de proponer tocarlo convirtió un
+   arreglo redundante en uno que cierra un hueco de otro tipo. El guard ya
+   tenía cuatro versiones de versión comparándose entre sí; el problema nunca
+   fue la cantidad de comparaciones, fue que había una quinta afirmación en
+   texto que nadie leía.
+6. **Estado**: `4cf78bfd`, `shellcheck` limpio en el fichero modificado, árbol
+   limpio. Workspace **2.2.31** sin publicar; último release público
+   **v2.2.27** (`5ee68265`).
