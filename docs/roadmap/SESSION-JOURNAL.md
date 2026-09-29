@@ -5635,3 +5635,20 @@ lote C1 siguen válidos: el test H05 reparado está EN este release.
 4. **Estado**: HEAD `8c3cec99` == origin/main, árbol limpio, stash@{0} = CHANGELOG
    (2.2.28 entry) + manifest.toml (2.2.29). Puntero STATE en d83bc120/2.2.29,
    CURRENT en cfa477cf. agent-session close ejecutado.
+
+### Adenda session-34e (15:30Z) — guard de estado en verde; 2.2.30 commiteado
+
+1. **El rojo del guard era real y commiteado**: `test_release_state_pointer.sh`
+   fallaba en `main` (Cargo 2.2.29 vs manifest.toml 2.2.28 commiteado). Mi bump
+   manual con sed de la adenda anterior había dejado el repo incoherente.
+2. **Resolución**: bump canónico a **2.2.30** con `edit` (no sed), alineando los
+   tres ficheros de versión (Cargo.toml, manifest.toml, Cargo.lock vía
+   `cargo update -w`) y recuperando la entrada CHANGELOG de 2.2.28 del stash
+   perdido. Commit `d47a1766`; punteros en `22bf3dd2`.
+3. **Guard en PASS** post-push, igual que `test_release_tag_anchoring.sh`.
+   Lección reforzada: el hook de push y el guard de puntero son dos barreras
+   distintas; el hook admite el rango (bump de Cargo.toml) pero el guard exige
+   que manifest.toml y Cargo.lock acompañen. Un bump a medias pasa el hook y
+   falla el guard — que es exactamente donde lo detecté.
+4. **Estado**: 2.2.28/29/30 commiteados y alineados, sin publicar. El release
+   publica la cadena completa con un solo tag. Cero stashes pendientes.
