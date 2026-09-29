@@ -57,6 +57,28 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **Salida:** UAT T19–T27 y recibos con incidentes restantes clasificados; pruebas de contención/recuperación observadas, sin promesas de seguridad universal.
 
+### C3i — Coherencia de bootstrap/adoption/cycle recovery (P0/P1, follow-up de C3, fuente: paquete hypermedia)
+
+**Fuente:** paquete `docs/sddk-hypermedia-workflow-platform-evolution-2026-09-29/` (delta propuesto, adoptado como follow-up descubierto; no reabre receipts históricos de C3a-h). **Dependencia:** tras C3. **Superficie:** `skills/sddk-cycle-resume/SKILL.md`, `prompts/sddk/mcw.md`, `skills/_shared/cli-usage-contract.md`, `tests/test_workflow_contract.py`, application service de adoption en `sddk-cli`.
+
+**Problema falsable (verificado en código 2026-09-29):** `crates/sddk-cli/src/cycle.rs` (`resolve_cycle_context_with_cwd`) infiere el ciclo activo con degradación tipada (0 → `NoActiveCycle`, >1 → `AmbiguousCycle` con candidates), mientras `skills/sddk-cycle-resume/SKILL.md` y `prompts/sddk/mcw.md` aún enseñan que "no hay descubrimiento global" y bloquean con `runtime-active-cycle-discovery-unavailable`. Las sesiones nuevas no rehidratan un ciclo que el runtime sí sabe resolver. Pines vigentes en `tests/test_workflow_contract.py` (línea 1086) congelan la afirmación obsoleta.
+
+**Objetivos:** (1) alinear la superficie de orquestación con la realidad del resolver (descubrimiento 0/1/N tipado); (2) bootstrap/adoption repetido en proyecto convergido = no-op semántico, sin ritual de re-adopción por sesión; (3) 0/1/N ciclos producen estados tipados y recoveries correctas; (4) el agente no vuelve a pedir adopción en cada sesión; (5) una única identidad project/workspace/cycle coherente del bootstrap.
+
+**Exit gate:** 20 reinicios del mismo proyecto convergido no vuelven a pedir adopción; ciclo único inferido sin ID explícito; múltiples ciclos → ambigüedad tipada, nunca adivinar; sin remote → misma identidad persistida; callers legacy siguen funcionando.
+
+**UAT:** CTX-UAT-001..005, MIG-UAT-001 (en [UAT-MATRIX.md](UAT-MATRIX.md)). **No-objetivos:** no cambiar la semántica del resolver de `cycle.rs`; no tocar C4; no abrir C6.
+
+### C3j — Contexto durable, session binding y handoff hipermedia mínimo (P1, depende de C3i)
+
+**Fuente:** mismo paquete. **Dependencia:** C3i. **Superficie:** CapsuleStore y SessionBindingStore persistentes detrás de los seams existentes (`context_bridge.rs`, `agentic_session_binding.rs`), application service `context bootstrap`, progressive refs + `context expand`, ContextDelta durable/monotónico entre procesos, primera representación hipermedia de Project/Run/Step.
+
+**Objetivos:** (1) CapsuleStore persistente; (2) SessionBindingStore persistente; (3) `context bootstrap` service; (4) progressive refs + expand mínimo; (5) ContextDelta durable entre reinicios de proceso; (6) primera representación hipermedia de estado, sin cutover de control-flow.
+
+**Exit gate:** dos procesos secuenciales reconstruyen el mismo basis/capsule desde storage; el segundo recibe solo delta si hay cambio; session ≠ run preservado; el transcript no se importa.
+
+**UAT:** CTX-UAT-006..015, HYP-UAT-001..004. **No-objetivos:** no WorkflowDefinition custom, no migración completa de prompts, no augmentors de terceros.
+
 ### C4 — Release y certificación de producto (P0 para cada declaración)
 
 Evaluar [CERTIFICATIONS.md](CERTIFICATIONS.md), ejecutar perfil completo local sin `--skip-tests`, construir y verificar binario/bundle/manifest/SBOM/hashes, clean-machine UAT, migración/replay, publicar mediante `bash scripts/release.sh` **solo con autorización del operador**, verificar assets públicos y registrar SHA/tag/env/resultado. Un fallo de gate bloquea **esa certificación**; Base puede permanecer certificada aunque Enhanced no lo esté si no se ha roto Base. Certificación historical != current HEAD.
@@ -68,6 +90,14 @@ Evaluar [CERTIFICATIONS.md](CERTIFICATIONS.md), ejecutar perfil completo local s
 **X08:** Jev benchmark solo con corpus etiquetado, baseline y métrica definidos. **J7:** MCP pull solo si un consumidor demuestra necesidad que push/SDK no resuelve. **J8:** operaciones host avanzadas tras negociación de capabilities y UAT propios. **J9:** segundo host real antes de declarar `AGENTIC_API_STABLE/1.0`. **R11:** split de crates solo con métricas sostenidas de dependencia, frecuencia de cambios y compilación; conservar puertos/ownership, no hacer un split cosmético. Future async Parallel es **nueva feature**, no reapertura de R12 ya cerrado.
 
 **Salida:** cada idea es `DEFERRED` hasta que el disparador y el SCOPE existan; no convertirlas en backlog ejecutable por inercia.
+
+### C6 — Convergencia de plataforma de workflows (post-C4, siblings con C5, fuente: paquete hypermedia)
+
+**Fuente:** mismo paquete. **Estado:** PROPOSED. **No abre** hasta que C3i/C3j dejen continuidad de sesión no frágil y exista cutover post-C4. Detalle completo en `docs/sddk-hypermedia-workflow-platform-evolution-2026-09-29/05-roadmap/ROADMAP-OVERLAY.md` (C6a contracts → C6b compiler+equivalence shadow → C6c StepAugmentor+CapabilityResolver+ProviderRegistry → C6d ContributionReconciler+vertical software → C6e hypermedia surface+prompt slimming → C6f user workflows). Reutiliza sin duplicar: `WorkflowIR` (`crates/sddk-domain/src/workflow_ir.rs`), `WorkflowRuntime` (`crates/sddk-engine/src/workflow_runtime.rs`), ContextCompiler/Capsule/Delta, `SkillDefinition`/registry, CapabilityGateway, puertos CogniCode/Chronos como **capabilities resueltas, no providers hardcodeados**, evidence/EvidenceRef, semantic graph, typed child outputs, session binding. Reglas duras: una fact log, un grafo, un runtime; `Step != Skill != Capability != Provider`; prompts sin control-flow ni autoridad de persistencia; strangler, no big bang.
+
+### C7 — Generalización por packs y segundo dominio (experimental, tras C6)
+
+**Fuente:** mismo paquete. **Estado:** PROPOSED, no abrir antes de C6. Falsar fuga de conceptos software en el core: boundary del software pack (C7a), pack de autoría/book con providers fakes deterministas primero (C7b, p.ej. `create-book`), certificación experimental de portabilidad al segundo dominio con el mismo runtime/capsule/protocolo/evidence y cero forks de core (C7c). Si no se cumple, no declarar el core genérico; registrar qué abstracción falló.
 
 ## 3. Contrato de cambio para cualquier slice
 

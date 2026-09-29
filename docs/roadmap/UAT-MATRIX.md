@@ -39,5 +39,13 @@
 | T33 | C4 / T5 | Ausencia de binario EXT en perfil enhanced | BLOCKED/NOT_RUN; Base puede permanecer válido. |
 | T34 | C5 / T4 | Segundo host real implementa contratos mínimos | AG4 validado antes de API estable, sin semántica JCode filtrada. |
 | T35 | C5 / T2 | Corpus Jev etiquetado + baseline reproducible | Mejora demostrada o experimento descartado; sin score infundado. |
+| CTX-UAT-001 | C3i / T1 | Proyecto convergido: bootstrap repetido x20 (adopt status tras adopt apply) | Pidiente no repite adopción; estado `complete` estable entre invocaciones. |
+| CTX-UAT-002 | C3i / T1 | Un lease activo: inferir ciclo sin `--cycle` | Inferencia devuelve el ciclo único; sin guess. |
+| CTX-UAT-003 | C3i / T1 | Dos leases activos sin `--cycle` | `AmbiguousCycle` tipado con candidates; nunca adivinar. |
+| CTX-UAT-004 | C3i / T1 | Cero leases activos | `NoActiveCycle` tipado con hint de recuperación. |
+| CTX-UAT-005 | C3i / T1 | Skill resume contra runtime real (0/1/N) | La skill enseña inferencia y recoveries, no bloqueo por "no discovery"; legacy callers intactos. |
+| MIG-UAT-001 | C3i / T1 | Migration: skill vieja vs nueva con el mismo ledger | Misma identidad y ciclo; sin pérdida de contexto. |
+| CTX-UAT-006..015 | C3j | Capsule/SessionBinding persistentes, delta entre procesos, session ≠ run | Reservadas; no abrir antes de cerrar C3i. |
+| HYP-UAT-001..004 | C3j/C6 | Affordances hipermedia de Project/Run/Step | Reservadas; no abrir antes de cerrar C3i. |
 
 **Criterio de cierre:** no marcar un hito VERIFIED por contar tests. Vincular cada fila aplicable a un resultado ejecutado, al SHA exacto y a un recibo verificable. Un fallo requiere incidencia y corrección RED→GREEN; un blocker debe tener owner y revisit trigger. Los gates de [CERTIFICATIONS.md](CERTIFICATIONS.md) deciden las promociones.
