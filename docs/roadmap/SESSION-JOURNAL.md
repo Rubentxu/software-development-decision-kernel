@@ -5911,3 +5911,47 @@ Se eligio `e62da1bc` porque es lo que hace `scripts/reconcile_state_pointer.sh` 
 ### Siguiente paso exacto
 
 Cerrar C3i objetivo 2: service `bootstrap`/`ensure` en sddk-cli que llame a adopt-converge + inference y que init.md/orchestrator.md consuman, con CTX-UAT-001 automatizado a 20 reinicios. O, si el operador prefiere publicar primero: bump + push de la cadena pendiente.
+
+---
+
+## Adenda session-37 — 2026-09-29T19:13Z — Deuda session-36 ejecutada + C3i objetivo 2 (convergencia de adopcion)
+
+**Autorizacion:** modo autonomo (`/autonomo`): roadmap, deuda tecnica severa reciente o auditoria, a criterio con gates pre-aprobados. **PRE-FLIGHT:** MODE=on (declared:project), framework current 2.2.27, HEAD 595b0746, adopcion complete, ledger hash 58745880051db0a5... (constante toda la sesion), Readiness READY.
+
+### Bloque A — Deuda sesion-36 (fossil BUNDLE.toml)
+
+1. **RED primero:** guard nuevo `tests/test_dev_install_source_guard.sh` contra el fosil v1.145.1 (falla: version != workspace). Contrato: si hay BUNDLE.toml commiteado, version y rango binario deben incluir la version del workspace y el ancla manifest_sha256 debe matchear MANIFEST.sha256; el checkout DEBE llevar uno coherente porque `dev install --source` lo exige (fail-closed sin el).
+2. **GREEN:** BUNDLE.toml regenerado con `sddk dev manifest --bundle` (2.2.32 / [2.2.32, 2.2.32], ancla correcta). Mutaciones probadas: version divergente FAIL, archivo ausente FAIL, shellcheck limpio. `ci.yml` lo recoge via loop `tests/test_*.sh`.
+3. **Prueba end-to-end:** `dev install --source .` real sobre prefix aislado /tmp: exit 0 (antes: "binary 2.2.27 is not compatible with bundle 1.145.1"). Commit `edf148cb`.
+4. **Hallazgo nuevo registrado (INC-DEBT-038, `ee463133`):** la instalacion `--source` copia superficies planas al prefix SIN crear `framework/<version>/` ni `current`, pero escribe recibo v2 con bundle_version; el doctor contrasta contra el layout versionado que no existe y reporta `bundle_coherence: missing` (reproducido 2x en prefixes aislados). No se arregla aqui: decision de diseno entre 3 opciones, ciclo propio.
+
+### Bloque B — C3i objetivo 2 (bootstrap repetido = no-op)
+
+1. **Probe falsador (binario publicado, sin fix):** 20x `adopt apply` sobre proyecto aislado /tmp: el recibo MUTA en cada apply (hash 6e270650... -> a8eb419a..., timestamp regenerado). El "no-op semantico" del roadmap no existia: apply era un refresh encubierto.
+2. **Causa raiz:** converge() reescribia el recibo incondicionalmente con overwrite=true cuando existia; el timestamp del plan (now_utc en prepare_adoption_plan) garantizaba bytes distintos en cada invocacion.
+3. **Fix (`a5987c63`):** converge() short-circuit: identidad coincidente + runtime metadata ya representada => NO reescritura. refresh_adoption() deja de delegar en converge y asume su contrato explicito (reescribe cuando timestamp/actor/metadata del plan difieren): es el UNICO verbo de runtime metadata.
+4. **Pins:** test de motor `apply_on_converged_adoption_is_byte_stable_across_repeats` (RED observado con fix revertido via stash; GREEN con fix); test de integracion `apply_replay_keeps_converged_receipt_and_refresh_moves_runtime_metadata` reescrito (apply no-op + refresh mueve metadata); superficie `tests/test_adopt_convergence_contract.py` 6/6 checks (resume lee status NO apply; init mantiene estatuto orchestrator-owned; contrato compartido ensena converge-not-ritual; pin y short-circuit existen; refresh mantiene contrato). Mutacion de superficie probada: status->apply en la skill de resume => FAIL.
+5. **CTX-UAT-001 PASS:** e2e con binario reconstruido (2.2.32 + fix): 20 apply, status complete siempre, recibo byte-estable (86d4341a9c0b...). Recibo `docs/roadmap/receipts/session-37/UAT-EVIDENCE-2026-09-29T1912.yaml`; UAT-MATRIX actualizada.
+
+### Evidencia de verificacion (lote scoped)
+
+- sddk-engine: lib 1333 passed; tests 106 suites, 0 fallos (incl. a4_4m convergence pins y vecinos de converge).
+- sddk-cli: --test adoption_contract 11/11. fmt/clippy -p sddk-engine limpios.
+- Superficies: test_workflow_contract.py 508/508; test_adopt_convergence_contract.py 6/6; guard BUNDLE verde tras regenerar MANIFEST+BUNDLE.toml.
+- Ledger real: hash 58745880051db0a5... constante (verificado en pre-flight, checkpoints y cierre).
+
+### Conocimiento negativo
+
+1. La mutacion del ancla del guard (sed con prefijo sha256:) no aplico por formato; el instalador real SI valida el ancla en runtime (verify_manifest_anchor). Limitacion documentada en el recibo, no ocultada.
+2. Identity estable x20 en probe (project resolve) pero SIN pin especifico todavia: queda como objetivo 5 de C3i, no declarado cerrado.
+3. `git init` + commit vacio en probes dispara el git-wrapper fail-closed del host (repo sin identidad): irrelevante para SDDK (la identidad de adopcion viene del path canonico), documentado como friccion del entorno.
+
+### Estado de WorkItems
+
+- **C3i objetivo 2: IMPLEMENTED + VERIFIED.** Restante: objetivo 5 (pin identidad unica), script reutilizable CTX-UAT-001. Objetivos 3/4 ya verificados en session-36/37.
+- **C3j/C6/C7: no abrir.** INC-DEBT-038: abierto con opciones; INC-DEBT-037 (ledger): sin cambio, pendiente operador.
+- **Pendiente operador:** recuperacion del ledger real y push (once commits sin publicar).
+
+### Siguiente paso exacto
+
+Cerrar C3i objetivo 5: pin de identidad unica (golden test de project_id estable entre reinicios y tras refresh), y convertir el probe de CTX-UAT-001 en script reutilizable bajo tests/. Alternativa si el operador prefiere publicar: bump (MINOR sugerido: feat + fix acumulados) + push de la cadena.

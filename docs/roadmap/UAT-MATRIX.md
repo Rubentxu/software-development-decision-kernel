@@ -39,7 +39,7 @@
 | T33 | C4 / T5 | Ausencia de binario EXT en perfil enhanced | BLOCKED/NOT_RUN; Base puede permanecer válido. |
 | T34 | C5 / T4 | Segundo host real implementa contratos mínimos | AG4 validado antes de API estable, sin semántica JCode filtrada. |
 | T35 | C5 / T2 | Corpus Jev etiquetado + baseline reproducible | Mejora demostrada o experimento descartado; sin score infundado. |
-| CTX-UAT-001 | C3i / T1 | Proyecto convergido: bootstrap repetido x20 (adopt status tras adopt apply) | Pidiente no repite adopción; estado `complete` estable entre invocaciones. |
+| CTX-UAT-001 | C3i / T1 | Proyecto convergido: bootstrap repetido x20 (adopt status tras adopt apply) | Pidiente no repite adopción; estado `complete` estable entre invocaciones. **PASS session-37** (`receipts/session-37/UAT-EVIDENCE-2026-09-29T1912.yaml`): recibo byte-estable ×20 con fix `a5987c63`; falsador observado sin fix (recibo mutaba por apply). |
 | CTX-UAT-002 | C3i / T1 | Un lease activo: inferir ciclo sin `--cycle` | Inferencia devuelve el ciclo único; sin guess. |
 | CTX-UAT-003 | C3i / T1 | Dos leases activos sin `--cycle` | `AmbiguousCycle` tipado con candidates; nunca adivinar. |
 | CTX-UAT-004 | C3i / T1 | Cero leases activos | `NoActiveCycle` tipado con hint de recuperación. |

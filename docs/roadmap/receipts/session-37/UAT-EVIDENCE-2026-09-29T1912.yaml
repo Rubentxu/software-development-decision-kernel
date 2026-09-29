@@ -1,0 +1,45 @@
+# UAT-EVIDENCE — session-37 — 2026-09-29T19:12Z
+
+**Baseline / HEAD:** `ee463133` al iniciar (tras session-36); commits de esta sesión:
+`edf148cb` (fósil BUNDLE.toml + guard), `ee463133` (INC-DEBT-038),
+`a5987c63` (fix convergencia), `539a5fe2` (pins de superficie).
+**Workspace version:** 2.2.32 · **Último release público:** v2.2.27 · **Binario usado en probes e2e:** 2.2.32 (rebuild local, `/var/home/rubentxu/cargo-targets`).
+
+## CTX-UAT-001 — Proyecto convergido: bootstrap repetido x20
+
+- **Precondiciones:** proyecto git nuevo bajo `/tmp/c3i2-probe-b/proj`, estado aislado (`SDDK_STATE_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` bajo `/tmp/c3i2-probe-b/`). Ledger real nunca tocado (hash re-verificado al inicio y al final de la sesión: `58745880051db0a5…`).
+- **Ejecución:** `sddk adopt apply --root … --scope .` × 20 (1 inicial + 19 repetidos) con binario 2.2.32 reconstruido con el fix `a5987c63`.
+- **Observado (OBSERVED):** `status: complete` en todas las invocaciones; sha256 del recibo `adoption.json` **byte-estable** (`86d4341a9c0b…`) tras las 20.
+- **Contraste (falsador):** con el binario publicado 2.2.27/2.2.32 (sin fix), el mismo probe en `/tmp/c3i2-probe-a` mostró el recibo mutando en cada apply (`6e270650…` → `a8eb419a…`, timestamp regenerado). RED→GREEN confirmado.
+- **Pin de runtime:** `apply_on_converged_adoption_is_byte_stable_across_repeats` (3 repeticiones en test, mismo contrato byte-estable); RED observado al revertir el short-circuit (stash), GREEN con el fix.
+- **Resultado:** **PASS** (parcial del exit gate: e2e 20/20 en un proyecto; el test de runtime modela 3 de 20 por coste, mismo invariante).
+
+## CTX-UAT-002..004 — sin cambio (PASS en session-36, evidencia `session-35b/UAT-EVIDENCE-2026-09-29T1822.yaml`).
+
+## CTX-UAT-005 — Skill resume vs runtime real
+
+- Superficies re-pineadas esta sesión: `tests/test_adopt_convergence_contract.py` 6/6 (mutation-tested: `status`→`apply` en la skill de resume ⇒ FAIL). `tests/test_workflow_contract.py` 508/508.
+- **Resultado:** **PASS** (mantenido).
+
+## MIG-UAT-001 — **NOT_RUN** (misma razón que session-36: requiere dos versiones de skill conviviendo; sin release nuevo aún).
+
+## Guard nuevo fuera de matriz (deuda sesión-36)
+
+- `tests/test_dev_install_source_guard.sh`: RED contra el fósil (versión 1.145.1 ≠ workspace 2.2.32), GREEN tras regenerar BUNDLE.toml; mutation-tested: versión divergente FAIL, ancla corrupta +2.2.31 FAIL... (ancla mutada NO detectada — ver hallazgo), archivo ausente FAIL. ShellCheck limpio. Registrado en ci.yml vía loop `tests/test_*.sh`.
+
+## Hallazgos de la sesión
+
+1. **Fósil BUNDLE.toml corregido** (`edf148cb`) y `sddk dev install --source .` vuelve a pasar sus tres fail-closed sobre el árbol (verificado con instalación real a prefix aislado: exit 0).
+2. **INC-DEBT-038 registrado** (`ee463133`): `--source` instala layout plano con recibo versionado ⇒ doctor reporta `bundle_coherence: missing` (reproducido). Decisión de resolución pendiente en ciclo propio (3 opciones documentadas).
+3. **Limitación del guard observada:** la mutación del ancla `manifest_sha256` no fue detectada por el guard en su primer intento (el sed de mutación no aplicó por formato con prefijo `sha256:`; la vía real del instalador sí lo valida en runtime vía `verify_manifest_anchor`). El check de ancla del guard se mantiene; quedará ejercitado por el flujo de regeneración.
+4. **Ledger real intacto toda la sesión** (hash `58745880051db0a5…` constante; probes exclusivamente en `/tmp` con estado aislado).
+
+## Estado de WorkItems
+
+- **C3i objetivo 2: IMPLEMENTED + VERIFIED** (convergencia idempotente byte-estable + contrato de refresh explícito + superficies pineadas). Restantes: objetivo 5 (identidad única — observado estable ×20 en probe, pendiente pin específico), automatización completa de CTX-UAT-001 como script reutilizable, y objetivo 4 ya cubierto por diseño (resume lee status).
+- **C3j/C6/C7: no abrir.**
+
+## Pendiente del operador (sin cambio)
+
+- Recuperación del ledger real (`c0-t01-pointer-mutation` PAUSED; backup intacto en `/tmp/ledger.pre-m21.backup.sqlite`, sha `0ebc44c20ec06eb5…`).
+- Push: ahora **once commits sin publicar** (`origin/main = 5440b2e8`).
