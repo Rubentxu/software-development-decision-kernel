@@ -1198,7 +1198,9 @@ pub(crate) fn process_session_for_ingest(
         .filter(|r| r.status == sddk_domain::UatStatus::NotRun)
         .count() as u32;
     let total = session.results.len().max(1) as u32;
-    let coverage = 100.0 * (passed + blocked) as f64 / total as f64;
+    // Coverage por-sesion se re-agrega abajo sobre los totales acumulados
+    // del release (S3.4); el valor local solo alimentaba el upsert pisado.
+    let _coverage = 100.0 * (passed + blocked) as f64 / total as f64;
     let verdict = if failed > 0 || not_run > 0 {
         "NOT_READY"
     } else if blocked == 0 {
