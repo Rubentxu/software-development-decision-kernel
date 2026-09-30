@@ -42,7 +42,7 @@ pub(crate) enum BacklogCommand {
 }
 
 /// Closed-set discard reasons (REQ-Backlog-Item-Promote-Discard).
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum CliDiscardReason {
     Superseded,
     Wontfix,
@@ -169,6 +169,11 @@ pub(crate) struct BacklogDiscardArgs {
     /// Actor responsible for the discard.
     #[arg(long)]
     pub(crate) actor_ref: String,
+    /// Replacing item id, required when `--reason superseded`. The successor
+    /// must exist; discarding without a traceable successor loses the
+    /// findings that lived only in this item (agent-secretless report D3).
+    #[arg(long)]
+    pub(crate) superseded_by: Option<BacklogItemId>,
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
@@ -183,6 +188,10 @@ pub(crate) struct BacklogRenderArgs {
     /// Output path (default: BACKLOG.md / ROADMAP.md in the workspace root).
     #[arg(long)]
     pub(crate) output: Option<String>,
+    /// Compare the file against the ledger-derived projection without
+    /// writing; non-zero exit on drift, for CI (agent-secretless report D7).
+    #[arg(long, default_value_t = false)]
+    pub(crate) check: bool,
     #[command(flatten)]
     pub(crate) runtime: RuntimeArgs,
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
@@ -539,7 +548,34 @@ fn discard_text(o: &DiscardOutput) -> String {
 fn run_backlog_discard(args: BacklogDiscardArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<DiscardOutput> {
+        // Lineage guard (agent-secretless report D3): superseding without a
+        // successor loses every finding that lived only in the discarded
+        // item. The successor must be named and must exist.
+        if args.reason == CliDiscardReason::Superseded {
+            let successor = args.superseded_by.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--reason superseded requires --superseded-by <item-id>; discarding without a successor loses findings that lived only in this item"
+                )
+            })?;
+            if successor == &args.item_id {
+                anyhow::bail!(
+                    "--superseded-by must reference a DIFFERENT item, not the one being discarded"
+                );
+            }
+        }
         let mut store = open_store(&args.runtime, environment)?;
+        if let Some(successor) = args.superseded_by.as_ref() {
+            let exists = store
+                .item(successor)
+                .map_err(|e| anyhow::anyhow!("backlog successor lookup failed: {e}"))?
+                .is_some();
+            if !exists {
+                anyhow::bail!(
+                    "--superseded-by {}: item not found in this backlog; register or name an existing item",
+                    successor
+                );
+            }
+        }
         require_transitionable(&mut store, &args.item_id)?;
         let reason: String = args.reason.into();
         let discarded_at = now_rfc3339();
@@ -631,6 +667,25 @@ fn run_backlog_render(args: BacklogRenderArgs, environment: &CliEnvironment) -> 
             BacklogRenderKind::Backlog => "BACKLOG.md".to_string(),
             BacklogRenderKind::Roadmap => "ROADMAP.md".to_string(),
         });
+        if args.check {
+            // D7 fix: compare against the ledger-derived projection without
+            // writing; drift (file missing or different) exits non-zero.
+            let on_disk = std::fs::read_to_string(&output_path).ok();
+            let clean = on_disk.as_deref() == Some(markdown.as_str());
+            if !clean {
+                anyhow::bail!(
+                    "backlog render check FAILED: {} diverges from the ledger-derived projection ({}); run `sddk backlog render` to regenerate",
+                    output_path,
+                    sha256
+                );
+            }
+            return Ok(RenderOutput {
+                kind: format!("{:?}", kind).to_lowercase(),
+                output_path,
+                rendered_items: items.len(),
+                sha256,
+            });
+        }
         std::fs::write(&output_path, bytes)
             .map_err(|e| anyhow::anyhow!("backlog render write failed: {e}"))?;
         Ok(RenderOutput {
