@@ -1,15 +1,35 @@
 ---
 id: INC-DEBT-041
-title: ShellCheck gate is blind upstream and carries 28 latent findings
+title: ShellCheck gate is blind upstream and carries latent findings
 severity: medium
 priority: P2
-status: open
+status: resolved
 opened: session-45
+resolved: session-47
+resolution: Ruta 1 (limpieza real a severidad style, sin tocar ci.yml ni bajar tolerancia)
 component: ci
 surface: .github/workflows/ci.yml
 ---
 
-# INC-DEBT-041: el gate de ShellCheck está ciego aguas arriba y arrastra 28 hallazgos latentes
+# INC-DEBT-041: el gate de ShellCheck está ciego aguas arriba y arrastra hallazgos latentes
+
+> **RESUELTA (session-47, 2026-09-30).** Se eligió la ruta 1 del triaje: limpieza
+> real a severidad `style`, sin tocar `ci.yml`, sin bajar tolerancia y sin
+> baseline declarado — el gate quedó en **0 hallazgos** con el comando exacto
+> del step (`shellcheck -S style`, default 0.11.0). Re-medición previa: el
+> alcance real era mayor que el de session-45 (≈49 hallazgos en 15 ficheros,
+> la mayoría `SC2016` intencional: grep de literales `$VAR` contra YAML/sh);
+> las medidas de esta sección se conservan como foto histórica del momento del
+> registro. Tratamiento: 30 directivas `# shellcheck disable=SCnnnn` con
+> justificación por línea (patrón de contrato de literales productivos), 2
+> refactorizaciones mínimas (`SC2129` en apply_banner con grupo `{ … } > tmp`,
+> verificado con smoke de ambas ramas) y `SC2034` documentada (`GATE_END` es
+> anchor espejo, no código muerto). Tests de los 10 ficheros tocados: PASS
+> (release×7, install asset contract, vault×2 + receipt_authority y
+> pipeline_consistency). La ceguera aguas arriba sigue siendo una propiedad
+> estructural de `ci.yml` (no corregible desde este repo: los jobs son
+> secuenciales por diseño), pero deja de ocultar hallazgos reales: si el step
+> llega a correr, está en verde genuino.
 
 ## Criterio verificable (y se sostiene)
 
