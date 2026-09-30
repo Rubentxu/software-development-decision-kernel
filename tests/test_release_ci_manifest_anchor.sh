@@ -35,7 +35,7 @@ echo "extracted pattern: $PATTERN"
 # ── Case 1: the digest must come from hashing the MANIFEST FILE ────────────
 # `sha256sum <file>` is the shape. `awk NR==1` (or any other first-line read)
 # reads a listed file's digest, which is a different value.
-if echo "$PATTERN" | grep -qE 'sha256sum[[:space:]]+"?\$?\{?WORK' ; then
+if echo "$PATTERN" | grep -qE 'sha256sum[[:space:]]+("?\$?\{?WORK|[A-Za-z_./]*MANIFEST\.sha256)' ; then
     pass "digests MANIFEST.sha256 itself via sha256sum"
 else
     fail "does not hash MANIFEST.sha256 (sha256sum on the file is required)"
