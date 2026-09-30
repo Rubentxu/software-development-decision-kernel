@@ -6476,3 +6476,95 @@ check mecánico que session-43 dejó anotado, y ahora tiene justificación
 medida en vez de intuida. **Sigue sin implementarse**: es un artefacto
 nuevo y no belong a una sesión de release bloqueada.
 
+
+---
+
+## session-45 — 2026-09-30T07:17Z — RELEASE v2.2.33 PUBLICADO (cierra INC-DEBT-040)
+
+- **baseline**: `v2.2.27` · **HEAD**: `e737b04a` · **workspace_version**: `2.2.33`
+- **publicado**: `v2.2.33` (objeto `4d2f0cbd` → `e737b04a`), 27 assets,
+  run `36681891807` = `completed success`, 12/12 jobs.
+
+### Qué se hizo
+
+Elegida la salida (1) de las tres que dejó session-43b: **publicar como
+v2.2.33 con bump real**, combinando un bump que satisface el predicado (A)
+de `githooks/pre-push` con el único path que puede firmar keyless
+(`release.yml` por `workflow_dispatch`, que tiene `id-token: write`;
+`release.sh` local no puede, INC-DEBT-024/030).
+
+1. **Auditoría de vigencia de deuda** antes de publicar. Dos entradas
+   listadas sin resolver **no eran deuda real**:
+   - `INC-DEBT-026` **caducada**: el bundle local instalado verifica
+     **377/377** ficheros contra `MANIFEST.sha256`, 0 problemas, y
+     `dev doctor` da `content.manifest: present`. Lo que cambió no fue el
+     repo sino el bundle instalado: los releases de CI posteriores
+     sustituyeron la instalación contaminada de session-29.
+   - `INC-DEBT-030` **caducada por vía distinta**: el criterio (el guard
+     de firma local aborta) sigue cierto, pero `v2.2.17`/`v2.2.20`/`v2.2.27`
+     los publicó `github-actions[bot]` con 6 assets `.sig` cada uno. La
+     deuda real no era «no puedo publicar», era «no sabía que se publica
+     por CI».
+   - Ambas cerradas **conservando la evidencia anterior** y añadiendo la de
+     cierre. Índice reconciliado y verificado con el guard de session-44,
+     **falsificado en el repo real**: reintroducir la divergencia da FAIL,
+     revertir da PASS.
+2. **Bump real** `2.2.32 -> 2.2.33` con `--force-version`. `Cargo.toml`,
+   `Cargo.lock`, `manifest.toml` y `CHANGELOG.md` alineados.
+3. **Gates locales completos** antes de publicar: fmt OK; clippy exit 0 con
+   0 warnings; `cargo test --workspace` **5150 passed / 0 failed / 19
+   ignored**; `cargo metadata --locked` OK; `test_release_public_gate.sh`
+   13/0; `test_debt_index_coherence.sh` 8/0.
+4. **Publicación**: push de 49 commits (`5440b2e8..e737b04a`), tag
+   anotado, `workflow_dispatch` sobre el tag, gate 9b completo, instalación
+   real desde la URL pública, prune.
+
+### Evidencia del gate público (9b) — OBSERVED
+
+`isDraft=false`, `isPrerelease=false`, tag SHA anclado vía `git ls-remote`
+(no `origin/main`), 7/7 assets HTTP 200, CDN sin staleness
+(`42b86e6d…` servido == asset), **`cosign verify-blob` Verified OK x2**
+(binario y bundle, issuer `token.actions.githubusercontent.com`), CHECKSUMS
+del bundle «La suma coincide», bundle con `MANIFEST.sha256` en la raíz y
+379 ficheros. Instalación sin `SDDK_BASE_URL`, sin `SDDK_ALLOW_UNSIGNED` y
+sin `SDDK_SKIP_SIGNING` → exit 0, `all_present: true`, `current` →
+`2.2.33`, prune `removed 1 stale bundle(s)`.
+
+### Hallazgo nuevo, NO gate de este release
+
+`ci.yml:47` ejecuta `shellcheck` **sin flags** con `|| exit 1`, y con
+shellcheck 0.11.0 el default severity es `style`: info, style y warning
+fallan el job. Medido sobre `git archive origin/main` **sin mis commits**:
+**28 hallazgos en 9 ficheros** (25 info, 2 style, 1 warning SC2034
+`GATE_END`, código muerto). `HEAD` vs `origin/main`: **idénticos**, mi bump
+no introduce ni uno; mis 2 ficheros nuevos salen limpios. El último run de
+`ci.yml` sobre `main` ya estaba en `failure` (`ed0e3c47`, 2026-09-28) antes
+de este trabajo, y `release.yml` no depende de `ci.yml`, así que no
+bloqueó el release bajo AGENTS.md §2.5. **Registrado sin maquillar como
+verde.** No se abrió INC: queda para triaje.
+
+### Decisiones
+
+- **Publicar como v2.2.33, no v2.2.32.** La sección de CHANGELOG de 2.2.32
+  no describe este árbol; publicar 2.2.32 habría sido mentir en el changelog.
+  v2.2.32 queda **sin publicar a propósito**.
+- **No se corrigió el predicado (A) del hook.** La vía (3) —comparar contra
+  el último tag publicado— eliminaría esta clase de deadlock en vez de
+  rodearla, pero altera un gate de admisión y requiere su propia decisión
+  con tests que falsifiquen el caso nuevo. Queda **explícitamente abierta**
+  en `INC-DEBT-040`.
+
+### Deuda
+
+- **4 P1/critical abiertos → 1** (`INC-DEBT-039`).
+- Cerradas: `INC-DEBT-040` (resolved), `INC-DEBT-026` y `INC-DEBT-030`
+  (caducadas por observación).
+- Abierta sin clasificar: shellcheck baseline de `ci.yml:47` (28 hallazgos
+  preexistentes en 9 ficheros).
+
+### Siguiente paso ejecutable
+
+Triar el shellcheck baseline de `ci.yml:47`: decidir entre (a) limpiar los
+28 hallazgos, (b) fijar `-S warning` con baseline declarado, o (c) dejar
+constar que la nube no gatea (AGENTS.md §2.5) y sacarlo del checklist de
+`AGENTS.md` §5. Con esa decisión, `INC-DEBT-039` es el siguiente P1.

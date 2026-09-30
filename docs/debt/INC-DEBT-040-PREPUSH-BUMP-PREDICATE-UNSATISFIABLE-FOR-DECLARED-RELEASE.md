@@ -1,6 +1,6 @@
 ---
 id: INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE
-status: open
+status: resolved
 severity: high
 priority: P1
 detected_at: 2026-09-30
@@ -142,3 +142,48 @@ docs-only. La formulación vigente está en
 documentación de `AGENTS.md` §2.1 va por detrás del código y es la
 razón de que session-43b creyera que el bump de `061afe26` desbloquearía
 el push. Corregir esa frase es parte de la remediación de esta INC.
+
+## Resolucion (session-45, 2026-09-30): publicada v2.2.33, deuda resuelta
+
+La causa raiz era que el predicado (A) de `githooks/pre-push` exige un
+cambio de `[workspace.package] version` **dentro del rango
+`origin/main..HEAD`**, y el bump real de session-43b (a 2.2.32) ya era
+ancestro de `origin/main`: el cambio quedaba 44 commits atras y era
+inobservable por construccion.
+
+Resolucion aplicada: **bump real 2.2.32 -> 2.2.33** con
+`release-bump.sh --force-version 2.2.33` (AGENTS.md 2.3: el workspace
+version es el puntero ceremonial del release, no una version de
+desarrollo arbitraria). El cambio de version queda asi **dentro** del
+rango pendiente y ambos gates aceptan.
+
+Evidencia, toda OBSERVED antes de publicar:
+
+- `githooks/pre-push` invocado directamente -> `HOOK_EXIT=0`
+  (antes `HOOK_EXIT=1` en el mismo arbol sin el bump).
+- `release_admission_check_v2 HEAD` -> `ACCEPT last-publish=2.2.27 -> 2.2.33`.
+- `Cargo.toml`, `Cargo.lock`, `manifest.toml` y `CHANGELOG.md` alineados;
+  `cargo metadata --locked` OK tras el bump.
+
+Publicacion: `git push origin main` (49 commits, `5440b2e8..e737b04a`,
+`PUSH_EXIT=0`), `HEAD == origin/main == e737b04a` verificado tras fetch.
+Tag `v2.2.33` anotado, objeto `4d2f0cbd`, `v2.2.33^{} = e737b04a`.
+Release por `release.yml` `workflow_dispatch --ref v2.2.33`: run
+`36681891807` = **completed success**, 12/12 jobs. Instalado y podado
+en local. Recibo: `tests/cycle-artifacts/session-45-release-v2.2.33/release-receipt.md`.
+
+**La etiqueta `v2.2.32` queda sin publicar a proposito**: su seccion de
+`CHANGELOG.md` no describe este arbol, asi que `2.2.33` es la version
+honesta. Publicar 2.2.32 habria sido mentir en el changelog.
+
+**Decision de diseno que sigue abierta** (no resuelta por esta sesion,
+se deja explicita): el predicado (A) del hook compara contra
+`origin/main..HEAD`, mientras que `release_admission_check_v2` compara
+contra el **ultimo tag publicado**. Los dos responden a preguntas
+distintas y ambos tienen razon sobre la suya; por eso no habia waiver
+que negociar. La sesion-43b ofrecio tres salidas y elegio la (1)
+(publicar como v2.2.33 con bump real). La via (3) —corregir el
+predicado para que compare contra el ultimo tag publicado— eliminaria
+esta clase de deadlock en vez de rodearla, pero **altera un gate de
+admision** y requiere su propia decision con tests que falsifiquen el
+caso nuevo. No se ha implementado.
