@@ -170,7 +170,7 @@ Publicacion: `git push origin main` (49 commits, `5440b2e8..e737b04a`,
 Tag `v2.2.33` anotado, objeto `4d2f0cbd`, `v2.2.33^{} = e737b04a`.
 Release por `release.yml` `workflow_dispatch --ref v2.2.33`: run
 `36681891807` = **completed success**, 12/12 jobs. Instalado y podado
-en local. Recibo: `tests/cycle-artifacts/session-45-release-v2.2.33/release-receipt.md`.
+en local. Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session-45-release-v2.2.33/RECEIPT.md`.
 
 **La etiqueta `v2.2.32` queda sin publicar a proposito**: su seccion de
 `CHANGELOG.md` no describe este arbol, asi que `2.2.33` es la version

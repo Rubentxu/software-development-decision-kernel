@@ -65,3 +65,40 @@ Contexto: el último run de `ci.yml` sobre `main` ya estaba en `failure`
 `ci.yml`, por lo que no bloqueó el release (AGENTS.md §2.5: la nube es evidencia
 asíncrona, el gate es local). **Se registra como blocker de calidad preexistente,
 no se maquilla como verde.** No se ha abierto INC: queda para triaje.
+
+
+## Correccion de session-45b: el diagnostico inicial era FALSO
+
+Lo que este recibo afirmaba sobre el shellcheck — «`ci.yml:47` esta rojo»,
+«el ultimo run de `ci.yml` sobre `main` ya estaba en `failure` por
+shellcheck» — **era una inferencia no verificada**, y resulto falsa.
+
+Se comprobo leyendo el log real del job `36450601924` (`ed0e3c47`):
+
+```
+success  Check formatting
+failure  Run workspace tests          <-- aqui murio
+skipped  Run strict Clippy
+skipped  Lint repository contracts
+skipped  Run ShellCheck on shell surfaces   <-- NUNCA se evaluo
+```
+
+El fallo real fueron `cli_incidence_dka_orphan_review_phase_exists` y
+`cli_incidence_dka_managed_closure_vault_route_exists`, los dos tests de
+vault de `INC-DEBT-032`, que ya **no existen** en HEAD (borrados en
+`182e74f5`, posterior a `ed0e3c47`) y tienen un sustituto verde,
+`cli_phase_enum_has_no_orphan_review_variant`. El cierre de
+`INC-DEBT-032` es **valido**.
+
+Por tanto: **shellcheck nunca ha fallado en CI aqui.** Sus 28 hallazgos
+(9 ficheros) son **latentes**, no un fallo observado, y su step esta
+**ciego aguas arriba** porque no lleva `if: always()` y el job muere en
+el test previo. Si los gates upstream pasan, ese step falla.
+
+El numero **9 ficheros / 28 hallazgos** si es correcto: se obtuvo con el
+comando aggregate exacto del step. Un bucle `for` con `|| true` mal
+colocado dio 10/29 durante la investigacion; era el bucle, no el dato.
+
+Registrado como **INC-DEBT-041** (medium/P2, open), con las tres salidas
+de triage. No afecta al release `v2.2.33`: `release.yml` no depende de
+`ci.yml`, y su run fue `success` con 12/12 jobs.

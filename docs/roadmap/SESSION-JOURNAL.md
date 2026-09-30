@@ -6568,3 +6568,46 @@ Triar el shellcheck baseline de `ci.yml:47`: decidir entre (a) limpiar los
 28 hallazgos, (b) fijar `-S warning` con baseline declarado, o (c) dejar
 constar que la nube no gatea (AGENTS.md §2.5) y sacarlo del checklist de
 `AGENTS.md` §5. Con esa decisión, `INC-DEBT-039` es el siguiente P1.
+
+### Correccion de session-45b: el diagnostico del shellcheck era FALSO
+
+Lo registrado mas arriba («`ci.yml:47` esta rojo», «el ultimo run ya
+estaba en failure por shellcheck») era una **inferencia no verificada**.
+Falsada leyendo el log real del job `36450601924` (`ed0e3c47`):
+
+```
+success  Check formatting
+failure  Run workspace tests          <-- aqui murio
+skipped  Run strict Clippy
+skipped  Lint repository contracts
+skipped  Run ShellCheck on shell surfaces   <-- NUNCA se evaluo
+```
+
+El fallo real fueron `cli_incidence_dka_orphan_review_phase_exists` y
+`cli_incidence_dka_managed_closure_vault_route_exists`, los dos tests de
+vault de `INC-DEBT-032`, que ya **no existen** en HEAD (borrados en
+`182e74f5`, posterior a `ed0e3c47`) y tienen sustituto verde
+(`cli_phase_enum_has_no_orphan_review_variant`, verificado `ok`).
+**El cierre de `INC-DEBT-032` es valido** y no se toca.
+
+Conclusion corregida: **shellcheck nunca ha fallado en CI aqui.** Sus 28
+hallazgos en 9 ficheros son **latentes**, y el step esta **ciego aguas
+arriba** (sin `if: always()`, el job muere antes). Si los gates upstream
+pasan, ese step falla. Registrado como **INC-DEBT-041** (medium/P2,
+open) con las tres salidas de triage.
+
+El numero **9 ficheros / 28 hallazgos** si es correcto, obtenido con el
+comando aggregate exacto del step. Durante la investigacion un bucle
+`for` con `|| true` mal colocado dio 10/29: era el bucle, no el dato.
+
+Aprendizaje, y es la quinta vez que un artefacto de medicion afirma algo
+falso (tras `INC-DEBT-033`, `INC-DEBT-037` y los dos bugs del guard de
+autenticidad en session-43): **«el último CI rojo es X» es una hipótesis,
+no un hecho.** Cuesta el mismo tiempo leer el log del job que correr el
+gate en local, y el log dice la verdad. Un finding que no se ha
+observado en su propio gate no puede presentarse como fallo del gate.
+
+### Deuda al cierre de session-45b
+
+- Abierta: **INC-DEBT-039** (P1, unico), **INC-DEBT-041** (P2, nueva).
+- Sin cambio en el release: `v2.2.33` publicado, verificado, instalado.
