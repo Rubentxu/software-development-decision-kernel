@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.2] - 2026-09-30
+
+### Fixes
+  - fix(gateway): ProducerToL0Adapter evalua contra un engine inyectado — las reglas registradas disparan por la ruta publica (C3l.2)
+
+### Other
+  - docs(c3l): C3l.2 cerrada con falsificador y exit-gate en el suite; S7a re-verificable; AT-UAT-004/005 PASS
+  - docs(c3l): reconciliar puntero de estado a f8d1a009 (session-52)
+  - docs(c3l): session-52 cerrada con v2.4.1 publicada y verificada
+
 ## [2.4.1] - 2026-09-30
 
 ### Fixes
