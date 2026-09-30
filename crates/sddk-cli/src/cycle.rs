@@ -445,11 +445,24 @@ impl RuntimeContext {
             let canonical = crate::path_string(&root)?;
             fallback_seed = Some(sddk_domain::stable_fallback_seed(&canonical));
         }
-        let identity = sddk_domain::resolve_project_identity(
-            remote.as_deref(),
-            scope,
-            fallback_seed.as_deref(),
-        )?;
+        let identity = if let Some(pin) = crate::load_project_pin(&root)? {
+            // Pinned identity wins (W2c): the checkout declared its project_id
+            // explicitly, so remote renames or case drift cannot fork the
+            // ledger. Recorded with identity_source=pinned for auditability.
+            sddk_domain::ResolvedProjectIdentity {
+                project_id: sddk_domain::ProjectId::new(pin.project_id.clone())?,
+                remote_url: None,
+                scope: sddk_domain::normalize_scope(scope)?,
+                identity_source: sddk_domain::IdentitySource::Pinned,
+                fallback_seed: None,
+            }
+        } else {
+            sddk_domain::resolve_project_identity(
+                remote.as_deref(),
+                scope,
+                fallback_seed.as_deref(),
+            )?
+        };
         let canonical_workspace_path = crate::path_string(&root)?;
         let workspace_id =
             crate::stable_workspace_id(&identity.project_id, &canonical_workspace_path);

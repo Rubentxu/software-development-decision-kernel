@@ -78,6 +78,9 @@ pub enum IdentitySource {
     Remote,
     /// The identity was derived from a caller-supplied stable UUID and scope.
     Fallback,
+    /// The identity was pinned in the checkout (`.sddk/project-pin.json`);
+    /// remote/seed derivation is bypassed (W2c).
+    Pinned,
 }
 
 /// Fully resolved deterministic project identity.

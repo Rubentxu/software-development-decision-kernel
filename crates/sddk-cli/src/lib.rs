@@ -120,7 +120,7 @@ pub fn now_ms_since_epoch() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(i64::MAX)
 }
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use vault_cmd::VaultCommand;
 use walkdir::WalkDir;
@@ -547,6 +547,10 @@ struct CompletionInstallArgs {
 enum ProjectCommand {
     /// Resolve identity without writing project or SDDK state.
     Resolve(ProjectResolveArgs),
+    /// Pin this checkout to a project_id (`.sddk/project-pin.json`).
+    Pin(ProjectPinArgs),
+    /// Remove the project pin from this checkout.
+    Unpin(ProjectUnpinArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -865,9 +869,11 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
     match cli.command {
         Command::Version(args) => run_version(args, environment),
         Command::AgentHelp { command } => run_help(command),
-        Command::Project {
-            command: ProjectCommand::Resolve(args),
-        } => run_project_resolve(args),
+        Command::Project { command } => match command {
+            ProjectCommand::Resolve(args) => run_project_resolve(args),
+            ProjectCommand::Pin(args) => run_project_pin(args),
+            ProjectCommand::Unpin(args) => run_project_unpin(args),
+        },
         Command::Adopt { command } => run_adopt(command, environment),
         Command::Context { command } => run_context(command, environment),
         Command::Lint { root, format } => match lint_repository(&root) {
@@ -1486,9 +1492,162 @@ pub(crate) fn resolve_project_ids(
     Ok((identity.project_id.to_string(), workspace_id))
 }
 
+#[derive(Debug, Clone, Args)]
+pub(crate) struct ProjectPinArgs {
+    /// Checkout root holding `.sddk/project-pin.json`.
+    #[arg(long)]
+    pub(crate) root: PathBuf,
+    /// The project_id to pin, as reported by `sddk project resolve`.
+    #[arg(long)]
+    pub(crate) project_id: String,
+    /// Why the pin exists (remote renamed, case drift, monorepo split...).
+    #[arg(long)]
+    pub(crate) reason: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct ProjectUnpinArgs {
+    /// Checkout root holding `.sddk/project-pin.json`.
+    #[arg(long)]
+    pub(crate) root: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// Durable project pin: `.sddk/project-pin.json` in the checkout.
+/// When present, `project resolve` and every runtime context honor it over
+/// remote/seed derivation, so a renamed or case-drifted remote cannot fork
+/// the ledger (agent-secretless report D2, work item W2c).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProjectPin {
+    pub(crate) schema_version: u32,
+    pub(crate) project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reason: Option<String>,
+    pub(crate) pinned_at: String,
+}
+
+pub(crate) const PROJECT_PIN_SCHEMA_VERSION: u32 = 1;
+
+pub(crate) fn project_pin_path(root: &Path) -> PathBuf {
+    root.join(".sddk").join("project-pin.json")
+}
+
+/// Reads and validates the pin for a root. Errors name the problem so a
+/// stale pin fails loud instead of being silently ignored.
+pub(crate) fn load_project_pin(root: &Path) -> anyhow::Result<Option<ProjectPin>> {
+    let path = project_pin_path(root);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+    let pin: ProjectPin = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("invalid project pin {}: {e}", path.display()))?;
+    if pin.schema_version != PROJECT_PIN_SCHEMA_VERSION {
+        anyhow::bail!(
+            "project pin {} has schema_version {}, this build accepts {}",
+            path.display(),
+            pin.schema_version,
+            PROJECT_PIN_SCHEMA_VERSION
+        );
+    }
+    if !pin.project_id.starts_with("p-") {
+        anyhow::bail!(
+            "project pin {} holds '{}', which is not a project_id (expected p-*)",
+            path.display(),
+            pin.project_id
+        );
+    }
+    Ok(Some(pin))
+}
+
+fn run_project_pin(args: ProjectPinArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<String> {
+        let root = canonical_root(&args.root)?;
+        if !args.project_id.starts_with("p-") {
+            anyhow::bail!(
+                "--project-id '{}' is not a project_id (expected p-*); run `sddk project resolve` first",
+                args.project_id
+            );
+        }
+        let path = project_pin_path(&root);
+        if let Some(existing) = load_project_pin(&root)?
+            && existing.project_id != args.project_id
+        {
+            anyhow::bail!(
+                "{} already pins {} (refusing to silently repin to {}); run `sddk project unpin` first if the move is intentional",
+                path.display(),
+                existing.project_id,
+                args.project_id
+            );
+        }
+        let pin = ProjectPin {
+            schema_version: PROJECT_PIN_SCHEMA_VERSION,
+            project_id: args.project_id.clone(),
+            reason: args.reason.clone(),
+            pinned_at: crate::git_cmd::default_timestamp(),
+        };
+        std::fs::create_dir_all(root.join(".sddk"))?;
+        std::fs::write(&path, serde_json::to_string_pretty(&pin)? + "\n")?;
+        Ok(format!(
+            "project pinned: {}\npin file: {}\n",
+            args.project_id,
+            path.display()
+        ))
+    })();
+    render_result(result, format, |text| text.to_string())
+}
+
+fn run_project_unpin(args: ProjectUnpinArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<String> {
+        let root = canonical_root(&args.root)?;
+        let path = project_pin_path(&root);
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+            Ok(format!("project pin removed: {}\n", path.display()))
+        } else {
+            Ok(format!("no project pin at {}\n", path.display()))
+        }
+    })();
+    render_result(result, format, |text| text.to_string())
+}
+
 fn run_project_resolve(args: ProjectResolveArgs) -> CommandOutput {
     let result = (|| -> anyhow::Result<ProjectResolution> {
         let root = canonical_root(&args.root)?;
+        // Pinned identity wins (W2c): once an operator pins a project_id,
+        // remote renames or case drift cannot fork the ledger anymore.
+        if let Some(pin) = load_project_pin(&root)? {
+            let identity = resolve_project_identity(None, &args.scope, None).ok();
+            let (remote_url, fallback_seed) =
+                match (&identity, args.remote.as_ref(), args.fallback_seed.as_ref()) {
+                    (Some(i), _, _) if i.remote_url.is_some() || i.fallback_seed.is_some() => {
+                        (i.remote_url.clone(), i.fallback_seed.clone())
+                    }
+                    _ => (args.remote.clone(), args.fallback_seed.clone()),
+                };
+            let canonical_workspace_path = path_string(&root)?;
+            let workspace_id = stable_workspace_id(
+                &sddk_domain::ProjectId::new(pin.project_id.clone())?,
+                &canonical_workspace_path,
+            );
+            return Ok(ProjectResolution {
+                project_id: pin.project_id,
+                workspace_id,
+                canonical_workspace_path,
+                identity_source: IdentitySource::Pinned,
+                remote_url,
+                scope: args.scope,
+                fallback_seed,
+            });
+        }
         let remote = resolve_remote(&root, args.remote)?;
         let fallback_seed = match (remote.as_ref(), args.fallback_seed) {
             // Derive from the canonical path: a random seed makes every
@@ -1877,6 +2036,7 @@ fn identity_source_text(source: IdentitySource) -> &'static str {
     match source {
         IdentitySource::Remote => "remote",
         IdentitySource::Fallback => "fallback",
+        IdentitySource::Pinned => "pinned",
     }
 }
 
