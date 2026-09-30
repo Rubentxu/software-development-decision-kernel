@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.36] - 2026-09-30
+
+### Features
+  - feat(cli): context bootstrap compila la capsule del ciclo activo desde el ledger (ADR-0147)
+  - feat(debt): abrir INC-DEBT-042 por el falso complete de context bootstrap
+
+### Fixes
+  - fix(cli): context bootstrap deja de reportar complete sin compilar capsule
+  - fix(debt): el guard de coherencia se auto-desactivaba con su propia prosa
+  - fix(debt): reabrir INC-DEBT-040, el fix de session-45 fue por ocurrencia
+  - fix(debt): degradar INC-DEBT-039 de high/P1 a medium/P2 tras auditar su criterio
+  - fix(debt): falsificar el diagnostico del shellcheck y abrir INC-DEBT-041
+
+### Other
+  - docs(roadmap): rectificar la migracion a 2.2.35 que no hacia falta
+  - docs(roadmap): doble check de los goals previos con evidencia mas fuerte
+  - docs(roadmap): observar los goals de sesiones anteriores en vez de declararlos no-observados
+  - docs(roadmap): cierre de session-45 con el release v2.2.33 publicado
+
 ## [2.2.35] - 2026-09-30
 
 ### Fixes
