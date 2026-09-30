@@ -6966,3 +6966,26 @@ ciclo activo desde el ledger (ADR-0147)`), bump real 2.2.35 -> 2.2.36 con
 `bash scripts/release-bump.sh --force-version 2.2.36` (arregla el drift de
 manifest.toml), push, `bash scripts/release.sh`, install + doctor, y
 cerrar el slice de C3j objetivo 3.
+
+---
+
+## session-46b — 2026-09-30T12:40Z — Release v2.2.37 publicado + hito C3k en roadmap
+
+**Baseline/HEAD al cierre:** development_head = origin/main = `89a45a9e`; tag **v2.2.37** (objeto `11d8d053`, peel `1927d215` = commit bumpeado). Árbol limpio.
+
+**WorkItem:** cierre de C3j objetivo 3 paso 5 (CTX-003 MUST, ADR-0147) + planificación C3k.
+
+**Decisiones:**
+1. Bump real 2.2.36→2.2.37 (`7f535fb9`) para satisfacer el predicado (A) del hook: el bump a 2.2.36 ya estaba en origin/main y el rango pendiente era docs+test (fuera de allowlist). Mismo patrón INC-DEBT-040 de session-45: v2.2.34/35/36 quedan como punteros ceremoniales sin publicar (precedente v2.2.32).
+2. Publicación por CI (`release.yml` workflow_dispatch `--ref v2.2.37`, run 36714821817 completed success) porque release.sh local se detiene en firma keyless (cosign OIDC solo en GH Actions). Patrón session-45.
+3. Hito **C3k** PROPOSED añadido a ROADMAP.md con W1..W7 a partir del report de defectos de `agent-secretless` (los 11 hallazgos confirmados en código con file:line; doc: `docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md`).
+
+**UAT observado:** gates locales pre-release fmt/clippy/test workspace 5159/0/19; 9b: tag anchoring + 6/6 assets HTTP 200; 9c: cosign Verified OK + CDN sin staleness (sha servido `c2de8bd3...`); install exit 0, sddk 2.2.37, doctor all_present true (319 present, 19 advisory briefness), prune removed 2.2.33.
+
+**UAT NO ejecutado:** CTX-UAT-011..015, HYP-UAT-001..004 (paso 7 hipermedia y objetivo 6 de C3j, trabajo futuro).
+
+**Bloqueos:** ninguno. **Nota:** un primer intento de release en background murió por timeout del runner (600s); reanudado con log durable en disco, sin estado corrupto.
+
+**Riesgos:** W4 (gates sin evaluador) requiere decisión de modelo del operador; D1/D2 siguen vivas en producción hasta C3k W1/W2.
+
+**Primer paso de la sesión siguiente:** abrir C3k con W1 (sign-off) y W2 (identidad) como primer slice RED→GREEN; pedir al operador la decisión de W4.

@@ -1,6 +1,20 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-46, 2026-09-30T11:21Z):** Workspace **`2.2.35`** (bump pendiente a 2.2.36 para este bloque de código), `HEAD = a14540c5 = origin/main`, árbol CON cambios de session-46 sin commitear (C3j objetivo 3 paso 5 completo: compilación de capsule a nivel ciclo).
+**Estado (session-46b, 2026-09-30T12:39Z): RELEASE v2.2.37 PUBLICADO + hito C3k en roadmap.** Workspace `2.2.37`, `HEAD = origin/main = 89a45a9e` (docs C3k, 1 commit tras el tag), árbol limpio.
+
+**Hecho en session-46b:**
+
+1. **Release v2.2.37 publicado por CI** (run 36714821817 success, 27 assets, isDraft=false, isPrerelease=false): tag anotado `11d8d053` peel `1927d215` == commit bumpeado. Bump real 2.2.36→2.2.37 (`7f535fb9`) para satisfacer el predicado (A) del hook (mismo patrón INC-DEBT-040 de session-45: v2.2.34/35/36 quedan sin publicar, punteros ceremoniales).
+2. **Gates 9b/9c OBSERVED** (autorizados por operador): tag anchoring via `git ls-remote`, 6/6 assets HTTP 200 de muestra, `cosign verify-blob` Verified OK (identity `release.yml@refs/tags/v2.2.37`), CDN sin staleness (sha servido `c2de8bd3...` == binario descargado).
+3. **Instalación local OBSERVED:** `install.sh --version v2.2.37 --editor all` exit 0; `sddk --version` = 2.2.37; `framework/current → 2.2.37`; doctor 319 present + `all_present: true` (19 advisory `surface.briefness.*`); prune removed 2.2.33 kept 2.2.37.
+4. **Hito C3k PROPOSED en ROADMAP.md** + `docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md`: los 11 hallazgos del report de `agent-secretless` (`docs/receipts/sddk-2.2.33-defects.md`) confirmados contra el código fuente con file:line. Plan W1..W7 (sign-off integrity, identidad, discard linaje, gates evaluadores, UAT status/plan, render check, ingest multi-sesión). **W4 requiere decisión del operador** (evaluador material `sddk.cli` vs prompt corregido).
+5. Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session-46-release-v2.2.37/RECEIPT.md`.
+
+**SIGUIENTE PASO (preciso):** abrir C3k con W1 (D1 sign-off) y W2 (D2 identidad, high/P1) como primer slice; W4 bloqueado por decisión de modelo del operador. C3j sigue con paso 7 hipermedia y objetivo 6 (CTX-UAT-011..015, HYP-UAT-001..004 NOT_RUN).
+
+---
+
+Previous: **Estado (session-46, 2026-09-30T11:21Z):** Workspace **`2.2.35`** (bump pendiente a 2.2.36 para este bloque de código), `HEAD = a14540c5 = origin/main`, árbol CON cambios de session-46 sin commitear (C3j objetivo 3 paso 5 completo: compilación de capsule a nivel ciclo).
 
 **Hecho en session-46 (delegación total del operador: "continua con el roadmap hasta el final sin parar"):**
 
