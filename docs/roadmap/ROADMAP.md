@@ -79,6 +79,18 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **UAT:** CTX-UAT-006..015, HYP-UAT-001..004. **No-objetivos:** no WorkflowDefinition custom, no migración completa de prompts, no augmentors de terceros.
 
+### C3k — Integridad de evidencia UAT/identidad/gates CLI (P1, fuente: defectos 2.2.33 reportados desde agent-secretless)
+
+**Fuente:** report externo `agent-secretless/docs/receipts/sddk-2.2.33-defects.md` + confirmación en código de este repo (`docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md`, 11 hallazgos confirmados con file:line). **Estado:** PROPOSED. **Dependencia:** tras C3 (mismo dominio de integridad); W1..W3/W5..W7 paralelizables entre sí; W4 requiere decisión de modelo (evaluador material vs prompt corregido).
+
+**Problema falsable (verificado en código 2026-09-30):** (D1) `run_uat_signoff` (uat.rs:1687) firma aceptaciones sin parsear el plan, con snapshot de evidencia literal `"sha256:{}"` y `--actor` libre: un agente puede fabricar una aceptación humana indistinguible sobre cero escenarios. (D2) la identidad del proyecto se deriva de la URL del remote sin normalizar el case del path (`identity.rs:310`) y `ensure_project_row` (admission.rs:593) materializa ledgers nuevos en silencio: un cambio de case del remote escribe con éxito en el ledger equivocado. (S3.1/S3.2) `register_evaluator` (engine lib.rs:1165) no tiene call sites en el CLI mientras `prompts/sddk/phases/release.md:109` instruye evaluar `release-receipt`/`no-pending-effects` con `--evaluator sddk.cli`: seguir el prompt cuesta `ENGINE_UNREGISTERED_EVALUATOR` garantizado. (D3/D7) backlog sin guard de linaje en discard ni check de drift en render. (D4/D5/D6/S3.3/S3.4) proyecciones UAT sin anclaje de root, sin validación de `--from`, esqueleto sin declarar, sin schema de session/report, y `upsert_uat_result` (control_plane.rs:255) pisa multi-sesión con `session_count` mal contado.
+
+**Objetivos (W1..W7 en el doc de research):** (1) sign-off exige plan con escenarios, evidencia real y marca `--agent-authored` para actores agente; (2) identidad: normalizar case del path, `sddk project pin`, warning fail-loud ante ledger vacío nuevo; (3) discard con `--superseded-by` verificado; (4) gates del workflow de release con evaluador registrado (o prompts corregidos, según decisión); (5) status/plan UAT anclados a root y validados; (6) `render --check` para CI; (7) ingest multi-sesión acumulativa con schemas de session/report.
+
+**Exit gate:** los comandos de la sección 6 del report de agent-secretless reproducidos contra el framework no materializan aceptaciones falsas, ledgers divergentes ni errores de evaluador inexistente; tests RED→GREEN negativos por WI; regressiones con las URLs exactas del report.
+
+**UAT:** UAT-SIGN-001..004, UAT-IDEN-001..004, UAT-BLG-001..003, UAT-GATE-001..002, UAT-UAT-001..004 (alta en UAT-MATRIX.md al pasar a READY). **No-objetivos:** no re-diseñar el modelo de identidad ni el motor de gates; poblar y cerrar mecanismos existentes.
+
 ### C4 — Release y certificación de producto (P0 para cada declaración)
 
 Evaluar [CERTIFICATIONS.md](CERTIFICATIONS.md), ejecutar perfil completo local sin `--skip-tests`, construir y verificar binario/bundle/manifest/SBOM/hashes, clean-machine UAT, migración/replay, publicar mediante `bash scripts/release.sh` **solo con autorización del operador**, verificar assets públicos y registrar SHA/tag/env/resultado. Un fallo de gate bloquea **esa certificación**; Base puede permanecer certificada aunque Enhanced no lo esté si no se ha roto Base. Certificación historical != current HEAD.
