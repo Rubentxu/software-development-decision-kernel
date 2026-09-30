@@ -45,3 +45,13 @@ Los 5 falsificadores declarados por el paquete, todos en `debverify_kernel/tests
 
 - `22459708` fix(engine): DebVerify reconcile respeta ChallengeError
 - _(docs + bump: se consignan al cerrar)_
+
+## ADDENDUM — release v2.4.1 PUBLICADA (misma sesión)
+
+- **SemVer derivado:** fix → PATCH → **2.4.1** (release-bump.sh). Perfil completo antes del commit de docs: **5194/0/19** (+6 exactos = los falsificadores).
+- **Flujo local 0–8b OK** (ACCEPT 2.4.0→2.4.1, binario musl static-pie verificado BuildID 90bdfbe8, manifest 377 ficheros, bundle+unified+sbom, vault mirror 51 skipped/0 created). Parada en 8c **por diseño** (INC-DEBT-024). Nota de incidente menor: la primera corrida del flujo perdió su log en /tmp (exit 1 ambiguo); la re-ejecución en foreground con tee mostró que el estado era el 8c esperado — segunda vez que un artefacto de medición desaparece bajo esta sesión; el control aplicado fue re-ejecutar observando en vivo.
+- **CI:** run **36778476542 completed success** (13/13 jobs). Tag anotado objeto `2292991a`, peel `c7cef2e7` == origin/main (push → sync → tag → CI).
+- **Release:** isDraft=false, isPrerelease=false, publishedAt 2026-09-30T21:25:13Z, **27 assets**.
+- **9b OBSERVED:** 27/27 HTTP 200; gate PASS=13 FAIL=0; anclaje ls-remote verificado.
+- **9c OBSERVED:** sha CDN `99657fa551e92833…` == declarado; cosign **Verified OK** identity `release.yml@refs/tags/v2.4.1`.
+- **10–12 OBSERVED:** install.sh exit 0; `sddk 2.4.1`; current → 2.4.1; doctor **all_present: true**; prune removed 2.4.0 kept 2.4.1.

@@ -7218,3 +7218,5 @@ es el publicado por CI.
 **SIGUIENTE PASO:** C3l.2 (Producer→Secretary L0 wiring real por `dispatch()` público — AT-UAT-004/005; defecto: `ProducerToL0Adapter::dispatch` crea engine vacío). Después C3l.3.
 
 **Incidentes:** ninguno. Release fix→PATCH 2.4.1 tras perfil completo (addendum).
+
+**Addendum session-52 (publicación):** release **v2.4.1 PUBLICADA** (fix→PATCH). Perfil completo 5194/0/19. Local 0–8b OK; 8c fail-closed por diseño (INC-DEBT-024). CI run **36778476542 success**. Tag objeto `2292991a`, peel `c7cef2e7` == origin/main. Release: 27 assets, publishedAt 2026-09-30T21:25:13Z. **9b:** 27/27 HTTP 200, gate 13/0. **9c:** sha `99657fa5…` íntegro, cosign **Verified OK**. **10–12:** install exit 0, `sddk 2.4.1`, doctor all_present, prune removed 2.4.0. Incidente menor declarado: la primera corrida del flujo perdió su log en /tmp; re-ejecución en vivo confirmó que era el 8c esperado (segunda pérdida de artefacto de medición en estas sesiones).
