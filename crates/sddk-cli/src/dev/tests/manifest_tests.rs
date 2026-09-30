@@ -513,7 +513,15 @@ fn install_migrates_legacy_v1_receipt_to_v2_when_source_has_bundle_toml() {
     let raw = std::fs::read_to_string(prefix.join("sddk-install.json")).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(parsed["schema_version"], 2);
-    assert_eq!(parsed["bundle_version"], env!("CARGO_PKG_VERSION"));
+    // INC-DEBT-038 (session-47): --source produce layout FLAT (sin
+    // framework/<v>/ ni current); el recibo honesto declara layout="flat" y
+    // deja bundle_version a null en vez de enlazar una version que el layout
+    // no produce (eso era el bug: el doctor tachaba la coherencia).
+    assert_eq!(parsed["layout"], "flat");
+    assert!(
+        parsed["bundle_version"].is_null(),
+        "flat install must not bind bundle_version (INC-DEBT-038)"
+    );
     assert!(
         parsed["bundle_sha256"]
             .as_str()
