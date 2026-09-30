@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-49, 2026-09-30T20:00Z): C3i CERRADO SIN UAT ABIERTAS + INC-DEBT-043 RESUELTA.** Workspace `2.3.2`, último release publicado `v2.3.2` (sin release nuevo en esta sesión). Árbol con cambios sin commitear de session-49 + 2 commits documentales de session-48 sin pushear.
+**Estado (session-49, 2026-09-30T21:10Z): C3i CERRADO SIN UAT ABIERTAS + INC-DEBT-043 RESUELTA + RELEASE v2.3.3 PUBLICADO.** Workspace `2.3.3`, tag `v2.3.3` peel `f2e6efe0` == `origin/main`, `sddk 2.3.3` instalado. **SIGUIENTE PASO: abrir C3j** (desbloqueado por primera vez), empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015.
 
 **Hecho en session-49 (WorkItem W1 = cerrar CTX-UAT-005 y MIG-UAT-001, las dos últimas UAT de C3i):**
 
@@ -17,9 +17,9 @@
 
 **Deuda:** 0 nueva abierta. INC-DEBT-043 registrada y resuelta en el mismo bloque. Severa reciente: ninguna otra vigente (los 3 candidatos S14 siguen sin cumplir criterio; 041/042 y 038 cerradas).
 
-**SIGUIENTE PASO (preciso):** (a) `bash scripts/release.sh` con bump real `2.3.2 → 2.3.3` (fix + 2 UAT cerradas son un `fix` con evidencia: PATCH por SemVer derivado del contenido; el bump arrastra también los 2 commits documentales de session-48 que el pre-push bloquea, sin `--no-verify`); (b) tras publicar, **abrir C3j** — queda desbloqueado por primera vez al no tener C3i ninguna UAT abierta, empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015 que siguen NOT_RUN.
+**SIGUIENTE PASO (preciso, actualizado tras publicar):** ~~(a) release 2.3.3~~ **HECHO** — v2.3.3 publicado por CI (run 36760173483, 27 assets, gates 9b/9c OBSERVED, instalado y podado; recibo con addendum). **(b) abrir C3j** — desbloqueado por primera vez al no tener C3i ninguna UAT abierta: empezar por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015 que siguen NOT_RUN, con el patrón de automatización ya establecido.
 
-**Límites declarados:** no se ejecutó perfil completo al redactar el recibo; no hay release nuevo; los 2 commits documentales de session-48 siguen sin pushear; no se probó si `--cycle` **de otro proyecto** pasa el `cycle_exists` (pregunta abierta, no defecto confirmado).
+**Límites declarados (actualizados):** no se ejecutó perfil completo al redactar el recibo (sí antes del commit: `cargo test --workspace` 5182/0/19, fmt, clippy workspace); los 2 commits documentales de session-48 **ya salieron** con el bump real; no se probó si `--cycle` **de otro proyecto** pasa el `cycle_exists` (pregunta abierta, no defecto confirmado); la etiqueta `binary.bundle_coherence` ya no aparece en la salida de `dev doctor` de esta versión (se registra lo observable: `all_present: true`).
 
 ---
 

@@ -7123,3 +7123,24 @@ cerrar el slice de C3j objetivo 3.
 **PRIMER PASO DE LA SESIÓN SIGUIENTE:** `bash scripts/release.sh` con bump real `2.3.2 → 2.3.3` (el contenido es un `fix` con evidencia verificada → PATCH por SemVer; el bump arrastra además los 2 commits documentales de session-48 que el pre-push bloquea, **sin `--no-verify`**). Tras publicar, **abrir C3j** por primera vez sin UAT de dependencia abiertas, empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015.
 
 **Recibo:** `tests/cycle-artifacts/p-63676b11dc0ef88f/session49-c3i-ctx-uat-005-mig-uat-001/RECEIPT.md`.
+
+**Addendum session-49 (publicación):** release **v2.3.3 PUBLICADO**. El flujo
+local (`release.sh --skip-tests`) completó 0–8: preflight ACCEPT 2.3.2→2.3.3 y
+**push admitido por el predicado (A)** — el bump real sacó además los 2
+commits documentales de session-48 que llevaban toda la sesión sin pushear,
+sin `--no-verify`. El 8c abortó por diseño (firma keyless exige identidad de
+Actions; firmar desde estación mintaría certificado de PERSONA que los
+instaladores rechazan — INC-DEBT-024 funcionando). Vía canónica: **CI**.
+Tag anotado objeto `a31f52e8`, peel `f2e6efe0` == origin/main (orden respetado:
+push → verificar sync → taggear). Run **36760173483 success** (13/13 jobs, con
+firma cosign y smoke E2E). Release: isDraft=false, isPrerelease=false,
+publishedAt 2026-09-30T18:47:34Z, **27 assets**. **9b OBSERVED:** 27/27
+HTTP 200; `test_release_public_gate.sh` PASS=13 FAIL=0. **9c OBSERVED:** sha
+CDN `11cee821…` == declarado (sin staleness); cosign **Verified OK** con
+identity `release.yml@refs/tags/v2.3.3`. **10–12 OBSERVED:** install.sh desde
+URL pública exit 0; `sddk 2.3.3`; current → 2.3.3; doctor `content.manifest:
+present`, 320 present, 19 advisory missing, `all_present: true` (la etiqueta
+`binary.bundle_coherence` ya no aparece en esta versión — se registra lo
+observable); prune removed 2.3.2, kept 2.3.3. Nota: el binario release local
+había quedado en 2.3.2 (el bump es posterior a ese build); el 2.3.3 verificado
+es el publicado por CI.

@@ -151,3 +151,42 @@ _(se completan tras la ejecución del perfil completo y el bump)_
 - `docs/debt/INC-DEBT-043-EXPLICIT-CYCLE-BOUND-TO-NONEXISTENT-CYCLE.md`
 - `crates/sddk-cli/src/context_cmd.rs` — `CycleNotFound`, check `cycle_exists`,
   `plant_real_cycle`, 2 tests nuevos, 2 fixtures reparados
+
+## 9. ADDENDUM — release v2.3.3 PUBLICADO (misma sesión)
+
+El flujo local `bash scripts/release.sh --skip-tests` completó los pasos 0–8
+(preflight ACCEPT 2.3.2→2.3.3, push admitido por el predicado (A) del
+pre-push — el bump real hace observable el cambio de versión en el rango, con
+lo que **salieron también los 2 commits documentales de session-48** que
+llevaron toda la sesión sin pushear, **sin `--no-verify`**) y se detuvo en el
+8c por diseño: la firma keyless exige identidad de Actions, y firmar desde
+una estación mintaría un certificado de PERSONA que los instaladores
+rechazan (fail-closed de INC-DEBT-024 funcionando). Publicación por la vía
+canónica de las releases previas: **CI**.
+
+- **Tag:** anotado, objeto `a31f52e8`, peel `f2e6efe0` **== origin/main**
+  (orden respetado: push → verificar sync → taggear).
+- **CI:** `release.yml` workflow_dispatch --ref v2.3.3, run **36760173483
+  completed success** (13/13 jobs, incluidos `Sign release assets (cosign
+  keyless)`, `Publish the fully staged and signed release` y `Smoke test
+  installer (end-to-end)`).
+- **Release:** isDraft=false, isPrerelease=false, publishedAt
+  2026-09-30T18:47:34Z, **27 assets**.
+- **Gate 9b OBSERVED:** tag anclado vía ls-remote; **27/27 assets HTTP 200**;
+  `tests/test_release_public_gate.sh` **PASS=13 FAIL=0**.
+- **Gate 9c OBSERVED:** sha256 servido por CDN `11cee82117ee7727…` **==
+  declarado** (sin staleness); `cosign verify-blob` **Verified OK** con
+  identity `release.yml@refs/tags/v2.3.3` e issuer
+  `token.actions.githubusercontent.com` (invocación canónica del pin, sin
+  `--insecure-ignore-tuf`, que esta versión de cosign no soporta).
+- **Pasos 10–12 OBSERVED:** `install.sh --version v2.3.3 --editor all` desde
+  la URL pública → exit 0; `sddk --version` = **2.3.3**;
+  `framework/current → 2.3.3`; `sddk dev doctor` → `content.manifest:
+  present`, **320 present**, 19 advisory missing, **`all_present: true`**
+  (misma forma que session-46b; la etiqueta `binary.bundle_coherence` ya no
+  aparece en la salida de esta versión — se registra lo observable, no la
+  etiqueta histórica); `dev update --prune-only --keep 1` → removed 2.3.2,
+  kept 2.3.3.
+- **Nota de método:** el binario release local había quedado en 2.3.2 porque
+  el bump se commiteó después de ese build; el binario 2.3.3 verificado es el
+  que publicó CI y que instaló `install.sh`.
