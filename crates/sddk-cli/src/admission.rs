@@ -592,6 +592,17 @@ fn record_single_project(
 /// exists.
 fn ensure_project_row(project_dir: &std::path::Path, project_id: &str) -> anyhow::Result<()> {
     let ledger_path = project_dir.join("ledger.sqlite");
+    if !ledger_path.exists() {
+        // Fail-loud (agent-secretless report D2): creating a fresh ledger
+        // here means identity resolution minted a NEW project_id for this
+        // checkout (case-change, renamed remote, fallback seed drift).
+        // Old ledgers keep their history; silently forking a new one hides
+        // the fork. The caller still proceeds, but stderr says what happened.
+        eprintln!(
+            "WARNING [sddk/admission]: no existing ledger for project {project_id}; creating a fresh one at {}. If this project already had a ledger, identity resolution just forked it (remote URL changed? SDDK_PROJECT_ID unset?). Use 'sddk project resolve' to inspect the minted identity.",
+            ledger_path.display()
+        );
+    }
     let storage = sddk_storage::Storage::open(&ledger_path)?;
     if let Ok(Some(_)) = storage.get_project_optional(project_id) {
         return Ok(());
