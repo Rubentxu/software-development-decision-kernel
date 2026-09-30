@@ -978,7 +978,9 @@ pub enum EngineError {
         receipt_id: String,
     },
     /// The evaluator is not registered for the gate.
-    #[error("evaluator {evaluator} is not registered for gate {gate}")]
+    #[error(
+        "evaluator {evaluator} is not registered for gate {gate} (hint: if the gate is not declared in the workflow's `gates:` section it can never be evaluated; check `workflow.yaml` — e.g. `release-receipt` and `merge-receipt` are ARTIFACTS, not gates)"
+    )]
     UnregisteredEvaluator {
         /// Gate being evaluated.
         gate: String,

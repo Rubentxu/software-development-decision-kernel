@@ -103,12 +103,18 @@ remote postconditions in this order:
 For adopted projects:
 
 1. Inspect `sddk cycle status --root . --scope . --cycle {cycle_id} --format json`.
-2. Build material evidence for `release-receipt` and `no-pending-effects` with
-   candidate SHA, annotated tag peel result, push/tag receipt IDs, exact Git
-   commands, exit codes, and output digests. Derive each `{outcome}`, then run:
-   `sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id} --transition release.complete --gate {release-receipt|no-pending-effects} --outcome {outcome} --evaluator sddk.cli --evidence {evidence_json_arg} --timestamp {now} --actor sddk --format json`
-3. When both gates pass, transition with both artifacts and receipts:
-   `sddk cycle transition --root . --scope . --cycle {cycle_id} --transition release.complete --artifact merge-receipt={merge_receipt_path} --artifact release-receipt={release_receipt_path} --gate-receipt {release_receipt_gate_id} --gate-receipt {effects_gate_id} {lease_flags_if_present} --format json`
+2. Build material evidence for the two REAL gates of `release.complete`
+   (`no-pending-effects` and `release-uat-approved`) plus the artifact
+   evidence for `release-receipt` (an annotated tag that peels to the pushed
+   main SHA) and `merge-receipt`. NOTE: `release-receipt` and
+   `merge-receipt` are ARTIFACTS, not gates; evaluating them with
+   evaluate-gate fails with ENGINE_UNREGISTERED_EVALUATOR because they are
+   not declared in the `gates:` section of the workflow. Derive `{outcome}`,
+   then run (once per real gate):
+   `sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id} --transition release.complete --gate {no-pending-effects|release-uat-approved} --outcome {outcome} --evaluator sddk.cli --evidence {evidence_json_arg} --timestamp {now} --actor sddk --format json`
+3. When both gates pass, transition with both artifacts and the two gate
+   receipts (effects + uat):
+   `sddk cycle transition --root . --scope . --cycle {cycle_id} --transition release.complete --artifact merge-receipt={merge_receipt_path} --artifact release-receipt={release_receipt_path} --gate-receipt {effects_gate_id} --gate-receipt {uat_gate_id} {lease_flags_if_present} --format json`
 4. Include current lease owner/token only when cycle status contains a live
    lease. Require transition `outcome=succeeded`, `status=RELEASED`, and
    `phase=archive`.
@@ -176,17 +182,18 @@ Full procedure (from `cli-usage-contract.md#matrix`):
    tag, and SHA binding. Set `{outcome}` to `passed` only when all Git effects are
    complete and verified.
 3. `sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id}
-   --transition release.complete --gate release-receipt --outcome {outcome}
-   --evaluator sddk.cli --evidence {evidence_json}
-   --timestamp {now} --actor sddk --format json`
-4. `sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id}
    --transition release.complete --gate no-pending-effects --outcome {outcome}
    --evaluator sddk.cli --evidence {evidence_json}
    --timestamp {now} --actor sddk --format json`
+4. `sddk cycle evaluate-gate --root . --scope . --cycle {cycle_id}
+   --transition release.complete --gate release-uat-approved --outcome {outcome}
+   --evaluator sddk.cli --evidence {evidence_json}
+   --timestamp {now} --actor sddk --format json`
+   (`release-receipt` is an ARTIFACT here, not a gate: never evaluate it.)
 5. On both `passed`, `sddk cycle transition --root . --scope . --cycle {cycle_id}
    --transition release.complete --artifact merge-receipt={merge_receipt_path}
-   --artifact release-receipt={release_receipt_path} --gate-receipt {release_receipt_gate_id}
-   --gate-receipt {effects_gate_id} {lease_flags_if_present} --format json`
+   --artifact release-receipt={release_receipt_path} --gate-receipt {effects_gate_id}
+   --gate-receipt {uat_gate_id} {lease_flags_if_present} --format json`
 6. `sddk ledger verify --root . --scope . --format json`
 
 On failure: blocked — runtime remains `OPEN/release`. Failed CLI invocation,
