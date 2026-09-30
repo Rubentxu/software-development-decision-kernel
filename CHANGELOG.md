@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.3.1] - 2026-09-30
+
+### Fixes
+  - fix(cli): INC-DEBT-038 — recibo honesto para dev install --source (layout flat)
+  - fix(debt): INC-DEBT-041 resuelta — gate shellcheck en 0 hallazgos a severidad style
+
+### Other
+  - docs(roadmap): puntero reconciliado a a3751cc0 tras deuda 041/038
+  - docs(debt): INC-DEBT-038 -> resolved (session-47, opciones 2+3)
+  - docs(debt): INC-DEBT-041 -> resolved (session-47, ruta 1 con re-medición)
+  - docs(roadmap): cierre C3k — release v2.3.0 publicado, INC-DEBT-040 resuelta
+
 ## [2.3.0] - 2026-09-30
 
 ### Features
