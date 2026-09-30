@@ -37,8 +37,18 @@ y se actualiza con `sddk dev install`.
 - Una concernencia por commit. Si un cambio toca docs + código, un solo commit con la
   concernencia explicada en el body.
 - Commits a `main` via `git push origin main` (no PRs — proyecto lineal con tags `vX.Y.Z`).
-- **Activación del hook de prevención**: `git config core.hooksPath githooks` (local por checkout;
-  el hook rechaza push a main sin commit `chore(release): bump version`).
+- **Activación del hook de prevención**: `git config core.hooksPath githooks` (local por checkout).
+  El hook es **semántico, no textual**: un push a `main` se acepta si el rango
+  `origin/main..HEAD` contiene (A) un cambio **real** de `[workspace.package] version`
+  en `Cargo.toml`, o (B) es no vacío y **todos** sus paths caen en la allowlist
+  cerrada de documentación (`docs/**`, `.sddk/followups/**`, los tres ficheros
+  documentales de `tests/cycle-artifacts/p-*/*/`, `MANIFEST.sha256` generado).
+  El **subject del commit no es autoridad**: un marker `chore(release): bump version`
+  vacío se **rechaza** (fue el defecto INC-A5-PUSH-RELEASE-MARKER-FRICTION, cerrado).
+  Matriz de casos en `tests/test_push_prevention_hook.sh`. Ver
+  `docs/debt/INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE.md`
+  (high/P1, open) por el predicado (A) cuando el bump declarado ya está en
+  `origin/main`: es insatisfacible y bloquea la publicación hasta decidir la versión.
 
 ### 2.2. Branch model
 
