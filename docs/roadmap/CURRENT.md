@@ -1,5 +1,36 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-44, 2026-09-30T06:44Z):** Workspace **`2.2.32`**, `HEAD (local) = ad6c6e63`, `origin/main = 5440b2e8` — **45 commits sin publicar**, árbol limpio. **El release v2.2.32 sigue SIN publicarse, y ahora hay una razón nueva y más fuerte: el push está bloqueado por un predicado insatisfacible (INC-DEBT-040, high/P1).**
+
+**Lo que ocurrió, en orden.** El primer paso de session-43b (`git push origin main`) **se ejecutó y fue rechazado** por `githooks/pre-push` con `HOOK_EXIT=1`. La causa **no** es un bump pendiente: el bump ceremonial `061afe26` de session-43b **no bumpeó nada** (su padre ya era `2.2.32`). El bump real a `2.2.32` se commiteó en `3d4e457a`, que **ya es ancestro de `origin/main`**, así que en el rango `5440b2e8..ad6c6e63` **ningún commit cambia `[workspace.package] version`** — verificado commit por commit, salida vacía. El hook exige que el cambio ocurra **dentro del rango**; ocurrió 44 commits antes de `origin/main`. Es inobservable por construcción.
+
+**Los dos gates no se contradicen: cada uno tiene razón.** `githooks/pre-push` mide contra el rango `origin/main..HEAD`; `release_admission_check_v2` mide contra el **último tag publicado** (`v2.2.27`) y responde `ACCEPT 2.2.27 -> 2.2.32`. Dos referencias distintas para la misma pregunta. Por eso no había waiver que negociar.
+
+**El auto-desbloqueo tampoco existe:** `scripts/release-bump.sh` **se niega** a derivar bump (*"the workspace declares the pending release (2.2.32), no bump to derive"*) — se desactiva justo cuando hay un release pendiente declarado. Y `release.sh` no puede esquivarlo: su paso 1c hace ese mismo push y muere (línea 293), sin flag que lo salve.
+
+**Falsación (clon aislado, sin red, remoto intacto), hook invocado directamente:** control sin bump `HOOK_EXIT=1`; con bump real `2.2.32 -> 2.2.33` vía `--force-version` `HOOK_EXIT=0` **y** `ACCEPT last-publish=2.2.27 -> 2.2.33`. **Corrección de método, declarada:** una primera medición dio `REJECT` post-bump y se registró como «el hook rechaza incluso un bump real» — **falso**, por medir el exit de `head` y no el del hook. Repetido con captura explícita. Cuarta vez que un artefacto de medición afirma algo falso.
+
+**Consecuencia en cascada, declarada:** el rojo de `test_release_state_pointer.sh` (2 checks) **no es deuda independiente**, es efecto mecánico de este bloqueo. No se reparó ni se maquilló la tolerancia.
+
+**DESVIACIÓN DE CONTRATO CORREGIDA (`ad6c6e63`):** `AGENTS.md` §2.1 describía el hook ceremonial **retirado** («rechaza push a main sin commit `chore(release): bump version»`) — literalmente la razón por la que session-43b creyó que el push estaba desbloqueado. Corregido a la formulación vigente, con `INC-DEBT-040` enlazada.
+
+**DECISIÓN PENDIENTE DEL OPERADOR (bloquea la publicación):**
+1. **Publicar como `v2.2.33`** con bump real (`--force-version`). Falsado que hook y admission aceptan. Coste: `v2.2.32` queda sin publicar para siempre.
+2. **Publicar como `v2.2.32`** con `--no-verify`. Coste: etiqueta sin bump visible en el rango, changelog que no describe el árbol publicado.
+3. **Corregir el predicado del hook** para comparar contra el último tag publicado, como ya hace `release_admission_check_v2`. Elimina la deuda en vez de rodearla, pero altera un gate de admisión: requiere su propia decisión y tests que falsifiquen el caso nuevo. No es emergency work.
+
+**Deuda**: 1 nueva (`INC-DEBT-040`, high/P1) ⇒ **4 P1/critical reales** de 25 entradas (INC-DEBT-040, INC-DEBT-039, INC-DEBT-030, INC-DEBT-026). Sigue 1 P2 medium: INC-DEBT-038.
+
+**Estado no tocado**: `c0-t01-pointer-mutation` sigue `PAUSED`, backup intacto. **El ledger real no fue escrito**: sólo lecturas (`sddk version`, `sddk adopt status`).
+
+**Gates observados**: `release_admission_check_v2` ACCEPT · `sddk dev manifest --verify` `manifest OK` exit 0 · `gh auth status` OK (Rubentxu) · `cosign` `/usr/bin/cosign` y `jq` presentes (9c no abortará) · `githooks/pre-push` directo `HOOK_EXIT=1` · `test_adr_promotion_format.sh` `violations: 0` exit 0.
+
+**Restante de C3j (sin cambio):** objetivo 3 **paso 5** (bloqueado por INC-DEBT-039, requiere decisión de modelo sobre `frontier` con `node_runs_v1` vacía) y **paso 7** (hipermedia), y objetivo 6. CTX-UAT-002/003 y 007..012/015 **NOT_RUN**. **C4/C6/C7: no abrir.**
+
+**Commits de este bloque**: `ad6c6e63` (INC-DEBT-040 + corrección de AGENTS.md §2.1). Recibo: `receipts/session-44/UAT-EVIDENCE-2026-09-30T0644.yaml`.
+
+Previous: **Estado (session-43b, 2026-09-29T22:32Z):** Workspace **`2.2.32`**, `HEAD (local) = 061afe26`, `origin/main = 5440b2e8` — **42 commits sin publicar**, árbol limpio. **Release v2.2.32 AUTORIZADO Y PREPARADO, PERO NO PUBLICADO.**
+
 **Estado (session-43b, 2026-09-29T22:32Z):** Workspace **`2.2.32`**, `HEAD (local) = 061afe26`, `origin/main = 5440b2e8` — **42 commits sin publicar**, árbol limpio. **Release v2.2.32 AUTORIZADO Y PREPARADO, PERO NO PUBLICADO.**
 
 > **Lo que NO ocurrió, declarado de entrada:** no se ejecutó `git push` ni `scripts/release.sh`. **No existe tag `v2.2.32`** y el último release público sigue siendo **`v2.2.27`**. La sesión se cerró en el punto exacto anterior al push. Lo que **sí** está hecho: perfil completo en verde y el commit `chore(release): bump version` (`061afe26`), que es lo que el `pre-push` hook exige para desbloquear el push.

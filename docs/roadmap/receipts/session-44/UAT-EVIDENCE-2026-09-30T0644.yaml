@@ -1,0 +1,155 @@
+---
+session: 44
+date_utc: 2026-09-30
+branch: main
+baseline: f717dca6
+head_after: ad6c6e63
+origin_main: 5440b2e8
+workspace_version: 2.2.32
+pending_release_tag: v2.2.32
+release_published: false
+push_executed: true
+push_result: REJECTED
+acceptance: BLOCKED_RELEASE_PREDICATE_UNSATISFIABLE
+blocking_debt: INC-DEBT-040
+decisions_pending_operator:
+  - publish-as-2.2.33-with-real-bump
+  - publish-as-2.2.32-with-no-verify
+  - fix-hook-predicate-against-last-published-tag
+---
+
+# Receipt session-44 — el push rechazado, su causa raíz, y el bloqueo
+
+> **Lo que NO se hizo, declarado de entrada:** no se publicó ningún
+> release. No existe tag `v2.2.32` ni release en GitHub. El último
+> release público sigue siendo **`v2.2.27`**. `origin/main` sigue en
+> `5440b2e8`: los **45** commits de esta sesión y todas las sesiones
+> anteriores siguen sin publicar.
+
+## Resultado
+
+El primer paso que session-43b dejó escrito **se ejecutó y falló**:
+
+```text
+git push origin main
+ERROR: Push to main rejected — no real release contract found in range.
+HOOK_EXIT=1
+```
+
+## El hallazgo: no era un bump pendiente, era un predicado insatisfacible
+
+El puntero de session-43b anticipaba que el commit `061afe26`
+(`chore(release): bump version`) desbloquearía el push. **No lo hizo, y
+no porque el bump faltara: porque no bumpeó nada.** Su padre ya era
+`2.2.32`.
+
+La causa real es una **contradicción de baselines entre dos gates** que
+preguntan lo mismo con referencias distintas:
+
+| Gate | Baseline | Dice |
+|---|---|---|
+| `githooks/pre-push` (predicado A) | rango `origin/main..HEAD` | `HOOK_EXIT=1` REJECT |
+| `release_admission_check_v2` | último tag publicado (`v2.2.27`) | `ACCEPT ... 2.2.27 -> 2.2.32` |
+
+El bump a `2.2.32` se commiteó en `3d4e457a`, que **ya es ancestro de
+`origin/main`**. En el rango `5440b2e8..ad6c6e63` **ningún commit
+cambia `[workspace.package] version`** — comprobado commit por commit,
+salida vacía. El cambio ocurrió 44 commits antes de `origin/main`: es
+inobservable por construcción, no por descuido.
+
+**Los dos gates no se contradicen: cada uno tiene razón sobre su propia
+pregunta.** Por eso el rojo no se negotiaba: no había waiver que pedir,
+había una referencia que no cuadraba.
+
+El auto-desbloqueo tampoco existe. `scripts/release-bump.sh` se niega a
+derivar un bump:
+
+```text
+workspace (2.2.32) is ahead of last tag (v2.2.27); the workspace declares
+the pending release (2.2.32), no bump to derive
+```
+
+Se desactiva **justo** cuando hay un release pendiente declarado, que es
+el caso para el que existe.
+
+## Falsación (clon aislado, sin red, remoto real intacto)
+
+El hook se invocó **directamente**, no vía `git push`, para que el exit
+code fuera el del hook:
+
+| Escenario | Hook | Admission |
+|---|---|---|
+| Rango real, sin bump (**control**) | `HOOK_EXIT=1` | `ACCEPT 2.2.27 -> 2.2.32` |
+| Bump real `2.2.32 -> 2.2.33` | `HOOK_EXIT=0` | `ACCEPT 2.2.27 -> 2.2.33` |
+| Los 45 commits + este commit documental | `HOOK_EXIT=1` | — |
+
+**Corrección de método, declarada.** Una primera medición dio `REJECT`
+después del bump y se registró como «el hook rechaza incluso un bump
+real». Era **falso**: `cmd | hook && echo ACCEPT || echo REJECT` mide
+el exit code de `head`, no el del hook. Repetido con captura explícita:
+`HOOK_EXIT=0`. Cuarta vez que un artefacto de medición —no el código—
+afirma algo falso (preceden INC-DEBT-033, INC-DEBT-037 y los dos bugs
+del guard de autenticidad en session-43).
+
+## Consecuencia en cascada
+
+El rojo de `tests/test_release_state_pointer.sh` (2 checks: `current_sha`
+no está en `origin/main`, y va 40 commits por detrás) **no es deuda
+independiente**: es consecuencia mecánica de este bloqueo. No se
+"reparó" ni se maquilló la tolerancia.
+
+## Desviación de contrato registrada
+
+`AGENTS.md` §2.1 afirmaba que el hook «rechaza push a main sin commit
+`chore(release): bump version`». **Eso describe el hook ceremonial
+retirado**, no el vigente: el actual rechaza el marker ceremonial
+*vacío* y exige un cambio de versión real o un rango docs-only. Esa
+frase desactualizada es precisamente lo que llevó a session-43b a
+creer que el bump de `061afe26` desbloquearía el push. Corregida en
+`ad6c6e63`.
+
+## Commits de esta sesión
+
+| SHA | Concern |
+|---|---|
+| `ad6c6e63` | `docs(debt)`: registra INC-DEBT-040 y corrige la descripción del hook en AGENTS.md |
+
+## Gates observados
+
+- `release_admission_check_v2 HEAD` ⇒ `ACCEPT last-publish=2.2.27 -> 2.2.32` (OBSERVED)
+- `sddk dev manifest --root . --verify` ⇒ `manifest OK`, exit 0 (OBSERVED)
+- `gh auth status` ⇒ logueado como Rubentxu (OBSERVED)
+- `cosign` ⇒ `/usr/bin/cosign`, `jq` presente (OBSERVED): 9c no abortará
+- `githooks/pre-push` ejecutado directamente ⇒ `HOOK_EXIT=1` (OBSERVED)
+- `test_adr_promotion_format.sh` ⇒ `violations: 0`, exit 0 (OBSERVED)
+
+## UAT
+
+**NOT_RUN**: `cargo test --workspace` (esta sesión no tocó Rust);
+`scripts/release.sh` (bloqueado en el paso 1c por INC-DEBT-040);
+`git push` (ejecutado, **rechazado**); los de C3j siguen `NOT_RUN`.
+
+## Estado no tocado
+
+`c0-t01-pointer-mutation` sigue `PAUSED`, backup intacto. **El ledger
+real no fue escrito en esta sesión**: sólo se leyeron `sddk version` y
+`sddk adopt status`, que son lecturas.
+
+## Deuda
+
+**1 nueva**: `INC-DEBT-040` (high/P1, open), añadida al índice como
+primera P1. Pasan a **4 P1/critical reales** de 25 entradas:
+INC-DEBT-040, INC-DEBT-039, INC-DEBT-030, INC-DEBT-026.
+
+## Decisión pendiente del operador
+
+Bloquea la publicación. Ninguna de las tres opciones está implementada:
+
+1. **Publicar como `v2.2.33`** con bump real (`--force-version`). Falsado
+   que hook y admission aceptan. Coste: `v2.2.32` queda sin publicar.
+2. **Publicar como `v2.2.32`** con `--no-verify`. Coste: etiqueta sin
+   bump visible en el rango.
+3. **Corregir el predicado del hook** para comparar contra el último tag
+   publicado, como ya hace `release_admission_check_v2`. Elimina la
+   deuda en vez de rodearla, pero altera un gate de admisión y requiere
+   su propia decisión con tests que falsifiquen el caso nuevo.

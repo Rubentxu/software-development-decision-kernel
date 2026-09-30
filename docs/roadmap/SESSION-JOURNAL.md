@@ -6355,3 +6355,90 @@ bash scripts/release.sh  # 0-13, con gates 9b y 9c
 Después, `test_release_state_pointer.sh` debe pasar solo al publicar: es
 el rojo declarado desde session-35 y se cierra con push + tag. No
 maquillar la tolerancia.
+
+---
+
+## session-44 — 2026-09-30 — El push rechazado: no era un bump pendiente
+
+**Baseline** `f717dca6` → **HEAD** `ad6c6e63` (`origin/main` `5440b2e8`).
+**Autorización**: el operador pidió retomar las tareas SDDK; el push y el
+release de session-43b seguían autorizados.
+
+> **Estado real al cierre: NO se publicó nada.** `git push origin main`
+> fue **rechazado** (`HOOK_EXIT=1`). No existe tag `v2.2.32` ni release
+> en GitHub. El último release público sigue siendo **`v2.2.27`**, y
+> `origin/main` sigue en `5440b2e8`: **45 commits sin publicar**.
+
+**El hallazgo: el bump de session-43b no bumpeó nada.** `061afe26`
+(`chore(release): bump version`) tenía por padre un commit que ya
+declaraba `2.2.32`, así que su subject cumplía la convención y su
+contenido no bumpeó: ceremonial en sentido literal. El bump real está
+en `3d4e457a`, que **ya es ancestro de `origin/main`**. En el rango
+`5440b2e8..ad6c6e63` **ningún commit cambia
+`[workspace.package] version`** (verificado commit por commit, salida
+vacía), porque el cambio ocurrió 44 commits antes de `origin/main`.
+
+**Contradicción de baselines, no contradicción de gates.** El
+`pre-push` mide contra el rango `origin/main..HEAD`;
+`release_admission_check_v2` mide contra el **último tag publicado**
+(`v2.2.27`) y responde `ACCEPT 2.2.27 -> 2.2.32`. Los dos tienen razón
+sobre su propia pregunta, así que **no había waiver que negociar**:
+había una referencia que no cuadraba. `release-bump.sh` tampoco
+auto-desbloquea — se niega a derivar (*"the workspace declares the
+pending release (2.2.32), no bump to derive"*), desactivándose justo
+cuando hay un release pendiente. Y `release.sh` no puede esquivarlo: su
+paso 1c hace ese mismo push.
+
+**Falsación (clon aislado, sin red, remoto intacto, hook invocado
+directamente)**: control sin bump `HOOK_EXIT=1`; con bump real
+`2.2.32 -> 2.2.33` vía `--force-version` `HOOK_EXIT=0` y
+`ACCEPT last-publish=2.2.27 -> 2.2.33`.
+
+**Corrección de método, declarada.** Una primera medición dio `REJECT`
+después del bump y se registró como «el hook rechaza incluso un bump
+real». Era **falso**: `cmd | hook && echo ACCEPT || echo REJECT` mide
+el exit code de `head`, no el del hook. Repetido con captura explícita.
+**Cuarta vez** que un artefacto de medición afirma algo falso (preceden
+INC-DEBT-033, INC-DEBT-037 y los dos bugs del guard de autenticidad en
+session-43).
+
+**Consecuencia en cascada**: el rojo de
+`test_release_state_pointer.sh` (2 checks) **no es deuda
+independiente**, es efecto mecánico de este bloqueo. No se reparó ni se
+maquinilló la tolerancia.
+
+**Desviación de contrato corregida** (`ad6c6e63`): `AGENTS.md` §2.1
+describía el hook ceremonial **retirado**, que es literalmente la razón
+por la que session-43b creyó que el push estaba desbloqueado.
+
+**Gates observados**: `release_admission_check_v2` ACCEPT ·
+`sddk dev manifest --verify` `manifest OK` exit 0 · `gh auth status` OK
+· `cosign` y `jq` presentes (9c no abortará) · `githooks/pre-push`
+directo `HOOK_EXIT=1` · `test_adr_promotion_format.sh` `violations: 0`.
+
+**UAT**: `cargo test --workspace` **NOT_RUN** (no se tocó Rust);
+`release.sh` **NOT_RUN** (bloqueado en 1c); `git push` **ejecutado y
+rechazado**; los de C3j siguen `NOT_RUN`.
+
+**Deuda**: 1 nueva (`INC-DEBT-040`, high/P1) ⇒ **4 P1/critical** de 25.
+
+**Estado no tocado**: `c0-t01-pointer-mutation` PAUSED, backup intacto.
+**El ledger real no fue escrito**: sólo lecturas.
+
+**Commits**: `ad6c6e63` (INC-DEBT-040 + corrección de `AGENTS.md` §2.1).
+
+**Decisión pendiente del operador** (ninguna implementada):
+(1) publicar como `v2.2.33` con bump real — falsado que hook y
+admission aceptan, pero `v2.2.32` queda sin publicar;
+(2) publicar como `v2.2.32` con `--no-verify` — etiqueta sin bump
+visible en el rango;
+(3) corregir el predicado del hook para comparar contra el último tag
+publicado — elimina la deuda en vez de rodearla, pero altera un gate
+de admisión y requiere su propia decisión con tests que falsifiquen el
+caso nuevo.
+
+**Primer paso de la sesión siguiente**: obtener la decisión de
+versión. Con (1), `bash scripts/release-bump.sh --force-version 2.2.33`
+y después `git push origin main` + `bash scripts/release.sh`. Con (3),
+abrir ciclo propio: alterar un gate de admisión no es trabajo de
+release.
