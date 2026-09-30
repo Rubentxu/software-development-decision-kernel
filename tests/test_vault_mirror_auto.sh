@@ -126,6 +126,7 @@ echo "PASS (c): step 8b's failure mode is warn (not die)"
 
 # Find the bounds of the SKIP_TESTS guard (if any). Step 8b must live
 # outside that guard.
+# shellcheck disable=SC2016  # literales $SKIP_TESTS/$DRY_RUN de release.sh
 SKIP_OPEN_LINE="$(grep -n '^if \[ "\$SKIP_TESTS" = "0" \]' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 if [[ -n "$SKIP_OPEN_LINE" ]]; then
     SKIP_CLOSE_LINE="$(awk -v start="$SKIP_OPEN_LINE" '
@@ -143,6 +144,7 @@ fi
 # short-circuit is at line 370+; step 8b is BEFORE that line, so the
 # dry-run path still runs it. Confirm by checking that step 8b's line
 # number is less than the dry-run check line.
+# shellcheck disable=SC2016  # literal $DRY_RUN de release.sh
 DRY_LINE="$(grep -n '^if \[ "\$DRY_RUN" = "1" \]' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 if [[ -n "$DRY_LINE" && "$LINE_8B" -gt "$DRY_LINE" ]]; then
     echo "FAIL (d): step 8b is AFTER the dry-run short-circuit —"

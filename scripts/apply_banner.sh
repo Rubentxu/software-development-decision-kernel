@@ -19,6 +19,7 @@ if [[ ! -f "$file" ]]; then
   exit 66
 fi
 
+# shellcheck disable=SC2016  # banner literal con backticks/links markdown
 banner='> **Historical / superseded.** This document records previous design context. Current normative architecture and roadmap are linked from [`docs/architecture/README.md`](../architecture/README.md).'
 
 # Idempotency: skip if banner already present.
@@ -33,10 +34,13 @@ if head -1 "$file" | grep -q '^---$'; then
   close=$(awk 'NR>1 && /^---$/ {print NR; exit}' "$file")
   if [[ -n "$close" ]]; then
     tmp=$(mktemp)
-    head -n "$close" "$file" > "$tmp"
-    echo "" >> "$tmp"
-    echo "$banner" >> "$tmp"
-    tail -n +"$((close+1))" "$file" >> "$tmp"
+    # shellcheck disable=SC2129  # secuencia de append legible y en orden
+    {
+      head -n "$close" "$file"
+      echo ""
+      echo "$banner"
+      tail -n +"$((close+1))" "$file"
+    } > "$tmp"
     mv "$tmp" "$file"
     echo "bannered (after frontmatter): $file"
     exit 0

@@ -60,6 +60,7 @@ REPO="${SDDK_REPO:-Rubentxu/software-development-decision-kernel}"
 SDDK_PREFIX="${SDDK_PREFIX:-$HOME/.local/bin}"
 SDDK_FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-$HOME/.local/share/sddk/framework}"
 cd "$ROOT"
+# shellcheck disable=SC1091  # se valida su existencia en tests/test_release_receipt_authority.sh
 source "$ROOT/scripts/release-assets-contract.sh"
 
 # Isolate TMPDIR for the whole release run so the test gate is deterministic

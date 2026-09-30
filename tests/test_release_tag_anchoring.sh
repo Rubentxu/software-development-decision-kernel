@@ -139,6 +139,7 @@ echo "PASS (b): step 1c pushes the branch (no tag, no --force)"
 # and closes with a matching `fi`. We assert that step 1c is AFTER the
 # closing fi of the test gate. Use awk to find the matching fi (the first
 # `fi` at the same indentation as the `if` open).
+# shellcheck disable=SC2016  # literal $SKIP_TESTS de release.sh
 SKIP_OPEN_LINE="$(grep -n '^if \[ "\$SKIP_TESTS" = "0" \]' "$RELEASE_SH" | head -1 | cut -d: -f1)"
 if [[ -z "$SKIP_OPEN_LINE" ]]; then
     echo "FAIL (c): could not locate SKIP_TESTS guard open"

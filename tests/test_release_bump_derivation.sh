@@ -23,6 +23,7 @@ if [[ ! -f "$BUMP" ]]; then
 fi
 
 TMPROOT=$(mktemp -d)
+# shellcheck disable=SC2329  # se referencia via trap EXIT (no captado por shellcheck)
 cleanup() {
     local code=$?
     chmod -R u+rw "$TMPROOT" 2>/dev/null || true

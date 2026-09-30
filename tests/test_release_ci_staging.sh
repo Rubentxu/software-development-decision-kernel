@@ -50,6 +50,7 @@ fi
 # ── Case 2: the staging root must live outside the tracked tree surface ───
 # The bundle tarball is built from `agents skills prompts/sddk assets`, so a
 # staging dir inside one of those would be swept into the bundle too.
+# shellcheck disable=SC2016  # literal $RUNNER_TEMP del YAML
 if echo "$STAGE_LINE" | grep -qE 'dist-out|/tmp|mktemp|\$RUNNER_TEMP'; then
     pass "STAGE lives outside the bundle surface (dist-out / tmp)"
 else
@@ -70,10 +71,12 @@ if [ -z "$GLOBS" ]; then
     pass "no upload or artifact path globs the bare bundle assets/*"
 else
     fail "an upload/artifact path still globs the bare assets/*:"
+    # shellcheck disable=SC2001  # sangrado literal para el diff
     echo "$GLOBS" | sed 's/^/         /'
 fi
 
 # ── Case 4: the upload must reference the staging root at all ─────────────
+# shellcheck disable=SC2016  # literales $TAG del YAML
 if grep -qE 'gh release upload "\$TAG" .*release-assets/\*' "$WF"; then
     pass "gh release upload targets the isolated staging root"
 else

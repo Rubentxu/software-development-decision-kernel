@@ -57,6 +57,7 @@ fi
 # ── Case 2: the producer's consumer extracts with NO strip ───────────────
 # release.yml:193 does `tar xzf "$BUNDLE" -C "$WORK/framework"`. If a strip
 # were added here it would delete MANIFEST.sha256 for a root-layout bundle.
+# shellcheck disable=SC2016  # matchea el literal $BUNDLE en el YAML
 EXTRACT_LINE="$(grep -nE 'tar xzf "\$BUNDLE"' "$WF" | head -1)"
 if [ -z "$EXTRACT_LINE" ]; then
     fail "could not find the bundle extraction in release.yml"
@@ -70,6 +71,7 @@ fi
 # The gate exists and is correct; the v2.2.17 failure was that the manifest
 # was looked for in the wrong place. Pin both: the gate must exist AND name
 # the root-layout path.
+# shellcheck disable=SC2016  # literal $WORK del YAML
 if grep -qE 'test -f "\$WORK/framework/MANIFEST\.sha256"' "$WF"; then
     pass "the CI consumer gates on the manifest at its root-layout path"
 else

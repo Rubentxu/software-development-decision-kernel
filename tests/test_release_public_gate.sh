@@ -52,6 +52,7 @@ fi
 # placed during the REL-1 implementation). We define markers so the
 # extraction is robust to line-number drift.
 GATE_BEGIN='# >>> REL-1 public-release gate begin >>>'
+# shellcheck disable=SC2034  # anchor espejo del bloque; se comprueba GATE_BEGIN
 GATE_END='# <<< REL-1 public-release gate end <<<'
 if ! grep -q "$GATE_BEGIN" "$RELEASE_SCRIPT"; then
     echo "ERROR: gate markers not found in $RELEASE_SCRIPT"
@@ -325,6 +326,7 @@ fi
 
 # ─── Scenario 12: production and test use the same contract source
 section "Scenario 12: shared production/test asset contract"
+# shellcheck disable=SC2016  # literales del script, no expansiones
 if grep -Fq 'source "$ROOT/scripts/release-assets-contract.sh"' "$RELEASE_SCRIPT" \
     && grep -Fq 'validate_release_asset_contract "$RELEASE_JSON" "${TAG#v}"' "$RELEASE_SCRIPT" \
     && grep -Fq 'source "$SCRIPT_DIR/../scripts/release-assets-contract.sh"' "$LIB"; then

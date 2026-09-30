@@ -92,8 +92,10 @@ if [[ ${#INVALID[@]} -gt 0 ]]; then
 fi
 
 # Final invariant: the mirror script must be idempotent (re-running creates 0 new files).
+# shellcheck disable=SC2012  # directorio controlado, recuento simple
 BEFORE=$(ls "$VAULT_ADR_DIR" | wc -l)
 python3 "$REPO_ROOT/scripts/mirror_adrs_to_vault.py" >/dev/null
+# shellcheck disable=SC2012  # directorio controlado, recuento simple
 AFTER=$(ls "$VAULT_ADR_DIR" | wc -l)
 
 if [[ "$BEFORE" != "$AFTER" ]]; then

@@ -60,6 +60,7 @@ fi
 # ── 2. The legacy/split path must request an asset the release publishes ────
 # The bare binary asset. release.sh publishes `basename $BIN` == `sddk`.
 # A bare `sddk-<os>-<arch>-musl` download must therefore not exist.
+# shellcheck disable=SC2016  # grep de literales con $ASSET de install.sh (contrato)
 if grep -qE 'download "\$\(release_url "\$ASSET"\)"' "$INSTALL_SH"; then
     fail "installer downloads bare \$ASSET (sddk-<os>-<arch>-musl); release publishes bare 'sddk'"
 else
@@ -82,6 +83,7 @@ fi
 
 # ── 4. release.sh must actually publish the bare binary asset ──────────────
 # release.sh uploads `sddk` (basename of the built binary) per the public gate.
+# shellcheck disable=SC2016  # grep de literales con $BIN de release.sh (contrato)
 if grep -qE 'gh release upload.*"\$\(basename "\$BIN"\)"|\$BIN"|"sddk"' "$RELEASE_SH"; then
     ok "release.sh publishes the bare binary asset"
 else
@@ -133,6 +135,7 @@ fi
 # spelling of the fix goes stale the moment the variable is introduced.
 if grep -q 'musl' "$RELEASE_SH"; then
     # The name still says musl: acceptable ONLY if the build targets musl.
+# shellcheck disable=SC2016  # regex literal sobre release.sh: el default es un literal
     BUILD_TARGET_DEFAULT="$(sed -n 's/^BUILD_TARGET="${SDDK_RELEASE_BUILD_TARGET:-\([^}]\+\)}".*/\1/p' "$RELEASE_SH" | head -1)"
     if [ -n "$BUILD_TARGET_DEFAULT" ] && grep -q -- "--target \"\$BUILD_TARGET\"" "$RELEASE_SH" \
         && grep -q -- 'die "cargo build failed para target' "$RELEASE_SH"; then
@@ -222,6 +225,7 @@ fi
 # signature and the bundle tarball does not passes an `-eq 0` guard, then
 # fails at install time for the user. The count is compared against the
 # size of the list, so adding an artifact cannot silently weaken the gate.
+# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
 if grep -qF '[ "$SIGNED_COUNT" -ne "${#SIGN_ARTIFACTS[@]}" ]' "$RELEASE_SH"; then
     ok "release.sh requires ALL artifacts signed, not just one"
 else
@@ -256,6 +260,7 @@ fi
 # The CI signs DETACHED (.sig + .pem). A verifier that only reads --bundle
 # falls through to --signature with no certificate, which cannot pin an
 # identity. Both consumers must fetch the .pem.
+# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
 if grep -qF -- '--certificate $cert_file' "$INSTALL_SH"; then
     ok "install.sh passes the leaf --certificate on the detached path"
 else
@@ -404,6 +409,7 @@ fi
 #
 # A control that is not asserted here is a control that quietly stops
 # controlling the first time someone refactors the block.
+# shellcheck disable=SC2016  # literal del default en release.sh (contrato)
 if grep -q 'RELEASE_CERT_ISSUER="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"' "$RELEASE_SH"; then
     ok "release.sh pins the Actions OIDC issuer as the required signing identity"
 else
@@ -438,6 +444,7 @@ fi
 # reasons: the local device flow blocks on a human opening a browser (a hang
 # in an unattended run), and a personal certificate is still wrong. So the
 # host must be checked BEFORE any signing attempt.
+# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
 if grep -qF '[ "${GITHUB_ACTIONS:-}" != "true" ]' "$RELEASE_SH"; then
     ok "release.sh refuses to sign outside a GitHub Actions runner"
 else
@@ -461,6 +468,7 @@ fi
 # SDDK_SKIP_SIGNING must remain a way OUT (publish unsigned knowingly),
 # otherwise the pre-check would make local publishing impossible with no
 # declared escape.
+# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
 if grep -qF '[ "${SDDK_SKIP_SIGNING:-0}" != "1" ]' "$RELEASE_SH"; then
     ok "SDDK_SKIP_SIGNING=1 still bypasses the pre-check (unsigned is a deliberate choice)"
 else
@@ -504,18 +512,21 @@ fi
 # honor it. The v2.2.12 smoke failure (run 36482350538) was exactly this
 # passthrough missing: dev use resolved $SDDK_DATA_DIR/framework (= /tmp
 # + "framework") and the install rolled back.
+# shellcheck disable=SC2016  # literal del default en install.sh (contrato)
 if grep -q 'FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-' "$INSTALL_SH"; then
     ok "install.sh keeps SDDK_FRAMEWORK_DIR as the documented override"
 else
     fail "install.sh no longer honors the SDDK_FRAMEWORK_DIR override"
 fi
 
+# shellcheck disable=SC2016  # literales $FRAMEWORK_DIR de install.sh (contrato)
 if grep -qE '^SDDK_FRAMEWORK_DIR="\$FRAMEWORK_DIR" .*dev use ' "$INSTALL_SH"; then
     ok "dev use receives the installer's framework dir through SDDK_FRAMEWORK_DIR"
 else
     fail "dev use is not passed the installer framework dir (INC-A5-FWDIR regression)"
 fi
 
+# shellcheck disable=SC2016  # literales $FRAMEWORK_DIR de install.sh (contrato)
 if grep -qE '^SDDK_FRAMEWORK_DIR="\$FRAMEWORK_DIR" .*dev doctor ' "$INSTALL_SH"; then
     ok "dev doctor receives the installer's framework dir through SDDK_FRAMEWORK_DIR"
 else
