@@ -1,7 +1,7 @@
 # RECEIPT — session-48: C3i VERIFIED (CTX-UAT-002/003) + UAT caducado reparado
 
 **Fecha (UTC):** 2026-09-30 · **Baseline al inicio:** `66110595` (v2.3.1 publicado, cierre session-47)
-**Workspace al cierre:** `2.3.2` (bump commiteado, release v2.3.2 pendiente de publicación por CI)
+**Workspace al cierre:** `2.3.2` — **PUBLICADO** (run de CI 36751152773 success, 27 assets, no draft/prerelease, publishedAt 2026-09-30T17:32:49Z)
 
 ## Alcance y priorización (pre-flight)
 
@@ -46,6 +46,19 @@ trabajo en algo más valioso que cerrar un NOT_RUN: destapó evidencia caducada.
 | `f6723cf5` | docs | Matriz UAT 002/003 → PASS con evidencia; C3i → VERIFIED (historia conservada) |
 | `617e9981` | chore(release) | bump 2.3.1 → 2.3.2 (SEMVER derivado: 1 fix → PATCH) |
 | `fd44a146` | chore(release) | BUNDLE.toml 2.3.2 (el guard `test_dev_install_source_guard` predijo el fósil exacto) |
+
+## Release v2.3.2 (OBSERVED)
+
+- **Orden respetado** (lección de session-47): push de commits → verificar `HEAD == origin/main`
+  → **solo entonces** taggear. Tag anotado `309238c9`, peel `4952e88c` == `origin/main`.
+- Run de CI **36751152773 completed success**. Release: `isDraft=false`, `isPrerelease=false`,
+  `publishedAt 2026-09-30T17:32:49Z`, **27 assets**.
+- **Gate 9b:** 27/27 assets HTTP 200, 0 fallos, sin esperas de CDN.
+- **Gate 9c:** sha servido `364adbe0ff2d5ac2…` == sha256 del binario descargado;
+  `cosign verify-blob` **Verified OK** (identity `release.yml@refs/tags/v2.3.2`).
+- **Pasos 10-13:** `install.sh --version v2.3.2 --editor all` exit 0; `sddk 2.3.2`;
+  `framework/current → 2.3.2`; doctor `content.manifest: present`,
+  `binary.bundle_coherence: present`, `all_present: true`; prune removed 2.3.1.
 
 ## UAT cerrados con evidencia OBSERVED
 
@@ -115,5 +128,13 @@ Sin ese falsador el PASS sería decorativo.
 
 ## Siguiente paso
 
-Publicar **v2.3.2** por CI (tag + `gh workflow run release.yml --ref v2.3.2`), o cerrar
-CTX-UAT-005 + MIG-UAT-001 para dejar C3i sin ninguna UAT abierta.
+Dos cosas, en este orden y por razones distintas:
+
+1. **Pushear `441c8d46`** (commit solo-comentarios con la nota del orden
+   `push → HEAD==origin/main → tag` en `githooks/pre-push`). El pre-push lo rechaza porque
+   `githooks/` no está en la allowlist documental y el bump 2.3.2 ya está en `origin/main`.
+   **No** se fuerza con `--no-verify` (el gate tiene razón sobre su pregunta) ni se inventa un
+   2.3.3 por un comentario. Sale con el próximo bump real.
+2. **CTX-UAT-005 y MIG-UAT-001** (las dos UAT de C3i que siguen abiertas), automatizables con el
+   patrón ya establecido. C3i está VERIFIED con 003/004 cerrada; cerrarlas lo deja sin huecos y
+   desbloquea C3j.

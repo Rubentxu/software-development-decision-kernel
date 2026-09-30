@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-48, 2026-09-30T17:01Z): C3i VERIFIED — CTX-UAT-002/003 PASS + UAT caducado reparado.** Workspace `2.3.2` (bump commiteado, release pendiente de tagear), `HEAD = origin/main = fd44a146`, árbol con el journal sin commitear.
+**Estado (session-48, 2026-09-30T17:34Z): C3i VERIFIED + RELEASE v2.3.2 PUBLICADO.** Workspace `2.3.2`, tag `v2.3.2` peel `4952e88c` == `origin/main`, `sddk 2.3.2` instalado. Árbol con 2 commits locales sin pushear (documental), ver "SIGUIENTE PASO".
 
 **Hecho en session-48 (pre-flight: "deuda" sin criterios vigentes no es deuda; se verificó y la premisa caducó):**
 
@@ -10,8 +10,9 @@
 4. **CI ejecuta ahora los UAT** en el job espejo `shell-contracts` (con build release; timeout 15→25 min). Añade cobertura; no relaja ninguna allowlist.
 5. **Deuda severa reciente: ninguna vigente.** Los 3 candidatos open con severidad (S14-TEST-PORTS-UNCONSUMED, NO-STRUCTURED-LOGGING, FORCE-VERSION-ERGONOMICS) no cumplen el criterio: generalidad especulativa re-severizada, observabilidad de amplio alcance, y ergonomía de session-14 cuyo pipeline ya deriva bien. 041/038 resueltas en session-47.
 6. Contratos documentados al escribir el UAT: `cycle start` deriva el cycle_id del nombre y no acepta `--cycle`; `--timestamp` es RFC 3339; `lock release` exige `--fencing-token`.
+7. **Release v2.3.2 PUBLICADO** por CI (run 36751152773 success, 27 assets, publishedAt 17:32:49Z). Gates 9b/9c OBSERVED: 27/27 assets HTTP 200; sha CDN == binario (`364adbe0…`); cosign Verified OK. Instalado: `sddk 2.3.2`, `current → 2.3.2`, doctor `all_present: true`, prune removed 2.3.1. **Orden respetado** (lección de session-47): push → verificar `HEAD == origin/main` → solo entonces taggear; la nota queda escrita en `githooks/pre-push` para el siguiente.
 
-**SIGUIENTE PASO (preciso):** publicar v2.3.2 por CI (tag + `gh workflow run release.yml --ref v2.3.2`), o cerrar CTX-UAT-005 y MIG-UAT-001 con el patrón ya establecido para completar C3i sin huecos.
+**SIGUIENTE PASO (preciso):** (a) pushear `441c8d46` (nota del hook) — el pre-push lo rechaza porque `githooks/` no está en la allowlist documental y el bump ya está en `origin/main`; sale con el próximo bump real, sin `--no-verify`; (b) cerrar **CTX-UAT-005** y **MIG-UAT-001** con el patrón de `uat_ctx_004` ya establecido, dejando C3i sin UAT abiertas y desbloqueando C3j.
 
 ---
 
