@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-026-BUNDLE-CONTENT-NOT-IN-HISTORY
 title: "El bundle runtime local mezcla skills de otro proyecto (gentle-ai/sdd) y no satisface su manifest"
-status: open
+status: closed
 severity: medium
 priority: P2
 created: 2026-09-28
@@ -191,3 +191,32 @@ escribiera ahi. Para cerrarlo hace falta el mecanismo (ver accion 1).
    durante varias sesiones sin que nadie lo trifique. La senal estaba
    disponible; la respuesta fue descartarla como "instalacion vieja" — y
    esa descriptora era incorrecta, como se ha visto.
+
+## Cierre por caducidad de criterio (session-45, 2026-09-30)
+
+El criterio de session-29 era: «el bundle local no satisface su
+`MANIFEST.sha256`: 12 ficheros divergentes y 1 ausente». Ese criterio
+**ya no se sostiene**, y una alerta cuyo criterio no se verifica no es
+deuda real.
+
+Verificado contra el bundle local instalado hoy
+(`~/.local/share/sddk/framework/2.2.27`, `readlink` a
+`/var/home/rubentxu/...`):
+
+- **377/377 ficheros verificados por sha256 contra `MANIFEST.sha256`,
+  0 problemas** (relectura completa del manifest, no una muestra).
+- `sddk dev doctor --prefix ~/.local/bin` ⇒ `content.manifest: present`,
+  `binary.bundle_coherence: present`, `all_present: true`.
+
+Lo que cambió no fue el repo sino **el bundle instalado**: los releases
+posteriores (v2.2.17 en adelante, publicados por CI) sustituyeron la
+instalación contaminada de session-29. La hipótesis de entonces —que
+`bootstrap.sh` de `gentle-ai/sdd` escribía en
+`~/.local/share/sddk/framework/` del bundle de otro proyecto— **queda
+sin refutar**, pero **ya no tiene consecuencia observable**: no hay
+contenido ajeno en el bundle vigente.
+
+Se cierra como **caducada por observación**, no como corregida: el
+mecanismo de intrusión, si existió, no se identificó. Si reaparece un
+bundle divergente, la incidencia reabre con esta evidencia como
+punto de partida.

@@ -2,6 +2,87 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.33] - 2026-09-30
+
+### Features
+  - feat(release): paso 9c verifica la autenticidad del release publicado
+  - feat(cli): sddk context delta publica y drena el stream durable
+  - feat(engine): DeltaStore durable con stream persistente entre procesos
+  - feat(cli): sddk context bootstrap — operacion de contexto durable (CTX-003)
+  - feat(c3j): stores durables de binding y capsule detras de los seams existentes
+  - feat(c3i): alinear sddk-cycle-resume/mcw/contract con la inferencia real de ciclos
+
+### Fixes
+  - fix(cli): run-view falla cerrado con JSON valido y tests que lo comprueban
+  - fix(cli): aclara el mensaje de RUN_STATE_SOURCE_UNAVAILABLE
+  - fix(cli): sddk run view falla cerrado en vez de fabricar una RunStateView
+  - fix(roadmap): conteo de commits sin publicar a 29 y nota sobre su autorreferencia
+  - fix(roadmap): reconciliar el conteo de commits sin publicar (28, no 25)
+  - fix(engine): bootstrap de adopcion repetido es no-op byte-estable (C3i obj 2)
+  - fix(bundle): regenerar el BUNDLE.toml fosil y anadir guard del arbol
+  - fix(engine): SDDK_STATE_HOME gobierna la ruta real del ledger
+  - fix(storage): migracion 21 habilita PAUSED en bases de datos existentes
+  - fix(guard): el puntero no puede afirmar versiones en prosa libre
+  - fix(lint): reportar la ruta real de agents anidados y el hint que si regenera
+  - fix(engine): C2B-DRIFT-1 - adapter fija CHRONOS_DB_PATH ademas de CHRONOS_STORE_PATH
+  - fix(engine): adapter chronos soporta execution_query (renombre 0.1.4) con fallback legacy
+
+### Other
+  - test(debt): guard mecanico de coherencia indice<->documento de deuda
+  - docs(debt): reconcilia el indice con dos documentos ya cerrados
+  - docs(roadmap): close-out session-44 con recibo, journal y punteros
+  - docs(debt): registra INC-DEBT-040 y corrige la descripcion del hook
+  - docs(roadmap): verify the real ledger was not mutated by the session close
+  - docs(roadmap): close-out session-43b con recibo, journal y punteros
+  - docs(roadmap): close-out session-43 con recibo, journal y punteros
+  - docs(debt): cierra INC-AUDIT-S14 y reconcilia el indice de deuda
+  - test(release): guard end-to-end de autenticidad de un release real
+  - docs(roadmap): close-out session-42 con recibo, journal y punteros
+  - docs(debt): cierra INC-DEBT-037 y registra INC-DEBT-039
+  - docs(roadmap): registrar la autorreferencia del conteo de commits
+  - docs(roadmap): fijar el conteo de commits sin publicar al SHA medido
+  - docs(roadmap): recibo, journal y punteros de session-41 (C3j objetivo 5)
+  - docs(adr): ADR-0146 acepta durable_delta_store como modulo raiz
+  - docs(roadmap): receipt y punteros de session-40 (C3j objetivo 3)
+  - docs(adr): ADR-0145 acepta los modulos raiz de contexto durable
+  - docs(roadmap): avanzar punteros a session-39 con C3j slice 1 verificado
+  - docs(roadmap): registrar C3j slice 1 con evidencia session-39
+  - test(c3j): e2e de contexto durable CTX-UAT-006/013/014 a nivel sustrato
+  - docs(roadmap): avanzar punteros a session-38 con C3i completo
+  - docs(roadmap): cerrar C3i objetivo 5 con evidencia session-38
+  - test(c3i): automatizar CTX-UAT-001 como script reutilizable en tests/
+  - test(c3i): pinear identidad unica del bootstrap estable entre reinicios y refresh (C3i obj 5)
+  - docs(roadmap): cerrar session-37 con convergencia de adopcion verificada
+  - test(c3i): pinear el contrato de convergencia de adopcion en las superficies
+  - docs(debt): registrar INC-DEBT-038 (dev install --source instala layout plano con recibo versionado)
+  - docs(roadmap): cerrar session-36 con el estado del slice C3i y sus hallazgos
+  - docs(roadmap): adoptar delta hypermedia C3i/C3j/C6/C7 sin abrir segundo roadmap
+  - docs(roadmap): registrar session-35, el incidente del ledger y el rojo del guard
+  - docs(debt): registrar que SDDK_STATE_HOME no aísla el ledger
+  - test(uat): self-test de mutacion para el guard del puntero de estado
+  - docs(roadmap): puntero a 3d810c48 con la suite re-verificada
+  - docs(journal): adenda session-34i con la re-verificacion de la suite y el falso cuelgue
+  - docs(roadmap): CURRENT alineado con 2.2.32 y el diagnostico corregido del guard
+  - docs(roadmap): puntero a eff37cee tras el guard endurecido
+  - docs(journal): adenda session-34h con la correccion del diagnostico del guard
+  - docs(journal): adenda session-34g con el bump forzado y la brecha del guard
+  - docs(roadmap): puntero a 6f909de2 / 2.2.31 tras el push
+  - docs(roadmap): punteros de sesion-34f alineados con la evidencia observada
+  - docs(receipts): evidencia del perfil completo session-34 y hunt de gates rojos
+  - docs(adr): ADR-0144 propuesto - boundary de integracion con el host JCode
+  - docs(journal): adenda session-34e (guard en verde, 2.2.30 alineado y commiteado)
+  - docs(roadmap): punteros a d47a1766 / 2.2.30 con el guard de estado en PASS
+  - docs(journal): adenda session-34d (DRIFT-1 fix, leccion del bump manual, stash de release)
+  - docs(roadmap): CURRENT a 2.2.29/cfa477cf con C2 completo y C3g cerrado
+  - docs(roadmap): puntero a d83bc120 / 2.2.29 (sin publicar) con cadena de la sesion
+  - docs(journal): adenda session-34c (C2c con SDK publico, C3g completo)
+  - docs(uat): C3g addendum - presupuesto estatico y runtime con providers reales
+  - docs(uat): C2c re-ejecutado con el SDK público de jcode (T15-T18, decision_request ADR)
+  - docs(journal): adenda session-34b (C2a/C2b re-ejecutados, drift chronos, bump 2.2.28 sin publicar)
+  - docs(uat): C2b re-ejecutado contra chronos-mcp 0.1.4 real (T12-T14 PASS con fix de adapter)
+  - docs(uat): C2a re-ejecutado contra cognicode-mcp real 0.97.3 (T08-T11 PASS observados)
+  - docs(roadmap): punteros a v2.2.27/5ee68265 y adenda de cierre session-34
+
 ## [2.2.32] - 2026-09-29
 
 ### Fixes

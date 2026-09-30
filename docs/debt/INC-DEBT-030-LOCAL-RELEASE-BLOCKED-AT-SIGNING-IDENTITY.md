@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-030-LOCAL-RELEASE-BLOCKED-AT-SIGNING-IDENTITY
 title: "El publish local de v2.2.4 aborta en 8c/14 por identidad de firma ausente; la ruta local no puede publicar un release instalable"
-status: blocked
+status: closed
 severity: medium
 priority: P2
 created: 2026-09-28
@@ -107,3 +107,36 @@ se validaron contra ellos:
 - `INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY` (distribution-open) — publicar
   desde Actions y verificar un release real firmado es justamente lo que
   dejaría ese INC en `code-closed`.
+
+## Cierre por vía de publicación distinta (session-45, 2026-09-30)
+
+El criterio de esta INC era: «`scripts/release.sh` local aborta en
+8c/14 con el gate de identidad de firma; v2.2.4 no puede publicarse en
+local». Ese criterio **sigue siendo cierto** —el guard de
+`release.sh:805` no ha cambiado y aborta igual— pero **dejó de ser
+deuda**, porque la publicación se hace por otra vía y esa vía **sí**
+firma.
+
+Verificado en session-45:
+
+- `v2.2.4` nunca se publicó (`gh release view v2.2.4` → *not found*),
+  coherente con el criterio original.
+- `v2.2.17`, `v2.2.20` y `v2.2.27` **sí** se publicaron, los tres por
+  `github-actions[bot]`, con **6 assets `.sig` cada uno** y runs
+  *success* de `Sign release assets (cosign keyless)`.
+- El path local **nunca firmó**: `release.sh` aborta antes de
+  firmar cuando `GITHUB_ACTIONS != true`, y sólo publica sin firmar
+  con `SDDK_SKIP_SIGNING=1`.
+
+Conclusión: la identidad `token.actions.githubusercontent.com` no
+existe en este host y **no puede** existir (la emite el OIDC provider
+de GitHub, no se fabrica en local) — eso no cambió. Lo que cambió es
+que la deuda real no era «no puedo publicar», sino «no sabía que la
+publicación correcta es por CI». Publicar por `workflow_dispatch` con
+`id-token: write` produce exactamente los artefactos firmados que el
+instalador exige, sin `SDDK_SKIP_SIGNING` y sin degradar el contrato
+de instalación para los usuarios.
+
+**Consecuencia para INC-DEBT-040**: la vía CI resuelve también el
+bloqueo de push, porque `githooks/pre-push` sólo gatea
+`refs/heads/main` y un tag no lo atraviesa.
