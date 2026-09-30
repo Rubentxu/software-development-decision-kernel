@@ -6839,7 +6839,46 @@ posterior. El mensaje de `66a94a04` **se deja como esta**: reescribir
 un commit ya publicado seria fabricar historia, y el rectificado va
 aqui, que es append-only.
 
+**SEGUNDA RECTIFICACION (inmediata, porque el hook me contradijo).**
+`git push` fue **rechazado**:
+
+```console
+ERROR: (apply/release split | INC-A5-PUSH-RELEASE-MARKER-FRICTION)
+error: falló el empuje de algunas referencias
+PUSH_EXIT=1
+```
+
+No se usa `--no-verify`. Leyendo el hook (`githooks/pre-push`, lineas
+219-227), el predicado **no es «existe un commit cuyo subject matchee
+`chore(release): bump version`»**, que es lo que dice `AGENTS.md` 2.1 y
+lo que yo mismo acabo de escribir dos párrafos arriba. El hook pide
+**«un commit que cambia `[workspace.package] version` en `Cargo.toml`»**,
+o bien un rango no vacío cuyos paths cambiados sean todos `docs/**`,
+`.sddk/followups/**`, receipts concretos o `MANIFEST.sha256` generado.
+La via (2) no aplica porque mi rango toca `crates/sddk-cli/`. Solo
+queda la via (1): **un bump real**.
+
+Consecuencias honestas, y son dos correcciones al mismo error:
+
+1. **La conclusion «no hace falta 2.2.35» era correcta** y se sostiene:
+   `v2.2.34` no existe como tag ni release, asi que 2.2.34 sigue siendo
+   el proximo release. Pero la **razon** que di («el rango sin publicar
+   no tiene bump y aun asi el hook me admitio») era falsa. El hook no
+   admitio el commit de codigo; lo admitio porque aun no lo habia
+   pushado. En cuanto intente empujarlo, me rechazo — correctamente.
+2. **`AGENTS.md` 2.1 describe mal el hook.** Dice que el hook «rechaza
+   cualquier push a `main` que no contenga al menos un commit cuyo
+   subject matchee `^chore\(release\): bump version`». El codigo real no
+   comprueba subjects: comprueba el **diff de `Cargo.toml`**, y ademas
+   declara explicitamente que «a commit subject is NOT authority». La
+   documentacion y el codigo se contradicen, y en este caso **el codigo
+   manda**. Corregir `AGENTS.md` es trabajo pendiente y honesto, no
+   silenciable.
+
 **Estado tras 45g:** workspace 2.2.34, ultimo tag y release v2.2.33,
-sin tag v2.2.34, arbol limpio salvo este journal. P1 abiertos:
-`INC-DEBT-040` (hook, reproducido) y `INC-DEBT-042` (opcion a
-implementada, brecha real sigue bloqueada por `frontier`).
+dos commits sin publicar (fix de 042 + esta rectificacion). P1
+abiertos: `INC-DEBT-040` (hook, reproducido) y `INC-DEBT-042` (opcion a
+implementada, brecha real sigue bloqueada por `frontier`). **Bloqueo
+activo: el push requiere un bump real a 2.2.35**, porque el bump a
+2.2.34 de session-45 ya esta en `origin/main` y por tanto no cuenta
+como cambio de version en este rango.
