@@ -192,7 +192,11 @@ if sha_reconcilable == "1":
     # la marca de este script.
     pass
 else:
-    new_ver = f'  current_sha: "{target_short}"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main={target_short} ({real_ver}). El puntero anterior ({current_sha or "<none>"}/{current_ver or "<none>"}) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.'
+    # Contrato del guard (session-44, check 3c): el comentario de
+    # current_sha NO afirma versiones en prosa; la version vive solo en
+    # workspace_version_at_current. Este script escribia '(2.3.1)' y su
+    # propio guard lo tachaba: dos fuentes para el mismo hecho.
+    new_ver = f'  current_sha: "{target_short}"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior ({current_sha or "<none>"}) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.'
     text, n1 = re.subn(r'^  current_sha: *"[0-9a-f]{7,40}".*$', new_ver, text,
                         count=1, flags=re.M)
     if n1 != 1:
