@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.3.3] - 2026-09-30
+
+### Fixes
+  - fix(cli): un --cycle que no existe falla cerrado en vez de enlazar la sesión a una ficción
+
+### Other
+  - docs(c3i): cerrar CTX-UAT-005 y MIG-UAT-001 con evidencia; C3i sin UAT abiertas
+  - test(c3i): automatizar MIG-UAT-001 y CTX-UAT-005, cuyas premisas NOT_RUN habían caducado
+  - docs(roadmap): session-48 cerrada con v2.3.2 publicado y verificado
+  - docs(hook): dejar escrito el orden push -> HEAD==origin/main -> tag
+
 ## [2.3.2] - 2026-09-30
 
 ### Fixes
