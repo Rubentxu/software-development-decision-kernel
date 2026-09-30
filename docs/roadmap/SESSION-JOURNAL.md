@@ -7019,3 +7019,30 @@ cerrar el slice de C3j objetivo 3.
 **Riesgos:** los 6 `surface.briefness.*` advisory del doctor (superficies que exceden budgets de líneas) siguen abiertos como deuda cosmética; INC-DEBT-041 (shellcheck CI) sigue open.
 
 **Primer paso de la sesión siguiente:** evaluar en roadmap qué parte del plan de evolución (`docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md`) excede C3k y merece hito propio (S4+); recibo del cierre en `tests/cycle-artifacts/p-63676b11dc0ef88f/c3k-release-v2.3.0/RECEIPT.md`.
+
+---
+
+## session-47 — 2026-09-30T16:31Z — Deuda severa resuelta (INC-DEBT-041 + INC-DEBT-038) + release v2.3.1 publicado
+
+**Baseline/HEAD al cierre:** development_head = origin/main = `accd4911`; tag **v2.3.1** (peel `accd4911` == HEAD al publicar). Workspace 2.3.1.
+
+**WorkItem:** ninguno de roadmap — criterio del operador: regresiones y deuda técnica severa reciente primero. Pre-flight verificó vigencia REAL de ambas deudas antes de tratarlas (criterios confirmados en código, no aceptados por fechas).
+
+**Resuelto:**
+
+- **INC-DEBT-041** (medium/P2, session-45) → **resolved**: ruta 1 del triaje (limpieza a severidad style, sin tocar ci.yml, sin bajar tolerancia). Re-medición honesta: ≈49 hallazgos en 15 ficheros, no 28/9 (globo parcial en session-45). Mayoría SC2016 intencional (grep de literales `$VAR`, patrón de contrato). ~30 directivas justificadas + SC2129 refactorizada en apply_banner (smoke de ambas ramas) + GATE_END documentado como anchor espejo. OBSERVED: 0 hallazgos; tests de los 10 ficheros tocados PASS. Commits `3c746a88` + `1e45f810`.
+- **INC-DEBT-038** (medium/P2, session-37) → **resolved** por opciones 2+3 del propio doc: `InstallReceipt.layout` opcional; `--source` escribe `layout:"flat"` + `bundle_version:null`; doctor trata recibo flat como coherencia N/A en verde (`all_present: true` en E2E con prefix aislado). TDD RED→GREEN; doctor 9/9; dev_install 5/5; clippy -D warnings. Commits `d1d59df6` + `a3751cc0`.
+- **Defecto de herramienta:** `reconcile_state_pointer.sh` escribía versiones en prosa en el comentario de current_sha que su propio guard (check 3c) rechaza → fix `a3753be0`; reconciliación posterior con guard PASS.
+- **Higiene:** BUNDLE.toml fósil post-bump pillado dos veces por `test_dev_install_source_guard` (2.2.37 en el fix 038; regenerado a 2.3.0; y a 2.3.1 tras el bump). El guard funciona.
+
+**Regresión pillada por el gate del release:** `install_migrates_legacy_v1_receipt_to_v2_when_source_has_bundle_toml` esperaba la binding mentirosa que 038 elimina; actualizado a pinnear el recibo flat honesto. lib 854/0/1. Commit `accd4911`.
+
+**Release v2.3.1 (patch):** bump derivado del historial (2 fix + fix script + test). Incidente tag fantasma: el primer tag se pusheó antes del commit del test; el run 36741522523 generó un draft v2.3.1 inválido sobre el árbol rojo. Draft eliminado, tag borrado, re-tag al HEAD bueno, run **36742855897 success** (27 assets, no draft/prerelease, publishedAt 16:23:27Z). **9b OBSERVED:** peel == HEAD == origin/main; 27/27 assets HTTP 200 (un 500 transitorio de CDN en el .pem darwin-arm64, refrescó en ~2 min). **9c OBSERVED:** sha CDN `a84e5980…` == binario; cosign Verified OK (identity release.yml@refs/tags/v2.3.1). Nota: `sddk.bundle.json` no existe como asset (verificación por cert+sig). **Pasos 10-12 OBSERVED:** install.sh exit 0; sddk 2.3.1; current → 2.3.1; doctor all_present true; prune removed 2.3.0.
+
+**Incidente propio (trazabilidad):** un script python de una línea truncó STATE.yaml a 0 bytes durante una edición; restaurado desde git y rehecho con `edit`. Sin daño durable.
+
+**Bloqueos:** ninguno.
+
+**UAT/no ejecutado:** no aplica (deuda de tooling, sin UAT ids). NOT_RUN continúan: INC-DEBT-039 (disparador mecánico), INC-AUDIT-S14-*, CTX-UAT-011..015, HYP-UAT-001..004.
+
+**Primer paso de la sesión siguiente:** evaluar S4+ de `docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md` como hito propio (pendiente desde C3k) o abrir C3i (hypermedia). Receipt completo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session47-debt-041-038-release-v2.3.1/RECEIPT.md`.

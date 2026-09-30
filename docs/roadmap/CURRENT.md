@@ -1,5 +1,28 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-47, 2026-09-30T16:31Z): DEUDA SEVERA RESUELTA + RELEASE v2.3.1 PUBLICADO.** Workspace `2.3.1`, `HEAD = origin/main = accd4911` (1 commit documental pendiente de este cierre), árbol con cambios doc del cierre.
+
+**Hecho en session-47 (criterio del operador: regresiones/deuda severa primero, sin abrir roadmap):**
+
+1. **INC-DEBT-041 resolved** (shellcheck gate): ruta 1 del triaje. Re-medición honesta: ≈49 hallazgos en 15 ficheros (no 28/9: globo parcial en session-45); mayoría SC2016 intencional (grep de literales, patrón de contrato). ~30 directivas justificadas + SC2129 refactorizada (apply_banner) + GATE_END documentado como anchor espejo. **0 hallazgos OBSERVED**; sin tocar ci.yml ni bajar tolerancia. Commits `3c746a88` + `1e45f810`.
+2. **INC-DEBT-038 resolved** (recibo mentiroso de `dev install --source`): opciones 2+3 del propio doc. `InstallReceipt.layout` opcional; `--source` escribe `layout:"flat"` + `bundle_version:null`; el doctor trata el recibo flat como coherencia N/A en verde (`all_present: true` E2E en prefix aislado). TDD RED→GREEN; doctor 9/9; dev_install 5/5. Commits `d1d59df6` + `a3751cc0`.
+3. **Fix de herramienta:** `reconcile_state_pointer.sh` escribía versiones en prosa que su propio guard (check 3c) rechaza → `a3753be0`.
+4. **Regresión pillada por el gate del release:** el test de migración v1→v2 esperaba la binding mentirosa que 038 elimina → actualizado a pinnear el recibo flat (`accd4911`).
+5. **Release v2.3.1 por CI** (run 36742855897 success, 27 assets, no draft/prerelease, publishedAt 16:23:27Z). Incidente tag fantasma (primer tag antes del commit del test; draft inválido eliminado, re-tag al HEAD bueno; patrón v2.2.25). **9b OBSERVED:** peel == HEAD == origin/main, 27/27 assets HTTP 200 (un 500 transitorio de CDN, refresco ~2min). **9c OBSERVED:** sha CDN `a84e5980…` == binario; cosign Verified OK (nota: `sddk.bundle.json` no existe como asset; verificación por cert+sig). **Pasos 10-12 OBSERVED:** install.sh exit 0; `sddk 2.3.1`; current → 2.3.1; doctor `all_present: true`; prune removed 2.3.0.
+
+**SIGUIENTE PASO (preciso):** evaluar S4+ de `docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md` como hito propio del roadmap (pendiente desde C3k) o abrir C3i (hypermedia). Receipt: `tests/cycle-artifacts/p-63676b11dc0ef88f/session47-debt-041-038-release-v2.3.1/RECEIPT.md`.
+
+---
+
+Previous: **Estado (session-46b, 2026-09-30T15:10Z): C3k COMPLETO + RELEASE v2.3.0 PUBLICADO.** Workspace `2.3.0`, `HEAD = origin/main = 9d5c13d9`.
+
+1. **W2c**: `sddk project pin/unpin` (`.sddk/project-pin.json`, schema 1, valida `p-*`; resolve y RuntimeContext honran el pin; e2e 2/2). Commit `9c3e027e`.
+2. **INC-DEBT-040 variante (3)**: ruta (A-v2, tag-baseline) en `githooks/pre-push` alineada con `release_admission_check_v2`, fail-closed si ls-remote falla; matriz 48/48 con 3 expectativas AMENDED; debt → resolved. Commit `37c90b51`.
+3. **Release v2.3.0** (minor: 3 feats): run 36732655082 success; 9b OBSERVED (18/18 assets, tag==HEAD); 9c OBSERVED (cosign Verified OK, sha CDN == binario); install + doctor all_present + prune. Higiene pillada por guards: MANIFEST stale (`94a7516d`), BUNDLE.toml fósil 2.2.32 (`f2fed84b`), drift de puntero (`7231a09f`).
+4. Cierre C3k: ROADMAP COMPLETO, receipt `c3k-release-v2.3.0`, punteros reconciliados (`1e37b08e`).
+
+---
+
 **Estado (session-46b, 2026-09-30T12:39Z): RELEASE v2.2.37 PUBLICADO + hito C3k en roadmap.** Workspace `2.2.37`, `HEAD = origin/main = 89a45a9e` (docs C3k, 1 commit tras el tag), árbol limpio.
 
 **Hecho en session-46b:**
