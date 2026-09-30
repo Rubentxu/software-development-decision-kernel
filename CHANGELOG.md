@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.3.2] - 2026-09-30
+
+### Fixes
+  - fix(uat): bootstrap exit 4 (no_capsule_source) es contrato valido, no fallo
+
+### Other
+  - ci: ejecutar los UAT de context en el job espejo (causa raiz del UAT caducado)
+  - docs(roadmap): CTX-UAT-002/003 PASS con evidencia y C3i a VERIFIED
+  - test(c3i): automatizar CTX-UAT-002 y CTX-UAT-003 (era 'gate humano' inexistente)
+  - docs(roadmap): puntero de estado reconciliado al commit documental del cierre
+  - docs(roadmap): cierre session-47 — deuda 041/038 resuelta, release v2.3.1 publicado
+
 ## [2.3.1] - 2026-09-30
 
 ### Fixes
