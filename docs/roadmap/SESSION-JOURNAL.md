@@ -6442,3 +6442,37 @@ versión. Con (1), `bash scripts/release-bump.sh --force-version 2.2.33`
 y después `git push origin main` + `bash scripts/release.sh`. Con (3),
 abrir ciclo propio: alterar un gate de admisión no es trabajo de
 release.
+
+### Adenda session-44 — medición de coherencia índice↔documento de deuda
+
+Candidato anotado en session-43 y **no implementado** (un check mecánico
+requiere escribir código; esto es sólo la medición read-only que lo
+justifica).
+
+Medido sobre las **25** entradas de `docs/debt/README.md`, comparando el
+`status` del documento con lo que el índice afirma: **3 divergentes**.
+
+| Entrada | Índice decía | Documento dice | Verificado contra el árbol |
+|---|---|---|---|
+| `INC-DEBT-032` | `open` | `closed` (session-33) | los 2 tests que leían el vault con `env!("HOME")` **ya no existen**; en su lugar `cli_phase_enum_has_no_orphan_review_variant` (`cli.rs:13923`) certifica el invariante del enum compilado |
+| `INC-DEBT-031` | `open` | `closed` (session-34) | los 4 duplicados del CHANGELOG tienen 1 cabecera cada uno; la versión fantasma `2.3.0` tiene **0** |
+| `INC-DEBT-038` | `open` | sin frontmatter (`**Estado:**` en prosa) | divergencia de **forma**, no de contenido: el estado real es OPEN |
+
+Las dos primeras son el patrón que session-43 ya describió: **el índice
+miente y alguien gasta una sesión en deuda ya cerrada**. En este caso la
+sesión gastada fue la de session-43, y sólo partially: la auditoría
+encontró 2 de 3 alertas P1 mal Closure, no estas dos. O sea que la
+divergencia del índice no sólo produce trabajo desperdiciado, también
+**escurre** las alertas que sí importan.
+
+**Reconciliado en esta sesión** (commit abajo): las filas de `031` y
+`032` pasan a declarar `closed` con la evidencia del árbol. Vuelvo a
+medir con el mismo script: **de 3 a 1**, y la que queda es de forma.
+
+**Conocimiento negativo**: la coherencia índice↔documento no la puede
+garantizar el ojo. La medición es un script de ~15 líneas y encontró
+cosas que tres sesiones de auditoría no Remark. Es el candidato a
+check mecánico que session-43 dejó anotado, y ahora tiene justificación
+medida en vez de intuida. **Sigue sin implementarse**: es un artefacto
+nuevo y no belong a una sesión de release bloqueada.
+
