@@ -7144,3 +7144,27 @@ present`, 320 present, 19 advisory missing, `all_present: true` (la etiqueta
 observable); prune removed 2.3.2, kept 2.3.3. Nota: el binario release local
 había quedado en 2.3.2 (el bump es posterior a ese build); el 2.3.3 verificado
 es el publicado por CI.
+
+---
+
+## Session-50 (2026-09-30T22:10Z) — C3j objetivo 4 (`context expand`) + INC-DEBT-044 + adopción C3l/C3m/C3n
+
+**Baseline / HEAD:** `origin/main = 6fbe1990` (peel de `v2.3.3`). Workspace `2.3.3` al inicio. **Proyecto SDDK `p-995939af668a53d8`.** Uso del propio fix de session-49 observado en el arranque: el bootstrap de sesión concluyó `no_active_cycle` + binding escrito con exit 4 degradación honesta.
+
+**REENFOQUE DE ROADMAP (directiva del operador en sesión):** adoptado `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/` — **C3l (P0) Acceptance Truthfulness & False-Green Elimination**, **C3m (P1) Semantic & Boundary Convergence**, **C3n (P1) Production Boundary Certification**, insertados en `ROADMAP.md` tras C3k con la regla de promoción obligatoria (C4/C6 no pueden reclamar como certificadas las capacidades afectadas hasta cerrar C3l/C3m/C3n aplicables). Alta de **AT-UAT-001..026** en la matriz con columna `Boundary` (NOT_RUN inicial). El paquete **no reemplaza C3j**: continúa en paralelo. Recomendación operativa del paquete: abrir C3l.0 primero, continuar C3j sin mezclar concerns.
+
+**WorkItem W2 (C3j objetivo 4) — `sddk context expand` (feat, `1ae2f6bf`).** El envelope del bootstrap lleva REFS, nunca contenido (CTX-UAT-014); expand es el camino para leer UNA ref: sesión→binding→capsule→**ledger** (la autoridad del contenido). Read log durable por sesión (`context/reads/<session>.json`, cap 100, sha256 del contenido) — el "ContextReadRecord actualizado" de la UAT. Fail-closed tipado: sin binding, sin ciclo, ref desconocida (lista las disponibles — patrón candidates), ref stale (se reporta, no se sintetiza).
+
+**HALLAZGO — INC-DEBT-044 (high/P1, resolved, `cb4ea598`).** El UAT la destapó en su primera corrida: `file_name_for` incrustaba el id de ciclo **con barra** (los ids reales son `p-<hex>/<name>`) en el nombre de fichero → escritura a subdirectorio inexistente → `persist` tragaba el fallo → **para todo ciclo real el bootstrap decía `compiled` con `capsules/` VACÍO** y `basis_revision` apuntando a una capsule inexistente (CTX-UAT-006 imposible con ids reales). **Todos los tests de capsule usaban ids sin barra** — misma lección que INC-DEBT-043: fixture sin la forma real del dato = éxito indistinguible de ficción. Fix: percent-encode (`%``/``:`) en `file_name_for`, lookups codificado-a-codificado, sin migración (los nombres rotos jamás llegaron a disco). RED observado primero (`capsule_persists_and_recovers_with_slashed_runtime_run` FAILED), verde después (5/5 módulo, **1352/0** engine).
+
+**Evidencia:** unit expand 5 nuevos, `context_cmd::tests` **30/0**; UAT `tests/uat_ctx_007_context_expand.sh` **27 ok / 0 FAIL / exit 0** (9 secciones); RED pre-feature contra `v2.3.3` publicado (comando inexistente); **falsadores OBSERVED**: unitario 2/2 RED (prosa en vez de ledger + log suprimido; los 3 fail-closed siguen verdes) y UAT **3 FAIL exit 1** contra binario mutado — exactamente contenido-ledger ×2 + read log; PASS tras revertir. El work item del escenario se crea por la superficie del producto (`sddk change`, que resuelve root=CWD: invocación dentro del worktree del sandbox). fmt y clippy `-D warnings` limpios. Perfil completo: consignado en el addendum de publicación.
+
+**INCIDENTE DE MÉTODO (declarado):** el primer falsador no compilaba; al revertirlo con `git checkout` se perdió **toda la implementación de expand** (sin commitear). Reconstruida desde el contexto de sesión y reverificada. **Lección: commitear el estado verde ANTES de mutar para falsar** — la reversión debe tocar solo código desechable. Tercera entrada de la familia «la operación destruye lo que medía» (PASS contra binario viejo 48/49; exit secuestrado por trap).
+
+**GATES:** engine 1352/0 · cli context 30/0 · fmt/clippy/shellcheck limpios · UAT 27/0 · test_debt_index_coherence PASS=10 FAIL=0 · perfil completo workspace en el addendum.
+
+**LÍMITES:** CTX-UAT-014 parcial (presupuesto de tokens explícito no existe); `persist` fire-and-forget por trait (residual de 044); CTX-UAT-007..012 fila-a-fila pendiente de confirmación del operador (008–011 cubiertos por uat_ctx_003); C3l.0 sin abrir (siguiente WorkItem); soporte de expand limitado a work-item/decision/cycle (paths de recovery capsules declarados no soportados).
+
+**PRIMER PASO DE LA SESIÓN SIGUIENTE:** release (`feat → MINOR → 2.4.0` derivado por release-bump) y luego **abrir C3l.0** — re-clasificación honesta del baseline AIW-S0..S8/R0..R11 con `boundary_class`, sin reescribir evidencia histórica (AT-UAT-001).
+
+**Recibo:** `tests/cycle-artifacts/p-63676b11dc0ef88f/session50-c3j-expand-inc044-c3l-adoption/RECEIPT.md`.

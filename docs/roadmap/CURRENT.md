@@ -1,6 +1,22 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-49, 2026-09-30T21:10Z): C3i CERRADO SIN UAT ABIERTAS + INC-DEBT-043 RESUELTA + RELEASE v2.3.3 PUBLICADO.** Workspace `2.3.3`, tag `v2.3.3` peel `f2e6efe0` == `origin/main`, `sddk 2.3.3` instalado. **SIGUIENTE PASO: abrir C3j** (desbloqueado por primera vez), empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015.
+**Estado (session-50, 2026-09-30T22:15Z): C3j objetivo 4 (`context expand`) implementado + INC-DEBT-044 resuelta + ROADMAP REENFOCADO (C3l/C3m/C3n adoptados).** Workspace `2.3.3`, release en curso (`feat → MINOR → 2.4.0`). **SIGUIENTE PASO: abrir C3l.0** (re-clasificación honesta del baseline, AT-UAT-001) — prioridad P0 del paquete `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/`; C3j continúa en paralelo.
+
+**Hecho en session-50:**
+
+1. **Reenfoque de roadmap (directiva del operador):** insertados **C3l/C3m/C3n** en ROADMAP.md con la regla de promoción (nada que reclame AIW/Context-First/runtime-enhanced/dynamic-expansion/Secretary/arquitectura-conforme puede ser CERTIFIED sin cerrar C3l/C3m/C3n aplicables); alta de **AT-UAT-001..026** con columna `Boundary`. El paquete no reemplaza C3j.
+2. **`sddk context expand` (feat, `1ae2f6bf`)** — C3j objetivo 4: progressive disclosure mínima; contenido desde el **ledger**, no de la prosa de la capsule; read log durable por sesión con sha256; fail-closed tipado en todas las direcciones (ref desconocida LISTA las disponibles). **CTX-UAT-015 PASS** (`tests/uat_ctx_007_context_expand.sh`, 27 ok / 0 FAIL / exit 0); CTX-UAT-014 mitad observable PASS (el envelope del bootstrap no vuelca la capsule).
+3. **INC-DEBT-044 (high/P1, resolved, `cb4ea598`)** — destapada por el UAT: las capsules de **ciclos reales** (id con barra) NUNCA se escribían a disco (`persist` tragaba el fallo); el bootstrap decía `compiled` con `capsules/` vacío. Nadie lo vio: todos los tests usaban ids sin barra. Fix: percent-encode en `file_name_for`; RED-first pinneado; engine 1352/0.
+4. **Falsadores OBSERVED:** unitario 2/2 RED (prosa en vez de ledger + log suprimido); UAT 3 FAIL exit 1 contra binario mutado (exactamente contenido-ledger ×2 + read log); pre-feature RED contra `v2.3.3` publicado.
+5. **Incidente de método declarado:** falsar sobre código sin commitear costó la implementación (recuperada del contexto de sesión y reverificada 30/0). **Lección: commitear el verde antes de mutar.**
+
+**Límites:** CTX-UAT-014 parcial (presupuesto de tokens pendiente); `persist` fire-and-forget por trait (residual 044); CTX-UAT-007..012 fila-a-fila pendiente del operador; expand soporta work-item/decision/cycle (paths de recovery capsules no soportados, declarado).
+
+**SIGUIENTE PASO (preciso):** (a) publicar 2.4.0 (bump derivado, flujo canónico, gates 9b/9c); (b) **abrir C3l.0**: congelar la matriz `requirement → implementation → boundary realmente ejercitada → test → evidence → status` para AIW-S0..S8 y R0..R11, re-clasificando solo claims afectados (VERIFIED→IMPLEMENTED/NOT_VERIFIED, PASS→NOT_RUN) sin reescribir evidencia histórica; primero C3l.1 (DebVerify fail-closed) y C3l.2 (Producer→Secretary L0) según el paquete.
+
+---
+
+Previous: **Estado (session-49, 2026-09-30T21:10Z): C3i CERRADO SIN UAT ABIERTAS + INC-DEBT-043 RESUELTA + RELEASE v2.3.3 PUBLICADO.** Workspace `2.3.3`, tag `v2.3.3` peel `f2e6efe0` == `origin/main`, `sddk 2.3.3` instalado. **SIGUIENTE PASO: abrir C3j** (desbloqueado por primera vez), empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015.
 
 **Hecho en session-49 (WorkItem W1 = cerrar CTX-UAT-005 y MIG-UAT-001, las dos últimas UAT de C3i):**
 

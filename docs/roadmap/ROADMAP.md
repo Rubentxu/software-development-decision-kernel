@@ -91,6 +91,24 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **UAT:** UAT-SIGN-001..004, UAT-IDEN-001..004, UAT-BLG-001..003, UAT-GATE-001..002, UAT-UAT-001..004 (alta en UAT-MATRIX.md al pasar a READY). **No-objetivos:** no re-diseñar el modelo de identidad ni el motor de gates; poblar y cerrar mecanismos existentes.
 
+### C3l — Acceptance Truthfulness & False-Green Elimination (P0, paralelo a C3j)
+
+**Fuente:** paquete `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/` (adoptado 2026-09-30; detalle completo y falsificadores por slice allí). **Dependencia:** C3i cerrado. **Tipo:** saneamiento correctness/certification. **Objetivo:** que los tests y receipts demuestren exactamente la frontera que dicen demostrar — reparar falsos verdes, drift contractual y wiring incompleto detectados al contrastar los roadmaps históricos AIW + Context-First contra el código actual, sin reabrir indiscriminadamente hitos demostrados.
+
+**Slices:** C3l.0 re-clasificación honesta del baseline (AIW-S0..S8, R0..R11; `boundary_class` en nuevos UAT; prohibido el sufijo `e2e/real/two-cli` si la prueba no atraviesa esa frontera) · C3l.1 DebVerify fail-closed (`strategy_error ⇒ summary != ConfirmedBaseline`) · C3l.2 Producer→Secretary L0 wiring real por `dispatch()` público · C3l.3 Dynamic Workflow Expansion E2E real (proposal→authority→PlanRevision→execution + replay idempotente) · C3l.4 External test semantics: ausencia ≠ PASS · C3l.5 X04 concurrencia real SQLITE_MULTI_PROCESS · C3l.6 X07 segundo binario real · C3l.7 architecture gate.
+
+**Exit gate:** la matriz puede responder, para cualquier hito, qué frontera se observó realmente sin leer el nombre del test. **UAT:** AT-UAT-001..015 (overlay del paquete; alta en UAT-MATRIX al pasar cada slice a READY).
+
+### C3m — Semantic & Boundary Convergence (P1, tras C3l.1–C3l.4 en los contratos afectados)
+
+**Fuente:** mismo paquete. **Puede convivir con C3j.** C3m.0 ADR de significado canónico de KMT (una sola definición; rename solo tras aceptar el ADR) · C3m.1 Knowledge Merkle Tree mínimo real (invalidación incremental por fingerprints de unidad) · C3m.2 corregir incoherencia de `KnowledgeBasis::revise` · C3m.3 runtime provider-neutral provenance · C3m.4 eliminar confidence mágica de Snapshot L1 · C3m.5 R0 bounded-context decision. **UAT:** AT-UAT-016..022.
+
+### C3n — Production Boundary Certification (P1, tras C3l cerrado y C3m aplicable cerrado o deferred con ADR)
+
+**Fuente:** mismo paquete. Volver a certificar las capacidades afectadas usando fronteras reales: C3n.1 test taxonomy gate (receipts de `PROCESS`/`MCP_EXTERNAL`/`RELEASE_ARTIFACT` rechazados si incompletos) · C3n.2 re-certificación AIW (solo slices re-clasificadas) · C3n.3 re-certificación Context-First (solo hitos reabiertos) · C3n.4 integración de los falsificadores nuevos en release admission. **UAT:** AT-UAT-023..026.
+
+**Regla de promoción (obligatoria):** C3j puede continuar en paralelo. C4 puede publicar Base siempre que no reclame como certificadas las capacidades afectadas. Ningún perfil que reclame **AIW completo**, **Context-First completo**, **runtime enhanced**, **dynamic workflow expansion**, **Secretary producer integration** o **arquitectura conforme** puede ser `CERTIFIED` hasta cerrar C3l/C3m/C3n aplicables. C6 no consume como primitivas certificadas contratos que C3l/C3m re-clasifique.
+
 ### C4 — Release y certificación de producto (P0 para cada declaración)
 
 Evaluar [CERTIFICATIONS.md](CERTIFICATIONS.md), ejecutar perfil completo local sin `--skip-tests`, construir y verificar binario/bundle/manifest/SBOM/hashes, clean-machine UAT, migración/replay, publicar mediante `bash scripts/release.sh` **solo con autorización del operador**, verificar assets públicos y registrar SHA/tag/env/resultado. Un fallo de gate bloquea **esa certificación**; Base puede permanecer certificada aunque Enhanced no lo esté si no se ha roto Base. Certificación historical != current HEAD.
