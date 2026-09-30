@@ -105,12 +105,24 @@ print(eval("data" + sys.argv[2]))' "$1" "$2"
 }
 
 # ── 1. Bootstrap sin ciclo activo → no_active_cycle + binding persistido ─────
-step "1. bootstrap sin ciclo activo (CTX-004 estado 0)"
+# Desde INC-DEBT-042 (session-46) el comando sale con **código 4** cuando no
+# hay capsule que reconstruir: `status: no_capsule_source` es la degradación
+# honesta (no reclamar `complete` sin capsule) y el JSON sigue siendo válido.
+# Antes de ese cambio el script asumía exit 0 y quedó stale: el escenario pasó a
+# FAIL en cuanto el runtime adoptó la degradación. El contrato verificado aquí
+# es "exit 4 + estado tipado + binding persistido", no "exit 0".
+step "1. bootstrap sin ciclo activo (CTX-004 estado 0, exit 4 = no_capsule_source)"
 OUT1="$SANDBOX/out1.json"
-if ! "$BIN" context bootstrap --root "$WORKTREE" --session uat-s1 --format json >"$OUT1" 2>"$SANDBOX/err1.txt"; then
-    fail "bootstrap sin ciclo exited non-zero: $(cat "$SANDBOX/err1.txt")"
+set +e
+"$BIN" context bootstrap --root "$WORKTREE" --session uat-s1 --format json >"$OUT1" 2>"$SANDBOX/err1.txt"
+RC1=$?
+set -e
+if [ "$RC1" -ne 0 ] && [ "$RC1" -ne 4 ]; then
+    fail "bootstrap sin ciclo exited $RC1 (esperado 0 o 4): $(cat "$SANDBOX/err1.txt")"
     exit 1
 fi
+ok "código de salida tipado: $RC1"
+assert_eq "status honesto sin capsule" "no_capsule_source" "$(jqf "$OUT1" "['status']")"
 STATE1="$(jqf "$OUT1" "['cycle']['state']")"
 assert_eq "estado tipado sin ciclo" "no_active_cycle" "$STATE1"
 
@@ -140,8 +152,12 @@ fi
 step "2. replay idempotente (CTX-005 no-op semántico)"
 HASH_BEFORE="$(sha256sum "$BINDING" | cut -d' ' -f1)"
 OUT2="$SANDBOX/out2.json"
-if ! "$BIN" context bootstrap --root "$WORKTREE" --session uat-s1 --format json >"$OUT2" 2>"$SANDBOX/err2.txt"; then
-    fail "replay exited non-zero: $(cat "$SANDBOX/err2.txt")"
+set +e
+"$BIN" context bootstrap --root "$WORKTREE" --session uat-s1 --format json >"$OUT2" 2>"$SANDBOX/err2.txt"
+RC2=$?
+set -e
+if [ "$RC2" -ne 0 ] && [ "$RC2" -ne 4 ]; then
+    fail "replay exited $RC2 (esperado 0 o 4): $(cat "$SANDBOX/err2.txt")"
     exit 1
 fi
 HASH_AFTER="$(sha256sum "$BINDING" | cut -d' ' -f1)"
@@ -156,8 +172,12 @@ assert_eq "workspace_id estable" "$WORKSPACE1" "$(jqf "$OUT2" "['workspace_id']"
 # ── 3. Ciclo explícito → estado explicit + binding Run (CTX-004) ───────────
 step "3. ciclo explícito (CTX-003 paso 3 + CTX-004 explícito)"
 OUT3="$SANDBOX/out3.json"
-if ! "$BIN" context bootstrap --root "$WORKTREE" --session uat-s2 --cycle uat-cycle-1 --format json >"$OUT3" 2>"$SANDBOX/err3.txt"; then
-    fail "explicit-cycle bootstrap exited non-zero: $(cat "$SANDBOX/err3.txt")"
+set +e
+"$BIN" context bootstrap --root "$WORKTREE" --session uat-s2 --cycle uat-cycle-1 --format json >"$OUT3" 2>"$SANDBOX/err3.txt"
+RC3=$?
+set -e
+if [ "$RC3" -ne 0 ] && [ "$RC3" -ne 4 ]; then
+    fail "explicit-cycle bootstrap exited $RC3 (esperado 0 o 4): $(cat "$SANDBOX/err3.txt")"
     exit 1
 fi
 STATE3="$(jqf "$OUT3" "['cycle']['state']")"
@@ -198,8 +218,8 @@ fi
 
 printf '\n'
 if [ "$FAILURES" -eq 0 ]; then
-    printf 'UAT CTX-002: PASS (4/4 escenarios)\n'
+    printf 'UAT context bootstrap: PASS (4/4 escenarios, contrato exit 0/4 post INC-DEBT-042)\n'
     exit 0
 fi
-printf 'UAT CTX-002: FAIL (%s)\n' "$FAILURES" >&2
+printf 'UAT context bootstrap: FAIL (%s)\n' "$FAILURES" >&2
 exit 1
