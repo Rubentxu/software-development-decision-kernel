@@ -1,6 +1,21 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-47, 2026-09-30T16:31Z): DEUDA SEVERA RESUELTA + RELEASE v2.3.1 PUBLICADO.** Workspace `2.3.1`, `HEAD = origin/main = accd4911` (1 commit documental pendiente de este cierre), árbol con cambios doc del cierre.
+**Estado (session-48, 2026-09-30T17:01Z): C3i VERIFIED — CTX-UAT-002/003 PASS + UAT caducado reparado.** Workspace `2.3.2` (bump commiteado, release pendiente de tagear), `HEAD = origin/main = fd44a146`, árbol con el journal sin commitear.
+
+**Hecho en session-48 (pre-flight: "deuda" sin criterios vigentes no es deuda; se verificó y la premisa caducó):**
+
+1. **La "puerta" de CTX-UAT-002/003 no existía.** Estaban NOT_RUN desde session-40 por "gate humano: solo se puede dejar una lease escribiendo en el ledger real". FALSO: `sddk cycle start --lease-owner` y `cycle lock acquire` escriben en el ledger aislable del sandbox. El bloqueo era la ausencia del script.
+2. **HALLAZGO PRINCIPAL: evidencia UAT caducada que nadie notó.** `tests/uat_ctx_002_context_bootstrap.sh` estaba **ROJO** contra el binario actual mientras la matriz lo declaraba **PASS** desde session-40: INC-DEBT-042 (session-46) cambió el contrato a exit 4 (`no_capsule_source`, degradación honesta) y el script asumía exit 0. **Causa raíz: ningún job de CI ejecuta los UAT de context** — dos sesiones sin detección. Un UAT que nadie ejecuta no es evidencia, es decoración.
+3. **`tests/uat_ctx_004_cycle_inference.sh`** (nuevo): CTX-UAT-002 (dos ciclos, uno con lease → `resolved` al correcto, `context_source: compiled`, no menciona el otro) y CTX-UAT-003 (dos leases → `ambiguous`, 2 candidates con owner+expires_at_ms, **sin `cycle_id`**), más recovery (liberar lease → vuelve a `resolved`). Falsador RED→GREEN OBSERVED: neutralizar el guard de ambigüedad (`SDDK_UAT_FORCE_GUESS=1`) hace caer el script con 4 aserciones; revertido, PASS.
+4. **CI ejecuta ahora los UAT** en el job espejo `shell-contracts` (con build release; timeout 15→25 min). Añade cobertura; no relaja ninguna allowlist.
+5. **Deuda severa reciente: ninguna vigente.** Los 3 candidatos open con severidad (S14-TEST-PORTS-UNCONSUMED, NO-STRUCTURED-LOGGING, FORCE-VERSION-ERGONOMICS) no cumplen el criterio: generalidad especulativa re-severizada, observabilidad de amplio alcance, y ergonomía de session-14 cuyo pipeline ya deriva bien. 041/038 resueltas en session-47.
+6. Contratos documentados al escribir el UAT: `cycle start` deriva el cycle_id del nombre y no acepta `--cycle`; `--timestamp` es RFC 3339; `lock release` exige `--fencing-token`.
+
+**SIGUIENTE PASO (preciso):** publicar v2.3.2 por CI (tag + `gh workflow run release.yml --ref v2.3.2`), o cerrar CTX-UAT-005 y MIG-UAT-001 con el patrón ya establecido para completar C3i sin huecos.
+
+---
+
+Previous: **Estado (session-47, 2026-09-30T16:31Z): DEUDA SEVERA RESUELTA + RELEASE v2.3.1 PUBLICADO.** Workspace `2.3.1`, `HEAD = origin/main = accd4911` (1 commit documental pendiente de este cierre), árbol con cambios doc del cierre.
 
 **Hecho en session-47 (criterio del operador: regresiones/deuda severa primero, sin abrir roadmap):**
 

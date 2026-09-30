@@ -7046,3 +7046,34 @@ cerrar el slice de C3j objetivo 3.
 **UAT/no ejecutado:** no aplica (deuda de tooling, sin UAT ids). NOT_RUN continúan: INC-DEBT-039 (disparador mecánico), INC-AUDIT-S14-*, CTX-UAT-011..015, HYP-UAT-001..004.
 
 **Primer paso de la sesión siguiente:** evaluar S4+ de `docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md` como hito propio (pendiente desde C3k) o abrir C3i (hypermedia). Receipt completo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session47-debt-041-038-release-v2.3.1/RECEIPT.md`.
+
+---
+
+## session-48 — 2026-09-30T17:00Z — C3i VERIFIED: CTX-UAT-002/003 PASS + UAT caducado reparado + release v2.3.2
+
+**Baseline/HEAD al cierre:** `66110595` → `fd44a146` (push OK). Workspace 2.3.2.
+
+**WorkItem:** C3i — cerrar las dos UAT NOT_RUN con evidencia real, y verificar si el "gate humano" que las bloqueaba seguía vigente. **Verificado y CADUCADO**: `sddk cycle start --lease-owner` y `cycle lock acquire` escriben en el ledger aislable del sandbox. El bloqueo era la ausencia del script, no una restricción del runtime.
+
+**Deuda severa reciente: ninguna vigente.** Revisados los 3 candidatos open con severidad (INC-AUDIT-S14-TEST-PORTS-UNCONSUMED, NO-STRUCTURED-LOGGING, RELEASE-FORCE-VERSION-ERGONOMICS): ninguno cumple "deuda severa reciente" — uno es generalidad especulativa ya re-severizada a medium, otro es observabilidad deAmplio alcance, el tercero es ergonomía cuyo escenario (publicar v2.0.0 en vez de v1.173.0) fue de session-14 y el pipeline ya deriva bien. INC-DEBT-041/038 ya resueltas en session-47.
+
+**HALLAZGO PRINCIPAL (el que justificaba la sesion): evidencia UAT caducada y nadie lo notó.** `tests/uat_ctx_002_context_bootstrap.sh` estaba **ROJO** contra el binario actual mientras la matriz lo declaraba **PASS** desde session-40. Causa: INC-DEBT-042 (session-46) hizo que `context bootstrap` salga con **exit 4** (`no_capsule_source`, la degradación honesta); el script asumía exit 0. Evidencia OBSERVED del fallo: `bootstrap sin ciclo exited non-zero` con stderr vacío — el comando sí persistía binding, adopción y JSON tipado. **Causa raíz de la pudrición: ningún job de CI ejecuta los scripts UAT de context.** Dos sesiones sin que nada lo notara.
+
+**Trabajo (4 commits + bump + bundle):**
+- `0c167a6b` fix(uat): exit 4 aceptado como contrato válido; literal de salida `UAT CTX-002: PASS` → `UAT context bootstrap` (colisionaba con la fila CTX-UAT-002, que seguía NOT_RUN: invitaba a leer un PASS inexistente). 4/4 PASS.
+- `45087a17` test(c3i): `tests/uat_ctx_004_cycle_inference.sh` — CTX-UAT-002 (dos ciclos, uno con lease → `resolved` al que tiene lease, `context_source: compiled`, no menciona el otro) y CTX-UAT-003 (dos leases → `ambiguous` con 2 candidates con owner+expires_at_ms y **sin cycle_id**), más recovery (liberar lease con fencing token → vuelve a `resolved`: la ambigüedad es estado de runtime, no fallo permanente).
+- `146e349b` ci: los UAT de context se ejecutan en el job espejo `shell-contracts` (con build release); timeout 15→25 min. **Añade cobertura, no relaja** las allowlists del shellcheck gate.
+- `f6723cf5` docs: matriz UAT 002/003 → PASS con evidencia, 004 re-verificada; C3i → VERIFIED en ROADMAP (historia del problema conservada).
+- `617e9981` bump 2.3.2 (SEMVER derivado: 1 fix → PATCH) + `fd44a146` BUNDLE.toml 2.3.2 (el guard `test_dev_install_source_guard` predijo el fósil exacto, como en session-47).
+
+**Falsabilidad OBSERVED (RED→GREEN):** con el guard de ambigüedad neutralizado en `cycle.rs` (`SDDK_UAT_FORCE_GUESS=1`, revertido tras la prueba, `git checkout --`), el UAT 004 falla con 4 aserciones y exit 1; revertido, PASS. Sin ese falsador el PASS sería decorativo.
+
+**Contratos descubiertos al escribir el UAT (evita repetir los mismos tropezos):** `cycle start` deriva el cycle_id del nombre (`CycleId::from_parts`) y NO acepta `--cycle`; ofrece `--lease-owner` para crear con lease en un paso. `--timestamp` es RFC 3339, no epoch (un entero da "a character literal was not valid"). `lock release` exige `--fencing-token`, que se lee de la salida del acquire.
+
+**Calidad:** shellcheck -S style limpio en ambos scripts; `test_workflow_contract.py` 508/508; YAML de CI parsea con los 10 steps; el ledger del operador nunca se toca (sandbox con HOME/SDDK_STATE_HOME/XDG_DATA_HOME propios).
+
+**Incidentes propios (registrados, no escondidos):** dos typos contaminados (`cycle_id싱`, `假设`, `递增`) y un conteo de aserciones inventado ("12/12" cuando eran 14) en la primera versión del script — corregidos antes de commit. Un `edit` mío dropeó la línea `let candidates:` del falsador y abortó la transacción (fail-loud, sin escritura parcial). Un `edit` con `SDDBASH` en el old_string falló dos veces contra texto no exacto. El primer intento de falsador **no compiló** (tipo de retorno `ResolvedCycleContext`, no `Option`) y el UAT dio PASS contra el binario viejo: ese PASS era FALSO y se descartó; el falsador válido es el guard neutralizable por env.
+
+**Sigue abierto (NO en scope):** CTX-UAT-005 (skill resume contra runtime 0/1/N) y MIG-UAT-001 (migración skill vieja vs nueva) — automatizables con el mismo patrón. INC-AUDIT-S14-*, INC-DEBT-039, INC-MATRIX-LINT sin cambios. C3j sin abrir (depende de C3i, ya VERIFIED: se desbloquea).
+
+**Primer paso de la sesión siguiente:** release v2.3.2 por CI (`gh workflow run release.yml --ref v2.3.2` tras tagear), o bien cerrar CTX-UAT-005 + MIG-UAT-001 con el patrón ya establecido (el trabajo que deja C3i en VERIFIED completo).
