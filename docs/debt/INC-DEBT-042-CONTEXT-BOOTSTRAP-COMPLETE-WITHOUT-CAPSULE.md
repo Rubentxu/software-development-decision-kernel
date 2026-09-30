@@ -116,12 +116,58 @@ trampa para el consumidor.
 ninguna decisión de modelo. (c) es aceptable solo si además cambia el
 nombre del estado, no solo si se documenta.
 
+## Lo que se implementó (opción a) — 2026-09-30, commit `fix(cli)`
+
+La opción (a) está implementada y verificada en la interfaz real:
+
+- `ContextBootstrapResult::status` ahora es **`no_capsule_source`** cuando no
+  hay capsule, y `complete` solo cuando se recuperó una capsule durable. El
+  literal incondicional `status: "complete"` desapareció, y con él el
+  doc-comment que lo justificaba («Always `complete` on success»).
+- La frontera CLI mapea el estado degradado a **exit code 4**, igual que
+  `run-view` usa para `RUN_STATE_SOURCE_UNAVAILABLE`. El payload se emite
+  íntegro: identidad, adopción, ciclo y binding siguen siendo observables.
+
+Verificado ejecutando el binario, no solo con tests:
+
+```console
+$ sddk context bootstrap --session verify-45f --root . --format json
+status          = no_capsule_source
+capsule_id      = None
+context_source  = fresh
+basis_revision  = empty
+adoption        = complete
+binding_written = True
+EXIT=4
+```
+
+**Lo que esto NO cierra.** El MUST de CTX-003 paso 5 sigue sin
+satisfacerse: el comando ya no *afirma* haber compilado una capsule, pero
+tampoco la compila. La brecha real permanece y sigue bloqueada por la
+decisión de modelo sobre `frontier` (`INC-DEBT-039`). Lo que se corrigió
+es la **mentira**, no la **carencia**: el defecto se degrada de «dice que
+funciona» a «dice que no funcionó». La opción (b) —compilar de verdad—
+sigue abierta y bloqueada.
+
+Evidencia de tests: 3 tests nuevos (RED confirmado antes del fix: `left:
+"complete"` y `left: 0`; GREEN después), más 1 test preexistente
+actualizado. `cargo test -p sddk-cli`: **1326 passed, 0 failed, 2
+ignored**. `cargo fmt --check` y `cargo clippy -p sddk-cli --all-targets
+-- -D warnings`: exit 0.
+
+Un hallazgo honesto sobre ese test preexistente: `bootstrap_without_active_
+cycle_creates_project_binding` afirmaba `status == "complete"` mientras, tres
+líneas más abajo, afirmaba `capsule_id.is_none()`. **El test codificaba la
+contradicción como si fuera correcta.** Se actualizó a
+`no_capsule_source`; el resto de su comportamiento (binding, idempotencia,
+aislamiento de ciclo) no cambió. No se ajustó el test para que pasara: se
+cambió la expectativa, y la causa del cambio está en el doc-comment.
+
 ## Reproducción
 
 ```bash
 sddk context bootstrap --session probe-45e --root . --format json
-# observar: status=complete, capsule_id=null, context_source=fresh,
-#           basis_revision=empty, binding_written=false, exit 0
+# tras el fix: status=no_capsule_source, capsule_id=null, EXIT=4
 ```
 
 ## Nota de alcance

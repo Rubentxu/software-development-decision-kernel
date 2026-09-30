@@ -142,7 +142,12 @@ pub(crate) struct CycleCandidateOut {
 /// Full bootstrap result (CTX-003 step 7).
 #[derive(Debug, Serialize)]
 pub(crate) struct ContextBootstrapResult {
-    /// Always `complete` on success; typed states live in `cycle`.
+    /// `complete` only when the CTX-003 capsule obligation was satisfied —
+    /// that is, when a durable capsule was recovered and is now the basis.
+    /// Otherwise `no_capsule_source`: the bootstrap read no capsule and
+    /// compiled none, so CTX-003 step 5 is unsatisfied and the command must
+    /// not claim success (INC-DEBT-042). Typed states for the cycle live in
+    /// `cycle`, independently of this field.
     pub status: &'static str,
     pub project_id: String,
     pub workspace_id: String,
@@ -274,18 +279,23 @@ pub(crate) fn bootstrap(
     };
 
     // ── 4/5. Rebuild the context basis from the durable capsule ──
+    // CTX-003 step 5 ("compilar capsule") is a MUST that this code path does
+    // not yet satisfy: it only *reads* a durable capsule, it never compiles
+    // one. Producing no capsule is therefore an unsatisfied MUST, not a
+    // successful no-op, and the status must say so (INC-DEBT-042).
     let capsule_store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
         .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
     let cycle_key = cycle_key(&cycle_state);
-    let (context_source, basis_revision, capsule_id) = match capsule_store.last_capsule(&cycle_key)
-    {
-        Some(capsule) => (
-            "recovered",
-            capsule.capsule_id.clone(),
-            Some(capsule.capsule_id),
-        ),
-        None => ("fresh", "empty".to_string(), None),
-    };
+    let (context_source, basis_revision, capsule_id, status) =
+        match capsule_store.last_capsule(&cycle_key) {
+            Some(capsule) => (
+                "recovered",
+                capsule.capsule_id.clone(),
+                Some(capsule.capsule_id),
+                "complete",
+            ),
+            None => ("fresh", "empty".to_string(), None, "no_capsule_source"),
+        };
 
     // ── 6. Bind the session to the resolved target and persist it ──
     let session = AgenticSessionRef::new(args.session.clone());
@@ -329,7 +339,7 @@ pub(crate) fn bootstrap(
     };
 
     Ok(ContextBootstrapResult {
-        status: "complete",
+        status,
         project_id: identity.project_id.as_str().to_string(),
         workspace_id,
         adoption: adoption_state,
@@ -727,16 +737,118 @@ mod tests {
         store.persist(capsule);
     }
 
+    /// A bootstrap that delivered no capsule MUST NOT report `complete`.
+    ///
+    /// SPEC-005 CTX-003 step 5 is a literal MUST ("compilar capsule"). The
+    /// bootstrap only ever *reads* a durable capsule
+    /// (`FilesystemCapsuleStore::last_capsule`) and never compiles one, so
+    /// with no pre-existing capsule the command used to return
+    /// `status: "complete"` with `capsule_id: null`, `context_source:
+    /// fresh` and `basis_revision: empty`, and the CLI mapped that to exit
+    /// code 0 unconditionally. That is a false success: `complete` is the
+    /// signal an orchestrator reads to decide the context is ready.
+    ///
+    /// This pins INC-DEBT-042 option (a): degrade the typed state and the
+    /// exit code so the omission is observable. It does NOT close the gap
+    /// against the MUST — compiling a capsule still needs the ledger
+    /// adapter and the unresolved `frontier` model decision
+    /// (INC-DEBT-039) — so the assertion is that the command stops
+    /// claiming it succeeded.
+    #[test]
+    fn bootstrap_without_capsule_does_not_report_complete() {
+        let tmp = tempdir("no-capsule-honesty");
+        let environment = environment(&tmp);
+        let result = bootstrap(&args_at(&tmp, "s-honest"), &environment).expect("bootstrap");
+
+        // The precondition that makes this a defect and not a design:
+        // no capsule was compiled, so the MUST was not satisfied.
+        assert!(
+            result.capsule_id.is_none(),
+            "precondition: this test is only meaningful when no capsule exists"
+        );
+
+        // The defect: reporting `complete` while delivering nothing.
+        assert_ne!(
+            result.status, "complete",
+            "bootstrap must not report complete when it compiled no capsule (INC-DEBT-042)"
+        );
+        assert_eq!(
+            result.status, "no_capsule_source",
+            "the degradation must be typed so a consumer can branch on it"
+        );
+    }
+
+    /// The same omission must be observable from the *CLI surface*, not only
+    /// from the service struct: a consumer that only reads the process exit
+    /// code must be able to tell that nothing was compiled.
+    #[test]
+    fn bootstrap_without_capsule_exits_nonzero_at_the_cli_boundary() {
+        let tmp = tempdir("no-capsule-exit");
+        let environment = environment(&tmp);
+        let result = bootstrap(&args_at(&tmp, "s-exit"), &environment).expect("bootstrap");
+        assert!(result.capsule_id.is_none(), "precondition: no capsule");
+
+        let output = crate::run_context(
+            crate::ContextCommand::Bootstrap(crate::ContextBootstrapArgsCli {
+                root: Some(tmp.clone()),
+                scope: None,
+                session: "s-exit".into(),
+                cycle: None,
+                format: OutputFormat::Json,
+            }),
+            &environment,
+        );
+
+        assert_ne!(
+            output.status, 0,
+            "exit code must not be 0 when bootstrap compiled no capsule (INC-DEBT-042)"
+        );
+        assert!(
+            output.stdout.contains("no_capsule_source"),
+            "the typed state must reach the rendered output; got: {}",
+            output.stdout
+        );
+    }
+
+    /// A bootstrap that *did* recover a durable capsule keeps reporting
+    /// `complete`: the degradation must not swallow the success path.
+    #[test]
+    fn bootstrap_with_recovered_capsule_still_reports_complete() {
+        let tmp = tempdir("capsule-complete");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-ok"), &environment).expect("seed");
+        let paths = project_paths(&tmp, &environment);
+        let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
+        plant(&store, &capsule(UNREACHABLE_CYCLE_KEY));
+
+        let recovered = bootstrap(&args_at(&tmp, "s-ok"), &environment).expect("recovered");
+        assert!(
+            recovered.capsule_id.is_some(),
+            "precondition: a durable capsule was planted"
+        );
+        assert_eq!(
+            recovered.status, "complete",
+            "recovering a durable capsule is the success path and must stay complete"
+        );
+    }
+
     /// 1st bootstrap on a never-seen project: identity resolves, adoption
     /// converges, there is no lease so the degradation is typed
     /// (`no_active_cycle`) and the binding lands on the project target.
+    ///
+    /// `status` is `no_capsule_source`, not `complete`: this bootstrap found
+    /// no durable capsule and compiled none, so CTX-003 step 5 is
+    /// unsatisfied. The test previously asserted `complete` here, which is
+    /// the false success INC-DEBT-042 opened — it accepted a `complete`
+    /// whose own sibling assertion (`capsule_id.is_none()`) contradicted it.
+    /// Everything else about the binding behaviour is unchanged.
     #[test]
     fn bootstrap_without_active_cycle_creates_project_binding() {
         let tmp = tempdir("no-cycle");
         let environment = environment(&tmp);
         let result = bootstrap(&args_at(&tmp, "s-1"), &environment).expect("bootstrap");
 
-        assert_eq!(result.status, "complete");
+        assert_eq!(result.status, "no_capsule_source");
         assert_eq!(result.adoption, "complete");
         assert_eq!(result.context_source, "fresh");
         assert_eq!(result.basis_revision, "empty");

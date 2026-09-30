@@ -5,11 +5,13 @@ All notable changes to this project are documented in this file.
 ## [2.2.34] - 2026-09-30
 
 ### Fixes
+  - fix(cli): `context bootstrap` deja de reportar `complete` sin compilar capsule (INC-DEBT-042)
   - fix(debt): reabrir INC-DEBT-040, el fix de session-45 fue por ocurrencia
   - fix(debt): degradar INC-DEBT-039 de high/P1 a medium/P2 tras auditar su criterio
   - fix(debt): falsificar el diagnostico del shellcheck y abrir INC-DEBT-041
 
 ### Other
+  - feat(debt): abrir INC-DEBT-042, falso success de context bootstrap
   - docs(roadmap): cierre de session-45 con el release v2.2.33 publicado
 
 ## [2.2.33] - 2026-09-30

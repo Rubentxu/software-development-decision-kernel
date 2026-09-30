@@ -1528,11 +1528,21 @@ fn run_context(command: ContextCommand, environment: &CliEnvironment) -> Command
             };
             match context_cmd::bootstrap(&service_args, environment) {
                 Ok(result) => match render(&result, service_args.format, context_bootstrap_text) {
-                    Ok(stdout) => CommandOutput {
-                        status: 0,
-                        stdout,
-                        stderr: String::new(),
-                    },
+                    Ok(stdout) => {
+                        // A bootstrap that compiled no capsule leaves CTX-003
+                        // step 5 unsatisfied. Identity, adoption and the binding
+                        // were still resolved and rendered, so the payload is
+                        // emitted in full — but the exit code must not claim
+                        // success, or a consumer reading only the exit status
+                        // proceeds on a capsule that does not exist
+                        // (INC-DEBT-042).
+                        let status = if result.status == "complete" { 0 } else { 4 };
+                        CommandOutput {
+                            status,
+                            stdout,
+                            stderr: String::new(),
+                        }
+                    }
                     Err(error) => failure(error.to_string()),
                 },
                 Err(error) => failure(error.to_string()),
