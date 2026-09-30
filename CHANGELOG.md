@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.0] - 2026-09-30
+
+### Features
+  - feat(cli): sddk context expand — progressive disclosure minima de la capsule (C3j objetivo 4)
+
+### Fixes
+  - fix(engine): las capsules de ciclos reales (id con barra) se escribian en un subdirectorio inexistente y persist tragaba el fallo
+
+### Other
+  - docs(c3j): session-50 — context expand verificado, INC-DEBT-044, y adopcion de C3l/C3m/C3n
+  - docs(c3i): session-49 cerrada con v2.3.3 publicado y verificado
+
 ## [2.3.3] - 2026-09-30
 
 ### Fixes
