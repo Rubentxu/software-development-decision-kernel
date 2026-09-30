@@ -7238,3 +7238,5 @@ es el publicado por CI.
 **SIGUIENTE PASO:** C3l.3 (Dynamic Workflow Expansion E2E real — AT-UAT-006/007/008; vertical proposal→authority→PlanRevision→execution + replay idempotente). Después C3l.4 (semántica EXT ausencia≠PASS).
 
 **Incidentes:** ninguno. Release fix→PATCH 2.4.2 tras perfil completo (addendum).
+
+**Addendum session-53 (publicación):** release **v2.4.2 PUBLICADA** (fix→PATCH). Perfil completo 5195/0/19. Local 0–8c (8c fail-closed por diseño). CI run **36782347136 success** (13/13). Tag objeto `aea49ba8`, peel `98cdd2f4` == origin/main. 27 assets, publishedAt 2026-10-01T00:02:10Z. **9b:** 27/27 HTTP 200, gate 13/0. **9c:** sha `ed1c4e5f…` íntegro, cosign **Verified OK**. **10–12:** install exit 0, `sddk 2.4.2`, doctor all_present, prune removed 2.4.1.
