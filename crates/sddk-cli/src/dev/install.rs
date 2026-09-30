@@ -159,7 +159,7 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
 
             // Bundle surface copy: when --source is provided, copy surfaces AFTER
             // manifest verified. Binary-only (no --source) skips this block.
-            let bundle_metadata: Option<(String, String, String)> =
+            let bundle_metadata: Option<(Option<String>, String, Option<String>)> =
                 if let Some(source) = &args.source {
                     let source = std::fs::canonicalize(source)?;
                     for surface in MANIFEST_SURFACES {
@@ -188,21 +188,22 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
                         None
                     };
                     // Parse bundle version from BUNDLE.toml (already validated above).
-                    let bundle_version = if bundle_toml.is_file() {
+                    // INC-DEBT-038: se valida arriba para fail-closed, pero NO se
+                    // enlaza al recibo: el layout flat no produce framework/<v>/.
+                    let _bundle_version = if bundle_toml.is_file() {
                         parse_bundle_manifest(&bundle_toml)
                             .ok()
                             .map(|m| m.bundle.version)
                     } else {
                         None
                     };
-                    // Bundle path relative to the framework root.
-                    let bundle_path = args
-                        .prefix
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|s| s.to_owned());
-                    match (bundle_version, bundle_hash, bundle_path) {
-                        (Some(v), Some(h), Some(p)) => Some((v, h, p)),
+                    // INC-DEBT-038: el layout flat no declara bundle_version —
+                    // esa binding exige framework/<v>/ + current, que --source
+                    // no produce. El hash de BUNDLE.toml sí se guarda (verifica
+                    // qué bundle se instaló), sin fingir versionado.
+                    let bundle_path: Option<String> = None;
+                    match (bundle_hash, bundle_path) {
+                        (Some(h), p) => Some((None, h, p)),
                         _ => None,
                     }
                 } else {
@@ -219,7 +220,9 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
             });
 
             let (bundle_version, bundle_sha256, bundle_path) = match bundle_metadata {
-                Some((v, h, p)) => (Some(v), Some(h), Some(p)),
+                // INC-DEBT-038: v es None para --source (flat, sin binding de
+                // versión); con recibo de release plan sí puede venir Some.
+                Some((v, h, p)) => (v, Some(h), p),
                 None => (None, None, None),
             };
             let has_bundle = args.source.is_some();
@@ -241,6 +244,14 @@ pub(super) fn run_dev_install(args: super::InstallArgs) -> CommandOutput {
                 bundle_sha256,
                 bundle_path,
                 coherence_checked: if has_bundle { Some(true) } else { None },
+                // INC-DEBT-038: --source instala plano (sin framework/<v>/ ni
+                // current); el recibo lo declara para que el doctor no exija
+                // una coherencia versionada que este layout no produce.
+                layout: if has_bundle {
+                    Some("flat".to_owned())
+                } else {
+                    None
+                },
             };
             let receipt_path = args.prefix.join(RECEIPT_FILE);
             atomic_write(

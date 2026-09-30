@@ -124,6 +124,13 @@ pub(super) struct InstallReceipt {
     /// `true` means the binary version satisfies the BUNDLE.toml range.
     #[serde(default)]
     pub coherence_checked: Option<bool>,
+    /// INC-DEBT-038: layout of the installed bundle. `"flat"` = superficies
+    /// copiadas directamente al prefix por `dev install --source` (sin
+    /// `framework/<v>/` ni symlink `current`); la coherencia versionada no es
+    /// aplicable y el doctor no la exige. Ausente (= versioned) en el layout
+    /// canónico de release.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
 }
 
 fn default_receipt_schema_version() -> u32 {

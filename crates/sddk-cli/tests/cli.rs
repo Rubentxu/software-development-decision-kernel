@@ -10392,6 +10392,90 @@ fn doctor_skips_coherence_check_without_receipt() {
     );
 }
 
+#[test]
+fn doctor_flat_install_receipt_reports_notsynthetic_coherence() {
+    // INC-DEBT-038 (opción 2+3): `dev install --source` copia las superficies
+    // PLANAS al prefix (sin framework/<v>/ ni symlink current). El recibo v2
+    // de ese layout declara layout="flat" y bundle_version=null. El doctor
+    // trata ese caso como coherencia no aplicable (present=true con detalle
+    // "flat-install"), nunca como missing — el recibo ya no afirma una
+    // coherencia versionada que la instalación no produce.
+    let fixture = CliFixture::new("flat-install-receipt");
+    let root = fixture.root.clone();
+    let test_data = root.join(".test-data");
+    std::fs::create_dir_all(&test_data).unwrap();
+
+    // Capture this binary's version so the receipt matches it.
+    let version_output = std::process::Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    let version_str = String::from_utf8_lossy(&version_output.stderr)
+        .trim()
+        .to_string();
+    let binary_version = version_str.strip_prefix("sddk ").unwrap_or(&version_str);
+
+    // Flat layout: superficies directamente en el data dir, SIN framework/<v>/
+    // ni `current`. Receipt v2 con layout flat.
+    let assets = test_data.join("assets");
+    std::fs::create_dir_all(assets.join("uat-driver")).unwrap();
+    std::fs::write(assets.join("uat-driver/driver.mjs"), "").unwrap();
+    std::fs::write(assets.join("uat-driver/computer_use.mjs"), "").unwrap();
+    std::fs::write(assets.join("uat-driver/assess.mjs"), "").unwrap();
+    std::fs::create_dir_all(assets.join("uat-dashboard/kit")).unwrap();
+    std::fs::create_dir_all(assets.join("uat-dashboard/views")).unwrap();
+    std::fs::write(assets.join("uat-dashboard/kit/components.js"), "").unwrap();
+    std::fs::write(assets.join("uat-dashboard/views/guided.html"), "").unwrap();
+    let flat_receipt = serde_json::json!({
+        "schema_version": 2,
+        "version": binary_version,
+        "commit": "test-commit",
+        "binary_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "channel": "dev",
+        "installed_at": "2024-01-01T00:00:00Z",
+        "binary_path": "bin/sddk",
+        "bundle": true,
+        "layout": "flat",
+        "bundle_version": null
+    });
+    std::fs::write(
+        test_data.join("sddk-install.json"),
+        flat_receipt.to_string(),
+    )
+    .unwrap();
+
+    // Minimal surface.
+    write(
+        root.join("agents/orchestrator.md"),
+        "---\nname: orchestrator\ndescription: Test\nmodel: test\n---\n# Orch\n",
+    );
+    write(
+        root.join("permissions.yaml"),
+        "agents:\n  orchestrator:\n    phases: []\n    capabilities: []\n",
+    );
+    write(root.join("prompts/sddk/test.md"), "# Prompt\ncontent\n");
+    write(root.join("skills/demo/SKILL.md"), "# Demo\n");
+
+    let doctor = run_doctor_from(&root, &["dev", "doctor", "--format", "json"]);
+    let output: serde_json::Value = serde_json::from_str(&doctor.stdout).unwrap();
+    let checks = output["checks"].as_array().unwrap();
+
+    let coherence_check = checks
+        .iter()
+        .find(|c| c["tool"].as_str().unwrap() == "binary.bundle_coherence")
+        .expect("flat receipt must emit a binary.bundle_coherence check");
+    assert!(
+        coherence_check["present"].as_bool().unwrap(),
+        "flat-install receipt must NOT be flagged missing (coherencia no aplicable)"
+    );
+    let detail = coherence_check["detail"].as_str().unwrap_or("");
+    assert!(
+        detail.contains("flat"),
+        "detail must declare the flat layout, got: {detail}"
+    );
+    assert_eq!(doctor.status, 0, "flat install must exit 0");
+}
+
 fn run_with_root(fixture: &CliFixture, args: &[&str], common: &[&str]) -> std::process::Output {
     fixture.run(
         &args

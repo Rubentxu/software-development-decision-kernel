@@ -20,9 +20,9 @@ use crate::dev::arch_lint::{
     semantic_graph_alignment_checks, target_task_dag_alignment_checks,
     unified_authority_runner_alignment_checks,
 };
-use crate::dev::common::{read_receipt, tool_version};
+use crate::dev::common::{RECEIPT_FILE, read_receipt, tool_version};
 use crate::dev::manifest::verify_manifest;
-use crate::dev::paths::resolve_active_framework_root;
+use crate::dev::paths::{resolve_active_framework_root, sddk_data_dir};
 use crate::{CliEnvironment, CommandOutput, render_result};
 use std::path::{Path, PathBuf};
 
@@ -289,7 +289,24 @@ pub(super) fn run_dev_doctor(
     // from the active framework bundle (ADR-013). A dev update without asset
     // sync leaves stale/missing assets that break `uat dashboard` and
     // `uat run --executor playwright|computer_use` at runtime.
-    if let Ok(framework_root) = resolve_active_framework_root(environment) {
+    // INC-DEBT-038: `dev install --source` produce un layout PLANO (superficies
+    // directamente bajo el data root, sin framework/<v>/ ni current). Si el
+    // resolver versionado no encuentra nada pero existe un recibo flat, el
+    // doctor opera sobre el data root como framework root.
+    let flat_receipt_source = sddk_data_dir(environment)
+        .ok()
+        .filter(|dir| !dir.join("current").exists())
+        .filter(|dir| dir.join(RECEIPT_FILE).is_file())
+        .filter(|dir| {
+            read_receipt(dir)
+                .map(|r| r.layout.as_deref() == Some("flat"))
+                .unwrap_or(false)
+        });
+    let framework_root = match resolve_active_framework_root(environment) {
+        Ok(root) => Some(root),
+        Err(_) => flat_receipt_source.clone(),
+    };
+    if let Some(framework_root) = framework_root {
         let assets = framework_root.join("assets");
         let driver_ok = assets.join("uat-driver/driver.mjs").is_file()
             && assets.join("uat-driver/computer_use.mjs").is_file()
@@ -398,12 +415,37 @@ pub(super) fn run_dev_doctor(
                 .flatten()
                 .unwrap_or(true);
             let coherent = receipt_ok && bundle_match && compat_ok;
-            checks.push(DoctorCheck {
-                tool: "binary.bundle_coherence".into(),
-                present: coherent,
-                detail: None,
-            });
-            if !coherent {
+            // INC-DEBT-038: un recibo de instalación flat (layout="flat", sin
+            // bundle_version) declara superficies copiadas planas al prefix.
+            // La coherencia versionada (current → framework/<v>/) no es
+            // aplicable a ese layout: el doctor la reporta como N/A en verde
+            // en vez de un missing que acusaría una coherencia que la
+            // instalación nunca prometió. receipt.version sigue verificando.
+            let flat_install = receipt.layout.as_deref() == Some("flat");
+            if flat_install {
+                checks.push(DoctorCheck {
+                    tool: "binary.bundle_coherence".into(),
+                    present: receipt_ok,
+                    detail: Some(format!(
+                        "flat-install: coherencia versionada no aplicable (receipt.version {})",
+                        if receipt_ok { "ok" } else { "mismatch" }
+                    )),
+                });
+                if !receipt_ok {
+                    framework_warnings += 1;
+                }
+            } else if coherent {
+                checks.push(DoctorCheck {
+                    tool: "binary.bundle_coherence".into(),
+                    present: true,
+                    detail: None,
+                });
+            } else {
+                checks.push(DoctorCheck {
+                    tool: "binary.bundle_coherence".into(),
+                    present: false,
+                    detail: None,
+                });
                 framework_warnings += 1;
             }
         }
