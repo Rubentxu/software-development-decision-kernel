@@ -6989,3 +6989,33 @@ cerrar el slice de C3j objetivo 3.
 **Riesgos:** W4 (gates sin evaluador) requiere decisión de modelo del operador; D1/D2 siguen vivas en producción hasta C3k W1/W2.
 
 **Primer paso de la sesión siguiente:** abrir C3k con W1 (sign-off) y W2 (identidad) como primer slice RED→GREEN; pedir al operador la decisión de W4.
+
+---
+
+## session-46b (c3k, continuación 2) — 2026-09-30T15:10Z — C3k COMPLETO + release v2.3.0 publicado
+
+**Baseline/HEAD al cierre:** development_head = origin/main = `9d5c13d9` (antes del commit documental de este cierre); tag **v2.3.0** (peel `9d5c13d9` = HEAD al publicar). Workspace 2.3.0.
+
+**WorkItem:** cierre del hito C3k (11 defectos de agent-secretless): W2c + INC-DEBT-040 variante (3) + release + cierre.
+
+**Decisiones:**
+1. **W2c** (9c3e027e): `sddk project pin/unpin` con pin persistido `.sddk/project-pin.json` (schema 1); `project resolve` reporta `identity_source: pinned`; `RuntimeContext::open` lo honra; `IdentitySource::Pinned` nueva variante. Repinar a otro id falla sin unpin. E2E `project_pin_e2e` 2/2.
+2. **INC-DEBT-040 variante (3)** (37c90b51): ruta **(A-v2, tag-baseline)** en `githooks/pre-push`, alineada con `release_admission_check_v2`: se admite el push cuando la versión del tip excede el máximo tag `v*` del remote (o bootstrap). **Fail-closed** si `ls-remote` falla (probado por invocación directa del hook). Durante la ventana declarada-sin-publicar cualquier rango no vacío es admisible; 3 expectativas de rename de la matriz original enmendadas (`AMENDED:`). Matriz 48/48. Debt **resolved** + índice + documento actualizados (historia preservada).
+3. **Bump derivado minor** 2.2.37 → 2.3.0 (3 feats: project pin, backlog linaje, warning admission). Publicación por CI: `release.yml` workflow_dispatch `--ref v2.3.0`, **run 36732655082 completed success**, 27 assets, isDraft=false, isPrerelease=false.
+4. Higiene de árbol detectada por los guards: MANIFEST.sha256 stale (pillado por `cli_dev_install_accepts_committed_manifest`, 94a7516d), BUNDLE.toml fósil 2.2.32 (pillado por `test_dev_install_source_guard`, f2fed84b), drift de 15 commits del puntero STATE (7231a09f).
+
+**Evidencia OBSERVED (gates del release):**
+- Locales: fmt 0; clippy -D warnings 0; `cargo test --workspace` 0 failed (único rojo inicial = MANIFEST stale, no código); shell tests verdes; hook 48/48; admission 24/24; bump derivation 7/7; supply-chain 13/13 con `--tag v2.2.37`.
+- Push: 19 commits en un solo push **admitidos por la ruta tag-baseline recién implementada** (el rango no llevaba bump; tip 2.3.0 > v2.2.37) — el fix se probó a sí mismo en producción.
+- 9b: `git ls-remote refs/tags/v2.3.0` = `9d5c13d9…` == HEAD == origin/main; **18/18 assets HTTP 200** verificados individualmente.
+- 9c: sha256 CDN `3c5d5b88fdae53b2…` == binario descargado (sin staleness); `cosign verify-blob` **Verified OK** (identity `release.yml@refs/tags/v2.3.0`).
+- Install: `install.sh --version v2.3.0` exit 0; sddk 2.3.0; current → 2.3.0; doctor **all_present true** (content.manifest + binary.bundle_coherence present; 6 advisory briefness preexistentes); prune removed 2.2.37.
+- `release.sh` local aborta en 8c por diseño (cosign keyless exige OIDC de GH Actions); publicación por CI, patrón session-45/46.
+
+**UAT NO ejecutado:** CTX-UAT-011..015, HYP-UAT-001..004 (pertenecen a C3j objetivo 6 / paso 7 hipermedia, trabajo futuro).
+
+**Bloqueos:** ninguno.
+
+**Riesgos:** los 6 `surface.briefness.*` advisory del doctor (superficies que exceden budgets de líneas) siguen abiertos como deuda cosmética; INC-DEBT-041 (shellcheck CI) sigue open.
+
+**Primer paso de la sesión siguiente:** evaluar en roadmap qué parte del plan de evolución (`docs/research/2026-09-30-sddk-cli-defects-evolution-plan.md`) excede C3k y merece hito propio (S4+); recibo del cierre en `tests/cycle-artifacts/p-63676b11dc0ef88f/c3k-release-v2.3.0/RECEIPT.md`.
