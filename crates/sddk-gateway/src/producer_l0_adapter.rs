@@ -72,29 +72,57 @@ pub enum ProducerEvent {
 }
 
 /// Synchronous adapter from producer events to Secretary L0 reactive rules.
+///
+/// C3l.2: the adapter NEVER creates the engine it evaluates against. The
+/// caller composes a configured [`SecretaryL0Engine`] (its registered
+/// productive rules) and injects it via [`ProducerToL0Adapter::with_engine`]
+/// — the default constructors hold a fresh, rule-less engine only for
+/// silence/cooldown tests. Without injection, a registered rule can never
+/// fire through the public path (the INC behind AIW-S7a NOT_VERIFIED).
 #[derive(Debug, Default)]
 pub struct ProducerToL0Adapter {
+    engine: Option<std::sync::Arc<SecretaryL0Engine>>,
     now_ms: i64,
 }
 
 impl ProducerToL0Adapter {
-    /// Adapter with the current timestamp anchored at construction.
+    /// Adapter with the current timestamp anchored at construction and a
+    /// fresh (rule-less) engine.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adapter with a deterministic timestamp (tests, replays).
+    /// Adapter with a deterministic timestamp (tests, replays) and a fresh
+    /// (rule-less) engine.
     pub fn with_now(now_ms: i64) -> Self {
-        Self { now_ms }
+        Self {
+            engine: None,
+            now_ms,
+        }
     }
 
-    /// Converts `ev` into a [`ReactiveEvent`] and evaluates it against a
-    /// fresh real engine. Unknown events return an empty signal list.
+    /// Adapter composed with a CALLER-CONFIGURED engine (C3l.2): rules
+    /// registered on that engine fire through [`ProducerToL0Adapter::dispatch`].
+    /// Deterministic timestamp included (cooldown state lives in the engine,
+    /// so it persists across dispatches — as designed).
+    pub fn with_engine(engine: std::sync::Arc<SecretaryL0Engine>, now_ms: i64) -> Self {
+        Self {
+            engine: Some(engine),
+            now_ms,
+        }
+    }
+
+    /// Converts `ev` into a [`ReactiveEvent`] and evaluates it against the
+    /// configured engine (or a fresh one when none was injected). Unknown
+    /// events return an empty signal list.
     pub fn dispatch(&self, ev: ProducerEvent) -> Vec<ReactiveSignal> {
         let Some(reactive) = self.to_reactive(ev) else {
             return Vec::new();
         };
-        SecretaryL0Engine::new().evaluate(&reactive, self.now_ms)
+        match &self.engine {
+            Some(engine) => engine.evaluate(&reactive, self.now_ms),
+            None => SecretaryL0Engine::new().evaluate(&reactive, self.now_ms),
+        }
     }
 
     fn to_reactive(&self, ev: ProducerEvent) -> Option<ReactiveEvent> {

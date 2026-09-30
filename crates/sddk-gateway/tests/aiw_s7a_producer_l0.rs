@@ -27,8 +27,53 @@ fn cognicode_finding_e2e() {
         ))
         .expect("rule registers");
 
-    // Dispatch path: adapter converts the finding and evaluates a real engine.
-    let adapter = ProducerToL0Adapter::with_now(10_000);
+    // C3l.2 falsificador principal: register rule → dispatch(real
+    // ProducerEvent) → expected signal. La ruta pública del adapter es la
+    // que debe disparar la regla; reconstruir el ReactiveEvent a mano está
+    // PROHIBIDO por C3l.2 (eso demostraba el engine, no la ruta).
+    let adapter =
+        ProducerToL0Adapter::with_engine(std::sync::Arc::new(clone_engine(&engine)), 10_000);
+    let signals = adapter.dispatch(ProducerEvent::CogniCodeFinding {
+        symbol: "stale_parser".into(),
+        file: "crates/sddk-engine/src/lib.rs".into(),
+        line: 119,
+        finding_kind: FindingKind::Unused,
+    });
+    assert_eq!(
+        signals,
+        vec![ReactiveSignal::PersistEvidence {
+            evidence_ref: "ev-g04-cognicode".into(),
+            summary: "unused symbol".into(),
+        }],
+        "a registered rule MUST fire through the public dispatch path"
+    );
+}
+
+/// Exit gate de C3l.2: el test de arriba FALLA si el engine inyectado se
+/// sustituye por uno nuevo vacío — una regla registrada en un engine que el
+/// adapter no usa no puede disparar señal alguna por la ruta pública.
+#[test]
+fn exit_gate_fresh_engine_cannot_fire_registered_rules() {
+    let engine = SecretaryL0Engine::new();
+    engine
+        .register(ReactiveRule::new(
+            "cognicode-evidence",
+            ReactiveTrigger::CandidateArrived,
+            ReactiveMatcher::CustomKey {
+                key: "producer".into(),
+                value: "cognicode".into(),
+            },
+            ReactiveSignal::PersistEvidence {
+                evidence_ref: "ev-g04-cognicode".into(),
+                summary: "unused symbol".into(),
+            },
+        ))
+        .expect("rule registers");
+
+    // El adapter recibe un engine DISTINTO (vacío): sin wiring, la señal no
+    // existe. Esto es lo que el defecto C3l.2 hacía SIEMPRE.
+    let adapter =
+        ProducerToL0Adapter::with_engine(std::sync::Arc::new(SecretaryL0Engine::new()), 10_000);
     let signals = adapter.dispatch(ProducerEvent::CogniCodeFinding {
         symbol: "stale_parser".into(),
         file: "crates/sddk-engine/src/lib.rs".into(),
@@ -37,24 +82,33 @@ fn cognicode_finding_e2e() {
     });
     assert!(
         signals.is_empty(),
-        "fresh engine has no rules; dispatch must be side-effect free"
+        "an unconfigured engine fires nothing: the signal came from the \
+         injected engine, not from the adapter"
     );
+}
 
-    // G04: same conversion evaluated against the registered engine yields
-    // the configured signal, proving producer evidence reaches L0.
-    use sddk_engine::ReactiveEvent;
-    let reactive = ReactiveEvent::new(ReactiveTrigger::CandidateArrived, 10_000)
-        .with_cycle_ref("cognicode:stale_parser")
-        .with_custom("producer", "cognicode")
-        .with_custom("finding_kind", "unused");
-    let fired = engine.evaluate(&reactive, 10_000);
-    assert_eq!(
-        fired,
-        vec![ReactiveSignal::PersistEvidence {
-            evidence_ref: "ev-g04-cognicode".into(),
-            summary: "unused symbol".into(),
-        }]
-    );
+/// Helper del test: clona el estado del engine vía registro paralelo. El
+/// engine es interior-mutable pero no Clone; para el falsificador basta con
+/// un segundo engine con LA MISMA regla registrada (lo que el caller hace
+/// en producción: configura UN engine y se lo pasa al adapter).
+fn clone_engine(engine: &SecretaryL0Engine) -> SecretaryL0Engine {
+    let _ = engine; // la regla se re-registra en el nuevo engine abajo
+    let clone = SecretaryL0Engine::new();
+    clone
+        .register(ReactiveRule::new(
+            "cognicode-evidence",
+            ReactiveTrigger::CandidateArrived,
+            ReactiveMatcher::CustomKey {
+                key: "producer".into(),
+                value: "cognicode".into(),
+            },
+            ReactiveSignal::PersistEvidence {
+                evidence_ref: "ev-g04-cognicode".into(),
+                summary: "unused symbol".into(),
+            },
+        ))
+        .expect("rule registers on the clone");
+    clone
 }
 
 #[test]
@@ -75,30 +129,46 @@ fn chronos_crash_e2e() {
         ))
         .expect("rule registers");
 
-    let adapter = ProducerToL0Adapter::with_now(20_000);
+    // C3l.2: la regla registrada dispara POR LA RUTA PÚBLICA del adapter
+    // configurado con ese engine (sin reconstrucción manual del evento).
+    let adapter =
+        ProducerToL0Adapter::with_engine(std::sync::Arc::new(engine_for_adapter()), 20_000);
     let signals = adapter.dispatch(ProducerEvent::ChronosCrash {
         program: "sddk-cli".into(),
         signal: 11,
         callstack_top: "sddk::main+0x42".into(),
     });
-    assert!(
-        signals.is_empty(),
-        "adapter dispatch uses a fresh engine; registered rules fire through evaluate"
-    );
-
-    use sddk_engine::ReactiveEvent;
-    let reactive = ReactiveEvent::new(ReactiveTrigger::FrontierBlockerChanged, 20_000)
-        .with_cycle_ref("chronos-crash:sddk-cli")
-        .with_custom("producer", "chronos")
-        .with_custom("event_kind", "crash");
-    let fired = engine.evaluate(&reactive, 20_000);
     assert_eq!(
-        fired,
+        signals,
         vec![ReactiveSignal::OpenHumanDecision {
             request_ref: "dec-g04-crash".into(),
             reason: "producer reported a crash".into(),
-        }]
+        }],
+        "a registered crash rule MUST fire through the public dispatch path"
     );
+}
+
+/// Regla de crash registrada dos veces (una para el engine de aserción
+/// original del test, otra para el engine que recibe el adapter): en
+/// producción el caller configura UN engine y lo comparte; aquí el dup
+/// documenta que el disparo depende del engine inyectado, no del adapter.
+fn engine_for_adapter() -> SecretaryL0Engine {
+    let engine = SecretaryL0Engine::new();
+    engine
+        .register(ReactiveRule::new(
+            "chronos-crash-evidence",
+            ReactiveTrigger::FrontierBlockerChanged,
+            ReactiveMatcher::CustomKey {
+                key: "event_kind".into(),
+                value: "crash".into(),
+            },
+            ReactiveSignal::OpenHumanDecision {
+                request_ref: "dec-g04-crash".into(),
+                reason: "producer reported a crash".into(),
+            },
+        ))
+        .expect("rule registers");
+    engine
 }
 
 #[test]
