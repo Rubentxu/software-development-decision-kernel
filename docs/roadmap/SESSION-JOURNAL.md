@@ -6762,3 +6762,51 @@ pueda cerrar. Requiere la decision de modelo del operador sobre `frontier`,
 que es la misma que bloquea la opcion (a) de `INC-DEBT-039`. **Es una
 decision, no trabajo**: no hay codigo que escribir hasta que se responda.
 Se deja abierto con el bloqueo verificado, no como pendiente de esfuerzo.
+
+### session-45f: doble check de los goals de session-45e (el sistema salto la confianza)
+
+Reverifique las dos afirmaciones, porque el patron `grep` con ancla al
+final ya ha dado un falso negativo en este repo cinco veces.
+
+**`v2.2.32` no existe — CONFIRMADO por dos vias independientes.** El
+patron original (`grep 'v2\.2\.32$'`) era sospechoso: un tag anotado
+produce dos lineas y la peelada acaba en `^{}`, asi que el ancla no la
+cuenta. Con el patron sin ancha da **0** igual, el control `v2.2.33`
+da **2** lineas como debe, y la **API de GitHub** (`/tags` y `/releases`)
+da **0** para 2.2.32. Tres comprobaciones, mismo resultado. No es un
+artefacto del patron. El CHANGELOG tiene **1** cabecera `## [2.2.32]` y
+**1** `## [2.2.33]`, en orden correcto entre `2.2.34` y `2.2.31`.
+
+**Estado de versiones coherente** (observado): workspace `2.2.34`, ultimo
+tag local y remoto `v2.2.33`, ultimo release publicado `v2.2.33`, cabecera
+mas alta del CHANGELOG `2.2.34`. El 2.2.34 sin tag es el estado normal
+pre-release segun AGENTS.md 2.3, no una incoherencia.
+
+**`C3j remainder` — el bloqueo es estructural, confirmado en el codigo, y
+es mas fuerte de lo que session-45e afirmo.** Dos implementing
+`CapsuleInputs` existen en todo el workspace: `InMemoryCapsuleInputs` y
+`RecoveryCapsuleInputs`. El segundo exige un `RunStateView` en
+`RecoveryCapsuleInputs::new`, y la unica inyeccion
+(`with_run_state_view_inputs`) la usan **solo tests**. **No hay ninguna ruta
+de produccion que pueda compilar una capsule sin `RunStateView`.**
+
+**Y el paso 5 esta bloqueado de una forma que session-45e no describio:**
+`sddk context bootstrap --session probe-45e --root .` devuelve
+**exit 0 y `status: complete`**, pero con **`capsule_id: null`**,
+`context_source: fresh` y `basis_revision: empty`. El comando **reporta
+exito mientras su entrega no existe**. Es el mismo patron que
+`INC-DEBT-039`: afirmar algo que no se hizo, aqui en el comando en vez de
+en la vista. El «paso 5 pendiente» no es «la feature falta»: es «el comando
+dice complete sin compilar la capsule».
+
+**Esto no cambia la conclusion** (C3j sigue abierto y bloqueado, y el
+bloqueador sigue siendo la decision de modelo sobre `frontier`), pero la
+evidencia es mas fuerte y mas especifica: el bloqueo no es una limitacion
+de este repo, es que la **unica** implementacion de `CapsuleInputs` de
+produccion depende de un tipo que hoy falla cerrado por diseno.
+
+**Lo que NO se ha hecho aqui**: no se ha arrancado un ciclo para probar
+`context bootstrap` con un ciclo activo. `sddk cycle list` no existe como
+subcomando, y no se inventa un comando para forzar una prueba. La
+observacion de arriba es sobre el estado sin ciclo activo, que es el estado
+por defecto del workspace.
