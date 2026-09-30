@@ -1,8 +1,8 @@
 ---
 id: INC-DEBT-039-RUN-STATE-VIEW-SCAFFOLD-READS-NO-LEDGER
 status: open
-severity: high
-priority: P1
+severity: medium
+priority: P2   # session-45b: degradado desde high/P1. Ver "Revision de severidad" al final del documento.
 detected_at: 2026-09-29
 detected_in_session: session-42
 blocks: [CTX-COMPILER-001, CTX-003-paso-5, CTX-COMPILER-002]
@@ -15,7 +15,7 @@ references:
 
 # INC-DEBT-039: `RunStateView` se construye sin leer el ledger y miente sobre su completitud
 
-- **Estado**: open (high/P1)
+- **Estado**: open (medium/P2 — degradado desde high/P1 en session-45b, ver revision de severidad)
 - **Detectada**: session-42 (2026-09-29), al desbloquear CTX-003 paso 5
 - **Bloquea**: `CTX-COMPILER-001`, CTX-003 paso 5, `CTX-COMPILER-002`
 
@@ -192,3 +192,68 @@ ejecutar CTX-003 paso 5, es decir, al chocar con el objetivo. La lección
 repetida de este repo (INC-DEBT-033, INC-DEBT-037) es que un objetivo
 "terminado" en apariencia puede estar bloqueado por una deuda que nadie
 anotó porque nadie llegó lo bastante lejos.
+
+## Revision de severidad — session-45b (2026-09-30): P1 → P2
+
+La sesion-45 cerro el ciclo con `INC-DEBT-039` como unico P1 abierto.
+Aplicando el criterio que uso para 026 y 030 —*una alerta cuyos criterios
+no se verifican no es deuda real, y una severidad que ya no describe el
+estado real distorts la priorizacion*— se revisa el criterio de P1.
+
+**El criterio de P1 era**: «no es "falta una integracion", es **una vista
+que afirma algo falso**». Ese criterio **ya no se sostiene**.
+
+### Lo que se verifica hoy (OBSERVED)
+
+1. **El defecto de la vista falsa esta corregido y fail-closed.**
+   `sddk run-view R-decl-fake-run --format json` con `SDDK_STATE_HOME`
+   aislado devuelve **exit 4**, stdout vacio, y este error:
+   `RUN_STATE_SOURCE_UNAVAILABLE` … «frontier, blockers and
+   pending_decisions cannot be reported without one», con
+   `"debt":"INC-DEBT-039"`. La heuristica de origen por prefijo y los
+   `vec![]` constantes **no existen** en `run_view.rs` (grep vacio).
+2. **Esta protegido por tests de regresion permanentes.**
+   `cargo test -p sddk-cli --test run_view_cli` → **4/4 ok**, incluidos
+   `no_source_fails_closed_and_emits_nothing_on_stdout` y
+   `fabricated_view_shape_is_not_reachable_from_the_cli`.
+3. **No queda ninguna cadena de dano viva.** `load_run_state_view` no lo
+   consume ningun otro modulo de produccion: su unico consumidor de
+   produccion es el propio comando, ya fail-closed. El unico otro
+   consumidor es el propio test que lo cita como regresion. Por tanto
+   `ActionSurfaceView` **no** se deriva hoy de una vista falsa en
+   produccion.
+
+Es decir: el defecto P1 —una vista que afirma algo falso— esta
+**corregido**, **verificado en vivo** y **blindado por tests**. Mantener
+P1 seria una severidad que describe un estado que ya no existe, y eso es
+justo el tipo de entrada que hizo que 026 y 030 se priorizasen dos veces
+(INC-DEBT-032, INC-DEBT-031: el indice era la autoridad de
+priorizacion, y decia `open` cuando el trabajo ya estaba hecho).
+
+### Lo que queda (y por que sigue siendo deuda, a P2)
+
+No es deuda **real de correctitud**, es **trabajo de modelo** que la
+opcion (a) necesita antes de poder escribirse:
+
+- **Opcion (a) — adaptador de ledger** sigue pendiente y sigue
+  bloqueando CTX-003 paso 5. Pero la propia INC ya sefia que requiere
+  responder antes una pregunta de **modelo**, no de codigo: *que es
+  `frontier` cuando `node_runs_v1` esta vacia?*. Responder eso con
+  codigo seria inventar la semantica de la spec.
+- **Opcion (c) — campo de procedencia `Sourced`/`Unsourced`** en
+  `RunStateView`: no implementada, y el grep lo confirma. Con (b) ya
+  aplicada el riesgo actual es bajo, pero sigue siendo *defence in
+  depth* cuando (a) llegue.
+
+Por eso baja a **medium/P2**: es deuda real, con criterio verificable
+(«no hay fuente de run state» sigue siendo cierto y sigue bloqueando
+CTX-003), pero **no** es una afirmacion falsa en produccion y no
+requiere contencion urgente: no hay ningun consumidor danado. Sigue
+siendo el **siguiente P1 del roadmap** en cuanto el operador decida la
+pregunta de modelo de `frontier`.
+
+### Lo que esta decision NO hace
+
+No cierra la INC ni implementa (a) ni (c). Solo corrige la severidad
+para que la prioridad refleje el estado real. Implementar (a) requiere
+la decision de modelo del operador, no una sesion autonoma.

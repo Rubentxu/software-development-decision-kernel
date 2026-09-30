@@ -6611,3 +6611,36 @@ observado en su propio gate no puede presentarse como fallo del gate.
 
 - Abierta: **INC-DEBT-039** (P1, unico), **INC-DEBT-041** (P2, nueva).
 - Sin cambio en el release: `v2.2.33` publicado, verificado, instalado.
+
+### session-45c: audit de INC-DEBT-039, unica P1 abierta → P2
+
+Aplicado el criterio de 026/030 a la ultima P1: **una severidad que ya
+no describe el estado real distorta la priorizacion**.
+
+**El criterio de P1 era** «no es falta una integracion, es una vista que
+**afirma algo falso**». **Ya no se sostiene.** Verificado hoy (OBSERVED):
+
+- `sddk run-view R-decl-fake-run --format json` con `SDDK_STATE_HOME`
+  aislado → **exit 4**, stdout vacio,
+  `RUN_STATE_SOURCE_UNAVAILABLE` + `"debt":"INC-DEBT-039"`.
+- La heuristica de origen por prefijo y los `vec![]` constantes **no
+  existen** en `run_view.rs` (grep vacio).
+- `cargo test -p sddk-cli --test run_view_cli` → **4/4 ok**, incluido
+  `fabricated_view_shape_is_not_reachable_from_the_cli`.
+- **No queda cadena de dano**: `load_run_state_view` no lo consume ningun
+  otro modulo de produccion; su unico consumidor es el propio comando,
+  ya fail-closed. `ActionSurfaceView` no se deriva hoy de una vista falsa.
+
+Degradada a **medium/P2**, con el documento conservado y la revision
+anadida al final (append-only). **No se cierra**: la opcion (a) sigue
+pendiente y sigue bloqueando CTX-003 paso 5, pero la propia INC ya
+reconoce que requiere una **decision de modelo** (que es `frontier` con
+`node_runs_v1` vacia), no de codigo. Implementarla en una sesion
+autonoma seria inventar la semantica de la spec.
+
+**Estado de la deuda al cerrar session-45c: 0 P1 abiertos, 10 abiertas
+en total** (INC-DEBT-039 P2 degradada, INC-DEBT-041 P2 nueva, y 8
+P2/P3 heredadas). La unica P2 con criterio vivo y accionable por
+decision del operador es **INC-DEBT-041** (ceguera de shellcheck aguas
+arriba + 28 hallazgos latentes, con tres salidas de triage). La
+prioridad de roadmap vuelve a ser el roadmap, no la triaje de deuda.
