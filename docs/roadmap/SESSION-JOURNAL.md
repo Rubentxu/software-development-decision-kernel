@@ -7195,3 +7195,26 @@ es el publicado por CI.
 **SIGUIENTE PASO:** C3l.1 (DebVerify fail-closed — AT-UAT-002/003, TDD RED→GREEN en `DebVerifyKernel::reconcile`) y después C3l.2 (Producer→L0 wiring real — AT-UAT-004/005), según la recomendación del paquete. Ambas son slices de código con falsificadores declarados en el paquete.
 
 **Incidente:** ninguno. Nota de higiene: queda sin trackear `docs/ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` (copia idéntica en raíz de docs/ del roadmap del paquete ya commiteado) — pendiente de decisión del operador (una sola fuente recomienda eliminarla).
+
+---
+
+## Session-52 (2026-10-01T00:10Z) — C3l.1: DebVerify fail-closed (AT-UAT-002/003 PASS)
+
+**Baseline / HEAD:** `origin/main = 4ad3429b` (v2.4.0 publicada en session-50). **Slice C3l.1** del paquete acceptance-truthfulness — primera slice de código de la vía C3l, según su recomendación operativa (C3l.1 y C3l.2 primero).
+
+**Defecto (verificado en código antes de tocar nada):** `DebVerifyKernel::reconcile` trataba `Err(_) => {}` — un pass podía terminar `ConfirmedBaseline` con estrategias aplicables que habían FALLADO, y `strategies_run = applicable.len()` contaba aplicables, no completadas. Exactamente el defecto declarado en C3l.1.
+
+**Resolución tipada (sin scores ni booleanos ambiguos), `22459708`:**
+- `StrategyFailure { strategy_id, reason }` (Serialize; `ChallengeError::MissingInput(d)` → `reason = "missing input: {d}"`).
+- `ReconciliationSummary::Incomplete { failures }` — sexto... (séptimo) variante del enum cerrado. **`ConfirmedBaseline` y `AcceptedDebt` inalcanzables con fallos**: aceptar deuda con una estrategia fallida ocultaría la deuda que esa estrategia habría encontrado.
+- Las señales reales dominan: Contradiction/EvidenceGap/Staleness siguen saliendo cuando se encontraron (falsificador 4: falla + contradicción ⇒ Contradiction).
+- `strategies_run` = outcomes Ok (completadas).
+- Digest de `intelligence_loop` content-addressed sobre las fallas en orden canónico; tag `"incomplete"` en `intelligence_advisory`. Dos sitios de match no-exhaustivo extendidos (grep previo confirmó que no había consumidores exhaustivos en producción).
+
+**Evidencia:** los 5 falsificadores de C3l.1 en `debverify_kernel/tests.rs::c3l1_falsifiers` — **RED observado antes del fix** (tipos ausentes: sin `StrategyFailure` ni `Incomplete` no compilaban), **GREEN después: debverify_kernel 34/34** (28 previos + 6 nuevos), `sddk-engine --lib` **1358/0**, fmt y clippy `-D warnings` limpios, sin consumidores CLI del summary. Perfil completo workspace: consignado en el addendum de publicación.
+
+**Matriz:** fila R6 actualizada (IMPLEMENTED → re-verificable; el estado definitivo lo fija C3n.2 re-ejecutando los falsificadores, que ya viven en el suite). AT-UAT-002/003 PASS en UAT-MATRIX.
+
+**SIGUIENTE PASO:** C3l.2 (Producer→Secretary L0 wiring real por `dispatch()` público — AT-UAT-004/005; defecto: `ProducerToL0Adapter::dispatch` crea engine vacío). Después C3l.3.
+
+**Incidentes:** ninguno. Release fix→PATCH 2.4.1 tras perfil completo (addendum).

@@ -1,6 +1,14 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-51, 2026-09-30T22:55Z): C3l.0 COMPLETADO — matriz de acceptance truthfulness congelada (AT-UAT-001 PASS).** Workspace `2.4.0` (== release publicada en session-50), `HEAD == origin/main`. **SIGUIENTE PASO: C3l.1** (DebVerify fail-closed, AT-UAT-002/003) y luego C3l.2 (Producer→L0 wiring real) — slices de código con falsificadores declarados en el paquete.
+**Estado (session-52, 2026-10-01T00:10Z): C3l.1 COMPLETADO — DebVerify fail-closed (AT-UAT-002/003 PASS), release 2.4.1 en curso.** Workspace `2.4.0`, HEAD `22459708`+docs. **SIGUIENTE PASO: C3l.2** (Producer→Secretary L0 wiring real por `dispatch()` público, AT-UAT-004/005; defecto: `ProducerToL0Adapter::dispatch` crea engine vacío). Después C3l.3.
+
+**Hecho en session-52 (C3l.1):**
+
+1. **Fix tipado `22459708`:** `ChallengeError` ya no se traga. `StrategyFailure { strategy_id, reason }` + `ReconciliationSummary::Incomplete { failures }`; `ConfirmedBaseline`/`AcceptedDebt` inalcanzables con fallos; señales reales dominan (falla+contradicción⇒Contradiction); `strategies_run` = ejecuciones completadas (Ok), no aplicables.
+2. **Falsificadores C3l.1 en el suite para siempre** (`debverify_kernel/tests.rs::c3l1_falsifiers`, 6 tests): RED observado antes del fix (tipos ausentes), GREEN 34/34 después; engine **1358/0**; fmt/clippy limpios; sin consumidores exhaustivos del summary en producción (grep previo).
+3. **Matriz:** R6 → IMPLEMENTED→re-verificable (C3n.2 re-ejecuta los falsificadores ya vivos en el suite); AT-UAT-002/003 PASS.
+
+**Límites:** `ChallengeError` hoy solo tiene `MissingInput` — nuevos variantes de error requerirán mapeo a `reason` tipado (el match en `reconcile` es exhaustivo y fallará a compile time si se añade uno sin tratarlo: correcto por diseño).
 
 **Hecho en session-51 (C3l.0, slice documental PURE — sin cambios de código):**
 
