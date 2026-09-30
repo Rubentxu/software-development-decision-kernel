@@ -11,7 +11,14 @@
 # refs/heads/main is ACCEPTED iff:
 #
 #   (A) the pushed range contains a REAL `[workspace.package] version`
-#       change in Cargo.toml (old != new), OR
+#       change in Cargo.toml (old != new), OR the workspace version at the
+#       pushed tip is semver-greater than the maximum published v* tag on
+#       the remote (INC-DEBT-040 variant 3: a bump already merged into
+#       origin/main is outside the pushed range by construction, so the
+#       range-local check alone is unsatisfiable for a declared-but-
+#       unreleased version). The tag query is FAIL-CLOSED: if the remote
+#       cannot answer, this route does not admit the push and the range
+#       must contain the bump or docs-only paths. OR
 #   (B) the pushed range is NON-EMPTY and EVERY changed path lies inside
 #       the closed documentation-only allowlist:
 #         docs/**
@@ -44,6 +51,49 @@ DISCIPLINE="apply/release split"
 INC_IDENTIFIER="INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION"
 INC_CEREMONIAL="INC-A5-PUSH-RELEASE-MARKER-FRICTION"
 CARGO_TOML_PATH="Cargo.toml"
+# Scratch file for the tag query result; recreated per push invocation.
+TMP_TAG_OUT="$(mktemp "${TMPDIR:-/tmp}/sddk-prepush-tags.XXXXXX")"
+
+# INC-DEBT-040 variant 3: maximum published v* version on the remote,
+# stripped of the `v` prefix. Empty output means bootstrap (no v* tags).
+# Fails by returning non-zero when the remote cannot answer — the caller
+# treats that as "route unavailable", never as "no published version".
+max_published_version() {
+    local raw rc tag
+    raw="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags origin 2>&1)"
+    rc=$?
+    if [[ $rc -ne 0 ]]; then
+        return 1
+    fi
+    tag="$(printf '%s\n' "$raw" \
+        | awk '{print $2}' \
+        | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+        | sort -V -r \
+        | head -1)"
+    printf '%s' "$tag"
+    return 0
+}
+
+# semver_gt <a> <b>: 0 iff a > b under dotted numeric comparison
+# (same semantics as scripts/lib/release_admission.sh).
+semver_gt_hook() {
+    local a="$1" b="$2"
+    [[ "$a" == "$b" ]] && return 1
+    local IFS=. av bv i ai bi
+    # shellcheck disable=SC2206
+    av=($a)
+    # shellcheck disable=SC2206
+    bv=($b)
+    for i in 0 1 2; do
+        ai="${av[$i]:-0}"
+        bi="${bv[$i]:-0}"
+        [[ "$ai" =~ ^[0-9]+$ ]] || ai=0
+        [[ "$bi" =~ ^[0-9]+$ ]] || bi=0
+        if ((10#$ai > 10#$bi)); then return 0; fi
+        if ((10#$ai < 10#$bi)); then return 1; fi
+    done
+    return 1
+}
 
 # Extract the [workspace.package] version from Cargo.toml content (empty if absent).
 cargo_workspace_version() {
@@ -155,6 +205,20 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
         exit 1
     fi
 
+    # Changed paths for the pushed range (shared by routes A-v2 and B).
+    if [[ "$NEW_BRANCH" -eq 1 ]]; then
+        CHANGED_PATHS=$(git ls-tree -r --name-only "$local_sha" 2>/dev/null)
+    else
+        # --no-renames so a rename contributes BOTH the old and the new path;
+        # a rename that touches any non-allowed path is therefore rejected.
+        CHANGED_PATHS=$(git diff --name-only --no-renames "$remote_sha" "$local_sha" 2>/dev/null)
+    fi
+    CHANGED_COUNT=0
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        CHANGED_COUNT=$((CHANGED_COUNT + 1))
+    done <<<"$CHANGED_PATHS"
+
     # (A) real [workspace.package] version change in the range.
     VERSION_BUMP=""
     for commit in $COMMITS_TO_CHECK; do
@@ -175,22 +239,33 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
         continue
     fi
 
-    # (B) non-empty range entirely inside the docs-only allowlist.
-    if [[ "$NEW_BRANCH" -eq 1 ]]; then
-        CHANGED_PATHS=$(git ls-tree -r --name-only "$local_sha" 2>/dev/null)
-    else
-        # --no-renames so a rename contributes BOTH the old and the new path;
-        # a rename that touches any non-allowed path is therefore rejected.
-        CHANGED_PATHS=$(git diff --name-only --no-renames "$remote_sha" "$local_sha" 2>/dev/null)
+    # (A-v2, INC-DEBT-040 variant 3) Tag-baseline admission, aligned with
+    # release_admission_check_v2: the workspace version at the pushed tip
+    # exceeds every published v* tag on the remote. The bump that declared
+    # this release may already be merged into origin/main, so a range-local
+    # search can never see it; during that declared-but-unpublished window
+    # the release contract exists at the tip, and any non-empty range is
+    # admissible. Bootstrap (remote answered, no v* tags) admits the first
+    # declared version. FAIL-CLOSED: if the tag query cannot answer, this
+    # route stays closed and the range must satisfy (A) or (B).
+    if [[ "$CHANGED_COUNT" -gt 0 ]]; then
+        tip_version="$(cargo_workspace_version "$(git show "$local_sha:$CARGO_TOML_PATH" 2>/dev/null || true)")"
+        if [[ -n "$tip_version" ]] && max_published_version >"$TMP_TAG_OUT" 2>/dev/null; then
+            last_pub="$(cat "$TMP_TAG_OUT")"
+            if [[ -z "$last_pub" ]] || semver_gt_hook "$tip_version" "$last_pub"; then
+                continue
+            fi
+        fi
     fi
 
-    CHANGED_COUNT=0
+    # (B) non-empty range entirely inside the docs-only allowlist
+    # (CHANGED_PATHS/CHANGED_COUNT computed above).
     DOCS_ONLY=1
     while IFS= read -r path; do
         [[ -z "$path" ]] && continue
-        CHANGED_COUNT=$((CHANGED_COUNT + 1))
         if ! is_allowed_path "$path" && ! is_generated_path "$path"; then
             DOCS_ONLY=0
+            break
         fi
     done <<<"$CHANGED_PATHS"
 
@@ -228,4 +303,5 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
 
 done
 
+rm -f "$TMP_TAG_OUT" 2>/dev/null || true
 exit 0

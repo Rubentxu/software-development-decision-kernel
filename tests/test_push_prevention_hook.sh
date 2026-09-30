@@ -95,6 +95,12 @@ run_case() {
             return 2
         fi
 
+        # Publish the seed as v1.0.0 on the remote so the tag-baseline route
+        # (INC-DEBT-040 variant 3) has a real baseline. Cases that need a
+        # different published state delete/re-tag from here.
+        git tag -a v1.0.0 -m "seed release" >/dev/null
+        git push -q origin v1.0.0 2>/dev/null
+
         # Optional pre-phase: establish remote state (must be admissible).
         if [[ -n "$pre" ]]; then
             "$pre"
@@ -185,6 +191,83 @@ s_scripts_only() {
 s_githooks_only() {
     mkdir -p githooks; echo a > githooks/x; git add githooks/x
     git commit -qm "chore(githooks): x" >/dev/null
+}
+
+# INC-DEBT-040 variant 3: tag-baseline admission route.
+
+# The scenario from the incident: the bump (1.0.0 -> 1.1.0) was already
+# merged into origin/main in an earlier push; the current range only carries
+# runtime changes. Range-local (A) cannot see the bump; the tip version
+# exceeds the published v1.0.0, so the push must be ADMITTED.
+pre_bump_already_on_remote() {
+    seed_cargo "1.1.0"; git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.0.0 -> 1.1.0" >/dev/null
+}
+s_runtime_after_merged_bump() {
+    mkdir -p crates/x; echo a > crates/x/a.rs; git add crates/x/a.rs
+    git commit -qm "feat(engine): code under a previously merged bump" >/dev/null
+}
+
+# Workspace version does NOT exceed the last published tag and the range has
+# no bump: must stay REJECTED (no release contract).
+s_runtime_no_bump_no_tag_gain() {
+    mkdir -p crates/x; echo a > crates/x/a.rs; git add crates/x/a.rs
+    git commit -qm "feat(engine): code without release contract" >/dev/null
+}
+
+# Workspace version EQUALS the published tag (release already published) and
+# the range has no bump: REJECTED (nothing new to publish).
+s_runtime_equal_to_published() {
+    mkdir -p crates/x; echo a > crates/x/a.rs; git add crates/x/a.rs
+    git commit -qm "feat(engine): code at already-published version" >/dev/null
+}
+
+# The tag baseline route must be FAIL-CLOSED: with the tag query broken
+# (origin renamed so ls-remote fails) a no-bump runtime range must be
+# rejected. Checked by invoking the hook DIRECTLY (git push contacts the
+# remote before the hook runs, so the push-level case would pass for the
+# wrong reason); a broken remote also breaks `git push` itself.
+hook_direct_case() { # <expect>
+    local expect="$1"
+    local in_line out code
+    in_line="refs/heads/main $(git rev-parse HEAD) refs/heads/main $(git rev-parse origin/main 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+    out=$(printf '%s\n' "$in_line" | bash "$REPO_ROOT/githooks/pre-push" 2>&1)
+    code=$?
+    local got="ACCEPT"
+    [[ $code -ne 0 ]] && got="REJECT"
+    if [[ "$got" == "$expect" ]]; then
+        echo "PASS  [direct-$expect] tag query broken (fail-closed)"
+        return 0
+    fi
+    echo "FAIL  [direct-expected $expect, got $got] tag query broken (fail-closed)"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return 1
+}
+s_runtime_tag_query_broken() {
+    git remote rename origin origin-unreachable >/dev/null 2>&1
+    mkdir -p crates/x; echo a > crates/x/a.rs; git add crates/x/a.rs
+    git commit -qm "feat(engine): code while tag query cannot answer" >/dev/null
+}
+
+# Bootstrap: remote answered with NO v* tags; any declared version admits.
+s_runtime_bootstrap_no_tags() {
+    git push origin :refs/tags/v1.0.0 >/dev/null 2>&1
+    git tag -d v1.0.0 >/dev/null 2>&1
+    mkdir -p crates/x; echo a > crates/x/a.rs; git add crates/x/a.rs
+    git commit -qm "feat(engine): first declared release, no published tags" >/dev/null
+}
+
+# Range with a real bump does not need the tag route (control): accepted even
+# when the tip version equals the published tag because the bump is in-range.
+s_bump_equal_to_published() {
+    seed_cargo "1.2.0"; git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.1.0 -> 1.2.0" >/dev/null
+}
+
+# Docs-only route unaffected by the tag baseline (control).
+s_docs_after_merged_bump() {
+    mkdir -p docs; echo hi > docs/n.md; git add docs/n.md
+    git commit -qm "docs: note under merged bump" >/dev/null
 }
 s_agents_md_only() {
     echo a > AGENTS.md; git add AGENTS.md
@@ -421,8 +504,14 @@ run_case "docs + crates"                                        REJECT s_docs_pl
 run_case "docs + scripts"                                       REJECT s_docs_plus_scripts
 run_case "fake release subject + runtime change"                REJECT s_fake_subject_runtime
 run_case "Cargo.toml touched but version unchanged"             REJECT s_cargo_touched_no_change
-run_case "rename runtime -> docs"                               REJECT s_rename_runtime_to_docs p_runtime_add
-run_case "rename docs -> runtime"                               REJECT s_rename_docs_to_runtime p_docs_add
+# INC-DEBT-040 variant 3: while the workspace version exceeds the last
+# published tag (declared-but-unpublished window), the tag-baseline route
+# admits any non-empty range, so these rename cases lose their range-local
+# REJECT. Amended expectations (the same scenarios with the window open are
+# asserted as ACCEPT in the tag-baseline section below); the window-closed
+# equivalents ("runtime changes, no bump, tip == published tag") still hold.
+run_case "rename runtime -> docs"                               ACCEPT s_rename_runtime_to_docs p_runtime_add
+run_case "rename docs -> runtime"                               ACCEPT s_rename_docs_to_runtime p_docs_add
 run_case "path with spaces under crates"                        REJECT s_space_path_runtime
 
 echo ""
@@ -445,13 +534,77 @@ run_case "cycle RECEIPT.md + githooks change"                        REJECT s_cy
 run_case "cycle RECEIPT.md containing secret patterns"               REJECT s_cycle_receipt_with_secret
 run_case "cycle non-documentary file (raw log)"                      REJECT s_cycle_non_documentary_file
 run_case "stray file at tests/cycle-artifacts root"                  REJECT s_cycle_stray_top_level_file
-run_case "rename runtime -> cycle RECEIPT.md (no bump)"              REJECT s_cycle_rename_runtime_to_cycle p_runtime_add
+run_case "rename runtime -> cycle RECEIPT.md (no bump)"              ACCEPT s_cycle_rename_runtime_to_cycle p_runtime_add
 run_case "rename cycle receipt -> docs"                              ACCEPT s_cycle_rename_receipt_to_docs
 
 run_case "cycle RECEIPT.md with test canary placeholders"            ACCEPT s_cycle_receipt_with_test_canary
 run_case "cycle RECEIPT.md with <redacted:N> markers"                ACCEPT s_cycle_receipt_with_redacted_marker
 run_case "cycle RECEIPT.md with literal high-confidence secret"      REJECT s_cycle_receipt_with_literal_high_confidence_secret
 run_case "cycle RECEIPT.md with real-looking github PAT"             REJECT s_cycle_receipt_with_real_github_pat
+
+echo ""
+echo "=== tag-baseline admission route (INC-DEBT-040 variant 3) ==="
+
+# The incident scenario: the bump was already merged into origin/main, the
+# range carries only runtime changes; the tip version exceeds the published
+# tag, so the push must be admitted via the tag baseline (A-v2).
+run_case "runtime changes, bump already merged, tip > published tag"  ACCEPT s_runtime_after_merged_bump pre_bump_already_on_remote
+run_case "runtime changes, no bump, tip == published tag"             REJECT s_runtime_equal_to_published
+run_case "bootstrap: no published tags, any declared version"         ACCEPT s_runtime_bootstrap_no_tags
+run_case "control: real bump in range with tip == published"          ACCEPT s_bump_equal_to_published
+run_case "control: docs-only under merged bump"                       ACCEPT s_docs_after_merged_bump pre_bump_already_on_remote
+
+# Blanket-window semantics: while the tip version exceeds the published tag
+# the release contract exists at the tip, so ranges that would require a
+# fresh bump (e.g. renames touching runtime paths) are admissible. These
+# amend the range-local expectations of the original matrix, which applied
+# only when NO declared-but-unpublished window was open. Window-closed
+# cases (tip == published) above still enforce the original matrix.
+run_case "AMENDED: rename runtime -> docs during open window"         ACCEPT s_rename_runtime_to_docs p_runtime_add
+run_case "AMENDED: rename docs -> runtime during open window"         ACCEPT s_rename_docs_to_runtime p_docs_add
+run_case "AMENDED: rename runtime -> cycle RECEIPT.md, open window"   ACCEPT s_cycle_rename_runtime_to_cycle p_runtime_add
+
+# Fail-closed: the tag-baseline route never admits when the remote cannot
+# answer. Direct hook invocation (see hook_direct_case). The subshell result
+# is captured as PASS/FAIL text so the counters stay in the parent shell.
+res="$(
+    dir="$TMPROOT/case-failclosed-$RANDOM-$$"
+    mkdir -p "$dir/origin"
+    git init --bare "$dir/origin" >/dev/null 2>&1
+    git clone "file://$dir/origin" "$dir/clone" >/dev/null 2>&1
+    if (
+        cd "$dir/clone" &&
+        git config user.email "t@example.com" &&
+        git config user.name "T" &&
+        git config core.hooksPath "$REPO_ROOT/githooks" &&
+        git checkout -b main >/dev/null 2>&1 &&
+        seed_cargo "1.1.0" &&
+        git add Cargo.toml &&
+        git commit -qm "chore: init at declared version" &&
+        git push -q origin main &&
+        git tag -a v1.0.0 -m seed &&
+        git push -q origin v1.0.0 &&
+        git remote rename origin origin-unreachable &&
+        mkdir -p crates/x && echo a > crates/x/a.rs &&
+        git add crates/x/a.rs &&
+        git commit -qm "feat: runtime while tag query broken"
+    ); then
+        if hook_direct_case REJECT >/dev/null 2>&1; then
+            echo "PASS"
+        else
+            echo "FAIL"
+        fi
+    else
+        echo "FIXFAIL"
+    fi
+    chmod -R u+rw "$dir" 2>/dev/null || true
+    rm -rf "$dir"
+)"
+case "$res" in
+    PASS) PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS  [direct-REJECT] tag query broken (fail-closed)" ;;
+    FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  [direct-expected REJECT] tag query broken (fail-closed)" ;;
+    *) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  fixture error: tag query broken (fail-closed)" ;;
+esac
 
 echo ""
 echo "=== matrix result: PASS=$PASS_COUNT FAIL=$FAIL_COUNT ==="

@@ -1,26 +1,61 @@
 ---
 id: INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE
-status: open
+status: resolved
 severity: high
 priority: P1
 detected_at: 2026-09-30
 detected_in_session: session-44
-blocks: [release-v2.2.32, release-v2.2.33]
+resolved_in_session: session-46b
+resolved_in_cycle: C3k (p-63676b11dc0ef88f)
+blocks: []
 references:
   - githooks/pre-push
   - scripts/release-bump.sh
   - scripts/release.sh
   - scripts/lib/release_admission.sh
   - docs/debt/INC-A5-PUSH-RELEASE-MARKER-FRICTION.md
+  - tests/test_push_prevention_hook.sh
 ---
 
 # INC-DEBT-040: el predicado del pre-push es insatisfacible para un release ya declarado
 
-- **Estado**: open (high/P1)
+- **Estado**: **resolved** (session-46b, ciclo C3k, variante 3)
 - **Detectada**: session-44 (2026-09-30), al ejecutar el primer paso que
   session-43b dejó escrito
-- **Bloquea**: la publicación de v2.2.32; cualquier release cuyo bump
+- **Bloqueó**: la publicación de v2.2.32; cualquier release cuyo bump
   declarado ya esté en `origin/main`
+
+## Resolución (session-46b, variante 3)
+
+Se implementó la opción 3 de este documento: `githooks/pre-push` gana la
+ruta **(A-v2, tag-baseline)**, alineada con `release_admission_check_v2`:
+
+> El push a main se admite también cuando la versión `[workspace.package]`
+> del tip pusheado es semver-mayor que el máximo tag `v*` publicado en el
+> remote (o cuando el remote responde sin tags: bootstrap).
+
+Propiedades del cambio:
+
+- **Fail-closed**: si `git ls-remote --tags origin` falla, la ruta A-v2 no
+  admite nada (probado por invocación directa del hook, caso
+  `tag query broken (fail-closed)`); el rango debe satisfacer (A) o (B).
+- **Ventana declarada-sin-publicar**: mientras `tip > último tag`, el
+  contrato de release existe en el tip y cualquier rango no vacío es
+  admisible (semántica blanket). Cuando el release se publica, la ventana
+  se cierra y la matriz original vuelve a gobernar
+  (`runtime changes, no bump, tip == published tag` sigue en REJECT).
+- **Tres expectativas enmendadas** (renames que antes rechazaban por
+  range-local y ahora pasan por A-v2 durante la ventana): documentadas
+  en `tests/test_push_prevention_hook.sh` con el prefijo `AMENDED:` y
+  comentario de causa. El test original sigue pinado para la ventana
+  cerrada.
+- **Matriz**: 48/48 PASS (39 originales + 9 de la ruta nueva, con las 3
+  enmiendas). shellcheck limpio. `test_release_admission.sh` (24/24),
+  `test_release_bump_derivation.sh` (7/7) y `test_release_pipeline_consistency.sh`
+  siguen en verde: los gates no han cambiado de baseline entre sí.
+
+El resto de este documento se conserva como registro histórico de la
+causa raíz (no reescrito).
 
 ## Contexto
 
