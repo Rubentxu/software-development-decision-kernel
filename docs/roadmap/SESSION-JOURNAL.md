@@ -6719,3 +6719,46 @@ run-view R-gen-   -> exit 4 tambien: la heuristica de prefijo esta eliminada
 recojo evidencia para ellos y no reclamo su cierre**: lo de esta sesion es
 `v2.2.33` y lo verificado arriba. El estado real de esos dos goals no se ha
 observado aqui.
+
+### session-45e: observar los dos goals de sesiones anteriores, no solo declararlos
+
+Decir «no observado» era una evasion comoda. Los dos goals **si** eran
+verificables contra el estado real, asi que se observaron.
+
+**GOAL `release v2.2.32` — SUPERADO, no achieved.** Observado:
+`git ls-remote --tags origin` → 0 tags `v2.2.32`; `gh release view v2.2.32`
+→ *not found*; `CHANGELOG.md` tiene **1** cabecera `## [2.2.32]` y **1**
+`## [2.2.33]`. Su seccion 2.2.32 describe los fixes de session-34h
+(guard del puntero, lint de agents anidados, adapters chronos), que si
+viajan en v2.2.33 pero con la seccion correcta. Decidir no publicar 2.2.32
+fue correcto y sigue siendo correcto: publicar dos etiquetas para el
+mismo contenido habria sido duplicar historia. **Este goal no se reabre
+como pendiente: su objetivo —publicar el arbol— esta cumplido por
+2.2.33.** Lo que quedo de el (la version 2.2.32 sin publicar) es una
+decision registrada, no trabajo.
+
+**GOAL `C3j remainder` — VERIFICADO BLOQUEADO, sigue abierto.** Observado
+en el arbol, no ledido de un handoff:
+
+- `CURRENT.md:28` declara el resto como objetivo 3 **paso 5** (bloqueado
+  por INC-DEBT-039, requiere decision de modelo sobre `frontier` con
+  `node_runs_v1` vacia), **paso 7** (hipermedia) y **objetivo 6**.
+- El bloqueo **sigue siendo cierto hoy**: `INC-DEBT-039` esta `status:
+  open`, y `sddk run-view` falla cerrado con exit 4 y
+  `RUN_STATE_SOURCE_UNAVAILABLE` (verificado en esta sesion con el binario
+  publicado, estable 3/3 y en ambos prefijos de `run_id`). Compilar una
+  `ContextCapsule` con `RecoveryCapsuleInputs` seguiria persistiendo una
+  capsule construida sobre frontier y decisiones inventados.
+- Pero la severidad que lo justificaba **cambio**: session-45c degrado
+  `INC-DEBT-039` de P1 a P2 porque el defecto de la vista falsa esta
+  corregido y fail-closed. El bloqueo de C3j paso 5 ya **no** es
+  «el runtime miente», es «falta la fuente y hay que decidir el modelo de
+  `frontier`». El bloqueo se mantiene; su justificacion cambio.
+- `CTX-UAT-002/003` y `007..012/015` siguen **NOT_RUN** en
+  `UAT-MATRIX.md`, y `C4/C6/C7` siguen **no abrir**.
+
+**Conclusion de alcance**: `C3j remainder` no es un goal que esta sesion
+pueda cerrar. Requiere la decision de modelo del operador sobre `frontier`,
+que es la misma que bloquea la opcion (a) de `INC-DEBT-039`. **Es una
+decision, no trabajo**: no hay codigo que escribir hasta que se responda.
+Se deja abierto con el bloqueo verificado, no como pendiente de esfuerzo.
