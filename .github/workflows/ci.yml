@@ -67,7 +67,7 @@ jobs:
   shell-contracts:
     name: Shell contract tests (non-gating mirror)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -89,3 +89,19 @@ jobs:
 
       - name: Run push prevention hook contract
         run: bash tests/test_push_prevention_hook.sh
+
+      # Los UAT de context se ejecutan aqui, en el job espejo, por el motivo
+      # que session-48 demostro: son los unicos que comprueban el runtime
+      # real de punta a punta, y al no correr en ningun job CI una premisa
+      # obsoleta en ellos (el exit 4 de INC-DEBT-042) pudo quedar roja
+      # durante dos sesiones mientras la matriz declaraba PASS. No son
+      # gating porque necesitan el binario release construido; aqui se
+      # construye. Un UAT que nadie ejecuta no es evidencia, es decoracion.
+      - name: Build release binary for UAT
+        run: cargo build --release --bin sddk
+
+      - name: Run context bootstrap UAT
+        run: bash tests/uat_ctx_002_context_bootstrap.sh
+
+      - name: Run cycle inference UAT
+        run: bash tests/uat_ctx_004_cycle_inference.sh
