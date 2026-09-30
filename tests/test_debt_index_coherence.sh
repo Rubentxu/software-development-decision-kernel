@@ -161,6 +161,30 @@ run_case PASS 0 \
     "document with prose-only status is read, not ignored" \
     "INC-DEMO-PROSE|INC-DEMO-PROSE.md|high/P1, open"
 
+# --- prose must not neutralize the declared state -------------------------
+# Regression for a real defect found in session-45d, on this repo's own
+# index. The guard used to collect EVERY state word in the row's metadata
+# segment, so a row that declared `closed` but mentioned `open` in its
+# annotation matched both states. The intersection was then always
+# non-empty, so `idx_unsettled` was true for that row no matter what, and
+# the genuine divergence went unreported.
+#
+# This is the worst shape a guard can have: its own prose switched it off,
+# and the suite still printed "the guard fails exactly when the index
+# diverges". Each case below declares the state OPPOSITE to its
+# document, so the only thing that can make the row pass is prose.
+#
+# No parentheses in the annotation: the row parser captures the metadata
+# with `([^)]*)`, so a `)` in the prose truncates the segment. That is a
+# separate limitation, recorded here so these cases stay meaningful.
+run_case FAIL 1 \
+    "prose mentioning 'open' does not neutralize a declared closed state" \
+    "INC-DEMO-OPEN|INC-DEMO-OPEN.md|medium/P2, closed — still open until the ledger adapter lands"
+
+run_case FAIL 1 \
+    "prose mentioning 'closed' does not neutralize a declared open state" \
+    "INC-DEMO-CLOSED|INC-DEMO-CLOSED.md|medium/P2, open — the defect is corrected and fail-closed, exit 4"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 if [[ $FAIL -gt 0 ]]; then

@@ -107,10 +107,32 @@ def doc_status(path: pathlib.Path) -> str:
         return "prose:" + m.group(1).lower()
     return "unreadable: sin frontmatter y sin `**Estado:**`"
 
+STATES = ("open", "blocked", "closed", "resolved", "fixed")
+
 def index_claims(meta: str) -> set:
+    """States the index row *declares*, not every state word it mentions.
+
+    The declared state is the FIRST one in the metadata segment, because
+    that is where the convention places it (`(medium/P2, open — ...)`).
+    Scanning the whole segment made a row unfalsifiable: session-45b
+    annotated INC-DEBT-039 with the word `fail-closed` in its prose, so
+    the row matched both `open` and `closed`, the intersection was
+    always non-empty, and a genuine divergence went unreported. A guard
+    that a sentence can switch off is not a guard.
+
+    Prose after the declared state is still reported as a warning when it
+    names a *conflicting* settled state, so the annotation is visible
+    without letting it override the declaration.
+    """
     low = meta.lower()
-    return {s for s in ("open", "blocked", "closed", "resolved", "fixed")
-            if re.search(r"\b" + s + r"\b", low)}
+    first = None
+    for s in STATES:
+        m = re.search(r"\b" + s + r"\b", low)
+        if m and (first is None or m.start() < first[0]):
+            first = (m.start(), s)
+    if first is None:
+        return set()
+    return {first[1]}
 
 checked = 0
 problems = []

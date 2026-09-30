@@ -237,7 +237,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_ci_contract.sh \
              tests/test_release_pipeline_consistency.sh \
              tests/falsify-ci-anchor-real.sh \
-             tests/test_vault_mirror_auto.sh; do
+             tests/test_vault_mirror_auto.sh \
+             tests/test_debt_index_coherence.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"

@@ -45,10 +45,21 @@ y se actualiza con `sddk dev install`.
   documentales de `tests/cycle-artifacts/p-*/*/`, `MANIFEST.sha256` generado).
   El **subject del commit no es autoridad**: un marker `chore(release): bump version`
   vacío se **rechaza** (fue el defecto INC-A5-PUSH-RELEASE-MARKER-FRICTION, cerrado).
-  Matriz de casos en `tests/test_push_prevention_hook.sh`. Ver
+  Matriz de casos en `tests/test_push_prevention_hook.sh`. La rama (B) tiene un
+  detalle que no es evidente: el patrón de cycle artifacts exige literalmente
+  `tests/cycle-artifacts/p-*/*/RECEIPT.md`. Un recibo en
+  `tests/cycle-artifacts/session-45-.../release-receipt.md` **no** casa con él
+  (falta el segmento `p-<project_id>` y el nombre debe ser `RECEIPT.md`), y el
+  push se rechaza. Verificado en session-45: el mismo commit que el hook
+  rechazaba pasó tras `git mv` a la ruta canónica, sin `--no-verify` y sin tocar
+  el contenido del recibo.
   `docs/debt/INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE.md`
-  (high/P1, open) por el predicado (A) cuando el bump declarado ya está en
-  `origin/main`: es insatisfacible y bloquea la publicación hasta decidir la versión.
+  (high/P1, **resolved** en session-45) documentaba el predicado (A)
+  insatisfacible cuando el bump declarado ya está en `origin/main`. Se resolvió
+  con un bump real 2.2.32 → 2.2.33, no reescribiendo el predicado: la variante (3)
+  —comparar contra el último tag publicado en vez de contra
+  `origin/main..HEAD`— sigue **abierta** y alteraría un gate de admisión, así que
+  requiere su propia decisión con tests que falsifiquen el caso nuevo.
 
 ### 2.2. Branch model
 
