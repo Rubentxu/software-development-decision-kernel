@@ -321,7 +321,13 @@ fn normalize_remote_path(path: &str) -> Result<String, IdentityError> {
     {
         return Err(IdentityError::InvalidRemoteUrl);
     }
-    Ok(path.to_owned())
+    // GitHub treats owner/repo case-insensitively (the same repo is served
+    // under any case), but a case change in the remote URL used to mint a
+    // DIFFERENT project_id and silently fork the ledger (agent-secretless
+    // report D2). Normalize the case away before hashing. Segments are
+    // lowercased individually so the structure stays inspectable.
+    let lowered: Vec<String> = path.split('/').map(|s| s.to_lowercase()).collect();
+    Ok(lowered.join("/"))
 }
 
 /// Normalizes and validates a required monorepo scope.
@@ -542,6 +548,21 @@ mod tests {
         let normalized = forms.map(normalize_remote_url).map(Result::unwrap);
         assert!(normalized.iter().all(|remote| remote == &normalized[0]));
         assert_eq!(normalized[0], "https://github.com/owner/repo");
+    }
+
+    /// D2 fix (agent-secretless): un cambio de case en owner/repo del remote
+    /// minteaba OTRO project_id y materializaba un ledger nuevo en silencio.
+    /// El host ya se normalizaba; el path del repo no.
+    #[test]
+    fn case_change_in_owner_or_repo_resolves_to_same_project_id() {
+        let lower = "https://github.com/rubentxu/agent-secretless.git";
+        let upper = "https://github.com/Rubentxu/agent-secretless.git";
+        let mixed = "git@github.com:RubentXu/Agent-Secretless.git";
+        let a = stable_project_id(&normalize_remote_url(lower).unwrap(), ".");
+        let b = stable_project_id(&normalize_remote_url(upper).unwrap(), ".");
+        let c = stable_project_id(&normalize_remote_url(mixed).unwrap(), ".");
+        assert_eq!(a, b, "owner case change must not fork the project id");
+        assert_eq!(a, c, "mixed case via scp form must match");
     }
 
     #[test]
