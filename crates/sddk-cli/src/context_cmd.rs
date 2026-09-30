@@ -705,6 +705,300 @@ fn publish_payload(
     Ok((to_revision, args.add.clone(), args.remove.clone()))
 }
 
+/// Arguments of `sddk context expand` (C3j objetivo 4, CTX-UAT-015).
+#[derive(Debug, Clone)]
+pub(crate) struct ContextExpandArgs {
+    /// Checkout or worktree root (inferred when absent).
+    pub root: Option<PathBuf>,
+    /// Monorepo scope, using `.` for the repository root.
+    pub scope: Option<String>,
+    /// Host session identity; must already have a durable cycle binding.
+    pub session: String,
+    /// The capsule reference to expand (`work-item:<id>`, a bare decision
+    /// id, or `cycle:<id>`), exactly as it appears in the capsule.
+    pub r#ref: String,
+    /// Output format.
+    pub format: OutputFormat,
+}
+
+/// Failure surface of `context expand`. Every variant says WHY the
+/// reference did not expand; none of them invents content.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ContextExpandError {
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("durable context error: {0}")]
+    Durable(String),
+    #[error(
+        "no durable binding for session {session}: run `sddk context bootstrap --session {session}` first"
+    )]
+    NoBinding { session: String },
+    #[error("session {session} is not bound to a cycle: there is no capsule to expand")]
+    NoCycleBound { session: String },
+    #[error(
+        "no durable capsule for the bound cycle {cycle_id}: run `sddk context bootstrap` again"
+    )]
+    NoCapsule { cycle_id: String },
+    /// The requested reference is not part of the capsule. The available
+    /// refs travel in the error (the candidates pattern): the caller can
+    /// list what COULD be expanded instead of guessing.
+    #[error(
+        "ref not found in the capsule: {reference}\n  available refs:\n{}",
+        available.iter().map(|r| format!("    {r}")).collect::<Vec<_>>().join("\n")
+    )]
+    RefNotFound {
+        reference: String,
+        available: Vec<String>,
+    },
+    /// The capsule carries the ref but the ledger no longer does: the
+    /// capsule is stale relative to the ledger, and saying so is the honest
+    /// degradation (never synthesize content the ledger lost).
+    #[error(
+        "capsule ref {reference} no longer resolves in the ledger (the capsule is stale): run `sddk context bootstrap` to recompile"
+    )]
+    StaleRef { reference: String },
+}
+
+/// Result of one successful expand. `content` is read from the LEDGER, not
+/// from the capsule: the capsule names the ref, the ledger owns the truth.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ContextExpandResult {
+    pub status: String,
+    pub session: String,
+    #[serde(rename = "ref")]
+    pub r#ref: String,
+    /// `work-item` | `decision` | `cycle`.
+    pub kind: String,
+    pub content: String,
+    pub content_sha256: String,
+    pub capsule_id: String,
+    pub basis_revision: Option<String>,
+    /// Number of records in this session's read log after this expand.
+    pub reads_recorded: usize,
+}
+
+/// Durable read-log directory: one JSON file per session under the project
+/// data dir (same XDG resolver as capsules/bindings — no second authority).
+fn reads_root(project_data: &Path) -> PathBuf {
+    project_data.join("context").join("reads")
+}
+
+/// Upper bound on records kept per session read log (SPEC-011 §4: traces
+/// stay bounded). Oldest records are dropped first.
+const READ_LOG_CAP: usize = 100;
+
+/// Run the expand operation (C3j objetivo 4, CTX-UAT-015).
+///
+/// Progressive disclosure, minimum viable slice: the bootstrap envelope
+/// carries the capsule's REFS (never its full content); this command is how
+/// a session reads exactly ONE of those refs. The content comes from the
+/// ledger (the authority), the read is recorded in a durable per-session
+/// `ContextReadRecord` log, and a ref the capsule does not contain is a
+/// typed error that lists what WOULD have been available.
+pub(crate) fn expand(
+    args: &ContextExpandArgs,
+    environment: &CliEnvironment,
+) -> Result<ContextExpandResult, ContextExpandError> {
+    let identity =
+        resolve_identity(args.root.as_deref(), args.scope.as_deref()).map_err(|e| match e {
+            ContextBootstrapError::Io(msg) => ContextExpandError::Io(msg),
+            other => ContextExpandError::Durable(other.to_string()),
+        })?;
+    let paths = sddk_engine::resolve_xdg_paths(
+        &xdg_of(environment),
+        identity.project_id.as_str(),
+        &identity.workspace_id,
+    )
+    .map_err(|e| ContextExpandError::Io(e.to_string()))?;
+
+    // 1. The binding is the authority on what this session may see.
+    let session = AgenticSessionRef::new(args.session.clone());
+    let binding = load_binding(&bindings_root(&paths.project_data), &session)
+        .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+        .ok_or_else(|| ContextExpandError::NoBinding {
+            session: args.session.clone(),
+        })?;
+    // Session ≠ run: only a Run-bound session carries a cycle capsule.
+    let cycle_id = match &binding.target {
+        BindingTarget::Run { run_ref } => run_ref.0.clone(),
+        _ => {
+            return Err(ContextExpandError::NoCycleBound {
+                session: args.session.clone(),
+            });
+        }
+    };
+
+    // 2. The capsule of the bound cycle names what exists to expand.
+    let store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
+        .map_err(|e| ContextExpandError::Durable(e.to_string()))?;
+    let capsule = store
+        .last_capsule(&format!("cycle-{cycle_id}"))
+        .ok_or_else(|| ContextExpandError::NoCapsule {
+            cycle_id: cycle_id.clone(),
+        })?;
+
+    // 3. Find the ref among the capsule's named references. The KEY of an
+    //    entry is everything before " | " (the title/rationale is prose
+    //    shipped alongside the key, not part of the identity).
+    let key_of = |entry: &str| entry.split(" | ").next().unwrap_or(entry).to_string();
+    let mut entries: Vec<(String, String)> = Vec::new(); // (key, kind)
+    for entry in capsule
+        .artifacts
+        .must_read
+        .iter()
+        .chain(capsule.artifacts.relevant.iter())
+    {
+        let key = key_of(entry);
+        // The cycle-level capsule (ADR-0147 D2) only produces these two
+        // typed prefixes; a bare path comes from a recovery capsule and is
+        // recognized as a key but expands only if a kind supports it.
+        let kind = if key.starts_with("work-item:") {
+            "work-item".to_string()
+        } else if key.starts_with("cycle:") {
+            "cycle".to_string()
+        } else {
+            "other".to_string()
+        };
+        entries.push((key, kind));
+    }
+    // Decisions travel as "<id> | <rationale>" with a BARE id (no prefix).
+    for entry in capsule
+        .decisions
+        .accepted
+        .iter()
+        .chain(capsule.decisions.rejected.iter())
+    {
+        entries.push((key_of(entry), "decision".to_string()));
+    }
+    let requested = args.r#ref.as_str();
+    let matched_kind = entries
+        .iter()
+        .find(|(key, _)| key == requested)
+        .map(|(_, kind)| kind.clone());
+    let Some(kind) = matched_kind else {
+        let mut available: Vec<String> = entries.iter().map(|(k, _)| k.clone()).collect();
+        available.sort();
+        available.dedup();
+        return Err(ContextExpandError::RefNotFound {
+            reference: requested.to_string(),
+            available,
+        });
+    };
+
+    // 4. Resolve the content from the LEDGER. The capsule names the ref;
+    //    the ledger owns the truth. A ref the ledger lost is staleness and
+    //    is reported, never papered over with capsule prose.
+    let storage = Storage::open_read_only(&paths.ledger)
+        .map_err(|e| ContextExpandError::Durable(e.to_string()))?;
+    let content = match kind.as_str() {
+        "work-item" => {
+            let id = requested.strip_prefix("work-item:").unwrap_or(requested);
+            let wi = storage
+                .get_work_item(id)
+                .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+                .ok_or_else(|| ContextExpandError::StaleRef {
+                    reference: requested.to_string(),
+                })?;
+            let status = serde_json::to_string(&wi.status)
+                .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+                .trim_matches('"')
+                .to_string();
+            format!(
+                "#{} [{}] {}\n{}",
+                wi.id.as_str(),
+                status,
+                wi.title,
+                if wi.description.is_empty() {
+                    "(no description)".to_string()
+                } else {
+                    wi.description.clone()
+                }
+            )
+        }
+        "decision" => {
+            let d = storage
+                .get_decision_record(requested)
+                .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+                .ok_or_else(|| ContextExpandError::StaleRef {
+                    reference: requested.to_string(),
+                })?;
+            format!(
+                "#{} [{:?}] decision on work item {}\n{}",
+                d.id, d.kind, d.work_item_id, d.rationale
+            )
+        }
+        "cycle" => {
+            let id = requested.strip_prefix("cycle:").unwrap_or(requested);
+            let record = match storage.get_cycle(id) {
+                Ok(record) => record,
+                Err(_) => {
+                    return Err(ContextExpandError::StaleRef {
+                        reference: requested.to_string(),
+                    });
+                }
+            };
+            format!(
+                "#{} [{}] phase={}\n{}",
+                record.manifest.cycle_id,
+                serde_json::to_string(&record.manifest.status)
+                    .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+                    .trim_matches('"'),
+                serde_json::to_string(&record.manifest.phase)
+                    .map_err(|e| ContextExpandError::Durable(e.to_string()))?
+                    .trim_matches('"'),
+                record.manifest.display_name
+            )
+        }
+        other => {
+            return Err(ContextExpandError::Durable(format!(
+                "unsupported ref kind {other:?}: this slice expands work-item/decision/cycle refs"
+            )));
+        }
+    };
+
+    // 5. Record the read (SPEC-011 §3): bookkeeping, bounded, durable.
+    let content_sha256 = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+    let mut recorder = sddk_domain::ContextReadRecorder::default_cap();
+    recorder.record(requested);
+    recorder.add_category(&kind);
+    let mut record = recorder.finish(&args.session, None);
+    record.content_hashes = vec![content_sha256.clone()];
+    let reads_dir = reads_root(&paths.project_data);
+    std::fs::create_dir_all(&reads_dir).map_err(|e| ContextExpandError::Io(e.to_string()))?;
+    let reads_path = reads_dir.join(format!("{}.json", args.session));
+    let mut log: Vec<sddk_domain::ContextReadRecord> = std::fs::read(&reads_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    log.push(record);
+    if log.len() > READ_LOG_CAP {
+        let excess = log.len() - READ_LOG_CAP;
+        log.drain(0..excess);
+    }
+    std::fs::write(
+        &reads_path,
+        serde_json::to_vec_pretty(&log).map_err(|e| ContextExpandError::Io(e.to_string()))?,
+    )
+    .map_err(|e| ContextExpandError::Io(e.to_string()))?;
+
+    Ok(ContextExpandResult {
+        status: "expanded".to_string(),
+        session: args.session.clone(),
+        r#ref: requested.to_string(),
+        kind,
+        content,
+        content_sha256,
+        capsule_id: capsule.capsule_id.clone(),
+        basis_revision: binding.context_basis.as_ref().map(|b| b.revision.clone()),
+        reads_recorded: log.len(),
+    })
+}
+
 /// Resolve project/workspace identity with the SAME resolver as `adopt`.
 fn resolve_identity(
     root: Option<&Path>,
@@ -1365,6 +1659,216 @@ mod tests {
             output.stdout.is_empty(),
             "a failed bootstrap must not render a resolved envelope: {}",
             output.stdout
+        );
+    }
+
+    /// C3j objetivo 4: expandir una referencia de la capsule devuelve el
+    /// contenido real del ledger y registra la lectura.
+    ///
+    /// FIXTURE: ciclo real + un work item abierto (debe aterrizar en
+    /// must_read como `work-item:wi-1 | ...`) + una decisión accept (debe
+    /// aterrizar en decisions.accepted como `d-1 | ...`).
+    fn plant_cycle_with_facts(tmp: &Path, environment: &CliEnvironment, cycle_id: &str) -> PathBuf {
+        let project_data = plant_real_cycle(tmp, environment, cycle_id);
+        let canonical = std::fs::canonicalize(tmp)
+            .expect("canonicalize")
+            .to_string_lossy()
+            .to_string();
+        let identity = sddk_domain::resolve_project_identity(
+            None,
+            ".",
+            Some(&sddk_domain::stable_fallback_seed(&canonical)),
+        )
+        .expect("identity");
+        let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
+        let paths = sddk_engine::resolve_xdg_paths(
+            &xdg_of(environment),
+            identity.project_id.as_str(),
+            &workspace_id,
+        )
+        .expect("paths");
+        let storage = crate::Storage::open(&paths.ledger).expect("open ledger");
+        storage
+            .insert_work_item(&sddk_domain::WorkItemRecord {
+                id: "wi-1".into(),
+                cycle_id: cycle_id.to_string(),
+                title: "cerrar C3j objetivo 4".into(),
+                description: "expand devuelve contenido real del ledger".into(),
+                status: sddk_domain::WorkItemStatus::Active,
+                actor_ref_kind: None,
+                actor_ref_id: None,
+                actor_ref_label: None,
+                created_at: 1_760_000_000,
+                schema_version: sddk_domain::WORK_ITEM_SCHEMA_VERSION,
+                spine_order: None,
+                spine_horizon: None,
+                spine_status: None,
+                exit_gate: None,
+            })
+            .expect("insert work item");
+        storage
+            .insert_decision_record(&sddk_domain::DecisionRecordRecord {
+                id: "d-1".into(),
+                work_item_id: "wi-1".into(),
+                kind: sddk_domain::DecisionKind::Accept,
+                rationale: "expandir por referencia, no volcar la capsule".into(),
+                actor_ref_kind: None,
+                actor_ref_id: None,
+                actor_ref_label: None,
+                schema_version: sddk_domain::DECISION_RECORD_SCHEMA_VERSION,
+            })
+            .expect("insert decision");
+        drop(storage);
+        project_data
+    }
+
+    fn expand_args(tmp: &Path, session: &str, r#ref: &str) -> ContextExpandArgs {
+        ContextExpandArgs {
+            root: Some(tmp.to_path_buf()),
+            scope: None,
+            session: session.to_string(),
+            r#ref: r#ref.to_string(),
+            format: OutputFormat::Json,
+        }
+    }
+
+    /// CTX-UAT-015 (parte 1): expandir el ref de un work item devuelve el
+    /// contenido REAL del ledger y deja un ContextReadRecord persistido.
+    #[test]
+    fn expand_work_item_returns_ledger_content_and_records_the_read() {
+        let tmp = tempdir("expand-work-item");
+        let environment = environment(&tmp);
+        plant_cycle_with_facts(&tmp, &environment, "cycle-expand-1");
+
+        // El binding nace del bootstrap explícito (sesión ≠ run).
+        let mut boot = args_at(&tmp, "s-exp-1");
+        boot.cycle = Some("cycle-expand-1".into());
+        bootstrap(&boot, &environment).expect("bootstrap");
+
+        let result = expand(
+            &expand_args(&tmp, "s-exp-1", "work-item:wi-1"),
+            &environment,
+        )
+        .expect("expand");
+        assert_eq!(result.status, "expanded");
+        assert!(
+            result.content.contains("cerrar C3j objetivo 4"),
+            "content must carry the ledger title; got: {}",
+            result.content
+        );
+        assert!(
+            result.content.contains("active"),
+            "content must carry the ledger status; got: {}",
+            result.content
+        );
+        assert_eq!(result.kind, "work-item");
+        // La lectura queda registrada: el record existe y nombra el ref.
+        let paths = project_paths(&tmp, &environment);
+        let reads = std::fs::read_to_string(reads_root(&paths).join("s-exp-1.json"))
+            .expect("reads file persisted");
+        assert!(
+            reads.contains("work-item:wi-1"),
+            "ContextReadRecord must name the expanded ref; got: {reads}"
+        );
+        assert!(
+            reads.contains(result.content_sha256.as_str()),
+            "ContextReadRecord must carry the content hash; got: {reads}"
+        );
+    }
+
+    /// CTX-UAT-015 (parte 2): "ContextReadRecord actualizado" — cada expand
+    /// AÑADE una lectura; el log crece entre invocaciones.
+    #[test]
+    fn expand_appends_to_the_read_log_across_invocations() {
+        let tmp = tempdir("expand-append");
+        let environment = environment(&tmp);
+        plant_cycle_with_facts(&tmp, &environment, "cycle-expand-2");
+        let mut boot = args_at(&tmp, "s-exp-2");
+        boot.cycle = Some("cycle-expand-2".into());
+        bootstrap(&boot, &environment).expect("bootstrap");
+
+        expand(
+            &expand_args(&tmp, "s-exp-2", "work-item:wi-1"),
+            &environment,
+        )
+        .expect("first expand");
+        let second =
+            expand(&expand_args(&tmp, "s-exp-2", "d-1"), &environment).expect("second expand");
+        assert_eq!(
+            second.kind, "decision",
+            "a bare id matching a decision expands as decision"
+        );
+        assert!(
+            second.content.contains("expandir por referencia"),
+            "decision content must carry the ledger rationale; got: {}",
+            second.content
+        );
+        let paths = project_paths(&tmp, &environment);
+        let reads =
+            std::fs::read_to_string(reads_root(&paths).join("s-exp-2.json")).expect("reads file");
+        assert_eq!(
+            reads.matches("\"object_ids\"").count(),
+            2,
+            "two expands must have recorded two reads; got: {reads}"
+        );
+    }
+
+    /// Una referencia que la capsule no contiene NO se inventa: error tipado
+    /// con la lista de refs disponibles (el patrón candidates de la
+    /// ambigüedad, aplicado a la resolución de refs).
+    #[test]
+    fn expand_unknown_ref_fails_typed_listing_available_refs() {
+        let tmp = tempdir("expand-unknown");
+        let environment = environment(&tmp);
+        plant_cycle_with_facts(&tmp, &environment, "cycle-expand-3");
+        let mut boot = args_at(&tmp, "s-exp-3");
+        boot.cycle = Some("cycle-expand-3".into());
+        bootstrap(&boot, &environment).expect("bootstrap");
+
+        let error = expand(
+            &expand_args(&tmp, "s-exp-3", "work-item:wi-999"),
+            &environment,
+        )
+        .expect_err("unknown ref must not resolve");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("work-item:wi-999"),
+            "the error must name the requested ref; got: {rendered}"
+        );
+        assert!(
+            rendered.contains("cycle:cycle-expand-3"),
+            "the error must list the available refs; got: {rendered}"
+        );
+    }
+
+    /// Sin binding durable no hay nada que expandir: la sesión no inventa
+    /// contexto (la misma regla que el delta ya aplica).
+    #[test]
+    fn expand_without_binding_fails_typed() {
+        let tmp = tempdir("expand-nobinding");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-seed"), &environment).expect("seed");
+        let error = expand(&expand_args(&tmp, "s-unbound", "cycle:x"), &environment)
+            .expect_err("unbound session must not expand");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("s-unbound"),
+            "the error must name the session; got: {rendered}"
+        );
+    }
+
+    /// Sesión bindeada a PROYECTO (sin ciclo): no hay capsule que expandir.
+    #[test]
+    fn expand_on_project_bound_session_fails_typed() {
+        let tmp = tempdir("expand-project");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-proj"), &environment).expect("bootstrap");
+        let error = expand(&expand_args(&tmp, "s-proj", "cycle:x"), &environment)
+            .expect_err("project-bound session has no capsule");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("no capsule") || rendered.contains("no cycle"),
+            "the error must say the session has no cycle-bound capsule; got: {rendered}"
         );
     }
 

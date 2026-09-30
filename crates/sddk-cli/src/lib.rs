@@ -575,6 +575,9 @@ enum ContextCommand {
     /// Publish or drain material context changes for a bound session
     /// (SPEC-005 CTX-008).
     Delta(ContextDeltaArgsCli),
+    /// Expand one capsule reference of a bound session, reading its content
+    /// from the ledger and recording the read (C3j objetivo 4, CTX-UAT-015).
+    Expand(ContextExpandArgsCli),
 }
 
 #[derive(Debug, Args)]
@@ -591,6 +594,26 @@ struct ContextBootstrapArgsCli {
     /// Explicit cycle id, skipping inference.
     #[arg(long)]
     cycle: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ContextExpandArgsCli {
+    /// Checkout or worktree root. Inferred from the current directory when absent.
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// Required monorepo scope, using `.` for the repository root.
+    #[arg(long)]
+    scope: Option<String>,
+    /// Host session identity; must already have a durable cycle binding.
+    #[arg(long)]
+    session: String,
+    /// Capsule reference to expand (`work-item:<id>`, bare decision id, or
+    /// `cycle:<id>`), exactly as the capsule names it.
+    #[arg(long = "ref")]
+    r#ref: String,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
@@ -1707,6 +1730,26 @@ fn run_context(command: ContextCommand, environment: &CliEnvironment) -> Command
                 Err(error) => failure(error.to_string()),
             }
         }
+        ContextCommand::Expand(args) => {
+            let service_args = context_cmd::ContextExpandArgs {
+                root: args.root,
+                scope: args.scope,
+                session: args.session,
+                r#ref: args.r#ref,
+                format: args.format,
+            };
+            match context_cmd::expand(&service_args, environment) {
+                Ok(result) => match render(&result, service_args.format, context_expand_text) {
+                    Ok(stdout) => CommandOutput {
+                        status: 0,
+                        stdout,
+                        stderr: String::new(),
+                    },
+                    Err(error) => failure(error.to_string()),
+                },
+                Err(error) => failure(error.to_string()),
+            }
+        }
         ContextCommand::Delta(args) => {
             let service_args = context_cmd::ContextDeltaArgs {
                 root: args.root,
@@ -1767,6 +1810,21 @@ fn context_bootstrap_text(result: &context_cmd::ContextBootstrapResult) -> Strin
         "binding: {} (written: {})\n",
         result.binding_ref, result.binding_written
     ));
+    out
+}
+
+fn context_expand_text(result: &context_cmd::ContextExpandResult) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("status: {}\n", result.status));
+    out.push_str(&format!("session: {}\n", result.session));
+    out.push_str(&format!("ref: {}\n", result.r#ref));
+    out.push_str(&format!("kind: {}\n", result.kind));
+    out.push_str(&format!("capsule: {}\n", result.capsule_id));
+    out.push_str(&format!("reads_recorded: {}\n", result.reads_recorded));
+    out.push_str(&format!("content_sha256: {}\n", result.content_sha256));
+    out.push_str("--- content ---\n");
+    out.push_str(&result.content);
+    out.push('\n');
     out
 }
 
