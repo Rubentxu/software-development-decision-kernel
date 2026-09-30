@@ -7,6 +7,15 @@
 #          INC-A5-PUSH-RELEASE-MARKER-FRICTION      (closed by A5-1)
 #          INC-AIWS1-RECEIPT-PUSH-BLOCK             (cycle-artifacts docs)
 #
+# NOTA OPERATIVA (session-47, precedente v2.2.25 y v2.3.1) — este hook protege
+# el PUSH, no el TAG. Un tag puede pusearse sobre un commit que todavia no
+# esta en origin/main, y el run de CI que lo consume se queda con ese arbol:
+# en v2.3.1 el primer tag se pusheo antes que el commit que arreglaba un test
+# rojo, el run creo un draft release invalido sobre el arbol roto, y hubo que
+# borrar el draft, borrar el tag remoto y re-tagear al commit bueno. Orden
+# obligatorio: (1) push de todos los commits, (2) verificar HEAD ==
+# origin/main, (3) SOLO entonces taggear. Nunca al reves.
+#
 # A5-1 contract (amended by cycle inc-receipt-push-admission) — a push to
 # refs/heads/main is ACCEPTED iff:
 #
