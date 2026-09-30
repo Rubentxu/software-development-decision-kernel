@@ -1,12 +1,13 @@
 ---
 id: INC-DEBT-038-DEV-INSTALL-SOURCE-UNVERSIONED-LAYOUT
 title: "`dev install --source` instala el bundle sin versionar y sin symlink `current`"
-status: open
+status: resolved
 severity: medium
 priority: P2
 detected_at: 2026-09-29
 detected_in_session: session-37
-resolved: null
+resolved: session-47
+resolution: "Opciones 2+3 juntas: recibo con layout=flat + doctor trata flat como coherencia N/A"
 cluster_id: CL-INSTALL-DISTRIBUTION
 fingerprint: "dev_install_source_writes_unversioned_layout_v1"
 related: [INC-DEBT-025, INC-DEBT-034]
@@ -14,9 +15,25 @@ related: [INC-DEBT-025, INC-DEBT-034]
 
 # INC-DEBT-038 — `dev install --source` instala bundle sin versionar y sin symlink `current`
 
+> **RESUELTA (session-47, 2026-09-30) — opciones 2+3 juntas.** `InstallReceipt`
+> ganó el campo opcional `layout`; `dev install --source` escribe
+> `layout: "flat"` con `bundle_version: null` (deja de afirmar una binding
+> versionada que no produce; el hash de BUNDLE.toml se conserva y la versión
+> del bundle sigue validándose fail-closed contra el binario antes de
+> escribir). `dev doctor`, cuando el resolver versionado no encuentra bundle
+> pero el data root lleva recibo flat, opera sobre las superficies planas y
+> reporta `binary.bundle_coherence` como N/A en verde con detalle
+> "flat-install" — `receipt.version` sigue verificando. Evidencia OBSERVED:
+> install en prefix aislado exit 0 con recibo `{layout: flat,
+> bundle_version: null}`; doctor sobre ese prefix `all_present: true`;
+> RED→GREEN de `doctor_flat_install_receipt_reports_notsynthetic_coherence`;
+> doctor 9/9, dev_install 5/5, fmt/clippy -D warnings limpios. La opción 1
+> (versionar como install.sh) sigue disponible como evolución futura si el
+> dogfooding quiere coherencia versionada, pero ya no es un defecto.
+
 **Fecha de registro:** 2026-09-29 (session-37)
 **Severidad:** medium / **Prioridad:** P2
-**Estado:** OPEN (mitigado para coherencia de superficies; el recibo sigue rojo)
+**Estado original:** OPEN (mitigado para coherencia de superficies; el recibo seguía rojo)
 
 > **Nota de forma (session-44).** Este documento declaraba el estado en
 > prosa (`**Estado:**`) y no en frontmatter, lo que lo hacía la única
