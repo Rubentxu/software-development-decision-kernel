@@ -98,10 +98,12 @@ impl CapsuleStore for FilesystemCapsuleStore {
     fn last_capsule(&self, workflow_run: &str) -> Option<ContextCapsule> {
         let index = self.index.lock().expect("poisoned");
         // Deterministic: lexicographically last file for the run, matching
-        // the in-memory store's "rev over BTreeMap" behavior.
+        // the in-memory store's "rev over BTreeMap" behavior. The file name
+        // carries the ENCODED run, so the comparison is encoded-to-encoded.
+        let encoded = encode_path_component(workflow_run);
         let mut candidates: Vec<&String> = index
             .values()
-            .filter(|f| f.split(':').next() == Some(workflow_run))
+            .filter(|f| f.split(':').next() == Some(encoded.as_str()))
             .collect();
         candidates.sort();
         let last = candidates.pop()?.clone();
@@ -111,10 +113,14 @@ impl CapsuleStore for FilesystemCapsuleStore {
 
     fn last_capsule_for_node(&self, workflow_run: &str, node_run: &str) -> Option<ContextCapsule> {
         let index = self.index.lock().expect("poisoned");
+        let (encoded_run, encoded_node) = (
+            encode_path_component(workflow_run),
+            encode_path_component(node_run),
+        );
         let mut candidates: Vec<&String> = index
             .values()
             .filter(|f| match parse_file_name(f) {
-                Some((run, node)) => run == workflow_run && node == node_run,
+                Some((run, node)) => run == encoded_run && node == encoded_node,
                 None => false,
             })
             .collect();
@@ -153,13 +159,40 @@ impl CapsuleStore for FilesystemCapsuleStore {
 }
 
 /// File name for a target: `<workflow>:<node>:<attempt>.json`. The
-/// components are opaque ids; `:` never appears in them by construction
-/// (capsule_id format is `run:node:attempt`), so round-tripping is safe.
+/// components are PERCENT-ENCODED (`%` → `%25`, `/` → `%2F`, `:` → `%3A`)
+/// before joining: real runtime cycle ids are `p-<hex>/<name>`, and a raw
+/// slash in the file name is a path into a nonexistent subdirectory. Before
+/// this encoding, `persist` swallowed that write failure and the caller
+/// reported a durable basis that was never written — with an EMPTY capsules
+/// directory behind a `context_source: compiled` (observed end-to-end). The
+/// in-memory index still keyed by `capsule_id`, so lookups by ref are
+/// unchanged.
 fn file_name_for(target: &CapsuleTarget) -> String {
     format!(
         "{}:{}:{}.json",
-        target.workflow_run, target.node_run, target.attempt
+        encode_path_component(&target.workflow_run),
+        encode_path_component(&target.node_run),
+        encode_path_component(&target.attempt)
     )
+}
+
+/// Percent-encode exactly the characters that are hostile to the
+/// `<run>:<node>:<attempt>.json` file-name grammar: the separators `%`, `:`
+/// and the path separator `/`. Everything else passes through untouched, so
+/// existing slash-free names keep their exact on-disk representation (no
+/// migration needed — the defective slashed names never landed on disk
+/// because the write failed).
+fn encode_path_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for ch in raw.chars() {
+        match ch {
+            '%' => out.push_str("%25"),
+            '/' => out.push_str("%2F"),
+            ':' => out.push_str("%3A"),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn parse_file_name(name: &str) -> Option<(String, String)> {
@@ -224,6 +257,33 @@ mod tests {
 
     // durability-required: exercises the real filesystem; a fake would not
     // prove restart durability (CTX-001 exit gate).
+    //
+    // The workflow run carries the REAL runtime shape: cycle ids are
+    // `p-<hex>/<name>`, so the run ALWAYS contains a slash. A file name that
+    // embeds the raw id is a path into a nonexistent subdirectory, and a
+    // persist that swallows that failure leaves the caller reporting a
+    // durable basis that was never written (observed end-to-end: bootstrap
+    // said `compiled` with an EMPTY capsules directory).
+    #[test]
+    fn capsule_persists_and_recovers_with_slashed_runtime_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("capsules");
+        let run = "cycle-p-c3ade1d7c35774cc/dbg-cycle";
+
+        {
+            let store = FilesystemCapsuleStore::open(&root).unwrap();
+            store.persist(&capsule_for(run, "bootstrap", "cold-start"));
+        }
+        // "process B": a fresh store over the same directory must see it.
+        let reopened = FilesystemCapsuleStore::open(&root).unwrap();
+        let capsule = reopened
+            .last_capsule(run)
+            .expect("slashed run must round-trip through the durable store");
+        assert_eq!(capsule.for_target.workflow_run, run);
+        assert_eq!(capsule.for_target.node_run, "bootstrap");
+        assert_eq!(capsule.capsule_id, format!("{run}:bootstrap:cold-start"));
+    }
+
     #[test]
     fn capsule_survives_process_restart() {
         let dir = tempfile::tempdir().unwrap();
