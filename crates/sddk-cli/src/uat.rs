@@ -410,6 +410,17 @@ pub(crate) struct UatSignOffArgs {
     /// Project identifier (defaults to the current adoption's `project_id`).
     #[arg(long)]
     pub(crate) project: Option<String>,
+    /// Record that the acceptance was authored by an agent actor
+    /// (`agent:*`). Required when `--actor agent:*` and `--decision accepted`;
+    /// without it the sign-off is rejected (no fabricated human acceptances
+    /// — agent-secretless report D1).
+    #[arg(long, default_value_t = false)]
+    pub(crate) agent_authored: bool,
+    /// Explicitly allow signing off with an empty evidence snapshot
+    /// (no `uat-manifest.yaml` next to the plan). Without this flag an empty
+    /// snapshot aborts the sign-off (evidence integrity — report D1).
+    #[arg(long, default_value_t = false)]
+    pub(crate) allow_empty_evidence: bool,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -1704,6 +1715,21 @@ fn run_uat_signoff(args: UatSignOffArgs, environment: &crate::CliEnvironment) ->
         // Compute plan_version_sha256.
         let plan_version_sha256 = sha256_of_file(&plan_path)?;
 
+        // Parse the plan: an acceptance must be bound to a plan with actual
+        // scenarios. Signing off an empty plan would record an acceptance
+        // over zero verified scenarios (agent-secretless report D1).
+        let plan_raw = std::fs::read_to_string(&plan_path)
+            .map_err(|e| anyhow::anyhow!("cannot read plan {}: {e}", plan_path.display()))?;
+        let plan: sddk_domain::UatPlan = serde_saphyr::from_str(&plan_raw)
+            .map_err(|e| anyhow::anyhow!("invalid plan {}: {e}", plan_path.display()))?;
+        let scenario_count: usize = plan.features.iter().map(|f| f.scenarios.len()).sum();
+        if scenario_count == 0 {
+            anyhow::bail!(
+                "plan {} declares 0 scenarios; write the plan before signing off (uat plan emits an empty skeleton)",
+                plan_path.display()
+            );
+        }
+
         // Resolve session directory and look for a manifest there.
         let session_dir = args.session_dir.clone().unwrap_or_else(|| {
             plan_path
@@ -1728,9 +1754,30 @@ fn run_uat_signoff(args: UatSignOffArgs, environment: &crate::CliEnvironment) ->
                 .map_err(|e| anyhow::anyhow!("invalid manifest {}: {e}", mpath.display()))?;
             evidence_snapshot_sha256(&manifest)
         } else {
-            // No manifest: use empty snapshot.
+            // No manifest: the snapshot would be an empty object. Accepting
+            // that silently fabricates `evidence_snapshot_sha256: sha256:{}
+            // acceptances; the caller must opt in explicitly (report D1).
+            if !args.allow_empty_evidence {
+                anyhow::bail!(
+                    "no evidence manifest found in {} (looked for uat-manifest.yaml, manifest.yaml, uat-manifest.yml); pass --allow-empty-evidence to sign off without evidence",
+                    session_dir.display()
+                );
+            }
             "sha256:{}".to_string()
         };
+
+        // Actor integrity: an `agent:*` actor must not be able to mint a
+        // record indistinguishable from a human acceptance (report D1).
+        let actor_is_agent = args.actor.starts_with("agent:");
+        if actor_is_agent && !args.agent_authored {
+            anyhow::bail!(
+                "actor `{}` is an agent; agent-authored acceptances require --agent-authored to be recorded as non-human",
+                args.actor
+            );
+        }
+        if args.justification.trim().is_empty() {
+            anyhow::bail!("justification must not be empty");
+        }
 
         let record = sddk_domain::UatAcceptanceRecord {
             decision: args.decision.into(),
@@ -4839,6 +4886,8 @@ entries:
             plan: Some(plan_path.clone()),
             session_dir: Some(dir.path().to_path_buf()),
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: false,
             format: OutputFormat::Text,
         };
         let out = run_uat_signoff(args, &env);
@@ -4877,6 +4926,8 @@ entries:
             plan: Some(plan_path.clone()),
             session_dir: Some(dir.path().to_path_buf()),
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: false,
             format: OutputFormat::Text,
         };
         let out2 = run_uat_signoff(args2, &env);
@@ -4903,7 +4954,12 @@ schema_version: 3
 release: { candidate: v1.9.0 }
 generated_by: test
 generated_at: "2026-08-11T00:00:00Z"
-features: []
+features:
+  - id: F-1
+    name: Feature
+    scenarios:
+      - id: S-1
+        title: Scenario
 "#;
         std::fs::write(&plan_path, plan_content).unwrap();
 
@@ -4916,6 +4972,8 @@ features: []
             plan: Some(plan_path),
             session_dir: None,
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
             format: OutputFormat::Text,
         };
         let out = run_uat_signoff(args, &env);
@@ -4934,10 +4992,217 @@ features: []
             plan: None,
             session_dir: None,
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: false,
             format: OutputFormat::Text,
         };
         let out = run_uat_signoff(args, &env);
         assert_ne!(out.status, 0, "expected error, got status 0");
+    }
+
+    /// D1 fix: sign-off de un plan sin escenarios se rechaza (el esqueleto
+    /// que emite `uat plan` ya no es firmable).
+    #[test]
+    fn signoff_empty_plan_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("uat-plan-v1.9.0.yaml");
+        std::fs::write(
+            &plan_path,
+            r#"
+schema_version: 3
+release: { candidate: v1.9.0 }
+generated_by: test
+generated_at: "2026-08-11T00:00:00Z"
+features: []
+"#,
+        )
+        .unwrap();
+        let env = make_env(dir.path());
+        let args = UatSignOffArgs {
+            release: "v1.9.0".into(),
+            decision: UatSignOffDecisionArg::Accepted,
+            actor: "user:421".into(),
+            justification: "probe".into(),
+            plan: Some(plan_path),
+            session_dir: Some(dir.path().to_path_buf()),
+            project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
+            format: OutputFormat::Text,
+        };
+        let out = run_uat_signoff(args, &env);
+        assert_ne!(out.status, 0, "empty plan must NOT be signable");
+        assert!(
+            out.stderr.contains("0 scenarios"),
+            "stderr should explain the rejection: {}",
+            out.stderr
+        );
+    }
+
+    /// D1 fix: sin manifest la evidencia queda vacía; sin el flag explícito
+    /// el sign-off aborta (nada de `sha256:{}` silencioso).
+    #[test]
+    fn signoff_without_evidence_requires_explicit_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("uat-plan-v1.9.0.yaml");
+        std::fs::write(
+            &plan_path,
+            r#"
+schema_version: 3
+release: { candidate: v1.9.0 }
+generated_by: test
+generated_at: "2026-08-11T00:00:00Z"
+features:
+  - id: F-1
+    name: Feature
+    scenarios:
+      - id: S-1
+        title: Scenario
+"#,
+        )
+        .unwrap();
+        let env = make_env(dir.path());
+        let base = UatSignOffArgs {
+            release: "v1.9.0".into(),
+            decision: UatSignOffDecisionArg::Accepted,
+            actor: "user:421".into(),
+            justification: "probe".into(),
+            plan: Some(plan_path),
+            session_dir: Some(dir.path().to_path_buf()),
+            project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: false,
+            format: OutputFormat::Text,
+        };
+        let out = run_uat_signoff(base.clone(), &env);
+        assert_ne!(out.status, 0, "empty evidence must abort without flag");
+        assert!(
+            out.stderr.contains("--allow-empty-evidence"),
+            "stderr should point to the flag: {}",
+            out.stderr
+        );
+        // El registro NO debe existir.
+        let acceptance = dir
+            .path()
+            .join("sddk")
+            .join("projects")
+            .join("test-project")
+            .join("uat")
+            .join("acceptances")
+            .join("uat-acceptance-v1.9.0.yaml");
+        assert!(!acceptance.exists(), "no acceptance record must be written");
+        // Con el flag sí pasa.
+        let mut with_flag = base;
+        with_flag.allow_empty_evidence = true;
+        let out2 = run_uat_signoff(with_flag, &env);
+        assert_eq!(out2.status, 0, "stderr: {}", out2.stderr);
+        assert!(acceptance.exists());
+    }
+
+    /// D1 fix: un actor `agent:*` no puede emitir una aceptación
+    /// indistinguible de una humana sin `--agent-authored`.
+    #[test]
+    fn signoff_agent_actor_requires_agent_authored_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("uat-plan-v1.9.0.yaml");
+        std::fs::write(
+            &plan_path,
+            r#"
+schema_version: 3
+release: { candidate: v1.9.0 }
+generated_by: test
+generated_at: "2026-08-11T00:00:00Z"
+features:
+  - id: F-1
+    name: Feature
+    scenarios:
+      - id: S-1
+        title: Scenario
+"#,
+        )
+        .unwrap();
+        let manifest_content = r#"
+schema_version: 1
+project_id: test-project
+generated_at: "2026-08-11T00:00:00Z"
+entries:
+  - sha256: abcdef123456
+    path: evidence/s.png
+    size_bytes: 100
+    captured_at: "2026-08-11T00:00:00Z"
+    scenario_id: S-1
+    session_id: sess-1
+    kind: screenshot
+"#;
+        std::fs::write(dir.path().join("uat-manifest.yaml"), manifest_content).unwrap();
+        let env = make_env(dir.path());
+        let base = UatSignOffArgs {
+            release: "v1.9.0".into(),
+            decision: UatSignOffDecisionArg::Accepted,
+            actor: "agent:jcode".into(),
+            justification: "probe".into(),
+            plan: Some(plan_path),
+            session_dir: Some(dir.path().to_path_buf()),
+            project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: false,
+            format: OutputFormat::Text,
+        };
+        let out = run_uat_signoff(base.clone(), &env);
+        assert_ne!(out.status, 0, "agent actor without flag must be rejected");
+        assert!(
+            out.stderr.contains("--agent-authored"),
+            "stderr should point to the flag: {}",
+            out.stderr
+        );
+        // Con el flag el registro se emite (marcado como agent-authored vía actor).
+        let mut with_flag = base;
+        with_flag.agent_authored = true;
+        let out2 = run_uat_signoff(with_flag, &env);
+        assert_eq!(out2.status, 0, "stderr: {}", out2.stderr);
+    }
+
+    /// D1 fix: justificación vacía se rechaza.
+    #[test]
+    fn signoff_blank_justification_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("uat-plan-v1.9.0.yaml");
+        std::fs::write(
+            &plan_path,
+            r#"
+schema_version: 3
+release: { candidate: v1.9.0 }
+generated_by: test
+generated_at: "2026-08-11T00:00:00Z"
+features:
+  - id: F-1
+    name: Feature
+    scenarios:
+      - id: S-1
+        title: Scenario
+"#,
+        )
+        .unwrap();
+        let env = make_env(dir.path());
+        let args = UatSignOffArgs {
+            release: "v1.9.0".into(),
+            decision: UatSignOffDecisionArg::Accepted,
+            actor: "user:421".into(),
+            justification: "   ".into(),
+            plan: Some(plan_path),
+            session_dir: Some(dir.path().to_path_buf()),
+            project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
+            format: OutputFormat::Text,
+        };
+        let out = run_uat_signoff(args, &env);
+        assert_ne!(out.status, 0, "blank justification must be rejected");
+        assert!(
+            out.stderr.contains("justification"),
+            "stderr: {}",
+            out.stderr
+        );
     }
 }
 
@@ -5555,6 +5820,8 @@ entries:
             plan: Some(plan_v1_path.clone()),
             session_dir: Some(dir.path().to_path_buf()),
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
             format: OutputFormat::Text,
         };
         let out_v1 = run_uat_signoff(args_v1, &env);
@@ -5599,6 +5866,8 @@ features:
             plan: Some(plan_v2_path.clone()),
             session_dir: Some(dir.path().to_path_buf()),
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
             format: OutputFormat::Text,
         };
         let out_v2 = run_uat_signoff(args_v2, &env);
@@ -5656,6 +5925,8 @@ features:
             plan: Some(plan_v1_path.clone()),
             session_dir: None,
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
             format: OutputFormat::Text,
         };
         let out_v1 = run_uat_signoff(args_v1, &env);
@@ -5700,6 +5971,8 @@ features:
             plan: Some(plan_v2_path),
             session_dir: None,
             project: Some("test-project".into()),
+            agent_authored: false,
+            allow_empty_evidence: true,
             format: OutputFormat::Text,
         };
         let out_v2 = run_uat_signoff(args_v2, &env);
