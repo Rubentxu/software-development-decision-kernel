@@ -97,6 +97,8 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **Slices:** C3l.0 re-clasificación honesta del baseline (AIW-S0..S8, R0..R11; `boundary_class` en nuevos UAT; prohibido el sufijo `e2e/real/two-cli` si la prueba no atraviesa esa frontera) · C3l.1 DebVerify fail-closed (`strategy_error ⇒ summary != ConfirmedBaseline`) · C3l.2 Producer→Secretary L0 wiring real por `dispatch()` público · C3l.3 Dynamic Workflow Expansion E2E real (proposal→authority→PlanRevision→execution + replay idempotente) · C3l.4 External test semantics: ausencia ≠ PASS · C3l.5 X04 concurrencia real SQLITE_MULTI_PROCESS · C3l.6 X07 segundo binario real · C3l.7 architecture gate.
 
+**Estado C3l.0:** **MATRIX CONGELADA (session-51)** — [ACCEPTANCE-TRUTHFULNESS-MATRIX.md](ACCEPTANCE-TRUTHFULNESS-MATRIX.md): 21 filas (AIW-S0..S8 + R0..R11) con frontera realmente ejercitada y re-clasificaciones solo donde el paquete las manda (R6→IMPLEMENTED, S7a→NOT_VERIFIED, S4→IMPLEMENTED_NOT_VERIFIED, S5/S8→IMPLEMENTED/NOT_VERIFIED, R2/R5/R8 parcial, gate de arquitectura no válido hasta C3l.7). Receipts históricos intactos.
+
 **Exit gate:** la matriz puede responder, para cualquier hito, qué frontera se observó realmente sin leer el nombre del test. **UAT:** AT-UAT-001..015 (overlay del paquete; alta en UAT-MATRIX al pasar cada slice a READY).
 
 ### C3m — Semantic & Boundary Convergence (P1, tras C3l.1–C3l.4 en los contratos afectados)

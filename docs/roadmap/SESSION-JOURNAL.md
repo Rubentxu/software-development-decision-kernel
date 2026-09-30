@@ -7170,3 +7170,28 @@ es el publicado por CI.
 **Recibo:** `tests/cycle-artifacts/p-63676b11dc0ef88f/session50-c3j-expand-inc044-c3l-adoption/RECEIPT.md`.
 
 **Addendum session-50 (publicación):** release **v2.4.0 PUBLICADO**. Perfil completo previo al commit: **5188/0/19** (+6 exactos). Local 0–8 OK (binario musl static-pie verificado; parada en 8c por diseño, INC-DEBT-024). CI run **36772801013 success** (13/13 jobs). Tag objeto `31fe22f7`, peel `f31c92c4` == origin/main. Release: 27 assets, no draft/prerelease, publishedAt 2026-09-30T20:36:29Z. **9b OBSERVED:** 27/27 HTTP 200, gate PASS=13 FAIL=0. **9c OBSERVED:** sha CDN `ed4a327b…` == declarado; cosign **Verified OK** (`release.yml@refs/tags/v2.4.0`). **10–12 OBSERVED:** install exit 0, `sddk 2.4.0`, current → 2.4.0, doctor all_present: true, prune removed 2.3.3; `sddk context expand` presente en el instalado.
+
+---
+
+## Session-51 (2026-09-30T22:55Z) — C3l.0: matriz de acceptance truthfulness congelada (AT-UAT-001 PASS)
+
+**Baseline / HEAD:** `origin/main = 262d2a35` (v2.4.0 publicada en session-50). **Proyecto SDDK `p-995939af668a53d8`.** Slice: **C3l.0** del paquete `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/` — prioridad P0 según su propia recomendación operativa (abrir C3l.0 primero; C3j continúa en paralelo sin mezclar concerns).
+
+**Entregable — matriz congelada:** `docs/roadmap/ACCEPTANCE-TRUTHFULNESS-MATRIX.md`. 21 filas (AIW-S0..S8 + S1b + R0..R11), cada una con: requirement → implementación → **frontera realmente ejercitada** (`boundary_class` del vocabulario cerrado del paquete) → test → evidencia → status PRE → status POST → trigger de reapertura. Enlazada desde ROADMAP (C3l.0) y desde la fila AT-UAT-001 de la UAT-MATRIX. Todas las rutas de evidencia citadas verificadas existentes.
+
+**Re-clasificaciones aplicadas — SOLO las que el paquete manda explícitamente:**
+- **R6 DebVerify: VERIFIED → IMPLEMENTED** (C3l.1: `reconcile` ignora `ChallengeError`; invariante `strategy_error ⇒ summary != ConfirmedBaseline`).
+- **AIW-S7a: DELIVERED → NOT_VERIFIED** (C3l.2: `ProducerToL0Adapter::dispatch()` crea engine vacío — la ruta pública no dispara reglas productivas).
+- **AIW-S4: DELIVERED → IMPLEMENTED_NOT_VERIFIED** (C3l.3: el test llama `cycle_replan` directo; no cruza la vertical evidence→Secretary→authority→PlanRevision→runtime).
+- **AIW-S5: DELIVERED → IMPLEMENTED** hasta re-observación (C3l.4: semántica EXT ausencia≠PASS).
+- **AIW-S8: DELIVERED → NOT_VERIFIED** para los claims multi-proceso/segundo-binario (C3l.5/C3l.6: mismo proceso con `Arc<InMemoryLeaseStore>` / dos handles `Storage`).
+- **R2/R4-snapshot/R5-invalidación/R8: → IMPLEMENTED/NOT_VERIFIED parciales** (C3m.0/2/4/3/1: KMT con tres significados, `revise` incoherente, confidence mágica 0.95, provenance hardcodeada, invalidación incremental sin KMT real).
+- **Claim «architecture conformant»: NO VÁLIDO** hasta C3l.7 (el gate cuenta un `ARCH001 FAIL` como esperado sin distinguir `OPEN_DEBT/WAIVED/FIXED`).
+
+**Lo que NO se tocó (regla: solo claims afectados):** AIW-S2/S3/S6/S7b/c/S1b, R1/R3/R9/R11 — sin defecto declarado del paquete, quedan con su claim y evidencia. **Receipts históricos intactos**; AIW-S1/R7 mantienen VERIFIED anclado a su SHA porque la frontera MCP_EXTERNAL SÍ se cruzó (binario real observado) — C3l.4 les añade trigger de re-observación, no re-clasificación.
+
+**Método:** documental (PURE) — sin cambios de código, sin tests afectados, sin release. La salida de esta slice ES la matriz: permite responder, para cualquier hito, qué frontera se observó de verdad sin leer el nombre del test (exit gate de C3l.0).
+
+**SIGUIENTE PASO:** C3l.1 (DebVerify fail-closed — AT-UAT-002/003, TDD RED→GREEN en `DebVerifyKernel::reconcile`) y después C3l.2 (Producer→L0 wiring real — AT-UAT-004/005), según la recomendación del paquete. Ambas son slices de código con falsificadores declarados en el paquete.
+
+**Incidente:** ninguno. Nota de higiene: queda sin trackear `docs/ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` (copia idéntica en raíz de docs/ del roadmap del paquete ya commiteado) — pendiente de decisión del operador (una sola fuente recomienda eliminarla).

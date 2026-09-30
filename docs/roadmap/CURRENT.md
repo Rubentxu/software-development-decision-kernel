@@ -1,6 +1,21 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-50, 2026-09-30T22:15Z): C3j objetivo 4 (`context expand`) implementado + INC-DEBT-044 resuelta + ROADMAP REENFOCADO (C3l/C3m/C3n adoptados).** Workspace `2.3.3`, release en curso (`feat → MINOR → 2.4.0`). **SIGUIENTE PASO: abrir C3l.0** (re-clasificación honesta del baseline, AT-UAT-001) — prioridad P0 del paquete `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/`; C3j continúa en paralelo.
+**Estado (session-51, 2026-09-30T22:55Z): C3l.0 COMPLETADO — matriz de acceptance truthfulness congelada (AT-UAT-001 PASS).** Workspace `2.4.0` (== release publicada en session-50), `HEAD == origin/main`. **SIGUIENTE PASO: C3l.1** (DebVerify fail-closed, AT-UAT-002/003) y luego C3l.2 (Producer→L0 wiring real) — slices de código con falsificadores declarados en el paquete.
+
+**Hecho en session-51 (C3l.0, slice documental PURE — sin cambios de código):**
+
+1. **Matriz congelada:** [ACCEPTANCE-TRUTHFULNESS-MATRIX.md](ACCEPTANCE-TRUTHFULNESS-MATRIX.md) — 21 filas (AIW-S0..S8 + S1b + R0..R11) con requirement → implementación → **frontera realmente ejercitada** (`boundary_class`) → test → evidencia → status PRE → status POST → trigger. Enlazada desde ROADMAP C3l.0 y AT-UAT-001. Rutas de evidencia citadas verificadas existentes.
+2. **Re-clasificaciones (solo las mandadas por el paquete):** R6→IMPLEMENTED · S7a→NOT_VERIFIED · S4→IMPLEMENTED_NOT_VERIFIED · S5→IMPLEMENTED · S8→NOT_VERIFIED (claims multi-proceso) · R2/R4-snapshot/R5-invalidación/R8 parciales por C3m.x · claim «architecture conformant» NO VÁLIDO hasta C3l.7.
+3. **Sin re-clasificar (regla):** AIW-S2/S3/S6/S7b/c/S1b, R1/R3/R9/R11 — sin defecto declarado. Receipts históricos intactos; AIW-S1/R7 mantienen VERIFIED por su SHA (la frontera MCP_EXTERNAL sí se cruzó).
+4. Exit gate C3l.0 cumplido: la matriz responde, para cualquier hito, qué frontera se observó realmente sin leer el nombre del test.
+
+**Higiene pendiente (decisión del operador):** `docs/ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` (copia idéntica en raíz docs/ del roadmap ya commiteado dentro del paquete) sigue sin trackear — recomendado eliminarla (una sola fuente).
+
+**SIGUIENTE PASO (preciso):** **C3l.1 DebVerify fail-closed** — hacer que `DebVerifyKernel::reconcile` respete `ChallengeError` con invariante `strategy_error ⇒ summary != ConfirmedBaseline` (`ReconciliationSummary::EvidenceGap/Incomplete`, sin scores ni booleanos ambiguos); falsificadores declarados en el paquete (una estrategia falla / todas / una falla y otra sin findings / una falla y otra con contradicción / `strategies_run` cuenta ejecuciones completadas). Después C3l.2.
+
+---
+
+Previous: **Estado (session-50, 2026-09-30T22:15Z): C3j objetivo 4 (`context expand`) implementado + INC-DEBT-044 resuelta + ROADMAP REENFOCADO (C3l/C3m/C3n adoptados).** Workspace `2.3.3`, release en curso (`feat → MINOR → 2.4.0`). **SIGUIENTE PASO: abrir C3l.0** (re-clasificación honesta del baseline, AT-UAT-001) — prioridad P0 del paquete `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/`; C3j continúa en paralelo.
 
 **Hecho en session-50:**
 

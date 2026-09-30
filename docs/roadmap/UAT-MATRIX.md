@@ -55,7 +55,7 @@ Estados iniciales: **NOT_RUN**. Cada fila declara `Boundary` además del escenar
 
 | ID | Hito | Boundary | Escenario / falsador | Exit criterion |
 |---|---|---|---|---|
-| AT-UAT-001 | C3l.0 | PURE | Claim VERIFIED sin boundary/evidence compatible | Re-clasificado; ninguna evidencia histórica se reescribe |
+| AT-UAT-001 | C3l.0 | PURE | Claim VERIFIED sin boundary/evidence compatible | Re-clasificado; ninguna evidencia histórica se reescribe. **PASS session-51** — matriz congelada: [ACCEPTANCE-TRUTHFULNESS-MATRIX.md](ACCEPTANCE-TRUTHFULNESS-MATRIX.md) (21 filas AIW-S0..S8 + R0..R11 con `Frontier real` por evidencia citada; re-clasificaciones solo las mandadas por el paquete: R6→IMPLEMENTED (C3l.1), S7a→NOT_VERIFIED (C3l.2), S4→IMPLEMENTED_NOT_VERIFIED (C3l.3), S5→IMPLEMENTED (C3l.4), S8→NOT_VERIFIED (C3l.5/6), R2/R5/R8 parciales (C3m.x), claim «architecture conformant» no válido hasta C3l.7). Verificación de que toda ruta de evidencia citada existe. Filas sin defecto declarado SIN re-clasificar (regla C3l.0). |
 | AT-UAT-002 | C3l.1 | IN_PROCESS | ChallengeStrategy retorna error | Summary != ConfirmedBaseline |
 | AT-UAT-003 | C3l.1 | IN_PROCESS | Todas las strategies fallan | Resultado incompleto/gap tipado |
 | AT-UAT-004 | C3l.2 | IN_PROCESS | Regla registrada + ProducerEvent por `dispatch()` público | Señal esperada; engine vacío falsador falla |
