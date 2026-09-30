@@ -7168,3 +7168,5 @@ es el publicado por CI.
 **PRIMER PASO DE LA SESIÓN SIGUIENTE:** release (`feat → MINOR → 2.4.0` derivado por release-bump) y luego **abrir C3l.0** — re-clasificación honesta del baseline AIW-S0..S8/R0..R11 con `boundary_class`, sin reescribir evidencia histórica (AT-UAT-001).
 
 **Recibo:** `tests/cycle-artifacts/p-63676b11dc0ef88f/session50-c3j-expand-inc044-c3l-adoption/RECEIPT.md`.
+
+**Addendum session-50 (publicación):** release **v2.4.0 PUBLICADO**. Perfil completo previo al commit: **5188/0/19** (+6 exactos). Local 0–8 OK (binario musl static-pie verificado; parada en 8c por diseño, INC-DEBT-024). CI run **36772801013 success** (13/13 jobs). Tag objeto `31fe22f7`, peel `f31c92c4` == origin/main. Release: 27 assets, no draft/prerelease, publishedAt 2026-09-30T20:36:29Z. **9b OBSERVED:** 27/27 HTTP 200, gate PASS=13 FAIL=0. **9c OBSERVED:** sha CDN `ed4a327b…` == declarado; cosign **Verified OK** (`release.yml@refs/tags/v2.4.0`). **10–12 OBSERVED:** install exit 0, `sddk 2.4.0`, current → 2.4.0, doctor all_present: true, prune removed 2.3.3; `sddk context expand` presente en el instalado.

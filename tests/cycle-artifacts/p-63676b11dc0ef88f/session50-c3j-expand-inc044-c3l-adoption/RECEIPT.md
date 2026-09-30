@@ -58,3 +58,13 @@ Deuda abierta re-verificada: solo los 5 INC-AUDIT-S14 (medium/low, sin criterio 
 - `tests/uat_ctx_007_context_expand.sh` — CTX-UAT-015
 - `docs/debt/INC-DEBT-044-CAPSULE-PERSIST-SILENT-FAIL-SLASHED-CYCLE-ID.md`
 - `docs/roadmap/ROADMAP.md` / `UAT-MATRIX.md` — C3l/C3m/C3n + AT-UAT + 014/015
+
+## 8. ADDENDUM — release v2.4.0 PUBLICADO (misma sesión)
+
+- **SemVer derivado:** `feat` → MINOR → **2.4.0** (release-bump.sh, no decidido a mano). Perfil completo previo al commit: `cargo test --workspace` **5188 passed / 0 failed / 19 ignored** (+6 exactos sobre session-49: 1 test de store + 5 de expand), fmt y clippy workspace limpios.
+- **Flujo local 0–8 OK** (preflight ACCEPT 2.3.3→2.4.0, 5 commits pusheados, binario musl **static-pie verificado**, manifest 377 ficheros, bundle+unified+sbom); parada en 8c **por diseño** (firma keyless exige identidad de Actions — INC-DEBT-024 funcionando). Publicación por **CI**: run **36772801013 completed success** (13/13 jobs, firma cosign + smoke E2E).
+- **Tag:** anotado, objeto `31fe22f7`, peel `f31c92c4` == origin/main (push → verificar sync → taggear).
+- **Release:** isDraft=false, isPrerelease=false, publishedAt 2026-09-30T20:36:29Z, **27 assets**.
+- **9b OBSERVED:** 27/27 HTTP 200; `test_release_public_gate.sh` PASS=13 FAIL=0; tag anclado vía ls-remote.
+- **9c OBSERVED:** sha CDN `ed4a327bab6da7f5…` == declarado (sin staleness); cosign **Verified OK** identity `release.yml@refs/tags/v2.4.0`.
+- **10–12 OBSERVED:** `install.sh --version v2.4.0` desde la URL pública exit 0; `sddk 2.4.0`; current → 2.4.0; doctor **all_present: true**; prune removed 2.3.3 kept 2.4.0; el comando nuevo `sddk context expand --help` presente en el instalado.
