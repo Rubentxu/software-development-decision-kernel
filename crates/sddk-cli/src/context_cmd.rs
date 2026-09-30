@@ -24,10 +24,15 @@ use sddk_engine::agentic_session_binding::{
     AgenticBinding, AgenticSessionRef, BindingTarget, ContextBasis,
 };
 use sddk_engine::context_bridge::{ContextBridge, ContextDelta};
+use sddk_engine::context_capsule::{CapsuleTarget, CompilerPolicy, ContextCompiler};
 use sddk_engine::durable_capsule_store::FilesystemCapsuleStore;
 use sddk_engine::durable_delta_store::FilesystemDeltaStore;
 use sddk_engine::durable_session_binding::{load_binding, save_binding};
-use sddk_engine::{AdoptionPaths, CapsuleStore, XdgEnvironment};
+use sddk_engine::retry::WallClock;
+use sddk_engine::{
+    AdoptionPaths, CapsuleStore, CycleFactSource, CycleFacts, CycleLedgerCapsuleInputs,
+    XdgEnvironment,
+};
 use sddk_storage::Storage;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -235,25 +240,16 @@ pub(crate) fn bootstrap(
                     cycle_id: resolved.cycle_id.clone().unwrap_or_default(),
                 }
             } else {
-                match resolved.active_leases.len() {
-                    0 => BootstrapCycleState::NoActiveCycle {
+                // The inference layer ships the single active lease through
+                // `cycle_id` (its `active_leases` field is left empty by
+                // contract), and degrades to typed errors for zero (or
+                // ambiguous) leases. Match on that contract, not on the
+                // always-empty vec (CTA-003 step 3 wiring fix).
+                match resolved.cycle_id.clone() {
+                    Some(cycle_id) => BootstrapCycleState::Resolved { cycle_id },
+                    None => BootstrapCycleState::NoActiveCycle {
                         project_id: identity.project_id.as_str().to_string(),
                         hint: "start or resume a cycle: sddk cycle start --root <path>".to_string(),
-                    },
-                    1 => BootstrapCycleState::Resolved {
-                        cycle_id: resolved.active_leases[0].cycle_id.clone(),
-                    },
-                    _ => BootstrapCycleState::Ambiguous {
-                        project_id: identity.project_id.as_str().to_string(),
-                        candidates: resolved
-                            .active_leases
-                            .iter()
-                            .map(|c| CycleCandidateOut {
-                                cycle_id: c.cycle_id.clone(),
-                                owner: c.owner.clone(),
-                                expires_at_ms: c.expires_at_ms,
-                            })
-                            .collect(),
                     },
                 }
             }
@@ -294,7 +290,25 @@ pub(crate) fn bootstrap(
                 Some(capsule.capsule_id),
                 "complete",
             ),
-            None => ("fresh", "empty".to_string(), None, "no_capsule_source"),
+            None => {
+                // CTX-003 step 5 (the MUST): COMPILE the capsule from the
+                // real facts of the resolved cycle (ADR-0147 D2). Only a
+                // resolved/explicit cycle with ledger facts can compile; a
+                // project with no cycle stays honestly without a capsule.
+                match compile_cycle_capsule(&cycle_state, identity.project_id.as_str(), &paths) {
+                    Ok(Some(capsule)) => {
+                        capsule_store.persist(&capsule);
+                        (
+                            "compiled",
+                            capsule.capsule_id.clone(),
+                            Some(capsule.capsule_id),
+                            "complete",
+                        )
+                    }
+                    Ok(None) => ("fresh", "empty".to_string(), None, "no_capsule_source"),
+                    Err(e) => return Err(ContextBootstrapError::Durable(e)),
+                }
+            }
         };
 
     // ── 6. Bind the session to the resolved target and persist it ──
@@ -390,6 +404,114 @@ fn cycle_key(state: &BootstrapCycleState) -> String {
 /// by the `<workflow_run>:<node>:<attempt>` capsule key, so this name can
 /// never collide with a real cycle (`cycle-<id>`).
 const UNREACHABLE_CYCLE_KEY: &str = "no-active-cycle";
+
+/// The cycle id behind a resolvable bootstrap state, if any.
+fn resolvable_cycle_id(state: &BootstrapCycleState) -> Option<String> {
+    match state {
+        BootstrapCycleState::Resolved { cycle_id } | BootstrapCycleState::Explicit { cycle_id } => {
+            Some(cycle_id.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Projects the REAL facts of a cycle from the canonical ledger (ADR-0147
+/// D2): goal placeholder from the manifest, work items by state, decisions
+/// by kind. Read-only over `Storage`.
+struct StorageCycleFactSource {
+    ledger_path: PathBuf,
+}
+
+impl std::fmt::Debug for StorageCycleFactSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StorageCycleFactSource")
+            .field("ledger", &self.ledger_path.display().to_string())
+            .finish()
+    }
+}
+
+impl CycleFactSource for StorageCycleFactSource {
+    fn cycle_facts(&self, cycle_id: &str) -> Option<CycleFacts> {
+        let storage = Storage::open_read_only(&self.ledger_path).ok()?;
+        let record = storage.get_cycle(cycle_id).ok()?;
+        let work_items = storage
+            .list_work_items_by_cycle(cycle_id)
+            .unwrap_or_default();
+        let mut accepted = Vec::new();
+        let mut rejected = Vec::new();
+        for wi in &work_items {
+            let decisions = storage
+                .list_decision_records_by_work_item(wi.id.as_ref())
+                .unwrap_or_default();
+            for d in decisions {
+                let entry = format!("{} | {}", d.id, d.rationale);
+                match d.kind {
+                    sddk_domain::DecisionKind::Accept => accepted.push(entry),
+                    sddk_domain::DecisionKind::Reject => rejected.push(entry),
+                    // Defer/Escalate are open questions, not verdicts: they
+                    // are not compiled as accepted/rejected either way.
+                    _ => {}
+                }
+            }
+        }
+        Some(CycleFacts {
+            cycle_id: cycle_id.to_string(),
+            // The manifest's display_name is the only canonical, human-named
+            // summary the cycle carries; the work items carry the rest.
+            goal: Some(record.manifest.display_name),
+            work_items: work_items
+                .into_iter()
+                .map(|wi: sddk_domain::WorkItemRecord| {
+                    (
+                        wi.id.clone(),
+                        wi.title,
+                        serde_json::to_string(&wi.status)
+                            .map(|s| s.trim_matches('"').to_string())
+                            .unwrap_or_else(|_| "active".to_string()),
+                    )
+                })
+                .collect(),
+            accepted_decisions: accepted,
+            rejected_decisions: rejected,
+        })
+    }
+}
+
+/// CTX-003 step 5: compile the cycle's capsule from real ledger facts.
+/// Returns `Ok(None)` when there is no cycle to compile (honest absence),
+/// and a typed error when a resolvable cycle fails to compile (never a
+/// silent skip).
+fn compile_cycle_capsule(
+    cycle_state: &BootstrapCycleState,
+    _project_id: &str,
+    paths: &sddk_engine::AdoptionPaths,
+) -> Result<Option<sddk_engine::ContextCapsule>, String> {
+    let Some(cycle_id) = resolvable_cycle_id(cycle_state) else {
+        return Ok(None);
+    };
+    let source = StorageCycleFactSource {
+        ledger_path: paths.ledger.clone(),
+    };
+    let Some(inputs) = CycleLedgerCapsuleInputs::from_source(&source, &cycle_id) else {
+        // No ledger facts for this cycle (unknown id, or a --cycle reference
+        // that does not exist yet). The bootstrap still binds — the target is
+        // a reference — but compiles nothing: absence of facts is never
+        // papered over with a placeholder capsule (ADR-0147 D1/D2).
+        return Ok(None);
+    };
+    let compiler = ContextCompiler::with_policy(
+        ContextCompiler::new(std::sync::Arc::new(inputs), std::sync::Arc::new(WallClock)),
+        CompilerPolicy::default(),
+    );
+    let capsule = compiler
+        .compile(CapsuleTarget {
+            workflow_run: format!("cycle-{cycle_id}"),
+            node_run: "bootstrap".into(),
+            attempt: "cold-start".into(),
+        })
+        .map_err(|e| format!("capsule compile failed for cycle {cycle_id}: {e}"))?;
+    Ok(Some(capsule))
+}
 
 fn xdg_of(environment: &CliEnvironment) -> XdgEnvironment {
     XdgEnvironment {
@@ -910,6 +1032,187 @@ mod tests {
         let result = bootstrap(&args_at(&tmp, "s-4b"), &environment).expect("bootstrap");
         assert_eq!(result.context_source, "fresh");
         assert_eq!(result.basis_revision, "empty");
+    }
+
+    /// CTX-003 step 5 (the MUST), now satisfied: a bootstrap over a project
+    /// with ONE active cycle lease compiles the cycle's capsule from REAL
+    /// ledger facts (ADR-0147 D2) and reports `complete` with origin
+    /// `compiled` — without any pre-planted capsule.
+    #[test]
+    fn bootstrap_with_active_cycle_compiles_capsule_from_ledger_facts() {
+        use sddk_domain::{
+            DECISION_RECORD_SCHEMA_VERSION, DecisionKind, DecisionRecordRecord,
+            WORK_ITEM_SCHEMA_VERSION, WorkItemRecord, WorkItemStatus,
+        };
+        use sddk_testkit::CycleBuilder;
+
+        let tmp = tempdir("cycle-compile");
+        let environment = environment(&tmp);
+
+        // 1. Seed identity + adoption exactly as the first bootstrap sees it.
+        bootstrap(&args_at(&tmp, "s-c0"), &environment).expect("seed");
+        let canonical = std::fs::canonicalize(&tmp)
+            .expect("canonicalize")
+            .to_string_lossy()
+            .to_string();
+        let project_id = sddk_domain::stable_fallback_project_id(
+            &sddk_domain::stable_fallback_seed(&canonical),
+            ".",
+        );
+
+        // 2. Plant the ledger: project row, cycle, 3 work items (done/active/paused)
+        //    and 2 decisions (accept + reject) attached to the first item.
+        let identity_for_paths = sddk_domain::resolve_project_identity(
+            None,
+            ".",
+            Some(&sddk_domain::stable_fallback_seed(&canonical)),
+        )
+        .expect("identity");
+        let workspace_id = stable_workspace_id(&identity_for_paths.project_id, &canonical);
+        let paths = sddk_engine::resolve_xdg_paths(
+            &xdg_of(&environment),
+            identity_for_paths.project_id.as_str(),
+            &workspace_id,
+        )
+        .expect("paths");
+        let mut storage = crate::Storage::open(&paths.ledger).expect("open ledger");
+        storage
+            .register_project_workspace(
+                &sddk_domain::ProjectRecord {
+                    project_id: project_id.clone(),
+                    display_name: "ctx-cycle".into(),
+                    remote_url: None,
+                    scope: ".".into(),
+                    created_at: "2026-09-30T00:00:00Z".into(),
+                },
+                &sddk_domain::WorkspaceRecord {
+                    // Same id the adoption convergence already registered for
+                    // this canonical path; re-registering is then a no-op.
+                    workspace_id: workspace_id.clone(),
+                    project_id: project_id.clone(),
+                    canonical_path: canonical.clone(),
+                    created_at: "2026-09-30T00:00:00Z".into(),
+                },
+            )
+            .expect("register project");
+
+        let cycle_id = "c-ctx-cycle-under-test";
+        let cycle_record = CycleBuilder::new(sddk_domain::CyclePath::AFull)
+            .with_id(cycle_id)
+            .with_project(&project_id)
+            .build();
+        // The CycleBuilder hardcodes workspace_id "ws-test"; the FK against
+        // workspaces(project_id, workspace_id) needs the REAL one.
+        let mut cycle_record = cycle_record;
+        cycle_record.manifest.workspace_id = workspace_id.to_string();
+        storage.insert_cycle(&cycle_record).expect("insert cycle");
+
+        let now = 1_760_000_000;
+        let work_item = |id: &str, title: &str, status: WorkItemStatus| WorkItemRecord {
+            id: id.to_string(),
+            cycle_id: cycle_id.to_string(),
+            title: title.to_string(),
+            description: String::new(),
+            status,
+            actor_ref_kind: None,
+            actor_ref_id: None,
+            actor_ref_label: None,
+            created_at: now,
+            schema_version: WORK_ITEM_SCHEMA_VERSION,
+            spine_order: None,
+            spine_horizon: None,
+            spine_status: None,
+            exit_gate: None,
+        };
+        storage
+            .insert_work_item(&work_item("wi-1", "cerrar C3j", WorkItemStatus::Done))
+            .expect("wi-1");
+        storage
+            .insert_work_item(&work_item(
+                "wi-2",
+                "release v2.2.35",
+                WorkItemStatus::Active,
+            ))
+            .expect("wi-2");
+        storage
+            .insert_work_item(&work_item("wi-3", "adoptar C4", WorkItemStatus::Paused))
+            .expect("wi-3");
+        let decision = |id: &str, kind: DecisionKind, why: &str| DecisionRecordRecord {
+            id: id.to_string(),
+            work_item_id: "wi-1".to_string(),
+            kind,
+            rationale: why.to_string(),
+            actor_ref_kind: None,
+            actor_ref_id: None,
+            actor_ref_label: None,
+            schema_version: DECISION_RECORD_SCHEMA_VERSION,
+        };
+        storage
+            .insert_decision_record(&decision(
+                "d-1",
+                DecisionKind::Accept,
+                "D2: compilar a nivel ciclo",
+            ))
+            .expect("d-1");
+        storage
+            .insert_decision_record(&decision(
+                "d-2",
+                DecisionKind::Reject,
+                "D1: frontier vacio sin run",
+            ))
+            .expect("d-2");
+
+        // 3. Acquire the ONE active lease that makes the cycle resolvable.
+        //    Wall-clock now in MILLISECONDS (the lease API is ms-based): a
+        //    fixture timestamp would read as expired at inference time.
+        let now_ms = time::OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        storage
+            .acquire_cycle_lease(cycle_id, "tester", now_ms, now_ms + 3_600_000)
+            .expect("lease");
+        drop(storage);
+
+        // 4. A DIFFERENT session bootstraps: no capsule exists yet, so the
+        //    command must COMPILE one from the facts above.
+        let result = bootstrap(&args_at(&tmp, "s-c1"), &environment).expect("bootstrap");
+        assert_eq!(
+            result.status, "complete",
+            "the cycle capsule MUST have been compiled (CTX-003 step 5)"
+        );
+        assert_eq!(result.context_source, "compiled");
+        let capsule_id = result.capsule_id.clone().expect("compiled capsule id");
+        assert_eq!(result.basis_revision, capsule_id);
+
+        // 5. The durable capsule carries the REAL facts, not placeholders.
+        let store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
+            .expect("reopen capsule store");
+        let durable = store
+            .last_capsule(&format!("cycle-{cycle_id}"))
+            .expect("capsule persisted under the cycle key");
+        let objective = format!(
+            "{}\n{}\n{}\n{}\n{}",
+            durable.objective,
+            durable.artifacts.must_read.join("\n"),
+            durable.artifacts.relevant.join("\n"),
+            durable.decisions.accepted.join("\n"),
+            durable.definition_of_done.join("\n")
+        );
+        assert!(
+            objective.contains("c-ctx-cycle-under-test"),
+            "objective/must_read must carry the cycle ref; got: {}",
+            objective
+        );
+        assert!(
+            objective.contains("cerrar C3j"),
+            "relevant work must carry the done work item title"
+        );
+        assert!(
+            objective.contains("d-1"),
+            "must_read must carry the accepted decision"
+        );
+        assert!(
+            objective.contains("wi-3"),
+            "must_read must carry the blocked work item"
+        );
     }
 
     /// The session is bound, but the binding carries NO transcript: only

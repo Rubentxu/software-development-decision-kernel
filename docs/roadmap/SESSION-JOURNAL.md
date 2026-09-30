@@ -6882,3 +6882,87 @@ implementada, brecha real sigue bloqueada por `frontier`). **Bloqueo
 activo: el push requiere un bump real a 2.2.35**, porque el bump a
 2.2.34 de session-45 ya esta en `origin/main` y por tanto no cuenta
 como cambio de version en este rango.
+
+## session-46 — 2026-09-30T11:22Z — C3j paso 5: compilación de capsule a nivel ciclo (cierra INC-DEBT-042)
+
+- **baseline**: `v2.2.33` · **HEAD al abrir**: `a14540c5` (= origin/main) · **workspace_version**: `2.2.35`
+- **WorkItem**: C3j objetivo 3 (CTX-003) paso 5 — el MUST bloqueado por INC-DEBT-039
+- **delegación**: el operador autorizó explícitamente autonomía total y los gates humanos (9b/9c) del release
+
+### Qué se hizo
+
+1. **Puntero reconciliado** (`bash scripts/reconcile_state_pointer.sh`):
+   el guard rojo de session-45 (puntero 56 commits detrás) pasó a verde.
+   El FAIL restante (`manifest.toml` 2.2.34 vs Cargo 2.2.35) es el drift
+   conocido que arregla el bump del release.
+2. **ADR-0147** (decisión de modelo, la que INC-DEBT-039 llevaba dos
+   sesiones pidiendo): (D1) `frontier` solo se define para un run
+   existente; la ausencia de fila NO es un frontier vacío. (D2) el
+   bootstrap compila capsule a nivel CICLO con facts reales del ledger.
+   (D3) la ruta run-level queda pendiente del primer run real.
+3. **Implementación D2**: `CycleFacts` + port `CycleFactSource` +
+   `CycleLedgerCapsuleInputs` (`sddk-engine/cold_start.rs`; port porque
+   `sddk-storage` es dev-dep del engine). 5 tests nuevos en
+   `cold_start_tests.rs` (15/15): compila desde facts reales, ciclo
+   cerrado compila, ciclo desconocido → None, mismatch de ciclo → None,
+   goal vacío → objetivo "ciclo {id}".
+4. **Wiring CLI**: `StorageCycleFactSource` (proyección read-only del
+   ledger: manifest.display_name como goal canónico, work items con
+   status serde snake_case, decisiones Accept/Reject con rationale) +
+   `compile_cycle_capsule` en el paso 4/5 del bootstrap. Sin ciclo o sin
+   facts: `no_capsule_source` exit 4 (degradación honesta intacta).
+5. **BUG DE WIRING, hallado por el test y no por lectura**: el bootstrap
+   leía `resolved.active_leases` para inferir el ciclo, pero
+   `resolve_cycle_context` devuelve `active_leases: Vec::new()` SIEMPRE
+   por contrato — la lease única viaja en `cycle_id` y cero/ambiguas como
+   errores tipados. El match muerto degradaba a `NoActiveCycle` incluso
+   con una lease activa: ningún bootstrap habría compilado jamás. Fix:
+   leer `resolved.cycle_id`. Diagnóstico por sondas (3 iteraciones),
+   eliminadas antes del commit.
+6. **INC-DEBT-042 CERRADA** (high/P1): opción (b) implementada; la
+   adenda del doc trae evidencia, límites y el hallazgo del wiring.
+   **INC-DEBT-039 RE-SCOPED** a low/P3: solo queda la ruta run-level,
+   disparador mecánico de re-apertura = primera fila real en
+   `node_runs_v1`. Índice de deuda actualizado, guard PASS=10 FAIL=0.
+
+### Evidencia (observada, no inferida)
+
+- `cargo test -p sddk-cli --lib`: **847 passed / 0 failed / 1 ignored**
+- `cargo test -p sddk-engine --lib`: **1351 passed / 0 failed / 1 ignored**
+- `cargo test -p sddk-engine --test cold_start_tests`: **15/15**
+- `cargo clippy -p sddk-cli -p sddk-engine --all-targets`: limpio
+- `bash tests/test_debt_index_coherence.sh`: PASS=10 FAIL=0
+- `bash tests/test_release_state_pointer.sh`: 9/10 ok, FAIL único =
+  drift manifest.toml (lo arregla el bump)
+- Test de integración nuevo
+  `bootstrap_with_active_cycle_compiles_capsule_from_ledger_facts`:
+  ledger real en tempdir (ciclo + 3 work items done/active/paused + 2
+  decisiones + lease activa en ms); la capsule durable lleva cycle ref,
+  item cerrado en relevant, decisión aceptada en decisions.accepted,
+  item pausado en must_read.
+
+### Decisiones y conocimiento negativo
+
+- El goal de la capsule es `display_name` del manifest: la entidad `Goal`
+  de sddk-domain NO tiene tabla de persistencia; usarla habría sido
+  inventar facts. Declarado como límite residual.
+- `acquire_cycle_lease` es ms-based; pasarle segundos produce leases
+  "caducadas" silenciosas que degradan la inferencia. Trampa anotada.
+- El match sobre `active_leases` era código muerto desde que la
+  inferencia cambió de contrato: lección reiterada, los tests de wiring
+  (no solo de unidades) son los que pillan esto.
+
+### Estado al cierre
+
+Árbol CON cambios de session-46 sin commitear. Workspace 2.2.35, bump
+pendiente a 2.2.36. UAT: CTX-UAT-007..010 cubiertos por tests observados;
+CTX-UAT-011..015 e HYP-UAT-001..004 siguen NOT_RUN (paso 7 hipermedia y
+objetivo 6, trabajo futuro).
+
+### Primer paso de la sesión siguiente
+
+Commitear este bloque (`feat(cli): context bootstrap compila capsule del
+ciclo activo desde el ledger (ADR-0147)`), bump real 2.2.35 -> 2.2.36 con
+`bash scripts/release-bump.sh --force-version 2.2.36` (arregla el drift de
+manifest.toml), push, `bash scripts/release.sh`, install + doctor, y
+cerrar el slice de C3j objetivo 3.

@@ -277,3 +277,185 @@ fn _suppress_warnings() {
             CompilerPolicy,
         ) -> Result<sddk_engine::ColdStartOutput, _>;
 }
+
+// ── CycleLedgerCapsuleInputs (ADR-0147 D2 / CTX-003 paso 5) ────────────────
+//
+// The cycle-scoped CapsuleInputs must compile a capsule from REAL cycle
+// facts projected by the caller. These tests pin what the capsule claims:
+// only what the ledger contained, and never an empty must_read (the
+// compiler rejects that as MissingRequired).
+
+use sddk_engine::{CapsuleTarget, CycleFacts, CycleLedgerCapsuleInputs};
+
+#[derive(Debug)]
+struct FixedSource(Option<CycleFacts>);
+
+impl sddk_engine::CycleFactSource for FixedSource {
+    fn cycle_facts(&self, _cycle_id: &str) -> Option<CycleFacts> {
+        self.0.clone()
+    }
+}
+
+fn cycle_facts_fixture() -> CycleFacts {
+    cycle_facts_for("p-x/c3j-close")
+}
+
+fn cycle_facts_for(cycle_id: &str) -> CycleFacts {
+    CycleFacts {
+        cycle_id: cycle_id.into(),
+        goal: Some("Cerrar C3j con capsule compilada".into()),
+        work_items: vec![
+            ("WI-1".into(), "item abierto".into(), "active".into()),
+            ("WI-2".into(), "item pausado".into(), "paused".into()),
+            ("WI-3".into(), "item cerrado".into(), "done".into()),
+        ],
+        accepted_decisions: vec!["DEC-1 | adr elegido".into()],
+        rejected_decisions: vec!["DEC-2 | via descartada".into()],
+    }
+}
+
+/// The happy path: a cycle with facts compiles a REAL capsule whose
+/// objective is the cycle goal and whose must_read names the cycle and its
+/// open work items (blocked first). This is the CTX-003 step 5 obligation.
+#[test]
+fn cycle_ledger_inputs_compile_a_capsule_from_real_cycle_facts() {
+    let source = FixedSource(Some(cycle_facts_fixture()));
+    let inputs = CycleLedgerCapsuleInputs::from_source(&source, "p-x/c3j-close")
+        .expect("facts exist for the cycle");
+
+    let compiler = ContextCompiler::new(
+        Arc::new(inputs),
+        Arc::new(MockClock::new(1_760_000_000_000)),
+    );
+    let capsule = compiler
+        .compile(CapsuleTarget {
+            workflow_run: "cycle-p-x/c3j-close".into(),
+            node_run: "bootstrap".into(),
+            attempt: "cold-start".into(),
+        })
+        .expect("compile from cycle facts");
+
+    assert_eq!(capsule.objective, "Cerrar C3j con capsule compilada");
+    // must_read: cycle ref + paused first + open. Closed items stay out.
+    assert!(
+        capsule
+            .artifacts
+            .must_read
+            .first()
+            .is_some_and(|r| r.starts_with("cycle:p-x/c3j-close")),
+        "the cycle itself must be the first must-read; got {:?}",
+        capsule.artifacts.must_read
+    );
+    assert!(
+        capsule
+            .artifacts
+            .must_read
+            .iter()
+            .any(|r| r.starts_with("work-item:WI-2")),
+        "blocked (paused) items must land in must_read"
+    );
+    assert!(
+        capsule
+            .artifacts
+            .must_read
+            .iter()
+            .any(|r| r.starts_with("work-item:WI-1")),
+        "open items must land in must_read"
+    );
+    assert!(
+        !capsule
+            .artifacts
+            .must_read
+            .iter()
+            .any(|r| r.starts_with("work-item:WI-3")),
+        "closed items must NOT be must_read (they are relevant)"
+    );
+    assert_eq!(
+        capsule.decisions.accepted,
+        vec!["DEC-1 | adr elegido".to_string()]
+    );
+    assert_eq!(
+        capsule.decisions.rejected,
+        vec!["DEC-2 | via descartada".to_string()]
+    );
+    assert_eq!(
+        capsule.artifacts.relevant,
+        vec!["work-item:WI-3 | item cerrado".to_string()],
+        "closed items stay relevant"
+    );
+}
+
+/// A cycle whose items are ALL closed still compiles: the cycle ref keeps
+/// must_read non-empty, so the compiler's MissingRequired never fires for
+/// a real cycle.
+#[test]
+fn cycle_with_only_closed_items_still_compiles() {
+    let mut facts = cycle_facts_for("c");
+    facts.work_items = vec![("WI-9".into(), "cerrado".into(), "done".into())];
+    let source = FixedSource(Some(facts));
+    let inputs = CycleLedgerCapsuleInputs::from_source(&source, "c").expect("facts");
+
+    let compiler = ContextCompiler::new(
+        Arc::new(inputs),
+        Arc::new(MockClock::new(1_760_000_000_000)),
+    );
+    let capsule = compiler
+        .compile(CapsuleTarget {
+            workflow_run: "cycle-c".into(),
+            node_run: "bootstrap".into(),
+            attempt: "cold-start".into(),
+        })
+        .expect("must compile: cycle ref is always in must_read");
+    assert!(
+        capsule
+            .artifacts
+            .must_read
+            .iter()
+            .all(|r| r.starts_with("cycle:")),
+        "only the cycle ref may be must_read here; got {:?}",
+        capsule.artifacts.must_read
+    );
+}
+
+/// An unknown cycle (source returns None) does NOT produce inputs: the
+/// caller must fall through to the typed no-capsule state, never fabricate
+/// an empty capsule.
+#[test]
+fn unknown_cycle_yields_no_inputs() {
+    let source = FixedSource(None);
+    assert!(CycleLedgerCapsuleInputs::from_source(&source, "nope").is_none());
+}
+
+/// A source that answers with ANOTHER cycle's facts must not compile: the
+/// identity check turns it into the same typed absence as an unknown cycle.
+#[test]
+fn mismatched_cycle_facts_yield_no_inputs() {
+    let source = FixedSource(Some(cycle_facts_for("other-cycle")));
+    assert!(
+        CycleLedgerCapsuleInputs::from_source(&source, "requested-cycle").is_none(),
+        "facts of another cycle must not compile"
+    );
+}
+
+/// A cycle whose goal is empty falls back to a deterministic objective
+/// naming the cycle: the capsule never carries an empty objective.
+#[test]
+fn empty_goal_falls_back_to_cycle_named_objective() {
+    let mut facts = cycle_facts_for("c-goal");
+    facts.goal = Some("   ".into());
+    let source = FixedSource(Some(facts));
+    let inputs = CycleLedgerCapsuleInputs::from_source(&source, "c-goal").expect("facts");
+    assert_eq!(inputs.facts().cycle_id, "c-goal");
+    let compiler = ContextCompiler::new(
+        Arc::new(inputs),
+        Arc::new(MockClock::new(1_760_000_000_000)),
+    );
+    let capsule = compiler
+        .compile(CapsuleTarget {
+            workflow_run: "cycle-c-goal".into(),
+            node_run: "n".into(),
+            attempt: "a".into(),
+        })
+        .expect("compile");
+    assert_eq!(capsule.objective, "ciclo c-goal");
+}

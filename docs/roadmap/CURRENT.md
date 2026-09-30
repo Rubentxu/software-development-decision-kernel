@@ -1,6 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-44, 2026-09-30T06:44Z):** Workspace **`2.2.32`**, `HEAD (local) = ad6c6e63`, `origin/main = 5440b2e8` — **45 commits sin publicar**, árbol limpio. **El release v2.2.32 sigue SIN publicarse, y ahora hay una razón nueva y más fuerte: el push está bloqueado por un predicado insatisfacible (INC-DEBT-040, high/P1).**
+**Estado (session-46, 2026-09-30T11:21Z):** Workspace **`2.2.35`** (bump pendiente a 2.2.36 para este bloque de código), `HEAD = a14540c5 = origin/main`, árbol CON cambios de session-46 sin commitear (C3j objetivo 3 paso 5 completo: compilación de capsule a nivel ciclo).
+
+**Hecho en session-46 (delegación total del operador: "continua con el roadmap hasta el final sin parar"):**
+
+1. **Puntero reconciliado** (`bash scripts/reconcile_state_pointer.sh`): el guard rojo de session-45 (puntero 56 commits detrás) quedó verde; el único FAIL restante es el drift conocido de `manifest.toml` (2.2.34 vs 2.2.35), que arregla el bump del próximo release (patrón establecido, no tocar a mano).
+2. **DECISIÓN DE MODELO — ADR-0147** (`docs/architecture/adrs/ADR-0147-FRONTIER-SEMANTICS-AND-CYCLE-CAPSULE-INPUTS.md`): (D1) `frontier` solo se define para un run existente; ausencia de fila ≠ frontier vacío. (D2) el bootstrap compila capsule a nivel CICLO con facts reales del ledger. (D3) la ruta run-level queda pendiente del primer run real (INC-DEBT-039 re-scoped a low/P3).
+3. **CTX-003 paso 5 IMPLEMENTADO (era el MUST bloqueado por INC-DEBT-039):** `CycleFacts` + port `CycleFactSource` + `CycleLedgerCapsuleInputs` en `sddk-engine` (`cold_start.rs`, 5 tests verdes 15/15) y `StorageCycleFactSource` + `compile_cycle_capsule` wired en el bootstrap (`context_cmd.rs`). Con ciclo activo: `status: complete`, `context_source: compiled`, capsule persistida bajo `cycle-<id>`, `basis_revision = capsule_id`. Sin ciclo: `no_capsule_source` exit 4 (degradación honesta intacta).
+4. **BUG DE WIRING encontrado y corregido:** el bootstrap leía `resolved.active_leases` para inferir el ciclo, pero `resolve_cycle_context` devuelve ese campo SIEMPRE vacío por contrato (la lease única viaja en `cycle_id`; cero/ambiguas viajan como errores tipados). El código muerto degradaba a `NoActiveCycle` incluso con lease activa: ningún bootstrap habría compilado jamás. Fix: leer `resolved.cycle_id`. Pinneado por el test de integración nuevo.
+5. **INC-DEBT-042 CERRADA** (high/P1, cerrada en session-46 con evidencia) e **INC-DEBT-039 RE-SCOPED** a low/P3 (solo queda la ruta run-level, disparador: primera fila real en `node_runs_v1`). Índice de deuda actualizado; guard `test_debt_index_coherence.sh` PASS=10 FAIL=0.
+
+**Evidencia observada:** test de integración `bootstrap_with_active_cycle_compiles_capsule_from_ledger_facts` (ledger real en tempdir: ciclo + 3 work items done/active/paused + 2 decisiones + lease activa; la capsule durable lleva cycle ref, item cerrado en relevant, decisión aceptada en decisions.accepted, item pausado en must_read). Suites: `cargo test -p sddk-cli --lib` 847/0/1 · `cargo test -p sddk-engine --lib` 1351/0/1 · cold_start_tests 15/15 · clippy `-p sddk-cli -p sddk-engine --all-targets` limpio.
+
+**Límite residual declarado:** el goal de la capsule es el `display_name` del `CycleManifest`; la entidad `Goal` de `sddk-domain` no tiene tabla de persistencia propia, así que usarla requeriría inventar facts. Queda para el ciclo que introduzca persistencia de goals.
+
+**SIGUIENTE PASO (preciso):** (1) commitear este bloque como `feat(cli): context bootstrap compila capsule del ciclo activo desde el ledger (ADR-0147)`; (2) bump real 2.2.35 -> 2.2.36 con `bash scripts/release-bump.sh --force-version 2.2.36` (arregla también el drift de manifest.toml); (3) push + `bash scripts/release.sh` (gates 9b/9c autorizados por el operador en esta sesión); (4) install + doctor + cierre de ciclo C3j objetivo 3 (quedan paso 7 hipermedia y objetivo 6).
+
+**UAT:** CTX-UAT-007..010 cubiertos por tests de integración observados (compiled/recovered/degradación/isolation). CTX-UAT-011..015 (paso 7 hipermedia, objetivo 6) y HYP-UAT-001..004 siguen **NOT_RUN**.
+
+---
+
+Previous: **Estado (session-44, 2026-09-30T06:44Z):** Workspace **`2.2.32`**, `HEAD (local) = ad6c6e63`, `origin/main = 5440b2e8` — **45 commits sin publicar**, árbol limpio. **El release v2.2.32 sigue SIN publicarse, y ahora hay una razón nueva y más fuerte: el push está bloqueado por un predicado insatisfacible (INC-DEBT-040, high/P1).**
 
 **Lo que ocurrió, en orden.** El primer paso de session-43b (`git push origin main`) **se ejecutó y fue rechazado** por `githooks/pre-push` con `HOOK_EXIT=1`. La causa **no** es un bump pendiente: el bump ceremonial `061afe26` de session-43b **no bumpeó nada** (su padre ya era `2.2.32`). El bump real a `2.2.32` se commiteó en `3d4e457a`, que **ya es ancestro de `origin/main`**, así que en el rango `5440b2e8..ad6c6e63` **ningún commit cambia `[workspace.package] version`** — verificado commit por commit, salida vacía. El hook exige que el cambio ocurra **dentro del rango**; ocurrió 44 commits antes de `origin/main`. Es inobservable por construcción.
 

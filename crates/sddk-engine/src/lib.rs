@@ -169,8 +169,9 @@ pub use circuit_breaker::{
 };
 pub use cold_start::{
     CapsulePersistence, CapsuleStore, ColdStartError, ColdStartOutput, ColdStartSource,
-    InMemoryCapsuleStore, InMemoryRunStateViewInputs, NullCapsulePersistence,
-    RecordingCapsulePersistence, RunStateViewInputs, cold_start as cold_start_core,
+    CycleFactSource, CycleFacts, CycleLedgerCapsuleInputs, InMemoryCapsuleStore,
+    InMemoryRunStateViewInputs, NullCapsulePersistence, RecordingCapsulePersistence,
+    RunStateViewInputs, cold_start as cold_start_core,
 };
 pub use completion_provider_router::{
     Provider, ProviderError, ProviderFailure, ProviderFailureKind, ProviderOutput,

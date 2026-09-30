@@ -1,15 +1,16 @@
 ---
 id: INC-DEBT-039-RUN-STATE-VIEW-SCAFFOLD-READS-NO-LEDGER
 status: open
-severity: medium
-priority: P2   # session-45b: degradado desde high/P1. Ver "Revision de severidad" al final del documento.
+severity: low
+priority: P3   # session-46: degradada desde medium/P2. El bloqueo de CTX-003 paso 5 quedó resuelto por la ruta ciclo-nivel (ADR-0147 D2); lo que queda aquí es SOLO la ruta run-level, pendiente del primer run real.
 detected_at: 2026-09-29
 detected_in_session: session-42
-blocks: [CTX-COMPILER-001, CTX-003-paso-5, CTX-COMPILER-002]
+blocks: [CTX-COMPILER-002]   # session-46 re-scope: CTX-COMPILER-001 y CTX-003-paso-5 quedaron desbloqueados por ADR-0147 D2 (capsule a nivel ciclo)
 references:
   - crates/sddk-cli/src/run_view.rs
   - crates/sddk-engine/src/run_view.rs
   - crates/sddk-engine/src/cold_start.rs
+  - docs/architecture/adrs/ADR-0147-FRONTIER-SEMANTICS-AND-CYCLE-CAPSULE-INPUTS.md
   - ~/.sddk-knowledge/sddk-framework/specs/engine/REQ-CurrentRunView-Shape.md
 ---
 
@@ -257,3 +258,30 @@ pregunta de modelo de `frontier`.
 No cierra la INC ni implementa (a) ni (c). Solo corrige la severidad
 para que la prioridad refleje el estado real. Implementar (a) requiere
 la decision de modelo del operador, no una sesion autonoma.
+
+## Re-scope session-46 (2026-09-30) — la decision de modelo ya existe: ADR-0147
+
+La pregunta de modelo que bloqueaba la opcion (a) quedó **respondida** en
+[ADR-0147](../../architecture/adrs/ADR-0147-FRONTIER-SEMANTICS-AND-CYCLE-CAPSULE-INPUTS.md)
+con tres decisiones: (D1) `frontier` solo se define para un run existente;
+la ausencia de fila en `node_runs_v1` NO es un frontier vacio, es ausencia
+de hecho y no se fabrica; (D2) el bootstrap compila la capsule a nivel
+CICLO con `CycleLedgerCapsuleInputs` leyendo facts reales del ledger, sin
+necesitar `RunStateView`; (D3) la ruta run-level (`RecoveryCapsuleInputs`)
+queda como recovery explicito pendiente del primer run real.
+
+Consecuencias verificadas en session-46:
+
+- **CTX-003 paso 5 está desbloqueado y satisfecho** por la ruta D2
+  (ciclo-nivel): el bootstrap compila y persiste la capsule del ciclo
+  activo. `INC-DEBT-042` quedó CERRADA con esa evidencia.
+- **Lo que queda en ESTA INC es solo la ruta run-level (D3)**: dar a
+  `load_run_state_view` una fuente real cuando existan runs. El fail-closed
+  actual (exit 4) es el comportamiento correcto mientras `node_runs_v1`
+  esté vacía; implementar el adaptador ANTES de que exista el primer run
+  real seria escribir código contra una tabla sin datos, sin forma de
+  observarlo. El disparador de re-apertura es mecanico: primera fila real
+  en `node_runs_v1`.
+- Severidad baja a **low/P3**: no bloquea ningún objetivo del roadmap
+  activo; el unique consumidor de producción (`sddk run view`) ya es
+  honesto fail-closed.

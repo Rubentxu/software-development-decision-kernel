@@ -380,6 +380,190 @@ impl CapsuleInputs for RecoveryCapsuleInputs {
     }
 }
 
+// ── CycleLedgerCapsuleInputs ───────────────────────────────────────────────
+
+/// Facts of one cycle, projected by the caller from the canonical ledger
+/// (ADR-0147 D2). Engine stays storage-agnostic: `sddk-storage` is only a
+/// dev-dependency here, so the CLI projects the rows and engine consumes
+/// the projection.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CycleFacts {
+    /// Cycle id, used as the capsule target's workflow_run.
+    pub cycle_id: String,
+    /// Goal of the cycle, from the canonical cycle manifest.
+    pub goal: Option<String>,
+    /// `(id, title, status)` of every work item of the cycle.
+    pub work_items: Vec<(String, String, String)>,
+    /// Accepted decision ids/summaries recorded for the cycle's work items.
+    pub accepted_decisions: Vec<String>,
+    /// Rejected decision ids/summaries.
+    pub rejected_decisions: Vec<String>,
+}
+
+/// Port the CLI implements over `Storage` to feed `CycleLedgerCapsuleInputs`.
+pub trait CycleFactSource: Send + Sync + std::fmt::Debug {
+    fn cycle_facts(&self, cycle_id: &str) -> Option<CycleFacts>;
+}
+
+/// Production `CapsuleInputs` that compiles a capsule from the REAL facts of
+/// an active cycle (ADR-0147 D2). This is the CTX-003 step 5 path that used
+/// to be blocked by INC-DEBT-039/042: the capsule is cycle-scoped, so it
+/// needs NO `RunStateView` and no `node_runs_v1` rows. A capsule compiled
+/// from these facts claims only what the ledger contains.
+#[derive(Debug, Clone)]
+pub struct CycleLedgerCapsuleInputs {
+    facts: CycleFacts,
+    /// Materialized once at construction: `CapsuleInputs::objective` returns
+    /// `&str`, so the derived text must outlive the borrow.
+    objective_text: String,
+}
+
+impl CycleLedgerCapsuleInputs {
+    /// `None` when the source has no facts for the cycle (unknown cycle).
+    /// The returned facts' `cycle_id` is checked to match the request: a
+    /// source that answers with another cycle's facts is a caller bug and
+    /// must not silently compile the wrong capsule.
+    pub fn from_source(source: &dyn CycleFactSource, cycle_id: &str) -> Option<Self> {
+        source.cycle_facts(cycle_id).and_then(|facts| {
+            if facts.cycle_id != cycle_id {
+                return None;
+            }
+            let objective_text = match &facts.goal {
+                Some(goal) if !goal.trim().is_empty() => goal.clone(),
+                _ => format!("ciclo {}", facts.cycle_id),
+            };
+            Some(Self {
+                facts,
+                objective_text,
+            })
+        })
+    }
+
+    pub fn facts(&self) -> &CycleFacts {
+        &self.facts
+    }
+
+    fn open_work_items(&self) -> Vec<&(String, String, String)> {
+        // Statuses arrive serde snake_case from the projection ("done",
+        // "superseded", "cancelled"): closed. Everything else is live
+        // context for the capsule.
+        self.facts
+            .work_items
+            .iter()
+            .filter(|(_, _, status)| {
+                !matches!(status.as_str(), "done" | "superseded" | "cancelled")
+            })
+            .collect()
+    }
+
+    fn blocked_work_items(&self) -> Vec<&(String, String, String)> {
+        self.facts
+            .work_items
+            .iter()
+            .filter(|(_, _, status)| status == "paused")
+            .collect()
+    }
+}
+
+impl CapsuleInputs for CycleLedgerCapsuleInputs {
+    fn objective(&self) -> &str {
+        &self.objective_text
+    }
+    fn definition_of_done(&self) -> Vec<String> {
+        // Every open work item title is a DoD line: the cycle is done when
+        // its open items close. Real ledger facts, not invented ones.
+        self.open_work_items()
+            .into_iter()
+            .map(|(id, title, _)| format!("{}: {}", id, title))
+            .collect()
+    }
+    fn scope(&self) -> Scope {
+        Scope::default()
+    }
+    fn constraints(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn accepted_decisions(&self) -> Vec<String> {
+        self.facts.accepted_decisions.clone()
+    }
+    fn rejected_decisions(&self) -> Vec<String> {
+        self.facts.rejected_decisions.clone()
+    }
+    fn assumptions(&self) -> Vec<crate::context_capsule::Assumption> {
+        Vec::new()
+    }
+    fn must_read(&self) -> Vec<String> {
+        // The cycle itself is always a must-read (its manifest was read to
+        // produce these facts), so a cycle whose items are all closed still
+        // compiles a capsule naming what it is about. Blocked items first
+        // (they gate progress), then open ones — mirrors
+        // RecoveryCapsuleInputs, where blockers land in must_read.
+        let mut out: Vec<String> = Vec::new();
+        let mut seen = BTreeSet::new();
+        let push = |entry: String, out: &mut Vec<String>, seen: &mut BTreeSet<String>| {
+            let key = entry.split(" |").next().unwrap_or(&entry).to_string();
+            if seen.insert(key) {
+                out.push(entry);
+            }
+        };
+        push(
+            format!("cycle:{} | {}", self.facts.cycle_id, self.objective_text),
+            &mut out,
+            &mut seen,
+        );
+        for (id, title, _) in self
+            .blocked_work_items()
+            .into_iter()
+            .chain(self.open_work_items().into_iter())
+        {
+            push(format!("work-item:{} | {}", id, title), &mut out, &mut seen);
+        }
+        out
+    }
+    fn relevant(&self) -> Vec<String> {
+        // Closed work items stay relevant (negative knowledge carrier).
+        self.facts
+            .work_items
+            .iter()
+            .filter(|(_, _, status)| matches!(status.as_str(), "done" | "superseded" | "cancelled"))
+            .map(|(id, title, _)| format!("work-item:{} | {}", id, title))
+            .collect()
+    }
+    fn fetch_on_demand(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn negative_knowledge(&self) -> Vec<NegativeKnowledge> {
+        Vec::new()
+    }
+    fn previous_capsule(&self) -> Option<ContextCapsule> {
+        None
+    }
+    fn parent_target(&self) -> Option<crate::context_capsule::CapsuleTarget> {
+        None
+    }
+    fn provenance(&self) -> Vec<crate::run_view::ProvenanceLink> {
+        Vec::new()
+    }
+    fn last_seen_at_ms(&self, _ref_id: &str) -> Option<i64> {
+        None
+    }
+    fn content_changed_since(&self, _ref_id: &str) -> Option<i64> {
+        None
+    }
+    fn decision_overridden_at(&self, _ref_id: &str) -> Option<i64> {
+        None
+    }
+    fn artifact_removed_at(&self, _ref_id: &str) -> Option<i64> {
+        None
+    }
+    fn provider_revoked_at(&self, _ref_id: &str) -> Option<i64> {
+        None
+    }
+    fn ref_tags(&self, _ref_id: &str) -> Vec<String> {
+        Vec::new()
+    }
+}
+
 // ── cold_start core (free function, testable independently) ───────────────
 
 pub fn cold_start(

@@ -3,14 +3,16 @@ id: INC-DEBT-042
 title: context bootstrap reports status complete while delivering no capsule
 severity: high
 priority: P1
-status: open
+status: closed
 detected_at: 2026-09-30
 detected_in_session: session-45f
+closed_in_session: session-46
 component: cli
 surface: crates/sddk-cli/src/context_cmd.rs
 references:
   - crates/sddk-engine/src/cold_start.rs
   - crates/sddk-engine/src/context_capsule.rs
+  - docs/architecture/adrs/ADR-0147-FRONTIER-SEMANTICS-AND-CYCLE-CAPSULE-INPUTS.md
   - docs/roadmap/CURRENT.md
 ---
 
@@ -179,3 +181,49 @@ para forzar la prueba. Con un ciclo activo `context_source` podría dejar de
 ser `fresh`, pero `capsule_id: null` seguiría requiriendo la misma fuente
 inexistente. Queda declarado como límite de la observación, no como
 suposición resuelta.
+
+## CIERRE (2026-09-30, session-46) — opción (b) implementada vía ADR-0147
+
+La carencia ya no existe: `context bootstrap` **compila de verdad** la
+capsule del ciclo activo desde facts reales del ledger. La decisión de
+modelo que bloqueaba (qué es `frontier` sin `node_runs`) quedó resuelta en
+**ADR-0147** con tres decisiones: (D1) `frontier` solo se define para un
+run existente, la ausencia de fila no es un frontier vacío; (D2) el
+bootstrap compila a nivel CICLO con `CycleLedgerCapsuleInputs` (goal,
+work items por estado, decisiones por tipo) leídos del ledger canónico;
+(D3) la ruta run-level (`RecoveryCapsuleInputs`) queda como recovery
+explícito pendiente del primer run real, re-scoped en INC-DEBT-039.
+
+Implementación: `CycleFacts` + trait `CycleFactSource` (port, porque
+`sddk-storage` es dev-dep del engine) + `CycleLedgerCapsuleInputs` en
+`crates/sddk-engine/src/cold_start.rs`, y `StorageCycleFactSource` +
+`compile_cycle_capsule` wired en el paso 4/5 del bootstrap en
+`crates/sddk-cli/src/context_cmd.rs`. Con ciclo activo: `status: complete`,
+`context_source: compiled`, capsule persistida bajo la clave `cycle-<id>`
+y `basis_revision = capsule_id`. Sin ciclo (o ciclo sin facts):
+`no_capsule_source` con exit 4 — la degradación honesta de la opción (a)
+se mantiene como red de seguridad, ya no como estado normal.
+
+Evidencia observada en session-46: test de integración
+`bootstrap_with_active_cycle_compiles_capsule_from_ledger_facts` (LEDGER
+real en tempdir: proyecto + ciclo + 3 work items done/active/paused + 2
+decisiones accept/reject + lease activa; bootstrap compila y la capsule
+durable lleva el cycle ref, el título del work item cerrado en relevant,
+la decisión aceptada en decisions.accepted y el item pausado en
+must_read). Suite: `cargo test -p sddk-cli --lib` 847 passed / 0 failed /
+1 ignored; `cargo test -p sddk-engine --lib` 1351 passed; cold_start_tests
+15/15. `cargo clippy -p sddk-cli -p sddk-engine --all-targets` limpio.
+
+Hallazgo estructural del wiring, corregido en el mismo cambio: el bootstrap
+leía `resolved.active_leases` para inferir el ciclo, pero
+`resolve_cycle_context` devuelve ese campo **siempre vacío por contrato**
+(la lease única viaja en `cycle_id`, y cero/ambiguas viajan como errores
+tipados). El código muerto degradaba a `NoActiveCycle` incluso con una
+lease activa, con lo que ningún bootstrap llegaba jamás a compilar. Fix:
+leer `resolved.cycle_id`. Pinneado por el test de integración nuevo.
+
+Límite residual declarado: el goal de la capsule es el `display_name` del
+`CycleManifest` (el único resumen canónico nombrado por humanos que el
+ciclo lleva); la entidad `Goal` de `sddk-domain` aún no tiene tabla de
+persistencia propia, así que compilarla requeriría inventar facts. Queda
+para el ciclo que introduzca persistencia de goals.
