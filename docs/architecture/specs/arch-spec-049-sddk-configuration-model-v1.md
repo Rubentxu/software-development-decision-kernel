@@ -245,6 +245,19 @@ the guard does not count.
 `git.push` / `git.tag` / `git.release` / `git.history_rewrite` are **laws**
 (§5), not profile keys.
 
+### Runtime environment variables (implemented, CLI)
+
+These are process-level overrides read by the `sddk` binary, not profile
+keys; the resolver does not emit them. They exist for scripting and CI
+isolation, not for day-to-day agent use.
+
+| Variable | Read by | Effect | Cautions |
+|---|---|---|---|
+| `SDDK_STATE_HOME` | engine paths (`sddk_engine::paths`) | relocates the per-project state root (`.../state/sddk/projects/<pid>`, incl. `ledger.sqlite`) | e2e tests MUST set it to isolate from the developer's real ledgers |
+| `SDDK_DATA_HOME` | engine paths | relocates the per-project data root (`.../data/sddk/projects/<pid>`) | same isolation rule |
+| `SDDK_PROJECT_ID` | `sddk uat signoff/status/result/validate` project resolution | pins the project_id when `--project` is absent | undocumented escape hatch before this note; **overrides cwd `adoption.json` discovery, so a stale value silently targets another project's ledger — prefer `--project` or unset it** |
+| `XDG_CACHE_HOME` | engine paths | relocates the cache root | standard XDG |
+
 ### Reserved (specified, not yet resolved)
 
 These namespaces are reserved so we do not invent keys ad hoc later. The
