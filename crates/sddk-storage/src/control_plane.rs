@@ -250,6 +250,11 @@ impl ControlPlane for SqliteControlPlane {
     }
 
     fn upsert_uat_result(&mut self, result: &UatResultRow) -> StdResult<(), DomainStorageError> {
+        // Accumulating upsert (agent-secretless report S3.4): each ingest
+        // contributes ONE session; conflicting rows previously overwrote the
+        // row, losing every earlier session of the same release. Counts and
+        // durations accumulate; verdict/coverage_pct/defects come from the
+        // caller, which re-aggregates across all ingested sessions of the tag.
         self.0
             .execute(
                 r#"
@@ -261,8 +266,8 @@ impl ControlPlane for SqliteControlPlane {
                     verdict = excluded.verdict,
                     coverage_pct = excluded.coverage_pct,
                     defects = excluded.defects,
-                    session_count = excluded.session_count,
-                    uat_duration_minutes = excluded.uat_duration_minutes,
+                    session_count = session_count + excluded.session_count,
+                    uat_duration_minutes = uat_duration_minutes + excluded.uat_duration_minutes,
                     recorded_at = excluded.recorded_at
                 "#,
                 params![
@@ -405,5 +410,33 @@ mod tests {
         let loaded = plane.load_cycles().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].cycle_id, "c1");
+    }
+
+    /// S3.4 fix: two ingests of the same (project, tag) must ACCUMULATE
+    /// session_count and duration, not overwrite them.
+    #[test]
+    fn upsert_uat_result_accumulates_sessions_across_ingests() {
+        let mut plane = SqliteControlPlane::open_in_memory().unwrap();
+        plane.0.execute_batch(SCHEMA_V1).unwrap();
+        plane
+            .upsert_project("p1", "p1", "uat", None, "2026-01-01")
+            .unwrap();
+        let row = |sessions: i64, minutes: i64| UatResultRow {
+            project_id: "p1".into(),
+            tag_version: "v1.0.0".into(),
+            verdict: "READY".into(),
+            coverage_pct: 80.0,
+            defects: 0,
+            session_count: sessions,
+            uat_duration_minutes: minutes,
+            recorded_at: "2026-01-01T00:00:00Z".into(),
+        };
+        // Dos ingestas de una sesión cada una.
+        plane.upsert_uat_result(&row(1, 30)).unwrap();
+        plane.upsert_uat_result(&row(1, 45)).unwrap();
+        let loaded = plane.load_uat_results().unwrap();
+        assert_eq!(loaded.len(), 1, "one row per (project, tag)");
+        assert_eq!(loaded[0].session_count, 2, "sessions accumulate");
+        assert_eq!(loaded[0].uat_duration_minutes, 75, "minutes accumulate");
     }
 }

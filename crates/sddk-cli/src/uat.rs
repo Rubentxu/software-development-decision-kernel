@@ -839,6 +839,7 @@ fn run_uat_plan(args: UatPlanArgs, _environment: &crate::CliEnvironment) -> Comm
 #[derive(serde::Serialize, Debug)]
 struct UatValidateOutput {
     schema_version: u64,
+    artifact_kind: String,
     plan_features: usize,
     scenarios_total: usize,
     form_dsl_errors: Vec<String>,
@@ -858,6 +859,56 @@ fn run_uat_validate(args: UatValidateArgs) -> CommandOutput {
             .unwrap_or(0);
         if kind == 0 {
             anyhow::bail!("missing or invalid `schema_version`");
+        }
+        // Artifact discrimination (agent-secretless report S3.3): validate
+        // used to treat EVERY input as a plan. A session (schema 1..=2 with
+        // `session_id`) passed plan validation spuriously and a report was
+        // rejected for lacking features. Name the kind, then validate
+        // against the typed model of that kind.
+        let has_session_id = value.get("session_id").and_then(|v| v.as_str()).is_some();
+        let artifact_kind = if has_session_id {
+            "session"
+        } else if value.get("plan_ref").is_some() && value.get("features").is_none() {
+            "report"
+        } else {
+            "plan"
+        };
+        match artifact_kind {
+            "session" => {
+                if !(1..=sddk_domain::LATEST_SESSION_SCHEMA_VERSION as u64).contains(&kind) {
+                    anyhow::bail!(
+                        "session schema_version {} is not supported (this build accepts 1..={})",
+                        kind,
+                        sddk_domain::LATEST_SESSION_SCHEMA_VERSION
+                    );
+                }
+                let session: sddk_domain::UatSession = serde_saphyr::from_str(&raw)
+                    .map_err(|e| anyhow::anyhow!("session schema validation failed: {e}"))?;
+                if session.results.is_empty() {
+                    anyhow::bail!("session must have at least one scenario result");
+                }
+                return Ok(UatValidateOutput {
+                    schema_version: kind,
+                    artifact_kind: artifact_kind.to_string(),
+                    plan_features: 0,
+                    scenarios_total: session.results.len(),
+                    form_dsl_errors: Vec::new(),
+                });
+            }
+            "report" => {
+                // Reports have no dedicated schema_version constant; the
+                // typed round-trip is the gate.
+                let report: sddk_domain::UatReport = serde_saphyr::from_str(&raw)
+                    .map_err(|e| anyhow::anyhow!("report schema validation failed: {e}"))?;
+                return Ok(UatValidateOutput {
+                    schema_version: kind,
+                    artifact_kind: artifact_kind.to_string(),
+                    plan_features: report.features.len(),
+                    scenarios_total: report.summary.total_scenarios as usize,
+                    form_dsl_errors: Vec::new(),
+                });
+            }
+            _ => {}
         }
         if !(1..=LATEST_PLAN_SCHEMA_VERSION as u64).contains(&kind) {
             anyhow::bail!(
@@ -902,6 +953,7 @@ fn run_uat_validate(args: UatValidateArgs) -> CommandOutput {
         let scenarios_total: usize = plan.features.iter().map(|f| f.scenarios.len()).sum();
         Ok(UatValidateOutput {
             schema_version: kind,
+            artifact_kind: "plan".to_string(),
             plan_features: plan.features.len(),
             scenarios_total,
             form_dsl_errors: Vec::new(),
@@ -1163,15 +1215,37 @@ pub(crate) fn process_session_for_ingest(
         .finished_at
         .clone()
         .unwrap_or_else(|| session.started_at.clone());
+    // S3.4 fix: the control-plane row accumulates ACROSS sessions of the
+    // same release. Re-aggregate verdict/coverage/defects over the running
+    // totals instead of letting the last ingested session overwrite them:
+    // each ingest contributes exactly one session.
+    let prior = plane.load_uat_results().ok().and_then(|rows| {
+        rows.into_iter()
+            .find(|r| r.project_id == project_id && r.tag_version == session.release)
+    });
+    let (agg_sessions, agg_defects, agg_duration, agg_passed, agg_total) = match &prior {
+        Some(p) => (
+            p.session_count + 1,
+            p.defects + failed as i64,
+            p.uat_duration_minutes + duration as i64,
+            // Prior per-status counts are not stored individually; treat
+            // prior sessions as their stored row implies (coverage x count)
+            // and fold this session's explicit counts on top.
+            ((p.coverage_pct / 100.0) * p.session_count as f64).round() as u32 + passed,
+            p.session_count as u32 + total,
+        ),
+        None => (1, failed as i64, duration as i64, passed, total),
+    };
+    let agg_coverage = 100.0 * agg_passed as f64 / agg_total.max(1) as f64;
     plane
         .upsert_uat_result(&UatResultRow {
             project_id,
             tag_version: session.release.clone(),
             verdict: verdict.into(),
-            coverage_pct: coverage,
-            defects: failed as i64,
-            session_count: session.results.len() as i64,
-            uat_duration_minutes: duration as i64,
+            coverage_pct: agg_coverage,
+            defects: agg_defects,
+            session_count: agg_sessions,
+            uat_duration_minutes: agg_duration,
             recorded_at,
         })
         .map_err(anyhow::Error::from)?;
@@ -5548,6 +5622,104 @@ features:
         assert_eq!(parsed["scenarios_total"], 3);
         assert!(parsed["form_dsl_errors"].is_array());
         assert_eq!(parsed["form_dsl_errors"].as_array().unwrap().len(), 0);
+        assert_eq!(parsed["artifact_kind"], "plan");
+    }
+
+    /// S3.3 fix: a session is named as such and validated with the session
+    /// model (results required), not spurious plan validation.
+    #[test]
+    fn validate_session_is_named_and_validated_as_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let session_path = dir.path().join("session.yaml");
+        let session_content = r#"
+schema_version: 2
+session_id: sess-1
+plan_ref: v1.0.0
+release: v1.0.0
+executor: human
+started_at: "2026-08-11T00:00:00Z"
+finished_at: "2026-08-11T00:30:00Z"
+results:
+  - scenario_id: S-1
+    status: PASS
+    duration_minutes: 5
+    evidence:
+      - kind: screenshot
+        ref: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        path: shots/s1.png
+        size_bytes: 10
+        captured_at: "2026-08-11T00:01:00Z"
+"#;
+        std::fs::write(&session_path, session_content).unwrap();
+        let args = UatValidateArgs {
+            file: session_path,
+            format: OutputFormat::Json,
+        };
+        let out = run_uat_validate(args);
+        assert_eq!(out.status, 0, "session should validate: {}", out.stderr);
+        let parsed: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+        assert_eq!(parsed["artifact_kind"], "session");
+        assert_eq!(parsed["scenarios_total"], 1);
+    }
+
+    /// S3.3 fix: a report is named as such and validated with the report
+    /// model instead of being rejected for lacking plan features.
+    #[test]
+    fn validate_report_is_named_and_validated_as_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let report_path = dir.path().join("report.yaml");
+        let report_content = r#"
+schema_version: 1
+release: v1.0.0
+plan_ref: v1.0.0
+sessions: [sess-1]
+summary:
+  total_scenarios: 2
+  passed: 2
+  failed: 0
+  blocked: 0
+  partial: 0
+  not_run: 0
+  coverage_pct: 100.0
+  defects: 0
+  ux_issues: 0
+  uat_duration_minutes: 10
+verdict: READY
+"#;
+        std::fs::write(&report_path, report_content).unwrap();
+        let args = UatValidateArgs {
+            file: report_path,
+            format: OutputFormat::Json,
+        };
+        let out = run_uat_validate(args);
+        assert_eq!(out.status, 0, "report should validate: {}", out.stderr);
+        let parsed: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+        assert_eq!(parsed["artifact_kind"], "report");
+    }
+
+    /// S3.3 fix: a session without results must NOT pass validation.
+    #[test]
+    fn validate_session_without_results_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let session_path = dir.path().join("session.yaml");
+        let session_content = r#"
+schema_version: 2
+session_id: sess-empty
+plan_ref: v1.0.0
+release: v1.0.0
+executor: human
+started_at: "2026-08-11T00:00:00Z"
+finished_at: "2026-08-11T00:30:00Z"
+results: []
+"#;
+        std::fs::write(&session_path, session_content).unwrap();
+        let args = UatValidateArgs {
+            file: session_path,
+            format: OutputFormat::Text,
+        };
+        let out = run_uat_validate(args);
+        assert_ne!(out.status, 0, "empty session must fail");
+        assert!(out.stderr.contains("at least one scenario result"));
     }
 
     /// Form DSL with goto pointing to non-existent item → exit 1.
