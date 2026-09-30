@@ -178,6 +178,15 @@ pub(crate) enum ContextBootstrapError {
     Durable(String),
     #[error("adoption error: {0}")]
     Adoption(String),
+    /// An explicit `--cycle` named a cycle that does not exist in the ledger.
+    ///
+    /// Typed on purpose: the caller named ONE cycle, so this is a broken
+    /// reference, not an ambiguity. It mirrors `STORAGE_NOT_FOUND` from
+    /// `sddk cycle status --cycle`, because both surfaces answer the same
+    /// question inside the same documented `cli_context` envelope and must
+    /// not disagree about whether a reference resolves.
+    #[error("cycle not found: {cycle_id}\n  recovery: create the record or fix the reference")]
+    CycleNotFound { cycle_id: String },
 }
 
 /// Run the bootstrap service.
@@ -313,6 +322,27 @@ pub(crate) fn bootstrap(
 
     // ── 6. Bind the session to the resolved target and persist it ──
     let session = AgenticSessionRef::new(args.session.clone());
+
+    // An EXPLICIT reference is never looked up anywhere else in this command:
+    // inference is bypassed by construction, so this is the single point
+    // where the argv id can be proven to name a real cycle. Binding it
+    // unverified would persist a durable reference to a fiction — the caller
+    // receives `state: explicit` plus that id, and an agent rebuilding
+    // `cli_context` would carry the phantom forward. Resolved-by-inference is
+    // exempt: the resolver already read it from a live lease row.
+    if let BootstrapCycleState::Explicit { cycle_id } = &cycle_state {
+        let storage = crate::Storage::open_read_only(&paths.ledger)
+            .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+        let exists = storage
+            .cycle_exists(cycle_id)
+            .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+        if !exists {
+            return Err(ContextBootstrapError::CycleNotFound {
+                cycle_id: cycle_id.clone(),
+            });
+        }
+    }
+
     let target = match &cycle_state {
         BootstrapCycleState::Resolved { cycle_id } | BootstrapCycleState::Explicit { cycle_id } => {
             BindingTarget::Run {
@@ -1240,13 +1270,116 @@ mod tests {
         );
     }
 
+    /// A `--cycle` that names NO cycle in the ledger must fail closed.
+    ///
+    /// Explicit `--cycle` bypasses inference, so nothing else in the command
+    /// ever looks the reference up: the id travelled straight from argv into
+    /// `BootstrapCycleState::Explicit`, into `BindingTarget::Run`, and into a
+    /// DURABLE session binding (`binding_written: true`). A stale or typo'd id
+    /// therefore produced a response that structurally looked resolved —
+    /// `state: explicit`, `cycle_id: <the fiction>` — while carrying no
+    /// context at all (`basis_revision: "empty"`, `context_source: "fresh"`,
+    /// `capsule_id: null`), and a caller that only reads the exit code or the
+    /// `cycle` object would carry a phantom cycle into its `cli_context`.
+    ///
+    /// This is the same defect class as INC-DEBT-039/042 one level up, and the
+    /// sibling surface already behaves correctly: `sddk cycle status --cycle
+    /// <unknown>` exits 1 with `STORAGE_NOT_FOUND`. Two surfaces that
+    /// `skills/sddk-cycle-resume/SKILL.md` documents in the SAME `cli_context`
+    /// envelope must not disagree on whether a reference resolves.
+    ///
+    /// Invariant: a reference is a *reference* — it points at something. The
+    /// fix is not to stop binding explicit cycles (session ≠ run is the
+    /// documented contract); it is to refuse to bind one that does not exist.
+    #[test]
+    fn explicit_nonexistent_cycle_fails_closed_without_binding() {
+        let tmp = tempdir("explicit-missing");
+        let environment = environment(&tmp);
+        // A real cycle exists, so "not found" cannot be an artefact of an
+        // empty ledger: the reference is wrong, not the project.
+        let project_data = plant_real_cycle(&tmp, &environment, "cycle-real");
+        let paths = project_paths(&tmp, &environment);
+
+        let mut explicit = args_at(&tmp, "s-missing");
+        explicit.cycle = Some("cycle-does-not-exist".into());
+        let error = bootstrap(&explicit, &environment)
+            .expect_err("a --cycle that names no cycle must not resolve");
+
+        // The error must be TYPED and carry the offending id, so a consumer
+        // can branch on it and report which reference failed — matching the
+        // `recovery:` affordance of STORAGE_NOT_FOUND.
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("cycle-does-not-exist"),
+            "the error must name the unresolvable reference; got: {rendered}"
+        );
+        assert!(
+            !rendered.to_lowercase().contains("ambiguous"),
+            "an unknown id is not an ambiguity: the caller named one cycle \
+             explicitly and it is absent, got: {rendered}"
+        );
+
+        // No phantom binding: the session must not be bound to a cycle that
+        // does not exist. `s-missing` never got a binding at all.
+        assert!(
+            load_binding(&bindings_root(&paths), &AgenticSessionRef::new("s-missing"))
+                .expect("load bindings")
+                .is_none(),
+            "a failed explicit --cycle must not persist a binding to a \
+             non-existent cycle"
+        );
+        // The real cycle planted by the fixture is untouched: the failure is
+        // scoped to the bad reference, it does not poison the project.
+        let store = FilesystemCapsuleStore::open(capsule_root(&project_data)).expect("open store");
+        assert!(
+            store.last_capsule("cycle-cycle-real").is_none(),
+            "the rejected reference must not have compiled a capsule"
+        );
+    }
+
+    /// The refusal must be observable from the process boundary, not only from
+    /// the service return type: a caller that reads only the exit code has to
+    /// be able to tell the bad reference from a good one.
+    #[test]
+    fn explicit_nonexistent_cycle_exits_nonzero_at_the_cli_boundary() {
+        let tmp = tempdir("explicit-missing-exit");
+        let environment = environment(&tmp);
+        plant_real_cycle(&tmp, &environment, "cycle-real");
+
+        let output = crate::run_context(
+            crate::ContextCommand::Bootstrap(crate::ContextBootstrapArgsCli {
+                root: Some(tmp.clone()),
+                scope: Some(".".into()),
+                session: "s-missing-exit".into(),
+                cycle: Some("cycle-does-not-exist".into()),
+                format: OutputFormat::Json,
+            }),
+            &environment,
+        );
+        assert_ne!(
+            output.status, 0,
+            "an unresolvable --cycle must not exit 0 (got stdout: {})",
+            output.stdout
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "a failed bootstrap must not render a resolved envelope: {}",
+            output.stdout
+        );
+    }
+
     /// Explicit `--cycle` bypasses inference and binds the session to the
     /// Run (session ≠ run: the target is a reference, not a merge).
+    ///
+    /// The cycle is REAL: the intent under test is that an explicit reference
+    /// binds a Run target without consulting leases, not that an arbitrary
+    /// string can be bound. Asserting it against a phantom id made the test
+    /// agree with a fail-open it never meant to cover.
     #[test]
     fn explicit_cycle_binds_run_target_without_inference() {
         let tmp = tempdir("explicit");
         let environment = environment(&tmp);
-        bootstrap(&args_at(&tmp, "s-6"), &environment).expect("seed");
+        plant_real_cycle(&tmp, &environment, "cycle-explicit");
         let mut explicit = args_at(&tmp, "s-6b");
         explicit.cycle = Some("cycle-explicit".into());
         let result = bootstrap(&explicit, &environment).expect("bootstrap");
@@ -1274,7 +1407,7 @@ mod tests {
     fn explicit_cycle_reads_its_own_capsule() {
         let tmp = tempdir("explicit-capsule");
         let environment = environment(&tmp);
-        bootstrap(&args_at(&tmp, "s-8"), &environment).expect("seed");
+        plant_real_cycle(&tmp, &environment, "explicit");
         let paths = project_paths(&tmp, &environment);
         let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         plant(&store, &capsule("cycle-explicit"));
@@ -1649,5 +1782,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create tempdir");
         dir
+    }
+
+    /// Seed adoption and plant a REAL cycle row for `cycle_id`.
+    ///
+    /// The explicit-`--cycle` fixtures used to assert behaviour against ids
+    /// that were never inserted in the ledger, which is exactly why the
+    /// fail-open described in `explicit_nonexistent_cycle_fails_closed`
+    /// survived: the only explicit fixtures were phantom cycles, so nothing
+    /// could tell "binds a reference" from "binds a fiction". Returns the
+    /// project data paths so callers can inspect durable state.
+    fn plant_real_cycle(tmp: &Path, environment: &CliEnvironment, cycle_id: &str) -> PathBuf {
+        use sddk_testkit::CycleBuilder;
+
+        bootstrap(&args_at(tmp, "s-plant-seed"), environment).expect("seed adoption");
+        let canonical = std::fs::canonicalize(tmp)
+            .expect("canonicalize")
+            .to_string_lossy()
+            .to_string();
+        let identity = sddk_domain::resolve_project_identity(
+            None,
+            ".",
+            Some(&sddk_domain::stable_fallback_seed(&canonical)),
+        )
+        .expect("identity");
+        let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
+        let paths = sddk_engine::resolve_xdg_paths(
+            &xdg_of(environment),
+            identity.project_id.as_str(),
+            &workspace_id,
+        )
+        .expect("paths");
+        let mut storage = crate::Storage::open(&paths.ledger).expect("open ledger");
+        // The adoption convergence above already registered this project +
+        // workspace pair, so re-registering the SAME ids is a no-op and only
+        // exists to satisfy the foreign keys of the cycle row.
+        storage
+            .register_project_workspace(
+                &sddk_domain::ProjectRecord {
+                    project_id: identity.project_id.as_str().to_string(),
+                    display_name: "ctx-explicit".into(),
+                    remote_url: None,
+                    scope: ".".into(),
+                    created_at: "2026-09-30T00:00:00Z".into(),
+                },
+                &sddk_domain::WorkspaceRecord {
+                    workspace_id: workspace_id.to_string(),
+                    project_id: identity.project_id.as_str().to_string(),
+                    canonical_path: canonical,
+                    created_at: "2026-09-30T00:00:00Z".into(),
+                },
+            )
+            .expect("register project");
+        let mut record = CycleBuilder::new(sddk_domain::CyclePath::AFull)
+            .with_id(cycle_id)
+            .with_project(identity.project_id.as_str())
+            .build();
+        // CycleBuilder hardcodes workspace_id "ws-test"; the FK against
+        // workspaces(project_id, workspace_id) needs the resolved one.
+        record.manifest.workspace_id = workspace_id.to_string();
+        storage.insert_cycle(&record).expect("insert cycle");
+        drop(storage);
+        paths.project_data
     }
 }
