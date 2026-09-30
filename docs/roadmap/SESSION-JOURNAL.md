@@ -6644,3 +6644,78 @@ P2/P3 heredadas). La unica P2 con criterio vivo y accionable por
 decision del operador es **INC-DEBT-041** (ceguera de shellcheck aguas
 arriba + 28 hallazgos latentes, con tres salidas de triage). La
 prioridad de roadmap vuelve a ser el roadmap, no la triaje de deuda.
+
+### session-45d: auditar lo que la sesion dio por cerrado (3 puntos debiles)
+
+El sistema de evaluacion senalo que varias afirmaciones de session-45 eran
+**inspeccion, no observacion**. Revisado. Tres hallazgos reales, dos de
+ellos bugs en trabajo mio.
+
+#### 1. BUG PROPIO: el guard de coherencia se auto-desactivaba con su prosa
+
+`scripts/check_debt_index_coherence.sh` recogia **toda** palabra de estado
+del metadato de la fila, no solo la declarada. La fila de INC-DEBT-039
+declara `open` en la posicion 132 y menciona `fail-closed` en la 1893, asi
+que coincidia con `open` **y** `closed`; la interseccion nunca era vacia y
+una divergencia real `closed`-vs-`open` pasaba **sin reportar**. Un guard
+que una frase puede apagar no es un guard.
+
+Corregido: el estado declarado es el **primero** del segmento, que es donde
+la convencion lo coloca. Falsificado sobre el indice real: fila 039 forzada
+a `closed` → `EXIT=1` con el mensaje exacto; revertida → PASS 26/26.
+Test de regresion permanente con RED→GREEN demostrado (9/1 sin el fix,
+10/0 con el).
+
+**Y el guard no lo ejecutaba nadie.** No estaba en `ci.yml`, ni en
+`release.sh`, ni en el checklist de `AGENTS.md` 5: solo se citaban entre si
+el script y su test. Conectado a la lista de shell tests del paso 1b de
+`release.sh` (el patron ya establecido), y verificado que el gate lo corre y
+que el test tiene el bit de ejecucion que el gate exige.
+
+#### 2. BUG PROPIO en el test de regresion que acabo de escribir
+
+La primera version de los casos nuevos **fallaba con el fix puesto** (8/2).
+Dos causas, ambas mias: el parser de filas usa `([^)]*)` y mi caso llevaba
+`(exit 4)` en la prosa, lo que truncaba el segmento; y declaraba el mismo
+estado que el documento, que es coherente, no divergente. Corregido, el test
+nuevo atrapa el bug (RED 9/1 → GREEN 10/0). Limitacion del `([^)]*)`
+queda documentada en el propio test para que no se reintroduzca.
+
+#### 3. INC-DEBT-040 REABIERTA: el fix fue por ocurrencia, no general
+
+Publicar v2.2.33 **rodeo** el deadlock, no lo resolvio. Reproducido en clon
+aislado con el hook real: un commit que toca `crates/**` sin bumpar da
+**`HOOK_EXIT=1`** con `INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION`. El bump
+real satisfacia el predicado (A) solo porque estaba en el rango pendiente, que
+es la condicion de un release, no una propiedad del gate. En cuanto ese bump
+pasa a `origin/main` —que es exactamente lo que hace un release— el
+predicado vuelve a ser insatisfacible.
+
+Reabierta como `open` high/P1. Lo que si se resolvio y se verifico es la
+salida (1): publicar como v2.2.33 con bump real, la unica via que conjugaba
+«satisfacer el predicado» con «publicar de verdad». La variante (3)
+—comparar contra el ultimo tag publicado— sigue siendo la unica que arregla
+la clase, y no se implementa sin su propia decision.
+
+#### 4. Aceptacion del release por la interfaz real (no por exit code)
+
+`install.sh` exit 0 no prueba que el release funcione. Ejercitado el binario
+publicado en un proyecto aislado:
+
+```
+sddk version      -> binary 2.2.33, source current, present true
+sddk --help       -> exit 0
+sddk dev doctor   -> content.manifest present, bundle_coherence present, all_present true
+project resolve   -> identidad estable; mismo path => mismo id
+adopt status      -> status + project_id + workspace_id + receipt
+run-view          -> exit 4, RUN_STATE_SOURCE_UNAVAILABLE, estable 3/3
+run-view R-gen-   -> exit 4 tambien: la heuristica de prefijo esta eliminada
+                     en AMBOS caminos, no solo en el que se probó antes
+```
+
+#### Goal que no cierro
+
+`release v2.2.32` y `C3j remainder` pertenecen a sesiones anteriores. **No
+recojo evidencia para ellos y no reclamo su cierre**: lo de esta sesion es
+`v2.2.33` y lo verificado arriba. El estado real de esos dos goals no se ha
+observado aqui.

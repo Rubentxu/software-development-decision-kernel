@@ -1,6 +1,6 @@
 ---
 id: INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE
-status: resolved
+status: open
 severity: high
 priority: P1
 detected_at: 2026-09-30
@@ -187,3 +187,47 @@ predicado para que compare contra el ultimo tag publicado— eliminaria
 esta clase de deadlock en vez de rodearla, pero **altera un gate de
 admision** y requiere su propia decision con tests que falsifiquen el
 caso nuevo. No se ha implementado.
+
+## session-45d: REABIERTA. El fix de session-45 fue por ocurrencia, no general
+
+Publicar v2.2.33 **no resolvio esta deuda: la rodeo**. Verificado en
+clon aislado con el hook real (`core.hooksPath githooks`, rango simulado
+sin tocar el remoto):
+
+- Commit de documentacion que toca solo `docs/**` → `HOOK_EXIT=0` (rama B).
+- Commit de **codigo** que toca `crates/**` sin bumpar → **`HOOK_EXIT=1`**,
+  con `ERROR: (apply/release split | INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION)`
+  y *"no real release contract found in range"*.
+
+Es exactamente el mismo deadlock. La causa sigue viva: el hook construye
+el rango desde `remote_sha`, es decir `origin/main..HEAD` (`pre-push:125`,
+`pre-push:145`), mientras que `release_admission_check_v2` compara contra
+el **ultimo tag publicado** (hoy responde `REJECT already-published
+2.2.33`). Dos gates, dos preguntas distintas, y la que gobierna el push no
+tiene en cuenta la publication.
+
+**Por que se cerro en session-45 y no ahora**: en session-45 el bump real
+2.2.32 -> 2.2.33 estaba dentro del rango pendiente, asi que la rama (A)
+se satisfacia. Ese bump era una condicion del release, no un arreglo del
+predicado. En cuanto ese bump pasa a estar en `origin/main` —que es
+justo lo que hace un release— el predicado vuelve a ser insatisfacible
+para cualquier commit de codigo que no accompanied un bump.
+
+**Lo que si seResolved**: la sesion-45执行力 de la salida (1) —publicar
+como v2.2.33 con bump real— era la unica via que podia conjugar
+"satisfacer el predicado" con "publicar de verdad". Eso es un hecho
+ejecutado y verificado, no una propiedad del gate.
+
+**La variante (3) sigue siendo la unica que arregla la clase**: que el
+predicado compare contra el **ultimo tag publicado** en vez de contra
+`origin/main..HEAD`. Consecuencia aceptable: permitiria un commit de
+codigo entre releases sin bumpear, que es lo que el gate quiere evitar;
+el contrapeso tendria que ser la admission (`release_admission_check_v2`),
+que ya rechaza `already-published`. **No se implementa aqui**: altera un
+gate de admision y requiere su propia decision con tests que falsifiquen
+el caso nuevo, tal como se declaro en session-45. Lo que se hace es
+dejar constancia de que **la deuda sigue abierta** y de que la
+resolucion de session-45 fue por ocurrencia.
+
+Estado final: `open` (high/P1). No se maquilla como cerrada porque el
+defecto es reproducible hoy.
