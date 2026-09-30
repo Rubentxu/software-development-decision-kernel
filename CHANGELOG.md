@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.3.0] - 2026-09-30
+
+### Features
+  - feat(cli): project pin persistido para identidad estable del checkout
+  - feat(cli): warning fail-loud cuando admission crea un ledger nuevo (D2)
+  - feat(cli): linaje obligatorio en backlog discard y render --check (D3/D7)
+
+### Fixes
+  - fix(release): ruta tag-baseline en el pre-push (INC-DEBT-040 variante 3)
+  - fix(engine,docs): gates del release = los declarados; receipts son artifacts (S3.1/S3.2/W4, ADR-0082)
+  - fix(cli,storage): uat validate discrimina session/report; control-plane acumula sesiones (S3.3/S3.4)
+  - fix(cli): uat plan valida --from contra git tags; uat status ancla en --root (D4/D5)
+  - fix(domain): normalizar case del path del remote — case-change ya no forkea el ledger (D2)
+  - fix(uat): sign-off fail-closed — plan con escenarios, evidencia real y actor honesto (D1)
+
+### Other
+  - docs(roadmap): comentario de current_sha sin versiones en prosa
+  - docs(roadmap): reconciliar current_sha al trunk (15 commits de drift)
+  - chore(bundle): regenerar BUNDLE.toml fosil 2.2.32 -> 2.2.37
+  - chore(manifest): regenerar MANIFEST.sha256 tras el fix de prompts/sddk/phases/release.md
+  - chore(cli): silenciar coverage local muerto tras la re-agregacion S3.4
+  - docs(spec): documentar env vars de runtime en arch-spec-049 (D2/W2d)
+  - docs(roadmap): quitar version de prosa del comentario del puntero (check 5 del guard)
+  - docs(roadmap): cierre session-46b — release v2.2.37 publicado y plan C3k
+  - docs(roadmap): hito C3k para defectos CLI 2.2.33 reportados desde agent-secretless
+
 ## [2.2.37] - 2026-09-30
 
 ### Features
