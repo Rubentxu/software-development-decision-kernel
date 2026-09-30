@@ -1,6 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-48, 2026-09-30T17:34Z): C3i VERIFIED + RELEASE v2.3.2 PUBLICADO.** Workspace `2.3.2`, tag `v2.3.2` peel `4952e88c` == `origin/main`, `sddk 2.3.2` instalado. Árbol con 2 commits locales sin pushear (documental), ver "SIGUIENTE PASO".
+**Estado (session-49, 2026-09-30T20:00Z): C3i CERRADO SIN UAT ABIERTAS + INC-DEBT-043 RESUELTA.** Workspace `2.3.2`, último release publicado `v2.3.2` (sin release nuevo en esta sesión). Árbol con cambios sin commitear de session-49 + 2 commits documentales de session-48 sin pushear.
+
+**Hecho en session-49 (WorkItem W1 = cerrar CTX-UAT-005 y MIG-UAT-001, las dos últimas UAT de C3i):**
+
+1. **Las dos filas eran `NOT_RUN` por una premisa incorrecta, y la premisa se verificó antes de tocar código.** Decían «requiere dos versiones de skill conviviendo; sin release nuevo». El enunciado de origen (paquete hypermedia, `06-uat/UAT-MATRIX.md:18`) es *"caller legacy pasa cycle ID explícito → explicit vence inference"*: un contrato del **runtime**, no del texto de la skill, ejercitable contra un binario y un ledger. Y ya había release publicado. **Segunda vez en dos sesiones que una "puerta" resulta ser un script que faltaba** (la primera: CTX-UAT-002/003, session-48).
+2. **HALLAZGO PRINCIPAL — INC-DEBT-043 (high/P1, resolved).** Al validar MIG-UAT-001 se observó que `context bootstrap --cycle <id inexistente>` devolvía `state: "explicit"` con ese id y **`binding_written: true`**: un envelope con forma de resolución y un **binding durable apuntando a un ciclo que no existe**. La superficie hermana `sddk cycle status --cycle` sí fallaba cerrado (`STORAGE_NOT_FOUND`) — y la skill documenta ambas en el **mismo** envelope `cli_context`. Clasificación honesta: **pre-existente desde `aff0a498`** (session-40), no regresión de session-46. **Por qué nadie lo vio:** las dos fixtures explícitas usaban ids que nunca se insertaban en el ledger, así que no podían distinguir «enlaza una referencia» de «enlaza una ficción».
+3. **Resolución:** `ContextBootstrapError::CycleNotFound` + `Storage::cycle_exists` en la frontera del binding (paso 6), **después** de resolver la basis → exit 1, sin envelope, sin binding. El ciclo resuelto **por inferencia** queda exento (el resolver ya lo leyó de una lease viva). Blast radius acotado al binding: un ciclo con capsule durable sigue reconectando igual.
+4. **CTX-UAT-005 PASS** (`tests/uat_ctx_006_skill_runtime_alignment.sh`, 7 secciones, 36 aserciones). Lo nuevo: los 3 estados en **un binario y un ledger**, y la ejecución real de las **acciones de recovery que la skill nombra** (desde 0 `cycle start`; desde N, elegir un candidate de la lista que emitió el runtime).
+5. **MIG-UAT-001 PASS** (`tests/uat_ctx_005_explicit_cycle_migration.sh`, 7 secciones, 34 aserciones). Explícito vence a la ambigüedad, identidad/workspace idénticos, y **sin pérdida de contexto demostrado por comparación explícita** (la ruta ambigua no entrega capsule; la explícita sí).
+6. **Falsadores observados:** unitario 2/2 RED con la variante de error presente (el check es load-bearing, no la firma). E2E: `uat_ctx_005` **8 FAIL** y `uat_ctx_006` **5 FAIL, 7/7 secciones, exit 1** contra binario mutado; ambos PASS tras revertir. Detector adicional: `uat_ctx_005` contra el **binario publicado v2.3.2** da 8 FAIL de los cuales **4 exactamente** en fail-closed — lo que acota el defecto: el runtime ya honraba «explícito vence»; faltaba negarse a una referencia rota.
+7. **Dos errores de medición propios, declarados en el recibo:** (a) la primera corrida del falsador dio PASS contra el binario mutado porque **el build de la mutación había fallado** y se corrió contra el binario viejo — se llegó a «mis tests no son load-bearing» sin comprobar el build; (b) el `trap` de limpieza devolvía el exit del `rm` (64) en vez del veredicto, lo que habría reportado un exit inventado como resultado de UAT.
+8. **Robustez derivada del falsador:** `uat_ctx_006` abortaba a media corrida si el runtime mutado no devolvía `candidates` (`KeyError` bajo `set -e`), ocultando el resto del log. Lecturas de JSON hechas tolerantes; un UAT que aborta no informa.
+
+**Gates observados:** `context_cmd::tests` 25 passed / 0 failed · fmt limpio · clippy `-p sddk-cli --all-targets -D warnings` exit 0 · shellcheck limpio en ambos scripts · `test_debt_index_coherence.sh` PASS=10 FAIL=0 · `uat_ctx_005` 34 ok / `uat_ctx_006` 36 ok con exit 0. Perfil completo del workspace: ver journal de esta sesión.
+
+**Deuda:** 0 nueva abierta. INC-DEBT-043 registrada y resuelta en el mismo bloque. Severa reciente: ninguna otra vigente (los 3 candidatos S14 siguen sin cumplir criterio; 041/042 y 038 cerradas).
+
+**SIGUIENTE PASO (preciso):** (a) `bash scripts/release.sh` con bump real `2.3.2 → 2.3.3` (fix + 2 UAT cerradas son un `fix` con evidencia: PATCH por SemVer derivado del contenido; el bump arrastra también los 2 commits documentales de session-48 que el pre-push bloquea, sin `--no-verify`); (b) tras publicar, **abrir C3j** — queda desbloqueado por primera vez al no tener C3i ninguna UAT abierta, empezando por el objetivo 3 paso 7 (hipermedia) y las filas CTX-UAT-007..012/015 que siguen NOT_RUN.
+
+**Límites declarados:** no se ejecutó perfil completo al redactar el recibo; no hay release nuevo; los 2 commits documentales de session-48 siguen sin pushear; no se probó si `--cycle` **de otro proyecto** pasa el `cycle_exists` (pregunta abierta, no defecto confirmado).
+
+---
+
+Previous: **Estado (session-48, 2026-09-30T17:34Z): C3i VERIFIED + RELEASE v2.3.2 PUBLICADO.** Workspace `2.3.2`, tag `v2.3.2` peel `4952e88c` == `origin/main`, `sddk 2.3.2` instalado. Árbol con 2 commits locales sin pushear (documental), ver "SIGUIENTE PASO".
 
 **Hecho en session-48 (pre-flight: "deuda" sin criterios vigentes no es deuda; se verificó y la premisa caducó):**
 
