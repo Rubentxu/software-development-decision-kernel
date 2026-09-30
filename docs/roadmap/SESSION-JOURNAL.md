@@ -6810,3 +6810,36 @@ produccion depende de un tipo que hoy falla cerrado por diseno.
 subcomando, y no se inventa un comando para forzar una prueba. La
 observacion de arriba es sobre el estado sin ciclo activo, que es el estado
 por defecto del workspace.
+
+### session-45g: rectificacion del mensaje del commit de 042
+
+El commit `66a94a04` (fix de context bootstrap) cierra su mensaje con
+«Migrar a 2.2.35 porque el bump a 2.2.34 ya se publico en el commit de
+INC-DEBT-042». **Eso es falso y lo verifico antes de actuar sobre el:**
+
+```console
+tags v2.2.34: 0
+releases: v2.2.33, v2.2.27, v2.2.26
+commits sin publicar: 66a94a04 fix(cli): ...
+bumps en el rango sin publicar: 0
+```
+
+`v2.2.34` **nunca se publico**. Los commits de session-45 (que si llevan
+bump) ya estan en `origin/main`, asi que el rango sin publicar solo
+contiene mi commit de codigo y por eso el pre-push hook lo admitio. **No
+hace falta migrar a 2.2.35**: 2.2.34 sigue siendo el puntero ceremonial
+correcto del proximo release, exactamente como manda AGENTS.md 2.3.
+
+**Por que importa mas alla de este commit.** `INC-DEBT-040` es
+precisamente sobre este predicado, y mi mensaje de commit asumia el
+comportamiento del hook sin comprobarlo. Es el mismo fallo que la INC
+documenta: **escribir la afirmacion y llamarla cierre**. La diferencia
+es que aqui la compruebo y la corrijo en la sesion, no en un PR
+posterior. El mensaje de `66a94a04` **se deja como esta**: reescribir
+un commit ya publicado seria fabricar historia, y el rectificado va
+aqui, que es append-only.
+
+**Estado tras 45g:** workspace 2.2.34, ultimo tag y release v2.2.33,
+sin tag v2.2.34, arbol limpio salvo este journal. P1 abiertos:
+`INC-DEBT-040` (hook, reproducido) y `INC-DEBT-042` (opcion a
+implementada, brecha real sigue bloqueada por `frontier`).
