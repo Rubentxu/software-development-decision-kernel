@@ -617,3 +617,190 @@ fn falsification_kernel_works_for_non_architecture() {
     let s = DebVerifyKernel::reconcile(scope, &b, &ev, &set);
     assert!(matches!(s, ReconciliationSummary::Contradiction(_)));
 }
+
+// ─── C3l.1: strategy_error ⇒ summary != ConfirmedBaseline ─────────────────
+//
+// INC del paquete acceptance-truthfulness: `reconcile` ignoraba
+// `ChallengeError` y podía terminar `ConfirmedBaseline` con estrategias
+// fallidas; `strategies_run` contaba aplicables, no completadas. Los cinco
+// falsificadores declarados en C3l.1.
+
+mod c3l1_falsifiers {
+    use super::*;
+    use crate::debverify_kernel::types::StrategyFailure;
+    use crate::debverify_kernel::{ChallengeError, ChallengeOutcome};
+
+    /// Estrategia scriptable: falla (MissingInput) o termina limpia.
+    struct ScriptedStrategy {
+        name: &'static str,
+        script: Script,
+    }
+
+    enum Script {
+        Fail,
+        Clean,
+    }
+
+    impl ChallengeStrategy for ScriptedStrategy {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn applicable(&self, _scope: &ReconciliationScope) -> bool {
+            true
+        }
+
+        fn challenge(
+            &self,
+            _baseline: &Baseline,
+            _evidence: &ObservationSet,
+        ) -> Result<ChallengeOutcome, ChallengeError> {
+            match self.script {
+                Script::Fail => Err(ChallengeError::MissingInput(format!(
+                    "{}: entrada no disponible en este entorno",
+                    self.name
+                ))),
+                Script::Clean => Ok(ChallengeOutcome::Findings(vec![])),
+            }
+        }
+    }
+
+    fn scripted_set(strategies: Vec<ScriptedStrategy>) -> ChallengeStrategySet {
+        let mut set = ChallengeStrategySet::new();
+        for s in strategies {
+            set = set.register(s);
+        }
+        set
+    }
+
+    fn fail(name: &'static str) -> ScriptedStrategy {
+        ScriptedStrategy {
+            name,
+            script: Script::Fail,
+        }
+    }
+    fn clean(name: &'static str) -> ScriptedStrategy {
+        ScriptedStrategy {
+            name,
+            script: Script::Clean,
+        }
+    }
+
+    fn kernel_run(set: &ChallengeStrategySet) -> ReconciliationSummary {
+        let scope = ReconciliationScope::all("c3l1");
+        let ev = empty_observations();
+        let b = baseline_of("c3l1", &ev);
+        DebVerifyKernel::reconcile(scope, &b, &ev, set)
+    }
+
+    /// Falsificador 1: una estrategia falla, las demás limpias ⇒ NUNCA
+    /// ConfirmedBaseline; el resultado es Incomplete con la StrategyFailure
+    /// tipada (strategy_id + typed_reason), sin score ni booleano ambiguo.
+    #[test]
+    fn one_strategy_failure_never_yields_confirmed_baseline() {
+        let set = scripted_set(vec![fail("failing-1"), clean("clean-1")]);
+        let s = kernel_run(&set);
+        match &s {
+            ReconciliationSummary::Incomplete { failures } => {
+                assert_eq!(failures.len(), 1);
+                assert_eq!(failures[0].strategy_id, "failing-1");
+                assert!(
+                    failures[0].reason.contains("entrada no disponible"),
+                    "typed reason must travel; got: {}",
+                    failures[0].reason
+                );
+            }
+            other => panic!("expected Incomplete, got: {other:?}"),
+        }
+    }
+
+    /// Falsificador 2: TODAS las estrategias fallan ⇒ Incomplete con todas
+    /// las fallas; jamás ConfirmedBaseline con strategies_run = 0.
+    #[test]
+    fn all_strategies_failing_yields_incomplete() {
+        let set = scripted_set(vec![fail("f-1"), fail("f-2"), fail("f-3")]);
+        let s = kernel_run(&set);
+        match &s {
+            ReconciliationSummary::Incomplete { failures } => {
+                assert_eq!(failures.len(), 3);
+                let ids: Vec<&str> = failures.iter().map(|f| f.strategy_id.as_str()).collect();
+                assert!(ids.contains(&"f-1") && ids.contains(&"f-2") && ids.contains(&"f-3"));
+            }
+            other => panic!("expected Incomplete, got: {other:?}"),
+        }
+    }
+
+    /// Falsificador 3: una falla y otra sin findings ⇒ Incomplete (la
+    /// limpieza de la otra NO compensa la falla de la primera).
+    #[test]
+    fn failure_plus_clean_strategy_still_incomplete() {
+        let set = scripted_set(vec![fail("broken"), clean("quiet-ok")]);
+        let s = kernel_run(&set);
+        assert!(
+            matches!(s, ReconciliationSummary::Incomplete { ref failures } if failures.len() == 1),
+            "expected Incomplete with exactly the failing strategy, got: {s:?}"
+        );
+    }
+
+    /// Falsificador 4: una falla y OTRA ESTRATEGIA REAL encuentra
+    /// contradicción ⇒ la señal real domina (Contradiction) y el invariante
+    /// se sostiene: jamás ConfirmedBaseline.
+    #[test]
+    fn failure_plus_contradiction_surfaces_contradiction_not_baseline() {
+        // Evidencia real con aff + den de la MISMA relación: la estrategia
+        // de contradicciones de producción la detecta.
+        let r = rel("c3l1-a", CoreRelationKind::DependsOn, "c3l1-b");
+        let mut ev = empty_observations();
+        ev.insert(aff(&r));
+        ev.insert(den(&r));
+        let b = baseline_of("c3l1", &ev);
+        let scope = ReconciliationScope::all("c3l1");
+        let set = ChallengeStrategySet::new()
+            .register(ScriptedStrategy {
+                name: "broken",
+                script: Script::Fail,
+            })
+            .register(ObservationContradictionChallengeStrategy);
+        let s = DebVerifyKernel::reconcile(scope, &b, &ev, &set);
+        assert!(
+            matches!(s, ReconciliationSummary::Contradiction(_)),
+            "the real finding dominates and the baseline can never be \
+             confirmed while a strategy failed, got: {s:?}"
+        );
+    }
+
+    /// Falsificador 5: `strategies_run` cuenta EJECUCIONES COMPLETADAS (Ok),
+    /// no meramente aplicables. Dos limpias ⇒ ConfirmedBaseline { 2 }; con
+    /// una fallida jamás hay ConfirmedBaseline.
+    #[test]
+    fn strategies_run_counts_completed_not_merely_applicable() {
+        let set = scripted_set(vec![clean("a"), clean("b")]);
+        let s = kernel_run(&set);
+        assert!(
+            matches!(
+                &s,
+                ReconciliationSummary::ConfirmedBaseline { strategies_run: 2 }
+            ),
+            "two completed strategies must count as 2, got: {s:?}"
+        );
+
+        let set = scripted_set(vec![clean("ok-one"), fail("broken")]);
+        let s = kernel_run(&set);
+        assert!(
+            !matches!(s, ReconciliationSummary::ConfirmedBaseline { .. }),
+            "a failed applicable strategy forbids ConfirmedBaseline, got: {s:?}"
+        );
+    }
+
+    /// `StrategyFailure` es tipado y serializable (la matriz y los receipts
+    /// lo consumen): estrategia + razón, sin campos ambiguos.
+    #[test]
+    fn strategy_failure_is_typed_and_carryable() {
+        let f = StrategyFailure {
+            strategy_id: "s".to_string(),
+            reason: "missing input: overlay".to_string(),
+        };
+        assert_eq!(f.strategy_id, "s");
+        assert!(f.reason.contains("missing input"));
+    }
+}

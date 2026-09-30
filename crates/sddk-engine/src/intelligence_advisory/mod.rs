@@ -531,6 +531,7 @@ fn reconciliation_tag(summary: &ReconciliationSummary) -> &'static str {
         ReconciliationSummary::Staleness(_) => "staleness",
         ReconciliationSummary::EvidenceGap(_) => "evidence_gap",
         ReconciliationSummary::AcceptedDebt(_) => "accepted_debt",
+        ReconciliationSummary::Incomplete { .. } => "incomplete",
         ReconciliationSummary::NotApplicable => "not_applicable",
     }
 }

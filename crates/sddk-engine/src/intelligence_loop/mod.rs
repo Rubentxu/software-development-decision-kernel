@@ -344,6 +344,20 @@ fn reconciliation_digest(summary: &ReconciliationSummary) -> String {
             h.update(b"accepted_debt|");
             h.update(debt_delta_tag(delta).as_bytes());
         }
+        ReconciliationSummary::Incomplete { failures } => {
+            h.update(b"incomplete|");
+            // Content-addressed over the TYPED failures, canonical order:
+            // the same failed set always digests the same.
+            let mut tags: Vec<String> = failures
+                .iter()
+                .map(|f| format!("{}|{}", f.strategy_id, f.reason))
+                .collect();
+            tags.sort();
+            for t in tags {
+                h.update(t.as_bytes());
+                h.update(b";");
+            }
+        }
         ReconciliationSummary::NotApplicable => {
             h.update(b"not_applicable");
         }

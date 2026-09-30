@@ -59,8 +59,8 @@ pub use strategy_observation_contradiction::ObservationContradictionChallengeStr
 pub use strategy_set::{ChallengeStrategySet, StrategyNotFoundError};
 pub use types::{
     Baseline, BaselineHash, ChallengeFindingKind, ContradictionSet, DebtDelta, DebtItem,
-    DebtItemKind, GapSet, ReconciliationScope, ReconciliationSummary, StaleSet, SubjectId,
-    TriggerCondition,
+    DebtItemKind, GapSet, ReconciliationScope, ReconciliationSummary, StaleSet, StrategyFailure,
+    SubjectId, TriggerCondition,
 };
 
 use crate::observation::ObservationSet;
@@ -86,7 +86,14 @@ impl DebVerifyKernel {
     ) -> ReconciliationSummary {
         let applicable: Vec<&dyn ChallengeStrategy> =
             strategies.applicable(&scope).into_iter().collect();
-        let strategies_run = applicable.len();
+
+        // C3l.1: `strategies_run` counts COMPLETED executions (Ok outcomes),
+        // never merely-applicable strategies, and a strategy error is a
+        // first-class `StrategyFailure` — the pass cannot confirm the
+        // baseline while one exists (invariant:
+        // strategy_error ⇒ summary != ConfirmedBaseline).
+        let mut strategies_run = 0usize;
+        let mut failures: Vec<StrategyFailure> = Vec::new();
 
         let mut all_findings: Vec<ChallengeFinding> = Vec::new();
         let mut all_contradictions: Vec<ContradictionSet> = Vec::new();
@@ -95,16 +102,28 @@ impl DebVerifyKernel {
 
         for strategy in &applicable {
             match strategy.challenge(baseline, evidence) {
-                Ok(ChallengeOutcome::Findings(fs)) => all_findings.extend(fs),
-                Ok(ChallengeOutcome::Contradictions(cs)) => all_contradictions.extend(cs),
-                Ok(ChallengeOutcome::Gaps(gs)) => all_gaps.extend(gs),
+                Ok(ChallengeOutcome::Findings(fs)) => {
+                    strategies_run += 1;
+                    all_findings.extend(fs);
+                }
+                Ok(ChallengeOutcome::Contradictions(cs)) => {
+                    strategies_run += 1;
+                    all_contradictions.extend(cs);
+                }
+                Ok(ChallengeOutcome::Gaps(gs)) => {
+                    strategies_run += 1;
+                    all_gaps.extend(gs);
+                }
                 // Strategies that surface debt do so via Findings with a Debt
                 // kind, not via a separate outcome arm.
-                Err(_) => {
-                    // Strategy errors do not stop the pass; they become
-                    // findings of kind `StrategyError` so the caller knows a
-                    // strategy could not run.
-                }
+                Err(err) => failures.push(StrategyFailure {
+                    strategy_id: strategy.name().to_string(),
+                    reason: match err {
+                        ChallengeError::MissingInput(detail) => {
+                            format!("missing input: {detail}")
+                        }
+                    },
+                }),
             }
         }
 
@@ -132,7 +151,10 @@ impl DebVerifyKernel {
             a.kind == b.kind && a.location.canonical_tag() == b.location.canonical_tag()
         });
 
-        // Build the summary.
+        // Build the summary. C3l.1: real findings dominate (they are the
+        // louder truth), but with ANY failure the pass can neither confirm
+        // the baseline nor accept debt — that would hide whatever the
+        // failed strategy would have found.
         if !all_contradictions.is_empty() {
             ReconciliationSummary::Contradiction(all_contradictions)
         } else if !all_gaps.is_empty() {
@@ -141,7 +163,9 @@ impl DebVerifyKernel {
             .iter()
             .any(|f| f.kind == ChallengeFindingKind::Stale)
         {
-            if !all_debt.iter().any(DebtItem::accepted) {
+            if !failures.is_empty() {
+                ReconciliationSummary::Incomplete { failures }
+            } else if !all_debt.iter().any(DebtItem::accepted) {
                 ReconciliationSummary::ConfirmedBaseline { strategies_run }
             } else {
                 ReconciliationSummary::AcceptedDebt(DebtDelta { items: all_debt })

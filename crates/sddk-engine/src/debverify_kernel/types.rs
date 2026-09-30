@@ -216,6 +216,18 @@ pub struct StaleSet {
     pub findings: Vec<super::strategy::ChallengeFinding>,
 }
 
+/// A strategy that was APPLICABLE but did not finish successfully. Typed on
+/// purpose (C3l.1): no score, no ambiguous bool — the receipt and the
+/// consumer can name the strategy and the reason.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct StrategyFailure {
+    /// Stable name of the strategy that failed (`ChallengeStrategy::name`).
+    pub strategy_id: String,
+    /// Typed reason rendered from the `ChallengeError` (the variant kind
+    /// plus its payload).
+    pub reason: String,
+}
+
 /// The closed 6-variant result of a reconciliation pass.
 ///
 /// No `bool` + `Option<String>` and no numeric score. Distinct from
@@ -224,7 +236,8 @@ pub struct StaleSet {
 pub enum ReconciliationSummary {
     /// Every applicable strategy found nothing to challenge.
     ConfirmedBaseline {
-        /// How many strategies ran.
+        /// How many strategies ran TO COMPLETION (Ok outcomes only — a
+        /// strategy that errored is a `StrategyFailure`, not a run).
         strategies_run: usize,
     },
     /// At least one contradiction reconciled.
@@ -235,6 +248,16 @@ pub enum ReconciliationSummary {
     EvidenceGap(Vec<GapSet>),
     /// Known debt present and accepted by a decision.
     AcceptedDebt(DebtDelta),
+    /// At least one applicable strategy FAILED (C3l.1): the pass is
+    /// incomplete and the baseline cannot be confirmed from it. Real
+    /// findings (contradictions/gaps/staleness) dominate this variant when
+    /// they were also found — they are the louder truth — but neither
+    /// `ConfirmedBaseline` nor `AcceptedDebt` is reachable while a failure
+    /// exists.
+    Incomplete {
+        /// One entry per applicable strategy that did not finish.
+        failures: Vec<StrategyFailure>,
+    },
     /// Scope declared but no strategies applicable.
     NotApplicable,
 }
