@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.1] - 2026-09-30
+
+### Fixes
+  - fix(engine): DebVerify reconcile respeta ChallengeError — strategy_error ⇒ summary != ConfirmedBaseline (C3l.1)
+
+### Other
+  - docs(c3l): C3l.1 cerrada con falsificadores en el suite; R6 re-verificable; AT-UAT-002/003 PASS
+  - docs(c3l): C3l.0 — matriz de acceptance truthfulness congelada (AT-UAT-001 PASS)
+  - docs(c3j): session-50 cerrada con v2.4.0 publicado y verificado
+
 ## [2.4.0] - 2026-09-30
 
 ### Features
