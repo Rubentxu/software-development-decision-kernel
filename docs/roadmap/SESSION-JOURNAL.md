@@ -7220,3 +7220,21 @@ es el publicado por CI.
 **Incidentes:** ninguno. Release fix→PATCH 2.4.1 tras perfil completo (addendum).
 
 **Addendum session-52 (publicación):** release **v2.4.1 PUBLICADA** (fix→PATCH). Perfil completo 5194/0/19. Local 0–8b OK; 8c fail-closed por diseño (INC-DEBT-024). CI run **36778476542 success**. Tag objeto `2292991a`, peel `c7cef2e7` == origin/main. Release: 27 assets, publishedAt 2026-09-30T21:25:13Z. **9b:** 27/27 HTTP 200, gate 13/0. **9c:** sha `99657fa5…` íntegro, cosign **Verified OK**. **10–12:** install exit 0, `sddk 2.4.1`, doctor all_present, prune removed 2.4.0. Incidente menor declarado: la primera corrida del flujo perdió su log en /tmp; re-ejecución en vivo confirmó que era el 8c esperado (segunda pérdida de artefacto de medición en estas sesiones).
+
+---
+
+## Session-53 (2026-10-01T00:40Z) — C3l.2: Producer→L0 wiring real (AT-UAT-004/005 PASS)
+
+**Baseline / HEAD:** `origin/main` con v2.4.1 publicada (session-52). **Slice C3l.2** — segunda slice de código de la vía C3l.
+
+**Defecto (verificado):** `ProducerToL0Adapter::dispatch` evaluaba contra `SecretaryL0Engine::new()` fresco — ninguna regla productiva registrada disparaba por la ruta pública (AIW-S7a NOT_VERIFIED). **El test S7a existente fijaba el defecto como esperado** (`assert!(signals.is_empty(), "fresh engine has no rules...")`) y "demostraba" el disparo reconstruyendo el `ReactiveEvent` a mano — el patrón que C3l.2 prohibe.
+
+**Resolución (opción 2 del paquete):** el adapter compone `Arc<SecretaryL0Engine>`; `new()/with_now()` conservan engine fresco; nuevo `with_engine(Arc<SecretaryL0Engine>, now_ms)`. Restricciones respetadas: sin authority en el adapter, sin reglas hardcodeadas en el motor, `Unknown` silencioso, determinismo y cooldown preservados (el cooldown vive ahora en el engine persistente — diseño pretendido).
+
+**Evidencia:** falsificador principal RED (with_engine inexistente) → GREEN: **aiw_s7a_producer_l0 5/5** (cognicode + crash disparan por dispatch; race/silencio intactos), **exit gate como test propio** (`exit_gate_fresh_engine_cannot_fire_registered_rules`: engine vacío inyectado ⇒ 0 señales), gateway **133/0**, fmt/clippy limpios. Perfil completo workspace: consignado en el addendum de publicación.
+
+**Matriz:** S7a → IMPLEMENTED→re-verificable (C3n.2); AT-UAT-004/005 PASS.
+
+**SIGUIENTE PASO:** C3l.3 (Dynamic Workflow Expansion E2E real — AT-UAT-006/007/008; vertical proposal→authority→PlanRevision→execution + replay idempotente). Después C3l.4 (semántica EXT ausencia≠PASS).
+
+**Incidentes:** ninguno. Release fix→PATCH 2.4.2 tras perfil completo (addendum).

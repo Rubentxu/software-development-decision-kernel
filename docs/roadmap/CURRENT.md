@@ -1,6 +1,15 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-52, 2026-10-01T00:10Z): C3l.1 COMPLETADO — DebVerify fail-closed (AT-UAT-002/003 PASS), release 2.4.1 en curso.** Workspace `2.4.0`, HEAD `22459708`+docs. **SIGUIENTE PASO: C3l.2** (Producer→Secretary L0 wiring real por `dispatch()` público, AT-UAT-004/005; defecto: `ProducerToL0Adapter::dispatch` crea engine vacío). Después C3l.3.
+**Estado (session-53, 2026-10-01T00:40Z): C3l.2 COMPLETADO — Producer→L0 wiring real (AT-UAT-004/005 PASS), release 2.4.2 en curso.** HEAD con el fix + docs. **SIGUIENTE PASO: C3l.3** (Dynamic Workflow Expansion E2E real — AT-UAT-006/007/008: proposal→authority→PlanRevision→execution + replay idempotente). Después C3l.4 (semántica EXT).
+
+**Hecho en session-53 (C3l.2):**
+
+1. **Fix:** `ProducerToL0Adapter` compone `Arc<SecretaryL0Engine>` (opción 2 del paquete); `with_engine(Arc, now_ms)` como ruta pública; `new()/with_now()` conservan engine fresco. Restricciones respetadas (sin authority, sin reglas hardcodeadas, Unknown silencioso, determinismo+cooldown).
+2. **El test S7a antiguo fijaba el defecto como esperado** (`assert!(signals.is_empty())`) y reconstruía el evento a mano — prohibido por C3l.2. Reescrito como falsificador real: register rule → dispatch(real event) → señal esperada, sin reconstrucción.
+3. **Exit gate como test propio:** `exit_gate_fresh_engine_cannot_fire_registered_rules` — engine vacío inyectado ⇒ 0 señales.
+4. **Evidencia:** aiw_s7a 5/5 (RED antes: `with_engine` inexistente), gateway 133/0, fmt/clippy limpios. Matriz S7a → re-verificable; AT-UAT-004/005 PASS.
+
+**Límites:** el cooldown ahora persiste entre dispatches del mismo adapter (engine persistente) — diseño pretendido; los tests de silencio usan engines frescos y siguen válidos.
 
 **Hecho en session-52 (C3l.1):**
 
