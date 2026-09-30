@@ -1,5 +1,9 @@
 ---
-status: Accepted
+id: ADR-0147-FRONTIER-SEMANTICS-AND-CYCLE-CAPSULE-INPUTS
+status: accepted
+proposed_at: 2026-09-30
+accepted_at: 2026-09-30
+accepted_by_cycle: c3j
 date: 2026-09-30
 deciders: ["orchestrator (autonomía delegada, session-46)"]
 related:
