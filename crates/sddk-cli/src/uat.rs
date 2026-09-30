@@ -108,6 +108,9 @@ pub(crate) struct UatPlanArgs {
     #[arg(long)]
     pub(crate) release: String,
     /// Aggregate features from this tag (default: last UAT'd release or all).
+    /// Must reference an existing git tag; a typo here silently produced a
+    /// plan claiming features from a baseline that does not exist
+    /// (agent-secretless report D5).
     #[arg(long)]
     pub(crate) from: Option<String>,
     /// Output YAML path.
@@ -219,6 +222,11 @@ pub(crate) struct UatStatusArgs {
     /// Candidate tag under test.
     #[arg(long)]
     pub(crate) release: String,
+    /// Checkout root holding the uat-plan/report files (default: cwd).
+    /// Without it, status silently inspected the caller's cwd, reporting
+    /// everything missing when invoked from anywhere else (report D4).
+    #[arg(long)]
+    pub(crate) root: Option<PathBuf>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -782,6 +790,26 @@ pub(crate) fn run_uat(command: UatCommand, environment: &crate::CliEnvironment) 
 fn run_uat_plan(args: UatPlanArgs, _environment: &crate::CliEnvironment) -> CommandOutput {
     let format = args.format;
     let result = (|| -> anyhow::Result<PathBuf> {
+        // Baseline validation (agent-secretless report D5): --from names a
+        // git tag used to aggregate features; a typo used to be accepted
+        // silently and the plan lied about its baseline. Fail loud instead.
+        if let Some(from) = &args.from {
+            let ok = std::process::Command::new("git")
+                .args([
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/tags/{from}"),
+                ])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if !ok {
+                anyhow::bail!(
+                    "--from {from}: no such git tag; pass an existing tag (see `git tag --list`) or omit --from"
+                );
+            }
+        }
         let plan = UatPlan {
             schema_version: 1,
             release: sddk_domain::UatPlanRelease {
@@ -2045,9 +2073,14 @@ fn run_uat_report(args: UatReportArgs, environment: &crate::CliEnvironment) -> C
 fn run_uat_status(args: UatStatusArgs) -> CommandOutput {
     let format = args.format;
     // Status is derived from artifacts on disk: plan/session/report for the
-    // release candidate. U6 will enrich this with control-plane data.
-    let plan_file = PathBuf::from(format!("uat-plan-{}.yaml", args.release));
-    let report_file = PathBuf::from(format!("uat-report-{}.yaml", args.release));
+    // release candidate. D4 fix: anchor the lookup at --root (default cwd)
+    // instead of always the process cwd, so invoking from another directory
+    // inspects the checkout the caller actually means.
+    let base = args
+        .root
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let plan_file = base.join(format!("uat-plan-{}.yaml", args.release));
+    let report_file = base.join(format!("uat-report-{}.yaml", args.release));
     let output = UatStatusOutput {
         release: args.release,
         plan: if plan_file.exists() {
