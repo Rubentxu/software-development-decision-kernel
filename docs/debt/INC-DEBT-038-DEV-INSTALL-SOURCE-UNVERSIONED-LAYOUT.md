@@ -1,8 +1,30 @@
+---
+id: INC-DEBT-038-DEV-INSTALL-SOURCE-UNVERSIONED-LAYOUT
+title: "`dev install --source` instala el bundle sin versionar y sin symlink `current`"
+status: open
+severity: medium
+priority: P2
+detected_at: 2026-09-29
+detected_in_session: session-37
+resolved: null
+cluster_id: CL-INSTALL-DISTRIBUTION
+fingerprint: "dev_install_source_writes_unversioned_layout_v1"
+related: [INC-DEBT-025, INC-DEBT-034]
+---
+
 # INC-DEBT-038 — `dev install --source` instala bundle sin versionar y sin symlink `current`
 
 **Fecha de registro:** 2026-09-29 (session-37)
 **Severidad:** medium / **Prioridad:** P2
 **Estado:** OPEN (mitigado para coherencia de superficies; el recibo sigue rojo)
+
+> **Nota de forma (session-44).** Este documento declaraba el estado en
+> prosa (`**Estado:**`) y no en frontmatter, lo que lo hacía la única
+> entrada del índice que un check mecánico no podía leer. El
+> frontmatter se añadió sin tocar el cuerpo: la severidad y la
+> prioridad que aparecen arriba son las que el índice ya publicaba, no
+> una reclasificación. `resolved: null` es explícito porque «no
+> resuelto» y «olvidado el campo» no son lo mismo.
 
 ## Síntoma observado (evidencia real, session-36/37)
 
