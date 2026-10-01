@@ -172,3 +172,132 @@ continúa por la ruta autorizada del propio proyecto (build Gradle +
 `pipelinek-release-harness`). Esa decisión **no cierra** esta deuda —acota su
 alcance— y lo que queda pendiente sigue siendo la misma pregunta de diseño:
 cómo resuelve su versión un proyecto que no tiene `Cargo.toml`.
+# Addendum — sesión 65i: el parser del lockstep leía la versión de una DEPENDENCIA
+
+> Añade a INC-DEBT-051. **No cierra la entrada**: el defecto de agnosticismo
+> sigue abierto y verificado. Lo que se arregla aquí es un defecto **distinto**
+> que la misma línea de código producía, y que solo apareció al ejercitar el
+> parser con formas de fichero que ningún test cubría.
+
+## Lo que se encontró
+
+Los cuatro criterios de INC-DEBT-051 se verificaron vigentes contra el árbol
+actual, incluido el caso real:
+
+```
+$ sddk release plan --tag v0.45.0     # en pipeline-kotlin (Kotlin/Gradle)
+error: VERSION LOCKSTEP ERROR: could not read
+  /var/home/rubentxu/Proyectos/kotlin/pipeline-kotlin/Cargo.toml: No such file or directory
+```
+
+Y al leer la implementación aparece algo que la entrada no nombra: el
+`lockstep` no «lee `Cargo.toml`», **parsea `Cargo.toml` a mano, línea a
+línea**, dentro de una función de release. Y ese parser tiene tres defectos,
+ninguno cubierto.
+
+### (d) Leía la versión de una tabla de DEPENDENCIAS
+
+```rust
+if trimmed.starts_with('[') {
+    in_workspace = trimmed.starts_with("[workspace");
+}
+```
+
+`[workspace.dependencies]` **empieza por `[workspace`**. Con esa tabla antes
+de `[workspace.package]` — orden legal, y el que emite el propio Cargo
+cuando las dependencias se declaran primero — el parser leía la clave
+`version` de una **dependencia** y la devolvía como versión del proyecto.
+
+RED medido contra el código real, antes del arreglo:
+
+```
+assertion `left == right` failed: the lockstep read a dependency's version instead of the project's
+  left: "9.9.9"
+ right: "1.42.5"
+```
+
+**El fallo era silencioso**, que es lo que lo hace grave: no abortaba,
+devolvía un veredicto seguro construido sobre un número que describe otra
+cosa. Un tag `v9.9.9` habría **autorizado un release** sobre la versión de
+una dependencia; un tag `v1.42.5` —el correcto— habría sido rechazado.
+
+### (e) Abortaba en un `Cargo.toml` válido
+
+El parser solo despejaba comillas dobles. `version = '1.2.3'` es TOML
+válido —lo acepta el propio Cargo— y hacía fallar el release. RED medido:
+`None` sobre un fichero que `toml::from_str` parsea sin dificultad.
+
+### (f) Abortaba en repos de un solo crate
+
+Una librería sin `[workspace]` declara su versión en `[package]`. El parser
+solo miraba tablas `[workspace*]`, así que abortaba con un mensaje que
+mencionaba `[workspace]` en un fichero que no tenía ninguna. Es **la imagen
+invertida del defecto original**: el mismo predicado, en el otro sentido.
+
+## Por qué no se arregló con «más formatos»
+
+El arreglo mínimo podía haber sido añadir `maven.xml`, `gradle.properties` y
+`package.json` a una lista. **Eso habría sido el mismo error una vez más**:
+una lista escrita a mano de dónde mirar, cada entrada con su propio modo de
+fallo, y otra que se desincroniza del resto. Es exactamente lo que produjo
+los defectos (a) y (b) de esta entrada con las superficies del bundle
+(INC-DEBT-056), donde la lista escrita a mano fue la quinta copia del
+contrato.
+
+Lo que sí es un arreglo del **sustituto**: usar el parser TOML real (`toml`,
+la misma dependencia que `sddk-cli` ya usaba) y decidir la precedencia de
+las tablas de forma explícita y total:
+
+| orden | tabla | por qué |
+|---|---|---|
+| 1 | `[workspace.package].version` | la declaración del workspace |
+| 2 | `[workspace].version` | workspaces antiguos, y lo que escriben los tests de este repo |
+| 3 | `[package].version` | repositorio de un solo crate, sin workspace |
+
+Ninguna es «la primera clave `version` que aparezca». Con la lista
+explícita, añadir un formato nuevo es una entrada más **en el mismo sitio
+que ya define la precedencia**, no un `if` más en el parser.
+
+## Falsificadores: 4 mutaciones, 4 detectadas
+
+| mutación | test que la mata |
+|---|---|
+| volver al prefijo de tabla (`[workspace*]`) | `lockstep_uses_the_project_version_not_a_dependencies` |
+| quitar el fallback a `[package]` | `lockstep_does_not_confuse_package_and_workspace_tables` |
+| quitar el fallback a `[workspace]` | `lockstep_passes_when_tag_matches_workspace_version` |
+| degradar el error de parseo a tabla vacía | `lockstep_errors_when_cargo_toml_missing` y el resto |
+
+La cuarta merece nombre: `unwrap_or(Table::default())` sobre un parseo
+fallido convierte un error tipado en «no hay versión», que es la misma
+suplantación que el `prompts_count = 0` de INC-DEBT-052 y el
+`is_empty()` de INC-DEBT-054. Un fallo de parseo debe nombrar el fichero y
+el error, no disfrazarse de ausencia.
+
+## Un test que cambió de opinión
+
+El primer RED de (d) forzaba `unwrap_err()` y luego inspeccionaba
+`err.workspace_version`. Con el arreglo en su sitio el lockstep **pasa**
+correctamente, y el test fallaba por eso: estaba afirmando el camino
+interno, no la propiedad que ve quien llama.
+
+Reescrito para afirmar el veredicto en las dos direcciones: el tag del
+proyecto se **acepta**, y el de la dependencia se **rechaza**. La segunda
+mitad es la que importa — si alguna vez volviera a leer `9.9.9`, el release
+quedaría autorizado.
+
+Es la segunda vez en esta sesión que un test RED resultó ser una descripción
+incorrecta del comportamiento, y la segunda vez que la corrección no era
+tocar el código sino **afirmar la propiedad en vez del camino**.
+
+## Lo que sigue abierto
+
+INC-DEBT-051 **no se cierra**. `ensure_version_lockstep` sigue leyendo
+`Cargo.toml`, y un proyecto Kotlin, Gradle, Maven, npm o Bazel sigue
+abortando. Cerrarlo requiere el **contrato que la entrada ya pedía**: la noción
+de «dónde declara un proyecto su versión», que hoy no existe en ninguna parte
+del engine — `grep -rln "project_version" crates/*/src/` → cero.
+
+Ese contrato, sus tipos, su carga por lenguaje y su punto de integración son
+un ciclo propio con SCOPE-CONTRACT y ADR. Lo que se ha hecho aquí es quitar
+un defecto que hacía que el arreglo futuro fuera más difícil de verificar: hoy
+el lockstep es correcto **para Rust**, y se puede demostrar con tests.

@@ -19,6 +19,13 @@ test-support = []
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-saphyr = { workspace = true }
+# Real TOML parsing for the version-lockstep rule. The hand-rolled line parser
+# this replaces matched table headers with `starts_with("[workspace")`, which
+# also matched `[workspace.dependencies]` (INC-DEBT-051 addendum, session-65i,
+# RED `left: "9.9.9" / right: "1.42.5"`), and only ever stripped double quotes,
+# so `version = '1.2.3'` — valid TOML — aborted the release. Same major
+# version sddk-cli already uses.
+toml = "0.8"
 thiserror = { workspace = true }
 sha2 = "0.10"
 hmac = { workspace = true }

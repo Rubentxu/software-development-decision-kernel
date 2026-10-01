@@ -8458,3 +8458,67 @@ los dos shell nuevos.
 **Pendiente:** OK del operador al push (5 commits). Y sin tocar:
 INC-DEBT-051, la migración de los 25 receipts, la RC 0.45.0 de PipelineK y
 las 19 superficies fuera de presupuesto de brevedad.
+
+### Continuación (3) — INC-DEBT-051 verificada, y un defecto peor en la misma línea
+
+Con el bundle cerrado, la deuda abierta más antigua con criterios verificables
+era INC-DEBT-051 (`release plan/apply` exigen `Cargo.toml`). Los cuatro
+criterios se verificaron **vigentes** contra el árbol actual, incluido el caso
+real: `sddk release plan --tag v0.45.0` sobre `pipeline-kotlin` sigue dando
+`VERSION LOCKSTEP ERROR`.
+
+**(M) Leyendo la implementación aparece algo que la entrada no nombra:** el
+lockstep no «lee `Cargo.toml`», **lo parsea a mano línea a línea** dentro de
+una función de release. Y ese parser tiene tres defectos, ninguno cubierto.
+
+1. **Leía la versión de una DEPENDENCIA.** `starts_with("[workspace")`
+   también coincide con `[workspace.dependencies]`. Con esa tabla antes de
+   `[workspace.package]` —orden legal, y el que emite el propio Cargo— leía
+   la clave `version` de una dependencia. RED medido contra el código real:
+   `left: "9.9.9" / right: "1.42.5"`. **El fallo era silencioso**: no
+   abortaba, devolvía un veredicto seguro sobre un número que describe otra
+   cosa. Un tag `v9.9.9` habría **autorizado un release**; el tag correcto
+   `v1.42.5` habría sido rechazado.
+2. **Abortaba con comilla simple.** `version = '1.2.3'` es TOML válido —
+   el parser solo despejaba `"`.
+3. **Abortaba en repos de un solo crate**, donde la versión vive en
+   `[package]` y el mensaje mencionaba un `[workspace]` inexistente. La
+   **imagen invertida** del defecto original.
+
+**(N) Por qué no se arregló con «más formatos».** Añadir `maven.xml`,
+`gradle.properties` y `package.json` a una lista habría sido **el mismo
+error una vez más**: una lista escrita a mano de dónde mirar, con un modo de
+fallo por entrada, que se desincroniza. Es exactamente lo que produjo (a) y
+(b) de INC-DEBT-056 con las superficies del bundle. Lo que sí arregla el
+sustituto: el parser TOML real (`toml`, la misma dependencia que `sddk-cli`
+ya usaba) con precedencia **escrita y total** — `[workspace.package]`, luego
+`[workspace]`, luego `[package]`. Añadir un formato es una entrada más en el
+sitio que ya define la precedencia, no un `if` más en el parser.
+
+**(O) Falsificadores: 5 mutaciones.** Las cuatro primeras murieron, y la
+cuarta — degradar el error de parseo a `unwrap_or(Table::default())` — fue
+**BLIND SPOT**: convertir un error tipado en «no hay versión» dejó todos los
+tests en verde. Es la misma suplantación que `prompts_count = 0` y que el
+`is_empty()` de INC-DEBT-054, y ningún test cubría un `Cargo.toml`
+malformado. Añadidos dos tests que separan los dos hechos — «el fichero está
+roto» y «el proyecto no declara versión» son mensajes distintos — y la
+mutación muere.
+
+Séptima vez que un falsador encuentra en sí mismo lo que la inspección no, y
+la primera que encuentra un **fail-open recién escrito por mí**.
+
+**(P) Un test RED que resultó ser una descripción incorrecta.** El primer
+RED del defecto (1) forzaba `unwrap_err()` y luego inspeccionaba
+`err.workspace_version`: afirmaba el camino interno, no la propiedad. Con el
+arreglo el lockstep **pasa** correctamente y el test fallaba por eso.
+Reescrito para afirmar el veredicto en las dos direcciones — el tag del
+proyecto se acepta, el de la dependencia se rechaza — y la segunda mitad es la
+que importa: si volviera a leer `9.9.9`, el release quedaría autorizado.
+
+**(Q) INC-DEBT-051 NO se cierra.** Sigue leyendo `Cargo.toml`, y Kotlin,
+Gradle, Maven, npm y Bazel siguen abortando. Cerrarlo requiere el contrato
+que la entrada ya pedía —«dónde declara un proyecto su versión»—, que **no
+existe en ninguna parte del engine**: `grep -rln "project_version"
+crates/*/src/` → cero. Es un ciclo propio con SCOPE-CONTRACT y ADR. Lo que
+se ha hecho es quitar el defecto que haría ese contrato más difícil de
+verificar: hoy el lockstep es correcto **para Rust**, y se puede demostrar.
