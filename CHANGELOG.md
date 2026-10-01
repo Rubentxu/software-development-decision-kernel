@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
   - feat(aiw): vertical real de expansion dinamica con identidad estable de trigger (C3l.3)
 
 ### Fixes
+  - fix(release): el CHANGELOG declarado tiene que describir el trabajo que se publica — nuevo gate de cobertura integrado como paso 2b del pipeline (INC-DEBT-047)
   - fix(roadmap): el puntero de estado tiene una sola clave autoritativa y parsea — `STATE.yaml` no era parseable por máquina y `development_head` estaba 9 veces duplicada (INC-DEBT-046)
   - fix(uat): la ausencia de un provider externo nunca vuelve a reportarse como PASS (C3l.4)
 

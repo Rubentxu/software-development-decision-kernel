@@ -94,6 +94,26 @@ cualquier cosa habría satisfecho a cualquier otro `feat` que compartiese scope,
 y un changelog lleno de líneas genéricas habría pasado. El gate no comprueba
 "hay una entrada de tipo feat", comprueba "está **esta** entrada".
 
+### Observación no planeada: el gate se cazó a sí mismo
+
+Después de commitar el fix, y antes de pushear, reejecutar el gate devolvió:
+
+```text
+[FAIL] missing from section '## [2.5.0]': fix(release): el CHANGELOG declarado tiene que describir el trabajo que se publica
+PASS=10 FAIL=1
+```
+
+El commit que implementa el gate quedó él mismo fuera de la sección, porque se
+commiteó después de escribir el changelog. Es exactamente el bucle que el gate
+existe para cerrar: **cada commit nuevo exige entrada**, así que el mecanismo no
+es decorativo sino que se aplica sobre el árbol real, en el momento del push.
+
+Es también un recordatorio del límite 1: el gate obliga a actualizar el
+changelog en cada commit de código, no sólo en el bump. Es el comportamiento
+deseado — la sección declarada es un índice del rango publicado, y el rango
+crece hasta el tag — pero implica que el flujo de trabajo tiene un paso más que
+antes.
+
 ## Criterio de cierre (alcanzado en session-61)
 
 - (a) `bash tests/test_changelog_coverage.sh` → `PASS=11 FAIL=0`, exit 0.
