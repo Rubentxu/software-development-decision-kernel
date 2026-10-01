@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-62, 2026-10-01T13:00Z): C3m.2 corregido en código pero con DEUDA NORMATIVA ABIERTA (INC-DEBT-048). `AT-UAT-019` queda PASS PARCIAL, no PASS. Release v2.5.0 sigue BLOQUEADO por musl-gcc.** **SIGUIENTE dentro de C3m: C3m.0** (una sola definición canónica de KMT) · C3m.1 (invalidación incremental) · C3m.3 · C3m.4 · C3m.5. La decisión normativa de INC-DEBT-048 requiere autoridad, no un agente.
+**Estado (session-62, 2026-10-01T13:00Z): C3m.2 corregido en código pero con DEUDA NORMATIVA ABIERTA (INC-DEBT-048). `AT-UAT-019` queda PASS PARCIAL, no PASS. Release v2.5.0 sigue BLOQUEADO por musl-gcc.** **SIGUIENTE dentro de C3m: C3m.0** (una sola definición canónica de KMT) · C3m.1 (invalidación incremental) · C3m.3 · C3m.4 · C3m.5. La decisión normativa de INC-DEBT-048 requiere autoridad, no un agente. **Y una segunda decisión de gobernanza:** INC-DEBT-049 (doble identidad de proyecto) espera autorización del operador antes de aplicar `sddk project pin`.
 
 **Defecto medido (RED antes del fix):** el doc de `KnowledgeBasis::revise` afirmaba *"a new basis hash (because the `revised_at` participates in the hash)"*. La implementación hacía `derive_basis_hash(&new_basis.assertions)`, y esa función **sólo recibe `assertions`**: `revised_at` no tenía forma de participar. RED empírico: `revise(t=20)` con contenido idéntico daba el **mismo** `basis_hash` (`4de2152…` antes y después).
 
@@ -21,11 +21,20 @@
 - **`AT-UAT-019` cita "el ADR de identidad", que no existe.** Verificado: no hay ADR de `KnowledgeBasis` (lo más cercano es ADR-0147, sobre otra cosa). Un criterio que remite a un documento inexistente no se puede cumplir ni incumplir honestamente.
 - **Decisión normativa binaria, pendiente:** (a) actualizar REQ-A3S1-021 para incluir `revised_at`, o (b) revertir el cambio, corregir el doc de `revise` y resolver aparte que `KMT::evaluate` compara hash antes que tiempo. Cambiar una spec en `proposed` no corresponde a una slice de código.
 
-**Gates:** `knowledge::` **24 passed / 0 failed** · `sddk-engine` completo **2376 passed / 0 failed / 11 ignored** (el cambio de dominio no rompió ningún consumidor) · **perfil completo del workspace 5237 passed / 0 failed / 23 ignored** · fmt limpio · clippy `-D warnings` exit 0 · `test_debt_index_coherence` PASS=10 FAIL=0 · `test_changelog_coverage` PASS=13 FAIL=0.
+**Gates:** `knowledge::` **24 passed / 0 failed** · `sddk-engine` completo **2376 passed / 0 failed / 11 ignored** (el cambio de dominio no rompió ningún consumidor) · **perfil completo del workspace 5237 passed / 0 failed / 23 ignored** · fmt limpio · clippy `-D warnings` exit 0 · `test_debt_index_coherence` PASS=10 FAIL=0 · `test_changelog_coverage` **PASS=14 FAIL=0**.
 
 **Estado del release:** v2.5.0 **BLOQUEADO** (`rpm -q musl-gcc`: "el paquete musl-gcc no está instalado"). `release.sh --dry-run` se lanzó y **excedió 600 s** porque el dry-run ejecuta el perfil completo del workspace (pasos 0-8); es coste, no fallo del gate. Nada publicado, ningún tag, sin forzar glibc.
 
 **Trazabilidad de la evidencia (no se re-presenta como prueba de este commit):** los gates de arriba se midieron sobre `7bbeee3d`, que es el commit de **código**. Este commit documental es posterior y **no toca `crates/`, `scripts/` ni shell tests**, así que el árbol ejecutable es idéntico al medido. Comprobable sin confiar en este texto: `git diff 7bbeee3d HEAD --name-only -- crates/ scripts/ tests/'*.sh'` debe salir **vacío** (el `RECEIPT.md` sí está bajo `tests/`, por eso el patrón es `tests/'*.sh'` y no `tests/`). Si no lo está, la evidencia de los gates **no** aplica a HEAD.
+
+**Hallazgo de gobernanza posterior al push de C3m.2 — INC-DEBT-049 (high/P1, open): este repo tiene DOS identidades de proyecto vivas, y el CLI resuelve la que NO tiene historia.** `sddk adopt status` responde **`status: complete`** sobre `p-995939af668a53d8` (ledger de 380 KB, 6 referencias a eventos), mientras **65 ciclos** en `.sddk/cycles/` y **3.911.680 B** de ledger (173 referencias) viven bajo `p-63676b11dc0ef88f`, que el CLI no menciona. Causa con fecha y actor en el propio receipt de adopción: el **2026-09-30T19:29:34Z** (`actor: rubentxu`, `identity_source: remote`, remote `…/software-development-decision-kernel`, scope `.`) re-asignó el `project_id`, que es `hash(remote normalizado, scope)`. **Es un PASS falso** de la misma familia que C3l.7 e INC-DEBT-047, y golpea la premisa del proyecto: *la autoridad no ve su propia historia*. `sddk cycle status` arranca desde un storage vacío con un `complete` que invita a no mirar atrás. **Los datos NO se perdieron** — ambos storages están íntegros; se perdió el acceso. Agravante: los dos proyectos comparten `vault_path`, luego dos identidades escriben sobre el mismo vault (una autoridad canónica por concepto queda sin dueño). **Remedio local disponible y NO aplicado** (espera autorización del operador: cambiar la identidad autoritativa del repo es gobernanza, no una corrección de slice):
+
+```bash
+sddk project pin --root . --project-id p-63676b11dc0ef88f \
+  --reason "remote renombrado: la identidad historica conserva 65 ciclos y 3.9 MB de ledger"
+```
+
+Lo que **sí** es defecto del repo es que ni `adopt status` ni `cycle status` declaren el historial existente bajo otra identidad — cero coincidencias en `crates/sddk-cli/src/`. No se corrige en una slice porque tocaría un contrato de estado que cambia lo que `sddk-cycle-resume` y `sddk-debt-verify` pueden asumir: necesita SCOPE y ADRs. Detalle completo, remedys y falsificadores F49–F52 en [`docs/debt/INC-DEBT-049-…md`](../debt/INC-DEBT-049-READOPTION-REASSIGNS-PROJECT-IDSILENTLY-ORPHANS-HISTORY.md).
 
 ---
 
