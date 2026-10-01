@@ -19,7 +19,7 @@ Estados iniciales: `NOT_RUN`.
 | AT-UAT-012 | C3l.5 | SQLITE_MULTI_PROCESS | Winner muere y otro recupera tras condición válida | Sin doble autoridad ni divergence |
 | AT-UAT-013 | C3l.6 | PROCESS | Writer + segundo consumidor real | Reader observa estado durable. **PASS session-58** — binario `sddk` real como proceso hijo, PID afirmado |
 | AT-UAT-014 | C3l.6 | PROCESS | Segundo consumidor intenta write | Fail closed. **PASS session-58** — verbo inexistente y transición sin autoridad fallan cerradas; ledger byte-idéntico |
-| AT-UAT-015 | C3l.7 | PROCESS | `check-architecture` sobre repo actual | 0 error no-waived o waiver vigente tipado |
+| AT-UAT-015 | C3l.7 | PROCESS | `check-architecture` sobre repo actual | 0 error no-waived o waiver vigente tipado. **NOT PASS (session-60)**: veredicto `WAIVED` (2 waivers vivos + 10 evaluadores sin implementar). El gate ya no puede certificar conformidad; conformar el repo es C5 |
 | AT-UAT-016 | C3m.0 | PURE | Buscar significados KMT productivos | Exactamente una definición canónica |
 | AT-UAT-017 | C3m.1 | PURE | Source cambia en una hoja | Sólo ramas afectadas invalidan |
 | AT-UAT-018 | C3m.1 | PURE | Dependency/analyzer cambia sin source | Diferencia dimensional detectada |
