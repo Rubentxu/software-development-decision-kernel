@@ -111,11 +111,13 @@ El falsehood está entero en el adaptador `sddk-cli`, que fabrica la entrada.
 Cambiar la semántica de esas primitivas habría sido tapar una falsedad del
 adaptador rompiendo dos primitivas correctas.
 
-## Dientes: tres inyecciones, y una inyección que no mordió
+## Dientes: cuatro inyecciones, y dos que no mordieron
 
 1. El stream vacío vuelve a declararse intacto → `un_stream_vacio_no_se_declara_cadena_intacta` falla.
 2. El default vuelve al stream inventado → `el_por_defecto_verifica_los_streams_que_existen` falla por la etiqueta.
 3. El informe y el `PASS` fabricados vuelven → los dos tests de `debt` fallan.
+4. Un stream nombrado vuelve a etiquetarse como el conjunto entero →
+   `un_stream_nombrado_se_responde_con_su_nombre` falla.
 
 La inyección 2 **no mordió la primera vez**, y el motivo importa: el test
 llamaba directamente a `verify_every_stream`, así que la línea que elegía el
@@ -128,6 +130,46 @@ Durante esa corrección el refactor **introdujo una regresión** que el test
 atrapó: la vacuidad se juzgaba por el número de nombres del conjunto y no por los
 eventos examinados, de modo que un nombre que no resuelve a nada volvía a
 declararse `PASS`. El criterio correcto es `event_count == 0`.
+
+La inyección 4 **tampoco podía morder**, y por la razón opuesta a la de la 2: los
+dos tests del refactor pasaban por `resolve_streams(None, ..)`, luego ninguno
+alcanzaba la ruta del stream explícito. Véase «Regresión de etiqueta».
+
+## Regresión de etiqueta (encontrada al evaluar `ddfd2b51`, no por sus tests)
+
+Al integrar `ddfd2b51` se encontró un defecto que el commit no cubría.
+`run_backfill_chain` conservaba la etiqueta que devuelve `resolve_streams`;
+`run_verify_chain` la descartaba (`let (_, streams) = …`) y `verify_streams` la
+reconstruía con `resolve_streams(None, streams, project_id)`. El efecto:
+
+```
+$ sddk ledger verify-chain --stream cycle:p-demo/one
+stream: all streams of p-demo      # lo pedido: cycle:p-demo/one
+```
+
+El veredicto era correcto —se verificaba el stream pedido— pero la salida
+nombraba otra cosa. Es el mismo género de falta que este INC registra, una
+escala más pequeña: el informe describía algo distinto de lo examinado, y el
+doc-comment del propio struct prometía lo contrario («The stream verified, or the
+label describing the set verified when the caller named none»).
+
+RED medido antes de corregir:
+
+```
+left:  "all streams of p-demo"
+right: "cycle:p-demo/one"
+```
+
+El arreglo hace que la etiqueta viaje desde quien la decide hasta quien la
+publica: `verify_streams` la recibe en lugar de recalcularla. Solo el resolver
+sabe si quien llamó nombró un stream o tomó el default, así que duplicar esa
+decisión dentro de la verificación es lo que permite el fallo. Con el cambio,
+`run_backfill_chain` y `run_verify_chain` hacen exactamente lo mismo con el
+resultado de `resolve_streams`.
+
+**Consecuencia sobre el propio INC-DEBT-053:** sigue `resolved`, pero la
+resolución era incompleta en el momento del commit. El aviso «la fase `verify`
+deja de poder autorizarse» permanece íntegro y no le afecta.
 
 ## Consecuencia aceptada
 

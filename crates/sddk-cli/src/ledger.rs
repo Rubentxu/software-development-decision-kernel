@@ -264,24 +264,29 @@ fn run_verify_chain(args: VerifyChainArgs, environment: &CliEnvironment) -> Comm
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         let event_store = SqliteEventStore::open(context.paths.ledger.parent().unwrap())?;
         let project_id = context.identity.project_id.to_string();
-        let (_, streams) = resolve_streams(
+        let (label, streams) = resolve_streams(
             args.stream.as_deref(),
             event_store.list_streams()?,
             &project_id,
         );
-        verify_streams(&event_store, streams, &project_id)
+        verify_streams(&event_store, label, streams)
     })();
     render_result(result, format, verify_chain_text)
 }
 
 /// Verifies a resolved set of streams and reports one verdict for the set.
 ///
+/// `label` is the name `resolve_streams` gave the set, passed in rather than
+/// rebuilt: only the resolver knows whether the caller named one stream or took
+/// the default. Recomputing it here answered an explicitly named stream with the
+/// set's label, so the report named something other than what was examined.
+///
 /// A single named stream reports its own head. A set reports no head, because no
 /// one event is the head of several streams and naming one would imply it is.
 fn verify_streams(
     event_store: &sddk_storage::event_store::SqliteEventStore,
+    label: String,
     streams: Vec<String>,
-    project_id: &str,
 ) -> anyhow::Result<VerifyChainOutput> {
     use sddk_domain::EventStore;
     let single = streams.len() == 1;
@@ -308,7 +313,6 @@ fn verify_streams(
     } else {
         None
     };
-    let (label, _) = resolve_streams(None, streams, project_id);
     Ok(VerifyChainOutput {
         stream: label,
         streams: stream_count,
@@ -834,9 +838,12 @@ mod chain_scope_tests {
         // pass that truth along as a verdict.
         let dir = tempfile::tempdir().expect("a temporary directory");
         let store = SqliteEventStore::open(dir.path()).expect("a store");
-        let output =
-            super::verify_streams(&store, vec!["cycle:p-none/never-ran".to_string()], "p-none")
-                .expect("the verification runs");
+        let output = super::verify_streams(
+            &store,
+            "cycle:p-none/never-ran".to_string(),
+            vec!["cycle:p-none/never-ran".to_string()],
+        )
+        .expect("the verification runs");
 
         assert_eq!(
             output.event_count, 0,
@@ -879,10 +886,14 @@ mod chain_scope_tests {
             "p-demo",
         );
         let output =
-            super::verify_streams(&store, streams, "p-demo").expect("the verification runs");
+            super::verify_streams(&store, label.clone(), streams).expect("the verification runs");
         assert_eq!(
             label, "all streams of p-demo",
             "the default names the set it covers"
+        );
+        assert_eq!(
+            output.stream, label,
+            "the verdict is reported under the name the resolver gave it"
         );
         assert_eq!(
             output.streams, 2,
@@ -896,6 +907,41 @@ mod chain_scope_tests {
             matches!(output.status, super::VerifyChainStatus::Pass),
             "an intact chain over real events is a pass: {:?}",
             output.status
+        );
+    }
+
+    #[test]
+    fn un_stream_nombrado_se_responde_con_su_nombre() {
+        // The label must name what was asked for. The two tests above both go
+        // through the default path, so nothing pinned the explicit one — and
+        // `verify_streams` rebuilt the label with `resolve_streams(None, ..)`.
+        // That answered `--stream cycle:p-demo/one` with "all streams of
+        // p-demo": a set label for one named stream, which is the same class of
+        // mistake this commit exists to remove. The report named something other
+        // than what was examined.
+        let dir = store_with("cycle:p-demo/one", "p-demo", 2);
+        let store = open(&dir);
+
+        let (label, streams) = super::resolve_streams(
+            Some("cycle:p-demo/one"),
+            store.list_streams().expect("the streams are listed"),
+            "p-demo",
+        );
+        let output =
+            super::verify_streams(&store, label.clone(), streams).expect("the verification runs");
+
+        assert_eq!(
+            output.stream, "cycle:p-demo/one",
+            "an explicitly named stream must be echoed, not relabelled as the whole set"
+        );
+        assert_eq!(
+            label, output.stream,
+            "the verdict must carry the name the resolver produced"
+        );
+        assert_eq!(output.streams, 1, "one named stream is one stream");
+        assert!(
+            output.head_chain_hash.is_some(),
+            "a single named stream has a head that may be reported"
         );
     }
 }
