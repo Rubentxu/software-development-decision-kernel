@@ -113,7 +113,15 @@ impl ChronosMcpAdapter {
                 "params": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": {"name": "sddk-runtime-port", "version": "0.1.0"}
+                    "clientInfo": {
+                        "name": "sddk-runtime-port",
+                        // C3l.4: the client version participates in the
+                        // provider's compatibility decisions and diagnostics.
+                        // A frozen "0.1.0" reported a protocol the adapter has
+                        // not been at since; the CogniCode adapter already
+                        // binds this to the real crate version.
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
                 }
             }))
             .map_err(|_| RuntimePortError::Unavailable)?;
