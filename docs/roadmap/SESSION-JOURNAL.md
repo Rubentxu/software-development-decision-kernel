@@ -7651,3 +7651,43 @@ El hook **nunca estuvo roto**: lo que estaba roto era la verificacion. Corregido
 - **PUBLICADO:** commit documental en `main` (pendiente de push). `HEAD == origin/main == 818d4ff9` al cerrarse la sesión de trabajo. En el harness, commit local **`fc249b8`** con el pipeline, sus 28 tests y el falsificador — **SIN PUSHEAR (op-5)**, y arrastraría 40 commits.
 - **NO ejecutado / NO_ABIERTO:** `sddk dev install` — **el binario del PATH sigue siendo `sddk 2.4.2` y no contiene los fixes de session-63 ni 65b**; la autoridad instalada sigue ciega pese a que la release que la arregla ya está publicada y firmada · la **migración** de los 25 receipts (`apply` intacto, digest `b98e9a8d`, backup verificado) · RC 0.45.0 de PipelineK · push del harness · el workdir relativo de `certify-candidate`/`promote-release`.
 - **Siguiente paso preciso:** (1) `sddk dev install` desde el bundle ya publicado — es lo que más valor entrega ahora mismo, porque el release **ya está fuera** y lo que falta es que la autoridad local lo vea; (2) decisión del operador sobre el push del harness (op-5, 40 commits); (3) si autoriza, `apply` con el digest `b98e9a8d…` y el backup ya verificado; (4) abrir WorkItem para el workdir relativo de `certify-candidate`/`promote-release`; (5) SCOPE+ADR del contrato de versión en proyectos no-Rust (INC-DEBT-051).
+
+## session-65d — 2026-10-01T18:52Z — Dos gates ciegos: `verify-chain`/`debt` (ddfd2b51) y `doctor --strict` (propio)
+
+**Baseline de entrada:** `HEAD == origin/main == 20999259`, árbol limpio en cuanto a cambios propios. `workspace` 2.5.2, tag publicado `v2.5.2`, binario del PATH 2.5.2.
+
+**Colisión de escritura concurrente (no resuelta, sí registrada).** A mitad de sesión, otro actor empezó a reescribir `crates/sddk-cli/src/{ledger,debt}.rs` en este mismo checkout. Durante una ventana el crate **no compiló** (4 errores en `ledger.rs`), que casi se atribuyen a este trabajo: eran ajenos. Se paró, se preservó el parche propio fuera del repo (`/tmp/doctor-strict-fix/doctor.rs.patch`) y se preguntó al operador, que respondió **«evaluar e integrar»**. El actor terminó y commiteó `ddfd2b51`, ya publicado. **Regla operativa que se confirma: en este checkout hay al menos otro agente; comprobar `git status` y los timestamps antes de compilar, y no atribuir errores ajenos a los propios.**
+
+**(A) `ddfd2b51`, evaluado (no escrito aquí).** INC-DEBT-053: `ledger verify-chain` resolvía por defecto el stream `project:<id>`, ausente en los 326 ledgers de la máquina → cero eventos → `PASS`; `debt report`/`gates` fabricaban un informe de un ciclo ajeno sin hallazgos → los gates de deuda eran constantes. **Evaluación: 865 tests del lib verdes, clippy limpio, documento de deuda sólido.** El defecto estaba además **fijado por tests**: `test_report_empty_findings` exigía que la fabricación funcionase.
+
+**(B) Defecto encontrado al evaluar (A), ausente de sus tests.** `verify_streams` reconstruía la etiqueta con `resolve_streams(None, ..)`, así que `--stream X` se respondía `all streams of <project>`. RED medido antes de corregir. Corregido en `d76cbb1c`. Los dos tests de ese refactor pasaban por la ruta del default y no podían morderlo.
+
+**(C) INC-DEBT-054, propio.** `doctor --strict` salía con **exit 0 sin medir nada**: checks anclados a `current_dir()` + `if let Ok(read_dir(..))` tragando el error, mientras `resolve_active_framework_root` ignora el cwd. Medido sobre el binario publicado **v2.5.2**: 0 checks emitidos, `all_present: true`, exit 0. Y **ningún gate lo ejecutaba** (`grep -rn -- '--strict' .github/` → 0). Criterios ADR-016 **siguen vigentes, sin waiver**, pero su única ejecución automática eran dos tests con raíz con superficies. Corregido en `cfe96856`, fail-closed: sin superficies se dice *unverifiable*, no *satisfied*.
+
+**(D) Dientes falsificados, no afirmados.** Diente 1 (anclar solo al cwd) mata `..._brevity_mide_el_bundle_instalado_cuando_el_cwd_no_es_un_arbol` y solo ese. Diente 2 (no contar la violación) mata `..._strict_no_pasa_sobre_una_ausencia_de_medicion` y solo ese. El de la etiqueta se vio rojo antes de corregir.
+
+**(E) Deriva de punteros que `ddfd2b51` dejó:** `Cargo.lock` en 2.5.2 para 8 miembros (`0c512cf6`) y `manifest.toml` en 2.5.2 (`6c4e9b69`), ambos tras bumpear `Cargo.toml` a 2.5.3.
+
+**(F) CHANGELOG 2.5.3** (`9085402b`): el gate daba **PASS=0 FAIL=3**; ahora **PASS=6 FAIL=0**.
+
+**Comandos ejecutados (todos reales, contexto real):**
+- `cargo test -p sddk-cli --lib` → **865 passed, 0 failed**
+- `cargo clippy -p sddk-cli --all-targets -- -D warnings` → limpio
+- `cargo test -p sddk-cli --test cli cli_dev_doctor` → **6 passed, 0 failed** (2 nuevos)
+- `bash tests/test_changelog_coverage.sh` → **PASS=6 FAIL=0**
+- `bash tests/test_debt_index_coherence.sh` → **PASS=10 FAIL=0**
+- `bash tests/test_release_state_pointer.sh` → **FAIL (1 de 9)**: `current_sha NO esta en origin/main`
+- `bash scripts/reconcile_state_pointer.sh --check` → PASS (compara contra main local, no contra origin/main)
+- Falsificación de los 2 dientes del doctor (RED observado, fichero restaurado)
+
+**NO_RUN declarado, no olvidado:** `certify-candidate` y `promote-release` end-to-end (requieren modificar el toolchain global); RC 0.45.0 de PipelineK (acción externa no autorizada); migración de los 25 receipts (operador: «No, mantener en espera»); publicación de v2.5.3 (requiere push primero).
+
+**Riesgos abiertos:**
+1. **Push bloqueado por op-5** y, además, el predicado (A) del pre-push hook es **insatisfacible**: el rango `origin/main..HEAD` no contiene cambio de `[workspace.package] version`, porque 2.5.3 ya está declarado y no publicado. Es la variante (3) que AGENTS.md §2.1 declara abierta. **Requiere decisión del operador**; no se bumpeará a 2.5.4 para satisfacer un hook porque saltaría una versión nunca publicada.
+2. **`doctor --strict` va a fallar** desde ya: el bundle público incumple 19 presupuestos. Adelgazar esas superficies es trabajo de contenido, ciclo propio.
+3. **La fase `verify` de todo proyecto no puede autorizarse** con los dos gates de deuda hasta que exista la detección (consecuencia aceptada de `ddfd2b51`).
+4. `test_release_state_pointer.sh` en FAIL es **verdadero y no se maquilla**: sin push no puede estar verde.
+5. La autoridad instalada (`sddk` 2.5.2 en el PATH) **no tiene ninguno de estos fixes**.
+
+**Primer paso preciso de la sesión siguiente:** decisión del operador sobre el push de estos 6 commits. Con push autorizado: push, publicar v2.5.3 con `bash scripts/release.sh` (el CHANGELOG ya lo cubre) y `sddk dev install`. Sin push: abrir el ciclo de adelgazar las 19 superficies, porque es lo que devuelve `--strict` a verde y es el único camino que no depende de decisiones externas.
+
