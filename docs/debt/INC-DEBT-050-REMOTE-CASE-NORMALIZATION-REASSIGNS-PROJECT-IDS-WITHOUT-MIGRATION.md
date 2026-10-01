@@ -246,3 +246,55 @@ vez anterior.
 - `normalize_remote_path` normaliza el **path**, no el host: `github.com` ya
   venía en minúsculas del input, pero un host con mayúsculas seguiría
   reasignando. No verificado si algún remoto de esta máquina tiene esa forma.
+### Addendum session-65i — remedición y precondiciones de `apply`, sin migrar
+
+Auditoría reejecutada tras el push de `25955f43`. **Los 25 huérfanos se
+confirman exactamente, y no crecen**:
+
+```text
+selfcheck: OK (21 normalizaciones + 8 rechazos + 2 ids heredados, contra el Rust real)
+receipts revisados: 132          (era 117 en session-65)
+ids que NO coinciden con la derivacion actual: 25
+```
+
+El total de receipts sube porque los propios gates del repo crean adopts de
+prueba; los huérfanos no. El `selfcheck` se auto-verifica contra el Rust real
+antes de decir nada, que es lo que hace la medición creíble.
+
+**Lo que cambia respecto a lo que se vio antes:** el alcance de la escritura
+está medido, y son 20 tablas de un storage que el CLI ya no puede leer. El
+plan cuantifica 206 `gate_receipts.project_id`, 206 `cycle_id`, 61 filas de
+`events_v1`, 21 ciclos, 57 `cycle_leases`, y una fila de `projects` — es decir,
+**la fila de registro del proyecto**, no solo artefactos derivados.
+
+### Precondiciones de `apply`: las dos, satisfechas
+
+Sin ejecutar la migración, se dejaron listas las dos cosas que `apply` exige:
+
+1. **Plan** — `.migration-plan.json` (18 990 bytes),
+   `sha256 = 7f695037dca06842395f9e09f979c2ed0f8d3c8c89d96dd004ec67bb30c2958a`.
+2. **Backup verificado** —
+   `/var/home/rubentxu/.sddk-migration-backup/20261001T234240Z`,
+   **7035 ficheros copiados y verificados byte a byte**, con
+   `BACKUP-COMPLETE` y su manifiesto.
+
+El storage real queda **intacto**: la auditoría posterior sigue reportando 25.
+
+El comando queda a un paso, y no se ejecuta:
+
+```bash
+scripts/migrate_project_identity.py apply \
+  --plan .migration-plan.json \
+  --confirm 7f695037dca06842395f9e09f979c2ed0f8d3c8c89d96dd004ec67bb30c2958a \
+  --backup /var/home/rubentxu/.sddk-migration-backup/20261001T234240Z
+```
+
+**Por qué no se ejecuta aquí.** Es destructivo y reescribe la fila de
+`projects` — la que hace que el proyecto exista. El operador dejó la
+migración en espera en la sesión anterior, y eso no se ha des-hecho: preparar
+las precondiciones no es autorizarlas. Lo que sí se ha hecho es que la
+decisión, cuando se tome, no necesite preparación previa: el plan está
+generado, el backup está verificado y el hash está anotado.
+
+`.migration-plan.json` **no se commitea**: contiene rutas absolutas de esta
+máquina y es un artefacto de una ejecución concreta, no del repositorio.

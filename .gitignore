@@ -89,3 +89,8 @@ golden-dataset/results/
 # invocation. The durable observation belongs in docs/roadmap/UAT-MATRIX.md;
 # this file is a run artifact, not evidence.
 tests/receipts/ext/
+
+# Plan de migracion de identidad (INC-DEBT-050). Artefacto de una ejecucion
+# concreta: contiene rutas absolutas de esta maquina y no pertenece al repo.
+# El comando exacto queda en la entrada de deuda, con su sha256.
+.migration-plan.json
