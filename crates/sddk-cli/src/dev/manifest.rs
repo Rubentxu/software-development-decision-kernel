@@ -248,43 +248,59 @@ pub(super) fn write_manifest(root: &Path) -> anyhow::Result<usize> {
 
 /// Tally the framework surface counts for the BUNDLE.toml `contents` section.
 ///
-/// Walks the same `MANIFEST_SURFACES` roots as `manifest_entries` but counts
-/// files per surface. Used by `write_bundle_manifest_for_root` to populate
-/// `agents_count`, `skills_count`, `prompts_count`, `assets_count`.
+/// The counts are derived from the MANIFEST.sha256 that was just written, not
+/// from a second walk of the filesystem. Two independent traversals of the
+/// same surfaces is how `prompts_count` came to be permanently 0 while the
+/// bundle really shipped 44 prompts:
+///
+///   * `MANIFEST_SURFACES` names the third surface `prompts/sddk`, but the
+///     `match` here looked for the literal `prompts`, so the arm never fired
+///     and `_ => {}` swallowed the mismatch;
+///   * the filesystem walk counted files the manifest does not list (an
+///     untracked cache under `agents/`, a file under `assets/`), so the
+///     counts disagreed with the artifact they described.
+///
+/// Reading the manifest removes the second traversal: the counts now describe
+/// the file that ships, by construction.
+///
+/// A surface with no field to increment is an error, not a silent zero — that
+/// silence is the defect being fixed.
 pub(super) fn count_surface_entries(
     root: &Path,
 ) -> anyhow::Result<crate::dev::bundle_manifest::ContentsSection> {
     use crate::dev::bundle_manifest::ContentsSection;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let content = std::fs::read_to_string(&manifest_path).map_err(|error| {
+        anyhow::anyhow!(
+            "cannot tally surface counts: {} is unreadable ({error}); \
+             the manifest must be written before the bundle manifest",
+            manifest_path.display()
+        )
+    })?;
     let mut counts = ContentsSection::default();
-    for surface in super::common::MANIFEST_SURFACES {
-        let dir = root.join(surface);
-        if !dir.is_dir() {
+    for line in content.lines() {
+        // `<sha256>  <path>`, the same shape `manifest_lines` writes.
+        let Some((_digest, path)) = line.split_once("  ") else {
             continue;
-        }
-        let count = count_files_recursive(&dir)?;
-        match surface {
-            "agents" => counts.agents_count = count,
-            "skills" => counts.skills_count = count,
-            "prompts" => counts.prompts_count = count,
-            "assets" => counts.assets_count = count,
-            _ => {}
+        };
+        for surface in super::common::MANIFEST_SURFACES {
+            if !path.starts_with(&format!("{surface}/")) {
+                continue;
+            }
+            let slot = match surface {
+                "agents" => &mut counts.agents_count,
+                "skills" => &mut counts.skills_count,
+                "prompts/sddk" => &mut counts.prompts_count,
+                "assets" => &mut counts.assets_count,
+                other => anyhow::bail!(
+                    "MANIFEST_SURFACES declares the surface {other:?} but ContentsSection has no \
+                     field for it; add the field and its arm here instead of shipping a 0 count"
+                ),
+            };
+            *slot += 1;
         }
     }
     Ok(counts)
-}
-
-fn count_files_recursive(dir: &Path) -> anyhow::Result<u32> {
-    let mut count = 0u32;
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        if file_type.is_file() {
-            count += 1;
-        } else if file_type.is_dir() {
-            count += count_files_recursive(&entry.path())?;
-        }
-    }
-    Ok(count)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 //! Tests for `dev manifest` — extracted to dev/tests/ to keep manifest.rs below LOC ceiling.
 
 use crate::dev::install::run_dev_install;
-use crate::dev::manifest::{MANIFEST_FILE, manifest_entries, verify_manifest, write_manifest};
+use crate::dev::manifest::{
+    MANIFEST_FILE, count_surface_entries, manifest_entries, verify_manifest, write_manifest,
+};
 use crate::dev::update::update_bundle;
 use crate::dev::{InstallArgs, LinkEditor, OutputFormat, UpdateArgs};
 
@@ -639,4 +641,74 @@ fn update_legacy_root_layout_preserves_existing_root_content() {
         "pre-existing current symlink must survive"
     );
     std::fs::remove_dir_all(&target).ok();
+}
+
+// ── Surface counts for BUNDLE.toml (INC-DEBT-052) ──────────────────────────
+//
+// `prompts_count` shipped as 0 in every BUNDLE.toml the tool ever wrote:
+// `MANIFEST_SURFACES` names the surface `prompts/sddk` while the `match` in
+// `count_surface_entries` looked for `prompts`, so the arm never fired and
+// `_ => {}` swallowed it. The counts also came from a second filesystem walk
+// that disagrees with the manifest. These tests pin both halves.
+
+#[test]
+fn surface_counts_tally_prompts_that_the_manifest_lists() {
+    let root = temp_root("counts-prompts");
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/a.md"), "a").unwrap();
+    std::fs::create_dir_all(root.join("prompts/sddk/nested")).unwrap();
+    std::fs::write(root.join("prompts/sddk/one.md"), "one").unwrap();
+    std::fs::write(root.join("prompts/sddk/nested/two.md"), "two").unwrap();
+
+    write_manifest(&root).unwrap();
+    let counts = count_surface_entries(&root).unwrap();
+
+    assert_eq!(
+        counts.prompts_count, 2,
+        "prompts under `prompts/sddk/` must be counted; the surface constant is \
+         `prompts/sddk` and a `prompts` arm never matches it"
+    );
+    assert_eq!(counts.agents_count, 1);
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn surface_counts_describe_the_manifest_not_the_filesystem() {
+    let root = temp_root("counts-drift");
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/a.md"), "a").unwrap();
+    // A file the manifest will NOT list (not tracked by git, so the
+    // git-tracked traversal skips it). A filesystem walk counted it and the
+    // declared count no longer matched the artifact.
+    std::fs::create_dir_all(root.join("agents/.cache")).unwrap();
+    std::fs::write(root.join("agents/.cache/registry.json"), "cache").unwrap();
+
+    write_manifest(&root).unwrap();
+    let counts = count_surface_entries(&root).unwrap();
+
+    let manifest_lines = std::fs::read_to_string(root.join(MANIFEST_FILE))
+        .unwrap()
+        .lines()
+        .count() as u32;
+    let total =
+        counts.agents_count + counts.skills_count + counts.prompts_count + counts.assets_count;
+    assert_eq!(
+        total, manifest_lines,
+        "the counts must add up to the manifest they describe"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn surface_counts_fail_closed_without_a_manifest() {
+    let root = temp_root("counts-nomanifest");
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/a.md"), "a").unwrap();
+
+    let error = count_surface_entries(&root).unwrap_err().to_string();
+    assert!(
+        error.contains("manifest"),
+        "a missing manifest must be reported, not silently tallied as zero: {error}"
+    );
+    std::fs::remove_dir_all(&root).ok();
 }
