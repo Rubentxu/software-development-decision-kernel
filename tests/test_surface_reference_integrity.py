@@ -3,13 +3,17 @@
 
 Una cita es prosa, no un enlace: nada la resuelve, así que una referencia a un
 fichero inexistente sobrevive indefinidamente. No es hipótesis — este guard
-nació de medir 394 referencias en las superficies y encontrar, en tres rondas, 25 pares
+nació de medir 394 referencias en las superficies y encontrar 25 pares, uno de los cuales resulto ser
+un contrato de salida y no una cita
 (citado -> destino) que no abren, agrupados en cinco familias:
 
   * las specs E14 (6 citas): `specs/` no existe en el repo, y tres agentes y sus
     tres skills lo citan como "full spec";
-  * los agentes `cua-test-*` (5 citas): el flujo entero de
-    `cua-test-orchestrator/SKILL.md` llama a tres actores que no existen;
+  * los agentes `cua-test-*` (5 citas), **la más grave**: no son referencias de
+    una lista de lectura, son instrucciones. `cua-test-orchestrator/SKILL.md:26`
+    dice literalmente "follow the algorithm in
+    `agents/cua-test-orchestrator.body.md`", y ese fichero no existe — el
+    agente recibe la orden de cargar algo que no está;
   * `docs/impeccable-reference/` (2), `test-pyramid-builder` (3), y tres sueltas.
 
 `git log --all` dice de todos ellos lo mismo: **cero commits**. No se
@@ -44,6 +48,9 @@ OUTPUT_PREFIXES = (
     ".playwright-cli/", "src/", "web-app/", "src-tauri/", "node_modules/",
     "output_dir/", "build/", "evidence/", "metrics/", "reports/", "diagrams/",
     "editorial/", "exercises/", "book-template/",
+    # test-pyramid-builder:63 dice "Update the project's test strategy
+    # (docs/test-strategy.md, copy of ...)": lo escribe, no lo lee.
+    "docs/test-strategy.md",
     "lib/", "milestones/",
 )
 
@@ -75,7 +82,6 @@ KNOWN_BROKEN = {
     ("agents/deep-research-orchestrator.md", "skills/deep-research-methodology-hub/SKILL.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-    ("agents/test-pyramid-builder.md", "docs/test-strategy.md"),
     ("agents/uat-discovery.md", "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md"),
     ("agents/uat-form-quality.md", "specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md"),
     ("agents/uat-ux-form.md", "specs/E14-uat-guided-pipeline/E14.3-UX-FORM-AGENT.md"),
