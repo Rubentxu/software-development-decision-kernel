@@ -29,6 +29,7 @@ fn write_then_parse_round_trips() {
             skills_count: 87,
             prompts_count: 18,
             assets_count: 5,
+            specs_count: 14,
             manifest_sha256: Some("sha256:abc".to_owned()),
         },
     )

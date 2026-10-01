@@ -96,6 +96,13 @@ pub struct ContentsSection {
     pub prompts_count: u32,
     #[serde(default)]
     pub assets_count: u32,
+    /// One counter per `MANIFEST_SURFACES` entry. `count_surface_entries`
+    /// aborts when a surface has no field here, which is deliberate: a
+    /// surface that ships without a declared count is exactly the defect
+    /// INC-DEBT-052 documented. `tests/test_bundle_surface_coverage.py` keeps
+    /// this struct, that constant and both `tar` command lines in agreement.
+    #[serde(default)]
+    pub specs_count: u32,
     #[serde(default)]
     pub manifest_sha256: Option<String>,
 }

@@ -168,3 +168,58 @@ resultado mejor que el previsto: el guard falla donde antes no fallaba nada.
   `ContentsSection` → debe abortar, no escribir 0.
 - **F70** cambiar el formato de línea del manifest (separador) →
   `surface_counts_describe_the_manifest_not_the_filesystem` debe fallar.
+
+## Addendum session-65f — el riesgo residual queda cerrado
+
+Esta entrada dejó anotado que el fail-closed de `other => anyhow::bail!` cubre
+la **deriva de contenido** pero no la **deriva de esquema**, y que cerrarla
+exigía *«un test que compare `MANIFEST_SURFACES` con las claves de
+`ContentsSection` por reflexión o por lista explícita; queda anotado, no
+implementado»*.
+
+**Implementado en session-65f**, y no por casualidad: al añadir `specs` como
+quinta superficie del bundle. Es exactamente la operación que el riesgo
+residual describía, y hacerlo sin el guard habría reproducido el defecto en su
+forma nueva.
+
+`tests/test_bundle_surface_coverage.py` fija las **cuatro** copias del
+contrato, que es una más de las que el recibo llega a enumerar:
+
+| copia | fichero |
+|---|---|
+| lista de superficies | `crates/sddk-cli/src/dev/common.rs` |
+| contador por superficie | `crates/sddk-cli/src/dev/bundle_manifest.rs` (`ContentsSection`) |
+| brazo de conteo | `crates/sddk-cli/src/dev/manifest.rs` (`count_surface_entries`) |
+| lo que se empaqueta | el `tar` de `scripts/release.sh` **y** el de `.github/workflows/release.yml` |
+
+**El hallazgo que el guard hizo al construirse:** los nombres de superficie y de
+campo **no se corresponden**. La superficie es `prompts/sddk` y el campo es
+`prompts_count`. La primera versión del guard derivaba el campo del nombre de la
+superficie —`prompts/sddk` contra `prompts/sddk_count`— y por eso **falló en
+verde sobre el propio repo sano**: que era, literalmente, el mecanismo del
+defecto original reproducido en el instrumento. La forma correcta es una tabla
+explícita `SURFACE_TO_FIELD`, y el guard exige que las dos mitades del contrato
+queden cubiertas por ella en ambos sentidos.
+
+**Falsificadores, 6 mutaciones OBSERVADAS** — las seis detectadas, y el árbol
+restaurado en verde al terminar:
+
+| # | mutación | detectada por |
+|---|---|---|
+| M1 | quitar `specs` de `MANIFEST_SURFACES` | superficie sin contador |
+| M2 | añadir una superficie sin campo en `ContentsSection` | **F69, el que esta entrada exigía** |
+| M3 | quitar el brazo de conteo de `specs` | `count_surface_entries` lo abortaría |
+| M4 | quitar `specs` de un solo `tar` | el bundle local omite la superficie |
+| M5 | quitar `specs` del otro `tar` | local y cloud publican distinta cosa |
+| M6 | cambiar la tabla del guard sin tocar el código | tabla obsoleta |
+
+M4 y M5 son la mitad que el recibo no enumeró: la deriva **entre las dos rutas
+de producción** habría producido un release cloud distinto del que se prueba en
+local, desde el mismo commit.
+
+**Lo que sigue sin cubrir, y se declara en vez de omitirse:** el guard ata las
+cuatro copias por *nombre*, no por *significado*. Si mañana alguien renombra
+`prompts/sddk` y renombra el campo a la vez, las cuatro copias siguen
+coherentes entre sí y la superficie cambia de significado sin que nada se queje.
+El comentario de la constante lo dice, para que quien lo lea sepa qué protección
+tiene y cuál no.

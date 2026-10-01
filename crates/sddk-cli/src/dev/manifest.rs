@@ -292,6 +292,7 @@ pub(super) fn count_surface_entries(
                 "skills" => &mut counts.skills_count,
                 "prompts/sddk" => &mut counts.prompts_count,
                 "assets" => &mut counts.assets_count,
+                "specs" => &mut counts.specs_count,
                 other => anyhow::bail!(
                     "MANIFEST_SURFACES declares the surface {other:?} but ContentsSection has no \
                      field for it; add the field and its arm here instead of shipping a 0 count"

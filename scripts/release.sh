@@ -555,7 +555,7 @@ printf '%s\n' \
     > "$BUNDLE_STAGE/BUNDLE.toml"
 tar czf "$BUNDLE_TARBALL" \
     --xform "s|^|software-development-decision-kernel/|" \
-    -C "$BUNDLE_STAGE" agents skills prompts/sddk assets MANIFEST.sha256 BUNDLE.toml
+    -C "$BUNDLE_STAGE" agents skills prompts/sddk assets specs MANIFEST.sha256 BUNDLE.toml
 sha256sum "$BUNDLE_TARBALL" | awk '{print $1}' > "$BUNDLE_TARBALL.sha256"
 # Contract check: the standalone tarball MUST carry BUNDLE.toml now.
 tar tzf "$BUNDLE_TARBALL" | grep -qx "software-development-decision-kernel/BUNDLE.toml" \

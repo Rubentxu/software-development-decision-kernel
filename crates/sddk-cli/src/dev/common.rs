@@ -7,7 +7,30 @@ use sddk_gateway::PermissionPolicy;
 
 pub(super) const RECEIPT_FILE: &str = "sddk-install.json";
 
-pub(crate) const MANIFEST_SURFACES: [&str; 4] = ["agents", "skills", "prompts/sddk", "assets"];
+/// Surfaces that ship inside the framework bundle, and therefore must appear
+/// in `MANIFEST.sha256`.
+///
+/// **This list is duplicated in three places, and the duplication is a known
+/// hazard.** `scripts/release.sh` and `.github/workflows/release.yml` each list
+/// the same directories in their `tar` command, and `ContentsSection` has one
+/// counter per surface. Adding a surface here and forgetting any of the other
+/// three produces a bundle that silently omits it, or a counter that aborts
+/// generation — the same class as INC-DEBT-052, where `prompts_count` shipped
+/// as 0 because the surface list and the counting `match` disagreed.
+///
+/// `tests/test_bundle_surface_coverage.py` pins the four copies against each
+/// other. Run it after touching this constant.
+pub(crate) const MANIFEST_SURFACES: [&str; 5] = [
+    "agents",
+    "skills",
+    "prompts/sddk",
+    "assets",
+    // Specifications that surfaces cite as their full spec. Shipped because
+    // `agents/uat-*.md` and `skills/uat-*/SKILL.md` order the agent to read
+    // them: a citation the published artifact cannot resolve is a broken
+    // promise, and the knowledge vault they came from is not distributed.
+    "specs",
+];
 
 pub(super) fn read_receipt(prefix: &Path) -> anyhow::Result<super::InstallReceipt> {
     let path = prefix.join(RECEIPT_FILE);

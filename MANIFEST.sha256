@@ -375,3 +375,17 @@ f970ed67fe9b9ac5ad32787a732be740bff73e1ae45ddfa4392bdfe8f828775e  skills/ui-audi
 2ffe100a55f966b0bd19cb9225b0573b46de8b4dc9cb4b266bfda855b085535f  skills/version-drift-detector/references/drift-sources.md
 feb8ef98dc4b446ed7f5eea7bab95a3d524ce81df31b81f9b32a0e763c1494c7  skills/work-unit-commits/SKILL.md
 f8837aa320f7ab67d6f680bfe4e0b9a340d48a9da0ec6e2fae8fe0cd6e190775  skills/zai-mcp/SKILL.md
+50bc70508c0c23f38e101ef61a13b0e7dc44e0c10a93a313ee8fe86f8768857b  specs/E14-uat-guided-pipeline/E14.1-EVIDENCE-INBOX.md
+b91850cc5aa01645529c7b269e9869615b206070db9d759cef0eb4e03d7e41af  specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md
+37ce1d1d49b5973aaa5c64e51eb16773ca9c1143fc532edbd730a73a9f9875c0  specs/E14-uat-guided-pipeline/E14.3-UX-FORM-AGENT.md
+2cd1f9bdcc48e2fdb28b8e854a861a5935e8c5e2b7ccb6327ae4222fab45c0bc  specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md
+823d4b7bf46f1f7091f1423fcaff79dfbfde2782d8d028ad54dac59a333dca99  specs/E14-uat-guided-pipeline/E14.5-PIPELINE-WIRING.md
+5a3fe40c3f0023d02a971da5ded28b4f1380400f729203c98867b4d5c92674b9  specs/E14-uat-guided-pipeline/PROPOSAL.md
+82d4e61866a57eee6ba210ca2410c54759458fa6eb4b5d0088c6772618dfa1a2  specs/E14-uat-guided-pipeline/REQ-E14-Agent-Skill-Registry-Manifest.md
+1f97ecfe3c2c309bbe4546b9d41f9324edf257c41ab9442b258b82279f548def  specs/E14-uat-guided-pipeline/REQ-E14-Discover-AAM-Parse.md
+2db688ec5d0a8024f9d4888c78ca01f3ea005041274f28d3d9b32bb3f0ca9a5a  specs/E14-uat-guided-pipeline/REQ-E14-EnrichForms-Semantic-Transform.md
+d5733d6905120bac2df2157175f8b935e87e45a30a9a11c5517939fffe544525  specs/E14-uat-guided-pipeline/REQ-E14-Form-Quality-12-Smells.md
+eb811e6ce089045b5d634b0b86ff10ecc884f963752d29de2ad3098304f8fc6c  specs/E14-uat-guided-pipeline/REQ-E14-Generate-Pipeline-Approval.md
+6078973bd82279acbe7ee03177606aa89951f52624bb762cdc1e070df1b31e03  specs/E14-uat-guided-pipeline/REQ-E14-Runtime-Sync-Release-Only.md
+8bd8f25674b24f669112db58cd747dab1431c292d0d195c388e0c6a43b31654f  specs/E14-uat-guided-pipeline/REQ-E14-Tests-and-Hygiene.md
+8ad59e85237eb60d80ace7c8cdaa45c33ab991e9f0b5158abbba993caa9a40aa  specs/E14-uat-guided-pipeline/REQ-E14-Video-MediaRecorder-Annotation.md
