@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-65d, 2026-10-01T18:52Z): DOS gates que respondían sin examinar nada, corregidos y con dientes verificados. Uno lo encontró y corrigió otro actor (`ddfd2b51`, ya publicado); el segundo es mío y salió al intentar responder a la pregunta de si algún gate ejecutaba los criterios de briefness. La respuesta era **no**, y el gate tampoco habría podido fallar aunque se lo pidieran. `2.5.3` queda **DECLARADA y NO PUBLICADA**: sin push (op-5) y con el predicado (A) del pre-push hook insatisfacible, porque el rango `origin/main..HEAD` no contiene cambio de `[workspace.package] version`.** **SIGUIENTE: decisión del operador sobre el push; después `sddk dev install` y publicar v2.5.3.**
+**Estado (session-65d, 2026-10-01T18:52Z): DOS gates que respondían sin examinar nada, corregidos y con dientes verificados. Uno lo encontró y corrigió otro actor (`ddfd2b51`, ya publicado); el segundo es mío y salió al intentar responder a la pregunta de si algún gate ejecutaba los criterios de briefness. La respuesta era **no**, y el gate tampoco habría podido fallar aunque se lo pidieran. `2.5.3` queda **DECLARADA y NO PUBLICADA**: sin tag `v2.5.3` y sin `sddk dev install`, así que la autoridad instalada (2.5.2) no tiene ninguno de estos fixes. El único bloqueo para publicar es la autorización del operador al push (op-5); el pre-push hook lo admite.** **SIGUIENTE: OK al push, después `bash scripts/release.sh` y `sddk dev install`.**
 
 **Hecho en session-65d:**
 
@@ -17,9 +17,11 @@
 
 **Consecuencias aceptadas, no resueltas:** `--strict` **ya puede fallar y va a fallar** — el bundle público incumple 19 presupuestos (2 agents, 11 skills, 3 prompts); la fase `verify` de **todo** proyecto deja de poder autorizarse con los dos gates de deuda hasta que exista la detección; y `tests/test_release_state_pointer.sh` queda en **FAIL** en `current_sha NO esta en origin/main`, que es exactamente cierto y no se puede maquillar sin pushear. `scripts/reconcile_state_pointer.sh --check` dice PASS porque compara contra **main local**, el test contra **origin/main**: con 5 commits sin publicar las dos no pueden estar verdes a la vez, y eso es lo que el guard señala.
 
-**Lo que este slice NO cierra:** el **push** (op-5, y además el predicado (A) del hook es insatisfacible mientras 2.5.3 siga declarado y no publicado) · `sddk dev install` — el binario del PATH sigue siendo 2.5.2 y **no tiene ninguno de estos fixes** · publicar v2.5.3 · **adelgazar las 19 superficies** fuera de presupuesto, que es lo que haría que `--strict` volviera a estar verde · la detección de deuda que INC-DEBT-053 deja explícitamente sin implementar.
+**Lo que este slice NO cierra:** el **push** (op-5; el hook **no** lo bloquea) · `sddk dev install` — el binario del PATH sigue siendo 2.5.2 y **no tiene ninguno de estos fixes** · publicar v2.5.3 · **adelgazar las 19 superficies** fuera de presupuesto, que es lo que haría que `--strict` volviera a estar verde · la detección de deuda que INC-DEBT-053 deja explícitamente sin implementar.
 
-**Siguiente paso preciso:** decisión del operador sobre el push. Con el push autorizado, el push, y después publicar v2.5.3 (el `CHANGELOG` ya lo describe) e instalar. Sin push, `doctor --strict` seguirá sin poder usarse como gate en ninguna parte y el puntero seguirá en FAIL.
+**Corrección de esta misma entrada:** se afirmó primero que el predicado (A) del hook era insatisfacible por no contener el rango un cambio de versión. **Es falso**, y se comprobó antes de darlo por bueno: `githooks/pre-push` define (A) como disyunción, y su segundo disjunct (variante 3 de INC-DEBT-040) admite cuando la versión del workspace en el tip supera al mayor tag publicado en el remoto — aquí **2.5.3 > v2.5.2**. El push se admite. La lección es la de siempre en este repo: un predicado leído a medias es un predicado que decide sobre información que no tiene.
+
+**Siguiente paso preciso:** OK del operador al push de estos 6 commits. Después, `bash scripts/release.sh` para publicar v2.5.3 (el `CHANGELOG` ya lo cubre) y `sddk dev install`. Sin push, `doctor --strict` seguirá sin poder usarse como gate en ninguna parte y el puntero seguirá en FAIL.
 
 ---
 
