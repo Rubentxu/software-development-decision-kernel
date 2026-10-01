@@ -4,6 +4,10 @@ title: "La re-adopción reasignó el project_id del repo y `adopt status` sigue 
 status: open
 severity: high
 priority: P1
+partially_resolved_at: 2026-10-01
+partially_resolved_in_session: session-63
+resolved_part: "el pin pasa a ser la autoridad de identidad en las CINCO vias del CLI (session-63)"
+open_part: "adopt status / cycle status no declaran aun la existencia de historial bajo otra identidad; requiere SCOPE + ADR de contrato de estado"
 detected_at: 2026-10-01
 detected_in_session: session-62
 component: identity
@@ -168,6 +172,92 @@ Eso cambia lo que otros consumidores y skills (`sddk-cycle-resume`,
    dispara (evita el falso positivo de "mismo nombre, distinto proyecto").
 4. **F52** — proyecto recién adoptado sin historia previa ⇒ la salida **no**
    cambia respecto a la actual (sin regresión de ruido para el caso normal).
+
+## Resolución parcial (session-63): el pin era la autoridad declarada y no lo era
+
+El operador autorizó el remedio local. **Aplicado**:
+`sddk project pin --root . --project-id p-63676b11dc0ef88f`. Y al aplicarlo
+salió el hallazgo que convertía esta incidencia de "deuda" en **defecto de
+producto**:
+
+```text
+$ sddk project pin …            -> project pinned: p-63676b11dc0ef88f  (OK)
+$ sddk project resolve …        -> project_id: p-63676b11dc0ef88f
+                                   identity_source: pinned              (OK)
+$ sddk adopt status             -> project_id: p-995939af668a53d8      (NO)
+$ sddk cycle status             -> no active cycle found for
+                                   project p-995939af668a53d8          (NO)
+```
+
+El pin se escribía y **no surtía efecto en dos de las tres vías**. Concretamente
+había **cinco resolvers de identidad independientes** en el crate y sólo dos
+leían el pin:
+
+| # | Resolver | Leía el pin | Superficie |
+|---|---|---|---|
+| 1 | `RuntimeContext::open` (`cycle.rs`) | ✅ | `cycle` con `--cycle` explícito |
+| 2 | `run_project_resolve` (`lib.rs`) | ✅ | `project resolve` |
+| 3 | `resolve_project_ids` (`lib.rs`) | ❌ | `config set` |
+| 4 | inferencia de ciclo (`cycle.rs`) | ❌ | `cycle status`, `cycle next` |
+| 5 | `plan_adoption` (`sddk-engine`) | ❌ | `adopt status/plan/apply/…` |
+
+**La causa raíz era una afirmación falsa en el propio código.** El doc de
+`ProjectPin` decía *"When present, `project resolve` and every runtime context
+honor it over remote/seed derivation"*. Dos de cinco contexts no lo honraban.
+Y un segundo comentario, en la inferencia de ciclo, decía *"using the same
+logic as RuntimeContext::open (remote OR fallback_seed OR generate)"* — la
+enumeración omitía precisamente el pin, que era la diferencia que rompía.
+
+**Por qué nadie lo cazó:** los dos tests e2e del pin (`pin_overrides_remote_drift`,
+`unpin_restores_remote_derivation`) ejercitan **sólo `project resolve`**, el
+único resolver que ya funcionaba. El contrato que el doc declaraba no tenía
+ninguna prueba.
+
+### Corrección
+
+Una sola función canónica decide la identidad de todo el CLI:
+`resolve_identity_honoring_pin` (`lib.rs`). El pin gana sobre remote y sobre
+seed. `plan_adoption` es una función pura sin acceso a disco, así que recibe el
+pin como dato (`AdoptionPlanInput.pinned_project_id`) en vez de leer el fichero:
+el CLI lo lee, el engine lo razona. Un pin malformado **falla cerrado** en
+`validate_plan_input` — no puede caerse al remote en silencio, que es como se
+produjo el `status: complete` sobre un storage vacío.
+
+Además `.sddk/project-pin.json` se añadió a `.gitignore`: es configuración de
+identidad **por máquina**, y versionarlo forzaría a todo otro checkout del repo
+al `project_id` de quien lo commitea — exactamente la bifurcación que el pin
+existe para evitar. `.sddk/followups/` sigue trackeado a propósito.
+
+### Falsificadores OBSERVED
+
+| # | Mutación | Resultado |
+|---|---|---|
+| **F49** | `prepare_adoption_plan` deja de pasar el pin | **OBSERVED** — e2e FAILED: *"adopt status debe honourar el pin (esperaba `p-pinnedauthoritative01`, derivado `p-c3d5cbc69b93a9bb`)"* |
+| **F50** | la inferencia de ciclo deja de leer el pin | **OBSERVED** — e2e FAILED en la aserción de `cycle status` |
+| **F51** | `resolve_identity_honoring_pin` ignora el pin | **OBSERVED** — unit test FAILED: *"resolve_project_ids debe honourar el pin"* |
+| **F52** | `plan_adoption` ignora el pin | **OBSERVED** — `pinned_project_id_wins_over_remote_derivation` FAILED |
+
+Un valor que se conserva: con la mutación de F52, el test de pin malformado
+**sigue pasando**, porque la validación vive en `validate_plan_input`, que es
+independiente del `match` de derivación. Son dos comportamientos distintos y
+están cubiertos por separado; un solo test no habría detectado esa separación.
+
+**El primer intento de F49 fue una falsación y se descartó:** la mutación se
+aplicó con 8 espacios de indentación sobre una línea que tenía 4, así que no
+tocó nada y el e2e pasó "sin romper". Sólo se cuenta como OBSERVED después de
+verificar que el fichero mutado había cambiado de verdad.
+
+## Lo que sigue ABIERTO
+
+La mitad de esta incidencia **no** está resuelta y no se arregla en una slice:
+
+- `adopt status` y `cycle status` siguen **sin declarar** que existe historial
+  bajo otra identidad con el mismo `vault_path`. Ahora reportan correctamente
+  el proyecto pinneado, pero un checkout sin pin que se re-adopte seguirá
+  reportando `complete` sobre un storage vacío sin avisar.
+- Eso exige decidir el contrato: ¿estado nuevo (`complete_with_orphaned_history`),
+  `complete` pasa a warning, o la advertencia va sólo en `cycle status`? Cambia
+  lo que `sddk-cycle-resume` y `sddk-debt-verify` pueden asumir. **SCOPE + ADR.**
 
 ## Conocimiento negativo útil
 

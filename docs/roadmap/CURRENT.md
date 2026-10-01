@@ -1,5 +1,24 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-63, 2026-10-01T14:20Z): el pin de identidad ya gobierna las CINCO vías del CLI — antes se escribía y no surtía efecto en `adopt status`, `cycle status` ni `config set`. INC-DEBT-049 queda con la parte del pin RESUELTA y la advertencia de historial huérfano ABIERTA. Release v2.5.0 sigue BLOQUEADO por musl-gcc, y ahora eso tiene consecuencia real: el binario instalado (`sddk 2.4.2`) no contiene el fix.**
+
+**Lo que cambió en session-63 (autorizado por el operador, que además autorizó todos los gates humanos):**
+
+1. **Aplicado** `sddk project pin --project-id p-63676b11dc0ef88f` — el remedio que session-62 dejó escrito y sin ejecutar. Y al aplicarlo **falló**, que es el hallazgo: `project resolve` reportaba `identity_source: pinned`, pero `adopt status` y `cycle status` seguían en `p-995939af668a53d8`.
+2. **Causa raíz medida: hay CINCO resolvers de identidad independientes en `sddk-cli` y sólo DOS leían el pin.** `RuntimeContext::open` ✅, `run_project_resolve` ✅, `resolve_project_ids` ❌ (`config set`), inferencia de ciclo ❌ (`cycle status`/`next`), `plan_adoption` ❌ (`adopt`).
+3. **La afirmación falsa estaba en el propio código:** el doc de `ProjectPin` decía *"every runtime context honor it"*, y el comentario de la inferencia enumeraba *"remote OR fallback_seed OR generate"* — omitiendo el pin. Nadie lo cazó porque los dos e2e del pin sólo invocan `project resolve`, el único resolver que ya funcionaba.
+4. **Corrección:** una función canónica `resolve_identity_honoring_pin` decide la identidad de todo el CLI. `plan_adoption` es puro y sin disco, así que recibe el pin como dato (`AdoptionPlanInput.pinned_project_id`); un pin malformado **falla cerrado** en `validate_plan_input`. `.sddk/project-pin.json` a `.gitignore`: es identidad **por máquina** y versionarlo forzaría a todo checkout al `project_id` de quien commitea.
+5. **5 tests nuevos**, uno por resolver que no tenía ninguna prueba con pin, **más uno de no-regresión** para el caso sin pin. **Falsificadores F49–F52 OBSERVED**, uno por resolver roto.
+6. **Un falsificador descartado por ser una falsación:** el primer F49 se aplicó con 8 espacios de indentación sobre una línea de 4; el fichero no cambió y el e2e pasó "sin romper". Sólo cuenta tras verificar el fichero mutado.
+
+**Gates:** `sddk-cli --lib` 859/0 · `project_pin_e2e` 4/0 · `adoption_identity` 3/0 · `sddk-engine -p sddk-cli` todo verde · fmt limpio · clippy `-D warnings` exit 0 · **workspace 5242 passed / 0 failed** (272 targets; cuadra con 5237 + los 5 tests nuevos, no con impresión).
+
+**CONSECUENCIA DEL BLOQUEO DE RELEASE, ya no teórica:** el binario del PATH es `sddk 2.4.2` y **no contiene este fix**, así que en la CLI instalada el pin sigue sin surtir efecto y la autoridad sigue sin ver sus 65 ciclos hasta que se publique. Publicar v2.5.0 pasa de "tener la versión al día" a **desbloquear la autoridad operativa**.
+
+**SIGUIENTE dentro de C3m:** C3m.0 (ADR de significado canónico de KMT) · C3m.1 · C3m.3 · C3m.4 · C3m.5. **Pendientes de decisión:** INC-DEBT-048 (binaria, norma) · INC-DEBT-049 parte abierta (SCOPE + ADR de contrato de estado) · `musl-gcc` (sudo del operador).
+
+---
+
 **Estado (session-62, 2026-10-01T13:00Z): C3m.2 corregido en código pero con DEUDA NORMATIVA ABIERTA (INC-DEBT-048). `AT-UAT-019` queda PASS PARCIAL, no PASS. Release v2.5.0 sigue BLOQUEADO por musl-gcc.** **SIGUIENTE dentro de C3m: C3m.0** (una sola definición canónica de KMT) · C3m.1 (invalidación incremental) · C3m.3 · C3m.4 · C3m.5. La decisión normativa de INC-DEBT-048 requiere autoridad, no un agente. **Y una segunda decisión de gobernanza:** INC-DEBT-049 (doble identidad de proyecto) espera autorización del operador antes de aplicar `sddk project pin`.
 
 **Defecto medido (RED antes del fix):** el doc de `KnowledgeBasis::revise` afirmaba *"a new basis hash (because the `revised_at` participates in the hash)"*. La implementación hacía `derive_basis_hash(&new_basis.assertions)`, y esa función **sólo recibe `assertions`**: `revised_at` no tenía forma de participar. RED empírico: `revise(t=20)` con contenido idéntico daba el **mismo** `basis_hash` (`4de2152…` antes y después).
