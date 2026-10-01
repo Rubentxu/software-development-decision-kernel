@@ -8,6 +8,7 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+pub mod agent_lease_store;
 pub mod backlog_store;
 pub mod cas;
 pub mod control_plane;
@@ -20,6 +21,7 @@ pub mod projection_store;
 pub mod rebuild;
 pub mod schema_guard;
 pub mod spine_import;
+pub use agent_lease_store::{SqliteLeaseStore, peek as peek_agent_lease};
 pub use backlog_store::{BacklogEvent, BacklogStore, SqliteBacklogStore, SqliteBacklogStoreOwned};
 pub use cas::FilesystemCas;
 pub use control_plane::{ProjectStatusRow, SCHEMA_V1, SqliteControlPlane};

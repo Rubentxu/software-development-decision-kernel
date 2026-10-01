@@ -48,17 +48,11 @@ impl AgentIdentity {
     }
 }
 
-/// Errors from lease operations.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum LeaseError {
-    #[error("storage error: {0}")]
-    Storage(String),
-    #[error("lease conflict: owner `{owner}` holds token {fencing_token}")]
-    Conflict { owner: String, fencing_token: i64 },
-    #[error("lease expired")]
-    Expired,
-}
+/// C3l.5: the lease port moved to `sddk_domain::ports` so a durable,
+/// multi-process-safe implementation can live in `sddk-storage` next to
+/// `Ledger` (one authority per concept — AGENTS.md §2.7). Re-exported here so
+/// existing consumers of `sddk_engine::LeaseStore` are unaffected.
+pub use sddk_domain::ports::{LeaseError, LeaseRecord, LeaseStore};
 
 /// Errors from `execute_with_retry` and `execute_decision`.
 #[derive(Debug, thiserror::Error)]
@@ -86,20 +80,13 @@ pub enum ExecuteDecisionError {
     Execute(String),
 }
 
-/// Abstraction over the lease store. Real implementations forward to
-/// `sddk_storage::Ledger::acquire_cycle_lease / release_lease_with_event`.
-pub trait LeaseStore: Send + Sync + std::fmt::Debug {
-    fn acquire(
-        &self,
-        cycle_id: &str,
-        owner: &str,
-        now_ms: i64,
-        expires_at_ms: i64,
-    ) -> Result<LeaseRecord, LeaseError>;
-    fn release(&self, cycle_id: &str, owner: &str, fencing_token: i64) -> Result<bool, LeaseError>;
-}
-
 /// In-memory lease store for tests + scaffolding.
+///
+/// **Proves intra-process semantics only.** Two OS processes each holding their
+/// own instance cannot see each other, so a pass here is not evidence about
+/// cross-process behaviour. The durable implementation is
+/// `sddk_storage::SqliteLeaseStore`; the boundary is crossed by
+/// `aiw_s8_x04_multi_process_concurrency`.
 #[derive(Debug, Default)]
 pub struct InMemoryLeaseStore {
     inner: Mutex<HashMap<String, LeaseRecord>>,
@@ -155,17 +142,6 @@ impl LeaseStore for InMemoryLeaseStore {
         Ok(false)
     }
 }
-
-/// Lease state returned from the store.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeaseRecord {
-    pub cycle_id: String,
-    pub owner: String,
-    pub fencing_token: i64,
-    pub acquired_at_ms: i64,
-    pub expires_at_ms: i64,
-}
-
 /// RAII lease handle. `Drop` releases the lease atomically.
 #[derive(Debug)]
 pub struct LeaseHandle {

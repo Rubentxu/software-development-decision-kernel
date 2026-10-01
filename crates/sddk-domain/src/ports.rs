@@ -1082,6 +1082,77 @@ impl GraphStore for Box<dyn GraphStore + Send + Sync> {
         (**self).record_workflow_run_transition(run_id, from_state, to_state, reason)
     }
 }
+
+// ── LeaseStore port (C3l.5 / AIW-S8 X04) ──────────────────────────────────
+//
+// Moved here from `sddk-engine::agent_host` for the same reason `Ledger` lives
+// here: a port belongs to the hexagonal boundary, not to a consumer. The
+// engine previously owned this port with exactly one implementation
+// (`InMemoryLeaseStore`), which made the X04 exit gate — "at least two PIDs and
+// a shared durable SQLite ledger" — unreachable by construction rather than by
+// accident.
+//
+// `sddk-engine` re-exports all three types, so existing consumers are
+// unaffected.
+
+/// Errors from lease operations.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LeaseError {
+    /// The store could not be reached.
+    #[error("storage error: {0}")]
+    Storage(String),
+    /// Another owner holds a live lease.
+    #[error("lease conflict: owner `{owner}` holds token {fencing_token}")]
+    Conflict {
+        /// Current holder of the lease.
+        owner: String,
+        /// Token the holder owns; a loser must not act on a lower one.
+        fencing_token: i64,
+    },
+    /// The lease presented is past its expiry.
+    #[error("lease expired")]
+    Expired,
+}
+
+/// Lease state returned from the store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaseRecord {
+    /// Cycle the lease guards.
+    pub cycle_id: String,
+    /// Current holder, empty when free.
+    pub owner: String,
+    /// Monotonic fencing counter.
+    pub fencing_token: i64,
+    /// When the current holder took it.
+    pub acquired_at_ms: i64,
+    /// When it lapses.
+    pub expires_at_ms: i64,
+}
+
+/// Abstraction over the lease store.
+///
+/// A real implementation must be **durable and multi-process safe**: two
+/// independent OS processes contending for the same cycle must observe one
+/// winner. An in-memory implementation can only ever prove intra-process
+/// semantics, and must not be read as evidence about cross-process behaviour.
+pub trait LeaseStore: Send + Sync + std::fmt::Debug {
+    /// Take the lease for `cycle_id`, or report the current holder.
+    fn acquire(
+        &self,
+        cycle_id: &str,
+        owner: &str,
+        now_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<LeaseRecord, LeaseError>;
+
+    /// Release the lease, but only for the exact `(owner, fencing_token)`.
+    ///
+    /// Returns whether the release was applied. A stale token must return
+    /// `Ok(false)` — never `Err`, and never release someone else's lease.
+    fn release(&self, cycle_id: &str, owner: &str, fencing_token: i64) -> Result<bool, LeaseError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
