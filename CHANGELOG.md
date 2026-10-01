@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.5.1] - 2026-10-01
+## [2.5.2] - 2026-10-01
 
 ### Features
   - feat(scripts): herramienta fail-closed de migracion de project_id — `audit`/`plan`/`backup`/`apply`, con `apply` exigiendo digest del plan y backup verificado; su espejo del normalizador no coincidía con el Rust en 6 formas (entre ellas `git@host:owner/repo`, la más común de Git) y habría escrito ids equivocados en ledgers reales. `tests/test_migrate_project_identity_mirror.py` lo fija con 10 tests, falsificado él mismo (INC-DEBT-050)
@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
   - feat(aiw): vertical real de expansion dinamica con identidad estable de trigger (C3l.3)
 
 ### Fixes
+  - fix(manifest): los conteos de superficie de BUNDLE.toml describen el manifest que se publica — `prompts_count` valía 0 en todos los bundles escritos porque `MANIFEST_SURFACES` llama `prompts/sddk` a la superficie y el `match` buscaba `prompts`; ahora los conteos se leen del manifest recién escrito y una superficie sin campo aborta en vez de escribir 0 (INC-DEBT-052)
+  - fix(uat): el gate de derivacion del bump devuelve un valor, no la salida de su limpieza — `rm -rf` escribía en el stdout de la función y su mensaje se concatenaba al tag, así que el gate comparaba contra una cadena contaminada (PASS=0 FAIL=7, verificado también en el baseline)
   - fix(cli): el pin de identidad pasa a gobernar las cinco vías del CLI — `sddk project pin` se escribía y no surtía efecto en `adopt status`, `cycle status` ni `config set`; el doc afirmaba "every runtime context honors it" y sólo 2 de 5 resolvers lo honraban (INC-DEBT-049, parte resuelta)
   - fix(knowledge): revise() produce una identidad nueva, como su contrato afirma — antes devolvía el mismo `basis_hash` con contenido idéntico y una revisión temporal era invisible al freshness (C3m.2, parcial — ver INC-DEBT-048)
   - fix(release): el CHANGELOG declarado tiene que describir el trabajo que se publica — nuevo gate de cobertura integrado como paso 2b del pipeline (INC-DEBT-047)
@@ -25,6 +27,7 @@ All notable changes to this project are documented in this file.
   - test(push): el caso fail-closed media el repo equivocado y nunca verifico nada (INC-DEBT-045)
 
 ### Other
+  - docs(debt): registra INC-DEBT-052, el bundle declaraba cero prompts y publicaba 44
   - docs(roadmap): cierra C3l.7 con AT-UAT-015 honestamente en NOT PASS
   - docs(roadmap): cierra C3l.6 con X07 en la frontera de proceso y AT-UAT-013/014 PASS
   - docs(roadmap): session-59 cierra INC-DEBT-046 y reconcilia la divergencia con origin/main
