@@ -215,6 +215,6 @@ Exit codes:
 ## References
 
 - `skills/uat-form-quality/SKILL.md` — skill orchestration
-- `specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md` — full spec in knowledge vault
+- `specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md` — full spec (in repo, copied verbatim from the knowledge vault in session-65f)
 - `agents/uat-planner.md` — upstream agent that generates the plans this agent audits
 - `agents/uat-ux-form.md` — downstream agent that remediates smells (E14.3)
