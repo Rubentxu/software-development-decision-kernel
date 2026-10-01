@@ -5,10 +5,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 use sddk_domain::{DebtReport, FindingStatus};
-use sddk_engine::{self, GateOutcome, evaluate_named_gate, render_inc_template};
+use sddk_engine::{self, render_inc_template};
 use thiserror::Error;
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use crate::{CliEnvironment, CommandOutput};
 
@@ -60,43 +58,33 @@ pub fn run_debt(args: DebtArgs, env: &CliEnvironment) -> CommandOutput {
     }
 }
 
-fn empty_report_for_cycle(cycle_id: &str) -> DebtReport {
-    DebtReport {
-        schema_version: "1.1.0".into(),
-        cycle_id: cycle_id.into(),
-        generated_at: OffsetDateTime::now_utc()
-            .format(&Rfc3339)
-            .unwrap_or_else(|_| "2026-08-21T00:00:00Z".into()),
-        findings: vec![],
-    }
-}
+/// Explains that this build has no debt detector, and what it will not do.
+///
+/// The previous implementation wrote a report naming a hard-coded foreign cycle
+/// with no findings, and the gates read that report, so every debt gate in every
+/// project answered pass without examining anything. Refusing is the honest
+/// outcome: a measurement that never happened is not a passing measurement.
+const DEBT_DETECTION_ABSENT: &str = "\
+debt detection is not implemented in this build, so there is no report to read and \
+no gate to evaluate.
+
+This command previously wrote a report for a hard-coded cycle that did not belong \
+to the caller, with no findings, and the debt gates answered PASS over that \
+fabricated report. That made the verdict independent of the project it claimed to \
+check.
+
+Until detection exists, the gates debt-severity-assigned and \
+debt-priority-assigned cannot pass, and the verify phase is blocked by that fact \
+rather than by a measurement that never happened.";
 
 fn cmd_report(output: &PathBuf) -> CommandOutput {
-    let report = empty_report_for_cycle("p-52b95ef55999f9de/kernel-cycle-8");
-    let json = match serde_json::to_string_pretty(&report) {
-        Ok(j) => j,
-        Err(e) => {
-            return CommandOutput {
-                status: 1,
-                stdout: String::new(),
-                stderr: format!("JSON error: {e}\n"),
-            };
-        }
-    };
-    if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    match std::fs::write(output, &json) {
-        Ok(_) => CommandOutput {
-            status: 0,
-            stdout: format!("wrote {}\n", output.display()),
-            stderr: String::new(),
-        },
-        Err(e) => CommandOutput {
-            status: 1,
-            stdout: String::new(),
-            stderr: format!("error writing {}: {e}\n", output.display()),
-        },
+    // Nothing is written. A file shaped like evidence but not measured is worse
+    // than no file, because the next reader cannot tell the two apart.
+    let _ = output;
+    CommandOutput {
+        status: 1,
+        stdout: String::new(),
+        stderr: format!("error: {DEBT_DETECTION_ABSENT}\n"),
     }
 }
 
@@ -283,26 +271,13 @@ fn cmd_backfill(cycle_id: &str, env: &CliEnvironment) -> CommandOutput {
 }
 
 fn cmd_gates(gate_name: &str) -> CommandOutput {
-    let report = empty_report_for_cycle("p-52b95ef55999f9de/kernel-cycle-8");
-    let outcome = evaluate_named_gate(gate_name, &report);
-    match &outcome {
-        GateOutcome::Passed { notes } => CommandOutput {
-            status: 0,
-            stdout: format!("PASS: {}\n", notes),
-            stderr: String::new(),
-        },
-        GateOutcome::Failed {
-            offending_ids,
-            notes,
-        } => CommandOutput {
-            status: 1,
-            stdout: String::new(),
-            stderr: format!(
-                "FAIL: {} (offending: {})\n",
-                notes,
-                offending_ids.join(", ")
-            ),
-        },
+    // There is no report to evaluate. Naming an absent measurement is not a
+    // verdict, so this refuses rather than answering pass over an empty report.
+    let _ = gate_name;
+    CommandOutput {
+        status: 1,
+        stdout: String::new(),
+        stderr: format!("error: {DEBT_DETECTION_ABSENT}\n"),
     }
 }
 
@@ -379,18 +354,55 @@ mod tests {
     }
 
     #[test]
-    fn test_report_empty_findings() {
+    fn un_informe_de_deuda_no_se_fabrica_para_un_ciclo_ajeno() {
+        // This test previously asserted the opposite: it required the command to
+        // succeed and to write a file. That file named a cycle belonging to
+        // another project and held no findings, so the assertion pinned the
+        // fabrication in place.
         let temp = tempfile::tempdir().unwrap();
         let output = temp.path().join("debt-report.json");
         let result = cmd_report(&output);
-        assert_eq!(result.status, 0);
-        assert!(output.exists());
+
+        assert_eq!(
+            result.status, 1,
+            "without a detector there is nothing to report, so the command must fail closed"
+        );
+        assert!(
+            !output.exists(),
+            "a file shaped like evidence but never measured is worse than no file: the \
+             next reader cannot tell them apart"
+        );
+        assert!(
+            result.stderr.contains("not implemented"),
+            "the refusal must say what is missing, not merely that it failed: {}",
+            result.stderr
+        );
     }
 
     #[test]
-    fn test_gates_unknown_gate() {
-        let result = cmd_gates("unknown-gate");
-        assert_eq!(result.status, 1);
-        assert!(result.stderr.contains("FAIL"));
+    fn un_gate_de_deuda_no_responde_pass_sin_medicion() {
+        // The gate used to answer PASS over a fabricated empty report, for every
+        // gate name, in every project. An unmeasurable gate has no verdict.
+        for gate in [
+            "debt-severity-assigned",
+            "debt-priority-assigned",
+            "unknown-gate",
+        ] {
+            let result = cmd_gates(gate);
+            assert_eq!(
+                result.status, 1,
+                "{gate} must not pass when nothing was measured"
+            );
+            assert!(
+                !result.stdout.contains("PASS"),
+                "{gate} emitted a pass verdict with no report behind it: {}",
+                result.stdout
+            );
+            assert!(
+                result.stderr.contains("not implemented"),
+                "{gate} must name the missing measurement: {}",
+                result.stderr
+            );
+        }
     }
 }

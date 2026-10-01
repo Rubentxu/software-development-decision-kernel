@@ -173,23 +173,36 @@ struct LedgerVerifyOutput {
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct VerifyChainOutput {
+    /// The stream verified, or the label describing the set verified when the
+    /// caller named none.
     stream: String,
+    /// How many streams the verdict covers, so a set is never reported as if it
+    /// were one stream.
+    streams: usize,
     event_count: usize,
     head_chain_hash: Option<String>,
     status: VerifyChainStatus,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum VerifyChainStatus {
     Pass,
-    Fail { error: String },
+    /// The named stream holds no events, so no chain was checked.
+    Empty,
+    Fail {
+        error: String,
+    },
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct BackfillChainOutput {
+    /// The stream backfilled, or the label describing the set when the caller
+    /// named none.
     stream: String,
+    /// How many streams the count covers.
+    streams: usize,
     updated: usize,
     status: BackfillChainStatus,
 }
@@ -227,52 +240,100 @@ fn run_ledger_verify(args: LedgerVerifyArgs, environment: &CliEnvironment) -> Co
     render_result(result, format, ledger_verify_text)
 }
 
+/// Decides which streams a chain command covers, and how to name that set.
+///
+/// Both chain commands need this decision, and both once made it the same wrong
+/// way independently: a `project:<id>` stream that no event has ever used. The
+/// ledger is one file per project, so every stream it holds belongs to that
+/// project and the honest default is the set itself.
+fn resolve_streams(
+    explicit: Option<&str>,
+    available: Vec<String>,
+    project_id: &str,
+) -> (String, Vec<String>) {
+    match explicit {
+        Some(stream) => (stream.to_string(), vec![stream.to_string()]),
+        None => (format!("all streams of {project_id}"), available),
+    }
+}
+
 fn run_verify_chain(args: VerifyChainArgs, environment: &CliEnvironment) -> CommandOutput {
-    use sddk_domain::EventStore;
     use sddk_storage::event_store::SqliteEventStore;
     let format = args.format;
     let result = (|| -> anyhow::Result<VerifyChainOutput> {
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let stream = args
-            .stream
-            .unwrap_or_else(|| format!("project:{}", context.identity.project_id));
         let event_store = SqliteEventStore::open(context.paths.ledger.parent().unwrap())?;
-        let head_chain = event_store.head_chain_hash(&stream)?;
-        let event_count = event_store.load_stream(&stream, None, u32::MAX)?.len();
-        match event_store.verify_chain_integrity(&stream) {
-            Ok(()) => Ok(VerifyChainOutput {
-                stream: stream.clone(),
-                event_count,
-                head_chain_hash: head_chain,
-                status: VerifyChainStatus::Pass,
-            }),
-            Err(e) => Ok(VerifyChainOutput {
-                stream,
-                event_count,
-                head_chain_hash: head_chain,
-                status: VerifyChainStatus::Fail {
-                    error: e.to_string(),
-                },
-            }),
-        }
+        let project_id = context.identity.project_id.to_string();
+        let (_, streams) = resolve_streams(
+            args.stream.as_deref(),
+            event_store.list_streams()?,
+            &project_id,
+        );
+        verify_streams(&event_store, streams, &project_id)
     })();
     render_result(result, format, verify_chain_text)
 }
 
+/// Verifies a resolved set of streams and reports one verdict for the set.
+///
+/// A single named stream reports its own head. A set reports no head, because no
+/// one event is the head of several streams and naming one would imply it is.
+fn verify_streams(
+    event_store: &sddk_storage::event_store::SqliteEventStore,
+    streams: Vec<String>,
+    project_id: &str,
+) -> anyhow::Result<VerifyChainOutput> {
+    use sddk_domain::EventStore;
+    let single = streams.len() == 1;
+    let stream_count = streams.len();
+    let mut event_count = 0usize;
+    let mut failure: Option<String> = None;
+    for stream in &streams {
+        event_count += event_store.load_stream(stream, None, u32::MAX)?.len();
+        if failure.is_none()
+            && let Err(e) = event_store.verify_chain_integrity(stream)
+        {
+            failure = Some(format!("{stream}: {e}"));
+        }
+    }
+    // Emptiness is judged by the events actually examined, not by how many names
+    // the set holds: a name that resolves to no events is still nothing checked.
+    let status = match (event_count, failure) {
+        (0, _) => VerifyChainStatus::Empty,
+        (_, Some(error)) => VerifyChainStatus::Fail { error },
+        (_, None) => VerifyChainStatus::Pass,
+    };
+    let head_chain_hash = if single {
+        event_store.head_chain_hash(&streams[0])?
+    } else {
+        None
+    };
+    let (label, _) = resolve_streams(None, streams, project_id);
+    Ok(VerifyChainOutput {
+        stream: label,
+        streams: stream_count,
+        event_count,
+        head_chain_hash,
+        status,
+    })
+}
+
 fn verify_chain_text(output: &VerifyChainOutput) -> String {
+    let head = output.head_chain_hash.as_deref().unwrap_or("null");
     match &output.status {
         VerifyChainStatus::Pass => format!(
-            "stream: {}\nevent_count: {}\nhead_chain_hash: {}\nstatus: PASS\n",
-            output.stream,
-            output.event_count,
-            output.head_chain_hash.as_deref().unwrap_or("null")
+            "stream: {}\nstreams: {}\nevent_count: {}\nhead_chain_hash: {head}\nstatus: PASS\n",
+            output.stream, output.streams, output.event_count
+        ),
+        VerifyChainStatus::Empty => format!(
+            "stream: {}\nstreams: {}\nevent_count: {}\nhead_chain_hash: {head}\n\
+             status: EMPTY\n\
+             no events were verified, so this is not a statement that any chain is intact\n",
+            output.stream, output.streams, output.event_count
         ),
         VerifyChainStatus::Fail { error } => format!(
-            "stream: {}\nevent_count: {}\nhead_chain_hash: {}\nstatus: FAIL\nerror: {}\n",
-            output.stream,
-            output.event_count,
-            output.head_chain_hash.as_deref().unwrap_or("null"),
-            error
+            "stream: {}\nstreams: {}\nevent_count: {}\nhead_chain_hash: {head}\nstatus: FAIL\nerror: {}\n",
+            output.stream, output.streams, output.event_count, error
         ),
     }
 }
@@ -285,23 +346,35 @@ fn run_backfill_chain(args: BackfillChainArgs, environment: &CliEnvironment) -> 
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         let ledger_dir = context.paths.ledger.parent().unwrap();
         let mut event_store = SqliteEventStore::open(ledger_dir)?;
-        let stream = args
-            .stream
-            .unwrap_or_else(|| format!("project:{}", context.identity.project_id));
-        match event_store.backfill_chain_hash(&stream) {
-            Ok(updated) => Ok(BackfillChainOutput {
-                stream: stream.clone(),
-                updated,
-                status: BackfillChainStatus::Success,
-            }),
-            Err(e) => Ok(BackfillChainOutput {
-                stream,
-                updated: 0,
-                status: BackfillChainStatus::Fail {
-                    error: e.to_string(),
-                },
-            }),
+        let project_id = context.identity.project_id.to_string();
+        let (label, streams) = resolve_streams(
+            args.stream.as_deref(),
+            event_store.list_streams()?,
+            &project_id,
+        );
+        let total = streams.len();
+        let mut updated = 0usize;
+        let mut failure: Option<String> = None;
+        for stream in &streams {
+            match event_store.backfill_chain_hash(stream) {
+                Ok(n) => updated += n,
+                Err(e) => {
+                    if failure.is_none() {
+                        failure = Some(format!("{stream}: {e}"));
+                    }
+                }
+            }
         }
+        let status = match failure {
+            Some(error) => BackfillChainStatus::Fail { error },
+            None => BackfillChainStatus::Success,
+        };
+        Ok(BackfillChainOutput {
+            stream: label,
+            streams: total,
+            updated,
+            status,
+        })
     })();
     render_result(result, format, backfill_chain_text)
 }
@@ -309,12 +382,12 @@ fn run_backfill_chain(args: BackfillChainArgs, environment: &CliEnvironment) -> 
 fn backfill_chain_text(output: &BackfillChainOutput) -> String {
     match &output.status {
         BackfillChainStatus::Success => format!(
-            "stream: {}\nupdated: {}\nstatus: SUCCESS\n",
-            output.stream, output.updated
+            "stream: {}\nstreams: {}\nupdated: {}\nstatus: SUCCESS\n",
+            output.stream, output.streams, output.updated
         ),
         BackfillChainStatus::Fail { error } => format!(
-            "stream: {}\nupdated: {}\nstatus: FAIL\nerror: {}\n",
-            output.stream, output.updated, error
+            "stream: {}\nstreams: {}\nupdated: {}\nstatus: FAIL\nerror: {}\n",
+            output.stream, output.streams, output.updated, error
         ),
     }
 }
@@ -688,5 +761,141 @@ mod tests {
         };
         // RuntimeContext::open will fail without a real project, but args construction is tested.
         let _ = std::fs::remove_file(tmp);
+    }
+}
+
+#[cfg(test)]
+mod chain_scope_tests {
+    use sddk_domain::{ActorKind, ActorRef, EntityRef, EventEnvelopeV1, EventStore};
+    use sddk_storage::event_store::SqliteEventStore;
+
+    /// Appends one event to `stream` and returns the store holding it.
+    fn store_with(stream: &str, project: &str, count: u64) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut store = SqliteEventStore::open(dir.path()).expect("a store");
+        store
+            .connection()
+            .execute(
+                "INSERT OR IGNORE INTO projects (project_id, display_name, scope, created_at)
+                 VALUES (?1, ?1, '.', '2026-08-19T10:00:00Z')",
+                rusqlite::params![project],
+            )
+            .expect("the project row exists");
+        for sequence in 1..=count {
+            let mut envelope = EventEnvelopeV1 {
+                event_id: format!("evt-{stream}-{sequence}"),
+                event_type: "cycle.phase.transitioned".into(),
+                schema_version: 1,
+                stream_id: stream.into(),
+                sequence,
+                project_id: project.into(),
+                occurred_at: "2026-08-19T10:00:00Z".into(),
+                recorded_at: "2026-08-19T10:00:00Z".into(),
+                actor: ActorRef {
+                    kind: ActorKind::System,
+                    id: "scope-test".into(),
+                    definition_hash: None,
+                    policy_hash: None,
+                    model: None,
+                    role: None,
+                },
+                subjects: vec![EntityRef {
+                    kind: "capability".into(),
+                    id: "scope".into(),
+                    version: None,
+                    content_hash: None,
+                }],
+                payload: serde_json::Value::Null,
+                evidence_refs: vec![],
+                content_hash: String::new(),
+                metadata: None,
+                causation_id: None,
+                correlation_id: None,
+                cycle_id: Some("c-1".into()),
+                frame_id: None,
+                fork_id: None,
+            };
+            let computed = envelope.compute_content_hash();
+            envelope.content_hash = computed;
+            store.append(&envelope).expect("the event is appended");
+        }
+        drop(store);
+        dir
+    }
+
+    fn open(dir: &tempfile::TempDir) -> SqliteEventStore {
+        SqliteEventStore::open(dir.path()).expect("a store")
+    }
+
+    #[test]
+    fn un_stream_vacio_no_se_declara_cadena_intacta() {
+        // `verify_chain_integrity` answers Ok for zero events, which is true of
+        // zero events and false as a claim about a ledger. The command must not
+        // pass that truth along as a verdict.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let store = SqliteEventStore::open(dir.path()).expect("a store");
+        let output =
+            super::verify_streams(&store, vec!["cycle:p-none/never-ran".to_string()], "p-none")
+                .expect("the verification runs");
+
+        assert_eq!(
+            output.event_count, 0,
+            "the stream really is empty; that is the premise of this test"
+        );
+        assert!(
+            !matches!(output.status, super::VerifyChainStatus::Pass),
+            "a stream with no events cannot be reported as an intact chain"
+        );
+        assert!(
+            matches!(output.status, super::VerifyChainStatus::Empty),
+            "the absence must be named, not left to be read as a pass: {:?}",
+            output.status
+        );
+    }
+
+    #[test]
+    fn el_por_defecto_verifica_los_streams_que_existen() {
+        // The previous default named `project:<id>`, a stream no event has ever
+        // used, so it selected nothing and reported the selection as a pass.
+        let dir = store_with("cycle:p-demo/one", "p-demo", 2);
+        let dir_two = store_with("cycle:p-demo/two", "p-demo", 3);
+        // Both streams belong to one ledger, so mirror the second into the first.
+        let store = open(&dir);
+        for event in open(&dir_two)
+            .load_stream("cycle:p-demo/two", None, u32::MAX)
+            .unwrap()
+        {
+            let mut copy = event;
+            copy.event_id = format!("copy-{}", copy.event_id);
+            let mut writable = SqliteEventStore::open(dir.path()).unwrap();
+            let computed = copy.compute_content_hash();
+            copy.content_hash = computed;
+            writable.append(&copy).expect("the event is appended");
+        }
+
+        let (label, streams) = super::resolve_streams(
+            None,
+            store.list_streams().expect("the streams are listed"),
+            "p-demo",
+        );
+        let output =
+            super::verify_streams(&store, streams, "p-demo").expect("the verification runs");
+        assert_eq!(
+            label, "all streams of p-demo",
+            "the default names the set it covers"
+        );
+        assert_eq!(
+            output.streams, 2,
+            "both streams of the ledger must be covered, not one invented stream"
+        );
+        assert_eq!(
+            output.event_count, 5,
+            "every event of every stream is counted"
+        );
+        assert!(
+            matches!(output.status, super::VerifyChainStatus::Pass),
+            "an intact chain over real events is a pass: {:?}",
+            output.status
+        );
     }
 }
