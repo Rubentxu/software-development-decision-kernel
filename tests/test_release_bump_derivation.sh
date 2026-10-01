@@ -27,7 +27,7 @@ TMPROOT=$(mktemp -d)
 cleanup() {
     local code=$?
     chmod -R u+rw "$TMPROOT" 2>/dev/null || true
-    rm -rf "$TMPROOT"
+    rm -rf "$TMPROOT" >/dev/null 2>&1
     exit "$code"
 }
 trap cleanup EXIT
@@ -76,10 +76,15 @@ EOF
         git tag "v$tag"
         git commit -q --allow-empty -m "$subject"
     )
-    local out
+    local out derived
     out=$(cd "$dir" && bash scripts/release-bump.sh --dry-run 2>&1)
-    rm -rf "$dir"
-    echo "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}'
+    # El valor de retorno de esta funcion ES lo que el caller lee. Cualquier
+    # salida en stdout del cleanup se concatenaria al tag y haria fallar la
+    # comparacion, asi que se silencia explicitamente en vez de confiar en que
+    # `rm` no imprime nada.
+    rm -rf "$dir" >/dev/null 2>&1
+    derived=$(printf '%s\n' "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}')
+    printf '%s\n' "$derived"
 }
 
 check() {
@@ -129,10 +134,13 @@ EOF
         git tag "v$tag"
         git commit -q --allow-empty -m "$subject"
     )
-    local out
+    local out derived
     out=$(cd "$dir" && bash scripts/release-bump.sh --dry-run --force-version "$force" 2>&1)
-    rm -rf "$dir"
-    echo "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}'
+    # Mismo motivo que en derive(): el retorno se lee como valor, no como
+    # salida acumulada.
+    rm -rf "$dir" >/dev/null 2>&1
+    derived=$(printf '%s\n' "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}')
+    printf '%s\n' "$derived"
 }
 
 # --- The regression: workspace ahead of the tag -----------------------------
