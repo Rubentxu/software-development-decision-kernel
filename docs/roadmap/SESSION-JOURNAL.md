@@ -7887,3 +7887,65 @@ designed to provide it.
 **Corrección para las siguientes sesiones:** emitirlo antes del primer `edit`, no
 después. Es barato —tres lecturas de Git— y es lo que evita que este trabajo se
 convierta en el error ajeno del siguiente.
+
+---
+
+## session-65e — Publicacion de los 8 commits de session-65d y reconciliacion del puntero (2026-10-01)
+
+**Autorizacion op-5 otorgada explicitamente** para el push de `e194bc57..9f86a6d1`. Push
+ejecutado: `f483097d..9f86a6d1  main -> main`, exit 0. Verificado con
+`git ls-remote origin refs/heads/main` -> `9f86a6d121f5ec0fc7c2bf249c24439d1da54d23`,
+igual a `git rev-parse HEAD`. **No hubo interferencia del actor concurrente** en esta
+ocasion, a diferencia de las dos anteriores de la sesion.
+
+**El hook admitio por la via (A-v2), no por la (A) ni por la (B).** Antes de pushear
+verifique el predicado en vez de asumirlo, porque `origin/main` ya declara `2.5.3` — el
+mismo valor que HEAD — luego el rango `origin/main..HEAD` **no contiene** cambio real de
+`[workspace.package] version` y el primer disjunct de (A) es insatisfacible. La via (B)
+tampoco aplica: los 8 commits tocan `crates/sddk-cli/src/{dev/doctor.rs,ledger.rs}`,
+`crates/sddk-cli/tests/cli.rs` y `tests/test_surface_reference_integrity.py`, fuera de la
+allowlist documental cerrada. Lo que si admite es **`githooks/pre-push:251-268`, la
+variante 3 de INC-DEBT-040 (`A-v2`)**: la version del workspace en el tip (`2.5.3`) es
+semver-mayor que el mayor tag `v*` publicado en el remoto (`v2.5.2`). Push **sin
+`--no-verify`** y **sin bumpear a 2.5.4**.
+
+**HALLAZGO NUEVO, FUERA DEL ALCANCE AUTORIZADO, REPORTADO NO ARREGLADO — y es
+Load-bearing.** `AGENTS.md:59-61` afirma que la variante (3) *«sigue **abierta** y
+alteraria un gate de admision, asi que requiere su propia decision»*. Es **falso**:
+`docs/debt/INC-DEBT-040-...md` esta `status: resolved`, `resolved_in_session:
+session-46b`, y el hook implementa la variante como ruta `A-v2`. Misma clase de defecto
+que el ADR-016 inexistente que cerro session-65d: **un documento afirma una
+authoridad que el codigo ya no tiene**. La consecuencia no es academica — un agente que
+lea ese parrafo concluira que su push necesita un bump real, y bumpeara a **2.5.4**
+siendo que `2.5.3` esta **declarada y no publicada** y la siguiente release **ES v2.5.3**
+(AGENTS.md 2.3). Exactamente la accion incorrecta que esta sesion si evita. No se
+corrige aqui porque `AGENTS.md` es la autoridad contractual del operador: la correccion
+la decide el operador, no el agente que la encontro.
+
+**Puntero reconciliado.** Antes de escribir, `--check` predijo el drift correctamente
+(`current_sha va 8 commit(s) por detras (tolerancia 3) -- se reconcilia`;
+`workspace_version_at_current 2.5.3: alineada`). La escritura toco **2 lineas** y nada
+mas: `current_sha` `f483097d` -> `9f86a6d1` y `head_at_state_sync` en paralelo.
+`superseded_pointer` **se preservo tal cual** porque ya existia con nota manual (el
+script solo lo inserta si no existia) — no se reescribio historia. El propio script
+avanzo el aviso de que el commit objetivo no es un bump, que es correcto y esperado.
+
+**Guard verificado, no supuesto:** `bash tests/test_release_state_pointer.sh` ->
+**PASS 9/9**, `el puntero es puntual: 0 commit(s) de retraso`. Estaba en FAIL por 8
+commits al empezar esta entrada y en verde al terminarla, con la misma tolerancia (3) y
+el puntero movido al SHA real.
+
+**Lo que NO cambia con esto:** los **8 commits ya estaban verificados** en verde
+(`fmt` OK, `clippy --workspace --all-targets -D warnings` limpio, `cargo test
+--workspace` sin un solo FAILED) **antes** del push; publicar no es re-verificar y no se
+ha vuelto a correr el perfil completo porque el arbol no cambio. Siguen abiertas y sin
+decidir: la familia `cua-test-*` (3 agentes que ninguna skill puede cargar, porque nunca
+se escribieron — 0 commits en `git log --all`), las 6 citas de las specs E14 (arbol
+`specs/` inexistente), las 3 citas con basename ambiguo, la reduccion de las 19
+superficies fuera de presupuesto, INC-DEBT-051, la migracion de los 25 receipts y la RC
+0.45.0 de PipelineK. Y `v2.5.3` sigue **declarada, no publicada**: no hay tag, el bundle
+instalado sigue en `2.5.2`.
+
+**Primer paso preciso de la sesion siguiente:** no abrir trabajo nuevo sin cerrar la
+decision de `AGENTS.md:59-61`. Es una frase, y mientras siga mintiendo induce un bump
+equivocado en el primer push de la proxima sesion.
