@@ -186,7 +186,11 @@ fn trigger(expected_base: &str) -> ExpansionTrigger {
 }
 
 fn bound_trigger(engine: &Engine<Storage>, cycle_id: &str) -> ExpansionTrigger {
-    let mut t = trigger(&engine.current_plan_revision_id(cycle_id).expect("base revision"));
+    let mut t = trigger(
+        &engine
+            .current_plan_revision_id(cycle_id)
+            .expect("base revision"),
+    );
     t.cycle_id = cycle_id.to_string();
     t
 }
@@ -222,7 +226,9 @@ fn booted(cycle_id: &str) -> (tempfile::TempDir, Engine<Storage>, String, String
     engine
         .acquire_cycle_lease(&cid, ACTOR, 0, i64::MAX)
         .expect("lease");
-    let base_rev = engine.current_plan_revision_id(&cid).expect("base revision");
+    let base_rev = engine
+        .current_plan_revision_id(&cid)
+        .expect("base revision");
     (dir, engine, cid, base_rev, path)
 }
 
@@ -231,7 +237,10 @@ fn apply(
     trigger: &ExpansionTrigger,
     authority: &AuthorityContext,
     receipt_path: &std::path::Path,
-) -> Result<sddk_engine::dynamic_expansion::ExpansionOutcome, sddk_engine::dynamic_expansion::ExpansionError> {
+) -> Result<
+    sddk_engine::dynamic_expansion::ExpansionOutcome,
+    sddk_engine::dynamic_expansion::ExpansionError,
+> {
     engine.apply_dynamic_expansion(
         trigger,
         authority,
@@ -260,10 +269,7 @@ fn f1_duplicate_trigger_yields_exactly_one_revision() {
         "replay must return the SAME revision id, not a new one"
     );
     assert_eq!(first.lineage_len, 2, "root + exactly one derived revision");
-    assert_eq!(
-        second.lineage_len, 2,
-        "replay must not grow the lineage"
-    );
+    assert_eq!(second.lineage_len, 2, "replay must not grow the lineage");
     assert_eq!(first.parent_revision_id.as_deref(), Some(base_rev.as_str()));
 }
 
@@ -280,11 +286,7 @@ fn f2_replay_executes_only_the_new_node_once() {
     let first = apply(&mut engine, &t, &auth(), receipts.path()).expect("first");
     let second = apply(&mut engine, &t, &auth(), receipts.path()).expect("replay");
 
-    let executed: Vec<&str> = first
-        .executed_node_ids
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
+    let executed: Vec<&str> = first.executed_node_ids.iter().map(|s| s.as_str()).collect();
     assert_eq!(executed, vec!["t2"], "only the NEW node is dispatched");
     assert!(
         !first.executed_node_ids.iter().any(|n| n.as_str() == "t1"),
@@ -368,8 +370,8 @@ fn f4_invalid_delta_leaves_no_canonical_change() {
 
     let before_events = engine.ledger().list_cycle_events(&cid).expect("events");
 
-    let err = apply(&mut engine, &t, &auth(), receipts.path())
-        .expect_err("empty delta must fail closed");
+    let err =
+        apply(&mut engine, &t, &auth(), receipts.path()).expect_err("empty delta must fail closed");
     assert!(
         matches!(
             err,
@@ -379,7 +381,11 @@ fn f4_invalid_delta_leaves_no_canonical_change() {
     );
 
     assert_eq!(
-        engine.ledger().list_cycle_events(&cid).expect("events").len(),
+        engine
+            .ledger()
+            .list_cycle_events(&cid)
+            .expect("events")
+            .len(),
         before_events.len(),
         "invalid delta must not append events"
     );
@@ -406,7 +412,10 @@ fn new_revision_carries_lineage_and_receipt() {
     assert_eq!(out.mutation, PlanMutation::NodesChanged);
 
     let receipt_file = receipts.path().join(&cid).join("expansion-receipt.json");
-    assert!(receipt_file.is_file(), "receipt must exist at {receipt_file:?}");
+    assert!(
+        receipt_file.is_file(),
+        "receipt must exist at {receipt_file:?}"
+    );
     let body = std::fs::read_to_string(&receipt_file).expect("read receipt");
     let v: serde_json::Value = serde_json::from_str(&body).expect("receipt is json");
     assert_eq!(v["trigger_fingerprint"], out.trigger_fingerprint);
@@ -418,7 +427,10 @@ fn new_revision_carries_lineage_and_receipt() {
     apply(&mut engine, &t, &auth(), receipts.path()).expect("replay");
     let body2 = std::fs::read_to_string(&receipt_file).expect("read receipt again");
     let v2: serde_json::Value = serde_json::from_str(&body2).expect("json");
-    assert_eq!(v2["revision_id"], out.revision_id, "receipt identity is stable");
+    assert_eq!(
+        v2["revision_id"], out.revision_id,
+        "receipt identity is stable"
+    );
 }
 
 // ── F5 — execution failure of the new node ────────────────────────────────
@@ -444,7 +456,10 @@ fn f5_new_node_execution_failure_is_recorded_not_counted_as_success() {
         .expect("expansion is durable even if the node fails");
 
     assert!(out.applied);
-    assert!(out.new_node_failed, "the failure must be visible in the outcome");
+    assert!(
+        out.new_node_failed,
+        "the failure must be visible in the outcome"
+    );
     assert_eq!(
         out.new_node_execution_count, 0,
         "a failed node is not counted as an execution"
@@ -511,8 +526,8 @@ fn f7_stale_base_revision_fails_closed() {
     );
 
     let before_events = engine.ledger().list_cycle_events(&cid).expect("events");
-    let err = apply(&mut engine, &t2, &auth(), receipts.path())
-        .expect_err("stale base must fail closed");
+    let err =
+        apply(&mut engine, &t2, &auth(), receipts.path()).expect_err("stale base must fail closed");
 
     assert!(
         matches!(
@@ -522,7 +537,11 @@ fn f7_stale_base_revision_fails_closed() {
         "stale base must be typed, got {err:?}"
     );
     assert_eq!(
-        engine.ledger().list_cycle_events(&cid).expect("events").len(),
+        engine
+            .ledger()
+            .list_cycle_events(&cid)
+            .expect("events")
+            .len(),
         before_events.len(),
         "stale base must not append events"
     );

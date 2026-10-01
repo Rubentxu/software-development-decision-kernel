@@ -414,9 +414,22 @@ fn w11_perf_irrelevant_trigger_yields_zero_proposals() {
     assert_eq!(l1.proposal_count(), 0);
 }
 
-/// W02 — NEG: two replan attempts with the same proposal_id must not
-/// double-apply. The engine's lease fence + counter increment is the
-/// atomicity guarantee.
+/// W02 — the boundary of `Engine::cycle_replan`.
+///
+/// The test *name* claims "one admission", but the body proves the opposite:
+/// two `cycle_replan` calls with the same delta produce `replan_count == 2`.
+/// That divergence is real and is **not** a bug in this test — it is the
+/// measured boundary of this API, and C3l.3 records it as defect D2.
+///
+/// `cycle_replan` takes its `event_id` from the caller and derives no identity
+/// from the trigger content, so it cannot be idempotent: this test deliberately
+/// uses a NEW `event_id` on the second call so the ledger's own
+/// `INSERT OR IGNORE` dedup does not mask the finding.
+///
+/// Stable-trigger idempotency lives one layer up, in
+/// `sddk_engine::dynamic_expansion`, which derives a content fingerprint and
+/// guards on it before any mutation. See
+/// `tests/c3l3_dynamic_expansion_vertical.rs` (F1/F2/F6).
 #[test]
 fn w02_two_replan_calls_with_same_input_yield_one_admission() {
     let (_dir, storage, _ledger_path) = open_storage();
@@ -483,6 +496,8 @@ fn w02_two_replan_calls_with_same_input_yield_one_admission() {
     let record = engine.ledger().get_cycle(&cycle_id).expect("get cycle");
     assert_eq!(
         record.manifest.replan_count, 2,
-        "two replan calls produce two counter increments; the contract is bounded counter, not dedup"
+        "cycle_replan has no stable trigger identity, so two identical deltas \
+         produce two revisions; idempotency is provided one layer up by \
+         sddk_engine::dynamic_expansion (see c3l3_dynamic_expansion_vertical.rs)"
     );
 }

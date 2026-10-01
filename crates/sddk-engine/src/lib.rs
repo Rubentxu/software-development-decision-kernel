@@ -62,7 +62,6 @@ pub mod converge_verification;
 pub mod cycle_narrative;
 pub mod cycle_pause;
 pub mod cycle_replan;
-pub mod dynamic_expansion;
 pub mod cycle_summary;
 pub mod cycle_supersede;
 pub mod debverify_kernel;
@@ -74,6 +73,7 @@ pub mod durable_capsule_store;
 pub mod durable_delta_store;
 pub mod durable_map_fanout;
 pub mod durable_session_binding;
+pub mod dynamic_expansion;
 pub mod engineering_assurance;
 pub mod engineering_assurance_resolvers;
 pub mod event_bus;
@@ -190,8 +190,8 @@ pub use continuation_candidate::{
     InMemoryFrontierStore, ResumeView, Reversibility,
 };
 pub use cycle_replan::*;
-pub use dynamic_expansion::*;
 pub use cycle_supersede::*;
+pub use dynamic_expansion::*;
 pub use event_bus::*;
 pub use fingerprint::*;
 pub use gate_error::GateError;

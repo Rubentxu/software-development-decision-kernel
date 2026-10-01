@@ -7240,3 +7240,33 @@ es el publicado por CI.
 **Incidentes:** ninguno. Release fix→PATCH 2.4.2 tras perfil completo (addendum).
 
 **Addendum session-53 (publicación):** release **v2.4.2 PUBLICADA** (fix→PATCH). Perfil completo 5195/0/19. Local 0–8c (8c fail-closed por diseño). CI run **36782347136 success** (13/13). Tag objeto `aea49ba8`, peel `98cdd2f4` == origin/main. 27 assets, publishedAt 2026-10-01T00:02:10Z. **9b:** 27/27 HTTP 200, gate 13/0. **9c:** sha `ed1c4e5f…` íntegro, cosign **Verified OK**. **10–12:** install exit 0, `sddk 2.4.2`, doctor all_present, prune removed 2.4.1.
+
+---
+
+## Session-54 (2026-10-01T08:20Z) — C3l.3: vertical real de Dynamic Workflow Expansion (AT-UAT-006/007/008 PASS)
+
+**Baseline / HEAD:** `dc343722` (= `origin/main`, workspace `2.4.2` = tag `v2.4.2` publicado). **Slice C3l.3** — tercera slice de código de la vía C3l, precedida de la recuperación de contexto y de la higiene del duplicado documental.
+
+**Higiene (decisión del operador):** `docs/ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` retirado. Verificado duplicado byte-idéntico de la copia commiteada en `docs/sddk-roadmap-acceptance-truthfulness-2026-09-30/` (sha256 `f06b9fb5…` en ambas; `diff` vacío). Ningún enlace funcional lo referenciaba. Una sola fuente.
+
+**Defecto (verificado contra el código, no inferido del enunciado):** seis huecos. `aiw_s4_dynamic_expansion.rs` llamaba `Engine::cycle_replan` DIRECTO. Ese API (D1) toma `event_id` del caller sin derivar identidad del trigger; (D2) el test W02 **fijaba el defecto como contrato** (`replan_count == 2`, *"the contract is bounded counter, not dedup"*) — el mismo patrón que C3l.2 ya había prohibido para S7a; (D3) el append canónico deduplica por `event_id` (`INSERT OR IGNORE`) pero `update_cycle_with_event` ejecuta el `UPDATE cycles` incondicionalmente ⇒ **divergencia ledger↔proyección** en replay; (D4) `cycle_replan` no valida authority en absoluto; (D5) no existe paso de orchestration; (D6) nunca toca `PlanRevisionV1` y la ejecución incremental no existe (el compiler es *compile-only* por diseño declarado).
+
+**Conclusión:** C3l.3 no era una composición de test. La re-clasificación `IMPLEMENTED_NOT_VERIFIED` de C3l.0 era correcta.
+
+**Hallazgos adicionales:** `WorkflowManifest` no contiene un `WorkflowIR` ⇒ el substrate de plan-revision nunca estuvo unido al ciclo (por eso el padre se toma del tip real del ledger). `WritableSurface::PlanRevisions` admite Human+Agent, **no System**, y W01..W11 usan System ⇒ si la ruta de replan hubiera validado authority, esos tests ya habrían fallado; corroboración independiente de D4.
+
+**Resolución:** nueva superficie `sddk-engine::dynamic_expansion` con la vertical completa (evidence gap → proposal de Secretary → decisión de orchestration → authority → delta tipado → `PlanRevisionV1` N+1 parentado en el tip real → selección incremental → recibo atómico). La idempotencia usa un **fingerprint content-addressed** del trigger que viaja en el payload del evento canónico, con el guard **antes de cualquier mutación** — lo que cierra D3 por construcción sin tabla nueva (el ledger ya es la autoridad append-only, ADR §2.7).
+
+**Evidencia:** RED por superficie ausente (`E0432`/`E0599`) → GREEN **12/12**. **4 falsificadores OBSERVED** con el verde ya commiteado y `git diff` vacío al restaurar: guard de replay → 5 FAIL · authority → 2 FAIL · pin de base → 1 FAIL · selección incremental → 6 FAIL. W01..W11 intactos 7/7. fmt limpio · clippy `-p sddk-engine --all-targets -D warnings` exit 0 · `cargo test -p sddk-engine` lib **1358/0/1** + todas las suites de integración con 0 fallos.
+
+**Límite declarado ANTES de escribir código** (en el SCOPE-CONTRACT, para que el recibo no pudiera reinterpretar el alcance después): lo registrado es la **selección y contabilidad** de nodos despachados, NO la evaluación de operadores (DW-RUNTIME-003/004/005). `AIW-S4` queda **IMPLEMENTED → re-verificable**, no VERIFIED. Otras: el `base_ir` lo declara el propio trigger (un trigger deshonesto podría sobre-despachar — mitigado, no cerrado); la revisión raíz es sintética y content-derived porque no existe un `PlanRevisionV1` inicial del ciclo; `cycle_replan` no se modificó (su frontera queda documentada en W02); sin perfil completo del workspace ni release, que corresponden a verify/release.
+
+**Error de medición propio, declarado:** el primer falsificador de authority gateó el check detrás de `std::env::var("C3L3_NEVER").is_err()`, es decir lo dejó activo en el caso normal → **mutación nula, 12/12 PASS**. Casi se concluyó que el check no era load-bearing; repetido como eliminación literal (M2-bis) y sí cayó. Quinta vez que un falsador mal construido produce un resultado falso.
+
+**Cinco errores fueron míos durante el GREEN** (declarados, no del defecto): `base_ir` ausente en el inicializador del trigger; `&str.as_str()` (API inestable); closure `Fn` capturando un `String` mutable; y un predicado de ejecución **invertido** en F5, que devolvía `true`=éxito para el nodo que debía fallar.
+
+**Corrección de puntero:** `last_public_release_observed` decía `v2.2.33` desde session-45, obsoleto — el real es `v2.4.2`. Corregido sin reescribir la historia de v2.2.33, que sigue descrita con su evidencia.
+
+**Matriz:** S4 `IMPLEMENTED_NOT_VERIFIED` → **IMPLEMENTED → re-verificable**; AT-UAT-006/007/008 PASS. Commit de la slice `7360c32e`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session54-c3l3-dynamic-expansion-vertical/RECEIPT.md`.
+
+**SIGUIENTE PASO:** **C3l.4** — External test semantics: ausencia ≠ PASS (los tests Chronos pueden salir verdes vía `None => return`). Congelar el contrato de `NotObserved` antes de tocar los tests. Después C3l.5 (X04 `SQLITE_MULTI_PROCESS`) y C3l.6 (X07 segundo binario real).

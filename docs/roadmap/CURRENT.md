@@ -1,5 +1,25 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-54, 2026-10-01T08:20Z): C3l.3 COMPLETADO — la vertical de Dynamic Workflow Expansion existe como superficie de producción (AT-UAT-006/007/008 PASS).** Workspace `2.4.2` (= último tag publicado `v2.4.2`), `HEAD` con el fix commiteado. **SIGUIENTE PASO: C3l.4** (External test semantics: ausencia ≠ PASS — los tests Chronos pueden salir verdes vía `None => return`). Después C3l.5 (X04 concurrencia real `SQLITE_MULTI_PROCESS`) y C3l.6 (X07 segundo binario real).
+
+**Hecho en session-54 (C3l.3):**
+
+1. **El defecto no era una composición faltante, era una superficie.** `aiw_s4_dynamic_expansion.rs` llamaba `Engine::cycle_replan` directo: sin identidad de trigger (recibe `event_id` del caller), sin validación de authority sobre `plan_revisions`, sin `PlanRevisionV1` y sin noción de nodos nuevos. Y **W02 fijaba el defecto como contrato** (`replan_count == 2`, *"the contract is bounded counter, not dedup"*) — el mismo patrón que C3l.2 ya había prohibido para S7a. W02 reetiquetado como frontera medida, sin tocar su lógica.
+2. **Hallazgo de divergencia (D3):** el append canónico deduplica por `event_id` (`INSERT OR IGNORE`), pero `update_cycle_with_event` ejecuta el `UPDATE cycles` incondicionalmente ⇒ un replay podía dejar el evento sin duplicar y `replan_count` re-incrementado. El guard de idempotencia corre **antes de cualquier mutación**, lo que cierra esa divergencia por construcción.
+3. **Vertical implementada** (`sddk-engine::dynamic_expansion`): evidence gap → proposal de Secretary → decisión de orchestration → authority sobre `WritableSurface::PlanRevisions` → delta tipado → `PlanRevisionV1` N+1 parentado en el **tip real del ledger** → selección incremental (solo nodos ausentes del plan base) → recibo atómico. El linaje se reconstruye desde los eventos, así que sobrevive al restart.
+4. **Evidencia:** RED por superficie ausente (`E0432`/`E0599`) → GREEN **12/12**. **4 falsificadores OBSERVED** sobre la producción mutada: guard de replay (5 FAIL), authority (2 FAIL), pin de base (1 FAIL), selección incremental (6 FAIL). W01..W11 intactos 7/7. fmt/clippy limpios.
+5. **Matriz:** S4 `IMPLEMENTED_NOT_VERIFIED` → **IMPLEMENTED → re-verificable**. AT-UAT-006/007/008 PASS.
+
+**Límites (declarados en el recibo y en el SCOPE-CONTRACT antes de escribir código):** lo registrado es la **selección y contabilidad** de nodos despachados, no la evaluación de operadores (DW-RUNTIME-003/004/005, fuera de scope del propio compiler) — por eso S4 **no** puede pasar a VERIFIED. La selección incremental usa el `base_ir` que declara el propio trigger: un trigger deshonesto podría sobre-despachar (mitigado, no cerrado). La revisión raíz es sintética y content-derived, porque `WorkflowManifest` no contiene un `WorkflowIR` (el substrate de plan-revision nunca estuvo unido al ciclo).
+
+**Error de medición propio declarado:** el primer falsificador de authority gateó el check detrás de una env var que no se activaba — mutación **nula**, 12/12 PASS. Casi se concluye que el check no era load-bearing; repetido como eliminación literal, cayó.
+
+**Higiene cerrada:** `docs/ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` eliminado (duplicado byte-idéntico, sha256 `f06b9fb5…` en ambas; la canónica del paquete está commiteada). Una sola fuente.
+
+**SIGUIENTE PASO (preciso):** **C3l.4** — semántica de tests externos: ausencia de evidencia no es PASS. Congelar el contrato de qué cuenta como `NotObserved` antes de tocar los tests Chronos.
+
+---
+
 **Estado (session-53, 2026-10-01T00:40Z): C3l.2 COMPLETADO — Producer→L0 wiring real (AT-UAT-004/005 PASS), release 2.4.2 en curso.** HEAD con el fix + docs. **SIGUIENTE PASO: C3l.3** (Dynamic Workflow Expansion E2E real — AT-UAT-006/007/008: proposal→authority→PlanRevision→execution + replay idempotente). Después C3l.4 (semántica EXT).
 
 **Hecho en session-53 (C3l.2):**

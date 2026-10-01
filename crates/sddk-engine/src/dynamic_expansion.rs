@@ -53,12 +53,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use sddk_domain::plan_revision::{NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1};
+use sddk_domain::plan_revision::{
+    NormalizedPlanV1, PlanMutation, PlanProvenanceV1, PlanRevisionV1,
+};
 use sddk_domain::workflow_ir::WorkflowIR;
 use sddk_domain::{LedgerEvent, LedgerEventInput};
 
-use crate::secretary_l1::{BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine, SecretaryProposal};
 use crate::risk_approval_policy::RiskTier;
+use crate::secretary_l1::{
+    BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
+    SecretaryProposal,
+};
 use crate::{
     Engine, EngineError, EventContext, RestageTo, authority::AuthorityContext,
     authority::WritableSurface, write_atomic,
@@ -313,6 +318,11 @@ impl<L: sddk_domain::Ledger> Engine<L> {
     }
 
     /// The full vertical with an injected Secretary.
+    // The 8 parameters are the vertical's own coordinates (trigger, Secretary,
+    // identity, authority, event context, receipt dir, decision). Bundling them
+    // into a struct would only move the same list one frame down without making
+    // the call site say more; `cycle_replan` takes the same trade.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_dynamic_expansion_with_secretary(
         &mut self,
         trigger: &ExpansionTrigger,
@@ -430,12 +440,10 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         }
 
         // ── Step 6: typed delta → PlanRevision N+1, parented on the ledger tip.
-        let provenance =
-            PlanProvenanceV1::new(&deps.secretary_id.0, env!("CARGO_PKG_VERSION")).map_err(
-                |e| ExpansionError::PlanRevision {
-                    reason: e.to_string(),
-                },
-            )?;
+        let provenance = PlanProvenanceV1::new(&deps.secretary_id.0, env!("CARGO_PKG_VERSION"))
+            .map_err(|e| ExpansionError::PlanRevision {
+                reason: e.to_string(),
+            })?;
         let normalized = NormalizedPlanV1::from_workflow_ir(&trigger.proposed_ir);
         let revision = PlanRevisionV1::new(
             Some(tip.clone()),
@@ -448,8 +456,12 @@ impl<L: sddk_domain::Ledger> Engine<L> {
         })?;
 
         // ── Step 7: incremental execution — only nodes absent from the base.
-        let base_nodes: Vec<String> =
-            trigger.base_ir.operators.keys().map(|k| k.0.clone()).collect();
+        let base_nodes: Vec<String> = trigger
+            .base_ir
+            .operators
+            .keys()
+            .map(|k| k.0.clone())
+            .collect();
         let mut executed_node_ids: Vec<String> = Vec::new();
         let mut failed_node_ids: Vec<String> = Vec::new();
         for id in trigger.proposed_ir.operators.keys() {
