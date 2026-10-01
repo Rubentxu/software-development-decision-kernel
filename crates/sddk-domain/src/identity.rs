@@ -709,6 +709,125 @@ mod tests {
         assert_ne!(stable_project_id("ab", "c"), stable_project_id("a", "bc"));
     }
 
+    // ── Golden pins of the REMOTE identity path (INC-DEBT-050) ──────────────
+    //
+    // `stable_project_id` had NO golden pin while `stable_fallback_seed` had
+    // one since INC-DEBT-028. That asymmetry is the whole defect: the seed
+    // path was protected, the remote path — the one every real project takes
+    // — was not. When commit 52182522 lowercased `normalize_remote_path`, it
+    // silently reassigned the `project_id` of every already-adopted project
+    // with **no migration**: 25 of 104 adoption receipts on one machine were
+    // orphaned (16 ids across 13 remotes), their ledgers intact but out of
+    // the CLI's reach.
+    //
+    // The existing property test (`stable_project_id_is_deterministic`) cannot
+    // catch that class of change: asserting `f(x) == f(x)` still passes when
+    // `f` is replaced wholesale. Only pinning the *absolute* output makes a
+    // normalisation change fail loudly, which is what a migration decision
+    // needs to be forced rather than discovered later.
+
+    #[test]
+    fn project_id_is_pinned_to_known_values() {
+        // Golden pins. The domain string `sddk.project.remote.v1` and the
+        // framing of the derivation are part of the identity contract:
+        // changing either reassigns the `project_id` of every project in the
+        // world, orphaning its ledger and receipts. Nothing structural
+        // depends on them, so the expected values are pinned explicitly.
+        //
+        // If one of these fails, DO NOT just copy the new value over. That
+        // reassigns the identity of every project derived from the same
+        // remote. Decide first whether a migration is warranted, and pin the
+        // new value only as part of that migration.
+        //
+        // See docs/debt/INC-DEBT-050-REMOTE-CASE-NORMALIZATION-REASSIGNS-PROJECT-IDS-WITHOUT-MIGRATION.md
+        // and docs/debt/INC-DEBT-028-NONDETERMINISTIC-FALLBACK-IDENTITY.md.
+        assert_eq!(
+            stable_project_id("https://github.com/rubentxu/example", "."),
+            "p-fd57187922005b40"
+        );
+        assert_eq!(
+            stable_project_id("https://github.com/acme/widgets", "acme"),
+            "p-09add0c4901adb20"
+        );
+        assert_eq!(
+            stable_project_id("https://gitlab.com/g/sub/p", "sub"),
+            "p-8a1e919e1cbfb921"
+        );
+    }
+
+    #[test]
+    fn remote_normalization_is_pinned_to_known_values() {
+        // The normaliser is the layer that actually caused INC-DEBT-050, so
+        // it is pinned separately from the hash. A change here is the
+        // dangerous one even when the hash stays untouched: it changes the
+        // *input* to the derivation, which reassigns ids just as silently.
+        //
+        // Cases cover, in order: mixed-case host and path, `.git` suffix,
+        // default ports that must be dropped, ssh/scp form, and transport
+        // credentials that must be stripped.
+        assert_eq!(
+            normalize_remote_url("https://GitHub.com/Acme/Widgets.git").unwrap(),
+            "https://github.com/acme/widgets"
+        );
+        assert_eq!(
+            normalize_remote_url("https://github.com:443/acme/widgets").unwrap(),
+            "https://github.com/acme/widgets"
+        );
+        assert_eq!(
+            normalize_remote_url("https://github.com:8443/acme/widgets").unwrap(),
+            "https://github.com:8443/acme/widgets"
+        );
+        assert_eq!(
+            normalize_remote_url("git@github.com:Acme/Widgets.git").unwrap(),
+            "https://github.com/acme/widgets"
+        );
+        assert_eq!(
+            normalize_remote_url("https://user:tok@github.com/Acme/Widgets.git?x=1#frag").unwrap(),
+            "https://github.com/acme/widgets"
+        );
+    }
+
+    #[test]
+    fn case_normalization_reassigned_real_project_ids_without_migration() {
+        // Historical regression pin, using the two ids that genuinely coexisted
+        // on one machine. This asserts the DAMAGE, not the intent: it is the
+        // reason the two golden pins above exist.
+        //
+        // `Rubentxu` (pre-normalisation, minted 2026-09-30T07:47Z, carrying 65
+        // cycles and a 3.9 MB ledger) vs `rubentxu` (post-normalisation, minted
+        // 12 hours later the same day, empty). Same repository, same owner,
+        // only the case differs.
+        let repo = "software-development-decision-kernel";
+        let pre = stable_project_id(&format!("https://github.com/Rubentxu/{repo}"), ".");
+        let post = stable_project_id(&format!("https://github.com/rubentxu/{repo}"), ".");
+
+        assert_ne!(
+            pre, post,
+            "changing the case of the owner changes the project_id — that IS the defect"
+        );
+        assert_eq!(
+            pre, "p-63676b11dc0ef88f",
+            "historical id, holds the real ledger"
+        );
+        assert_eq!(
+            post, "p-995939af668a53d8",
+            "id minted after the normalisation"
+        );
+
+        // The property D2 actually wanted, and which now holds: once
+        // normalised, both spellings collapse onto the same project.
+        let normalised = normalize_remote_url(&format!("https://github.com/Rubentxu/{repo}"))
+            .unwrap()
+            .to_lowercase();
+        assert_eq!(normalised, format!("https://github.com/rubentxu/{repo}"));
+        assert_eq!(stable_project_id(&normalised, "."), post);
+
+        // The two properties together are why a migration was required and
+        // why a golden pin is the only thing that would have announced it:
+        // case-insensitive going forward, and silently reassigning everything
+        // already minted.
+    }
+
     #[test]
     fn fallback_identity_requires_and_canonicalizes_uuid_seed() {
         let identity = resolve_project_identity(
