@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.5.0] - 2026-10-01
+
+### Features
+  - feat(lease): LeaseStore durable y multi-proceso; X04 cruza la frontera real (C3l.5)
+  - feat(aiw): vertical real de expansion dinamica con identidad estable de trigger (C3l.3)
+
+### Fixes
+  - fix(uat): la ausencia de un provider externo nunca vuelve a reportarse como PASS (C3l.4)
+
+### Other
+  - docs(c3l): cierre de C3l.5 con recibo, matriz X04 y punteros reconciliados
+  - docs(arch): ADR-0148 y ADR-0149 para los modulos root nuevos de sddk-engine
+  - chore(debt): normaliza el status de INC-DEBT-028 tras verificar sus criterios
+  - docs(c3l): cierre de C3l.4 con recibo, matriz S5 y punteros reconciliados
+  - chore(c3l): el recibo del EXT gate es artefacto de run, no evidencia
+  - docs(c3l): cierre de C3l.3 con recibo, matriz S4 y punteros reconciliados
+  - docs(c3l): reconciliar puntero de estado (session-53)
+  - docs(c3l): session-53 cerrada con v2.4.2 publicada y verificada
+
 ## [2.4.2] - 2026-09-30
 
 ### Fixes
