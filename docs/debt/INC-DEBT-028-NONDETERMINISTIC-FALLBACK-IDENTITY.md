@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-028-NONDETERMINISTIC-FALLBACK-IDENTITY
 title: "El project_id de un workspace sin remote cambia en cada invocación, y adopt status lo lee como no adoptado"
-status: fixed
+status: resolved
 severity: high
 priority: P1
 created: 2026-09-28
@@ -116,3 +116,34 @@ Queda pendiente una decisión de política: la máquina tiene **236** directorio
 en `~/.local/share/sddk/projects` y **298** en `~/.local/state/sddk/projects`.
 Parte son residuos de este bug, pero **no se ha verificado** cuantos ni cuales,
 así que no se afirma aquí. Borrarlos es destructivo y requiere al operador.
+
+## Reverificación session-56 y normalización del status
+
+Este documento declaraba `status: fixed`, un valor **fuera del vocabulario
+canónico** del corpus (que es `open` / `resolved` / `closed`: 7 / 9 / 60 sobre
+77 ficheros). `fixed` aparecía **una sola vez** en las 77. Cualquier herramienta
+que filtre por el vocabulario canónico lo habría tratado como no-cerrada.
+
+Antes de tocarlo se verificaron sus criterios, porque una alerta de deuda cuyos
+criterios han caducado no es deuda real. **OBSERVED en session-56, sobre un
+repositorio sin remote, tres invocaciones del mismo comando:**
+
+```text
+$ sddk project resolve --root <probe> --scope .   # 1
+project_id: p-aa6761df127e827d
+$ sddk project resolve --root <probe> --scope .   # 2, mismo comando
+project_id: p-aa6761df127e827d
+$ sddk project resolve --root <probe> --scope .   # 3
+project_id: p-aa6761df127e827d
+
+$ sddk adopt status --root <probe> --scope .
+status: absent
+project_id: p-aa6761df127e827d     ← coherente con resolve
+```
+
+`project_id` y `workspace_id` estables, e `identity_source: fallback` con
+`remote_url: null`. **El fix de session-30 sigue vigente**: los criterios de
+esta incidencia han caducado, luego no es deuda abierta. Se normaliza
+`fixed → resolved` para devolver el fichero al vocabulario canónico; el
+cambio de valor **no** es una afirmación nueva, es la constancia de una
+verificación ya hecha.
