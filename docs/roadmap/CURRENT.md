@@ -1,5 +1,23 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-59, 2026-10-01T11:35Z): INC-DEBT-046 CERRADA — el puntero de estado es legible por máquina y tiene una sola clave autoritativa. Reconciliada además una divergencia de git con `origin/main`. El release v2.5.0 sigue BLOQUEADO por el toolchain musl (verificado en vivo hoy).** **SIGUIENTE PASO: C3l.7** (architecture gate, AT-UAT-015), que cierra la vía C3l y desbloquea C3n.
+
+**Hallazgo de entrada (no asumido):** `origin/main` contenía `86f2aad7` "chore(release): bump version" que la rama local **no** tenía. `f78a8bf2` era el ancestro común y **los dos bumps eran de contenido idéntico** (`Cargo.toml`/`CHANGELOG.md`/`manifest.toml` con diff vacío) — el remoto salió del step 1c de `release.sh`, el local del cierre de session-57. **Resuelto con `git rebase origin/main`:** historia lineal, `86f2aad7` ahora ancestro, Git descartó el bump redundante, y el árbol final es **idéntico** al HEAD de session-58 (`git diff --quiet` sin diferencias: cero bytes perdidos). No era un defecto del hook: eran dos ejecuciones del paso 1c sobre ramas hermanas.
+
+**Hecho en session-59 (cierre de INC-DEBT-046):**
+
+1. **`STATE.yaml` no lo parseaba ninguna máquina.** Una clave `development_head` (session-46b) con **3 espacios** de indentación hace que `yaml.safe_load` aborte sin leer el resto del documento. **No lo introdujo session-58**: se rompió al menos en session-46b y nadie lo vio porque estos punteros se leen a ojo. Una máquina recibía un error, no un estado.
+2. **`development_head` estaba 9 veces duplicada.** En YAML la clave repetida no es error: **gana la última**. Una vez arreglada la indentación, el puntero vigente que leía una máquina era el de **session-45**, cuatro sesiones atrasado, mientras `CURRENT.md` sí era correcto.
+3. **Cierre con las cuatro condiciones medidas:** puntero resuelto == sesión actual · `development_head` == 1 (era 9) · `superseded_development_head` == 1 clave con los **8 valores previos recuperables** · cero claves perdidas en `source:` (key sets idénticos). **Falsificador OBSERVED**: reintroducir el espacio reproduce el `ParserError` exacto.
+4. **Error propio declarado:** mi primera consolidación **creó** una segunda clave `superseded_development_head` en vez de concatenar a la preexistente, con lo que la clave antigua ganaba y el índice salía vacío. Lo detecté al **recuperar** los valores (0 en vez de 8), no al escribir. Es el mismo modo de fallo que la INC documenta: una aserción declarada sin comprobación.
+5. **Sin pérdida de historia:** las 8 sesiones (45/46/46b/48/54/55/56/57) conservan entrada completa en `SESSION-JOURNAL.md`; el campo consolidado queda como **índice**, no como fuente.
+
+**Auditoría de deuda ejecutada (no heredada):** parseados los **79** ficheros `INC-*.md` → `closed 60 · resolved 11 · open 8`. Severidad máxima abierta era esta misma INC. Las 7 restantes: 6× `INC-AUDIT-S14` (medium/low, remediación diferida a C5 o marcadas "no es un bug" en su propio cuerpo) + `INC-DEBT-039` (low/P3, degradada en session-46, pendiente del primer run real). **Criterios verificados individualmente** — la regla de que "alerta sin verificar no es deuda" se cumple medida, no asumida.
+
+**Estado del release (sin cambio, verificado hoy):** `x86_64-linux-musl-gcc` **ausente** ("el paquete musl-gcc no está instalado"); target Rust musl presente. `v2.5.0` sigue **BLOQUEADO** en el step 3/14, sin publicar. No se forzó glibc. Remedio (requiere sudo del operador): `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin más cambios.
+
+---
+
 **Estado (session-58, 2026-10-01T11:05Z): C3l.6 COMPLETADO — X07 cruza la frontera de proceso/binario real (AT-UAT-013/014 PASS). AIW-S8 sigue SIN VERIFIED: la vía C3l necesita C3l.7. El release v2.5.0 sigue bloqueado por el mismo toolchain musl (sin cambio en §Bloqueo).** **SIGUIENTE PASO: C3l.7** (architecture gate, que cierra la vía C3l y desbloquea C3n), salvo que el operador levante antes el bloqueo de musl.
 
 **Hecho en session-58 (C3l.6):**
