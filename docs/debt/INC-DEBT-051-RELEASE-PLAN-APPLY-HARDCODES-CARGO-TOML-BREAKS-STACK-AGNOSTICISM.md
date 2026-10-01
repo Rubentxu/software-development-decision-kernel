@@ -130,3 +130,45 @@ Mientras esta deuda esté abierta, `sddk release plan` **no es utilizable** sobr
 ningún proyecto no-Rust. Para un framework que se declara agnóstico, eso acota
 el alcance real del comando a un tipo de proyecto. No es un defecto de
 configuración de un usuario: es del binario que se distribuye.
+
+## Verificación de vigencia (session-65d) — la deuda sigue siendo real
+
+El objetivo de la sesión obliga a comprobar que los criterios siguen vigentes
+antes de tratarla como deuda. Los cuatro se sostienen:
+
+| criterio | estado medido |
+|---|---|
+| AGENTS.md §2.3 declara la política agnóstica y lista Bazel | **vigente** — `AGENTS.md:90` lo dice literalmente |
+| `ensure_version_lockstep` abre `Cargo.toml` sin consultar adapter | **vigente** — `version.rs:51`, sin cambios |
+| Los call sites de `release plan` / `release apply` | **vigentes** — `release_cmd.rs:668` y `:847` |
+| Existe un seam de adapter para resolver la versión de un proyecto no-Rust | **no existe** — los únicos son `ContextAdapter`, `EditorAdapter` y `ReconcileAdapter`; ninguno toca versión ni build system |
+
+**El arreglo sigue siendo un contrato nuevo**, no un bug local: no hay seam al
+que cablearlo, hay que diseñarlo. Sigue siendo `decision_request`, no trabajo
+mecánico.
+
+### Corrección del registro: hay un tercer call site, y NO es un tercer defecto
+
+La entrada nombra dos. Al verificar se encontró un tercero,
+`release_cmd.rs:947`, dentro de `local_release_preconditions`:
+
+```rust
+let version_lockstep_passed = ensure_version_lockstep(&context.root, current_tag).is_ok();
+```
+
+A primera vista parece el peor de los tres —no aborta, se traga el error— y la
+hipótesis era que la ruta `local` se saltase el lockstep sin comprobarlo. **Es falso,
+y se comprobó antes de escribirlo:** `crates/sddk-gateway/src/release.rs:205`
+rechaza con `ReleaseError::Precondition("version lockstep check did not pass…")`
+cuando el flag llega a `false`. Los tres call sites fallan cerrado: dos abortan
+con el mensaje, el tercero anota y el gateway se niega.
+
+Se consigna aquí para que nadie lo re-investigue como si fuera un agujero.
+
+### Lo que el operador ya decidió
+
+La ruta operativa para PipelineK no usa `sddk release plan` ni `dist`: se
+continúa por la ruta autorizada del propio proyecto (build Gradle +
+`pipelinek-release-harness`). Esa decisión **no cierra** esta deuda —acota su
+alcance— y lo que queda pendiente sigue siendo la misma pregunta de diseño:
+cómo resuelve su versión un proyecto que no tiene `Cargo.toml`.

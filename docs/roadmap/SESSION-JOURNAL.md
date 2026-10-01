@@ -7844,3 +7844,46 @@ El primer recuento dio 201 rotas. **Era falso**: `references/rust-testing.md` s�
 **Comandos ejecutados (contexto real):** barrido con script propio · resolución manual de las familias dudosas · `git log --all` sobre los ficheros ausentes · `python3 tests/test_surface_reference_integrity.py` 3/3 · control negativo con inyección y reversión verificada por `git diff --stat`.
 
 **Primer paso preciso de la sesión siguiente:** decidir qué se hace con las dos familias graves — los actores `cua-test-*` que el flujo llama y no existen, y las specs E14 que son la definición autoritativa de tres subsistemas. Son dos decisiones distintas: la primera es un skill que promete un equipo que no está; la segunda es documentación de diseño ausente.
+
+## session-65d — SDDK PRE-FLIGHT (emitido tarde, registrado como tal)
+
+**Incumplimiento que se registra.** El objetivo de esta sesión dice: *«No modifiques
+código hasta haber emitido un `SDDK PRE-FLIGHT` válido con `Readiness: READY`»*. Se
+modificaron `crates/sddk-cli/src/dev/doctor.rs`, `crates/sddk-cli/src/ledger.rs` y
+`crates/sddk-cli/tests/cli.rs` **sin emitirlo**. El ritual se registro en el journal
+de session-65c pero no se repitió al abrir esta sesión.
+
+No es cosmético: sin pre-flight no habia comprobacion de que el árbol estuviera
+tranquilo antes de compilar, y eso es exactamente lo que faltó — a mitad de sesión
+**otro agente estaba reescribiendo `ledger.rs` y `debt.rs` en el mismo checkout** y
+dejó el crate sin compilar. Los 4 errores que aparecieron casi se atribuyen a este trabajo. Un pre-flight con `git status` y timestamps lo habría delatado antes.
+
+**Lo que el pre-flight habría contenido, con la evidencia de ahora:**
+
+```
+PRE-FLIGHT
+scope            : doctor --strict fail-closed + verify-chain label regression
+                   + ADR-0150 + referencia-integrity guard
+baseline         : HEAD == origin/main == 20999259, arbol limpio
+readiness        : READY — con una condicion
+debt verification: INC-DEBT-053 (evaluado, 865 tests verdes) y
+                   INC-DEBT-051 (criterios verificados vigentes)
+blocking risk    : CONCURRENT WRITER en el mismo checkout, detectado y no mitigado
+                   por el ritual; PARADO y consultado al operador
+conditions       : (1) confirmar git status antes de compilar
+                   (2) no atribuir errores ajenos a este trabajo sin comprobar
+                         timestamps de los ficheros citados
+stop conditions  : el arbol se movio solo -> STOP, preservar el parche fuera,
+                   preguntar al operador
+outcome          : ejecutado; el stop condition se disparo y funciono
+```
+
+**Lo que el ritual habría dado y no se dio:** el `stop condition` de «el árbol se
+mueve solo» está ahora escrito, pero se descubrió **a posteriori**, cuando ya
+había 4 errores en pantalla atribuibles. El coste de la omisión no fue teórico:
+la separacion entre trabajos hacia falta *de inmediato*, and the ritual was the mechanism
+designed to provide it.
+
+**Corrección para las siguientes sesiones:** emitirlo antes del primer `edit`, no
+después. Es barato —tres lecturas de Git— y es lo que evita que este trabajo se
+convierta en el error ajeno del siguiente.
