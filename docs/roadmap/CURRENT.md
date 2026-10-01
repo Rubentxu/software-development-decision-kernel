@@ -1,5 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-60, 2026-10-01T12:05Z): C3l.7 CERRADA como slice — el architecture gate ya no puede certificar conformidad con deuda abierta. AT-UAT-015 sigue NOT PASS, y honestamente: el repo NO es conforme.** El release v2.5.0 sigue BLOQUEADO por el toolchain musl. **SIGUIENTE: C5** (conformar el repo: eliminar ARCH003/ARCH008 e implementar los 10 evaluadores), que es lo que realmente cierra AT-UAT-015.
+
+**El supuesto del paquete para C3l.7 estaba obsoleto, y el defecto real era triple:**
+
+1. **El test que certificaba el gate no lo ejecutaba.** `check_architecture_runs_against_repo` resolvía el binario en `target/{release,debug}/sddk` y hacía `return` si no estaba. El target dir de esta máquina es compartido (`/var/home/rubentxu/cargo-targets`), así que reportaba **`ok` en `0.00s`**. Auto-verde por `return`: el mismo patrón que C3l.4 corrigió en otro sitio, reintroducido aquí. **Un gate que no se ejecuta no puede certificar nada.**
+2. **La afirmación era obsoleta.** Exigía `ARCH001` FAIL + exit 1. La edge `engine→storage` que la motivaba **ya no existe** (`sddk-engine/Cargo.toml` no depende de `sddk-storage`), y ARCH001 hoy es PASS. Con el binario presente, el test habría caído.
+3. **El defecto estructural:** `RuleStatus = {Pass, Fail, Waived, NotApplicable}` no tiene `OPEN_DEBT`, y `Waived` y `NotApplicable` salían **ambos por el mismo camino a `exit 0`**. "Conformidad" y "no demostrado" eran literalmente el mismo código, que es como un repo con deuda arquitectónica abierta podía citarse como conforme.
+
+**Hecho en session-60 (C3l.7):**
+
+- **Nuevo `sddk_domain::rules::verdict`:** veredicto tipado y agregado `Conformant` / `OpenDebt` / `Waived` / `NotEvaluated`, con `is_conformant()` **true sólo para `Conformant`**. El claim de conformidad no está disponible por defecto: hay que ganárselo. Entrada vacía ⇒ `NotEvaluated`, para que un fichero de reglas vacío no pueda acuñar conformidad. Un `Fail` de error entre varios `Pass` **domina**: no se promedia.
+- **No se añadió variante a `RuleStatus`** (21 consumidores): esto es una pregunta agregada, no un outcome por regla.
+- **Exit codes:** `0` sólo `Conformant`; `1` `OpenDebt` (contrato histórico intacto); **`2` nuevo** para `Waived`/`NotEvaluated`, que un consumidor fail-closed distingue de una violación probada. El JSON `--out` lleva `verdict` además de `exit_status`.
+- **El gate sobre el repo real:** antes `EXIT=0`; ahora `VERDICT: WAIVED (exit 2)` + *"This gate does NOT certify architectural conformance"*.
+- **Test reparado y movido** de `src/dev/tests/` a `tests/`: `CARGO_BIN_EXE_sddk` **no** existe en un test unitario del crate, y esa resolución ambiental era parte del bug. Sin `skip` (si el binario falta, el test falla), root resuelto desde `CARGO_MANIFEST_DIR` (un test de integración corre en `crates/sddk-cli`, no en la raíz), y **3 fixtures con `schema_version: 1.0.0`** cuando el loader exige `1.2.0` — que el skip ocultaba.
+- **Falsificadores F15 y F16 OBSERVED.** F16 es el decisivo: reponer el `skip` + el path inexistente devuelve **`finished in 0.00s`**, el patrón exacto que delató D1.
+- **Clasificación deliberada de `WarningThenRatchet`** (una tercera severidad que no aparece en la lectura inicial del paquete): se trata como warning, porque bloquear sobre una violación que esa severidad existe para *congelar en el sitio* impediría que el código nuevo cumpla, que es su propósito declarado.
+
+**Gates:** `verdict` 11/11 unitarios · `check_architecture_gate` 4/4 en **0.67s** (antes 0.00s sin ejecutar) · `context_fitness` 7/7 (contrato cross-crate de módulos root) · fmt limpio · clippy `-D warnings` exit 0 · **perfil completo 5233 passed / 0 failed / 23 ignored**.
+
+**Límites:** cerrar la slice **no** cierra AT-UAT-015. Su criterio es "0 error no-waived o waiver vigente tipado", y el repo tiene 2 waivers vivos (ARCH003, ARCH008) y 10 evaluadores sin implementar ⇒ veredicto `WAIVED`. **Conformar el repo es C5.** `Waived` tampoco tipa el expiry en el estado (el expiry por ancestry ya existe en el evaluador, pero no viaja en el veredicto). Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session60-c3l7-architecture-gate-verdict/RECEIPT.md`.
+
+---
+
 **Estado (session-59, 2026-10-01T11:50Z): INC-DEBT-046 CERRADA — el puntero de estado es legible por máquina y tiene una sola clave autoritativa. Reconciliada además una divergencia de git con `origin/main`. El release v2.5.0 sigue BLOQUEADO por el toolchain musl (verificado en vivo hoy).** Todo commiteado y **pusheado**: `origin/main == HEAD 6a3e5f4c` (divergencia 0/0). **SIGUIENTE PASO: C3l.7** (architecture gate, AT-UAT-015), que cierra la vía C3l y desbloquea C3n.
 
 **Hallazgo de entrada (no asumido):** `origin/main` contenía `86f2aad7` "chore(release): bump version" que la rama local **no** tenía. `f78a8bf2` era el ancestro común y **los dos bumps eran de contenido idéntico** (`Cargo.toml`/`CHANGELOG.md`/`manifest.toml` con diff vacío) — el remoto salió del step 1c de `release.sh`, el local del cierre de session-57. **Resuelto con `git rebase origin/main`:** historia lineal, `86f2aad7` ahora ancestro, Git descartó el bump redundante, y el árbol final es **idéntico** al HEAD de session-58 (`git diff --quiet` sin diferencias: cero bytes perdidos). No era un defecto del hook: eran dos ejecuciones del paso 1c sobre ramas hermanas.
