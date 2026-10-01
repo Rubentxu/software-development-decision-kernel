@@ -348,7 +348,7 @@ impl KnowledgeBasis {
         );
         Self {
             assertions: BTreeMap::new(),
-            basis_hash: derive_basis_hash(&BTreeMap::new()),
+            basis_hash: derive_basis_hash_at(&BTreeMap::new(), Some(revised_at)),
             revised_at,
         }
     }
@@ -370,14 +370,20 @@ impl KnowledgeBasis {
         let id = assertion.id().clone();
         let previous_hash = self.assertions.get(&id).map(|a| a.basis_hash().clone());
         self.assertions.insert(id, assertion);
-        self.basis_hash = derive_basis_hash(&self.assertions);
+        self.basis_hash = derive_basis_hash_at(&self.assertions, Some(self.revised_at));
         Ok((self.basis_hash.clone(), previous_hash))
     }
 
     /// Produce a new basis at a strictly greater `at` time. This is the
     /// canonical way to mark the basis as revised: a fresh basis is returned
-    /// with the same assertion set and a new basis hash (because the
-    /// `revised_at` participates in the hash).
+    /// with the same assertion set and a **new basis hash**, because
+    /// `revised_at` participates in the hash.
+    ///
+    /// That last sentence used to be false. The digest only ever hashed the
+    /// assertion set, so revising at a later time left `basis_hash`
+    /// byte-identical, and because [`KMT::evaluate`] compares hashes before
+    /// timestamps a pure revision was invisible to freshness. Fixed in
+    /// C3m.2; see [`derive_basis_hash_at`].
     pub fn revise(self, at: EventTime) -> Result<Self, KnowledgeError> {
         if at.0 <= self.revised_at.0 {
             return Err(KnowledgeError::StaleRevision {
@@ -387,7 +393,7 @@ impl KnowledgeBasis {
         }
         let mut new_basis = self;
         new_basis.revised_at = at;
-        new_basis.basis_hash = derive_basis_hash(&new_basis.assertions);
+        new_basis.basis_hash = derive_basis_hash_at(&new_basis.assertions, Some(at));
         Ok(new_basis)
     }
 
@@ -438,9 +444,34 @@ impl KnowledgeBasis {
 ///
 /// Pure function of the assertion set; `BTreeMap` iteration guarantees
 /// deterministic order across runs and across process restarts.
-fn derive_basis_hash(assertions: &BTreeMap<KnowledgeId, KnowledgeAssertion>) -> BasisHash {
+/// Domain-separated digest of a basis: its assertion set **and** the time it
+/// was last revised.
+///
+/// Before this function gained the `revised_at` parameter (C3m.2), only the
+/// assertion set was hashed, so `revise(at)` returned a basis with an
+/// **unchanged** hash even though `revise`'s own doc claimed "a new basis hash
+/// (because the `revised_at` participates in the hash)". Two bases with
+/// identical content revised at different times were indistinguishable — and
+/// since `KMT::evaluate` compares hashes *before* timestamps, a pure revision
+/// was invisible to freshness.
+///
+/// `revised_at: None` reproduces the legacy v1 domain. It exists so the
+/// historical identity of a basis stays *reproducible* (and testable), not to
+/// mint identities: no live code path constructs one. The version tag
+/// separates the domains, so a stored v1 hash fails closed against a v2 basis
+/// (mismatch → re-verified) rather than comparing equal by accident.
+fn derive_basis_hash_at(
+    assertions: &BTreeMap<KnowledgeId, KnowledgeAssertion>,
+    revised_at: Option<EventTime>,
+) -> BasisHash {
     let mut hasher = Sha256::new();
-    hasher.update(b"sddk.knowledge.basis.v1\n");
+    match revised_at {
+        Some(at) => {
+            hasher.update(b"sddk.knowledge.basis.v2\n");
+            hasher.update((at.0 as u64).to_le_bytes());
+        }
+        None => hasher.update(b"sddk.knowledge.basis.v1\n"),
+    }
     hasher.update((assertions.len() as u64).to_le_bytes());
     for (id, assertion) in assertions {
         // ids are sorted by BTreeMap; assertion hashes are stable.
@@ -925,6 +956,86 @@ mod tests {
         // Cannot revise backwards.
         let err = revised.revise(EventTime(15)).unwrap_err();
         assert!(matches!(err, KnowledgeError::StaleRevision { .. }));
+    }
+
+    /// C3m.2 — a revision changes the basis identity, as `revise`'s contract
+    /// states.
+    ///
+    /// This was false until session-62: `derive_basis_hash` hashed only the
+    /// assertion set, so revising at a later time left `basis_hash` identical.
+    /// The test above could not catch it because it only asserts monotonicity
+    /// of `revised_at` — which *was* correct. The gap was the identity claim.
+    #[test]
+    fn revise_changes_the_basis_hash_when_content_is_unchanged() {
+        let mut basis = KnowledgeBasis::empty(EventTime(10));
+        basis.insert(declare_one("k", 1)).unwrap();
+        let before = basis.clone();
+        let after = basis.revise(EventTime(20)).unwrap();
+
+        assert_ne!(
+            before.basis_hash(),
+            after.basis_hash(),
+            "revise() must produce a new basis hash even when the assertion set is unchanged"
+        );
+        // The content, meanwhile, must be untouched — only identity moves.
+        assert_eq!(before.assertions(), after.assertions());
+        assert_eq!(after.revised_at(), EventTime(20));
+    }
+
+    /// The same revision applied at two different times must not collide.
+    ///
+    /// This is the property that matters downstream: `KMT::evaluate` compares
+    /// hashes *before* timestamps, so if two distinct revisions shared a hash
+    /// the freshness evaluation could not see the difference between them.
+    #[test]
+    fn revisions_at_different_times_have_distinct_identities() {
+        let mut basis = KnowledgeBasis::empty(EventTime(1));
+        basis.insert(declare_one("k", 1)).unwrap();
+        let at_10 = basis.clone().revise(EventTime(10)).unwrap();
+        let at_20 = basis.revise(EventTime(20)).unwrap();
+        assert_ne!(
+            at_10.basis_hash(),
+            at_20.basis_hash(),
+            "two revisions of the same content must be distinguishable by identity"
+        );
+    }
+
+    /// An untouched basis must not collide with a revised one: same content,
+    /// no revision vs. same content revised.
+    #[test]
+    fn an_untouched_basis_is_distinguishable_from_a_revised_one() {
+        let mut basis = KnowledgeBasis::empty(EventTime(10));
+        basis.insert(declare_one("k", 1)).unwrap();
+        let untouched = basis.clone();
+        let revised = basis.revise(EventTime(20)).unwrap();
+        assert_ne!(
+            untouched.basis_hash(),
+            revised.basis_hash(),
+            "content identity alone must not stand in for revision identity"
+        );
+    }
+
+    /// Falsifier F19 (not shipped): reverting `revise` to hash only the
+    /// assertion set must make the two identity tests above fail. Without this
+    /// they would pass vacuously if the hash ever stopped being checked.
+    #[test]
+    fn falsifier_f19_identity_is_load_bearing() {
+        let mut basis = KnowledgeBasis::empty(EventTime(10));
+        basis.insert(declare_one("k", 1)).unwrap();
+        let before = basis.clone();
+        let revised_at_20 = basis.clone().revise(EventTime(20)).unwrap();
+        let legacy_at_20 = derive_basis_hash_at(before.assertions(), None);
+
+        // The v2 digest at t=20 must differ from both the pre-revision identity
+        // and the legacy v1 digest of the same content.
+        assert_ne!(before.basis_hash(), &legacy_at_20);
+        assert_ne!(revised_at_20.basis_hash(), &legacy_at_20);
+        // And the v1 domain remains reproducible for the same content, which
+        // is why it exists.
+        assert_eq!(
+            legacy_at_20,
+            derive_basis_hash_at(revised_at_20.assertions(), None)
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────
