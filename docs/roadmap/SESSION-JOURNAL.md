@@ -8167,3 +8167,154 @@ documentales en verde · guard de superficies 8/8 · guard de referencias OK.
 **Pendiente:** publicar `2bc0511c` + este cierre (op-5), y decidir las 4 citas
 de basename ambiguo. Y sigue sin tocar: INC-DEBT-051 (arreglo = contrato
 nuevo), la migración de los 25 receipts, y la RC 0.45.0 de PipelineK.
+
+---
+
+## session-65h — sexta superficie, y el staging que era una quinta copia del contrato (2026-10-01)
+
+**Baseline** `667fb75b` (publicado) → **HEAD** `bc6e2cfd` (sin publicar).
+Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+### Lo que se buscaba
+
+Cerrar la sexta superficie `docs/impeccable-reference` (los dos ficheros que
+`agents/impeccable-primary.md` cita y que el bundle no llevaba). Al verificar
+que los ficheros **viajan de verdad** — ejecutando la fase 5, no leyendo el
+código — aparecieron dos defectos que no tenían nada que ver con la sexta
+superficie.
+
+### (A) El staging era una quinta copia del contrato
+
+`scripts/release.sh`aba las superficies con una lista escrita a mano
+(`cp -r agents skills assets …`) y las volvía a nombrar en el `tar`. De ahí
+salieron los dos defectos:
+
+**(a) el `tar` nombraba superficies que el staging nunca copiaba.** Al añadir
+`specs` y `docs/impeccable-reference` a la lista del `tar` se olvidó en la del
+`cp -r`. Fase 5 aislada, RED medido:
+
+```
+tar: specs: No se puede efectuar stat: No existe el fichero o el directorio
+tar: docs/impeccable-reference: No se puede efectuar stat: …
+exit=2
+```
+
+`set -euo pipefail` (`release.sh:55`) lo vuelve un release **abortado**, no
+uno corrupto: ruidoso, pero **incompleto**. Y un subdirectorio necesita
+además su **padre** creado antes del `cp -r`, o aterriza plano como
+`dst/<hoja>` y el `tar`, que pide el camino con prefijo, no encuentra nada.
+Regla ya documentada para `prompts/sddk`; `docs/impeccable-reference` la
+sufría por primera vez.
+
+**(b) `cp -r` copiaba ficheros que el manifest no lista.** `cp -r <superficie>`
+copia lo que hay en disco, **incluido lo que `.gitignore` excluye**. Contando
+ficheros reales del tar contra entradas del manifest:
+
+```
+superficie                    tar  manifest
+agents                         73        72
+skills                        245       245
+prompts/sddk                   44        44
+assets                         18        17
+specs                          14        14
+docs/impeccable-reference       2         2
+```
+
+Los dos sobrantes, ambos untracked y ambos covered por `.gitignore`:
+`agents/.atl/.skill-registry.cache.json` (`.gitignore:26`) y
+`assets/agent-models.yaml.bak` (`.gitignore:17`). Consecuencia: el
+`manifest_sha256` de `BUNDLE.toml` **no describía el propio tarball** — dos
+ficheros sin digest, que la instalación no puede verificar. La ruta cloud
+**no** sufre (b): empaqueta un checkout limpio.
+
+### (B) Resolución — Ruta 1: la autoridad manda
+
+El staging se deriva de `MANIFEST.sha256`, que step 4 ya verifica fail-closed:
+
+```bash
+awk '{print $2}' MANIFEST.sha256 | xargs -d '\n' cp --parents -t "$BUNDLE_STAGE"
+```
+
+Elimina las dos clases de defecto a la vez: lo que el manifest lista viaja, y
+nada más puede viajar. Con ella desaparece la lista escrita a mano, y con ella
+el coste de editarla cada vez que se añade una superficie — que es exactamente
+lo que produjo (a). Se añade un contrato fail-closed: el conjunto de ficheros
+del staging es exactamente el del manifest + `BUNDLE.toml`.
+
+Las dos rutas ya no enuncian el mismo hecho igual, y eso es **correcto**:
+
+| ruta | cómo declara el contenido | por qué |
+|---|---|---|
+| `release.sh` (local) | deriva del manifest | corre en un árbol donde **sí** hay debris |
+| `release.yml` (cloud) | lista explícita | checkout limpio; la lista es auditable |
+
+### (C) El guard anterior no podía ver ninguno de los dos
+
+`tests/test_bundle_surface_coverage.py` (session-65g) comparaba la lista de
+superficies del `tar` contra `MANIFEST_SURFACES`. Pasaba con las dos partes
+rotas, y **no por casualidad**: ambos defectos son invisibles a una
+comparación de listas.
+
+- (a) metía `specs` en la lista del `tar` → la comparación pasaba. El `cp -r`
+  no estaba en ninguna lista que el gate mirara.
+- (b) son ficheros que **no están en ninguna lista**, porque no deben estarlo.
+  Ninguna comparación de listas puede observar lo que correctamente no figura
+  en ninguna.
+
+> **Un guard que compara dos listas solo detecta la divergencia entre
+> declaraciones.** No detecta que una declaración deje de ser la que se
+> obedece, ni lo que se publica sin declarar. Las dos cosas aparecieron al
+> **ejecutar** el staging y contar ficheros.
+
+### (D) Guard reescrito: la propiedad, no la lista
+
+12 tests. Los que importan: staging derivado del manifest (estructural, no
+una lista que hoy coincide); `tar` empaquetando el árbol entero; manifest casa
+con `git ls-files` **en ambas direcciones**; y un **canario** untracked
+colocado bajo una superficie real que **no debe** llegar al staging — el único
+test que puede ver (b).
+
+### (E) Falsificadores: 9 mutaciones, las 9 detectadas
+
+M1 staging manual · M2 `tar` re-enumerando · M3 superficie sin campo · M4
+campo huérfano · M5 brazo de conteo perdido · M6 workflow pierde superficie ·
+M7 workflow envía directorio no cubierto · M8 manifest editado a mano · M9
+`tar` empaquetando un subpath. Árbol restaurado en verde.
+
+**La falsificación encontró dos puntos ciegos en el guard nuevo mismo**, ambos
+de la misma familia:
+
+1. `assertNotIn("agents", members)` + `len(members) == 1` lo satisfacía
+   `software-development-decision-kernel/agents` — un subconjunto sigue siendo
+   un miembro, solo que el inesperado. **La contención no es la igualdad.**
+2. `test_staged_tree_matches_the_manifest_exactly` comparaba el manifest
+   **consigo mismo**: ambas mitades se derivaban de él, así que borrar una
+   entrada a mano la borraba de las dos y el gate seguía verde mientras el
+   fichero dejaba de publicarse en silencio. **Tautológico.** El test nuevo
+   se ancla en `git ls-files`, una autoridad que el manifest no puede definir
+   para sí mismo.
+
+Sexta vez que un falsador encuentra en sí mismo lo que la inspección no.
+
+### Evidencia ejecutada
+
+`cargo fmt --check` limpio · `clippy -p sddk-cli --all-targets -D warnings`
+limpio · **409 tests `dev`, 0 failed** · `shellcheck scripts/release.sh`
+limpio · manifest **394** ficheros, `--verify` OK · **12/12** guard de
+superfices · 3/3 guard de referencias · 10/10 índice de deuda · 15/15
+changelog · 48/48 hook de push · puntero `PASS`.
+
+### Pendiente
+
+- **Push de `bc6e2cfd`** — requiere OK explícito (op-5).
+- INC-DEBT-051 (arreglo = contrato nuevo), migración de los 25 receipts, RC
+  0.45.0 de PipelineK, y las 19 superficies fuera de presupuesto de
+  brevedad: sin tocar.
+
+**Primer paso preciso de la sesión siguiente:** publicar `bc6e2cfd` + este
+cierre. Después, la pregunta que este caso deja abierta y que **no** se ha
+decidido: `release.yml` sigue enunciando la lista de superficies a mano. Es
+segura porque empaqueta un checkout limpio, pero es una quinta copia que
+depende de una propiedad del entorno y no del código. Se puede derivar igual
+que la local; no se ha hecho porque la ruta cloud no puede probarse en local
+y el guard no podría verificarlo.
