@@ -75,3 +75,9 @@ golden-dataset/results/
 # debt-report.{json,md}, debt-verify-report.md, verify-findings.json, etc.
 # Per cycle-36 discipline: no amend previous cycles, no commit runtime CAS.
 .sddk/cycles/
+
+# EXT provider gate receipts (C3l.4). `tests/ext_provider_gate.sh` rewrites
+# this file on every run, so committing it would dirty the tree on each
+# invocation. The durable observation belongs in docs/roadmap/UAT-MATRIX.md;
+# this file is a run artifact, not evidence.
+tests/receipts/ext/
