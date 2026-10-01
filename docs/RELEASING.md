@@ -46,6 +46,35 @@ non-distributable by construction. Contract tests live in
 - ✅ Linux aarch64 (musl static)
 - ⏳ macOS x86_64 + arm64 (pending: `cargo-zigbuild` toolchain already installed;
   need to generate binaries and upload to release)
+
+**Changelog coverage gate (step 2b, INC-DEBT-047):**
+
+Step 2b runs `tests/test_changelog_coverage.sh` after the version is read and
+**before the build**. It requires that the `## [<workspace version>]` section
+exists exactly once, is non-empty, and represents every `feat`/`fix`/`test`
+commit since the last published tag.
+
+The match is by **fingerprint** — type, scope and the first four words of the
+subject payload — not by the mere presence of a `feat(...)` line. A generic
+entry such as `feat(architecture): improvements to the architecture subsystem`
+does **not** satisfy `feat(architecture): el gate de conformidad distingue
+deuda abierta de conformidad`; the gate checks that *this* entry is there.
+
+This exists because the gap was live: 26 commits sat between `v2.4.2` and HEAD
+— including a whole `feat` slice — while the `[2.5.0]` section still listed
+only the features present when the bump was committed. Publishing then would
+have shipped an artifact whose changelog misdescribed its own contents, the
+same defect shape as C3l.7 one layer down.
+
+The gate is skipped by `--dry-run` (nothing is published, so there is nothing to
+misdescribe) and it fails **before** the build: a missing entry found at step 9
+costs a release deletion, found here it costs a commit.
+
+Two distinct changelog tests, not overlapping:
+- `tests/test_changelog_merge.sh` — the merge in `release-bump.sh` does not
+  duplicate a version header.
+- `tests/test_changelog_coverage.sh` — the section under that header describes
+  the commits it ships.
 - ⏳ Windows x86_64 (pending: requires `#[cfg(unix)]` carve-out in code using
   `std::os::unix::*`)
 

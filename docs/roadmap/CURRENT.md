@@ -1,5 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-61, 2026-10-01T12:40Z): cerrado INC-DEBT-047 — el CHANGELOG declarado tenía que describir el trabajo, y ahora un gate lo exige antes del build. Release v2.5.0 sigue BLOQUEADO por musl-gcc, pero su contenido declarado ya es fiel.** **SIGUIENTE: levantar el bloqueo de musl y publicar v2.5.0, o bien C3m (si el operador lo prefiere antes del release).**
+
+**Defecto encontrado y medido:** había **26 commits sin publicar** desde `v2.4.2` — incluida una slice `feat(architecture)` entera (C3l.7), X07, un `fix(roadmap)` y tres `test` — frente a una sección `## [2.5.0]` que listaba **dos** features, las que ya estaban cuando se commiteó el bump. `release-bump.sh --dry-run` confirma `no bump to derive: the workspace already declares the pending release (2.5.0)`: **el trabajo crecía detrás de una sección congelada sin ninguna señal**. Y `scripts/release.sh` no mencionaba `CHANGELOG` en ninguno de sus pasos.
+
+**Por qué no era cosmético:** es **la misma forma de defecto que C3l.7, una capa más abajo** — un artefacto que no declara lo que es. El agravante: el release llevaba **tres sesiones detenido** en un paso físico (instalar `musl-gcc`), y en ese intervalo se acumularon dos slices enteras sin que nadie lo notara. Ningún guard lo delató porque no existía.
+
+**Hecho en session-61:**
+
+1. **`tests/test_changelog_coverage.sh`** (nuevo): la sección de la versión del workspace existe exactamente una vez, tiene contenido, y todo commit `feat`/`fix`/`test` desde el último tag está representado **por huella** — tipo + scope + las **4 primeras palabras del payload**, no mera presencia del tipo.
+2. **Integrado como paso 2b de `release.sh`, antes del build**: un hueco detectado en el paso 9, después de `gh release create`, cuesta borrar un release; detectado aquí cuesta un commit. `--dry-run` lo salta por diseño.
+3. **Falsificadores F17 y F18 OBSERVED.** **F18 es el que da valor al gate**: sustituir el payload por `feat(architecture): improvements to the architecture subsystem…` **conservando el scope** ⇒ exit 1. Sin la huella, un `feat` genérico habría satisfecho a cualquier otro `feat` del mismo scope.
+4. **CHANGELOG de 2.5.0 actualizado** con los 8 commits reales, más una nota de que la release sigue bloqueada: una sección que describe un artefacto no publicado debe decirlo, no dejar que el lector lo infiera.
+5. **Los dos tests de changelog no se solapan**: `test_changelog_merge.sh` prueba que el merge **no duplique** una cabecera; `test_changelog_coverage.sh` prueba que la sección **describa lo que se publica**. Son propiedades distintas y la segunda no la comprobaba nadie.
+6. **Corrección de mi propio cierre de session-60:** escribí que "conformar el repo (eliminar waivers, implementar evaluadores) es **C5**". **Es INCORRECTO.** Leído `ROADMAP.md:124`, C5 es "evolución **condicionada a pruebas de valor** (P2/P3)" y su salida dice literalmente que "cada idea es DEFERRED hasta que el disparador y el SCOPE existan". Conformar el repo para cerrar AT-UAT-015 es **C3l.7 (que el UAT deja abierto) o C4**, no C5. Ninguno de los disparadores de C5 (X08, J7, J8, J9, R11) está activado.
+
+**Gates:** `test_changelog_coverage` **PASS=11 FAIL=0** · `test_changelog_merge` PASS · `test_debt_index_coherence` **PASS=10 FAIL=0** · shellcheck limpio en el gate nuevo y en `release.sh` · `bash -n` limpio en ambos · `git diff --check` limpio. Perfil completo del workspace **no relanzado**: no se tocó código Rust (SUT = `CHANGELOG.md` + `release.sh` + gate shell), así que la evidencia de session-60 (5233 passed / 0 failed) sigue vigente.
+
+**Límites:** el gate compara tipo, scope y 4 palabras, así que una reescritura profunda del subject puede dar un **falso negativo** (revisar de más), preferible al falso positivo (publicar de menos). Excluye `docs`/`chore` a propósito: listar cada sincronización de punteros es ruido. Compara contra el último **tag publicado**, no contra `origin/main..HEAD`: los commits que no entran en la release quedan fuera del contrato, que es lo correcto.
+
+---
+
 **Estado (session-60, 2026-10-01T12:05Z): C3l.7 CERRADA como slice — el architecture gate ya no puede certificar conformidad con deuda abierta. AT-UAT-015 sigue NOT PASS, y honestamente: el repo NO es conforme.** El release v2.5.0 sigue BLOQUEADO por el toolchain musl. **SIGUIENTE: C5** (conformar el repo: eliminar ARCH003/ARCH008 e implementar los 10 evaluadores), que es lo que realmente cierra AT-UAT-015.
 
 **El supuesto del paquete para C3l.7 estaba obsoleto, y el defecto real era triple:**

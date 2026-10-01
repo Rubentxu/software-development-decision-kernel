@@ -286,20 +286,28 @@ El full profile no debe copiarse dentro de cada inner loop de `apply`.
 
 **Entry point canónico:** `bash scripts/release.sh`.
 
-Ese script ejecuta los 14 pasos abajo en orden, gateados por el previo.
+Ese script ejecuta los 15 pasos abajo en orden, gateados por el previo.
+
+> **Nota (session-61):** el pipeline pasó de 14 a 15 pasos con la incorporación
+> del **2b — changelog coverage** (`tests/test_changelog_coverage.sh`).
+> El changelog declarado tiene que describir el trabajo que se publica; sin
+> ese gate, 26 commits (incluida una slice `feat` entera) se acumulaban detrás
+> de una sección congelada y el artefacto habría salido describiéndose mal.
+> `--dry-run` salta el 2b porque no publica nada.
 Cualquier paso que falle aborta con código no-cero. Si el script no puede
 correr en tu entorno, el equivalente manual está en `docs/RELEASING.md`
 sección "Manual fallback" — pero la regla es: **si no puedes correr el
 script, abre un ciclo para arreglar lo que sea que te lo impide, no
 hagas un release a medias**.
 
-### Pipeline (14 pasos)
+### Pipeline (15 pasos)
 
 | # | Paso | Gate | Cómo se verifica |
 |---|------|------|------------------|
 | 0 | Preflight | `gh auth status`, branch `main`, tree limpio, HEAD = `chore(release): bump version`, `jq` en PATH | `git log -1 --format=%s` matchea regex |
 | 1 | Workspace green | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | exit code 0 |
 | 2 | Read version | de `Cargo.toml` workspace.package.version | regex `^v?[0-9]+\.[0-9]+\.[0-9]+` |
+| 2b | **Changelog coverage** (INC-DEBT-047) | `tests/test_changelog_coverage.sh`: la sección `## [<version>]` existe una vez, tiene contenido y representa todo `feat`/`fix`/`test` desde el último tag, por **huella** (tipo + scope + 4 primeras palabras del payload) | `PASS=11 FAIL=0`; exit 0. Corre antes del build: un hueco tras `gh release create` cuesta borrar un release. `--dry-run` lo salta |
 | 3 | Build binary | `cargo build --release --bin sddk` | `$BIN --version` |
 | 4 | Manifest | `$BIN dev manifest --root .` + `--verify` | `verify_manifest` sin mismatches (RDI) |
 | 5 | Bundle tarball | `tar czf` en **layout raíz** (`agents/`, `skills/`, `prompts/sddk/`, `assets/`, `MANIFEST.sha256` sin directorio envolvente) | `bundle.tar.gz.sha256` |
@@ -345,7 +353,7 @@ porque el bloque vive dentro del script). No skip-able con
 
 ```bash
 bash scripts/release.sh               # flujo completo (0-13)
-bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica, no corre 9b)
+bash scripts/release.sh --dry-run     # solo pasos 0-8 (no publica, no corre 9b ni 2b)
 bash scripts/release.sh --skip-tests  # asume que ya corriste los gates
 bash scripts/release.sh --skip-install # pasos 0-8 (no toca local; 9b no corre porque presupone 9)
 bash scripts/release.sh --force       # sobrescribe release existente en GH
