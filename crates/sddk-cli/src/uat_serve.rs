@@ -267,28 +267,11 @@ fn handle_ingest(stream: &mut TcpStream, body: &[u8], environment: &crate::CliEn
 }
 
 fn compute_verdict(session: &UatSession) -> &'static str {
-    let failed = session
-        .results
-        .iter()
-        .filter(|r| matches!(r.status, sddk_domain::UatStatus::Fail))
-        .count();
-    let blocked = session
-        .results
-        .iter()
-        .filter(|r| matches!(r.status, sddk_domain::UatStatus::Blocked))
-        .count();
-    let not_run = session
-        .results
-        .iter()
-        .filter(|r| matches!(r.status, sddk_domain::UatStatus::NotRun))
-        .count();
-    if failed > 0 || not_run > 0 {
-        "NOT_READY"
-    } else if blocked > 0 {
-        "READY_WITH_RISKS"
-    } else {
-        "READY"
-    }
+    // The rule lives in `UatVerdict::from_results` (sddk-domain). It used to be
+    // spelled out here, and the copy in `uat.rs` counted the same three
+    // statuses and reached `Ready` over an empty session. Two authorities for
+    // one concept, both fail-open.
+    sddk_domain::UatVerdict::from_results(&session.results).as_str()
 }
 
 fn escape_json(s: &str) -> String {
@@ -389,6 +372,78 @@ mod tests {
         // is what we're validating.
         let _ = http_post(&server.ingest_url, "application/json", b"not json");
         drop(server);
+    }
+
+    // ── El veredicto no se emite sobre cero escenarios, ni sobre escenarios
+    // ── incompletos. `READY` es una afirmacion positiva de disponibilidad: la
+    // ── consume quien decide si se publica. Un `READY` emitido sobre una
+    // ── sesion vacia es la misma clase de defecto que INC-DEBT-054
+    // ── (`doctor --strict` exit 0 sin medir) y que INC-DEBT-053
+    // ── (`verify-chain` PASS sobre cero eventos): un veredicto que no
+    // ── proviene de examinar nada.
+
+    fn session_with(statuses: &[(&str, &str)]) -> UatSession {
+        let results: String = statuses
+            .iter()
+            .map(|(id, st)| format!("  - scenario_id: {id}\n    status: {st}\n"))
+            .collect();
+        serde_saphyr::from_str(&format!(
+            "schema_version: 2\nsession_id: s\nplan_ref: v2.0.0\nrelease: v2.0.0\nexecutor: fara\nstarted_at: 2026-08-09T00:00:00Z\nresults:\n{results}"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn una_sesion_sin_escenarios_no_es_ready() {
+        // RED: la implementacion actual cuenta Fail/Blocked/NotRun sobre una
+        // coleccion vacia, obtiene tres ceros y cae en el `else` -> "READY".
+        // Una sesion donde no se ejecuto nada no es una sesion lista.
+        let session = session_with(&[]);
+        assert!(
+            session.results.is_empty(),
+            "precondicion: la sesion no tiene escenarios"
+        );
+        assert_eq!(
+            compute_verdict(&session),
+            "NOT_READY",
+            "cero escenarios ejecutados no puede producir un veredicto afirmativo"
+        );
+    }
+
+    #[test]
+    fn una_sesion_de_escenarios_parciales_es_ready_with_risks() {
+        // Partial es de primera clase (uat.rs lo trata en 5 sitios y
+        // uat-reporter.md lo exige en el resumen) y ninguna de las DOS copias
+        // sin plan lo contaba: caia en el mismo `else` que READY. RED medido:
+        // left "READY", right "NOT_READY".
+        //
+        // El arreglo NO lo escala a NotReady. La autoridad previa es
+        // `aggregate_report`, que produce el uat-report.yaml publicado y lo
+        // clasifica como riesgo; escalarlo seria inventar una decision de
+        // contrato. Lo que este test fija es que la copia sin plan coincide
+        // con la autoridad -- READY_WITH_RISKS, y sobre todo que ya no es READY.
+        let session = session_with(&[("S-1", "PARTIAL"), ("S-2", "PARTIAL")]);
+        assert_eq!(
+            compute_verdict(&session),
+            "READY_WITH_RISKS",
+            "escenarios parciales no pueden leerse como PASS, y la autoridad \
+             vigente los clasifica como riesgo, no como bloqueo"
+        );
+    }
+
+    #[test]
+    fn una_sesion_con_todo_pass_sigue_siendo_ready() {
+        // Diente positivo: el arreglo no puede cerrarlo degradando el caso bueno.
+        let session = session_with(&[("S-1", "PASS"), ("S-2", "PASS")]);
+        assert_eq!(compute_verdict(&session), "READY");
+    }
+
+    #[test]
+    fn una_sesion_bloqueada_sigue_siendo_ready_with_risks() {
+        // Segundo diente positivo: el caso blocked no debe colapsar a NOT_READY
+        // al anadir la regla de vacio/partial.
+        let session = session_with(&[("S-1", "PASS"), ("S-2", "BLOCKED")]);
+        assert_eq!(compute_verdict(&session), "READY_WITH_RISKS");
     }
 
     /// Minimal blocking HTTP GET (no external dep needed).

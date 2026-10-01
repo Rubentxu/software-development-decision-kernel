@@ -21,6 +21,8 @@ You are `uat-reporter`, the **synthesizer**. You merge one or more sessions (far
    - `READY` — no failures, no blockers.
    - `READY_WITH_RISKS` — blockers only (not failed), or failures in P1/P2 with documented workarounds.
    - `NOT_READY` — any P0 failure, or failures without workaround.
+   - **`NOT_READY` also when the plan has no scenarios, or every scenario is `NOT_RUN`.** A verdict is a claim about an examination; over nothing there is no examination to report on, and a plan with zero scenarios cannot be `READY` (INC-DEBT-055). The single implementation of this rule is `UatVerdict::from_counts` / `from_results` in `crates/sddk-domain/src/uat.rs` — if you are about to re-derive it, read that instead of restating it.
+   - `PARTIAL` is counted as a **risk**, not a blocker: it maps to `READY_WITH_RISKS`. Note that ADR-012 §6 does not actually mention partial, so this is the pre-existing classification of `aggregate_report` being made explicit rather than a new decision — if the contract should change, that is a contract change, not a local fix.
 5. **`not_ready_blockers`** — one line per failing scenario: `S-7 (añadir miembro: falla al cambiar permisos)`.
 6. **`features`** — per-feature rollup with coverage % and per-scenario status + executor.
 

@@ -1192,22 +1192,20 @@ pub(crate) fn process_session_for_ingest(
         .iter()
         .filter(|r| r.status == sddk_domain::UatStatus::Blocked)
         .count() as u32;
-    let not_run = session
-        .results
-        .iter()
-        .filter(|r| r.status == sddk_domain::UatStatus::NotRun)
-        .count() as u32;
+    // `not_run` ya no se cuenta aquí: el veredicto lo lee `from_results`, que
+    // recorre `session.results` por su cuenta. Contarlo dos veces era justo la
+    // duplicación que estaINC elimina.
     let total = session.results.len().max(1) as u32;
     // Coverage por-sesion se re-agrega abajo sobre los totales acumulados
     // del release (S3.4); el valor local solo alimentaba el upsert pisado.
     let _coverage = 100.0 * (passed + blocked) as f64 / total as f64;
-    let verdict = if failed > 0 || not_run > 0 {
-        "NOT_READY"
-    } else if blocked == 0 {
-        "READY"
-    } else {
-        "READY_WITH_RISKS"
-    };
+    // The rule lives in `UatVerdict::from_results` (sddk-domain). This copy
+    // counted Fail/Blocked/NotRun and reached "READY" over an empty session:
+    // an `executor: fara` session with no results sailed past the integrity
+    // guard (which only applies to `executor: human`) and was persisted as
+    // ready, with `total = len().max(1)` hiding the emptiness in the coverage
+    // denominator too.
+    let verdict = sddk_domain::UatVerdict::from_results(&session.results);
     let duration = session
         .results
         .iter()
@@ -1243,7 +1241,7 @@ pub(crate) fn process_session_for_ingest(
         .upsert_uat_result(&UatResultRow {
             project_id,
             tag_version: session.release.clone(),
-            verdict: verdict.into(),
+            verdict: verdict.as_str().into(),
             coverage_pct: agg_coverage,
             defects: agg_defects,
             session_count: agg_sessions,
@@ -2378,13 +2376,7 @@ fn aggregate_report(plan: &UatPlan, sessions: &[UatSession]) -> UatReport {
         0.0
     };
 
-    let verdict = if failed > 0 || not_run > 0 {
-        UatVerdict::NotReady
-    } else if blocked > 0 || partial > 0 {
-        UatVerdict::ReadyWithRisks
-    } else {
-        UatVerdict::Ready
-    };
+    let verdict = sddk_domain::UatVerdict::from_counts(failed, not_run, blocked, partial);
 
     UatReport {
         schema_version: 2,

@@ -767,6 +767,73 @@ pub enum UatVerdict {
     NotReady,
 }
 
+impl UatVerdict {
+    /// The verdict rule, over already-aggregated counters.
+    ///
+    /// This is the rule `aggregate_report` already applied to the published
+    /// `uat-report.yaml`, and it is the most considered of the three copies:
+    /// it counted `Partial`, which the other two did not. It is now the only
+    /// copy, so the three call sites cannot drift.
+    ///
+    /// Precedence, unchanged from the implementation this replaces: any
+    /// failure or not-run outranks any risk, and risks outrank readiness.
+    /// `Partial` is a risk, not a blocker, which is what the pre-existing
+    /// `aggregate_report` decided.
+    pub fn from_counts(failed: u32, not_run: u32, blocked: u32, partial: u32) -> Self {
+        if failed > 0 || not_run > 0 {
+            Self::NotReady
+        } else if blocked > 0 || partial > 0 {
+            Self::ReadyWithRisks
+        } else {
+            Self::Ready
+        }
+    }
+
+    /// The verdict of one session, which has no plan to cross-reference.
+    ///
+    /// This is the rule the control-plane upsert (`uat.rs`) and the HTTP
+    /// response (`uat_serve.rs`) each re-spelled, and both were fail-open:
+    /// counting Fail/Blocked/NotRun over an empty `results` yields three
+    /// zeros and fell through to `Ready`. A session that executed no scenario
+    /// is not a session that is ready — the same refusal
+    /// `process_session_for_ingest` already applies to a fabricated
+    /// `executor: human` session, extended here to the agent path.
+    ///
+    /// The empty case is the whole of this function's contribution over
+    /// `from_counts`; everything else delegates, so the two cannot disagree.
+    /// `Partial` is deliberately NOT escalated to `NotReady` here. It was
+    /// tempting — a partially executed scenario is not a pass, and reading one
+    /// as `Ready` is wrong — but `aggregate_report` classifies it as a risk,
+    /// and `agents/uat-reporter.md`'s definitions of `READY_WITH_RISKS`
+    /// (ADR-012 §6: "blockers only, or failures with documented workarounds")
+    /// do not mention partial at all. Which of the two is correct is a
+    /// contract decision, not a bug fix, so it is recorded rather than
+    /// silently decided here. What this function removes is the third answer.
+    pub fn from_results(results: &[UatScenarioResult]) -> Self {
+        if results.is_empty() {
+            return Self::NotReady;
+        }
+        let count = |s: UatStatus| results.iter().filter(|r| r.status == s).count() as u32;
+        Self::from_counts(
+            count(UatStatus::Fail),
+            count(UatStatus::NotRun),
+            count(UatStatus::Blocked),
+            count(UatStatus::Partial),
+        )
+    }
+
+    /// The wire/display form. One authority so the three CLI call sites and
+    /// the published contract in `agents/uat-reporter.md` cannot spell it
+    /// differently.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "READY",
+            Self::ReadyWithRisks => "READY_WITH_RISKS",
+            Self::NotReady => "NOT_READY",
+        }
+    }
+}
+
 /// One guided step of a scenario (plain language, junior-friendly).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -4618,5 +4685,93 @@ mod disagreement_tests {
         r.scenario_id = "  ".into();
         let errors = validate_disagreement(&r);
         assert_eq!(errors.len(), 2);
+    }
+}
+
+/// INC-DEBT-055. The verdict rule has one authority; these are its teeth, at
+/// the layer the authority lives in, so they cannot be satisfied by a call site
+/// that happens to be wired correctly.
+#[cfg(test)]
+mod verdict_rule_tests {
+    use super::*;
+
+    fn result(id: &str, status: UatStatus) -> UatScenarioResult {
+        UatScenarioResult {
+            scenario_id: id.into(),
+            status,
+            comment: None,
+            evidence: vec![],
+            duration_minutes: 0,
+            verdict_at: None,
+            verdict_duration_ms: None,
+            tester_notes: None,
+            observed: None,
+            failure_reason: None,
+            linked_defect: None,
+            repro_command: None,
+            oracle_assessments: vec![],
+        }
+    }
+
+    #[test]
+    fn sin_escenarios_no_es_ready() {
+        // El defecto: contar Fail/Blocked/NotRun sobre nada da tres ceros y cae
+        // en el `else`. Una sesion que no ejecuto nada no esta lista.
+        assert_eq!(UatVerdict::from_results(&[]), UatVerdict::NotReady);
+        assert_eq!(UatVerdict::from_results(&[]).as_str(), "NOT_READY");
+    }
+
+    #[test]
+    fn la_precedencia_por_contadores_se_conserva() {
+        // Sin cambios de comportamiento respecto a la regla que
+        // `aggregate_report` ya aplicaba: fallo o not-run bloquean; blocked o
+        // partial son riesgo; solo todo-pass es READY.
+        assert_eq!(UatVerdict::from_counts(0, 0, 0, 0), UatVerdict::Ready);
+        assert_eq!(
+            UatVerdict::from_counts(0, 0, 1, 0),
+            UatVerdict::ReadyWithRisks
+        );
+        assert_eq!(
+            UatVerdict::from_counts(0, 0, 0, 1),
+            UatVerdict::ReadyWithRisks
+        );
+        assert_eq!(UatVerdict::from_counts(1, 0, 0, 0), UatVerdict::NotReady);
+        assert_eq!(UatVerdict::from_counts(0, 1, 0, 0), UatVerdict::NotReady);
+        // Un fallo gana a un riesgo: la precedencia no se invierte.
+        assert_eq!(UatVerdict::from_counts(1, 0, 1, 1), UatVerdict::NotReady);
+    }
+
+    #[test]
+    fn from_results_delega_en_from_counts() {
+        // Si estas dos dejaran de coincidir, habria dos reglas de nuevo. Este
+        // test es el que impide que vuelvan a separarse.
+        let cases = [
+            (UatStatus::Pass, UatVerdict::Ready),
+            (UatStatus::Fail, UatVerdict::NotReady),
+            (UatStatus::NotRun, UatVerdict::NotReady),
+            (UatStatus::Blocked, UatVerdict::ReadyWithRisks),
+            (UatStatus::Partial, UatVerdict::ReadyWithRisks),
+        ];
+        for (status, expected) in cases {
+            let from_results = UatVerdict::from_results(&[result("S-1", status)]);
+            assert_eq!(from_results, expected, "from_results con {status:?}");
+            let failed = u32::from(status == UatStatus::Fail);
+            let not_run = u32::from(status == UatStatus::NotRun);
+            let blocked = u32::from(status == UatStatus::Blocked);
+            let partial = u32::from(status == UatStatus::Partial);
+            assert_eq!(
+                UatVerdict::from_counts(failed, not_run, blocked, partial),
+                from_results,
+                "from_counts y from_results discrepan en {status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn la_grafia_del_veredicto_tiene_una_sola_forma() {
+        // `agents/uat-reporter.md` publica estas tres cadenas como contrato.
+        assert_eq!(UatVerdict::Ready.as_str(), "READY");
+        assert_eq!(UatVerdict::ReadyWithRisks.as_str(), "READY_WITH_RISKS");
+        assert_eq!(UatVerdict::NotReady.as_str(), "NOT_READY");
     }
 }
