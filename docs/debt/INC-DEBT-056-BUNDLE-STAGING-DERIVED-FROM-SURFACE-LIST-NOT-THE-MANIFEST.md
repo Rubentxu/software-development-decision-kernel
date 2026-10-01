@@ -147,6 +147,61 @@ lo cual es correcto y no una divergencia:
 | `release.sh` (local) | deriva del manifest | corre en un árbol de trabajo donde **sí** hay debris |
 | `release.yml` (cloud) | lista explícita | empaqueta un checkout limpio; la lista es legible y auditable |
 
+## Las dos rutas nunca se compararon — y sí se pueden comparar
+
+Quedaba una decisión sin tomar: `release.yml` seguía enumerando las superficies
+a mano, y la razón para no derivarla del manifest era «esa ruta no puede
+probarse en local». **La razón era falsa**, y era exactamente el tipo de
+afirmación que este Inc viene a cerrar.
+
+`act` v0.2.89 y podman 5.8.7 están en la máquina, con `ubuntu-latest` mapeado
+a `catthehacker/ubuntu:rust-latest`. El job `framework-bundle` **se ejecuta**
+de verdad: falla primero con `workspace version 2.5.3 != tag main` porque
+`GITHUB_REF_NAME` no es un tag, y se resuelve con un evento `workflow_dispatch`
+que fija `refs/tags/v2.5.3`. Con eso el paso `Bundle framework` pasa entero
+(solo falla `upload-artifact`, por un bug de `act` al copiar la action —
+`path escapes from parent` — que ocurre **después** de construir el tarball).
+
+Con las dos rutas ejecutables, la comparación que faltaba es de una vez:
+
+```
+ok   — l: wrapped under software-development-decision-kernel/
+ok   — c: root-level layout (no wrapper), as its producer documents
+ok   — both routes carry the same 396 members
+ok   — every shared member is byte-identical
+ok   — l/c: anchor matches the manifest that shipped
+ok   — l/c: nothing gitignored rode along
+```
+
+**Las dos rutas publican el mismo bundle.** La divergencia de layout
+(envuelto contra plano) es intencionada y está documentada en
+`release.yml:135-139`; el consumidor la resuelve con
+`tarball_wraps_all_members_under_one_dir`. Todo lo demás es idéntico.
+
+Dos cosas que la prueba поняó y que no eran del código:
+
+- **El primer montaje usaba el árbol de trabajo, no un checkout limpio**, y
+  por eso la ruta cloud «filtró» `agents/.atl/` y `assets/*.bak`. Eso no es
+  un defecto de `release.yml`: `actions/checkout` no puede contener ficheros
+  no trackeados, y `git archive` confirma que el checkout limpio tiene
+  exactamente las cifras del manifest (72/245/44/17/14/2 = 394), sin debris.
+  **Un FAIL del harness que parece un defecto del producto es la forma más
+  cara de perder el tiempo**, y esta vez la perte por montar mal.
+- `mktemp -d` crea con modo 700 y el contenedor alcanza el árbol con otro
+  mapeo de uid: todo falla con `Permission denied` mientras el host muestra
+  `drwxr-xr-x`. El scratch tiene que vivir **dentro del repo**.
+
+`tests/test_release_routes_parity.sh` lo hace reproducible en un comando.
+4 mutaciones falsificadoras, todas detectadas: quitar una superficie del
+`tar` cloud, falsear el ancla, volver al `awk NR==1` de la primera línea, y
+no copiar `MANIFEST.sha256` al staging.
+
+**Con esto la decisión ya no es una conjetura**: la lista explícita de
+`release.yml` es correcta y está verificada contra la ruta local. Cambiarla
+sería ahora una simplificación sin evidencia a su favor, y el coste — una
+ruta que no puede probarse en el mismo host donde se ejecuta el gate — sigue
+sin pagarse. **Se decide NO derivar `release.yml`, y por escrito.**
+
 ## El guard no vio ninguno de los dos
 
 `tests/test_bundle_surface_coverage.py` (session-65g) comparaba la lista de

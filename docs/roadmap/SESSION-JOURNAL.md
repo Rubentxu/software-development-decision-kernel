@@ -8387,3 +8387,74 @@ notarlo: el fichero de control estaba contaminado.
 también `release.yml` del manifest. Sabe mejor que la lista manual —porque
 un checkout limpio no puede filtrar debris—, pero no puede probarse en
 local, luego ningún guard podría verificarla.
+
+### Continuación (2) — la ruta cloud sí se puede probar, y publica lo mismo
+
+Quedaba una decisión abierta desde el cierre anterior: derivar o no
+`release.yml` del manifest. La razón para no hacerlo era «esa ruta no puede
+probarse en local». **Era falsa**, y era el mismo género de afirmación sin
+comprobar que este Inc viene a cerrar.
+
+**(I) `act` + podman están en la máquina.** v0.2.89 y podman 5.8.7, con
+`ubuntu-latest` mapeado a `catthehacker/ubuntu:rust-latest`. El job
+`framework-bundle` **se ejecuta**: falla primero con
+`workspace version 2.5.3 != tag main` porque `GITHUB_REF_NAME` no es un tag,
+y se resuelve con un evento `workflow_dispatch` que fija
+`refs/tags/v2.5.3`. Con eso el paso `Bundle framework` pasa entero y
+construye el tarball; solo falla `upload-artifact`, por un bug de `act` al
+copiar la action (`path escapes from parent`) que ocurre **después** de
+empaquetar.
+
+**(J) Las dos rutas publican el mismo bundle.** Con ambas ejecutables, la
+comparación que faltaba desde siempre:
+
+```
+ok — both routes carry the same 396 members
+ok — every shared member is byte-identical
+ok — l/c: anchor matches the manifest that shipped
+ok — l/c: nothing gitignored rode along
+```
+
+La divergencia de layout (envuelto contra plano) es **intencionada** y está
+documentada en `release.yml:135-139`; el consumidor la resuelve con
+`tarball_wraps_all_members_under_one_dir`. Todo lo demás es idéntico.
+
+`tests/test_release_routes_parity.sh` lo deja en un comando, con 4
+mutaciones falsificadoras, todas detectadas: quitar una superficie del
+`tar` cloud, falsear el ancla, volver al `awk NR==1` de la primera línea, y
+no copiar `MANIFEST.sha256` al staging.
+
+**Decisión tomada con evidencia: NO derivar `release.yml`.** Su lista
+explícita queda *verificada contra la ruta local*, así que cambiarla sería
+una simplificación sin evidencia a su favor, y el coste — una ruta que no
+puede probarse en el host donde corre el gate — sigue sin pagarse.
+
+**(K) Dos cosas que la prueba pendía y no eran del código.**
+
+1. El primer montaje usaba **el árbol de trabajo** en vez de un checkout
+   limpio, y por eso la ruta cloud «filtró» `agents/.atl/` y
+   `assets/*.bak`. **No es un defecto de `release.yml`**: `actions/checkout`
+   no puede contener ficheros no trackeados, y `git archive` lo confirma
+   (72/245/44/17/14/2 = 394, sin debris). Un `FAIL` del harness que parece
+   un defecto del producto es la forma más cara de perder el tiempo, y esta
+   vez la perdí por montar mal.
+2. `mktemp -d` crea con modo 700 y el contenedor alcanza el árbol con otro
+   mapeo de uid: todo falla con `Permission denied` aunque el host muestre
+   `drwxr-xr-x` y los ids coincidan. El scratch tiene que vivir **dentro del
+   repo**. Cuatro intentos perdidos antes de mirar los permisos en vez de
+   reintentar.
+
+**(L) `BUNDLE.toml` trackeado mentía en dos valores.** Al regenerarlo con el
+binario: `skills_count` era **244** donde el manifest tiene **245**, y
+faltaba `impeccable_reference_count` (2), porque el fichero no se había
+regenerado desde la quinta superficie. Misma clase que `prompts_count = 0`:
+un contador que no describe lo que publica. Corregido y verificado.
+
+**Gates:** paridad de rutas PASS (396 miembros, byte-idénticos) · step5 e2e
+PASS · ancla 12/12 · superficies 12/12 · referencias 3/3 · índice de deuda
+10/10 · changelog 17/17 · manifest `--verify` OK · `shellcheck` limpio en
+los dos shell nuevos.
+
+**Pendiente:** OK del operador al push (5 commits). Y sin tocar:
+INC-DEBT-051, la migración de los 25 receipts, la RC 0.45.0 de PipelineK y
+las 19 superficies fuera de presupuesto de brevedad.
