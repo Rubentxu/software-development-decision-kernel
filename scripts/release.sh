@@ -552,6 +552,15 @@ mkdir -p "$BUNDLE_STAGE"
 # load-bearing for BOTH what is included and what is excluded, and removes the
 # hand-maintained list that had to be edited every time a surface was added.
 awk '{print $2}' MANIFEST.sha256 | xargs -d '\n' cp --parents -t "$BUNDLE_STAGE"
+# MANIFEST.sha256 must ship too, and the manifest cannot list itself: a file
+# cannot contain its own digest. Deriving the staging from the manifest
+# therefore drops the one file the bundle most needs — OBSERVED end-to-end in
+# session-65h, where an extracted tarball had no MANIFEST.sha256 and
+# release.yml:230 ("bundle lacks MANIFEST.sha256") plus
+# `update.rs` (required) would both have refused it. Add it explicitly, and
+# let the fail-closed check below confirm the result is exactly
+# manifest-paths + MANIFEST.sha256 + BUNDLE.toml.
+cp MANIFEST.sha256 "$BUNDLE_STAGE/"
 # BUNDLE.toml must ship INSIDE the standalone bundle tarball. It used to be
 # written only AFTER the tar was created (step 6), so the published tarball
 # never contained it: `sddk dev update` resolves its layout from BUNDLE.toml,
@@ -562,30 +571,51 @@ awk '{print $2}' MANIFEST.sha256 | xargs -d '\n' cp --parents -t "$BUNDLE_STAGE"
 # install.sh installs were unaffected.
 # The manifest's OWN sha256, not the hash of its first line (INC-DEBT-025,
 # long comment in step 6 below).
+# The `sha256:` prefix matches `dev manifest --bundle` (manifest.rs) and both
+# cloud jobs, so the three producers stop diverging. `verify_manifest_anchor`
+# normalises both forms, so this is convergence, not a correctness change;
+# tests/test_release_ci_manifest_anchor.sh pins all three.
 MANIFEST_SHA="$(sha256sum MANIFEST.sha256 | awk '{print $1}')"
 printf '%s\n' \
     '[bundle]' 'schema_version = 2' \
     "version = \"$VERSION\"" \
     "binary_min_version = \"$VERSION\"" \
     "binary_max_version = \"$VERSION\"" \
-    '' '[contents]' "manifest_sha256 = \"$MANIFEST_SHA\"" \
+    '' '[contents]' "manifest_sha256 = \"sha256:$MANIFEST_SHA\"" \
     > "$BUNDLE_STAGE/BUNDLE.toml"
+# Pack the staged tree. The `--xform` prefix must be applied to the members
+# RELATIVE to the staging parent, never to the wrapper directory itself:
+# `tar -C $parent software-development-decision-kernel --xform 's|^|.../|'`
+# transforms the MEMBER NAME, which is already `software-development-decision-kernel`,
+# and yields `software-development-decision-kernel/software-development-decision-kernel/…`
+# — a doubled prefix on all 396 members. OBSERVED end-to-end in session-65h:
+# every consumer check ran against a path one level too deep. `cd` into the
+# parent and pass `.` so the members are `./agents/...` and the xform produces
+# the single `software-development-decision-kernel/` prefix the contract
+# expects (checked by `grep -qx` on the tar listing, below).
 tar czf "$BUNDLE_TARBALL" \
-    --xform "s|^|software-development-decision-kernel/|" \
+    --xform "s|^\./|software-development-decision-kernel/|" \
     -C "$TMP/bundle-stage" software-development-decision-kernel
 sha256sum "$BUNDLE_TARBALL" | awk '{print $1}' > "$BUNDLE_TARBALL.sha256"
 # Contract check: the standalone tarball MUST carry BUNDLE.toml now.
 tar tzf "$BUNDLE_TARBALL" | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
     || { echo "FATAL: bundle tarball is missing software-development-decision-kernel/BUNDLE.toml" >&2; exit 1; }
-# Contract check (INC-DEBT-056, session-65h): the tarball's regular-file set
-# must be EXACTLY the manifest's paths plus BUNDLE.toml. This is the check
-# that would have caught (b) above. It compares the staged tree on disk rather
-# than the tar listing, so a member that silently went missing is caught too.
+# Contract check (INC-DEBT-056, session-65h): the staged tree must be EXACTLY
+# the manifest's paths plus the two files the manifest cannot list itself —
+# MANIFEST.sha256 (a file cannot contain its own digest) and BUNDLE.toml
+# (injected). This is the check that would have caught the gitignored-artefact
+# leak. It compares the staged tree on disk rather than the tar listing, so a
+# member that silently went missing is caught too.
 DIFF_OUT="$(diff <(awk '{print $2}' MANIFEST.sha256 | sort) \
-                 <(cd "$BUNDLE_STAGE" && find . -type f -printf '%P\n' | grep -v '^BUNDLE.toml$' | sort) || true)"
+                 <(cd "$BUNDLE_STAGE" && find . -type f -printf '%P\n' \
+                    | grep -vx -e '^BUNDLE.toml$' -e '^MANIFEST\.sha256$' | sort) || true)"
 [ -z "$DIFF_OUT" ] || { echo "FATAL: staged bundle does not match the manifest:" >&2; echo "$DIFF_OUT" >&2; exit 1; }
+for REQUIRED in MANIFEST.sha256 BUNDLE.toml; do
+    [ -f "$BUNDLE_STAGE/$REQUIRED" ] \
+        || { echo "FATAL: bundle is missing required $REQUIRED" >&2; exit 1; }
+done
 ok "bundle: $(basename "$BUNDLE_TARBALL") ($(stat -c%s "$BUNDLE_TARBALL") bytes, BUNDLE.toml included)"
-ok "bundle staging matches MANIFEST.sha256 exactly ($(awk 'END{print NR}' MANIFEST.sha256) + BUNDLE.toml)"
+ok "bundle staging matches MANIFEST.sha256 exactly ($(awk 'END{print NR}' MANIFEST.sha256) + MANIFEST.sha256 + BUNDLE.toml)"
 
 # --- 6. BUNDLE.toml ---
 

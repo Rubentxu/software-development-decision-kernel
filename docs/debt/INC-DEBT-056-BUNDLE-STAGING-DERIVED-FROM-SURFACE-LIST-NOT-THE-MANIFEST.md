@@ -64,15 +64,32 @@ Los dos sobrantes, ambos untracked y ambos cubiertos por `.gitignore`:
 | `agents/.atl/.skill-registry.cache.json` | `.gitignore:26` (`.atl/`) | caché local de `skill-registry` |
 | `assets/agent-models.yaml.bak` | `.gitignore:17` (`*.bak`) | backup de la tabla de modelos |
 
-Consecuencia: **`manifest_sha256` en `BUNDLE.toml` no describía el propio
-tarball**. Dos ficheros viajaban sin digest, no verificados por
-`verify_manifest` en la instalación, y no reinstallables de forma
-reproducible. La ruta cloud (`release.yml`) no sufre (b): empaqueta un
-checkout limpio, donde ese debris no existe.
+**(c) Los dos que introdujo el arreglo mismo.** No se plagaron: los
+**produjo** la derivación por manifest, y solo aparecieron al **ejecutar**
+el bundle completo, no al leer el código.
+
+- **`MANIFEST.sha256` dejó de viajar.** El manifest no puede listarse a sí
+  mismo —un fichero no puede contener su propio digest—, luego derivar el
+  staging de él descarta el fichero que el bundle más necesita.
+  `release.yml:230` aborta con `bundle lacks MANIFEST.sha256` y `update.rs`
+  lo trata como **required**: el release se habría roto en la ruta cloud y
+  en cada instalación.
+- **El prefijo del tarball se duplicó en los 396 miembros.** El `--xform`
+  transforma el *nombre del miembro*, y al recibir el directorio
+  `software-development-decision-kernel` ya envuelto le prepende el mismo
+  prefijo otra vez:
+  `software-development-decision-kernel/software-development-decision-kernel/…`.
+  Medido: **608 miembros** con doble prefijo.
+
+Que (c) lo produjera el arreglo de (a) y (b) es la parte incómoda: la
+corrección se verificó con el guard de superficies —12/12 verde y 9
+mutaciones— sin que ninguno **empaquetara**. Un guard que no empaqueta no
+puede observar un tarball mal empaquetado. Ambos nacen de la misma razón:
+todo lo que se verificó fue el *staging*, nunca el artefacto.
 
 ## Criterio verificable
 
-El defecto (b) medido antes del arreglo, con el tar real de la fase 5:
+Defecto (b), medido antes del arreglo, con el tar real de la fase 5:
 
 ```
 $ tar tzf bundle.tar.gz | grep -E '\.bak|\.atl'
@@ -80,7 +97,22 @@ software-development-decision-kernel/agents/.atl/.skill-registry.cache.json
 software-development-decision-kernel/assets/agent-models.yaml.bak
 ```
 
-Y el defecto (a), RED medido sobre la fase 5 aislada: `exit=2`.
+Defecto (a), RED medido sobre la fase 5 aislada: `exit=2`.
+
+Defecto (c), RED medido ejecutando el paso 5 completo y extrayendo el
+resultado (`tests/test_release_bundle_step5.sh`, entonces sin corregir):
+
+```
+  FAIL — MANIFEST.sha256 does not ship
+  FAIL — BUNDLE.toml missing
+  FAIL — doubled wrapper prefix on 608 members
+```
+
+Consecuencia de (b): **`manifest_sha256` en `BUNDLE.toml` no describía el
+propio tarball**. Dos ficheros viajaban sin digest, no verificados por
+`verify_manifest` en la instalación, y no reinstallables de forma
+reproducible. La ruta cloud (`release.yml`) no sufre (b): empaqueta un
+checkout limpio, donde ese debris no existe.
 
 ## Resolución — Ruta 1: la autoridad manda
 
@@ -89,15 +121,23 @@ fail-closed y que por tanto es la única declaración de qué se publica:
 
 ```bash
 awk '{print $2}' MANIFEST.sha256 | xargs -d '\n' cp --parents -t "$BUNDLE_STAGE"
+cp MANIFEST.sha256 "$BUNDLE_STAGE/"   # el manifest no puede listarse a sí mismo
 ```
 
 Esto elimina las dos clases de defecto a la vez: lo que el manifest lista
 viaja, y **nada más puede viajar**. La lista escrita a mano desaparece, con
 lo que desaparece también el coste de editarla cada vez que se añade una
-superficie — que es exactamente lo que produjo (a).
+superficie — que es exactamente lo que produjo (a). El segundo `cp` es la
+corrección de (c): el manifest es el único fichero que el manifest no
+puede declarar, luego se añade explícitamente.
+
+El `--xform` se aplica a `./ruta` y no al nombre del directorio, para que el
+prefijo envuelto salga una sola vez (corrección de (c)).
 
 Se añade un contrato fail-closed en la misma fase: el conjunto de ficheros
-del staging debe ser **exactamente** el del manifest más `BUNDLE.toml`.
+del staging debe ser **exactamente** el del manifest más `MANIFEST.sha256` y
+`BUNDLE.toml`, y ambos deben estar presentes — que es lo que
+`update.rs` exige al desinstalar.
 
 Las dos rutas de producción ya no enuncian el mismo hecho de la misma forma,
 lo cual es correcto y no una divergencia:
@@ -148,3 +188,37 @@ Los dos puntos ciegos que la falsificación encontró en el propio guard nuevo
    mismo.
 
 Sexta vez que un falsador encuentra en sí mismo lo que la inspección no.
+
+## El test que faltaba: ejecutar el artefacto, no el staging
+
+Los defectos (c) los produjo el arreglo y **no los vio ninguno de los dos
+gates**: 12/12 el de superficies, 9/9 mutaciones, y el paso 5 seguía roto.
+La razón es una sola y ya se había dicho media vuelta arriba: todo lo que se
+verificó fue el *staging*, nunca el **artefacto**. El guard compara código; el
+defecto estaba en lo que ese código produce.
+
+`tests/test_release_bundle_step5.sh` lo ejecuta de punta a punta: stage →
+`tar` → extraer → y preguntar al bundle **extraído** lo que preguntarían
+`install.sh` y `update.rs`:
+
+```
+ok   — MANIFEST.sha256 ships (release.yml:230 and update.rs require it)
+ok   — BUNDLE.toml ships at the wrapper root
+ok   — single wrapper directory (no doubled prefix)
+ok   — anchor matches the manifest that shipped
+ok   — all 394 manifest entries present in the bundle
+ok   — all digests verify
+ok   — no gitignored artefact rode along
+     bundle carries 396 files
+```
+
+3 mutaciones falsificadoras, una por defecto, las tres detectadas: quitar el
+`cp` del manifest, volver al `--xform` sin `^\./`, y quitar el prefijo
+`sha256:` del ancla. Cada una muere en el check que le corresponde.
+
+El mismo día, `tests/test_release_ci_manifest_anchor.sh` solo miraba
+`release.yml` (`WF=`), con `release.sh` apareciendo **una vez, en un
+comentario**. Ese gate existía para converger los productores del ancla y
+estaba estructuralmente incapaz de ver que `release.sh` seguía divergiendo:
+seguía escribiendo hex desnudo. Extendido a los dos productores, y en rojo
+sobre el estado real, que es la forma en que un gate demuestra que mira.

@@ -8318,3 +8318,72 @@ segura porque empaqueta un checkout limpio, pero es una quinta copia que
 depende de una propiedad del entorno y no del código. Se puede derivar igual
 que la local; no se ha hecho porque la ruta cloud no puede probarse en local
 y el guard no podría verificarlo.
+
+### Continuación de session-65h — el arreglo produjo dos defectos nuevos
+
+Verificar la afirmación «la ruta cloud es segura porque empaqueta un checkout
+limpio» —afirmada sin comprobar— estaba bien, pero abrió otra puerta: el
+gate del ancla de manifest.
+
+**(F) `test_release_ci_manifest_anchor.sh` solo miraba `release.yml`.** Toma
+`WF=release.yml` y `scripts/release.sh` aparece **una vez, en un comentario**.
+El gate existe para converger los productores de `manifest_sha256` y era
+estructuralmente incapaz de ver que `release.sh` seguía divergiendo: escribe
+hex desnudo mientras las tres rutas cloud escriben `sha256:`. No es un
+defecto de corrección —`verify_manifest_anchor` normaliza ambos formatos—,
+sino de convergencia, que es justo lo que el gate declara hacer. Extendido a
+los dos productores, con control negativo que exige que un productor en hex
+desnudo sea rechazado, y **en rojo sobre el estado real** a la primera
+ejecución. `release.sh` corregido al formato canónico.
+
+**(G) El paso 5 tenía DOS defectos que mi propio arreglo produjo, y ningún
+gate los vio.** Con 12/12 del guard de superficies y 9/9 mutaciones en verde,
+ejecutando el paso 5 completo y extrayendo el resultado:
+
+```
+  FAIL — MANIFEST.sha256 does not ship
+  FAIL — BUNDLE.toml missing
+  FAIL — doubled wrapper prefix on 608 members
+```
+
+1. **`MANIFEST.sha256` dejó de viajar.** El manifest no puede listarse a sí
+   mismo —un fichero no puede contener su propio digest—, luego derivar el
+   staging de él descarta el fichero que el bundle más necesita.
+   `release.yml:230` aborta con `bundle lacks MANIFEST.sha256` y
+   `update.rs` lo trata como **required**: el release se habría roto en la
+   ruta cloud y en cada instalación.
+2. **Prefijo duplicado en los 396 miembros.** El `--xform` transforma el
+   *nombre del miembro*, y al recibir el directorio ya envuelto le prepende
+   el mismo prefijo: `software-development-decision-kernel/software-development-decision-kernel/…`.
+
+Que los produjera el arreglo de (a) y (b) es lo incómodo del caso. Todo lo
+verificado era el **staging**; nadie había mirado el **artefacto**. Un guard
+que compara código no puede observar un tarball mal construido.
+
+**(H) `tests/test_release_bundle_step5.sh`.** Ejecuta stage → `tar` →
+extraer → preguntar al bundle extraído lo que preguntarían `install.sh` y
+`update.rs`: presencia de `MANIFEST.sha256` y `BUNDLE.toml`, prefijo único,
+ancla igual al manifest que viajó, las 394 entradas con su digest
+verificado, ningún artefacto gitignored a bordo. **396 ficheros** = 394 + 2.
+
+3 mutaciones falsificadoras, una por defecto, las 3 detectadas: quitar el
+`cp` del manifest, volver al `--xform` sin `^\./`, quitar el prefijo
+`sha256:`. Restaurado en verde.
+
+**Errores del harness, que son los de siempre:** primero `cd "$(dirname
+"$0")"` le llevó a `tests/` en vez de la raíz, y el fallo se presentó como
+`MANIFEST.sha256: No existe el fichero` — indistinguible de un defecto real
+hasta leer la línea del `cd`. Después, 7 ocurrencias de `A && B || C`
+(SC2015), donde si `note` devolviera no-cero se ejecutaría la rama de fallo;
+reescrito a `if/else`, que es lo que se quería decir. Y al falsificar,
+restauré desde una copia ya mutada y perdí dos mutaciones seguidas antes de
+notarlo: el fichero de control estaba contaminado.
+
+**Gates:** step5 e2e PASS · ancla 12/12 · superficies 12/12 · referencias
+3/3 · índice de deuda 10/10 · changelog 16/16 · puntero PASS · manifest
+`--verify` OK · `shellcheck` limpio en los tres shell tocados.
+
+**Pendiente:** OK del operador al push. Y sigue **sin decidir**: derivar
+también `release.yml` del manifest. Sabe mejor que la lista manual —porque
+un checkout limpio no puede filtrar debris—, pero no puede probarse en
+local, luego ningún guard podría verificarla.
