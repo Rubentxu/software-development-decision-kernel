@@ -8071,3 +8071,99 @@ orchestrator), y `skills/ui-audit-protocol/SKILL.md:131` depende del
 los agentes o rediseñar la skill para que haga el trabajo ella misma). Es la
 cita que más rápido convierte en un fallo real a un agente, porque no es una
 referencia muerta: es una **orden de cargar** algo que no existe.
+
+---
+
+## session-65g — `specs` viaja en el bundle, y el guard que faltaba desde INC-DEBT-052 (2026-10-01)
+
+**Push de session-65f publicado** (`f27c4346..2bfab95e`, op-5, verificado con
+`ls-remote`), con el puntero reconciliado a `f27c4346` y los cuatro gates en
+verde. Las dos decisiones de superficie queAutor quedaron ejecutadas:
+
+**(A) `cua-test-orchestrator` hace el trabajo ella misma.** Rediseño autorizado.
+La skill orquestaba tres subagentes que **nunca se escribieron** —`git log --all`
+da cero commits para `cua-test-scenarist`, `cua-test-runner`,
+`cua-test-judge` y `agents/cua-test-orchestrator.body.md`— y su Activation
+Contract ordenaba al agente **cargar** ficheros ausentes. `ui-audit-protocol`
+dependía además del `JudgeVerdictEnvelope` de un judge inexistente. El motivo
+de fondo de que el rediseño sea el arreglo correcto y no un apaño: **nada de
+eso necesitaba un segundo agente**. El único modelo distinto es Fara, y Fara es
+un endpoint HTTP, no un despacho. Los tres papeles pasaron a ser pasos del
+mismo agente: escribir criterios, un `curl` por criterio, sintetizar. Se
+conservaron las partes que no eran decoración (sin navegador, HTTP only,
+`temperature: 0`, solo assets estáticos, envelopes y nombres intactos) y se
+documentó **por qué** `max_tokens` es 200: es la configuración contra la que se
+calibró la rúbrica. Regla nueva, que es la que hace posible el resto: una
+respuesta vacía o truncada es `unresolved`, **nunca `pass`**. Presupuesto:
+124 líneas (límite 150) y 135 (límite 150).
+
+**(B) Las specs E14 al repo.** La conclusión obvia —«hay que escribirlas o
+quitar la promesa»— era **falsa**: las cinco specs existen en
+`~/.sddk-knowledge/sddk-framework/specs/E14-uat-guided-pipeline/` y nunca
+estuvieron en el repo. Copiado el **directorio completo** (14 ficheros, 1624
+líneas), no los tres citados: 5 de 13 habría dejado un conjunto parcial, que es
+peor que ninguno porque parecería autoritativo. `diff -rq`: 0 diferencias.
+Línea base del guard de referencias **15 → 4**, control negativo re-ejecutado.
+Las cuatro que quedan son las de **coincidencia de basename ambigua**, que
+siguen deliberadamente sin tocar: «apuntar a lo más parecido» cambia qué
+autoridad declara la superficie.
+
+**(C) `specs` pasa a ser superficie del bundle**, y esto no era una corrección
+sino un **cambio de contrato de distribución**. `MANIFEST_SURFACES` era
+`["agents","skills","prompts/sddk","assets"]`, luego el bundle llevaba una orden
+de leer una spec que no tenía. Añadida `specs` con su `specs_count`, su brazo
+de conteo y **los dos `tar` de producción** (`release.sh` y `release.yml`).
+Medido con el binario recién compilado —con el 2.5.3 del PATH el manifest
+seguía en 377 ficheros y con **cero** entradas de `specs`, porque el binario
+lleva la lista vieja—: manifest **377 → 391**, `specs = 14`,
+`BUNDLE.toml` declara `specs_count = 14`, `--verify` OK.
+
+**(D) EL GUARD QUE FALTABA DESDE INC-DEBT-052, Y POR QUÉ ESTABA ESCRITO.** Su
+recibo dejó esto textual: el fail-closed de `other => bail!` cubre la **deriva
+de contenido** pero no la **deriva de esquema**, y *«queda anotado, no
+implementado»*. Añadir una superficie **es exactamente** la operación que lo
+activaba, y hacerlo sin el guard habría reproducido el defecto en su forma
+nueva. `tests/test_bundle_surface_coverage.py` (8 tests) ata las **cuatro**
+copias del contrato: la lista de superficies, `ContentsSection`, el brazo de
+`count_surface_entries` y los dos `tar` de producción. La cuarta es una que el
+recibo ni enumeraba: la deriva **entre las dos rutas de producción** habría
+publicado en cloud un bundle distinto del que se prueba en local, desde el
+mismo commit.
+
+**(E) EL GUARD ENCONTRÓRÓ UN DEFECTO AL CONSTRUIRSE — y era el original.** Los
+nombres de superficie y de campo **no se corresponden**: la superficie es
+`prompts/sddk` y el campo es `prompts_count`. La primera versión del guard
+derivaba el campo del nombre de la superficie y por eso **falló en verde sobre
+el propio repo sano**: `prompts/sddk` contra `prompts/sddk_count`. Eso es, sin
+ninguna ironía útil, **el mecanismo de INC-DEBT-052 reproducido en el
+instrumento que iba a cubrirlo**. La forma correcta resultó ser una tabla
+explícita `SURFACE_TO_FIELD`, exigida en ambos sentidos. Quinta vez que un
+falsador encuentra en sí mismo lo que la inspección no.
+
+Antes de llegar ahí el parser del guard falló **tres veces** por su cuenta, y
+las tres vale la pena porque son el mismo error de razonamiento: (1) tomaba el
+`[` del tipo `[&str; 5]` por el de la lista; (2) filtraba todo token con `/`
+como si fuera una ruta de salida —y **`prompts/sddk` es una superficie**, la
+misma del bug original—; (3) buscaba «la línea con `tar` y `MANIFEST.sha256`»
+y en `release.sh` el comando es multilínea con `\`, así que seleccionó un
+**comentario** y parseó una frase como si fuera un comando. La gleaned por
+posición y por código, no por forma.
+
+**(F) Falsificadores: 6 mutaciones, las 6 detectadas**, árbol restaurado en
+verde. M2 es el **F69** que la propia INC-DEBT-052 exigía para este caso. M4 y
+M5 cubren cada `tar` por separado, que es la deriva entre rutas.
+
+**(G) Lo que NO se cubre, declarado en vez de omitido.** El guard ata las cuatro
+copias por **nombre**, no por **significado**: un renombrado coherente de la
+superficie y del campo cambiaría qué se distribuye sin que nada se queje.
+Queda escrito en el addendum de INC-DEBT-052 y en el comentario de la
+constante.
+
+**Evidencia ejecutada.** `fmt` limpio · `clippy -D warnings` limpio · **409
+tests de `dev`, 0 failed** · manifest verificado con 391 ficheros ·
+`BUNDLE.toml` regenerado con los cinco contadores · los cuatro gates
+documentales en verde · guard de superficies 8/8 · guard de referencias OK.
+
+**Pendiente:** publicar `2bc0511c` + este cierre (op-5), y decidir las 4 citas
+de basename ambiguo. Y sigue sin tocar: INC-DEBT-051 (arreglo = contrato
+nuevo), la migración de los 25 receipts, y la RC 0.45.0 de PipelineK.
