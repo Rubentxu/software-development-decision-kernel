@@ -7949,3 +7949,125 @@ instalado sigue en `2.5.2`.
 **Primer paso preciso de la sesion siguiente:** no abrir trabajo nuevo sin cerrar la
 decision de `AGENTS.md:59-61`. Es una frase, y mientras siga mintiendo induce un bump
 equivocado en el primer push de la proxima sesion.
+
+---
+
+## session-65f — Cuarta reincidencia del mismo género: el veredicto UAT salía READY sin ejecutar nada (2026-10-01)
+
+**Cierre de session-65e primero:** publicados los 3 commits de cierre
+(`9f86a6d1..ee037b92`, op-5 dos veces, verificado con `ls-remote`), puntero
+reconciliado a `9f86a6d1`, guard de puntero de FAIL a **PASS 9/9**. De paso, el
+gate de changelog me cazó a mí: `test_changelog_coverage.sh` estaba en
+`FAIL=1` porque el commit `9f86a6d1` —el último de la slice— se escribió
+después de cerrarse la sección 2.5.3 y nadie lo declaró. Mi medición previa de
+`PASS=8` era anterior a ese commit, o sea que describía un árbol que no se iba a
+publicar. Al añadir su entrada creé un `fix(changelog)` que el gate exigía
+declarar en la sección que reparaba —bucle sin salida— y lo enmendé a
+`docs(changelog)`, que es el precedente del propio repo dos veces
+(`9085402b`, `03db88a8`).
+
+**Y una corrección de `AGENTS.md` que era load-bearing.** `AGENTS.md:59-61`
+afirmaba que la variante (3) del pre-push *"sigue **abierta** y alteraría un
+gate de admisión"*. Falso: `INC-DEBT-040` está `status: resolved` desde
+session-46b y la variante está implementada como ruta `A-v2` en
+`githooks/pre-push:251-268`, con nueve casos propios en
+`tests/test_push_prevention_hook.sh:553` (**PASS=48 FAIL=0** ejecutado aquí). Un
+agente que leyera ese párrafo bumpearía a **2.5.4**, cuando 2.5.3 está
+**declarada y no publicada** y la siguiente release **ES v2.5.3** (§2.3).
+Corregido, con la consecuencia operativa explícita.
+
+**(A) LA REINCIDENCIA, y es la cuarta del mismo género.** Buscando más
+instancias de «un gate que contesta sin examinar nada» —los tres anteriores
+fueron `doctor --strict` (exit 0 sin medir), `verify-chain` (PASS sobre cero
+eventos) y `debt report/gates` (informe fabricado)— encontré que **la regla del
+veredicto UAT estaba escrita tres veces**, y que las dos copias **sin plan**
+contaban `Fail`/`Blocked`/`NotRun` sobre `results`. Con la lista vacía salían
+**tres ceros** y caían en el `else` → **`READY`**.
+
+**(B) POR QUÉ EL GUARD DE INTEGRIDAD NO LO TAPABA.** `process_session_for_ingest`
+ya rechaza una sesión `executor: human` fabricada —exige `executed_by` +
+`finished_at` + evidencia o estado no-PASS (`uat.rs:1152`)— pero ese guard es
+literalmente `if session.executor == UatExecutor::Human`. Una sesión
+**`executor: fara` con `results: []`** no entra: se acepta, se persiste `READY` en
+el control plane, y `total = results.len().max(1)` **enmascara el vacío en el
+denominador de cobertura**. La respuesta HTTP lo decía sin querer en el mismo
+cuerpo: `"verdict":"READY","results":0`.
+
+**(C) POR QUÉ ES PEOR QUE LOS OTROS TRES.** INC-DEBT-053 y -054 contestaban
+`PASS` / exit 0: un veredicto de **integridad**. Este contesta **`READY`**, que
+es afirmación de **aptitud para publicar** y es lo que consume quien decide. Un
+`PASS` sobre nada es un dato que falta; un `READY` sobre nada es una decisión
+tomada con información que no existe.
+
+**(D) RED MEDIDO, antes de tocar nada.** `left: "READY" / right: "NOT_READY"`
+en los dos casos: sesión sin escenarios, y sesión de sólo `PARTIAL`.
+
+**(E) UNA DECISIÓN QUE CASI TOMO MAL.** El test de `Partial` pedía
+`NOT_READY`, y es tentador: un escenario parcial no es un `PASS`. Pero al buscar
+la tercera implementación encontré que `aggregate_report` —la que produce el
+`uat-report.yaml` publicado, y la única que **sí** contaba `Partial`— lo
+clasifica como **riesgo** (`READY_WITH_RISKS`). Adoptar mi `NotReady` habría
+sido inventar una tercera respuesta y hacer divergir el reporte publicado de la
+fila del control plane **en el caso opuesto al que venía a arreglar**. `ADR-012
+§6`, la definición que `uat-reporter.md` cita, **no menciona partial**. Así que
+el arreglo adopta la autoridad previa y **registra el hueco de contrato sin
+decidirlo**: es una decisión de contrato, no un bug. Primera vez que el mismo
+trabajo produce un defecto *y* una tentación de arreglarlo de más; la tentación
+era más peligrosa que el defecto.
+
+**(F) RESOLUCIÓN: una sola autoridad.** `UatVerdict::from_counts` es **la regla
+que `aggregate_report` ya aplicaba** —sin cambio de comportamiento donde ya se
+usaba— y `from_results` delega en ella añadiendo **una sola** cosa: `results`
+vacío → `NotReady`. `as_str` fija una sola grafía. Las tres copias delegan y la
+variable `not_run`, que solo servía al veredicto, desaparece con la duplicación
+(clippy la cazó como `unused variable`, que era la señal correcta).
+
+**(G) Dientes falsificados, 4 mutaciones OBSERVED.** M1 quita el rechazo del
+vacío → mueren sólo los tests de esa regla. M2 quita `Partial` del riesgo y M3
+quita `not_run` del bloqueo → mueren la precedencia y la delegación. **M4 degrada
+`from_results` a `NotReady` siempre → mueren los TRES dientes positivos del
+CLI**, luego el arreglo no se puede cerrar degradando los casos buenos.
+
+**(H) EL FALSIFICADOR FALLÓ SU PRIMERA EJECUCIÓN — y es la cuarta vez.** La sonda
+hacía `sed 's/ \.\.\..*//'`, que **borra el sufijo `... ok` / `... FAILED`**:
+imprimía la lista de nombres de test. Con las cuatro mutaciones aplicadas, la
+salida era **idéntica** a la del árbol sano, y «los ocho tests aparecen» se lee
+como «los ocho tests pasaron» si no se mira el código de la sonda. **Es esta
+misma INC, en el instrumento que la verifica.** Se detectó porque el resultado
+era *demasiado bonito* — cuatro mutaciones y cero dientes muertos exige duda
+antes que crédito. Corregida la sonda y re-ejecutada desde cero; los resultados
+de (G) son los de la segunda. Precedentes: el guard de coherencia de deuda se
+encontró dos bugs en sí mismo (session-43); el F53 de INC-DEBT-050 estaba mal
+diseñado y se sustituyó **antes** de ejecutarlo; y el fail-closed del hook de
+pre-push medía otro repositorio.
+
+**(I) Evidencia ejecutada, no supuesta.** `fmt` limpio · `clippy -D warnings`
+limpio · 4 tests de la autoridad en el dominio · 4 en el CLI (2 RED + 2
+positivos) · 85 lib `sddk-domain` y 158 lib `sddk-cli` en `uat`, **0 FAILED** ·
+`test_changelog_coverage.sh` **PASS=11 FAIL=0** con la huella del commit
+declarada · `test_debt_index_coherence.sh` **PASS=10 FAIL=0** ·
+`test_surface_reference_integrity.py` **OK** · `MANIFEST.sha256` regenerado
+(377 ficheros) y verificado, por el cambio en `agents/uat-reporter.md`.
+
+**(J) LO QUE DESCUBRÍ DE PASO Y NO ESTÁ RESUELTO.** Las **6 citas de las specs
+E14 no son substance-dangling**: las cinco specs existen en
+`~/.sddk-knowledge/sddk-framework/specs/E14-uat-guided-pipeline/` (E14.1–E14.5),
+nunca estuvieron en el repo (`git log --all --diff-filter=A -- 'specs/*'` vacío),
+y `agents/uat-form-quality.md:218` ya decía *"full spec in knowledge vault"*. La
+cita apunta a una ruta relativa al repo que no resuelve desde ningún sitio
+alcanzable, y el vault **no viaja en el bundle** (`grep -c sddk-knowledge
+MANIFEST.sha256` → 0). La decisión es mucho más barata de lo que parecía: no hay
+que escribir specs ni quitar la promesa. Sigue siendo del operador si se copian
+al repo (contenido real, 478 líneas en las tres citadas) o si se corrigen las
+seis citas para nombrar el vault.
+
+La familia **`cua-test-*` sigue igual y es la más grave**: `agents/` no contiene
+**ninguno** de los cuatro agentes que `skills/cua-test-orchestrator/SKILL.md`
+orquesta (`cua-test-scenarist`, `cua-test-runner`, `cua-test-judge`, más el propio
+orchestrator), y `skills/ui-audit-protocol/SKILL.md:131` depende del
+`JudgeVerdictEnvelope` que debería devolver `agents/cua-test-judge.md`.
+
+**Primer paso preciso de la sesión siguiente:** decidir `cua-test-*` (escribir
+los agentes o rediseñar la skill para que haga el trabajo ella misma). Es la
+cita que más rápido convierte en un fallo real a un agente, porque no es una
+referencia muerta: es una **orden de cargar** algo que no existe.
