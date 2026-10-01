@@ -54,12 +54,39 @@ y se actualiza con `sddk dev install`.
   rechazaba pasó tras `git mv` a la ruta canónica, sin `--no-verify` y sin tocar
   el contenido del recibo.
   `docs/debt/INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE.md`
-  (high/P1, **resolved** en session-45) documentaba el predicado (A)
-  insatisfacible cuando el bump declarado ya está en `origin/main`. Se resolvió
-  con un bump real 2.2.32 → 2.2.33, no reescribiendo el predicado: la variante (3)
-  —comparar contra el último tag publicado en vez de contra
-  `origin/main..HEAD`— sigue **abierta** y alteraría un gate de admisión, así que
-  requiere su propia decisión con tests que falsifiquen el caso nuevo.
+  (high/P1) documentaba el predicado (A) insatisfacible cuando el bump declarado ya
+  está en `origin/main`. Se resolvió **en dos pasos**, y conviene no confundirlos:
+  **(1) session-45**, con un bump real 2.2.32 → 2.2.33, sin reescribir el predicado;
+  **(2) session-46b** (ciclo C3k), implementando la variante (3). El INC está
+  `status: resolved` desde session-46b.
+  La variante (3) **está implementada**: es la ruta `A-v2` de
+  `githooks/pre-push:251-268`, y admite el push cuando la versión del workspace en el
+  **tip pushed** es semver-mayor que el **mayor tag `v*` publicado en el remoto**
+  (consulta `git ls-remote --tags origin`, alineada con
+  `scripts/lib/release_admission.sh:96-122`). El predicado (A) solo no puede ver un bump
+  que ya está en `origin/main` — está fuera del rango por construcción—, luego sin esta
+  variante el push sería insatisfacible durante toda la ventana
+  *declarada-pero-no-publicada*. Es **fail-closed**: si la consulta de tags no
+  responde, la ruta no admite y el rango tiene que cumplir (A) o (B) por su cuenta.
+  La tiene, y con tests que falsifican el caso: `tests/test_push_prevention_hook.sh`
+  le dedica su propia sección *«tag-baseline admission route (INC-DEBT-040 variant
+  3)»* (línea 553) con ocho casos —admitir con tip por encima del tag, **rechazar** con
+  tip igual al tag, bootstrap sin tags, bump real en rango, docs-only bajo bump ya
+  fusionado, tres casos «enmendados» de la matriz de renombres mientras la ventana
+  está abierta— más un noveno que falsifica el **fail-closed**: con el remoto
+  renombrado a algo inalcanzable la ruta no admite. Ese último caso tiene su propia
+  nota porque **encontró un defecto en sí mismo**: la invocación del hook vivía en el
+  cuerpo de un `if (...)` ya cerrado, así que corría sobre el repo de verdad —cuyo
+  rango sí contiene un bump, luego ACCEPT— y la afirmación de fail-closed nunca se
+  ejercitaba. TERCERA vez que un test falsador encuentra en sí mismo lo que la
+  inspección no.
+
+  **Consecuencia operativa, y es la que importa:** durante esa ventana **no se bumpea
+  para satisfacer el hook**. Si el workspace declara `X.Y.Z` y el último tag publicado
+  es menor, la siguiente release **ES `X.Y.Z`** (§2.3) y el push se admite solo.
+  Verificado en session-65e: 8 commits tocando `crates/` (fuera de la allowlist de
+  (B)) publicados con tip `2.5.3` sobre tag publicado `v2.5.2`, sin `--no-verify` y
+  sin bumpear a `2.5.4`.
 
 ### 2.2. Branch model
 
