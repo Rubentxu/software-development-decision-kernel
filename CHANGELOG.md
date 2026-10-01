@@ -2,9 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.5.0] - 2026-10-01
+## [2.5.1] - 2026-10-01
 
 ### Features
+  - feat(scripts): herramienta fail-closed de migracion de project_id — `audit`/`plan`/`backup`/`apply`, con `apply` exigiendo digest del plan y backup verificado; su espejo del normalizador no coincidía con el Rust en 6 formas (entre ellas `git@host:owner/repo`, la más común de Git) y habría escrito ids equivocados en ledgers reales. `tests/test_migrate_project_identity_mirror.py` lo fija con 10 tests, falsificado él mismo (INC-DEBT-050)
   - feat(architecture): el gate de conformidad distingue deuda abierta de conformidad — veredicto tipado `Conformant`/`OpenDebt`/`Waived`/`NotEvaluated`; exit 0 queda reservado a conformidad probada (C3l.7)
   - feat(lease): LeaseStore durable y multi-proceso; X04 cruza la frontera real (C3l.5)
   - feat(aiw): vertical real de expansion dinamica con identidad estable de trigger (C3l.3)
