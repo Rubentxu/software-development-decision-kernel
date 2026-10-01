@@ -259,6 +259,43 @@ La mitad de esta incidencia **no** está resuelta y no se arregla en una slice:
   `complete` pasa a warning, o la advertencia va sólo en `cycle status`? Cambia
   lo que `sddk-cycle-resume` y `sddk-debt-verify` pueden asumir. **SCOPE + ADR.**
 
+## Corrección de session-63: la hipótesis de la causa era ERRÓNEA
+
+Este documentoDice que *"`p-63676b11dc0ef88f` no se reproduce desde ningún
+remote ni scope probado"* y lo interpretó como **remote cambiado**. **Eso es
+falso, y queda corregido sin reescribir la observación original**, que sigue
+siendo cierto lo que midió: el id no se reproduce desde el remote *tal como lo
+normaliza el código hoy*.
+
+La verdad es más simple y más grave. Los dos receipts **declaran el mismo
+remote**, y sólo se diferencian en la *caste* del owner:
+
+| receipt | remote declarado | project_id |
+|---|---|---|
+| `2026-09-30T07:47:47Z` | `…/Rubentxu/software-development-decision-kernel` | `p-63676b11dc0ef88f` (65 ciclos) |
+| `2026-09-30T19:29:34Z` | `…/rubentxu/software-development-decision-kernel` | `p-995939af668a53d8` (vacío) |
+
+```text
+https://github.com/Rubentxu/software-development-decision-kernel  -> p-63676b11dc0ef88f
+https://github.com/rubentxu/software-development-decision-kernel  -> p-995939af668a53d8
+```
+
+Entre medias entró el commit `52182522` *"normalizar case del path del remote —
+case-change ya no forkea el ledger (D2)"*. **El remote no cambió: cambió el
+código que lo normaliza**, y con él el `project_id` de todo proyecto ya
+adoptado, sin migración.
+
+La causa y su alcance están en **[INC-DEBT-050](INC-DEBT-050-REMOTE-CASE-NORMALIZATION-REASSIGNS-PROJECT-IDS-WITHOUT-MIGRATION.md)**:
+**25 receipts de 104 (24%)**, 16 `project_id` y 13 repos remotos quedaron
+huérfanos en esta máquina.
+
+**Lección sobre el método:** busqué la causa en el remoto durante dos
+rondas de sondeo (30 remotes × 4 scopes, más el fallback seed por ruta) y
+concluí *"remote distinto"*. El certeza de que un receipt declara un remote es
+lo que estaba delante desde el principio y no se contrastó con el receipt
+**histórico**. Un solo `cat` de los dos `adoption.json` habría dado la
+respuesta. **Medir el contraejemplo antes de extender la hipótesis.**
+
 ## Conocimiento negativo útil
 
 No se pudo reproducir `p-63676b11dc0ef88f` desde ningún remote ni scope probado,
