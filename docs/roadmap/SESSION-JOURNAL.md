@@ -7808,3 +7808,39 @@ El peldaño 3 es lo que hace coherente el 2: un presupuesto con forma de acantil
 **Riesgo abierto nuevo:** la escalera está escrita pero **tampoco ejecutada**. El peldaño 1 está medido sobre un fichero; los peldaños 2 y 3 siguen sin probar sobre material real. `uat-discovery` es el candidato natural para ejecutarla entera en el siguiente ciclo: si los tres peldaños funcionan sobre las 14 líneas más baratas del repo, funcionan sobre las más caras.
 
 **Primer paso preciso de la sesión siguiente:** ejecutar la escalera completa sobre `uat-discovery` —adelgazar, y si las 10 restantes lo exigen, partir o documentar el waiver— y registrar qué peldaño se usó y por qué. Es el experimento que decide si ADR-0150 es aplicable o solo elegante.
+
+## session-65d (barrido) — 25 referencias rotas en las superficies, y el guard que las fija
+
+**Cómo salió.** Iba a ejecutar la escalera de remedio de ADR-0150 sobre `uat-discovery` y, al leer sus `References`, encontré que la spec que el propio fichero cita como **"full spec"** no existe. Eso me hizo preguntar si era un caso aislado.
+
+**Barrido.** Script propio sobre las superficies publicables (`agents/*.md`, `skills/*/SKILL.md`, `prompts/sddk/*.md`), extrayendo rutas de backticks y enlaces markdown y comprobando existencia: **394 referencias comprobadas**.
+
+El primer recuento dio 201 rotas. **Era falso**: `references/rust-testing.md` sí existe, pero relativo a `skills/test-pyramid/`, no a la raíz. Corregido el resolutor, bajó a 110. Luego a 51, y luego a 25, porque el resto eran rutas que la propia superficie **escribe al ejecutarse** (`evidence/sources.yaml`, `build/drift-report.yml`, `book-context/GLOSSARY.md`) — contratos de salida, no citas.
+
+**El recuento se verificó a mano antes de creerse.** La comprobación que casi convierte un falso positivo en defecto: `skill-creator` y `skill-improver` citan `docs/skill-style-guide.md`, que no existe, pero **declaran el fallback en sus propias líneas** — copia empaquetada en `references/` y, si tampoco, reglas inline. Es un caso diseñado. Marcarlos como rotos habría sido inventar un defecto. `skill-registry` cita el mismo doc **sin fallback**, y ese sí cuenta.
+
+**Las 25, en cinco familias:**
+
+| familia | citas | naturaleza |
+|---|---|---|
+| specs E14 (`E14.2/3/4`) | 6 | `specs/` **no existe**; 3 agentes y sus 3 skills lo citan como "full spec" |
+| agentes `cua-test-*` | 5 | el flujo entero de `cua-test-orchestrator/SKILL.md` llama a 3 actores que no existen |
+| `prompts/studio-agents/` | 6 | los ficheros existen como `agents/studio-*.md`; la ruta citada no |
+| `docs/impeccable-reference/` | 2 | `impeccable-primary` cita una referencia que no está |
+| `test-pyramid-builder` y sueltas | 6 | 3 en `test-pyramid-builder`, 1 en `deep-research-orchestrator`, 1 en `skill-registry`, 1 en `ui-audit-protocol` |
+
+**No se perdieron: nunca se escribieron.** `git log --all` da **cero commits** para `agents/cua-test-{runner,judge,scenarist}.md` y para `specs/E14*`. Y `skills/cua-test-orchestrator/SKILL.md` llegó así en el **import inicial** (`34d68c21`). No es pérdida de datos: es contenido redactado con referencias adelantadas que nunca se cumplieron.
+
+**Es el mismo patrón que ADR-016.** Un fichero declara una autoridad y otro la cita, y nadie comprueba que exista, porque una cita es prosa y no un enlace. Esta vez en 13 superficies en lugar de una línea de código.
+
+**Guard: `tests/test_surface_reference_integrity.py` (3/3 verde).** Congela la línea base exacta, de modo que **falla si alguien añade una cita rota nueva y falla igual si alguien arregla una sin actualizar la línea base** — que es la mitad del valor, porque obliga a decidir qué se hizo con ella.
+
+**El guard encontró su propio fallo al escribirse.** Declaré `DECLARED_FALLBACK` pero no lo apliqué en el detector, así que reportaba como rotas las dos citas con fallback. El segundo test lo cazó. Un control negativo que no hubiere estado no habría servido de nada.
+
+**Control negativo ejecutado, no afirmado:** inyectada `agents/cita-inventada.md` en `agents/orchestrator.md` → el guard **FALLA** nombrando el par; revertido → **OK**; `git diff --stat` confirma que el fichero quedó intacto.
+
+**Lo que NO se arregla aquí.** Las 6 citas de `prompts/studio-agents/` son correcciones mecánicas de una línea, pero `agents/studio-orchestrator.md` está en la lista de las 19 que el ciclo de brevedad va a reescribir. Arreglarlas ahora regeneraría `MANIFEST.sha256` y el bundle para corregir cadenas que van a cambiar de todos modos. **Se dejan para el ciclo, no antes.**
+
+**Comandos ejecutados (contexto real):** barrido con script propio · resolución manual de las familias dudosas · `git log --all` sobre los ficheros ausentes · `python3 tests/test_surface_reference_integrity.py` 3/3 · control negativo con inyección y reversión verificada por `git diff --stat`.
+
+**Primer paso preciso de la sesión siguiente:** decidir qué se hace con las dos familias graves — los actores `cua-test-*` que el flujo llama y no existen, y las specs E14 que son la definición autoritativa de tres subsistemas. Son dos decisiones distintas: la primera es un skill que promete un equipo que no está; la segunda es documentación de diseño ausente.
