@@ -130,7 +130,7 @@ jobs:
             '[contents]' \
             "manifest_sha256 = \"sha256:$MANIFEST_SHA\"" \
             > BUNDLE.toml
-          tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets specs MANIFEST.sha256 BUNDLE.toml
+          tar czf bundle/software-development-decision-kernel.tar.gz agents skills prompts/sddk assets specs docs/impeccable-reference MANIFEST.sha256 BUNDLE.toml
           (cd bundle && sha256sum software-development-decision-kernel.tar.gz > software-development-decision-kernel.tar.gz.sha256)
           # Contract check: this tarball is ROOT-LEVEL (no wrapper prefix),
           # so BUNDLE.toml must appear at the archive root. (The release.sh

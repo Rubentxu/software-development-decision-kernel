@@ -20,7 +20,7 @@ pub(super) const RECEIPT_FILE: &str = "sddk-install.json";
 ///
 /// `tests/test_bundle_surface_coverage.py` pins the four copies against each
 /// other. Run it after touching this constant.
-pub(crate) const MANIFEST_SURFACES: [&str; 5] = [
+pub(crate) const MANIFEST_SURFACES: [&str; 6] = [
     "agents",
     "skills",
     "prompts/sddk",
@@ -30,6 +30,13 @@ pub(crate) const MANIFEST_SURFACES: [&str; 5] = [
     // them: a citation the published artifact cannot resolve is a broken
     // promise, and the knowledge vault they came from is not distributed.
     "specs",
+    // The reference notes for the external `impeccable` dependency. A
+    // subdirectory of `docs/` rather than `docs/` itself, because `docs/`
+    // is most of the repository — including `docs/history/` — and shipping
+    // that is a different decision. Scoped to what `impeccable-primary.md`
+    // actually cites, for the same reason: the agent travels in the bundle
+    // and must not cite files the bundle does not carry.
+    "docs/impeccable-reference",
 ];
 
 pub(super) fn read_receipt(prefix: &Path) -> anyhow::Result<super::InstallReceipt> {

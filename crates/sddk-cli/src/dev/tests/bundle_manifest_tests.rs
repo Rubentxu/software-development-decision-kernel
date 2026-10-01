@@ -30,6 +30,7 @@ fn write_then_parse_round_trips() {
             prompts_count: 18,
             assets_count: 5,
             specs_count: 14,
+            impeccable_reference_count: 2,
             manifest_sha256: Some("sha256:abc".to_owned()),
         },
     )

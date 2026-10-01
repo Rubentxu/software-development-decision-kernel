@@ -103,6 +103,13 @@ pub struct ContentsSection {
     /// this struct, that constant and both `tar` command lines in agreement.
     #[serde(default)]
     pub specs_count: u32,
+    /// `docs/impeccable-reference/`, a subdirectory of `docs/` shipped under a
+    /// shorter field name. The surface name and the field name deliberately do
+    /// not correspond — that is what `SURFACE_TO_FIELD` in
+    /// `tests/test_bundle_surface_coverage.py` exists to record, after
+    /// `prompts/sddk` → `prompts_count` cost INC-DEBT-052 a permanently zero.
+    #[serde(default)]
+    pub impeccable_reference_count: u32,
     #[serde(default)]
     pub manifest_sha256: Option<String>,
 }

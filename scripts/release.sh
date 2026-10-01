@@ -529,12 +529,29 @@ BUNDLE_TARBALL="$TMP/software-development-decision-kernel.tar.gz"
 # to every member, so an absolute second path leaks its mktemp prefix (two
 # falsation runs failed before this layout; see session-34 receipt).
 BUNDLE_STAGE="$TMP/bundle-stage/software-development-decision-kernel"
-mkdir -p "$BUNDLE_STAGE/prompts"
-cp -r agents skills assets MANIFEST.sha256 "$BUNDLE_STAGE/"
-# prompts/sddk needs its parent created first: `cp -r prompts/sddk dst/`
-# nests correctly only when dst/prompts exists (falsated: without it, the
-# surface lands flat as dst/sddk and the tarball misses prompts/sddk/*).
-cp -r prompts/sddk "$BUNDLE_STAGE/prompts/"
+mkdir -p "$BUNDLE_STAGE"
+# The staging is derived FROM the manifest, not from a hand-written surface
+# list. Two defects forced this (session-65h, both measured):
+#
+#   (a) The `tar` below named surfaces the `cp -r` never staged, so the tar
+#       failed on a non-existent member. `set -euo pipefail` turns that into an
+#       aborted release, not a corrupt one -- but the release would not have
+#       completed at all. A subdirectory surface (prompts/sddk,
+#       docs/impeccable-reference) additionally needs its PARENT created
+#       before `cp -r`, or it lands flat as dst/<leaf> and the tar, which asks
+#       for the prefix path, finds nothing to stat.
+#   (b) `cp -r <surface>` copies whatever is on disk, INCLUDING gitignored
+#       files the manifest does not list. Measured on 2.5.3: the bundle shipped
+#       agents/.atl/.skill-registry.cache.json and assets/agent-models.yaml.bak
+#       (both matched by .gitignore:26 / :17) as bundle content outside the
+#       manifest, so `manifest_sha256` in BUNDLE.toml did not describe the
+#       tarball and an install could not verify them.
+#
+# The manifest is already the authoritative statement of what ships (step 4
+# verifies it, fail-closed). Reading the staging from it makes that authority
+# load-bearing for BOTH what is included and what is excluded, and removes the
+# hand-maintained list that had to be edited every time a surface was added.
+awk '{print $2}' MANIFEST.sha256 | xargs -d '\n' cp --parents -t "$BUNDLE_STAGE"
 # BUNDLE.toml must ship INSIDE the standalone bundle tarball. It used to be
 # written only AFTER the tar was created (step 6), so the published tarball
 # never contained it: `sddk dev update` resolves its layout from BUNDLE.toml,
@@ -555,12 +572,20 @@ printf '%s\n' \
     > "$BUNDLE_STAGE/BUNDLE.toml"
 tar czf "$BUNDLE_TARBALL" \
     --xform "s|^|software-development-decision-kernel/|" \
-    -C "$BUNDLE_STAGE" agents skills prompts/sddk assets specs MANIFEST.sha256 BUNDLE.toml
+    -C "$TMP/bundle-stage" software-development-decision-kernel
 sha256sum "$BUNDLE_TARBALL" | awk '{print $1}' > "$BUNDLE_TARBALL.sha256"
 # Contract check: the standalone tarball MUST carry BUNDLE.toml now.
 tar tzf "$BUNDLE_TARBALL" | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
     || { echo "FATAL: bundle tarball is missing software-development-decision-kernel/BUNDLE.toml" >&2; exit 1; }
+# Contract check (INC-DEBT-056, session-65h): the tarball's regular-file set
+# must be EXACTLY the manifest's paths plus BUNDLE.toml. This is the check
+# that would have caught (b) above. It compares the staged tree on disk rather
+# than the tar listing, so a member that silently went missing is caught too.
+DIFF_OUT="$(diff <(awk '{print $2}' MANIFEST.sha256 | sort) \
+                 <(cd "$BUNDLE_STAGE" && find . -type f -printf '%P\n' | grep -v '^BUNDLE.toml$' | sort) || true)"
+[ -z "$DIFF_OUT" ] || { echo "FATAL: staged bundle does not match the manifest:" >&2; echo "$DIFF_OUT" >&2; exit 1; }
 ok "bundle: $(basename "$BUNDLE_TARBALL") ($(stat -c%s "$BUNDLE_TARBALL") bytes, BUNDLE.toml included)"
+ok "bundle staging matches MANIFEST.sha256 exactly ($(awk 'END{print NR}' MANIFEST.sha256) + BUNDLE.toml)"
 
 # --- 6. BUNDLE.toml ---
 

@@ -293,6 +293,7 @@ pub(super) fn count_surface_entries(
                 "prompts/sddk" => &mut counts.prompts_count,
                 "assets" => &mut counts.assets_count,
                 "specs" => &mut counts.specs_count,
+                "docs/impeccable-reference" => &mut counts.impeccable_reference_count,
                 other => anyhow::bail!(
                     "MANIFEST_SURFACES declares the surface {other:?} but ContentsSection has no \
                      field for it; add the field and its arm here instead of shipping a 0 count"

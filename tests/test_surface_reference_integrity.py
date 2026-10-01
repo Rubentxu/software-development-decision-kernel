@@ -78,26 +78,25 @@ KNOWN_EXTENSIONS = {
 # Tres familias mas se RESOLVIERON en session-65d con la misma comprobacion
 # previa: el destino existia en un unico sitio y la ruta citada era la
 # equivocada. `test-pyramid-builder` (2) y `cua-test-orchestrator` (1).
-KNOWN_BROKEN = {
-    # Las DOS que quedan NO son rutas rotas por descuido: `impeccable-primary`
-    # promete un directorio `docs/impeccable-reference/` que **nunca existio en
-    # ninguna rama** (`git log --all --diff-filter=A -- 'docs/impeccable*'`
-    # vacio) y cuya skill, `impeccable`, tampoco esta en este repo: el agente
-    # es un wrapper de una skill externa que el usuario instala en
-    # `<your-impeccable-skill-path>/`. No hay destino unico al que corregir,
-    # luego la eleccion es del operador: retirarlas o escribir el contenido.
-    #
-    # Las otras trece de la linea base original (15) se resolvieron en
-    # session-65f/65g: las 6 de las specs E14 (que SI existen, copiadas al
-    # repo y ahora al bundle), las 5 de la familia cua-test-* (cuyos agentes
-    # nunca se escribieron y cuya skill paso a hacer el trabajo ella misma),
-    # `deep-research-methodology-hub` (existia en un unico sitio, faltaba el
-    # `sub/`), y `skill-style-guide` (no existe en el repo por diseno, pero
-    # `skill-registry` no declaraba el fallback que sus dos hermanos si
-    # declaran -- movido a DECLARED_FALLBACK).
-    ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
-    ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-}
+# Linea base vacia. Las quince citas rotas que dio el barrido inicial
+# (session-65d) se resolvieron todas, en tres tandas:
+#
+#   session-65f — las 6 de las specs E14, que SI existen (copiadas al repo
+#     desde el knowledge vault), y las 5 de la familia cua-test-*, cuyos
+#     agentes nunca se escribieron y cuya skill paso a hacer el trabajo
+#     ella misma en vez de delegar en ellos.
+#   session-65g — las 2 de `docs/impeccable-reference/`, escritas con
+#     contenido real del upstream citedado, NO inventado; y
+#     `deep-research-methodology-hub`, que existia en un unico sitio
+#     (`skills/deep-research/sub/…`) y a la que le faltaba el `sub/`.
+#   session-65h — `skill-registry` autorizo el doc ausente que sus dos
+#     hermanos ya declaraban con fallback, y se le copio la guia para
+#     que la cadena que declara exista.
+#
+# Un conjunto vacio es el estado correcto aqui: no significa que no queden
+# referencias dudosas, significa que no queda ninguna que no resuelva. Si
+# esto vuelve a poblarse, el guard dira CUAL, y eso es lo que se busca.
+KNOWN_BROKEN = set()
 
 # Descartadas por verificacion manual: la superficie declara un fallback
 # explicito para la ausencia. `skill-creator` y `skill-improver` dicen, en sus
