@@ -39,7 +39,7 @@ Cero checks de briefness emitidos y, aun así, `all_present: true` y exit 0. El
 gate no podía fallar: no tenía nada que mirar.
 
 En el repo, el mismo comando sí encuentra 19 superficies fuera de presupuesto
-(2 agents >300, 11 skills >150, 3 prompts >200). La diferencia entre «19
+(2 agents >300, 14 skills >150, 3 prompts >200). La diferencia entre «19
 incumplimientos» y «0印发» no era el estado de las superficies: era dónde se
 miraba.
 
