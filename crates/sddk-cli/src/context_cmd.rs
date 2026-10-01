@@ -1060,6 +1060,13 @@ fn converge_adoption(
     let timestamp = format_rfc3339(now_ms);
     let plan = sddk_engine::plan_adoption(sddk_engine::AdoptionPlanInput {
         remote_url: remote.map(str::to_string),
+        // The caller already resolved the identity honouring the durable pin;
+        // forward it so the plan converges on the same project instead of
+        // re-deriving from the remote. INC-DEBT-049.
+        pinned_project_id: match identity.identity_source {
+            sddk_domain::IdentitySource::Pinned => Some(identity.project_id.to_string()),
+            _ => None,
+        },
         scope: scope.to_string(),
         fallback_seed: if remote.is_none() {
             Some(sddk_domain::stable_fallback_seed(canonical))

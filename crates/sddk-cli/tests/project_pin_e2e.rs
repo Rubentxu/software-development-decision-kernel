@@ -7,6 +7,12 @@
 //!   el project_id resuelto.
 //! - Repinar a otro project_id falla sin `unpin` previo; `unpin` restaura el
 //!   derive por remote.
+//! - INC-DEBT-049: el pin también es autoridad para `adopt status` y para la
+//!   inferencia de `cycle status`. Antes esas dos vías
+//!   rederivaban desde el remote y reportaban un project_id DISTINTO al que
+//!   `project resolve` mostraba sobre el mismo checkout con pin. Los dos tests
+//!   anteriores pasaban mientras esas tres seguían mintiendo, porque sólo
+//!   ejercitaban el resolver que ya honraba el pin.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -37,9 +43,18 @@ impl Drop for Sandbox {
 }
 
 fn run(dir: &std::path::Path, args: &[&str]) -> (i32, String) {
+    // XDG isolation: these commands resolve real storage paths and some of
+    // them (adopt) open a ledger. Without isolation, two cases sharing a
+    // remote would contend on the developer's actual ledger — observed as
+    // "database is locked" — and would write into it besides.
+    let xdg = dir.join(".xdg");
+    std::fs::create_dir_all(&xdg).ok();
     let out = Command::new(bin())
         .args(args)
         .env_remove("SDDK_PROJECT_ID")
+        .env("XDG_DATA_HOME", xdg.join("data"))
+        .env("XDG_STATE_HOME", xdg.join("state"))
+        .env("XDG_CACHE_HOME", xdg.join("cache"))
         .current_dir(dir)
         .output()
         .expect("sddk binary runs");
@@ -51,6 +66,17 @@ fn run(dir: &std::path::Path, args: &[&str]) -> (i32, String) {
             String::from_utf8_lossy(&out.stderr)
         ),
     )
+}
+
+/// `adopt status` exits non-zero when the project is not adopted (`status:
+/// absent`), which is the correct answer for a fresh checkout. The project_id
+/// it reports is what matters, so read it regardless of the exit code.
+fn project_id_from(out: &str) -> String {
+    out.lines()
+        .find_map(|l| l.strip_prefix("project_id: "))
+        .expect("project_id line in output")
+        .trim()
+        .to_string()
 }
 
 #[test]
@@ -226,4 +252,102 @@ fn unpin_restores_remote_derivation() {
     );
     assert_eq!(code, 0, "{out}");
     assert!(out.contains(&format!("project_id: {id_b}")), "{out}");
+}
+
+/// INC-DEBT-049: un pin declarado por el operador es la autoridad de identidad.
+/// Este test recorre las superficies visibles que ANTES rederivaban desde el
+/// remote. La tercera vía rota (`resolve_project_ids`, usada por `config set`)
+/// no expone el id en su salida, así que se cubre con un test unitario en
+/// `lib.rs::tests::resolve_project_ids_honors_the_pin`.
+///
+/// El fallo original, medido en vivo: sobre un checkout con pin, `project
+/// resolve` reportaba `p-63676b11dc0ef88f` mientras `adopt status` reportaba
+/// `p-995939af668a53d8` y `cycle status` buscaba ciclos del id equivocado. El
+/// pin se escribía y no surtía efecto en dos de las tres vías.
+#[test]
+fn pinned_identity_is_authoritative_for_adopt_config_and_cycle() {
+    let s = Sandbox::new("authoritative");
+
+    let remote = "git@example.com:Org/Repo.git";
+    let id_pinned = "p-pinnedauthoritative01";
+
+    // Baseline sin pin: `adopt status` deriva del remote.
+    let (_, out) = run(
+        &s.dir,
+        &[
+            "adopt", "status", "--root", ".", "--scope", ".", "--remote", remote,
+        ],
+    );
+    let derived = project_id_from(&out);
+    assert!(derived.starts_with("p-"), "{out}");
+    assert_ne!(
+        derived, id_pinned,
+        "el id derivado debe diferir del pin; si no, el test no prueba nada"
+    );
+
+    let (code, out) = run(
+        &s.dir,
+        &[
+            "project",
+            "pin",
+            "--root",
+            ".",
+            "--project-id",
+            id_pinned,
+            "--reason",
+            "inc-debt-049",
+        ],
+    );
+    assert_eq!(code, 0, "pin: {out}");
+
+    // 1. adopt status: debe reportar el id pinneado, no el derivado.
+    let (_, out) = run(
+        &s.dir,
+        &[
+            "adopt", "status", "--root", ".", "--scope", ".", "--remote", remote,
+        ],
+    );
+    assert!(
+        out.contains(&format!("project_id: {id_pinned}")),
+        "adopt status debe honourar el pin (esperaba {id_pinned}, derivado {derived}):\n{out}"
+    );
+
+    // 2. cycle status: sin ciclos activos nombra el proyecto en el error. Ese
+    //    nombre es el project_id que buscó, así que delata el resolver usado.
+    let (_, out) = run(&s.dir, &["cycle", "status", "--root", ".", "--scope", "."]);
+    assert!(
+        out.contains(id_pinned),
+        "cycle status debe buscar ciclos del proyecto pinneado:\n{out}"
+    );
+}
+
+/// Contrapartida del anterior: sin pin, nada cambia. Un fix que alterase el
+/// caso normal (el 99% de los checkouts) pasaría el test de arriba y rompería
+/// este. INC-DEBT-049.
+#[test]
+fn unpinned_checkout_still_derives_from_the_remote() {
+    let s = Sandbox::new("unpinned-unchanged");
+
+    let remote = "git@example.com:Org/Repo.git";
+    let (_, out) = run(
+        &s.dir,
+        &[
+            "adopt", "status", "--root", ".", "--scope", ".", "--remote", remote,
+        ],
+    );
+    let from_adopt = project_id_from(&out);
+
+    let (code, out) = run(
+        &s.dir,
+        &[
+            "project", "resolve", "--root", ".", "--remote", remote, "--scope", ".",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    let from_resolve = project_id_from(&out);
+
+    assert_eq!(
+        from_adopt, from_resolve,
+        "sin pin, adopt status y project resolve deben coincidir (derive por remote)"
+    );
 }

@@ -490,6 +490,7 @@ impl Fixture {
     fn input(&self, relative_root: &str) -> AdoptionPlanInput {
         AdoptionPlanInput {
             remote_url: None,
+            pinned_project_id: None,
             scope: ".".into(),
             fallback_seed: None,
             canonical_workspace_path: self.root.join(relative_root),

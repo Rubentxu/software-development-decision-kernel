@@ -94,8 +94,8 @@ use release_cmd::ReleaseCommand;
 use result_cmd::{AgentResultCommand, ValidateCommand};
 use rules_cmd::RulesCommand;
 use sddk_domain::{
-    IdentitySource, LedgerFactory, SddkErrorCode, normalize_scope, resolve_project_identity,
-    stable_workspace_id,
+    IdentitySource, LedgerFactory, ProjectId, ResolvedProjectIdentity, SddkErrorCode,
+    normalize_scope, resolve_project_identity, stable_workspace_id,
 };
 use sddk_storage::{SqliteControlPlane, SqliteLedgerFactory};
 
@@ -1493,6 +1493,48 @@ fn version_text(output: &VersionResolution) -> String {
     )
 }
 
+/// The one place project identity is decided for every CLI surface.
+///
+/// A durable pin (`.sddk/project-pin.json`) wins over remote/seed derivation:
+/// once an operator pins a `project_id`, a renamed or case-drifted remote can
+/// no longer fork the ledger (W2c, agent-secretless report D2).
+///
+/// **Why this function exists.** The pin used to be honoured by only two of
+/// five independent resolvers in this crate — `project resolve` and
+/// `RuntimeContext::open`. The other three (`resolve_project_ids`, cycle
+/// inference, `prepare_adoption_plan`) re-derived the identity from
+/// remote/seed, so a pinned checkout still split across two `project_id`s:
+/// `sddk cycle status` and `sddk adopt status` reported the unpinned one while
+/// `sddk project resolve` reported the pinned one. The `ProjectPin` doc comment
+/// claimed "every runtime context honors it"; that claim was false and nothing
+/// tested it. See INC-DEBT-049.
+///
+/// Every resolver must go through here. A surface that legitimately needs a
+/// different *output* shape (notably `project resolve`, which reports
+/// `remote_url` alongside the id) may call the pin lookup directly, but it
+/// must not re-derive the identity.
+pub(crate) fn resolve_identity_honoring_pin(
+    root: &Path,
+    scope: &str,
+    remote: Option<String>,
+    fallback_seed: Option<String>,
+) -> anyhow::Result<ResolvedProjectIdentity> {
+    if let Some(pin) = load_project_pin(root)? {
+        return Ok(ResolvedProjectIdentity {
+            project_id: ProjectId::new(pin.project_id.clone())?,
+            remote_url: None,
+            scope: normalize_scope(scope)?,
+            identity_source: IdentitySource::Pinned,
+            fallback_seed: None,
+        });
+    }
+    Ok(resolve_project_identity(
+        remote.as_deref(),
+        scope,
+        fallback_seed.as_deref(),
+    )?)
+}
+
 /// Resolve `(project_id, workspace_id)` for a root. Single source shared by
 /// `sddk project resolve` and `sddk config resolve`.
 pub(crate) fn resolve_project_ids(
@@ -1509,7 +1551,10 @@ pub(crate) fn resolve_project_ids(
         (None, None) => Some(sddk_domain::stable_fallback_seed(&path_string(&root)?)),
         (_, seed) => seed,
     };
-    let identity = resolve_project_identity(remote.as_deref(), scope, fallback_seed.as_deref())?;
+    // Goes through the canonical resolver so a pinned checkout reports the
+    // pinned project here too. It used to call `resolve_project_identity`
+    // directly and silently ignore the pin — INC-DEBT-049.
+    let identity = resolve_identity_honoring_pin(&root, scope, remote, fallback_seed)?;
     let canonical_workspace_path = path_string(&root)?;
     let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
     Ok((identity.project_id.to_string(), workspace_id))
@@ -1542,9 +1587,15 @@ pub(crate) struct ProjectUnpinArgs {
 }
 
 /// Durable project pin: `.sddk/project-pin.json` in the checkout.
-/// When present, `project resolve` and every runtime context honor it over
+/// When present, every project-identity resolution honors it over
 /// remote/seed derivation, so a renamed or case-drifted remote cannot fork
 /// the ledger (agent-secretless report D2, work item W2c).
+///
+/// **This doc used to be a false claim.** It said "every runtime context
+/// honors it" while only two of five independent resolvers did; `adopt
+/// status`, `config resolve` and cycle inference silently re-derived from
+/// the remote. Nothing tested the contract it asserted. All resolvers now go
+/// through [`resolve_identity_honoring_pin`]. INC-DEBT-049.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ProjectPin {
     pub(crate) schema_version: u32,
@@ -1913,6 +1964,10 @@ fn prepare_adoption_plan(
     environment: &CliEnvironment,
 ) -> anyhow::Result<AdoptionPlan> {
     let root = canonical_root(&args.root)?;
+    // Read the pin here so `plan_adoption` can honour it. The engine stays
+    // filesystem-free, so this is the only place that can see the file.
+    // INC-DEBT-049.
+    let pinned_project_id = load_project_pin(&root)?.map(|pin| pin.project_id);
     let remote = resolve_remote(&root, args.remote)?;
     let mut fallback_seed = args.fallback_seed;
     if remote.is_none() && fallback_seed.is_none() {
@@ -1956,6 +2011,7 @@ fn prepare_adoption_plan(
         .unwrap_or_else(|| "sddk-cli".into());
     Ok(plan_adoption(AdoptionPlanInput {
         remote_url: remote,
+        pinned_project_id,
         scope: args.scope,
         fallback_seed,
         canonical_workspace_path: root,
@@ -2361,5 +2417,40 @@ mod tests {
         let output = run_from(["sddk", "completion", "zsh"]);
         assert_eq!(output.status, 0);
         assert!(output.stdout.contains("#compdef"));
+    }
+
+    /// INC-DEBT-049: `resolve_project_ids` (la vía que usa `config set`)
+    /// rederivaba la identidad desde el remote e ignoraba el pin. Este es el
+    /// tercer resolver roto; los dos primeros los cubre el e2e de pin.
+    #[test]
+    fn resolve_project_ids_honors_the_pin() {
+        let root =
+            std::env::temp_dir().join(format!("sddk-unit-pin-{}-{}", std::process::id(), line!()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let remote = Some("https://example.com/acme/repo.git".to_string());
+
+        // Sin pin: el id viene del remote derivado.
+        let (derived, _) = resolve_project_ids(&root, ".", remote.clone(), None).unwrap();
+        assert!(derived.starts_with("p-"), "{derived}");
+        assert_ne!(
+            derived, "p-unithonorspin001",
+            "el id derivado debe diferir del pin, si no el test no prueba nada"
+        );
+
+        // Con pin presente, el pinneado gana.
+        std::fs::create_dir_all(root.join(".sddk")).unwrap();
+        std::fs::write(
+            root.join(".sddk/project-pin.json"),
+            r#"{"schema_version":1,"project_id":"p-unithonorspin001","reason":"test","pinned_at":"2026-10-01T12:00:00Z"}"#,
+        )
+        .unwrap();
+        let (pinned, _) = resolve_project_ids(&root, ".", remote, None).unwrap();
+        assert_eq!(
+            pinned, "p-unithonorspin001",
+            "resolve_project_ids debe honourar el pin"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

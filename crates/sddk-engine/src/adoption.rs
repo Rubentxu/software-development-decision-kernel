@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sddk_domain::error::SddkErrorCode;
 use sddk_domain::{
     AdoptionReceipt, IdentityError, IdentitySource, Ledger, ResolvedProjectIdentity,
-    resolve_project_identity, stable_workspace_id,
+    normalize_scope, resolve_project_identity, stable_workspace_id,
 };
 use sddk_domain::{ProjectRecord, StorageError, WorkspaceRecord};
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,14 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub struct AdoptionPlanInput {
     /// Raw remote URL, or `None` for fallback identity.
     pub remote_url: Option<String>,
+    /// Durable pin declared by the checkout (`.sddk/project-pin.json`).
+    ///
+    /// When present it **wins** over `remote_url`/`fallback_seed`
+    /// derivation: a renamed or case-drifted remote must not fork the
+    /// ledger. It is the caller (`sddk-cli`) that reads the pin file; this
+    /// crate stays free of filesystem access so `plan_adoption` remains a
+    /// pure function. INC-DEBT-049.
+    pub pinned_project_id: Option<String>,
     /// Required monorepo scope.
     pub scope: String,
     /// Stable UUID required when no remote is available.
@@ -186,11 +194,26 @@ impl SddkErrorCode for AdoptionError {
 /// Builds an adoption plan without reading or writing process or filesystem state.
 pub fn plan_adoption(input: AdoptionPlanInput) -> Result<AdoptionPlan, AdoptionError> {
     validate_plan_input(&input)?;
-    let identity = resolve_project_identity(
-        input.remote_url.as_deref(),
-        &input.scope,
-        input.fallback_seed.as_deref(),
-    )?;
+    // Pinned identity wins over remote/seed derivation (W2c). Before this,
+    // `adopt status` re-derived the identity from the remote and reported a
+    // different project_id than `project resolve` did on the same checkout,
+    // which is how a re-adopted repo kept reporting `status: complete` over an
+    // empty storage while its real ledger sat under the pinned id.
+    // INC-DEBT-049.
+    let identity = match input.pinned_project_id.as_deref() {
+        Some(pinned) => ResolvedProjectIdentity {
+            project_id: sddk_domain::ProjectId::new(pinned)?,
+            remote_url: None,
+            scope: normalize_scope(&input.scope)?,
+            identity_source: IdentitySource::Pinned,
+            fallback_seed: None,
+        },
+        None => resolve_project_identity(
+            input.remote_url.as_deref(),
+            &input.scope,
+            input.fallback_seed.as_deref(),
+        )?,
+    };
     let canonical_workspace_path = path_string(&input.canonical_workspace_path)?;
     let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
     let paths = resolve_xdg_paths(&input.xdg, identity.project_id.as_str(), &workspace_id)?;
@@ -639,6 +662,14 @@ fn validate_plan_input(input: &AdoptionPlanInput) -> Result<(), AdoptionError> {
             input.canonical_workspace_path
         )));
     }
+    // A malformed pin must fail loud rather than fall through to remote
+    // derivation: silently ignoring an unreadable pin is exactly how the
+    // checkout ended up split across two project_ids. INC-DEBT-049.
+    if let Some(pinned) = input.pinned_project_id.as_deref() {
+        sddk_domain::ProjectId::new(pinned).map_err(|e| {
+            AdoptionError::InvalidInput(format!("pinned project_id is invalid: {e}"))
+        })?;
+    }
     Ok(())
 }
 
@@ -758,6 +789,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let plan = plan_adoption(AdoptionPlanInput {
             remote_url: Some("https://example.com/acme/repo.git".into()),
+            pinned_project_id: None,
             scope: ".".into(),
             fallback_seed: None,
             canonical_workspace_path: root,
@@ -827,6 +859,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let plan = plan_adoption(AdoptionPlanInput {
             remote_url: Some("https://example.com/acme/repo.git".into()),
+            pinned_project_id: None,
             scope: ".".into(),
             fallback_seed: None,
             canonical_workspace_path: root,

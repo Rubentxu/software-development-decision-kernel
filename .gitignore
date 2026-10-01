@@ -76,6 +76,14 @@ golden-dataset/results/
 # Per cycle-36 discipline: no amend previous cycles, no commit runtime CAS.
 .sddk/cycles/
 
+# SDDK project pin (`.sddk/project-pin.json`). Machine-local identity
+# configuration: it declares WHICH project_id this checkout is, and that
+# answer can differ per machine and per checkout location. Committing it
+# would force every other clone of this repo onto the committer's
+# project_id, which is exactly the fork the pin exists to prevent.
+# `.sddk/followups/` stays tracked on purpose — it is authored evidence.
+.sddk/project-pin.json
+
 # EXT provider gate receipts (C3l.4). `tests/ext_provider_gate.sh` rewrites
 # this file on every run, so committing it would dirty the tree on each
 # invocation. The durable observation belongs in docs/roadmap/UAT-MATRIX.md;

@@ -235,10 +235,19 @@ fn resolve_cycle_context_with_cwd(
     // Step 4: Resolve cycle from active leases (only if cycle not explicit)
     // This requires project identity, which we defer to RuntimeContext::open.
     // For cycle inference we need project_id now, so we resolve it here
-    // using the same logic as RuntimeContext::open (remote OR fallback_seed OR generate).
+    // using the same logic as RuntimeContext::open — which includes the
+    // durable pin. The old comment claimed "remote OR fallback_seed OR
+    // generate" and omitted the pin; that omission is why `cycle status` kept
+    // reporting the unpinned project on a pinned checkout (INC-DEBT-049).
     let cycle_id = if let Some(c) = cycle_arg {
         Some(c.to_string())
     } else {
+        // A pin is an explicit operator declaration of the project identity,
+        // so it outranks every derived signal — including the remote.
+        let pinned = crate::load_project_pin(&root)
+            .ok()
+            .flatten()
+            .map(|p| p.project_id);
         // Need project_id for cycle inference — resolve it using available signals
         let remote = crate::resolve_remote(&root, args.remote.clone())
             .ok()
@@ -251,7 +260,9 @@ fn resolve_cycle_context_with_cwd(
         }
         // If no remote and no fallback_seed, we can't infer cycle without walking up
         // to find project markers. Use the project_id from project markers if available.
-        let project_id = if remote.is_some() {
+        let project_id = if let Some(ref pinned) = pinned {
+            Some(ProjectId::new(pinned.clone()).ok())
+        } else if remote.is_some() {
             // Use remote for project_id
             if let Some(ref remote_url) = remote {
                 let normalized = normalize_remote_url(remote_url).ok();
@@ -445,24 +456,10 @@ impl RuntimeContext {
             let canonical = crate::path_string(&root)?;
             fallback_seed = Some(sddk_domain::stable_fallback_seed(&canonical));
         }
-        let identity = if let Some(pin) = crate::load_project_pin(&root)? {
-            // Pinned identity wins (W2c): the checkout declared its project_id
-            // explicitly, so remote renames or case drift cannot fork the
-            // ledger. Recorded with identity_source=pinned for auditability.
-            sddk_domain::ResolvedProjectIdentity {
-                project_id: sddk_domain::ProjectId::new(pin.project_id.clone())?,
-                remote_url: None,
-                scope: sddk_domain::normalize_scope(scope)?,
-                identity_source: sddk_domain::IdentitySource::Pinned,
-                fallback_seed: None,
-            }
-        } else {
-            sddk_domain::resolve_project_identity(
-                remote.as_deref(),
-                scope,
-                fallback_seed.as_deref(),
-            )?
-        };
+        // Canonical resolver: a durable pin wins over remote/seed derivation
+        // (W2c), so a renamed or case-drifted remote cannot fork the ledger.
+        // Recorded with identity_source=pinned for auditability. INC-DEBT-049.
+        let identity = crate::resolve_identity_honoring_pin(&root, scope, remote, fallback_seed)?;
         let canonical_workspace_path = crate::path_string(&root)?;
         let workspace_id =
             crate::stable_workspace_id(&identity.project_id, &canonical_workspace_path);
