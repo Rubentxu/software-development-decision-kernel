@@ -7720,3 +7720,52 @@ Las 19 coinciden una a una con el recuento independiente hecho con script antes 
 
 **Primer paso preciso de la sesión siguiente:** abrir el ciclo de brevedad con SCOPE-CONTRACT congelado. El triage dice que es viable: las 19 tienen ≥6 secciones `##`, y 2 (playwright-cli, test-pyramid) ya usan el patrón `references/` que ADR-016 describe. Exceso mayor: `HTML-REPORT.md` (+1128), `entropy-sdd` (+399), `cognicode-sdd` (+294). Exceso menor: `uat-discovery` (+14), `branch-pr` (+52), `studio-orchestrator` (+64). Al cierre del ciclo hay que regenerar `MANIFEST.sha256` y reinstalar.
 
+
+## session-65d (addendum) — El ADR de brevedad no existía: ADR-0150 escrito
+
+**Punto de partida (pregunta del operador, perenne en su instrucción):** «deuda técnica severa reciente **verificando que sus criterios sigan vigentes**». Verificar los criterios de brevedad destapó que **no había criterio canónico que verificar**.
+
+**El hallazgo.** `CHANGELOG.md:2308` registra `docs(adr): ADR-016 surface-brevity` como trabajo hecho, y `crates/sddk-cli/src/dev/doctor.rs` implementa los tres números citando ese ADR-016. Rastreados el repo entero y todo el historial de git con `git log --all --diff-filter=A --name-only -- '*ADR-016*' '*brevity*'`: **ese ADR nunca fue commiteado.** Los ADR-016 que existen son *outcomes-events-errors*, *provider-independent-agent-profiles* y *universal-evidence-model*. Los `400-line budget` de `prompts/sddk/phases/{apply,tasks}.md` son de tamaño de PR (`chained-pr`), no de superficies. Ninguno de los 58 ADRs de `docs/architecture/adrs/` menciona brevedad, presupuesto de líneas ni Pocock.
+
+Es decir: el concepto tenía **un punto de aplicación y una cita, y ninguna autoridad**. Nadie podía consultar qué estructura produce un corte, ni qué hacer con una superficie que no se puede partir.
+
+**Medición que faltaba** (los tres umbrales nunca tuvieron derivación):
+
+| medida | valor |
+|---|---|
+| skills que cumplen el techo de 150 | 78 |
+| media de las que cumplen | 3 034 bytes ≈ **758 tokens** ≈ 119 líneas |
+| superficies fuera de presupuesto | **19** (2 agents, 14 skills, 3 prompts) |
+| tokens de las 19 incumplidoras | **≈ 68 400** |
+| peor caso | `prompts/sddk/HTML-REPORT.md`, 1 328 líneas ≈ **14 900 tokens** |
+| skills que adoptaron `references/` sin que nadie lo mandara | **2** |
+
+El techo de 150 queda a **1,26× la mediana** de lo que ya se cumple: no es arbitrario, es un backstop que casi nada toca. Y el dato que más pesa a favor es el último: `playwright-cli` y `test-pyramid` adoptaron el patrón por decisión propia, **antes de que existiera regla alguna**.
+
+**Decisión del operador:** escribir el ADR canónico ratificando 300/150/200. Con su autorización explícita, y su opción incluyendo «más lo que la evidencia obligue a precisar».
+
+**Lo escrito: `docs/architecture/adrs/ADR-0150-SURFACE-BREVITY.md`**, con lo que el ADR fantasma no tenía:
+
+1. **Derivación** de los tres presupuestos, con la tabla de arriba, en vez de una constante.
+2. **Vía de waiver**, que el changelog declaraba explícitamente como «sin excepciones nominales» y que **no se ratifica**: un gate duro sin salida fuerza *cumplir o `--no-verify`*. El waiver se registra como entrada en `docs/debt/` con severidad y prioridad de ADR-0047, y `--strict` **sigue fallando** — documentar deuda no es legalizarla.
+3. **Imprecisión declarada**: el gate cuenta líneas y lo que se grava son tokens (media real 78 bytes/línea). Dirección: medir tokens. El error favorece partir de más.
+4. **Contrato de corte**, que era la parte que nadie podía consultar: se queda frontmatter, línea de gate si delega, `## Purpose`, el contrato como lista corta, **un** ejemplo e índice `## References`; se mueve la profundidad por temas a `references/` en minúsculas y guiones. Cada referencia abre diciendo **qué cubre y qué no**, como ya hace `test-pyramid/references/rust-testing.md`.
+5. **Referencias bajo demanda**: un `references/` que se carga entero reproduce el problema dentro del archivo.
+6. **El caso de las especificaciones**: `HTML-REPORT.md` describe en su propio texto «Progressive Disclosure (20 sections, 4 layers)» y son 1 328 líneas en un fichero — prescribe disclosure progresivo y no lo ejerce sobre sí mismo. Se parte por su propia especificación, **no** por waiver: waiver es para lo que no se puede partir.
+7. **Fail-closed cuando no hay nada que medir**, que es el defecto de INC-DEBT-054 ya cerrado y validado.
+
+**Citas colgantes reparadas:** 8 en `doctor.rs`, 4 en `tests/cli.rs`, 3 en `INC-DEBT-054`. Las referencias `§4` se eliminaron porque apuntaban a una sección que no existía en ningún documento — el ADR citado no existía. Quedan `ADR-016` legítimos: la historia dentro del propio ADR-0150 y el `package_local_id` de ADR-0109, que es el mapeo histórico que §2.9 manda conservar.
+
+**Comandos ejecutados (contexto real):**
+- `cargo fmt --all --check` → OK (tras aplicar fmt: `ADR-0150` es 3 caracteres más largo que `ADR-016` y desbordó una línea)
+- `cargo clippy -p sddk-cli --all-targets -- -D warnings` → limpio
+- `cargo test -p sddk-cli --test cli cli_dev_doctor` → 6 passed
+- `bash tests/test_changelog_coverage.sh` → PASS=6 FAIL=0
+- `bash tests/test_debt_index_coherence.sh` → PASS=10 FAIL=0
+- Medición de contexto con script propio, sobre árbol y bundle
+
+**NOT_RUN declarado:** la reducción de las 19 superficies. Este slice entrega el contrato, no el corte; el corte es ciclo propio y necesita su propio SCOPE-CONTRACT con UAT y stop conditions.
+
+**Riesgos abiertos:** las 19 siguen incumpliendo `--strict` (correcto y ya visible) · el bundle local sigue en 2.5.2 hasta que se publique la release · la vía de waiver crea trabajo nuevo de disciplina de deuda · sigue sin resolverse qué hacer con el actor concurrente con push sobre `main`.
+
+**Primer paso preciso de la sesión siguiente:** abrir el ciclo de brevedad con SCOPE-CONTRACT congelado contra ADR-0150, empezando por las más baratas (`uat-discovery` +14, `branch-pr` +52, `studio-orchestrator` +64) para validar el contrato de corte sobre material barato antes de atacar `HTML-REPORT.md` (+1128).

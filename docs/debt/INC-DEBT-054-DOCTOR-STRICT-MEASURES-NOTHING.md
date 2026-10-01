@@ -80,10 +80,10 @@ mientras la ruta-neutra pasaba sin comprobar nada.
 
 `grep -rn -- '--strict' .github/` → **cero coincidencias**. Ningún workflow de
 CI, y ningún paso de `scripts/release.sh`, invocan `dev doctor --strict`. Los
-criterios de ADR-016 (agent ≤300, skill ≤150, prompt ≤200) sólo se ejecutaban
+criterios de ADR-0150 (agent ≤300, skill ≤150, prompt ≤200) sólo se ejecutaban
 desde esos dos tests de integración.
 
-Los criterios siguen vigentes —no hay waiver registrado y el ADR-016 no ha sido
+Los criterios siguen vigentes —no hay waiver registrado y el ADR-0150 no ha sido
 sustituido— pero su única aplicación automática era un test que nunca tocaba el
 camino defectuoso.
 
@@ -96,7 +96,7 @@ camino defectuoso.
   (`agents/` 70, `skills/` 96, `prompts/sddk/` 25 en `2.5.2`).
 - **Fallo cerrado.** Sin superficies se emite `surface.briefness.root` con
   `present: false` y un `detail` que dice *unverifiable*, y cuenta como violación
-  de brevedad. En modo advisor sigue siendo advisory (exit 0, ADR-016 §4); con
+  de brevedad. En modo advisor sigue siendo advisory (exit 0, ADR-0150); con
   `--strict` sale 1. Una medición vacía no es una medición aprobada.
 - **Una sola autoridad.** `SURFACE_DIRS` sustituye a la lista literal
   `["agents", "skills", "prompts/sddk"]` que el bucle de `empty_dirs` repetía.

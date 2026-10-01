@@ -55,7 +55,7 @@ struct FrameworkCheck {
     detail: String,
 }
 
-/// The three directories that hold framework surfaces (ADR-016).
+/// The three directories that hold framework surfaces (ADR-0150).
 const SURFACE_DIRS: [&str; 3] = ["agents", "skills", "prompts/sddk"];
 
 /// True when `root` holds at least one framework surface directory.
@@ -467,7 +467,7 @@ pub(super) fn run_dev_doctor(
         }
     }
 
-    // Surface brevity checks (ADR-016): agent ≤ 300, skill ≤ 150, prompt ≤ 200.
+    // Surface brevity checks (ADR-0150): agent ≤ 300, skill ≤ 150, prompt ≤ 200.
     //
     // INC-DEBT-054: this block used to read from `current_dir()` only, and
     // every enumeration was guarded by `if let Ok(entries) = read_dir(..)`. A
@@ -494,14 +494,14 @@ pub(super) fn run_dev_doctor(
 
     // Fail closed: an empty measurement is not a passing measurement. Emitted
     // as a regular check so advisory mode still reports it (exit 0) while
-    // `--strict` promotes it (ADR-016 §4).
+    // `--strict` promotes it (ADR-0150).
     if !has_surface_dirs(&root) {
         brevity_violations += 1;
         checks.push(DoctorCheck {
             tool: "surface.briefness.root".into(),
             present: false,
             detail: Some(format!(
-                "no surfaces under {} (looked for {}) — ADR-016 brevity is unverifiable here, not satisfied",
+                "no surfaces under {} (looked for {}) — ADR-0150 brevity is unverifiable here, not satisfied",
                 root.display(),
                 SURFACE_DIRS.join(", ")
             )),
@@ -601,7 +601,7 @@ pub(super) fn run_dev_doctor(
         }
     }
 
-    // Surface empty-dirs check (ADR-016): no empty subdirectories in surfaces.
+    // Surface empty-dirs check (ADR-0150): no empty subdirectories in surfaces.
     for surface_dir in SURFACE_DIRS {
         let dir_path = root.join(surface_dir);
         if dir_path.is_dir()
@@ -625,7 +625,8 @@ pub(super) fn run_dev_doctor(
                     checks.push(DoctorCheck {
                         tool: format!("surface.empty_dirs.{rel}"),
                         present,
-                        detail: (!present).then(|| format!("{rel} is empty — remove it (ADR-016)")),
+                        detail: (!present)
+                            .then(|| format!("{rel} is empty — remove it (ADR-0150)")),
                     });
                 }
             }
@@ -807,7 +808,7 @@ pub(super) fn run_dev_doctor(
 
     // `all_present` reflects only non-brevity checks (framework layout).
     // Brevity violations are tracked separately via `brevity_violations` and
-    // only affect the exit code in strict mode (ADR-016 §4).
+    // only affect the exit code in strict mode (ADR-0150).
     let all_present = framework_warnings == 0;
     let result = Ok::<_, anyhow::Error>(DoctorOutput {
         all_present,
@@ -820,7 +821,7 @@ pub(super) fn run_dev_doctor(
                 checks: output.checks.clone(),
             };
             let mut command = render_result(Ok(cloned), format, doctor_text);
-            // Strict mode: only brevity violations trigger non-zero exit (ADR-016 §4).
+            // Strict mode: only brevity violations trigger non-zero exit (ADR-0150).
             // surface.empty_dirs is detect-only advisory — never promoted by --strict.
             if args.strict && brevity_violations > 0 {
                 command.status = 1;

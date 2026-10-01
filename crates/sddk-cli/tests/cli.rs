@@ -10000,7 +10000,7 @@ fn run_doctor_from(root: &Path, args: &[&str]) -> sddk_cli::CommandOutput {
 
 #[test]
 fn cli_dev_doctor_surface_briefness() {
-    // RED test: surface.briefness check (ADR-016).
+    // RED test: surface.briefness check (ADR-0150).
     // Creates a 501-line agent fixture and verifies the doctor reports it as over threshold.
     let fixture = CliFixture::new("surface-briefness");
     let root = fixture.root.clone();
@@ -10142,7 +10142,7 @@ fn cli_dev_doctor_emits_actionable_detail_on_failures() {
 
 #[test]
 fn cli_dev_doctor_surface_empty_dirs() {
-    // RED test: surface.empty-dirs check (ADR-016).
+    // RED test: surface.empty-dirs check (ADR-0150).
     // Creates an empty agents/ directory and verifies the doctor reports it.
     let fixture = CliFixture::new("surface-empty-dirs");
     let root = fixture.root.clone();
@@ -10230,7 +10230,7 @@ fn cli_dev_doctor_strict_no_pasa_sobre_una_ausencia_de_medicion() {
         .expect("surface.briefness.root must be reported when there is nothing to measure");
     assert!(
         !root_check["present"].as_bool().unwrap(),
-        "a root holding no surfaces cannot satisfy the ADR-016 gate"
+        "a root holding no surfaces cannot satisfy the ADR-0150 gate"
     );
     assert!(
         root_check["detail"]
@@ -10241,7 +10241,7 @@ fn cli_dev_doctor_strict_no_pasa_sobre_una_ausencia_de_medicion() {
     );
     assert_eq!(
         doctor.status, 0,
-        "advisory mode stays advisory (ADR-016 §4): report the failure, exit 0"
+        "advisory mode stays advisory (ADR-0150): report the failure, exit 0"
     );
 
     let strict = run_doctor_from(&root, &["dev", "doctor", "--strict", "--format", "json"]);
