@@ -3,15 +3,13 @@
 
 Una cita es prosa, no un enlace: nada la resuelve, así que una referencia a un
 fichero inexistente sobrevive indefinidamente. No es hipótesis — este guard
-nació de medir 394 referencias en las superficies y encontrar 25 pares
+nació de medir 394 referencias en las superficies y encontrar, en dos rondas, 25 pares
 (citado -> destino) que no abren, agrupados en cinco familias:
 
   * las specs E14 (6 citas): `specs/` no existe en el repo, y tres agentes y sus
     tres skills lo citan como "full spec";
   * los agentes `cua-test-*` (5 citas): el flujo entero de
     `cua-test-orchestrator/SKILL.md` llama a tres actores que no existen;
-  * `prompts/studio-agents/` (6 citas): los ficheros existen, como
-    `agents/studio-*.md`; la ruta citada no;
   * `docs/impeccable-reference/` (2), `test-pyramid-builder` (3), y tres sueltas.
 
 `git log --all` dice de todos ellos lo mismo: **cero commits**. No se
@@ -68,16 +66,12 @@ KNOWN_EXTENSIONS = {
 
 # Los 25 pares medidos y verificados a mano en session-65d. Cero commits los
 # toco nunca;ver SESSION-JOURNAL session-65d (barrido de referencias).
+# La familia `prompts/studio-agents/` (6 citas) se RESOLVIO en session-65d: los
+# ficheros existian como `agents/studio-*.md` y la ruta citada era la equivocada.
 KNOWN_BROKEN = {
     ("agents/deep-research-orchestrator.md", "skills/deep-research-methodology-hub/SKILL.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-analyzer.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-block.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-component.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-page.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-token.md"),
-    ("agents/studio-orchestrator.md", "prompts/studio-agents/studio-validator.md"),
     ("agents/test-pyramid-builder.md", "assets/grill-test-coverage.md"),
     ("agents/test-pyramid-builder.md", "assets/test-strategy-doc.md"),
     ("agents/test-pyramid-builder.md", "docs/test-strategy.md"),

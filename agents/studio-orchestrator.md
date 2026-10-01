@@ -355,10 +355,10 @@ Save cycle metrics to:
 
 ## See also
 
-- `prompts/studio-agents/studio-analyzer.md`
-- `prompts/studio-agents/studio-token.md`
-- `prompts/studio-agents/studio-component.md`
-- `prompts/studio-agents/studio-block.md`
-- `prompts/studio-agents/studio-page.md`
-- `prompts/studio-agents/studio-validator.md`
+- `agents/studio-analyzer.md`
+- `agents/studio-token.md`
+- `agents/studio-component.md`
+- `agents/studio-block.md`
+- `agents/studio-page.md`
+- `agents/studio-validator.md`
 - `prompts/sddk/orchestrator.md` (parent pattern)

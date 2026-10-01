@@ -11,6 +11,12 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
   - docs(adr): ADR-0150 da por escrito el presupuesto de brevedad que el código aplicaba sin contrato — el «ADR-016 surface-brevity» que citaban `doctor.rs` y el CHANGELOG **nunca fue commiteado**; los tres umbrales (300/150/200) estaban en una constante y en una línea de changelog, sin derivación. Ratificados con su medición (78 skills en presupuesto, media 758 tokens; techo a 1,26× la mediana) y con **vía de waiver** en vez del «sin excepciones nominales» que afirmaba el changelog: un gate sin salida se salta. Añade el contrato de corte —qué se queda en la superficie de invocación y qué va a `references/`— y el caso de las superficies que son especificaciones (ADR-0150)
+  - docs(adr): enmienda a ADR-0150, el remedio es proporcional al exceso — ejecutar los puntos 1-7 sobre el material más barato del repo (`uat-discovery`, 14 líneas por encima) encontró que el contrato solo ofrecía dos salidas, partir o waiver, y ninguna sirve para un exceso pequeño. Medido: quitar solo duplicación genuina recupera 4 de las 14. Se añade la escalera de tres peldaños —adelgazar, partir, waiver—; el tercero es el que hace coherente el segundo (ADR-0150)
+  - docs(debt): INC-DEBT-051 verificada vigente, y el PRE-FLIGHT que no se emitió — los cuatro criterios se sostienen, incluido que **no existe seam de adapter** para la versión de un proyecto no-Rust. Se corrige el registro: hay un tercer call site (`release_cmd.rs:947`) que la entrada no nombraba y que **no** es un tercer defecto, porque `sddk-gateway/src/release.rs:205` rechaza con `ReleaseError::Precondition`. Los tres fallan cerrado
+
+### Tests
+  - test(surfaces): 25 referencias rotas que ninguna comprobación detectaba — una cita es prosa, no un enlace: nada la resuelve. Barrido de `agents`, `skills` y `prompts/sddk`: 394 referencias comprobadas, 25 pares que no abren, en 13 superficies y cinco familias. `git log --all` da **cero commits** para los ficheros ausentes: nunca se escribieron, no se perdieron. El guard congela la línea base, así que falla si alguien añade una cita rota nueva **y falla igual si arregla una sin actualizar la línea base** (INC-DEBT-054)
+  - fix(surfaces): `studio-orchestrator` citaba `prompts/studio-agents/studio-*.md`, que no existe; los agentes están en `agents/studio-*.md` — seis rutas corregidas, verificadas una a una contra el fichero real. La línea base del guard baja de 25 a 19
 
 ## [2.5.2] - 2026-10-01
 
