@@ -79,21 +79,18 @@ KNOWN_EXTENSIONS = {
 # previa: el destino existia en un unico sitio y la ruta citada era la
 # equivocada. `test-pyramid-builder` (2) y `cua-test-orchestrator` (1).
 KNOWN_BROKEN = {
+    # Las cuatro que quedan NO son rutas rotas sino citas cuya coincidencia de
+    # nombre es ambigua. "Apuntar a lo mas parecido" cambia que autoridad
+    # declara la superficie, y eso es decision del operador, no una correccion
+    # mecanica. Las otras once de la linea base original (15) se resolvieron en
+    # session-65f: las 6 de las specs E14, que SI existen y se copiaron al
+    # repo desde el knowledge vault, y las 5 de la familia cua-test-*, cuyos
+    # agentes nunca se escribieron y cuya skill paso a hacer el trabajo ella
+    # misma en vez de delegar en ellos.
     ("agents/deep-research-orchestrator.md", "skills/deep-research-methodology-hub/SKILL.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-    ("agents/uat-discovery.md", "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md"),
-    ("agents/uat-form-quality.md", "specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md"),
-    ("agents/uat-ux-form.md", "specs/E14-uat-guided-pipeline/E14.3-UX-FORM-AGENT.md"),
-    ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-judge.md"),
-    ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-orchestrator.body.md"),
-    ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-runner.md"),
-    ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-scenarist.md"),
     ("skills/skill-registry/SKILL.md", "docs/skill-style-guide.md"),
-    ("skills/uat-discovery/SKILL.md", "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md"),
-    ("skills/uat-form-quality/SKILL.md", "specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md"),
-    ("skills/uat-ux-form/SKILL.md", "specs/E14-uat-guided-pipeline/E14.3-UX-FORM-AGENT.md"),
-    ("skills/ui-audit-protocol/SKILL.md", "agents/cua-test-judge.md"),
 }
 
 # Descartadas por verificacion manual: la superficie declara un fallback

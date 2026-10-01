@@ -97,35 +97,39 @@ If no evidence was collected, say so explicitly and explain why.
 
 ## CUA Test Mode (experimental)
 
-For the `cua-test-orchestrator` agent family: the Output Contract and Severity Rubric above are reused unchanged, but the Tool Matrix is replaced because the orchestration cannot navigate the browser.
+For the `cua-test-orchestrator` skill: the Output Contract and Severity Rubric above are reused unchanged, but the Tool Matrix is replaced because the loop cannot navigate the browser.
 
 ### When to use CUA Test Mode
 
-- Caller is `cua-test-orchestrator`, `cua-test-runner`, `cua-test-judge`, or `cua-test-scenarist`.
+- The caller is the `cua-test-orchestrator` skill. It is a **single agent**: the former `cua-test-scenarist` / `cua-test-runner` / `cua-test-judge` were agent files that were never written, and are now steps of that one agent rather than dispatches.
 - Inputs are **static assets only**: PNG screenshots, HTML, CSS, JS source, or text descriptions.
 - No URL is fetched; no Playwright; no `control-browser`; no `node_repl`; no `fara-cli` subprocess.
-- Fara 1.5 9B is invoked exclusively as an LLM via `POST http://localhost:8082/v1/chat/completions` by `cua-test-runner`.
+- Fara 1.5 9B is invoked exclusively as an LLM via `POST http://localhost:8082/v1/chat/completions`, by the loop itself.
 
 ### Tool Matrix (CUA Test Mode)
 
 | Goal | Tool |
 |---|---|
 | Inspect static asset (image, HTML, source) | `read`, `glob`, `grep` |
-| Generate acceptance criteria | `cua-test-scenarist` subagent |
-| Ask Fara to evaluate a single criterion | `cua-test-runner` subagent (model: `llamacpp/Fara1.5-9B`) |
-| Synthesize Fara responses against rubric | `cua-test-judge` subagent |
+| Generate acceptance criteria | step 1 of the loop, by the agent itself |
+| Ask Fara to evaluate a single criterion | step 2, `bash: curl` to `/v1/chat/completions` (`temperature: 0`, `max_tokens: 200`) |
+| Synthesize Fara responses against rubric | step 3, by the agent itself |
 | Persist artifacts | `edit`/`write` under `tests/cua/**` and `docs/cua/**` only |
 | Verify Fara server is up | `bash: curl http://localhost:8082/health` |
 | Probe Fara response shape | `bash: curl http://localhost:8082/v1/models` |
 
 ### Hard rules (CUA Test Mode)
 
-1. **No browser automation** under any subagent. `control-browser`, `playwright-cli`, and `node_repl` are not allowed in the runner/judge/scenarist prompts.
-2. **Fara is invoked only by `cua-test-runner`**, only via HTTP, only with `temperature: 0` and `max_tokens: 200`.
-3. **The orchestrator must check** `curl /health` before dispatching the runner. If the server is down, abort the entire loop and report `server_down`.
+1. **No browser automation** anywhere in the loop. `control-browser`, `playwright-cli`, and `node_repl` are not allowed.
+2. **Fara is invoked only via HTTP**, only with `temperature: 0` and `max_tokens: 200`.
+3. **The loop must check** `curl /health` before evaluating any criterion. If the server is down, abort the entire loop and report `server_down`.
 4. **Reuse the same severity rubric** as the standard audit (`critical` / `warning` / `suggestion`). Findings that depend on dynamic interaction are not assignable to a severity and are skipped with a `skip_reason`.
 5. **The Output Contract is the same shape**: target URL/route (passed through, not fetched), evidence collected (asset paths), findings grouped by severity, recommended tests (Playwright tests the user should run manually outside this skill), final verdict.
+6. **An empty or truncated Fara response is `unresolved`, never `pass`.**
 
 ### Return Envelope compatibility
 
-`cua-test-judge` returns a `JudgeVerdictEnvelope` (see `agents/cua-test-judge.md`). The orchestrator normalizes it to the standard Output Contract: findings become `critical_findings`, `overall_verdict` becomes `final verdict`, `overall_score` is appended as a numeric field.
+The loop's step 3 produces a `JudgeVerdictEnvelope` (shape defined in
+`skills/cua-test-orchestrator/SKILL.md`, § Envelopes). It is normalized to the
+standard Output Contract: findings become `critical_findings`, `overall_verdict`
+becomes `final verdict`, `overall_score` is appended as a numeric field.

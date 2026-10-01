@@ -1,101 +1,124 @@
 ---
 name: cua-test-orchestrator
-description: "Trigger: validate web feature, run CUA test, audit app with Fara, check UI with local multimodal model, test web feature with vision model. Loads the multi-agent CUA test loop that uses Fara 1.5 9B (local via llama.cpp HTTP) + MiniMax-M3 (cloud) subagents."
+description: "Trigger: validate web feature, run CUA test, audit app with Fara, check UI with local multimodal model, test web feature with vision model. Single-agent loop that uses Fara 1.5 9B (local via llama.cpp HTTP) as the visual reasoning engine and a severity rubric borrowed from ui-audit-protocol."
 license: MIT
 metadata:
   author: OpenCode
-  version: "1.0"
+  version: "2.0"
   workflow: cua-test
 ---
 
 # CUA Test Orchestrator (Fara 1.5 9B)
 
-Multi-agent orchestration that validates web features using **Fara 1.5 9B** (local multimodal model served by llama.cpp on `http://localhost:8082/v1`) as the visual reasoning engine, coordinated by **MiniMax-M3** (cloud).
+Validates web features using **Fara 1.5 9B** (local multimodal model served by
+llama.cpp on `http://localhost:8082/v1`) as the visual reasoning engine, scored
+against the severity rubric of
+[`skills/ui-audit-protocol/SKILL.md`](../ui-audit-protocol/SKILL.md).
 
-## What this skill does
+## One agent, three steps
 
-For each feature the user wants to validate:
+This loop is **not** a multi-agent pipeline. There is no `cua-test-scenarist`,
+no `cua-test-runner` and no `cua-test-judge`: those agent files were never
+written, and the skill used to order a delegation to all four. Each role is now
+a **step you perform yourself**, in order:
 
-1. The orchestrator calls **`cua-test-scenarist`** (cloud M3) to generate 3-7 verifiable acceptance criteria.
-2. For each criterion, the orchestrator calls **`cua-test-runner`** (model: `llamacpp/Fara1.5-9B`) which sends the static asset(s) + the criterion as a multimodal prompt to Fara via HTTP and returns Fara's analysis.
-3. The orchestrator calls **`cua-test-judge`** (cloud M3) to synthesize Fara's responses against the rubric.
-4. The orchestrator writes `tests/cua/{date}-{feature-slug}/REPORT.md` and `SUMMARY.md`.
+| former role | what it actually needs | now |
+|---|---|---|
+| scenarist | to write 3-7 acceptance criteria | step 1, you write them |
+| runner | to POST an image + a question to Fara | step 2, one `curl` |
+| judge | to score responses against the rubric | step 3, you score them |
 
-## Activation Contract
+Nothing here needs a second agent. Only Fara itself is a different model, and
+Fara is an HTTP endpoint, not a dispatch.
 
-You are **not** the orchestrator. If this skill loaded into a session where you are the orchestrator, you are **cua-test-orchestrator** (primary M3). Stop reading this skill and follow the algorithm in `agents/cua-test-orchestrator.body.md`.
-
-If you are a subagent that received a `task(...)` call from the orchestrator, follow the **Return Envelope** specified by your agent file (`cua-test-runner`, `cua-test-judge`, or `cua-test-scenarist`). Do not delegate further.
-
-## Pre-flight (orchestrator only)
+## Pre-flight
 
 ```bash
-# 1. Verify Fara server is up
-curl -fsS http://localhost:8082/health || { echo "Fara server down. Run: llm fara"; exit 1; }
-
-# 2. Verify Fara is the active model
-curl -fsS http://localhost:8082/v1/models | jq '.data[0].id'
-
-# 3. Create output dir
-mkdir -p tests/cua/$(date +%Y-%m-%d)-${FEATURE_SLUG}
+curl -fsS http://localhost:8082/health          || { echo "run: llm fara"; exit 1; }
+curl -fsS http://localhost:8082/v1/models | jq -r '.data[0].id'
+mkdir -p "tests/cua/$(date +%Y-%m-%d)-${FEATURE_SLUG}"
 ```
 
-If any step fails, abort the loop with `status: "server_down"` and instruct the user to run `llm fara` and retry.
+If the health check fails, abort with `status: "server_down"` and tell the user
+to run `llm fara`. Do not fall back to another model: the rubric is calibrated
+against Fara's answers.
 
-## State Machine
+## The loop
 
+**Step 1 — criteria.** Write 3-7 acceptance criteria for the feature. Each must
+be checkable from a **static asset** alone. If the feature's correctness depends
+on interaction (a click, a scroll, a state transition), it is not testable here:
+write it down with a `skip_reason` and move on. Do not weaken a criterion until
+it fits.
+
+**Step 2 — ask Fara, once per criterion.** For each criterion, one request:
+
+```bash
+curl -fsS http://localhost:8082/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d @<(jq -n --arg img "$(base64 -w0 "$ASSET")" --arg q "$CRITERION" '{
+        model: "Fara1.5-9B", temperature: 0, max_tokens: 200,
+        messages: [{role: "user", content: [
+          {type: "text", text: $q},
+          {type: "image_url", image_url: {url: ("data:image/png;base64," + $img)}}]}]}')
 ```
-INIT
-  └─→ SCENARIST(feature) → rubric.json
-        └─→ for each criterion:
-              RUNNER(criterion, assets) → fara_response
-                └─→ JUDGE(rubric, all_fara_responses) → verdict.json
-        └─→ REPORT.md + SUMMARY.md
-  └─→ DONE
-```
 
-State is persisted to `tests/cua/.state/CHECKPOINT.md` after each criterion so the orchestrator can resume after interruption.
+Parameters are fixed: **`temperature: 0`, `max_tokens: 200`**, one criterion per
+call, `TIMEOUT_HTTP_FARA = 180_000` ms. Do not raise `max_tokens` to get a
+longer answer — a 9B model at 200 tokens is the configuration the rubric was
+calibrated against, and a longer answer is a different, unvalidated experiment.
+`MAX_RETRIES_PER_CRITERION = 3`, and a retry re-asks the same question.
 
-## Loop parameters
+**Step 3 — score.** For each response, decide one of:
 
-- `MAX_FEATURES_PARALLEL = 3` (features evaluated concurrently).
-- `MAX_RETRIES_PER_CRITERION = 3` (if Fara returns empty/garbled content).
-- `MAX_TOKENS_PER_FARA_CALL = 200` (deterministic, short responses).
-- `TEMPERATURE_FARA = 0`.
-- `TIMEOUT_HTTP_FARA = 180_000` (ms).
+| response | verdict |
+|---|---|
+| satisfies the criterion | `pass` |
+| contradicts it | `fail` + severity (`critical` / `warning` / `suggestion`) |
+| asserts something absent from the asset | `hallucination` + `hallucination_reason` |
+| `usage.completion_tokens == 0` | retry, then `unresolved` |
 
-## Failure modes
+Then normalize to the standard Output Contract of `ui-audit-protocol`:
+findings by severity, recommended tests the user runs **manually** outside this
+skill, and the final verdict.
 
-| Failure | Detection | Recovery |
-|---|---|---|
-| Fara server down | `curl /health` fails at preflight | Abort loop, instruct user to run `llm fara`. |
-| Fara returns empty content | `usage.completion_tokens == 0` | Retry with reformulated question (max 3). |
-| Fara returns `"length"` finish_reason | `choices[0].finish_reason == "length"` | Truncate criterion, retry. |
-| Scenarist returns `insufficient_info` | Envelope `status == "insufficient_info"` | Ask user for clarification; do not retry. |
-| Judge finds hallucination | `hallucination_detected == true` | Mark criterion as `verdict: "partial"` with `hallucination_reason` set. |
+## Envelopes
 
-## Output Contract
+Persisted verbatim as `tests/cua/{date}-{slug}/`:
 
-The orchestrator writes:
+- `rubric.json` — `{criteria: [{id, text, skip_reason?}]}`
+- `responses.json` — one `FaraRunnerEnvelope` per criterion:
+  `{criterion_id, finish_reason, completion_tokens, content}`
+- `verdict.json` — `JudgeVerdictEnvelope`:
+  `{findings: [{criterion_id, severity, reason}],
+    overall_verdict, overall_score, hallucination_detected}`
+- `REPORT.md` — human-readable scorecard
+- `SUMMARY.md` — rollup across features
 
-- `tests/cua/{date}-{slug}/rubric.json` — ScenarioEnvelope from scenarist.
-- `tests/cua/{date}-{slug}/responses.json` — array of FaraRunnerEnvelope from runner.
-- `tests/cua/{date}-{slug}/verdict.json` — JudgeVerdictEnvelope from judge.
-- `tests/cua/{date}-{slug}/REPORT.md` — human-readable Markdown scorecard.
-- `tests/cua/{date}-{slug}/SUMMARY.md` — overall scorecard across all features.
+`REPORT.md` and `SUMMARY.md` carry the standard Output Contract shape, so a CUA
+report and an `ui-audit-protocol` report are read the same way.
 
-## Hard rules (orchestrator + subagents)
+## Checkpoint
 
-1. **No browser automation** anywhere in the loop. `control-browser`, `playwright-cli`, `node_repl`, `microsoft/fara-cli` are forbidden.
-2. **Fara is invoked only by `cua-test-runner`**, only via `POST /v1/chat/completions`, only with `temperature: 0` and `max_tokens: 200`.
-3. **All artifacts land in `tests/cua/**` or `docs/cua/**`**. No edits elsewhere.
-4. **No subagent may invoke another subagent.** Only the orchestrator dispatches.
-5. **Static assets only**: the orchestrator never downloads a URL, never fetches a page, never renders HTML. The user provides everything as files.
+After each criterion, append its envelope to `tests/cua/.state/CHECKPOINT.md` so
+a run resumes instead of restarting. Record only completed criteria.
+
+## Hard rules
+
+1. **No browser automation, ever.** `control-browser`, `playwright-cli`,
+   `node_repl` and `fara-cli` are forbidden. This loop cannot see a running
+   application, and pretending otherwise produces confident findings about
+   pages it never loaded.
+2. **Fara only via HTTP**, only with `temperature: 0` and `max_tokens: 200`.
+3. **Static assets only.** Never fetch a URL, never render HTML. The user
+   provides files. A URL in the output is passed through for the user to open,
+   never resolved by you.
+4. **All artifacts land under `tests/cua/**`.** No edits elsewhere.
+5. **An empty Fara response is `unresolved`, not `pass`.** A criterion nobody
+   evaluated has not been satisfied. Reporting it as passed is the failure mode
+   this whole design exists to prevent.
 
 ## Related references
 
-- `skills/ui-audit-protocol/SKILL.md` — Section "CUA Test Mode" for the Output Contract and Severity Rubric reuse.
-- `agents/cua-test-orchestrator.body.md` — full orchestrator algorithm.
-- `agents/cua-test-runner.md` — Fara HTTP invocation envelope.
-- `agents/cua-test-judge.md` — synthesis envelope.
-- `agents/cua-test-scenarist.md` — rubric generation envelope.
+- [`skills/ui-audit-protocol/SKILL.md`](../ui-audit-protocol/SKILL.md) — the
+  Output Contract and Severity Rubric reused unchanged by CUA Test Mode.
