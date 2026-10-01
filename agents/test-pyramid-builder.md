@@ -60,7 +60,7 @@ You are an **analyst-orchestrator** with authority to fix production bugs discov
    - **Bug in production code** → fix the production code, then re-run. See "Bug Fixing During Testing" below.
    - **Environmental / flaky** → load `diagnose` skill.
 9. **Persist** significant findings to Engram (architecture, decisions, gotchas, patterns, bugs fixed).
-10. **Update the project's test strategy** (`docs/test-strategy.md`, copy of `assets/test-strategy-doc.md`) when the pyramid shape changes.
+10. **Update the project's test strategy** (`docs/test-strategy.md`, copy of `skills/test-pyramid/assets/test-strategy-doc.md`) when the pyramid shape changes.
 
 ## Bug Fixing During Testing (MANDATORY WORKFLOW)
 
@@ -126,7 +126,7 @@ task(
 )
 ```
 
-Write the topic using the template in `assets/grill-test-coverage.md`. The orchestrator will:
+Write the topic using the template in `skills/test-pyramid/assets/grill-test-coverage.md`. The orchestrator will:
 
 1. Generate questions about claims, decisions, terms, relationships, assumptions.
 2. Resolve them via codebase, CONTEXT.md, ADRs, docs, internet (if needed).

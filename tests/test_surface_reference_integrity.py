@@ -3,7 +3,7 @@
 
 Una cita es prosa, no un enlace: nada la resuelve, así que una referencia a un
 fichero inexistente sobrevive indefinidamente. No es hipótesis — este guard
-nació de medir 394 referencias en las superficies y encontrar, en dos rondas, 25 pares
+nació de medir 394 referencias en las superficies y encontrar, en tres rondas, 25 pares
 (citado -> destino) que no abren, agrupados en cinco familias:
 
   * las specs E14 (6 citas): `specs/` no existe en el repo, y tres agentes y sus
@@ -68,12 +68,13 @@ KNOWN_EXTENSIONS = {
 # toco nunca;ver SESSION-JOURNAL session-65d (barrido de referencias).
 # La familia `prompts/studio-agents/` (6 citas) se RESOLVIO en session-65d: los
 # ficheros existian como `agents/studio-*.md` y la ruta citada era la equivocada.
+# Tres familias mas se RESOLVIERON en session-65d con la misma comprobacion
+# previa: el destino existia en un unico sitio y la ruta citada era la
+# equivocada. `test-pyramid-builder` (2) y `cua-test-orchestrator` (1).
 KNOWN_BROKEN = {
     ("agents/deep-research-orchestrator.md", "skills/deep-research-methodology-hub/SKILL.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-    ("agents/test-pyramid-builder.md", "assets/grill-test-coverage.md"),
-    ("agents/test-pyramid-builder.md", "assets/test-strategy-doc.md"),
     ("agents/test-pyramid-builder.md", "docs/test-strategy.md"),
     ("agents/uat-discovery.md", "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md"),
     ("agents/uat-form-quality.md", "specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md"),
@@ -82,7 +83,6 @@ KNOWN_BROKEN = {
     ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-orchestrator.body.md"),
     ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-runner.md"),
     ("skills/cua-test-orchestrator/SKILL.md", "agents/cua-test-scenarist.md"),
-    ("skills/cua-test-orchestrator/SKILL.md", "ui-audit-protocol/SKILL.md"),
     ("skills/skill-registry/SKILL.md", "docs/skill-style-guide.md"),
     ("skills/uat-discovery/SKILL.md", "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md"),
     ("skills/uat-form-quality/SKILL.md", "specs/E14-uat-guided-pipeline/E14.2-FORM-QUALITY-AGENT.md"),

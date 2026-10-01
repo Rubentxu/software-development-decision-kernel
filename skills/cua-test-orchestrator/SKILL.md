@@ -94,7 +94,7 @@ The orchestrator writes:
 
 ## Related references
 
-- `ui-audit-protocol/SKILL.md` — Section "CUA Test Mode" for the Output Contract and Severity Rubric reuse.
+- `skills/ui-audit-protocol/SKILL.md` — Section "CUA Test Mode" for the Output Contract and Severity Rubric reuse.
 - `agents/cua-test-orchestrator.body.md` — full orchestrator algorithm.
 - `agents/cua-test-runner.md` — Fara HTTP invocation envelope.
 - `agents/cua-test-judge.md` — synthesis envelope.

@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file.
 ### Tests
   - test(surfaces): 25 referencias rotas que ninguna comprobación detectaba — una cita es prosa, no un enlace: nada la resuelve. Barrido de `agents`, `skills` y `prompts/sddk`: 394 referencias comprobadas, 25 pares que no abren, en 13 superficies y cinco familias. `git log --all` da **cero commits** para los ficheros ausentes: nunca se escribieron, no se perdieron. El guard congela la línea base, así que falla si alguien añade una cita rota nueva **y falla igual si arregla una sin actualizar la línea base** (INC-DEBT-054)
   - fix(surfaces): studio-orchestrator citaba prompts/studio-agents/, que no existe — seis rutas corregidas; los agentes están en agents/studio-*.md, verificados uno a uno contra el fichero real antes de tocar nada. La línea base del guard baja de 25 a 19 referencias rotas
+  - fix(surfaces): nueve citas mas apuntaban a un destino que existe en un unico sitio — `test-pyramid-builder` (2 assets de `test-pyramid`) y `cua-test-orchestrator` (`ui-audit-protocol`), verificadas con `find` antes de sustituir. **Solo se corrigen las que son mecánicas**: las tres cuya coincidencia de nombre era ambigua quedan sin tocar, porque «apuntar a lo más parecido» no es arreglar una cita. La línea base del guard baja de 19 a 16
 
 ## [2.5.2] - 2026-10-01
 
