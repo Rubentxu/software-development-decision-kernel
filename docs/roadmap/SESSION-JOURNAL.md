@@ -7695,5 +7695,28 @@ Dos cosas comprobadas, no supuestas: (1) lo publicado es **exactamente** lo veri
 
 **Consecuencia de gobernanza, no resuelta:** en este checkout hay otro agente con escritura **y push** sobre `main`, capaz de publicar sin autorización. Es el segundo incidente de concurrencia de la sesión; el primero dejó el crate sin compilar. Regla que se confirma: **un push autorizado puede no ser el que publica**, así que hay que contrastar `git ls-remote origin refs/heads/main` con lo que se cree haber publicado en vez de fiarse del output de git.
 
-**Primer paso preciso de la sesión siguiente:** `sddk dev install` — el binario del PATH sigue siendo 2.5.2 y no tiene ninguno de estos fixes. Después, publicar v2.5.3 (el CHANGELOG ya lo cubre, gate en PASS=6 FAIL=0) y decidir qué hacer con el actor concurrente.
+**AUTORIDAD LOCAL A 2.5.3 Y VALIDACIÓN DEL ARREGLO EN EL BINARIO INSTALADO (21:20Z).**
+
+Operador: `sddk dev install` antes que el ciclo de brevedad. Secuencia real: `dev install` instala **el binario que se está ejecutando**, así que hacía falta construir el 2.5.3 primero — si se hubiera invocado con el `sddk` 2.5.2 del PATH se habría reinstallado el mismo 2.5.2 y no habría pasado nada. `cargo build --release --bin sddk` (2m35s) y luego `release/sddk dev install --prefix ~/.local`:
+
+```
+version: 2.5.3   channel: dev   bundle: false
+binary_sha256: sha256:e9e13970a4117267583a45a661327ceb0d2026d8b1d2ddf3dc6c84870dcee7cf
+```
+
+`sddk --version` → **2.5.3**. El **bundle sigue en 2.5.2**: `dev install` desde un checkout escribe `bundle: false`, y el bundle 2.5.3 requiere que la release esté publicada (`dev update --version v2.5.3` la descargaría de GitHub). No es incoherencia: `dev doctor` sigue con `all_present: true` porque `binary.bundle_coherence` comprueba coherencia, no igualdad de versión.
+
+**Validación de INC-DEBT-054 contra el binario instalado, que es lo que faltaba.** La prueba fuerte no es el test unitario sino reproducir con el binario real el escenario que con v2.5.2 devolvía exit 0:
+
+| escenario | v2.5.2 (antes) | v2.5.3 (ahora) |
+|---|---|---|
+| raíz del repo | 19 violaciones, exit 1 | **19 violaciones, exit 1** |
+| cwd sin superficies, bundle resoluble | **0 checks, exit 0** | **183 checks emitidos, 19 violaciones, exit 1** |
+| cwd sin superficies y sin bundle | **0 checks, exit 0** | **1 check `surface.briefness.root` present=false, exit 1** |
+
+Las 19 coinciden una a una con el recuento independiente hecho con script antes de tocar nada. El mensaje del tercer caso dice lo que debe decir: `no surfaces under /tmp/strict-no-bundle/cwd (looked for agents, skills, prompts/sddk) — ADR-016 brevity is unverifiable here, not satisfied`.
+
+**Pendiente:** el bundle 2.5.3 requiere publicar la release. `doctor --strict` **falla hoy y con razón** —exit 1 sobre las 19 superficies—, y eso no es una regresión sino el aviso que el gate silencioso llevaba años reprimiendo.
+
+**Primer paso preciso de la sesión siguiente:** abrir el ciclo de brevedad con SCOPE-CONTRACT congelado. El triage dice que es viable: las 19 tienen ≥6 secciones `##`, y 2 (playwright-cli, test-pyramid) ya usan el patrón `references/` que ADR-016 describe. Exceso mayor: `HTML-REPORT.md` (+1128), `entropy-sdd` (+399), `cognicode-sdd` (+294). Exceso menor: `uat-discovery` (+14), `branch-pr` (+52), `studio-orchestrator` (+64). Al cierre del ciclo hay que regenerar `MANIFEST.sha256` y reinstalar.
 

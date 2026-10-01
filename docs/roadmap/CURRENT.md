@@ -1,6 +1,6 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-65d, 2026-10-01T18:52Z): DOS gates que respondían sin examinar nada, corregidos y con dientes verificados. Uno lo encontró y corrigió otro actor (`ddfd2b51`, ya publicado); el segundo es mío y salió al intentar responder a la pregunta de si algún gate ejecutaba los criterios de briefness. La respuesta era **no**, y el gate tampoco habría podido fallar aunque se lo pidieran. `2.5.3` queda **DECLARADA y NO PUBLICADA**: sin tag `v2.5.3` y sin `sddk dev install`, así que la autoridad instalada (2.5.2) no tiene ninguno de estos fixes. El único bloqueo para publicar es la autorización del operador al push (op-5); el pre-push hook lo admite.** **SIGUIENTE: OK al push, después `bash scripts/release.sh` y `sddk dev install`.**
+**Estado (session-65d, 2026-10-01T21:20Z): DOS gates que respondían sin examinar nada, corregidos, publicados y **validados contra el binario instalado**. `sddk` en el PATH es **2.5.3** y `doctor --strict` **hoy falla con exit 1 sobre las 19 superficies** — que es exactamente lo que debe hacer y lo que no podía hacer antes. El bundle instalado sigue en 2.5.2 porque el 2.5.3 aún no está publicado como release.** **SIGUIENTE: ciclo de brevedad con SCOPE-CONTRACT; publicar v2.5.3 para poder instalar el bundle.**
 
 **Hecho en session-65d:**
 
