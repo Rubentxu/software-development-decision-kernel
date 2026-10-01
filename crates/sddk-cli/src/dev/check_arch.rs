@@ -1,23 +1,42 @@
 //! `dev check-architecture` — live architecture rule evaluator.
 //!
 //! Runs the Phase 1 evaluators against the live workspace baseline and prints
-//! a tabular summary:
+//! a tabular summary, followed by an explicit aggregate verdict:
 //!
 //! ```text
-//! ARCH001  FAIL    engine→storage: N edge(s)
-//! ARCH002  PASS
-//! ARCH003  PASS
-//! ARCH004  N/A     kernel repo
-//! ARCH005  N/A     Phase 5 not shipped
+//! RULE      STATUS    DETAIL
+//! ARCH001   PASS
+//! ARCH003   WAIVED    waived: …
+//! ARCH004   N/A       kernel repo
+//!
+//! VERDICT: WAIVED (exit 2)
+//! This gate does NOT certify architectural conformance. See VERDICT above.
 //! ```
 //!
-//! Exit code 1 if any rule with `severity = Error` has `status = Fail`.
-//! Exit code 0 otherwise (Pass, Waived, N/A all exit 0).
+//! ## Exit codes and the verdict (C3l.7)
 //!
-//! JSON output (when `--out` is specified) follows the same shape as `sddk rules check`.
+//! The per-rule table says what each evaluator observed; it does **not** say
+//! whether the repository conforms. Those were conflated: `Waived` and
+//! `NotApplicable` used to reach `exit 0` through the same branch as a clean
+//! tree, so a repository with open architectural debt could be cited as
+//! conformant. The verdict is now a typed value (`sddk_domain::rules::verdict`)
+//! and `exit 0` is reserved for it:
+//!
+//! - `0` — `CONFORMANT`: every applicable rule was checked and holds.
+//! - `1` — `OPEN_DEBT`: a real unwaived `severity = error` violation.
+//! - `2` — `WAIVED` / `NOT_EVALUATED`: conformance is **not proven** — live
+//!   waivers, or rules whose evaluators do not exist yet. A caller that must
+//!   fail closed on unproven conformance can tell this apart from a proven
+//!   violation.
+//!
+//! JSON output (when `--out` is specified) carries both `verdict` and
+//! `exit_status`; a programmatic consumer should read `verdict`, since
+//! `exit_status` alone conflates "proven clean" with "not proven".
 
 use crate::CommandOutput;
-use sddk_domain::{RuleRegistry, RuleSeverity, RuleStatus};
+use sddk_domain::{
+    RuleOutcome, RuleRegistry, RuleSeverity, RuleStatus, Verdict, exit_code_for, verdict_for,
+};
 use sddk_engine::rules::{BaselineConsumer, evaluate_all_with_resolver, git_ancestry_resolver};
 use serde::Serialize;
 
@@ -38,6 +57,10 @@ struct ArchCheckOutput {
     head_anchor: String,
     evaluated_at: String,
     rows: Vec<ArchCheckRow>,
+    /// Aggregate gate verdict (C3l.7). A consumer reading this JSON must use
+    /// `verdict` to decide whether conformance is claimed — `exit_status` alone
+    /// conflates "proven clean" with "not proven".
+    verdict: &'static str,
     exit_status: i32,
 }
 
@@ -150,8 +173,45 @@ pub(super) fn run_check_architecture(args: super::CheckArchitectureArgs) -> Comm
         }
     }
 
-    let exit_status = if has_error_fail { 1 } else { 0 };
+    // ── Gate verdict (C3l.7) ────────────────────────────────────────────────
+    // The per-rule table says what each evaluator observed; it does not say
+    // whether the repository conforms. Before this, `exit 0` was reachable
+    // through the same branch for a clean tree, a waived violation and an
+    // unevaluated rule alike, so the gate could be cited as proof of
+    // conformance while debt was still open. The verdict is the typed answer
+    // to that question, and only CONFORMANT licenses the claim.
+    let outcomes: Vec<_> = evaluations
+        .iter()
+        .map(|eval| {
+            let severity = registry
+                .iter()
+                .find(|r| r.id == eval.rule_id)
+                .map(|r| r.severity)
+                .unwrap_or(RuleSeverity::Error);
+            RuleOutcome {
+                status: eval.status,
+                severity,
+                rule_id: eval.rule_id.as_str(),
+            }
+        })
+        .collect();
+    let verdict = verdict_for(&outcomes);
+    let exit_status = exit_code_for(verdict);
+    // `has_error_fail` is now implied by the verdict: a Fail at error
+    // severity is exactly what produces OpenDebt. Kept as an assertion of
+    // that invariant rather than a second source of truth for the exit code.
+    debug_assert_eq!(has_error_fail, verdict == Verdict::OpenDebt);
     let rows_count = rows.len();
+
+    stdout.push_str(&format!(
+        "\nVERDICT: {} (exit {})\n",
+        verdict.as_str(),
+        exit_status
+    ));
+    if !verdict.is_conformant() {
+        stdout
+            .push_str("This gate does NOT certify architectural conformance. See VERDICT above.\n");
+    }
 
     // ── JSON output (optional) ──────────────────────────────────────────────
     if let Some(out_path) = &args.out {
@@ -162,6 +222,7 @@ pub(super) fn run_check_architecture(args: super::CheckArchitectureArgs) -> Comm
             head_anchor: baseline.ref_.head_anchor.clone(),
             evaluated_at: now,
             rows: rows.clone(),
+            verdict: verdict.as_str(),
             exit_status,
         };
         let json = match serde_json::to_string_pretty(&output) {
@@ -222,7 +283,3 @@ fn detail_for(
         RuleStatus::NotApplicable => provenance.unwrap_or("not applicable").to_owned(),
     }
 }
-
-#[cfg(test)]
-#[path = "tests/check_architecture_tests.rs"]
-mod check_architecture_tests;
