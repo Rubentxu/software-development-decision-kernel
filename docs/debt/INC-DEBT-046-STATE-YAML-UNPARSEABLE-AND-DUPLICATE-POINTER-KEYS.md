@@ -1,11 +1,12 @@
 ---
 id: INC-DEBT-046-STATE-YAML-UNPARSEABLE-AND-DUPLICATE-POINTER-KEYS
 title: el puntero de estado no era parseable por maquina (indentacion) y sus claves `development_head` estaban duplicadas
-status: open
+status: resolved
 severity: high
 priority: P1
 detected_at: 2026-10-01
 detected_in_session: session-58
+closed_in_session: session-59
 component: governance
 surface: docs/roadmap/STATE.yaml
 references:
@@ -47,35 +48,52 @@ una fuente: convierte la reanudación en lectura humana de prosa, y reintroduce
 precisamente la deriva entre puntero y realidad que la matriz de verdadfulness
 existe para eliminar.
 
-## Estado de la corrección en session-58
+## Estado: RESUELTA en session-59 (2026-10-01T11:35Z)
 
-**Corregido en session-58** (parte de esta slice):
+**Cierre completo**, no parcial. Las cuatro condiciones del criterio de cierre
+están medidas sobre el árbol final:
 
-1. Indentación de la línea 17 normalizada a 2 espacios.
-2. `yaml.safe_load` verificado: OK. `development_head` resuelto =
-   `DONE_C3L6_X07_PROCESS_BOUNDARY_RELEASE_BLOCKED_MUSL` (session-58),
-   `current_sha` = `bdb2ac65`, `workspace_version_at_current` = `2.5.0`.
-3. `updated_at` a `2026-10-01T11:05:00Z`; `current_sha` reconciliado al HEAD
-   real; `workspace_version_at_current` corregido de `2.4.2` (obsoleto) a
-   `2.5.0` declarada-no-publicada; blocker de musl añadido a la lista.
-4. La clave de session-58 se añadió **al final** para que sea la que resuelve.
+| # | Condición | Resultado medido |
+|---|-----------|------------------|
+| a | El puntero resuelto es el de la sesión actual | `IN_PROGRESS_C3L7_ARCHITECTURE_GATE_RELEASE_BLOCKED_MUSL` |
+| b | `grep -c '^  development_head:'` == 1 | **1** (era 9) |
+| c | `superseded_development_head` == 1 clave, con los 8 valores previos recuperables | **1** clave · **8** valores recuperables |
+| d | Cero claves perdidas en `source:` | diff de key sets **idéntico** contra el backup |
 
-**SIN CERRAR (motivo declarado):** la **consolidación** de las 7 claves
-`development_head` duplicadas en una sola, moviendo las anteriores a
-`superseded_development_head`. No se hizo aquí por dos razones concretas:
+**Falsificador OBSERVED:** reintroducir 3 espacios en una clave `source:`
+(`baseline_branch`) reproduce el `ParserError` exacto. La afirmación "el YAML
+parsea" tiene contraprueba, no es decorativa.
 
-- Reordenar historia de punteros es un cambio de contrato de
-  `STATE.yaml` (qué clave es autoritativa), no un fix de formato; exige su
-  propia decisión.
-- Todas las clavesSESSION-ANTIGUAS son **evidencia de sesión** y el diario es
-  quien la conserva (§10: no reescribir historia). Borrarlas del puntero sin
-  transladarlas reduce la trazabilidad que el propio esquema pretende preservar.
+**Error propio declarado.** Mi primera consolidación **creó** una segunda clave
+`superseded_development_head` en vez de concatenar a la preexistente. Con ello la
+clave antigua (session-43) quedaba después y **ganaba** en YAML, y el índice de
+valores salía vacío. Lo detecté al intentar recuperar los valores (0 recuperados,
+cuando debía ser 8); no al escribir. Corregido concatenando a la clave
+existente — el patrón ya establecido en este repo, que yo no respeté a la
+primera. Es exactamente el mismo modo de fallo que esta INC documenta: una
+aserción que se declara sin comprobación.
 
-Lo que **no** se hace, y es la parte que deja esta deuda abierta: seguir
-acumulando claves duplicadas. La siguiente sesión que escriba en este fichero
-debe consolidar, no añadir una octava.
+**Sin pérdida de historia.** Las ocho sesiones afectadas (45, 46, 46b, 48, 54,
+55, 56, 57) conservan entrada completa en `SESSION-JOURNAL.md`, y
+`superseded_development_head` queda como **índice** — cada valor con su sesión
+de origen — no como fuente. La prosa de cada sesión sigue en el diario y en
+los recibos de sus slices.
 
-## Criterio de cierre (verificable)
+## Divergencia de git reconciliada en la misma sesión
+
+Al recuperar contexto se detectó que `origin/main` contenía `86f2aad7`
+("chore(release): bump version") que la rama local **no** contenía: `f78a8bf2`
+era el ancestro común y ambos bumps eran de contenido **idéntico**
+(`Cargo.toml`, `CHANGELOG.md`, `manifest.toml` verificados por diff vacío). El
+remoto salió del step 1c de `release.sh`; el local, del cierre de session-57.
+
+Resuelto con `git rebase origin/main`: historia lineal, `86f2aad7` ahora
+ancestro, Git descartó el bump redundante, y el árbol final es **idéntico** al
+HEAD de session-58 (`git diff --quiet` sin diferencias: cero bytes perdidos).
+El bump duplicado no era un bug del hook sino dos ejecuciones concurrentes del
+paso 1c sobre ramas hermanas.
+
+## Criterio de cierre (histórico — cumplido en session-59)
 
 ```bash
 python3 -c "import yaml; d=yaml.safe_load(open('docs/roadmap/STATE.yaml')); \
@@ -85,8 +103,9 @@ python3 -c "import yaml; d=yaml.safe_load(open('docs/roadmap/STATE.yaml')); \
 - (a) el comando imprime el valor de la **sesión actual**, y
 - (b) `grep -c '^  development_head:' docs/roadmap/STATE.yaml` == `1`.
 
-Ambas condiciones deben cumplirse a la vez. (a) sin (b) es el estado actual tras
-el fix de session-58: parsea, pero depende del orden de las líneas.
+Ambas condiciones se cumplieron a la vez en session-59, y se añadieron (c) y
+(d) durante la ejecución. Antes del fix de session-58 (a) se cumplía y (b) no:
+el fichero parseaba, pero el puntero dependía del orden de las líneas.
 
 ## Falsificador
 
