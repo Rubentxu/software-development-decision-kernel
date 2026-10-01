@@ -101,6 +101,8 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **Estado C3l.6:** **X07 IMPLEMENTED (session-58)** — el consumidor es el binario `sddk` real (`CARGO_BIN_EXE_sddk`) lanzado como proceso hijo en `crates/sddk-cli/tests/aiw_s8_x07_real_binary_boundary.rs` (6/6), escritor vía API `Storage`; AT-UAT-013/014 en PASS. Ningún binario nuevo. Los 4 tests de storage intactos. Lección registrada: la aserción de byte-equality **no** muerde el falsificador "sustituir el binario por un handle in-process" (un handle tampoco escribe) ⇒ se añadió D0, que afirma el PID del hijo. Falsificadores F11–F14 OBSERVED. Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/RECEIPT.md`. **AIW-S8 sigue sin VERIFIED**: la vía C3l necesita C3l.7.
 
+**Estado C3l.7 (SIGUIENTE):** architecture gate sobre el repo actual — `AT-UAT-015`: 0 error no-waived o waiver vigente tipado. Cierra la vía C3l y desbloquea C3n. **WorkItem derivation en session-59:** antes se cerró `INC-DEBT-046` (high/P1, la única abierta), porque el puntero de estado tenía 9 claves `development_head` duplicadas y C3l.7 tiene que escribir punteros: hacerlo sobre un puntero frágil habría producido una octava clave. Reconciliada además una divergencia de git con `origin/main` (dos ramas hermanas con bumps de contenido idéntico) mediante `git rebase origin/main` — árbol final byte-idéntico y `HEAD == origin/main`.
+
 **Exit gate:** la matriz puede responder, para cualquier hito, qué frontera se observó realmente sin leer el nombre del test. **UAT:** AT-UAT-001..015 (overlay del paquete; alta en UAT-MATRIX al pasar cada slice a READY).
 
 ### C3m — Semantic & Boundary Convergence (P1, tras C3l.1–C3l.4 en los contratos afectados)
