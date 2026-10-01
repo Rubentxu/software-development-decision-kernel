@@ -1,5 +1,19 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-57, 2026-10-01T10:40Z): BLOCKED en `release.sh` step 3/14 — falta el compilador C `x86_64-linux-musl-gcc`. NO se publicó nada, y esa es la conducta correcta.** Detalle en [`docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md`](../architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md).
+
+**Trabajo verificado y commiteado, listo para salir en cuanto el bloqueo se levante:** `7360c32e`…`d3988a5e` (C3l.3+C3l.4+C3l.5) · `5a6f155f` (`test(push)`: repara el caso fail-closed que preguntaba al repo equivocado) · `f78a8bf2` (registra INC-DEBT-045, reindexa INC-DEBT-044) · `86f2aad7` (`chore(release): bump version` → workspace `2.5.0`, HEAD con el subject que exige el step 0).
+
+**El bloqueo:** target Rust musl **instalado**, pero el compilador C `musl-gcc` **ausente** (`ring v0.17.14` lo necesita). Distro **Bazzite 44** (Fedora inmutable); `sudo` **requiere contraseña** ⇒ intervención del operador. Remedio: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin más cambios.
+
+**NO se usó `SDDK_RELEASE_BUILD_TARGET` para forzar glibc.** El propio script lo prohíbe y lo califica de *"reintroduce INC-021"*: el asset se llama musl y `install.sh` lo reparte como musl, así que publicar un binario glibc con ese nombre **es la misma mentira que INC-DEBT-021 documentaba**.
+
+**Gates ya verdes** (los que fallaron en intentos anteriores, resueltos): workspace green · los 8 shell contract tests, incluido `test_push_prevention_hook.sh` con `PASS=48 FAIL=0` y falsificador F10 OBSERVED · `test_vault_adr_mirror_coverage.sh` con 53 ADRs espejados e idempotente · `debt_index_coherence` PASS=10 FAIL=0.
+
+**Tras el desbloqueo:** el release sale como `v2.5.0` sin cambios adicionales (el bump ya está commiteado y la versión es la correcta). Después, **C3l.6** (X07 segundo binario real), luego C3l.7 (architecture gate, que cierra la vía C3l y desbloquea C3n).
+
+---
+
 **Estado (session-56, 2026-10-01T10:05Z): C3l.5 COMPLETADO — X04 cruza la frontera multi-proceso real (AT-UAT-011/012 PASS). ADRs escritos para los 2 módulos root nuevos.** **SIGUIENTE PASO: C3l.6** (X07: segundo binario real). Después C3l.7 (architecture gate), que cierra la vía C3l y desbloquea C3n.
 
 **Pre-flight ejecutado (no asumido).** Índice de deuda curado (44 de 77 ficheros ausentes del índice), así que parseé el frontmatter de los 77: **0 critical/high abiertas**; las 7 `open` son S14 ancient y sus propios criterios dicen *"no es un bug"*, *"no borrar"*, *"la recomendación queda anulada"*. **INC-DEBT-028** (único high/P1, `status: fixed` — valor **fuera del vocabulario canónico**, 1 caso de 77) verificado OBSERVED hoy: 3 invocaciones de `sddk project resolve` sobre repo sin remote → mismo `project_id`. **No era deuda**; normalizado `fixed → resolved` con la evidencia registrada.

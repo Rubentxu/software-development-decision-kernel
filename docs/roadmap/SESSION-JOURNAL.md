@@ -7334,3 +7334,41 @@ El exit gate —*"al menos dos PIDs distintos y SQLite durable compartido"*— e
 **Matriz:** X04 **VERIFIED** (session-56); X07 sigue `NOT_VERIFIED`, así que **`AIW-S8` no pasa a VERIFIED** — sigue siendo C3l.6. AT-UAT-011/012 PASS. Commit `6abcf052`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session56-c3l5-x04-multi-process-concurrency/RECEIPT.md`.
 
 **SIGUIENTE PASO:** **C3l.6** — X07: segundo binario real (`AIW-S8` completes). Después **C3l.7** (architecture gate), que cierra la vía C3l y desbloquea C3n. En paralelo, **C3m.3 + C3m.5** para la consolidación provider/capability.
+
+---
+
+## Session-57 (2026-10-01T10:40Z) — release 2.5.0 BLOQUEADO en el step 3: falta el toolchain musl
+
+**Baseline / HEAD:** `d3988a5e` al abrir, 9 commits sin publicar. **WorkItem: release 2.5.0**, no C3l.6 — por regla 6 (disparador único: feature completa + criterios verificados; y evitando acumular 9 commits sin liberar). **Workflow `A-lite`** con `debt_verification` ejecutada.
+
+### Pre-flight
+
+Índice de deuda curado (44 de 77 ficheros ausentes) ⇒ parseé el frontmatter de los 77: **0 critical/high abiertas**, severidad máxima `medium/P2`. No había deuda severa vigente, luego el camino es roadmap/release.
+
+### Versión: `2.5.0`, no `2.4.3` — corrección de session-56
+
+En el turno anterior dije PATCH a ojo. La regla 6 exige derivarla del historial: el rango tiene **2 `feat` + 1 `fix` + 4 docs + 2 chore** ⇒ MINOR. `scripts/release-bump.sh --dry-run` lo calculó solo (`v2.4.2 -> v2.5.0 (minor)`), independiente de mi lectura. Verifiqué además que **no hay breaking change**: `sddk_engine::LeaseStore` y `sddk_engine::agent_host::LeaseStore` siguen ambas vivas vía re-export, que era el riesgo del movimiento del puerto en C3l.5.
+
+### Tres intentos, tres abortos fail-closed, ninguno publicó nada
+
+| # | Gate que abortó | Causa | Autoría |
+|---|---|---|---|
+| 1 | `test_push_prevention_hook` (1b) | El caso fail-closed preguntaba al **repo equivocado** | Mía (test roto desde 2026-09-30) |
+| 2 | `test_vault_adr_mirror_coverage` (1b) | ADR-0148/0149 sin espejar en el vault | Mía (ADRs nuevos) |
+| 3 | **musl build** (step 3) | **Falta `x86_64-linux-musl-gcc`** | **Entorno — no del trabajo** |
+
+**Intento 1 — la más instructive.** El caso que afirma certificar que el pre-push *falla cerrado* **nunca exertitó ese comportamiento**. Tres defectos encadenados, los tres en el test: el `cd "$dir/clone"` vivia dentro de un `if ( ... )` ya cerrado, así que `hook_direct_case` corria en el CWD del runner y preguntaba al hook sobre el **repo real**, cuyo rango si contiene un bump ⇒ ACCEPT, y la maniobra `git remote rename` de la que depende el caso nunca le afectaba; `git rev-parse origin/main` imprime el nombre del ref en stdout y aun asi sale con codigo != 0, con lo que el `||` fallback partia el stdin del hook en dos lineas; y la limpieza, envuelta por un `rm` que imprime a stdout en este entorno, hacia que `res` nunca casase con PASS/FAIL, con lo que el caso caia **siempre** en la rama de "fixture error" con independencia de lo decidido por el hook.
+
+El hook **nunca estuvo roto**: lo que estaba roto era la verificacion. Corregido ⇒ `PASS=48 FAIL=0`, y **falsificador F10 OBSERVED** (mutando el hook para admitir cuando la consulta de tags falla, cae a `[direct-expected REJECT, got ACCEPT]`). Antes de arreglarlo, el caso tampoco era falsable. Y el fallo era **silencioso y dependiente del entorno**: con un `rm` que no imprimiera, el caso habria caido en la rama `FAIL` y el gate se habria manifestado como "el hook no falla cerrado" — conclusion opuesta y tambien falsa. Registrado como **INC-DEBT-045** (high/P1, resolved); **no cierra la variante (3) de INC-DEBT-040**, que sigue abierta.
+
+**Intento 2.** `python3 scripts/mirror_adrs_to_vault.py` ⇒ 53 ADRs, idempotente, test verde. De paso indexe **INC-DEBT-044**, que existia como fichero high/P1 sin figurar en el indice — el mismo hueco de descubribilidad por el que `INC-DEBT-028` pudo llevar `status: fixed` sin que nada lo detectara.
+
+**Intento 3 — el bloqueo actual.** Pasa steps 0, 1, 1b y 2, y aborta en el 3: `ring v0.17.14` necesita un compilador C para musl y `x86_64-linux-musl-gcc` no esta. El target **Rust** musl si esta instalado; falta el **C**. Distro **Bazzite 44** (Fedora inmutable), `sudo` requiere contrasena ⇒ operador.
+
+**No se forzo un build glibc.** `scripts/release.sh` (lineas 424-450) dice que el target es configurable "porque no todos los hosts de release tienen el toolchain", pero que si se pide musl y no esta, el script **aborta** porque *"es preferible no publicar a publicar un binario con el nombre equivocado. Esa era exactamente la mentira que INC-021 documentaba"*, y que el flag `SDDK_RELEASE_BUILD_TARGET` **"reintroduce INC-021"** y *"se requiere una decision explicita del operador"*. Forzarlo seria recrear la mentira: el asset se llama musl e `install.sh` lo reparte como musl.
+
+**Remedio:** `rpm-ostree install --idempotent musl-gcc` + reboot, y relanzar `bash scripts/release.sh` sin mas cambios (la version `2.5.0` ya es la correcta y el bump ya esta commiteado). Bloqueador registrado en `docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md`.
+
+**Gates en verde antes del bloqueo:** workspace green · los 8 shell contract tests · `test_push_prevention_hook.sh` `PASS=48 FAIL=0` · `test_vault_adr_mirror_coverage.sh` 53 ADRs, idempotente · `debt_index_coherence` PASS=10 FAIL=0.
+
+**SIGUIENTE PASO:** desbloquear el toolchain (operador) y relanzar el release; despues **C3l.6** (X07) y **C3l.7** (architecture gate). En paralelo, **C3m.3 + C3m.5** para la consolidacion provider/capability.
