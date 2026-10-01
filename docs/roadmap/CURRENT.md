@@ -1,5 +1,20 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-58, 2026-10-01T11:05Z): C3l.6 COMPLETADO — X07 cruza la frontera de proceso/binario real (AT-UAT-013/014 PASS). AIW-S8 sigue SIN VERIFIED: la vía C3l necesita C3l.7. El release v2.5.0 sigue bloqueado por el mismo toolchain musl (sin cambio en §Bloqueo).** **SIGUIENTE PASO: C3l.7** (architecture gate, que cierra la vía C3l y desbloquea C3n), salvo que el operador levante antes el bloqueo de musl.
+
+**Hecho en session-58 (C3l.6):**
+
+1. **El defecto era de la frontera, no del aserto.** `aiw_s8_x07_second_binary_integration.rs` documenta *"a second consumer process"* y su `run_writer` devuelve un **path**: el test abre un **segundo `Storage` en el MISMO proceso**. Dos handles, un proceso. Comparten memoria, código compilado y PID — prueba que dos conexiones coexisten, no que un ejecutable aparte pueda leer lo que otro escribió.
+2. **El consumidor es el binario `sddk` real** (`CARGO_BIN_EXE_sddk`), lanzado como proceso hijo, con el ledger redirigido por `SDDK_DATA_DIR`/`SDDK_STATE_HOME`. **Ningún binario nuevo** — el paquete lo prohíbe si una superficie CLI real cubre la lectura, y la cubre (`ledger events`, `ledger verify`, `cycle status`, `project resolve`). El test vive en `sddk-cli/tests/` porque es el único sitio con `CARGO_BIN_EXE_sddk`. Los 4 tests de storage **no se tocaron**.
+3. **GREEN 6/6** (D0 proceso · D1 identidad · D2 ciclo/eventos · D3 schema guard · D4 bytes · D5 write fail-closed).
+4. **El falsificador central NO mordía, y eso reveló un defecto de diseño mío.** F12 (sustituir el binario por un handle in-process) dio `4 passed; 0 failed` con el binario completamente ausente. Causa: la aserción de bytes compara *antes* y *después*, y un handle in-process **tampoco escribe** — sólo prueba "nadie escribió", no "otro proceso lo hizo". **Corrección: D0**, que afirma que el consumidor es un ejecutable distinto del binario de test y que su **PID difiere del PID del test**. Con D0, F12 muerde con el mensaje exacto del defecto original: `no boundary crossed`. Lección transferible: *byte-equality demuestra no-escritura, no ejecución-por-proceso.*
+5. **Falsificadores F11–F14 todos OBSERVED.** F11 necesitó un segundo intento: la primera versión escribía con la conexión abierta y no mudou los bytes — el storage usa **WAL**, así que la escritura vive en `ledger.sqlite-wal` y sólo alcanza el fichero principal en el checkpoint. "No muerde" por razón mecánica, no por aserto débil; corregido cerrando el handle.
+6. **Límite declarado (medido, no supuesto):** D4 afirma quietud del **fichero principal**, no del directorio. El binario abre el ledger en escritura (`SqliteLedgerFactory::open_ledger` → `Storage::open`; `RuntimeContext::open` además construye el engine con `Storage::open`), lo **crea si falta**, y los sidecars `-wal`/`-shm` aparecen y desaparecen. El contenido no cambia; el directorio sí se toca. No se maquilla como "read-only".
+
+**Límites:** verifica X07, no certifica "dos CLIs de producción" ni el instalador/bundle; usa el binario de debug de cargo (el release está bloqueado), que es el mismo código. Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/RECEIPT.md`.
+
+---
+
 **Estado (session-57, 2026-10-01T10:40Z): BLOCKED en `release.sh` step 3/14 — falta el compilador C `x86_64-linux-musl-gcc`. NO se publicó nada, y esa es la conducta correcta.** Detalle en [`docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md`](../architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md).
 
 **Trabajo verificado y commiteado, listo para salir en cuanto el bloqueo se levante:** `7360c32e`…`d3988a5e` (C3l.3+C3l.4+C3l.5) · `5a6f155f` (`test(push)`: repara el caso fail-closed que preguntaba al repo equivocado) · `f78a8bf2` (registra INC-DEBT-045, reindexa INC-DEBT-044) · `86f2aad7` (`chore(release): bump version` → workspace `2.5.0`, HEAD con el subject que exige el step 0).

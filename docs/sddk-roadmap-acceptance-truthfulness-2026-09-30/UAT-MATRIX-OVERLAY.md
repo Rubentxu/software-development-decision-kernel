@@ -17,8 +17,8 @@ Estados iniciales: `NOT_RUN`.
 | AT-UAT-010 | C3l.4 | MCP_EXTERNAL | Chronos real disponible | binary/version/hash/capabilities + captura observada |
 | AT-UAT-011 | C3l.5 | SQLITE_MULTI_PROCESS | Dos CLI compiten por misma lease | Un owner, fencing monotónico, loser sin write |
 | AT-UAT-012 | C3l.5 | SQLITE_MULTI_PROCESS | Winner muere y otro recupera tras condición válida | Sin doble autoridad ni divergence |
-| AT-UAT-013 | C3l.6 | PROCESS | Writer + segundo consumidor real | Reader observa estado durable |
-| AT-UAT-014 | C3l.6 | PROCESS | Segundo consumidor intenta write | Fail closed |
+| AT-UAT-013 | C3l.6 | PROCESS | Writer + segundo consumidor real | Reader observa estado durable. **PASS session-58** — binario `sddk` real como proceso hijo, PID afirmado |
+| AT-UAT-014 | C3l.6 | PROCESS | Segundo consumidor intenta write | Fail closed. **PASS session-58** — verbo inexistente y transición sin autoridad fallan cerradas; ledger byte-idéntico |
 | AT-UAT-015 | C3l.7 | PROCESS | `check-architecture` sobre repo actual | 0 error no-waived o waiver vigente tipado |
 | AT-UAT-016 | C3m.0 | PURE | Buscar significados KMT productivos | Exactamente una definición canónica |
 | AT-UAT-017 | C3m.1 | PURE | Source cambia en una hoja | Sólo ramas afectadas invalidan |

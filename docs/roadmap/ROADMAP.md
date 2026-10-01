@@ -99,6 +99,8 @@ C2 y C3 pueden realizarse en paralelo **solo después** de C1 y con el mismo con
 
 **Estado C3l.0:** **MATRIX CONGELADA (session-51)** — [ACCEPTANCE-TRUTHFULNESS-MATRIX.md](ACCEPTANCE-TRUTHFULNESS-MATRIX.md): 21 filas (AIW-S0..S8 + R0..R11) con frontera realmente ejercitada y re-clasificaciones solo donde el paquete las manda (R6→IMPLEMENTED, S7a→NOT_VERIFIED, S4→IMPLEMENTED_NOT_VERIFIED, S5/S8→IMPLEMENTED/NOT_VERIFIED, R2/R5/R8 parcial, gate de arquitectura no válido hasta C3l.7). Receipts históricos intactos.
 
+**Estado C3l.6:** **X07 IMPLEMENTED (session-58)** — el consumidor es el binario `sddk` real (`CARGO_BIN_EXE_sddk`) lanzado como proceso hijo en `crates/sddk-cli/tests/aiw_s8_x07_real_binary_boundary.rs` (6/6), escritor vía API `Storage`; AT-UAT-013/014 en PASS. Ningún binario nuevo. Los 4 tests de storage intactos. Lección registrada: la aserción de byte-equality **no** muerde el falsificador "sustituir el binario por un handle in-process" (un handle tampoco escribe) ⇒ se añadió D0, que afirma el PID del hijo. Falsificadores F11–F14 OBSERVED. Recibo: `tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/RECEIPT.md`. **AIW-S8 sigue sin VERIFIED**: la vía C3l necesita C3l.7.
+
 **Exit gate:** la matriz puede responder, para cualquier hito, qué frontera se observó realmente sin leer el nombre del test. **UAT:** AT-UAT-001..015 (overlay del paquete; alta en UAT-MATRIX al pasar cada slice a READY).
 
 ### C3m — Semantic & Boundary Convergence (P1, tras C3l.1–C3l.4 en los contratos afectados)
