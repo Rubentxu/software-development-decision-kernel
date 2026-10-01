@@ -50,5 +50,8 @@ Return:
 
 ## References
 
-- `docs/skill-style-guide.md` — how skills should be authored before indexing.
+- `docs/skill-style-guide.md` — the normative guide on how skills should be authored before indexing. **It does not exist in this repo**, and that is expected, not a broken promise: `skill-creator` and `skill-improver` declare the same absence and the same fallback. Apply this order —
+  1. if `docs/skill-style-guide.md` exists, it is normative;
+  2. otherwise use the bundled copy that ships with this skill at `references/skill-style-guide.md` (byte-identical to the one under `skill-creator` and `skill-improver`);
+  3. otherwise apply the inline rules of `skill-creator` § Hard Rules.
 - `skills/_shared/skill-resolver.md` — how delegators use the index.

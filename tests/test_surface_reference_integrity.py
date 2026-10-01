@@ -79,18 +79,24 @@ KNOWN_EXTENSIONS = {
 # previa: el destino existia en un unico sitio y la ruta citada era la
 # equivocada. `test-pyramid-builder` (2) y `cua-test-orchestrator` (1).
 KNOWN_BROKEN = {
-    # Las cuatro que quedan NO son rutas rotas sino citas cuya coincidencia de
-    # nombre es ambigua. "Apuntar a lo mas parecido" cambia que autoridad
-    # declara la superficie, y eso es decision del operador, no una correccion
-    # mecanica. Las otras once de la linea base original (15) se resolvieron en
-    # session-65f: las 6 de las specs E14, que SI existen y se copiaron al
-    # repo desde el knowledge vault, y las 5 de la familia cua-test-*, cuyos
-    # agentes nunca se escribieron y cuya skill paso a hacer el trabajo ella
-    # misma en vez de delegar en ellos.
-    ("agents/deep-research-orchestrator.md", "skills/deep-research-methodology-hub/SKILL.md"),
+    # Las DOS que quedan NO son rutas rotas por descuido: `impeccable-primary`
+    # promete un directorio `docs/impeccable-reference/` que **nunca existio en
+    # ninguna rama** (`git log --all --diff-filter=A -- 'docs/impeccable*'`
+    # vacio) y cuya skill, `impeccable`, tampoco esta en este repo: el agente
+    # es un wrapper de una skill externa que el usuario instala en
+    # `<your-impeccable-skill-path>/`. No hay destino unico al que corregir,
+    # luego la eleccion es del operador: retirarlas o escribir el contenido.
+    #
+    # Las otras trece de la linea base original (15) se resolvieron en
+    # session-65f/65g: las 6 de las specs E14 (que SI existen, copiadas al
+    # repo y ahora al bundle), las 5 de la familia cua-test-* (cuyos agentes
+    # nunca se escribieron y cuya skill paso a hacer el trabajo ella misma),
+    # `deep-research-methodology-hub` (existia en un unico sitio, faltaba el
+    # `sub/`), y `skill-style-guide` (no existe en el repo por diseno, pero
+    # `skill-registry` no declaraba el fallback que sus dos hermanos si
+    # declaran -- movido a DECLARED_FALLBACK).
     ("agents/impeccable-primary.md", "docs/impeccable-reference/README.md"),
     ("agents/impeccable-primary.md", "docs/impeccable-reference/impeccable-antipatterns.md"),
-    ("skills/skill-registry/SKILL.md", "docs/skill-style-guide.md"),
 }
 
 # Descartadas por verificacion manual: la superficie declara un fallback
@@ -98,9 +104,13 @@ KNOWN_BROKEN = {
 # propias lineas, que si `docs/skill-style-guide.md` no esta, se use la copia
 # empaquetada en references/ y, si tampoco, reglas inline. La ausencia del doc
 # de repo esta disenada; marcarla como rota seria un falso positivo.
+# `skill-registry` se sumo aqui en session-65g: citaba el mismo doc ausente
+# SIN declarar el fallback, y ademas no tenia copia propia -- se le copio la
+# guia (byte-identica a las otras dos) para que la cadena que declara exista.
 DECLARED_FALLBACK = {
     ("skills/skill-creator/SKILL.md", "docs/skill-style-guide.md"),
     ("skills/skill-improver/SKILL.md", "docs/skill-style-guide.md"),
+    ("skills/skill-registry/SKILL.md", "docs/skill-style-guide.md"),
 }
 
 

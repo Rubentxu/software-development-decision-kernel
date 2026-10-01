@@ -121,6 +121,6 @@ skill_resolution: injected | fallback-registry | fallback-path | none
 
 ## References
 
-- `skills/deep-research-methodology-hub/SKILL.md` — methodological hub.
-- 21 bundled skills under `skills/deep-*/`.
+- `skills/deep-research/sub/deep-research-methodology-hub/SKILL.md` — methodological hub.
+- 22 bundled skills under `skills/deep-research/sub/deep-*/`.
 - `crates/sddk-cli/src/lib.rs::WORKFLOW_MANIFEST`.
