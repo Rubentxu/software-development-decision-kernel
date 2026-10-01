@@ -302,3 +302,44 @@ El guard encontró **dos bugs en sí mismo** al ejecutarse, no al leerse:
 Ninguno de los dos se habría detectado leyendo el script. Es la tercera
 vez en este repo que el falsador encuentra lo que la inspección no
 (INC-DEBT-033, INC-DEBT-037, y ahora el propio guard nuevo).
+
+---
+
+## Addendum session-65c — re-confirmación del guard sobre v2.5.2
+
+**Esta entrada NO cierra nada nuevo.** El INC sigue `closed` desde session-43
+(testigo v2.2.27). Lo que se registra es que el guard se ejecutó contra la
+release vigente y sigue verde, que es la condición que el propio documento
+dice que hay que observar y que llevaba dos releases sin comprobarse.
+
+```text
+bash tests/test_supply_chain_authenticity.sh --tag v2.5.2
+  PASS=13 FAIL=0 SKIP=0
+  ✓ signature verifies under the pinned trust root: sddk
+  ✓ signature verifies under the pinned trust root: software-development-decision-kernel.tar.gz
+  ✓ verified 2/2 signed payload(s) for v2.5.2
+  ✓ pin rejects a branch ref where a tag is required (control)
+  ✓ pin rejects a different OIDC issuer (control)
+  ✓ control: a wildcard pattern WOULD accept this certificate (so the pin is what rejects)
+```
+
+Los tres controles negativos importan más que los dos positivos: sin ellos,
+"2/2 verifican" no distingue *la firma es válida* de *el pin no está
+restringiendo nada*. El tercero lo dice explícitamente — un `.*` habría
+aceptado este certificado, luego es el pin lo que lo rechaza.
+
+**Contexto de la release v2.5.2** (session-65b/65c): tag ligero `v2.5.2` →
+`818d4ff95f8ea129ddccd7fc53f2bb4b73ee3088`; publicada `2026-10-01T16:22:15Z`;
+`isDraft=false`, `isPrerelease=false`; 27 assets; run CI `36890390356`
+success. Firma keyless producida por `release.yml` (job *Sign release assets
+(cosign keyless)*), no por `release.sh`, porque la identidad sólo existe en un
+runner de Actions — ver el addendum de session-65c en
+`docs/roadmap/SESSION-JOURNAL.md` para el reparto de papeles
+"PipelineK conduce, Actions firma".
+
+**Verificación independiente, desde el harness de PipelineK:**
+`pipelines/certify-sddk-release.pipeline.kts` ejecutada contra v2.5.2 con las
+8 etapas verdes y `cosign verify-blob` → `Verified OK` bajo los mismos dos
+pins leídos de `scripts/install.sh`, seguidos de instalación desde la URL
+pública y `dev doctor` con `all_present: true`. Dos verificadores, mismo ancla
+de confianza, mismo veredicto.
