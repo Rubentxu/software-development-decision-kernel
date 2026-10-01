@@ -7270,3 +7270,33 @@ es el publicado por CI.
 **Matriz:** S4 `IMPLEMENTED_NOT_VERIFIED` → **IMPLEMENTED → re-verificable**; AT-UAT-006/007/008 PASS. Commit de la slice `7360c32e`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session54-c3l3-dynamic-expansion-vertical/RECEIPT.md`.
 
 **SIGUIENTE PASO:** **C3l.4** — External test semantics: ausencia ≠ PASS (los tests Chronos pueden salir verdes vía `None => return`). Congelar el contrato de `NotObserved` antes de tocar los tests. Después C3l.5 (X04 `SQLITE_MULTI_PROCESS`) y C3l.6 (X07 segundo binario real).
+
+---
+
+## Session-55 (2026-10-01T09:15Z) — C3l.4: la ausencia de un provider externo nunca vuelve a ser PASS (AT-UAT-009 PASS, AT-UAT-010 BLOCKED)
+
+**Baseline / HEAD:** `4657e8b0` (C3l.3 cerrado, sin push; 2 commits por delante de `origin/main` = `dc343722`). **Slice C3l.4** — cuarta y última de la vía C3l antes de C3l.5.
+
+**RED medido con su control.** `aiw_s5_chronos_real.rs` resolvía el provider con `None => return`. Con `CHRONOS_MCP_BIN` y `COGNICODE_MCP_BIN` ambos ausentes, el run reportaba `3 passed; 0 failed; 0 ignored` en **`finished in 0.00s`** — dos de los tres tests sin ejecutar. `finished in 0.00s` es la prueba material: no se puede hacer spawn de un proceso y capturar eventos en cero tiempo. **El contraste es la mitad del hallazgo:** `aiw_s1_cognicode_real.rs`, en el MISMO entorno, ya reportaba `2 passed; 3 ignored` porque usaba la convención correcta (`#[ignore]` + `expect`). El defecto estaba **aislado a 2 sitios** y la solución correcta **ya existía en el repo**. No era diseño nuevo: generalizar un patrón propio.
+
+**Resolución.** `ext_outcome` fija los cinco estados honestos (`PassObserved` / `FailObserved` / `BlockedExternalDependency` / `NotRun` / `NotApplicable`) con la invariante load-bearing: `is_pass()` es `true` **solo** para `PassObserved`, y **resolver un binario nunca devuelve un pass** — `resolve_provider` devuelve `NotRun` aun encontrándolo, porque resolver es precondición, no observación. `tests/ext_provider_gate.sh` es la otra mitad: 5 estados, 4 exit codes (0 pass / 1 fail / 2 blocked / 3 not_run) y recibo con path/sha256/version/capabilities. **Un provider resuelto cuyo perfil falla es `fail_observed`, nunca `blocked`**: colapsar los dos es cómo una regresión real se reporta como problema de entorno. Los dos lados se pinean por test.
+
+**GREEN en las dos direcciones.** Run ordinario: `2 passed; 2 ignored` (honesto). Perfil EXT pedido sin provider: `0 passed; 2 FAILED` con el mensaje `BlockedExternalDependency { env_var: "CHRONOS_MCP_BIN", found: "not on PATH and env var unset or empty" }` — **falla fuerte en vez de fingir**.
+
+**Falsificador M5 OBSERVED.** Con el verde commiteado, se restauró el patrón defectuoso: el run volvió a `4 passed; 0 failed; 0 ignored` en 0.00s. Exit gate load-bearing. Restaurado; `git diff` limpio.
+
+**Exit gate del paquete:** `grep -rn "None => return" --include=*.rs crates/*/tests/` → 1 hit, y es el comentario que *documenta* el defecto. Satisfecho.
+
+**Quick win del mismo commit:** `clientInfo` de Chronos informaba `"0.1.0"` congelado mientras el adapter CogniCode ya usaba `env!("CARGO_PKG_VERSION")` — el hardcode señalado en la auditoría externa, verificado y corregido.
+
+**Gates:** `ext_outcome` 4/0 · `aiw_s5_chronos_real` ordinario 2 passed / 2 ignored · `--ignored` sin binario 0 passed / 2 FAILED · fmt limpio · clippy `-p sddk-engine --all-targets -D warnings` exit 0 · shellcheck limpio · `cargo test -p sddk-engine --lib` **1362/0/1** (era 1358) · suite completa del engine 0 fallos.
+
+**Límites declarados.** **AT-UAT-010 NO es un PASS**: `chronos-mcp` no está instalado; la semántica está implementada y falsificada pero la captura real sigue sin observarse. El pin enum↔launcher es parcial — el test lee el script y falla si deja de conocer un estado, pero eso no prueba que lo *emita*. **`ProviderKind::Null` NO se toca**: el falso verde por *tipos* queda abierto y lo cierra la consolidación provider/capability (**C3m.3** + **C3m.5**), no este slice. Sin perfil completo del workspace ni release.
+
+**Dos errores propios.** (a) Commiteé el recibo del gate (`tests/receipts/ext/chronos-gate.json`), que se reescribe en cada run; revertido en `fc5fea2f` y añadido a `.gitignore` con la razón. (b) En el turno anterior afirmé que el ADR de significado canónico de provider/capability era **C3m.0** — es incorrecto: **C3m.0 es el ADR de KMT** (Knowledge Merkle Tree). Lo es **C3m.3** y **C3m.5**. Anotado en el SCOPE-CONTRACT §9 y aquí para que no se propague.
+
+**Auditoría externa (contexto, no commitment).** Un informe externo auditó los paquetes Context-First y AIW contra `6fbe1990` (session-49, v2.3.3). Verificado: sus hallazgos técnicos sobre las costuras provider/observation son **reales y exactos** (los tres `ObservationSet`, los dos `ProviderKind` homónimos, `ProviderKind::Null`, los hardcodes), y **ninguno de los 19 commits posteriores tocó esas tres costuras** — el desfase no las caduca. Lo que sí caducó es su capa de estado (afirma que C3j "acaba de quedar desbloqueado", cuando C3i cerró en ese mismo SHA). Sus 36 porcentajes de cumplimiento **no son falsificables** (sin denominador, método ni `boundary_class`) y reintroducirían exactamente el falso-verde que esta vía elimina; se descartó la tabla y se conservaron los hallazgos con `file:line`.
+
+**Matriz:** AIW-S5 → **IMPLEMENTED → re-verificable** con la captura real declarada **BLOCKED**. AT-UAT-009 PASS, AT-UAT-010 BLOCKED. Commits `6d826044` + `fc5fea2f`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session55-c3l4-external-test-semantics/RECEIPT.md`.
+
+**SIGUIENTE PASO:** **C3l.5** — X04: dos CLI / concurrencia real multi-proceso `SQLITE_MULTI_PROCESS`. Después C3l.6 (X07 segundo binario real) y C3l.7 (architecture gate, que cierra la vía C3l y desbloquea C3n). En paralelo, la consolidación provider/capability vía **C3m.3 + C3m.5** — abrir los `ProviderKind` duplicados, los tres `ObservationSet` o `ProviderKind::Null` como tickets sueltos crearía una segunda autoridad para el mismo concepto (§2.7).

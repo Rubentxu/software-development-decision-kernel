@@ -1,5 +1,23 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-55, 2026-10-01T09:15Z): C3l.4 COMPLETADO — la ausencia de un provider externo nunca vuelve a reportarse como PASS (AT-UAT-009 PASS, AT-UAT-010 BLOCKED).** **SIGUIENTE PASO: C3l.5** (X04: dos CLI / concurrencia real multi-proceso `SQLITE_MULTI_PROCESS`). Después C3l.6 (X07 segundo binario real) y C3l.7 (architecture gate, que cierra C3l y desbloquea C3n).
+
+**Hecho en session-55 (C3l.4):**
+
+1. **RED medido con su control.** `aiw_s5_chronos_real.rs` usaba `None => return`; con `CHRONOS_MCP_BIN` ausente el run reportaba `3 passed; 0 failed; 0 ignored` en **`0.00s`** — dos de tres tests sin ejecutar. El contraste es la mitad del hallazgo: `aiw_s1_cognicode_real.rs`, **en el mismo entorno**, ya reportaba `3 ignored` porque usaba la convención correcta. El defecto estaba aislado a 2 sitios y la solución ya existía en el repo.
+2. **Cinco estados tipados** (`ext_outcome`) con la invariante load-bearing: `is_pass()` es `true` **solo** para `PassObserved`, y **resolver un binario nunca devuelve un pass** — resolver es precondición, no observación. Sin esa distinción, "encontré el binario" se degrada en "el contrato se sostiene".
+3. **Launcher con contrato de exit codes** (0 pass / 1 fail / 2 blocked / 3 not_run) + recibo con path/sha256/version/capabilities. Un provider resuelto cuyo perfil falla es `fail_observed`, **nunca** `blocked` — colapsarlos es cómo una regresión real se reporta como problema de entorno.
+4. **GREEN en las dos direcciones:** run ordinario `2 passed; 2 ignored` (honesto); perfil EXT pedido sin provider `0 passed; 2 FAILED` (falla fuerte en vez de fingir).
+5. **Falsificador M5 OBSERVED:** restaurado el patrón defectuoso, el run vuelve a `4 passed; 0 ignored` en 0.00s. Exit gate load-bearing. `grep "None => return"` en tests de integración externa → 1 hit, y es el comentario que documenta el defecto.
+6. **Quick win del mismo commit:** `clientInfo` de Chronos informaba `"0.1.0"` congelado mientras el adapter CogniCode ya usaba `env!("CARGO_PKG_VERSION")`.
+7. **Gates:** `ext_outcome` 4/0 · fmt limpio · clippy `-D warnings` exit 0 · shellcheck limpio · engine lib **1362/0/1** (era 1358) · suite completa 0 fallos.
+
+**Límites declarados:** **AT-UAT-010 NO es un PASS** — `chronos-mcp` no está instalado; la semántica está implementada y falsificada pero la captura real sigue sin observarse. El pin enum↔launcher es parcial (el test lee el script, no prueba que lo emita). **`ProviderKind::Null` NO se toca**: el falso verde por *tipos* queda abierto y lo cierra la consolidación provider/capability (**C3m.3** + **C3m.5**), no este slice.
+
+**Corrección de un error propio:** en el turno anterior afirmé que el ADR de significado canónico de provider/capability era **C3m.0**. Es incorrecto — **C3m.0 es el ADR de KMT** (Knowledge Merkle Tree). Lo es **C3m.3** (runtime provider-neutral provenance) y **C3m.5** (R0 bounded-context decision).
+
+---
+
 **Estado (session-54, 2026-10-01T08:20Z): C3l.3 COMPLETADO — la vertical de Dynamic Workflow Expansion existe como superficie de producción (AT-UAT-006/007/008 PASS).** Workspace `2.4.2` (= último tag publicado `v2.4.2`), `HEAD` con el fix commiteado. **SIGUIENTE PASO: C3l.4** (External test semantics: ausencia ≠ PASS — los tests Chronos pueden salir verdes vía `None => return`). Después C3l.5 (X04 concurrencia real `SQLITE_MULTI_PROCESS`) y C3l.6 (X07 segundo binario real).
 
 **Hecho en session-54 (C3l.3):**
