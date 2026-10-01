@@ -80,7 +80,68 @@ if grep -q '^manifest_sha256' BUNDLE.toml; then
     ok "manifest_sha256 ancla verificado"
 fi
 
-# ── 5. schema_version soportado ────────────────────────────────────────────
+# ── 5. Contadores de superficie, contra el recuento real del manifest ──────
+# The table is written out, not derived, for the reason INC-DEBT-052 measured:
+# the field names do NOT correspond to the surface paths (`prompts/sddk` ->
+# `prompts_count`), and deriving one from the other is precisely what produced
+# `prompts_count = 0` — the counting match looked for a literal the surface
+# list never contained, the arm never fired, and `_ => {}` swallowed it. A
+# silent zero is worse than a missing one: nothing can tell it from a
+# legitimately empty surface.
+#
+# OBSERVED in session-65h, on the committed BUNDLE.toml: it declared
+# `skills_count = 244` where the manifest has 245, and did not declare
+# `impeccable_reference_count` at all. The other four checks of this guard
+# (version, range, anchor, schema) were blind to it: the file can be
+# coherent in its header and lie in its body. That is the same class as the
+# `prompts_count = 0` above, and it survived two reviews.
+#
+# Both directions are checked. A declared counter that disagrees with the
+# manifest is a bundle that lies about its own contents; a surface the
+# manifest covers with no counter is a count that can only be wrong.
+SURFACE_TO_FIELD="agents:agents skills:skills prompts/sddk:prompts assets:assets specs:specs docs/impeccable-reference:impeccable_reference"
+
+for PAIR in $SURFACE_TO_FIELD; do
+    SURFACE="${PAIR%%:*}"
+    FIELD="${PAIR##*:}"
+
+    DECLARED="$(sed -n "s/^${FIELD}_count *= *\([0-9]*\).*/\1/p" BUNDLE.toml | head -1)"
+    if [ -z "$DECLARED" ]; then
+        fail "BUNDLE.toml no declara ${FIELD}_count (superficie '$SURFACE' cubierta por el manifest). Regenerar con sddk dev manifest --bundle"
+    fi
+
+    ACTUAL="$(grep -c "  ${SURFACE}/" MANIFEST.sha256 || true)"
+    if [ "$DECLARED" != "$ACTUAL" ]; then
+        fail "${FIELD}_count declara $DECLARED pero el manifest tiene $ACTUAL entradas en '$SURFACE' (BUNDLE.toml fosil: regenerar con sddk dev manifest --bundle)"
+    fi
+done
+ok "los 6 contadores de superficie coinciden con MANIFEST.sha256"
+
+# A surface missing from the table is a hole in the CHECK, not a pass: the loop
+# above would simply not ask about it. Falsified exactly that way (removing
+# `docs/impeccable-reference` from the table left the guard green while the
+# counter was never verified). So the table is pinned to the surfaces the
+# manifest actually covers, in both directions.
+# The count is derived from MANIFEST_SURFACES in common.rs rather than
+# restated here, because restating is the duplication that produced (a) and
+# (b) in INC-DEBT-056. If a surface is added there, this fails until the line
+# is written below.
+DECLARED_SURFACES="$(sed -n '/MANIFEST_SURFACES: \[&str;/,/^]/p' crates/sddk-cli/src/dev/common.rs \
+    | grep -oE '"[^"]+"' | tr -d '"' | sort)"
+# Split the table into one surface per line. `printf '%s\n' "$VAR"` emits the
+# WHOLE string as a single line, which is what made this check pass on a
+# mangled table. `tr ' ' '\n'` splits explicitly, so there is no unquoted
+# expansion to warn about (SC2086) and no way to read it as one line.
+TABLE_SURFACES="$(printf '%s' "$SURFACE_TO_FIELD" | tr ' ' '\n' | cut -d: -f1 | sort)"
+
+if [ "$DECLARED_SURFACES" != "$TABLE_SURFACES" ]; then
+    MISSING="$(comm -23 <(printf '%s\n' "$DECLARED_SURFACES") <(printf '%s\n' "$TABLE_SURFACES") | tr '\n' ' ')"
+    EXTRA="$(comm -13 <(printf '%s\n' "$DECLARED_SURFACES") <(printf '%s\n' "$TABLE_SURFACES") | tr '\n' ' ')"
+    fail "esta tabla no cubre exactamente las superficies de MANIFEST_SURFACES. Sin verificar: ${MISSING:-ninguna}; sin superficie: ${EXTRA:-ninguna} — un contador no verificado es un contador que solo puede mentir"
+fi
+ok "la tabla de contadores cubre todas las superficies declaradas"
+
+# ── 6. schema_version soportado ────────────────────────────────────────────
 SCHEMA="$(sed -n 's/^schema_version *= *\([0-9]*\).*/\1/p' BUNDLE.toml | head -1)"
 [ -n "$SCHEMA" ] || fail "BUNDLE.toml sin schema_version"
 [ "$SCHEMA" -le 2 ] 2>/dev/null || fail "schema_version $SCHEMA > 2 (no soportado por el instalador)"
