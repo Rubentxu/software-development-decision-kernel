@@ -229,8 +229,15 @@ s_runtime_equal_to_published() {
 # wrong reason); a broken remote also breaks `git push` itself.
 hook_direct_case() { # <expect>
     local expect="$1"
-    local in_line out code
-    in_line="refs/heads/main $(git rev-parse HEAD) refs/heads/main $(git rev-parse origin/main 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+    local in_line out code remote_sha
+    # `git rev-parse origin/main` on a missing ref prints the ref NAME to
+    # stdout and still exits non-zero, so a naive `||` fallback appended the
+    # zero sha to that name and split the hook's stdin into two malformed
+    # lines. `--verify -q` prints nothing on failure, so the hook receives one
+    # well-formed line.
+    remote_sha="$(git rev-parse --verify -q origin/main 2>/dev/null)" \
+        || remote_sha="0000000000000000000000000000000000000000"
+    in_line="refs/heads/main $(git rev-parse HEAD) refs/heads/main ${remote_sha}"
     out=$(printf '%s\n' "$in_line" | bash "$REPO_ROOT/githooks/pre-push" 2>&1)
     code=$?
     local got="ACCEPT"
@@ -569,9 +576,21 @@ run_case "AMENDED: rename runtime -> cycle RECEIPT.md, open window"   ACCEPT s_c
 # is captured as PASS/FAIL text so the counters stay in the parent shell.
 res="$(
     dir="$TMPROOT/case-failclosed-$RANDOM-$$"
+    hc_log="$TMPROOT/failclosed-direct.log"
     mkdir -p "$dir/origin"
     git init --bare "$dir/origin" >/dev/null 2>&1
     git clone "file://$dir/origin" "$dir/clone" >/dev/null 2>&1
+    # The hook invocation MUST live inside the same shell that cd'd into the
+    # fixture. It used to sit in the `if (...)` body *after* that subshell had
+    # been closed, so the CWD was the test runner's: the hook was asked about
+    # the REAL repo (whose range legitimately contains a version bump →
+    # ACCEPT) and the `git remote rename` the case depends on never applied to
+    # it. The case was measuring a different repository, so its "fail-closed"
+    # claim was never exercised.
+    #
+    # `hook_direct_case` prints a message AND returns a status, so its output
+    # goes to a log and only the PASS/FAIL token reaches `res`; the
+    # diagnostics are replayed on failure instead of being swallowed.
     if (
         cd "$dir/clone" &&
         git config user.email "t@example.com" &&
@@ -587,23 +606,31 @@ res="$(
         git remote rename origin origin-unreachable &&
         mkdir -p crates/x && echo a > crates/x/a.rs &&
         git add crates/x/a.rs &&
-        git commit -qm "feat: runtime while tag query broken"
+        git commit -qm "feat: runtime while tag query broken" &&
+        if hook_direct_case REJECT >"$hc_log" 2>&1; then echo PASS; else echo FAIL; fi
     ); then
-        if hook_direct_case REJECT >/dev/null 2>&1; then
-            echo "PASS"
-        else
-            echo "FAIL"
-        fi
+        :
     else
-        echo "FIXFAIL"
+        echo FIXFAIL
     fi
-    chmod -R u+rw "$dir" 2>/dev/null || true
-    rm -rf "$dir"
+    # Cleanup noise must not reach stdout: `rm` is routed through a
+    # delete-guard wrapper in some environments that PRINTS to stdout
+    # ("moved to trash: ..."), which would contaminate `res` and make the
+    # case fall through to the `*)` fixture-error branch no matter what the
+    # hook decided. Diagnostics belong on stderr.
+    chmod -R u+rw "$dir" 2>/dev/null >/dev/null
+    rm -rf "$dir" >/dev/null 2>&1
 )"
-case "$res" in
+# The verdict is the LAST token emitted, not the whole stream. Commands inside
+# the block (the pre-push hook, and `rm` routed through a delete-guard wrapper)
+# can print to stdout, and any of that noise would otherwise push the token
+# out of an exact match and make a passing case report a fixture error.
+verdict="$(printf '%s\n' "$res" | tail -1 | tr -d '[:space:]')"
+case "$verdict" in
     PASS) PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS  [direct-REJECT] tag query broken (fail-closed)" ;;
-    FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  [direct-expected REJECT] tag query broken (fail-closed)" ;;
-    *) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  fixture error: tag query broken (fail-closed)" ;;
+    FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  [direct-expected REJECT] tag query broken (fail-closed)";
+          [[ -f "$TMPROOT/failclosed-direct.log" ]] && cat "$TMPROOT/failclosed-direct.log" ;;
+    *) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  fixture error: tag query broken (fail-closed) [verdict=<${verdict}>]" ;;
 esac
 
 echo ""
