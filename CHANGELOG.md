@@ -5,13 +5,26 @@ All notable changes to this project are documented in this file.
 ## [2.5.0] - 2026-10-01
 
 ### Features
+  - feat(architecture): el gate de conformidad distingue deuda abierta de conformidad — veredicto tipado `Conformant`/`OpenDebt`/`Waived`/`NotEvaluated`; exit 0 queda reservado a conformidad probada (C3l.7)
   - feat(lease): LeaseStore durable y multi-proceso; X04 cruza la frontera real (C3l.5)
   - feat(aiw): vertical real de expansion dinamica con identidad estable de trigger (C3l.3)
 
 ### Fixes
+  - fix(roadmap): el puntero de estado tiene una sola clave autoritativa y parsea — `STATE.yaml` no era parseable por máquina y `development_head` estaba 9 veces duplicada (INC-DEBT-046)
   - fix(uat): la ausencia de un provider externo nunca vuelve a reportarse como PASS (C3l.4)
 
+### Tests
+  - test(architecture): el gate se ejecuta de verdad y deja de certificar conformidad — el test que lo certificaba hacia `skip` y reportaba `ok` en 0.00s sin ejecutar el gate
+  - test(x07): el segundo consumidor cruza la frontera de proceso real, no un segundo handle (C3l.6)
+  - test(push): el caso fail-closed media el repo equivocado y nunca verifico nada (INC-DEBT-045)
+
 ### Other
+  - docs(roadmap): cierra C3l.7 con AT-UAT-015 honestamente en NOT PASS
+  - docs(roadmap): cierra C3l.6 con X07 en la frontera de proceso y AT-UAT-013/014 PASS
+  - docs(roadmap): session-59 cierra INC-DEBT-046 y reconcilia la divergencia con origin/main
+  - docs(release): registra el bloqueo del toolchain musl que detiene v2.5.0
+  - docs(debt): registra INC-DEBT-046, el puntero de estado no era parseable por maquina
+  - docs(debt): registra INC-DEBT-045 y reindexa INC-DEBT-044
   - docs(c3l): cierre de C3l.5 con recibo, matriz X04 y punteros reconciliados
   - docs(arch): ADR-0148 y ADR-0149 para los modulos root nuevos de sddk-engine
   - chore(debt): normaliza el status de INC-DEBT-028 tras verificar sus criterios
@@ -20,6 +33,11 @@ All notable changes to this project are documented in this file.
   - docs(c3l): cierre de C3l.3 con recibo, matriz S4 y punteros reconciliados
   - docs(c3l): reconciliar puntero de estado (session-53)
   - docs(c3l): session-53 cerrada con v2.4.2 publicada y verificada
+
+> **Nota de estado:** esta release sigue **BLOQUEADA** — falta el toolchain
+> `x86_64-linux-musl-gcc` (`scripts/release.sh` aborta en el step 3/14). La
+> entrada describe el contenido declarado del artefacto, no una publicación.
+> Detalle en `docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md`.
 
 ## [2.4.2] - 2026-09-30
 

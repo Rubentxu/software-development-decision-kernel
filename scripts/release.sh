@@ -386,6 +386,25 @@ TAG="${TAG:-v$VERSION}"
 [ -n "$VERSION" ] || die "could not parse version from Cargo.toml"
 ok "version: $VERSION → tag: $TAG"
 
+# --- 2b. changelog coverage (INC-DEBT-047, session-61) ---
+#
+# The version above is already declared, so the release can proceed without any
+# further check that the CHANGELOG section describes the work. That gap was
+# live: 26 commits sat between the last tag and HEAD — including a whole
+# `feat(architecture)` slice — while `[2.5.0]` listed only the two features
+# present when the bump was committed. Shipping then would have published an
+# artifact whose changelog misdescribed its own contents: the same defect shape
+# as C3l.7, one layer down.
+#
+# Fail-closed before the build, because a missing entry found at step 9 (after
+# a `gh release create`) costs a deletion; found here it costs a commit.
+if [[ "$DRY_RUN" == "0" ]]; then
+    step "2b/14 — changelog coverage"
+    bash tests/test_changelog_coverage.sh \
+        || die "changelog coverage failed: the declared section does not describe the work this release ships. Add the missing entries (git log --format=%s <last-tag>..HEAD) and re-run."
+    ok "changelog describes the shipped work"
+fi
+
 # --- 2.5 semver-correct tag (cycle-c2 bug fix) ---
 #
 # The workspace version above is a CEREMONIAL per-push pointer (incremented by
