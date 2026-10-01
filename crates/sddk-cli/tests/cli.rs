@@ -10206,6 +10206,106 @@ fn cli_dev_doctor_surface_empty_dirs() {
     );
 }
 
+#[test]
+fn cli_dev_doctor_strict_no_pasa_sobre_una_ausencia_de_medicion() {
+    // INC-BRIEF-STRICT-VACUOUS: every surface enumeration was guarded by
+    // `if let Ok(entries) = read_dir(..)`, so a cwd holding no `agents/`,
+    // `skills/` or `prompts/sddk/` skipped them all without a word. `--strict`
+    // then exited 0 having examined nothing — and the ordinary case of
+    // auditing an installed prefix from your own project directory is exactly
+    // such a cwd, so the gate could never fail on the known breaches.
+    //
+    // An empty measurement is not a passing measurement.
+    let fixture = CliFixture::new("doctor-strict-nothing-to-measure");
+    let root = fixture.root.clone();
+
+    // No surfaces here, and the fixture's SDDK_DATA_DIR installs no bundle, so
+    // neither the cwd nor the active framework root can be measured.
+    let doctor = run_doctor_from(&root, &["dev", "doctor", "--format", "json"]);
+    let output: serde_json::Value = serde_json::from_str(&doctor.stdout).unwrap();
+    let checks = output["checks"].as_array().unwrap();
+    let root_check = checks
+        .iter()
+        .find(|c| c["tool"].as_str().unwrap() == "surface.briefness.root")
+        .expect("surface.briefness.root must be reported when there is nothing to measure");
+    assert!(
+        !root_check["present"].as_bool().unwrap(),
+        "a root holding no surfaces cannot satisfy the ADR-016 gate"
+    );
+    assert!(
+        root_check["detail"]
+            .as_str()
+            .expect("a failing check must carry a remediation hint (R17)")
+            .contains("unverifiable"),
+        "the hint must say the budget is unverifiable here, not that it is satisfied"
+    );
+    assert_eq!(
+        doctor.status, 0,
+        "advisory mode stays advisory (ADR-016 §4): report the failure, exit 0"
+    );
+
+    let strict = run_doctor_from(&root, &["dev", "doctor", "--strict", "--format", "json"]);
+    assert_eq!(
+        strict.status, 1,
+        "--strict must exit 1 when brevity could not be measured at all"
+    );
+}
+
+#[test]
+fn cli_dev_doctor_brevity_mide_el_bundle_instalado_cuando_el_cwd_no_es_un_arbol() {
+    // The other half of the same defect: layout checks resolved the active
+    // framework root while brevity read `current_dir()`, so auditing an
+    // installed prefix measured nothing. The surfaces live at the root of the
+    // bundle in flat layout (AGENTS.md §8), which makes it a valid root.
+    let fixture = CliFixture::new("doctor-briefness-installed-bundle");
+    let root = fixture.root.clone();
+
+    // An installed bundle holding one over-budget agent (501 lines > 300).
+    // `SDDK_DATA_DIR` *is* the sddk data root, so `framework/` hangs directly
+    // under it — unlike `XDG_DATA_HOME`, which is the parent of `sddk/`.
+    let bundle = root.join(".test-data/framework/9.9.9");
+    let mut over_budget = String::from("---\nname: _bundle_over\ndescription: fixture\n---\n# B\n");
+    for i in 0..501 {
+        over_budget.push_str(&format!("line {}\n", i));
+    }
+    write(bundle.join("agents/_bundle_over.md"), &over_budget);
+    write(bundle.join("prompts/sddk/ok.md"), "# ok\n");
+    // The layout checks read this bundle too, so a deliberately incomplete one
+    // would drown the brevity verdict under unrelated layout warnings.
+    for asset in [
+        "assets/uat-driver/driver.mjs",
+        "assets/uat-driver/computer_use.mjs",
+        "assets/uat-driver/assess.mjs",
+        "assets/uat-dashboard/kit/components.js",
+        "assets/uat-dashboard/views/guided.html",
+    ] {
+        write(bundle.join(asset), "// fixture\n");
+    }
+
+    // cwd holds no surfaces at all: the verdict must come from the bundle.
+    let doctor = run_doctor_from(&root, &["dev", "doctor", "--format", "json"]);
+    let output: serde_json::Value = serde_json::from_str(&doctor.stdout).unwrap();
+    let checks = output["checks"].as_array().unwrap();
+    let measured = checks
+        .iter()
+        .find(|c| c["tool"].as_str().unwrap() == "surface.briefness._bundle_over.md")
+        .expect("the bundle's own surfaces must be measured when the cwd is not a tree");
+    assert!(
+        !measured["present"].as_bool().unwrap(),
+        "the 501-line agent in the installed bundle breaches the 300-line budget"
+    );
+    assert_eq!(
+        doctor.status, 0,
+        "advisory mode stays advisory even for the installed bundle"
+    );
+
+    let strict = run_doctor_from(&root, &["dev", "doctor", "--strict", "--format", "json"]);
+    assert_eq!(
+        strict.status, 1,
+        "--strict must now be able to fail on the bundle it actually verifies"
+    );
+}
+
 // ── binary/bundle coherence tests ───────────────────────────────────────────────
 
 /// Minimal valid InstallReceipt JSON with all required serde fields.

@@ -55,6 +55,18 @@ struct FrameworkCheck {
     detail: String,
 }
 
+/// The three directories that hold framework surfaces (ADR-016).
+const SURFACE_DIRS: [&str; 3] = ["agents", "skills", "prompts/sddk"];
+
+/// True when `root` holds at least one framework surface directory.
+///
+/// Both the source checkout and the installed bundle root carry them in flat
+/// layout (AGENTS.md §8), so this is the predicate that decides whether a
+/// root can be *measured* at all — as opposed to merely pointed at.
+fn has_surface_dirs(root: &Path) -> bool {
+    SURFACE_DIRS.iter().any(|d| root.join(d).is_dir())
+}
+
 /// Push a single arch-lint marker into the doctor checks vector as a
 /// `DoctorCheck`. Mapping: marker.id → `tool`, marker.present → `present`.
 fn push_marker(checks: &mut Vec<DoctorCheck>, marker: &MarkerStatus) {
@@ -306,6 +318,10 @@ pub(super) fn run_dev_doctor(
         Ok(root) => Some(root),
         Err(_) => flat_receipt_source.clone(),
     };
+    // Retained for the surface checks further down: the bundle root is itself a
+    // valid place to find `agents/`, `skills/` and `prompts/sddk/`, so it is the
+    // correct fallback when the cwd is not a framework tree.
+    let surface_framework_root = framework_root.clone();
     if let Some(framework_root) = framework_root {
         let assets = framework_root.join("assets");
         let driver_ok = assets.join("uat-driver/driver.mjs").is_file()
@@ -452,8 +468,45 @@ pub(super) fn run_dev_doctor(
     }
 
     // Surface brevity checks (ADR-016): agent ≤ 300, skill ≤ 150, prompt ≤ 200.
-    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    //
+    // INC-BRIEF-STRICT-VACUOUS: this block used to read from `current_dir()`
+    // only, and every enumeration was guarded by `if let Ok(entries) =
+    // read_dir(..)`. A cwd without surfaces — the normal case when auditing an
+    // installed prefix from your own project — therefore skipped every
+    // enumeration silently, and `--strict` exited 0 having measured nothing.
+    // "No surfaces" was indistinguishable from "every surface within budget",
+    // so the gate could not fail on the 19 known breaches.
+    //
+    // Prefer the checkout when it holds the surfaces: a developer who just
+    // edited an agent wants *that* agent measured, not the installed copy.
+    // Otherwise fall back to the active framework root, which carries the same
+    // directories in flat bundle layout.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let root = if has_surface_dirs(&cwd) {
+        cwd
+    } else {
+        surface_framework_root
+            .clone()
+            .filter(|fr| has_surface_dirs(fr))
+            .unwrap_or(cwd)
+    };
     let mut brevity_violations = 0usize;
+
+    // Fail closed: an empty measurement is not a passing measurement. Emitted
+    // as a regular check so advisory mode still reports it (exit 0) while
+    // `--strict` promotes it (ADR-016 §4).
+    if !has_surface_dirs(&root) {
+        brevity_violations += 1;
+        checks.push(DoctorCheck {
+            tool: "surface.briefness.root".into(),
+            present: false,
+            detail: Some(format!(
+                "no surfaces under {} (looked for {}) — ADR-016 brevity is unverifiable here, not satisfied",
+                root.display(),
+                SURFACE_DIRS.join(", ")
+            )),
+        });
+    }
 
     // Agents: agents/*.md
     if let Ok(entries) = std::fs::read_dir(root.join("agents")) {
@@ -549,7 +602,7 @@ pub(super) fn run_dev_doctor(
     }
 
     // Surface empty-dirs check (ADR-016): no empty subdirectories in surfaces.
-    for surface_dir in ["agents", "skills", "prompts/sddk"] {
+    for surface_dir in SURFACE_DIRS {
         let dir_path = root.join(surface_dir);
         if dir_path.is_dir()
             && let Ok(entries) = std::fs::read_dir(&dir_path)
