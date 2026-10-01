@@ -1,5 +1,22 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-64, 2026-10-01T15:40Z): el camino `remote` de la identidad tiene golden pin — la próxima reasignación de `project_id` rompe un test en vez de fallar en silencio. Es el remedio de fondo de INC-DEBT-050; la migración de los 25 receipts huérfanos sigue ABIERTA y espera al operador. Release v2.5.0 sigue BLOQUEADO por musl-gcc.** **SIGUIENTE dentro de C3m:** C3m.0 (ADR de significado canónico de KMT) · C3m.1 · C3m.3 · C3m.4 · C3m.5.
+
+**Hecho en session-64 (sólo tests, SemVer PATCH, sin tocar producción):**
+
+1. **Tres tests nuevos** en `crates/sddk-domain/src/identity.rs`: `project_id_is_pinned_to_known_values` (tres formas de remote+scope), `remote_normalization_is_pinned_to_known_values` (casse mixta, `.git`, puertos, scp/ssh, credenciales) y `case_normalization_reassigned_real_project_ids_without_migration` (los **dos ids reales** de esta máquina, con sus valores exactos).
+2. **El hueco era conceptual, no de cobertura.** `properties.rs:20` sólo afirma `f(x) == f(x)`, y eso **sigue siendo cierto si `f` se sustituye entera**. El defecto no tocaba lo que el test comprobaba: comprobaba una propiedad ortogonal. Y la asimetría era la causa — el seed de fallback **sí** tenía golden pin desde INC-DEBT-028 con el razonamiento escrito; el camino del remote, **el que recorre todo proyecto real**, no.
+3. **Falsificadores F53–F55 OBSERVED.** F53 (quitar el `.to_lowercase()` del path) → el golden del normalizador falla con `left: "https://github.com/Acme/Widgets"` frente a `right: "…/acme/widgets"`. F54 (dominio `v1`→`v2`) y F55 (invertir el framing remote/scope) → fallan el golden del hash **y** el test histórico.
+4. **Un falsificador mal diseñado se corrigió antes de ejecutarlo:** el F53 inicial mutaba `to_lowercase`→`to_ascii_lowercase`, que en ASCII da el mismo resultado — el pin no habría fallado y la prueba no habría probado nada.
+5. **Las capas quedan pinadas por separado**, y eso sólo se ve al falsificar: con el normalizador mutado el golden del hash sigue verde (recibe el remote ya normalizado); con el hash mutado el del normalizador sigue verde. Cada pin protege la suya, y ese cruce era justo lo que hacía el defecto original.
+6. **El comentario del golden dice lo que no hay que hacer si falla:** no copiar el valor nuevo. Copiarlo es exactamente lo que hizo D2, en silencio.
+
+**Gates:** `sddk-domain --lib identity::` 30/0 (3 nuevos) · `sddk-domain --lib` 559/0 · fmt limpio · clippy `-D warnings` exit 0 · **workspace 5245 passed / 0 failed** (5242 + 3, cuadra con aritmética).
+
+**Lo que este slice NO cierra:** la **migración de los 25 receipts** (destructiva, requiere al operador) y convertir la regla "tocar el normalizador es BREAKING CHANGE" en un gate automático de CI. El golden pin **impide el siguiente fork, no arregla el anterior.**
+
+---
+
 **Estado (session-63, 2026-10-01T14:20Z): el pin de identidad ya gobierna las CINCO vías del CLI — antes se escribía y no surtía efecto en `adopt status`, `cycle status` ni `config set`. INC-DEBT-049 queda con la parte del pin RESUELTA y la advertencia de historial huérfano ABIERTA. Release v2.5.0 sigue BLOQUEADO por musl-gcc, y ahora eso tiene consecuencia real: el binario instalado (`sddk 2.4.2`) no contiene el fix.**
 
 **Lo que cambió en session-63 (autorizado por el operador, que además autorizó todos los gates humanos):**

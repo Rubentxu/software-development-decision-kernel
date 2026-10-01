@@ -4,6 +4,10 @@ title: "Normalizar el remote a minúsculas reasignó el project_id de 25 adopcio
 status: open
 severity: critical
 priority: P1
+partially_resolved_at: 2026-10-01
+partially_resolved_in_session: session-64
+resolved_part: "golden pin del camino remote: stable_project_id y normalize_remote_url quedan con valores absolutos fijados por test (session-64)"
+open_part: "migracion de los 25 receipts huerfanos: destructiva, requiere al operador; y la regla de cambio (tocar el normalizador es BREAKING CHANGE) todavia no es un gate automatico"
 detected_at: 2026-10-01
 detected_in_session: session-63
 component: identity
@@ -120,24 +124,56 @@ Verificado ejecutando el binario compilado con el pin aplicado.
 `workspace_id` y las rutas derivadas de cada receipt, y mover los ledgers.
 Es **destructivo y necesita al operador**: no se ejecuta desde un agente.
 
-**3. El arreglo de fondo, y es el importante: golden pin del
-`project_id` derivado de un remote conocido.** Un test que fije el valor
-exacto de `stable_project_id("https://github.com/rubentxu/example", ".")`
-haría que **cualquier** cambio futuro en `normalize_remote_url` —y en
-`normalize_remote_scope`, y en el propio dominio— rompiera un test en vez de
-reasignar silenciosamente el `project_id` de cada proyecto del mundo. Es el
-mismo mecanismo que ya protege el seed de fallback, aplicado donde faltaba.
+**3. El arreglo de fondo — HECHO en session-64.** `stable_project_id` y
+`normalize_remote_url` tienen ahora valores absolutos fijados por test (tres
+tests nuevos, falsificadores F53–F55 OBSERVED abajo). Cualquier cambio futuro
+en el normalizador, en el dominio `sddk.project.remote.v1` o en el framing del
+hash rompe un test en vez de reasignar silenciosamente el `project_id` de cada
+proyecto del mundo. Es el mismo mecanismo que ya protegía el seed de fallback,
+aplicado donde faltaba.
+
+El comentario del golden pin dice explícitamente lo que **no** hay que hacer si
+falla: copiar el valor nuevo. Eso reasignaría la identidad de todos los
+proyectos con ese remote; lo correcto es decidir antes si procede migración.
 
 **4. Regla de cambio:** cualquier modificación de `normalize_remote_url` o del
 dominio `sddk.project.remote.v1` es **breaking change** y requiere migración o
 pin, aunque parezca inocua. Sin esa regla, el mismo defecto se repite en el
 próximo refactor del normalizador.
 
-## Falsificadores exigidos al implementar el pin dorado
+## Falsificadores OBSERVED (session-64) — el pin dorado está puesto y muerde
 
-- **F53** — cambiar una letra del normalizador (`to_lowercase` → `to_ascii_lowercase`) debe **fallar** el golden pin. Si no falla, el pin no protege.
-- **F54** — el mismo remote escrito con distinta casse debe dar el **mismo** `project_id` (es la propiedad que D2 quería y ahora sí tiene con pin).
-- **F55** — sin cambios de código, el golden pin debe ser estable entre ejecuciones (no compara rutas ni variables de entorno).
+Tres tests nuevos en `crates/sddk-domain/src/identity.rs`:
+
+| Test | Qué fija |
+|---|---|
+| `project_id_is_pinned_to_known_values` | valor absoluto de `stable_project_id` en 3 formas: scope raíz `"."`, owner en GitHub, subpath en GitLab |
+| `remote_normalization_is_pinned_to_known_values` | salida exacta del normalizador: casse mixta, `.git`, puerto por defecto, puerto no-por-defecto, scp/ssh, credenciales + query + fragment |
+| `case_normalization_reassigned_real_project_ids_without_migration` | los **dos ids reales** que convivieron en esta máquina, con sus valores exactos |
+
+| # | Mutación | Resultado |
+|---|---|---|
+| **F53** | quitar el `.to_lowercase()` del path en `normalize_remote_path` | **OBSERVED** — `remote_normalization_is_pinned_to_known_values` FAILED: `left: "https://github.com/Acme/Widgets"` frente a `right: "https://github.com/acme/widgets"` |
+| **F54** | dominio del hash `sddk.project.remote.v1` → `.v2` | **OBSERVED** — FALLAN `project_id_is_pinned_to_known_values` **y** `case_normalization_reassigned_real_project_ids_without_migration` |
+| **F55** | invertir el framing (remote y scope intercambiados) | **OBSERVED** — FALLAN los mismos dos |
+
+**El primer F53 diseñado estaba mal y se sustituyó antes de ejecutarlo.**
+Proponía mutar `to_lowercase` → `to_ascii_lowercase`, que para entradas ASCII
+produce **exactamente el mismo resultado**, así que el pin no habría fallado y
+la prueba habría sido inútil. Un falsificador que no puede fallar no es un
+falsificador. Las tres mutaciones finales cambian cada una el valor derivado, que
+es la condición para que el pin signifique algo.
+
+**Un valor de tener las capas separadas:** con F53 (el normalizador), el golden
+del **hash** sigue verde, porque `stable_project_id` recibe el remote ya
+normalizado. Con F54 y F55 (el hash), el golden del **normalizador** sigue
+verde. Cada pin protege **su** capa y ninguno depende del otro. Ese reparto es
+justo lo que hacía falta: el defecto original cruzaba las dos.
+
+**El test histórico fija más de lo previsto:** con F54 y F55 falla también,
+porque contiene los ids reales. Avisa de que un cambio en el dominio o en el
+framing no es "otro hash": es exactamente la misma reasignación silenciosa de la
+vez anterior.
 
 ## Límites declarados
 

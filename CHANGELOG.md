@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
   - fix(uat): la ausencia de un provider externo nunca vuelve a reportarse como PASS (C3l.4)
 
 ### Tests
+  - test(domain): el camino remote de la identidad queda con golden pin — `stable_project_id` y `normalize_remote_url` fijan valores absolutos; sin eso, el commit que normalizó la casse reasignó 25 de 104 adopciones sin migración (INC-DEBT-050, remedio de fondo)
   - test(architecture): el gate se ejecuta de verdad y deja de certificar conformidad — el test que lo certificaba hacia `skip` y reportaba `ok` en 0.00s sin ejecutar el gate
   - test(x07): el segundo consumidor cruza la frontera de proceso real, no un segundo handle (C3l.6)
   - test(push): el caso fail-closed media el repo equivocado y nunca verifico nada (INC-DEBT-045)
