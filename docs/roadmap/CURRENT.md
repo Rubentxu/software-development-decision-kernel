@@ -1,5 +1,23 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-56, 2026-10-01T10:05Z): C3l.5 COMPLETADO — X04 cruza la frontera multi-proceso real (AT-UAT-011/012 PASS). ADRs escritos para los 2 módulos root nuevos.** **SIGUIENTE PASO: C3l.6** (X07: segundo binario real). Después C3l.7 (architecture gate), que cierra la vía C3l y desbloquea C3n.
+
+**Pre-flight ejecutado (no asumido).** Índice de deuda curado (44 de 77 ficheros ausentes del índice), así que parseé el frontmatter de los 77: **0 critical/high abiertas**; las 7 `open` son S14 ancient y sus propios criterios dicen *"no es un bug"*, *"no borrar"*, *"la recomendación queda anulada"*. **INC-DEBT-028** (único high/P1, `status: fixed` — valor **fuera del vocabulario canónico**, 1 caso de 77) verificado OBSERVED hoy: 3 invocaciones de `sddk project resolve` sobre repo sin remote → mismo `project_id`. **No era deuda**; normalizado `fixed → resolved` con la evidencia registrada.
+
+**Hecho en session-56 (C3l.5):**
+
+1. **El exit gate era inalcanzable por construcción:** `impl LeaseStore` existía **una sola vez**, para `InMemoryLeaseStore`. El doc del propio trait declaraba una intención inexistente. **Causa raíz:** el puerto vivía en `sddk-engine` cuando el patrón canónico del repo es puerto en `sddk-domain` + impl en `sddk-storage` (como `Ledger`).
+2. **Puerto movido a `sddk-domain::ports`** (con re-export desde el engine: cero consumidores rotos) + nuevo `SqliteLeaseStore` con `BEGIN IMMEDIATE`, rollback del perdedor y escalera de `busy_timeout` heredada de INC-DEBT-029.
+3. **Defecto real encontrado por el test nuevo:** `release` hacía `DELETE` y **destruía el contador de fencing** — tras una release el siguiente acquire reemitía token 1 ya usado, con lo que un holder obsoleto pasaba por vigente. Corregido: el fencing es monotono **por ciclo**, no por lease.
+4. **GREEN 8/8** con ≥2 PIDs **afirmados** (`std::process::id()`, con test propio que falla si coincide) y reloj **real** (un `MockClock` haría G5 vacuo). Los 4 tests W0x antiguos intactos: prueban semántica intra-proceso, que sigue siendo válida.
+5. **Falsificadores:** F6 → 1 FAIL · F8 → 5 FAIL · **F9 (estado en memoria) → 8/8 FAIL, decisivo**. **F7 (sin retry) → 0 FAIL: no mordió**, y queda **declarado** en el recibo en vez de disfrazado — con 6 procesos, `busy_timeout` solo absorbe la contención, así que la escalera de retry no queda probada como load-bearing a ese nivel.
+
+**Regresión encontrada y corregida (por el perfil completo, no por testing scoped):** `no_new_root_level_context_module_without_adr` FALLÓ. Dos módulos root nuevos en `sddk-engine/src` (`dynamic_expansion.rs` de session-54 y `ext_outcome.rs` de session-55) sin ADR. **No la cazó el testing quirúrgico** porque `context_fitness` vive en `sddk-cli`: la regla "solo tests afectados" funciona para el SUT pero **deja pasar contratos cross-crate**. Resuelto por la vía que el propio test exige (ADR-0148 y ADR-0149), **no** inflando el baseline. Lección registrada en el recibo.
+
+**Límites declarados:** esto **verifica X04**, no certifica "dos CLIs de producción" — los procesos son el binario de test re-ejecutado, no `sddk` como dos invocaciones. **X07 sigue NOT_VERIFIED**, así que `AIW-S8` no pasa a VERIFIED. `agent_leases` es tabla nueva y propia: un lease de agente puede existir para un ciclo que aún no está en el ledger, así que no reutiliza `cycle_leases` (que tiene FK a `cycles`).
+
+---
+
 **Estado (session-55, 2026-10-01T09:15Z): C3l.4 COMPLETADO — la ausencia de un provider externo nunca vuelve a reportarse como PASS (AT-UAT-009 PASS, AT-UAT-010 BLOCKED).** **SIGUIENTE PASO: C3l.5** (X04: dos CLI / concurrencia real multi-proceso `SQLITE_MULTI_PROCESS`). Después C3l.6 (X07 segundo binario real) y C3l.7 (architecture gate, que cierra C3l y desbloquea C3n).
 
 **Hecho en session-55 (C3l.4):**

@@ -7300,3 +7300,37 @@ es el publicado por CI.
 **Matriz:** AIW-S5 → **IMPLEMENTED → re-verificable** con la captura real declarada **BLOCKED**. AT-UAT-009 PASS, AT-UAT-010 BLOCKED. Commits `6d826044` + `fc5fea2f`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session55-c3l4-external-test-semantics/RECEIPT.md`.
 
 **SIGUIENTE PASO:** **C3l.5** — X04: dos CLI / concurrencia real multi-proceso `SQLITE_MULTI_PROCESS`. Después C3l.6 (X07 segundo binario real) y C3l.7 (architecture gate, que cierra la vía C3l y desbloquea C3n). En paralelo, la consolidación provider/capability vía **C3m.3 + C3m.5** — abrir los `ProviderKind` duplicados, los tres `ObservationSet` o `ProviderKind::Null` como tickets sueltos crearía una segunda autoridad para el mismo concepto (§2.7).
+
+---
+
+## Session-56 (2026-10-01T10:05Z) — C3l.5: X04 cruza la frontera multi-proceso real (AT-UAT-011/012 PASS)
+
+**Baseline / HEAD:** `ccf7ada9` al abrir (7 commits sin publicar respecto a `origin/main` = `dc343722`). **Slice C3l.5** · **Workflow `A-lite`**, con `debt_verification: mandatory` ejecutada en el PRE-FLIGHT.
+
+### Pre-flight (ejecutado, no asumido)
+
+El índice de deuda resultó ser una vista **curada** — 44 de 77 ficheros no aparecen en él — así que parseé el frontmatter de los 77. Resultado: **0 critical/high abiertas**; las 7 `open` son S14 ancient cuyos propios criterios dicen *"no es un bug"*, *"no borrar"*, *"la recomendación original queda anulada"*. Es exactamente el caso que la regla descarta.
+
+`INC-DEBT-028` era el único candidato high/P1, con `status: fixed` — un valor **fuera del vocabulario canónico** (1 caso de 77; el resto es `closed` 60 / `resolved` 9 / `open` 7). Sus criterios: `project_id` no determinista. **Verificados OBSERVED hoy:** 3 invocaciones de `sddk project resolve` sobre repo sin remote → mismo `project_id` y `workspace_id`; `adopt status` coherente. **No era deuda**; normalizado `fixed → resolved` con la evidencia en el propio documento.
+
+### El defecto y su causa raíz
+
+El exit gate —*"al menos dos PIDs distintos y SQLite durable compartido"*— era **inalcanzable por construcción**: `impl LeaseStore` existía una sola vez, para `InMemoryLeaseStore`, y el doc del trait declaraba una intención inexistente. **Causa raíz:** el puerto vivía en `sddk-engine` cuando el patrón canónico del repo es puerto en `sddk-domain::ports` + impl en `sddk-storage` (como `Ledger`). Se eligió esa vía —y no meter rusqlite en el engine, ni invertir storage→engine— por §2.7. El engine re-exporta los tres tipos: cero consumidores rotos.
+
+### Resultado
+
+`SqliteLeaseStore` con `BEGIN IMMEDIATE` (sin el lock de escritura tomado al inicio, dos procesos observarían ambos "libre"), rollback del perdedor, y escalera de `busy_timeout` heredada de INC-DEBT-029. **GREEN 8/8** con ≥2 PIDs **afirmados** y reloj **real** (un `MockClock` haría G5 vacuo). Los 4 tests W0x antiguos intactos.
+
+**Defecto real encontrado por el test nuevo, no por el antiguo:** `release` hacía `DELETE` y destruía el contador de fencing — tras una release el siguiente acquire reemitía token 1 ya usado, con lo que un holder obsoleto pasaba por vigente. Corregido: el fencing es monotono **por ciclo**, no por lease.
+
+**Falsificadores:** F6 → 1 FAIL · F8 → 5 FAIL · **F9 (estado en memoria) → 8/8 FAIL, decisivo**: sin estado durable, toda afirmación multi-proceso colapsa. **F7 (sin escalera de retry) → 0 FAIL: no mordió**, y queda declarado en el recibo en vez de disfrazado de verde. Con 6 procesos, `busy_timeout` solo absorbe la contención, así que el retry no queda probado como load-bearing a ese nivel; el patrón de INC-DEBT-029 (lock forzado de 7 s) lo haría falsable y no se hizo en esta slice.
+
+### Regresión encontrada por el perfil completo — y una lección de método
+
+`no_new_root_level_context_module_without_adr` **FALLÓ**: dos módulos root nuevos en `sddk-engine/src` (`dynamic_expansion.rs` de session-54 y `ext_outcome.rs` de session-55) sin ADR. **El testing quirúrgico no la cazó** porque `context_fitness` vive en `sddk-cli`: la regla "solo tests afectados" funciona para el SUT pero **deja pasar los contratos cross-crate**. El único motivo de que saliera ahora es que el perfil completo se ejecutó. Resuelto por la vía que el propio test exige (**ADR-0148** y **ADR-0149**), no inflando `BASELINE_ROOT_MODULES` — inflar el baseline habría hecho verde el test sin registrar la decisión.
+
+**Error de medición propio declarado:** afirmé que el frontmatter de `INC-DEBT-039` estaba malformado. Falso — mi regex usaba `\s*`, que cruza saltos de línea, y leía un comentario inline válido de `priority` como si fuera parte del valor. Leído el fichero, el frontmatter es correcto. El segundo "hallazgo" evaporó al verificarlo.
+
+**Matriz:** X04 **VERIFIED** (session-56); X07 sigue `NOT_VERIFIED`, así que **`AIW-S8` no pasa a VERIFIED** — sigue siendo C3l.6. AT-UAT-011/012 PASS. Commit `6abcf052`; recibo `tests/cycle-artifacts/p-63676b11dc0ef88f/session56-c3l5-x04-multi-process-concurrency/RECEIPT.md`.
+
+**SIGUIENTE PASO:** **C3l.6** — X07: segundo binario real (`AIW-S8` completes). Después **C3l.7** (architecture gate), que cierra la vía C3l y desbloquea C3n. En paralelo, **C3m.3 + C3m.5** para la consolidación provider/capability.
