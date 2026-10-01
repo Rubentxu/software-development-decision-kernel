@@ -122,9 +122,16 @@ heredada, y porque el repo ya pagó una vez por confiar en el perfil parcial
 - **La migración de los 25 receipts huérfanos.** Destructiva, requiere al
   operador, **no ejecutada**. El golden pin no la reemplaza: impide el
   siguiente, no arregla el anterior.
-- **La regla "tocar el normalizador es BREAKING CHANGE"** es hoy un comentario
-  y un golden pin, no un gate. Convertirla en comprobación automática de CI es
-  trabajo aparte.
+- ~~La regla "tocar el normalizador es BREAKING CHANGE"~~ — **retirada en esta
+  misma sesión.** Session-63 la dejó pendiente como *"gate automático de CI"*.
+  Verificado contra `.github/workflows/ci.yml` antes de invertir en ella:
+  `cargo test --workspace` **ya** ejecuta el golden pin en cada perfil
+  completo, y el encabezado del workflow declara *"cloud CI is an optional
+  on-demand check … never a gate"* (AGENTS.md §2.5). El gate autoritativo es
+  el perfil local y el pin ya está dentro de él. Habría sido redundante **y**
+  contrario a la política del repo. Es la regla del operador — *alerta de
+  deuda sin verificar si sus criterios siguen vigentes no es deuda real* —
+  aplicada a una alerta escrita por mí mismo media hora antes.
 
 ## §7 Estado del release
 

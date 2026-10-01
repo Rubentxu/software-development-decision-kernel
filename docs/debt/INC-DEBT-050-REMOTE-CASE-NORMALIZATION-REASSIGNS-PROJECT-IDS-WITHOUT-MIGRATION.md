@@ -87,6 +87,39 @@ Un cuarto de las adopciones de esta máquina quedaron con su ledger fuera del
 alcance del CLI. **Los datos no se pierden** — los storages siguen íntegros —
 pero `sddk` resuelve la identidad nueva y opera sobre un storage vacío.
 
+### Addendum session-65 — remedición con herramienta propia
+
+La medición se ha repetido con `scripts/migrate_project_identity.py audit`
+—que deriva los ids con un espejo fijado por test contra el Rust real— y
+corrige dos cosas. **No se reescribe lo anterior**: se consigna lo que se
+midió entonces y lo que se mide ahora.
+
+```text
+                                    session-63        session-65
+receipts de adopcion revisados:         104              117
+ids que NO coinciden:                    25  (24%)        25  (21%)
+project_id viejos afectados:             16               15
+remotos con casse distinta:              13               15
+```
+
+- **Los 25 receipts huérfanos se confirman y son estables.** El total de
+  receipts crece (104 → 117) porque los propios gates del repo crean adopts
+  de prueba; los huérfanos no. El porcentaje baja por eso, no porque se haya
+  arreglado nada.
+- **El "16 `project_id` / 13 repos" de la frase de resumen era incorrecto
+  desde que se escribió**: la lista de detalle de este mismo documento ya
+  enumera **15 ids sobre 15 remotos**, que es lo que reproduce la remedición.
+  La lista era correcta; la frase que la resumía, no. Se corrige aquí para
+  que nadie cite `16`/`13` como si fueran medidos.
+- **El espejo por sí mismo era un riesgo adicional.** La primera versión de
+  ese script reimplementaba `normalize_remote_url` con reglas *parecidas pero
+  distintas* al Rust: rechazaba `git@host:owner/repo` (la forma de remote más
+  común), trataba el puerto por defecto como global en vez de por esquema y
+  aceptaba authority y puerto vacíos que el Rust rechaza. Con ese espejo, un
+  `apply` habría escrito ids equivocados en ledgers reales. Se corrigió antes
+  de ejecutar nada y se fijó con `tests/test_migrate_project_identity_mirror.py`
+  (10 tests) más 7 falsificadores observados.
+
 ## Por qué no lo detectó nadie
 
 INC-DEBT-028 ya establecía el principio para el camino del *fallback seed*:
