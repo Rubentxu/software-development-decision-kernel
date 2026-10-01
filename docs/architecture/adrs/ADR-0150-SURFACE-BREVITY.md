@@ -118,6 +118,32 @@ lo hicieron partiendo por temas reales (`rust-testing`, `edge-case-grill`,
    en el cwd ni en el framework root activo— se emite `surface.briefness.root` con
    `present: false` y `--strict` sale 1. Una medición vacía no es una medición aprobada.
 
+8. **El remedio es proporcional al exceso: primero se adelgaza, después se parte, y el
+   waiver es el último peldaño.** Este punto se añadió por enmienda el 2026-10-01,
+   después de intentar ejecutar los puntos 1–7 sobre `skills/uat-discovery/SKILL.md`
+   (164 líneas, 14 por encima). Los puntos 1–7 ofrecían **solo dos salidas**: partir
+   el fichero o registrar un waiver. Ninguna de las dos sirve para un exceso pequeño y
+   real.
+
+   | peldaño | cuándo | qué cuesta |
+   |---|---|---|
+   | **1. Adelgazar** | el exceso se puede cubrir con contenido redundante | ninguno: se quita duplicación, se pierde nada |
+   | **2. Partir** | el exceso es de fondo | un fichero por tema, con su «qué cubre y qué no» |
+   | **3. Waiver** | tras 1 y 2 sigue excediendo, y exceder está justificado | una entrada en `docs/debt/` con revisión fechada |
+
+   La medición que motiva el peldaño 1: en `uat-discovery` el `curl` de health check
+   estaba escrito dos veces (en Prerequisites y en Phase 1) y el contrato de salidas
+   también (en Phase 2 y en la tabla Output Files). Eliminar **solo** esa duplicación
+   genuina baja el fichero de 164 a **160**: se recuperan **4 de las 14 líneas** y
+   quedan 10 que llevan información. Con el contrato anterior esas 10 obligaban a
+   crear ficheros de referencia para ahorrarlas, o a documentar deuda por 14 líneas.
+   Ninguna de las dos es una respuesta honesta.
+
+   El peldaño 3 es lo que hace coherente el 2: un exceso marginal tiene salida legítima
+   —un waiver documentado y fechado— **porque la decisión 2 abrió esa vía**. Sin
+   waiver, un presupuesto con forma de acantilado (149 conforme, 151 incumplido) solo
+   puede cumplirse distorsionando el contenido.
+
 ## Consecuencias
 
 - **19 superficies incumplirán `--strict` desde ya**, y eso es correcto: es el aviso que

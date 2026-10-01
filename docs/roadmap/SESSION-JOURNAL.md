@@ -7769,3 +7769,42 @@ El techo de 150 queda a **1,26× la mediana** de lo que ya se cumple: no es arbi
 **Riesgos abiertos:** las 19 siguen incumpliendo `--strict` (correcto y ya visible) · el bundle local sigue en 2.5.2 hasta que se publique la release · la vía de waiver crea trabajo nuevo de disciplina de deuda · sigue sin resolverse qué hacer con el actor concurrente con push sobre `main`.
 
 **Primer paso preciso de la sesión siguiente:** abrir el ciclo de brevedad con SCOPE-CONTRACT congelado contra ADR-0150, empezando por las más baratas (`uat-discovery` +14, `branch-pr` +52, `studio-orchestrator` +64) para validar el contrato de corte sobre material barato antes de atacar `HTML-REPORT.md` (+1128).
+
+## session-65d (enmienda a ADR-0150) — El contrato no tenía escalera de remedio
+
+**Cómo salió.** El primer paso declarado tras ADR-0150 era abrir el ciclo de brevedad empezando por las más baratas para **validar el contrato antes de que 19 ficheros dependan de él**. Elegí `skills/uat-discovery/SKILL.md`: 164 líneas, 14 por encima del techo de 150. Es el material más barato que existe.
+
+**Lo que encontró la ejecución, no la lectura.** Los puntos 1–7 de ADR-0150 ofrecían **solo dos salidas**: partir el fichero en `references/`, o registrar un waiver. Para un exceso de 14 líneas, ninguna de las dos es honesta:
+
+- **Partir** significa crear ficheros de referencia para ahorrar 14 líneas: dos ficheros nuevos, el MANIFEST cambiado, y más superficie que leer para ahorrar esas líneas.
+- **Waiver** significa documentar deuda por 14 líneas.
+
+**Medición del tercer peldaño que faltaba.** Antes de concluir, se midió cuánto se recupera **adelgazando**, quitando solo duplicación genuina:
+
+- El `curl` de health check estaba escrito dos veces: en Prerequisites y en Phase 1.
+- El contrato de salidas también: en Phase 2 y en la tabla Output Files.
+
+Eliminar solo eso baja el fichero de **164 a 160**. Se recuperan **4 de las 14 líneas**, y quedan **10 que llevan información**. Es decir: el contenido es genuinamente irreducible en ~10 líneas, y el contrato anterior no tenía ninguna respuesta para eso.
+
+**Enmienda aplicada a ADR-0150 (punto 8): escalera de remedio en tres peldaños.**
+
+| peldaño | cuándo | qué cuesta |
+|---|---|---|
+| 1. Adelgazar | el exceso se cubre con redundancia | ninguno |
+| 2. Partir | el exceso es de fondo | un fichero por tema con su «qué cubre y qué no» |
+| 3. Waiver | tras 1 y 2 sigue excediendo y está justificado | entrada en `docs/debt/` con revisión fechada |
+
+El peldaño 3 es lo que hace coherente el 2: un presupuesto con forma de acantilado (149 conforme, 151 incumplido) sin salida legítima obliga a distorsionar el contenido. **La vía de waiver que se añadió en la decisión 2 es lo que hace que la escalera tenga final**; con el «sin excepciones nominales» del changelog, el peldaño 3 no existía y la escalera no subía.
+
+**Nota de alcance:** la escarpadura afecta a **3 de las 19**, no a las 19. Exceso mediano medido ≈ 130 líneas; solo `uat-discovery` (+14), `branch-pr` (+52) y `studio-orchestrator` (+64) están en zona de acantilado. La enmienda importa, pero no convierte el ciclo de brevedad en trabajo trivial.
+
+**Comandos ejecutados (contexto real):**
+- Lectura del fichero objetivo y medición del adelgazado sobre copia en `/tmp`, **sin tocar el fichero del repo**
+- `grep` de verificación: ADR-0150 no mencionaba adelgazar en ningún punto antes de la enmienda
+- `grep` de corrupción y de mezclas de idioma sobre el ADR enmendado
+
+**NOT_RUN declarado:** el corte de `uat-discovery` y de las otras 18. Esta slice entrega la corrección del contrato, no el corte.
+
+**Riesgo abierto nuevo:** la escalera está escrita pero **tampoco ejecutada**. El peldaño 1 está medido sobre un fichero; los peldaños 2 y 3 siguen sin probar sobre material real. `uat-discovery` es el candidato natural para ejecutarla entera en el siguiente ciclo: si los tres peldaños funcionan sobre las 14 líneas más baratas del repo, funcionan sobre las más caras.
+
+**Primer paso preciso de la sesión siguiente:** ejecutar la escalera completa sobre `uat-discovery` —adelgazar, y si las 10 restantes lo exigen, partir o documentar el waiver— y registrar qué peldaño se usó y por qué. Es el experimento que decide si ADR-0150 es aplicable o solo elegante.
