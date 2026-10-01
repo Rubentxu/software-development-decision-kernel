@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.5.3] - 2026-10-01
+
+### Fixes
+  - fix(cli): verify-chain y debt gates dejaban de examinar nada y contestaban igual — `sddk ledger verify-chain` resolvía por defecto el stream `project:<id>`, un identificador que **no existe en ninguno de los 326 ledgers** de la máquina, seleccionaba cero eventos y contestaba `PASS` mientras `sddk ledger verify` sobre el mismo ledger veía 171; `debt report` y `debt gates` fabricaban un informe para un ciclo ajeno y sin hallazgos, y como un informe vacío no incumple ningún predicado los gates `debt-severity-assigned` y `debt-priority-assigned` han sido constantes, no ciegos (INC-DEBT-053)
+  - fix(cli): un stream nombrado se respondía con la etiqueta del conjunto entero — `verify_streams` reconstruía la etiqueta con `resolve_streams(None, ..)`, así que `verify-chain --stream cycle:p-demo/one` contestaba `stream: all streams of p-demo`: veredicto correcto sobre una salida que nombraba otra cosa, y el doc-comment del struct prometía lo contrario. La etiqueta viaja ahora desde quien la decide hasta quien la publica (addendum de INC-DEBT-053)
+  - fix(cli): `doctor --strict` pasaba sin medir nada, y ningún gate lo ejecutaba — los checks de `surface.briefness` se anclaban a `current_dir()` y cada enumeración iba dentro de `if let Ok(read_dir(..))`, así que desde un directorio sin superficies emitía **0 checks** y salía con `all_present: true` y exit 0; medido sobre el binario publicado v2.5.2. Ningún workflow de CI lo ejecutaba (`grep -rn -- '--strict' .github/` → 0 coincidencias), luego los criterios de ADR-016 sólo corrían desde dos tests que montaban una raíz con superficies y nunca alcanzaban la ruta vacua. Ahora se mide el árbol que contiene las superficies —el cwd, o el framework root activo, que las lleva en layout plano— y sin ellas se falla cerrado nombrando que el presupuesto es *inverificable* (INC-DEBT-054)
+
 ## [2.5.2] - 2026-10-01
 
 ### Features
