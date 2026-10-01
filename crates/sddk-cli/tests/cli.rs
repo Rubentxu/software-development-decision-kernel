@@ -10208,12 +10208,12 @@ fn cli_dev_doctor_surface_empty_dirs() {
 
 #[test]
 fn cli_dev_doctor_strict_no_pasa_sobre_una_ausencia_de_medicion() {
-    // INC-BRIEF-STRICT-VACUOUS: every surface enumeration was guarded by
-    // `if let Ok(entries) = read_dir(..)`, so a cwd holding no `agents/`,
-    // `skills/` or `prompts/sddk/` skipped them all without a word. `--strict`
-    // then exited 0 having examined nothing — and the ordinary case of
-    // auditing an installed prefix from your own project directory is exactly
-    // such a cwd, so the gate could never fail on the known breaches.
+    // INC-DEBT-054: every surface enumeration was guarded by `if let Ok(entries)
+    // = read_dir(..)`, so a cwd holding no `agents/`, `skills/` or
+    // `prompts/sddk/` skipped them all without a word. `--strict` then exited 0
+    // having examined nothing — and the ordinary case of auditing an installed
+    // prefix from your own project directory is exactly such a cwd, so the gate
+    // could never fail on the known breaches.
     //
     // An empty measurement is not a passing measurement.
     let fixture = CliFixture::new("doctor-strict-nothing-to-measure");

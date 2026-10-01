@@ -469,13 +469,13 @@ pub(super) fn run_dev_doctor(
 
     // Surface brevity checks (ADR-016): agent ≤ 300, skill ≤ 150, prompt ≤ 200.
     //
-    // INC-BRIEF-STRICT-VACUOUS: this block used to read from `current_dir()`
-    // only, and every enumeration was guarded by `if let Ok(entries) =
-    // read_dir(..)`. A cwd without surfaces — the normal case when auditing an
-    // installed prefix from your own project — therefore skipped every
-    // enumeration silently, and `--strict` exited 0 having measured nothing.
-    // "No surfaces" was indistinguishable from "every surface within budget",
-    // so the gate could not fail on the 19 known breaches.
+    // INC-DEBT-054: this block used to read from `current_dir()` only, and
+    // every enumeration was guarded by `if let Ok(entries) = read_dir(..)`. A
+    // cwd without surfaces — the normal case when auditing an installed prefix
+    // from your own project — therefore skipped every enumeration silently, and
+    // `--strict` exited 0 having measured nothing. "No surfaces" was
+    // indistinguishable from "every surface within budget", so the gate could
+    // not fail on the 19 known breaches.
     //
     // Prefer the checkout when it holds the surfaces: a developer who just
     // edited an agent wants *that* agent measured, not the installed copy.
