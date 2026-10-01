@@ -16,7 +16,7 @@ All notable changes to this project are documented in this file.
 
 ### Tests
   - test(surfaces): 25 referencias rotas que ninguna comprobación detectaba — una cita es prosa, no un enlace: nada la resuelve. Barrido de `agents`, `skills` y `prompts/sddk`: 394 referencias comprobadas, 25 pares que no abren, en 13 superficies y cinco familias. `git log --all` da **cero commits** para los ficheros ausentes: nunca se escribieron, no se perdieron. El guard congela la línea base, así que falla si alguien añade una cita rota nueva **y falla igual si arregla una sin actualizar la línea base** (INC-DEBT-054)
-  - fix(surfaces): `studio-orchestrator` citaba `prompts/studio-agents/studio-*.md`, que no existe; los agentes están en `agents/studio-*.md` — seis rutas corregidas, verificadas una a una contra el fichero real. La línea base del guard baja de 25 a 19
+  - fix(surfaces): studio-orchestrator citaba prompts/studio-agents/, que no existe — seis rutas corregidas; los agentes están en agents/studio-*.md, verificados uno a uno contra el fichero real antes de tocar nada. La línea base del guard baja de 25 a 19 referencias rotas
 
 ## [2.5.2] - 2026-10-01
 
