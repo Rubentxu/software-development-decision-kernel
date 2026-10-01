@@ -1,5 +1,34 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-62, 2026-10-01T13:00Z): C3m.2 corregido en código pero con DEUDA NORMATIVA ABIERTA (INC-DEBT-048). `AT-UAT-019` queda PASS PARCIAL, no PASS. Release v2.5.0 sigue BLOQUEADO por musl-gcc.** **SIGUIENTE dentro de C3m: C3m.0** (una sola definición canónica de KMT) · C3m.1 (invalidación incremental) · C3m.3 · C3m.4 · C3m.5. La decisión normativa de INC-DEBT-048 requiere autoridad, no un agente.
+
+**Defecto medido (RED antes del fix):** el doc de `KnowledgeBasis::revise` afirmaba *"a new basis hash (because the `revised_at` participates in the hash)"*. La implementación hacía `derive_basis_hash(&new_basis.assertions)`, y esa función **sólo recibe `assertions`**: `revised_at` no tenía forma de participar. RED empírico: `revise(t=20)` con contenido idéntico daba el **mismo** `basis_hash` (`4de2152…` antes y después).
+
+**Consecuencia que sobrevive a la spec:** `KMT::evaluate` compara los hashes **antes** que los timestamps, así que una revisión puramente temporal era **invisible al freshness** — devolvía `Fresh` sin mirar `revised_at`. La suite no lo cazaba porque el test existente (`..._revise_with_stale_time_is_rejected`) comprueba la **monotonía del tiempo**, que sí era correcta; la mitad del contrato que fallaba no tenía aserción.
+
+**Hecho en session-62:**
+
+1. `derive_basis_hash` → `derive_basis_hash_at(assertions, revised_at)`. `empty`, `insert` y `revise` pasan `Some(revised_at)`. Dominio **`v2`** con tag de versión: una identidad persistida v1 **falla cerrada** contra un basis v2 en vez de coincidir por accidente.
+2. **4 tests nuevos** como *property-set*: el contrato del doc · dos revisiones distintas no colisionan · una basis sin tocar es distinguible de una revisada · el dominio v1 sigue reproducible y no colisiona con v2.
+3. **Falsificadores F19 y F20 OBSERVED.** F19 (`revise` vuelve al hash legacy) → 2 FAIL. **F20 (que la derivación ignore el tiempo — el defecto raíz) → 4 FAIL**, los cuatro tests de identidad.
+4. **Clippy encontró un defecto propio del refactor:** el wrapper `derive_basis_hash` quedó sin uso. No se dejó código muerto ni se silenció el lint: se eliminó.
+5. **Impacto en datos, medido y no temido:** `grep basis_hash` y `grep KnowledgeBasis` en `sddk-storage` → **0 resultados**. `KnowledgeBasis` **no se persiste**, luego el cambio de dominio no invalida ninguna identidad almacenada. El tag `v2` es hoy prevención, no riesgo.
+
+**Por qué NO se cierra (INC-DEBT-048, high/P1, open):**
+
+- El cambio **contradice REQ-A3S1-021** de `arch-spec-A3-S1-knowledge-substrate.md` (`status: proposed`), que fija la derivación "from the sorted `(id, inner_basis_hash)` pairs", es decir **sólo del conjunto de assertions**. Código y spec discrepan ahora.
+- **Matiz que corrige el diagnóstico previo:** el código **era consistente con la spec**; lo que mentía era el doc de `revise`. No era un descuadre docs/código sobre la derivación — los tres describían el mismo digest salvo el doc.
+- **`AT-UAT-019` cita "el ADR de identidad", que no existe.** Verificado: no hay ADR de `KnowledgeBasis` (lo más cercano es ADR-0147, sobre otra cosa). Un criterio que remite a un documento inexistente no se puede cumplir ni incumplir honestamente.
+- **Decisión normativa binaria, pendiente:** (a) actualizar REQ-A3S1-021 para incluir `revised_at`, o (b) revertir el cambio, corregir el doc de `revise` y resolver aparte que `KMT::evaluate` compara hash antes que tiempo. Cambiar una spec en `proposed` no corresponde a una slice de código.
+
+**Gates:** `knowledge::` **24 passed / 0 failed** · `sddk-engine` completo **2376 passed / 0 failed / 11 ignored** (el cambio de dominio no rompió ningún consumidor) · **perfil completo del workspace 5237 passed / 0 failed / 23 ignored** · fmt limpio · clippy `-D warnings` exit 0 · `test_debt_index_coherence` PASS=10 FAIL=0 · `test_changelog_coverage` PASS=13 FAIL=0.
+
+**Estado del release:** v2.5.0 **BLOQUEADO** (`rpm -q musl-gcc`: "el paquete musl-gcc no está instalado"). `release.sh --dry-run` se lanzó y **excedió 600 s** porque el dry-run ejecuta el perfil completo del workspace (pasos 0-8); es coste, no fallo del gate. Nada publicado, ningún tag, sin forzar glibc.
+
+**Trazabilidad de la evidencia (no se re-presenta como prueba de este commit):** los gates de arriba se midieron sobre `7bbeee3d`, que es el commit de **código**. Este commit documental es posterior y **no toca `crates/`, `scripts/` ni shell tests**, así que el árbol ejecutable es idéntico al medido. Comprobable sin confiar en este texto: `git diff 7bbeee3d HEAD --name-only -- crates/ scripts/ tests/'*.sh'` debe salir **vacío** (el `RECEIPT.md` sí está bajo `tests/`, por eso el patrón es `tests/'*.sh'` y no `tests/`). Si no lo está, la evidencia de los gates **no** aplica a HEAD.
+
+---
+
 **Estado (session-61, 2026-10-01T12:40Z): cerrado INC-DEBT-047 — el CHANGELOG declarado tenía que describir el trabajo, y ahora un gate lo exige antes del build. Release v2.5.0 sigue BLOQUEADO por musl-gcc, pero su contenido declarado ya es fiel.** **SIGUIENTE: levantar el bloqueo de musl y publicar v2.5.0, o bien C3m (si el operador lo prefiere antes del release).**
 
 **Defecto encontrado y medido:** había **26 commits sin publicar** desde `v2.4.2` — incluida una slice `feat(architecture)` entera (C3l.7), X07, un `fix(roadmap)` y tres `test` — frente a una sección `## [2.5.0]` que listaba **dos** features, las que ya estaban cuando se commiteó el bump. `release-bump.sh --dry-run` confirma `no bump to derive: the workspace already declares the pending release (2.5.0)`: **el trabajo crecía detrás de una sección congelada sin ninguna señal**. Y `scripts/release.sh` no mencionaba `CHANGELOG` en ninguno de sus pasos.
