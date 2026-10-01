@@ -7,7 +7,7 @@ priority: P1
 partially_resolved_at: 2026-10-01
 partially_resolved_in_session: session-64
 resolved_part: "golden pin del camino remote: stable_project_id y normalize_remote_url quedan con valores absolutos fijados por test (session-64)"
-open_part: "migracion de los 25 receipts huerfanos: destructiva, requiere al operador; y la regla de cambio (tocar el normalizador es BREAKING CHANGE) todavia no es un gate automatico"
+open_part: "migracion de los 25 receipts huerfanos: destructiva, requiere al operador"
 detected_at: 2026-10-01
 detected_in_session: session-63
 component: identity
@@ -140,6 +140,36 @@ proyectos con ese remote; lo correcto es decidir antes si procede migración.
 dominio `sddk.project.remote.v1` es **breaking change** y requiere migración o
 pin, aunque parezca inocua. Sin esa regla, el mismo defecto se repite en el
 próximo refactor del normalizador.
+
+### Corrección de session-64: el "gate automático de CI" que propuse NO era deuda real
+
+Esta incidencia, tal como se escribió en session-63, dejaba un cuarto remedy
+pendiente: *"convertir la regla BREAKING CHANGE en un gate automático de CI"*.
+**Se reevaluó y se retira: no era deuda real.**
+
+Se había escrito sin verificar cómo funciona el pipeline. Verificado en
+`.github/workflows/ci.yml`:
+
+- `cargo test --workspace` **sí** se ejecuta en el workflow, así que el golden
+  pin **ya corre automáticamente** con cada perfil completo. No hacía falta
+  ningún mecanismo nuevo.
+- Y el propio encabezado del workflow dice: *"MANUAL-ONLY (2026-08-10): SDDK
+  never depends on CI/CD. Validation runs locally; cloud CI is an optional
+  on-demand check via workflow_dispatch, **never a gate**"*.
+
+Añadir un gate en la cloud habría sido redundante **y** contrario a la política
+del repo, que por AGENTS.md §2.5 trata la cloud como evidencia asíncrona, nunca
+como bloqueo. El gate autoritativo es el perfil local, y el golden pin ya está
+dentro de él.
+
+**Lección aplicada a sí misma:** es el mismo patrón que la regla del operador
+enuncia — *alerta de deuda sin verificar si sus criterios siguen vigentes no es
+deuda real*. Esta vez la alerta la escribí yo treinta minutos antes, en el
+documento que estaba redactando. Lo que la deja cerrada no es una discusión de
+gusto sino un `grep` en el pipeline.
+
+**Queda una sola parte abierta, y es la que de verdad importa:** la migración de
+los 25 receipts.
 
 ## Falsificadores OBSERVED (session-64) — el pin dorado está puesto y muerde
 
