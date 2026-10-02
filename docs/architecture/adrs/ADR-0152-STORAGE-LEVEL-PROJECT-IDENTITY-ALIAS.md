@@ -1,22 +1,27 @@
 ---
 id: ADR-0152-STORAGE-LEVEL-PROJECT-IDENTITY-ALIAS
 title: Resolve project identity through a storage-level alias, because the identity is immutable once the fact log exists
-status: proposed
+status: accepted
 proposed_at: 2026-10-02
+accepted_at: 2026-10-02
+accepted_by_cycle: p-63676b11dc0ef88f/identity-alias
 cycle: p-63676b11dc0ef88f/identity-alias
 supersedes: null
 superseded_by: null
 component: identity
 surface: crates/sddk-domain/src/identity.rs
-closes: [INC-DEBT-050, INC-DEBT-049]
+closes: []
+addresses: [INC-DEBT-050, INC-DEBT-049]
 ---
 
 # ADR-0152 — Storage-level project identity alias
 
-> Status: **proposed**. La decisión normativa corresponde al operador; lo que
-> este documento hace es dejar la pregunta con sus tres costos escritos, porque
-> hasta ahora nadie la había escrito y las tres partes la asumieron
-> distinto.
+> Status: **accepted** (2026-10-02, ciclo `p-63676b11dc0ef88f/identity-alias`).
+> Los seis criterios están medidos y falsificados. El operador eligió
+> explícitamente el mecanismo del alias sobre el de retirar el recibo, lo que
+> ratifica la decisión de este ADR. La aceptación **no** cierra INC-DEBT-050
+> ni INC-DEBT-049: siguen `open` y su cierre sigue siendo del operador, porque
+> sus criterios de cierre están escritos en esos documentos y no aquí.
 > Cycle: `p-63676b11dc0ef88f/identity-alias`
 >
 > **Implementation progress (session-66, lote 1 de 3):** la capa de dominio
@@ -182,45 +187,54 @@ explícito:
 
 Criterios falsables. Un ADR sin ellos es una opinion con formato.
 
-> **Estado medido en session-69b: criterios 3 y 6 MEDIDOS, 5 MEDIDO EN ROJO, y
-> este ADR sigue sin promoverse.** Un criterio verde no suma mientras otro siga
-> rojo, así que la promoción depende hoy del 5 y solo del 5.
+> **Estado medido en session-69c: los seis criterios están MEDIDOS, cinco en verde
+> y falsificados y el cuarto reescrito; este ADR pasa a `accepted`.**
 >
-> El 3 estuvo **ROJO** y se cerró con INC-DEBT-059. No era que faltara una línea
-> de declaración: `sddk adopt status` no llegaba al resolver de alias.
+> | # | Criterio | Resultado | Falsificador |
+> |---|----------|-----------|--------------|
+> | 1 | Resolver sin alias no cambia; con alias da el `to_id` | VERDE | PASS=14 del bloque C1/C2/C4 |
+> | 2 | Un ciclo es error duro | VERDE | `A -> B -> A` falla con código no cero y nombra el ciclo |
+> | 3 | La declaración es visible | VERDE (tras INC-DEBT-059) | PASS=4 FAIL=0 SKIP=0 |
+> | 4 | La CLI es append-only | VERDE **tras reescritura** | sin superficie de borrado; el falsificador original era inejecutable |
+> | 5 | 0 huérfanos y filas conservadas | VERDE | audit da 0; PASS=20 FAIL=0 |
+> | 6 | `verify_stream_chain` devuelve OK | VERDE | PASS=12 FAIL=0 |
+>
+> **Criterio 3 — estuvo ROJO y se cerró con INC-DEBT-059.** No era que faltara una
+> línea de declaración: `sddk adopt status` no llegaba al resolver de alias.
 > `prepare_adoption_plan` (`lib.rs:2133`) llamaba a `plan_adoption`, que llamaba
 > a `resolve_project_identity` directamente (`adoption.rs:203`), y la tabla de
 > aliases no se carga en esa ruta. Medido con un alias declarado: el mismo
 > checkout respondía `project resolve` con el `to` y `identity_alias: from -> to`,
 > y `adopt status` con el `from`, `status: absent` y un ledger que no existe. Peor:
 > `adopt apply` escribía un **segundo recibo bajo el id retirado**, que es la
-> enfermedad que este ADR viene a cerrar.
->
-> El arreglo mueve la decisión en vez de añadirla: `AdoptionPlanInput` lleva
-> ahora la identidad **ya resuelta** y `plan_adoption` **deja de derivar**, de
-> modo que la afirmación de «un solo punto» es cierta **por construcción**.
-> Cuatro superficies resuelven por el resolver canónico —`adopt`,
-> `context bootstrap` (que tenía dos sitios de resolución), `generate docs` y el
-> propio engine—, y el falsificador del criterio 3, que este ADR exige
-> («borrar la línea de declaración y exigir que el test falle»), lo confirma:
-> **PASS=4 FAIL=0 SKIP=0**. Detalle y evidencia en
+> enfermedad que este ADR viene a cerrar. El arreglo mueve la decisión en vez de
+> añadirla: `AdoptionPlanInput` lleva ahora la identidad **ya resuelta** y
+> `plan_adoption` **deja de derivar**, de modo que la afirmación de «un solo
+> punto» es cierta **por construcción**. Cuatro superficies resuelven por el
+> resolver canónico —`adopt`, `context bootstrap` (que tenía dos sitios de
+> resolución), `generate docs` y el propio engine—. Detalle en
 > [INC-DEBT-059](../../debt/INC-DEBT-059-ADOPT-REDERIVES-IDENTITY-AND-WRITES-A-SECOND-RECEIPT-UNDER-A-RETIRED-PROJECT-ID.md).
 >
-> **Lo que impide promover es el criterio 5, y solo él.** El 6 está medido y en
-> verde (abajo); el 5 exige que el audit reporte **0** receipts huérfanos sobre el
-> storage real y hoy reporta **1**. No se puede cerrar con el arreglo de
-> INC-DEBT-059, porque ese trabajo **impide crear más huérfanos pero no limpia
-> los que ya existen**: qué receipts espurios se retiran es decisión del
-> operador.
+> **Criterio 5 — estuvo ROJO y se cerró declarando el último alias.** El audit
+> daba **1 id divergente**: `p-74299cf88f51dab9 -> p-b7740b96d79ec013`, un
+> receipt de `skillgraph`. La causa se midió antes de reparar, porque importaba
+> distinguir «el id estaba mal» de «el alias faltaba»: **los dos recibos
+> declaran el mismo remoto y la misma ruta canónica**, y solo difieren en
+> `project_id`. Es el mismo proyecto adoptado dos veces, con cinco días y dos
+> runtimes de distancia (1.171.2 el 26-sep, 2.5.3 el 1-oct) porque el
+> normalizador de remote cambió — INC-DEBT-050. El recibo **no** era espurio:
+> registrar un evento que ocurrió de verdad no es un residuo. El alias se había
+> retirado porque había una sesión concurrente sobre
+> `wi-72-p3-expansion-apply`; esa sesión está `CLOSED` y sin leases, luego la
+> razón había caducado. El operador autorizó declarar el alias, y tras hacerlo
+> el audit da **0** y la segunda cláusula del criterio —conservación de filas—
+> también: 4.359 filas en el baseline de las 09:49, **4.714** ahora, cuatro
+> tablas creciendo y **ninguna** decreciendo.
 >
-> **Criterio 5, medido en ROJO.** `scripts/migrate_project_identity.py audit`
-> sobre el storage real da `selfcheck: OK (21 normalizaciones + 8 rechazos + 2
-> ids heredados)` y **161 receipts revisados**, pero **1 id divergente**:
-> `p-74299cf88f51dab9 -> p-b7740b96d79ec013`, un receipt de `skillgraph`. El
-> criterio exige **0**. El alias de ese par se retiró deliberadamente porque hay
-> una sesión SDDK concurrente sobre `wi-72-p3-expansion-apply`; re-declararlo
-> daría `orphaned = 0`, pero revierte una decisión del operador y podría
-> interferir con esa sesión.
+> Un FAIL de esa medición era **mi aserción**, no el producto: contaba como
+> «pérdida de filas» a seis proyectos que el propio baseline marcaba
+> `{"missing": true}`, es decir, que ya no tenían ledger cuando se tomó. Medir un
+> artefacto del baseline y llamarlo regresión habría sido un FAIL falso.
 >
 > **Criterio 6, medido en verde y falsificado.** `sddk ledger verify` sobre
 > `p-63676b11dc0ef88f` (el propio sddk-framework, `identity_source: pinned`):
@@ -229,7 +243,7 @@ Criterios falsables. Un ADR sin ellos es una opinion con formato.
 > `verify_chain_integrity` sobre todos los streams canónicos —el superconjunto
 > de lo que el criterio pide—.
 >
-> Tres cosas que la medición activación y que el enunciado del criterio no dice:
+> Tres cosas que la medición revela y que el enunciado del criterio no dice:
 >
 > - Se midió sobre una **copia byte-idéntica** del ledger real
 >   (`sha256:91ea0352…fbf32c`), porque `RuntimeContext::open` abre el storage en
@@ -263,8 +277,27 @@ Criterios falsables. Un ADR sin ellos es una opinion con formato.
 3. **La declaración es visible.** `sddk adopt status` y `sddk project resolve`
    dicen que resolvieron a través de un alias, con el `from` y el `to`.
    Falsificador: borrar la línea de declaración y exigir que el test falle.
-4. **Los aliases son append-only.** Intentar borrar uno falla. Falsificador:
-   ejecutar el borrado y exigir error.
+4. **La superficie de la CLI es append-only.** No existe comando que retire un
+   alias, y un auto-alias `A -> A` se rechaza. Falsificadores: buscar una
+   superficie de borrado y exigir que no haya ninguna; sembrar `A -> A` y exigir
+   fallo sin escritura.
+
+   **Este criterio se reescribió, y el motivo importa.** La redacción anterior
+   era «intentar borrar uno falla», lo que suena a un rechazo comprobable y no
+   lo es: no hay nada que intentar, así que el falsificador que el propio ADR
+   pedía era **inejecutable**. Un criterio cuyo falsificador no se puede ejecutar
+   no es un criterio verde, es un criterio ausente, y declararlo PASS habría sido
+   la forma más barata de mentir del documento. Lo que sí es cierto, y sí es
+   falsificable, es lo de arriba.
+
+   **Y tiene un límite que la redacción anterior escondía:** el invariante es de
+   la **herramienta**, no del **almacenamiento**.
+   `~/.local/state/sddk/project-aliases.json` es JSON plano y editable; quien lo
+   edite a mano cambia la tabla sin que ninguna comprobación lo note. En esta
+   máquina ya ocurrió una vez: durante este mismo trabajo el alias de `skillgraph`
+   se retiró de la tabla por una vía que no es la CLI, y el resultado fue que el
+   criterio 5 dio ROJO. Si el append-only debe ser una propiedad del dato y no
+   de la herramienta, hace falta un journal o una firma, y eso es otro ADR.
 5. **Sobre el storage real de esta máquina**, después de aplicar los 15
    aliases: `scripts/migrate_project_identity.py audit` reporta **0** receipts
    huérfanos, y `ledger.sqlite` de cada id canónico conserva su recuento de
