@@ -1,5 +1,36 @@
 # CURRENT — puntero de reanudación de SDDK
 
+> ## ⚠ EL ÁRBOL ESTÁ ROJO A PROPÓSITO
+>
+> `HEAD` tiene **tres tests RED** en `crates/sddk-cli/tests/cycle_list_e2e.rs`
+> porque `sddk cycle list` todavía no existe. Es el **lote 1** del ciclo
+> `p-63676b11dc0ef88f/cycle-enumeration`, escrito para caer *antes* de tocar
+> producción. **No es una regresión** y no hay que arreglar nada al heredarlo.
+> **2.5.3 no es publicable hasta el lote 2**, porque el gate de release es
+> `cargo test --workspace` con cero fallos.
+
+**Estado (session-69c 3ª parte, 2026-10-02): abierto el ciclo del remedio de INC-DEBT-060 y entregado el lote 1. Al mapear la superficie apareció un segundo defecto — D2 — más grave que el que abría la incidencia.** `HEAD` = `9bac0845` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**D2: 81 de los 179 ciclos tienen un `manifest_json` que no deserializa, así que `get_cycle` les devuelve error y no registro.** No es que no se puedan nombrar: es que **no se pueden leer**. `CycleManifest` exige once campos sin `#[serde(default)]`, luego un `{}` falla con *missing field `schema_version`* y `json_from_sql_error` lo propaga como `FromSqlConversionFailure`. 79 de los 81 tienen `{}`; los otros 2 son notas de cierre `{reason, notes}` de ciclos docs-only ya `CLOSED`.
+
+**El lote 1 fija ese comportamiento por escrito antes de que la enumeración lo esquive.** Tres tests de caracterización que **pasan** (3/3), con una precondición que evita el paso en vacío: un manifiesto completo, construido con `CycleManifest::new` en vez de JSON a mano, **se lee bien** por la misma llamada. Sin ella, un FAIL probaría que `get_cycle` está roto para *todos* los ciclos, que es otro defecto. Fijarlo antes es lo que convierte un cambio posterior en decisión y no en deriva — es STOP 1 del SCOPE.
+
+**Los tres RED son de CLI a propósito.** Un test que llama a `list_cycles` no compila, y un RED comprado rompiendo el build tumba el crate entero; por eso R3 queda para el lote 2. Caen con `unrecognized subcommand 'list'` y el andamiaje de `adopt apply` + `cycle start` **funcionando**: caer por el fixture habría sido un FAIL que no media nada. Uno de ellos exige que dos ciclos coexistentes sean **nombrados los dos** sin convertirse en el error de ambigüedad de la resolución por lease — que es exactamente por lo que 91 ciclos `OPEN` son invisibles hoy—, y otro exige que el recuento se **declare** y cuadre, porque el modo de fallo que este ciclo existe para evitar es el de `ledger events` devolviendo 50 de 590 sin decirlo.
+
+**Corregí un error de mi propio contrato antes de escribir un solo test:** el SCOPE etiquetaba R4 como RED, y un test que afirma el comportamiento actual **pasa hoy**. Es de caracterización, y llamarlo RED era falso. La enmienda quedó escrita en el SCOPE, no corregida de memoria.
+
+**Gates:** `cargo fmt --check` limpio · `clippy -p sddk-storage --tests -D warnings` exit 0 · `test_changelog_coverage` **PASS=46 FAIL=0** tras declarar el lote · `git diff --check` limpio · push sin `--no-verify`.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Lote 2** del ciclo: `list_cycles` + `sddk cycle list`, y R3. Es lo que devuelve el árbol a verde.
+2. **81 filas ilegibles**: qué son es **decisión del operador**. No se limpian ni se migran (§2.2 del SCOPE).
+3. **F63**: `sddk ledger events` trunca en 50 de 590 sin declararlo. Slice propio, fuera de este lote a propósito.
+4. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+5. **Clave KMS**: único bloqueo de v2.5.3, y ahora además el árbol rojo.
+
+---
+
 **Estado (session-69c 2ª parte, 2026-10-02): dos hallazgos nuevos medidos y falsificados. INC-DEBT-060 abierta — la autoridad no puede enumerar sus propios ciclos. Y la premisa de la parte abierta de INC-DEBT-049 resulta FALSA, medida.** `HEAD` = `0f9613cd` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **INC-DEBT-060 — 97 de 179 ciclos no los nombra ningún comando.** No salió de leer el roadmap: salió de medir la premisa de INC-DEBT-049 y chocar con que `cycle status` decía `no active cycle found` mientras la tabla tenía 107 ciclos no terminales. La primera hipótesis —«es un falso negativo»— era **falsa**: el código infiere el ciclo actual por **lease vivo** y los 30 leases estaban caducados, así que su respuesta era correcta para la pregunta que hace. La segunda, ya leída la implementación, sí: el hueco es de **enumeración**. No hay `list_cycles` en el storage ni `cycle list` en la CLI, solo `get_cycle(id)` — hay que **saber** el id y nada lo da. Y `sddk ledger events` trunca en **50 de 590** eventos sin decirlo, así que sin `--limit` solo ve 19 ciclos de los 82 alcanzables.

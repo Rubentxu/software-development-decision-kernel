@@ -9340,3 +9340,41 @@ publicación del harness.
 (`list_cycles` + `sddk cycle list` + F63) es trabajo de código y exige
 `SDDK PRE-FLIGHT` con `Readiness: READY` y `prompts/sddk/change-scoped-testing.md`.
 Antes de escribir código, sus tests RED (F60–F63).
+
+## session-69c (3ª parte) — 2026-10-02 — ciclo de enumeracion abierto, lote 1 entregado
+
+**Baseline / HEAD.** `1f421ddd` → `9bac0845`, dos commits publicados sin
+`--no-verify` más este documental.
+
+**WorkItem.** El remedio de INC-DEBT-060, que es `high`/`P1` y severo reciente.
+
+**EL ARBOL ESTA ROJO A PROPOSITO.** `cycle_list_e2e.rs` tiene 3 tests RED porque
+`sddk cycle list` no existe. Es el lote 1. **2.5.3 no es publicable hasta el
+lote 2**, porque el gate es `cargo test --workspace` con cero fallos. Quien
+herede esto no tiene que arreglar nada.
+
+**D2, encontrado al mapear, no escrito antes.** 81 de 179 ciclos con
+`manifest_json` que no deserializa ⇒ `get_cycle` devuelve **error**, no registro.
+`CycleManifest` exige once campos sin `serde(default)`. 79 con `{}`, 2 con notas
+de cierre.
+
+**Lote 1 entregado.** Caracterización: **3/3 PASS**, con precondición de que un
+manifiesto completo sí se lee. RED: **3/3 FAIL** por `unrecognized subcommand`,
+con el andamiaje funcionando.
+
+**UAT observado.** Ninguno: no hay UAT de usuario. La evidencia es de tests
+unitarios y de caracterización sobre sandboxes.
+
+**Un error propio corregido antes de escribir un test:** el SCOPE decía que R4
+era RED, y un test que afirma el comportamiento actual **pasa**. La enmienda
+quedó en el SCOPE.
+
+**Bloqueos que persisten.** Clave KMS; decisión del operador sobre las 81 filas;
+F63; F49 de INC-DEBT-049; ruta forge; harness.
+
+**Primer paso de la sesión siguiente.** Lote 2 del ciclo
+`p-63676b11dc0ef88f/cycle-enumeration`: `Storage::list_cycles` y
+`sddk cycle list`, con R3 escribible en cuanto la función exista. Empezar por R3
+es lo que demuestra que la enumeración **no** se construye sobre `events_v1`, que
+es el error que produce los 97. STOP 1 vigente: si hace falta tocar `get_cycle`,
+parar y abrir SCOPE aparte.
