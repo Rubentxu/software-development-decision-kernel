@@ -342,12 +342,22 @@ impl VersionAuthority {
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum VersionSourceError {
     /// Ningún manifiesto del registro existe en el repositorio.
-    #[error("VERSION LOCKSTEP ERROR: no known manifest found under {root}; looked for {searched}")]
+    ///
+    /// El mensaje nombra **dónde se buscó y cuál es la salida**: sin lo
+    /// segundo, quien recibe esto solo puede adivinar. La declaración
+    /// explícita existe justo para este caso —un proyecto cuyo ecosistema no
+    /// declara versión en ningún manifiesto— y callar su nombre convertía la
+    /// salida en un acertijo.
+    #[error(
+        "VERSION LOCKSTEP ERROR: no known manifest found under {root}; looked for {searched}; if this project does not declare its version in any manifest, declare it explicitly in {declaration}"
+    )]
     NoSource {
         /// Raíz inspeccionada.
         root: PathBuf,
         /// Rutas que se buscaron, ya unidas, en el orden del registro.
         searched: String,
+        /// Fichero donde se declara la autoridad cuando nadie la publica.
+        declaration: &'static str,
     },
 
     /// El manifiesto existe pero no se pudo leer.
@@ -603,6 +613,7 @@ fn resolve_from_manifests(root: &Path) -> Result<VersionAuthority, VersionSource
     Err(VersionSourceError::NoSource {
         root: root.to_path_buf(),
         searched: searched.join(", "),
+        declaration: AUTHORITY_DECLARATION,
     })
 }
 
@@ -1052,6 +1063,14 @@ mod tests {
         for expected in ["Cargo.toml", "package.json", "gradle.properties", "go.mod"] {
             assert!(msg.contains(expected), "falta {expected} en: {msg}");
         }
+        // Y la SALIDA. El criterio 8 del SCOPE de este lote exigía un error que
+        // listara dónde se buscó **y** nombrara la declaración explícita: sin
+        // lo segundo, quien recibe el mensaje solo puede adivinar que existe
+        // una salida. Este test lo mide porque el mensaje no lo delata solo.
+        assert!(
+            msg.contains(AUTHORITY_DECLARATION),
+            "el error no dice cual es la salida: {msg}"
+        );
     }
 
     // ── Criterio 3: añadir un ecosistema es SOLO datos ────────────────────
@@ -1194,6 +1213,76 @@ mod tests {
 
     /// Corta un fichero por su bloque de tests: a partir de ahí, nombrar
     /// ecosistemas es lo esperado.
+    /// Criterio 1 de ADR-0153, con la forma que se puede cumplir.
+    ///
+    /// El criterio estaba escrito como «`Cargo.toml` no aparece en `version.rs`»,
+    /// y esa letra **nunca fue satisfacible**: los tests de paridad de Rust
+    /// tienen que *construir* un `Cargo.toml` para comprobar que el lockstep
+    /// sigue igual que antes, y sus fixtures lo nombran trece veces. Medido:
+    /// de esas trece, **cero** están en código de producción — seis son
+    /// fixtures, dos son asserts sobre el mensaje de error, cinco son
+    /// comentarios que cuentan la historia. La propiedad con dientes es la
+    /// otra: **el código que resuelve no nombra ningún manifiesto**, y eso no
+    /// lo puede ver ningún test de comportamiento, porque un reader genérico
+    /// que hardcodea un nombre se comporta igual mientras el nombre siga ahí.
+    /// Por eso este test es estructural: lee el fuente y recorta lo que no es
+    /// producción.
+    #[test]
+    fn the_resolution_code_names_no_manifest() {
+        // `include_str!` exige un literal, luego los dos ficheros se nombran
+        // aqui en vez de en un bucle.
+        for (file, full) in [
+            ("version.rs", include_str!("version.rs")),
+            ("version_source.rs", include_str!("version_source.rs")),
+        ] {
+            // El REGISTRY **si** nombra manifiestos, y tiene que: es el sitio
+            // donde vive el dato. Lo que se prohibe es que el CODIGO que lee
+            // los nombre, luego el registro se recorta antes de comprobar.
+            // `version.rs` no tiene registro — vive en `version_source.rs`—,
+            // luego el recorte es opcional y no un fallo.
+            let outside = match full.find("pub const REGISTRY") {
+                Some(start) => {
+                    let end = start
+                        + full[start..]
+                            .find("\n];")
+                            .map(|i| i + 3)
+                            .expect("el registro tiene que cerrar con ];");
+                    format!("{}{}", &full[..start], &full[end..])
+                }
+                None => full.to_string(),
+            };
+            let production = production_only(&outside);
+            // Los docs de modulo cuentan como documentacion, no como codigo:
+            // cuentan por que existio el contrato, no por como resuelve.
+            let without_docs = production
+                .lines()
+                .filter(|line| {
+                    let t = line.trim_start();
+                    !t.starts_with("//!") && !t.starts_with("///") && !t.starts_with("//")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            for manifest in [
+                "Cargo.toml",
+                "package.json",
+                "pyproject.toml",
+                "gradle.properties",
+                "Directory.Build.props",
+                "CMakeLists.txt",
+                "go.mod",
+                "MODULE.bazel",
+            ] {
+                assert!(
+                    !without_docs.contains(manifest),
+                    "`{manifest}` vuelve a aparecer en el codigo de produccion de {file}, \
+                     fuera del REGISTRY. \
+                     Es la lista codificada de «donde buscar la version» que ADR-0153 \
+                     existe para evitar: anade una fila al REGISTRY, no un nombre aqui."
+                );
+            }
+        }
+    }
+
     fn production_only(source: &str) -> String {
         match source.find("#[cfg(test)]") {
             Some(i) => source[..i].to_string(),
