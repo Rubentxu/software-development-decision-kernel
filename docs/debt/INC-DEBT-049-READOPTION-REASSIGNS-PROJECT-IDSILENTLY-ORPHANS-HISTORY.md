@@ -422,3 +422,13 @@ local, la migracion sigue siendo la unica que unifica los `project_id`.
 fichero **que no existe**. Las superficies reales de este defecto son
 `crates/sddk-engine/src/adoption.rs` (los tres sitios) y
 `crates/sddk-cli/src/lib.rs` + `context_cmd.rs` (lectura del pin).
+
+---
+
+## Addendum session-66b — la decision normativa que faltaba ya esta escrita
+
+**ADR-0152** (`docs/architecture/adrs/ADR-0152-STORAGE-LEVEL-PROJECT-IDENTITY-ALIAS.md`, `status: proposed`) decide la pregunta que este documento llevaba dos sesiones plantando: como se resuelve una identidad de proyecto cuando la derivacion y el storage no coinciden.
+
+Su decision: un alias a nivel de storage (`project_aliases(from_id, to_id)`), resuelto **en el mismo sitio unico** donde ya se decide la identidad (`resolve_identity_honoring_pin`), fail-closed en las cuatro reglas que importan (cadenas transitivas, ciclo = error duro, aliases append-only, y declaracion visible cuando se resuelve por alias).
+
+La SCOPE-CONTRACT del ciclo es `docs/roadmap/receipts/c3m-identity-alias/SCOPE-CONTRACT.md`. **La implementacion no arranca hasta que el operador acepte el ADR**: hasta entonces esto es una propuesta con sus costos escritos, no un trabajo en curso.
