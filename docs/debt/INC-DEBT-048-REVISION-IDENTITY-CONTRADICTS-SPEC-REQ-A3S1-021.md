@@ -212,3 +212,42 @@ criterio que remite a un ADR inexistente puede quedarse en PASS PARCIAL
 indefinidamente sin que nada lo delate. Es la misma clase que el resto de
 hallazgos de la sesion: **una cita que no resuelve es un criterio que no puede
 fallar honestamente**, y aqui no hay ni siquiera un guard que la note.
+
+### Cierre del hallazgo adyacente (session-65k)
+
+El "hallazgo adyacente" que este documento dejó abierto —*ningún gate valida
+que las citas de `docs/roadmap/UAT-MATRIX.md` resuelvan a algo existente*— está
+implementado como `tests/test_uat_authority_citations.py`, cableado en
+`scripts/release.sh`.
+
+**Lo que comprueba (tres propiedades, todas verificables):**
+
+1. Toda autoridad citada por ID (`ADR-NNNN`, `REQ-...`, `INC-DEBT-NNN`)
+   resuelve a un documento real.
+2. Cada fila tiene tantas celdas como la cabecera de **su** tabla.
+3. Los IDs de fila son únicos en toda la matriz.
+
+**Lo que NO comprueba, y conviene decirlo:** una autoridad citada **en prosa**
+—como «el ADR de identidad» de `AT-UAT-019`— no tiene ID que resolver. Un guard
+que fingiera cubrirlo estaría midiendo algo que no mide. La prosa se reporta
+como **aviso**, no como veredicto. El guard hoy emite exactamente un aviso, y es
+justamente `AT-UAT-019`: el criterio que segue sin autoridad resoluble. La
+decisión de repararlo sigue siendo normativa y no se toma aquí.
+
+**Estado medido:** 2 tablas, 70 filas, 6 autoridades citadas y **6 resuelven**,
+0 avisos de estructura.
+
+**Falsificadores: 3 mutaciones, 3 detectadas** (ADR inexistente, ID duplicado,
+celdas de más). Una de ellas tuvo que **repetirse**: la primera vez la mutación
+no llegó a aplicarse —la columna es `C0 / T1`, no `C1 / T1`— y el guard dio
+PASS sobre un fichero intacto. **Sexta vez que un falsador falla por sí mismo y
+no por el producto.** La repetición lleva un `assert` sobre el número de
+ocurrencias del texto objetivo, para que un `replace` vacío no pueda volver a
+producir un verde falso.
+
+**Nota de método sobre la instrumentación.** La primera medición de este trabajo
+reportó «28 filas con 5 celdas y 44 con 4» y de ahí casi se declara un defecto de
+columnas **que no existe**: `UAT-MATRIX.md` tiene **dos tablas** con cabeceras
+distintas, y el script las mezclaba porque recortaba por índice fijo en vez de
+agrupar por cabecera. La propiedad 2 existe precisamente para que ningún parser
+de la matriz repita ese error.

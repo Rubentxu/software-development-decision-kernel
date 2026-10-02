@@ -266,6 +266,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_surface_reference_integrity.py \
              tests/test_adopt_convergence_contract.py \
              tests/test_migrate_project_identity_mirror.py \
+             tests/test_uat_authority_citations.py \
              tests/test_gate_coverage.py; do
         if [ -f "$p" ]; then
             python3 "$p" >/dev/null \
