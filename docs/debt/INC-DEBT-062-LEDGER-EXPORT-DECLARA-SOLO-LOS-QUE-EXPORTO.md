@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-062
 title: "`ledger export` escribe N eventos a un fichero y no declara cuántos existían: la misma clase que F63, en la cuarta superficie"
-status: open
+status: resolved
 severity: high
 priority: P1
 fingerprint: "ledger_export_truncation_undeclared"
@@ -60,23 +60,54 @@ y el artefacto escrito se puede contrastar con `ledger events --limit 0`.
 
 ## Medición
 
-`/var/home/rubentxu/f63/03-medir-watch.py`, contra una copia del ledger real
+`/var/home/rubentxu/f63/09-medir-export.py`, contra una copia del ledger real
 (el mtime del original se comprueba antes y después):
 
 ```
 OK  : `ledger export --limit 5` escribe cinco eventos y sale
       -- exit=0 escritos=5 dice=['exported 5 events to /tmp/.../export.jsonl']
 GAP : `ledger export` declara cuantos eventos existian en total
-      -- numeros que declara=[5], total real=598
+      -- numeros que declara=[5], total real=600
+GAP : `ledger export` tiene una salida que una maquina pueda leer
+      -- con --format json -> exit=2: unexpected argument '--format'
 ```
+
+> **Corrección al cerrar.** Esta sección citaba `03-medir-watch.py` y 598
+> eventos. El instrumento correcto es `09-medir-export.py` y el total al abrir el
+> ciclo era **600**: 598 era el número del ciclo de `ledger watch`, y el ledger
+> había crecido con los 8 hechos del ciclo anterior. Se corrige **al cerrar**, no
+> antes —una cita de medición equivocada en un documento de deuda es un
+> documento que afirma algo falso sobre cómo se encontró el defecto—.
+
+El segundo GAP no salió de buscar truncamientos: salió leyendo el fichero.
+**`ExportOutput` derivaba `Serialize` y nunca se serializaba.** El resumen era
+un `format!` escrito a mano dentro del `match` de éxito, y el comando no tenía
+`--format` ninguno: la forma declarada no era la que estaba en vigor, y sin
+`--format` una máquina no tenía dónde leer la respuesta.
 
 ## Estado
 
-**No se arregla aquí.** `cl-ledger-watch-total` cierra `ledger watch`; una
-concernia por ciclo. La superficie y el remedio ya están medidos, y el patrón
-aplicado en `ledger watch` es directamente transportable: `LedgerExportOutput`
-gana `total_events` y `pending`, derivados de `all_events.len()` **antes** del
-`take`, que es donde el vector ya los tiene.
+**Resuelto** por el ciclo `cl-ledger-export-total`
+(`p-63676b11dc0ef88f/ledger-export-total`), commits `6ca0bdca` (tests RED),
+`2226bb9f` (arreglo) y `04e129f7` (guard corregido por la falsificación).
 
-Cerrado por: —
-Cierre previsto: ciclo siguiente a `cl-ledger-watch-total`.
+`ExportOutput` lleva `written`, `total_events` y `pending()` derivado por
+`saturating_sub`; el total se toma de `all_events.len()` **antes** del
+`.take(limit)`, que es donde el vector ya lo tiene. Texto y JSON salen del mismo
+struct, y el `Serialize` es **manual** porque el derivado emite campos y
+`pending()` es un método.
+
+**Lo que NO se hizo aquí, y está declarado en el `RECEIPT`:** no se extrajo
+función de filtro, al contrario que en `ledger watch`. Allí el `retain` corría
+dentro del bucle de sondeo y necesitaba un único sitio; aquí hay un vector y un
+filtro ya aplicados, y copiar el remedio anterior habría añadido una segunda
+cuenta sin nada de donde divergir.
+
+**Verificación:** `09-medir-export.py` **0/6 GAP** (antes 2/6), falsificador
+`10-falsify-export.py` **5/5 mutaciones detectadas**, `13-falsify-sonda.py`
+**3/3**, workspace **5409 passed / 0 failed / 24 ignored / 283 binarios**,
+`clippy --workspace --all-targets -- -D warnings` exit 0.
+
+Cerrado por: session-69m
+Cerrado el: 2026-10-03
+
