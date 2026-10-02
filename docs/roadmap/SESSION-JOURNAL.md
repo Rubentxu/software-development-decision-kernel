@@ -10620,3 +10620,42 @@ El ciclo **no está cerrado**: está en **`RELEASE_PENDING`**
 (`p-63676b11dc0ef88f/ledger-export-total`, `sequence: 7`, 6 artefactos). Cerrado
 de verdad exigiría la release, y la release sigue bloqueada por la clave KMS.
 Nueve gates evaluados con evidencia reproducible.
+
+#### Addendum session-69m — INC-DEBT-060 verificada, y su titular es FALSO
+
+El objetivo pide comprobar que los criterios de una alerta de deuda sigan
+vigentes. Se comprueba, y **no lo son**.
+
+Medido sobre copia byte-identica del ledger real, con `mtime` del original
+comprobado antes y después (`14-medir-debt-060.py`):
+
+- `sddk cycle list` declara **102** ciclos — 72 `CLOSED` + 25 `OPEN` + 1
+  `PAUSED` + 1 `RELEASED` + 3 `RELEASE_PENDING`, que cierra exacto — y los **18
+  ciclos sin hecho aparecen**, verificado en vivo para `m0-inventory-baseline`,
+  `architecture-adoption-m0-supersession` y `kernel-cycle-56-backlog-ledger`.
+  **El titular «ninguna superficie del producto enumera los ciclos» es falso
+  desde session-69c**, cuando se aplicó `Storage::list_cycles` + `cycle list`, y
+  la sección *Remedio, no aplicado* también.
+- **Las cifras del titular reconcilian exacto**: **97** filas sin hecho = **79**
+  `__spine_import__` + **18** del proyecto; **91** `OPEN` = 79 + 12. El 97 nunca
+  fue una población, era la **suma** de las dos — la corrección de session-69d las
+  separó y no volvió a sumarlas. **La detección original era correcta; lo que ha
+  caducado es el estado.**
+- La cifra que los punteros llevaban —«23 sin hecho (17 `OPEN`)»— es de 69d y hoy
+  mide **18 (12 `OPEN`)**: los ciclos avanzan y emiten hechos.
+- **Queda abierta solo la pieza 2**, y es más estrecha de lo que decía: las **79**
+  filas `__spine_import__`, todas `OPEN`/`build`, cero hechos, y **alcanzables
+  por ninguna superficie**. Se comprobó, no se supuso: `cycle list` infiere el
+  proyecto del checkout y **no acepta `--project-id`**, y no existe comando que
+  enumere proyectos —`project resolve` resuelve la identidad de un checkout, no de
+  un id arbitrario—.
+- **La severidad se re-plantea y NO se baja.** El razonamiento de `high` se
+  apoyaba en que el rodeo consiste en leer el almacenamiento a mano, y para los
+  18 eso ya no hace falta. El propio documento reserva la bajada a `medium` a la
+  **decisión del operador**, y una severidad no se degrada por el criterio de
+  quien la escribió.
+
+Se conservan la afirmación falsa y el texto original al lado de la corrección, sin
+reescribirlos. **Un inventario de deuda que mantiene `open` un defecto cuyo
+titular contradice una funcionalidad ya entregada es, en sí mismo, una declaración
+falsa** — la misma clase que este trabajo viene a cerrar desde F63.
