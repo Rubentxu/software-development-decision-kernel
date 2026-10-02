@@ -1,17 +1,50 @@
 # CURRENT — puntero de reanudación de SDDK
 
-> ## ⚠ EL ÁRBOL ESTÁ ROJO A PROPÓSITO
+> ## ✅ EL ÁRBOL ESTÁ VERDE
 >
-> `HEAD` tiene **tres tests RED** en `crates/sddk-cli/tests/cycle_list_e2e.rs`
-> porque `sddk cycle list` todavía no existe. Es el **lote 1** del ciclo
+> El aviso anterior de este fichero —«el árbol está ROJO a propósito, tres tests
+> RED por `cycle list` inexistente»— **queda derogado**. El lote 2 aterrizó y el
+> perfil completo pasa: **5374 tests, 0 fallos**, clippy `-D warnings` exit 0,
+> `cargo fmt --check` limpio. **2.5.3 vuelve a ser publicable por el lado del
+> árbol**; su único bloqueo sigue siendo la clave KMS. Se conserva el aviso viejo
+> más abajo, en su sitio histórico, sin editarlo.
+
+**Estado (session-69d, 2026-10-02): entregado el lote 2 de `cl-cycle-enumeration` — `Storage::list_cycles` y `sddk cycle list` — y CORREGIDA la magnitud de INC-DEBT-060, que era casi 4× mayor de lo declarado.** `HEAD` = `190bbd52` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Las cifras publicadas estaban mal: 179 filas en `cycles` no son 179 ciclos de este proyecto.** La tabla contiene **dos poblaciones**: **100** con `project_id = p-63676b11dc0ef88f` (ids `<project_id>/<slug>`) y **79** con `project_id = '__spine_import__'` (slugs desnudos, `manifest_json = {}` las 79, **cero eventos** cada una). `__spine_import__` **no es un marcador**: es una fila real de la tabla `projects` del mismo ledger (`display_name: "Spine Import Project"`, workspace `spine-import`). Cifras correctas: de los 100, **23 no los nombraba ninguna superficie** y **17 de esos son `OPEN`**; y solo **2** tienen manifiesto ilegible, no 81. La **magnitud** era casi 4× mayor de la declarada; la **clase** de defecto no cambia, y por eso INC-DEBT-060 sigue `open` y `high`.
+
+**Lo encontró el falsificador del propio remedio, y falló por su cuenta, no por la del producto.** R6 devolvió `declared=100 table=179` contra un enumerador **correcto**: su baseline contaba `SELECT COUNT(*) FROM cycles` **sin filtro de proyecto**. Tercera vez en este ciclo que un FAIL es un guard mal escrito. El camino fácil habría sido cambiar `list_cycles` para enumerar las 179 —habría hecho pasar el falsificador y habría sido un defecto—, así que **la causa se midió antes de reparar** porque las dos reparaciones son opuestas. Falsificador corregido, más `F5` para que el guard no vuelva a derivar solo: **PASS=9 FAIL=0**.
+
+**El remedio lee `cycles`, no `events_v1`, y esa elección *es* el remedio:** una enumeración sobre el log de hechos reproduciría el defecto que pretende arreglar, porque los 23 no tienen hechos **por eso** son invisibles. La fila ilegible se lista **marcada** (`manifest_readable: false`) y no se tira: tirarla cambiaría «invisible» por «omitido en silencio» y el recuento dejaría de cuadrar sin explicación. **STOP 1 respetado**: `get_cycle` no se toca y sus 3 tests de caracterización siguen verdes sin reescribir.
+
+**Dos cosas que pasaron y conviene no volver a hacer.** `cli_golden` **cayó** con la suite completa —el subcomando nuevo cambiaba el help— y su fixture se regeneró con el delta **revisado línea a línea: una sola línea añadida**. Y el primer comando de la sesión fue `cargo test --workspace | tail -60`, cuyo exit code es el de `tail` y **no el de cargo**: parecía verde con la suite roja debajo. Se repitió con `> log 2>&1; echo EXIT=$?`, que no puede mentir.
+
+**Gates:** `cargo test --workspace --no-fail-fast` **5374 passed / 0 failed** en 276 binarios · `cargo clippy --workspace --all-targets -- -D warnings` exit 0 · `cargo fmt --check` limpio · falsificador R6 **PASS=9 FAIL=0** con sha256 del ledger real idéntico antes y después · `test_changelog_coverage` **PASS=47 FAIL=0** · `check_debt_index_coherence`, `test_docs_script_contamination`, `test_gate_coverage`, `test_adr_promotion_format` PASS · `test_release_state_pointer` reconciliado en este commit · `git diff --check` limpio · push sin `--no-verify`.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS**: único bloqueo de v2.5.3, del operador. Ya no está acompañado del árbol rojo.
+2. **Las 79 filas de `__spine_import__`**: qué son, y si son alcanzables desde algún checkout, es una pregunta **sin medir**. Se declara sin medir. El lote solo estableció que **no son ciclos de este proyecto**.
+3. **Los 23 ciclos sin hecho** (17 `OPEN`): qué hacer con ellos sigue siendo decisión del operador. §2.2 del SCOPE prohíbe limpiarlos o migrarlos.
+4. **F63**: `sddk ledger events` trunca en 50 de 590 sin declararlo. Slice propio, excluido del lote a propósito.
+5. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+
+---
+
+> ## ⚠ HISTÓRICO — EL ÁRBOL ESTABA ROJO A PROPÓSITO (session-69c 3ª parte)
+>
+> **Este aviso estaba vigente hasta el lote 2 y ya no lo está.** Se conserva sin
+> editar como evidencia de lo que era cierto cuando se escribió.
+>
+> `HEAD` tenía **tres tests RED** en `crates/sddk-cli/tests/cycle_list_e2e.rs`
+> porque `sddk cycle list` todavía no existía. Era el **lote 1** del ciclo
 > `p-63676b11dc0ef88f/cycle-enumeration`, escrito para caer *antes* de tocar
-> producción. **No es una regresión** y no hay que arreglar nada al heredarlo.
-> **2.5.3 no es publicable hasta el lote 2**, porque el gate de release es
-> `cargo test --workspace` con cero fallos.
+> producción. **No era una regresión.** **2.5.3 no era publicable hasta el lote 2**,
+> porque el gate de release es `cargo test --workspace` con cero fallos.
 
 **Estado (session-69c 3ª parte, 2026-10-02): abierto el ciclo del remedio de INC-DEBT-060 y entregado el lote 1. Al mapear la superficie apareció un segundo defecto — D2 — más grave que el que abría la incidencia.** `HEAD` = `9bac0845` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
-**D2: 81 de los 179 ciclos tienen un `manifest_json` que no deserializa, así que `get_cycle` les devuelve error y no registro.** No es que no se puedan nombrar: es que **no se pueden leer**. `CycleManifest` exige once campos sin `#[serde(default)]`, luego un `{}` falla con *missing field `schema_version`* y `json_from_sql_error` lo propaga como `FromSqlConversionFailure`. 79 de los 81 tienen `{}`; los otros 2 son notas de cierre `{reason, notes}` de ciclos docs-only ya `CLOSED`.
+**D2: 81 de los 179 ciclos tienen un `manifest_json` que no deserializa, así que `get_cycle` les devuelve error y no registro.** No es que no se puedan nombrar: es que **no se pueden leer**. `CycleManifest` exige once campos sin `#[serde(default)]`, luego un `{}` falla con *missing field `schema_version`* y `json_from_sql_error` lo propaga como `FromSqlConversionFailure`. 79 de los 81 tienen `{}`; los otros 2 son notas de cierre `{reason, notes}` de ciclos docs-only ya `CLOSED`. **[Magnitud corregida en session-69d: solo 2 de los 100 ciclos de este proyecto son ilegibles; las 79 con `{}` pertenecen a `__spine_import__`, que es otro proyecto.]**
 
 **El lote 1 fija ese comportamiento por escrito antes de que la enumeración lo esquive.** Tres tests de caracterización que **pasan** (3/3), con una precondición que evita el paso en vacío: un manifiesto completo, construido con `CycleManifest::new` en vez de JSON a mano, **se lee bien** por la misma llamada. Sin ella, un FAIL probaría que `get_cycle` está roto para *todos* los ciclos, que es otro defecto. Fijarlo antes es lo que convierte un cambio posterior en decisión y no en deriva — es STOP 1 del SCOPE.
 

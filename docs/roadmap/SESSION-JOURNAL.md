@@ -9378,3 +9378,140 @@ F63; F49 de INC-DEBT-049; ruta forge; harness.
 es lo que demuestra que la enumeración **no** se construye sobre `events_v1`, que
 es el error que produce los 97. STOP 1 vigente: si hace falta tocar `get_cycle`,
 parar y abrir SCOPE aparte.
+
+---
+
+## session-69d — 2026-10-02
+
+**Baseline / HEAD.** `origin/main` = `ee630c80` al entrar. HEAD al cerrar este
+bloque: `190bbd52` + este commit documental. Rama `main`. Workspace **2.5.3
+declarada, no publicada**; último tag remoto `v2.5.2`. **Push sin `--no-verify`.**
+
+**WorkItem.** `p-63676b11dc0ef88f/cycle-enumeration`, lote 2 — el remedio de
+INC-DEBT-060 (D1, enumeración).
+
+**Commits.** `113f84ba` feat(cycle) · `1a4d422a` docs(debt) · `190bbd52`
+docs(changelog) · este.
+
+### Entregado
+
+`Storage::list_cycles` y `Storage::list_cycles_by_status` en
+`crates/sddk-storage/src/lib.rs`, y `sddk cycle list` en
+`crates/sddk-cli/src/cycle.rs`. El árbol pasó de ROJO a propósito (3 tests RED
+del lote 1) a **verde**.
+
+`list_cycles` lee **`cycles`, no `events_v1`**, y esa elección *es* el remedio: una
+enumeración construida sobre el log de hechos reproduciría el defecto que
+pretende arreglar, porque los ciclos sin hechos son invisibles **por eso**. La
+fila ilegible se lista **marcada** (`manifest_readable: false`), no se tira:
+tirarla cambiaría «invisible» por «omitido en silencio» y el recuento dejaría de
+cuadrar sin explicación. `status`/`phase` son `String` porque `MIGRATION_21`
+existe justamente porque el conjunto almacenado y el enum pueden discrepar.
+
+**STOP 1 respetado:** `get_cycle` no se toca y sus 3 tests de caracterización
+siguen verdes sin reescribir.
+
+### El hallazgo del lote: las cifras de INC-DEBT-060 estaban mal
+
+El falsificador de R6 devolvió `FAIL` con `declared=100 table=179` contra un
+producto **correcto**. Su baseline contaba `SELECT COUNT(*) FROM cycles` **sin
+filtro de proyecto**. Tercera vez en este ciclo que un FAIL es un guard mal
+escrito y no un defecto del producto.
+
+Medido, la tabla `cycles` contiene **dos poblaciones**:
+
+| `project_id` | filas | ids | manifiesto | eventos |
+|---|---|---|---|---|
+| `p-63676b11dc0ef88f` | **100** | `<project_id>/<slug>` | 98 legibles, 2 ilegibles | 77 con ≥1, **23 sin ninguno** |
+| `__spine_import__` | **79** | slug desnudo | las 79 con `{}` | **0** |
+
+`__spine_import__` **no es un marcador**: es una fila real de la tabla `projects`
+del mismo ledger (`display_name: "Spine Import Project"`, workspace
+`spine-import`).
+
+**Cifras reales:** de los 100, **23 no los nombraba ninguna superficie**, **17 de
+esos son `OPEN`**, y solo **2** tienen manifiesto ilegible. Publicado era 179 / 97
+/ 91 / 81. La **magnitud** era casi **4× mayor**; la **clase** de defecto no
+cambia, y por eso INC-DEBT-060 sigue `open` y `high`.
+
+El camino fácil habría sido cambiar `list_cycles` para enumerar las 179 filas:
+habría hecho pasar el falsificador y habría sido un defecto. **La causa se midió
+antes de reparar** porque las dos reparaciones son opuestas. Corregido el guard y
+añadido `F5` para que no vuelva a derivar solo: **PASS=9 FAIL=0**.
+
+La evidencia original **no se borró**: se conserva tachada y con la corrección
+delante, en el documento de deuda, en el índice y en el SCOPE. Un titular
+corregido sin el titular equivocado al lado es reescritura de historia, no
+corrección.
+
+### Verificación
+
+```
+cargo test --workspace --no-fail-fast   EXIT=0  5374 passed / 0 failed / 24 ignored (276 binarios)
+cargo clippy --workspace --all-targets -- -D warnings   EXIT=0
+cargo fmt --check                        limpio (solo los 4 ficheros del lote)
+falsificador R6                          PASS=9 FAIL=0
+test_changelog_coverage                  PASS=47 FAIL=0
+check_debt_index_coherence               PASS (44 entradas)
+test_docs_script_contamination           PASS
+test_gate_coverage                       PASS
+test_adr_promotion_format                PASS
+test_release_state_pointer               reconciliado en este commit
+git diff --check                         limpio
+```
+
+**Solo lectura verificada, no declarada:** el sha256 del ledger real
+(`91ea0352…fbf32c`) es idéntico antes y después de correr el falsificador contra
+una copia byte-idéntica. Era obligatorio porque `RuntimeContext::open` no abre en
+solo lectura —su tercer parámetro es `generate_seed` y dentro hace
+`Storage::open`, que abre en escritura—.
+
+### Dos cosas que pasaron y no hay que repetir
+
+1. **`cli_golden` cayó** con la suite completa: el subcomando nuevo cambiaba
+   `sddk cycle --help`. El fixture se regeneró con el delta **revisado línea a
+   línea**: una sola línea añadida, ninguna otra movida. Un snapshot regenerado
+   sin mirar el diff deja de medir.
+2. **El primer comando de la sesión fue `cargo test --workspace | tail -60`.** El
+   exit code de un pipeline es el de `tail`, no el de cargo: **parecía un
+   `EXIT=0` con la suite roja debajo.** Se repitió con `> log 2>&1; echo EXIT=$?`,
+   que no puede mentir. Un gate leído por su exit code y envuelto en un pipe no
+   es un gate.
+
+**Contaminación:** el escaneo CJK/cirílico salió `CLEAN` en todo, pero la
+redacción de este lote se contaminó **nueve veces** al escribirla, y una de ellas
+fue el párrafo que describía la contaminación: al nombrar los caracteres CJK que
+había que corregir, los escribí literal dentro de la frase que los prohibía. El
+control es **retroactivo sobre lo ya escrito**, no sobre la intención al
+escribir, y por eso cada borrador necesita su propio escaneo.
+
+### UAT y evidencia
+
+Ninguna fila de `docs/roadmap/UAT-MATRIX.md` ejecutada en esta sesión: el trabajo
+es de superficie de enumeración y su verificación son tests y falsificadores,
+no un guion UAT. **No se certifica nada** y no se toca
+`docs/roadmap/CERTIFICATIONS.md`.
+
+### Riesgos
+
+- **Las 79 filas de `__spine_import__`** son decisión del operador. Si son
+  alcanzables desde algún checkout es una pregunta **sin medir**, declarada sin
+  medir.
+- **Los 23 ciclos sin hecho** (17 `OPEN`): §2.2 del SCOPE prohíbe limpiarlos o
+  migrarlos.
+- **`get_cycle` sigue dando error** en las 2 filas ilegibles de este proyecto:
+  solo se listan marcadas. Es STOP 1.
+- **F63 sin tocar**: `ledger events` trunca en 50 de 590 sin declararlo.
+
+### Bloqueos que persisten
+
+Clave KMS (único bloqueo de 2.5.3); decisión del operador sobre las 79 filas de
+`__spine_import__`; F63; F49 de INC-DEBT-049; ruta forge de `release apply` contra
+un GitHub real; harness `Pipelinek-Test-Hardness` (44 commits sin publicar).
+
+**Primer paso de la sesión siguiente.** Cerrar `cl-cycle-enumeration` o abrir su
+lote 3, decidiendo antes qué falta para que INC-DEBT-060 pueda pasar de `open`:
+o el operador declara qué son las 79 filas de `__spine_import__`, o se abre SCOPE
+para ellas. Antes, `git fetch origin` y revalidar `HEAD`/`origin/main`/tag/
+workspace/bundle. **No bumpear por conveniencia**: si el workspace declara
+`2.5.3` y el último tag publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
