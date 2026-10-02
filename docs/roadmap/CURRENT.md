@@ -1,5 +1,38 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69g, 2026-10-02): `vault search` cerrado — la misma clase de defecto que F63, en la segunda superficie que quedaba.** `HEAD` = este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El defecto, medido antes de decidir nada:** sobre el índice real de esta máquina, `sddk vault search` imprimía **20 de 75 documentos** sin declarar ningún total, con **exit 0**; `--limit 0` devolvía `no hits`; y el JSON era un array desnudo.
+
+**Aquí el total NO viene gratis, y por eso el diseño es distinto al de F63.** En `ledger events` venía en memoria porque el corte es posterior al `take`; aquí `search_index` corta en SQL (`LIMIT ?2`), luego declararlo cuesta una segunda consulta. Se midió antes de decidir, y la alternativa barata se descartó: el `COUNT` es **más barato que la propia búsqueda** (0,119 ms contra 0,376 ms con 75 docs) y el sobrecoste **baja con la escala**, de +31,7 % a **+5,2 %** con 7500 documentos, porque `ORDER BY rank LIMIT 20` ordena todos los matchs mientras que `COUNT … WHERE MATCH` solo los recorre. Por eso el total **exacto**: el dato completo sale más barato que el parcial.
+
+**`search_index` no cambia de firma.** Es API pública de `sddk-vault` con **8 tests unitarios** que la usan; el camino corto los rompía a todos. El total se obtiene con `count_matches`, función nueva.
+
+**`--limit 0` era la cuarta contradicción de la convención del cero en este binario.** `ledger export --limit 0`, `ledger events --limit 0` y `ledger watch --max-events 0` significan todos; aquí `LIMIT 0` en SQL no es caso especial y devuelve cero filas.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5384 passed / 0 failed** en 278 binarios (baseline 5378, **+6** exactamente los nuevos) · `clippy -D warnings` exit 0 · `fmt --check` limpio · falsificador O1–O4 **PASS=9 FAIL=0** con `declared=61` contrastado contra `sql=61` y el sha256 del índice real idéntico antes y después · `test_changelog_coverage` **PASS=51 FAIL=0**.
+
+**Un fallo del arnés que valió más que el arreglo:** el fixture de R1 no casaba —FTS5 hace coincidencia de token exacto sin stemming, así que `crypto` no encuentra `cryptography`— y eso dejaba **R6 vacío**: su rama «con coincidencias» estaba ejercitando en realidad la de «sin coincidencias» y pasaba igual. Un test que pasa porque prueba otra cosa es un test que no mide, y no se vio hasta que R1 lo destapó.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **`vault graph` y `vault show`: NO MEDIDOS.** También proyectan datos y podrían tener la misma clase. El SCOPE lo dice como «no medido», **no** como «correcto» — esa distinción es la que faltó con `ledger watch` y repetirla sería repetir el error.
+3. **INC-DEBT-060 sigue `open`**: las 79 filas de `__spine_import__` y los 23 ciclos sin hecho (17 `OPEN`) son decisión del operador, y `get_cycle` sigue dando error en las 2 filas ilegibles (STOP 1).
+4. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+
+---
+
+**Estado (session-69f, 2026-10-02): auditoría de familia del defecto de F63 — once candidatos, uno solo. Y una afirmación mía que era falsa, corregida en los cuatro sitios donde estaba.** `HEAD` = `a61948a2` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La afirmación que era falsa:** se venía diciendo que `ledger watch --max-events` «trunca sin declarar lo mismo». **No es así.** Medido: `ledger watch` **declara** en los dos formatos —`[watch] emitted 5 events, exiting` en texto y `{"__watch_complete":true,"emitted":5}` en JSON (`ledger.rs:785-788`)—, y su `--max-events` está documentado como `0 = unlimited`. **Es el modelo del comportamiento correcto**, y el propio arreglo de F63 lo copia. Salió de **analogía de nombre**: tres comandos con bandera de tope, un mismo tratamiento y **ninguno ejecutado**. Es el camino que produce los demás números falsos de esta sesión —tratar la forma como si fuera el comportamiento—.
+
+**De los 11 candidatos de la auditoría, 10 se eliminaron por lectura:** defaults de escritura, cota de profundidad con `0 = unbounded` ya documentado, tope de bytes sobre un subproceso, `.take()` interno sin superficie de usuario, y nueve ficheros que ya declaran. El único superviviente fue `vault search`, cerrado en session-69g. La reducción va escrita con su tabla porque «11 defectos» es el número que viaja a un documento y se convierte en trabajo que nadie necesitaba.
+
+**El límite del método, declarado:** la auditoría es estática; diez candidatos se eliminaron por lectura y no por ejecución, y un criterio de búsqueda puede tener falsos negativos.
+
+---
+
 **Estado (session-69e, 2026-10-02): F63 cerrado. `sddk ledger events` ya no trunca en silencio y `--limit 0` ya no significa cero.** Con esto, **los cuatro falsificadores de INC-DEBT-060 (F60–F63) están entregados**; la deuda **sigue `open`** y la razón está escrita. `HEAD` = `2fd82cf7` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El defecto medido otra vez, no heredado:** sobre el ledger real de `p-63676b11dc0ef88f` en copia byte-idéntica —590 eventos, 114 streams—, `sddk ledger events` imprimía **50**, nombraba **19 de los 114 ciclos**, no declaraba ningún total y salía con **exit 0**. La ventana por defecto eran las secuencias **12 a 20**: las 50 más recientes, con las 540 anteriores invisibles y nada en pantalla que lo dijera.

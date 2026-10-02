@@ -9720,3 +9720,98 @@ SCOPE + PRE-FLIGHT, con las tres correcciones ya medidas y `--limit 0` alineado.
 Antes, `git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle.
 **No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
 publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+---
+
+## session-69g — 2026-10-02
+
+**Baseline / HEAD.** `origin/main` = `a61948a2` al entrar. Rama `main`. Workspace
+**2.5.3 declarada, no publicada**; último tag remoto `v2.5.2`. Push **sin
+`--no-verify`**.
+
+**WorkItem.** `p-63676b11dc0ef88f/vault-declaration` — la segunda superficie de la
+misma clase de defecto que F63, y la única que sobrevivió a la auditoría.
+
+**Commits.** `848413f8` SCOPE + PRE-FLIGHT · `1ea240ac` test(cli), 5 RED ·
+`37870817` fix(vault) · `973ac3f9` changelog · este.
+
+### Entregado
+
+`sddk vault search` declara cuánto dejó fuera, y `--limit 0` significa «todos».
+
+### El coste, medido antes de decidir
+
+En `ledger events` el total venía gratis: `list_events` carga el vector entero y
+el corte es posterior. Aquí **no**: `search_index` corta en SQL (`LIMIT ?2`).
+
+| índice | búsqueda | COUNT | sobrecoste |
+|---|---|---|---|
+| real, 75 docs | 0,376 ms | 0,119 ms | +31,7 % |
+| sintético, 750 | 0,814 ms | 0,064 ms | +7,8 % |
+| sintético, 7500 | 8,129 ms | 0,424 ms | **+5,2 %** |
+
+**El COUNT es más barato que la propia búsqueda y el sobrecoste baja con la
+escala**: `ORDER BY rank LIMIT 20` ordena todos los matchs, `COUNT … WHERE MATCH`
+solo los recorre. La alternativa de `LIMIT n+1` —deducir «al menos uno más»— se
+descartó con esta medición, no por gusto. Y se paga el total **exacto** porque
+sale más barato que el parcial.
+
+### `search_index` intacto
+
+API pública de `sddk-vault` con **8 tests unitarios** que la usan. El camino corto
+—devolver `(hits, total)`— los rompía a todos. El total se obtiene con
+`count_matches`, función nueva. Añadir no rompe nada.
+
+### Verificación
+
+```
+cargo test --workspace --no-fail-fast   EXIT=0  5384 passed / 0 failed / 24 ignored (278 binarios)
+cargo clippy --workspace --all-targets -- -D warnings   EXIT=0
+cargo fmt --check                        limpio
+vault_search_declaration                 6 passed
+falsificador O1–O4                       PASS=9 FAIL=0
+test_changelog_coverage                  PASS=51 FAIL=0
+```
+
+Baseline 5378 → **+6**, exactamente los tests nuevos.
+
+### El fallo del arnés que importaba
+
+El fixture de R1 no casaba: FTS5 hace coincidencia de token exacto sin stemming,
+así que `crypto` no encuentra `cryptography`. R1 falló contra un producto que
+declaraba `hits: 0 of 0 (complete)` — correctamente, porque no había
+coincidencia.
+
+**Lo importante es lo que ese fallo tapaba:** R6 tenía una rama «con
+coincidencias» que en realidad estaba ejercitando la de «sin coincidencias», y
+pasaba igual. Un test que pasa porque prueba otra cosa es un test que no mide, y
+no se vio hasta que R1 lo destapó. Un guard escrito para «ambos casos» que en
+realidad cubre uno es peor que no escribirlo, porque ocupa el hueco del que sí
+mediría.
+
+### UAT
+
+Ninguna fila de `docs/roadmap/UAT-MATRIX.md` ejecutada: no hay cambio de
+comportamiento observable fuera de la salida del comando. **No se certifica nada.**
+
+### Riesgos
+
+- **Cambio de forma del JSON**: rompe `jq '.[0]'`. **1** consumidor en el repo,
+  ninguno fuera del repo conocido.
+- **`vault graph` y `vault show`: NO MEDIDOS.** También proyectan datos. El SCOPE
+  lo dice como «no medido» y no como «correcto»: esa distinción es la que faltó
+  con `ledger watch`, y repetirla sería repetir el error.
+- **INC-DEBT-060 sigue `open`**, sin relación con este lote.
+
+### Bloqueos que persisten
+
+Clave KMS (único bloqueo de 2.5.3); las 79 filas de `__spine_import__`; los 23
+ciclos sin hecho; INC-DEBT-049 (F49); ruta forge de `release apply`; harness.
+
+**Primer paso de la sesión siguiente.** Dos caminos, y la elección es del
+operador: (a) medir `vault graph` y `vault show` para no dejar «no medido» donde
+los dos slices anteriores dejaron «correcto» sin comprobar; (b) atender los
+bloqueos del operador. Antes, `git fetch origin` y revalidar
+`HEAD`/`origin/main`/tag/workspace/bundle. **No bumpear por conveniencia**: si el
+workspace declara `2.5.3` y el último tag publicado es `v2.5.2`, la siguiente
+release **es 2.5.3**.
