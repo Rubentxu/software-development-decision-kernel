@@ -245,3 +245,44 @@ una pregunta que **no se ha medido** en esta sesión y se declara no medida.
 SCOPE-CONTRACT §2.4 ya excluía la deuda de procedencia de esas importaciones del
 alcance de `cl-cycle-enumeration`, y esta corrección confirma que la exclusión
 estaba bien puesta: no eran el mismo problema.
+
+## Addendum session-69e — los cuatro falsificadores están entregados; la deuda NO se cierra
+
+**F60, F61, F62** los entregó `cl-cycle-enumeration` (commit `113f84ba`).
+**F63** lo entregó `cl-ledger-declaration` (commit `ddde7bef`). Los cuatro están
+medidos y verde contra el almacenamiento real, no en sandbox.
+
+Que los cuatro estén verdes **no cierra esta incidencia**, y la razón está
+escrita para que no se lea al revés:
+
+| F | estado | dónde |
+|---|---|---|
+| F60 | entregado | `cycle list` devuelve las filas sembradas, no un subconjunto |
+| F61 | entregado | un ciclo `CLOSED` aparece; la enumeración no filtra por estado |
+| F62 | entregado | un ciclo sin eventos aparece; la enumeración lee `cycles`, no `events_v1` |
+| F63 | entregado | `ledger events` declara total, mostrados y si trunca, en texto y JSON |
+
+**Lo que sigue abierto y no lo arregla ninguno de los cuatro:**
+
+1. **Las 79 filas de `__spine_import__`.** No son ciclos de este proyecto —son
+   una fila real de `projects` con su propio workspace— y no las cubre ninguna
+   superficie. **Qué son, y si son alcanzables desde algún checkout, sigue SIN
+   MEDIR.** Es decisión del operador.
+2. **Los 23 ciclos sin hecho (17 `OPEN`).** Ahora se pueden **nombrar**, que era
+   el defecto, pero no se ha decidido qué se hace con ellos. SCOPE §2.2 prohíbe
+   limpiarlos o migrarlos.
+3. **`get_cycle` sigue devolviendo error** en las 2 filas con manifiesto
+   ilegible. Solo se listan marcadas. Es STOP 1 de `cl-cycle-enumeration` y
+   deliberadamente no se cambió el contrato de lectura de un registro durable.
+
+**Con la magnitud corregida** (§ addendum session-69d), la severidad sigue
+`high` porque el defecto de clase —la autoridad no puede presentar su propio
+estado— no se ha cerrado, pero **bajar a `medium` es ahora decisión del
+operador** y no se toma aquí.
+
+**Defecto hermano que este lote dejó escrito y NO arregló:**
+`ledger watch --max-events` trunca sin declarar lo mismo que `ledger events` hacía,
+en el mismo binario y a un comando de distancia. Está excluido por
+`SCOPE-CONTRACT §2.3` de `cl-ledger-declaration` —cada superficie con su
+SCOPE— y queda como slice propio. Que exista un consumidor más de esta familia
+es un hecho, no una hipótesis.

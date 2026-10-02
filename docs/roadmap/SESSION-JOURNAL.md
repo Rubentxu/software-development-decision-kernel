@@ -9515,3 +9515,106 @@ o el operador declara qué son las 79 filas de `__spine_import__`, o se abre SCO
 para ellas. Antes, `git fetch origin` y revalidar `HEAD`/`origin/main`/tag/
 workspace/bundle. **No bumpear por conveniencia**: si el workspace declara
 `2.5.3` y el último tag publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+---
+
+## session-69e — 2026-10-02
+
+**Baseline / HEAD.** `origin/main` = `90038756` al entrar. Rama `main`. Workspace
+**2.5.3 declarada, no publicada**; último tag remoto `v2.5.2`. Push **sin
+`--no-verify`**.
+
+**WorkItem.** `p-63676b11dc0ef88f/ledger-declaration` — el remedio del
+falsificador **F63** de INC-DEBT-060.
+
+**Commits.** `409ddac3` SCOPE + PRE-FLIGHT · `c5651a40` test(cli), los cuatro RED ·
+`ddde7bef` fix(cli) · `2fd82cf7` changelog · este.
+
+### Entregado
+
+`sddk ledger events` declara cuánto dejó fuera, y `--limit 0` significa «todos».
+**Con esto los cuatro falsificadores de INC-DEBT-060 (F60–F63) están
+entregados**; la deuda **sigue `open`** y la razón está escrita en su addendum.
+
+### El defecto, remedido y no heredado
+
+Contra copia byte-idéntica del ledger real —590 eventos, 114 streams—:
+`ledger events` imprimía **50**, nombraba **19 de los 114 ciclos**, no declaraba
+ningún total, **exit 0**. La ventana eran las secuencias **12 a 20**: las 50 más
+recientes, con las 540 anteriores invisibles.
+
+**El total ya estaba en mano y se tiraba.** `list_events` → `canonical_events`
+recorre todos los streams con `u32::MAX`; el truncamiento pasaba después en
+memoria. `total_events` es `all.len()` antes del `take`. **Storage no se toca**,
+que es por lo que STOP 1 no saltó, y el lote no cuesta ninguna consulta nueva.
+
+**`--limit 0` significaba CERO**, lista vacía y exit 0, mientras
+`ledger export --limit 0` significa todos y `ledger watch --max-events 0`
+también. Convención invertida dentro del mismo binario, y **no estaba en el
+enunciado de F63**.
+
+### El error propio del lote: la medición de impacto
+
+Se declaró «1 consumidor en `crates/`, 0 fuera» y **es falso por partida doble**:
+
+1. Dentro son **2**. Se buscó con un grep sobre una **lista de ficheros elegida a
+   mano** en vez de sobre el árbol; el segundo
+   (`aiw_s8_x07_real_binary_boundary.rs:292`) salió **por el perfil completo del
+   workspace**, después de romper el build.
+2. **`skills/` ni se miró**, y es superficie del bundle distribuido:
+   `skills/sddk-cycle-resume/SKILL.md:62` ejecuta este comando con
+   `--format json`. **Examinado y no es rotura** —no parsea el array, pide al
+   agente que reconstruya la cadena leyéndola, y una envoltura que dice «10 de
+   590» es más informativa—, pero pudo no serlo.
+
+**Quinta** vez en este ciclo que medir con el instrumento equivocado produce un
+número falso, y la quinta vez el número iba a un documento. Corrección escrita en
+§3 del SCOPE con el número erróneo delante.
+
+### Verificación
+
+```
+cargo test --workspace --no-fail-fast   EXIT=0  5378 passed / 0 failed / 24 ignored (277 binarios)
+cargo clippy --workspace --all-targets -- -D warnings   EXIT=0
+cargo fmt --check                        limpio
+ledger_events_declaration                4 passed
+aiw_s8_x07_real_binary_boundary           6 passed
+falsificador O1–O4                       PASS=7 FAIL=0
+test_changelog_coverage                  PASS=49 FAIL=0
+```
+
+Baseline 5374 → **+4**, exactamente los tests nuevos: ningún verde preexistente
+perdido. El falsificador contrasta `declared=590` contra `sql=590` —STOP 4— y
+verifica que el sha256 del ledger real sea idéntico antes y después —F6, la
+prueba de solo lectura y no su declaración—.
+
+### UAT
+
+`AT-UAT-013` toca `aiw_s8_x07_real_binary_boundary.rs`, que se actualizó por el
+cambio de forma; **pasa y su aserción de fondo no se movió**. Ninguna otra fila de
+`docs/roadmap/UAT-MATRIX.md` se ejecutó. **No se certifica nada** y no se toca
+`docs/roadmap/CERTIFICATIONS.md`.
+
+### Riesgos
+
+- **Cambio de forma del JSON**: rompe `jq '.[0]'`. Dos consumidores en el repo,
+  ambos actualizados declarando el cambio. Fuera del repo, sin medir.
+- **`ledger watch --max-events`** trunca sin declarar lo mismo. Mismo defecto,
+  superficie vecina, excluido por §2.3 del SCOPE. Slice propio.
+- **INC-DEBT-060 sigue `open`**: las 79 filas de `__spine_import__` y los 23
+  ciclos sin hecho son del operador; `get_cycle` sigue dando error en las 2 filas
+  ilegibles (STOP 1).
+
+### Bloqueos que persisten
+
+Clave KMS (único bloqueo de 2.5.3); las 79 filas de `__spine_import__`, incluida
+la pregunta **sin medir** de si son alcanzables; los 23 ciclos sin hecho;
+INC-DEBT-049 (F49); ruta forge de `release apply`; harness.
+
+**Primer paso de la sesión siguiente.** El candidato natural es
+`ledger watch --max-events`: mismo defecto de familia, superficie vecina, y ya
+escrito en el SCOPE como excluido a propósito, así que abrirlo es medirlo y
+decidir sin arrastrar el lote anterior. Antes, `git fetch origin` y revalidar
+`HEAD`/`origin/main`/tag/workspace/bundle. **No bumpear por conveniencia**: si el
+workspace declara `2.5.3` y el último tag publicado es `v2.5.2`, la siguiente
+release **es 2.5.3**.

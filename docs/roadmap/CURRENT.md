@@ -1,5 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69e, 2026-10-02): F63 cerrado. `sddk ledger events` ya no trunca en silencio y `--limit 0` ya no significa cero.** Con esto, **los cuatro falsificadores de INC-DEBT-060 (F60–F63) están entregados**; la deuda **sigue `open`** y la razón está escrita. `HEAD` = `2fd82cf7` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El defecto medido otra vez, no heredado:** sobre el ledger real de `p-63676b11dc0ef88f` en copia byte-idéntica —590 eventos, 114 streams—, `sddk ledger events` imprimía **50**, nombraba **19 de los 114 ciclos**, no declaraba ningún total y salía con **exit 0**. La ventana por defecto eran las secuencias **12 a 20**: las 50 más recientes, con las 540 anteriores invisibles y nada en pantalla que lo dijera.
+
+**El total ya estaba en mano y se tiraba, y por eso el lote no toca storage.** `Storage::list_events` (`lib.rs:974`) llama a `canonical_events`, que recorre **todos** los streams con `u32::MAX` y devuelve el vector entero; el truncamiento pasaba después, en memoria, con `.take(args.limit)`. `total_events` es `all.len()` **antes** del `take`: ninguna consulta nueva, ninguna API de storage, ninguna migración. STOP 1 no saltó porque no hizo falta.
+
+**Y `--limit 0` significaba CERO**, con lista vacía y exit 0, mientras `ledger export --limit 0` significa todos (`ledger.rs:442-445`) y `ledger watch --max-events 0` también. La convención invertida a un comando de distancia, en el mismo binario. No estaba en el enunciado de F63.
+
+**Cambio de forma del JSON, declarado.** El payload pasa de array a `{events, total_events, shown, truncated}`: no es un campo que faltara añadir, es que **un array no tiene dónde llevar un total**. Y **la medición de impacto previa fue falsa por partida doble**: son **dos** consumidores en el repo y no uno, porque se buscó con un grep sobre una lista de ficheros elegida a mano en vez de sobre el árbol, y el segundo salió **por el perfil completo del workspace**, es decir después de romper el build; y `skills/` ni se miró, siendo superficie del bundle distribuido. Examinado y **no es rotura** —`sddk-cycle-resume/SKILL.md:62` no parsea el array, pide al agente que reconstruya la cadena leyéndola, y una envoltura que dice «10 de 590» es más informativa—, pero pudo no serlo. Quinta vez en este ciclo que medir con el instrumento equivocado produce un número falso, y la quinta vez iba a un documento.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5378 passed / 0 failed** en 277 binarios (baseline 5374, **+4** exactamente los nuevos, ninguno verde preexistente perdido) · `cargo clippy --workspace --all-targets -- -D warnings` exit 0 · `cargo fmt --check` limpio · falsificador O1–O4 **PASS=7 FAIL=0** con `declared=590` contrastado contra `sql=590` y el sha256 del ledger real idéntico antes y después · `test_changelog_coverage` **PASS=49 FAIL=0** · `git diff --check` limpio.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-060 sigue `open`** aunque sus cuatro falsificadores estén verdes: las 79 filas de `__spine_import__` y los 23 ciclos sin hecho (17 `OPEN`) son decisión suya, y `get_cycle` sigue dando error en las 2 filas ilegibles (STOP 1).
+3. **`ledger watch --max-events`** trunca sin declarar lo mismo. Mismo defecto, superficie vecina, excluido por §2.3 del SCOPE. Slice propio, y es el siguiente candidato natural.
+4. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+
+---
+
 > ## ✅ EL ÁRBOL ESTÁ VERDE
 >
 > El aviso anterior de este fichero —«el árbol está ROJO a propósito, tres tests
