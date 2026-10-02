@@ -640,62 +640,15 @@ fn dist_verify_text(output: &serde_json::Value) -> String {
     )
 }
 
-/// De dónde salió la versión que se comprobó contra el tag.
+/// El plan lleva **el tipo del engine**, no una estructura propia.
 ///
-/// Se declara porque `Ok` no significa lo mismo en los dos casos: un proyecto
-/// Rust que concuerda con su tag pasó una comprobación, y un proyecto Go no
-/// tuvo nada contra qué comprobar. Un plan que no distinguiera los dos se
-/// leería como verificado cuando no lo fue.
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-struct VersionAuthorityOutput {
-    /// `cross_checked` o `tag_is_the_only_authority`.
-    kind: &'static str,
-    /// La versión contra la que se comparó el tag. `None` cuando el tag es la
-    /// única autoridad: no hubo nada que comparar.
-    version: Option<String>,
-    /// Manifiestos leídos que declararon esa versión.
-    declared_in: Vec<VersionCandidateOutput>,
-    /// Ecosistemas presentes que no declaran versión en ningún manifiesto.
-    /// Solo tiene sentido con `kind: tag_is_the_only_authority`.
-    undeclared_ecosystems: Vec<&'static str>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-struct VersionCandidateOutput {
-    ecosystem: &'static str,
-    path: String,
-    version: String,
-}
-
-fn version_authority_output(authority: &VersionAuthority) -> VersionAuthorityOutput {
-    match authority {
-        VersionAuthority::CrossChecked {
-            version,
-            candidates,
-        } => VersionAuthorityOutput {
-            kind: "cross_checked",
-            version: Some(version.clone()),
-            declared_in: candidates
-                .iter()
-                .map(|candidate| VersionCandidateOutput {
-                    ecosystem: candidate.ecosystem,
-                    path: candidate.path.display().to_string(),
-                    version: candidate.version.clone(),
-                })
-                .collect(),
-            undeclared_ecosystems: Vec::new(),
-        },
-        VersionAuthority::TagIsTheOnlyAuthority { ecosystems } => VersionAuthorityOutput {
-            kind: "tag_is_the_only_authority",
-            version: None,
-            declared_in: Vec::new(),
-            undeclared_ecosystems: ecosystems.clone(),
-        },
-    }
-}
-
+/// La primera versión de este output tenía su propia copia, con nombres de
+/// campo distintos (`declared_in` frente a `candidates`, y
+/// `undeclared_ecosystems` frente a `ecosystems`). Dos comandos serializaban el
+/// mismo hecho con dos esquemas: quien leyera `release plan` y `release apply`
+/// tenía que traducir entre ellos. Cuando `release apply` empezó a usar el
+/// tipo canónico, esa copia se volvió una divergencia con fecha, así que
+/// desaparece: el render de texto sabe leer los dos brazos del enum.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct ReleasePlanOutput {
@@ -705,7 +658,7 @@ struct ReleasePlanOutput {
     tag: String,
     head: Option<String>,
     steps: Vec<&'static str>,
-    version_authority: VersionAuthorityOutput,
+    version_authority: VersionAuthority,
 }
 
 fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandOutput {
@@ -817,7 +770,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
                 ],
                 ReleaseRoute::Forge => vec!["create_pr", "merge_pr", "create_release"],
             },
-            version_authority: version_authority_output(&authority),
+            version_authority: authority,
         })
     })();
     render_result(result, format, release_plan_text)
@@ -905,9 +858,13 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
                 let repo = args.repo.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("--repo is required when --route forge is selected")
                 })?;
-                // L1 lockstep: version tag must match workspace Cargo.toml version
-                ensure_version_lockstep(&root, &args.tag).map_err(|e| anyhow::anyhow!("{e}"))?;
-                let version_lockstep_passed = true;
+                // L1 lockstep: el tag tiene que coincidir con la versión
+                // declarada. Se pregunta por la variante que devuelve de
+                // dónde salió, y no por un literal: escribir `true` a mano
+                // informaba un lockstep comprobado en proyectos donde no se
+                // comprobó nada, porque no hay manifiesto contra el que
+                // comparar. Sigue fallando cerrado ante un desajuste.
+                let version_authority = version_authority_or_fail(&root, &args.tag)?;
                 let input = ReleasePlanInput {
                     project_id,
                     cycle_id: None,
@@ -945,7 +902,7 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
                             &mut gateway,
                             &plan,
                             &mut forge,
-                            version_lockstep_passed,
+                            version_authority,
                         )?)
                     },
                 )
@@ -996,6 +953,31 @@ fn authorize_release(policy: &PermissionPolicy, route: ReleaseRoute) -> anyhow::
     Ok(())
 }
 
+/// La autoridad de la versión que se comprueba contra el tag, o error si la
+/// regla del lockstep se incumple.
+///
+/// Existe como función, y no como línea dentro de un closure, porque las dos
+/// cosas que se le piden son distintas y no caben en un mismo tipo: el
+/// resultado de un release **registra** de dónde salió la versión, y esa
+/// llamada **falla cerrado** si el tag no cuadra.
+fn version_authority_or_fail(
+    root: &std::path::Path,
+    tag: &str,
+) -> anyhow::Result<VersionAuthority> {
+    ensure_version_lockstep_detailed(root, tag).map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+/// Si la regla del lockstep se cumplió. `true` **no** significa que la versión
+/// se comprobara contra algo: un proyecto que no declara versión en ningún
+/// manifiesto —Go, Bazel— no tiene nada que comparar, y esa es justamente la
+/// razón por la que no se le bloquea.
+///
+/// No es lo mismo que [`version_authority_or_fail`], y confundirlos es el
+/// defecto que este lote cierra: uno es una **puerta** y el otro un **registro**.
+fn version_lockstep_satisfied(root: &std::path::Path, tag: &str) -> bool {
+    ensure_version_lockstep(root, tag).is_ok()
+}
+
 fn local_release_preconditions(
     context: &RuntimeContext,
     project_id: &str,
@@ -1005,8 +987,10 @@ fn local_release_preconditions(
     current_tag: &str,
     environment: &CliEnvironment,
 ) -> anyhow::Result<LocalReleasePreconditions> {
-    // L1 lockstep: version tag must match workspace Cargo.toml version
-    let version_lockstep_passed = ensure_version_lockstep(&context.root, current_tag).is_ok();
+    // L1 lockstep: la puerta local. `true` significa que la regla no se incumplio,
+    // no que la version se comprobara: un proyecto sin version declarada no
+    // tiene contra que compararse y no se bloquea por ello.
+    let version_lockstep_passed = version_lockstep_satisfied(&context.root, current_tag);
     let cycle_id = cycle_id.ok_or_else(|| {
         anyhow::anyhow!("--cycle is required for --route local to verify local release evidence")
     })?;
@@ -1186,29 +1170,53 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
     );
     // La autoridad se imprime antes de los pasos: es la línea que decide si lo
     // que viene después fue comprobado o no tenía nada que comprobarlo.
-    text.push_str(&format!(
-        "version_authority: {}\n",
-        output.version_authority.kind
+    text.push_str(&version_authority_text(
+        &output.version_authority,
+        "version_declared_in: ",
+        "version_undeclared_in: ",
     ));
-    match &output.version_authority.version {
-        Some(version) => text.push_str(&format!("version: {version}\n")),
-        None => text.push_str(
-            "version: null\nnote: no manifest declares a version; the tag is the only authority and nothing was cross-checked\n",
-        ),
-    }
-    for candidate in &output.version_authority.declared_in {
-        text.push_str(&format!(
-            "version_declared_in: {} ({}) = {}\n",
-            candidate.path, candidate.ecosystem, candidate.version
-        ));
-    }
-    for ecosystem in &output.version_authority.undeclared_ecosystems {
-        text.push_str(&format!("version_undeclared_in: {ecosystem}\n"));
-    }
     text.push_str("steps:\n");
     for step in &output.steps {
         text.push_str(&format!("- {step}\n"));
     }
+    text
+}
+
+/// Un solo render para los dos comandos: `release plan` y `release apply`
+/// declaran la autoridad y sus líneas no pueden divergir, porque salen de la
+/// misma función sobre el mismo tipo.
+fn version_authority_text(
+    authority: &VersionAuthority,
+    declared: &str,
+    undeclared: &str,
+) -> String {
+    let mut text = match authority {
+        VersionAuthority::CrossChecked {
+            version,
+            candidates,
+        } => {
+            let mut text = format!("version_authority: cross_checked\nversion: {version}\n");
+            for candidate in candidates {
+                text.push_str(&format!(
+                    "{declared}{} ({}) = {}\n",
+                    candidate.path.display(),
+                    candidate.ecosystem,
+                    candidate.version
+                ));
+            }
+            text
+        }
+        VersionAuthority::TagIsTheOnlyAuthority { ecosystems } => {
+            let mut text = String::from(
+                "version_authority: tag_is_the_only_authority\nversion: null\nnote: no manifest declares a version; the tag is the only authority and nothing was cross-checked\n",
+            );
+            for ecosystem in ecosystems {
+                text.push_str(&format!("{undeclared}{ecosystem}\n"));
+            }
+            text
+        }
+    };
+    text.push('\n');
     text
 }
 
@@ -1218,6 +1226,14 @@ fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
         output.converged,
         output.applied.len()
     );
+    // El resultado de un release dice de dónde salió la versión, igual que el
+    // plan. Informar solo `converged` deja al lector sin forma de saber si la
+    // versión se comprobó contra algo o si no había nada que comprobar.
+    text.push_str(&version_authority_text(
+        &output.version_authority,
+        "version_declared_in: ",
+        "ecosystems: ",
+    ));
     for step in &output.applied {
         text.push_str(&format!("- {} {}\n", step.step, step.receipt_id));
     }
@@ -1894,10 +1910,7 @@ mod tests {
         );
     }
 
-    use super::{
-        ReleasePlanOutput, ReleaseRoute, VersionAuthority, release_plan_text,
-        version_authority_output,
-    };
+    use super::{ReleasePlanOutput, ReleaseRoute, VersionAuthority, release_plan_text};
     use sddk_engine::version_source::VersionCandidate;
 
     fn cross_checked() -> VersionAuthority {
@@ -1925,7 +1938,7 @@ mod tests {
             tag: "v1.0.0".to_string(),
             head: Some("abc1234".to_string()),
             steps: vec!["push_main"],
-            version_authority: version_authority_output(&authority),
+            version_authority: authority,
         }
     }
 
@@ -1972,15 +1985,15 @@ mod tests {
         assert_eq!(json["version_authority"]["kind"], "cross_checked");
         assert_eq!(json["version_authority"]["version"], "1.0.0");
         assert_eq!(
-            json["version_authority"]["declared_in"][0]["path"],
+            json["version_authority"]["candidates"][0]["path"],
             "Cargo.toml"
         );
         assert_eq!(
-            json["version_authority"]["declared_in"][0]["ecosystem"],
+            json["version_authority"]["candidates"][0]["ecosystem"],
             "rust"
         );
         assert_eq!(
-            json["version_authority"]["declared_in"][0]["version"],
+            json["version_authority"]["candidates"][0]["version"],
             "1.0.0"
         );
 
@@ -1993,10 +2006,7 @@ mod tests {
             tag_json["version_authority"]["version"].is_null(),
             "sin version declarada no hay version que reportar: {tag_json}"
         );
-        assert_eq!(
-            tag_json["version_authority"]["undeclared_ecosystems"][0],
-            "go"
-        );
+        assert_eq!(tag_json["version_authority"]["ecosystems"][0], "go");
     }
 
     /// Los campos existentes no se mueven: el campo nuevo es aditivo, y un
@@ -2010,5 +2020,124 @@ mod tests {
         assert_eq!(json["tag"], "v1.0.0");
         assert_eq!(json["head"], "abc1234");
         assert_eq!(json["steps"][0], "push_main");
+    }
+
+    /// Fixtures reales, no una estructura imitada. Los dos caminos que se
+    /// comprueban aqui (la autoridad que se registra y la puerta que decide)
+    /// ya habian pasado con proyectos de prueba que no son de Rust, y un doble
+    /// habria pasado igual: el punto es que el contrato se cumpla en un
+    /// directorio de verdad, no en una estructura que lo imita.
+    fn go_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("go.mod"),
+            "module example.com/f\n\ngo 1.22\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    fn rust_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    /// Un proyecto Rust registra que se comparo el tag contra su manifiesto.
+    #[test]
+    fn a_rust_project_reports_a_cross_checked_authority() {
+        let dir = rust_project();
+        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        assert!(
+            matches!(authority, VersionAuthority::CrossChecked { .. }),
+            "{authority:?}"
+        );
+        assert!(authority.was_cross_checked());
+    }
+
+    /// Un proyecto Go **no** puede presentarse como comprobado, y este test
+    /// existe porque el falsificador del lote encontro que nadie lo cubria:
+    /// la ruta forge no tiene test, y su call site podia informar un lockstep
+    /// que no se habia comprobado sin que la suite se enterara.
+    #[test]
+    fn a_go_project_reports_the_tag_as_the_only_authority() {
+        let dir = go_project();
+        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        assert_eq!(
+            authority,
+            VersionAuthority::TagIsTheOnlyAuthority {
+                ecosystems: vec!["go"]
+            }
+        );
+        assert!(
+            !authority.was_cross_checked(),
+            "sin manifiesto no hubo comparacion, y no puede decir lo contrario"
+        );
+    }
+
+    /// La puerta local **deja pasar** a un proyecto sin versión declarada. Este
+    /// es el criterio que el falsificador vio sobrevivir a una mutacion que
+    /// la convertia en `was_cross_checked()`: habria dejado a Go y a Bazel sin
+    /// poder publicar jamas, y ningun test de la suite lo notaba porque todos
+    /// sus fixtures de la ruta local son de Rust.
+    #[test]
+    fn the_local_gate_lets_a_go_project_through() {
+        let dir = go_project();
+        assert!(
+            super::version_lockstep_satisfied(dir.path(), "v1.0.0"),
+            "un proyecto sin version declarada no tiene contra que comparar, y eso no es una infraccion"
+        );
+    }
+
+    /// Y sigue cerrandose cuando la hay y no cuadra. La puerta tiene que
+    /// seguir siendo una puerta: `false` aqui aborta el release.
+    #[test]
+    fn the_local_gate_still_refuses_a_mismatch() {
+        let dir = rust_project();
+        assert!(super::version_lockstep_satisfied(dir.path(), "v1.0.0"));
+        assert!(
+            !super::version_lockstep_satisfied(dir.path(), "v9.9.9"),
+            "un tag que no coincide con la version declarada tiene que cerrar la puerta"
+        );
+        assert!(super::version_authority_or_fail(dir.path(), "v9.9.9").is_err());
+    }
+
+    /// El resultado de un apply declara la autoridad, igual que el plan. Este
+    /// render no lo cubria nadie tampoco: `release apply --route forge` no es
+    /// alcanzable sin red, y quitar el bloque entero no rompia nada.
+    #[test]
+    fn the_apply_outcome_text_declares_the_authority() {
+        let tag_only = super::release_outcome_text(&sddk_gateway::ReleaseOutcome {
+            applied: Vec::new(),
+            skipped: Vec::new(),
+            converged: true,
+            version_authority: VersionAuthority::TagIsTheOnlyAuthority {
+                ecosystems: vec!["go"],
+            },
+        });
+        assert!(
+            tag_only.contains("version_authority: tag_is_the_only_authority"),
+            "{tag_only}"
+        );
+        assert!(tag_only.contains("nothing was cross-checked"), "{tag_only}");
+
+        let checked = super::release_outcome_text(&sddk_gateway::ReleaseOutcome {
+            applied: Vec::new(),
+            skipped: Vec::new(),
+            converged: true,
+            version_authority: VersionAuthority::CrossChecked {
+                version: "1.0.0".into(),
+                candidates: Vec::new(),
+            },
+        });
+        assert!(
+            checked.contains("version_authority: cross_checked"),
+            "{checked}"
+        );
+        assert!(checked.contains("version: 1.0.0"), "{checked}");
     }
 }

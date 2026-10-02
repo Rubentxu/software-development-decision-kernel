@@ -42,6 +42,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use thiserror::Error;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +268,13 @@ pub const REGISTRY: &[VersionSourceSpec] = &[
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Una fuente detectada, con la versión que declaró.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize` con `snake_case` para que el JSON de este tipo use **la misma
+/// grafía** que ya emite `release plan`. Es el punto de evitar la segunda
+/// representación del mismo concepto: si el gateway serializara su propia
+/// estructura, ambas podrían divergir sin que nada lo notara.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub struct VersionCandidate {
     /// Ecosistema al que pertenece la entrada del registro.
     pub ecosystem: &'static str,
@@ -278,7 +285,20 @@ pub struct VersionCandidate {
 }
 
 /// De dónde sale la versión, y con qué fuerza.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Es el **único** tipo que expresa este concepto: lo usa el engine para
+/// resolver, la CLI para declarar el plan y el gateway para registrar el
+/// resultado de un release. Que lo comparta es deliberado —tres estructuras
+/// paralelas para el mismo hecho son la forma que este repo llama copia, y
+/// las copias divergen.
+///
+/// `tag = "kind"` y no el externo por defecto: con el externo, serde emite
+/// `{"tag_is_the_only_authority": {...}}` y la clave sería el propio nombre de
+/// la variante, luego el mismo hecho saldría con **dos formas distintas** en
+/// `release plan` y en `release apply`. Internamente etiquetado, la forma es
+/// `{"kind": "tag_is_the_only_authority", ...}` en los dos. Un test lo fija.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VersionAuthority {
     /// Hay una versión declarada contra la que comprobar el tag.
     CrossChecked {

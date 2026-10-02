@@ -4527,7 +4527,7 @@ fn cli_release_plan_admits_a_go_project_has_nothing_to_cross_check() {
         "sin version declarada no hay version que reportar: {plan_json}"
     );
     assert_eq!(
-        plan_json["version_authority"]["undeclared_ecosystems"][0], "go",
+        plan_json["version_authority"]["ecosystems"][0], "go",
         "{plan_json}"
     );
 }
@@ -4571,7 +4571,7 @@ fn cli_release_plan_declares_a_rust_project_was_cross_checked() {
     let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     assert_eq!(plan_json["version_authority"]["kind"], "cross_checked");
     assert_eq!(plan_json["version_authority"]["version"], "1.0.0");
-    let declared_in = &plan_json["version_authority"]["declared_in"][0];
+    let declared_in = &plan_json["version_authority"]["candidates"][0];
     assert_eq!(declared_in["ecosystem"], "rust");
     assert_eq!(declared_in["version"], "1.0.0");
     assert!(

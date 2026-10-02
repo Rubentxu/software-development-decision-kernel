@@ -7,6 +7,7 @@ use thiserror::Error;
 use crate::forge::{Forge, ForgeError, PrRequest, ReleaseRequest};
 use crate::gateway::{CapabilityGateway, CapabilityPlanInput, GatewayError};
 use crate::git::{GitError, GitExecutor};
+use sddk_engine::version_source::VersionAuthority;
 use sddk_storage::{CapabilityReceipt, CapabilityStatus};
 
 /// Inputs for one release across a forge.
@@ -70,9 +71,16 @@ pub struct ReleaseOutcome {
     pub skipped: Vec<String>,
     /// Whether the release converged to the target state.
     pub converged: bool,
-    /// Whether the version lockstep check passed before planning was allowed.
-    #[serde(default)]
-    pub version_lockstep_passed: bool,
+    /// Where the version that was checked against the tag came from.
+    ///
+    /// This is a *record of a fact*, not a verdict: `TagIsTheOnlyAuthority`
+    /// means the project declares no version anywhere, so the tag had nothing
+    /// to be checked against. It is kept distinct from
+    /// `LocalReleasePreconditions::version_lockstep_passed`, which is a
+    /// *gate*: there, `false` aborts the release. A single boolean cannot
+    /// carry both meanings, and reading one as the other is how a release
+    /// gets reported as verified when nothing was verified.
+    pub version_authority: VersionAuthority,
 }
 
 /// Receipt of one executed release step.
@@ -140,7 +148,17 @@ pub struct LocalReleasePreconditions {
     pub verification_passed: bool,
     /// The configured local UAT gate is present and passing.
     pub uat_passed: bool,
-    /// Whether the version lockstep check passed before release was allowed.
+    /// Whether the version lockstep rule was **not violated** before release
+    /// was allowed. This is a gate: `false` aborts with
+    /// `ReleaseError::Precondition`, and the value reaches durable storage as
+    /// the string in `ReleaseFailureEvidence::failed_precondition`, which is
+    /// why the field keeps its name.
+    ///
+    /// `true` therefore does **not** mean the version was cross-checked — a
+    /// project that declares no version (Go, Bazel) has nothing to check, and
+    /// is not blocked for it. For the record of *where* the version came from,
+    /// see `ReleaseOutcome::version_authority`, which is a different fact and
+    /// deliberately a different type.
     pub version_lockstep_passed: bool,
     /// MANIFEST exact-set gate passed before push/tag.
     #[serde(default)]
@@ -392,13 +410,17 @@ pub fn vault_release_preconditions(input: &VaultClosureInput) -> Result<(), Rele
 /// already-merged PR or already-published release is skipped without duplicating
 /// effects, and the provider state is re-checked before each step.
 ///
-/// The `version_lockstep_passed` parameter records whether the caller verified
-/// the release tag matches the workspace Cargo.toml version before planning.
+/// The `version_authority` parameter records where the version that was
+/// checked against the tag came from. It is **not** validated here: this
+/// function applies a plan, and turning the record into a second gate would be
+/// a new blocking rule with its own contract. The lockstep itself is enforced
+/// by the caller, through `ensure_version_lockstep_detailed`, which fails
+/// closed on a mismatch or on a version it cannot read.
 pub fn apply_release(
     gateway: &mut CapabilityGateway,
     plan: &ReleasePlan,
     forge: &mut dyn Forge,
-    version_lockstep_passed: bool,
+    version_authority: VersionAuthority,
 ) -> Result<ReleaseOutcome, ReleaseError> {
     let mut applied = Vec::new();
     let mut skipped = Vec::new();
@@ -499,7 +521,7 @@ pub fn apply_release(
         applied,
         skipped,
         converged,
-        version_lockstep_passed,
+        version_authority,
     })
 }
 

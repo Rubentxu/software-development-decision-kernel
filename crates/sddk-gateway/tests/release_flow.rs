@@ -1,5 +1,6 @@
 //! Release flow integration tests: plan, idempotent apply, reconciliation.
 
+use sddk_engine::version_source::VersionAuthority;
 use sddk_gateway::{
     CapabilityGateway, CapabilityPlanInput, CapabilityPolicy, Forge, GitExecutor,
     LocalReleaseInput, LocalReleasePreconditions, MockForge, ReleasePlanInput, apply_local_release,
@@ -66,6 +67,16 @@ fn local_release_input(tag: &str) -> LocalReleaseInput {
     }
 }
 
+/// La autoridad que estos tests declaran. Antes se pasaba `false`, y el valor
+/// era arbitrario porque nadie leia el campo: se llevaba a `ReleaseOutcome` y
+/// de ahi a ninguna parte. Ahora es un hecho comprobable, y un test lo fija.
+fn checked_version() -> VersionAuthority {
+    VersionAuthority::CrossChecked {
+        version: "1.0.0".to_string(),
+        candidates: Vec::new(),
+    }
+}
+
 fn local_git_repo() -> (tempfile::TempDir, GitExecutor) {
     let directory = tempfile::tempdir().unwrap();
     let origin = directory.path().join("origin.git");
@@ -106,7 +117,7 @@ fn full_release_creates_pr_merges_and_publishes() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps.len(), 3);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, false).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
     assert_eq!(outcome.applied.len(), 3);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -226,13 +237,13 @@ fn interrupted_release_converges_without_duplicating_effects() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps, vec![sddk_gateway::ReleaseStep::MergePr]);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, false).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
     assert_eq!(outcome.applied.len(), 1);
     assert!(outcome.converged);
     assert_eq!(outcome.skipped.len(), 0);
     assert!(forge.is_merged(3));
 
-    let second = apply_release(&mut gateway, &plan, &mut forge, false).unwrap();
+    let second = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
     assert!(second.applied.is_empty());
     assert_eq!(second.skipped.len(), 1);
     assert!(second.converged);
@@ -256,7 +267,7 @@ fn release_without_open_pr_creates_and_merges() {
             .is_none()
     );
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, false).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
     assert_eq!(outcome.applied.len(), 2);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -371,5 +382,121 @@ fn reconcile_finalizes_started_local_receipts_after_remote_effects() {
             .unwrap()
             .status,
         CapabilityStatus::Succeeded
+    );
+}
+
+/// El resultado de un release dice **de dónde** salió la versión, no que el
+/// lockstep pasó. Antes era un `bool` que el llamador fijaba a mano, y sobre
+/// un proyecto sin versión declarada informaba una comprobación que no había
+/// ocurrido.
+#[test]
+fn release_outcome_records_where_the_version_came_from() {
+    let (_dir, mut gateway) = gateway();
+    let mut forge = MockForge::new();
+    let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
+
+    let checked = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        VersionAuthority::CrossChecked {
+            version: "1.0.0".into(),
+            candidates: Vec::new(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        checked.version_authority,
+        VersionAuthority::CrossChecked { .. }
+    ));
+
+    // Un proyecto Go o Bazel no declara versión en ningún manifiesto: el tag
+    // no tenía contra qué contrastarse, y el resultado tiene que decirlo en
+    // vez de presentarse como comprobado.
+    let tag_only = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        VersionAuthority::TagIsTheOnlyAuthority {
+            ecosystems: vec!["go"],
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        tag_only.version_authority,
+        VersionAuthority::TagIsTheOnlyAuthority {
+            ecosystems: vec!["go"]
+        }
+    );
+    assert!(
+        !checked.version_authority.was_cross_checked()
+            || !matches!(
+                tag_only.version_authority,
+                VersionAuthority::CrossChecked { .. }
+            ),
+        "un proyecto sin version declarada no puede registrarse como comprobado"
+    );
+}
+
+/// El nombre `version_lockstep_passed` ya no aparece en el resultado: lo que
+/// queda es un campo con nombre propio y tipo propio. Es la homonimia del
+/// lote 2 (§2 del SCOPE) resuelta por construcción y no por una nota.
+#[test]
+fn the_outcome_has_no_boolean_named_after_the_lockstep() {
+    let json = serde_json::to_value(sddk_gateway::ReleaseOutcome {
+        applied: Vec::new(),
+        skipped: Vec::new(),
+        converged: true,
+        version_authority: VersionAuthority::TagIsTheOnlyAuthority {
+            ecosystems: vec!["go"],
+        },
+    })
+    .unwrap();
+    assert!(
+        json.get("version_lockstep_passed").is_none(),
+        "el resultado no puede afirmar un lockstep que no se comprobó: {json}"
+    );
+    assert_eq!(
+        json["version_authority"]["kind"], "tag_is_the_only_authority",
+        "{json}"
+    );
+    assert_eq!(json["version_authority"]["ecosystems"][0], "go");
+}
+
+/// Test **estructural** del doc de `apply_release`. Un doc no se ejecuta, así
+/// que ningún test de comportamiento lo vigila: el único que puede es uno que
+/// lee el fuente. El doc nombraba `Cargo.toml`, que ADR-0153 dejó de ser
+/// cierto, y volver a nombrarlo sería la tercera copia de una suposición que
+/// ya no existe.
+#[test]
+fn the_apply_release_doc_does_not_name_a_manifest() {
+    let source = include_str!("../src/release.rs");
+    let start = source
+        .find("pub fn apply_release(")
+        .expect("apply_release no encontrado");
+    // El doc comment es lo que precede a la firma.
+    // El doc comment es el bloque CONTIGUO de lineas `///` que precede a la
+    // firma. Tomar solo la ultima dejaria una linea suelta y el test pasaria
+    // sobre un doc que ya miente: el fallo inicial del propio test.
+    let before = &source[..start];
+    let mut lines: Vec<&str> = Vec::new();
+    for line in before.lines().rev() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("///") {
+            lines.push(trimmed);
+        } else if trimmed.is_empty() || trimmed.starts_with("#[") {
+            continue;
+        } else {
+            break;
+        }
+    }
+    let doc = lines.join("\n");
+    assert!(
+        !doc.contains("Cargo.toml"),
+        "el doc de apply_release vuelve a nombrarlo: {doc}"
+    );
+    assert!(
+        doc.contains("version_authority"),
+        "el doc tiene que nombrar el parametro real: {doc}"
     );
 }
