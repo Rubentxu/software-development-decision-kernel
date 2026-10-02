@@ -42,7 +42,8 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("sddk-exp-decl-{}-{}", name, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sddk-exp-decl-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Sandbox { dir }
@@ -93,7 +94,9 @@ fn run(dir: &Path, args: &[&str]) -> (i32, String) {
 fn adopt(dir: &Path) {
     let (code, out) = run(
         dir,
-        &["adopt", "apply", "--root", ".", "--scope", ".", "--remote", REMOTE],
+        &[
+            "adopt", "apply", "--root", ".", "--scope", ".", "--remote", REMOTE,
+        ],
     );
     assert_eq!(code, 0, "adopt apply must succeed in the sandbox: {out}");
 }
@@ -102,7 +105,9 @@ fn adopt(dir: &Path) {
 fn cycle_start(dir: &Path, name: &str) -> String {
     let (code, out) = run(
         dir,
-        &["cycle", "start", "--root", ".", "--scope", ".", "--name", name, "--remote", REMOTE],
+        &[
+            "cycle", "start", "--root", ".", "--scope", ".", "--name", name, "--remote", REMOTE,
+        ],
     );
     assert_eq!(code, 0, "cycle start must succeed: {out}");
     out.lines()
@@ -134,8 +139,7 @@ fn real_total(dir: &Path) -> u64 {
 
 fn export(dir: &Path, out_file: &str, extra: &[&str]) -> (i32, String) {
     let mut args = vec![
-        "ledger", "export", "--root", ".", "--scope", ".", "--remote", REMOTE, "--output",
-        out_file,
+        "ledger", "export", "--root", ".", "--scope", ".", "--remote", REMOTE, "--output", out_file,
     ];
     args.extend_from_slice(extra);
     run(dir, &args)
@@ -155,7 +159,14 @@ fn written_lines(path: &str) -> Vec<String> {
 /// measures the path instead of the sentence. Already learned once this
 /// session — the guard, not the product.
 fn declaration_phrase(out: &str) -> String {
-    out.trim().lines().last().unwrap_or("").split(" to ").next().unwrap_or("").to_string()
+    out.trim()
+        .lines()
+        .last()
+        .unwrap_or("")
+        .split(" to ")
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 /// RED today: with the cap above the total nothing is left out — which is
@@ -247,7 +258,10 @@ fn r3_the_three_numbers_close() {
 
     let out = s.out("export.jsonl");
     let (code, stdout) = export(s.path(), &out, &["--limit", "2", "--format", "json"]);
-    assert_eq!(code, 0, "`ledger export --format json` must exit 0: {stdout}");
+    assert_eq!(
+        code, 0,
+        "`ledger export --format json` must exit 0: {stdout}"
+    );
 
     let v: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("the summary must be valid JSON ({e}): {stdout}"));
@@ -295,13 +309,20 @@ fn r4_the_total_belongs_to_the_queried_cycle() {
     let events = listing["events"].as_array().expect("events array");
     let total = listing["total_events"].as_u64().expect("total_events");
     let count_of = |id: &str| -> u64 {
-        events.iter().filter(|e| e["cycle_id"].as_str() == Some(id)).count() as u64
+        events
+            .iter()
+            .filter(|e| e["cycle_id"].as_str() == Some(id))
+            .count() as u64
     };
     // The cycle with the fewest events, so `total != that` can actually fail.
-    let smallest = [(a.as_str(), count_of(&a)), (b.as_str(), count_of(&b)), (c.as_str(), count_of(&c))]
-        .into_iter()
-        .min_by_key(|(_, n)| *n)
-        .expect("at least one cycle with events");
+    let smallest = [
+        (a.as_str(), count_of(&a)),
+        (b.as_str(), count_of(&b)),
+        (c.as_str(), count_of(&c)),
+    ]
+    .into_iter()
+    .min_by_key(|(_, n)| *n)
+    .expect("at least one cycle with events");
     let (small_id, small) = smallest;
 
     assert!(
@@ -328,6 +349,52 @@ fn r4_the_total_belongs_to_the_queried_cycle() {
     );
 }
 
+/// **Structural, not behavioural** — and it is the only guard for O3.
+///
+/// O3 says the form in force must be `ExportOutput`, the struct that already
+/// derived `Serialize`. R2 checks the *payload* of that JSON, and it cannot
+/// tell `ExportOutput` from a hand-written `json!` beside it: both produce the
+/// same bytes, so both make R1–R5 pass. The defect this cycle closes started
+/// exactly there — a struct that declared a shape the command never used — and
+/// the way back to it is writing `json!` and leaving the struct dead again.
+///
+/// A test that reads the source is the only kind that can see that, and it is
+/// the fourth structural guard of this series. It is deliberately narrow: it
+/// looks at the body of `run_ledger_export`, because a `json!` in another
+/// function of the same file is not a second serializer of *this* summary —
+/// the sixth time in this session that looking at the whole file found another
+/// command's code.
+#[test]
+fn r6_the_json_summary_comes_from_export_output_not_a_parallel_literal() {
+    let src = include_str!("../src/ledger.rs");
+    let body = src
+        .split("fn run_ledger_export")
+        .nth(1)
+        .expect("run_ledger_export must exist")
+        .split("\nfn ")
+        .next()
+        .expect("its body must be delimited");
+
+    assert!(
+        body.contains("ExportOutput"),
+        "the summary of `ledger export` must be an `ExportOutput`; the function \
+         does not even name it, so the JSON is coming from somewhere else: {body}"
+    );
+    assert!(
+        body.contains("to_string(&output)"),
+        "the JSON must be produced by serializing the `ExportOutput` itself, not \
+         by a hand-written literal. A `json!` beside the struct would leave the \
+         struct dead again, which is the defect this cycle closes. Got: {body}"
+    );
+    assert!(
+        !body.contains("json!"),
+        "there is no second, hand-written form of this summary. Two renderers \
+         that spell their own numbers are two rules about the same fact and can \
+         drift; that is the whole reason the struct is serialized directly. \
+         Got: {body}"
+    );
+}
+
 /// **Characterisation, not RED** — declared as such, because calling it RED
 /// would be a lie: the payload is correct today and must stay correct.
 ///
@@ -348,7 +415,11 @@ fn r5_the_payload_stays_jsonl_one_event_per_line_ascending() {
     assert_eq!(code, 0, "`ledger export --limit 0` must exit 0: {stdout}");
 
     let lines = written_lines(&out);
-    assert!(lines.len() >= 3, "the fixture must produce several events: {}", lines.len());
+    assert!(
+        lines.len() >= 3,
+        "the fixture must produce several events: {}",
+        lines.len()
+    );
     for line in &lines {
         let v: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("every line must be a JSON object ({e}): {line}"));
@@ -359,7 +430,11 @@ fn r5_the_payload_stays_jsonl_one_event_per_line_ascending() {
     }
     let seqs: Vec<i64> = lines
         .iter()
-        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["sequence"].as_i64().unwrap())
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).unwrap()["sequence"]
+                .as_i64()
+                .unwrap()
+        })
         .collect();
     let mut sorted = seqs.clone();
     sorted.sort_unstable();

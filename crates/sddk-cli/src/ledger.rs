@@ -102,6 +102,16 @@ pub(crate) struct LedgerExportArgs {
     /// Output file path. Required — JSONL files are typically saved to disk.
     #[arg(long)]
     pub(crate) output: std::path::PathBuf,
+    /// Format of the summary printed after the export. The exported FILE is
+    /// JSONL either way; this is the shape of what the command says about it.
+    ///
+    /// It exists because a file that looks complete is the artifact another
+    /// process consumes, and without a machine-readable summary there is no
+    /// way for that process to know it is not — `ExportOutput` already
+    /// derived `Serialize` and was never serialized, so the declared form was
+    /// not the one in force. That is INC-DEBT-062.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -495,36 +505,56 @@ fn run_ledger_export(args: LedgerExportArgs, environment: &CliEnvironment) -> Co
         } else {
             args.limit
         };
+        // Taken BEFORE the `take`, and that is the whole fix. `all_events` is
+        // already the whole query — the cycle/frame filter was applied by
+        // choosing which listing to call — so the length of this vector is the
+        // number of events that existed, and the number that will be written is
+        // what the limit leaves of it.
+        //
+        // This is why no filter function is extracted here, unlike in
+        // `ledger watch`: there the filter runs inside the loop over a bounded
+        // page, so it has to be shared between the loop and the count. Here
+        // there is one vector and one filter, already applied. Copying watch's
+        // remedy would add a second rule that cannot diverge because there is
+        // nothing to diverge from.
+        let total_events = all_events.len();
         let events: Vec<_> = all_events.into_iter().take(limit).collect();
 
         // Write JSONL — one JSON object per line.
         let file = std::fs::File::create(&args.output)
             .with_context(|| format!("creating output file {}", args.output.display()))?;
         let mut buf = std::io::BufWriter::new(file);
-        let mut count = 0;
+        let mut written = 0;
         for event in &events {
             let json = serde_json::to_string(event).context("serializing LedgerEvent to JSON")?;
             use std::io::Write;
             writeln!(buf, "{json}").context("writing JSON line")?;
-            count += 1;
+            written += 1;
         }
         drop(buf); // flushes on drop
 
         Ok(ExportOutput {
             path: args.output.clone(),
-            count,
+            written,
+            total_events,
         })
     })();
 
     match result {
-        Ok(output) => CommandOutput {
-            status: 0,
-            stdout: format!(
-                "exported {} events to {}\n",
-                output.count,
-                output.path.display()
-            ),
-            stderr: String::new(),
+        Ok(output) => match args.format {
+            OutputFormat::Json => match serde_json::to_string(&output) {
+                Ok(json) => CommandOutput {
+                    status: 0,
+                    stdout: format!("{json}\n"),
+                    stderr: String::new(),
+                },
+                Err(error) => failure_envelope(&anyhow::Error::from(error)),
+            },
+            OutputFormat::Text => CommandOutput {
+                status: 0,
+                stdout: format!("{}\n", export_text(&output)),
+                stderr: String::new(),
+            },
         },
         Err(e) => CommandOutput {
             status: 1,
@@ -534,11 +564,61 @@ fn run_ledger_export(args: LedgerExportArgs, environment: &CliEnvironment) -> Co
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
+/// What `ledger export` says about the file it just wrote.
+///
+/// `written` is what landed in the file; `total_events` is how many events the
+/// ledger held for this query, taken from the vector that already was the whole
+/// query, before the limit. `pending` is **derived** — never a third number
+/// written by hand — and `saturating_sub` so a deletion between the count and
+/// the write cannot underflow a command that just produced a file.
+///
+/// The JSON renderer serializes this same struct, so the two shapes cannot
+/// disagree. Writing the numbers separately in each renderer would make the
+/// text and the machine-readable summary two rules about the same fact, free
+/// to drift: which is the defect this change exists to close, one level down.
 struct ExportOutput {
     path: std::path::PathBuf,
-    count: usize,
+    written: usize,
+    total_events: usize,
+}
+
+impl ExportOutput {
+    fn pending(&self) -> usize {
+        self.total_events.saturating_sub(self.written)
+    }
+}
+
+/// Hand-written because `pending` must be **derived at serialization time**.
+///
+/// The obvious alternatives both fail, and they fail in the two ways this
+/// series of cycles keeps measuring. `#[derive(Serialize)]` emits the FIELDS,
+/// and a method is not a field, so the derived number silently never reaches
+/// the JSON — which is what happened the first time. Adding `pending` as a
+/// field fixes that and reintroduces the other: a third stored number that a
+/// later edit can set to something the other two contradict, with the derive
+/// unable to notice. Computing it here means there is exactly one place where
+/// the number exists, and it is a place that cannot be edited without deleting
+/// it.
+impl Serialize for ExportOutput {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ExportOutput", 4)?;
+        state.serialize_field("path", &self.path)?;
+        state.serialize_field("written", &self.written)?;
+        state.serialize_field("total_events", &self.total_events)?;
+        state.serialize_field("pending", &self.pending())?;
+        state.end()
+    }
+}
+
+fn export_text(output: &ExportOutput) -> String {
+    format!(
+        "exported {} of {} events ({} not written) to {}",
+        output.written,
+        output.total_events,
+        output.pending(),
+        output.path.display()
+    )
 }
 
 #[derive(Serialize)]
@@ -905,6 +985,10 @@ mod tests {
             frame: None,
             limit: 10,
             output: tmp.clone(),
+            // Added by INC-DEBT-062: the summary's shape. Constructing the
+            // args with the same value the CLI default supplies, so this test
+            // keeps testing what it tested -- that the args can be built.
+            format: OutputFormat::Text,
         };
         // RuntimeContext::open will fail without a real project, but args construction is tested.
         let _ = std::fs::remove_file(tmp);
