@@ -9,20 +9,47 @@
 
 ## §0 — La medición que abre el lote
 
+> ### ⚠️ Enmienda session-69d — §0 estaba mal y la tabla no se conserva como cierta
+>
+> La tabla de abajo es lo que se midió **al abrir** el lote, y su línea de
+> «filas en la tabla `cycles`: 179» es la que el falsificador de R6 desmintió.
+> Las dos primeras filas están mal; las demás son correctas pero están contadas
+> sobre una población equivocada. Se conservan porque son la evidencia del
+> punto de partida, y esta enmienda va delante para que no se lean sin ella.
+>
+> **179 no es el número de ciclos de este proyecto.** La tabla `cycles` de ese
+> ledger contiene dos poblaciones:
+>
+> | `project_id` | filas | ids | `manifest_json` | eventos |
+> |---|---|---|---|---|
+> | `p-63676b11dc0ef88f` | **100** | `<project_id>/<slug>` | 98 legibles, 2 ilegibles | 77 con ≥1 evento, **23 sin ninguno** |
+> | `__spine_import__` | **79** | slug desnudo | las 79 con `{}` | **0** |
+>
+> `__spine_import__` es una **fila real de la tabla `projects`** del mismo ledger
+> (`display_name: "Spine Import Project"`, workspace `spine-import`), no un
+> marcador. Medido en `04-spine-import.py`, read-only.
+>
+> **Consecuencia sobre este SCOPE:** las 81 filas ilegibles que D2 daba por
+> «de este proyecto» son 2 de este proyecto + 79 de `__spine_import__`. D2
+> **sigue siendo un defecto real** —`get_cycle` devuelve error, no registro, y
+> hay 2 filas de este proyecto que no se pueden leer— pero es **79 veces menor**
+> de lo que §0 afirmaba. §2.2 y STOP 1 no cambian: siguen sin tocarse esas filas.
+
 Todo lo que sigue sale de leer el almacenamiento real de
 `p-63676b11dc0ef88f` y ejecutar las superficies que el producto ofrece.
 
-| Medición | Valor |
+| Medición | Valor (al abrir el lote) |
 |---|---|
-| Filas en la tabla `cycles` | **179** |
-| Ciclos que nombra alguna superficie del producto | **82** |
-| Ciclos que no nombra ninguna | **97** (91 con `status: OPEN`) |
-| Ciclos cuyo `manifest_json` **no deserializa** en `CycleManifest` | **81** |
-| — de ellos, con `manifest_json = {}` | 79 |
-| — con `manifest_json = {"reason", "notes"}` | 2 (`CLOSED`, docs-only) |
+| Filas en la tabla `cycles` | ~~**179**~~ → **100** de este proyecto (+ 79 de `__spine_import__`) |
+| Ciclos que nombra alguna superficie del producto | ~~**82**~~ → **77** |
+| Ciclos que no nombra ninguna | ~~**97**~~ → **23** (**17** con `status: OPEN`) |
+| Ciclos cuyo `manifest_json` **no deserializa** en `CycleManifest` | ~~**81**~~ → **2** de este proyecto |
+| — de ellos, con `manifest_json = {}` | ~~79~~ → 0 (las 79 con `{}` son de `__spine_import__`) |
+| — con `manifest_json = {"reason", "notes"}` | 2 (`CLOSED`, docs-only, 2026-09-09) |
 | Superficie de enumeración | **no existe** |
 
-Los 81 de D2 y los 97 de D1 son **defectos distintos y ambos son de lectura**:
+Los ~~81~~ **2** de D2 y los ~~97~~ **23** de D1 (ver enmienda arriba) son
+**defectos distintos y ambos son de lectura**:
 
 - **D1, enumeración.** No hay `list_cycles` en `crates/sddk-storage/src/lib.rs`
   (0 coincidencias) ni `sddk cycle list` en la CLI. Solo `get_cycle(cycle_id)`, que
@@ -32,8 +59,9 @@ Los 81 de D2 y los 97 de D1 son **defectos distintos y ambos son de lectura**:
   (`cycle_from_row`, `lib.rs:1893`), y `CycleManifest` exige once campos sin
   `#[serde(default)]` (`crates/sddk-domain/src/cycle.rs:182-210`). Un `{}` falla
   con *missing field `schema_version`*, y `json_from_sql_error` (`lib.rs:1994`) lo
-  convierte en `FromSqlConversionFailure`, que `?` propaga. **Para esas 81 filas la
-  API de storage devuelve un error, no un registro.**
+  convierte en `FromSqlConversionFailure`, que `?` propaga. **Para esas filas la
+  API de storage devuelve un error, no un registro** — medido: **2 filas de este
+  proyecto**, más 79 de `__spine_import__` que §2.2 también prohíbe tocar.
 
 D2 es más grave que D1 y no estaba escrito en INC-DEBT-060: no es que no se puedan
 nombrar, es que **no se pueden leer**. Es la razón por la que el lote 1 empieza
@@ -66,8 +94,10 @@ amplia en caliente.
 
 1. **NO** se cambia el contrato de `get_cycle`. Sigue devolviendo error ante un
    manifiesto ilegible: eso es una decisión de otro SCOPE (§4, STOP 1).
-2. **NO** se limpia, migra ni borra ninguna de las 179 filas. Qué son las 81 es
+2. **NO** se limpia, migra ni borra ninguna fila de `cycles`: ni las 100 de este
+   proyecto ni las 79 de `__spine_import__`. Qué son las ilegibles es
    **decisión del operador** y está bloqueada desde la apertura de INC-DEBT-060.
+   (Redactado con las cifras originales, 179 y 81; véase la enmienda de §0.)
 3. **NO** se toca `sddk ledger events` ni su truncamiento por defecto (F63). Es
    otra superficie y otro defecto; meterlo aquí haría el lote más grande y sus
    falsificadores menos claros. Queda como slice propio.
@@ -110,7 +140,7 @@ de ese comportamiento sería una deriva y no una decisión.
 2. **Si algún test que ya estaba verde hay que reescribirlo para que pase,** se
    para. El criterio es que la prueba era verde y significaba algo.
 3. **Si la enumeración necesita una migración de esquema,** se para: eso tocaría
-   las 179 filas y §2.2 lo prohíbe.
+   las filas de `cycles` y §2.2 lo prohíbe.
 4. **Si R4 no cae,** se para. Si `get_cycle` devolviera un registro para `{}`,
    la premisa de D2 es falsa y este SCOPE está construido sobre una suposición
    falsa: hay que volver a medir antes de escribir una línea.
@@ -120,7 +150,8 @@ de ese comportamiento sería una deriva y no una decisión.
 ## §5 — Riesgo
 
 1. **Volumen.** El storage tiene **333** directorios de proyecto. El más grande
-   medido tiene 179 ciclos. `list_cycles` sin paginación devuelve 179 filas hoy, y
+   medido tiene 100 ciclos propios (179 filas en total, contando las 79 de
+   `__spine_import__`). `list_cycles` sin paginación devuelve 100 filas hoy, y
    eso es aceptable; si mañana un proyecto llega a miles, hará falta un límite, y
    ese límite tiene que **declarar** que trunca. Mismo principio que F63.
 2. **Lectura, no escritura.** Este lote no escribe en el almacenamiento real. Los

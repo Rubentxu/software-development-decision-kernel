@@ -18,6 +18,39 @@ references:
 
 # INC-DEBT-060 — La autoridad no puede enumerar su propio estado
 
+> ## ⚠️ CORRECCIÓN DE MAGNITUD (2026-10-02, session-69d)
+>
+> **El titular y el cuerpo de más abajo usan cifras que han resultado estar mal.**
+> No se reescriben: se conservan como evidencia de lo que se creía al detectar, y
+> esta corrección va delante para que nadie los lea sin ella.
+>
+> **Lo que se creía:** 179 filas en `cycles`, 97 no nombradas por ninguna
+> superficie, 91 de esas `OPEN`, 81 manifiestos ilegibles.
+>
+> **Lo que se ha medido:** la tabla `cycles` de ese ledger **no contiene 179 ciclos
+> de este proyecto**. Contiene **dos poblaciones**:
+>
+> | `project_id` | filas | ids | manifiesto | eventos |
+> |---|---|---|---|---|
+> | `p-63676b11dc0ef88f` | **100** | `<project_id>/<slug>` | 98 legibles, 2 ilegibles | 77 ciclos tienen ≥1 evento, **23 no** |
+> | `__spine_import__` | **79** | slug desnudo (`AGENT-HOST-001`, …) | las 79 con `{}` | **0**, ninguna |
+>
+> `__spine_import__` **no es un marcador**: es una fila real de la tabla `projects`
+> del mismo ledger (`display_name: "Spine Import Project"`, workspace
+> `spine-import`). Son registros importados de spine, no ciclos de este proyecto.
+>
+> **Cifras correctas:** de los **100 ciclos de `p-63676b11dc0ef88f`, ninguna
+> superficie los enumeraba, 23 no los nombraba, 17 de esos 17 son `OPEN`, y 2
+> tienen manifiesto ilegible.** La clase de defecto no cambia; la magnitud sí, y
+> era casi 4× mayor de lo declarado.
+>
+> **Cómo se encontró:** el falsificador de R6 (el del propio remedio) falló
+> contra un producto correcto. Falló porque su baseline contaba
+> `SELECT COUNT(*) FROM cycles` sin filtro de proyecto. Es la **tercera** vez en
+> este ciclo que un falsificador falla por un guard mal escrito y no por un
+> defecto del producto. Se deja escrito porque el número que sostenía un
+> documento publicado era el del guard.
+
 ## Qué es
 
 El ledger del proyecto `p-63676b11dc0ef88f` tiene **179 filas en la tabla
@@ -149,3 +182,66 @@ Dos FAIL de la medición fueron del falsificador, no del producto: contar 160
 ciclos inalcanzables porque `ledger events` trunca en 50 por defecto, y exigir
 un reparto de estados copiado de un cálculo anterior en vez de comparar contra
 el valor medido.
+
+## Addendum session-69d — la corrección, medida y con su propia evidencia
+
+El remedio (`cl-cycle-enumeration`) construyó el falsificador que la misma deuda
+exigía, y ese falsificador falló contra un producto **correcto**: la lista
+devolvió 100 y el baseline decía 179. Antes de tocar el código —que era el
+movimiento fácil y el equivocado— se midió de dónde salía la diferencia, porque
+un FAIL puede ser el guard y no el producto, y las dos reparaciones son
+opuestas: `list_cycles` no debe enumerar filas de otro proyecto.
+
+Medición (`04-spine-import.py`, read-only, `mode=ro`):
+
+```
+todas las filas de cycles                          : 179
+  project_id = p-63676b11dc0ef88f                   : 100
+  project_id = '__spine_import__'                   :  79   <- otro proyecto
+forma de cycle_id
+  <project_id>/<slug>                               : 100
+  slug desnudo                                      :  79
+proyectos registrados en ESTE ledger
+  ('p-63676b11dc0ef88f', 'sddk-framework')
+  ('__spine_import__', 'Spine Import Project')      <- fila real, no marcador
+de los 100 de este proyecto
+  nombrados por un evento                           :  77
+  NO nombrados por ninguna superficie               :  23   (17 OPEN)
+  manifiesto legible                                :  98
+  manifiesto ilegible                               :   2
+de los 79 de __spine_import__
+  con algun evento                                  :   0
+```
+
+**Las 79 filas con `{}` que el documento atribuyó a los «97 sin hecho» son, una
+a una, la población de `__spine_import__`.** No son ciclos de este proyecto: son
+registros importados de spine, con su propio proyecto, su propio workspace y su
+propio `display_name` en el mismo ledger. Los 23 que sí son de este proyecto
+tienen `manifest_json` nativo o `null`, y solo 2 son ilegibles.
+
+### Qué cambia y qué no
+
+| | Antes | Ahora |
+|---|---|---|
+| filas de `cycles` atribuidas al proyecto | 179 | **100** |
+| ciclos no nombrados por ninguna superficie | 97 | **23** |
+| de esos, `OPEN` | 91 | **17** |
+| manifiestos ilegibles | 81 | **2** |
+| superficie de enumeración | no existe | **`Storage::list_cycles` + `sddk cycle list`** |
+
+**La clase de defecto no cambia y por eso la deuda sigue `open` y `high`:** sigue
+sin existir superficie para declarar qué son las 79 filas importadas, y 17 ciclos
+que el ledger afirma `OPEN` no estaban —y sin el remedio no están— nombrados por
+nada. Lo que cambia es el número, y bajarlo a `medium` sobre la evidencia
+corregida es decisión del operador, no se toma aquí.
+
+### Lo que la corrección abre, y no se cierra aquí
+
+Las 79 filas de `__spine_import__` son un **sujeto distinto** con su propio
+problema, no una parte de este: un proyecto que existe dentro del ledger de otro,
+cuyo workspace es el literal `'spine-import'` (no una ruta) y cuyos 79 registros
+no tienen evento ni manifiesto. Que sean o no alcanzables desde algún checkout es
+una pregunta que **no se ha medido** en esta sesión y se declara no medida.
+SCOPE-CONTRACT §2.4 ya excluía la deuda de procedencia de esas importaciones del
+alcance de `cl-cycle-enumeration`, y esta corrección confirma que la exclusión
+estaba bien puesta: no eran el mismo problema.
