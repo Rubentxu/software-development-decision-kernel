@@ -1,5 +1,32 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69j, 2026-10-02): se aplicó la regla del operador al único `critical` que quedaba abierto — «alerta de deuda sin verificar si sus criterios siguen vigentes no es deuda real» — y al verificlo apareció una incidencia nueva: el alias de proyecto renombra, pero en 6 de 15 casos lo que había era un reparto.** `HEAD` = `19ff78c0` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**INC-DEBT-050 remedida: el efecto observable ya no existe.** `migrate_project_identity.py audit` da **0 ids divergentes sobre 177 receipts**, con `selfcheck: OK`. El síntoma del titular —«un cuarto de las adopciones quedaron con su ledger fuera del alcance del CLI»— está resuelto. Su `open_part` de frontmatter describía el alias como «trabajo de diseño con SCOPE + ADR»: **está hecho**, ADR-0152 `accepted`, 15 aliases declarados. Corregido, y corregido lo que la medición sí establece.
+
+**La mitad que queda del criterio de cierre está medida como inalcanzable por migración.** Que los receipts digan el id que hoy se deriva solo lo logra una migración, y la migración **no existe**: el `project_id` entra en el `content_hash` de `events_v1`; el trigger `BEFORE UPDATE` rechaza con *«events_v1 are append-only»**, y **sin** trigger la escritura pasa pero el hash **no se recalcula**, luego `verify_stream_chain` falla con `hash_drift` para siempre. Quedan dos salidas y **ambas son del operador**: dar la partida por cerrada dejando los receipts como historia verdadera de cuando se escribieron, o declarar que esos ids deben ser nombrables — en cuyo caso la respuesta es una **segunda autoridad de lectura**, no una migración.
+
+**INC-DEBT-061, nueva: 6 de los 15 alias ocultan 51 ciclos.** La tabla `from_id -> to_id` se aplica como **redirección**, y una redirección renombra pero **no une**. En 6 casos hay **445 eventos y 51 ciclos con nombre** en el lado apartado (`h2-body-execution-engine`, `coordinator-collapse`, `q05-release-action-pins`, `ci-repair-release-closure`…). **Ningún comando los nombra**, y **un pin no los salva**: el alias se aplica **después** del pin, y el propio código dice que un pin que nombra el id retirado es «exactamente el input que el alias existe para corregir». En **5 de los 6**, el campo `reason` afirma que el histórico está en el `to_id` y el storage lo contradice: la tabla es un registro durable de decisión que induce a una conclusión falsa.
+
+**La hipótesis que casi se convirtió en informe, y por qué no lo fue.** Los ciclos llegan a `2026-10-02T17:44:21Z`, **30 minutos después** del commit que cerró el trabajo del alias: leído así, el arreglo estaba roto y seguía escribiendo en el id retirado. No lo está. El binario instalado es **`sddk 2.2.27` del 2026-09-29**, anterior a la tabla, y no podía consultarla porque no existe en su código. **El arreglo no está roto: no está desplegado.** La medición que separa el error del acierto fue una sola: **qué binario escribió**, no cuándo. Las otras dos hipótesis —«los receipts contradicen la derivación» y «la tabla no existe»— cayeron igual: el audit da 0, y la tabla **no** es una tabla SQLite sino `~/.local/state/sddk/project-aliases.json`.
+
+**Es la quinta vez en esta sesión que una conclusión sale de medir la superficie equivocada.** Las otras cuatro: `ledger watch` (69f), `env` fuera de ámbito (falsificador de `vault graph`), los dos gates que son `.py` y no `.sh`, y aquí una tabla de alias buscada en SQLite. **Y una sexta, de un instrumento roto:** un normalizador de ids mío colapsaba `INC-DEBT-060` a `INC` y declaró **3 entradas de índice colgantes que no existían** — con el regex correcto son **0**. La forma común es siempre la misma: **aceptar el resultado del instrumento antes de comprobar que el instrumento mide lo que uno cree**.
+
+**Gravedad `high` y no `critical` porque no hay pérdida de datos:** las 445 filas y los 51 ciclos están íntegros, consistentes y legibles — por SQLite, que es rodear el producto entero. Es el mismo razonamiento por el que INC-DEBT-060 bajó de `critical`.
+
+**Verificación:** `test_debt_index_coherence` **PASS=12 FAIL=0** · `test_docs_script_contamination` **PASS** · `test_gate_coverage` **PASS** (48 entradas de índice, **0** colgantes) · `test_changelog_coverage` **PASS=56 FAIL=0** · scanner **CLEAN**. **No se cambió una línea de Rust**, luego no se ejecutó la suite completa: el alcance es `docs/` y un script independiente, y `test_gate_coverage` confirma que el script nuevo no necesita runner. **Storage real intacto**: nada escribe en `project-aliases.json` ni en ningún ledger.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-050**: la decisión de las dos salidas de arriba.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartado. Remedio 1 (corregir el `reason` falso) es **aditivo y reversible, y queda escrito como recomendación sin ejecutar**: el fichero está fuera del repo y `store_alias_table` es append-only por diseño, luego reescribir un `reason` es una decisión sobre la inmutabilidad de la tabla, no un ajuste de texto. Remedio 2 es **diseño** y roza ADR-0152.
+4. **INC-DEBT-060 sigue `open`**: 79 filas `__spine_import__` y 23 ciclos sin hecho (17 `OPEN`).
+5. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+6. Auditar qué más serializa un `GraphView` o parte (`export_node`, `window.__vault_nodes__`), que siguen **sin medir**.
+
+---
+
 **Estado (session-69i, 2026-10-02): la réplica HTML de `vault export` era una tercera superficie del mismo defecto, y un guard mío era falso — las dos cosas las encontró medir en vez de suponer.** `HEAD` = `3f7efb99` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El riesgo que session-69h dejó escrito como «no verificado si es intencional»: medido, y no era intencional.** `GraphExport` (`export.rs:90-95`) **no es una vista parcial de `GraphView`**: es una **estructura distinta con tres campos escrita a mano**, luego las dos listas de campos podían separarse sin que nada lo notara. Sobre el mismo vault de dos ciclos disjuntos, el JSON incrustado en la página declaraba `cyclic` y nada más: sin `cycle_count`, sin `multiple_cycles`, y con `topological_order` ausente **sin decir por qué**. El defecto de `cl-vault-graph` **intacto**, en una superficie que nadie miraba.

@@ -10020,3 +10020,98 @@ medir**. Pregunta que guía la búsqueda: *«¿qué otros lugares serializan un
 `GraphView` o una parte de él, y cada uno declara lo mismo?»*. **No bumpear por
 conveniencia**: si el workspace declara `2.5.3` y el último tag publicado es
 `v2.5.2`, la siguiente release **es 2.5.3**.
+
+### 2026-10-03T00:20:00Z — `p-63676b11dc0ef88f/identity-split-history` — miniMax Code (mvs_b98f2520808543c8bfd72b7d38e01c34)
+
+**Baseline:** `505983a7` (`docs(roadmap): session-69i…`), `HEAD == origin/main`.
+**HEAD al cerrar:** `19ff78c0` + este commit documental. Rama `main`.
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`).
+
+#### WorkItem
+
+La prioridad del goal es *deuda técnica severa reciente, verificando que sus
+criterios sigan vigentes*. El único `critical` abierto era INC-DEBT-050. Se
+verificó, y la verificación abrió una incidencia que no era de 050.
+
+#### Decisiones
+
+1. **Aplicar la regla del operador antes de tratar nada como deuda.** Audit de
+   050: **0 divergentes sobre 177 receipts**, `selfcheck: OK`.
+2. **INC-DEBT-050 — `open_part` corregido.** Describía un mundo pre-ADR-0152. Lo
+   que la medición sí establece: la segunda mitad del criterio es
+   **inalcanzable por migración**, y las dos salidas restantes son del operador.
+3. **INC-DEBT-061 — nueva.** 6 de 15 alias apartan **445 eventos y 51 ciclos**.
+   La redirección renombra; no une. `high` y no `critical` porque no hay pérdida
+   de datos.
+4. **Remedio 1 de 061 queda escrito y NO ejecutado.** Corregir el `reason` falso
+   es aditivo, pero el fichero está fuera del repo y `store_alias_table` es
+   append-only: reescribir un `reason` es una decisión sobre inmutabilidad.
+5. **El script informa, no bloquea.** No se cablea a `release.sh`: hacerlo sería
+   el defecto que la incidencia describe.
+
+#### Evidencia observada
+
+| qué | resultado |
+|---|---|
+| `migrate_project_identity.py audit` | **0 divergentes / 177 receipts**, `selfcheck: OK` |
+| alias declaradas | 15, todas con `reason` y `created_at`, 0 bucles, 0 `from` duplicados, 0 `to` repetidos |
+| `audit_project_alias_split.py` | **6 de 15 apartan historia · 445 eventos · 51 ciclos** |
+| `reason` que afirma algo falso | **5 de 6** (el sexto tiene otro motivo y no lo afirma) |
+| `events_v1` primer evento, ledger de referencia | trigger **rechaza**; sin trigger la escritura pasa y el `content_hash` **no cambia** |
+| `test_debt_index_coherence` | **PASS=12 FAIL=0** |
+| `test_docs_script_contamination` · `test_gate_coverage` | PASS |
+| índice de deuda | 48 entradas, **0** colgantes |
+| `test_changelog_coverage` | **PASS=56 FAIL=0** |
+| scanner | **CLEAN** |
+
+**Contexto real vs. sintético:** todo es contra el **storage real**, en lectura.
+`project-aliases.json` y los ledgers quedan **intactos**. La prueba de la
+imposibilidad de migrar se hizo sobre una **copia en `/tmp`**, nunca sobre el
+ledger real: la pregunta era «qué pasaría si se reescribiera», y responderla en
+el storage real habría sido la operación destructiva que la incidencia prohíbe.
+
+**No se ejecutó `cargo test --workspace`:** no cambió una línea de Rust. El
+alcance es `docs/` y un script independiente, y `test_gate_coverage` confirma que
+el script nuevo no necesita runner.
+
+#### Tres hipótesis medidas y descartadas
+
+1. **«El arreglo de ADR-0152 está roto y escribe en el id retirado.»** Los ciclos
+   llegan 30 min **después** del commit que cerró el trabajo, lo que lo parecía.
+   **Falso:** el binario instalado es `sddk 2.2.27` del 2026-09-29, anterior a la
+   tabla. **No está roto: no está desplegado.** La medición que lo separa: *qué
+   binario escribió*.
+2. **«Los receipts contradicen la derivación.»** Falso: 0 de 177.
+3. **«La tabla no existe.»** Falso: no es SQLite, es
+   `~/.local/state/sddk/project-aliases.json`, y `load_aliases` falla cerrado.
+
+**Y una sexta medición rota, mía:** un normalizador de ids colapsaba
+`INC-DEBT-060` a `INC` y declaró **3 entradas de índice colgantes que no
+existían**. Con el regex correcto: **0**. Se cuenta porque es la misma forma que
+las otras cinco, y esa forma es el aprendizaje de la sesión.
+
+#### Riesgos
+
+1. **51 es un techo, no un número de ciclos distintos**: usa
+   `cycles.project_id`, y no se midió si alguno aparece ya en el `to` por otro
+   camino.
+2. La medición es **de esta máquina**; el mecanismo es independiente del entorno.
+3. Mientras **2.5.3 no esté instalado**, ningún binario desplegado conoce la tabla,
+   luego **no puede** crear más historia en un lado apartado. Ese es el límite
+   que mantiene esto en `high`.
+
+#### Bloqueos que persisten
+
+Clave KMS (**único** bloqueo de 2.5.3); las dos salidas de INC-DEBT-050; los 51
+ciclos de INC-DEBT-061; 79 filas `__spine_import__` y 23 ciclos sin hecho;
+INC-DEBT-049; ruta forge de `release apply`; harness Pipelinek-Test-Hardness.
+
+#### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. Luego,
+en este orden: **(a)** `audit_project_alias_split.py` después de instalar 2.5.3,
+que es cuando la lectura del storage cambia de valor; **(b)** el `GraphView` que
+faltaba por criterio —`export_node` y `window.__vault_nodes__`, sin medir;
+**(c)** decisiones de operador, que son cuatro y ninguna es técnica.
+**No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
+publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
