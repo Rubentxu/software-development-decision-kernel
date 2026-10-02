@@ -6,8 +6,10 @@ severity: critical
 priority: P1
 partially_resolved_at: 2026-10-02
 partially_resolved_in_session: session-66
+revalidated_at: 2026-10-02
+revalidated_in_session: session-69j
 resolved_part: "el apply deja de ser una operacion unica e inejecutable: escritura acotada por WHERE, renombrado de estado declarado y verificado, recuento y escritura comparten predicado, rechazo del storage traducido a problema legible, y test propio de la escritura (24 casos, 11 mutaciones detectadas). session-66"
-open_part: "la migracion de los 25 receipts NO EXISTE: los 15 proyectos tienen 3477 filas en tablas append-only y el project_id esta horneado en el content_hash del fact log, asi que la identidad es inmutable desde el primer evento. El storage sigue intacto. Camino propuesto: alias de proyecto (tabla from_id->to_id que el CLI resuelve al derivar), que es trabajo de diseño con SCOPE + ADR."
+open_part: "NO HAY TRABAJO PENDIENTE, HAY UNA DECISION, Y UNA DE SUS DOS OPCIONES ESTA MEDIDA COMO IMPOSIBLE. Remedido en session-69j: el audit da 0 ids divergentes sobre 177 receipts (selfcheck OK), luego el efecto observable de esta incidencia --'un cuarto de las adopciones quedaron con su ledger fuera del alcance del CLI'-- ya no existe, y la migracion de los 25 receipts NO es necesaria para el efecto observable. El camino del alias que este campo proponia como 'trabajo de diseno con SCOPE + ADR' esta HECHO: ADR-0152 accepted, 15 aliases declarados, 0 divergentes. Lo que queda es la segunda mitad del criterio, que el propio documento dejo sin decidir: si los receipts deben decir el id que hoy se deriva. MEDIDO, ESA MITAD ES INALCANZABLE POR MIGRACION: el project_id entra en el content_hash de events_v1, el trigger BEFORE UPDATE rechaza, y sin trigger la escritura pasa pero el hash NO se recalcula, luego verify_stream_chain falla con hash_drift para siempre. Quedan dos salidas y las dos son del operador: (a) dar la partida por cerrada y dejar los receipts como historia verdadera de cuando se escribieron, o (b) declarar que esos ids deben ser nombrables, en cuyo caso la respuesta es una segunda autoridad de lectura y NO una migracion. El storage sigue intacto."
 detected_at: 2026-10-01
 detected_in_session: session-63
 component: identity
