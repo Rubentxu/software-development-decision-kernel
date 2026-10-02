@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
-use sddk_engine::version::ensure_version_lockstep;
+use sddk_engine::version::{ensure_version_lockstep, ensure_version_lockstep_detailed};
+use sddk_engine::version_source::VersionAuthority;
 use sddk_gateway::{
     CapabilityGateway, CapabilityPolicy, GitExecutor, GitHubForge, LocalReleaseInput,
     LocalReleaseOutcome, LocalReleasePreconditions, PermissionPolicy, ReleasePlanInput,
@@ -639,6 +640,62 @@ fn dist_verify_text(output: &serde_json::Value) -> String {
     )
 }
 
+/// De dónde salió la versión que se comprobó contra el tag.
+///
+/// Se declara porque `Ok` no significa lo mismo en los dos casos: un proyecto
+/// Rust que concuerda con su tag pasó una comprobación, y un proyecto Go no
+/// tuvo nada contra qué comprobar. Un plan que no distinguiera los dos se
+/// leería como verificado cuando no lo fue.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct VersionAuthorityOutput {
+    /// `cross_checked` o `tag_is_the_only_authority`.
+    kind: &'static str,
+    /// La versión contra la que se comparó el tag. `None` cuando el tag es la
+    /// única autoridad: no hubo nada que comparar.
+    version: Option<String>,
+    /// Manifiestos leídos que declararon esa versión.
+    declared_in: Vec<VersionCandidateOutput>,
+    /// Ecosistemas presentes que no declaran versión en ningún manifiesto.
+    /// Solo tiene sentido con `kind: tag_is_the_only_authority`.
+    undeclared_ecosystems: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct VersionCandidateOutput {
+    ecosystem: &'static str,
+    path: String,
+    version: String,
+}
+
+fn version_authority_output(authority: &VersionAuthority) -> VersionAuthorityOutput {
+    match authority {
+        VersionAuthority::CrossChecked {
+            version,
+            candidates,
+        } => VersionAuthorityOutput {
+            kind: "cross_checked",
+            version: Some(version.clone()),
+            declared_in: candidates
+                .iter()
+                .map(|candidate| VersionCandidateOutput {
+                    ecosystem: candidate.ecosystem,
+                    path: candidate.path.display().to_string(),
+                    version: candidate.version.clone(),
+                })
+                .collect(),
+            undeclared_ecosystems: Vec::new(),
+        },
+        VersionAuthority::TagIsTheOnlyAuthority { ecosystems } => VersionAuthorityOutput {
+            kind: "tag_is_the_only_authority",
+            version: None,
+            declared_in: Vec::new(),
+            undeclared_ecosystems: ecosystems.clone(),
+        },
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct ReleasePlanOutput {
@@ -648,6 +705,7 @@ struct ReleasePlanOutput {
     tag: String,
     head: Option<String>,
     steps: Vec<&'static str>,
+    version_authority: VersionAuthorityOutput,
 }
 
 fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandOutput {
@@ -665,7 +723,10 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         preflight_manifest(git.root(), false, "production release always verifies")?;
 
         // L1 lockstep: version tag must match workspace Cargo.toml version
-        ensure_version_lockstep(git.root(), &args.tag)?;
+        // La variante `detailed` y no la que aplana: el plan declara de dónde
+        // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
+        // que reportar. Sigue fallando cerrado ante un desajuste.
+        let authority = ensure_version_lockstep_detailed(git.root(), &args.tag)?;
         let head = git.inspect()?.head;
 
         // REQ-RDI-002 / REQ-RDI-003: gather manifest + receipt fields.
@@ -756,6 +817,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
                 ],
                 ReleaseRoute::Forge => vec!["create_pr", "merge_pr", "create_release"],
             },
+            version_authority: version_authority_output(&authority),
         })
     })();
     render_result(result, format, release_plan_text)
@@ -1116,12 +1178,34 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
         ReleaseRoute::Forge => "forge",
     };
     let mut text = format!(
-        "route: {route}\nbranch: {}\nbase: {}\ntag: {}\nhead: {}\nsteps:\n",
+        "route: {route}\nbranch: {}\nbase: {}\ntag: {}\nhead: {}\n",
         output.branch,
         output.base,
         output.tag,
         output.head.as_deref().unwrap_or("null")
     );
+    // La autoridad se imprime antes de los pasos: es la línea que decide si lo
+    // que viene después fue comprobado o no tenía nada que comprobarlo.
+    text.push_str(&format!(
+        "version_authority: {}\n",
+        output.version_authority.kind
+    ));
+    match &output.version_authority.version {
+        Some(version) => text.push_str(&format!("version: {version}\n")),
+        None => text.push_str(
+            "version: null\nnote: no manifest declares a version; the tag is the only authority and nothing was cross-checked\n",
+        ),
+    }
+    for candidate in &output.version_authority.declared_in {
+        text.push_str(&format!(
+            "version_declared_in: {} ({}) = {}\n",
+            candidate.path, candidate.ecosystem, candidate.version
+        ));
+    }
+    for ecosystem in &output.version_authority.undeclared_ecosystems {
+        text.push_str(&format!("version_undeclared_in: {ecosystem}\n"));
+    }
+    text.push_str("steps:\n");
     for step in &output.steps {
         text.push_str(&format!("- {step}\n"));
     }
@@ -1808,5 +1892,123 @@ mod tests {
             passed(&[receipt_waived, receipt_passed], "tests-pass"),
             "Passed receipt among Waived must still satisfy release gate"
         );
+    }
+
+    use super::{
+        ReleasePlanOutput, ReleaseRoute, VersionAuthority, release_plan_text,
+        version_authority_output,
+    };
+    use sddk_engine::version_source::VersionCandidate;
+
+    fn cross_checked() -> VersionAuthority {
+        VersionAuthority::CrossChecked {
+            version: "1.0.0".to_string(),
+            candidates: vec![VersionCandidate {
+                ecosystem: "rust",
+                path: std::path::PathBuf::from("Cargo.toml"),
+                version: "1.0.0".to_string(),
+            }],
+        }
+    }
+
+    fn tag_only() -> VersionAuthority {
+        VersionAuthority::TagIsTheOnlyAuthority {
+            ecosystems: vec!["go"],
+        }
+    }
+
+    fn plan(authority: VersionAuthority) -> ReleasePlanOutput {
+        ReleasePlanOutput {
+            route: ReleaseRoute::Local,
+            branch: "main".to_string(),
+            base: "main".to_string(),
+            tag: "v1.0.0".to_string(),
+            head: Some("abc1234".to_string()),
+            steps: vec!["push_main"],
+            version_authority: version_authority_output(&authority),
+        }
+    }
+
+    /// Un proyecto que declara versión se presenta como comprobado, y dice
+    /// contra qué se comprobó: el manifiesto concreto que se leyó.
+    #[test]
+    fn release_plan_text_declares_the_cross_checked_authority() {
+        let text = release_plan_text(&plan(cross_checked()));
+        assert!(text.contains("version_authority: cross_checked"), "{text}");
+        assert!(text.contains("version: 1.0.0"), "{text}");
+        assert!(
+            text.contains("version_declared_in: Cargo.toml (rust) = 1.0.0"),
+            "{text}"
+        );
+    }
+
+    /// Un proyecto sin versión declarada no se presenta como comprobado, y
+    /// dice por qué. Esta es la razón del lote: sin esto, el plan de un repo
+    /// Go es indistinguible del de un repo Rust.
+    #[test]
+    fn release_plan_text_admits_when_nothing_was_cross_checked() {
+        let text = release_plan_text(&plan(tag_only()));
+        assert!(
+            text.contains("version_authority: tag_is_the_only_authority"),
+            "{text}"
+        );
+        assert!(
+            text.contains("nothing was cross-checked"),
+            "el texto tiene que decir que no hubo comprobacion: {text}"
+        );
+        assert!(text.contains("version: null"), "{text}");
+        assert!(text.contains("version_undeclared_in: go"), "{text}");
+        assert!(
+            !text.contains("cross_checked\n"),
+            "un proyecto sin version declarada no puede aparecer como comprobado: {text}"
+        );
+    }
+
+    /// El JSON y el texto no pueden divergir porque salen del mismo mapeo: el
+    /// riesgo declarado en el PRE-FLIGHT, verificado sobre la forma serializada.
+    #[test]
+    fn the_serialized_authority_matches_the_rendered_one() {
+        let json = serde_json::to_value(plan(cross_checked())).unwrap();
+        assert_eq!(json["version_authority"]["kind"], "cross_checked");
+        assert_eq!(json["version_authority"]["version"], "1.0.0");
+        assert_eq!(
+            json["version_authority"]["declared_in"][0]["path"],
+            "Cargo.toml"
+        );
+        assert_eq!(
+            json["version_authority"]["declared_in"][0]["ecosystem"],
+            "rust"
+        );
+        assert_eq!(
+            json["version_authority"]["declared_in"][0]["version"],
+            "1.0.0"
+        );
+
+        let tag_json = serde_json::to_value(plan(tag_only())).unwrap();
+        assert_eq!(
+            tag_json["version_authority"]["kind"],
+            "tag_is_the_only_authority"
+        );
+        assert!(
+            tag_json["version_authority"]["version"].is_null(),
+            "sin version declarada no hay version que reportar: {tag_json}"
+        );
+        assert_eq!(
+            tag_json["version_authority"]["undeclared_ecosystems"][0],
+            "go"
+        );
+    }
+
+    /// Los campos existentes no se mueven: el campo nuevo es aditivo, y un
+    /// consumidor que lee `tag` o `steps` tiene que seguir viendo lo mismo.
+    #[test]
+    fn the_plan_keeps_its_previous_fields() {
+        let json = serde_json::to_value(plan(cross_checked())).unwrap();
+        assert_eq!(json["route"], "local");
+        assert_eq!(json["branch"], "main");
+        assert_eq!(json["base"], "main");
+        assert_eq!(json["tag"], "v1.0.0");
+        assert_eq!(json["head"], "abc1234");
+        assert_eq!(json["steps"][0], "push_main");
     }
 }

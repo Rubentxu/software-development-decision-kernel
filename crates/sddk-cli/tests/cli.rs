@@ -4478,6 +4478,158 @@ version = \"1.0.0\"
     );
 }
 
+/// Un proyecto Go no declara versión en ningún manifiesto, así que no hay nada
+/// que comparar contra el tag. El plan tiene que decirlo: sin esto su salida es
+/// indistinguible de la de un proyecto Rust que sí se comprobó, que es el falso
+/// verde que este lote cierra.
+#[test]
+fn cli_release_plan_admits_a_go_project_has_nothing_to_cross_check() {
+    let fixture = CliFixture::new("release-plan-go");
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    // Deliberately no Cargo.toml: `go.mod` is the whole point.
+    write(
+        fixture.root.join("go.mod"),
+        "module example.com/fixture\n\ngo 1.22\n",
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+    ];
+    let plan = run_with_root(
+        &fixture,
+        &["release", "plan", "--tag", "v1.0.0", "--format", "json"],
+        &common,
+    );
+    assert!(
+        plan.status.success(),
+        "un proyecto Go debe poder planear: {}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(
+        plan_json["version_authority"]["kind"], "tag_is_the_only_authority",
+        "{plan_json}"
+    );
+    assert!(
+        plan_json["version_authority"]["version"].is_null(),
+        "sin version declarada no hay version que reportar: {plan_json}"
+    );
+    assert_eq!(
+        plan_json["version_authority"]["undeclared_ecosystems"][0], "go",
+        "{plan_json}"
+    );
+}
+
+/// El caso contrario: un proyecto Rust se presenta como comprobado, y declara
+/// contra qué manifiesto se comprobó. El criterio 2 del SCOPE del lote 2.
+#[test]
+fn cli_release_plan_declares_a_rust_project_was_cross_checked() {
+    let fixture = CliFixture::new("release-plan-rust-authority");
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    write(
+        fixture.root.join("Cargo.toml"),
+        "[workspace]\nversion = \"1.0.0\"\n",
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+    let common = [
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+    ];
+    let plan = run_with_root(
+        &fixture,
+        &["release", "plan", "--tag", "v1.0.0", "--format", "json"],
+        &common,
+    );
+    assert!(
+        plan.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan_json["version_authority"]["kind"], "cross_checked");
+    assert_eq!(plan_json["version_authority"]["version"], "1.0.0");
+    let declared_in = &plan_json["version_authority"]["declared_in"][0];
+    assert_eq!(declared_in["ecosystem"], "rust");
+    assert_eq!(declared_in["version"], "1.0.0");
+    assert!(
+        declared_in["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("Cargo.toml"),
+        "el plan tiene que nombrar el manifiesto que se leyo: {declared_in}"
+    );
+}
+
+/// El texto dice lo mismo que el JSON. Un render que se queda corto es la
+/// misma clase de defecto con otra forma.
+#[test]
+fn cli_release_plan_text_says_the_authority_out_loud() {
+    let fixture = CliFixture::new("release-plan-text-authority");
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    write(
+        fixture.root.join("go.mod"),
+        "module example.com/fixture\n\ngo 1.22\n",
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+    let plan = run_with_root(
+        &fixture,
+        &["release", "plan", "--tag", "v1.0.0"],
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let text = String::from_utf8_lossy(&plan.stdout);
+    assert!(
+        text.contains("version_authority: tag_is_the_only_authority"),
+        "{text}"
+    );
+    assert!(text.contains("nothing was cross-checked"), "{text}");
+    assert!(
+        !text.contains("version_authority: cross_checked"),
+        "un proyecto Go no puede aparecer como comprobado: {text}"
+    );
+}
+
 #[test]
 fn cli_release_requires_explicit_route_for_legacy_forge_invocations() {
     let fixture = CliFixture::new("release-route-migration");
