@@ -182,8 +182,9 @@ explícito:
 
 Criterios falsables. Un ADR sin ellos es una opinion con formato.
 
-> **Estado medido en session-69: el criterio 3 está MEDIDO y este ADR sigue sin
-> promoverse.** No por el 3, sino por el 5 y el 6, que no se han medido nunca.
+> **Estado medido en session-69b: criterios 3 y 6 MEDIDOS, 5 MEDIDO EN ROJO, y
+> este ADR sigue sin promoverse.** Un criterio verde no suma mientras otro siga
+> rojo, así que la promoción depende hoy del 5 y solo del 5.
 >
 > El 3 estuvo **ROJO** y se cerró con INC-DEBT-059. No era que faltara una línea
 > de declaración: `sddk adopt status` no llegaba al resolver de alias.
@@ -205,12 +206,52 @@ Criterios falsables. Un ADR sin ellos es una opinion con formato.
 > **PASS=4 FAIL=0 SKIP=0**. Detalle y evidencia en
 > [INC-DEBT-059](../../debt/INC-DEBT-059-ADOPT-REDERIVES-IDENTITY-AND-WRITES-A-SECOND-RECEIPT-UNDER-A-RETIRED-PROJECT-ID.md).
 >
-> **Lo que impide promover:** el criterio 5 exige que el audit reporte **0**
-> receipts huérfanos sobre el storage real, y el criterio 6 exige
-> `verify_stream_chain` sobre un stream canónico. Ninguno se ha medido. El
-> criterio 5 además no se puede cerrar con el arreglo de INC-DEBT-059, porque
-> ese trabajo **impide crear más huérfanos pero no limpia los que ya existen**:
-> qué receipts espurios se retiran es decisión del operador.
+> **Lo que impide promover es el criterio 5, y solo él.** El 6 está medido y en
+> verde (abajo); el 5 exige que el audit reporte **0** receipts huérfanos sobre el
+> storage real y hoy reporta **1**. No se puede cerrar con el arreglo de
+> INC-DEBT-059, porque ese trabajo **impide crear más huérfanos pero no limpia
+> los que ya existen**: qué receipts espurios se retiran es decisión del
+> operador.
+>
+> **Criterio 5, medido en ROJO.** `scripts/migrate_project_identity.py audit`
+> sobre el storage real da `selfcheck: OK (21 normalizaciones + 8 rechazos + 2
+> ids heredados)` y **161 receipts revisados**, pero **1 id divergente**:
+> `p-74299cf88f51dab9 -> p-b7740b96d79ec013`, un receipt de `skillgraph`. El
+> criterio exige **0**. El alias de ese par se retiró deliberadamente porque hay
+> una sesión SDDK concurrente sobre `wi-72-p3-expansion-apply`; re-declararlo
+> daría `orphaned = 0`, pero revierte una decisión del operador y podría
+> interferir con esa sesión.
+>
+> **Criterio 6, medido en verde y falsificado.** `sddk ledger verify` sobre
+> `p-63676b11dc0ef88f` (el propio sddk-framework, `identity_source: pinned`):
+> **590 eventos, 114 streams, salida 0**. Esa ruta es `Storage::verify_ledger`
+> (`lib.rs:977`), que corre `verify_stream_chain` **y** después
+> `verify_chain_integrity` sobre todos los streams canónicos —el superconjunto
+> de lo que el criterio pide—.
+>
+> Tres cosas que la medición activación y que el enunciado del criterio no dice:
+>
+> - Se midió sobre una **copia byte-idéntica** del ledger real
+>   (`sha256:91ea0352…fbf32c`), porque `RuntimeContext::open` abre el storage en
+>   escritura: su tercer parámetro es `generate_seed`, no «solo lectura». Una
+>   medición que promete no tocar el storage real no puede correr contra él. El
+>   sha256 del original se comprobó antes y después.
+> - `events_v1` lleva los triggers `events_v1_no_update` y `events_v1_no_delete`,
+>   que abortan. **Este criterio solo puede pasar a rojo por corrupción, nunca por
+>   una escritura legítima**: es un invariante de corrupción, no de escritura.
+> - Las 590 filas tienen `chain_hash` no vacío, de modo que `verify_chain_integrity`
+>   no se salta ninguna fila heredada de la migración: la verificación es
+>   **total**, no parcial.
+>
+> El verde no se aceptó sin falsificarlo, y el falsificador es lo que da valor a
+> la cifra: **PASS=12 FAIL=0**. La misma corrupción produce diagnósticos
+> distintos según el verificador —manipular `content_hash` da `hash_drift` por
+> `verify_stream_chain` y `chain_drift` por `verify_chain_integrity`, porque la
+> cadena se compromete con el hash de contenido—, así que la medición **sí
+> distingue** el verificador que el criterio nombra de su vecino. Un FAIL de esa
+> corrida era un guard mal escrito, no un defecto: esperaba que
+> `ledger verify-chain` no viera el rehash de `content_hash`, y sí lo ve. Recibo
+> en [`RECEIPT-c6-stream-chain.md`](../../roadmap/receipts/cl-adopt-alias-wiring/RECEIPT-c6-stream-chain.md).
 
 1. **La propiedad, con su falsificador.** Resolver con un alias da el mismo
    `project_id` que resolver sin él **cuando no hay alias** (el caso normal no
