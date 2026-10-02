@@ -26,7 +26,7 @@ import tomllib
 from pathlib import Path
 import datetime as dt
 
-REPO_ROOT = Path("/home/rubentxu/Proyectos/agentesIA/sddk-framework").resolve()
+REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_ADR_DIR = REPO_ROOT / "docs/architecture/adrs"
 VAULT_ADR_DIR = Path.home() / ".sddk-knowledge/sddk-framework/adrs"
 
@@ -264,14 +264,33 @@ at `docs/architecture/specs/` in the repo.
 
 
 def main():
+    # Fail closed. `Path.glob` over a missing directory yields an empty
+    # iterator, so a wrong REPO_ROOT used to make this script report
+    # `created: 0, skipped: 0` and exit 0 — a success that measured nothing,
+    # which is the defect class this repository keeps having to catch. The
+    # remedy for a red `test_vault_adr_mirror_coverage.sh` must not itself be
+    # silently vacuous on the machine that needs it.
+    if not REPO_ADR_DIR.is_dir():
+        print(f"ERROR: no ADR directory at {REPO_ADR_DIR}", file=sys.stderr)
+        print("       nothing was mirrored, and the exit code is not a success.",
+              file=sys.stderr)
+        return 1
+
+    repo_adrs = sorted(REPO_ADR_DIR.glob("ADR-*.md"))
+    if not repo_adrs:
+        print(f"ERROR: {REPO_ADR_DIR} contains no ADR files at all.", file=sys.stderr)
+        return 1
+
+    accepted = [p for p in repo_adrs if parse_frontmatter(p).get("status") == "accepted"]
+    if not accepted:
+        print(f"ERROR: none of the {len(repo_adrs)} ADRs in {REPO_ADR_DIR} are "
+              "`accepted`; refusing to report a vacuous mirror run.", file=sys.stderr)
+        return 1
+
     VAULT_ADR_DIR.mkdir(parents=True, exist_ok=True)
     created = []
     skipped = []
-    for repo_file in sorted(REPO_ADR_DIR.glob("ADR-*.md")):
-        # Skip non-accepted
-        fm = parse_frontmatter(repo_file)
-        if fm.get("status") != "accepted":
-            continue
+    for repo_file in accepted:
         slug = repo_file.stem.lower()
         # Vault filename convention: <id>-<kebab-title>.md (matches ADR-0079-cycle-supersede.md)
         # We use the full stem to preserve traceability back to the repo file
@@ -282,12 +301,14 @@ def main():
         body = build_mirror(repo_file)
         target.write_text(body)
         created.append(target.name)
+    print(f"repo: {REPO_ROOT} ({len(accepted)} accepted of {len(repo_adrs)})")
     print(f"created: {len(created)}, skipped: {len(skipped)}")
     for n in created:
         print(f"  + {n}")
     for n in skipped:
         print(f"  = {n} (already exists)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
