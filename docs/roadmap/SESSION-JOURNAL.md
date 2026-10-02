@@ -8914,3 +8914,88 @@ haberlo publicado seria el mismo falso verde que este lote cierra.
 decidir el contrato de los dos `version_lockstep_passed` de `sddk-gateway`, y
 corregir el doc de `release.rs:395-396`, que sigue diciendo «the workspace
 Cargo.toml version» como si el contrato de ADR-0153 no existiera.
+
+### 2026-10-02T16:00:00Z — p-63676b11dc0ef88f/version-source (lote 3, cierra D2) — orchestrator
+
+**SHA antes:** `1c82e910` (`HEAD == origin/main`, arbol limpio)
+**SHA despues:** `93f5b3ab` (feat) + `1a8f8ff8` (fix del changelog) + este commit documental
+
+**WorkItem:** INC-DEBT-051, lote 3. Cierra D2, el defecto que el lote 2 dejo
+abierto y escrito.
+
+**Defecto verificado antes de escribir nada:** `ReleaseOutcome.version_lockstep_passed`
+lo escribia a mano —`ensure_version_lockstep(&root, &args.tag)?` y despues
+`let version_lockstep_passed = true;`— y el campo **no lo leia nadie** en el
+workspace (`rg` sobre los crates, medido, no supuesto). Sobre un proyecto Go o
+Bazel informaba un lockstep comprobado donde no habia nada que comprobar.
+
+**Decision central, y su razon medida:** el otro campo, `LocalReleasePreconditions.
+version_lockstep_passed`, **no se renombro**. Es una **puerta** que
+`release.rs:205` lee para abortar, y su valor llega al storage como la cadena de
+`ReleaseFailureEvidence::failed_precondition`, que tres tests de `cli.rs`
+comparan literalmente. Renombrarlo cambia un contrato de datos durable por
+claridad en un nombre interno. Con el resultado tipado, los dos **dejan de
+llamarse igual**: la homonimia desaparece por construccion, no por una nota.
+
+**El falsificador dio 6 PASS / 3 FAIL, y los tres FAIL eran huecos REALES** de
+la misma clase: `release apply` no tiene ninguna cobertura, porque la ruta forge
+necesita red y los tests e2e no la alcanzan.
+
+- la autoridad registrada podia informarse inventada (el call site estaba en un closure, sin seam)
+- la puerta local podia pasar a `was_cross_checked()` y **bloquear a Go y a Bazel para siempre**, con la suite en verde, porque **todos** los fixtures de la ruta local son de Rust
+- el render del resultado se podia borrar entero
+
+El segundo es el que mas importa: es exactamente el arreglo **equivocado** que
+la tentacion sugiere, y habria sido un FAIL de produccion silencioso.
+
+**Arreglo:** dos funciones con nombre —`version_authority_or_fail` y
+`version_lockstep_satisfied`—, que son hechos distintos y no caben en un mismo
+tipo, y cinco tests nuevos sobre fixtures reales de `tempfile` con un `go.mod` y
+un `Cargo.toml` de verdad. Ademas desaparece la **copia** del tipo que tenia la
+CLI: al pasar el resultado al tipo canonico, aquella se volvio una divergencia
+con fecha (`declared_in` frente a `candidates`), y los dos renders de texto
+salen ahora de la **misma funcion**.
+
+**El falsificador fallo contra si mismo CUATRO veces**, todas por su propia
+construccion y ninguna por el codigo: (1) anclaje literal que `cargo fmt` movio,
+luego la mutacion no aterrizaba, el build pasaba y declaraba FAIL sobre algo que
+nunca se probo; (2) un `\\x27` en el reemplazo, que `re.sub` procesa como
+plantilla; (3) un `[^)]*` que no contempla parentesis anidados y se comia el
+cierre de la funcion mas 1.177 caracteres; (4) un detector apuntado al binario de
+**integracion** en vez de al de las **unitarias**, que declaro «nadie lo detecta»
+sobre cobertura que si existia —comprobado antes de tocar nada: los dos tests
+fallan de verdad bajo la mutacion. **Regla que queda: una mutacion que no
+aterriza, no compila, o que se busca donde no vive su test se marca SKIP, nunca
+FAIL**, porque un FAIL que no midio nada se lee igual que un hallazgo.
+
+**Evidencia observada:** `release_flow` 12/0 · `release_blockers` 3/0 · `engine
+--lib version` 50/0 · `cli --lib release` 22/0 · `cli --test cli release` 33/0,
+con los 3 tests de `failed_precondition` verdes **sin reescribirlos** · fmt y
+clippy `-D warnings` limpios · falsificador **PASS=9 FAIL=0 SKIP=0**, 5
+mutaciones, las 5 detectadas · `test_changelog_coverage` **PASS=40 FAIL=0**.
+
+**Hallazgo colateral del gate 2b:** mi propia entrada de changelog lo rompio en
+la direccion contraria a la que lo habia roto antes. El gate cuenta la cadena
+del encabezado con `grep -cF` sobre el **fichero entero**, no sobre las
+cabeceras, luego una entrada que **cita su propio encabezado** cuenta como una
+segunda y falla con «expected exactly one header». Declarado con su entrada propia
+y escrito a proposito, para que el proximo que redacte una linea sobre el gate no
+lo descubra de nuevo.
+
+**No ejecutado (y por que):** `release apply --route forge` contra GitHub de
+verdad — este lote cumple sus criterios sobre el tipo, el render y la puerta, y
+afirmar que un release por forge funciona de extremo a extremo sin medirlo seria
+el mismo falso verde que este trabajo cierra. Tampoco `cargo test --workspace`:
+AGENTS.md §2.3 reserva el perfil completo para `verify`/release.
+
+**Riesgos y bloqueos:**
+
+- **Clave del KMS**: unico bloqueo que queda para publicar v2.5.3. Del operador.
+- `apply_release` **no valida** la autoridad que recibe. Declarado en el SCOPE
+  §3 y en el doc: validar seria una puerta nueva con su propio SCOPE.
+- El binario de `~/.local/bin/sddk` sigue stale; todo el trabajo usa
+  `/var/home/rubentxu/cargo-targets/debug/sddk`.
+
+**Primer paso de la sesion siguiente:** con D2 cerrado, recorrer los siete
+criterios de ADR-0153 **uno a uno** y promoverlo —y ADR-0152— a `accepted` solo
+cuando todos estén verdes medidas, no declarados verdes por suma.

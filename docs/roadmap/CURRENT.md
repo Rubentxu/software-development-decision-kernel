@@ -1,5 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
 
+# CURRENT — puntero de reanudación de SDDK
+
+**Estado (session-67b, 2026-10-02): D2 cerrado. `release apply` ya no afirma un lockstep que nadie comprobó, y con esto los siete criterios de ADR-0153 son medibles uno a uno.** `HEAD` = `1a8f8ff8` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo que cambió en esta sesión, en dos líneas:**
+
+1. **`ReleaseOutcome.version_lockstep_passed` lo escribía a mano** (`release_cmd.rs:847-848`): `ensure_version_lockstep(...)?` y después `let version_lockstep_passed = true;`. Sobre un proyecto Go o Bazel informaba que el lockstep había pasado sin que hubiera pasado nada. Ahora el resultado lleva `version_authority`, el **tipo del engine**, y la ruta forge lo deriva. **D2 cerrado.**
+2. **El otro campo, que se llamaba igual, NO se renombró**, y el motivo está medido: es una **puerta** que `release.rs:205` lee para abortar, y su valor llega al storage como la cadena de `failed_precondition`, que tres tests comparan literalmente. Con el resultado tipado, los dos dejan de llamarse igual y la homonimia desaparece **por construcción**.
+
+**El falsificador encontró tres huecos reales, de la misma clase:** `release apply` no tiene ninguna cobertura, porque la ruta forge necesita red. El grave era la **puerta local** — pasarla a `was_cross_checked()` habría **bloqueado a Go y a Bazel para siempre**, con la suite en verde, porque todos los fixtures de esa ruta son de Rust. Se extrajeron dos funciones con nombre y se cubrieron con fixtures reales.
+
+**Y falló contra sí mismo cuatro veces**, todas por su construcción: anclaje que `cargo fmt` movió, un escape de regex en un reemplazo, un `[^)]*` que se comía el cierre de la función, y un detector apuntado al binario de integración en vez de al de las pruebas unitarias. La regla que queda: **una mutación que no aterriza, no compila, o que se busca donde no vive su test se marca `SKIP`, nunca `FAIL`.**
+
+**Gates de session-67b:** `release_flow` 12/0 · `release_blockers` 3/0 · `engine --lib version` 50/0 · `cli --lib release` 22/0 · `cli --test cli release` 33/0, con los 3 tests de `failed_precondition` verdes **sin reescribirlos** · fmt y clippy `-D warnings` limpios · falsificador **PASS=9 FAIL=0 SKIP=0**, 5 mutaciones, las 5 detectadas · `test_changelog_coverage` **PASS=40 FAIL=0**.
+
+**Lo que sigue abierto:** la **clave del KMS**, único bloqueo que queda para publicar v2.5.3 · **promover ADR-0153 y ADR-0152 a `accepted`**, que con D2 cerrado ya es medible criterio a criterio · el **contrato de read-option** de INC-DEBT-049 · la **publicación del harness** Pipelinek-Test-Hardness (44 commits sin publicar) · el **alias de skillgraph**, retirado por decisión del operador hasta que la sesión concurrente cierre `wi-72-p3-expansion-apply` · la clase ASCII de contaminación en `docs/` (INC-DEBT-058: no automatizable).
+
+**Nota sobre el puntero:** `current_sha` nombra `1a8f8ff8`, el commit **anterior** a este fichero documental, por la razón que la tercera sesión ya dejó escrita: actualizar el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener.
+
+---
+
 **Estado (session-67, 2026-10-02): `release plan` ya no disimula cuándo no hubo nada que comparar, y el gate de cobertura del changelog estaba ROJO desde el lote 1 y ya no lo está. v2.5.3 tenía DOS bloqueos, no uno.** `HEAD` = `1f93dc1a` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Lo que cambió en esta sesión, en dos líneas:**
