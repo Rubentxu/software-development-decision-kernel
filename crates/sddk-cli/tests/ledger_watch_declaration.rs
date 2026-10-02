@@ -343,51 +343,72 @@ fn r4_the_total_belongs_to_the_queried_cycle() {
 /// mutation that drops `apply_watch_filters` from the poll loop while leaving
 /// it on the count emits every cycle's events while declaring the total for
 /// one, and R1–R5 all still pass — the arithmetic closes, the total is right,
-/// the number is right. Only the stream itself is wrong. It is the mirror of
-/// R4, and without it the guard has a direction it cannot see.
+/// the number is right. Only the stream itself is wrong.
+///
+/// **The fixture is chosen so the mutation cannot pass by luck, and the first
+/// version of it could.** It picked the cycle with the *fewest* events, which in
+/// a fixture of one-event cycles is the *first* one in the ledger — so an
+/// unfiltered run emitted that very event and looked right. The falsifier M5
+/// passed the test, which is what exposed it. Here the target is the **last**
+/// cycle written, so an unfiltered run necessarily emits other cycles' events
+/// first, and the cap is set above the target's own count so the difference
+/// shows up as extra lines rather than as a wrong first line.
 #[test]
 fn r6_the_filter_bounds_what_is_actually_emitted() {
     let s = Sandbox::new("emitted-bounded");
     adopt(s.path());
     cycle_start(s.path(), "alpha");
     cycle_start(s.path(), "beta");
+    cycle_start(s.path(), "gamma");
 
     let (_, listing) = events_json(s.path());
     let events = listing["events"].as_array().expect("events array");
-    let mut per_cycle: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-    for e in events {
-        *per_cycle
-            .entry(e["cycle_id"].as_str().expect("cycle_id"))
-            .or_insert(0) += 1;
-    }
-    let (target, _) = per_cycle
+    assert!(
+        events.len() >= 2,
+        "the fixture needs several events: {}",
+        events.len()
+    );
+    // The last event written, and therefore the cycle whose events an
+    // unfiltered run reaches *last*.
+    let target = events.last().expect("last event")["cycle_id"]
+        .as_str()
+        .expect("cycle_id")
+        .to_string();
+    let target_count = events
         .iter()
-        .min_by_key(|(_, n)| **n)
-        .expect("at least one cycle");
-    let target = target.to_string();
+        .filter(|e| e["cycle_id"].as_str() == Some(target.as_str()))
+        .count();
 
+    // Cap above the target's own count: with the filter the run emits exactly
+    // that many and then idles out; without it, the loop keeps going and emits
+    // the other cycles too.
+    let cap = (target_count + 2).to_string();
     let (code, out) = watch(
         s.path(),
-        &["--cycle", &target, "--max-events", "1", "--format", "json"],
+        &["--cycle", &target, "--max-events", &cap, "--format", "json"],
     );
     assert_eq!(code, 0, "`ledger watch --cycle` must exit 0: {out}");
 
-    // Every event line — not the summary, which carries no `cycle_id`.
+    // Event lines only — the summary carries no `cycle_id`.
     let emitted: Vec<&str> = out
         .lines()
         .filter(|l| l.contains(r#""event_id""#))
         .collect();
     assert_eq!(
         emitted.len(),
-        1,
-        "the cap is 1, so exactly one event may be emitted: {out}"
+        target_count,
+        "with `--cycle {target}` the run must emit exactly that cycle's {target_count} \
+         event(s). More than that means the loop emitted events the query excluded, \
+         while still declaring this cycle's total. Got: {out}"
     );
-    assert!(
-        emitted[0].contains(&format!(r#""cycle_id":"{target}""#)),
-        "every emitted event must belong to the queried cycle `{target}`. A run \
-         that emits other cycles' events while declaring that cycle's total is \
-         making a false declaration about the stream it just produced. Got: {out}"
-    );
+    for line in &emitted {
+        assert!(
+            line.contains(&format!(r#""cycle_id":"{target}""#)),
+            "every emitted event must belong to the queried cycle `{target}`. A run \
+             that emits other cycles' events while declaring that cycle's total makes \
+             a false declaration about the stream it just produced. Got: {out}"
+        );
+    }
 }
 
 ///
