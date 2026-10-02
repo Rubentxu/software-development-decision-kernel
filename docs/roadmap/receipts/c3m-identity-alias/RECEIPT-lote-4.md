@@ -5,7 +5,9 @@
 **Binario:** `/var/home/rubentxu/cargo-targets/debug/sddk` 2.5.3, compilado de este
 checkout. **No** se usó `~/.local/bin/sddk`, que sigue stale (ver B2).
 **Storage real:** `~/.local/state/sddk/` — la tabla se escribió en
-`project-aliases.json`, sha256 `bc981da9ca770c35`, 15 entradas, `schema_version: 1`.
+`project-aliases.json`, sha256 `3052169cc5d0bd1c`, **14 entradas**,
+`schema_version: 1`. (Fueron 15, sha `bc981da9…`, hasta la retirada del par
+de skillgraph; ver "Decisión del operador" abajo.)
 **Rollback:** borrar `~/.local/state/sddk/project-aliases.json`. No hay más que
 deshacer: el mecanismo no toca ningún ledger.
 
@@ -95,9 +97,53 @@ heurístico de «quién tiene más» no es el criterio: el criterio es que el re
 sea alcanzable, y porque un ledger sin receipt se deja de resolver mientras que
 un receipt inalcanzable se pierde en silencio.
 
-**Pendiente de decisión del operador:** dejar el alias de skillgraph, o retirarlo
+**Pendiente de decisión del operador:** deixar el alias de skillgraph, o retirarlo
 hasta que esa sesión termine su work item. Retirarlo sube el audit a ≥1; dejarlo
 es el estado actual.
+
+## Decisión del operador: retirado
+
+Elegido **retirarlo hasta que la sesión termine su work item**. Se reconstruyó la
+tabla con los **14** aliases restantes; la anterior de 15 se conservó en
+`/var/home/rubentxu/aliases-15-superseded.json` por si hay que volver.
+
+**Cómo se retiró, y por qué así.** El store es append-only por construcción —
+`AliasTable` no tiene `remove`—, así que retirar una entrada **no** es borrar una
+línea del JSON a mano: sería editar por debajo del store, saltándose la única
+garantía que el store existe para dar. Se reconstruyó la tabla desde cero
+pasando por el store, de modo que cada una de las 14 vuelve a pasar validación
+de formato, de resolución y de ciclo. Una retirada hecha por la vía sancionada
+cuesta un segundo; una hecha a mano cuesta un alias que el store nunca vio.
+
+### Verificación tras la retirada
+
+```text
+$ sddk project resolve --root $T --scope . --remote https://github.com/Rubentxu/CogniCode
+project_id: p-c1fac1fea05615c6
+identity_alias: p-2c63a808fcee924a -> p-c1fac1fea05615c6
+
+$ sddk project resolve --root $T --scope . --remote https://github.com/Rubentxu/chronos
+project_id: p-3416cfb8288f8964
+identity_alias: p-55f14aab9263c12f -> p-3416cfb8288f8964
+
+$ sddk project resolve --root $T --scope . --remote https://github.com/Rubentxu/skillgraph
+project_id: p-b7740b96d79ec013
+identity_alias: none
+
+$ python3 scripts/migrate_project_identity.py audit
+ids que NO coinciden con la derivacion actual: 1
+  p-74299cf88f51dab9  ->  p-b7740b96d79ec013   (1 receipt)
+      remote: https://github.com/Rubentxu/skillgraph
+```
+
+El audit baja a **1**, y esa única entrada es exactamente el par retirado: los
+otros 14 siguen efectivos. El pin de este checkout no se toca
+(`identity_source: pinned`, `identity_alias: none`).
+
+**Reanudar cuando la sesión cierre su work item:** declarar
+`p-b7740b96d79ec013 -> p-74299cf88f51dab9` con su `reason` (que incluye la
+excepción de que el lado derivado tiene más eventos), y el audit vuelve a 0.
+
 
 ## Dirección de los 15, y por qué no es «el lado con más eventos»
 
