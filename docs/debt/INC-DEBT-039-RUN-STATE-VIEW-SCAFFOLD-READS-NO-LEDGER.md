@@ -1,6 +1,10 @@
 ---
 id: INC-DEBT-039-RUN-STATE-VIEW-SCAFFOLD-READS-NO-LEDGER
-status: open
+status: resolved
+resolved_at: 2026-10-02
+resolved_in_session: session-65l
+resolved_part: "el scaffold que fabricaba la vista fue sustituido por la opcion (b): `sddk run-view` falla cerrado con RUN_STATE_SOURCE_UNAVAILABLE en vez de emitir una vista indistinguible de la verdad (verificado contra el binario publicado v2.5.3, exit 4)"
+open_part: "ninguno de esta deuda. La opcion (a) —un RunStateViewInputs respaldado por ledger— es feature de la ruta run-level, no deuda: nada afirma hoy. ADR-0147 D3 ya la asigno al primer run real"
 severity: low
 priority: P3   # session-46: degradada desde medium/P2. El bloqueo de CTX-003 paso 5 quedó resuelto por la ruta ciclo-nivel (ADR-0147 D2); lo que queda aquí es SOLO la ruta run-level, pendiente del primer run real.
 detected_at: 2026-09-29
@@ -285,3 +289,64 @@ Consecuencias verificadas en session-46:
 - Severidad baja a **low/P3**: no bloquea ningún objetivo del roadmap
   activo; el unique consumidor de producción (`sddk run view`) ya es
   honesto fail-closed.
+
+---
+
+## Addendum session-65l: auditoría — el defecto central está RESUELTO y verificado
+
+Esta era la única entrada abierta que no había pasado por verificación de
+vigencia. **Su afirmación central ya no se sostiene: el comando que «afirmaba
+algo falso» ahora falla cerrado.**
+
+### Lo que se verificó, no lo que se leyó
+
+Con el binario **publicado** (`sddk 2.5.3`), no con el código:
+
+```console
+$ sddk run-view demo-run-1
+{"debt":"INC-DEBT-039","error":"RUN_STATE_SOURCE_UNAVAILABLE",
+ "message":"no run_state source is wired for `demo-run-1`: frontier, blockers
+            and pending_decisions cannot be reported without one",
+ "run_id":"demo-run-1"}
+exit 4
+```
+
+Eso es exactamente el contrato que la entrada pedía: **una vista que dice
+«no tengo fuente» es visible; una vista que dice «nada está listo» cuando
+nunca miró se usa en silencio.** El segundo caso es el defecto, y ya no
+ocurre.
+
+### Qué cambió respecto a lo que la entrada describe
+
+La entrada describe un scaffold que construía la vista con `vec![]`
+constantes y `origin` adivinado por prefijo del `run_id`. Ese scaffold **ya
+no está**: `crates/sddk-cli/src/run_view.rs` lo describe en pasado («the
+scaffold it replaces», «the v0 scaffold built…») y `run_run_view` decide la
+disponibilidad de fuente **primero** — con una nota que explica por qué el
+orden importa: el scaffold resolvía la política primero, así que una política
+desconocida sobre un run sin fuente reportaba `POLICY_NOT_FOUND`, apuntando al
+defecto equivocado.
+
+Se adoptó la **opción (b)**: fallar cerrado con error tipado, hasta que exista
+un `RunStateViewInputs` respaldado por ledger (opción (a)).
+
+### Lo que queda, y por qué no es la misma deuda
+
+`build_frontier_projection_from_cli` sigue devolviendo `empty_projection()`
+(`run_view.rs:279`). **No es el defecto de esta entrada**, y conviene no
+confundirlos:
+
+- es un hueco de **DEC-PLANE-002** (el puente CLI→motor para la proyección de
+  frontier), no la afirmación falsa sobre identidad que esta entrada denunciaba;
+- el propio comentario anota que la proyección vacía solo emite `Abort`, «lo
+  cual es aceptable para vistas ad-hoc»;
+- y es **inalcanzable por este comando**: `run_run_view` devuelve en
+  `load_run_state_view` antes de llegar ahí — verificado por el `exit 4` de
+  arriba, que es exactamente ese camino de rechazo.
+
+### Veredicto
+
+El defecto P1 —*una vista que afirma algo falso*— está **cerrado en código y
+verificado contra el binario publicado**. Lo que queda (opción (a), una fuente
+respaldada por ledger) es **feature de la ruta run-level**, no deuda: nada
+miente hoy, y ADR-0147 D3 ya la dejó asignada al primer run real.
