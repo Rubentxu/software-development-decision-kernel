@@ -45,8 +45,9 @@
 
 ## Lote 3 — falsificación (`test(release)`)
 
-5. **Instrumento** `/var/home/rubentxu/f63/15-falsify-forge.py`, que **muta el
-   producto** y exige que caigan los guards:
+5. **Instrumento nuevo** que este plan escribe en
+   `/var/home/rubentxu/f63/15-falsify-forge.py`, que **muta el producto** y exige
+   que caigan los guards:
 
    - **M1** la rama vuelve a construir `GitHubForge::new` en línea → **R3** cae.
    - **M2** se invierte el orden de los pasos → **R4** cae.
