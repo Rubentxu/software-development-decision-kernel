@@ -674,19 +674,6 @@ fn ledger_events_text(output: &LedgerEventsOutput) -> String {
     text
 }
 
-/// Tail the ledger in real time (M9.5 live-mode streaming).
-///
-/// Polls `Storage::list_events_after(last_seq, limit)` in a loop, writing
-/// one event per line (NDJSON when `--format json`, pretty text when
-/// `--format text`). Returns a [`CommandOutput`] containing the streamed
-/// lines so unit tests can assert on them. In a real terminal session the
-/// same lines flow to the process stdout via the captured `CommandOutput`
-/// pipeline.
-///
-/// Exit conditions (in order):
-///   * `--max-events` reached (0 = unlimited)
-///   * `--idle-timeout-ms` elapsed with no new events (0 = never)
-///   * SIGINT/EOF on stdin (handled by callers, not in-process)
 /// Applies the `--cycle` and `--frame` narrowing that `ledger watch` uses, in
 /// **one** place, called from two: the poll loop and the total it declares.
 ///
@@ -716,9 +703,9 @@ fn apply_watch_filters(events: &mut Vec<LedgerEvent>, cycle: Option<&str>, frame
 /// deletion cannot panic, and the arithmetic closing is asserted by R3 in
 /// `tests/ledger_watch_declaration.rs`.
 ///
-/// The two renderers below read this one struct. A footer and a JSON summary
-/// are two declarations of the same fact; writing their numbers separately
-/// would make them free to disagree.
+/// The two renderers in `run_ledger_watch` read this one struct. A footer and
+/// a JSON summary are two declarations of the same fact; writing their numbers
+/// separately would make them free to disagree.
 #[derive(Serialize)]
 struct LedgerWatchSummary {
     emitted: u64,
@@ -731,123 +718,126 @@ impl LedgerWatchSummary {
     }
 }
 
+/// Tail the ledger in real time (M9.5 live-mode streaming).
+///
+/// Polls `Storage::list_events_after(last_seq, limit)` in a loop, writing
+/// one event per line (NDJSON when `--format json`, pretty text when
+/// `--format text`). Returns a [`CommandOutput`] containing the streamed
+/// lines so unit tests can assert on them. In a real terminal session the
+/// same lines flow to the process stdout via the captured `CommandOutput`
+/// pipeline.
+///
+/// Exit conditions (in order):
+///   * `--max-events` reached (0 = unlimited)
+///   * `--idle-timeout-ms` elapsed with no new events (0 = never)
+///   * SIGINT/EOF on stdin (handled by callers, not in-process)
 fn run_ledger_watch(args: LedgerWatchArgs, environment: &CliEnvironment) -> CommandOutput {
     use std::fmt::Write as _;
 
     let mut stdout = String::new();
     let format = args.format;
 
-    let result: anyhow::Result<LedgerWatchSummary> =
-        (|| -> anyhow::Result<LedgerWatchSummary> {
-            let context = RuntimeContext::open(&args.runtime, environment, false)?;
-            let mut after_sequence = args.from_sequence;
-            let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
-            let max_events = args.max_events;
-            let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
-            let started = std::time::Instant::now();
-            let mut last_activity = std::time::Instant::now();
-            let mut emitted: u64 = 0;
+    let result: anyhow::Result<LedgerWatchSummary> = (|| -> anyhow::Result<LedgerWatchSummary> {
+        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let mut after_sequence = args.from_sequence;
+        let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
+        let max_events = args.max_events;
+        let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
+        let started = std::time::Instant::now();
+        let mut last_activity = std::time::Instant::now();
+        let mut emitted: u64 = 0;
 
-            // When `--from-tail` is requested, start strictly after the
-            // current latest sequence so historical events are not re-emitted.
-            if args.from_tail {
-                let tail = context
-                    .storage
-                    .list_events()
-                    .context("loading current ledger tail for --from-tail")?;
-                after_sequence = tail.last().map(|ev| ev.sequence).unwrap_or(0);
-            }
-
-            // The cursor this run *started* from, kept apart from the running
-            // one: the total has to describe what this run could have emitted,
-            // and using the cursor it finished on would answer a different
-            // question — "how much is still there" instead of "how much was
-            // there", which is a number that cannot be compared with `emitted`.
-            let start_cursor = after_sequence;
-
-            'poll: loop {
-                // Bounded fetch: ask for a generous chunk per poll. SQLite
-                // returns up to `limit` rows ordered by sequence ASC.
-                let chunk_size: i64 = 256;
-                let mut events = context
-                    .storage
-                    .list_events_after(after_sequence, chunk_size)
-                    .context("polling list_events_after")?;
-
-                // Optional cycle/frame narrowing — `list_events_after` is
-                // already narrow by sequence range, but cycle/frame filters
-                // require a second pass.
-                apply_watch_filters(
-                    &mut events,
-                    args.cycle.as_deref(),
-                    args.frame.as_deref(),
-                );
-
-                if events.is_empty() {
-                    if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
-                        break;
-                    }
-                    std::thread::sleep(interval);
-                    // Defensive: avoid pathological infinite loop if a clock
-                    // skew or test harness pins time forward.
-                    if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
-                        break;
-                    }
-                    continue;
-                }
-
-                for event in &events {
-                    let line = match format {
-                        OutputFormat::Json => {
-                            serde_json::to_string(event)
-                                .context("serializing LedgerEvent to NDJSON")?
-                        }
-                        OutputFormat::Text => format!(
-                            "{:>8}  {:<36}  {:<24}  cycle={}  frame={}",
-                            event.sequence,
-                            event.event_type,
-                            event.event_id,
-                            event.cycle_id.as_deref().unwrap_or("-"),
-                            event.frame_id.as_str(),
-                        ),
-                    };
-                    writeln!(stdout, "{line}").expect("writing to String never fails");
-                    after_sequence = event.sequence;
-                    emitted = emitted.saturating_add(1);
-                    if max_events > 0 && emitted >= max_events {
-                        break 'poll;
-                    }
-                }
-                last_activity = std::time::Instant::now();
-                // Safety bound: never loop forever in pathological cases
-                // (e.g. test harness without an idle timeout). 5 minutes is
-                // well beyond the longest expected run.
-                if started.elapsed() > std::time::Duration::from_secs(300) {
-                    anyhow::bail!("ledger watch exceeded 5 minute safety bound");
-                }
-            }
-
-            // Declaring the window. The cap is not a reason to stay silent
-            // about it: "emitted 5" over a ledger of 591 is indistinguishable
-            // from "that was all of them" unless the other 586 are named.
-            // `i64::MAX` removes the cap for this one count, and the same
-            // filter the loop used, so the number cannot disagree with the
-            // events that were (or were not) emitted.
-            let mut available = context
+        // When `--from-tail` is requested, start strictly after the
+        // current latest sequence so historical events are not re-emitted.
+        if args.from_tail {
+            let tail = context
                 .storage
-                .list_events_after(start_cursor, i64::MAX)
-                .context("counting the events this watch could have emitted")?;
-            apply_watch_filters(
-                &mut available,
-                args.cycle.as_deref(),
-                args.frame.as_deref(),
-            );
+                .list_events()
+                .context("loading current ledger tail for --from-tail")?;
+            after_sequence = tail.last().map(|ev| ev.sequence).unwrap_or(0);
+        }
 
-            Ok(LedgerWatchSummary {
-                emitted,
-                total_events: available.len() as u64,
-            })
-        })();
+        // The cursor this run *started* from, kept apart from the running
+        // one: the total has to describe what this run could have emitted,
+        // and using the cursor it finished on would answer a different
+        // question — "how much is still there" instead of "how much was
+        // there", which is a number that cannot be compared with `emitted`.
+        let start_cursor = after_sequence;
+
+        'poll: loop {
+            // Bounded fetch: ask for a generous chunk per poll. SQLite
+            // returns up to `limit` rows ordered by sequence ASC.
+            let chunk_size: i64 = 256;
+            let mut events = context
+                .storage
+                .list_events_after(after_sequence, chunk_size)
+                .context("polling list_events_after")?;
+
+            // Optional cycle/frame narrowing — `list_events_after` is
+            // already narrow by sequence range, but cycle/frame filters
+            // require a second pass.
+            apply_watch_filters(&mut events, args.cycle.as_deref(), args.frame.as_deref());
+
+            if events.is_empty() {
+                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                    break;
+                }
+                std::thread::sleep(interval);
+                // Defensive: avoid pathological infinite loop if a clock
+                // skew or test harness pins time forward.
+                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                    break;
+                }
+                continue;
+            }
+
+            for event in &events {
+                let line = match format {
+                    OutputFormat::Json => {
+                        serde_json::to_string(event).context("serializing LedgerEvent to NDJSON")?
+                    }
+                    OutputFormat::Text => format!(
+                        "{:>8}  {:<36}  {:<24}  cycle={}  frame={}",
+                        event.sequence,
+                        event.event_type,
+                        event.event_id,
+                        event.cycle_id.as_deref().unwrap_or("-"),
+                        event.frame_id.as_str(),
+                    ),
+                };
+                writeln!(stdout, "{line}").expect("writing to String never fails");
+                after_sequence = event.sequence;
+                emitted = emitted.saturating_add(1);
+                if max_events > 0 && emitted >= max_events {
+                    break 'poll;
+                }
+            }
+            last_activity = std::time::Instant::now();
+            // Safety bound: never loop forever in pathological cases
+            // (e.g. test harness without an idle timeout). 5 minutes is
+            // well beyond the longest expected run.
+            if started.elapsed() > std::time::Duration::from_secs(300) {
+                anyhow::bail!("ledger watch exceeded 5 minute safety bound");
+            }
+        }
+
+        // Declaring the window. The cap is not a reason to stay silent
+        // about it: "emitted 5" over a ledger of 591 is indistinguishable
+        // from "that was all of them" unless the other 586 are named.
+        // `i64::MAX` removes the cap for this one count, and the same
+        // filter the loop used, so the number cannot disagree with the
+        // events that were (or were not) emitted.
+        let mut available = context
+            .storage
+            .list_events_after(start_cursor, i64::MAX)
+            .context("counting the events this watch could have emitted")?;
+        apply_watch_filters(&mut available, args.cycle.as_deref(), args.frame.as_deref());
+
+        Ok(LedgerWatchSummary {
+            emitted,
+            total_events: available.len() as u64,
+        })
+    })();
 
     match result {
         Ok(summary) => {
