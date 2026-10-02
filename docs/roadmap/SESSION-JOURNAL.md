@@ -9069,3 +9069,97 @@ ejecutado. F56, F57 y F59 se midieron con la ruta local, que no necesita red.
 sus criterios uno a uno, medir cada uno, y promover solo si todos estan
 verdes— y no promoverlo por simetria con el anterior: son contratos distintos
 con criterios distintos.
+
+---
+
+### 2026-10-02T18:10:00Z — p-63676b11dc0ef88f/identity-alias (INC-DEBT-059) — orchestrator
+
+**Baseline:** `b5567c9b` (HEAD y `origin/main` al entrar). **HEAD al salir:**
+`1d613bbf`, publicado con `git push origin main` **sin `--no-verify`** (variante
+A-v2: workspace 2.5.3 > tag publicado v2.5.2). **WorkItem:** recorrer los criterios
+de ADR-0152 uno a uno. **Resultado: el criterio 3 es ROJO, el ADR no se promueve,
+y de medirlo salió una INC nueva.**
+
+**Lo que se descubrió.** El store de alias de ADR-0152 se resuelve en un sitio,
+`resolve_identity_honoring_pin`, y **`adopt` no es ese sitio**. Hay tres puntos de
+llamada (`lib.rs:1636` `resolve_project_ids`, `lib.rs:1903` `run_project_resolve`,
+más el wrapper) y `prepare_adoption_plan` (`lib.rs:2133`) no está entre ellos:
+llama a `plan_adoption`, que llama a `resolve_project_identity` **directamente**
+(`adoption.rs:203`). Es el único camino de identidad del CLI que no consulta la
+tabla de aliases. El pin sí se respeta, pero por un mecanismo **paralelo** dentro
+del engine — hay **dos** resolutores, que es exactamente lo contrario de lo que
+ADR-0152 autorizó al fijar un punto único de decisión.
+
+**Medido, no inferido** (repro fuera del repo, `/var/home/rubentxu/repro-c3{,b}.sh`,
+`HOME`/`XDG_*` aislados; checkout con pin en `X`, pin retirado, alias `Y -> X`
+declarado). El mismo checkout, sin pin, en el mismo instante:
+
+- `sddk project resolve` → `p-0000000000000aaa`, `identity_alias: p-c4319… -> p-0000…`, **exit 0**
+- `sddk adopt status` → `p-c4319c598bc98be8`, `status: absent`, **mira un ledger que no existe**, **exit 1**
+- `sddk adopt apply` → **escribe un segundo recibo bajo el id retirado**, sin avisar; sale `complete`
+
+Con los 14 aliases del storage real, la condición es alcanzable en 14 proyectos.
+El segundo recibo es la enfermedad que motivó el ADR, de vuelta, de forma
+determinista en cada `adopt apply` sobre un checkout con alias.
+
+**Por qué ningún test lo cazaba.** `grep -c alias` da **0** en
+`adoption_contract.rs` y en `project_pin_e2e.rs`: los tests viven a ambos lados
+de la costura y ninguno la cruza. Es la **misma** forma que la mutación
+`resolve_bypasses_the_wiring` del lote 3, que escapó por idéntica razón y que ya
+costó partir `run_project_resolve_with` para poder cruzarla. Encima, el doc de
+`ProjectPin` (`lib.rs:1699-1703`) afirma «All resolvers now go through
+[`resolve_identity_honoring_pin`]. INC-DEBT-049» — frase **falsa**, escrita por el
+mismo doc que se acusa a sí mismo de haber sido una afirmación falsa, y nombrando
+`adopt status` como uno de los tres ofensores originales: se corrigió para el pin,
+se dejó el mismo agujero para el alias.
+
+**El arreglo evidente no cerraba nada, y se descartó sin commitear.** Añadir
+`alias_origin: Option<ProjectId>` a `AdoptionStatus` más su línea de render
+**compilaba**, y se midió por qué no servía: `plan.identity.alias_origin()` es
+`None` **siempre**, porque `plan_adoption` no resuelve alias. El campo
+serializaría `none` en el 100% de los casos — una declaración que nunca se
+dispara, que hace el criterio *parecer* satisfecho a quien lea la estructura. Se
+descartó con `git checkout` antes de commitear.
+
+**Defecto propio de session-68, encontrado al correr un guard que nadie había
+corrido.** `tests/test_adr_0153_criteria.sh` se creó al aceptar ADR-0153 y
+**ningún runner lo ejecutaba**: `test_gate_coverage.py` llevaba rojo
+(`SIN runner y SIN motivo: 1`). Y no era ejecutable (`-rw-r--r--`), con lo que
+añadirlo a la lista de `release.sh` sin el `chmod` lo habría convertido en un
+**skip silencioso** — cableado en apariencia, ejecutado nunca. Es la clase que el
+propio guard de session-65j describió, y otra vez el defecto estaba en la
+verificación y no en lo verificado.
+
+**Contaminación propia: doce en dos ficheros, y siete indetectables.** Al
+escribir la INC nueva: un fragmento CJK donde iba una palabra (no se reproduce
+aquí, porque citarlo contaminaría este mismo fichero y obligaría a meterlo en la
+allowlist de INC-DEBT-057), `se.crossó`, `seorga`, `estaINC`, `ADR-0152ymmó`,
+`La motivation`, `El mechanism`, `sin warning`, `Passar`, `call sites`,
+`se Ingramó`, `la mecanismo`. **Cinco las cazaron los barridos de regexes; siete
+no las cazó ninguno** — son palabras inglesas sueltas o un género equivocado, no
+un token pegado dentro de una palabra. Segunda confirmación en esta sesión de la
+conclusión de INC-DEBT-058: esa clase **no** es automatizable con una expresión
+regular. La limpieza la hizo la lectura completa del fichero.
+
+**Gates:** `test_adr_0153_criteria` **PASS=7 FAIL=0** y ahora cableado a
+`release.sh` · `test_gate_coverage` `con runner: 36 · SIN runner y SIN motivo: 0`
+· `check_debt_index_coherence` PASS, 44 entradas · `test_docs_script_contamination`
+PASS · `test_adr_promotion_format` PASS, 56 aceptados, 0 violaciones ·
+`test_uat_authority_citations` PASS, 0 avisos · `shellcheck scripts/release.sh`
+limpio. **No se tocó Rust**: el diff son dos ficheros de deuda, un ADR y el runner.
+
+**Lo que NO se afirma.** No se midió el criterio 5 de ADR-0152 ni el 6: siguen
+sin medir, y el 5 además interactúa con la divergencia del par de skillgraph
+retirado. La ruta **forge** de `release apply` contra un GitHub real sigue sin
+medir, pendiente propio declarado. No se ejecutó el arreglo de INC-DEBT-059: la
+sesión lo deja con SCOPE y criterios de cierre escritos, no implementado.
+
+**Primer paso de la sesión siguiente:** abrir el ciclo de INC-DEBT-059 con
+`SCOPE-CONTRACT` y `PRE-FLIGHT` propios, y escribir el test **RED antes** del
+arreglo. El movimiento correcto es **mover** la decisión al resolver canónico
+—que `prepare_adoption_plan` resuelva una vez por
+`resolve_identity_honoring_pin_with` y pase al engine la identidad ya resuelta,
+con `alias_origin` e `identity_source` intactos— y no **añadir** un tercer
+resolutor. Pasar el id resuelto como `pinned_project_id` sería más corto y
+**incorrecto**: degradaría `identity_source` a `Pinned` en el camino no pinado, la
+regresión que el comentario de `adoption.rs:210-243` ya advirtió una vez.

@@ -2,6 +2,30 @@
 
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69, 2026-10-02): `adopt` no llega al store de alias, y `adopt apply` recrea el huérfano que ADR-0152 existe para cerrar. Criterio 3 ROJO, el ADR no se promueve, INC-DEBT-059 abierta.** `HEAD` = `1d613bbf` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo que se descubrió, en tres líneas:**
+
+1. **El store de alias se resuelve en un sitio, y `adopt` no es ese sitio.** Hay tres puntos de llamada de `resolve_identity_honoring_pin*` y `prepare_adoption_plan` (`lib.rs:2133`) no está entre ellos: llama a `plan_adoption`, que llama a `resolve_project_identity` **directamente** (`adoption.rs:203`). Es el único camino de identidad del CLI que no consulta la tabla. El pin sí se respeta, pero por un mecanismo **paralelo** dentro del engine — hay **dos** resolutores, que es lo contrario de lo que ADR-0152 autorizó al fijar un punto único de decisión.
+2. **Medido, no inferido.** El mismo checkout, sin pin, en el mismo instante: `project resolve` da el `to` y declara `from -> to` (exit 0); `adopt status` da el `from`, `status: absent` y **mira un ledger que no existe** (exit 1). Dos comandos, dos respuestas sobre el mismo estado, sin aviso. Y `adopt apply` sobre ese checkout **escribe un segundo recibo bajo el id retirado**, sin avisar — el comando sale `complete`. Con los 14 aliases del storage real, la condición es alcanzable en 14 proyectos.
+3. **El arreglo evidente no cerraba nada, y se descartó sin commitear.** Añadir `alias_origin` a `AdoptionStatus` **compila**, pero `plan.identity.alias_origin()` es `None` **siempre**: el campo serializaría `none` en el 100% de los casos. Un campo que declara un alias que nunca ocurre hace el criterio *parecer* satisfecho a quien lea la estructura.
+
+**Por qué ningún test lo cazaba:** `grep -c alias` da **0** en `adoption_contract.rs` y en `project_pin_e2e.rs`. Los tests viven a ambos lados de la costura y ninguno la cruza — la **misma** forma que la mutación `resolve_bypasses_the_wiring` del lote 3, que escapó por idéntica razón. Y el doc de `ProjectPin` (`lib.rs:1699-1703`) afirma «All resolvers now go through [`resolve_identity_honoring_pin`]. INC-DEBT-049»: frase **falsa**, escrita por el mismo doc que se acusa a sí mismo de haber sido una afirmación falsa, y nombrando `adopt status` como uno de los tres ofensores originales.
+
+**Un defecto propio de session-68, encontrado al correr un guard que nunca se había corrido:** `tests/test_adr_0153_criteria.sh` existía y **ningún runner lo ejecutaba** — `test_gate_coverage.py` llevaba rojo. Y no era ejecutable (`-rw-r--r--`), con lo que añadirlo a la lista sin el `chmod` lo habría convertido en un **skip silencioso**: cableado en apariencia, ejecutado nunca.
+
+**Contaminación propia, registrada porque es el dato que INC-DEBT-058 necesita:** al escribir la INC nueva cometí **doce** contaminaciones en dos ficheros. **Cinco** las cazó el barrido de regexes —un fragmento CJK donde iba una palabra (no se reproduce aquí, porque citarlo contaminaría este fichero y obligaría a meter `CURRENT.md` en la allowlist de INC-DEBT-057, que es un coste que una frase de este tipo no compensa), más `se.crossó`, `seorga`, `estaINC` y `ADR-0152ymmó`— y **siete no las cazó ningún barrido**: `La motivation`, `El mechanism`, `sin warning`, `Passar`, `call sites`, `se Ingramó`, `la mecanismo`. Son palabras inglesas sueltas o un género equivocado, no un token pegado dentro de una palabra — la clase que INC-DEBT-058 declara **no automatizable con una expresión regular**. Solo la lectura completa del fichero las limpió. Es la segunda vez en esta sesión que el guard que debía cazar la contaminación resulta incapaz y el trabajo lo hace la lectura.
+
+**Gates de session-69:** `test_adr_0153_criteria` **PASS=7 FAIL=0**, ahora cableado a `release.sh` · `test_gate_coverage` `con runner: 36 · SIN runner y SIN motivo: 0` · `check_debt_index_coherence` PASS, 44 entradas · `test_docs_script_contamination` PASS · `test_adr_promotion_format` PASS, 56 aceptados, 0 violaciones · `test_uat_authority_citations` PASS, 0 avisos · `shellcheck scripts/release.sh` limpio. No se tocó Rust: `git diff` de la sesión son dos ficheros de deuda, un ADR y el runner.
+
+**Lo que sigue abierto:** **el arreglo de INC-DEBT-059**, que necesita `SCOPE-CONTRACT` + `PRE-FLIGHT` propios y test **RED antes** del arreglo, no después · la **clave del KMS**, único bloqueo que queda para publicar v2.5.3 · el **contrato de read-option** de INC-DEBT-049 · la **publicación del harness** Pipelinek-Test-Hardness (44 commits sin publicar) · el **alias de skillgraph**, retirado hasta que la sesión concurrente cierre `wi-72-p3-expansion-apply` · la clase ASCII de contaminación en `docs/` (INC-DEBT-058: no automatizable).
+
+**Nota sobre el puntero:** `current_sha` nombra `1d613bbf`, el commit **anterior** a este fichero documental, por la razón que la tercera sesión ya dejó escrita: actualizar el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener.
+
+---
+
+# CURRENT — puntero de reanudación de SDDK
+
 **Estado (session-68, 2026-10-02): ADR-0153 pasa a `accepted` e INC-DEBT-051 queda resuelta, con sus cuatro falsificadores medidos contra el binario. `release plan` ya no está acotado a proyectos Rust.** `HEAD` = `c35e9a1c` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Lo que cambió, en tres líneas:**
