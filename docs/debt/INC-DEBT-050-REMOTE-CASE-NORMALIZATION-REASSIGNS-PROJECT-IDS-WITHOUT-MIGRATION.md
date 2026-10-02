@@ -474,3 +474,47 @@ como el camino propuesto — no como algo ejecutado aquí.
 Su decision: un alias a nivel de storage (`project_aliases(from_id, to_id)`), resuelto **en el mismo sitio unico** donde ya se decide la identidad (`resolve_identity_honoring_pin`), fail-closed en las cuatro reglas que importan (cadenas transitivas, ciclo = error duro, aliases append-only, y declaracion visible cuando se resuelve por alias).
 
 La SCOPE-CONTRACT del ciclo es `docs/roadmap/receipts/c3m-identity-alias/SCOPE-CONTRACT.md`. **La implementacion no arranca hasta que el operador acepte el ADR**: hasta entonces esto es una propuesta con sus costos escritos, no un trabajo en curso.
+
+---
+
+## Addendum session-69c — el ADR fue aceptado, y que cambia y que no
+
+**ADR-0152 pasa a `accepted`** (2026-10-02, ciclo
+`p-63676b11dc0ef88f/identity-alias`). Los seis criterios estan medidos: cinco en
+verde y falsificados, y el cuarto —la CLI es append-only— **reescrito**, porque
+su redaccion anterior exigia un falsificador inejecutable.
+
+El addendum session-66b de este documento dice «la implementacion no arranca hasta
+que el operador acepte el ADR». Eso ya paso: hay 15 aliases declarados en el
+storage real, el audit da **0** ids divergentes sobre **161** receipts, y el
+operador eligio explicitamente el mecanismo del alias sobre el de retirar el
+recibo cuando se le poids las dos opciones con su coste.
+
+**Lo que esto aporta a este documento:**
+
+- La causa ya esta aislada con nombre y fecha: el normalizador de remote cambio
+  y el par `p-74299cf88f51dab9` / `p-b7740b96d79ec013` de `skillgraph` son el
+  mismo proyecto con dos derivaciones, cinco dias y dos runtimes de distancia
+  (1.171.2 el 26-sep, 2.5.3 el 1-oct). Se midio antes de reparar, porque
+  «declarar el alias» y «retirar el recibo» son reparaciones opuestas y una es
+  irreversible.
+- Los 25 receipts del alcance original estan **todos** resueltos: el audit no
+  reporta ninguno divergente. El remedio 2 de esta incidencia, el que se declaro
+  «destructivo, requiere al operador, no ejecutada», ya no es necesario para el
+  efecto observable.
+- El remedio 3, el golden pin de `stable_project_id` y `normalize_remote_url`,
+  sigue en pie e independiente: protege contra el *proximo* cambio de
+  normalizador. El alias protege contra el *actual*.
+- **Knowledge negativo que sigue valiendo:** el alias protege la lectura por la
+  CLI. Un artefacto que no pase por el resolver canonico —un script suelto, una
+  consulta directa al receipt— seguira viendo el id viejo. El remedy 3 es el que
+  evita que el problema reaparezca, y el alias solo lo racciona.
+
+**Lo que NO aporta, y por que la incidencia sigue `open`:** el alias produce el
+mismo efecto observable que la migracion —ningun receipt queda huerfano— pero no
+reescribe los receipts ni reescribe la historia. Si el criterio de cierre de esta
+incidencia es «los ids ya no divergen», esta metida lo cumple; si es «los
+receipts dicen el id que hoy se deriva», no, y eso solo lo logra una migracion
+destructiva. **Que cierre o no es del operador**, porque el criterio esta escrito
+aqui y no en el ADR. Lo que el ADR cambia es el frente `closes:` de su
+frontmatter: pasa a `[]`, y esta incidencia pasa a `addresses:`.

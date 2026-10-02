@@ -432,3 +432,45 @@ fichero **que no existe**. Las superficies reales de este defecto son
 Su decision: un alias a nivel de storage (`project_aliases(from_id, to_id)`), resuelto **en el mismo sitio unico** donde ya se decide la identidad (`resolve_identity_honoring_pin`), fail-closed en las cuatro reglas que importan (cadenas transitivas, ciclo = error duro, aliases append-only, y declaracion visible cuando se resuelve por alias).
 
 La SCOPE-CONTRACT del ciclo es `docs/roadmap/receipts/c3m-identity-alias/SCOPE-CONTRACT.md`. **La implementacion no arranca hasta que el operador acepte el ADR**: hasta entonces esto es una propuesta con sus costos escritos, no un trabajo en curso.
+
+---
+
+## Addendum session-69c — el ADR fue aceptado, y que cambia y que no
+
+**ADR-0152 pasa a `accepted`** (2026-10-02, ciclo
+`p-63676b11dc0ef88f/identity-alias`). Los seis criterios estan medidos: cinco en
+verde y falsificados, y el cuarto —la CLI es append-only— **reescrito**, porque
+su redaccion anterior exigia un falsificador inejecutable.
+
+El addendum session-66b de este documento dice «la implementacion no arranca hasta
+que el operador acepte el ADR». Eso ya paso: hay 15 aliases declarados en el
+storage real, el audit da **0** ids divergentes sobre **161** receipts, y el
+operador eligio explicitamente el mecanismo del alias sobre el de retirar el
+recibo cuando se le poids las dos opciones con su coste.
+
+**Lo que esto aporta a este documento:**
+
+- El historico de `p-63676b11dc0ef88f` —65 ciclos, 3.9 MB de ledger— ya lo ve
+  la CLI, y no porque se arreglara el storage sino porque el **pin** lo declara
+  y los cinco resolutores passaram por el resolver canonico (session-63).
+- La parte de «la autoridad no ve su propia historia» que sigue **sin** cerrar es
+  la que este documento nombra: que ni `adopt status` ni `cycle status` declaren
+  la existencia de historial bajo otra identidad con el mismo `vault_path`. El
+  alias de ADR-0152 no lo arregla, porque no es un problema de resolver sino de
+  **declarar**: el mecanismo de declaracion de un salto existe y se ejercita
+  (`alias_hops`, `identity_alias: from -> to`), pero no hay todavia una regla que
+  obligue a `adopt status` y `cycle status` a buscar historia en otras
+  identidades antes de decir `complete`.
+- Ese es el trabajo que queda, y es el **contrato de read-option**: que dice
+  «complete» un comando cuando existe historial que no ve. Decide que estado
+  nuevo corresponde y si `sddk-cycle-resume` y `sddk-debt-verify` pueden asumir
+  lo que hoy asumen, asi que necesita SCOPE y ADR propios.
+
+**Lo que NO aporta, y por que la incidencia sigue `open`:** el alias produce el
+mismo efecto observable que la migracion —ningun receipt queda huerfano— pero no
+reescribe los receipts ni reescribe la historia. Si el criterio de cierre de esta
+incidencia es «los ids ya no divergen», esta metida lo cumple; si es «los
+receipts dicen el id que hoy se deriva», no, y eso solo lo logra una migracion
+destructiva. **Que cierre o no es del operador**, porque el criterio esta escrito
+aqui y no en el ADR. Lo que el ADR cambia es el frente `closes:` de su
+frontmatter: pasa a `[]`, y esta incidencia pasa a `addresses:`.
