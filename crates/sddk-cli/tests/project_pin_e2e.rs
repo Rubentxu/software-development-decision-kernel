@@ -52,6 +52,11 @@ fn run(dir: &std::path::Path, args: &[&str]) -> (i32, String) {
     let out = Command::new(bin())
         .args(args)
         .env_remove("SDDK_PROJECT_ID")
+        // Same reason as the XDG vars above, one level up: `SDDK_DATA_DIR` wins
+        // over `XDG_DATA_HOME` and is inherited, so one exported in the
+        // developer's shell would send these cases into their real storage
+        // despite the isolation three lines up.
+        .env_remove("SDDK_DATA_DIR")
         .env("XDG_DATA_HOME", xdg.join("data"))
         .env("XDG_STATE_HOME", xdg.join("state"))
         .env("XDG_CACHE_HOME", xdg.join("cache"))
@@ -349,5 +354,62 @@ fn unpinned_checkout_still_derives_from_the_remote() {
     assert_eq!(
         from_adopt, from_resolve,
         "sin pin, adopt status y project resolve deben coincidir (derive por remote)"
+    );
+}
+
+/// A malformed pin must fail **closed**, not fall through to derivation.
+///
+/// This used to be measured in the engine
+/// (`adoption_identity.rs::malformed_pin_fails_closed_instead_of_falling_back_to_the_remote`)
+/// by `validate_plan_input`. That check moved with the identity: a
+/// checkout-local concern is not a filesystem-free engine's business, and the
+/// engine cannot read the pin file anyway. INC-DEBT-059.
+///
+/// It is re-measured here because the property is unchanged and the place it
+/// lives changed: an unreadable pin silently ignored is exactly how a checkout
+/// ended up split across two `project_id`s, and `adopt status` reporting
+/// `status: complete` over an empty storage while the real ledger sat under the
+/// id the pin named.
+#[test]
+fn a_malformed_pin_fails_closed_instead_of_deriving() {
+    let s = Sandbox::new("malformed");
+
+    // Valid JSON, valid `schema_version`, but the `project_id` is not a
+    // project_id — no `p-` prefix. Every other field is well-formed, so this
+    // is a pin that a lenient reader would happily accept.
+    std::fs::create_dir_all(s.dir.join(".sddk")).unwrap();
+    std::fs::write(
+        s.dir.join(".sddk/project-pin.json"),
+        r#"{"schema_version":1,"project_id":"63676b11dc0ef88f","pinned_at":"2026-10-01T12:00:00Z"}"#,
+    )
+    .unwrap();
+
+    let (code, out) = run(
+        &s.dir,
+        &[
+            "adopt",
+            "status",
+            "--root",
+            ".",
+            "--scope",
+            ".",
+            "--remote",
+            "git@EXAMPLE.com:Org/Repo.git",
+        ],
+    );
+
+    assert_ne!(
+        code, 0,
+        "un pin malformado debe salir con codigo no cero, no derivar en silencio.\nsalida: {out}"
+    );
+    assert!(
+        out.contains("project pin") || out.contains("not a project_id"),
+        "el error debe NOMBRAR al pin, no hablar del remote: {out}"
+    );
+    assert!(
+        !out.contains("status: complete"),
+        "un pin que no se pudo leer no puede acabar en `complete`: es el \
+         `status: complete` sobre storage vacio que INC-DEBT-049 describio.\n\
+         salida: {out}"
     );
 }

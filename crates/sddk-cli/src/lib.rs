@@ -1208,18 +1208,40 @@ fn generation_destination(
     }
     // Resolve the project identity to find its XDG generated dir. We reuse the
     // same resolution as adoption so the destination is stable per project.
+    //
+    // That sentence was a third false claim of the same family, and the
+    // falsifier found it while looking for a second resolver: it reused the
+    // *shape* of the adoption resolution, not the resolution itself. It called
+    // `resolve_project_identity` directly, so neither the pin nor the alias
+    // applied. OBSERVED on a checkout with a declared alias
+    // (`repro-c3d.sh`): `project resolve` reports the surviving id while
+    // `sddk generate docs` writes to
+    // `…/projects/<retired-id>/generated/docs/generated/` — generated
+    // documentation for a project nobody reads any more. INC-DEBT-059.
     let remote = resolve_remote(root, None)?;
+    // And a **pre-existing** defect, found while measuring the above and not
+    // caused by it: `find_persisted_fallback_seed` only matched receipts whose
+    // `identity_source` was `Fallback`, so a receipt written **under a pin** was
+    // invisible to it. With no remote, that left the seed `None`, the
+    // resolution failed, and `generate docs` silently fell back to in-repo on
+    // every pinned remote-less checkout — the INC-DEBT-049 shape, in a
+    // different function. The fix is one clause in the predicate, not a new
+    // source of seeds: see the note on that function.
     let fallback_seed = if remote.is_none() {
         find_persisted_fallback_seed(environment, root, ".")?
     } else {
         None
     };
-    let identity = match resolve_project_identity(remote.as_deref(), ".", fallback_seed.as_deref())
-    {
+    let identity = match resolve_identity_honoring_pin(root, ".", remote, fallback_seed) {
         Ok(identity) => identity,
-        Err(_) => return Ok(root.to_path_buf()), // not adopted → in-repo fallback
+        // Unresolvable identity → in-repo fallback, so `generate` never fails on
+        // a repo that genuinely has no project. That set is strictly smaller
+        // than before: it no longer includes pinned remote-less checkouts,
+        // which are perfectly resolvable.
+        Err(_) => return Ok(root.to_path_buf()),
     };
-    let workspace_id = stable_workspace_id(&identity.project_id, &path_string(root)?);
+    let canonical = path_string(root)?;
+    let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
     let paths = sddk_engine::resolve_xdg_paths(
         &environment.xdg(),
         identity.project_id.as_str(),
@@ -1696,11 +1718,25 @@ pub(crate) struct ProjectAliasArgs {
 /// remote/seed derivation, so a renamed or case-drifted remote cannot fork
 /// the ledger (agent-secretless report D2, work item W2c).
 ///
-/// **This doc used to be a false claim.** It said "every runtime context
-/// honors it" while only two of five independent resolvers did; `adopt
-/// status`, `config resolve` and cycle inference silently re-derived from
-/// the remote. Nothing tested the contract it asserted. All resolvers now go
-/// through [`resolve_identity_honoring_pin`]. INC-DEBT-049.
+/// **This doc used to be a false claim, twice.** It first said "every runtime
+/// context honors it" while only two of five independent resolvers did;
+/// `adopt status`, `config resolve` and cycle inference silently re-derived
+/// from the remote. Nothing tested the contract it asserted. The repair then
+/// closed with "All resolvers now go through [`resolve_identity_honoring_pin`]" —
+/// which was **also false**, for the same function it names earlier in the
+/// paragraph: `adopt` re-derived a second time, and this time not for the pin
+/// but for the alias, so `sddk adopt status` and `sddk context bootstrap`
+/// reported a retired `project_id` and `adopt apply` wrote a second adoption
+/// receipt under it. INC-DEBT-049, then INC-DEBT-059.
+///
+/// What is true now, and is enforced rather than asserted: the pin is applied
+/// in exactly one function, `resolve_identity_honoring_pin_with`, and both
+/// `adopt` and `context bootstrap` reach their identity only through it. The
+/// engine no longer decides identity at all — it cannot, being filesystem-free,
+/// so any identity it derived was systematically the pre-alias one. The pin
+/// *itself* is read by `load_project_pin` below, which is why a malformed one
+/// still fails closed: a checkout-local concern is validated where the
+/// checkout-local file is read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ProjectPin {
     pub(crate) schema_version: u32,
@@ -2136,10 +2172,12 @@ fn prepare_adoption_plan(
     environment: &CliEnvironment,
 ) -> anyhow::Result<AdoptionPlan> {
     let root = canonical_root(&args.root)?;
-    // Read the pin here so `plan_adoption` can honour it. The engine stays
-    // filesystem-free, so this is the only place that can see the file.
-    // INC-DEBT-049.
-    let pinned_project_id = load_project_pin(&root)?.map(|pin| pin.project_id);
+    // The pin is NOT read here. It used to be, so the engine could honour it —
+    // and that arrangement left this path with no way to see the alias table,
+    // so `adopt` re-derived the identity independently of the canonical
+    // resolver and landed on the retired id (INC-DEBT-059). Both the pin and
+    // the alias are now applied by the one resolver, below, in the one order
+    // that is correct.
     let remote = resolve_remote(&root, args.remote)?;
     let mut fallback_seed = args.fallback_seed;
     if remote.is_none() && fallback_seed.is_none() {
@@ -2181,11 +2219,18 @@ fn prepare_adoption_plan(
         .or_else(|| environment.sddk_actor.clone())
         .or_else(|| environment.user.clone())
         .unwrap_or_else(|| "sddk-cli".into());
+    // The one decision point. The pin is applied over the derived id, and then
+    // the alias over both branches — the order is not interchangeable, and
+    // `resolve_identity_honoring_pin_with` is where that is enforced and
+    // explained. A cycle or an over-long chain is a hard error here rather than
+    // a silent fallback to the pre-alias id.
+    let identity = resolve_identity_honoring_pin(&root, &args.scope, remote, fallback_seed)?;
     Ok(plan_adoption(AdoptionPlanInput {
-        remote_url: remote,
-        pinned_project_id,
-        scope: args.scope,
-        fallback_seed,
+        // Resolved once, by the resolver that `sddk project resolve` and
+        // `sddk context bootstrap` also go through. `identity_source` and
+        // `alias_hops` travel with it, so a checkout that reached its id
+        // through a redirect still says so in `adopt status`.
+        identity,
         canonical_workspace_path: root,
         display_name,
         xdg: environment.xdg(),
@@ -2231,10 +2276,18 @@ pub(crate) fn find_persisted_fallback_seed(
             Ok(receipt) => receipt,
             Err(_) => continue,
         };
-        if receipt.identity_source == IdentitySource::Fallback
-            && receipt.canonical_workspace_path == root
-            && receipt.scope == scope
-        {
+        // A `Pinned` receipt counts, and its absence here is what made
+        // `sddk generate docs` fall back to in-repo on every pinned remote-less
+        // checkout: the pin overwrites `identity_source`, so a receipt written
+        // under one was invisible to this lookup, the seed came back `None`, the
+        // resolution failed, and the caller swallowed it as "not adopted". The
+        // seed is still there — the pin replaces the `project_id`, not the seed.
+        // INC-DEBT-059.
+        let seeded = matches!(
+            receipt.identity_source,
+            IdentitySource::Fallback | IdentitySource::Pinned
+        );
+        if seeded && receipt.canonical_workspace_path == root && receipt.scope == scope {
             if found.is_some() {
                 anyhow::bail!("multiple fallback adoption receipts match this workspace");
             }
@@ -2317,12 +2370,23 @@ fn adoption_result_text(result: &AdoptionCommandResult) -> String {
             plan.paths.receipt.display()
         ),
         AdoptionCommandResult::Status(status) => format!(
-            "status: {}\nproject_id: {}\nworkspace_id: {}\nreceipt: {}\nledger: {}\n{}",
+            "status: {}\nproject_id: {}\nworkspace_id: {}\nreceipt: {}\nledger: {}\nidentity_alias: {}\n{}",
             adoption_status_text(status.status),
             status.project_id,
             status.workspace_id,
             status.receipt_path.display(),
             status.ledger_path.display(),
+            // Criterion 3 of ADR-0152: the declaration names the `from` and the
+            // `to`. The `to` is the `project_id` above; without this line the
+            // `from` appeared nowhere, and a redirected identity read exactly
+            // like one that was never redirected. `none` is a real answer, not
+            // a missing one: `alias_origin()` returns `None` rather than
+            // guessing when no alias applied.
+            status
+                .alias_origin
+                .as_ref()
+                .map(|from| format!("{from} -> {}", status.project_id))
+                .unwrap_or_else(|| "none".to_string()),
             status
                 .detail
                 .as_ref()

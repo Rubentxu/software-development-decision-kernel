@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sddk_domain::error::SddkErrorCode;
 use sddk_domain::{
-    AdoptionReceipt, IdentityError, IdentitySource, Ledger, ResolvedProjectIdentity,
-    normalize_remote_url, resolve_project_identity, stable_workspace_id,
+    AdoptionReceipt, IdentityError, IdentitySource, Ledger, ProjectId, ResolvedProjectIdentity,
+    normalize_remote_url, stable_workspace_id,
 };
 use sddk_domain::{ProjectRecord, StorageError, WorkspaceRecord};
 use serde::{Deserialize, Serialize};
@@ -27,20 +27,30 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// Explicit deterministic input for adoption planning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdoptionPlanInput {
-    /// Raw remote URL, or `None` for fallback identity.
-    pub remote_url: Option<String>,
-    /// Durable pin declared by the checkout (`.sddk/project-pin.json`).
+    /// Project identity, **already resolved** by the caller.
     ///
-    /// When present it **wins** over `remote_url`/`fallback_seed`
-    /// derivation: a renamed or case-drifted remote must not fork the
-    /// ledger. It is the caller (`sddk-cli`) that reads the pin file; this
-    /// crate stays free of filesystem access so `plan_adoption` remains a
-    /// pure function. INC-DEBT-049.
-    pub pinned_project_id: Option<String>,
-    /// Required monorepo scope.
-    pub scope: String,
-    /// Stable UUID required when no remote is available.
-    pub fallback_seed: Option<String>,
+    /// This field used to be four: `remote_url`, `pinned_project_id`, `scope`
+    /// and `fallback_seed`, from which this crate derived the identity itself.
+    /// That was a defect, not a convenience (INC-DEBT-059): this crate is
+    /// filesystem-free **by design**, so it could never load the project alias
+    /// table, so every identity it produced was systematically the *pre-alias*
+    /// one. `sddk adopt` and `sddk context bootstrap` therefore re-derived
+    /// independently of the canonical resolver, reported the retired id, and —
+    /// worse — `adopt apply` wrote a *second* adoption receipt under it, which
+    /// is the orphan ADR-0152 exists to make un-re-creatable.
+    ///
+    /// Taking the identity resolved makes "one decision point" true **by
+    /// construction** rather than by note: the derivation inputs are gone, so
+    /// there is nothing left to derive from. With an optional override
+    /// instead, someone re-adds the call and no behavioural test notices.
+    ///
+    /// The caller is `sddk-cli`, which reads the pin file
+    /// (`.sddk/project-pin.json`) and the alias table
+    /// (`$XDG_STATE_HOME/sddk/project-aliases.json`), applies the pin and then
+    /// the alias — in that order, which is not interchangeable — and hands the
+    /// result here. `identity_source` and `alias_hops` travel intact, so a
+    /// checkout that reached its id through a redirect still says so.
+    pub identity: ResolvedProjectIdentity,
     /// Canonical absolute checkout or worktree path.
     pub canonical_workspace_path: PathBuf,
     /// Human-readable project name.
@@ -113,6 +123,22 @@ pub struct AdoptionStatus {
     /// Stable explanation for partial or invalid states.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The id this resolution **started from**, when it was redirected through
+    /// a project alias; the `project_id` on this same struct is the `to`.
+    ///
+    /// Criterion 3 of ADR-0152 requires `adopt status` to say that it resolved
+    /// through an alias, with the `from` and the `to`. The `to` is
+    /// `project_id`; the `from` has to travel separately, because nothing else
+    /// on this struct records that a redirect happened — and a redirected
+    /// identity that does not say so reads exactly like one that was never
+    /// redirected, which is the silent-redirect failure the ADR exists to
+    /// close.
+    ///
+    /// It is `None` when no alias applied, and that is a distinguishable state,
+    /// not a missing one: `alias_origin()` returns `None` rather than guessing,
+    /// so "resolved here" can never be mistaken for "came from here".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_origin: Option<ProjectId>,
 }
 
 /// Errors emitted by adoption planning or convergence.
@@ -194,53 +220,36 @@ impl SddkErrorCode for AdoptionError {
 /// Builds an adoption plan without reading or writing process or filesystem state.
 pub fn plan_adoption(input: AdoptionPlanInput) -> Result<AdoptionPlan, AdoptionError> {
     validate_plan_input(&input)?;
-    // Pinned identity wins over remote/seed derivation (W2c). Before this,
-    // `adopt status` re-derived the identity from the remote and reported a
-    // different project_id than `project resolve` did on the same checkout,
-    // which is how a re-adopted repo kept reporting `status: complete` over an
-    // empty storage while its real ledger sat under the pinned id.
-    // INC-DEBT-049.
-    let identity = match input.pinned_project_id.as_deref() {
-        Some(pinned) => {
-            // The pin overrides the project_id ONLY. `remote_url` and `scope`
-            // are also identity — they feed `same_identity`, which decides
-            // whether a stored receipt still describes this project — so
-            // discarding them here made every pinned checkout report
-            // `conflict` against a receipt that matched on all seven other
-            // fields.
-            //
-            // OBSERVED (session-65i, this repo): the pin holds
-            // `p-63676b11dc0ef88f` and the stored receipt holds the same id,
-            // the same workspace, the same scope, the same canonical path and
-            // byte-identical storage paths. Only `remote_url` differed —
-            // `Some(...)` in the receipt, `None` here. `adopt status` and
-            // `adopt refresh` both answered `conflict`, and `refresh` refused
-            // by its own contract ("refresh only accepts runtime metadata
-            // drift") because this is not runtime drift: it is the plan
-            // forgetting who it is.
-            //
-            // Resolving the identity from the same inputs the unpinned path
-            // uses keeps ONE derivation, and the pin's `project_id` is
-            // substituted for the derived one. `identity_source` stays
-            // `Pinned` on purpose: `context_cmd.rs` reads it to decide whether
-            // to forward the pin into the plan it builds, so downgrading it to
-            // `Remote` would make that caller re-derive the id this pin exists
-            // to prevent.
-            let mut derived = resolve_project_identity(
-                input.remote_url.as_deref(),
-                &input.scope,
-                input.fallback_seed.as_deref(),
-            )?;
-            derived.project_id = sddk_domain::ProjectId::new(pinned)?;
-            derived.identity_source = IdentitySource::Pinned;
-            derived
-        }
-        None => resolve_project_identity(
-            input.remote_url.as_deref(),
-            &input.scope,
-            input.fallback_seed.as_deref(),
-        )?,
-    };
+    // The identity arrives RESOLVED. It used to be derived here, from
+    // `remote_url` + `pinned_project_id` + `scope` + `fallback_seed`, and that
+    // was a defect: this crate cannot load the alias table, so anything it
+    // derived was the pre-alias id. INC-DEBT-059.
+    //
+    // The knowledge that used to live here has moved, not disappeared, and the
+    // reason it moved is that it was always a statement about *resolution*
+    // rather than about this function:
+    //
+    // - "Pinned identity wins over derivation (W2c)" — `adopt status` used to
+    //   re-derive from the remote and report a different project_id than
+    //   `project resolve` on the same checkout. INC-DEBT-049.
+    // - "The pin overrides the project_id ONLY" — OBSERVED (session-65i, this
+    //   repo): the pin holds `p-63676b11dc0ef88f` and the stored receipt holds
+    //   the same id, workspace, scope, canonical path and byte-identical
+    //   storage paths; only `remote_url` differed, so `adopt status` and
+    //   `adopt refresh` both answered `conflict` against a receipt that
+    //   matched on all seven other fields. `remote_url` and `scope` are also
+    //   identity — they feed `same_identity`.
+    // - "derive first, then let the pin override the id" is what
+    //   `resolve_identity_honoring_pin_with` does
+    //   (`crates/sddk-cli/src/lib.rs`), and there the alias is applied after
+    //   both branches. That is the one resolver now, and the order is not
+    //   interchangeable.
+    //
+    // What is deliberately NOT done here is to accept the resolved id as
+    // `pinned_project_id`. That looks equivalent and is not: this crate would
+    // treat it as a pin, `identity_source` would not travel, and `alias_origin`
+    // would be lost one level deeper — with a shape that *looks* right.
+    let identity = input.identity;
     let canonical_workspace_path = path_string(&input.canonical_workspace_path)?;
     let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
     let paths = resolve_xdg_paths(&input.xdg, identity.project_id.as_str(), &workspace_id)?;
@@ -726,14 +735,15 @@ fn validate_plan_input(input: &AdoptionPlanInput) -> Result<(), AdoptionError> {
             input.canonical_workspace_path
         )));
     }
-    // A malformed pin must fail loud rather than fall through to remote
-    // derivation: silently ignoring an unreadable pin is exactly how the
-    // checkout ended up split across two project_ids. INC-DEBT-049.
-    if let Some(pinned) = input.pinned_project_id.as_deref() {
-        sddk_domain::ProjectId::new(pinned).map_err(|e| {
-            AdoptionError::InvalidInput(format!("pinned project_id is invalid: {e}"))
-        })?;
-    }
+    // The pin check that used to live here is gone with the field. It is not
+    // lost: a malformed pin must still fail loud rather than fall through to
+    // derivation, which is INC-DEBT-049, and it still does — `load_project_pin`
+    // (`crates/sddk-cli/src/lib.rs`) rejects a bad `schema_version` and a
+    // `project_id` that is not `p-*`, and `resolve_identity_honoring_pin_with`
+    // runs the value through `ProjectId::new` before using it. The check moved
+    // to the place that owns the pin, which is the same move as the identity
+    // itself: a checkout-local concern has no business being validated by a
+    // filesystem-free engine.
     Ok(())
 }
 
@@ -771,6 +781,7 @@ fn base_status(plan: &AdoptionPlan) -> AdoptionStatus {
         ledger_path: plan.paths.ledger.clone(),
         receipt: None,
         detail: None,
+        alias_origin: plan.identity.alias_origin().cloned(),
     }
 }
 
@@ -846,16 +857,23 @@ impl LedgerInspection {
 mod tests {
     use super::*;
 
+    /// The identity a caller resolves for `remote` and hands in.
+    ///
+    /// Every in-module fixture spells this out now that the engine does not
+    /// derive it. That is the cost of the change and it is the point of it: a
+    /// fixture that cannot name a remote without also naming a scope, a seed
+    /// and a pin is a fixture that cannot pretend the engine is choosing.
+    fn identity_for(remote: &str) -> ResolvedProjectIdentity {
+        sddk_domain::resolve_project_identity(Some(remote), ".", None).unwrap()
+    }
+
     #[test]
     fn existing_xdg_vault_legacy_receipt_is_absorbed_by_apply() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("repo");
         fs::create_dir_all(&root).unwrap();
         let plan = plan_adoption(AdoptionPlanInput {
-            remote_url: Some("https://example.com/acme/repo.git".into()),
-            pinned_project_id: None,
-            scope: ".".into(),
-            fallback_seed: None,
+            identity: identity_for("https://example.com/acme/repo.git"),
             canonical_workspace_path: root,
             display_name: "repo".into(),
             xdg: XdgEnvironment {
@@ -922,10 +940,7 @@ mod tests {
         let root = directory.path().join("repo");
         fs::create_dir_all(&root).unwrap();
         let plan = plan_adoption(AdoptionPlanInput {
-            remote_url: Some("https://example.com/acme/repo.git".into()),
-            pinned_project_id: None,
-            scope: ".".into(),
-            fallback_seed: None,
+            identity: identity_for("https://example.com/acme/repo.git"),
             canonical_workspace_path: root,
             display_name: "repo".into(),
             xdg: XdgEnvironment {
@@ -984,6 +999,18 @@ mod tests {
         plan_with_remote_pinned(directory, remote, None)
     }
 
+    /// A plan whose identity came in already resolved, which is the only shape
+    /// this function accepts now (INC-DEBT-059).
+    ///
+    /// `pinned_project_id` no longer reaches the engine — it is a
+    /// checkout-local file, and the engine is filesystem-free — so this helper
+    /// applies it to the *resolved identity* the way the CLI's resolver does:
+    /// derive from the remote, then override the id and say so. That is
+    /// faithful, not a re-implementation of the decision: the tests that use the
+    /// pinned arm are not testing the pin. They need two identities that share
+    /// a `project_id`, a `workspace_id` and the derived paths while differing
+    /// in the remote, and the pin was only ever the way to *build* that pair.
+    /// The subject is `same_identity`, which must reject the pair.
     fn plan_with_remote_pinned(
         directory: &Path,
         remote: &str,
@@ -991,11 +1018,13 @@ mod tests {
     ) -> AdoptionPlan {
         let root = directory.join("repo");
         fs::create_dir_all(&root).unwrap();
+        let mut identity = identity_for(remote);
+        if let Some(pinned) = pinned_project_id {
+            identity.project_id = ProjectId::new(pinned).unwrap();
+            identity.identity_source = IdentitySource::Pinned;
+        }
         plan_adoption(AdoptionPlanInput {
-            remote_url: Some(remote.into()),
-            pinned_project_id: pinned_project_id.map(str::to_owned),
-            scope: ".".into(),
-            fallback_seed: None,
+            identity,
             canonical_workspace_path: root,
             display_name: "sddk-framework".into(),
             xdg: XdgEnvironment {
@@ -1039,10 +1068,9 @@ mod tests {
         assert_eq!(
             plan.identity.project_id,
             plan_adoption(AdoptionPlanInput {
-                remote_url: Some(REMOTE_FOSSILIZED.into()),
-                pinned_project_id: None,
-                scope: ".".into(),
-                fallback_seed: None,
+                identity:
+                    sddk_domain::resolve_project_identity(Some(REMOTE_FOSSILIZED), ".", None,)
+                        .unwrap(),
                 canonical_workspace_path: plan.receipt.canonical_workspace_path.clone().into(),
                 display_name: "sddk-framework".into(),
                 xdg: XdgEnvironment {

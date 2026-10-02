@@ -134,7 +134,10 @@ fn aliased_checkout() -> Aliased {
     let sandbox = CliSandbox::new(repo, env!("CARGO_BIN_EXE_sddk")).unwrap();
     let root = sandbox.path().to_string_lossy().to_string();
 
-    let derived = run(&sandbox, &["project", "resolve", "--root", &root, "--scope", "."]);
+    let derived = run(
+        &sandbox,
+        &["project", "resolve", "--root", &root, "--scope", "."],
+    );
     let from = field(&derived, "project_id").expect("project resolve must report a project_id");
 
     // The id the receipt will live under. Distinct from `from` by construction:
@@ -148,7 +151,10 @@ fn aliased_checkout() -> Aliased {
         &sandbox,
         &["project", "pin", "--root", &root, "--project-id", &to],
     );
-    run(&sandbox, &["adopt", "apply", "--root", &root, "--scope", "."]);
+    run(
+        &sandbox,
+        &["adopt", "apply", "--root", &root, "--scope", "."],
+    );
 
     // Drop the pin so identity derives again — otherwise the pin alone would
     // explain the result and the test would measure the wrong thing.
@@ -168,11 +174,7 @@ fn aliased_checkout() -> Aliased {
         ],
     );
 
-    Aliased {
-        sandbox,
-        from,
-        to,
-    }
+    Aliased { sandbox, from, to }
 }
 
 fn root_of(a: &Aliased) -> String {
@@ -269,6 +271,101 @@ fn context_bootstrap_follows_the_alias_and_binds_the_surviving_project() {
     assert!(
         !adoption_receipt_ids(&a.sandbox).contains(&a.from),
         "`context bootstrap` es el segundo escritor del mismo huerfano"
+    );
+}
+
+/// Structural, CLI side, and it is the one that would have caught the fourth
+/// resolver.
+///
+/// The engine-side test above cannot see this: `generation_destination` lives in
+/// the CLI, calls `sddk_domain::resolve_project_identity` directly, and nobody
+/// had looked. The falsifier of this lot found it while hunting for a *second*
+/// resolver, after the adoption fix was already green — which is the point.
+/// Reading the SCOPE did not turn it up; counting call sites did.
+///
+/// The property is an exact count, not a substring. `lib.rs` legitimately calls
+/// `resolve_project_identity` inside `resolve_identity_honoring_pin_with`, so a
+/// blanket "must not appear" would forbid the one call that is the authority.
+/// "Exactly once" says what is meant: one decision point, and any other call
+/// site is a second resolver wearing the same function name.
+#[test]
+fn the_cli_has_no_second_identity_resolver() {
+    let canonical = include_str!("../src/lib.rs");
+    let context = include_str!("../src/context_cmd.rs");
+
+    let cli = production_code(canonical);
+    let ctx = production_code(context);
+
+    assert_eq!(
+        ctx.matches("resolve_project_identity(").count(),
+        0,
+        "context_cmd.rs vuelve a resolver la identidad por su cuenta. Su doc de \
+         antes —«with the SAME resolver as `adopt`»— era literalmente cierto y \
+         exactamente lo contrario de lo que importa: ambos se saltaban la \
+         autoridad igual, y la concordancia entre dos bypass no es convergencia."
+    );
+    // Counted WITH the parenthesis, so the `use` line does not inflate it: a
+    // first pass counted the bare name, got 2, and reported a violation that
+    // was the import. The count is of *calls*, and this is the second time in
+    // this lot that a guard measured the wrong thing and said so.
+    assert_eq!(
+        cli.matches("resolve_project_identity(").count(),
+        1,
+        "lib.rs deberia tener UNA llamada a `resolve_project_identity`: la de \
+         `resolve_identity_honoring_pin_with`. Hay mas de una, luego hay un \
+         segundo resolutor. La cuenta va sobre el codigo sin comentarios: \
+         documentacion no es codigo, y un doc que nombra la derivacion no la \
+         hace."
+    );
+}
+
+/// The production part of a source file, with comments removed.
+///
+/// Comments are documentation, not code: the same convention as
+/// `version_source.rs::production_only`, and for the same reason. A comment
+/// that *names* a function is not a call to it, so counting one as a violation
+/// would make the guard unsatisfiable the moment someone explains themselves.
+fn production_code(source: &str) -> String {
+    let production = match source.find("#[cfg(test)]") {
+        Some(i) => &source[..i],
+        None => source,
+    };
+    production
+        .lines()
+        .filter(|line| {
+            let t = line.trim_start();
+            !t.starts_with("//!") && !t.starts_with("///") && !t.starts_with("//")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The fourth surface, found by the falsifier rather than by reading: it wrote
+/// generated documentation into the retired project's data dir while
+/// `project resolve` named the surviving one. `repro-c3d.sh` is the manual
+/// version of this test.
+#[test]
+fn generate_docs_writes_under_the_surviving_project() {
+    let a = aliased_checkout();
+    let root = root_of(&a);
+    run_reporting(&a.sandbox, &["generate", "docs", "--root", &root]);
+
+    let retired = a.sandbox.xdg().xdg_data.join("sddk/projects").join(&a.from);
+    assert!(
+        !retired.join("generated").exists(),
+        "`sddk generate docs` volvio a escribir bajo el project_id RETIRADO {}. \
+         Documentacion generada para un proyecto al que el alias ya no lleva a \
+         nadie.\n{}",
+        a.from,
+        retired.join("generated").display()
+    );
+    let surviving = a.sandbox.xdg().xdg_data.join("sddk/projects").join(&a.to);
+    assert!(
+        surviving.join("generated").exists(),
+        "`sddk generate docs` deberia escribir bajo el `to` del alias {}.\n\
+         existe: {:?}",
+        a.to,
+        surviving.join("generated").display()
     );
 }
 

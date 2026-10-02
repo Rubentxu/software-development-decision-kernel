@@ -112,7 +112,9 @@ fn apply_replay_keeps_converged_receipt_and_refresh_moves_runtime_metadata() {
     // es un no-op semantico. El runtime pin vive en
     // `apply_on_converged_adoption_is_byte_stable_across_repeats`.
     let mut replay_input = fixture.input("repo");
-    replay_input.remote_url = Some("https://example.com/acme/repo".into());
+    replay_input.identity =
+        sddk_domain::resolve_project_identity(Some("https://example.com/acme/repo"), ".", None)
+            .unwrap();
     replay_input.timestamp = "2026-08-04T11:00:00Z".into();
     replay_input.actor = "second-actor".into();
     let replay_timestamp = replay_input.timestamp.clone();
@@ -253,7 +255,12 @@ fn repair_refuses_identity_conflict() {
     let bytes_original = fs::read(&original.paths.receipt).unwrap();
 
     let mut changed_input = fixture.input("repo");
-    changed_input.remote_url = Some("https://example.com/acme/other-repo".into());
+    changed_input.identity = sddk_domain::resolve_project_identity(
+        Some("https://example.com/acme/other-repo"),
+        ".",
+        None,
+    )
+    .unwrap();
     let changed = plan_adoption(changed_input).unwrap();
 
     // The drifted plan resolves to a different project_id (and therefore a
@@ -295,7 +302,9 @@ fn refresh_preserves_identity_and_updates_runtime_metadata() {
     let bytes_v1 = fs::read(&v1.paths.receipt).unwrap();
 
     let mut v2_input = fixture.input("repo");
-    v2_input.remote_url = Some("https://example.com/acme/repo".into());
+    v2_input.identity =
+        sddk_domain::resolve_project_identity(Some("https://example.com/acme/repo"), ".", None)
+            .unwrap();
     v2_input.runtime_version = "0.2.0".into();
     v2_input.timestamp = "2026-08-13T18:00:00Z".into();
     v2_input.actor = "second-actor".into();
@@ -339,7 +348,12 @@ fn refresh_fails_on_identity_drift() {
     // paths.receipt. Refresh on the drifted path returns Absent (no receipt
     // there) and the original receipt stays untouched.
     let mut drifted_input = fixture.input("repo");
-    drifted_input.remote_url = Some("https://example.com/acme/other-repo".into());
+    drifted_input.identity = sddk_domain::resolve_project_identity(
+        Some("https://example.com/acme/other-repo"),
+        ".",
+        None,
+    )
+    .unwrap();
     drifted_input.runtime_version = "0.2.0".into();
     let drifted = plan_adoption(drifted_input).unwrap();
 
@@ -377,7 +391,12 @@ fn apply_is_strict_about_identity_after_refresh() {
     // project_id ⇒ different paths.receipt, so apply creates a NEW receipt at
     // the drifted path. The original receipt must remain byte-untouched.
     let mut drifted_input = fixture.input("repo");
-    drifted_input.remote_url = Some("https://example.com/acme/other-repo".into());
+    drifted_input.identity = sddk_domain::resolve_project_identity(
+        Some("https://example.com/acme/other-repo"),
+        ".",
+        None,
+    )
+    .unwrap();
     drifted_input.runtime_version = "0.2.0".into();
     let drifted = plan_adoption(drifted_input).unwrap();
 
@@ -487,12 +506,24 @@ impl Fixture {
         }
     }
 
+    /// The identity for a checkout, resolved the way `sddk adopt` resolves one
+    /// with no remote: a stable seed derived from the canonical path.
+    ///
+    /// The old fixture passed `remote_url: None, fallback_seed: None` and every
+    /// test filled the remote in *afterwards* — which is why the engine saw a
+    /// `project_id` fixed by the checkout with a remote attached, and why the
+    /// "two identities, same project" cases work at all. Resolving here keeps
+    /// that exact shape: the seed fixes the id, the mutation supplies the
+    /// remote.
+    fn identity(&self, relative_root: &str) -> sddk_domain::ResolvedProjectIdentity {
+        let canonical = self.root.join(relative_root);
+        let seed = sddk_domain::stable_fallback_seed(&canonical.to_string_lossy());
+        sddk_domain::resolve_project_identity(None, ".", Some(&seed)).unwrap()
+    }
+
     fn input(&self, relative_root: &str) -> AdoptionPlanInput {
         AdoptionPlanInput {
-            remote_url: None,
-            pinned_project_id: None,
-            scope: ".".into(),
-            fallback_seed: None,
+            identity: self.identity(relative_root),
             canonical_workspace_path: self.root.join(relative_root),
             display_name: Path::new(relative_root)
                 .file_name()
@@ -514,16 +545,17 @@ impl Fixture {
         }
     }
 
+    /// Two helpers that genuinely re-derive the identity, so they resolve a
+    /// new one rather than patch the old: the engine takes it as given now.
     fn remote_plan(&self, root: &str, remote: &str, scope: &str) -> AdoptionPlan {
         let mut input = self.input(root);
-        input.remote_url = Some(remote.into());
-        input.scope = scope.into();
+        input.identity = sddk_domain::resolve_project_identity(Some(remote), scope, None).unwrap();
         plan_adoption(input).unwrap()
     }
 
     fn fallback_plan(&self, root: &str, seed: &str) -> AdoptionPlan {
         let mut input = self.input(root);
-        input.fallback_seed = Some(seed.into());
+        input.identity = sddk_domain::resolve_project_identity(None, ".", Some(seed)).unwrap();
         plan_adoption(input).unwrap()
     }
 }

@@ -203,17 +203,8 @@ pub(crate) fn bootstrap(
             .map_err(|e| ContextBootstrapError::Io(e.to_string()))?,
     };
     let scope = args.scope.clone().unwrap_or_else(|| ".".to_string());
-    let remote =
-        resolve_remote(&root, None).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
     let canonical = path_string(&root).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
-    let fallback_seed = if remote.is_none() {
-        Some(sddk_domain::stable_fallback_seed(&canonical))
-    } else {
-        None
-    };
-    let identity =
-        sddk_domain::resolve_project_identity(remote.as_deref(), &scope, fallback_seed.as_deref())
-            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let (identity, remote, fallback_seed) = resolve_via_canonical(&root, &scope)?;
     let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
 
     let xdg = xdg_of(environment);
@@ -221,17 +212,8 @@ pub(crate) fn bootstrap(
         .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
 
     // ── 2. Converge adoption without interaction (CTX-005) ──
-    let adoption_state = converge_adoption(
-        &root,
-        &scope,
-        environment,
-        &paths,
-        &identity,
-        remote.as_deref(),
-        &canonical,
-        args.now_ms,
-    )
-    .map_err(|e| ContextBootstrapError::Adoption(e.to_string()))?;
+    let adoption_state = converge_adoption(&root, environment, &paths, &identity, args.now_ms)
+        .map_err(|e| ContextBootstrapError::Adoption(e.to_string()))?;
 
     // ── 3. Infer the cycle with typed degradation (CTX-004) ──
     let runtime_args = RuntimeArgs {
@@ -999,7 +981,49 @@ pub(crate) fn expand(
     })
 }
 
-/// Resolve project/workspace identity with the SAME resolver as `adopt`.
+/// Resolve the project identity through the **one** resolver, and hand back the
+/// remote and seed that produced it, because the callers display and forward
+/// both.
+///
+/// This function exists because this module had **two** resolution sites, and
+/// both called `sddk_domain::resolve_project_identity` directly — so neither
+/// applied the project alias. `sddk context bootstrap` therefore reported the
+/// **retired** `project_id` while `sddk project resolve` on the same checkout
+/// reported the surviving one, and — worse than the disagreement — it answered
+/// `adoption: complete` about an adoption held under the retired id and wrote a
+/// durable session binding into that id's data dir, where nothing would read it
+/// afterwards. INC-DEBT-059.
+///
+/// The doc on the old `resolve_identity` said it resolved "with the SAME
+/// resolver as `adopt`", which was literally true and exactly the problem: both
+/// bypassed the authority in the same way, and agreement between two bypasses
+/// is not convergence.
+fn resolve_via_canonical(
+    root: &Path,
+    scope: &str,
+) -> Result<
+    (
+        sddk_domain::ResolvedProjectIdentity,
+        Option<String>,
+        Option<String>,
+    ),
+    ContextBootstrapError,
+> {
+    let remote =
+        resolve_remote(root, None).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let canonical = path_string(root).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let fallback_seed = if remote.is_none() {
+        Some(sddk_domain::stable_fallback_seed(&canonical))
+    } else {
+        None
+    };
+    let identity =
+        crate::resolve_identity_honoring_pin(root, scope, remote.clone(), fallback_seed.clone())
+            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    Ok((identity, remote, fallback_seed))
+}
+
+/// Resolve project/workspace identity through the canonical resolver.
 fn resolve_identity(
     root: Option<&Path>,
     scope: Option<&str>,
@@ -1012,17 +1036,8 @@ fn resolve_identity(
             .map_err(|e| ContextBootstrapError::Io(e.to_string()))?,
     };
     let scope = scope.unwrap_or(".").to_string();
-    let remote =
-        resolve_remote(&root, None).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
     let canonical = path_string(&root).map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
-    let fallback_seed = if remote.is_none() {
-        Some(sddk_domain::stable_fallback_seed(&canonical))
-    } else {
-        None
-    };
-    let identity =
-        sddk_domain::resolve_project_identity(remote.as_deref(), &scope, fallback_seed.as_deref())
-            .map_err(|e| ContextBootstrapError::Io(e.to_string()))?;
+    let (identity, _remote, _fallback_seed) = resolve_via_canonical(&root, &scope)?;
     let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
     Ok(ResolvedContextIdentity {
         project_id: identity.project_id,
@@ -1046,33 +1061,34 @@ fn bindings_root(project_data: &Path) -> PathBuf {
 /// Converge adoption (CTX-005). Reuses the adoption application service:
 /// a repeated bootstrap over an adopted project is a semantic no-op (C3i
 /// obj 2 byte-stable receipt).
-#[allow(clippy::too_many_arguments)]
+///
+/// `scope`, `remote` and `fallback_seed` are gone from this signature on
+/// purpose. They existed only to feed the derivation that used to happen
+/// inside the engine; with the identity arriving resolved there is nothing
+/// left for them to do. They are removed rather than left as `_`-prefixed
+/// parameters, because a dead parameter in a signature reads like meaning and
+/// the next caller wires it back up.
 fn converge_adoption(
     root: &Path,
-    scope: &str,
     environment: &CliEnvironment,
     paths: &AdoptionPaths,
     identity: &sddk_domain::ResolvedProjectIdentity,
-    remote: Option<&str>,
-    canonical: &str,
     now_ms: i64,
 ) -> Result<&'static str, anyhow::Error> {
     let timestamp = format_rfc3339(now_ms);
     let plan = sddk_engine::plan_adoption(sddk_engine::AdoptionPlanInput {
-        remote_url: remote.map(str::to_string),
-        // The caller already resolved the identity honouring the durable pin;
-        // forward it so the plan converges on the same project instead of
-        // re-deriving from the remote. INC-DEBT-049.
-        pinned_project_id: match identity.identity_source {
-            sddk_domain::IdentitySource::Pinned => Some(identity.project_id.to_string()),
-            _ => None,
-        },
-        scope: scope.to_string(),
-        fallback_seed: if remote.is_none() {
-            Some(sddk_domain::stable_fallback_seed(canonical))
-        } else {
-            None
-        },
+        // The identity comes in already resolved, pin and alias both applied.
+        //
+        // It used to be re-derived here, and forwarded through
+        // `pinned_project_id` **only when `identity_source == Pinned`**. That
+        // conditional was the bug, not the fix: a checkout with an alias and
+        // *without* a pin took the `None` branch, the engine derived the
+        // pre-alias id, and the bootstrap adopted a second time under the
+        // retired one. Reusing the pin channel to carry a resolved identity
+        // also loses `alias_hops` and `identity_source` one level deeper, so
+        // the status could not have declared the redirect even if the id had
+        // been right. INC-DEBT-059.
+        identity: identity.clone(),
         canonical_workspace_path: root.to_path_buf(),
         display_name: root
             .file_name()
