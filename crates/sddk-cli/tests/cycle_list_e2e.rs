@@ -6,12 +6,11 @@
 //! `cycle list` in the CLI; `get_cycle(cycle_id)` exists but requires already
 //! knowing the id, and nothing supplies it.
 //!
-//! These tests are **RED today** and that is the point: they call a
-//! subcommand that does not exist, so they fail with "unrecognized subcommand"
-//! rather than against an assertion about enumeration. They are written at the
-//! CLI level on purpose — a storage-level test calling `list_cycles` would not
-//! compile at all, and a RED bought by breaking the build takes the whole crate
-//! down with it.
+//! These tests were written RED in lote 1 and turned GREEN in lote 2, when
+//! `cycle list` and `Storage::list_cycles` landed. They stay at the CLI level
+//! on purpose — a storage-level test calling `list_cycles` would not have
+//! compiled at all before the function existed, and a RED bought by breaking
+//! the build takes the whole crate down with it.
 //!
 //! What they are *not* is a licence to invent behaviour. They assert only what
 //! the SCOPE-CONTRACT of `cl-cycle-enumeration` froze: every cycle is named,
@@ -117,10 +116,9 @@ fn list(dir: &Path) -> (i32, String) {
     )
 }
 
-/// RED today: the subcommand does not exist. The assertion that matters is the
-/// last one — every cycle must be **named**, not merely counted, because a
-/// listing that reported `cycles: 3` without naming them would be an artifact
-/// of the same family as the one this debt is about.
+/// The assertion that matters is the loop: every cycle must be **named**, not
+/// merely counted, because a listing that reported `cycles: 3` without naming
+/// them would be an artifact of the same family as the one this debt is about.
 #[test]
 fn cycle_list_names_every_cycle_the_project_holds() {
     let s = Sandbox::new("names-all");
@@ -135,8 +133,7 @@ fn cycle_list_names_every_cycle_the_project_holds() {
     assert_eq!(
         code,
         0,
-        "`sddk cycle list` must exit 0 on a project with {} cycles; it does not exist yet, \
-         so this is RED. Output was: {out}",
+        "`sddk cycle list` must exit 0 on a project with {} cycles. Output was: {out}",
         ids.len()
     );
     for id in &ids {
@@ -198,5 +195,70 @@ fn cycle_list_declares_a_count_that_matches_what_it_named() {
         "the listing must declare how many cycles it examined, and the number must \
          be right; a truncated or undeclared listing repeats the `ledger events` \
          defect (50 of 590, silently). Got: {out}"
+    );
+}
+
+/// R5. A row whose `manifest_json` is not a `CycleManifest` must not take the
+/// listing down with it, and it must not vanish either.
+///
+/// This is planted by writing the row directly, because no write path the
+/// product has produces one: `cycle start` always emits a `cycle.created` with a
+/// complete manifest. The 81 rows this is about came from somewhere else — 79
+/// carry `{}` and 2 carry a closure note — and the product has no way to
+/// recreate them, which is exactly why the listing has to be able to *report*
+/// them rather than assume they cannot occur.
+///
+/// Both failure modes are asserted, because they are different and both are bad:
+/// aborting the listing hides the cycles that *are* readable, and dropping the
+/// row makes the count stop adding up with nothing to explain the difference.
+#[test]
+fn cycle_list_reports_an_unreadable_manifest_without_aborting() {
+    let s = Sandbox::new("unreadable");
+    let project_id = adopt(&s.dir);
+    start_cycle(&s.dir, "readable");
+
+    let ledger = s
+        .dir
+        .join(".xdg/state/sddk/projects")
+        .join(&project_id)
+        .join("ledger.sqlite");
+    assert!(ledger.exists(), "sandbox ledger must exist at {ledger:?}");
+    {
+        let conn = rusqlite::Connection::open(&ledger).unwrap();
+        // The project and workspace rows exist (adopt wrote them), so the
+        // composite foreign key on `cycles` is satisfiable.
+        conn.execute(
+            "INSERT INTO cycles (cycle_id, project_id, workspace_id, status, phase, manifest_json, created_at, updated_at)
+             SELECT 'unreadable-cycle', p.project_id, w.workspace_id, 'OPEN', 'explore', '{}', '2026-01-01', '2026-01-01'
+             FROM projects p, workspaces w
+             WHERE p.project_id = w.project_id AND p.project_id = ?1",
+            rusqlite::params![project_id],
+        )
+        .expect("the malformed row must be plantable, or this test measures nothing");
+    }
+
+    let (code, out) = list(&s.dir);
+
+    assert_eq!(
+        code, 0,
+        "one unreadable row must not take the listing down: {out}"
+    );
+    assert!(
+        out.contains("cycles: 2"),
+        "the unreadable row is still a cycle and must be counted: {out}"
+    );
+    assert!(
+        out.contains("unreadable_manifests: 1"),
+        "the listing must declare how many rows it could not fully read, or the \
+         difference between `cycles:` and what `get_cycle` can serve becomes \
+         invisible. Got: {out}"
+    );
+    assert!(
+        out.contains("manifest_readable: false"),
+        "the row itself must be marked, not just counted: {out}"
+    );
+    assert!(
+        out.contains("manifest_readable: true"),
+        "and the readable one must be marked readable, or the flag says nothing: {out}"
     );
 }

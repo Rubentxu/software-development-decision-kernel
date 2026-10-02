@@ -1,5 +1,6 @@
 //! Cycle and lease commands exposing the local workflow authority.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
@@ -534,6 +535,13 @@ pub(crate) enum CycleCommand {
     Inventory(crate::inventory_cycle::CycleInventoryArgs),
     /// Print the frontier of legal transitions from the current cycle state.
     Next(CycleNextArgs),
+    /// Enumerate every cycle this project holds.
+    ///
+    /// `cycle status` answers a different question — *which cycle has a live
+    /// lease* — and on a project with several cycles it answers none of them.
+    /// On `p-63676b11dc0ef88f` that left 97 of 179 cycles named by no command
+    /// at all, 91 of them claiming `OPEN`. INC-DEBT-060, D1.
+    List(CycleListArgs),
     /// Verify the provenance chain for a cycle (supports cross-storage drift detection).
     VerifyReferences(CycleVerifyReferencesArgs),
 }
@@ -609,6 +617,21 @@ impl From<NarrativeArgTone> for NarrativeTone {
             NarrativeArgTone::Socratic => Self::Socratic,
         }
     }
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct CycleListArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Narrow to one status, matched verbatim against the stored value.
+    ///
+    /// Absent means **every** status. A default of "the interesting ones"
+    /// would hide exactly the rows this command exists to name.
+    #[arg(long)]
+    pub(crate) status: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1139,6 +1162,7 @@ pub(crate) fn run_cycle(command: CycleCommand, environment: &CliEnvironment) -> 
             crate::inventory_cycle::run_cycle_inventory(args, environment)
         }
         CycleCommand::Next(args) => run_cycle_next(args, environment),
+        CycleCommand::List(args) => run_cycle_list(args, environment),
         CycleCommand::Pause(args) => run_cycle_pause(args, environment),
         CycleCommand::Resume(args) => run_cycle_resume(args, environment),
         CycleCommand::VerifyReferences(args) => run_cycle_verify_references(args, environment),
@@ -2024,6 +2048,111 @@ fn run_cycle_resume(args: CycleResumeArgs, environment: &CliEnvironment) -> Comm
         })
     })();
     render_result(result, format, cycle_resume_text)
+}
+
+/// Enumerates the project's cycles. INC-DEBT-060, D1.
+///
+/// The three things this output is built to do, each of them a defect it would
+/// otherwise reproduce:
+///
+/// - **Name every cycle, not a count.** A listing that printed `cycles: 179` and
+///   no ids would be the same shape as the bug: authoritative state nobody can
+///   point at.
+/// - **Declare how many it examined.** `sddk ledger events` returns 50 of 590
+///   with no indication that it stopped, and anything that reads that as the
+///   whole state under-reads the ledger. A count is what makes truncation
+///   visible.
+/// - **Declare the rows it could not fully read.** 81 of those 179 cycles have
+///   a `manifest_json` that is not a `CycleManifest`, so `get_cycle` errors on
+///   them. Dropping them from the listing would make the count stop adding up
+///   with no explanation; counting them silently would hide that they are not
+///   readable. They are listed, and reported separately.
+fn run_cycle_list(args: CycleListArgs, environment: &CliEnvironment) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<CycleListOutput> {
+        // No cycle inference here, and that is the point: `resolve_cycle_context`
+        // resolves through a live lease, so a project with no lease — or with
+        // several — could not be enumerated at all. The project identity is all
+        // this needs.
+        let context = RuntimeContext::open(&args.runtime, environment, false)?;
+        let project_id = context.identity.project_id.to_string();
+        let cycles = context
+            .storage
+            .list_cycles_by_status(project_id.as_str(), args.status.as_deref())
+            .map_err(|e| anyhow::anyhow!("cycle enumeration failed: {e}"))?;
+
+        let unreadable = cycles.iter().filter(|c| !c.manifest_readable).count();
+        let by_status = cycles.iter().fold(BTreeMap::new(), |mut acc, c| {
+            *acc.entry(c.status.clone()).or_insert(0usize) += 1;
+            acc
+        });
+
+        Ok(CycleListOutput {
+            project_id,
+            cycles: cycles
+                .into_iter()
+                .map(|c| CycleListEntry {
+                    cycle_id: c.cycle_id,
+                    status: c.status,
+                    phase: c.phase,
+                    created_at: c.created_at,
+                    updated_at: c.updated_at,
+                    manifest_readable: c.manifest_readable,
+                })
+                .collect(),
+            by_status,
+            unreadable_manifests: unreadable,
+        })
+    })();
+    render_result(result, format, cycle_list_text)
+}
+
+fn cycle_list_text(output: &CycleListOutput) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("project: {}\n", output.project_id));
+    // The count is the line that makes truncation visible, so it comes before
+    // the rows rather than being implied by their number.
+    out.push_str(&format!("cycles: {}\n", output.cycles.len()));
+    out.push_str(&format!(
+        "unreadable_manifests: {}\n",
+        output.unreadable_manifests
+    ));
+    for (status, count) in &output.by_status {
+        out.push_str(&format!("status[{status}]: {count}\n"));
+    }
+    for entry in &output.cycles {
+        // `manifest_readable` is rendered inline rather than in a column: it is
+        // a property of the row, and a reader scanning the list needs to see
+        // which rows are less readable than the others without a second lookup.
+        out.push_str(&format!(
+            "cycle: {}\n  status: {}\n  phase: {}\n  created_at: {}\n  updated_at: {}\n  manifest_readable: {}\n",
+            entry.cycle_id,
+            entry.status,
+            entry.phase,
+            entry.created_at,
+            entry.updated_at,
+            entry.manifest_readable,
+        ));
+    }
+    out
+}
+
+#[derive(Serialize)]
+struct CycleListOutput {
+    project_id: String,
+    cycles: Vec<CycleListEntry>,
+    by_status: BTreeMap<String, usize>,
+    unreadable_manifests: usize,
+}
+
+#[derive(Serialize)]
+struct CycleListEntry {
+    cycle_id: String,
+    status: String,
+    phase: String,
+    created_at: String,
+    updated_at: String,
+    manifest_readable: bool,
 }
 
 fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandOutput {

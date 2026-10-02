@@ -244,6 +244,41 @@ pub enum StorageError {
     SelfLoop(String),
 }
 
+/// One row of the `cycles` table, as enumeration has to report it.
+///
+/// Deliberately **not** [`CycleRecord`], and the difference is the whole point.
+/// `CycleRecord` carries a `manifest: CycleManifest`, so producing one asserts
+/// that the manifest deserialized — and 81 of the 179 cycles in the real
+/// storage do not deserialize, which is why `get_cycle` fails on them. A read
+/// model that inherited that shape would either fail the whole listing or drop
+/// those rows, and both turn "invisible" into something worse.
+///
+/// It lives here rather than in `sddk-domain` because `manifest_readable` is a
+/// fact about *this ledger*, not about a cycle: the same cycle id can be
+/// readable in one project and not in another, and a domain type that has to
+/// say so is a domain type carrying a storage-quality verdict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CycleSummary {
+    /// Stable cycle identifier, `<project_id>/<slug>`.
+    pub cycle_id: String,
+    /// Status as stored. A `String`, not the domain enum: `MIGRATION_21`
+    /// widened this column precisely because the stored set and the enum could
+    /// disagree, and a row must survive the enumeration anyway.
+    pub status: String,
+    /// Phase as stored, for the same reason.
+    pub phase: String,
+    /// Creation stamp, as stored — not re-formatted, so it compares against the
+    /// same column the rest of the system orders by.
+    pub created_at: String,
+    /// Last-update stamp, as stored.
+    pub updated_at: String,
+    /// Whether `manifest_json` deserialized into a `CycleManifest`.
+    ///
+    /// `false` is a fact worth reporting, not a failure: it is the difference
+    /// between a cycle that can be read and one that can only be listed.
+    pub manifest_readable: bool,
+}
+
 /// SQLite-backed SDDK persistence.
 pub struct Storage {
     connection: Connection,
@@ -646,6 +681,80 @@ impl Storage {
             )
             .optional()?
             .ok_or_else(|| not_found("cycle", cycle_id))
+    }
+
+    /// Enumerates every cycle this project holds.
+    ///
+    /// INC-DEBT-060, D1. Until now the only way to reach a cycle was
+    /// [`Storage::get_cycle`], which needs an id — and nothing in the product
+    /// supplies one. On `p-63676b11dc0ef88f` that leaves **97 of 179** cycles
+    /// named by no command at all, 91 of them claiming `OPEN`.
+    ///
+    /// Two decisions here are load-bearing, and both are about what this
+    /// function refuses to do:
+    ///
+    /// - **It reads `cycles`, not `events_v1`.** A ledger event only exists for
+    ///   cycles that emitted one, so an enumeration built on the event log
+    ///   reproduces exactly the defect it is meant to fix: those 97 rows have no
+    ///   events, which is *why* they are invisible.
+    /// - **A row it cannot fully deserialize is still returned.** 81 of those
+    ///   179 rows carry a `manifest_json` that is not a `CycleManifest`, and
+    ///   `get_cycle` returns an *error* for them. Dropping them here would swap
+    ///   "invisible" for "silently omitted" and lose the count. They come back
+    ///   with `manifest_readable: false` instead, so the listing can name them
+    ///   and say why.
+    ///
+    /// `status` and `phase` are [`String`], not the domain enums, and that is not
+    /// laziness: `MIGRATION_21` exists precisely because this column has held
+    /// values the enum did not know yet, and a row must not vanish from the
+    /// enumeration because its status is one this binary has not heard of.
+    ///
+    /// Ordering is `created_at, cycle_id` — stable across calls, so two listings
+    /// of the same ledger are comparable, which is what makes a count worth
+    /// asserting.
+    pub fn list_cycles(&self, project_id: &str) -> Result<Vec<CycleSummary>> {
+        let mut stmt = self.connection.prepare(
+            "SELECT cycle_id, status, phase, manifest_json, created_at, updated_at
+             FROM cycles WHERE project_id = ?1 ORDER BY created_at, cycle_id",
+        )?;
+        let rows = stmt.query_map([project_id], |row| {
+            let manifest_json: String = row.get(3)?;
+            Ok(CycleSummary {
+                cycle_id: row.get(0)?,
+                status: row.get(1)?,
+                phase: row.get(2)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+                manifest_readable: serde_json::from_str::<CycleManifest>(&manifest_json).is_ok(),
+            })
+        })?;
+        // `query_map` yields `rusqlite::Error`; the mapping to `StorageError` is
+        // `?`-driven row by row rather than through `collect`, which would need
+        // a `FromIterator` this crate does not have and should not grow just to
+        // save two characters.
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Same enumeration, narrowed to one status. `None` means every status,
+    /// which is what "list" means without a filter — a listing that defaulted
+    /// to the active cycle would hide the 91 `OPEN` rows that carry this debt.
+    pub fn list_cycles_by_status(
+        &self,
+        project_id: &str,
+        status: Option<&str>,
+    ) -> Result<Vec<CycleSummary>> {
+        Ok(match status {
+            None => self.list_cycles(project_id)?,
+            Some(wanted) => self
+                .list_cycles(project_id)?
+                .into_iter()
+                .filter(|c| c.status == wanted)
+                .collect(),
+        })
     }
 
     /// Replaces a cycle snapshot and appends its causal event (WU-C15-5
