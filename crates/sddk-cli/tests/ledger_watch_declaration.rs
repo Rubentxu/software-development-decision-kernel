@@ -336,6 +336,61 @@ fn r4_the_total_belongs_to_the_queried_cycle() {
     );
 }
 
+/// **Characterisation, not RED** — and it is declared as such rather than called
+/// RED, which would be a lie: the emitter's filter works today.
+///
+/// R4 checks the *number* the filter produces. This checks the *events*: a
+/// mutation that drops `apply_watch_filters` from the poll loop while leaving
+/// it on the count emits every cycle's events while declaring the total for
+/// one, and R1–R5 all still pass — the arithmetic closes, the total is right,
+/// the number is right. Only the stream itself is wrong. It is the mirror of
+/// R4, and without it the guard has a direction it cannot see.
+#[test]
+fn r6_the_filter_bounds_what_is_actually_emitted() {
+    let s = Sandbox::new("emitted-bounded");
+    adopt(s.path());
+    cycle_start(s.path(), "alpha");
+    cycle_start(s.path(), "beta");
+
+    let (_, listing) = events_json(s.path());
+    let events = listing["events"].as_array().expect("events array");
+    let mut per_cycle: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for e in events {
+        *per_cycle
+            .entry(e["cycle_id"].as_str().expect("cycle_id"))
+            .or_insert(0) += 1;
+    }
+    let (target, _) = per_cycle
+        .iter()
+        .min_by_key(|(_, n)| **n)
+        .expect("at least one cycle");
+    let target = target.to_string();
+
+    let (code, out) = watch(
+        s.path(),
+        &["--cycle", &target, "--max-events", "1", "--format", "json"],
+    );
+    assert_eq!(code, 0, "`ledger watch --cycle` must exit 0: {out}");
+
+    // Every event line — not the summary, which carries no `cycle_id`.
+    let emitted: Vec<&str> = out
+        .lines()
+        .filter(|l| l.contains(r#""event_id""#))
+        .collect();
+    assert_eq!(
+        emitted.len(),
+        1,
+        "the cap is 1, so exactly one event may be emitted: {out}"
+    );
+    assert!(
+        emitted[0].contains(&format!(r#""cycle_id":"{target}""#)),
+        "every emitted event must belong to the queried cycle `{target}`. A run \
+         that emits other cycles' events while declaring that cycle's total is \
+         making a false declaration about the stream it just produced. Got: {out}"
+    );
+}
+
+///
 /// RED today, and this is the other half of R4: the **cursor**.
 ///
 /// Sequences are **per stream** (C1.5), and every `cycle start` opens its own
