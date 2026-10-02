@@ -9298,3 +9298,45 @@ GitHub real; publicación del harness Pipelinek-Test-Hardness.
 el contrato de read-option de INC-DEBT-049 y la medición de la ruta forge de
 `release apply`. Antes de tocar código: `SDDK PRE-FLIGHT` con
 `Readiness: READY`, y aplicar `prompts/sddk/change-scoped-testing.md`.
+
+## session-69c (2ª parte) — 2026-10-02 — INC-DEBT-060 y la premisa de INC-DEBT-049
+
+**Baseline / HEAD.** `bdb1da3c` → `0f9613cd`, dos commits publicados sin
+`--no-verify` más este documental.
+
+**WorkItem.** Cerrar lo que quedaba de la línea de identidad después de
+promover ADR-0152. Salió una incidencia nueva y una premisa desmentida.
+
+**INC-DEBT-060 — `high`/`P1`, abierta.** Ninguna superficie del producto enumera
+los ciclos: **97 de 179** filas de `p-63676b11dc0ef88f` no las nombra ningún
+comando, **91** con `status: OPEN`. No hay `list_cycles` en el storage ni
+`sddk cycle list` en la CLI; solo `get_cycle(id)`. `sddk ledger events` alcanza
+82 pero **trunca en 50 de 590 sin decirlo**. No es legado: los eventos empiezan
+el 2026-08-31 y estos ciclos son del 2026-09-07. Dos vías de escritura en
+`cycles`; los 97 sin evento son **Object sin Fact** según AGENTS.md §2.7.
+Falsificador **PASS=7 FAIL=0 SKIP=1**; el SKIP declara que solo se midió un
+proyecto de 333 y el total es mayor.
+
+**La premisa abierta de INC-DEBT-049 — FALSA, medida.** El hermano
+`p-995939af668a53d8` tiene **0 eventos y 0 ciclos**. Falsificador
+**PASS=12 FAIL=0** en cuatro sandboxes: el alias aplica a las dos ramas; pin y
+alias son redundantes; perder ambos degrada en silencio por diseño
+(`load_alias_table` trata fichero ausente como tabla vacía). F49 y F52 se
+contradicen bajo el estado actual, así que **no** se implementa la advertencia.
+INC-DEBT-049 sigue `open`.
+
+**UAT observado.** Ninguno: no hay UAT de usuario en este lote. La evidencia es
+de medición sobre el storage real y sobre sandboxes desechables.
+
+**Cinco FAIL propios, ninguno del producto**, todos del mismo tipo: medir con el
+site incorrecto y creer el número. Es lo que hace el guard útil, y por eso
+quedan escritos en vez de corregidos en silencio.
+
+**Bloqueos que persisten.** Clave KMS (único bloqueo de v2.5.3); decisión del
+operador sobre las 97 filas sin hecho y sobre F49; ruta forge de `release apply`;
+publicación del harness.
+
+**Primer paso de la sesión siguiente.** El remedio de INC-DEBT-060
+(`list_cycles` + `sddk cycle list` + F63) es trabajo de código y exige
+`SDDK PRE-FLIGHT` con `Readiness: READY` y `prompts/sddk/change-scoped-testing.md`.
+Antes de escribir código, sus tests RED (F60–F63).

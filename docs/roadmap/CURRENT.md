@@ -1,5 +1,28 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69c 2ª parte, 2026-10-02): dos hallazgos nuevos medidos y falsificados. INC-DEBT-060 abierta — la autoridad no puede enumerar sus propios ciclos. Y la premisa de la parte abierta de INC-DEBT-049 resulta FALSA, medida.** `HEAD` = `0f9613cd` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**INC-DEBT-060 — 97 de 179 ciclos no los nombra ningún comando.** No salió de leer el roadmap: salió de medir la premisa de INC-DEBT-049 y chocar con que `cycle status` decía `no active cycle found` mientras la tabla tenía 107 ciclos no terminales. La primera hipótesis —«es un falso negativo»— era **falsa**: el código infiere el ciclo actual por **lease vivo** y los 30 leases estaban caducados, así que su respuesta era correcta para la pregunta que hace. La segunda, ya leída la implementación, sí: el hueco es de **enumeración**. No hay `list_cycles` en el storage ni `cycle list` en la CLI, solo `get_cycle(id)` — hay que **saber** el id y nada lo da. Y `sddk ledger events` trunca en **50 de 590** eventos sin decirlo, así que sin `--limit` solo ve 19 ciclos de los 82 alcanzables.
+
+No es legado anterior al fact log: `events_v1` arranca el 2026-08-31 y estos ciclos son del 2026-09-07 en adelante. La tabla muestra **dos vías de escritura**: 100 filas RFC3339 —82 con evento y **18 sin él**— y 79 con timestamp de espacio y `manifest_json` vacío, **ninguna** con evento. Por AGENTS.md §2.7 son **Object sin Fact**: una proyección que no es reconstruible desde los hechos.
+
+**La premisa abierta de INC-DEBT-049 era falsa, y eso cambia qué hay que implementarse.** El id hermano `p-995939af668a53d8` tiene **0 eventos y 0 ciclos**: no hay historia fuera de vista. Medido en cuatro sandboxes con el store real copiado (**PASS=12 FAIL=0**): el alias se aplica a **las dos** ramas —la derivada del remoto y la fijada por el pin—, pin y alias son **salvaguardas redundantes** y cualquiera basta, y perder **las dos** degrada en **silencio** porque `load_alias_table` trata un fichero ausente como tabla vacía y no como error. En este repo el síntoma sería un `complete` sobre un storage vacío: la enfermedad que ADR-0152 vino a cerrar, reintroducida por perder el fichero en vez de por cambiar el normalizador.
+
+Por eso **no** se implementa la advertencia que pide F49: hoy dispararía sobre una carcasa sin contenido, que es justo el ruido que su guard hermano F52 existe para impedir. **F49 y F52 se contradicen bajo el estado actual**, y eso es defecto de los falsificadores, no del producto. Lo propuesto es reescribir F49 para triangular sobre *historia ausente* y no sobre *id hermano presente*. INC-DEBT-049 sigue `open`: su cierre formal es del operador.
+
+**Cinco FAIL fueron míos en esta sesión y ninguno era del producto**, y todos salen del mismo sitio: medir con el site incorrecto y creer el número. Dos por el límite por defecto de `ledger events`, uno por exigir un reparto de estados copiado de un cálculo anterior, uno por poner el pin en el id retirado donde el repo real lo tiene en el canónico, y uno por copiar el store a `$XDG_STATE_HOME` sin el segmento `sddk/`, que lo volvía tabla vacía y hacía parecer que el alias no se aplicaba. Todos quedan escritos.
+
+**Gates:** falsificadores **PASS=7 FAIL=0 SKIP=1** (INC-DEBT-060) y **PASS=12 FAIL=0** (INC-DEBT-049) · `check_debt_index_coherence` PASS con 45 entradas · `test_docs_script_contamination`, `test_gate_coverage`, `test_adr_promotion_format` (`accepted ADRs: 57`) PASS · `git diff --check` limpio · push sin `--no-verify`.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **INC-DEBT-060** necesita `list_cycles` + `sddk cycle list`, y **F63** sobre el truncamiento silencioso. Y una decisión del operador sobre qué son las 97 filas sin hecho: si son Objects legítimos necesitan fuente de verdad declarada; si son residuo de una importación, limpiarlas es destructivo.
+2. **INC-DEBT-049** sigue `open` con la parte abierta vaciada de objeto, a la espera de que el operador reescriba F49 o cierre.
+3. **La ruta forge de `release apply` contra un GitHub real** sigue sin medir.
+4. **La clave KMS** sigue sin aprovisionar, único bloqueo de v2.5.3.
+
+---
+
 **Estado (session-69c, 2026-10-02): ADR-0152 PROMOVIDO A `accepted`. Los seis criterios están medidos; cinco en verde y falsificados, y el cuarto reescrito porque su redacción anterior no tenía falsificador ejecutable. El huérfano de `skillgraph` está cerrado y el storage real da 0 ids divergentes sobre 161 receipts.** `HEAD` = `7702b3bf` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El criterio 5 estaba ROJO y se cerró declarando el último alias, no retirando el recibo.** La diferencia no es de estilo: declarar el alias afirma que ese checkout es ese proyecto siempre; retirar el recibo **destruye el registro de una adopción que ocurrió de verdad**. Así que la causa se midió antes de reparar, y resultó que los dos recibos de `skillgraph` declaran **el mismo remoto y la misma ruta canónica** y difieren solo en `project_id`: mismo proyecto adoptado dos veces, con cinco días y dos runtimes de distancia (1.171.2 el 26-sep, 2.5.3 el 1-oct) porque el normalizador de remote cambió. Eso es INC-DEBT-050 literalmente. El recibo no era espurio.
