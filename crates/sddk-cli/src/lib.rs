@@ -552,6 +552,12 @@ enum ProjectCommand {
     Pin(ProjectPinArgs),
     /// Remove the project pin from this checkout.
     Unpin(ProjectUnpinArgs),
+    /// Declare that a retired project_id resolves to another one (ADR-0152).
+    ///
+    /// Global and convergent, unlike the pin: the pin fixes ONE checkout and
+    /// does not follow the project anywhere else, which is why re-adoption left
+    /// 25 receipts pointing at ids that no longer resolve to anything.
+    Alias(ProjectAliasArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -897,6 +903,7 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             ProjectCommand::Resolve(args) => run_project_resolve(args),
             ProjectCommand::Pin(args) => run_project_pin(args),
             ProjectCommand::Unpin(args) => run_project_unpin(args),
+            ProjectCommand::Alias(args) => run_project_alias(args),
         },
         Command::Adopt { command } => run_adopt(command, environment),
         Command::Context { command } => run_context(command, environment),
@@ -1297,6 +1304,13 @@ struct ProjectResolution {
     remote_url: Option<String>,
     scope: String,
     fallback_seed: Option<String>,
+    /// Ids the resolution was redirected from, in order (ADR-0152).
+    ///
+    /// Always present, empty when nothing redirected. It is emitted even in
+    /// the quiet case because "this field is absent" and "nothing happened"
+    /// are different claims: a consumer must be able to tell that a build
+    /// which knows about aliases checked, and found none.
+    alias_hops: Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -1514,26 +1528,90 @@ fn version_text(output: &VersionResolution) -> String {
 /// different *output* shape (notably `project resolve`, which reports
 /// `remote_url` alongside the id) may call the pin lookup directly, but it
 /// must not re-derive the identity.
+///
+/// **This is also where an identity alias is applied** (ADR-0152), to the
+/// pinned and the derived branch alike. Pin wins over derivation because the
+/// pin is per-checkout; the alias runs after both because it is global and
+/// convergent. The order is not interchangeable: applying the alias first
+/// would let a pin re-introduce a retired id, and applying the pin after
+/// would let a stale checkout opt out of the redirect entirely.
 pub(crate) fn resolve_identity_honoring_pin(
     root: &Path,
     scope: &str,
     remote: Option<String>,
     fallback_seed: Option<String>,
 ) -> anyhow::Result<ResolvedProjectIdentity> {
-    if let Some(pin) = load_project_pin(root)? {
-        return Ok(ResolvedProjectIdentity {
+    // The alias table lives in the XDG state base, resolved with the *ledger's*
+    // precedence (INC-DEBT-037) via the engine's own `state_base`. A second
+    // resolver here would let an alias redirect against a different ledger
+    // than the one the runtime opens — a silent wrong-project redirect, the
+    // exact class ADR-0152 closes.
+    let state_base = sddk_engine::state_base(&CliEnvironment::current().xdg())?;
+    let table = crate::project_alias::load_alias_table(&state_base)?;
+    resolve_identity_honoring_pin_with(root, scope, remote, fallback_seed, &table)
+}
+
+/// The resolution itself, with the alias table supplied.
+///
+/// Split so the chain logic is testable without fabricating an XDG tree: the
+/// outer function is two lines of environment reading, and every behaviour
+/// that matters is in here.
+///
+/// **The alias applies to the pinned branch too, and that is deliberate.** A
+/// pin names one checkout's id and does not converge: a checkout pinned before
+/// the re-adoption keeps resolving to the pre-adoption id forever, which is
+/// INC-DEBT-049. If the alias were applied only to derived identities, the one
+/// case that most needs redirecting — a pinned, stale id — would be the one
+/// case that could not reach it. The pin answers "which id is this checkout",
+/// the alias answers "which project is that id"; a pin naming a retired id is
+/// exactly the input the alias exists to correct.
+pub(crate) fn resolve_identity_honoring_pin_with(
+    root: &Path,
+    scope: &str,
+    remote: Option<String>,
+    fallback_seed: Option<String>,
+    table: &sddk_domain::identity::AliasTable,
+) -> anyhow::Result<ResolvedProjectIdentity> {
+    let derived = resolve_project_identity(remote.as_deref(), scope, fallback_seed.as_deref());
+    let pin = load_project_pin(root)?;
+
+    // Derive FIRST, then let the pin override the id. The other order — pin
+    // short-circuit, derive never — is what forced `project resolve` to build
+    // its own second resolver to recover the remote/seed it displays: the pin
+    // branch used to throw them away. Reporting them from here keeps the pin's
+    // meaning ("this checkout is X, whatever the remote says") without costing
+    // the surface its display data, and it removes a resolver.
+    let mut identity = match (derived, pin) {
+        (Ok(mut d), Some(pin)) => {
+            d.project_id = ProjectId::new(pin.project_id.clone())?;
+            d.identity_source = IdentitySource::Pinned;
+            d
+        }
+        (Ok(d), None) => d,
+        // A pin still resolves when derivation cannot (no remote, no seed).
+        // That case worked before and must keep working: the pin is exactly
+        // what makes a checkout resolvable without a usable remote.
+        (Err(_), Some(pin)) => ResolvedProjectIdentity {
             project_id: ProjectId::new(pin.project_id.clone())?,
             remote_url: None,
             scope: normalize_scope(scope)?,
             identity_source: IdentitySource::Pinned,
             fallback_seed: None,
-        });
-    }
-    Ok(resolve_project_identity(
-        remote.as_deref(),
-        scope,
-        fallback_seed.as_deref(),
-    )?)
+            alias_hops: Vec::new(),
+        },
+        (Err(e), None) => return Err(e.into()),
+    };
+
+    // A cycle or an over-long chain is a hard error here, not a fallback to
+    // the un-aliased id: silently resolving the pre-alias id would report a
+    // project the operator no longer uses, which is the silent-redirect
+    // failure ADR-0152 rule 2 forbids.
+    let resolution = table
+        .resolve(identity.project_id.clone())
+        .map_err(|e| anyhow::anyhow!("project identity alias cannot be applied: {e}"))?;
+    identity.alias_hops = resolution.hops;
+    identity.project_id = resolution.project_id;
+    Ok(identity)
 }
 
 /// Resolve `(project_id, workspace_id)` for a root. Single source shared by
@@ -1582,6 +1660,32 @@ pub(crate) struct ProjectUnpinArgs {
     /// Checkout root holding `.sddk/project-pin.json`.
     #[arg(long)]
     pub(crate) root: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct ProjectAliasArgs {
+    /// The retired project_id that should resolve elsewhere.
+    #[arg(long)]
+    pub(crate) from: String,
+    /// The surviving project_id `from` should resolve to. Must already exist:
+    /// an alias to an id with no ledger behind it redirects a project into
+    /// empty state, which is worse than not redirecting.
+    #[arg(long)]
+    pub(crate) to: String,
+    /// Why the alias exists. Mandatory, not optional.
+    ///
+    /// This table decides which ledger a project is read from. A redirect with
+    /// no recorded reason is a redirect nobody can audit a year later, and
+    /// `--reason` being optional is what would make that the path of least
+    /// resistance. ADR-0152 rule 4.
+    #[arg(long)]
+    pub(crate) reason: String,
+    /// Preview the declaration without writing it.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -1694,58 +1798,125 @@ fn run_project_unpin(args: ProjectUnpinArgs) -> CommandOutput {
     render_result(result, format, |text| text.to_string())
 }
 
+/// Declare one identity alias (ADR-0152).
+///
+/// The target must already own a ledger. That check is the difference between
+/// "merge two histories" and "point this project at nothing": an alias to a
+/// `project_id` with no state behind it resolves every command to an empty
+/// ledger, and it would do so *successfully*. Failing at declaration is the
+/// only place that mistake is still cheap.
+fn run_project_alias(args: ProjectAliasArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<String> {
+        let state_base = sddk_engine::state_base(&CliEnvironment::current().xdg())?;
+        let path = crate::project_alias::project_aliases_path(&state_base);
+        let alias = crate::project_alias::parse_alias(
+            &args.from,
+            &args.to,
+            &args.reason,
+            &crate::git_cmd::default_timestamp(),
+        )?;
+
+        let target_ledger = state_base
+            .join("sddk")
+            .join("projects")
+            .join(&args.to)
+            .join("ledger.sqlite");
+        if !target_ledger.exists() {
+            anyhow::bail!(
+                "--to '{}' has no ledger at {}; an alias must point at a project that already exists, otherwise it redirects this project into empty state",
+                args.to,
+                target_ledger.display()
+            );
+        }
+
+        // Preview against the current table so `--dry-run` reports the real
+        // outcome, including the case where the alias closes a cycle.
+        let table = crate::project_alias::load_alias_table_at(&path)?;
+        let mut candidate = table.clone();
+        crate::project_alias::declare_alias(&mut candidate, alias.clone())?;
+        candidate.resolve(alias.from_id.clone()).map_err(|e| {
+            anyhow::anyhow!(
+                "--from {} would not resolve after this alias: {e}",
+                args.from
+            )
+        })?;
+
+        if args.dry_run {
+            return Ok(format!(
+                "would declare: {} -> {}\nreason: {}\nalias file: {}\nresolves to: {}\n",
+                alias.from_id,
+                alias.to_id,
+                alias.reason,
+                path.display(),
+                candidate.resolve(alias.from_id.clone())?.project_id
+            ));
+        }
+
+        crate::project_alias::declare_alias_at(&path, alias.clone())?;
+        Ok(format!(
+            "declared: {} -> {}\nreason: {}\nalias file: {}\n",
+            alias.from_id,
+            alias.to_id,
+            alias.reason,
+            path.display()
+        ))
+    })();
+    render_result(result, format, |text| text.to_string())
+}
+
 fn run_project_resolve(args: ProjectResolveArgs) -> CommandOutput {
     let result = (|| -> anyhow::Result<ProjectResolution> {
-        let root = canonical_root(&args.root)?;
-        // Pinned identity wins (W2c): once an operator pins a project_id,
-        // remote renames or case drift cannot fork the ledger anymore.
-        if let Some(pin) = load_project_pin(&root)? {
-            let identity = resolve_project_identity(None, &args.scope, None).ok();
-            let (remote_url, fallback_seed) =
-                match (&identity, args.remote.as_ref(), args.fallback_seed.as_ref()) {
-                    (Some(i), _, _) if i.remote_url.is_some() || i.fallback_seed.is_some() => {
-                        (i.remote_url.clone(), i.fallback_seed.clone())
-                    }
-                    _ => (args.remote.clone(), args.fallback_seed.clone()),
-                };
-            let canonical_workspace_path = path_string(&root)?;
-            let workspace_id = stable_workspace_id(
-                &sddk_domain::ProjectId::new(pin.project_id.clone())?,
-                &canonical_workspace_path,
-            );
-            return Ok(ProjectResolution {
-                project_id: pin.project_id,
-                workspace_id,
-                canonical_workspace_path,
-                identity_source: IdentitySource::Pinned,
-                remote_url,
-                scope: args.scope,
-                fallback_seed,
-            });
-        }
-        let remote = resolve_remote(&root, args.remote)?;
-        let fallback_seed = match (remote.as_ref(), args.fallback_seed) {
-            // Derive from the canonical path: a random seed makes every
-            // invocation a different project, so the reported identity
-            // drifts between commands. INC-DEBT-028.
-            (None, None) => Some(sddk_domain::stable_fallback_seed(&path_string(&root)?)),
-            (_, seed) => seed,
-        };
-        let identity =
-            resolve_project_identity(remote.as_deref(), &args.scope, fallback_seed.as_deref())?;
-        let canonical_workspace_path = path_string(&root)?;
-        let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
-        Ok(ProjectResolution {
-            project_id: identity.project_id.to_string(),
-            workspace_id,
-            canonical_workspace_path,
-            identity_source: identity.identity_source,
-            remote_url: identity.remote_url,
-            scope: identity.scope,
-            fallback_seed: identity.fallback_seed,
-        })
+        let state_base = sddk_engine::state_base(&CliEnvironment::current().xdg())?;
+        let table = crate::project_alias::load_alias_table(&state_base)?;
+        run_project_resolve_with(&args, &table)
     })();
     render_result(result, args.format, project_resolution_text)
+}
+
+/// The body of `sddk project resolve`, with the alias table supplied.
+///
+/// Split for the same reason as the resolver: the property that matters here is
+/// that this surface goes through the **one** resolver, and a property you can
+/// only exercise through a real `$XDG_STATE_HOME` is a property nobody tests.
+/// The first falsification run proved it — reintroducing the two-resolver shape
+/// here left the whole suite green.
+fn run_project_resolve_with(
+    args: &ProjectResolveArgs,
+    table: &sddk_domain::identity::AliasTable,
+) -> anyhow::Result<ProjectResolution> {
+    let root = canonical_root(&args.root)?;
+    let remote = resolve_remote(&root, args.remote.clone())?;
+    let fallback_seed = match (remote.as_ref(), args.fallback_seed.clone()) {
+        // Derive from the canonical path: a random seed makes every
+        // invocation a different project, so the reported identity
+        // drifts between commands. INC-DEBT-028.
+        (None, None) => Some(sddk_domain::stable_fallback_seed(&path_string(&root)?)),
+        (_, seed) => seed,
+    };
+    // One resolver, pin and alias both included. This function used to
+    // branch on the pin itself and re-derive in the other branch, which is
+    // a second identity resolver — the exact shape INC-DEBT-049 was about,
+    // one level up, and it would have reported the pre-alias id here and
+    // the post-alias id everywhere else.
+    let identity =
+        resolve_identity_honoring_pin_with(&root, &args.scope, remote, fallback_seed, table)?;
+    let canonical_workspace_path = path_string(&root)?;
+    let workspace_id = stable_workspace_id(&identity.project_id, &canonical_workspace_path);
+    Ok(ProjectResolution {
+        project_id: identity.project_id.to_string(),
+        workspace_id,
+        canonical_workspace_path,
+        identity_source: identity.identity_source,
+        remote_url: identity.remote_url,
+        scope: identity.scope,
+        fallback_seed: identity.fallback_seed,
+        alias_hops: identity
+            .alias_hops
+            .iter()
+            .map(|id| id.to_string())
+            .collect(),
+    })
 }
 
 /// Dispatch `sddk context <subcommand>` (C3j objetivo 3).
@@ -2106,15 +2277,29 @@ fn canonical_root(root: &Path) -> anyhow::Result<PathBuf> {
 }
 
 fn project_resolution_text(resolution: &ProjectResolution) -> String {
+    // The alias is declared as an explicit arrow, not as a bare field, because
+    // the whole point of ADR-0152 rule 4 is that an operator reading this can
+    // see which id they stopped using. A `project_id:` line with a second id
+    // somewhere above it is a fact; `from -> to` is a statement about a change.
+    let alias = if resolution.alias_hops.is_empty() {
+        "none".to_string()
+    } else {
+        format!(
+            "{} -> {}",
+            resolution.alias_hops.join(" -> "),
+            resolution.project_id
+        )
+    };
     format!(
-        "project_id: {}\nworkspace_id: {}\ncanonical_workspace_path: {}\nidentity_source: {}\nremote_url: {}\nscope: {}\nfallback_seed: {}\n",
+        "project_id: {}\nworkspace_id: {}\ncanonical_workspace_path: {}\nidentity_source: {}\nremote_url: {}\nscope: {}\nfallback_seed: {}\nidentity_alias: {}\n",
         resolution.project_id,
         resolution.workspace_id,
         resolution.canonical_workspace_path,
         identity_source_text(resolution.identity_source),
         resolution.remote_url.as_deref().unwrap_or("null"),
         resolution.scope,
-        resolution.fallback_seed.as_deref().unwrap_or("null")
+        resolution.fallback_seed.as_deref().unwrap_or("null"),
+        alias
     )
 }
 
@@ -2454,4 +2639,286 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    // ── ADR-0152: el cableado del alias en el resolutor único ────────────
+    //
+    // Los tests del dominio (lote 1) y del store (lote 2) demuestran que la
+    // tabla resuelve y que el fichero se escribe. Nada de eso demuestra que
+    // el cableado exista: una tabla perfecta a la que nadie llama deja todo
+    // verde. Estos tests atacan el enlace.
+
+    mod alias_wiring {
+        use super::*;
+        use sddk_domain::identity::{AliasTable, ProjectAlias};
+
+        fn pid(s: &str) -> sddk_domain::identity::ProjectId {
+            sddk_domain::identity::ProjectId::new(s).unwrap()
+        }
+
+        fn alias(from: &str, to: &str) -> ProjectAlias {
+            ProjectAlias::new(pid(from), pid(to), "test", "2026-10-02T00:00:00Z").unwrap()
+        }
+
+        fn table(entries: Vec<ProjectAlias>) -> AliasTable {
+            AliasTable::new(entries)
+        }
+
+        /// The id a given remote derives to, so a test can alias *the derived
+        /// id* without hardcoding a hash that would change if derivation did.
+        fn derived_id(remote: &str) -> sddk_domain::identity::ProjectId {
+            resolve_project_identity(Some(remote), ".", None)
+                .unwrap()
+                .project_id
+        }
+
+        const REMOTE: &str = "https://example.com/acme/alias-wiring.git";
+        const SURVIVOR: &str = "p-aliaswiresurvivor01";
+        const RETIRED: &str = "p-aliaswireretired01";
+
+        #[test]
+        fn an_alias_redirects_a_derived_identity() {
+            let root = tempfile::tempdir().unwrap();
+            let derived = derived_id(REMOTE);
+            let t = table(vec![alias(&derived.to_string(), SURVIVOR)]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .unwrap();
+            assert_eq!(identity.project_id, pid(SURVIVOR));
+            assert_eq!(identity.alias_hops, vec![derived.clone()]);
+            assert!(identity.redirected());
+            assert_eq!(identity.alias_origin(), Some(&derived));
+        }
+
+        /// The case the alias exists for. A pin is per-checkout and does not
+        /// converge, so a checkout pinned before the re-adoption resolves to a
+        /// retired id forever. If the alias were applied only to derived
+        /// identities, the one case that most needs redirecting could not
+        /// reach it — and the pin would be a permanent escape hatch from the
+        /// redirect.
+        #[test]
+        fn an_alias_redirects_a_pinned_retired_identity() {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join(".sddk")).unwrap();
+            std::fs::write(
+                root.path().join(".sddk/project-pin.json"),
+                format!(
+                    r#"{{"schema_version":1,"project_id":"{RETIRED}","reason":"pre-re-adoption pin","pinned_at":"2026-10-01T12:00:00Z"}}"#
+                ),
+            )
+            .unwrap();
+            let t = table(vec![alias(RETIRED, SURVIVOR)]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .unwrap();
+            assert_eq!(identity.project_id, pid(SURVIVOR));
+            assert_eq!(identity.identity_source, IdentitySource::Pinned);
+            assert_eq!(identity.alias_hops, vec![pid(RETIRED)]);
+        }
+
+        #[test]
+        fn an_unrelated_table_changes_nothing_and_declares_nothing() {
+            let root = tempfile::tempdir().unwrap();
+            let t = table(vec![alias(RETIRED, SURVIVOR)]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .unwrap();
+            assert_eq!(identity.project_id, derived_id(REMOTE));
+            assert!(identity.alias_hops.is_empty());
+            assert!(!identity.redirected());
+            assert_eq!(identity.alias_origin(), None);
+        }
+
+        #[test]
+        fn an_empty_table_is_the_same_as_no_table() {
+            let root = tempfile::tempdir().unwrap();
+            let t = table(vec![]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .unwrap();
+            assert_eq!(identity.project_id, derived_id(REMOTE));
+            assert!(identity.alias_hops.is_empty());
+        }
+
+        /// Chains resolve transitively, and the hops record the WHOLE path, not
+        /// just the first link: a two-step redirect that reported one hop would
+        /// leave the middle id unexplained in the declaration.
+        #[test]
+        fn a_chain_resolves_and_records_every_hop() {
+            let root = tempfile::tempdir().unwrap();
+            let derived = derived_id(REMOTE);
+            let middle = "p-aliaswiremiddle0001";
+            let t = table(vec![
+                alias(&derived.to_string(), middle),
+                alias(middle, SURVIVOR),
+            ]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .unwrap();
+            assert_eq!(identity.project_id, pid(SURVIVOR));
+            assert_eq!(identity.alias_hops, vec![derived, pid(middle)]);
+        }
+
+        /// The failure mode that must NOT be a silent success: a cyclic table
+        /// makes the resolution non-terminating in meaning, so it has to fail
+        /// loud. Falling back to the un-aliased id here would report a project
+        /// the operator deliberately retired, with exit 0 and no warning —
+        /// ADR-0152 rule 2.
+        #[test]
+        fn a_cycle_in_the_table_fails_loud_instead_of_returning_the_old_id() {
+            let root = tempfile::tempdir().unwrap();
+            let derived = derived_id(REMOTE);
+            let t = table(vec![
+                alias(&derived.to_string(), RETIRED),
+                alias(RETIRED, &derived.to_string()),
+            ]);
+            let err =
+                resolve_identity_honoring_pin_with(root.path(), ".", Some(REMOTE.into()), None, &t)
+                    .expect_err("un ciclo debe fallar, no devolver el id pre-alias");
+            let msg = format!("{err:#}");
+            assert!(msg.contains("cannot be applied"), "{msg}");
+            assert!(
+                !msg.contains(&derived.to_string()) || msg.contains("cycle"),
+                "el error debe nombrar el ciclo, no solo el id: {msg}"
+            );
+        }
+
+        /// A pin must keep working when derivation cannot (no remote, no
+        /// seed). That path existed before the alias and the refactor to
+        /// derive-first must not have taken it away.
+        #[test]
+        fn a_pin_still_resolves_when_derivation_cannot() {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join(".sddk")).unwrap();
+            std::fs::write(
+                root.path().join(".sddk/project-pin.json"),
+                format!(
+                    r#"{{"schema_version":1,"project_id":"{SURVIVOR}","reason":"no remote","pinned_at":"2026-10-01T12:00:00Z"}}"#
+                ),
+            )
+            .unwrap();
+            let t = table(vec![]);
+            let identity =
+                resolve_identity_honoring_pin_with(root.path(), ".", None, None, &t).unwrap();
+            assert_eq!(identity.project_id, pid(SURVIVOR));
+            assert_eq!(identity.identity_source, IdentitySource::Pinned);
+        }
+
+        /// End-to-end through the `sddk project resolve` surface itself.
+        ///
+        /// **This test exists because a mutation escaped.** Reinstating the
+        /// old two-resolver shape in `run_project_resolve` — a pin branch
+        /// that returns the pin's id without ever consulting the alias — left
+        /// every other test in the suite green. The resolver tests exercise
+        /// the resolver; the render tests exercise the renderer; nothing
+        /// exercised the seam between them, which is precisely the seam the
+        /// defect lived in.
+        #[test]
+        fn project_resolve_reports_the_aliased_id_not_the_pinned_one() {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join(".sddk")).unwrap();
+            std::fs::write(
+                root.path().join(".sddk/project-pin.json"),
+                format!(
+                    r#"{{"schema_version":1,"project_id":"{RETIRED}","reason":"pre-re-adoption pin","pinned_at":"2026-10-01T12:00:00Z"}}"#
+                ),
+            )
+            .unwrap();
+            let t = table(vec![alias(RETIRED, SURVIVOR)]);
+            let args = ProjectResolveArgs {
+                root: root.path().to_path_buf(),
+                scope: ".".into(),
+                remote: Some(REMOTE.into()),
+                fallback_seed: None,
+                format: OutputFormat::Text,
+            };
+            let resolution = run_project_resolve_with(&args, &t).expect("must resolve");
+
+            assert_eq!(
+                resolution.project_id, SURVIVOR,
+                "la superficie debe reportar el id POST-alias"
+            );
+            assert_eq!(
+                resolution.alias_hops,
+                vec![RETIRED.to_string()],
+                "y declarar de dónde vino"
+            );
+            let text = project_resolution_text(&resolution);
+            assert!(
+                text.contains(&format!("identity_alias: {RETIRED} -> {SURVIVOR}")),
+                "la salida visible debe llevar el salto: {text}"
+            );
+        }
+
+        /// The complement: with no alias, `project resolve` reports the pin and
+        /// says so. Without this, a test could "pass" by always printing an
+        /// arrow.
+        #[test]
+        fn project_resolve_reports_the_pinned_id_when_no_alias_applies() {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join(".sddk")).unwrap();
+            std::fs::write(
+                root.path().join(".sddk/project-pin.json"),
+                format!(
+                    r#"{{"schema_version":1,"project_id":"{SURVIVOR}","reason":"pin vigente","pinned_at":"2026-10-01T12:00:00Z"}}"#
+                ),
+            )
+            .unwrap();
+            let t = table(vec![]);
+            let args = ProjectResolveArgs {
+                root: root.path().to_path_buf(),
+                scope: ".".into(),
+                remote: Some(REMOTE.into()),
+                fallback_seed: None,
+                format: OutputFormat::Text,
+            };
+            let resolution = run_project_resolve_with(&args, &t).expect("must resolve");
+            assert_eq!(resolution.project_id, SURVIVOR);
+            assert!(resolution.alias_hops.is_empty());
+            assert!(project_resolution_text(&resolution).contains("identity_alias: none"));
+        }
+    }
+
+    /// ADR-0152 rule 4: the redirect is **declared**, not merely applied. A
+    /// resolution that lands on a different project without saying so is the
+    /// false green INC-DEBT-049 was about.
+    #[test]
+    fn the_resolve_output_declares_the_alias_it_followed() {
+        let resolution = ProjectResolution {
+            project_id: SURVIVOR_ID.to_string(),
+            workspace_id: "ws-test".into(),
+            canonical_workspace_path: "/tmp/x".into(),
+            identity_source: IdentitySource::Pinned,
+            remote_url: None,
+            scope: ".".into(),
+            fallback_seed: None,
+            alias_hops: vec![RETIRED_ID.to_string()],
+        };
+        let text = project_resolution_text(&resolution);
+        assert!(
+            text.contains(&format!("identity_alias: {RETIRED_ID} -> {SURVIVOR_ID}")),
+            "la salida debe declarar el salto: {text}"
+        );
+    }
+
+    #[test]
+    fn the_resolve_output_declares_none_when_nothing_redirected() {
+        let resolution = ProjectResolution {
+            project_id: SURVIVOR_ID.to_string(),
+            workspace_id: "ws-test".into(),
+            canonical_workspace_path: "/tmp/x".into(),
+            identity_source: IdentitySource::Remote,
+            remote_url: Some("https://example.com/a/b.git".into()),
+            scope: ".".into(),
+            fallback_seed: None,
+            alias_hops: vec![],
+        };
+        let text = project_resolution_text(&resolution);
+        assert!(
+            text.contains("identity_alias: none"),
+            "el caso quieto tambien se declara: {text}"
+        );
+    }
+
+    const SURVIVOR_ID: &str = "p-declsurvivor0001";
+    const RETIRED_ID: &str = "p-declretired00001";
 }

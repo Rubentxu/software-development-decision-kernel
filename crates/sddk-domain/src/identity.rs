@@ -265,6 +265,36 @@ pub struct ResolvedProjectIdentity {
     pub identity_source: IdentitySource,
     /// Canonical UUID used by fallback identity, when applicable.
     pub fallback_seed: Option<String>,
+    /// Chain of identity redirects followed to reach `project_id` (ADR-0152).
+    ///
+    /// Empty when no alias applied. **Not** an `IdentitySource` variant on
+    /// purpose: the source says how the id was *derived* (remote, seed, pin),
+    /// and an alias is a redirection *after* derivation. Folding them together
+    /// would make "pinned, then redirected" and "derived from remote, then
+    /// redirected" indistinguishable, and would push an alias through all
+    /// seventeen `match` sites on `IdentitySource` instead of four struct
+    /// literals.
+    ///
+    /// Carried so the CLI can **declare** the redirect (ADR-0152 rule 4). A
+    /// resolution that silently lands on a different project is the false
+    /// green INC-DEBT-049 was about, one level up.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias_hops: Vec<ProjectId>,
+}
+
+impl ResolvedProjectIdentity {
+    /// True when this identity reached `project_id` through at least one alias.
+    pub fn redirected(&self) -> bool {
+        !self.alias_hops.is_empty()
+    }
+
+    /// The id this resolution started from, when it was redirected.
+    ///
+    /// `None` when no alias applied, so a caller cannot mistake "resolved
+    /// here" for "came from here".
+    pub fn alias_origin(&self) -> Option<&ProjectId> {
+        self.alias_hops.first()
+    }
 }
 
 /// Knowledge profile persisted at adoption time.
@@ -545,6 +575,11 @@ pub fn resolve_project_identity(
                 scope,
                 identity_source: IdentitySource::Remote,
                 fallback_seed: None,
+                // Derivation is alias-blind on purpose: this function answers
+                // "what would the remote derive?", and the alias answers "which
+                // project is that, really?". Folding them here would make the
+                // pure function depend on state it cannot see.
+                alias_hops: Vec::new(),
             })
         }
         (None, Some(seed)) => {
@@ -557,6 +592,7 @@ pub fn resolve_project_identity(
                 scope,
                 identity_source: IdentitySource::Fallback,
                 fallback_seed: Some(fallback_seed),
+                alias_hops: Vec::new(),
             })
         }
         _ => Err(IdentityError::InvalidFallbackSeed),

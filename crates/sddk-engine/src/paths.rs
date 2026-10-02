@@ -92,6 +92,33 @@ pub enum PathResolutionError {
     NonUtf8Path(PathBuf),
 }
 
+/// Resolves the XDG state base — the directory that holds `sddk/projects/<id>/`.
+///
+/// Public, and deliberately **without** a `project_id`: an identity alias
+/// (ADR-0152) has to be resolved *before* knowing which project it names,
+/// because the alias is what tells you the project. Taking the base instead
+/// of a project's paths is what lets the alias table and the ledger share one
+/// precedence instead of two that must be kept in sync by discipline.
+///
+/// Precedence is INC-DEBT-037's and is the ledger's: `SDDK_STATE_HOME`, then
+/// `XDG_STATE_HOME`, then `HOME/.local/state`, then the platform dir. A second
+/// resolver with a different order would resolve aliases against a different
+/// ledger than the one the runtime uses, which is a silent wrong-project
+/// redirect — the exact failure class ADR-0152 exists to close.
+pub fn state_base(environment: &XdgEnvironment) -> Result<PathBuf, PathResolutionError> {
+    validate_optional("XDG_STATE_HOME", environment.state_home.as_deref())?;
+    validate_optional("SDDK_STATE_HOME", environment.sddk_state_home.as_deref())?;
+    resolve_base(
+        environment
+            .sddk_state_home
+            .as_deref()
+            .or(environment.state_home.as_deref()),
+        environment.home.as_deref(),
+        ".local/state",
+        dirs::state_dir(),
+    )
+}
+
 /// Resolves project and workspace storage paths without reading process state.
 pub fn resolve_xdg_paths(
     environment: &XdgEnvironment,
@@ -116,15 +143,7 @@ pub fn resolve_xdg_paths(
         ".local/share",
         dirs::data_dir(),
     )?;
-    let state_home = resolve_base(
-        environment
-            .sddk_state_home
-            .as_deref()
-            .or(environment.state_home.as_deref()),
-        environment.home.as_deref(),
-        ".local/state",
-        dirs::state_dir(),
-    )?;
+    let state_home = state_base(environment)?;
     let cache_home = resolve_base(
         environment.cache_home.as_deref(),
         environment.home.as_deref(),
