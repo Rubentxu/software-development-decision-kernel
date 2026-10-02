@@ -298,6 +298,24 @@ Criterios falsables. Un ADR sin ellos es una opinion con formato.
    se retiró de la tabla por una vía que no es la CLI, y el resultado fue que el
    criterio 5 dio ROJO. Si el append-only debe ser una propiedad del dato y no
    de la herramienta, hace falta un journal o una firma, y eso es otro ADR.
+
+   **Ese límite tiene un coste medido, y es fail-open.** `load_alias_table`
+   trata un fichero **ausente** como *tabla vacía, no como error*
+   (`project_alias.rs:74`, decisión deliberada y documentada: una máquina que
+   nunca ha declarado un alias es el caso normal). Medido con el store real
+   copiado a cuatro sandboxes —falsificador PASS=12 FAIL=0—: **sin pin y sin
+   store**, `project resolve` devuelve el id **retirado** con `alias_hops: []` y
+   **código de salida 0**. Nada avisa. En el caso de `sddk-framework` ese id
+   retirado tiene 0 eventos y 0 ciclos, así que el síntoma sería un
+   `complete` sobre un storage vacío: exactamente la enfermedad que este ADR
+   vino a cerrar, reintroducida por la *pérdida* del fichero en lugar de por un
+   cambio de normalizador.
+
+   La red que hoy evita eso son **dos salvaguardas redundantes** —el pin y el
+   alias—, y cualquiera de las dos basta. Se declara así porque una red de dos
+   salvaguardas independientes no es un argumento para dormir: si el pin se borra y el
+   store se extravía, la degradación es silenciosa por diseño, no por descuido.
+
 5. **Sobre el storage real de esta máquina**, después de aplicar los 15
    aliases: `scripts/migrate_project_identity.py audit` reporta **0** receipts
    huérfanos, y `ledger.sqlite` de cada id canónico conserva su recuento de

@@ -7,7 +7,7 @@ priority: P1
 partially_resolved_at: 2026-10-01
 partially_resolved_in_session: session-63
 resolved_part: "el pin pasa a ser la autoridad de identidad en las CINCO vias del CLI (session-63)"
-open_part: "adopt status / cycle status no declaran aun la existencia de historial bajo otra identidad; requiere SCOPE + ADR de contrato de estado"
+open_part: "NINGUNO MEDIDO VIGENTE. La parte que quedaba abierta —declarar que existe historial bajo otra identidad con el mismo vault_path— se midio en session-69c y su premisa es FALSA: el id hermano p-995939af668a53d8 tiene 0 eventos y 0 ciclos, luego no hay historia que quede fuera de vista. Ver 'Addendum session-69c'."
 detected_at: 2026-10-01
 detected_in_session: session-62
 component: identity
@@ -474,3 +474,85 @@ receipts dicen el id que hoy se deriva», no, y eso solo lo logra una migracion
 destructiva. **Que cierre o no es del operador**, porque el criterio esta escrito
 aqui y no en el ADR. Lo que el ADR cambia es el frente `closes:` de su
 frontmatter: pasa a `[]`, y esta incidencia pasa a `addresses:`.
+
+---
+
+## Addendum session-69c — la premisa de esta parte abierta es FALSA, y se midió
+
+Esta incidencia decia: «*la autoridad no ve su propia historia*», y pedia que
+`adopt status` y `cycle status` **declararan** que existen 65 ciclos y 3.9 MB
+bajo otra identidad con el mismo `vault_path`. Su falsificador F49 exige que la
+advertencia **dispare**.
+
+Medido en session-69c, con el storage real: **la condición que F49 describe ya no
+existe**, y por eso F49, tomado al pie de la letra, pediría un **falso positivo**.
+
+| | `p-63676b11dc0ef88f` | `p-995939af668a53d8` |
+|---|---|---|
+| Eventos | 590 | **0** |
+| Ciclos | 179 | **0** |
+| `display_name` | sddk-framework | sddk-framework |
+| `vault_path` | `~/.sddk-knowledge/sddk-framework` | el mismo |
+| Alias | — | `→ p-63676b11dc0ef88f`, declarado el 2026-10-02 |
+
+El id hermano está **vacío**. No hay historia fuera de vista: la única
+identidad con historia es la que el CLI nombra.
+
+### Y el mecanismo funciona por los dos caminos, medido
+
+Falsificador `/var/home/rubentxu/ro/05-resolucion.py` — **PASS=12 FAIL=0**,
+cuatro sandboxes con el mismo remoto y store de alias real copiado:
+
+| Escenario | Resuelve a | Saltos |
+|---|---|---|
+| A. sin pin, store presente | `p-63676b11dc0ef88f` | `[p-995939af668a53d8]` |
+| B. pin al id **retirado**, store presente | `p-63676b11dc0ef88f` | `[p-995939af668a53d8]` |
+| C. sin pin, store **ausente** | `p-995939af668a53d8` | `[]` |
+| D. pin al **canónico**, store ausente | `p-63676b11dc0ef88f` | `[]` |
+| D2. pin al **retirado**, store ausente | `p-995939af668a53d8` | `[]` |
+
+Tres consecuencias, y la segunda es la que esta incidencia no anticipó:
+
+1. **El alias se aplica a las dos ramas**, la derivada del remoto y la fijada por
+   el pin. El comentario del código lo dice y se comprobó: un pin que nombra un
+   id retirado también lo corrige el alias (B). El pin responde *qué id es este
+   checkout*; el alias responde *qué proyecto es ese id*.
+2. **El pin y el alias son salvaguardas redundantes** para este repo: cualquiera
+   de las dos basta (A y D). Perder una no rompe nada.
+3. **Perder las dos a la vez degrada en silencio**, y esto es lo que no estaba
+   escrito: `load_alias_table` trata un fichero ausente como **tabla vacía, no
+   como error** (`project_alias.rs:74`, decisión deliberada y documentada), así
+   que C devuelve el id vacío con `alias_hops: []` y **código de salida 0**. Nada
+   avisa. Es el reverso exacto del criterio 4 reescrito de ADR-0152: allí se dijo
+   que el append-only es de la herramienta y no del almacenamiento, y esta es la
+   medida de lo que cuesta que sea así.
+
+### Por qué NO se implementa la advertencia que pide F49
+
+Porque hoy dispararía sobre un hermano **vacío**. F49 tal como está escrito
+—«mismo `project_name` bajo otro `project_id` ⇒ `adopt status` debe
+mencionarlo»— exigiría un aviso sobre una carcasa sin contenido, que es
+exactamente el ruido que F52 (el guard hermano) existe para impedir. Los dos
+falsificadores se contradicen bajo el estado actual, y eso es un defecto de los
+falsificadores, no del producto.
+
+**Lo que se propone en su lugar** es una reescritura de F49 que conserve el
+interés real —«un artefacto no debe afirmar `complete` mientras haya historia que
+no ve»— peroTriangule la condición en *historia ausente*, no en *id hermano
+presente*. Con esa condición, hoy daría verde sin código nuevo, y seguiría dando
+rojo si un id hermano volviera a tener eventos, que es el defecto original.
+
+**Y el defecto original ya no es posible por esta vía:** con el alias declarado,
+un id hermano con historia resolvería al canónico (fila A del cuadro), luego la
+historia dejaría de estar fuera de vista sin tocar ningún comando.
+
+### Estado
+
+`status: open` **se mantiene**: el cierre formal es del operador. Lo que este
+addendum establece es que **la parte abierta ya no tiene objeto**, y que su
+falsificador necesita reescribirse antes de que pueda volver a ser un FAIL
+legítimo. Lo que queda abierto de verdad en el neighbourhood está en
+[INC-DEBT-060](./INC-DEBT-060-NO-SURFACE-ENUMERATES-CYCLES-97-OF-179-ARE-NAMED-BY-NO-COMMAND.md):
+no es historia bajo otra identidad, es que **97 ciclos del propio proyecto
+canónico no los nombra ninguna superficie**, 91 de ellos `OPEN`. Ese sí es un
+defecto vivo, y es de otra clase.
