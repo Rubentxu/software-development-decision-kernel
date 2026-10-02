@@ -9618,3 +9618,105 @@ decidir sin arrastrar el lote anterior. Antes, `git fetch origin` y revalidar
 `HEAD`/`origin/main`/tag/workspace/bundle. **No bumpear por conveniencia**: si el
 workspace declara `2.5.3` y el último tag publicado es `v2.5.2`, la siguiente
 release **es 2.5.3**.
+
+---
+
+## session-69f — 2026-10-02
+
+**Baseline / HEAD.** `origin/main` = `d3fc4e29` al entrar. Rama `main`. Workspace
+**2.5.3 declarada, no publicada**; último tag remoto `v2.5.2`.
+
+**WorkItem.** Auditoría de familia del defecto de F63. **Sin cambios de código**:
+esta sesión no arregla nada, corrige lo que se había afirmado sin medir.
+
+**Commits.** `bc402018` corrección · este.
+
+### La afirmación que era falsa
+
+Desde el cierre del ciclo anterior se venía diciendo, en cuatro sitios, que
+`sddk ledger watch --max-events` «trunca sin declarar lo mismo que `ledger events`
+hacía». **Es falso.** Medido con el binario real sobre copia byte-idéntica:
+
+```
+$ sddk ledger watch --root . --scope . --max-events 5
+  ... 5 líneas de evento ...
+[watch] emitted 5 events, exiting
+
+$ sddk ledger watch ... --format json
+{"__watch_complete":true,"emitted":5}
+```
+
+`ledger.rs:785-788` escribe el cierre **en los dos formatos**, y `--max-events`
+está documentado como `0 = unlimited` con default `0`. **`ledger watch` es el
+modelo del comportamiento correcto**, y el propio arreglo de F63 lo copia.
+
+**De dónde salió:** analogía de nombre. Los tres comandos tienen una bandera de
+tope, luego se les trató el mismo defecto **sin ejecutar ninguno**. Es el mismo
+camino que produce los demás números falsos de esta sesión —tratar la forma como
+si fuera el comportamiento— y por eso la corrección va con la medición delante y
+no como una nota al pie.
+
+Corregido **sin borrar el original** en los cuatro sitios: SCOPE §2.3 y §5.3,
+`RECEIPT.md` §9, el addendum de la deuda y `CURRENT.md`.
+
+### La auditoría: 11 candidatos, 1 defecto real
+
+Búsqueda sobre `crates/sddk-cli/src` de lectura acotada que no declara. De once
+candidatos, **uno** sobrevive a la lectura:
+
+| candidato | veredicto |
+|---|---|
+| `backlog.rs:113`, `metrics.rs:70` | defaults de escritura, no cotas de lectura |
+| `graph_cmd.rs:47` | cota de profundidad, `0 = unbounded` ya documentado |
+| `capability.rs:50` | tope de bytes sobre un subproceso: guard de recurso |
+| `dev/check.rs`, `dev/comments_check.rs`, `lint.rs`, `skill_registry_bridge.rs`, `uat_*` | `.take()` interno, sin superficie de usuario |
+| 9 ficheros más | ya declaran |
+| **`vault_cmd.rs:105`** | **sí es la misma clase** |
+
+La reducción va escrita con su tabla porque «11 defectos» es el tipo de número
+que viaja a un documento y se convierte en trabajo que nadie necesitaba.
+
+### Lo que queda, medido: `vault search`
+
+```
+sddk vault search --query cycle   -> 20 lineas, exit 0, SIN declarar
+SELECT COUNT(*) FROM vault_fts    -> 75 documentos
+sddk vault search --limit 0       -> "no hits"
+sddk vault search --format json   -> [ ... ]   array desnudo
+```
+
+Las tres cosas corregidas en `ledger events`, una a una, en otra superficie.
+**Sin tocar:** slice propio con SCOPE propio.
+
+### Verificación
+
+No hay cambio de código, luego no se re-ejecuta el perfil completo —re-ejecutarlo
+para un commit que solo toca prosa sería teatro—. Sí los gates documentales, que
+no cubren la verdad de una afirmación sino su redacción y su coherencia con el
+índice.
+
+### UAT
+
+Ninguna fila de `docs/roadmap/UAT-MATRIX.md` ejecutada: no hay cambio de
+comportamiento. **No se certifica nada.**
+
+### Riesgos
+
+- **INC-DEBT-060 sigue `open`**, aunque sus cuatro falsificadores estén verdes: las
+  79 filas de `__spine_import__` y los 23 ciclos sin hecho son del operador, y
+  `get_cycle` sigue dando error en las 2 filas ilegibles (STOP 1).
+- **La auditoría estática no es una prueba.** Diez candidatos eliminados por
+  lectura, no por ejecución. Si alguno tuviera una superficie de usuario que la
+  lectura no vio, seguiría ahí. Se declara el límite: el criterio fue «tiene una
+  bandera de tope por defecto», y ese criterio puede tener falsos negativos.
+
+### Bloqueos que persisten
+
+Clave KMS; las 79 filas de `__spine_import__`; los 23 ciclos sin hecho;
+INC-DEBT-049 (F49); ruta forge de `release apply`; harness.
+
+**Primer paso de la sesión siguiente.** Abrir el ciclo de `vault search`:
+SCOPE + PRE-FLIGHT, con las tres correcciones ya medidas y `--limit 0` alineado.
+Antes, `git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle.
+**No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
+publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
