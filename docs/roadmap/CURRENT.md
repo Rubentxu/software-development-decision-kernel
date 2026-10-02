@@ -1,5 +1,25 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-65j, 2026-10-01): un guard llevaba ROJO desde session-65b y nadie lo ejecutaba. La causa de fondo no era ese guard: la superficie de gates es una lista escrita a mano, y 13 de 36 tests no estaban en ella.** `HEAD` = `b15cf610`. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Hecho en session-65j:**
+
+1. **`scripts/check_debt_index_coherence.sh` salía con exit 1 sobre este repo desde session-65b.** Dos causas encadenadas: INC-DEBT-052 declaraba su estado como `**status:** resolved` en markdown bold — un dialecto que el guard no lee, porque lee frontmatter YAML y la prosa `**Estado:**` — y el guard no estaba referenciado por ningún runner. `ci.yml:46` hace `shellcheck` (lint, no ejecución) y `release.sh` corría el **test de fixtures**, que monta un árbol desechable por caso. Sus 10 casos PASABAN, y ese verde leía como cobertura.
+2. **El método casi se diagnostica al revés.** La primera hipótesis fue que el guard era ciego al dialecto, y estuvo a punto de «ablandarse» para aceptar la entrada. Lo refutó la evidencia: lo que se había ejecutado era el TEST, no el GUARD. Un `PASS=10 FAIL=0` leído como «el guard funciona» es exactamente el falso positivo que este repo lleva slices persiguiendo.
+3. **Corrección en la dirección correcta:** el DOCUMENTO se ajustó al contrato (frontmatter YAML canónico), no el contrato al documento. `resolved` sigue siendo `resolved`; ahora es legible por máquina. El guard queda **más estricto** después, no antes.
+4. **Barrido sistémico: 13 de 36 tests sin runner — no los 7 de la primera medición.** La diferencia es la lección: un test nombrado en un comentario no está gated, y la nota de exclusión de `release.sh` nombra dos tests precisamente porque NO se ejecutan. Contar prosa como cobertura es el mismo error que contar una declaración como obediencia.
+5. **Cableados 11 tests herméticos** (medidos: 36–299 ms cada uno), 6 shell y 5 python. Una regresión en el staging del bundle ahora falla el release en vez de publicarse.
+6. **Se quedaron fuera 6, con motivo escrito.** El caso importante: `test_h05_isolation.sh` **pasa sin medir** — sin el rlib release imprime `skip:` y aun así reporta `PASS=1 FAIL=0`. Cablearlo habría devuelto un verde vacío, la misma forma que INC-DEBT-054. Un PASS que no midió nada es peor que un gate ausente, porque además tapa el defecto.
+7. **`tests/test_gate_coverage.py` ata la propiedad** y se protege con dos reglas que impiden que la lista de excepciones se pudre: una excepción a un fichero inexistente es FAIL, y una excepción para un test que ya tiene runner es FAIL.
+8. **Dos falsificadores encontrados, incluidos en el guard mismo.** Tres mutaciones cazadas (test huérfano, excepción obsoleta, excepción cajón de sastre). Y al falsarlo, el guard resulto con su propia contabilidad mal: reportaba «excepcionados: 0» con seis excepciones vivas, porque la derivaba por resta. **Un guard que miente sobre sus propias cifras no puede usarse para justificar por qué el resto pasa.**
+
+**Gates:** `test_debt_index_coherence` 12/12 · `test_gate_coverage` 31 con runner + 6 excepcionados + 0 huérfanos · guard real 41/41 sobre el repo · `shellcheck` limpio · `bash -n release.sh` OK · 14/15 gates de release verdes, el rojo siendo `test_release_state_pointer` detectando este mismo puntero desfasado.
+
+**Lo que este slice NO cierra:** la **decisión normativa (a)/(b) de INC-DEBT-048** es del operador, y ahora con el radio corregido: REQ-A3S1-021 alimenta `IntelligenceLoopReceiptId` vía **ADR-0126, que está `accepted`**. El **gate de citas de `UAT-MATRIX.md`** sigue sin implementar. INC-DEBT-050 (migración de los 25 receipts) sigue en espera. El **contrato de versión para repos no-Rust** (cierre real de INC-DEBT-051) sigue necesitando SCOPE + ADR.
+
+
+---
+
 **Estado (session-65i, 2026-10-01): `adopt status` reportaba `conflict` sobre el storage ya convergido de este repo. Tres sitios de la cadena de identidad, no uno. Verificado end-to-end contra el binario: release 2.5.3 = `conflict`, binario con el arreglo = `complete`.** `HEAD` = `35b33e8c` (session-65i) sobre `e0628686` ya publicado. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`). **SIGUIENTE: publicar, o abrir el ciclo de brevedad que devuelve `doctor --strict` a verde.**
 
 **Hecho en session-65i:**

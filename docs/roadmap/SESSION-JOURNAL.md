@@ -8577,3 +8577,69 @@ brevedad de las 19 superficies que devuelve `doctor --strict` a verde. Antes, `s
 sobre este repo healing-normaliza el recibo: el arreglo hace que `configuration_hash` (bytes crudos)
 difiere y el verbo reescribe el remoto a minúsculas — es una escritura de healing, no una migración.
 
+
+## Continuación (session-65j, 2026-10-01) — un guard rojo desde session-65b, y la clase que escondia
+
+**Baseline/HEAD:** `8c510d1d` (publicado) -> `841660c6` -> `b15cf610`. Workspace 2.5.3 declarada,
+no publicada; último tag remoto `v2.5.2`.
+
+**WorkItem:** continuar la verificacion de vigencia de deuda abierta. Empezando por **INC-DEBT-052**,
+que era la unica que no se habia auditado en las sessions previas.
+
+**Auditoria de 052: el claim es cierto.** Los conteos de `[contents]` en `BUNDLE.toml` cuadran
+exactamente con `MANIFEST.sha256` (72/245/44/17/14/2). `skills` sube de 244 a 245 por la sexta
+superficie de session-65h, no por regresion.
+
+**Lo que se encontró al ejecutarlo: dos defectos encadenados.**
+
+1. 052 declaraba su estado como `**status:** resolved (session-65b)` en markdown bold. El guard lee
+   frontmatter YAML y la prosa `**Estado:**`; ese no era ninguno de los dos, luego lo reportaba
+   `unreadable` y salia con **exit 1**.
+2. `scripts/check_debt_index_coherence.sh` no estaba cableado en ningun runner. `ci.yml:46` hace
+   `shellcheck` (lint, no ejecucion); `release.sh` corria el **test de fixtures**. Sus 10 casos
+   PASABAN — y ese verde leia como cobertura.
+
+**Correccion de rumbo, worth recording.** La primera hipotesis fue que el guard era ciego al
+dialecto, y se casi lo ablandaba para que aceptara la entrada. La evidencia lo refuto. Lo que se
+habia ejecutado antes era el TEST, no el GUARD. Un `PASS=10 FAIL=0` leido como "el guard funciona"
+es exactamente el falso positivo que este repo lleva slices persiguiendo.
+
+**Direccion de la correccion: el documento se ajusto al contrato, no al contrario.** Convertido a
+frontmatter YAML canonico; `resolved` sigue siendo `resolved`. Falsificado: ablandar el guard para
+aceptar `**status:**` **rompe** el test. Un guard que acepta cualquier dialecto no es tolerante,
+dejo de medir.
+
+**Barrido sistémico: 13 de 36 tests sin runner.** La primera medicion dio 7. La diferencia es la
+leccion: **un test nombrado en un comentario no esta gated**, y la nota de exclusion de release.sh
+nombra dos tests precisamente porque NO se ejecutan. Contar prosa como cobertura es el mismo error
+que contar una declaracion como obediencia.
+
+- **Cableados 11** (hermeticos, 36-299 ms): 6 shell + 5 python.
+- **Fuera, con motivo escrito:** 6. El caso relevante es `test_h05_isolation.sh`, que **pasa sin
+  medir** (imprime `skip:` sin el rlib release y aun asi reporta `PASS=1 FAIL=0`). Un PASS que no
+  midio nada es peor que un gate ausente: ademas tapa el defecto. Misma forma que INC-DEBT-054.
+
+**Dos defects encontrados falsando el propio guard nuevo.**
+
+1. La contabilidad se derivaba por resta y reportaba "excepcionados: 0" con seis excepciones vivas.
+   Un guard que miente sobre sus propias cifras no puede usarse para justificar por que el resto
+   pasa. Ahora `covered`/`excepted`/`uncovered` son conjuntos disjuntos: 31 + 6 = 37.
+2. El primer falsador fallo **por su propio bug**: el regex buscaba `for t in \` + continuacion de
+   linea, pero la lista empieza con un fichero. No se acepto la mutacion como evidencia hasta que
+   fallo por la razon correcta. *Un falsador que no se aplica no prueba nada.*
+
+**Falsificadores: 3 mutaciones, 3 detectadas.** Test huerfano sin runner; excepcion obsoleta a un
+fichero inexistente; excepcion "cajon de sastre" sobre un test que ya tiene runner.
+
+**Gates:** `test_debt_index_coherence` 12/12 · `test_gate_coverage` PASS (31+6+0) · guard real
+41/41 · `shellcheck` limpio · `bash -n release.sh` OK.
+
+**Lo que NO se cierra.** Decision normativa (a)/(b) de **INC-DEBT-048**: es del operador, y con el
+radio corregido —REQ-A3S1-021 alimenta `IntelligenceLoopReceiptId` via **ADR-0126, `accepted`**.
+Gate que valide las citas de `UAT-MATRIX.md`: sin implementar. Migracion de los 25 receipts
+(INC-DEBT-050): en espera. Contrato de version para repos no-Rust (cierre real de INC-DEBT-051):
+necesita SCOPE + ADR.
+
+**Primer paso preciso de la sesion siguiente:** `bash scripts/release.sh` para publicar v2.5.3 —el
+CHANGELOG debe cubrir `fix(adoption)`, `fix(debt)` y `test(gates)` (gate 2b)— y `sddk dev install`.
+Despues, el ciclo de brevedad de las 19 superficies que devuelve `doctor --strict` a verde.
