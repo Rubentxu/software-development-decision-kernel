@@ -9163,3 +9163,78 @@ con `alias_origin` e `identity_source` intactos— y no **añadir** un tercer
 resolutor. Pasar el id resuelto como `pinned_project_id` sería más corto y
 **incorrecto**: degradaría `identity_source` a `Pinned` en el camino no pinado, la
 regresión que el comentario de `adoption.rs:210-243` ya advirtió una vez.
+
+---
+
+### 2026-10-02T21:30:00Z — p-63676b11dc0ef88f/identity-alias (INC-DEBT-059, lotes 1 y 2) — orchestrator
+
+**Baseline:** `1d613bbf` al empezar este tramo. **HEAD al salir:** `ff0bacda` + este
+commit documental, publicado con `git push origin main` **sin `--no-verify`**.
+**WorkItem:** corregir INC-DEBT-059, que session-69 había detectado y medido.
+**Resultado: resuelta en dos lotes. El criterio 3 de ADR-0152 pasa de ROJO a
+medido, y el ADR sigue sin promoverse — por el 5 y el 6, que nunca se midieron.**
+
+## Lote 1 — tests y nada más (`07c3fd5c`)
+
+`crates/sddk-cli/tests/alias_adoption_wiring.rs`, cuatro tests RED. Fichero
+propio y no `adoption_contract.rs` porque el doc de ese declara de qué va
+(aserts sobre los tokens del `agents/sddk-adopt.md`) y meter ahí cableado del
+store lo ensuciaría sin ganar nada.
+
+**Los cuatro caían, pero tres por el motivo equivocado**, y es la segunda vez en
+esta sesión que un FAIL propio tapa el defecto: `--scope` es obligatorio en
+`adopt apply` y el helper exigía éxito, luego el fallo era del andamiaje y el
+mensaje de la propiedad no se imprimía. Corregido, la segunda vez pasó lo
+siguiente: `adopt status` sale 1 y `context bootstrap` sale 4, así que exigir
+éxito las hacía medir el **código de salida** en vez de lo que reportan. De ahí
+`run_reporting`, que devuelve stdout sea cual sea el status: la propiedad es lo
+que el comando **reporta**, y el código de salida se sigue de ahí.
+
+## Lote 2 — el arreglo (`acd790b1`)
+
+`AdoptionPlanInput` lleva `identity: ResolvedProjectIdentity` en vez de los
+cuatro campos de derivación, y `plan_adoption` deja de llamar a
+`resolve_project_identity` por completo. Con la identidad ya resuelta, derivar
+por dentro es imposible porque el input ya no tiene de qué derivar: el punto
+único de decisión queda cierto **por construcción**. La forma corta —pasar el id
+resuelto por `pinned_project_id`— no exige tocar nada y **no funciona**, y
+`context_cmd.rs` ya la hacía, con la condición `identity_source == Pinned` que
+era justo el caso roto.
+
+**La cuarta superficie la encontró el falsificador, no la lectura:**
+`generate docs` escribía bajo el id retirado. No salió leyendo el SCOPE ni
+midiendo el arranque, sino **contando puntos de llamada**, con las otras tres ya
+arregladas.
+
+**Un arreglo demasiado amplio, cazado por un test preexistente:** derivar la
+semilla de la ruta convertía cualquier directorio en un proyecto y lo cazó
+`real_cli_exit_status_tracks_lint_errors_and_stale_checks` con `SDDK009`. El
+correcto era **una cláusula en el predicado**.
+
+**Tres defectos del propio falsificador**, todos corregidos y todos escritos en
+el recibo: M1 no compilaba (placeholder del `format!` sin su argumento es un
+error, no un aviso) y quedaba en SKIP cuando el criterio 3 exige ejercitarla; M3
+era una mutación mala y no un hueco; y el **restore a ciegas**, con backup de
+una sola vez, se llevó por delante un arreglo hecho después **sin avisar**. El
+restore ahora es fresco por ejecución y verificado por sha256.
+
+**Gates:** `cargo test --workspace` **5361 passed, 0 failed**, `cargo exit=0` ·
+costura **6/6** · `cargo fmt --check` limpio · `clippy -D warnings` **exit 0** ·
+falsificador **PASS=4 FAIL=0 SKIP=0** (borrar la declaración 6→5, el engine
+vuelve a derivar 6→1, la CLI introduce un segundo resolutor 6→4) ·
+`test_changelog_coverage` **PASS=45 FAIL=0** tras declarar los tres commits.
+
+## Lo que NO se cierra
+
+1. El **storage real no se limpia**: el arreglo impide crear más huérfanos, los
+   que ya existen siguen ahí, y los bindings atrapados siguen atrapados.
+2. El **criterio 5 de ADR-0152** no se puede cerrar aquí; qué receipts espurios
+   se retiran es **decisión del operador**.
+3. **ADR-0152 no se promueve**: el 3 está medido, el 5 y el 6 nunca.
+4. La **ruta forge** de `release apply` contra un GitHub real sigue sin medir.
+
+**Primer paso de la sesión siguiente:** los criterios **5** y **6** de ADR-0152,
+que son los que faltan para promoverlo. El 5 necesita primero una decisión del
+operador sobre qué receipts espurios se retiran del storage real, y el 6 es
+`verify_stream_chain` sobre un stream canónico. Antes de eso, la
+**clave del KMS**, que sigue siendo el único bloqueo de v2.5.3.

@@ -2,6 +2,33 @@
 
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69b, 2026-10-02): INC-DEBT-059 RESUELTA en dos lotes. La identidad se resuelve una vez y entra ya resuelta en el engine. El criterio 3 de ADR-0152 pasa de ROJO a medido — y el ADR sigue sin promoverse, por el 5 y el 6.** `HEAD` = `ff0bacda` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El arreglo, y por que es eliminacion y no un campo opcional:**
+
+`AdoptionPlanInput` deja de llevar `remote_url`, `pinned_project_id`, `scope` y `fallback_seed`, y lleva `identity: ResolvedProjectIdentity`. `plan_adoption` deja de llamar a `resolve_project_identity` **por completo**. Con la identidad ya resuelta, derivar por dentro es **imposible** porque el input ya no tiene de que derivar: la afirmacion de «un solo punto de decision» queda cierta **por construccion**. Con un campo opcional, alguien readane la llamada y ningun test de comportamiento lo nota.
+
+La forma corta —pasar el id resuelto por `pinned_project_id`— no exige tocar nada y **no funciona**: el engine lo trataria como pin, `identity_source` no viajaria y `alias_origin` se perderia un nivel mas adentro, con una forma que *parece* correcta. Y `context_cmd.rs` ya hacia exactamente eso, condicionado a `identity_source == Pinned`, que es por lo que un checkout con alias y **sin** pin era el caso que se rompia. Esa condicion se **elimina**, no se propaga.
+
+**Dos lotes, y el primero no era opcional.** El lote 1 son tests que caen **antes** de tocar produccion (`07c3fd5c`), que es lo que permite que el lote 2 sea «hacerlos verdes» y no «comprobar a posteriori si algo se movio». Los cuatro caian, pero **tres por el motivo equivocado** —faltaba `--scope`, y luego el helper exigia exito y esas dos superficies salen con codigo no cero—, asi que median el andamiaje en vez de la propiedad. Segunda vez en la sesion que un FAIL propio tapa el defecto.
+
+**La cuarta superficie la encontro el falsificador, no la lectura.** `adopt`, `context bootstrap` (que tenia **dos** sitios de resolucion) y el engine eran las tres conocidas. `sddk generate docs` escribia la documentacion generada bajo el data dir del id **retirado** mientras `project resolve` nominaba el superviviente. No salio leyendo el SCOPE ni midiendo el arranque: salio **contando puntos de llamada**, con las otras tres ya arregladas. Es la cuarta afirmacion de convergencia que este trabajo producia y era falsa — y por eso el guard nuevo cuenta llamadas con parentesis y exige **exactamente una**: prohibir el nombre dejaria fuera la llamada legitima del resolver canonico, y contarlo sin parentesis contaba tambien la linea `use` (que es como el guard dio 2 en vez de 1 en su primera version).
+
+**Un arreglo demasiado amplio, cazado por un test que ya existia.** El defecto de paso —`find_persisted_fallback_seed` no veia recibos **pinneados**, porque el pin sobrescribe `identity_source`— se corrigio primero derivando la semilla de la ruta canonica, copiando lo que hace `resolve_project_ids`. Eso convierte cualquier directorio en un proyecto y deja muerto el fallback in-repo; lo cazo `real_cli_exit_status_tracks_lint_errors_and_stale_checks` con `SDDK009`. El arreglo correcto era **una clausula en el predicado**: el pin sobrescribe el `project_id`, no la semilla.
+
+**Gates de session-69b:** `cargo test --workspace` **5361 passed, 0 failed**, `cargo exit=0` · costura **6/6** · `cargo fmt --check` limpio · `clippy -D warnings` **exit 0** · falsificador **PASS=4 FAIL=0 SKIP=0**, con las tres mutaciones detectadas: borrar la declaracion (6→5, el que el criterio 3 exige), el engine vuelve a derivar (6→1), la CLI introduce un segundo resolutor (6→4) · `check_debt_index_coherence`, `test_docs_script_contamination`, `test_gate_coverage`, `test_release_state_pointer`, `test_adr_promotion_format` PASS · `test_changelog_coverage` **PASS=45 FAIL=0**.
+
+**Lo que este trabajo NO cierra, escrito para que no se lea como verde:**
+
+1. **El storage real no se limpia.** El arreglo impide crear mas huerfanos; los que ya existen **siguen ahi**, y los bindings que `context bootstrap` dejo atrapados bajo ids retirados **siguen atrapados**.
+2. **El criterio 5 de ADR-0152 no se puede cerrar aqui.** Exige 0 huerfanos en el audit del storage real, y depende de (1). Que receipts espurios se retiran es **decision del operador**.
+3. **ADR-0152 no se promueve.** Su criterio 3 esta medido; el **5** y el **6** nunca se han medido, y seis criterios no se suman.
+4. **La ruta forge de `release apply` contra un GitHub real** sigue sin medir. Pendiente propio, declarado.
+
+**Nota sobre el puntero:** `current_sha` nombra `ff0bacda`, el commit **anterior** a este fichero documental, por la razon que la tercera sesion ya dejo escrita: actualizar el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener.
+
+---
+
 **Estado (session-69, 2026-10-02): `adopt` no llega al store de alias, y `adopt apply` recrea el huérfano que ADR-0152 existe para cerrar. Criterio 3 ROJO, el ADR no se promueve, INC-DEBT-059 abierta.** `HEAD` = `1d613bbf` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Lo que se descubrió, en tres líneas:**
