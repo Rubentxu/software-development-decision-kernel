@@ -18,6 +18,16 @@ closes: [INC-DEBT-050, INC-DEBT-049]
 > hasta ahora nadie la había escrito y las tres partes la asumieron
 > distinto.
 > Cycle: `p-63676b11dc0ef88f/identity-alias`
+>
+> **Implementation progress (session-66, lote 1 de 3):** la capa de dominio
+> está implementada y falsificada — `ProjectAlias`, `AliasTable`,
+> `AliasResolution` y las dos variantes de error en
+> `crates/sddk-domain/src/identity.rs`, con 11 tests y **6/6 mutaciones
+> detectadas**. Faltan la persistencia (lote 2) y el cableado en
+> `resolve_identity_honoring_pin` más el comando (lote 3). El ADR **sigue
+> `proposed`**: su decisión no está implementada entera y promoverla a
+> `accepted` con un tercio sería exactamente el tipo de `accepted` sin
+> evidencia que este repo lleva tres incidencias persiguiendo.
 
 ## Context
 

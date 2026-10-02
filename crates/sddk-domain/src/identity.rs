@@ -33,6 +33,174 @@ pub enum IdentityError {
     /// A fallback identity seed is absent or is not a UUID.
     #[error("fallback seed must be a valid UUID")]
     InvalidFallbackSeed,
+    /// An alias chain revisits a project id, so following it would not
+    /// terminate.
+    ///
+    /// **Hard error, not a warning.** A non-terminating resolution is silent by
+    /// construction: it either hangs or, if a step limit is added later, stops
+    /// at an arbitrary point and reports a plausible-looking id. Both are worse
+    /// than refusing. The chain is named so the operator can see the loop.
+    #[error("project alias cycle: {0}")]
+    AliasCycle(String),
+    /// An alias chain exceeded the hop limit without cycling.
+    ///
+    /// **A different variant from `AliasCycle` on purpose.** The falsifier
+    /// suite found the two conflated: with cycle detection removed, a two-hop
+    /// cycle simply ran into the step limit, produced the same variant, and the
+    /// cycle test went green for the wrong reason. A cycle and a malformed
+    /// table are different defects with different fixes — re-point an alias
+    /// versus repair the table — and a test that cannot tell them apart cannot
+    /// certify either.
+    #[error("project alias chain too long ({0} hops): the table is malformed")]
+    AliasChainTooLong(usize),
+}
+
+/// One entry of the storage-level project alias table.
+///
+/// ADR-0152. `from_id` is **what the code derives today**; `to_id` is the
+/// canonical identity, the one that holds the history.
+///
+/// This type **does not mint identities and does not rewrite any of them.**
+/// A `project_id` is baked into the content hash of an append-only, hash-chained
+/// event log (`EventEnvelopeV1::compute_content_hash` zeroes only
+/// `content_hash`, `sequence` and `recorded_at`), so once a project has one
+/// event its identity is immutable. That is why this exists: the only thing
+/// left to do is change *what resolution points at*, never what was recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectAlias {
+    /// The id the current derivation produces.
+    pub from_id: ProjectId,
+    /// The canonical id, which holds the history.
+    pub to_id: ProjectId,
+    /// Why the alias exists. Required by the CLI, not optional.
+    pub reason: String,
+    /// RFC3339 timestamp of declaration.
+    pub created_at: String,
+}
+
+impl ProjectAlias {
+    /// Declares an alias, rejecting the two shapes that cannot be right.
+    ///
+    /// - An **empty reason** is refused. An alias with no stated cause is
+    ///   indistinguishable, later, from a wrong one.
+    /// - A **destination that does not yet exist** cannot be checked here
+    ///   (this type is pure and has no storage), so the caller verifies it.
+    ///   That check is the CLI's, and it is a hard one: an alias to a
+    ///   not-yet-existing project is how two real projects would merge.
+    pub fn new(
+        from_id: ProjectId,
+        to_id: ProjectId,
+        reason: impl Into<String>,
+        created_at: impl Into<String>,
+    ) -> Result<Self, IdentityError> {
+        let reason = reason.into();
+        if reason.trim().is_empty() {
+            return Err(IdentityError::InvalidProjectId(
+                "an alias requires a reason".into(),
+            ));
+        }
+        Ok(Self {
+            from_id,
+            to_id,
+            reason,
+            created_at: created_at.into(),
+        })
+    }
+}
+
+/// The outcome of resolving a derived id through the alias table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasResolution {
+    /// The id resolution ended at. Equal to the input when no alias applied.
+    pub project_id: ProjectId,
+    /// Every hop taken, in order. Empty when no alias applied.
+    ///
+    /// Carried so the CLI can **declare** that it resolved through an alias
+    /// (ADR-0152 rule 4). A resolution that silently lands somewhere else is
+    /// the false green INC-DEBT-049 was about.
+    pub hops: Vec<ProjectId>,
+}
+
+impl AliasResolution {
+    /// True when at least one alias was followed.
+    pub fn redirected(&self) -> bool {
+        !self.hops.is_empty()
+    }
+}
+
+/// In-memory alias table: pure, no filesystem, no storage.
+///
+/// Append-only by construction: there is no `remove`. Retiring an alias means
+/// re-pointing the other way, and the record of why it existed outlives the
+/// project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AliasTable {
+    aliases: Vec<ProjectAlias>,
+}
+
+/// Upper bound on chain hops. A chain longer than this is a defect in the
+/// table, not a legitimate configuration, and the error says so.
+const MAX_ALIAS_HOPS: usize = 16;
+
+impl AliasTable {
+    /// Builds a table from its entries.
+    pub fn new(aliases: Vec<ProjectAlias>) -> Self {
+        Self { aliases }
+    }
+
+    /// The table's entries, in declaration order.
+    pub fn entries(&self) -> &[ProjectAlias] {
+        &self.aliases
+    }
+
+    fn target_of(&self, id: &ProjectId) -> Option<&ProjectAlias> {
+        self.aliases.iter().find(|a| &a.from_id == id)
+    }
+
+    /// Resolves `id` through the alias chain.
+    ///
+    /// Rules, all fail-closed (ADR-0152):
+    ///
+    /// 1. Chains resolve transitively: `A -> B -> C` yields `C`.
+    /// 2. A **cycle is a hard error** naming the chain, not a truncated answer.
+    /// 3. A **self-alias** (`A -> A`) resolves to `A` and terminates. It is
+    ///    redundant, not broken, and treating it as an error would make a
+    ///    harmless table unusable.
+    /// 4. No alias means the input is returned unchanged with no hops, so the
+    ///    common case cannot regress.
+    pub fn resolve(&self, id: ProjectId) -> Result<AliasResolution, IdentityError> {
+        let mut hops: Vec<ProjectId> = Vec::new();
+        let mut seen: Vec<ProjectId> = vec![id.clone()];
+        let mut current = id;
+
+        loop {
+            let Some(alias) = self.target_of(&current) else {
+                return Ok(AliasResolution {
+                    project_id: current,
+                    hops,
+                });
+            };
+            let next = alias.to_id.clone();
+            if next == current {
+                // Rule 3: self-alias terminates without a hop.
+                return Ok(AliasResolution {
+                    project_id: current,
+                    hops,
+                });
+            }
+            if let Some(at) = seen.iter().position(|s| s == &next) {
+                let mut chain: Vec<String> = seen[at..].iter().map(|s| s.to_string()).collect();
+                chain.push(next.to_string());
+                return Err(IdentityError::AliasCycle(chain.join(" -> ")));
+            }
+            if hops.len() >= MAX_ALIAS_HOPS {
+                return Err(IdentityError::AliasChainTooLong(MAX_ALIAS_HOPS));
+            }
+            seen.push(next.clone());
+            hops.push(current.clone());
+            current = next;
+        }
+    }
 }
 
 /// A globally unique project identifier.
@@ -869,5 +1037,160 @@ mod tests {
             stable_workspace_id(&first, "c"),
             stable_workspace_id(&second, "bc")
         );
+    }
+
+    // ── ADR-0152: resolución de identidad por alias ──────────────────────
+    //
+    // Cada criterio de ADR-0152 §Verification con su falsificador. Un criterio
+    // sin falsificador que se pueda ejecutar no es un criterio, es una opinión.
+
+    fn pid(s: &str) -> ProjectId {
+        ProjectId::new(s).unwrap()
+    }
+
+    fn alias(from: &str, to: &str) -> ProjectAlias {
+        ProjectAlias::new(pid(from), pid(to), "caso medido", "2026-10-02T00:00:00Z").unwrap()
+    }
+
+    #[test]
+    fn no_alias_returns_the_input_untouched() {
+        // Criterio 1, caso normal: el caso común no puede cambiar.
+        let table = AliasTable::new(vec![]);
+        let got = table.resolve(pid("p-aaa")).unwrap();
+        assert_eq!(got.project_id, pid("p-aaa"));
+        assert!(got.hops.is_empty());
+        assert!(!got.redirected());
+    }
+
+    #[test]
+    fn an_alias_not_applicable_leaves_resolution_unchanged() {
+        // Falsificador del criterio 1: un alias que no aplica no puede mover nada.
+        let table = AliasTable::new(vec![alias("p-other", "p-elsewhere")]);
+        let got = table.resolve(pid("p-aaa")).unwrap();
+        assert_eq!(got.project_id, pid("p-aaa"));
+        assert!(!got.redirected());
+    }
+
+    #[test]
+    fn an_applicable_alias_redirects_and_reports_the_hop() {
+        // Criterio 1, caso con alias. Y criterio 3: el salto es visible.
+        let table = AliasTable::new(vec![alias("p-derived", "p-canonical")]);
+        let got = table.resolve(pid("p-derived")).unwrap();
+        assert_eq!(got.project_id, pid("p-canonical"));
+        assert_eq!(got.hops, vec![pid("p-derived")]);
+        assert!(got.redirected());
+    }
+
+    #[test]
+    fn chains_resolve_transitively() {
+        // Regla 1: A -> B -> C yields C, con los dos saltos declarados.
+        let table = AliasTable::new(vec![
+            alias("p-a", "p-b"),
+            alias("p-b", "p-c"),
+            alias("p-c", "p-d"),
+        ]);
+        let got = table.resolve(pid("p-a")).unwrap();
+        assert_eq!(got.project_id, pid("p-d"));
+        assert_eq!(got.hops, vec![pid("p-a"), pid("p-b"), pid("p-c")]);
+    }
+
+    #[test]
+    fn a_self_alias_terminates_instead_of_looping() {
+        // Falsificador explícito del criterio 1. Un `A -> A` que se colgara
+        // sería el modo de fallo más caro posible: no avisa.
+        let table = AliasTable::new(vec![alias("p-a", "p-a")]);
+        let got = table.resolve(pid("p-a")).unwrap();
+        assert_eq!(got.project_id, pid("p-a"));
+        assert!(got.hops.is_empty(), "un auto-alias no es un salto");
+    }
+
+    #[test]
+    fn a_cycle_is_a_hard_error_that_names_the_chain() {
+        // Criterio 2: `A -> B -> A` falla Y nombra el ciclo. Un guard que sólo
+        // avisa es un FAIL, y un truncamiento silencioso también.
+        //
+        // Se afirma sobre la VARIANTE, no sobre el texto. Con la detección de
+        // ciclo retirada, un ciclo de dos saltos corría hasta el tope de pasos
+        // y devolvía el mismo tipo de error, y este test pasaba por el motivo
+        // equivocado. Afirmar sobre el texto es no poder distinguir "hay un
+        // ciclo" de "la tabla está mal", que son arreglos distintos.
+        let table = AliasTable::new(vec![alias("p-a", "p-b"), alias("p-b", "p-a")]);
+        let err = table.resolve(pid("p-a")).expect_err("un ciclo debe fallar");
+        assert!(
+            matches!(&err, IdentityError::AliasCycle(chain) if chain == "p-a -> p-b -> p-a"),
+            "esperaba AliasCycle con la cadena nombrada, obtuve: {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_three_hop_cycle_also_fails_as_a_cycle() {
+        let table = AliasTable::new(vec![
+            alias("p-a", "p-b"),
+            alias("p-b", "p-c"),
+            alias("p-c", "p-a"),
+        ]);
+        let err = table
+            .resolve(pid("p-a"))
+            .expect_err("un ciclo largo también falla");
+        assert!(
+            matches!(&err, IdentityError::AliasCycle(chain) if chain.contains("p-c -> p-a")),
+            "esperaba AliasCycle, obtuve: {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_chain_longer_than_the_limit_is_refused_not_truncated() {
+        // Un tope de pasos que en silencio devuelve un id plausible sería peor
+        // que no tener tope. Se falla, y con una variante DISTINTA del ciclo:
+        // aquí el arreglo es reparar la tabla, no re-apuntar un alias.
+        let mut entries = Vec::new();
+        for i in 0..MAX_ALIAS_HOPS + 4 {
+            entries.push(alias(
+                &format!("p-step{i:02}"),
+                &format!("p-step{:02}", i + 1),
+            ));
+        }
+        let table = AliasTable::new(entries);
+        let err = table
+            .resolve(pid("p-step00"))
+            .expect_err("una cadena absurda debe fallar");
+        assert!(
+            matches!(err, IdentityError::AliasChainTooLong(MAX_ALIAS_HOPS)),
+            "esperaba AliasChainTooLong, obtuve: {err:?}"
+        );
+    }
+
+    #[test]
+    fn an_alias_without_a_reason_is_refused() {
+        // Un alias sin causa declarada es indistinguible, más adelante, de uno
+        // equivocado. Y uno equivocado manda una identidad entera a otro sitio.
+        let err = ProjectAlias::new(pid("p-a"), pid("p-b"), "   ", "2026-10-02T00:00:00Z")
+            .expect_err("un alias sin motivo no debe existir");
+        assert!(err.to_string().contains("reason"), "{err}");
+    }
+
+    #[test]
+    fn a_duplicate_from_id_is_visible_rather_than_merged() {
+        // Criterio 4 en la parte que el tipo puede sostener: no hay `remove`,
+        // así que la API no ofrece la operación. Lo que sí se comprueba es que
+        // declarar dos veces el mismo `from_id` no se fusiona en silencio:
+        // gana el primero y el segundo sigue siendo una entrada visible.
+        let table = AliasTable::new(vec![alias("p-a", "p-first"), alias("p-a", "p-second")]);
+        assert_eq!(table.entries().len(), 2);
+        assert_eq!(
+            table.resolve(pid("p-a")).unwrap().project_id,
+            pid("p-first")
+        );
+    }
+
+    #[test]
+    fn the_real_case_of_this_machine_resolves_to_the_identity_with_history() {
+        // El caso medido, no un ejemplo inventado: p-9959 deriva hoy y tiene 0
+        // ciclos; p-6367 tiene 179. El alias es lo que evita que el CLI resuelva
+        // al vacío sin avisar.
+        let table = AliasTable::new(vec![alias("p-995939af668a53d8", "p-63676b11dc0ef88f")]);
+        let got = table.resolve(pid("p-995939af668a53d8")).unwrap();
+        assert_eq!(got.project_id, pid("p-63676b11dc0ef88f"));
+        assert!(got.redirected());
     }
 }

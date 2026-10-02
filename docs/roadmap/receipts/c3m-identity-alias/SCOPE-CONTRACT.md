@@ -108,3 +108,65 @@ su falsificador; un criterio sin falsificador que se pueda ejecutar no cuenta.
   cada frase diga qué quiso decir.
 - La clave del KMS, que bloquea v2.5.3 y es del operador.
 - Publicar el alias en una release: primero verde local, después release.
+
+---
+
+## Addendum — lote 1 (dominio) ejecutado, y un defecto que encontró el falsificador
+
+**PRE-FLIGHT:** `PRE-FLIGHT.md`, `Readiness: READY`.
+**Superficie tocada:** `crates/sddk-domain/src/identity.rs` y nada más, como
+el pre-flight acotaba. Ni schema, ni CLI, ni storage.
+
+### Lo implementado
+
+`ProjectAlias` (from/to/reason/created_at), `AliasTable` (append-only por
+construcción: no hay `remove`), `AliasResolution` (id final más los saltos,
+para que la declaración del ADR regla 4 tenga de dónde servirse), y las dos
+variantes de error.
+
+### Verificación
+
+```text
+cargo test -p sddk-domain --lib identity                      57 passed; 0 failed
+cargo test -p sddk-domain --lib                               574 passed; 0 failed
+cargo fmt --check                                             limpio
+cargo clippy -p sddk-domain --all-targets -- -D warnings      limpio
+cargo check --workspace --all-targets                         exit 0
+```
+
+El `check --workspace` no es opcional aquí: `IdentityError` es un enum
+**público** y añadir una variante rompe cualquier `match` exhaustivo de otro
+crate. Los usos que hay son todos construcciones, pero eso se verificó
+compilando, no leyendo.
+
+### El falsificador encontró un defecto real en MI test
+
+**6 mutaciones, 5 detectadas. La que no:** `no_cycle_detection`. Al quitar la
+detección de ciclo, la suite seguía **verde**.
+
+La causa: el test afirmaba sobre el **texto** del error (`contains("cycle")`).
+Sin detección, un ciclo de dos saltos no se colgaba — corría hasta el tope de
+16 saltos y devolvía `AliasCycle` igualmente, con un mensaje que casaba con las
+aserciones. El test pasaba **por el motivo equivocado**.
+
+Arreglo: `AliasChainTooLong` es ahora una variante **distinta** de `AliasCycle`,
+y los tests afirman sobre la variante con `matches!`, no sobre el texto. Un
+ciclo y una tabla malformada son defectos distintos con arreglos distintos — re-
+apuntar un alias frente a reparar la tabla — y un test que no los distingue no
+puede certificar ninguno.
+
+Re-falsificado: **6/6 detectadas**, con `no_cycle_detection` rompiendo 2 tests.
+
+Es la cuarta vez en esta sesión que un falsador encuentra un defecto que leer
+no habría encontrado, y la primera que encuentra uno **en el trabajo de esta
+sesión** en vez de en algo heredado.
+
+### Lotes que quedan
+
+| lote | superficie | por qué separado |
+|---|---|---|
+| 2 | persistencia de la tabla | un fallo de lógica y uno de cableado tienen que ser distinguibles por el resultado |
+| 3 | `resolve_identity_honoring_pin` + `sddk project alias` + declaración en la salida | el cableado es donde se re-introduce el defecto de los cinco resolutores |
+
+Ninguno de los dos toca el storage real de la máquina. Los 15 aliases se
+aplican después, con su propio criterio de recuento de filas.
