@@ -182,18 +182,35 @@ explícito:
 
 Criterios falsables. Un ADR sin ellos es una opinion con formato.
 
-> **Estado medido en session-69: el criterio 3 es ROJO y este ADR no se
-> promueve.** No es que falte una línea de declaración: `sddk adopt status` no
-> llega al resolver de alias. `prepare_adoption_plan` (`lib.rs:2133`) llama a
-> `plan_adoption`, que llama a `resolve_project_identity` directamente
-> (`adoption.rs:203`), y la tabla de aliases no se carga en esa ruta. Medido con
-> un alias declarado: el mismo checkout responde `project resolve` con el `to` y
-> `identity_alias: from -> to`, y `adopt status` con el `from`, `status: absent`
-> y un ledger que no existe. Peor: `adopt apply` sobre ese checkout **escribe un
-> segundo recibo bajo el id retirado**, que es la enfermedad que este ADR viene a
-> cerrar. Seis criterios no se suman: C3 en rojo bloquea la promoción entera.
-> Detalle, evidencia y criterios de cierre en
+> **Estado medido en session-69: el criterio 3 está MEDIDO y este ADR sigue sin
+> promoverse.** No por el 3, sino por el 5 y el 6, que no se han medido nunca.
+>
+> El 3 estuvo **ROJO** y se cerró con INC-DEBT-059. No era que faltara una línea
+> de declaración: `sddk adopt status` no llegaba al resolver de alias.
+> `prepare_adoption_plan` (`lib.rs:2133`) llamaba a `plan_adoption`, que llamaba
+> a `resolve_project_identity` directamente (`adoption.rs:203`), y la tabla de
+> aliases no se carga en esa ruta. Medido con un alias declarado: el mismo
+> checkout respondía `project resolve` con el `to` y `identity_alias: from -> to`,
+> y `adopt status` con el `from`, `status: absent` y un ledger que no existe. Peor:
+> `adopt apply` escribía un **segundo recibo bajo el id retirado**, que es la
+> enfermedad que este ADR viene a cerrar.
+>
+> El arreglo mueve la decisión en vez de añadirla: `AdoptionPlanInput` lleva
+> ahora la identidad **ya resuelta** y `plan_adoption` **deja de derivar**, de
+> modo que la afirmación de «un solo punto» es cierta **por construcción**.
+> Cuatro superficies resuelven por el resolver canónico —`adopt`,
+> `context bootstrap` (que tenía dos sitios de resolución), `generate docs` y el
+> propio engine—, y el falsificador del criterio 3, que este ADR exige
+> («borrar la línea de declaración y exigir que el test falle»), lo confirma:
+> **PASS=4 FAIL=0 SKIP=0**. Detalle y evidencia en
 > [INC-DEBT-059](../../debt/INC-DEBT-059-ADOPT-REDERIVES-IDENTITY-AND-WRITES-A-SECOND-RECEIPT-UNDER-A-RETIRED-PROJECT-ID.md).
+>
+> **Lo que impide promover:** el criterio 5 exige que el audit reporte **0**
+> receipts huérfanos sobre el storage real, y el criterio 6 exige
+> `verify_stream_chain` sobre un stream canónico. Ninguno se ha medido. El
+> criterio 5 además no se puede cerrar con el arreglo de INC-DEBT-059, porque
+> ese trabajo **impide crear más huérfanos pero no limpia los que ya existen**:
+> qué receipts espurios se retiran es decisión del operador.
 
 1. **La propiedad, con su falsificador.** Resolver con un alias da el mismo
    `project_id` que resolver sin él **cuando no hay alias** (el caso normal no

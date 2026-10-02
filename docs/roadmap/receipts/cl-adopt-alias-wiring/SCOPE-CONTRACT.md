@@ -123,7 +123,7 @@ Se para y se reporta, sin forzar, si ocurre cualquiera de estas:
 | fichero | qué se toca |
 |---|---|
 | `crates/sddk-engine/src/adoption.rs` | `AdoptionPlanInput`, `plan_adoption`, `validate_plan_input`, `AdoptionStatus.alias_origin` |
-| `crates/sddk-cli/src/lib.rs` | `prepare_adoption_plan` resuelve por el canónico; `adoption_result_text` declara el salto; doc de `ProjectPin` corregido |
+| `crates/sddk-cli/src/lib.rs` | `prepare_adoption_plan` resuelve por el canónico; `adoption_result_text` declara el salto; `generation_destination` resuelve por el canónico (**añadido en lote 2**, ver abajo); doc de `ProjectPin` corregido |
 | `crates/sddk-cli/src/context_cmd.rs` | `resolve_identity` y `converge_adoption` resuelven por el canónico; se elimina la condición de reenvío; doc corregido |
 | `crates/sddk-engine/tests/adoption_identity.rs` | los dos tests del pin migran a la CLI |
 | `crates/sddk-cli/tests/adoption_contract.rs` | los tests que cruzan la costura, que hoy no existen |
@@ -138,6 +138,38 @@ ensuciaría un contrato que es de otra cosa, para que quien lo lea tenga que
 saltarse medio doc para saber de qué va. El fichero nuevo lleva su propio doc
 explicando **por qué existe**: los dos ficheros que cubren `adopt` y el pin tenían
 **cero** ocurrencias de «alias», medido, luego la costura no la cruzaba nadie.
+
+### Enmienda de lote 2: `generation_destination` entra en el SCOPE
+
+**Medido antes de decidir, no inferido** (`repro-c3d.sh`, checkout con alias
+declarado):
+
+```
+$ sddk project resolve --root ws --scope .
+project_id: p-0000000000000aaa
+identity_alias: p-c4319c598bc98be8 -> p-0000000000000aaa
+
+$ sddk generate docs --root ws
+wrote docs/generated/workflow.md
+
+$ find …/data/sddk/projects -type d -name generated
+p-c4319c598bc98be8/generated          <-- el id RETIRADO
+```
+
+`generation_destination` (`lib.rs:1217`) era un **cuarto** resolutor, con el
+mismo bypass que los otros tres y con un doc que afirma lo contrario: «We reuse
+the same resolution as adoption» — reutilizaba la *forma* de la resolución de
+adopción, no la resolución. Se lo saltó el falsificador de este mismo lote,
+mientras buscaba un segundo resolutor; no salió de la lectura del SCOPE.
+
+Se añade al SCOPE por dos razones, y la segunda es la que manda: está en un
+fichero ya autorizado, y **dejarlo haría falsa la afirmación central de este
+lote**. El lote dice que hay un punto único de decisión; si `generate docs` sigue
+derivando por su cuenta, esa afirmación es la misma clase de doc que este
+trabajo lleva tres corrigiendo — y sería el cuarto.
+
+El arreglo es el mismo patrón, no uno nuevo: usar el resolver canónico, sin
+añadir ninguna vía.
 
 **Fuera de esta superficie, cualquier cambio necesita otro SCOPE.**
 

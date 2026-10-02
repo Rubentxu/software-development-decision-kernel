@@ -1,13 +1,17 @@
 ---
 id: INC-DEBT-059
 title: "El store de alias se resuelve para `project resolve` y no para `adopt`: adopt re-deriva la identidad y `adopt apply` escribe un segundo recibo bajo el project_id retirado"
-status: open
+status: resolved
 severity: high
 priority: P1
+resolved_at: 2026-10-02
+resolved_in_session: session-69
+resolution: "La identidad se resuelve UNA vez, en la CLI, y entra ya resuelta en el engine. `AdoptionPlanInput` deja de llevar los cuatro campos de derivacion y lleva `identity: ResolvedProjectIdentity`; `plan_adoption` deja de llamar a `resolve_project_identity` por completo, luego la posibilidad de derivar por dentro desaparece en vez de quedar prohibida por nota. Cuatro superficies resuelven por el resolver canonico: `adopt`, `context bootstrap` (que tenia DOS sitios de resolucion), `generate docs` (cuarta superficie, encontrada por el falsificador y no por la lectura) y el propio engine, que deja de decidir. 6 tests de costura, falsificador PASS=4 FAIL=0 SKIP=0 con las tres mutaciones detectadas, 5361 tests del workspace a 0 fallos."
+open_part: "NINGUNO de esta deuda. Lo que queda abierto NO es parte de ella y esta escrito mas abajo: este arreglo impide que se creen mas receipts espurios, NO limpia los que ya existen, y el criterio 5 de ADR-0152 depende de esa limpieza."
 detected_at: 2026-10-02
 detected_in_session: session-69
 component: identity
-surface: [crates/sddk-cli/src/lib.rs, crates/sddk-cli/src/context_cmd.rs]
+surface: [crates/sddk-cli/src/lib.rs, crates/sddk-cli/src/context_cmd.rs, crates/sddk-engine/src/adoption.rs]
 cluster_id: CL-IDENTITY
 related: [INC-DEBT-049, INC-DEBT-050]
 references:
@@ -324,3 +328,65 @@ El cambio que sí compila —`alias_origin` en `AdoptionStatus` más su línea d
 render— **fue revertido sin commitear** en vez de dejar un campo que declara un
 alias que nunca ocurre. No hay nada que recuperar: está en el historial de esta
 sesión, no en un commit.
+
+---
+
+## Resolution: cerrada en session-69, con dos lotes
+
+**Lote 1** (`07c3fd5c`): tests y nada más, con los cuatro RED midiendo la
+propiedad y no el andamiaje.
+
+**Lote 2**: el arreglo. Los seis criterios de cierre, medidos:
+
+| # | criterio | cómo se midió |
+|---|---|---|
+| 1 | test estructural sobre los puntos de llamada | dos guards: el engine no nombra `resolve_project_identity` ni `pinned_project_id` en producción, y la CLI tiene **exactamente una** llamada |
+| 2 | e2e que cruza la costura | `adopt status` reporta el `to` y nombra `from -> to`; falsificado por **M1** |
+| 3 | e2e de no-escritura | `adopt apply` no crea recibo bajo el `from`; se cuentan los ficheros antes y después |
+| 4 | e2e de `context bootstrap` | reporta el `to` y no escribe recibo ni binding bajo el `from`; **dos** falsificadores, por identificación y por escritura |
+| 5 | los docs corregidos | los **tres** docs falsos reescritos, y el de la CLI sostenido por el conteo de llamadas |
+| 6 | audit sobre el storage real | **NO se puede cerrar con este trabajo** — ver abajo |
+
+Y una **cuarta superficie** que no estaba en el enunciado: `sddk generate docs`
+escribía la documentación generada bajo el data dir del id **retirado**
+(`repro-c3d.sh`). No salió de leer el SCOPE ni de medir el arranque: la encontró
+**el falsificador**, buscando un segundo resolutor, con las otras tres ya
+arregladas. Es la cuarta afirmación de convergencia que este trabajo producía y
+que era falsa, y la cuarta vez que contar puntos de llamada encuentra lo que la
+inspección no.
+
+**Gates:** 5361 tests del workspace a 0 fallos, `cargo exit=0` · 6/6 de la
+costura · fmt limpio · clippy `-D warnings` exit 0 · falsificador
+**PASS=4 FAIL=0 SKIP=0** con las tres mutaciones detectadas.
+
+**El arreglo demasiado amplio, y por qué importa que un test lo cazara.** El
+defecto preexistente que se encontró de paso —`find_persisted_fallback_seed` no
+encontraba recibos **pinneados**, porque el pin sobrescribe `identity_source`—
+se corrigió primero derivando la semilla de la ruta canónica, copiando lo que
+hace `resolve_project_ids`. Eso es demasiado: convierte cualquier directorio en
+un proyecto y deja muerto el fallback in-repo de los repos no adoptados. Lo
+cazó `real_cli_exit_status_tracks_lint_errors_and_stale_checks` con
+`SDDK009`. El arreglo correcto era **una cláusula en el predicado**, no una
+fuente nueva de semillas. Es la clase de arreglo que funciona en el caso que
+estabas mirando y rompe el que no estabas mirando.
+
+### Lo que queda abierto, y NO es parte de esta deuda
+
+1. **El storage real no se limpia.** Este arreglo impide que se creen más
+   receipts espurios; los que ya existen **siguen ahí**, y los bindings
+   atrapados por `context bootstrap` **siguen atrapados**.
+2. **El criterio 5 de ADR-0152 no se puede cerrar con este trabajo**, porque
+   exige que el audit reporte 0 huérfanos sobre el storage real. Depende de (1).
+   Qué receipts espurios se retiran es **decisión del operador**.
+3. **ADR-0152 no se promueve.** Su **criterio 3 pasa de ROJO a medido** —con su
+   propio falsificador, M1— pero los criterios **5** y **6** siguen sin medir, y
+   seis criterios no se suman.
+4. **La ruta forge de `release apply` contra un GitHub real** sigue sin medir.
+   Pendiente propio, declarado, ajeno a esta deuda.
+
+### Lo que el arreglo NO limpia por diseño
+
+`plan_adoption` ya no puede derivar, pero el fallo por defecto sigue siendo
+**silencioso**: si alguien reintroduce un resolutor, la costura lo ve porque
+`the_cli_has_no_second_identity_resolver` cuenta llamadas. Ese es el guard que
+faltaba y que este trabajo añade, y es la razón por la que M3 se detecta.
