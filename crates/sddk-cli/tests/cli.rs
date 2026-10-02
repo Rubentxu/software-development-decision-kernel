@@ -8775,6 +8775,39 @@ fn cli_dev_install_with_bin_suffix_avoids_nesting_and_uses_executable_mode() {
     assert!(!prefix.join("sddk-install.json").exists());
 }
 
+/// execve a freshly installed binary, tolerating a transient ETXTBSY.
+///
+/// `execve` fails with `ETXTBSY` (errno 26) while the destination is still open
+/// for writing. Production `atomic_write` already treats that as transient and
+/// retries the `rename` (see `dev::common::atomic_write`, which names the code
+/// explicitly); this assertion has to share that contract, or a kernel timing
+/// condition becomes a suite failure roughly half the time — measured: this test
+/// failed on run 2 of 3 with `ExecutableFileBusy` and passed on runs 1 and 3.
+///
+/// The retry is BOUNDED. A binary that is genuinely not executable never becomes
+/// executable, so the loop still fails — this tolerates a race, it does not
+/// tolerate a broken install.
+fn exec_installed(binary: &Path, env: &[(&str, &Path)]) -> std::io::Result<std::process::Output> {
+    const ETXTBSY: i32 = 26;
+    let mut last = None;
+    for attempt in 0..20 {
+        let mut command = Command::new(binary);
+        command.arg("version");
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        match command.output() {
+            Ok(output) => return Ok(output),
+            Err(error) if error.raw_os_error() == Some(ETXTBSY) => {
+                last = Some(error);
+                std::thread::sleep(std::time::Duration::from_millis(20 * (attempt + 1)));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("installed binary never became executable")))
+}
+
 /// Regression test for INC-003 (mode half): the default layout
 /// (`--prefix=/opt/sdk` → `/opt/sdk/bin/sddk`) must also produce an
 /// executable binary, and `dev verify` must round-trip on it.
@@ -8818,14 +8851,16 @@ fn cli_dev_install_default_layout_is_executable_and_verify_passes() {
     );
 
     // The newly installed binary must actually run — execve and read version.
-    let output = Command::new(&binary)
-        .arg("version")
-        .env("HOME", &fixture.home)
-        .env("XDG_DATA_HOME", &fixture.data)
-        .env("XDG_STATE_HOME", &fixture.state)
-        .env("XDG_CACHE_HOME", &fixture.cache)
-        .output()
-        .expect("installed binary must be executable");
+    let output = exec_installed(
+        &binary,
+        &[
+            ("HOME", &fixture.home),
+            ("XDG_DATA_HOME", &fixture.data),
+            ("XDG_STATE_HOME", &fixture.state),
+            ("XDG_CACHE_HOME", &fixture.cache),
+        ],
+    )
+    .expect("installed binary must be executable");
     assert!(
         output.status.success(),
         "installed binary version must succeed; stderr={}",
