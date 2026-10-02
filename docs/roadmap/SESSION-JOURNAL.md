@@ -8833,3 +8833,84 @@ commit lo contenga.
 **Deuda abierta tras session-66:** 049 (contrato de read-option), 050 (alias de
 proyecto), 051 (contrato de version por adapter), 057 (corrupcion en docs/). **Cerrada:**
 048. **Bloqueante externo:** la clave del KMS, sin la cual v2.5.3 no se publica.
+
+### 2026-10-02T14:40:00Z — p-63676b11dc0ef88f/version-source (lote 2) + changelog — orchestrator
+
+**SHA antes:** `9de63438` (`HEAD == origin/main`, arbol limpio, 0 commits sin publicar)
+**SHA despues:** `dea0abd7` (feat, lote 2) + `1f93dc1a` (fix del changelog) + este commit documental
+
+**WorkItem:** INC-DEBT-051, lote 2. La superficie (`release_cmd.rs`) no estaba en el
+§4 del SCOPE-CONTRACT del ciclo, asi que el lote lleva SCOPE y PRE-FLIGHT propios,
+declarados **antes** de escribir codigo.
+
+**Defecto reproducido antes de arreglarlo** (no heredado): con un proyecto Go
+(`go.mod`, sin `Cargo.toml`), `release plan` salia con **exit 0** y una salida de
+cinco campos indistinguible de la de un repo Rust que si se comprueba. `Ok` no
+significa lo mismo cuando hubo una comprobacion que cuando no habia nada que
+comprobar, y la salida no lo distinguia.
+
+**Decisiones:**
+
+- La autoridad se declara en la salida del plan y **no** en `ReleaseOutcome`:
+  tocar `sddk-gateway` es STOP 2 de este lote.
+- **D2 queda abierto y escrito.** Los dos campos llamados
+  `version_lockstep_passed` tienen que significar cosas distintas: el de
+  `LocalReleasePreconditions` es una puerta que `release.rs:205` lee para abortar.
+  Pasarlo a `was_cross_checked()` **dejaria a Go y a Bazel sin poder publicar
+  jamas**. El de `ReleaseOutcome` solo se escribe y se serializa. Arreglarlos es
+  cambiar el contrato de `sddk-gateway`, con sus tests de integracion: lote
+  propio, no una linea.
+- El texto y el JSON salen del **mismo** valor, que era el riesgo del PRE-FLIGHT.
+
+**Evidencia observada:**
+
+- `cargo test -p sddk-cli --lib release` → 17 passed / 0 failed
+- `cargo test -p sddk-cli --test cli release` → 33 passed / 0 failed, con
+  `cli_release_plan_refuses_on_version_mismatch` verde **sin reescribirlo**
+- `cargo fmt --check` y `cargo clippy -p sddk-cli --all-targets -D warnings` limpios
+- falsificador end-to-end Go+Rust, fixtures fuera del repo → **PASS=14 FAIL=0**,
+  4 mutaciones, las 4 detectadas
+- `tests/test_changelog_coverage.sh` → **PASS=38 FAIL=0** (era 29/8)
+- `tests/test_docs_script_contamination.py` → PASS
+
+**El falsificador fallo contra si mismo y fue el hallazgo mas util de la sesion.**
+Su primera pasada dio 12/13. La mutacion que sobrevivio —quitar el campo
+`version_authority` de la salida— **no era un hueco del codigo**: ese campo no
+es opcional, luego el fuente **no compila**, el binario viejo se queda en su
+sitio, `release plan` sale con `exit 0` y la asercion lee **el artefacto que no
+se muto**. El falsificador se declaro satisfied midiendo lo contrario de lo que
+creia. Arreglo en el arnes, no en el codigo: toda mutacion comprueba que su
+build termino antes de preguntarle nada, y una que no compila se marca `SKIP`,
+nunca `PASS`. Ademas se anadio el paso 8: tras restaurar, el caso tiene que
+volver a su forma correcta, porque un falsificador que solo sabe decir
+"detectado" y no sabe decir "sigue bien" no mide el estado final.
+
+**Hallazgo colateral, encontrado al commitear:** el gate 2b del release estaba
+**rojo desde el lote 1** con `PASS=29 FAIL=8`, y solo uno de los ocho fallos era
+de este lote. Los otros siete eran trabajo del mismo objetivo, sin declarar en
+la seccion `## [2.5.3]`. **v2.5.3 tenia dos bloqueos, no uno**; el segundo era
+invisible porque 2b solo corre en el paso 2 del release, y el release esta parado
+en el 8c por la firma. El fallo propio era de forma: la huella del gate son las
+**cuatro primeras palabras del payload**, en minusculas y **sin normalizar
+acentos**, y mi entrada empezaba por el nombre del comando. Las tres lotes de
+`feat(identity)` comparten huella, luego cada una necesita su entrada.
+
+**No ejecutado (y por que):** `cargo test --workspace` completo y el perfil de
+release. AGENTS.md §2.3 reserva el perfil completo para `verify`/release, y este
+lote no publica. `release apply` sobre un proyecto Go **no** se ejecuto: el
+lote toca `release plan`, y afirmar que un release de Go publica bien sin
+haberlo publicado seria el mismo falso verde que este lote cierra.
+
+**Riesgos y bloqueos:**
+
+- **D2 abierto** (arriba). Es lo que impide promover ADR-0153 a `accepted`.
+- **Clave del KMS**, del operador: bloqueo 1 de 2 de v2.5.3.
+- El binario de `~/.local/bin/sddk` sigue stale; todo el trabajo usa
+  `/var/home/rubentxu/cargo-targets/debug/sddk`.
+- Sesion SDDK concurrente sobre `wi-72-p3-expansion-apply`; su alias sigue
+  retirado por decision del operador.
+
+**Primer paso de la sesion siguiente:** abrir el lote 3 con SCOPE propio —
+decidir el contrato de los dos `version_lockstep_passed` de `sddk-gateway`, y
+corregir el doc de `release.rs:395-396`, que sigue diciendo «the workspace
+Cargo.toml version» como si el contrato de ADR-0153 no existiera.

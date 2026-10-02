@@ -1,5 +1,24 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-67, 2026-10-02): `release plan` ya no disimula cuándo no hubo nada que comparar, y el gate de cobertura del changelog estaba ROJO desde el lote 1 y ya no lo está. v2.5.3 tenía DOS bloqueos, no uno.** `HEAD` = `1f93dc1a` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo que cambió en esta sesión, en dos líneas:**
+
+1. **D1 cerrado.** `release plan` llevaba `ensure_version_lockstep`, que acaba en `map(|_| ())`: la autoridad de la versión se tiraba. Medido **antes** del arreglo sobre un proyecto Go con `go.mod` y sin `Cargo.toml`: **exit 0** y una salida de cinco campos **indistinguible** de la de un repo Rust que sí se comprueba. Ahora la salida lleva `version_authority` con `kind`, la versión, los manifiestos leídos y los ecosistemas que no la declaran. Cambio **aditivo**, con test que fija los seis campos previos.
+2. **El gate 2b del release estaba rojo y no se veía.** `tests/test_changelog_coverage.sh` daba **PASS=29 FAIL=8**; solo uno de los ocho fallos era de este lote. Los otros siete eran trabajo del mismo objetivo, sin declarar en la sección `## [2.5.3]`. Con el gate rojo, **v2.5.3 no se podía publicar ni con la clave del KMS aprovisionada**.
+
+**Lo que NO se cierra, escrito y medido:** **D2**. La ruta forge de `release_cmd.rs:847-848` sigue escribiendo `let version_lockstep_passed = true;` a mano. No se arregla junto a D1 porque los **dos** campos llamados `version_lockstep_passed` tienen que significar cosas distintas: el de `LocalReleasePreconditions` es una puerta que `release.rs:205` lee para abortar, y pasarla a `was_cross_checked()` **dejaría a Go y a Bazel sin poder publicar jamás**. Es contrato de `sddk-gateway` y lleva lote propio.
+
+**Gates de session-67:** `cargo test -p sddk-cli --lib release` 17/0 · `cargo test -p sddk-cli --test cli release` 33/0, el test de mismatch del lockstep Rust pasado **sin reescribirlo** · `cargo fmt --check` y `clippy -D warnings` limpios · falsificador end-to-end Go+Rust **PASS=14 FAIL=0**, 4 mutaciones, las 4 detectadas · `test_changelog_coverage` **PASS=38 FAIL=0** · `test_docs_script_contamination` PASS.
+
+**El falsificador encontró un defecto en sí mismo, y es la lección de la sesión:** su primera pasada dio 12/13. La mutación que sobrevivió no era un hueco del código — quitar un campo no opcional de una construcción de struct **no compila**, el binario viejo sigue en su sitio, el comando sale con `exit 0` y la aserción lee **el artefacto que no se mutó**. Se declaró satisfied midiendo lo contrario de lo que creía. Arreglado en el arnés: toda mutación comprueba que su build terminó antes de preguntarle nada, y una que no compila se marca `SKIP`, nunca `PASS`.
+
+**Lo que sigue abierto:** la **clave del KMS** (bloqueo 1 de 2 de v2.5.3) · **D2**, contrato de los dos `version_lockstep_passed` de `sddk-gateway`, con el doc de `release.rs:395-396` que sigue nombrando `Cargo.toml` · **promover ADR-0153 y ADR-0152 a `accepted`**, que llega cuando todos sus criterios estén verdes uno a uno · el **contrato de read-option** de INC-DEBT-049 · la **publicación del harness** Pipelinek-Test-Hardness (44 commits sin publicar) · el **alias de skillgraph**, retirado por decisión del operador hasta que la sesión concurrente cierre `wi-72-p3-expansion-apply` · la clase ASCII de contaminación en `docs/` (INC-DEBT-058: no automatizable).
+
+**Nota sobre el puntero:** `current_sha` nombra `1f93dc1a`, el commit **anterior** a este fichero documental, por la razón que la tercera sesión ya dejó escrita: actualizar el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener.
+
+---
+
 **Estado (session-66, 2026-10-02): la migración de `project_id` NO EXISTE, y eso se discovered ejecutando el apply, no leyendo el plan. INC-DEBT-048 queda CERRADA por decisión del operador.** `HEAD` = `ff3849cf` (dos commits de session-66 publicados sin `--no-verify`, por la variante A-v2 del pre-push: workspace 2.5.3 > tag publicado v2.5.2). Workspace **2.5.3 declarada, no publicada** y **no publicable**: falta la clave del KMS.
 
 **Lo que cambia el diagnóstico, en dos líneas:**

@@ -134,7 +134,31 @@ Se añade además el paso 8: tras restaurar, el caso Go tiene que volver a su
 forma correcta. Un falsificador que solo sabe decir «detectado» y no sabe
 decir «sigue bien» no mide el estado final.
 
-## 7. UAT y riesgos
+## 7. Lo que encontró el commit, y no el lote
+
+Al commitear se ejecutó el paso 2b de `release.sh`
+(`tests/test_changelog_coverage.sh`): **PASS=29 FAIL=8**. Solo uno de los ocho
+fallos era de este lote; los otros siete eran trabajo del mismo objetivo —los
+tres lotes del alias de identidad, el audit, las dos entradas de deuda del
+cierre por alias y el lote 1 de ADR-0153— **sin declarar en la sección
+`## [2.5.3]`**.
+
+Eso significa que **v2.5.3 tenía dos bloqueos, no uno**: la clave del KMS y
+este gate. El segundo se llevaba invisible porque el gate 2b solo corre en el
+paso 2 del release, y el release está parado en el 8c por la firma.
+
+El fallo propio era de forma, no de contenido: la huella del gate son las
+**cuatro primeras palabras del payload**, en minúsculas y **sin normalizar
+acentos** (`norm()` solo colapsa mayúsculas y espacios), y mi entrada empezaba
+por el nombre del comando en vez de por el sujeto del commit. Las tres lotes
+de `feat(identity)` comparten huella —`alias de identidad de`—, luego cada una
+necesita su entrada: una sola línea habría cubierto tres commits y el gate lo
+aceptaría sin distinguir nada.
+
+Corregido en `1f93dc1a`. **PASS=38 FAIL=0**, la primera vez que este gate
+queda en verde.
+
+## 8. UAT y riesgos
 
 | UAT | estado | nota |
 |---|---|---|
@@ -147,7 +171,7 @@ Riesgo residual, ya escrito: quien lea solo `converged` y `applied` de
 se decide publicar. Es la línea que este lote pudo tocar sin abrir el contrato
 del gateway.
 
-## 8. Contexto real / fake
+## 9. Contexto real / fake
 
 - **Real:** el código, los tests, el binario reconstruido de este checkout, el
   proyecto Go y Rust de los fixtures, los 14 puntos del falsificador.
@@ -156,7 +180,7 @@ del gateway.
   no que un repositorio Go real publique bien. Eso último es lo que el paso
   `release apply` mediría y no se ha ejecutado.
 
-## 9. Primer paso de la sesión siguiente
+## 10. Primer paso de la sesión siguiente
 
 Abrir el lote 3 con SCOPE propio: decidir el contrato de los dos
 `version_lockstep_passed` de `sddk-gateway` y corregir el doc de
