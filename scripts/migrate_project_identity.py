@@ -382,6 +382,42 @@ def audit(as_json: bool) -> int:
 
 # ───────────────────────────────────── plan ──────────────────────────────────
 
+SCANNED_COLUMNS = ("project_id", "workspace_id", "cycle_id", "id", "ref")
+
+
+def owned_predicate(col: str) -> str:
+    """Predicado SQL de «esta fila es de este proyecto».
+
+    Lo usan TANTO el recuento (`sqlite_impact`) como la escritura
+    (`migrate_one`), construyéndolo desde esta única función. Antes eran dos
+    cadenas escritas a mano en sitios distintos, y por eso la escritura podía
+    desviarse del recuento: el `UPDATE` iba sin `WHERE` y escribía sobre toda
+    la tabla. En esta máquina eso no era hipotético — el ledger de
+    `p-7c4aff45199a2069` contiene 10 ciclos de OTRO proyecto
+    (`p-490921be0aac9b69`) y el de `p-63676b11dc0ef88f` contiene 79 ciclos
+    centinela `__spine_import__`. Un `UPDATE` sin `WHERE` habría reasignado la
+    identidad de los dos. Que el conjunto escrito sea el mismo objeto que el
+    recountsado no es una revisión, es la construcción.
+    """
+    return f'"{col}" = ? OR "{col}" LIKE ?'
+
+
+def owned_params(old_id: str) -> tuple[str, str]:
+    return (old_id, f"{old_id}/%")
+
+
+def rewrite_sql(table: str, col: str) -> str:
+    """Sustituye el PREFIJO del id conservando el sufijo.
+
+    Uniforme para `cycle_id` y para el resto de columnas. Antes `cycle_id`
+    tenía una rama aparte que hacía `? || substr(col, len(old)+1)` y las demás
+    PONÍAN el id entero; un valor `p-…/algo` en una columna no-`cycle_id` se
+    habría truncado. Aquí un `p-old/x` queda `p-new/x` en cualquier columna.
+    """
+    return (f'UPDATE "{table}" SET "{col}" = ? || substr("{col}", ?) '
+            f"WHERE {owned_predicate(col)}")
+
+
 def sqlite_impact(db: Path, old_id: str) -> dict:
     """Cuántas filas y en qué columnas aparece el project_id. Sólo lectura."""
     impact: dict[str, int] = {}
@@ -397,11 +433,11 @@ def sqlite_impact(db: Path, old_id: str) -> dict:
         for t in tables:
             cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
             for col in cols:
-                if col not in ("project_id", "workspace_id", "cycle_id", "id", "ref"):
+                if col not in SCANNED_COLUMNS:
                     continue
-                q = f'SELECT COUNT(*) FROM "{t}" WHERE "{col}" = ? OR "{col}" LIKE ?'
+                q = f'SELECT COUNT(*) FROM "{t}" WHERE {owned_predicate(col)}'
                 try:
-                    n = conn.execute(q, (old_id, f"{old_id}/%")).fetchone()[0]
+                    n = conn.execute(q, owned_params(old_id)).fetchone()[0]
                 except sqlite3.Error:
                     continue
                 if n:
@@ -410,6 +446,41 @@ def sqlite_impact(db: Path, old_id: str) -> dict:
     finally:
         conn.close()
     return impact
+
+
+def foreign_values(db: Path, old_id: str) -> dict[str, int]:
+    """Valores NO vacíos que NO son de este proyecto. Sólo lectura.
+
+    No son un error: un ledger puede legítimamente convivir con otro
+    proyecto. Lo que no puede es que la migración los toque. Se inventarían
+    para que el operador los vea antes de escribir, no para abortar.
+    """
+    out: dict[str, int] = {}
+    if not db.exists():
+        return out
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")]
+        for t in tables:
+            cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+            for col in cols:
+                if col not in SCANNED_COLUMNS:
+                    continue
+                try:
+                    rows = conn.execute(
+                        f'SELECT "{col}", COUNT(*) FROM "{t}" '
+                        f'WHERE "{col}" IS NOT NULL AND NOT ({owned_predicate(col)}) '
+                        f'GROUP BY 1 ORDER BY 2 DESC',
+                        owned_params(old_id),
+                    ).fetchall()
+                except sqlite3.Error:
+                    continue
+                for value, n in rows:
+                    out[f"{t}.{col}={value}"] = n
+    finally:
+        conn.close()
+    return out
 
 
 def build_plan() -> dict:
@@ -447,16 +518,31 @@ def build_plan() -> dict:
         ):
             if candidate.exists():
                 share_dirs.append(str(candidate))
+        state_dirs = []
         state_dbs = []
-        db = state / "projects" / old / "ledger.sqlite"
+        state_dir = state / "projects" / old
+        db = state_dir / "ledger.sqlite"
+        if state_dir.exists():
+            # El directorio se declara en el plan porque la escritura lo
+            # renombra. Una versión anterior de este script NUNCA lo renombraba:
+            # calculaba `dst = src.replace(old, new)` y abría `sqlite3.connect(dst)`
+            # sobre un directorio inexistente (fallaba) o sobre una db recién
+            # creada y vacía (perdía el ledger). Lo que el plan no dice, el
+            # código no lo hace — y aquí no lo decía.
+            state_dirs.append(str(state_dir))
         if db.exists():
-            state_dbs.append({"path": str(db), "impact": sqlite_impact(db, old)})
+            state_dbs.append({
+                "path": str(db),
+                "impact": sqlite_impact(db, old),
+                "foreign": foreign_values(db, old),
+            })
         migrations.append({
             "old_project_id": old,
             "new_project_id": new,
             "remotes": sorted(r for r in g["remotes"] if r),
             "receipts": sorted(g["receipts"]),
             "share_dirs_to_rename": share_dirs,
+            "state_dirs_to_rename": state_dirs,
             "state_dbs": state_dbs,
         })
 
@@ -581,6 +667,111 @@ def verify_backup(backup_dir: Path) -> tuple[bool, list[str]]:
 
 # ───────────────────────────────────── apply ──────────────────────────────────
 
+def migrate_one(m: dict, out=print) -> list[str]:
+    """Aplica UNA migración. Devuelve la lista de problemas (vacía = correcto).
+
+    Separada de `cmd_apply` para que se pueda falsificar sobre un fixture
+    temporal sin tocar el storage real: una escritura que sólo existe dentro
+    de un `if` de 60 líneas con cuatro guardas antes no se puede ejercitar.
+    """
+    problems: list[str] = []
+    old, new = m["old_project_id"], m["new_project_id"]
+
+    # ORDEN. Primero TODOS los chequeos, despues la escritura, y el renombrado
+    # al final. La version anterior renombraba los directorios primero y
+    # escribia despues: un fallo a mitad dejaba la migracion a medias, con el
+    # storage ya movido y el contenido a medias. Aqui, si algo falla, no se ha
+    # movido nada y la transaccion se ha revertido.
+    moves: list[tuple[Path, Path, str]] = []
+    for d in m.get("share_dirs_to_rename", []):
+        src, dst = Path(d), Path(str(d).replace(old, new))
+        if dst.exists():
+            problems.append(f"{dst} ya existe; no se fusiona nada")
+            return problems
+        if not src.exists():
+            problems.append(f"{src} no existe; el plan esta obsoleto")
+            return problems
+        moves.append((src, dst, "share"))
+    for d in m.get("state_dirs_to_rename", []):
+        src, dst = Path(d), Path(str(d).replace(old, new))
+        if not src.exists():
+            problems.append(f"{src} no existe; el plan esta obsoleto")
+            return problems
+        if dst.exists():
+            problems.append(f"{dst} ya existe; no se fusiona nada")
+            return problems
+        moves.append((src, dst, "estado"))
+    for db in m.get("state_dbs", []):
+        if not Path(db["path"]).exists():
+            problems.append(f"{db['path']} no existe; el plan esta obsoleto")
+            return problems
+
+    for db in m.get("state_dbs", []):
+        src = Path(db["path"])
+        dst = Path(str(db["path"]).replace(old, new))
+        for k, n in sorted(db.get("foreign", {}).items()):
+            out(f"  intacto (ajeno): {k} x{n}")
+        conn = sqlite3.connect(src)
+        try:
+            conn.execute("BEGIN")
+            for key, count in sorted(db["impact"].items()):
+                if key.startswith("__"):
+                    continue
+                table, col = key.split(".", 1)
+                conn.execute(rewrite_sql(table, col), (new, len(old) + 1) + owned_params(old))
+                changed = conn.execute("SELECT changes()").fetchone()[0]
+                # El recuento del plan y las filas escritas tienen que ser el
+                # MISMO numero. Si no lo son, se deshace: es la unica prueba
+                # de que la escritura no salio del alcance revisado.
+                if changed != count:
+                    conn.rollback()
+                    problems.append(
+                        f"{dst.name} {table}.{col}: el plan conto {count} filas y se "
+                        f"escribieron {changed}; reverted, no se escribe nada")
+                    return problems
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Postcondicion: no debe quedar ni un solo valor del id viejo, y las
+        # filas ajenas deben seguir intactas.
+        check = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+        try:
+            for key in db["impact"]:
+                if key.startswith("__"):
+                    continue
+                table, col = key.split(".", 1)
+                left = check.execute(
+                    f'SELECT COUNT(*) FROM "{table}" WHERE {owned_predicate(col)}',
+                    owned_params(old),
+                ).fetchone()[0]
+                if left:
+                    problems.append(
+                        f"{dst.name} {table}.{col}: quedan {left} filas con el id viejo")
+                    return problems
+            for k, n in sorted(db.get("foreign", {}).items()):
+                t, rest = k.split(".", 1)
+                col, value = rest.split("=", 1)
+                got = check.execute(
+                    f'SELECT COUNT(*) FROM "{t}" WHERE "{col}" = ?', (value,)
+                ).fetchone()[0]
+                if got != n:
+                    problems.append(
+                        f"{dst.name} {k}: era {n} y ahora es {got}; una fila ajena cambio")
+                    return problems
+        finally:
+            check.close()
+        out(f"  sqlite verificado: {src}")
+
+    # Todo verificado: ahora si, y solo ahora, se mueve el storage. Los
+    # directorios ya se comprobaron al principio, asi que un `rename` aqui
+    # solo puede fallar por una condicion de carrera externa.
+    for src, dst, kind in moves:
+        src.rename(dst)
+        out(f"  {kind}: {src} -> {dst}")
+    return problems
+
+
 def cmd_apply(args) -> int:
     ok, problems = selfcheck()
     if not ok:
@@ -611,38 +802,18 @@ def cmd_apply(args) -> int:
         print("  regenera el plan y revísalo de nuevo.", file=sys.stderr)
         return 3
 
-    share, state = Path(plan["share_root"]), Path(plan["state_root"])
     for m in plan["migrations"]:
         old, new = m["old_project_id"], m["new_project_id"]
         print(f"migrando {old} -> {new}")
-        if (share / "projects" / new).exists():
-            print(f"  ABORTO: {share / 'projects' / new} ya existe; no se fusiona nada",
-                  file=sys.stderr)
+        problems = migrate_one(m, out=lambda s: print(s, flush=True))
+        if problems:
+            print("  ABORTO:", file=sys.stderr)
+            for p in problems:
+                print(f"    {p}", file=sys.stderr)
+            print(
+                "  Esto ya se habia escrito en las migraciones anteriores. "
+                "Restaura con el backup antes de reintentar.", file=sys.stderr)
             return 3
-        for d in m["share_dirs_to_rename"]:
-            src, dst = Path(d), Path(d).replace(old, new)
-            src.rename(dst)
-            print(f"  movido {src} -> {dst}")
-        for db in m["state_dbs"]:
-            src = Path(db["path"])
-            dst = src.replace(old, new)
-            conn = sqlite3.connect(dst)
-            try:
-                conn.execute("BEGIN")
-                for key, count in db["impact"].items():
-                    if key.startswith("__"):
-                        continue
-                    table, col = key.split(".", 1)
-                    if col == "cycle_id":
-                        conn.execute(
-                            f'UPDATE "{table}" SET "{col}" = ? || substr("{col}", ?)',
-                            (new, len(old) + 1))
-                    else:
-                        conn.execute(f'UPDATE "{table}" SET "{col}" = ?', (new,))
-                conn.commit()
-            finally:
-                conn.close()
-            print(f"  sqlite actualizado: {dst}")
 
     print()
     print("PASOS QUE QUEDAN Y ESTE SCRIPT NO HACE:")

@@ -4,10 +4,10 @@ title: "Normalizar el remote a minúsculas reasignó el project_id de 25 adopcio
 status: open
 severity: critical
 priority: P1
-partially_resolved_at: 2026-10-01
-partially_resolved_in_session: session-64
-resolved_part: "golden pin del camino remote: stable_project_id y normalize_remote_url quedan con valores absolutos fijados por test (session-64)"
-open_part: "migracion de los 25 receipts huerfanos: destructiva, requiere al operador"
+partially_resolved_at: 2026-10-02
+partially_resolved_in_session: session-66
+resolved_part: "el apply deja de ser una operacion unica e inejecutable: escritura acotada por WHERE, renombrado de estado declarado y verificado, recuento y escritura comparten predicado, y test propio de la escritura (11 casos, 5 mutaciones detectadas). session-66"
+open_part: "la migracion de los 25 receipts huerfanos son tres operaciones, no un apply: 7 renombrados limpios, 2 con el id nuevo en cascara (0 ciclos) y 6 que exigen fusionar dos ledgers. El storage sigue intacto."
 detected_at: 2026-10-01
 detected_in_session: session-63
 component: identity
@@ -298,3 +298,82 @@ generado, el backup está verificado y el hash está anotado.
 
 `.migration-plan.json` **no se commitea**: contiene rutas absolutas de esta
 máquina y es un artefacto de una ejecución concreta, no del repositorio.
+
+---
+
+## Addendum session-66 — el `apply` no era solo destructivo: era inejecutable
+
+El operador autorizó el `apply`. Antes de ejecutarlo se leyeron los ledgers
+reales en vez de confiar en el plan, y el plan mentía en tres puntos.
+
+### 1. El `UPDATE` iba sin `WHERE`
+
+`sqlite_impact` contaba las filas que **casaban** con el id viejo. La
+escritura hacía `UPDATE "t" SET "c" = ?` sobre la **tabla entera**. En dos
+ledgers de esta máquina hay filas que no son del proyecto que se migra:
+
+| ledger | filas ajenas | qué son |
+|---|---|---|
+| `p-63676b11dc0ef88f` | 79 ciclos + 1 proyecto + 1 workspace | centinela `__spine_import__` (import legacy) |
+| `p-7c4aff45199a2069` | 10 ciclos + eventos + gate receipts | **otro proyecto**, `p-490921be0aac9b69` |
+
+Un `UPDATE` sin `WHERE` habría reasignado la identidad de los dos, y el plan
+—que es lo que el operador revisa— no lo mencionaba, porque para el plan esas
+filas no existen. Ninguno de los tres guardas que ya había (selfcheck, digest
+del plan, backup verificado) lo detectaba: los tres corren **antes** de
+escribir, y el defecto está **dentro** de la escritura.
+
+### 2. El directorio de estado no se renombraba nunca
+
+El código hacía `dst = src.replace(old, new)` y abría `sqlite3.connect(dst)`.
+Dos cosas a la vez:
+
+- `Path.replace` es *renombrado de fichero* con un destino, no sustitución de
+  cadena. `Path(d).replace(old, new)` lanza `TypeError`. El `apply` habría
+  abortado en el primer renombrado, sin migrar nada.
+- Aunque se hubiera escrito `str(d).replace(old, new)`, el directorio de estado
+  no estaba en el plan: solo `share_dirs_to_rename`. Sobre un directorio
+  inexistente, `sqlite3.connect` falla; si el destino existiera, creaba una
+  base **vacía** y el ledger real se quedaba atrás, con su historia y sin
+  copia.
+
+### 3. Ocho de los quince destinos YA EXISTEN
+
+El plan asumía «renombrar a un hueco libre». No es el caso. Por cada proyecto
+lógico hay **dos** ids — el de antes del fix y el de después — porque el mismo
+repositorio se volvió a adoptar cuando el normalizador ya bajaba la caja
+(`Rubentxu/…` contra `rubentxu/…`). Los dos lados guardan historia real:
+
+| nivel | proyectos | qué pasa |
+|---|---|---|
+| **A** | 7 de 15 | el id nuevo no tiene storage. Renombrado limpio y sin ambigüedad. |
+| **B** | 2 de 15 | el id nuevo tiene directorio y ledger, pero **0 ciclos**. Es una cáscara de la re-adopción; el grueso sigue en el viejo. |
+| **C** | 6 de 15 | **ciclos en los dos lados** (p.ej. 125 viejo / 11 nuevo). Exige una unión real de dos ledgers. |
+
+La separación importa porque no es la misma operación. El nivel A es un
+renombrado. El B es un movimiento con una cáscara que tirar. El C es una fusión, y
+una fusión no está escrita, no está probada y no está autorizada.
+
+**El `apply` original abortaba en el primero de los ocho**, antes de migrar
+nada: ya comprobaba `(share/projects/<nuevo>).exists()`. Es decir, el comando
+llevaba dos sesiones «a un paso» y no podía llegar a completarse.
+
+### Estado tras session-66
+
+`scripts/migrate_project_identity.py` corregido y **sin ejecutar**:
+predicado único (`owned_predicate`) compartido por recuento y escritura;
+`WHERE` en todas las escrituras, con sufijo conservado; renombrado de estado
+declarado en el plan y ejecutado **al final**, tras verificar; comparación
+`filas escritas == filas contadas` con reversión; postcondición que comprueba
+que las filas ajenas siguen intactas; y `foreign_values` que **declara** en el
+plan lo que no se va a tocar, para que el plan no vuelva a ocultarlo.
+
+`tests/test_migrate_project_identity_write.py` fija el contrato de la escritura
+(11 casos, incluidos centinela, proyecto ajeno, ledger perdido, destino
+ocupado y reversión por recuento). Falsificado con 5 mutaciones: las 5 se
+detectan.
+
+El storage real sigue **intacto**: la auditoría posterior sigue reportando 25
+receipts huérfanos. Lo que cambia es que ahora se sabe que migrarlos no es un
+`apply`, sino tres operaciones con riesgo distinto, y que la de nivel C es una
+decisión del operador, no un paso pendiente.
