@@ -1,12 +1,32 @@
+---
+id: INC-DEBT-052-BUNDLE-TOML-SURFACE-COUNTS-DISAGREE-WITH-THE-MANIFEST
+title: "`BUNDLE.toml` declara `prompts_count = 0` en un bundle que publica 44 prompts"
+status: resolved
+resolved_at: 2026-10-01
+resolved_in_session: session-65b
+severity: medium
+priority: P1
+detected_at: 2026-10-01
+detected_in_session: session-65b
+component: sddk-dev-manifest
+surface: crates/sddk-cli/src/dev/manifest.rs
+fingerprint: "bundle_toml_surface_counts_disagree_with_the_manifest"
+---
+
 # INC-DEBT-052 — `BUNDLE.toml` declara `prompts_count = 0` en un bundle que publica 44 prompts
 
-**severity:** medium
-**priority:** P1
-**status:** resolved (session-65b)
-**detected:** session-65b, por barrido de gates (no por lectura)
-**component:** `sddk dev manifest --bundle` · `crates/sddk-cli/src/dev/manifest.rs`
-
----
+> **Nota de formato (session-65j).** Este documento declaraba su estado como
+> `**status:** resolved (session-65b)` en markdown bold. Ese no es ninguno de los
+> dos dialectos que `scripts/check_debt_index_coherence.sh` sabe leer: ni
+> frontmatter YAML, ni `**Estado:**`. El guard lo reportaba como
+> `unreadable: sin frontmatter y sin **Estado:**` y salía con **exit 1** — y
+> llevaba así desde session-65b sin que nadie lo notara, porque el guard no está
+> cableado en ningún runner (ver el addendum del final).
+>
+> La conversión a frontmatter **no cambia la afirmación**: `resolved` sigue
+> siendo `resolved`. Lo que cambia es que ahora es legible por máquina, que es
+> literalmente lo que el `doc_status` del guard dice que es el contrato
+> ("frontmatter is the machine contract").
 
 ## Qué declara el artefacto y qué contiene
 
@@ -223,3 +243,91 @@ cuatro copias por *nombre*, no por *significado*. Si mañana alguien renombra
 coherentes entre sí y la superficie cambia de significado sin que nada se queje.
 El comentario de la constante lo dice, para que quien lo lea sepa qué protección
 tiene y cuál no.
+
+---
+
+## Addendum session-65j: el guard llevaba rojo desde session-65b y nadie lo ejecutaba
+
+### Verificación previa: el contenido de esta entrada es cierto
+
+Antes de tocar nada, se contrastó el claim contra el árbol real. Los conteos de
+`[contents]` en el `BUNDLE.toml` actual **cuadran exactamente** con
+`MANIFEST.sha256`:
+
+| superficie | `BUNDLE.toml` | entradas en el manifest |
+|---|---|---|
+| `agents` | 72 | 72 |
+| `skills` | 245 | 245 |
+| `prompts` | 44 | 44 |
+| `assets` | 17 | 17 |
+| `specs` | 14 | 14 |
+| `impeccable_reference` | 2 | 2 |
+
+(`skills` sube de 244 a 245 por la sexta superficie de session-65h, no por una
+regresión.) **El arreglo de session-65b se sostiene.**
+
+### El hallazgo: dos defectos encadenados
+
+**Defecto 1 — el documento declaraba su estado en un dialecto ilegible.** Este
+fichero usaba `**status:** resolved (session-65b)` en markdown bold. El guard
+`scripts/check_debt_index_coherence.sh` lee exactamente dos dialectos:
+frontmatter YAML (`^status:`) y la prosa `**Estado:**`. El nuestro no era
+ninguno de los dos, así que lo reportaba como
+`unreadable: sin frontmatter y sin **Estado:**` — **fail-closed, correctamente**.
+Lo grave no es que el guard fallara: es que **llevaba fallando desde
+session-65b** y nadie se enteró.
+
+**Defecto 2 — el guard no estaba cableado en ningún sitio.** Referenciado solo
+por su propio test:
+
+- `ci.yml:46` hace `shellcheck` de `scripts/*.sh` y `tests/test_*.sh` — eso es
+  **lint**, no ejecución.
+- `scripts/release.sh:242` corre `tests/test_debt_index_coherence.sh`, que
+  monta un **árbol desechable por caso** vía `SDDK_DEBT_DIR`.
+- Nadie ejecutaba `check_debt_index_coherence.sh` contra el repo real.
+
+Sus **10 casos pasaban**. Ese verde es lo que hacía el defecto invisible: leía
+como cobertura y no lo era. Es la forma del INC-DEBT-033 **un nivel más
+hondo** — el propio header del guard advierte que *"un test que no puede mover
+el sujeto bajo test no puede falsificarlo"*, y aun así el suite entero pasaba
+porque pasaba contra fixtures.
+
+### Método: casi se diagnostica al revés
+
+La primera hipótesis fue **incorrecta**: que el guard era ciego al dialecto y
+por eso no veía esta entrada. Se casió «arreglar» el guard para que aceptara el
+dialecto. La evidencia lo refutó: `grep -m1 "^status:"` sobre el documento sale
+con **código 1**, y al ejecutar el guard real contra el repo sale **exit 1**
+señalando precisamente esta entrada.
+
+**Lo que se había ejecutado antes era el TEST, no el GUARD** — y el test hace
+exactamente lo que su propio comentario dice que no debe hacer: probar contra
+fixtures y no contra el sujeto real. Un PASS=10 FAIL=0 leído como «el guard
+funciona» es exactamente el falso positivo que este repo lleva tres slices
+persiguiendo.
+
+### Corrección
+
+1. **El documento se ajustó al contrato”**, no al revés: frontmatter YAML
+   canónico. `resolved` sigue siendo `resolved`; lo único que cambia es que
+   ahora es legible por máquina.
+2. **El guard se ejecuta en `release.sh`**, junto al bucle de tests pero como
+   paso propio y fail-closed.
+3. **El test ata el cableado.** Una aserción nueva comprueba que
+   `release.sh` invoca el guard. Sin ella, el cableado puede borrarse sin que
+   nada se ponga rojo — que es como desapareció en primer lugar.
+
+### Falsificadores: 2 mutaciones, 2 detectadas
+
+| Mutación | Resultado |
+|---|---|
+| Guard acepta `**status:**` (ablandar el contrato) | `[FAIL] status in an unknown dialect is unreadable` (esperaba exit 1, obtuvo 0) |
+| Cableado borrado de `release.sh` | `[FAIL] release.sh no invoca el guard` |
+
+La primera es la que más dice: **ablandar el guard para absolver al documento
+está prohibido por el propio test**. La dirección correcta es el documento se
+ajusta al contrato. Un guard que acepta cualquier dialecto no está siendo
+ tolerante, está dejeando de medir.
+
+**Resultado:** test **12/12**, guard real **41/41** sobre el repo (antes 40/41),
+`shellcheck` limpio, y el guard pasa a ejecutarse en cada release.

@@ -249,6 +249,24 @@ if [ "$SKIP_TESTS" = "0" ]; then
         fi
     done
     ok "shell contract tests green"
+
+    # INC-DEBT-055-adjacent (session-65j): el guard de abajo estaba referenciado
+    # SOLO por su propio test de fixtures. `ci.yml:46` hace `shellcheck` de
+    # `scripts/*.sh` — que es lint, no ejecución — y el bucle de arriba corre
+    # `tests/test_*.sh`, que monta un árbol desechable por caso. Nadie ejecutaba
+    # el guard contra el repo real, y llevaba ROJO (exit 1) desde session-65b
+    # porque INC-DEBT-052 declaraba su estado en un dialecto que no sabe leer.
+    #
+    # Es la forma del INC-DEBT-033 un nivel más hondo: el propio header del guard
+    # advierte que "un test que no puede mover el sujeto bajo test no puede
+    # falsificarlo", y aun así sus 10 casos pasaban — porque pasaban contra
+    # fixtures, no contra el índice real. Ejecutarlo aquí es lo que convierte
+    # los 10 casos en evidencia y no en decoración.
+    if bash scripts/check_debt_index_coherence.sh >/dev/null; then
+        ok "debt index coherence: indice y documentos coinciden"
+    else
+        die "debt index coherence guard failed (run scripts/check_debt_index_coherence.sh)"
+    fi
 else
     warn "skipping step 1 (tests) — assumed already run"
 fi

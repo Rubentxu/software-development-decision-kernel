@@ -63,6 +63,16 @@ EOF
 
 body
 EOF
+    # The shape INC-DEBT-052 really had: bold but LOWERCASE `status:`, which is
+    # neither YAML frontmatter nor the `**Estado:**` dialect the guard reads.
+    # It looks machine-readable and is not, which is worse than prose.
+    cat > "$dir/docs/debt/INC-DEMO-BOLD-STATUS.md" <<'EOF'
+# bold lowercase status, no frontmatter
+
+**status:** resolved (session-99)
+
+body
+EOF
 }
 
 # write_index <dir> <rows...> where each row is "ID|file.md|meta"
@@ -161,6 +171,15 @@ run_case PASS 0 \
     "document with prose-only status is read, not ignored" \
     "INC-DEMO-PROSE|INC-DEMO-PROSE.md|high/P1, open"
 
+# A dialect the guard does not know is UNREADABLE, never "coherent because we
+# could not tell". This is INC-DEBT-052 as it really was: the document declared
+# `**status:** resolved`, the index agreed, and the only honest outcome is that
+# nobody can verify the agreement. Accepting the row would make a debt entry
+# whose state no one can read indistinguishable from one whose state checks out.
+run_case FAIL 1 \
+    "status in an unknown dialect is unreadable, not assumed coherent" \
+    "INC-DEMO-BOLD|INC-DEMO-BOLD-STATUS.md|medium/P1, resolved"
+
 # --- prose must not neutralize the declared state -------------------------
 # Regression for a real defect found in session-45d, on this repo's own
 # index. The guard used to collect EVERY state word in the row's metadata
@@ -184,6 +203,23 @@ run_case FAIL 1 \
 run_case FAIL 1 \
     "prose mentioning 'closed' does not neutralize a declared open state" \
     "INC-DEMO-CLOSED|INC-DEMO-CLOSED.md|medium/P2, open — the defect is corrected and fail-closed, exit 4"
+
+echo
+echo "== wiring: el guard tiene que ejecutarse en algun sitio =="
+
+# Fixture coverage alone does not tell you the guard ever RUNS against the real
+# repo. `ci.yml:46` shellchecks `scripts/*.sh` — that is lint, not execution —
+# and this file itself only ever points the guard at throwaway trees. Between
+# them, nothing executed the guard: it sat at exit 1 on this repo from
+# session-65b with 10/10 green tests. So the wiring is itself load-bearing and
+# needs its own assertion, or it can be deleted without anything going red.
+if grep -q "check_debt_index_coherence\.sh" "$REPO_ROOT/scripts/release.sh"; then
+    PASS=$((PASS + 1))
+    printf '  [ok]   release.sh ejecuta el guard real contra el repo\n'
+else
+    FAIL=$((FAIL + 1))
+    printf '  [FAIL] release.sh no invoca el guard; sus casos pasan contra fixtures y el guard real puede quedar rojo sin que nadie lo note\n'
+fi
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
