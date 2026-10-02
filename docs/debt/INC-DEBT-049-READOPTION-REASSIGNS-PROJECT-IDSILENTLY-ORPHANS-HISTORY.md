@@ -11,11 +11,13 @@ open_part: "adopt status / cycle status no declaran aun la existencia de histori
 detected_at: 2026-10-01
 detected_in_session: session-62
 component: identity
-surface: crates/sddk-cli/src/adopt.rs
+surface: crates/sddk-engine/src/adoption.rs
 cluster_id: CL-IDENTITY
 related: [INC-DEBT-028, INC-DEBT-037]
 references:
-  - crates/sddk-cli/src/adopt.rs
+  - crates/sddk-engine/src/adoption.rs
+  - crates/sddk-cli/src/context_cmd.rs
+  - crates/sddk-cli/src/lib.rs
   - crates/sddk-cli/src/cycle.rs
   - crates/sddk-domain/src/identity.rs
   - docs/debt/INC-DEBT-028-NONDETERMINISTIC-FALLBACK-IDENTITY.md
@@ -305,3 +307,118 @@ INC-DEBT-028 línea 108 —*"un proyecto remoto (como `sddk-framework`,
 **inverificable hoy**: ese id ya no se deriva del remote actual. No se corrige
 aquí porque el documento es historia verificada de session-56 y esta observación
 es de session-62; queda consignada, no reescrita.
+
+---
+
+## Addendum session-65i: `adopt status` resolvia `conflict` en este repo
+
+### Qué se observó
+
+Con el pin activo (`.sddk/project-pin.json` -> `p-63676b11dc0ef88f`) y el
+storage de este repo ya convergido, `adopt status` respondia `conflict` en las
+cuatro consultas reales. No era un artefacto de tests: era el binario release
+2.5.3 hablando sobre el almacenamiento vivo.
+
+La causa esta en la **cadena de comparacion de identidad**, y son **tres**
+sitios, no uno:
+
+1. **`plan_adoption` (`crates/sddk-engine/src/adoption.rs`)** — la rama
+   `Some(pinned)` del `match input.pinned_project_id` construia la identidad
+   dejando `remote_url: None`, mientras el camino no pinneado lo resuelve. El
+   pin sobreescribia `project_id` y tiraba el resto de la identidad. Como
+   `remote_url` **es** identidad, `same_identity` comparaba `None` contra
+   `Some(...)` y declaraba conflicto contra un recibo que coincidia en las
+   otras siete comparaciones. Corregido: se resuelve la identidad con los
+   mismos inputs del camino no pinneado y se sustituye solo `project_id`.
+   `identity_source` se conserva en `Pinned` a proposito —
+   `context_cmd.rs:1066-1069` lo lee para reenviar el pin.
+
+2. **`same_identity`** — comparaba `remote_url` como cadena CRUDA.
+
+3. **`inspect_ledger`** — comparaba `existing.remote_url !=
+   plan.identity.remote_url` tambien en crudo, sobre la fila de la tabla
+   `projects`.
+
+Los sitios 2 y 3 son **independientes**: arreglar el 2 sin el 3 solo traslada
+el conflicto. Por eso el arreglo es una unica funcion,
+`remote_urls_match`, usada por los dos.
+
+### Por qué la comparación cruda era incorrecta
+
+El dominio ya habia decidido que la identidad del remoto es **insensible al
+case**: `normalize_remote_path` (`crates/sddk-domain/src/identity.rs`) baja
+cada segmento a minuscula **antes** de hashear el `project_id`, y eso lo fija
+el test golden `case_change_in_owner_or_repo_resolves_to_same_project_id`.
+Dos remotos que difieren solo en el case acuñan el **mismo `project_id`**, luego
+son la misma identidad por definicion. Compararlos en crudo contradecia esa
+decision ya tomada.
+
+La fila real lo confirma: el recibo y la fila `projects` de este repo guardan
+`https://github.com/Rubentxu/...` en mayusculas porque se acunaron el
+2026-09-30, antes del commit `52182522`. El `project_id` derivado hoy es
+identico (`p-63676b11dc0ef88f` bajo el pin) y aun asi se reportaba conflicto.
+
+### Evidencia
+
+RED, con el detalle propio de cada sitio (no uno solo):
+
+```text
+fossilized_capitalized_receipt_is_still_the_same_identity ... FAILED
+  detalle: Some("receipt identity differs from plan; refresh only accepts
+            runtime metadata drift")   left: Conflict  right: Complete
+
+fossilized_capitalized_ledger_row_is_still_the_same_identity ... FAILED
+  detalle: Some("ledger project identity differs from plan")
+                                                    left: Conflict  right: Complete
+```
+
+GREEN: 6/6 en `adoption::tests`, y 1375/1375 en la suite del engine.
+
+**MUTACION (session-65i).** Sustituir la comparacion por `right == *right`
+—devolviendo `true` siempre que ambos lados normalicen— dejo los dos tests
+positivos **EN VERDE**. Fijaban «el mismo repo con otro case ya no es
+conflicto» pero NO «un repo distinto sigue siendo conflicto»: un guard que
+declara siempre coincidencia era aceptable. Se anadieron dos tests negativos
+(`different_remote_under_the_same_pin_is_still_a_different_identity_{receipt,ledger}`)
+y la mutacion paso a ser detectada (`left: Complete`, `right: Conflict`).
+
+Los negativos usan **pin** a proposito. Sin pin, un remoto distinto acuna otro
+`project_id`, luego apunta a rutas inexistentes y el veredicto es `Absent`: el
+test discriminaba, pero por el guard equivocado (las rutas), no por la
+comparacion de identidad. El pin es la unica forma de que dos remotos
+genuinamente distintos compartan `project_id` y rutas.
+
+Cuarta vez que un test falsador encuentra en si mismo lo que la inspeccion no.
+Aqui encontro algo que la inspeccion no habia considerado: **la mitad negativa
+del contrato**.
+
+**Verificacion end-to-end sobre el storage vivo**, mismo repo, mismo pin, solo
+cambia el binario:
+
+```text
+/home/rubentxu/.local/bin/sddk (release 2.5.3, sin el arreglo)
+  -> status: conflict
+     detail: receipt identity differs from plan
+
+/var/home/rubentxu/cargo-targets/debug/sddk (con el arreglo)
+  -> status: complete
+```
+
+### Lo que esto NO resuelve
+
+**INC-DEBT-050 sigue abierta y no se ve afectada.** El arreglo cambia como se
+COMPARA la identidad; no reubica 25 recibos que viven bajo un `project_id`
+distinto al que deriva el remoto actual. Este repo no necesita migracion porque
+tiene pin; los otros 24 recibos huerfanos sin pin siguen huerfanos.
+
+La comparacion normalizada es la contraparte **no destructiva** de la
+migracion: acepta el estado fosilizado en lugar de reescribirlo. Ambas cosas
+pueden convivir — y esta es la lectura correcta: el pin es la via barata y
+local, la migracion sigue siendo la unica que unifica los `project_id`.
+
+### Correccion de superficie
+
+`surface:` y `references:` declaraban `crates/sddk-cli/src/adopt.rs`, un
+fichero **que no existe**. Las superficies reales de este defecto son
+`crates/sddk-engine/src/adoption.rs` (los tres sitios) y
+`crates/sddk-cli/src/lib.rs` + `context_cmd.rs` (lectura del pin).

@@ -1761,6 +1761,7 @@ dependencies = [
  "rand 0.8.8",
  "regex",
  "reqwest",
+ "rusqlite",
  "sddk-domain",
  "sddk-engine",
  "sddk-storage",

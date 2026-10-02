@@ -42,6 +42,13 @@ reqwest = { workspace = true }
 [dev-dependencies]
 regex = { workspace = true }
 tempfile = { workspace = true }
+# WHY: adoption.rs `fossilized_capitalized_ledger_row_is_still_the_same_identity`
+# must write a `projects` row exactly as a pre-normalization binary did
+# (owner in caps). `Storage::register_project_workspace` REFUSES that today by
+# design (RegistrationConflict), so the fossilized row is only reachable with
+# raw SQL — which is the point: the guard under test is `inspect_ledger`, not
+# the storage guard.
+rusqlite = { workspace = true }
 # WHY: cycle_authority.rs durability-required tests use file-based Storage::open(&path) reopen pattern
 # (REQ-M13-004 anti-AC hygiene — name the durability tests that justify this dev-dep)
 sddk-storage = { path = "../sddk-storage" }

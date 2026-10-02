@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sddk_domain::error::SddkErrorCode;
 use sddk_domain::{
     AdoptionReceipt, IdentityError, IdentitySource, Ledger, ResolvedProjectIdentity,
-    normalize_scope, resolve_project_identity, stable_workspace_id,
+    normalize_remote_url, resolve_project_identity, stable_workspace_id,
 };
 use sddk_domain::{ProjectRecord, StorageError, WorkspaceRecord};
 use serde::{Deserialize, Serialize};
@@ -201,13 +201,40 @@ pub fn plan_adoption(input: AdoptionPlanInput) -> Result<AdoptionPlan, AdoptionE
     // empty storage while its real ledger sat under the pinned id.
     // INC-DEBT-049.
     let identity = match input.pinned_project_id.as_deref() {
-        Some(pinned) => ResolvedProjectIdentity {
-            project_id: sddk_domain::ProjectId::new(pinned)?,
-            remote_url: None,
-            scope: normalize_scope(&input.scope)?,
-            identity_source: IdentitySource::Pinned,
-            fallback_seed: None,
-        },
+        Some(pinned) => {
+            // The pin overrides the project_id ONLY. `remote_url` and `scope`
+            // are also identity — they feed `same_identity`, which decides
+            // whether a stored receipt still describes this project — so
+            // discarding them here made every pinned checkout report
+            // `conflict` against a receipt that matched on all seven other
+            // fields.
+            //
+            // OBSERVED (session-65i, this repo): the pin holds
+            // `p-63676b11dc0ef88f` and the stored receipt holds the same id,
+            // the same workspace, the same scope, the same canonical path and
+            // byte-identical storage paths. Only `remote_url` differed —
+            // `Some(...)` in the receipt, `None` here. `adopt status` and
+            // `adopt refresh` both answered `conflict`, and `refresh` refused
+            // by its own contract ("refresh only accepts runtime metadata
+            // drift") because this is not runtime drift: it is the plan
+            // forgetting who it is.
+            //
+            // Resolving the identity from the same inputs the unpinned path
+            // uses keeps ONE derivation, and the pin's `project_id` is
+            // substituted for the derived one. `identity_source` stays
+            // `Pinned` on purpose: `context_cmd.rs` reads it to decide whether
+            // to forward the pin into the plan it builds, so downgrading it to
+            // `Remote` would make that caller re-derive the id this pin exists
+            // to prevent.
+            let mut derived = resolve_project_identity(
+                input.remote_url.as_deref(),
+                &input.scope,
+                input.fallback_seed.as_deref(),
+            )?;
+            derived.project_id = sddk_domain::ProjectId::new(pinned)?;
+            derived.identity_source = IdentitySource::Pinned;
+            derived
+        }
         None => resolve_project_identity(
             input.remote_url.as_deref(),
             &input.scope,
@@ -507,7 +534,7 @@ fn inspect_ledger(plan: &AdoptionPlan, ledger: &impl Ledger) -> LedgerInspection
         return LedgerInspection::conflict("ledger belongs to a different project".into());
     }
     if let Some(existing) = &project
-        && (existing.remote_url != plan.identity.remote_url
+        && (!remote_urls_match(&existing.remote_url, &plan.identity.remote_url)
             || existing.scope != plan.identity.scope)
     {
         return LedgerInspection::conflict("ledger project identity differs from plan".into());
@@ -611,6 +638,11 @@ fn configuration_hash(receipt: &AdoptionReceipt) -> Result<String, AdoptionError
 /// `actor`, `configuration_hash`) is excluded so that CLI bumps can be
 /// refreshed without re-adoption.
 ///
+/// `remote_url` is compared as IDENTITY via `remote_urls_match`, not as a raw
+/// string: the domain normalizes it before minting `project_id`, so the case
+/// of the owner is not part of the identity. See that function for the
+/// observed failure this encodes.
+///
 /// The legacy `paths.vault` compatibility shim (`vault` may live at
 /// `$project_data/vault` instead of the canonical `$HOME/.sddk-knowledge/$name`)
 /// is preserved to avoid forcing users with an existing legacy receipt to
@@ -626,11 +658,43 @@ fn same_identity(left: &AdoptionReceipt, right: &AdoptionReceipt) -> bool {
     left.schema_version == right.schema_version
         && left.project_id == right.project_id
         && left.workspace_id == right.workspace_id
-        && left.remote_url == right.remote_url
+        && remote_urls_match(&left.remote_url, &right.remote_url)
         && left.scope == right.scope
         && left.fallback_seed == right.fallback_seed
         && left.canonical_workspace_path == right.canonical_workspace_path
         && left.paths == right_paths
+}
+
+/// Compara dos remotos opcionales COMO IDENTIDAD.
+///
+/// El dominio ya decidio que la identidad es insensible al case en el remoto:
+/// `normalize_remote_path` (sddk-domain) baja cada segmento a minuscula antes
+/// de hashear el `project_id`, de modo que `Rubentxu/repo` y `rubentxu/repo`
+/// acuñan el MISMO `project_id` — fijado por el test golden
+/// `case_change_in_owner_or_repo_resolves_to_same_project_id`. Comparar aqui
+/// las cadenas CRUDAS contradedia esa decision.
+///
+/// OBSERVADO (session-65i, este repo): el recibo y la fila `projects` se
+/// acuñaron el 2026-09-30 con `https://github.com/Rubentxu/...` en mayusculas,
+/// antes de que existiera esa normalizacion. El `project_id` derivado hoy es
+/// identico, pero `adopt status` reportaba `conflict` — dos sitios distintos,
+/// `same_identity` (recibo) e `inspect_ledger` (fila), cada uno con su propio
+/// mensaje. Un solo guard los cubre a los dos.
+///
+/// Se normalizan LOS DOS lados para que la comparacion sea simetrica. Si
+/// alguno no normaliza, se cae a la igualdad cruda: una URL invalida nunca
+/// declara coincidencia solo porque la otra parte si normalizo.
+fn remote_urls_match(left: &Option<String>, right: &Option<String>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            match (normalize_remote_url(left), normalize_remote_url(right)) {
+                (Ok(left), Ok(right)) => left == right,
+                _ => left == right,
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Returns the legacy vault path (`$project_data/vault`) inferred from the
@@ -890,5 +954,248 @@ mod tests {
                 "re-apply #{repeat} reescribio el recibo byte-identicamente convergido: el bootstrap repetido debe ser un no-op, no un refresh"
             );
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // session-65i: identidad del remoto insensible al case.
+    //
+    // OBSERVADO (sddk-framework, recibo real de session-63 escrito el
+    // 2026-09-30T07:47:47Z): el recibo en disco guarda el owner del remoto EN
+    // MAYUSCULAS (`https://github.com/Rubentxu/software-development-decision-kernel`)
+    // porque se acuno antes de que `normalize_remote_path` (sddk-domain)
+    // bajara cada segmento a minuscula.
+    //
+    // El DOMINIO ya decidio que la identidad es INSENSIBLE al case: el
+    // `project_id` resultante es identico, y eso lo fija el test golden
+    // `case_change_in_owner_or_repo_resolves_to_same_project_id` en
+    // `sddk-domain::identity`. Comparar el remoto CRUDO aqui contradedia esa
+    // decision y reportaba `conflict` contra un recibo que describe el MISMO
+    // proyecto en las otras siete comparaciones de `same_identity`.
+    //
+    // Estos DOS tests separan los DOS sitios que comparan el remoto en crudo,
+    // porque arreglar uno solo trasladaria el conflicto al otro:
+    //   - `same_identity`   -> recibo en disco
+    //   - `inspect_ledger`  -> fila de la tabla `projects`
+    const REMOTE_LOWER: &str = "https://github.com/rubentxu/software-development-decision-kernel";
+    const REMOTE_FOSSILIZED: &str =
+        "https://github.com/Rubentxu/software-development-decision-kernel";
+
+    fn plan_with_remote(directory: &Path, remote: &str) -> AdoptionPlan {
+        plan_with_remote_pinned(directory, remote, None)
+    }
+
+    fn plan_with_remote_pinned(
+        directory: &Path,
+        remote: &str,
+        pinned_project_id: Option<&str>,
+    ) -> AdoptionPlan {
+        let root = directory.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        plan_adoption(AdoptionPlanInput {
+            remote_url: Some(remote.into()),
+            pinned_project_id: pinned_project_id.map(str::to_owned),
+            scope: ".".into(),
+            fallback_seed: None,
+            canonical_workspace_path: root,
+            display_name: "sddk-framework".into(),
+            xdg: XdgEnvironment {
+                home: Some(directory.join("home")),
+                data_home: Some(directory.join("data")),
+                state_home: Some(directory.join("state")),
+                cache_home: Some(directory.join("cache")),
+                ..XdgEnvironment::default()
+            },
+            sddk_version: "3.6".into(),
+            runtime_version: "2.2.34".into(),
+            timestamp: "2026-09-30T07:47:47Z".into(),
+            actor: "rubentxu".into(),
+        })
+        .unwrap()
+    }
+
+    /// El recibo fosilizado describe el MISMO proyecto: el `project_id` es
+    /// identico porque el dominio normaliza antes de hashear. Un `conflict`
+    /// aqui es un falso positivo que bloquea `status`, `refresh` y `apply`.
+    #[test]
+    fn fossilized_capitalized_receipt_is_still_the_same_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let plan = plan_with_remote(directory.path(), REMOTE_LOWER);
+        let mut ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        apply_adoption(&plan, &mut ledger).unwrap();
+
+        // Fosiliza SOLO el recibo, con el hash recomputado para que siga siendo
+        // internamente coherente: un hash invalido produciria `Corrupt`, que es
+        // otro fallo y no el que se quiere falsificar aqui.
+        let mut fossilized = plan.receipt.clone();
+        fossilized.remote_url = Some(REMOTE_FOSSILIZED.into());
+        fossilized.configuration_hash = configuration_hash(&fossilized).unwrap();
+        fs::write(
+            &plan.paths.receipt,
+            serde_json::to_vec_pretty(&fossilized).unwrap(),
+        )
+        .unwrap();
+
+        // El dominio ya los considera el mismo proyecto; el motor debe coincidir.
+        assert_eq!(
+            plan.identity.project_id,
+            plan_adoption(AdoptionPlanInput {
+                remote_url: Some(REMOTE_FOSSILIZED.into()),
+                pinned_project_id: None,
+                scope: ".".into(),
+                fallback_seed: None,
+                canonical_workspace_path: plan.receipt.canonical_workspace_path.clone().into(),
+                display_name: "sddk-framework".into(),
+                xdg: XdgEnvironment {
+                    home: Some(directory.path().join("home")),
+                    data_home: Some(directory.path().join("data")),
+                    state_home: Some(directory.path().join("state")),
+                    cache_home: Some(directory.path().join("cache")),
+                    ..XdgEnvironment::default()
+                },
+                sddk_version: "3.6".into(),
+                runtime_version: "2.2.34".into(),
+                timestamp: "2026-09-30T07:47:47Z".into(),
+                actor: "rubentxu".into(),
+            })
+            .unwrap()
+            .identity
+            .project_id,
+            "el project_id debe ser identico con y sin mayusculas en el owner"
+        );
+
+        let status = adoption_status(&plan, &ledger).unwrap();
+        assert_eq!(
+            status.status,
+            AdoptionStatusKind::Complete,
+            "un recibo fosilizado con el owner en mayusculas describe el mismo proyecto \
+             (mismo project_id, mismo workspace, mismos paths): reportar conflict es un \
+             falso positivo. detalle: {:?}",
+            status.detail
+        );
+    }
+
+    /// Mismo caso sobre la fila de la tabla `projects`. Si solo se arreglara
+    /// `same_identity`, este `conflict` pasaria a ser el unico que sobrevive.
+    ///
+    /// NOTA sobre como se fosiliza la fila: `Storage::register_project_workspace`
+    /// RECHAZA hoy un remoto distinto (`RegistrationConflict`), asi que esa fila
+    /// solo pudo escribirla un binario anterior a la normalizacion — que es
+    /// exactamente el estado real de este repo (fila `projects` con
+    /// `Rubentxu/...`, verificado sobre el ledger vivo). Por eso se escribe con
+    /// SQL directo: el guard que se esta falsando es `inspect_ledger`, no el
+    /// guard del storage, que aqui hace bien su trabajo.
+    #[test]
+    fn fossilized_capitalized_ledger_row_is_still_the_same_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let plan = plan_with_remote(directory.path(), REMOTE_LOWER);
+        {
+            let mut ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+            apply_adoption(&plan, &mut ledger).unwrap();
+        }
+
+        // Fosiliza SOLO la fila del ledger; el recibo se queda como esta.
+        let project_id = plan.identity.project_id.to_string();
+        let connection = rusqlite::Connection::open(&plan.paths.ledger).unwrap();
+        connection
+            .execute(
+                "UPDATE projects SET remote_url = ?1 WHERE project_id = ?2",
+                rusqlite::params![REMOTE_FOSSILIZED, project_id],
+            )
+            .unwrap();
+        drop(connection);
+
+        let ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        let status = adoption_status(&plan, &ledger).unwrap();
+        assert_eq!(
+            status.status,
+            AdoptionStatusKind::Complete,
+            "la fila del ledger con el owner en mayusculas es la misma identidad: \
+             detail: {:?}",
+            status.detail
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // La OTRA mitad del contrato, que faltaba.
+    //
+    // MUTACION (session-65i): sustituir la comparacion por `right == *right`
+    // —devolviendo `true` siempre que ambos lados normalicen— dejo los dos
+    // tests de arriba EN VERDE. Fijaban «el mismo repo con otro case ya no
+    // es conflicto», pero NO «un repo distinto sigue siendo conflicto»: un
+    // guard que declara siempre coincidencia era aceptable.
+    //
+    // Estos dos tests cierran ese lado. Sin ellos el arreglo normalizador
+    // degrada la deteccion de drift en vez de afinarla.
+    //
+    // POR QUE EL PIN (intento descartado primero): un remoto distinto sin pin
+    // acuña otro `project_id`, luego apunta a rutas inexistentes y el veredicto
+    // es `Absent`. El test discriminaba, pero por el guard equivocado (las
+    // rutas), no por la comparacion de identidad. El pin es la unica forma de
+    // que dos remotos genuinamente distintos compartan `project_id` y rutas:
+    // el pin dice «esto es el proyecto X» mientras el checkout apunta a un
+    // repo Y. Ese es el escenario que la comparacion tiene que rechazar.
+    const REMOTE_OTHER: &str = "https://github.com/rubentxu/otro-repo";
+
+    /// Adopta REMOTE_LOWER y devuelve (plan, ledger) junto al plan pinneado a
+    /// ese mismo `project_id` pero con REMOTE_OTHER.
+    fn diverged_by_pin(directory: &Path) -> (AdoptionPlan, sddk_storage::Storage, AdoptionPlan) {
+        let plan = plan_with_remote(directory, REMOTE_LOWER);
+        let mut ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        apply_adoption(&plan, &mut ledger).unwrap();
+        let pinned = plan_with_remote_pinned(
+            directory,
+            REMOTE_OTHER,
+            Some(plan.identity.project_id.as_str()),
+        );
+        // El pin iguala project_id, workspace_id y rutas: lo UNICO que
+        // distingue las dos identidades es el remoto.
+        assert_eq!(plan.identity.project_id, pinned.identity.project_id);
+        assert_eq!(plan.paths.receipt, pinned.paths.receipt);
+        assert_ne!(plan.identity.remote_url, pinned.identity.remote_url);
+        (plan, ledger, pinned)
+    }
+
+    #[test]
+    fn different_remote_under_the_same_pin_is_still_a_different_identity_receipt() {
+        let directory = tempfile::tempdir().unwrap();
+        let (_plan, ledger, diverged) = diverged_by_pin(directory.path());
+        let status = adoption_status(&diverged, &ledger).unwrap();
+        assert_eq!(
+            status.status,
+            AdoptionStatusKind::Conflict,
+            "un remoto genuinamente distinto bajo el mismo pin debe seguir siendo \
+             conflict: normalizar el case no puede validar el drift de remoto. \
+             detail: {:?}",
+            status.detail
+        );
+    }
+
+    /// Mismo caso sobre la fila del ledger: sin normalizar, este es el unico
+    /// guard que separa dos proyectos distintos que comparten checkout.
+    #[test]
+    fn different_remote_under_the_same_pin_is_still_a_different_identity_ledger() {
+        let directory = tempfile::tempdir().unwrap();
+        let (plan, ledger, diverged) = diverged_by_pin(directory.path());
+        // El recibo de `plan` esta intacto; se fosiliza la fila del ledger con
+        // el remoto divergente para ejercer el segundo guard de forma aislada.
+        drop(ledger);
+        let connection = rusqlite::Connection::open(&plan.paths.ledger).unwrap();
+        connection
+            .execute(
+                "UPDATE projects SET remote_url = ?1 WHERE project_id = ?2",
+                rusqlite::params![REMOTE_OTHER, diverged.identity.project_id.to_string()],
+            )
+            .unwrap();
+        drop(connection);
+
+        let ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        let status = adoption_status(&diverged, &ledger).unwrap();
+        assert_eq!(
+            status.status,
+            AdoptionStatusKind::Conflict,
+            "el ledger debe seguir separando dos remotos distintos bajo el mismo pin. \
+             detail: {:?}",
+            status.detail
+        );
     }
 }
