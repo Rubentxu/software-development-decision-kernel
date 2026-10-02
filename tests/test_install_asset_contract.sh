@@ -162,7 +162,7 @@ fi
 if awk '
     /^[[:space:]]*#/                 { next }
     /^[[:space:]]*(die|warn|ok|echo) / { next }
-    /^[[:space:]]*if cosign sign-blob/ { found = 1 }
+    /cosign sign-blob/ && !/^[[:space:]]*#/ { found = 1 }
     END { exit(found ? 0 : 1) }
 ' "$RELEASE_SH"; then
     ok "release.sh signs its artifacts with cosign (signing loop, not a comment)"
@@ -282,14 +282,14 @@ COSIGN_RS="$ROOT/crates/sddk-cli/src/cosign.rs"
 # declaration by name and take everything between r" and "; regardless of
 # layout. A layout-specific extraction silently returns "" after a fmt run,
 # and then "cosign.rs == install.sh" compares empty to empty and passes.
-_rust_identity=$(sed -n 's/^pub const DEFAULT_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+_rust_identity=$(sed -n 's/^pub const LEGACY_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
 if [ -z "$_rust_identity" ]; then
     _rust_identity=$(tr '\n' ' ' < "$COSIGN_RS" \
-        | sed -n 's/.*DEFAULT_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";.*/\1/p')
+        | sed -n 's/.*LEGACY_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";.*/\1/p')
 fi
-_rust_issuer=$(sed -n 's/^pub const DEFAULT_CERT_ISSUER: &str = "\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
-_shell_identity=$(sed -n 's/.*SDDK_COSIGN_IDENTITY:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
-_shell_issuer=$(sed -n 's/.*SDDK_COSIGN_ISSUER:-\([^}]*\)}".*/\1/p' "$INSTALL_SH" | head -1)
+_rust_issuer=$(sed -n 's/^pub const LEGACY_CERT_ISSUER: &str = "\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
+_shell_identity=$(grep -m1 "^SDDK_LEGACY_CERT_IDENTITY='" "$INSTALL_SH" | sed "s/^SDDK_LEGACY_CERT_IDENTITY='\(.*\)'$/\1/")
+_shell_issuer=$(grep -m1 "^SDDK_LEGACY_CERT_ISSUER='" "$INSTALL_SH" | sed "s/^SDDK_LEGACY_CERT_ISSUER='\(.*\)'$/\1/")
 
 if [ -n "$_rust_identity" ] && [ "$_rust_identity" = "$_shell_identity" ]; then
     ok "install.sh and cosign.rs pin the same certificate identity"
@@ -390,9 +390,33 @@ fi
 # check and require a bail inside the same brace-delimited block. Anchoring
 # on the message text instead would miss the bail that guards it.
 if awk '
-    /^[[:space:]]*if !output\.status\.success\(\) \{/ { inbranch=1; next }
-    inbranch && /bail!/ { found=1; inbranch=0 }
-    inbranch && /^[[:space:]]*}$/ { inbranch=0 }
+    # The two-anchor flow replaced `if !output.status.success() { bail! }`
+    # with: try anchor 1, try anchor 2, and bail only when BOTH fail. The
+    # control to pin is therefore that specific bail, not "a bail somewhere
+    # nearby".
+    #
+    # Three earlier attempts at this check all passed for the wrong reason,
+    # and each failure is worth naming because they are the same mistake:
+    #
+    #   1. Anchored on `if !output.status.success() {` — a shape that no
+    #      longer exists, so the guard was green because it never fired.
+    #   2. Unscoped `/anyhow::bail!/` — matched 17 bails in the file, so
+    #      deleting the guarded one left it green.
+    #   3. Scoped to the function — but the function has three bails, so
+    #      deleting the guarded one still left it green.
+    #
+    # So: scoped to the function AND matched on the message the bail prints.
+    # The bail is multi-line, so the message lives on the following lines.
+    /fn verify_bundle_signature\(/ { infn=1; next }
+    infn && /^}/ { infn=0 }
+    infn && /anyhow::bail!\(/ {
+        # Read the continuation lines of this macro call.
+        if ((getline m1) > 0 && (getline m2) > 0 && (getline m3) > 0) {
+            if (m1 ~ /cosign verification FAILED/ ||
+                m2 ~ /cosign verification FAILED/ ||
+                m3 ~ /cosign verification FAILED/) { found = 1 }
+        }
+    }
     END { exit(found ? 0 : 1) }
 ' "$UPDATE_RS" 2>/dev/null; then
     ok "sddk dev update bails on a failed signature verification"
@@ -400,79 +424,163 @@ else
     fail "sddk dev update does not bail on a bad signature"
 fi
 
-# --- Signing identity (INC-DEBT-024) -------------------------------
+# --- Key-based anchor: the three copies must agree -----------------------
 #
-# The local keyless identity cannot satisfy the pin, and cosign being
-# installed is not evidence the right identity was used. release.sh must
-# therefore check the issuer of the certificate it actually minted BEFORE
-# publishing, and must fail closed when it cannot read it.
+# The anchor is the project's public signing key. It exists in three places:
+# the Rust constant (via include_str!), the shell constant in install.sh, and
+# the file on disk. A divergence means the CLI trusts one signer and the
+# installer another, which is a hole neither would report.
+
+ANCHOR_FILE="$ROOT/assets/trust/release-verify-key.pub"
+if [ ! -f "$ANCHOR_FILE" ]; then
+    fail "the key-based anchor file is missing: $ANCHOR_FILE"
+else
+    _anchor_file_body=$(tr -d '\n' < "$ANCHOR_FILE" | sed 's/[[:space:]]*$//')
+    _anchor_shell_body=$(sed -n 's/^SDDK_RELEASE_VERIFY_KEY_BODY="\(.*\)"$/\1/p' "$INSTALL_SH" | head -1)
+
+    if [ -z "$_anchor_file_body" ]; then
+        # The empty-equals-empty case: a missing or blank anchor yields "" on
+        # both sides and a naive comparison PASSES. This is the failure the
+        # flat-body design exists to prevent, so it is checked explicitly.
+        fail "the anchor file is empty; an empty anchor makes --key point at nothing"
+    elif [ -n "$_anchor_shell_body" ] && [ "$_anchor_file_body" = "$_anchor_shell_body" ]; then
+        ok "install.sh and the anchor file carry the same key body"
+    else
+        fail "key-based anchor drift: file='$_anchor_file_body' install.sh='$_anchor_shell_body'"
+    fi
+
+    if grep -qF 'assets/trust/release-verify-key.pub' "$COSIGN_RS"; then
+        ok "cosign.rs embeds the anchor from the same file"
+    else
+        fail "cosign.rs no longer reads the anchor file; the constant may have been inlined"
+    fi
+
+    # Placeholder state must be COHERENT, not permanently a placeholder: the
+    # anchor is legitimately unprovisioned today and legitimately provisioned
+    # after the KMS key exists. What is never acceptable is one copy carrying
+    # the placeholder while the other carries a real key — that is the state
+    # where install.sh refuses and the CLI does not, or vice versa, and
+    # neither reports it.
+    #
+    # Only the ASSIGNMENT line is read. The marker also appears in
+    # install.sh's runtime `case` guard, which must keep matching the
+    # placeholder forever — that is what refuses a regressed anchor — so
+    # grepping the whole file would report "still unprovisioned" after the key
+    # was provisioned, and this check would fail the legitimate state.
+    _install_sh_has_marker=0
+    _anchor_file_has_marker=0
+    grep -m1 '^SDDK_RELEASE_VERIFY_KEY_BODY="' "$INSTALL_SH" \
+        | grep -qF '@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@' && _install_sh_has_marker=1
+    grep -qF '@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@' "$ANCHOR_FILE" && _anchor_file_has_marker=1
+
+    if [ "$_install_sh_has_marker" -eq "$_anchor_file_has_marker" ]; then
+        if [ "$_install_sh_has_marker" -eq 1 ]; then
+            ok "the unprovisioned-anchor placeholder is present in both copies and refused"
+        else
+            ok "the anchor is provisioned in both copies (post-provisioning state)"
+        fi
+    else
+        fail "placeholder state is incoherent: install.sh carries the marker=$_install_sh_has_marker, anchor file carries it=$_anchor_file_has_marker"
+    fi
+
+    # Each consumer must REBUILD the PEM. cosign rejects a bare body with
+    # "PEM decoding failed" — the same error a malformed key gives, which is
+    # what once made a negative control pass for the wrong reason.
+    for _consumer in "$INSTALL_SH" "$COSIGN_RS"; do
+        if grep -q 'BEGIN PUBLIC KEY' "$_consumer"; then
+            ok "$(basename "$_consumer") rebuilds the PEM framing cosign requires"
+        else
+            fail "$(basename "$_consumer") does not rebuild the PEM framing"
+        fi
+    done
+fi
+
+# Both anchors must be present in both consumers. Dropping the legacy branch
+# breaks installing v2.5.2; dropping the key-based branch silently reopens the
+# path the migration exists to close.
+for _consumer in "$INSTALL_SH" "$UPDATE_RS"; do
+    if grep -q -- '--key' "$_consumer" && grep -q -- '--certificate-identity-regexp' "$_consumer"; then
+        ok "$(basename "$_consumer") verifies against both anchors"
+    else
+        fail "$(basename "$_consumer") is missing one of the two anchors"
+    fi
+done
+
+# --- Signing identity: key-based anchor (ADR-0151) ---------------------
+#
+# The assertions removed from here pinned the GitHub Actions OIDC issuer and
+# checked that release.sh read the issuer back out of the certificate it
+# minted. Both described the keyless anchor, which is no longer the signing
+# path — so they were replaced rather than dropped, because the invariant
+# they protected is still the one that matters: never publish a signature
+# this project's own installers reject.
 #
 # A control that is not asserted here is a control that quietly stops
 # controlling the first time someone refactors the block.
-# shellcheck disable=SC2016  # literal del default en release.sh (contrato)
-if grep -q 'RELEASE_CERT_ISSUER="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"' "$RELEASE_SH"; then
-    ok "release.sh pins the Actions OIDC issuer as the required signing identity"
-else
-    fail "release.sh does not pin the required signing issuer"
-fi
 
-# The pin must be byte-identical to what the consumers verify against.
-# Drift here means the release signs with one identity and install.sh and
-# \`sddk dev update\` demand another.
-release_pin=$(grep -oE 'SDDK_COSIGN_ISSUER:-[^}]+' "$RELEASE_SH" | head -1 | sed 's/SDDK_COSIGN_ISSUER:-//')
-rust_pin=$(grep -oP '(?<=DEFAULT_CERT_ISSUER: &str = ")[^"]+' "$COSIGN_RS")
-if [ -n "$release_pin" ] && [ "$release_pin" = "$rust_pin" ]; then
-    ok "the signing issuer in release.sh matches DEFAULT_CERT_ISSUER in the consumer"
-else
-    fail "signing issuer drift: release.sh [$release_pin] vs cosign.rs [$rust_pin]"
-fi
-
-# Fail-closed on a wrong identity, not a warning. A warn-and-continue here
-# publishes a release that this project's own installer refuses.
+# 1. release.sh must VERIFY against the pinned anchor before publishing.
+#    Reading a certificate issuer proved "signed by something"; verifying the
+#    artifact against the same key the installers pin proves "signed by us".
+#    Asserted as the call PLUS the die on its failure branch: a verify with
+#    no refusal is a verify nobody reads.
 if awk '
-    /emitted_issuer.*cert_issuer/ { readcert=1 }
-    readcert && /signing identity verified/ { okbranch=1 }
-    readcert && /die .*WRONG identity/ { diefound=1 }
-    END { exit((okbranch && diefound) ? 0 : 1) }
+    /cosign verify-blob --key/ { sawverify=1 }
+    sawverify && /does NOT verify against the pinned public key/ { diefound=1 }
+    END { exit((sawverify && diefound) ? 0 : 1) }
 ' "$RELEASE_SH" 2>/dev/null; then
-    ok "release.sh dies when the signing identity is not the pinned one"
+    ok "release.sh verifies the signed artifact against the pinned anchor and dies if it fails"
 else
-    fail "release.sh does not fail closed on a wrong signing identity"
+    fail "release.sh does not verify against the pinned anchor before publishing"
 fi
 
-# The issuer gate runs AFTER cosign has signed, which is too late for two
-# reasons: the local device flow blocks on a human opening a browser (a hang
-# in an unattended run), and a personal certificate is still wrong. So the
-# host must be checked BEFORE any signing attempt.
-# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
-if grep -qF '[ "${GITHUB_ACTIONS:-}" != "true" ]' "$RELEASE_SH"; then
-    ok "release.sh refuses to sign outside a GitHub Actions runner"
+# 2. The signer must be selectable without a hosted OIDC runner. Requiring
+#    GITHUB_ACTIONS is exactly what made the v2.5.3 release impossible (it
+#    aborted at step 8c). If this gate returns, the project is back to not
+#    being able to ship — so its absence is asserted, not merely tolerated.
+if grep -q 'GITHUB_ACTIONS' "$RELEASE_SH"; then
+    fail "release.sh gates signing on GITHUB_ACTIONS again; no release can be produced without an Actions runner"
 else
-    fail "release.sh does not check the Actions context before signing"
+    ok "release.sh no longer requires a GitHub Actions runner to sign"
 fi
 
-# The pre-check must die, not warn, and it must run before the signing loop.
-# A warn here leaves the device-flow hang in place, which is the failure mode
-# the check exists to prevent.
+# 3. SDDK_RELEASE_SIGNING_KEY selects the signer. With it unset the script
+#    must die, not fall back to something that merely looks signed.
 if awk '
-    /\[ "\$\{GITHUB_ACTIONS:-\}" != "true" \]/ && !seen { ctx=NR; seen=1 }
-    /for artifact in "\$\{SIGN_ARTIFACTS\[@\]\}"/ && seen && !loop { loop=NR }
-    seen && /die "the project'"'"'s signing identity does not exist/ { diefound=NR }
-    END { exit((ctx && diefound && loop && ctx < loop) ? 0 : 1) }
+    /signing_ref="\$\{SDDK_RELEASE_SIGNING_KEY:-0?\}"?|"\$\{SDDK_RELEASE_SIGNING_KEY:-\}"/ { sawgate=1 }
+    sawgate && /die "no signing key configured/ { diefound=1 }
+    END { exit(diefound ? 0 : 1) }
 ' "$RELEASE_SH" 2>/dev/null; then
-    ok "the pre-check dies (not warns) and runs before the signing loop"
+    ok "release.sh dies when no signing key is configured"
 else
-    fail "the signing pre-check is missing, non-fatal, or misplaced"
+    fail "release.sh does not fail closed when SDDK_RELEASE_SIGNING_KEY is unset"
 fi
 
-# SDDK_SKIP_SIGNING must remain a way OUT (publish unsigned knowingly),
-# otherwise the pre-check would make local publishing impossible with no
-# declared escape.
-# shellcheck disable=SC2016  # literal productivo grep -F (contrato)
-if grep -qF '[ "${SDDK_SKIP_SIGNING:-0}" != "1" ]' "$RELEASE_SH"; then
-    ok "SDDK_SKIP_SIGNING=1 still bypasses the pre-check (unsigned is a deliberate choice)"
+# 4. The unprovisioned-anchor guard. This is the one that stops a release
+#    nobody can install from being published, and the anchor file IS still
+#    the transition marker today, so this is live, not hypothetical.
+if grep -q 'SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY' "$RELEASE_SH"; then
+    ok "release.sh refuses to publish while the anchor is the transition placeholder"
 else
-    fail "the pre-check removed the declared unsigned escape hatch"
+    fail "release.sh no longer refuses an unprovisioned anchor; a release nobody can install would ship"
+fi
+
+# 5. A private key FILE is the shape that breaks the premise of ADR-0151, so
+#    it is refused by default. Asserted because the cheap path is the one
+#    that gets taken by accident, and because "it works on my machine" is how
+#    a long-lived signing key ends up in a backup.
+if grep -q 'SDDK_ALLOW_FILE_SIGNER' "$RELEASE_SH"; then
+    ok "release.sh refuses a private key file signer by default (ADR-0151)"
+else
+    fail "release.sh accepts a private key file signer without an explicit acknowledgement"
+fi
+
+# 6. Partial signing must stay fatal. A release whose bundle tarball has no
+#    signature is one install.sh refuses, and the user finds out.
+# shellcheck disable=SC2016  # literal de contrato en release.sh
+if grep -qF 'SIGNED_COUNT" -ne "${#SIGN_ARTIFACTS[@]}"' "$RELEASE_SH"; then
+    ok "release.sh refuses a partially signed release"
+else
+    fail "release.sh can publish a partially signed release"
 fi
 
 # The cosign that signs a release must be a declared decision, not a third

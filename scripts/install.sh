@@ -215,86 +215,131 @@ verify_sha256() {
 #   * signature absent            -> hard failure unless the operator sets
 #     SDDK_ALLOW_UNSIGNED=1, which prints what it is doing.
 #   * cosign absent               -> same as absent, with the install line.
+# The project's public signing key, as the base64 BODY of its PEM.
+#
+# This is a copy of assets/trust/release-verify-key.pub, and
+# tests/test_install_asset_contract.sh fails when the two drift. The authority
+# is the Rust constant; this is the shell reader of it.
+#
+# A BODY, not a PEM, because the drift check is `sed`, which is line
+# oriented: a multi-line PEM compares as empty on both sides and the guard
+# passes without ever comparing a key. Verified against cosign v3.1.3 — the
+# body is only accepted with header/footer framing, which _rebuild_verify_key
+# adds.
+#
+# PROVISIONING: when the release signing key exists in the KMS, replace the
+# next line with the base64 body of its public key (one line, no PEM
+# framing), and put the same body in
+# assets/trust/release-verify-key.pub. The guard below fails
+# until both match.
+SDDK_RELEASE_VERIFY_KEY_BODY="@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@"
+
+# Legacy keyless anchor (Fulcio via GitHub Actions), retained only for
+# releases v2.2.11..v2.5.2. Its values are copies of
+# cosign::LEGACY_CERT_IDENTITY_REGEXP and cosign::LEGACY_CERT_ISSUER.
+SDDK_LEGACY_CERT_IDENTITY='^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+SDDK_LEGACY_CERT_ISSUER='https://token.actions.githubusercontent.com'
+
+# The transition placeholder is not a key. Refusing to verify against it is
+# the whole point: an unprovisioned anchor must not degrade into "accept
+# whatever the signature says".
+_rebuild_verify_key() {
+    case "$SDDK_RELEASE_VERIFY_KEY_BODY" in
+        @@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@|'')
+            echo "error: the release signing key has not been provisioned" >&2
+            echo "  assets/trust/release-verify-key.pub holds the" >&2
+            echo "  transition placeholder, not a key. Refusing to verify." >&2
+            return 1
+            ;;
+    esac
+    {
+        printf -- '-----BEGIN PUBLIC KEY-----\n'
+        printf -- '%s\n' "$SDDK_RELEASE_VERIFY_KEY_BODY"
+        printf -- '-----END PUBLIC KEY-----\n'
+    }
+}
+
 verify_signature() {
     local file="$1" sig_url="$2" label="$3"
-    local sig_file bundle_file cert_file
-    sig_file="$file.sig"
-    bundle_file="$file.bundle.json"
-    cert_file="$file.pem"
+    local sig_file bundle_file cert_file key_file
 
     if ! command -v cosign >/dev/null 2>&1; then
         _signature_absent "cosign is not installed" "$label"
         return $?
     fi
 
-    # The CI (.github/workflows/release.yml) signs in DETACHED form: it
-    # publishes <file>.sig AND <file>.pem. The bundle form is what current
-    # cosign emits with --bundle, and what `release.sh` produces locally.
-    # Both are accepted; the certificate file is required in the detached
-    # case for the reason in the flag below.
+    # The keyless releases sign DETACHED: they publish <file>.sig AND
+    # <file>.pem. The bundle form is what current cosign emits with
+    # --bundle. Both are accepted; the certificate file is required in the
+    # detached case, because a detached signature with no leaf certificate
+    # has nothing for --certificate-identity to match and cosign would fall
+    # back to trusting any certificate it likes.
     if ! download_optional "$sig_url.bundle.json" "$bundle_file"; then
         if ! download_optional "$sig_url.sig" "$sig_file"; then
             _signature_absent "no signature asset published" "$label"
             return $?
         fi
-        # The detached form needs the leaf certificate explicitly.
-        # `cosign verify-blob --signature` alone validates the signature
-        # against whatever certificate cosign decides to trust, which is
-        # the unpinned path this whole policy exists to close. Observed on
-        # cosign v3.1.3 (first signed release, v2.2.11): `--certificate-chain`
-        # carries ONLY the chain and cosign aborts with "provide a key … a
-        # certificate to verify against with --certificate, or a bundle" —
-        # the leaf must come via --certificate. That flag is what makes the
-        # identity/issuer pins below actually match something.
         download_optional "$sig_url.pem" "$cert_file" || true
     fi
 
-    local args
+    key_file="$file.sddk-anchor.pub"
+    if ! _rebuild_verify_key >"$key_file"; then
+        rm -f "$key_file"
+        return 1
+    fi
+
+    # ── Anchor 1: key-based, the one this project signs with now ────────
+    local kb_args="verify-blob --key $key_file"
     if [ -s "$bundle_file" ]; then
-        args="verify-blob --bundle $bundle_file"
-    elif [ -s "$cert_file" ]; then
-        args="verify-blob --signature $sig_file --certificate $cert_file"
+        kb_args="$kb_args --bundle $bundle_file"
     else
-        # A detached signature with no certificate cannot be pinned. Refuse
-        # rather than accept an unpinned verification, which would report
-        # success for a signature from any signer.
+        kb_args="$kb_args --signature $sig_file"
+    fi
+
+    # shellcheck disable=SC2086 # args is a deliberately word-split arg list
+    if cosign $kb_args "$file" >/dev/null 2>&1; then
+        rm -f "$key_file"
+        echo "  signature verified (cosign key-based, project signing key pinned)"
+        return 0
+    fi
+
+    # ── Anchor 2: legacy keyless, until the transition closes ───────────
+    # A detached .sig with no .pem cannot be pinned. Refuse rather than try
+    # an unpinned verification that would report success for any signer.
+    if [ ! -s "$bundle_file" ] && [ ! -s "$cert_file" ]; then
+        rm -f "$key_file"
         echo "error: detached signature for $label has no .pem certificate" >&2
         echo "  Refusing to verify without a certificate chain: --certificate-identity" >&2
         echo "  has nothing to match, so any signer would be accepted." >&2
         return 1
     fi
 
-    # Pin BOTH halves of the certificate. Two variables, never one: a
-    # single value whose meaning depended on whether it contained '@' let
-    # the GitHub Actions issuer (which has no '@') be passed as the identity,
-    # and cosign without a pinned issuer accepts the certificate against
-    # ANY issuer. That is weaker than it looks, not stronger.
-    #
-    # The subject is a REGEX, not a literal. See crates/sddk-cli/src/cosign.rs:
-    # a literal pin to one ref either matches nothing (branch ref) or breaks
-    # on the next tag, and the release workflow runs on TAGS.
-    # The defaults must stay byte-identical to that constant.
-    # tests/test_install_asset_contract.sh asserts that, so drift between the
-    # Rust and bash copies fails the suite instead of shipping a release only
-    # one of them trusts.
-    local cert_identity="${SDDK_COSIGN_IDENTITY:-^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$}"
-    local cert_issuer="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
-
+    local cert_identity="${SDDK_COSIGN_IDENTITY:-$SDDK_LEGACY_CERT_IDENTITY}"
+    local cert_issuer="${SDDK_COSIGN_ISSUER:-$SDDK_LEGACY_CERT_ISSUER}"
     if [ -z "$cert_identity" ] || [ -z "$cert_issuer" ]; then
+        rm -f "$key_file"
         echo "error: SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty" >&2
         echo "  An empty value means 'accept any signer', which proves nothing." >&2
         return 1
     fi
 
-    args="$args --certificate-identity-regexp=$cert_identity --certificate-oidc-issuer=$cert_issuer"
+    local legacy_args
+    if [ -s "$bundle_file" ]; then
+        legacy_args="verify-blob --bundle $bundle_file"
+    else
+        legacy_args="verify-blob --signature $sig_file --certificate $cert_file"
+    fi
+    legacy_args="$legacy_args --certificate-identity-regexp=$cert_identity --certificate-oidc-issuer=$cert_issuer"
 
     # shellcheck disable=SC2086 # args is a deliberately word-split arg list
-    if cosign $args "$file" >/dev/null 2>&1; then
-        echo "  signature verified (cosign keyless, identity and issuer pinned)"
+    if cosign $legacy_args "$file" >/dev/null 2>&1; then
+        rm -f "$key_file"
+        echo "  signature verified (cosign keyless legacy anchor, identity and issuer pinned)"
         return 0
     fi
 
-    echo "error: cosign verification FAILED for $label" >&2
+    rm -f "$key_file"
+    echo "error: cosign verification FAILED for $label against BOTH anchors" >&2
     echo "  Refusing to install. A present-but-invalid signature is never a" >&2
     echo "  warning: anyone who can serve artifacts can serve a bad signature," >&2
     echo "  and warning here would make that a bypass." >&2

@@ -243,6 +243,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_dev_install_source_guard.sh \
              tests/test_release_bundle_layout.sh \
              tests/test_release_bundle_step5.sh \
+             tests/test_install_asset_contract.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh; do
@@ -846,137 +847,120 @@ PY
 # that this project's own install.sh refuses, because the pin cannot match.
 # Publishing that is the worst outcome available: the failure surfaces at the
 # user's install, with a signature error that reads like tampering.
-RELEASE_CERT_ISSUER="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
-
-# Extract the issuer from the certificate cosign just minted, and refuse to
-# continue if it is not the pinned one.
-#
-# The certificate lives inside the bundle: v2 bundle format carries it as
-# base64 in `.cert` (confirmed in cosign v2.4.3 sign_blob.go, which is what
-# CI installs via cosign-installer v3.8.1's default `cosign-release`).
-# Anything unparseable is a FAILURE, never a pass: a check that cannot read
-# the certificate has not verified anything, and treating that as success is
-# how a control silently stops controlling.
-cert_issuer() {
-    local bundle_path="$1"
-    python3 - "$bundle_path" <<'PY'
-import base64, json, re, subprocess, sys, tempfile, os
-
-try:
-    bundle = json.load(open(sys.argv[1]))
-except Exception as exc:
-    sys.exit(f"unreadable bundle: {exc}")
-
-raw = None
-# v2 bundle: base64 PEM in `.cert`.
-cert = bundle.get("cert")
-if cert:
-    try:
-        raw = base64.b64decode(cert)
-    except Exception:
-        raw = None
-
-# New bundle format: the certificate chain is already PEM inside
-# `verificationMaterial.x509CertificateChain.certificates[].rawBytes`.
-if raw is None:
-    certs = (bundle.get("verificationMaterial") or {}).get(
-        "x509CertificateChain", {}).get("certificates", [])
-    for entry in certs:
-        candidate = entry.get("rawBytes")
-        if candidate:
-            try:
-                raw = base64.b64decode(candidate)
-                break
-            except Exception:
-                continue
-
-if not raw:
-    sys.exit("no certificate found in bundle")
-
-with tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False) as fh:
-    fh.write(raw)
-    pem = fh.name
-try:
-    out = subprocess.run(
-        ["openssl", "x509", "-noout", "-issuer"],
-        input=raw, capture_output=True, check=True).stdout.decode()
-finally:
-    os.unlink(pem)
-
-# `issuer=CN=...,O=...` or a URI SAN. The OIDC issuer rides in the SAN as
-# a URI, so read that rather than the RFC4514 DN, which carries the Fulcio
-# CA's name and not the OIDC provider.
-sans = subprocess.run(
-    ["openssl", "x509", "-noout", "-ext", "subjectAltName"],
-    input=raw, capture_output=True).stdout.decode()
-m = re.search(r"URI:(\S+)", sans)
-if m:
-    print(m.group(1))
-else:
-    print(out.strip())
-PY
-}
-
 SIGN_ARTIFACTS=(
     "$(basename "$BIN")"
     "$(basename "$UNIFIED")"
     "$(basename "$BUNDLE_TARBALL")"
 )
 
-# --- Pre-check: is the project identity even reachable from here? ---
+# --- 8c. cosign signatures (key-based anchor, ADR-0151) -------------------
 #
-# INC-DEBT-024 mitigacion 2. The issuer gate below is the real defense, but
-# it runs AFTER cosign has already signed, which means two bad things happen
-# first when you sign from a laptop:
+# The anchor used to be a Fulcio certificate minted by GitHub Actions'
+# OIDC provider, which only exists inside an Actions runner. This project no
+# longer uses Actions as its CI, so requiring one made releases impossible
+# to produce: the v2.5.3 attempt aborted here at step 8c. The anchor is now
+# key-based and the signing key lives in a KMS (ADR-0151).
 #
-#   1. cosign falls back to the interactive device flow, which blocks on a
-#      human opening a browser. In an unattended run that is a hang, not a
-#      failure.
-#   2. If the operator does complete it, the certificate belongs to a PERSON
-#      and the release is still wrong — the gate then rejects it, but only
-#      after the work and the browser round-trip.
+# The invariant this block still enforces is the one that matters: PUBLISHING
+# A SIGNATURE NOBODY CAN VERIFY. It is checked below by verifying what was
+# actually produced against the pinned public key, which is strictly
+# stronger than reading a certificate issuer — the old check proved "signed
+# by something", the new one proves "signed by us".
 #
-# So refuse early, with a message that says where the identity does exist.
-# Detect it the way GitHub sets it: `GITHUB_ACTIONS=true` on the runner.
+# SDDK_RELEASE_SIGNING_KEY selects the signer:
+#   * a KMS reference (awskms://…, gcpkms://…, azurekms://…, hashivault://…)
+#     — the private key never leaves the KMS. This is the supported path.
+#   * a path to a private key file — NOT the supported path. A file is a
+#     secret that can be copied out of a backup; it exists so the signing
+#     half can be exercised in tests without a cloud account. Refused unless
+#     the operator says so explicitly.
 #
-# `SDDK_ALLOW_LOCAL_SIGNING=1` is NOT an escape hatch to a good release — it
-# only reaches the issuer gate, which will still reject a personal identity.
-# It exists so the check can be falsified without a live Actions runner.
-if [ "${SDDK_SKIP_SIGNING:-0}" != "1" ] && [ "${SDDK_ALLOW_LOCAL_SIGNING:-0}" != "1" ]; then
-    if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-        die "the project's signing identity does not exist on this host.
-               Required issuer: $RELEASE_CERT_ISSUER
-               This host: not a GitHub Actions runner (GITHUB_ACTIONS != true).
+# Cosign reads COSIGN_PASSWORD from the environment. It must never be
+# exported or logged: this script never echoes the signing ref beyond its
+# scheme.
+signing_ref="${SDDK_RELEASE_SIGNING_KEY:-}"
 
-               Keyless signing mints a certificate for whatever identity the
-               OIDC provider sees. Inside GitHub Actions that is the workflow
-               running on a tag, which is what install.sh and \`sddk dev
-               update\` pin. On a workstation cosign instead asks a human to
-               open a browser and mints a certificate for that PERSON — which
-               the installers reject, so the release would be signed and
-               uninstallable.
+if [ "${SDDK_SKIP_SIGNING:-0}" != "1" ]; then
+    if [ -z "$signing_ref" ]; then
+        die "no signing key configured.
+               The release anchor is key-based as of ADR-0151, so a release
+               needs a signer. Set SDDK_RELEASE_SIGNING_KEY to a KMS
+               reference, e.g.:
 
-               Run the release from GitHub Actions (see
-               .github/workflows/release-automation.yml) so the identity is
-               the project's. To publish fully unsigned on purpose, set
-               SDDK_SKIP_SIGNING=1 — the installers will then require
-               SDDK_ALLOW_UNSIGNED=1 / SDDK_ALLOW_UNSIGNED_UPDATE=1."
+                 SDDK_RELEASE_SIGNING_KEY=awskms:///projects/P/locations/global/keyRings/SDDK/cryptoKeys/release \
+                 bash scripts/release.sh
+
+               To publish fully unsigned on purpose, set SDDK_SKIP_SIGNING=1 —
+               the installers will then require SDDK_ALLOW_UNSIGNED=1."
     fi
-    ok "signing context: GitHub Actions runner (project identity available)"
+
+    # The anchor the consumers pin. If it is still the transition marker,
+    # publishing would ship a release nobody can install.
+    anchor_file="$ROOT/assets/trust/release-verify-key.pub"
+    anchor_body="$(tr -d '\n' < "$anchor_file" 2>/dev/null | sed 's/[[:space:]]*$//')"
+    if [ -z "$anchor_body" ] || [ "$anchor_body" = "@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@" ]; then
+        die "the release signing key has not been provisioned.
+               $anchor_file holds the transition placeholder, not a public key.
+
+               Create the key in the KMS, then copy its public key body (one
+               line, base64, no PEM framing) into BOTH:
+                 - $anchor_file
+                 - scripts/install.sh (SDDK_RELEASE_VERIFY_KEY_BODY)
+
+               tests/test_install_asset_contract.sh fails until the two
+               agree. Refusing to publish: a release signed by a key its own
+               installers cannot verify is worse than no release. See
+               ADR-0151."
+    fi
+
+    # A private key FILE is the shape that breaks ADR-0151's premise. It is
+    # refused by default so the cheap path is not taken by accident; the
+    # escape hatch exists so CI can exercise the signing path without a cloud
+    # account.
+    case "$signing_ref" in
+        *.key|*.pem|/*|*.json)
+            if [ "${SDDK_ALLOW_FILE_SIGNER:-0}" != "1" ]; then
+                die "SDDK_RELEASE_SIGNING_KEY looks like a private key FILE.
+                       That is not the supported path under ADR-0151: the point
+                       of the KMS is that the private key never lands on a host.
+
+                       Use a KMS reference (awskms://…, gcpkms://…,
+                       azurekms://…, hashivault://…). If this is a test run,
+                       set SDDK_ALLOW_FILE_SIGNER=1 to acknowledge the
+                       difference."
+            fi
+            warn "SDDK_ALLOW_FILE_SIGNER=1 — signing from a private key FILE."
+            warn "  The key material exists on this host. Never use this for a real release."
+            ;;
+    esac
+    # Only the scheme is printed, never the reference itself: a KMS reference
+    # names a key ring and a crypto key, and this script does not put one in a
+    # log. An unrecognised scheme is not rejected here — cosign rejects it at
+    # signing time with a precise error, and a check here would only duplicate
+    # that with a worse message. The claim is deliberately narrow: an anchor is
+    # PRESENT, not that it is correct. Correctness is settled below, by
+    # verifying the signed artifact against it, which is the only check that
+    # cannot be satisfied by a signer's optimism.
+    ok "signing anchor present; signer scheme: ${signing_ref%%:*}"
 fi
 
 SIGNED_COUNT=0
 if command -v cosign >/dev/null 2>&1; then
     for artifact in "${SIGN_ARTIFACTS[@]}"; do
-        src="$TMP/$artifact"
-        [ -f "$src" ] || { warn "artifact missing for signing: $artifact"; continue; }
-        # New bundle format is the current one. The detached `.sig` is
-        # extracted FROM the bundle so it is a real signature, not a copy of
-        # the artifact: consumers on older cosign read `--signature`, and a
-        # file that merely looks like a signature would either fail
-        # verification (confusing) or, worse, be treated as valid.
-        if cosign sign-blob --yes --new-bundle-format \
-             --bundle "$TMP/$artifact.bundle.json" "$src" 2>"$TMP/sign-$artifact.log"; then
+        src_artifact="$TMP/$artifact"
+        [ -f "$src_artifact" ] || { warn "artifact missing for signing: $artifact"; continue; }
+        if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then
+            SIGNED_COUNT=$((SIGNED_COUNT + 1))
+            continue
+        fi
+        # --new-bundle-format is required by cosign v3.x for --bundle;
+        # observed on v3.1.3, where the older --output-signature form was
+        # removed. The detached .sig is extracted FROM the bundle so it is a
+        # real signature rather than a copy of the artifact.
+        if COSIGN_PASSWORD="${COSIGN_PASSWORD:-}" cosign sign-blob --yes \
+             --new-bundle-format --key "$signing_ref" \
+             --bundle "$TMP/$artifact.bundle.json" "$src_artifact" \
+             2>"$TMP/sign-$artifact.log"; then
             extract_detached_sig "$TMP/$artifact.bundle.json" "$TMP/$artifact.sig" \
                 || warn "could not extract detached .sig from bundle for $artifact"
             ok "signed: $artifact (.sig + .bundle.json)"
@@ -987,68 +971,68 @@ if command -v cosign >/dev/null 2>&1; then
         fi
     done
 
-    # Identity gate (INC-DEBT-024). Signing succeeding is NOT the same as
-    # signing with the identity this project pins. Check the issuer of the
-    # certificate that was actually minted, before anything is uploaded.
+    # ── The invariant: what was published must verify against the pin ──
     #
-    # One artifact is enough to establish it: every signature in this release
-    # comes from the same `cosign sign-blob` invocation shape in the same
-    # loop, so they share the identity. Checking all three would be theatre.
-    if [ "$SIGNED_COUNT" -gt 0 ]; then
+    # The old check read the issuer out of the minted certificate and
+    # compared it to a constant. That proved "signed by something that
+    # Fulcio vouched for", and it ran AFTER signing, so a laptop-signed
+    # release had already cost a browser round-trip before being refused.
+    #
+    # This verifies the artifact against the SAME key the installers pin, so
+    # the two cannot disagree. It is a real check: a wrong key, a corrupted
+    # bundle or a signature that never landed all fail here rather than in
+    # the user's terminal.
+    if [ "${SDDK_SKIP_SIGNING:-0}" != "1" ] && [ "$SIGNED_COUNT" -gt 0 ]; then
+        anchor_pem="$TMP/release-anchor.pem"
+        {
+            printf -- '-----BEGIN PUBLIC KEY-----\n'
+            printf -- '%s\n' "$anchor_body"
+            printf -- '-----END PUBLIC KEY-----\n'
+        } > "$anchor_pem"
+
         first_artifact="${SIGN_ARTIFACTS[0]}"
-        if emitted_issuer=$(cert_issuer "$TMP/$first_artifact.bundle.json"); then
-            if [ "$emitted_issuer" = "$RELEASE_CERT_ISSUER" ]; then
-                ok "signing identity verified: issuer $emitted_issuer"
-            else
-                die "signed with the WRONG identity.
-               expected issuer: $RELEASE_CERT_ISSUER
-               actual issuer:   $emitted_issuer
-
-               This release would be published signed, but unusable: install.sh
-               and \`sddk dev update\` pin the issuer above and would refuse every
-               artifact, with a signature error that reads like tampering.
-
-               The keyless identity depends on WHERE you sign. GitHub Actions
-               mints a certificate for the workflow ($RELEASE_CERT_ISSUER);
-               the local device flow mints one for a PERSON. cosign being
-               installed is not evidence that the right identity was used.
-
-               Refusing to publish. To sign with the project identity, run the
-               release from GitHub Actions (release-automation.yml). To publish
-               unsigned on purpose, set SDDK_SKIP_SIGNING=1."
-            fi
+        if cosign verify-blob --key "$anchor_pem" \
+             --bundle "$TMP/$first_artifact.bundle.json" "$TMP/$first_artifact" \
+             >/dev/null 2>&1; then
+            ok "signing identity verified: the release verifies against the pinned anchor"
         else
-            die "could not read the signing identity from $first_artifact.bundle.json.
+            die "the signed artifact does NOT verify against the pinned public key.
 
-               A check that cannot read the certificate has verified nothing,
-               and reporting success here is how a control silently stops
-               controlling. Refusing to publish."
+               This is the release nobody can install: install.sh and
+               \`sddk dev update\` pin the anchor in
+               assets/trust/release-verify-key.pub, and this
+               artifact does not satisfy it.
+
+               Refusing to publish. Check that SDDK_RELEASE_SIGNING_KEY is the
+               private key matching that anchor, and that the anchor file and
+               scripts/install.sh carry the same body."
         fi
     fi
 
     # All-or-nothing. A partially signed release is worse than an unsigned
     # one: the binary verifies while the bundle tarball does not, so the
-    # failure lands on the user at install time instead of here. The count
-    # is compared against the size of SIGN_ARTIFACTS, not against zero.
+    # failure lands on the user at install time instead of here.
     if [ "$SIGNED_COUNT" -ne "${#SIGN_ARTIFACTS[@]}" ]; then
         die "signed $SIGNED_COUNT of ${#SIGN_ARTIFACTS[@]} artifacts. Refusing to publish a partial set: a release whose bundle tarball has no signature is a release that install.sh refuses, and the user finds out instead of us.
 
-         To sign, provide an OIDC identity. In GitHub Actions it is automatic
-         (id-token: write). Locally, cosign needs the browser device flow:
-           cosign sign-blob --yes --bundle <file>.bundle.json <file>
-         Or set SDDK_SKIP_SIGNING=1 to publish fully unsigned on purpose — the
-         installers will then require SDDK_ALLOW_UNSIGNED=1 / SDDK_ALLOW_UNSIGNED_UPDATE=1."
+         To sign, set SDDK_RELEASE_SIGNING_KEY to a KMS reference. Or set
+         SDDK_SKIP_SIGNING=1 to publish fully unsigned on purpose — the
+         installers will then require SDDK_ALLOW_UNSIGNED=1."
     fi
-    ok "$SIGNED_COUNT/${#SIGN_ARTIFACTS[@]} artifacts signed"
-else
     if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then
         warn "SDDK_SKIP_SIGNING=1 — publishing UNSIGNED artifacts. Both installers"
         warn "will refuse this release unless the operator opts out explicitly."
     else
-        die "cosign is not installed and SDDK_SKIP_SIGNING is not set. Both
-         installers now require a signature, so an unsigned release would be
-         uninstallable. Install cosign, or set SDDK_SKIP_SIGNING=1 to accept
-         that knowingly. See INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY."
+        ok "$SIGNED_COUNT/${#SIGN_ARTIFACTS[@]} artifacts signed"
+    fi
+else
+    if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then
+        warn "cosign not installed; SDDK_SKIP_SIGNING=1 — publishing UNSIGNED artifacts."
+    else
+        die "cosign is not installed. Install cosign, or set SDDK_SKIP_SIGNING=1 to accept
+         that knowingly — both installers require a signature, so an unsigned
+         release would be uninstallable. See ADR-0151 and
+         INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY."
     fi
 fi
 

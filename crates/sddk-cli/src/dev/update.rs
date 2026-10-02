@@ -25,23 +25,53 @@ use std::path::Path;
 /// split can be pinned by unit tests (this crate forbids unsafe code and
 /// `std::env::set_var` is `unsafe` in edition 2024, so no test can reach
 /// argv-shaping code that reads env vars inline).
-fn cosign_argv(
+/// Build the verification argv for the key-based anchor (the primary one).
+///
+/// cosign v3.1.3 accepts a public key with `--key <path>`; there is no
+/// certificate, no identity and no issuer, because none of those exist for a
+/// key-based signature. The key file is written by the caller into a temp dir
+/// because cosign takes a PATH, not a literal.
+fn cosign_argv_keybased(
+    bundle: &Path,
+    bundle_path: &Path,
+    sig_path: &Path,
+    verify_key: &Path,
+) -> Vec<std::ffi::OsString> {
+    let mut v: Vec<std::ffi::OsString> = ["verify-blob", "--key"].iter().map(Into::into).collect();
+    v.push(verify_key.into());
+    // The bundle form carries the signature and, for older cosign, the
+    // payload digest. Prefer it; fall back to the detached pair.
+    if bundle_path.exists() {
+        v.push("--bundle".into());
+        v.push(bundle_path.into());
+    } else {
+        v.push("--signature".into());
+        v.push(sig_path.into());
+    }
+    v.push(bundle.into());
+    v
+}
+
+/// Build the verification argv for the LEGACY keyless anchor.
+///
+/// Kept only for releases v2.2.11..v2.5.2, whose signatures carry a Fulcio
+/// certificate and no public key. `cosign_argv_keybased` cannot verify those
+/// and this cannot verify the new ones; the transition window is what makes
+/// both reachable from one updater.
+///
+/// Identity and issuer are SEPARATE variables. Conflating them in one var
+/// whose meaning depends on whether the value contains '@' is a trap: the
+/// GitHub Actions issuer URL has no '@', so passing it as the identity
+/// produced `--certificate-identity=<issuer>` — and cosign, told only an
+/// identity, still requires `--certificate-oidc-issuer` or it accepts the
+/// certificate against ANY issuer. That is not a stronger check, it is a
+/// weaker one wearing a stricter-looking name.
+fn cosign_argv_keyless(
     bundle: &Path,
     sig_path: &Path,
     cert_path: &Path,
     bundle_path: &Path,
 ) -> anyhow::Result<Vec<std::ffi::OsString>> {
-    // Prefer the bundle format when present (current cosign), fall back to
-    // the detached signature for older cosign versions. The CI signs
-    // DETACHED: it publishes <file>.sig and <file>.pem.
-    //
-    // `cosign verify-blob --signature` on its own validates against whatever
-    // certificate cosign picks, which is the unpinned path this policy
-    // exists to close. The leaf certificate must be passed explicitly.
-    // Observed on cosign v3.1.3 (first signed release, v2.2.11):
-    // --certificate-chain carries only the CHAIN and cosign aborts with
-    // "provide a key … a certificate to verify against with --certificate";
-    // the leaf flag is --certificate.
     let mut argv: Vec<std::ffi::OsString> = if bundle_path.exists() {
         let mut v: Vec<std::ffi::OsString> =
             ["verify-blob", "--bundle"].iter().map(Into::into).collect();
@@ -67,20 +97,10 @@ fn cosign_argv(
             .collect()
     };
 
-    // Identity and issuer are SEPARATE variables. Conflating them in one
-    // var whose meaning depends on whether the value contains '@' is a trap:
-    // the GitHub Actions issuer URL has no '@', so passing it as the identity
-    // produced `--certificate-identity=<issuer>` — and cosign, told only an
-    // identity, still requires `--certificate-oidc-issuer` to be supplied or
-    // it accepts the certificate against ANY issuer. That is not a stronger
-    // check, it is a weaker one wearing a stricter-looking name.
-    //
-    // Defaults are the real SDDK signing identity so an operator who sets
-    // nothing gets pinning, not "any Sigstore certificate will do".
     let identity = std::env::var("SDDK_COSIGN_IDENTITY")
-        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_IDENTITY_REGEXP.to_string());
+        .unwrap_or_else(|_| crate::cosign::LEGACY_CERT_IDENTITY_REGEXP.to_string());
     let issuer = std::env::var("SDDK_COSIGN_ISSUER")
-        .unwrap_or_else(|_| crate::cosign::DEFAULT_CERT_ISSUER.to_string());
+        .unwrap_or_else(|_| crate::cosign::LEGACY_CERT_ISSUER.to_string());
 
     if identity.trim().is_empty() || issuer.trim().is_empty() {
         anyhow::bail!(
@@ -177,10 +197,53 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
         );
     }
 
-    // Verify. Shape argv via cosign_argv (unit-pinned) and run it.
-    // The CI signs detached (.sig + .pem). A .sig without a .pem gives
-    // cosign nothing to pin --certificate-identity against, so it would
-    // trust whatever certificate it likes: refuse before shaping argv.
+    // ── Verify against BOTH anchors, key-based first ─────────────────
+    //
+    // Two anchors are live during the transition: the key-based one this
+    // project signs with now, and the legacy keyless one that verified
+    // releases v2.2.11..v2.5.2. Each is a full verification with its own
+    // pinning; neither is "accept if either flag was accepted".
+    //
+    // Order is deliberate. The key-based anchor is the one that must keep
+    // working after the transition closes, so it is tried first and its
+    // failure is reported when BOTH anchors fail.
+    //
+    // Neither branch may be removed without the other's tests failing: if
+    // `attempt_keybased` is dropped, a keyless signature starts passing
+    // through it, and if `attempt_keyless` is dropped, installing v2.5.2
+    // breaks — the exact regression the legacy branch exists to avoid.
+    let key_path = bundle.with_file_name("sddk-release-verify-key.pub");
+    std::fs::write(&key_path, crate::cosign::release_verify_key_pem()).map_err(|e| {
+        anyhow::anyhow!(
+            "could not stage the release verification key at {}: {e}\n\
+             Refusing to verify: without an anchor any signature would be accepted.",
+            key_path.display()
+        )
+    })?;
+
+    let mut failures: Vec<String> = Vec::new();
+
+    let keybased = std::process::Command::new("cosign")
+        .args(cosign_argv_keybased(
+            bundle,
+            &bundle_path,
+            &sig_path,
+            &key_path,
+        ))
+        .output()?;
+    if keybased.status.success() {
+        let _ = std::fs::remove_file(&key_path);
+        return Ok(());
+    }
+    failures.push(format!(
+        "key-based anchor (project signing key): {}",
+        String::from_utf8_lossy(&keybased.stderr).trim()
+    ));
+
+    // The legacy branch needs a certificate: a detached .sig with no .pem
+    // gives cosign nothing to pin an identity against, so it would trust
+    // whatever certificate it picks. That is the unpinned path this policy
+    // exists to close, so it is refused rather than tried.
     if !bundle_path.exists() && !cert_path.exists() {
         anyhow::bail!(
             "detached signature for {} has no .pem certificate next to it.\n\
@@ -189,19 +252,31 @@ fn verify_bundle_signature(bundle: &Path, url: &str, allow_unsigned: bool) -> an
             bundle.display()
         );
     }
-    let argv = cosign_argv(bundle, &sig_path, &cert_path, &bundle_path)?;
-    let output = std::process::Command::new("cosign").args(argv).output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "cosign verification FAILED for {}\n{stderr}\n\
-             Refusing to install. A present-but-invalid signature is never a warning:\n\
-             an attacker who can serve artifacts can also serve a bad signature, and\n\
-             a warning here would turn that into a bypass.",
-            bundle.display()
-        );
+    let keyless = std::process::Command::new("cosign")
+        .args(cosign_argv_keyless(
+            bundle,
+            &sig_path,
+            &cert_path,
+            &bundle_path,
+        )?)
+        .output()?;
+    let _ = std::fs::remove_file(&key_path);
+    if keyless.status.success() {
+        return Ok(());
     }
-    Ok(())
+    failures.push(format!(
+        "legacy keyless anchor (Fulcio via GitHub Actions, until the transition closes): {}",
+        String::from_utf8_lossy(&keyless.stderr).trim()
+    ));
+
+    anyhow::bail!(
+        "cosign verification FAILED for {}\n{}\n\
+         Refusing to install. A present-but-invalid signature is never a warning:\n\
+         an attacker who can serve artifacts can also serve a bad signature, and\n\
+         a warning here would turn that into a bypass.",
+        bundle.display(),
+        failures.join("\n  ")
+    );
 }
 
 /// Reject tarball members that would write outside the extraction root.
@@ -730,6 +805,116 @@ mod tests {
     use super::*;
     use std::fs;
 
+    // ── key-based anchor argv ─────────────────────────────────────────
+    //
+    // The key-based shaper must pass --key and the blob, and must NOT pass
+    // certificate flags: there is no certificate, no identity and no issuer
+    // in a key-based signature, and passing them would make cosign reject
+    // the call for a reason that reads like tampering.
+
+    #[test]
+    fn keybased_argv_pins_the_project_key_and_the_blob() {
+        let dir = tempdir_for_test("argv-keybased");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        let bundle_form = dir.join("b.tar.gz.bundle.json");
+        fs::write(&bundle_form, b"{}").unwrap();
+        let key = dir.join("sddk-release-verify-key.pub");
+        fs::write(&key, crate::cosign::release_verify_key_pem()).unwrap();
+
+        let argv = cosign_argv_keybased(&bundle, &bundle_form, &dir.join("b.tar.gz.sig"), &key);
+        let s: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert_eq!(s[0], "verify-blob");
+        assert_eq!(
+            *s.last().unwrap(),
+            bundle.to_string_lossy(),
+            "the blob must be the single positional, got {s:?}"
+        );
+        let key_at = s
+            .iter()
+            .position(|a| a == "--key")
+            .unwrap_or_else(|| panic!("--key must be present: {s:?}"));
+        assert_eq!(
+            s[key_at + 1],
+            key.to_string_lossy(),
+            "--key must be followed by the key path: {s:?}"
+        );
+    }
+
+    #[test]
+    fn keybased_argv_never_passes_certificate_flags() {
+        // Regression-shaped assertion, not a spot check: if any certificate
+        // flag ever reaches this shaper, cosign fails for a reason that has
+        // nothing to do with the artifact.
+        let dir = tempdir_for_test("argv-keybased-nocert");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        let key = dir.join("k.pub");
+        fs::write(&key, crate::cosign::release_verify_key_pem()).unwrap();
+
+        for bundle_form in [dir.join("b.tar.gz.bundle.json"), dir.join("absent.json")] {
+            let argv = cosign_argv_keybased(&bundle, &bundle_form, &dir.join("b.sig"), &key);
+            let s: Vec<String> = argv
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            for forbidden in [
+                "--certificate-identity-regexp",
+                "--certificate-oidc-issuer",
+                "--certificate",
+                "--certificate-chain",
+            ] {
+                assert!(
+                    !s.iter().any(|a| a.starts_with(forbidden)),
+                    "{forbidden} must never reach the key-based shaper: {s:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_two_shapers_produce_mutually_exclusive_argv() {
+        // The anchors are distinguished by which flags they pass. If they
+        // ever converged, a signature valid for one would be attempted under
+        // the other's pinning and the transition would stop discriminating.
+        let dir = tempdir_for_test("argv-two-anchors");
+        let bundle = dir.join("b.tar.gz");
+        fs::write(&bundle, b"payload").unwrap();
+        let bundle_form = dir.join("b.tar.gz.bundle.json");
+        fs::write(&bundle_form, b"{}").unwrap();
+        let cert = dir.join("b.tar.gz.pem");
+        fs::write(&cert, b"cert").unwrap();
+        let key = dir.join("k.pub");
+        fs::write(&key, crate::cosign::release_verify_key_pem()).unwrap();
+
+        let kb: Vec<String> = cosign_argv_keybased(&bundle, &bundle_form, &dir.join("b.sig"), &key)
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let kl: Vec<String> = cosign_argv_keyless(&bundle, &bundle_form, &dir.join("b.sig"), &cert)
+            .unwrap()
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            kb.contains(&"--key".to_string()) && !kl.contains(&"--key".to_string()),
+            "only the key-based shaper passes --key"
+        );
+        assert!(
+            kl.iter()
+                .any(|a| a.starts_with("--certificate-identity-regexp="))
+                && !kb
+                    .iter()
+                    .any(|a| a.starts_with("--certificate-identity-regexp=")),
+            "only the legacy shaper pins a certificate identity"
+        );
+    }
+
     // ── signature policy (authenticidad, INC-AUDIT-S14-SUPPLY-CHAIN-AUTHENTICITY) ──
     //
     // Estos tests NO invocan cosign. Pinear el comportamiento de "hay firma
@@ -867,7 +1052,7 @@ mod tests {
         fs::write(&bundle, b"payload").unwrap();
         let bundle_form = dir.join("b.tar.gz.bundle.json");
         fs::write(&bundle_form, b"{}").unwrap();
-        let argv = cosign_argv(
+        let argv = cosign_argv_keyless(
             &bundle,
             &dir.join("b.tar.gz.sig"),
             &dir.join("b.tar.gz.pem"),
@@ -927,7 +1112,8 @@ mod tests {
         let cert = dir.join("b.tar.gz.pem");
         fs::write(&sig, b"sig").unwrap();
         fs::write(&cert, b"cert").unwrap();
-        let argv = cosign_argv(&bundle, &sig, &cert, &dir.join("absent.bundle.json")).unwrap();
+        let argv =
+            cosign_argv_keyless(&bundle, &sig, &cert, &dir.join("absent.bundle.json")).unwrap();
         let s: Vec<String> = argv
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
@@ -983,7 +1169,7 @@ mod tests {
         fs::write(&bundle, b"p").unwrap();
         let bundle_form = dir.join("b.tar.gz.bundle.json");
         fs::write(&bundle_form, b"{}").unwrap();
-        let argv = cosign_argv(
+        let argv = cosign_argv_keyless(
             &bundle,
             &dir.join("b.tar.gz.sig"),
             &dir.join("b.tar.gz.pem"),

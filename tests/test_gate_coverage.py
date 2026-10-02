@@ -77,9 +77,6 @@ EXCEPTIONS: dict[str, str] = {
         "verifica el release PUBLICO contra la API de GitHub (curl/gh). "
         "Requiere red y un tag publicado; en un release aun no lo hay."
     ),
-    "test_install_asset_contract.sh": (
-        "requiere red + `gh`: descarga assets del release publicado."
-    ),
     "test_release_bump_derivation.sh": (
         "deriva la version consultando el remoto; requiere red."
     ),
