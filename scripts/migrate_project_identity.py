@@ -278,9 +278,93 @@ def selfcheck() -> tuple[bool, list[str]]:
 # ───────────────────────────── descubrimiento del storage ─────────────────────
 
 def roots() -> tuple[Path, Path]:
+    # `SDDK_STATE_HOME` manda sobre `XDG_STATE_HOME`, igual que
+    # `sddk_engine::state_base` (INC-DEBT-037). Este script solo miraba
+    # `XDG_STATE_HOME`, asi que con `SDDK_STATE_HOME` definida la CLI escribia
+    # el fichero de aliases ahi y el audit lo buscaba en otro sitio: el
+    # instrumento y el mecanismo median almacenamientos distintos sin que
+    # ninguno de los dos se quejara.
     share = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "sddk"
-    state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "sddk"
+    state = Path(
+        os.environ.get("SDDK_STATE_HOME")
+        or os.environ.get("XDG_STATE_HOME")
+        or Path.home() / ".local/state"
+    ) / "sddk"
     return share, state
+
+
+# Tope de saltos: el MISMO valor que `MAX_ALIAS_HOPS` en
+# `crates/sddk-domain/src/identity.rs`. Si divergen, este script dejaria de
+# medir lo que el runtime hace, que es justo su trabajo.
+MAX_ALIAS_HOPS = 16
+
+
+def load_aliases(state: Path) -> dict[str, str]:
+    """Carga `project-aliases.json`. Ausente = tabla vacia, no error.
+
+    Una maquina que nunca declaro un alias es el caso normal. Un fichero
+    ilegible, en cambio, SÍ es un fallo: si no se puede leer la tabla y el
+    audit no lo dice, dira "nada que migrar" cuando en realidad no puede
+    saberlo.
+    """
+    path = state / "project-aliases.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise AliasTableUnreadable(f"{path}: {exc}") from exc
+    if data.get("schema_version") != 1:
+        raise AliasTableUnreadable(
+            f"{path}: schema_version {data.get('schema_version')!r}, este build acepta 1"
+        )
+    table: dict[str, str] = {}
+    for entry in data.get("aliases", []):
+        table[entry["from_id"]] = entry["to_id"]   # la PRIMERA entrada gana
+    return table
+
+
+class AliasTableUnreadable(RuntimeError):
+    pass
+
+
+def resolve_alias(pid: str | None, table: dict[str, str]) -> tuple[str | None, list[str]]:
+    """Sigue la cadena de aliases. Devuelve (id_final, saltos)."""
+    if pid is None:
+        return None, []
+    seen = [pid]
+    hops: list[str] = []
+    current = pid
+    for _ in range(MAX_ALIAS_HOPS + 1):
+        nxt = table.get(current)
+        if nxt is None or nxt == current:
+            return current, hops
+        if nxt in seen:
+            raise AliasTableUnreadable(
+                "ciclo de aliases: " + " -> ".join(seen + [nxt])
+            )
+        hops.append(current)
+        seen.append(nxt)
+        current = nxt
+    raise AliasTableUnreadable(
+        f"cadena de aliases mas larga que {MAX_ALIAS_HOPS} saltos: "
+        + " -> ".join(seen)
+    )
+
+
+def validate_aliases(table: dict[str, str]) -> None:
+    """Resuelve TODAS las entradas antes de usarlas. Falla cerrado.
+
+    Sin esta pasada, un ciclo solo se descubre cuando algun receipt pasa por
+    el, y entonces revienta con traceback y un exit ambiguo en vez de un
+    informe. Se valida la tabla entera al leerla — que es lo mismo que hace
+    el store en Rust (`store_alias_table_at` resuelve cada entrada antes de
+    escribir) — y asi el audit tiene un unico camino de fallo, no uno por
+    cada sitio donde se resuelve.
+    """
+    for start in table:
+        resolve_alias(start, table)
+
 
 
 def iter_receipts(share: Path):
@@ -302,8 +386,18 @@ def iter_receipts(share: Path):
         yield p, data, None
 
 
-def current_id_for(receipt: dict) -> tuple[str | None, str]:
-    """Devuelve (project_id_actual, como_se_resolvio)."""
+def current_id_for(receipt: dict, aliases: dict[str, str]) -> tuple[str | None, str]:
+    """Devuelve (project_id_actual, como_se_resolvio).
+
+    Aplica la tabla de aliases (ADR-0152) DESPUÉS de derivar, que es el orden
+    que usa el runtime: primero el pin o la derivación, luego el alias. Sin
+    esta línea el audit daría 15 aliases declarados y los 25 receipts
+    seguirían apareciendo como huérfanos — el instrumento no vería lo que el
+    mecanismo hace, y "audit en 0" sería un criterio que no se puede cumplir.
+
+    Un alias NO declarado sigue dando huérfano: la corrección mide la
+    convergencia, no la borra.
+    """
     remote = receipt.get("remote_url")
     seed = receipt.get("fallback_seed")
     scope = receipt.get("scope")
@@ -313,10 +407,16 @@ def current_id_for(receipt: dict) -> tuple[str | None, str]:
         norm = normalize_remote_url(remote)
         if norm is None:
             return None, f"remote no normalizable: {remote}"
-        return stable_project_id(norm, scope), f"remote normalizado: {norm}"
-    if seed:
-        return stable_fallback_project_id(seed, scope), "fallback seed"
-    return None, "sin remote ni fallback_seed (no se puede derivar)"
+        derived, how = stable_project_id(norm, scope), f"remote normalizado: {norm}"
+    elif seed:
+        derived, how = stable_fallback_project_id(seed, scope), "fallback seed"
+    else:
+        return None, "sin remote ni fallback_seed (no se puede derivar)"
+
+    final, hops = resolve_alias(derived, aliases)
+    if hops:
+        how = f"{how}; alias {' -> '.join(hops + [final])}"
+    return final, how
 
 
 def audit(as_json: bool) -> int:
@@ -328,18 +428,41 @@ def audit(as_json: bool) -> int:
         return 3
 
     share, state = roots()
+    # Fail-closed: una tabla ilegible NO se trata como tabla vacía. Sin esto,
+    # un fichero corrupto haría que el audit reportara "0 huérfanos" precisamente
+    # porque no pudo leer los aliases — el peor falso verde posible.
+    try:
+        aliases = load_aliases(state)
+        validate_aliases(aliases)
+    except AliasTableUnreadable as exc:
+        print(
+            f"NO SE PUEDE LEER LA TABLA DE ALIASES: {exc}\n"
+            "  esto NO es lo mismo que 'no hay aliases'. Sin ella el audit no\n"
+            "  puede afirmar nada sobre la convergencia, asi que falla.",
+            file=sys.stderr,
+        )
+        return 4
+
     rows = []
     for path, data, error in iter_receipts(share):
         if error or data is None:
             rows.append({"receipt": str(path), "error": error})
             continue
         stored = data.get("project_id")
-        actual, how = current_id_for(data)
+        actual, how = current_id_for(data, aliases)
+        # La comparacion es sobre la FORMA RESUELTA, no sobre las cadenas.
+        # Convergence significa "los dos apuntan al mismo proyecto", no "los
+        # dos tienen el mismo texto": un receipt que nombra el id de la
+        # re-adopcion (Y) sigue apuntando al proyecto correcto a traves del
+        # alias, y comparando literales lo declararia divergente para siempre.
+        # Un receipt cuyo id no resuelve a nada sigue dando huerfano.
+        stored_final, _ = resolve_alias(stored, aliases)
         rows.append({
             "receipt": str(path),
             "stored": stored,
+            "stored_resolved": stored_final,
             "actual": actual,
-            "orphaned": bool(actual) and actual != stored,
+            "orphaned": bool(actual) and actual != stored_final,
             "resolved_by": how,
             "remote": data.get("remote_url"),
             "workspace_path": data.get("canonical_workspace_path"),
