@@ -20,11 +20,7 @@ pub enum HtmlExportError {
 pub fn export_html(index: &VaultIndex, graph: &GraphView) -> Result<String, HtmlExportError> {
     let nodes_json =
         serde_json::to_string(&index.nodes.iter().map(export_node).collect::<Vec<_>>())?;
-    let graph_json = serde_json::to_string(&GraphExport {
-        cyclic: graph.cyclic,
-        sample_cycle: graph.sample_cycle.clone(),
-        topological_order: graph.topological_order.clone(),
-    })?;
+    let graph_json = serde_json::to_string(&GraphExport::from(graph))?;
 
     let mut html = String::new();
     writeln!(html, "<!DOCTYPE html>").unwrap();
@@ -87,11 +83,52 @@ fn export_node(node: &VaultNode) -> serde_json::Value {
     })
 }
 
+/// The graph as the exported page sees it.
+///
+/// This is a **second declaration of the same fact** that `vault graph` declares
+/// in its own JSON, not a rendering of the first. It was a hand-written struct
+/// with three fields, which is how the two drifted apart: with a vault of two
+/// disjoint cycles the page reported a `sample_cycle` and never said how many
+/// cycles there were, and reported a missing `topological_order` without saying
+/// why — the same omission `vault graph` had just stopped making, in a surface
+/// nobody was looking at.
+///
+/// The `skip_serializing_if` attributes are **load-bearing, not cosmetic**. They
+/// mirror `GraphView`'s, because the two surfaces have to agree on which keys are
+/// *present* and not only on their values: without them this struct emits
+/// `"topological_order": null` where `GraphView` omits the key entirely, and a
+/// consumer comparing the two documents sees a difference where there is none
+/// in meaning.
 #[derive(Serialize)]
 struct GraphExport {
     cyclic: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     sample_cycle: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cycle_count: Option<u64>,
+    multiple_cycles: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topological_order_absent_because: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     topological_order: Option<Vec<String>>,
+}
+
+impl From<&GraphView> for GraphExport {
+    /// Field-by-field, so adding a field to `GraphView` without deciding what the
+    /// page should say about it is a compile error rather than a silent
+    /// divergence. That inversion of control is the actual fix: the previous
+    /// mapping was a struct literal at the call site, and a call site is not
+    /// where a compiler looks.
+    fn from(graph: &GraphView) -> Self {
+        Self {
+            cyclic: graph.cyclic,
+            sample_cycle: graph.sample_cycle.clone(),
+            cycle_count: graph.cycle_count,
+            multiple_cycles: graph.multiple_cycles,
+            topological_order_absent_because: graph.topological_order_absent_because.clone(),
+            topological_order: graph.topological_order.clone(),
+        }
+    }
 }
 
 fn escape(value: &str) -> String {

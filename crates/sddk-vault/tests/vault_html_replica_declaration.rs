@@ -55,7 +55,9 @@ fn embedded_graph(html: &str) -> serde_json::Value {
         .expect("the export embeds the graph for the page to consume")
         + "window.__vault_graph__=".len();
     let rest = &html[start..];
-    let end = rest.find(';').expect("the assignment is terminated by a semicolon");
+    let end = rest
+        .find(';')
+        .expect("the assignment is terminated by a semicolon");
     serde_json::from_str(&rest[..end]).expect("the embedded literal is valid JSON")
 }
 
@@ -71,16 +73,34 @@ fn r1_embedded_graph_declares_the_cycle_count() {
     two_cycle_vault(dir.path());
     let e = embedded_graph(&html_for(dir.path()));
 
+    // This first version of the assertion was "the key `cycle_count` is
+    // present", and it FAILED against a correct implementation. It was the test
+    // that was wrong, not the product: the saturated form deliberately omits
+    // `cycle_count` when the answer is "more than one", because `None` is the
+    // encoding of "2 or more" and `multiple_cycles: true` is what makes it
+    // distinguishable from "absent". Requiring the key to be present would
+    // re-introduce exactly the ambiguity this cycle set out to remove — and it
+    // would have forced a `cycle_count: null` that `vault graph` does not emit,
+    // which is a divergence of the opposite sign.
+    //
+    // So the property is not presence. It is: the embedded graph says how many
+    // cycles there are, in one of the two forms the saturated contract allows.
+    let exact = e.get("cycle_count").and_then(|v| v.as_u64());
+    let multiple = e.get("multiple_cycles").and_then(|v| v.as_bool());
     assert!(
-        e.get("cycle_count").is_some(),
-        "the embedded graph must carry `cycle_count`. Measured absent today: the \
-         HTML declares `sample_cycle` and never says how many there are, which is \
-         the same omission `vault graph` just stopped making. Got: {e}"
+        exact == Some(1) || (exact.is_none() && multiple == Some(true)),
+        "the embedded graph must say how many cycles there are, in the saturated \
+         form: an exact count when it is 0 or 1, and `multiple_cycles: true` with \
+         no count when it is 2 or more. Anything else leaves a reader unable to \
+         tell 'more than one' from 'not computed'. Got: {e}"
     );
-    assert!(
-        e.get("multiple_cycles").is_some(),
-        "`cycle_count` alone is not enough: `None` has to be distinguishable from \
-         'the field is missing', so the boolean has to travel with it. Got: {e}"
+    assert_eq!(
+        multiple,
+        Some(true),
+        "this fixture has two disjoint cycles, so the saturated form is the only \
+         correct one. If this ever reads 2 cycles, `dfs_cycle` found one — and \
+         then this test would be measuring the wrong graph, not a wrong export. \
+         Got: {e}"
     );
 }
 
@@ -95,7 +115,8 @@ fn r2_embedded_graph_explains_the_absent_topological_order() {
         "precondition: a cyclic graph has no topological order: {e}"
     );
     assert_eq!(
-        e.get("topological_order_absent_because").and_then(|v| v.as_str()),
+        e.get("topological_order_absent_because")
+            .and_then(|v| v.as_str()),
         Some("cyclic"),
         "an absent topological order must SAY that it is absent and why. Today the \
          field is simply not in the embedded JSON, which reads as 'not computed' \
