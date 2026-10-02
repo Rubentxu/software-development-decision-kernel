@@ -51,6 +51,48 @@ references:
 > defecto del producto. Se deja escrito porque el número que sostenía un
 > documento publicado era el del guard.
 
+> ## ⚠️ CORRECCIÓN DE ESTADO (2026-10-03, session-69m)
+>
+> **La primera pieza del remedio se aplicó en session-69c, y el titular de este
+> documento —«Ninguna superficie del producto enumera los ciclos»— es FALSO
+> desde entonces.** No se reescribe: se conserva arriba como evidencia de lo que
+> se creía, y esta corrección va delante para que nadie lo lea sin ella.
+>
+> **Medido hoy, sobre una copia byte-identica del ledger:**
+>
+> | | antes | hoy (session-69m) |
+> |---|---|---|
+> | `sddk cycle list` | **no existía** | **102 ciclos**, desglose 72 `CLOSED` + 25 `OPEN` + 1 `PAUSED` + 1 `RELEASED` + 3 `RELEASE_PENDING` |
+> | ciclos del proyecto sin hecho | 23, **no nombrados** | 18, **nombrados** — verificado en vivo para `m0-inventory-baseline`, `architecture-adoption-m0-supersension` y `kernel-cycle-56-backlog-ledger` |
+> | filas `__spine_import__` | 79, sin nombrar | 79, **siguen sin nombrar por ninguna superficie** |
+> | filas totales en `cycles` | 181 | 181 |
+>
+> **El 97 y el 91 del titular reconcilian exactamente** con la medición de hoy,
+> y eso confirma que la detección original era correcta:
+>
+> - **97** filas sin hecho = **79** (`__spine_import__`) + **18** (del proyecto)
+> - **91** `OPEN` = **79** + **12**
+>
+> El 97 nunca fue una población: era la **suma** de las dos. La corrección de
+> session-69d las separó y no volvió a sumarlas, y por eso el titular quedó
+> imposible de leer.
+>
+> **Lo que queda abierto, con precisión:** las **79** filas `__spine_import__` —
+> todas `OPEN`/`build`, **cero** hechos, y **alcanzables por ninguna superficie**.
+> `cycle list` infiere el proyecto del checkout y **no acepta `--project-id`**, y
+> no existe ningún comando que **enumere proyectos** (`project resolve` resuelve
+> la identidad de un checkout, no de un id arbitrario), luego no hay forma de
+> pedirle la lista de ese proyecto. Siguen siendo el residuo de importación que
+> la propia sección *Remedio* definía como decisión del operador.
+>
+> **Y la severidad se re-plantea, pero no se baja aquí.** El razonamiento de
+> `high` se apoyaba en que el rodeo consiste en «rodear el producto entero y leer
+> su almacenamiento a mano». Para los 18 ciclos del proyecto eso **ya no hace
+> falta** — `sddk cycle list` los nombra. Para las 79 filas de `__spine_import__`
+> sigue haciendo falta. El propio documento reserva esa bajada a `medium` a la
+> **decisión del operador**, y una severidad no se degrada por el criterio de
+> quien la escribió.
+
 ## Qué es
 
 El ledger del proyecto `p-63676b11dc0ef88f` tiene **179 filas en la tabla
@@ -155,7 +197,34 @@ Que sea mayor no cambia el hecho y por eso se declara SKIP, no PASS.
 4. **F63** — `sddk ledger events` **sin** `--limit` declara cuántos eventos hay
    del total, o falla; hoy devuelve 50 de 590 sin decirlo.
 
-## Remedio, no aplicado
+## Remedio: la pieza 1 aplicada, la pieza 2 abierta
+
+> El título de esta sección decía «Remedio, **no aplicado**». Era cierto cuando
+> se escribió y dejó de serlo en session-69c. Se conserva el texto original
+> debajo, y la corrección va delante.
+
+Dos piezas, y la segunda no depende de la primera:
+
+1. ~~`Storage::list_cycles(project_id, estado_opcional)` más `sddk cycle list`.~~
+   **APLICADA** en session-69c (commit `113f84ba`), con los cuatro falsificadores
+   entregados: F60 siembra 3 ciclos en storage limpio y la enumeración devuelve
+   3; F61 un ciclo `CLOSED` aparece; F62 un ciclo **sin eventos** aparece —que es
+   exactamente el error que produce estas filas—; y F63 también entró, en la
+   misma familia, por tres superficies successive.
+2. **ABIERTA.** Decidir qué se hace con las filas sin hecho. La medición de
+   session-69m las separa con precisión: **79** son `__spine_import__` —residuo de
+   importación, todos `OPEN`/`build`, cero hechos, y no nombradas por ninguna
+   superficie porque `cycle list` acota al `project_id` real— y **18** son ciclos
+   del propio proyecto que **ya son visibles** desde session-69c. Si las 79 son
+   Objects sin Fact legítimos, su estado necesita una fuente de verdad declarada;
+   si son residuo, limpiarlas es destructivo. **No se hace nada sin esa decisión,
+   que es del operador.**
+
+   Lo que sí se ha hecho, y era lo que faltaba para que la decisión sea informed:
+   **medir cuál es cuál**, porque el titular trataba las 97 como una sola cosa y
+   no lo son.
+
+### El texto original de esta sección, conservado
 
 Dos piezas, y la segunda no depende de la primera:
 

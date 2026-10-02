@@ -296,6 +296,27 @@ c3_progress:
 # INC-DEBT-062 pasa a `resolved`. Su seccion Medicion citaba
 # `03-medir-watch.py` y 598 eventos; lo cierto es `09-medir-export.py` y 600.
 # Se corrige al cerrar, no antes.
+# INC-DEBT-060, VERIFICADA EN SESION-69M, Y SU TITULAR RESULTADO FALSO. El
+# objetivo pide comprobar que los criterios de la deuda sigan vigentes, y aqui
+# ya no lo son: la pieza 1 del remedio se APLICO en session-69c (`cycle list` +
+# `Storage::list_cycles`), luego el titular «ninguna superficie del producto
+# enumera los ciclos» es FALSO desde entonces, y la seccion «Remedio, no
+# aplicado» tambien. Medido hoy sobre copia byte-identica: `cycle list` declara
+# 102 ciclos con desglose 72 CLOSED + 25 OPEN + 1 PAUSED + 1 RELEASED + 3
+# RELEASE_PENDING, y los 18 ciclos SIN hecho aparecen (verificado en vivo), que
+# es el falsificador F62 sostiene contra el producto de hoy. LAS CIFRAS
+# ORIGINALES RECONCILIAN EXACTAMENTE, lo que confirma que la deteccion era
+# correcta: 97 filas sin hecho = 79 `__spine_import__` + 18 del proyecto, y 91
+# OPEN = 79 + 12. El 97 NUNCA fue una poblacion, era la SUMA de las dos, que la
+# correccion de 69d separo sin volver a sumar. Lo que queda abierto son las 79
+# filas `__spine_import__`: todas OPEN/build, cero hechos, y ALCANZABLES POR
+# NINGUNA SUPERFICIE (cycle list infiere el proyecto del checkout y no acepta
+# --project-id, y no hay comando que enumere proyectos). Su limpieza es
+# destructiva y sigue siendo decision del operador.
+# LA SEVERIDAD SE RE-PLANTEA Y NO SE BAJA AQUI: el razonamiento de `high` se
+# apoyaba en que el rodeo es leer el almacenamiento a mano, y para los 18 eso ya
+# no hace falta. El propio documento reserva la bajada a `medium` al operador, y
+# una severidad no se degrada por el criterio de quien la escribio.
 # La auditoria de superficies que truncan esta AGOTADA: de 5 candidatas
 # quedaron 2 defectos reales, los dos cerrados. No se repite.
 next_action: "Session-22 addendum (quater). (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."

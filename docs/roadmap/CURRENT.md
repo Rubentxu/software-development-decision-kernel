@@ -28,7 +28,7 @@
 2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
 3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
 4. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente. Se recomienda enmendar; **no se ejecuta aquí** (son documentos de ciclos cerrados).
-5. **INC-DEBT-060**: 79 filas `__spine_import__` y 23 ciclos sin hecho (17 `OPEN`).
+5. **INC-DEBT-060**: la pieza 1 del remedio quedó **aplicada** en session-69c y su titular —«ninguna superficie del producto enumera los ciclos»— es **falso desde entonces**: `sddk cycle list` enumera los **102** ciclos del proyecto, incluidos los 18 que no tienen hecho, verificado en vivo. Queda abierta **solo** la decisión del operador sobre las **79** filas `__spine_import__`, que no son alcanzables por ninguna superficie. Reconciliado con la medición de hoy: **97 = 79 + 18** y **91 `OPEN` = 79 + 12** — el 97 original nunca fue una población, era la suma de las dos, que session-69d separó sin volver a sumar.
 6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
 7. **La auditoría de superficies que truncan está agotada** y no se repite: medida, y de 5 candidatas quedaron 2 defectos reales.
 
