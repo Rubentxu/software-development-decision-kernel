@@ -18,9 +18,10 @@
 //! all, so a machine cannot read `export`'s answer because there is no shape to
 //! read it in. The declared form exists; it is just not the one in force.
 //!
-//! **These are RED today, at the CLI level, on purpose.** A storage-level test
-//! calling a function that does not exist is a compile error, and a RED bought
-//! by breaking the build takes the whole crate down with it.
+//! **These were committed RED, at the CLI level, on purpose, and are GREEN as of
+//! the fix.** A storage-level test calling a function that does not exist is a
+//! compile error, and a RED bought by breaking the build takes the whole crate
+//! down with it.
 //!
 //! The reference total is never hard-coded: it is read from `ledger events`,
 //! the sibling surface that already declares. So these tests compare two
@@ -169,9 +170,9 @@ fn declaration_phrase(out: &str) -> String {
         .to_string()
 }
 
-/// RED today: with the cap above the total nothing is left out — which is
-/// exactly when a declaration that only appears on the interesting case goes
-/// missing. An untruncated export is the case nobody suspects.
+/// Committed RED, now GREEN: with the cap above the total nothing is left out —
+/// which is exactly when a declaration that only appears on the interesting case
+/// goes missing. An untruncated export is the case nobody suspects.
 #[test]
 fn r1_text_declares_the_total_even_when_nothing_is_left_out() {
     let s = Sandbox::new("no-left-out");
@@ -200,18 +201,36 @@ fn r1_text_declares_the_total_even_when_nothing_is_left_out() {
     );
 }
 
-/// RED today, and this one is about the FORM, not the number: `--format` is an
-/// unknown argument, so a machine cannot read `export`'s answer at all. It is
-/// also the guard for O3: the JSON has to come from `ExportOutput`, the struct
-/// that already derives `Serialize`, and a test that only checks the payload
-/// would not notice a second, parallel serializer.
+/// Committed RED, now GREEN. This one is about the FORM first: `--format` did
+/// not exist, so a machine could not read `export`'s answer at all. It is also
+/// the guard for O3: the JSON has to come from `ExportOutput`, the struct that
+/// already derives `Serialize`, and a test that only checks the payload would
+/// not notice a second, parallel serializer.
+///
+/// It asserts one number too — that `total_events` is the real one — and that
+/// assertion is what the falsifier found vacuous until the fixture grew a second
+/// event. See the comment on the fixture below.
 #[test]
 fn r2_json_format_exists_and_carries_the_declaration() {
     let s = Sandbox::new("json-shape");
     adopt(s.path());
     cycle_start(s.path(), "alpha");
+    // TWO cycles, not one, and the reason is measured. With a single cycle this
+    // fixture holds exactly ONE event, so the number asserted below would also
+    // be what a hard-coded `total_events = 1usize` prints: the mutation is
+    // indistinguishable from the truth and the assertion cannot fail. Measured
+    // in session-69m with `11-medir-fixture-r2.py`: 1 cycle -> 1 event,
+    // 2 -> 2, 3 -> 3. A guard that cannot fail for the reason it names is
+    // decoration, and the falsifier is what said so — M1 was reported as
+    // "undetected" here while R1 and R3 caught it.
+    cycle_start(s.path(), "beta");
 
     let total = real_total(s.path());
+    assert!(
+        total > 1,
+        "this fixture must hold more than one event or the total asserted below \
+         cannot distinguish a real count from a constant: {total}"
+    );
     let out = s.out("export.jsonl");
     let (code, stdout) = export(s.path(), &out, &["--limit", "1", "--format", "json"]);
 
@@ -244,10 +263,10 @@ fn r2_json_format_exists_and_carries_the_declaration() {
     );
 }
 
-/// RED today. And this is the guard for "derived, not hand-written": the three
-/// numbers are produced by the same subtraction, and a `pending` typed in by
-/// hand passes R1 and R2 — both of which only require the fields to exist and
-/// the total to be right — and dies here.
+/// Committed RED, now GREEN. And this is the guard for "derived, not
+/// hand-written": the three numbers are produced by the same subtraction, and a
+/// `pending` typed in by hand passes R1 and R2 — both of which only require the
+/// fields to exist and the total to be right — and dies here.
 #[test]
 fn r3_the_three_numbers_close() {
     let s = Sandbox::new("closure");
@@ -294,9 +313,10 @@ fn r3_the_three_numbers_close() {
     );
 }
 
-/// RED today, and this is the guard that makes the cycle worth its name: a
-/// cheaper count that ignores the filter is not a cheaper declaration, it is a
-/// false one. `--cycle X` must report the events of X, not of the ledger.
+/// Committed RED, now GREEN, and this is the guard that makes the cycle worth
+/// its name: a cheaper count that ignores the filter is not a cheaper
+/// declaration, it is a false one. `--cycle X` must report the events of X, not
+/// of the ledger.
 #[test]
 fn r4_the_total_belongs_to_the_queried_cycle() {
     let s = Sandbox::new("cycle-filter");
