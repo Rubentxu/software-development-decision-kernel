@@ -22,21 +22,39 @@
 
 use std::path::Path;
 
-use sddk_vault::{NodeKind, VaultIndex, VaultNode, export_html, graph_view, parse_vault};
+use sddk_vault::{NodeKind, VaultIndex, export_html, graph_view, parse_vault};
 
-/// The field list, read off the struct definition rather than restated, so this
-/// file cannot itself go stale the way the code under test can.
-fn vault_node_fields() -> Vec<String> {
-    vec![
-        "id".into(),
-        "kind".into(),
-        "path".into(),
-        "title".into(),
-        "status".into(),
-        "tags".into(),
-        "body".into(),
-        "wikilinks".into(),
-    ]
+/// The field list, **derived from the type** by asking serde for it.
+///
+/// Two earlier versions of this helper were wrong, and both wrong in the way
+/// that matters here:
+///
+/// 1. It returned a **restated literal** of the eight field names. That is the
+///    defect under test wearing a different hat — a hand-written list of what
+///    the struct has, in the one place whose job is to notice when the
+///    hand-written list stops matching.
+/// 2. It built a `VaultNode { … }` literal to serialise. Then a field added to
+///    the struct made **this test file stop compiling**, so the mutation was
+///    "caught" — by a `missing field` error in a helper, before any assertion
+///    ran. A guard that fires for the wrong reason is the same shape as a guard
+///    that does not fire, and it hides the message that would have been useful.
+///
+/// So the probe is a node **parsed from a real fixture**, never a literal: the
+/// list always reflects whatever the struct currently has, and the test always
+/// compiles so the assertion can do the reporting.
+fn vault_node_fields(root: &Path) -> Vec<String> {
+    let index = parse_vault(root).expect("the fixture vault parses");
+    let node = index
+        .nodes
+        .first()
+        .expect("the fixture vault has at least one node");
+    serde_json::to_value(node)
+        .expect("a parsed node serialises")
+        .as_object()
+        .expect("a node serialises to an object")
+        .keys()
+        .cloned()
+        .collect()
 }
 
 fn node_with(directory: &Path, id: &str, frontmatter_extra: &str, body: &str) {
@@ -64,7 +82,9 @@ fn embedded_nodes(html: &str) -> serde_json::Value {
         .expect("the export embeds the nodes for the page to consume")
         + "window.__vault_nodes__=".len();
     let rest = &html[start..];
-    let end = rest.find(';').expect("the assignment is terminated by a semicolon");
+    let end = rest
+        .find(';')
+        .expect("the assignment is terminated by a semicolon");
     serde_json::from_str(&rest[..end]).expect("the embedded literal is valid JSON")
 }
 
@@ -93,21 +113,29 @@ fn r1_artifact_declares_the_projection_it_makes() {
          nothing, so a consumer cannot answer 'is this everything?' without \
          reading the code.",
         carried.len(),
-        vault_node_fields().len(),
+        vault_node_fields(dir.path()).len(),
         carried
     );
 }
 
 #[test]
 fn r2_adding_a_field_to_vault_node_cannot_pass_unnoticed() {
-    // This test asserts a property of the *code shape*, not of a value. The
-    // projection has to be derived from `VaultNode` itself — via `Serialize`,
-    // or via an exhaustive `From` — so that a new field is a compile error or a
-    // failing test rather than a silent omission.
+    // This is the test that carries the weight, and it is honest about what it
+    // does and does not buy.
     //
-    // The check that actually bites: the set of keys the export carries is
-    // pinned against the set of fields the struct declares. If someone adds
-    // `tags2` to `VaultNode` and forgets the export, the pin fails.
+    // **What it does NOT do:** make the build fail. The `From<&VaultNode> for
+    // NodeProjection` mapping is between two different types, so adding a field
+    // to `VaultNode` does not break compilation — measured, not assumed: a
+    // `mutant_field` was added to the struct, the parser was updated to satisfy
+    // it, and `cargo build` succeeded. An earlier version of this file and of
+    // the doc comment in `export.rs` both claimed the opposite. A guard that
+    // claims a guarantee it does not provide is worse than no guard.
+    //
+    // **What it DOES do:** pin the two field sets against each other, so the
+    // invariant is `carried == declared − omitted` and nothing else. There is
+    // no third bucket: a field is either carried, or it is named in the
+    // artifact as omitted. Add a field to `VaultNode` and, unless somebody
+    // decides for it, this fails with the field's name in the message.
     let dir = tempfile::tempdir().unwrap();
     node_with(dir.path(), "TERM-A", "tags: [alpha, beta]\n", "cuerpo");
     let (_index, html) = vault(dir.path());
@@ -115,11 +143,8 @@ fn r2_adding_a_field_to_vault_node_cannot_pass_unnoticed() {
     let first = &nodes.as_array().unwrap()[0];
     let carried: Vec<String> = first.as_object().unwrap().keys().cloned().collect();
 
-    let declared = vault_node_fields();
-    let undeclared: Vec<&String> = carried
-        .iter()
-        .filter(|k| !declared.contains(k))
-        .collect();
+    let declared = vault_node_fields(dir.path());
+    let undeclared: Vec<&String> = carried.iter().filter(|k| !declared.contains(k)).collect();
     assert!(
         undeclared.is_empty(),
         "the export carries keys that are not fields of `VaultNode`: \
@@ -127,9 +152,9 @@ fn r2_adding_a_field_to_vault_node_cannot_pass_unnoticed() {
          have is the same defect as one that drops them silently."
     );
 
-    // The complement, and this is the part that fails first when a field is
-    // added: every field is either carried or listed as deliberately omitted.
-    // There is no third bucket.
+    // The complement: every field is carried or named as omitted, and the two
+    // together account for the whole struct. Derived from the type on both
+    // sides, so this cannot pass by agreeing with a stale list.
     let omitted: Vec<String> = declared
         .iter()
         .filter(|f| !carried.contains(f))
@@ -144,6 +169,14 @@ fn r2_adding_a_field_to_vault_node_cannot_pass_unnoticed() {
              no answer. Carried: {carried:?}, omitted: {omitted:?}"
         );
     }
+    assert_eq!(
+        carried.len() + omitted.len(),
+        declared.len(),
+        "every field of `VaultNode` is either carried or named as omitted, and \
+         the two together must account for all {} of them. Carried: {carried:?}, \
+         omitted: {omitted:?}",
+        declared.len()
+    );
 }
 
 #[test]
