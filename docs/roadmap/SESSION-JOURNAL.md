@@ -8643,3 +8643,177 @@ necesita SCOPE + ADR.
 **Primer paso preciso de la sesion siguiente:** `bash scripts/release.sh` para publicar v2.5.3 —el
 CHANGELOG debe cubrir `fix(adoption)`, `fix(debt)` y `test(gates)` (gate 2b)— y `sddk dev install`.
 Despues, el ciclo de brevedad de las 19 superficies que devuelve `doctor --strict` a verde.
+
+---
+
+## session-66 — la migración de project_id no existe, e INC-DEBT-048 se cierra (2026-10-02)
+
+Baseline: `465da3cd` == `origin/main` al entrar. HEAD al salir: `ff3849cf` (dos
+commits de session-66 publicados, ambos admitidos por la variante A-v2 del
+pre-push: workspace 2.5.3 > tag publicado v2.5.2, sin `--no-verify`).
+
+### Lo que cambia de verdad: INC-DEBT-050 no es una deuda de migración
+
+El operador autorizó el `apply` de los 7 renombrados limpios. Se ejecutó y
+abortó con `sqlite3.IntegrityError: events_v1 are append-only`. Nada se
+escribió: la transacción no llegó a commitear y los renombrados, que ahora
+ocurren al final, no corrieron. La auditoría posterior sigue en 25.
+
+El motivo no es un trigger que se pueda relajar. `events_v1`,
+`attempts_v1`, `workflow_runs_v1`, `node_runs_v1`, `workflow_run_events_v1` y
+`backlog_item_events_v1` llevan `BEFORE UPDATE` que hace `RAISE(ABORT)`, con un
+test que lo exige (`cross_ledger_consistency.rs:151`). Y por encima del
+trigger: `EventEnvelopeV1::compute_content_hash` anula **únicamente**
+`content_hash`, `sequence` y `recorded_at`, de modo que `project_id`,
+`stream_id` y `cycle_id` entran en el hash. Reescribirlos dejaría
+`verify_stream_chain` fallando con `hash_drift` de forma permanente.
+
+**El `project_id` está horneado en un fact log encadenado por hash. La identidad
+de un proyecto es inmutable desde su primer evento.** Los 15 proyectos suman
+3.477 filas append-only: 0 migrables, no por dificultad, por ausencia de
+operación.
+
+Esto explica lo que la auditoría de session-65i no pudo explicar: los 8
+proyectos con dos ids no son un efecto secundario del cambio de normalizador.
+Son la **re-adopción**, que es la única vía que existe cuando la identidad ya no
+se puede cambiar, y su coste es partir el historial en dos en vez de unirlo. De
+ahí los 51 ciclos que existen sólo del lado nuevo y la única colisión de nombre
+(`r6-workers-probe-wiring`).
+
+**Camino de cierre propuesto, no ejecutado:** una tabla de alias
+`from_id -> to_id` que el CLI resuelva al derivar el id. Es lo que hace git con
+un rename: no toca el fact log, no reescribe historia, no pierde los 25
+receipts, sólo deja de calcular mal. Es trabajo de diseño (SCOPE + ADR), no un
+parche de script.
+
+### Tres defectos del propio `apply`, encontrados antes de escribir
+
+1. **`UPDATE` sin `WHERE`.** `sqlite_impact` contaba las filas que casaban con
+   el id viejo; la escritura se llevaba la tabla entera. En
+   `p-63676b11dc0ef88f` hay 79 ciclos centinela `__spine_import__`; en
+   `p-7c4aff45199a2069` hay 10 ciclos de **otro proyecto**,
+   `p-490921be0aac9b69`, con su historia. El plan —que es lo que el operador
+   revisa— no lo mencionaba, porque para el plan esas filas no existen.
+2. **El directorio de estado nunca se renombraba.** El plan sólo declaraba
+   `share_dirs_to_rename`. `sqlite3.connect(dst)` sobre un directorio
+   inexistente falla; si el destino existiera, creaba una base vacía y el
+   ledger real se quedaba atrás, sin copia.
+3. **`Path.replace` usado como sustitución de cadena.** `Path(d).replace(old,
+   new)` lanza `TypeError`: `Path.replace` es renombrado de fichero con un
+   destino. El `apply` habría abortado en el primer paso.
+
+Los tres eran anteriores a esta sesión. Los tres confines de guarda que ya
+existían (selfcheck, digest del plan, backup verificado) corren **antes** de
+escribir, así que ninguno podía detectarlos. El `apply` original llevaba dos
+sesiones «a un paso» y no podía completarse: abortaba en el primero de los ocho
+proyectos cuyo destino ya estaba ocupado.
+
+**Correcciones:** predicado único (`owned_predicate`) compartido por recuento y
+escritura, de modo que el conjunto escrito es el mismo objeto que el conjunto
+contado y no una revisión aparte; `WHERE` en toda escritura con sufijo
+conservado (`p-old/x` -> `p-new/x` en cualquier columna); renombrado de estado
+declarado en el plan y ejecutado **al final**, tras verificar; comparación
+`filas escritas == filas contadas` con reversión; postcondición que comprueba
+que las filas ajenas siguen intactas; y el rechazo del storage traducido a
+problema legible en vez de traceback. La clasificación (`clean_rename` /
+`empty_shell` / `ledger_merge` / `blocked_append_only`) vive en una función con
+nombre, no dentro del `for` de `cmd_apply`, para que se pueda comprobar que
+existe.
+
+**Test:** `tests/test_migrate_project_identity_write.py`, 24 casos sobre
+fixtures temporales. Falsificado con **11 mutaciones, 11 detectadas**,
+incluidas las dos que hay que copiar sin querer al tocar otra cosa: degradar el
+bloqueo `append_only` y quitar la traducción de la excepción SQLite.
+
+### INC-DEBT-048: cerrada por la opción (a)
+
+`arch-spec-A3-S1-knowledge-substrate.md` pasa a `status: accepted` y
+**REQ-A3S1-021** se reescribe: los pares ordenados `(id, inner_basis_hash)`
+**más** `revised_at`, bajo tag de dominio versionado, con `revised_at: None`
+reproduciendo el dominio `v1` verbatim para que la identidad histórica siga
+siendo reproducible.
+
+**ADR-0126** reconciliado con una sección que **no enmenda su Decision**. La
+distinción que fija: su §4 excluye `evaluation_time` de la identidad del
+receipt —la hora en que alguien *evalúa*—, mientras `revised_at` es la hora en
+que el *conocimiento* se revisó, que es contenido. La identidad no es uniforme
+en la cadena, y generalizar §4 a «el tiempo nunca entra en una identidad» sería
+un error. Eso es lo que la nota previene.
+
+**AT-UAT-019** reescrito para citar REQ-A3S1-021 y ADR-0126 en vez del ADR de
+identidad que no existía. El guard `tests/test_uat_authority_citations.py` pasa
+de **1 aviso a 0**, y falsificado: reintroducir una cita inexistente produce
+`[FAIL] autoridad citada que NO resuelve` y exit 1.
+
+**Un número del UAT era incorrecto.** Decía que F20 daba 4 FAIL. Re-ejecutado
+hoy da **5**:
+
+```text
+baseline:  ok. 27 passed; 0 failed; 1 ignored
+F19:       FAILED. 25 passed; 2 failed; 1 ignored
+F20:       FAILED. 22 passed; 5 failed; 1 ignored
+```
+
+F19 coincide. La diferencia de F20 está explicada: session-65i añadió
+`audit_inc_debt_048_pure_temporal_revision_is_not_invisible`, que depende de la
+derivación. No es una regresión; es un número heredado que nadie volvió a
+ejecutar. La fila dice 5 y explica por qué.
+
+### Defecto propio, encontrado de paso
+
+`tests/test_adr_promotion_format.sh` falló con 2 violaciones: **ADR-0151**,
+escrito ayer en esta misma serie, declaraba `status: accepted` sin
+`accepted_at` ni `accepted_by_cycle`. Es la convención de ADR-0001 §3.4 que el
+guard exige. Corregido; el guard vuelve a `violations: 0`.
+
+Mismo patrón de siempre: un invariante que nadie ejecuta sobre el documento
+nuevo en el momento de escribirlo.
+
+### Hallazgo abierto, no arreglado
+
+**13 ficheros de `docs/` tienen caracteres CJK, cirílicos o de reemplazo
+sustituyendo palabras españolas**, en mitad de frase o de palabra:
+
+| fichero | ejemplo |
+|---|---|
+| `docs/adr/ADR-0072-secretary-budgets.md` | `no colisionan` precedido de U+4E24 U+8005 |
+| `docs/adr/ADR-0068-bounded-execution.md` | `snapshot` seguido de U+505A U+6765 |
+| `docs/adr/ADR-0002-…seq-allocation.md` | `El método` seguido de U+5185 U+5E55 |
+| `docs/debt/INC-DEBT-040-…` | `la sesion-45` seguido de U+6267 U+529B U+884C |
+| `docs/debt/INC-DEBT-056-…` | `la prueba` con cuatro cirílicos |
+| `docs/debt/INC-DEBT-054-…` | entrecomillado con U+5370 U+53D1 |
+| `docs/debt/INC-DEBT-020.md` | U+5E78 dentro de una frase |
+| `docs/architecture/adrs/ADR-0139-…` | dos U+FFFD en un bloque de código |
+| `docs/history/…` (4) y `SESSION-JOURNAL.md` | idem |
+
+Todos preexistentes; ninguno introducido en session-66. **No se corrigen en
+maso** por una razón concreta: la corrupción se detecta con fiabilidad, pero la
+palabra original **no** se puede reconstruir con fiabilidad. En
+`INC-DEBT-054` no hay forma de saber cual era la palabra original; sustituir unos caracteres por otros sería fabricar. El
+único arreglo honesto es que quien escribió cada frase diga qué quiso decir, o
+un guard que lo impida a partir de ahora.
+
+### Estado al salir
+
+- `HEAD == origin/main == ff3849cf`, árbol limpio.
+- Workspace 2.5.3 declarado; último tag remoto v2.5.2; v2.5.3 **no
+  publicado** y **no publicable** sin la clave del KMS.
+- Storage de SDDK **intacto**: 25 receipts huérfanos, que ya no son un
+  pendiente sino el síntoma de un hecho escrito.
+- Deuda: 49 documentos, **3 abiertas** (049, 050, 051). 048 resuelta.
+- Gates de esta sesión: 24 tests de escritura verdes con 11/11 mutaciones
+  detectadas; los 7 de python de `tests/` verdes; `check_debt_index_coherence`
+  PASS; `test_adr_promotion_format` PASS con 0 violaciones;
+  `test_uat_authority_citations` PASS con 0 avisos;
+  `cargo test -p sddk-engine --lib knowledge` 27/0.
+
+### Primer paso de la sesión siguiente
+
+`git status` limpio y `git log -1` = el commit documental de session-66 (el
+puntero de `STATE.yaml` es `ff3849cf`, el commit **anterior**: escribir el
+puntero convierte a este commit en HEAD, y un commit documental no es
+evidencia del SHA que dice contener). Después, la decisión que bloquea la
+release: aprovisionar la clave del KMS y copiar su cuerpo base64 a
+`assets/trust/release-verify-key.pub` y a `SDDK_RELEASE_VERIFY_KEY_BODY` en
+`scripts/install.sh`. Sin eso, v2.5.3 no sale, y la ventana declarada-pero-no-
+publicada sigue abierta.

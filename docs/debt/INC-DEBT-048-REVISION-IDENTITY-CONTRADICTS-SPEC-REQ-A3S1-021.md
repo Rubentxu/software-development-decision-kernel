@@ -1,11 +1,14 @@
 ---
 id: INC-DEBT-048-REVISION-IDENTITY-CONTRADICTS-SPEC-REQ-A3S1-021
 title: la identidad de revisión de KnowledgeBasis contradice REQ-A3S1-021, y el UAT que la gobierna cita un ADR que no existe
-status: open
+status: resolved
 severity: high
 priority: P1
 detected_at: 2026-10-01
 detected_in_session: session-62
+resolved_at: 2026-10-02
+resolved_in_session: session-66
+resolved_by: "decision normativa del operador, opcion (a)"
 component: architecture-contracts
 surface: docs/architecture/specs/arch-spec-A3-S1-knowledge-substrate.md
 references:
@@ -35,7 +38,7 @@ La corrección de C3m.2 hace que `revised_at` participe del digest
 ## El matiz que hay que preservar
 
 Antes de session-62 el diagnóstico era "`revise` con docs/código discrepantes".
-Medido, la realidad es más matizada y menos봬 triumphante:
+Medido, la realidad es más matizada y menos triunfal:
 
 - El **doc de `revise`** afirmaba *"a new basis hash (because the `revised_at`
   participates in the hash)"*. Eso **era falso**: `derive_basis_hash` sólo
@@ -251,3 +254,79 @@ columnas **que no existe**: `UAT-MATRIX.md` tiene **dos tablas** con cabeceras
 distintas, y el script las mezclaba porque recortaba por índice fijo en vez de
 agrupar por cabecera. La propiedad 2 existe precisamente para que ningún parser
 de la matriz repita ese error.
+
+---
+
+## Addendum session-66 — cerrada por la opción (a)
+
+Decisión normativa del operador: **(a)**, actualizar REQ-A3S1-021. Los tres
+requisitos del criterio de cierre se cumplen, y cada uno se verificó
+ejecutando, no leyendo.
+
+### 1. La spec pasa a `accepted` y REQ-A3S1-021 incluye `revised_at`
+
+`arch-spec-A3-S1-knowledge-substrate.md` pasa de `status: proposed` a
+`accepted` (`accepted_at: 2026-10-02`). REQ-A3S1-021 ahora fija la derivación
+sobre los pares ordenados `(id, inner_basis_hash)` **y** `revised_at`, bajo un
+tag de dominio versionado, y declara explícitamente que `revised_at: None`
+reproduce el dominio `v1` verbatim para que la identidad histórica siga siendo
+reproducible.
+
+La nota de aceptación deja escrito lo que el documento de deuda había medido y
+que no estaba en ninguna parte: **el defecto de `evaluate_freshness` está
+acoplado a esta decisión, no es independiente**. Bajo la derivación `v1` una
+revisión temporal nunca alcanzaba la comparación de timestamps; con `v2` se
+alcanza y produce `Unknown { MissingEvidence::FutureEvidence }`.
+
+### 2. ADR-0126 reconciliado, sin enmendar su Decision
+
+`ADR-0126` es `accepted` y §3 consume `KnowledgeBasis::basis_hash()` como
+entrada de la derivación de `IntelligenceLoopReceiptId`. Se añadió una sección
+**«Reconciliation — `KnowledgeBasis::basis_hash` derivation (2026-10-02)»** que
+**no toca la Decision**: sólo registra la interacción y por qué no la altera.
+
+La distinción que la reconciliación fija: §4 excluye `evaluation_time` de la
+identidad del receipt — la hora en que alguien *evalúa*, para que evaluar dos
+veces las mismas entradas semánticas no minte dos identidades. `revised_at` es
+otra cosa: la hora en que el *conocimiento* se revisó, que es contenido. La
+identidad **no es uniforme** en la cadena, y generalizar §4 a «el tiempo nunca
+entra en una identidad» sería un error. Eso es lo que la nota previene.
+
+Efecto en datos: **cero**. `KnowledgeBasis` no se persiste, luego ningún
+`IntelligenceLoopReceiptId` ya emitido cambia de valor.
+
+### 3. AT-UAT-019 cita una autoridad que existe
+
+El criterio decía «coincide con el ADR de identidad», que no existe. Ahora cita
+**REQ-A3S1-021** y **ADR-0126**, que sí. El guard
+`tests/test_uat_authority_citations.py` pasa de **1 aviso a 0**.
+
+Falsificado en esta sesión: reintroducir una cita inexistente produce
+`[FAIL] autoridad citada que NO resuelve` y **exit 1**.
+
+### Un número del UAT era incorrecto, y se corrige
+
+`AT-UAT-019` afirmaba que F20 daba **4 FAIL**. Re-ejecutado hoy da **5**:
+
+```text
+baseline:  test result: ok. 27 passed; 0 failed; 1 ignored
+F19:       test result: FAILED. 25 passed; 2 failed; 1 ignored
+F20:       test result: FAILED. 22 passed; 5 failed; 1 ignored
+```
+
+F19 coincide. F20 no, y la diferencia está explicada: session-65i añadió
+`audit_inc_debt_048_pure_temporal_revision_is_not_invisible`, que depende de la
+derivación, así que el conjunto de tests que la mutación rompe creció en uno.
+No es una regresión; es un número heredado que nadie volvió a ejecutar. La fila
+dice 5 y explica por qué.
+
+### Defecto propio encontrado de paso
+
+`tests/test_adr_promotion_format.sh` falló con 2 violaciones: **ADR-0151**, de
+esta misma serie, declaraba `status: accepted` sin `accepted_at` ni
+`accepted_by_cycle`. Es exactamente la convención de ADR-0001 §3.4 que el guard
+exige, y la incumplía un ADR escrito ayer. Corregido; el guard vuelve a
+`violations: 0`.
+
+Es el mismo patrón de siempre: un invariante que nadie ejecuta sobre el
+documento nuevo en el momento de escribirlo.

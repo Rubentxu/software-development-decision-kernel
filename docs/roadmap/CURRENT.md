@@ -1,6 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
 
-**Estado (session-65j, 2026-10-01): un guard llevaba ROJO desde session-65b y nadie lo ejecutaba. La causa de fondo no era ese guard: la superficie de gates es una lista escrita a mano, y 13 de 36 tests no estaban en ella.** `HEAD` = `b15cf610`. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+**Estado (session-66, 2026-10-02): la migración de `project_id` NO EXISTE, y eso se discovered ejecutando el apply, no leyendo el plan. INC-DEBT-048 queda CERRADA por decisión del operador.** `HEAD` = `ff3849cf` (dos commits de session-66 publicados sin `--no-verify`, por la variante A-v2 del pre-push: workspace 2.5.3 > tag publicado v2.5.2). Workspace **2.5.3 declarada, no publicada** y **no publicable**: falta la clave del KMS.
+
+**Lo que cambia el diagnóstico, en dos líneas:**
+
+1. **`project_id` está horneado en un fact log encadenado por hash.** `EventEnvelopeV1::compute_content_hash` anula únicamente `content_hash`, `sequence` y `recorded_at`; `project_id`, `stream_id` y `cycle_id` entran en el hash. Además `events_v1` y otras cinco tablas llevan `BEFORE UPDATE` que hace `RAISE(ABORT)`, con un test que lo exige. **La identidad de un proyecto es inmutable desde su primer evento**, luego los 25 receipts huérfanos no se pueden migrar: 3.477 filas append-only, 0 migrables. Se intentó y el storage rechazó la escritura; nada se escribió.
+2. **Los 8 proyectos con dos ids no son un efecto secundario del normalizador: son la re-adopción**, la única vía que existe cuando la identidad ya no se puede cambiar. Su coste es partir el historial en dos. Camino de cierre propuesto, no ejecutado: una tabla de alias `from_id -> to_id` que el CLI resuelva al derivar (lo que hace git con un rename); no toca el fact log.
+
+**Hecho en session-66, por encima del detalle de abajo:**
+
+- **Tres defectos del `apply` de INC-DEBT-050**, todos anteriores a esta sesión y todos invisibles para los guardas que ya existían (los tres corren *antes* de escribir, y el defecto estaba *dentro* de la escritura): `UPDATE` **sin `WHERE`** (habría reasignado 79 ciclos centinela `__spine_import__` y 10 ciclos de **otro proyecto**); el **directorio de estado nunca se renombraba**; y `Path.replace` usado como sustitución de cadena, que lanza `TypeError`. El `apply` llevaba dos sesiones «a un paso» y abortaba en el primero de los ocho destinos ya ocupados.
+- **INC-DEBT-048 cerrada** por la opción (a): spec `arch-spec-A3-S1` a `accepted` con REQ-A3S1-021 reescrita, **ADR-0126 reconciliado sin enmendar su Decision**, y **AT-UAT-019** reescrito para citar autoridades que existen. El guard de citas pasa de **1 aviso a 0**.
+- **Un número del UAT era incorrecto y se corrigió:** F20 daba 4 FAIL según session-62; re-ejecutado hoy da **5**, porque session-65i añadió un test que depende de la derivación. F19 da 2, como se decía.
+- **ADR-0151 incumplía ADR-0001 §3.4** — declaraba `status: accepted` sin `accepted_at` ni `accepted_by_cycle`. Encontrado por el guard, corregido. `violations: 0`.
+- **Hallazgo abierto y NO arreglado:** 13 ficheros de `docs/` tienen caracteres CJK, cirílicos o de reemplazo sustituyendo palabras españolas. No se corrigen en masa porque la corrupción se detecta con fiabilidad pero **la palabra original no**: sustituirlas sería fabricar.
+
+**Gates de session-66:** `test_migrate_project_identity_write` 24 casos verdes con **11/11 mutaciones detectadas** · los 7 tests de python de `tests/` verdes · `check_debt_index_coherence` PASS · `test_adr_promotion_format` PASS, 0 violaciones · `test_uat_authority_citations` PASS, 0 avisos · `cargo test -p sddk-engine --lib knowledge` 27 passed / 0 failed / 1 ignored.
+
+**Lo que sigue abierto:** la **clave del KMS**, que bloquea v2.5.3 · el **alias de proyecto** (camino de cierre de INC-DEBT-050, SCOPE + ADR) · el **contrato de versión para repos no-Rust** (cierre de INC-DEBT-051, SCOPE + ADR) · el **contrato de read-option** de INC-DEBT-049 · la **publicación del harness** Pipelinek-Test-Hardness (44 commits sin publicar) · la corrupción de caracteres en `docs/`, que necesita que quien escribió cada frase diga qué quiso decir.
+
+**Nota sobre el puntero:** `STATE.yaml` dice `ff3849cf`, que es el commit **anterior** a este fichero documental. Escribir el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener. Es la tercera vez que el puntero se autocita; queda dicho para que no se lea como contradicción.
+
+---
+
+## Estado (session-65j, 2026-10-01): un guard llevaba ROJO desde session-65b y nadie lo ejecutaba. La causa de fondo no era ese guard: la superficie de gates es una lista escrita a mano, y 13 de 36 tests no estaban en ella.** `HEAD` = `b15cf610`. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Hecho en session-65j:**
 

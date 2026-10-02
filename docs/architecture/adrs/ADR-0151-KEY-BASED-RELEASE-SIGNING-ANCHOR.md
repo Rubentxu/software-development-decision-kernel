@@ -3,9 +3,11 @@ id: ADR-0151
 title: Key-based release signing anchor, replacing the keyless OIDC identity
 status: accepted
 date: 2026-10-02
+accepted_at: 2026-10-02
 supersedes: null
 superseded_by: null
 cycle: p-63676b11dc0ef88f/trust-anchor-key-based-signing
+accepted_by_cycle: p-63676b11dc0ef88f/trust-anchor-key-based-signing
 ---
 
 # ADR-0151 — Key-based release signing anchor

@@ -104,9 +104,42 @@ Introduce **one composition module** that:
   `reduce_alignment`.
 - PublicReleaseGate PASS for the v1.169.64 release.
 
+## Reconciliation — `KnowledgeBasis::basis_hash` derivation (2026-10-02)
+
+> Added by decision normativa del operador sobre **INC-DEBT-048**, opción (a).
+> **This section records an interaction. It does not amend the Decision above.**
+
+`arch-spec-A3-S1-knowledge-substrate.md` passed to `status: accepted` with
+**REQ-A3S1-021** rewritten: `basis_hash` is now derived from the sorted
+`(id, inner_basis_hash)` pairs **and** the basis's `revised_at`, under a
+versioned domain tag. `KnowledgeBasis::basis_hash()` is the first input of
+`IntelligenceLoopReceiptId` (§3), so the *meaning* of that input changed.
+
+Two things are being distinguished, and the distinction is the whole point:
+
+1. **`evaluation_time` is not part of receipt identity** (§4). That is the
+   moment somebody evaluated. Evaluating the same semantic inputs twice must
+   not mint two identities.
+2. **`revised_at` IS part of basis identity** (REQ-A3S1-021). That is when the
+   knowledge itself was revised. It is content, not observation.
+
+So the exclusion in §4 still holds exactly as written, and this reconciliation
+does not weaken it. What it does say is that identity derivation is
+**not** uniform across the chain: the basis is versioned by when it was
+revised, the receipt is not versioned by when it was evaluated. A reader who
+generalises §4 to "time never enters an identity in this composition" would be
+wrong, and that is the misreading this note forecloses.
+
+No change to §3's wiring, to the two public types, to the non-goals, or to the
+acceptance gates. Impact on stored data: **zero** — `KnowledgeBasis` is not
+persisted (`basis_hash` does not appear anywhere in `crates/sddk-storage/`), so
+no already-minted `IntelligenceLoopReceiptId` changes value.
+
 ## See also
 
 - `docs/architecture/specs/arch-spec-047-a4-intelligence-loop.md`
+- `docs/architecture/specs/arch-spec-A3-S1-knowledge-substrate.md`
+  (REQ-A3S1-021, REQ-A3S1-033)
 - `.sddk/cycles/p-63676b11dc0ef88f-a4-5a-intelligence-loop-composition/spec.md`
 - `crates/sddk-engine/src/intelligence_loop/mod.rs`
 - `crates/sddk-engine/tests/a4_5a_intelligence_loop_composition.rs`

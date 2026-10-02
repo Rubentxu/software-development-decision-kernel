@@ -1,8 +1,11 @@
 ---
 id: arch-spec-A3-S1-knowledge-substrate
-status: proposed
+title: Knowledge + KMT substrate (cycle-bounded)
+status: accepted
 cycle: p-63676b11dc0ef88f/a3-1-kmt-foundation
 proposed_at: 2026-09-14
+accepted_at: 2026-10-02
+accepted_by: "decision normativa del operador sobre INC-DEBT-048, opcion (a)"
 supersedes_history: false
 source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evolution-2026-09-14/
 ---
@@ -57,14 +60,56 @@ guarantee.
   `assertions: BTreeMap<KnowledgeId, KnowledgeAssertion>`,
   `basis_hash: BasisHash`, `revised_at: EventTime`.
 - **REQ-A3S1-021** `KnowledgeBasis::basis_hash` SHALL be deterministically
-  derived from the sorted `(id, inner_basis_hash)` pairs (test asserts
-  insertion-order independence).
+  derived from the sorted `(id, inner_basis_hash)` pairs **and** the basis's
+  `revised_at`, under an explicit versioned domain tag (test asserts
+  insertion-order independence). Two bases with identical assertions revised
+  at different times SHALL therefore have different `basis_hash` values: a
+  revision is a change of the basis, not a relabelling of the same one.
+  A basis carrying `revised_at: None` SHALL reproduce the legacy `v1` domain
+  verbatim, so the historical identity of a pre-existing basis stays
+  *reproducible*. The version tag separates the two domains so a stored `v1`
+  hash fails closed against a `v2` basis (mismatch ⇒ re-verify) rather than
+  comparing equal by accident.
 - **REQ-A3S1-022** `KnowledgeBasis::insert` SHALL return the new basis_hash and
   the previous one. It SHALL be `&mut self` only.
 - **REQ-A3S1-023** `KnowledgeBasis::revise` SHALL be a free function that
   produces a new `KnowledgeBasis` with monotonically non-decreasing
   `revised_at`. A test SHALL assert that revising with a stale timestamp
   yields an error.
+
+> **Por qué REQ-A3S1-021 incluye `revised_at`** (aceptado 2026-10-02, cierra
+> INC-DEBT-048 opción (a)).
+>
+> La redacción anterior derivaba el hash **sólo** del conjunto de assertions.
+> Bajo esa redacción existían dos bases indistinguibles: el mismo contenido
+> revisado a distinta hora. No es un caso hypothetical — era el estado real,
+> y `KMT::evaluate` compara hashes **antes** que timestamps, así que una
+> revisión puramente temporal era invisible al freshness y devolvía `Fresh`
+> sin mirar `revised_at`, contradiciendo REQ-A3S1-033.
+>
+> La participación de `revised_at` no es un parche de ese defecto: es lo que
+> hace que «revisar» signifique algo. Una revisión es un cambio del basis, no
+> una etiqueta nueva sobre el mismo contenido.
+>
+> **Acoplamiento con REQ-A3S1-033.** El defecto de `evaluate_freshness` está
+> *acoplado* a esta decisión, no es independiente: bajo la derivación `v1` el
+> freshness de una revisión temporal nunca se alcanzaba a comparar. Fijada la
+> derivación `v2`, un `revised_at` más nuevo que la tolerancia produce
+> `Unknown { MissingEvidence::FutureEvidence }` por la rama de timestamps.
+> Ver `knowledge::tests::audit_inc_debt_048_pure_temporal_revision_is_not_invisible`.
+>
+> **Relación con ADR-0126** (`accepted`). ADR-0126 §3 consume
+> `KnowledgeBasis::basis_hash()` como entrada de la derivación de
+> `IntelligenceLoopReceiptId`; no define esa derivación. Su §4 excluye
+> `evaluation_time` de la identidad del receipt: es la hora en que alguien
+> evalúa, no el contenido evaluado. `revised_at` es contenido. No hay
+> conflicto; la reconciliación está escrita en
+> `docs/architecture/adrs/ADR-0126-INTELLIGENCE-LOOP-COMPOSITION-SEAM.md`.
+>
+> **Impacto en datos: cero, medido.** `KnowledgeBasis` no se persiste
+> (`basis_hash` no aparece en `crates/sddk-storage/`). El cambio de dominio
+> `v1 → v2` no invalida ninguna identidad almacenada; hoy es una propiedad
+> preventiva, no un riesgo operativo.
 
 ### KMT identity / freshness / invalidation
 
