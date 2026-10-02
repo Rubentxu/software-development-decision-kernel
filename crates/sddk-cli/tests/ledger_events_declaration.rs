@@ -24,17 +24,32 @@ fn bin() -> PathBuf {
 
 const REMOTE: &str = "https://example.test/ledger-declaration-fixture";
 
+/// Returns a fresh sandbox directory and removes it on drop.
+///
+/// `cycle start` needs the project and workspace rows adoption writes, so a bare
+/// sandbox fails on a foreign key before it ever reaches the ledger. Adopting
+/// first makes the fixture a real project with real events.
 struct Sandbox {
     dir: PathBuf,
 }
 
 impl Sandbox {
-    fn new(name: &str) -> PathBuf {
+    fn new(name: &str) -> Self {
         let dir =
             std::env::temp_dir().join(format!("sddk-ledger-decl-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        Sandbox { dir }
+    }
+
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -87,7 +102,9 @@ fn cycle_start(dir: &Path, name: &str) {
 }
 
 fn events(dir: &Path, extra: &[&str]) -> (i32, String) {
-    let mut args = vec!["ledger", "events", "--root", ".", "--scope", ".", "--remote", REMOTE];
+    let mut args = vec![
+        "ledger", "events", "--root", ".", "--scope", ".", "--remote", REMOTE,
+    ];
     args.extend_from_slice(extra);
     run(dir, &args)
 }
@@ -100,9 +117,10 @@ fn text_event_lines(out: &str) -> Vec<&str> {
     out.lines()
         .filter(|l| {
             let t = l.trim();
-            !t.is_empty() && t.split_whitespace().next().map_or(false, |w| {
-                !w.is_empty() && w.chars().all(|c| c.is_ascii_digit())
-            })
+            !t.is_empty()
+                && t.split_whitespace()
+                    .next()
+                    .is_some_and(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_digit()))
         })
         .collect()
 }
@@ -113,11 +131,11 @@ fn text_event_lines(out: &str) -> Vec<&str> {
 /// case cannot be read off a log where the interesting case did not happen.
 #[test]
 fn r1_text_declares_the_total_even_when_it_does_not_truncate() {
-    let dir = Sandbox::new("no-truncate");
-    adopt(&dir);
-    cycle_start(&dir, "only");
+    let s = Sandbox::new("no-truncate");
+    adopt(s.path());
+    cycle_start(s.path(), "only");
 
-    let (code, out) = events(&dir, &[]);
+    let (code, out) = events(s.path(), &[]);
 
     assert_eq!(code, 0, "`ledger events` must exit 0: {out}");
     let printed = text_event_lines(&out);
@@ -137,12 +155,12 @@ fn r1_text_declares_the_total_even_when_it_does_not_truncate() {
 /// has to *say so*, and the events that do exist still have to be listed.
 #[test]
 fn r2_text_names_every_event_when_it_fits() {
-    let dir = Sandbox::new("fits");
-    adopt(&dir);
-    cycle_start(&dir, "one");
-    cycle_start(&dir, "two");
+    let s = Sandbox::new("fits");
+    adopt(s.path());
+    cycle_start(s.path(), "one");
+    cycle_start(s.path(), "two");
 
-    let (code, out) = events(&dir, &[]);
+    let (code, out) = events(s.path(), &[]);
 
     assert_eq!(code, 0, "`ledger events` must exit 0: {out}");
     let printed = text_event_lines(&out);
@@ -163,11 +181,11 @@ fn r2_text_names_every_event_when_it_fits() {
 /// is why this is a shape change and not an added field.
 #[test]
 fn r3_json_carries_total_shown_and_truncated() {
-    let dir = Sandbox::new("json-shape");
-    adopt(&dir);
-    cycle_start(&dir, "alpha");
+    let s = Sandbox::new("json-shape");
+    adopt(s.path());
+    cycle_start(s.path(), "alpha");
 
-    let (code, out) = events(&dir, &["--format", "json"]);
+    let (code, out) = events(s.path(), &["--format", "json"]);
 
     assert_eq!(code, 0, "`ledger events --format json` must exit 0: {out}");
     let v: serde_json::Value = serde_json::from_str(&out)
@@ -181,10 +199,7 @@ fn r3_json_carries_total_shown_and_truncated() {
              array has nowhere to say it. Got: {out}"
         );
     }
-    assert!(
-        v["events"].is_array(),
-        "`events` must be the array: {out}"
-    );
+    assert!(v["events"].is_array(), "`events` must be the array: {out}");
     assert_eq!(
         v["shown"].as_u64(),
         v["events"].as_array().map(|a| a.len() as u64),
@@ -209,20 +224,20 @@ fn r3_json_carries_total_shown_and_truncated() {
 /// unblock themselves and gets nothing.
 #[test]
 fn r4_limit_zero_means_all_not_none() {
-    let dir = Sandbox::new("limit-zero");
-    adopt(&dir);
-    cycle_start(&dir, "one");
-    cycle_start(&dir, "two");
-    cycle_start(&dir, "three");
+    let s = Sandbox::new("limit-zero");
+    adopt(s.path());
+    cycle_start(s.path(), "one");
+    cycle_start(s.path(), "two");
+    cycle_start(s.path(), "three");
 
-    let (all_code, all_out) = events(&dir, &["--limit", "0", "--format", "json"]);
+    let (all_code, all_out) = events(s.path(), &["--limit", "0", "--format", "json"]);
     assert_eq!(all_code, 0, "`--limit 0` must exit 0: {all_out}");
     let v: serde_json::Value =
         serde_json::from_str(&all_out).unwrap_or_else(|e| panic!("{e}: {all_out}"));
 
-    let shown = v["shown"].as_u64().unwrap_or_else(|| {
-        panic!("`--limit 0` must still declare `shown`; got: {all_out}")
-    });
+    let shown = v["shown"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("`--limit 0` must still declare `shown`; got: {all_out}"));
     assert!(
         shown > 0,
         "`--limit 0` must mean ALL, matching `ledger export --limit 0` \
@@ -237,11 +252,15 @@ fn r4_limit_zero_means_all_not_none() {
     );
 
     // And a bounded limit still bounds, while still declaring what it dropped.
-    let (b_code, b_out) = events(&dir, &["--limit", "2", "--format", "json"]);
+    let (b_code, b_out) = events(s.path(), &["--limit", "2", "--format", "json"]);
     assert_eq!(b_code, 0, "`--limit 2` must exit 0: {b_out}");
     let b: serde_json::Value =
         serde_json::from_str(&b_out).unwrap_or_else(|e| panic!("{e}: {b_out}"));
-    assert_eq!(b["shown"].as_u64(), Some(2), "the limit must bound: {b_out}");
+    assert_eq!(
+        b["shown"].as_u64(),
+        Some(2),
+        "the limit must bound: {b_out}"
+    );
     assert_eq!(
         b["truncated"].as_bool(),
         Some(true),

@@ -108,9 +108,40 @@ consumidores dentro de crates/                  : 1
     assert_eq!(events_json.as_array().unwrap().len(), 6);
 ```
 
-`scripts/`, `.github/` y `tests/` no lo parsean. El único consumidor es un test
-del propio repo, que se actualiza **declarando** el cambio, no se ajusta en
-silencio.
+> ### ⚠️ CORRECCIÓN session-69d — esa medición estaba mal, por partida doble
+>
+> La tabla de arriba es la que se escribió **antes** de decidir, y **está mal**.
+> Se conserva porque el razonamiento que la produjo es el que hay que corregir,
+> y porque un §3 con el número correcto y sin el error no explica por qué se
+> Audaron dos consumidores.
+>
+> **1. Dentro de `crates/` hay un consumidor más.** Se buscó con un `grep` de
+> patrón `"ledger", "events"` sobre una **lista de ficheros elegida a mano** —los
+> que ya sabíamos que lo tocaban— en vez de sobre el árbol. El segundo es
+> `crates/sddk-cli/tests/aiw_s8_x07_real_binary_boundary.rs:292`
+> (`real_binary_reads_cycle_and_events`, `events.as_array()`), y salió **por el
+> perfil completo del workspace**, no por la medición previa. Dos consumidores,
+> no uno. Búsqueda exhaustiva correcta: `grep -rn --include=*.rs -E '"ledger"[[:space:]]*,[[:space:]]*"events"'`
+> sobre el repo → 2 ficheros, uno de ellos los tests nuevos de este ciclo.
+>
+> **2. `skills/` ni siquiera se miró**, y es superficie del bundle que se
+> distribuye a los usuarios. `skills/sddk-cycle-resume/SKILL.md:62` ejecuta
+> `sddk ledger events … --limit 10 --format json`. **Examinado y NO es una
+> rotura**: la skill no parsea el array, pide al agente que «reconstruya la cadena
+> causal reciente» leyéndola, y una envoltura que dice «10 de 590» es estrictamente
+> más informativa para ese agente que un array que no dice nada. Pero pudo haberlo
+> sido, y no se comprobó hasta después de romper el build.
+>
+> **Lo que esto cuesta y por qué se escribe:** el cambio de forma está en la
+> categoría que §4.2 declaró asumida, así que el procedimiento no cambia. Lo que
+> estaba mal era el **recuento**, y un recuento que sostiene una decisión de
+> compatibilidad tiene que poder rehacerse. Es la quinta vez en este ciclo que
+> medir con el instrumento equivocado —el sitio en vez del árbol— produce un
+> número falso, y la quinta vez el número iba a un documento publicado.
+
+`scripts/`, `.github/` y `tests/` no lo parsean. Los únicos consumidores son los
+dos tests del repo, y los dos se actualizan **declarando** el cambio, no se
+ajustan en silencio.
 
 La alternativa era **declarar solo en texto** y dejar el JSON como array. Se
 descarta, y se escribe por qué: el modo de fallo que F63 describe es
@@ -125,9 +156,14 @@ sigue mintiendo**, y F63 quedaría verde en el papel y falso en el uso.
    una migración), se para. El total ya está en memoria; si resulta que no, el
    razonamiento de §0.3 es falso y hay que volver a medir.
 2. **Si algún test que ya estaba verde hay que reescribirlo para que pase**, se
-   para y se escribe por qué. La **única** excepción prevista y declarada es
-   `cli.rs:1443`, cuyo `as_array()` **debe** cambiar porque la forma cambia, y
-   que se cuenta como cambio de contrato asumido, no como test acomodado.
+   para y se escribe por qué. La **única** excepción prevista es la que el cambio
+   de forma rompe, y hay que **contarla a mano antes de cambiar nada**:
+   `cli.rs:1443` y `aiw_s8_x07_real_binary_boundary.rs:292`, ambos por
+   `as_array()`. **La cuenta inicial fue 1 y era falsa** (ver la corrección de
+   §3): son 2, y una tercera superficie —`skills/`— no se miró hasta después de
+   romper el build. Se cuentan como cambio de contrato asumido, no como tests
+   acomodados; en ambos, la aserción que significa algo —cuántos eventos y
+   cuáles— sobrevive intacta y solo cambia el camino para llegar a ella.
 3. **Si `--limit 0` resulta ser usado por alguien en este repo**, se para: el
    comportamiento observable cambiaría de cero a todos y eso hay que saberlo
    antes, no después.

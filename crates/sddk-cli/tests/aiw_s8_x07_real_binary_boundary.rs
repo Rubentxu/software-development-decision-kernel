@@ -289,7 +289,13 @@ fn real_binary_reads_cycle_and_events() {
             "json",
         ],
     );
-    let events = events.as_array().expect("events array");
+    // **Shape change, declared.** `ledger events` used to emit a bare array.
+    // INC-DEBT-060 F63 is that it shows a window without saying so, and an array
+    // has nowhere to put the total, so the payload became an envelope:
+    // `{ events, total_events, shown, truncated }`. The assertion that matters —
+    // exactly the writer event, and nothing else, reaches a second process — is
+    // unchanged; only the path to reach it moved one level down.
+    let events = events["events"].as_array().expect("events array");
     assert_eq!(
         events.len(),
         1,

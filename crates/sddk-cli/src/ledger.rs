@@ -73,7 +73,11 @@ pub(crate) struct LedgerEventsArgs {
     /// Restrict to events sharing one command frame.
     #[arg(long)]
     pub(crate) frame: Option<String>,
-    /// Maximum events to list.
+    /// Maximum events to list (default 50; use 0 for all).
+    ///
+    /// The listing always declares how many events exist in total and whether
+    /// anything was left out, in both output formats — a silent window over a
+    /// 590-event ledger is what INC-DEBT-060 F63 is about.
     #[arg(long, default_value_t = 50)]
     pub(crate) limit: usize,
     /// Output format.
@@ -225,6 +229,32 @@ struct LedgerEventOutput {
     cycle_id: Option<String>,
     actor: String,
     occurred_at: String,
+}
+
+/// Envelope for `ledger events`. INC-DEBT-060, F63.
+///
+/// This was a bare `Vec<LedgerEventOutput>`, and that shape is the defect: an
+/// array has nowhere to declare that it is a *window*. The command defaults to
+/// the 50 newest events — measured on `p-63676b11dc0ef88f`: 50 of 590 events, 19
+/// of 114 cycles named, and nothing on screen saying so — so anything reading
+/// the payload as "the ledger" under-reads it by 540 events and cannot know.
+///
+/// The total costs nothing: `Storage::list_events` already loads every stream in
+/// full (`canonical_events` walks them with `u32::MAX`) and the truncation
+/// happens afterwards in memory. `total_events` is the length of the vector
+/// *before* the `take`, which is information this command was already
+/// discarding.
+#[derive(Serialize)]
+struct LedgerEventsOutput {
+    /// The events actually shown, ascending by sequence.
+    events: Vec<LedgerEventOutput>,
+    /// How many events the ledger holds for this query, shown or not.
+    total_events: usize,
+    /// How many are in `events`. Redundant with `events.len()` on purpose: a
+    /// consumer should not have to count an array to learn its own size.
+    shown: usize,
+    /// Whether anything was left out.
+    truncated: bool,
 }
 
 fn run_ledger_verify(args: LedgerVerifyArgs, environment: &CliEnvironment) -> CommandOutput {
@@ -398,16 +428,29 @@ fn backfill_chain_text(output: &BackfillChainOutput) -> String {
 
 fn run_ledger_events(args: LedgerEventsArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
-    let result = (|| -> anyhow::Result<Vec<LedgerEventOutput>> {
+    let result = (|| -> anyhow::Result<LedgerEventsOutput> {
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let events = match &args.frame {
+        let all = match &args.frame {
             Some(frame) => context.storage.list_frame_events(frame)?,
             None => context.storage.list_events()?,
         };
-        Ok(events
+        // Taken before the `take`, and that is the whole fix: the vector already
+        // holds every event, so declaring what was left out costs no query and
+        // no new storage API.
+        let total_events = all.len();
+        // `0` means all, matching `ledger export --limit 0` and
+        // `ledger watch --max-events 0` in the same binary. It used to mean
+        // *zero* here, which is the opposite convention one command away and
+        // produced an empty listing with exit 0.
+        let limit = if args.limit == 0 {
+            usize::MAX
+        } else {
+            args.limit
+        };
+        let events: Vec<LedgerEventOutput> = all
             .into_iter()
             .rev()
-            .take(args.limit)
+            .take(limit)
             .rev()
             .map(|event| LedgerEventOutput {
                 sequence: event.sequence,
@@ -419,7 +462,14 @@ fn run_ledger_events(args: LedgerEventsArgs, environment: &CliEnvironment) -> Co
                 actor: event.actor,
                 occurred_at: event.occurred_at,
             })
-            .collect())
+            .collect();
+        let shown = events.len();
+        Ok(LedgerEventsOutput {
+            truncated: shown < total_events,
+            shown,
+            total_events,
+            events,
+        })
     })();
     render_result(result, format, ledger_events_text)
 }
@@ -591,13 +641,27 @@ fn ledger_verify_text(output: &LedgerVerifyOutput) -> String {
     )
 }
 
-fn ledger_events_text(events: &Vec<LedgerEventOutput>) -> String {
-    if events.is_empty() {
-        return "no events\n".to_owned();
-    }
-    let mut output = String::new();
-    for event in events {
-        output.push_str(&format!(
+fn ledger_events_text(output: &LedgerEventsOutput) -> String {
+    let mut text = String::new();
+    // The declaration comes first and comes in both cases on purpose. A count
+    // that only appears when something was truncated cannot be read off a log
+    // where nothing was truncated, and "nothing was truncated" is exactly the
+    // claim a reader needs to be able to check.
+    text.push_str(&format!(
+        "events: {} of {} ({})\n",
+        output.shown,
+        output.total_events,
+        if output.truncated {
+            "truncated"
+        } else {
+            "complete"
+        }
+    ));
+    // An empty ledger declares zero rather than printing a bare `no events`,
+    // which reads as "there was nothing to look at" when what it should say is
+    // "nothing was left out".
+    for event in &output.events {
+        text.push_str(&format!(
             "{} {} {} {} {}\n",
             event.sequence,
             event.event_type,
@@ -606,7 +670,7 @@ fn ledger_events_text(events: &Vec<LedgerEventOutput>) -> String {
             event.cycle_id.as_deref().unwrap_or("-")
         ));
     }
-    output
+    text
 }
 
 /// Tail the ledger in real time (M9.5 live-mode streaming).

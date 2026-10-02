@@ -1449,13 +1449,36 @@ fn cli_walks_cycle_with_fencing_and_rebuilds_state() {
     // workflow events plus the auto-release event (shared frame with the
     // transition). After B+ (ADR-0111) the routine admissions are `Allow`, so
     // no extra `authority.admission.decided` events are recorded: 6 events.
-    assert_eq!(events_json.as_array().unwrap().len(), 6);
+    //
+    // **Shape change, declared.** This payload used to be a bare array. INC-DEBT-060
+    // F63 is that `ledger events` shows a window (50 of 590 on the real ledger)
+    // without saying so, and an array has nowhere to put the total — so the fix
+    // is an envelope, not an added field. Measured before deciding: this file is
+    // the only consumer of this payload in the repo, and `scripts/`, `.github/`
+    // and `tests/` do not parse it. See
+    // `docs/roadmap/receipts/cl-ledger-declaration/SCOPE-CONTRACT.md` §3 and
+    // §4.2.
+    let events_list = events_json["events"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`events` must be an array: {events_json}"));
+    assert_eq!(events_list.len(), 6);
+    // The declaration is the point of the change, so it is asserted rather than
+    // assumed: a listing that fits must say it fits.
+    assert_eq!(
+        events_json["total_events"].as_u64(),
+        Some(6),
+        "{events_json}"
+    );
+    assert_eq!(events_json["shown"].as_u64(), Some(6), "{events_json}");
+    assert_eq!(
+        events_json["truncated"].as_bool(),
+        Some(false),
+        "{events_json}"
+    );
     // Frame sharing holds on the cycle stream: the auto-release event shares
     // the transition frame. Workflow events carry no frame_id (empty string
     // in the merged view) and live on their own canonical streams.
-    let frames = events_json
-        .as_array()
-        .unwrap()
+    let frames = events_list
         .iter()
         .filter(|event| !event["frame_id"].as_str().unwrap().is_empty())
         .map(|event| event["frame_id"].as_str().unwrap())
