@@ -1,5 +1,30 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69k, 2026-10-03): la cuarta superficie de la misma clase, y —lo que más vale— el falsificador encontró un defecto en el remedio. Una afirmación mía llevaba dos commits viva y era falsa.** `HEAD` = `1f6072e7` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La pregunta que los tres ciclos anteriores no se hacían:** *¿qué más declara el mismo hecho, y cada uno lo declara igual?* De **5 superficies candidatas: 1 defecto, 2 ya cerradas, 2 descartadas.** Los dos descartes salen por **homonimia** — `sddk-domain` tiene **otro** `GraphView`, y el nombre compartido es justo lo que hace que una búsqueda por nombre lo traiga. **Sexta vez en esta sesión que el número de candidatos se reduce al leerlos.**
+
+**`VaultNode` deriva `Serialize` y tiene 8 campos; `export_node` era un `json!` a mano con 6**, que descartaba `tags` y `body` **sin declarar nada**. La asimetría es lo que lo hace defecto y no decisión: `status` viaja y tiene columna propia; `tags` no viaja y no tiene columna — mismo tipo de metadato, dos reglas, ninguna derivable. **Lo que no se afirma** es que `body` falte: eso es diseño, y casi con seguridad está bien. Lo que se afirma es más estrecho — **el artefacto no dice qué omite**, luego no se puede responder «¿esto es todo?» sin leer el código.
+
+**El falsificador encontró un defecto en el remedio, y eso es lo que más valor tiene.** O2 afirmaba que `From<&VaultNode>` hacía que añadir un campo a `VaultNode` fuera **error de compilación**. **Es falso, y medido:** se añadió `mutant_field`, se actualizó el parser, y `cargo build` **pasó**. Un `From` entre dos tipos **distintos** no es exhaustivo por ningún lado. **El mismo doc de `GraphExport::from(&GraphView)` afirmaba lo mismo desde el ciclo anterior**: la afirmación falsa llevaba **dos commits** viva y nadie la había falsificado. Corregidos los dos, con la medición al lado.
+
+**Y el guard que sí existe tampoco era el que se creía.** R2 tuvo dos versiones previas que no medían lo que declaraban: la primera repetía la lista de campos como **literal** — el defecto bajo prueba con otro sombrero —; la segunda construía un `VaultNode` **literal**, con lo que al mutar el error salía en el **fichero de test** y **ninguna aserción llegaba a ejecutarse**: la mutación quedaba «detectada» por el motivo equivocado, y el mensaje que habría servido no se imprimía nunca. La sonda es ahora un nodo **parseado de un fixture real**; con la mutación activa R2 nombra `mutant_field` y R1 reporta «7 de 9». **El script de medición también**: buscaba la palabra `omit`, lo que acopla el guard a una redacción. **El guard, no el producto — tres veces en este ciclo.**
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5396 passed / 0 failed** en 281 binarios (baseline 5391, **+5**) · `clippy -D warnings` exit 0 · `fmt --check` limpio · scanner **CLEAN** · `08-medir-nodes.py` de **«DEFECTO — omite sin declarar»** a **«correcto: omite y lo declara»** · changelog **PASS=57 FAIL=0** · las **7** aserciones del test existente de `export.rs` siguen verdaderas, sin reescribir.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-050**: las dos salidas — cerrar, o una segunda autoridad de lectura. La migración está **medida como inalcanzable**.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+4. **INC-DEBT-060**: 79 filas `__spine_import__` y 23 ciclos sin hecho (17 `OPEN`).
+5. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+6. `OMITTED_NODE_FIELDS` es una lista escrita a mano que R2 contrasta con el tipo pero **no** contra sí misma: si alguien añade ahí un campo que sí viaja, R2 no lo nota. **No medido.**
+7. La auditoría por criterio **no se ha aplicado a `ledger` ni a `cycle`**, que son las otras dos superficies que truncan.
+
+---
+
+
 **Estado (session-69j, 2026-10-02): se aplicó la regla del operador al único `critical` que quedaba abierto — «alerta de deuda sin verificar si sus criterios siguen vigentes no es deuda real» — y al verificlo apareció una incidencia nueva: el alias de proyecto renombra, pero en 6 de 15 casos lo que había era un reparto.** `HEAD` = `19ff78c0` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **INC-DEBT-050 remedida: el efecto observable ya no existe.** `migrate_project_identity.py audit` da **0 ids divergentes sobre 177 receipts**, con `selfcheck: OK`. El síntoma del titular —«un cuarto de las adopciones quedaron con su ledger fuera del alcance del CLI»— está resuelto. Su `open_part` de frontmatter describía el alias como «trabajo de diseño con SCOPE + ADR»: **está hecho**, ADR-0152 `accepted`, 15 aliases declarados. Corregido, y corregido lo que la medición sí establece.

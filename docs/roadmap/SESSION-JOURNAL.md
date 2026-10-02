@@ -10115,3 +10115,131 @@ faltaba por criterio —`export_node` y `window.__vault_nodes__`, sin medir;
 **(c)** decisiones de operador, que son cuatro y ninguna es técnica.
 **No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
 publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+### 2026-10-03T01:10:00Z — `p-63676b11dc0ef88f/vault-node-projection` — miniMax Code (mvs_b98f2520808543c8bfd72b7d38e01c34)
+
+**Baseline:** `4822ddd1` (`docs(roadmap): session-69j…`), `HEAD == origin/main`.
+**HEAD al cerrar:** `1f6072e7` + este commit documental. Rama `main`.
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`).
+
+#### WorkItem
+
+La pregunta que los tres ciclos anteriores **no** se hacían, y que el recibo de
+`cl-vault-html-replica` dejó anotada como pendiente: *¿qué más declara el mismo
+hecho, y cada uno lo declara igual?*
+
+#### Decisiones
+
+1. **Auditoría por criterio antes que por analogía.** 5 candidatas → 1 defecto,
+   2 ya cerradas, 2 descartadas. Los dos descartes salen por **homonimia**:
+   `sddk-domain` tiene **otro** `GraphView`.
+2. **El defecto no es «faltan campos», es «nada declara el alcance».** `body` casi
+   con seguridad no debe viajar; eso es diseño. Lo que se afirma es más estrecho.
+3. **Recuentos derivados de la serialización**, no escritos: una constante en la
+   frase de alcance sería el mismo defecto un nivel más abajo.
+4. **Cuando el guard falla, se corrige el guard.** Ocurrió tres veces aquí: el
+   script de medición, la lista literal del test, y el `VaultNode` literal.
+
+#### El hallazgo: el falsificador encontró un defecto en el remedio
+
+**O2 afirmaba que `From<&VaultNode>` hacía que añadir un campo a `VaultNode` fuera
+error de compilación. Es falso, y medido:**
+
+```
+1. anadir `mutant_field: String` a VaultNode
+2. actualizar parser.rs para satisfacerlo
+3. cargo build -p sddk-vault  ->  EXIT 0   (PASA)
+```
+
+Un `From` entre dos tipos **distintos** no es exhaustivo por ningún lado, y
+`NodeProjection` no es `VaultNode`. **El mismo doc de
+`GraphExport::from(&GraphView)` afirmaba lo mismo desde el ciclo anterior**: la
+afirmación falsa llevaba **dos commits** viva y nadie la había falsificado.
+Corregidos los dos docs, con la medición escrita al lado.
+
+**Y el guard que sí existe tampoco era el que se creía.** R2 tuvo dos versiones
+previas que no medían lo que declaraban:
+
+1. Repetía la lista de ocho campos como **literal** — el defecto bajo prueba con
+   otro sombrero.
+2. Construía un `VaultNode { … }` **literal**, con lo que al mutar el error era
+   `missing field` **en el fichero de test** y **ninguna aserción llegaba a
+   ejecutarse**. La mutación quedaba «detectada» por el motivo equivocado, y el
+   mensaje que habría servido no se imprimía nunca.
+
+La sonda es ahora un nodo **parseado de un fixture real**, así que el test
+siempre compila y es la aserción la que informa. Con la mutación activa:
+
+```
+`mutant_field` is a field of `VaultNode` that the export drops, and the artifact
+does not mention it. ... Carried: ["id","kind","path","status","tags","title",
+"wikilinks"], omitted: ["body", "mutant_field"]
+
+the export must DECLARE that it carries a projection... Today it carries 7 of 9
+```
+
+**El script de medición también:** su primera versión buscaba la palabra `omit`
+en el HTML, lo que acopla el guard a una redacción — cualquier declaración
+honesta que no la use sale como defecto. **El guard, no el producto.**
+
+#### Evidencia observada
+
+| qué | resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5396 passed / 0 failed**, 281 binarios (baseline 5391, **+5**) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+| scanner | **CLEAN** |
+| `vault/08-medir-nodes.py` | **DEFECTO — omite sin declarar** → **correcto: omite y lo declara** |
+| `test_changelog_coverage` | **PASS=57 FAIL=0** |
+| `test_debt_index_coherence` · `test_docs_script_contamination` · `test_gate_coverage` · `test_release_state_pointer` | exit 0 |
+| test existente `renders_self_contained_inspector` | sus **7** aserciones siguen verdaderas, sin reescribir |
+
+**Contexto real vs. sintético:** vault de markdown en árbol temporal con `XDG_*`
+propio y `SDDK_DATA_DIR` eliminado; el JSON se extrae **del HTML que produce el
+binario real**. **Ninguna medición contra el vault real.** El ciclo no escribe
+en él.
+
+#### La reducción de la auditoría, que es el resultado que viaja
+
+| superficie | veredicto |
+|---|---|
+| `GraphView` → `vault graph` | cerrada en `cl-vault-graph` |
+| `GraphView` → `GraphExport` | cerrada en `cl-vault-html-replica` |
+| `VaultNode` → `export_node` | **este ciclo** |
+| `sddk-domain::GraphView` | **descartado**: vista prestada y filtrada, sin `Serialize` |
+| `ActiveGraphView` | **descartado**: envuelve una proyección canónica y falla sin ella |
+
+**Sexta vez en esta sesión que el número de candidatos se reduce al leerlos.**
+
+#### Riesgos
+
+1. **Que `body` no viaje es una decisión, no una medición.** La sostiene el
+   motivo escrito y R4; si el criterio del inspector cambia, R4 es lo primero que
+   hay que revisar.
+2. **La tabla visible sigue sin columna `Tags`.** El dato viaja en el JSON
+   incrustado y la página lo declara, pero la tabla no lo muestra — coherente con
+   el no-objetivo 1, y dicho para que nadie lo lea al revés.
+3. `OMITTED_NODE_FIELDS` es una **lista escrita a mano** de lo que se omite. La
+   acompaña R2, que la contrasta con el tipo; si alguien añade ahí un campo que
+   sí viaja, R2 no lo detecta porque compara el conjunto de transportados contra
+   el de `VaultNode`, no contra esa lista. **No medido.**
+
+#### Bloqueos que persisten
+
+Clave KMS (**único** bloqueo de 2.5.3); las dos salidas de INC-DEBT-050; los 51
+ciclos de INC-DEBT-061; 79 filas `__spine_import__` y 23 ciclos sin hecho;
+INC-DEBT-049; ruta forge de `release apply`; harness Pipelinek-Test-Hardness.
+
+#### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. Con eso
+cerrado, **todo lo que queda sin hacer es decisión del operador** y ninguna es
+técnica: clave KMS, las dos salidas de INC-DEBT-050, los 51 ciclos de
+INC-DEBT-061, las 79 filas `__spine_import__` con los 23 ciclos sin hecho, e
+INC-DEBT-049. Antes de proponer trabajo nuevo, conviene comprobar si la
+**auditoría por criterio** tiene otra superficie donde aplicar: la pregunta
+*«¿qué más declara el mismo hecho?»* no se ha hecho sobre `ledger` ni sobre
+`cycle`, que son las otras dos superficies que truncan. **No bumpear por
+conveniencia**: si el workspace declara `2.5.3` y el último tag publicado es
+`v2.5.2`, la siguiente release **es 2.5.3**.
