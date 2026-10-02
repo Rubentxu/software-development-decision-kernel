@@ -2140,4 +2140,161 @@ mod tests {
         );
         assert!(checked.contains("version: 1.0.0"), "{checked}");
     }
+
+    // ===================================================================
+    // cl-release-forge-testability — R1..R5 del PRE-FLIGHT.
+    //
+    // R2 (el conductual) NO esta aqui y su ausencia es deliberada: llama a
+    // `apply_release_forge`, y un test que llama a una funcion que todavia no
+    // existe no es un test ROJO, es un error de compilacion que se lleva el
+    // crate entero. Es lo que advierte la cabecera de
+    // `ledger_export_declaration.rs`: una RED comprada rompiendo el build no es
+    // evidencia, es un destrozo. R2 llega con el codigo al que pertenece, en el
+    // mismo commit que lo implementa, y entonces es GREEN de verdad.
+    //
+    // Los cuatro de aqui son ESTRUCTURALES: leen el fuente y no dependen de que
+    // exista ninguna funcion, asi que compilan hoy y caen por la razon correcta.
+    // ===================================================================
+
+    /// El fuente del propio modulo, que es lo que estos guards miran.
+    const THIS_FILE: &str = include_str!("release_cmd.rs");
+
+    /// El cuerpo del brazo `ReleaseRoute::Forge`, acotado. Un `GitHubForge` en
+    /// otra funcion del mismo fichero no es el call site de esta rama, y buscar
+    /// en el fichero entero es la sexta vez en esta sesion que un detector mide
+    /// lo que tiene al lado.
+    fn forge_arm() -> &'static str {
+        THIS_FILE
+            .split("ReleaseRoute::Forge => {")
+            .nth(1)
+            .expect("the ReleaseRoute::Forge arm must exist")
+            .split("\n        }")
+            .next()
+            .expect("its body must be delimited")
+    }
+
+    /// **R1** — la rama delega en una funcion que recibe el forge por parametro.
+    /// RED hoy: la rama no delega en ninguna funcion; construye el adaptador
+    /// entero dentro de la llamada, y por eso ningun test la alcanza.
+    #[test]
+    fn r1_the_forge_arm_delegates_to_a_function_that_takes_the_forge() {
+        assert!(
+            THIS_FILE.contains("fn apply_release_forge"),
+            "the body of the forge route must live in a function of its own, so \
+             that it can be called with a double instead of only with `gh`. This \
+             is the whole defect of INC of the forge route: the branch exists and \
+             no test can reach it."
+        );
+        assert!(
+            THIS_FILE.contains("forge: &mut dyn Forge"),
+            "that function must receive the forge as `&mut dyn Forge`, which is \
+             what `apply_release` already takes (`release.rs:422`). Taking it \
+             concretely (`&mut GitHubForge`) would not be testable, because a \
+             double cannot be one."
+        );
+        assert!(
+            forge_arm().contains("apply_release_forge("),
+            "the ReleaseRoute::Forge arm must call it. Today the body is inlined: {}",
+            forge_arm()
+        );
+    }
+
+    /// **R3** — estructural de la costura: la rama **no** construye el adaptador
+    /// en linea. Sin este guard, re-inlinear `GitHubForge::new(repo)` devuelve la
+    /// rama a ser inalcanzable **con todos los tests en verde**, que es el
+    /// defecto que este ciclo viene a cerrar cerrandolo otra vez.
+    #[test]
+    fn r3_the_forge_arm_does_not_build_the_adapter_inline() {
+        assert!(
+            !forge_arm().contains("GitHubForge::new("),
+            "the ReleaseRoute::Forge arm must NOT construct `GitHubForge::new` \
+             inline: that is what makes it unreachable for the suite, and R1 \
+             would still pass. Building the adapter is the arm's job; running \
+             the release is the function's. The arm is: {}",
+            forge_arm()
+        );
+    }
+
+    /// **R4** — estructural de no-regresion. La extraccion es un cambio de FORMA
+    /// y no puede cambiar lo que la rama HACE: mismas capacidades, mismo orden
+    /// `CreatePr -> MergePr -> CreateRelease`, y el `AdmissionTicket` envolviendo
+    /// la cadena completa. STOP 1 dice que si esto se relaja, el arreglo se
+    /// descarta aunque los tests passen.
+    #[test]
+    fn r4_the_extraction_preserves_capabilities_order_and_the_ticket() {
+        // Las tres capacidades, y EN `authorize_release`.
+        //
+        // La primera version de este guard busco `ReleaseRoute::Forge => vec![`
+        // y se llevo la lista de PASOS del plan (`"create_pr", "merge_pr",
+        // "create_release"`), que esta un poco mas arriba en el mismo fichero y
+        // tiene la misma forma. Caia por el motivo equivocado —de hecho caia
+        // siempre, extractsse o no el cuerpo— y ademas no vigilaba lo que decia
+        // vigilar: la lista que de verdad autoriza las capacidades nunca se
+        // miraba. Treceva vez en esta sesion que un detector mide lo que tiene
+        // al lado. El ancla es ahora la FUNCION, no una linea que se repite.
+        let authorize = THIS_FILE
+            .split("fn authorize_release")
+            .nth(1)
+            .expect("authorize_release must exist")
+            .split("\nfn ")
+            .next()
+            .expect("its body must be delimited");
+        for capability in ["pr.create", "pr.merge", "release.create"] {
+            assert!(
+                authorize.contains(capability),
+                "`authorize_release` must keep requiring `{capability}` for the \
+                 forge route. Extracting the body for testability must not become \
+                 a way to run three privileged effects without their \
+                 authorization. Note that the STEP names are `create_pr` / \
+                 `merge_pr` / `create_release` and are NOT capabilities: do not \
+                 anchor on those. Body: {authorize}"
+            );
+        }
+
+        // El ticket sigue envolviendo la cadena: si desaparece, la rama publica
+        // sin pasar por el gate que ADR-0132 creo para eso.
+        //
+        // El ancla es la LLAMADA, con su turbofish (`::<_, …>`), y no el nombre
+        // a secas: `with_github_releases_ticket` aparece tambien en el `use` de
+        // la cabecera, y anclar por el nombre se llevaba el import en vez del
+        // cuerpo. Mismo defecto que el de las capacidades, otro sitio.
+        let ticket = THIS_FILE
+            .split("with_github_releases_ticket::<")
+            .nth(1)
+            .expect("the forge chain must run under an AdmissionTicket")
+            .split(");")
+            .next()
+            .unwrap();
+        assert!(
+            ticket.contains("apply_release("),
+            "`apply_release` must stay INSIDE the ticket, not beside it. The \
+             whole point of ADR-0132 is that the body runs only after the ticket \
+             is consumed: {ticket}"
+        );
+
+        // Y la version se sigue comprobando antes de tocar nada.
+        assert!(
+            ticket.contains("version_authority"),
+            "the chain must still carry the `version_authority` it was checked \
+             with. An extraction that drops it would report a release whose \
+             version was never cross-checked: {ticket}"
+        );
+    }
+
+    /// **R5** — el guard del comentario. El codigo afirma en dos sitios que esta
+    /// rama no tiene test y que no es alcanzable sin red. En cuanto un test la
+    /// alcanza, esas frases son falsas, y una afirmacion falsa en el codigo es
+    /// exactamente lo que este trabajo viene a cerrar.
+    #[test]
+    fn r5_the_source_no_longer_claims_the_forge_route_is_untested() {
+        for claim in ["no tiene test", "no es alcanzable sin red"] {
+            assert!(
+                !THIS_FILE.contains(claim),
+                "the source still says `{claim}` about `release apply --route \
+                 forge`. If this test passes, that statement is false and has to \
+                 go: a comment that contradicts the suite is a comment that will \
+                 be believed."
+            );
+        }
+    }
 }
