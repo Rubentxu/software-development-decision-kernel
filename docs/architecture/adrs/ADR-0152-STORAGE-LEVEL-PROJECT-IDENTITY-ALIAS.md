@@ -182,6 +182,19 @@ explícito:
 
 Criterios falsables. Un ADR sin ellos es una opinion con formato.
 
+> **Estado medido en session-69: el criterio 3 es ROJO y este ADR no se
+> promueve.** No es que falte una línea de declaración: `sddk adopt status` no
+> llega al resolver de alias. `prepare_adoption_plan` (`lib.rs:2133`) llama a
+> `plan_adoption`, que llama a `resolve_project_identity` directamente
+> (`adoption.rs:203`), y la tabla de aliases no se carga en esa ruta. Medido con
+> un alias declarado: el mismo checkout responde `project resolve` con el `to` y
+> `identity_alias: from -> to`, y `adopt status` con el `from`, `status: absent`
+> y un ledger que no existe. Peor: `adopt apply` sobre ese checkout **escribe un
+> segundo recibo bajo el id retirado**, que es la enfermedad que este ADR viene a
+> cerrar. Seis criterios no se suman: C3 en rojo bloquea la promoción entera.
+> Detalle, evidencia y criterios de cierre en
+> [INC-DEBT-059](../../debt/INC-DEBT-059-ADOPT-REDERIVES-IDENTITY-AND-WRITES-A-SECOND-RECEIPT-UNDER-A-RETIRED-PROJECT-ID.md).
+
 1. **La propiedad, con su falsificador.** Resolver con un alias da el mismo
    `project_id` que resolver sin él **cuando no hay alias** (el caso normal no
    cambia), y da el `to_id` cuando lo hay. Falsificador: sembrar un alias
