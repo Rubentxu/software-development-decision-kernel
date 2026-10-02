@@ -7,11 +7,12 @@ priority: P1
 detected_at: 2026-10-02
 detected_in_session: session-69
 component: identity
-surface: crates/sddk-cli/src/lib.rs
+surface: [crates/sddk-cli/src/lib.rs, crates/sddk-cli/src/context_cmd.rs]
 cluster_id: CL-IDENTITY
 related: [INC-DEBT-049, INC-DEBT-050]
 references:
   - crates/sddk-cli/src/lib.rs
+  - crates/sddk-cli/src/context_cmd.rs
   - crates/sddk-engine/src/adoption.rs
   - docs/architecture/adrs/ADR-0152-STORAGE-LEVEL-PROJECT-IDENTITY-ALIAS.md
   - docs/debt/INC-DEBT-050-REMOTE-CASE-NORMALIZATION-REASSIGNS-PROJECT-IDS-WITHOUT-MIGRATION.md
@@ -152,6 +153,84 @@ El criterio 5 («audit reporta 0 receipts huérfanos») queda en la misma línea
 reporta 1 divergencia por el par de skillgraph retirado, y aunque se reconciliara,
 el mecanismo que lo produce seguiría vigente.
 
+## AMPLIADO tras el primer commit: `context bootstrap` también se salta el store, y es peor
+
+La primera versión de esta INC declaraba `surface: crates/sddk-cli/src/lib.rs` y
+medía solo `adopt`. Al mapear el segundo punto de llamada de producción de `plan_adoption`
+la superficie resultó **más ancha**, y el defecto **peor**. Se amplía aquí en vez
+de reescribir el commit ya publicado: el diario es append-only y también la
+evidencia de una corrección de alcance.
+
+`converge_adoption` (`context_cmd.rs:1061`) es el otro llamador de `plan_adoption`
+en producción, y **el que lo llama tampoco resuelve el alias**:
+
+- `context_cmd.rs:1023-1024` — `resolve_identity` llama a
+  `sddk_domain::resolve_project_identity` **directamente**, no al resolver
+  canónico.
+- `context_cmd.rs:1066-1069` — reenvía el id a `plan_adoption` **solo** si
+  `identity_source == Pinned`. Un checkout con alias y **sin** pin cae en
+  `pinned_project_id: None`, y el engine vuelve a derivar. Es exactamente el
+  atajo que más abajo se declara incorrecto.
+
+**OBSERVED** sobre el mismo sandbox (`repro-c3c.sh`), mismo alias, mismo instante:
+
+```
+$ sddk project resolve --root ws --scope .
+project_id: p-0000000000000aaa
+identity_alias: p-c4319c598bc98be8 -> p-0000000000000aaa
+
+$ sddk context bootstrap --root ws --scope . --session probe-c3
+status: no_capsule_source
+project: p-c4319c598bc98be8            <-- el id RETIRADO
+adoption: complete                     <-- y afirma que esta completo
+binding: sddk/context/bindings/probe-c3.json (written: true)
+```
+
+**Tres comandos, tres respuestas sobre el mismo estado:** `project resolve` da el
+`to` y declara el salto; `adopt status` da el `from` con `absent`;
+`context bootstrap` da el `from` con **`complete`**.
+
+Es peor que `adopt status` en dos cosas que importan:
+
+1. **Afirma algo falso en positivo.** `adopt status` decía `absent`, que es
+   «no encuentro nada» — un error ruidoso. `context bootstrap` dice
+   **`adoption: complete`** sobre una adopción bajo un id retirado, y además
+   **escribe un binding de sesión durable** en el data dir de ese id
+   (`written: true`). Tras el arreglo, nada leerá ese binding: `context
+   bootstrap` abrirá el data dir del `to` y no lo encontrará. Queda **atrapado
+   en el sitio al que el alias ya no lleva a nadie**.
+2. **Es el segundo escritor del mismo huérfano.** Tras el bootstrap, el `find`
+   de `adoption.json` muestra los **dos** recibos, sin que nadie los pidiera dos
+   veces.
+
+**Y un tercer doc falso, el más literal de los tres.**
+`context_cmd.rs:1001`, el doc de `resolve_identity`:
+
+> /// Resolve project/workspace identity with the SAME resolver as `adopt`.
+
+Es literalmente cierto y exactamente lo contrario de lo que importa: ambos
+llaman a `sddk_domain::resolve_project_identity`, la función a la que **los dos**
+se saltan. El doc documenta la **concordancia entre los dos bypass** como si
+fuera concordancia con la autoridad. Es la tercera afirmación de convergencia
+que este trabajo produce y ninguna se cumple — las otras dos en
+`lib.rs:1699-1703` y en el propio criterio 3 del ADR, que por eso es rojo.
+
+**Consecuencia sobre la gravedad.** Sigue siendo `high` y no `critical`, y el
+razonamiento se amplía en vez de cambiar: no hay pérdida de datos (el binding es
+nuevo, no sobrescribe nada del `to`), ni corrupción de `content_hash`, ni
+brecha de seguridad, y el recibo duplicado sigue siendo resoluble por el alias.
+Lo que se **agrega** es que ahora hay un segundo escritor y una afirmación
+positiva falsa. La condición de escalada no cambia: `critical` en cuanto el
+mecanismo toque un proyecto cuyo id retirado **no** tenga alias declarado,
+porque entonces ni el recibo ni el binding los resuelve nadie.
+
+**Lo que esto NO cambia:** la causa sigue siendo una sola y el arreglo sigue
+siendo uno. Las dos superficies comparten la entrada —`plan_adoption`— y el
+movimiento correcto es el mismo: que ninguna de las dos derive identidad, y que
+la derive **una sola vez** el resolver canónico. Lo que cambia es el **recuento
+de puntos de llamada que hay que mover**: dos, no uno, y una de ellos reenvía el
+pin con una condición que hay que eliminar en vez de especificarla.
+
 ## Gravedad
 
 `high`, no `critical`. La razón de esa elección, porque la diferencia importa:
@@ -171,6 +250,7 @@ recibo no es resoluble por nadie.
 ```bash
 bash /var/home/rubentxu/repro-c3.sh    # alias + pin + adopt status
 bash /var/home/rubentxu/repro-c3b.sh   # adopt apply -> segundo recibo
+bash /var/home/rubentxu/repro-c3c.sh   # context bootstrap -> segundo recibo + binding
 ```
 
 ## Resolution (abierta)
@@ -178,21 +258,45 @@ bash /var/home/rubentxu/repro-c3b.sh   # adopt apply -> segundo recibo
 Precondición de la corrección: **`SCOPE-CONTRACT` + `PRE-FLIGHT` propios**, y
 test **RED antes** del arreglo, no después.
 
-El arreglo tiene que mover la decisión, no añadirla. `plan_adoption` re-deriva
-porque el engine es filesystem-free por diseño y la tabla la carga la CLI, así
-que la forma correcta es que `prepare_adoption_plan` resuelva **una vez** por
-`resolve_identity_honoring_pin_with` y pase al engine la identidad ya resuelta
-—con `alias_origin` y `identity_source` intactos, porque `context_cmd.rs` lee
-`identity_source` para decidir si reenvía el pin. Pasar el id resuelto como
-`pinned_project_id` sería más corto y **incorrecto**: degradaría `identity_source` a
-`Pinned` en el camino no pinado, que es la regresión que el comentario de
-`adoption.rs:210-243` ya warnió una vez.
+El arreglo tiene que **mover** la decisión, no añadirla. `plan_adoption` re-deriva
+porque el engine es filesystem-free por diseño y la tabla la carga la CLI; eso es
+correcto y no se toca. Lo que no puede seguir siendo cierto es que **el engine
+derive identidad**: no puede, porque no tiene la tabla, luego cualquier
+resolución que produzca es sistemáticamente la pre-alias.
+
+La forma correcta, y la que hace verdadera la afirmación de «un solo punto» **por
+construcción** en vez de por nota: `AdoptionPlanInput` deja de llevar
+`remote_url` + `pinned_project_id` + `scope` + `fallback_seed` y lleva la
+**identidad ya resuelta**. `plan_adoption` deja de llamar a
+`resolve_project_identity` por completo, y con ello desaparece la posibilidad de
+que alguien vuelva a derivar por ahí. Los dos puntos de llamada de producción
+(`prepare_adoption_plan` y `converge_adoption`) resuelven **una vez** por
+`resolve_identity_honoring_pin_with` y pasan el resultado.
+
+**Descartada la forma corta, y el motivo es el que ya está medido en el campo:**
+pasar el id resuelto como `pinned_project_id` no exige tocar nada y **no
+funciona**. Haría que el engine lo volviera a tratar como pin, así que
+`identity_source` no viajaría y el `alias_origin` tampoco — la información se
+perdería igual, un nivel más adentro y con una forma que parece correcta. Y
+`context_cmd.rs:1066-1069` ya hace exactamente eso hoy, condicionado a
+`identity_source == Pinned`, y por eso un checkout con alias y **sin** pin es el
+caso que se rompe. Esa condición hay que **eliminarla**, no propagarla: es el
+mismo error en la superficie hermana.
+
+**Coste asumido y declarado:** `plan_adoption` tiene 11 construcciones de
+`AdoptionPlanInput` — 2 en producción, 9 en tests — y los tests que cubren el pin
+**dentro del engine** (`pinned_project_id_wins_over_remote_derivation`,
+`malformed_pin_fails_closed_instead_of_falling_back_to_the_remote`) migran a la
+CLI, que es donde el pin vive y donde estaba desde que el pin es un asunto del
+checkout. Es el mismo criterio con el que se corrigió INC-DEBT-049 una vez, y
+perder cobertura no se acepta: se cambia de sitio, no se deja de medir.
 
 Criterios de cierre, todos falsables:
 
-1. Un test **estructural** sobre los puntos de llamada: `prepare_adoption_plan` no
-   llama a `resolve_project_identity` (ni a `plan_adoption` sin identidad
-   resuelta). Falsificador: reintroducir la derivación y exigir fallo.
+1. Un test **estructural** sobre los puntos de llamada: ni
+   `prepare_adoption_plan` ni `resolve_identity` de `context_cmd.rs` llaman a
+   `resolve_project_identity`. Falsificador: reintroducir la derivación en
+   cualquiera de los dos y exigir fallo.
 2. Un test e2e que cruza la costura: alias declarado + `adopt status` ⇒ el
    `project_id` reportado es el `to`, `identity_alias` nombra `from -> to`, y el
    ledger leído es el del `to`. Falsificador: borrar la línea de declaración y
@@ -200,11 +304,18 @@ Criterios de cierre, todos falsables:
 3. Un test e2e de no-regresión: `adopt apply` sobre un checkout con alias
    **no** crea un recibo bajo el id retirado. Falsificador: contar los ficheros
    `adoption.json` antes y después.
-4. El doc de `ProjectPin` corregido, y un test estructural que verifique que la
-   afirmación de convergencia del doc se sostiene — o que el doc deja de
-   afirmarla. Un doc que afirma una convergencia sin test es la clase que
-   INC-DEBT-049 ya pagó una vez.
-5. `scripts/migrate_project_identity.py audit` re-ejecutado sobre el storage real
+4. **Un test e2e para `context bootstrap`**, que es la segunda superficie y la
+   que afirma `complete`: con alias declarado ⇒ el `project` reportado es el
+   `to`, y el binding se escribe bajo el data dir del `to`. Falsificadores: dos,
+   y ambos importan — sustituir el proyecto por el `from` (falla por
+   identificación) y contar los `adoption.json` y los ficheros de binding antes
+   y después (falla por escritura).
+5. El doc de `ProjectPin` **y** el de `resolve_identity` en `context_cmd.rs`
+   corregidos, y un test estructural que verifique que la afirmación de
+   convergencia se sostiene — o que el doc deja de afirmarla. Los tres docs que
+   este trabajo produjo afirman una convergencia que no existe; un doc que la
+   afirma sin test es la clase que INC-DEBT-049 ya pagó una vez.
+6. `scripts/migrate_project_identity.py audit` re-ejecutado sobre el storage real
    **después** del arreglo, para el criterio 5 de ADR-0152.
 
 ## Nota sobre el estado del árbol
