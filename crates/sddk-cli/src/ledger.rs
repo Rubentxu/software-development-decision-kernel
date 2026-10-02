@@ -2,6 +2,7 @@
 
 use anyhow::Context;
 use clap::{Args, Subcommand};
+use sddk_domain::models::LedgerEvent;
 use sddk_domain::ports::SnapshotPort;
 use serde::Serialize;
 
@@ -686,106 +687,194 @@ fn ledger_events_text(output: &LedgerEventsOutput) -> String {
 ///   * `--max-events` reached (0 = unlimited)
 ///   * `--idle-timeout-ms` elapsed with no new events (0 = never)
 ///   * SIGINT/EOF on stdin (handled by callers, not in-process)
+/// Applies the `--cycle` and `--frame` narrowing that `ledger watch` uses, in
+/// **one** place, called from two: the poll loop and the total it declares.
+///
+/// One function with two call sites is the whole point. Two copies of these two
+/// `retain`s would be two rules declaring what "an event of this query" means —
+/// free to drift, and nothing would notice. That is the defect this change
+/// exists to close, reproduced one level down: `Storage::list_events_after`
+/// walks every stream and then `.take(limit)`s, throwing the length away on
+/// every poll from a `canonical_events()` that has already loaded the whole
+/// ledger. So the count here is made of the *same* predicate as the emission,
+/// not of a cheaper parallel query.
+fn apply_watch_filters(events: &mut Vec<LedgerEvent>, cycle: Option<&str>, frame: Option<&str>) {
+    if let Some(cycle) = cycle {
+        events.retain(|ev| ev.cycle_id.as_deref() == Some(cycle));
+    }
+    if let Some(frame) = frame {
+        events.retain(|ev| ev.frame_id == *frame);
+    }
+}
+
+/// What `ledger watch` declares when it stops.
+///
+/// `emitted` is what this run showed. `total_events` is how many events the
+/// ledger held for **this** query — the same start cursor and the same filters,
+/// counted through the same [`apply_watch_filters`]. `pending` is **derived**,
+/// never a third number written by hand: `saturating_sub` so a mid-run
+/// deletion cannot panic, and the arithmetic closing is asserted by R3 in
+/// `tests/ledger_watch_declaration.rs`.
+///
+/// The two renderers below read this one struct. A footer and a JSON summary
+/// are two declarations of the same fact; writing their numbers separately
+/// would make them free to disagree.
+#[derive(Serialize)]
+struct LedgerWatchSummary {
+    emitted: u64,
+    total_events: u64,
+}
+
+impl LedgerWatchSummary {
+    fn pending(&self) -> u64 {
+        self.total_events.saturating_sub(self.emitted)
+    }
+}
+
 fn run_ledger_watch(args: LedgerWatchArgs, environment: &CliEnvironment) -> CommandOutput {
     use std::fmt::Write as _;
 
     let mut stdout = String::new();
     let format = args.format;
 
-    let result: anyhow::Result<u64> = (|| -> anyhow::Result<u64> {
-        let context = RuntimeContext::open(&args.runtime, environment, false)?;
-        let mut after_sequence = args.from_sequence;
-        let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
-        let max_events = args.max_events;
-        let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
-        let started = std::time::Instant::now();
-        let mut last_activity = std::time::Instant::now();
-        let mut emitted: u64 = 0;
+    let result: anyhow::Result<LedgerWatchSummary> =
+        (|| -> anyhow::Result<LedgerWatchSummary> {
+            let context = RuntimeContext::open(&args.runtime, environment, false)?;
+            let mut after_sequence = args.from_sequence;
+            let interval = std::time::Duration::from_millis(args.interval_ms.max(1));
+            let max_events = args.max_events;
+            let idle_timeout = std::time::Duration::from_millis(args.idle_timeout_ms);
+            let started = std::time::Instant::now();
+            let mut last_activity = std::time::Instant::now();
+            let mut emitted: u64 = 0;
 
-        // When `--from-tail` is requested, start strictly after the
-        // current latest sequence so historical events are not re-emitted.
-        if args.from_tail {
-            let tail = context
-                .storage
-                .list_events()
-                .context("loading current ledger tail for --from-tail")?;
-            after_sequence = tail.last().map(|ev| ev.sequence).unwrap_or(0);
-        }
-
-        loop {
-            // Bounded fetch: ask for a generous chunk per poll. SQLite
-            // returns up to `limit` rows ordered by sequence ASC.
-            let chunk_size: i64 = 256;
-            let mut events = context
-                .storage
-                .list_events_after(after_sequence, chunk_size)
-                .context("polling list_events_after")?;
-
-            // Apply optional filters locally — `list_events_after` is
-            // already narrow by sequence range, but cycle/frame filters
-            // require a second pass.
-            if let Some(cycle) = &args.cycle {
-                events.retain(|ev| ev.cycle_id.as_deref() == Some(cycle.as_str()));
-            }
-            if let Some(frame) = &args.frame {
-                events.retain(|ev| ev.frame_id == *frame);
+            // When `--from-tail` is requested, start strictly after the
+            // current latest sequence so historical events are not re-emitted.
+            if args.from_tail {
+                let tail = context
+                    .storage
+                    .list_events()
+                    .context("loading current ledger tail for --from-tail")?;
+                after_sequence = tail.last().map(|ev| ev.sequence).unwrap_or(0);
             }
 
-            if events.is_empty() {
-                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
-                    break;
-                }
-                std::thread::sleep(interval);
-                // Defensive: avoid pathological infinite loop if a clock
-                // skew or test harness pins time forward.
-                if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
-                    break;
-                }
-                continue;
-            }
+            // The cursor this run *started* from, kept apart from the running
+            // one: the total has to describe what this run could have emitted,
+            // and using the cursor it finished on would answer a different
+            // question — "how much is still there" instead of "how much was
+            // there", which is a number that cannot be compared with `emitted`.
+            let start_cursor = after_sequence;
 
-            for event in &events {
-                let line = match format {
-                    OutputFormat::Json => {
-                        serde_json::to_string(event).context("serializing LedgerEvent to NDJSON")?
+            'poll: loop {
+                // Bounded fetch: ask for a generous chunk per poll. SQLite
+                // returns up to `limit` rows ordered by sequence ASC.
+                let chunk_size: i64 = 256;
+                let mut events = context
+                    .storage
+                    .list_events_after(after_sequence, chunk_size)
+                    .context("polling list_events_after")?;
+
+                // Optional cycle/frame narrowing — `list_events_after` is
+                // already narrow by sequence range, but cycle/frame filters
+                // require a second pass.
+                apply_watch_filters(
+                    &mut events,
+                    args.cycle.as_deref(),
+                    args.frame.as_deref(),
+                );
+
+                if events.is_empty() {
+                    if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                        break;
                     }
-                    OutputFormat::Text => format!(
-                        "{:>8}  {:<36}  {:<24}  cycle={}  frame={}",
-                        event.sequence,
-                        event.event_type,
-                        event.event_id,
-                        event.cycle_id.as_deref().unwrap_or("-"),
-                        event.frame_id.as_str(),
-                    ),
-                };
-                writeln!(stdout, "{line}").expect("writing to String never fails");
-                after_sequence = event.sequence;
-                emitted = emitted.saturating_add(1);
-                if max_events > 0 && emitted >= max_events {
-                    return Ok(emitted);
+                    std::thread::sleep(interval);
+                    // Defensive: avoid pathological infinite loop if a clock
+                    // skew or test harness pins time forward.
+                    if !idle_timeout.is_zero() && last_activity.elapsed() >= idle_timeout {
+                        break;
+                    }
+                    continue;
+                }
+
+                for event in &events {
+                    let line = match format {
+                        OutputFormat::Json => {
+                            serde_json::to_string(event)
+                                .context("serializing LedgerEvent to NDJSON")?
+                        }
+                        OutputFormat::Text => format!(
+                            "{:>8}  {:<36}  {:<24}  cycle={}  frame={}",
+                            event.sequence,
+                            event.event_type,
+                            event.event_id,
+                            event.cycle_id.as_deref().unwrap_or("-"),
+                            event.frame_id.as_str(),
+                        ),
+                    };
+                    writeln!(stdout, "{line}").expect("writing to String never fails");
+                    after_sequence = event.sequence;
+                    emitted = emitted.saturating_add(1);
+                    if max_events > 0 && emitted >= max_events {
+                        break 'poll;
+                    }
+                }
+                last_activity = std::time::Instant::now();
+                // Safety bound: never loop forever in pathological cases
+                // (e.g. test harness without an idle timeout). 5 minutes is
+                // well beyond the longest expected run.
+                if started.elapsed() > std::time::Duration::from_secs(300) {
+                    anyhow::bail!("ledger watch exceeded 5 minute safety bound");
                 }
             }
-            last_activity = std::time::Instant::now();
-            // Safety bound: never loop forever in pathological cases
-            // (e.g. test harness without an idle timeout). 5 minutes is
-            // well beyond the longest expected run.
-            if started.elapsed() > std::time::Duration::from_secs(300) {
-                anyhow::bail!("ledger watch exceeded 5 minute safety bound");
-            }
-        }
-        Ok(emitted)
-    })();
+
+            // Declaring the window. The cap is not a reason to stay silent
+            // about it: "emitted 5" over a ledger of 591 is indistinguishable
+            // from "that was all of them" unless the other 586 are named.
+            // `i64::MAX` removes the cap for this one count, and the same
+            // filter the loop used, so the number cannot disagree with the
+            // events that were (or were not) emitted.
+            let mut available = context
+                .storage
+                .list_events_after(start_cursor, i64::MAX)
+                .context("counting the events this watch could have emitted")?;
+            apply_watch_filters(
+                &mut available,
+                args.cycle.as_deref(),
+                args.frame.as_deref(),
+            );
+
+            Ok(LedgerWatchSummary {
+                emitted,
+                total_events: available.len() as u64,
+            })
+        })();
 
     match result {
-        Ok(count) => {
+        Ok(summary) => {
             // For JSON mode, emit a one-line summary so callers can see
             // the loop ended cleanly. For text mode, write a footer line.
+            // Both read the same struct, so the two cannot disagree.
             match format {
                 OutputFormat::Json => {
-                    let _ = writeln!(stdout, "{{\"__watch_complete\":true,\"emitted\":{count}}}");
+                    let _ = writeln!(
+                        stdout,
+                        "{}",
+                        serde_json::json!({
+                            "__watch_complete": true,
+                            "emitted": summary.emitted,
+                            "total_events": summary.total_events,
+                            "pending": summary.pending(),
+                        })
+                    );
                 }
                 OutputFormat::Text => {
-                    let _ = writeln!(stdout, "[watch] emitted {count} events, exiting");
+                    let _ = writeln!(
+                        stdout,
+                        "[watch] emitted {} of {} ({} not emitted), exiting",
+                        summary.emitted,
+                        summary.total_events,
+                        summary.pending()
+                    );
                 }
             }
             CommandOutput {
