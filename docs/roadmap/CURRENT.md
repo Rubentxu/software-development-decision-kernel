@@ -1,5 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69i, 2026-10-02): la réplica HTML de `vault export` era una tercera superficie del mismo defecto, y un guard mío era falso — las dos cosas las encontró medir en vez de suponer.** `HEAD` = `3f7efb99` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El riesgo que session-69h dejó escrito como «no verificado si es intencional»: medido, y no era intencional.** `GraphExport` (`export.rs:90-95`) **no es una vista parcial de `GraphView`**: es una **estructura distinta con tres campos escrita a mano**, luego las dos listas de campos podían separarse sin que nada lo notara. Sobre el mismo vault de dos ciclos disjuntos, el JSON incrustado en la página declaraba `cyclic` y nada más: sin `cycle_count`, sin `multiple_cycles`, y con `topological_order` ausente **sin decir por qué**. El defecto de `cl-vault-graph` **intacto**, en una superficie que nadie miraba.
+
+**Y el STOP 4 del ciclo anterior se cumplió literalmente con el defecto entero presente.** Decía «si `vault export` deja de cuadrar con `vault graph`, se para», y el HTML no afirma nada *falso* sobre el grafo: sencillamente no declara lo mismo. **Una condición que se puede cumplir con el defecto ahí no es un guard**, y queda anotado como débil en el SCOPE. Con esto el defecto estaba cerrado en **dos de tres** declaraciones, no en dos de dos — que es el número que se habría escrito si se hubiera contado por comandos en vez de por declaraciones.
+
+**El arreglo invierte el control:** el mapeo pasa de un literal en el sitio de llamada a un `impl From<&GraphView>`, de modo que **añadir un campo a `GraphView` sin decidir qué dice la página es un error de compilación** y no una divergencia silenciosa. Un sitio de llamada no es donde mira un compilador.
+
+**El primer R1 estaba mal, y no el producto.** Afirmaba que la clave `cycle_count` tiene que estar **presente**, y falló contra una implementación correcta: la forma saturada la **omite** cuando la respuesta es «2 o más», porque `None` *es* la codificación de «2 o más» y `multiple_cycles: true` es lo que la hace distinguible de «ausente». Exigir la clave habría reintroducido la ambigüedad que el ciclo quita. **El script de medición arrastraba la misma aserción equivocada** — primero falló el test, después salió un `GAP` residual en el script—, así que la propiedad comprobada es ahora la **forma**, no la presencia, en los dos sitios.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5391 passed / 0 failed** en 280 binarios (baseline 5388, **+3**) · `clippy -D warnings` exit 0 · `fmt --check` limpio · scanner **CLEAN** · `07-medir-html.py` de **3/4 en GAP a 0** · falsificador del ciclo anterior **PASS=6 FAIL=0**, sin regresión · `test_docs_script_contamination` **PASS** · `test_gate_coverage` **PASS**.
+
+**RECONCILIATION: el §6 del recibo de `cl-vault-graph` era falso.** Afirmaba que `test_docs_script_contamination` y `test_gate_coverage` no existían. **Sí existen, y son `.py`, no `.sh`**, cableados en `release.sh:272,274`; mi comprobador usó `[ -x tests/$t.sh ]` y luego busqué un `.sh` donde hay un `.py`. Ejecutados: **ambos PASS** (41 tests, 36 con runner, 5 excepcionados, **0 huérfanos**). §6 se conserva sin tocar y la corrección va al lado, en el §9 de ese mismo recibo. **Es la tercera vez en esta sesión que una conclusión sale de medir la superficie equivocada** — la primera fue el `ledger watch` de session-69f, la segunda la variable `env` fuera de ámbito en el falsificador de `vault graph`. Las tres comparten forma: **aceptar el resultado del instrumento antes de comprobar que el instrumento es el que uno cree que es.**
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-060 sigue `open`**: las 79 filas de `__spine_import__` y los 23 ciclos sin hecho (17 `OPEN`).
+3. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+4. **La familia no está auditada por criterio.** Este ciclo llegó a otra superficie desde un defecto concreto, no desde una pregunta tipo «¿qué más declara el mismo hecho?». Puede haber una cuarta declaración del mismo grafo, y `window.__vault_nodes__` / `export_node` **no se han auditado** contra la clase. **No medido.**
+5. La página HTML **no tiene consumidor en el repo** más allá del test: «el consumidor recupera los campos» está probado **contra el artefacto**, no contra una página en funcionamiento. **No verificado en navegador.**
+
+---
+
 **Estado (session-69h, 2026-10-02): los dos comandos que dos sesiones dejaron como «NO MEDIDOS» están medidos. Uno es defecto real y está cerrado; el otro semidió y se descartó. Y un gate de release llevaba rojo en HEAD por un motivo que se encontró al ejecutar su propio remedio.** `HEAD` = `7f2cb04e` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **`vault graph` era un defecto real, y solo aparecía en el caso que la función no promete.** Con un vault **acíclico** de 30 nodos parece correcto: `node_count` 30 cuadra y el orden topológico sale completo, luego nada falla. Con **dos ciclos disjuntos**, `find_sample_cycle` (`graph.rs:88-94`) devuelve el **primero** y para, `GraphView` no tenía ningún campo de recuento, y el resultado daba `sample_cycle` con uno **callando sobre cuántos hay**; además el `topological_order` **desaparecía** sin decir por qué — una línea que no está se lee como «no se computó», que es otra afirmación distinta de «no existe porque el grafo es cíclico».

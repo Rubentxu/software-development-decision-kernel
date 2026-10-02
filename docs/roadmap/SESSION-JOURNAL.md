@@ -9924,3 +9924,99 @@ de los dos gates que el SCOPE nombra y no existen, porque un SCOPE que exige gat
 inexistentes se cumple solo; **(c)** atender los bloqueos del operador.
 **No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
 publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+### 2026-10-02T23:58:00Z — `p-63676b11dc0ef88f/vault-html-replica` — miniMax Code (mvs_b98f2520808543c8bfd72b7d38e01c34)
+
+**Baseline:** `ce09a855` (`docs(roadmap): session-69h…`), `HEAD == origin/main`.
+**HEAD al cerrar:** `3f7efb99` + este commit documental. Rama `main`.
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`).
+
+#### WorkItem
+
+El riesgo 3 del recibo de `cl-vault-graph`: «la réplica HTML no se contradice con
+el grafo, **no verificado** si es intencional». La pregunta era de una línea y la
+respuesta cambió el alcance del defecto.
+
+#### Decisiones
+
+1. **La réplica HTML es una tercera superficie de la misma clase**, medida. Con el
+   vault de dos ciclos, el JSON incrustado declara `cyclic` y nada más: sin
+   `cycle_count`, sin `multiple_cycles`, con `topological_order` ausente sin causa.
+2. **STOP 4 del ciclo anterior estaba redactado demasiado flojo** y se cumplió
+   literalmente con el defecto entero presente. Se registra como guard débil, sin
+   reescribirlo. La lección general: **una condición que se puede cumplir con el
+   defecto ahí no es un guard.**
+3. **Invertir el control** del mapeo (`impl From<&GraphView>`) en vez de alinear
+   campos a mano: separarlas de nuevo pasa a ser error de compilación.
+4. **Un FAIL de un guard se corrige en el guard.** El primer R1 y el script de
+   medición tenían la misma aserción equivocada; el producto estaba bien en los dos
+   casos.
+5. **RECONCILIATION, no reescritura**, del §6 del recibo anterior.
+
+#### Evidencia observada
+
+| qué | resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5391 passed / 0 failed**, 280 binarios (baseline 5388, **+3**) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+| scanner de contaminación | **CLEAN** |
+| `vault/07-medir-html.py` | **0/4 en GAP** (antes 3/4) |
+| `vault/06-falsify-graph.py` | **PASS=6 FAIL=0**, sin regresión del ciclo anterior |
+| `tests/test_docs_script_contamination.py` | **PASS** — 6 preexistentes, 0 nuevas |
+| `tests/test_gate_coverage.py` | **PASS** — 41 · 36 con runner · 0 huérfanos |
+| changelog · deuda · espejo ADR · puntero · ADR format | exit 0 |
+
+**Contexto real vs. sintético:** vault de markdown en árbol temporal con `XDG_*`
+propio y `SDDK_DATA_DIR` eliminado; el JSON se extrae **del artefacto que produce
+el binario**, no de una estructura en memoria. **Ninguna medición contra el vault
+real.** El ciclo no escribe en él.
+
+#### RECONCILIATION sobre session-69h
+
+El §6 del recibo de `cl-vault-graph` (**«los dos gates no existen»**) es **falso**.
+Sí existen, son `.py` y no `.sh`, cableados en `release.sh:272,274`. Mi
+comprobador usó `[ -x tests/$t.sh ]`. Ejecutados: ambos **PASS**. §6 se conserva
+sin tocar; la corrección va en el §9 de ese recibo.
+
+**Es la tercera vez en esta sesión que una conclusión sale de medir la superficie
+equivocada** — `ledger watch` (69f), `env` fuera de ámbito (falsificador de
+`vault graph`), y estos dos gates. **Tercera vez que el patrón es el mismo:
+aceptar el resultado del instrumento antes de comprobar que el instrumento es el
+que uno cree que es.**
+
+#### Pruebas NO ejecutadas
+
+- **UAT**: no hay superficie de usuario final ni página en funcionamiento que
+  recorrer. **No se declara PASS de UAT.**
+- La página HTML **no tiene consumidor en el repo** más allá del test: «el
+  consumidor recupera los campos» está probado **contra el artefacto**, no en
+  navegador. **No verificado.**
+- `export_node` y `window.__vault_nodes__` **no auditados** contra la clase
+  (no-objetivo 3 del SCOPE). **No medido.**
+
+#### Riesgos
+
+1. **La familia no está auditada por criterio.** Este ciclo llegó a otra
+   superficie desde un defecto concreto, no desde «¿qué más declara el mismo
+   hecho?». Puede haber una cuarta declaración del mismo grafo.
+2. Los `skip_serializing_if` de `GraphExport` replican los de `GraphView` a mano.
+   Si uno cambia y el otro no, R3 lo detecta — pero solo para los **cinco** campos
+   que nombra, no para los que se añadan después.
+
+#### Bloqueos que persisten
+
+Clave KMS (**único** bloqueo de 2.5.3); 79 filas `__spine_import__`; 23 ciclos sin
+hecho (17 `OPEN`); INC-DEBT-049 (F49); ruta forge de `release apply`; harness
+Pipelinek-Test-Hardness.
+
+#### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. Luego, y
+esta vez **por criterio y no por defecto encontrado**: auditar qué más declara el
+mismo grafo, mirando `window.__vault_nodes__` y `export_node`, que son las dos
+superficies que este ciclo dejó **fuera por no-objetivo** y por tanto **sin
+medir**. Pregunta que guía la búsqueda: *«¿qué otros lugares serializan un
+`GraphView` o una parte de él, y cada uno declara lo mismo?»*. **No bumpear por
+conveniencia**: si el workspace declara `2.5.3` y el último tag publicado es
+`v2.5.2`, la siguiente release **es 2.5.3**.

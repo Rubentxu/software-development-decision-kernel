@@ -136,3 +136,48 @@ comando sin superficie de usuario final, y la evidencia son los seis escenarios
 del falsificador más los cuatro tests del repo. **No se declara PASS de UAT.**
 Los IDs de trazabilidad aplicables son los de `docs/roadmap/UAT-MATRIX.md` para
 superficies de CLI; no se ha tocado ninguna fila.
+
+---
+
+## §9 — RECONCILIATION 2026-10-02T23:50:00Z: **§6 era falso**
+
+**§6 de este recibo afirma que `test_docs_script_contamination` y
+`test_gate_coverage` «no existen». Es falso, y el error es mío.**
+
+Los dos **existen** y están cableados a `release.sh:272,274`:
+
+| lo que §6 decía | lo que es |
+|---|---|
+| `test_docs_script_contamination` no existe | `tests/test_docs_script_contamination.py` |
+| `test_gate_coverage` no existe | `tests/test_gate_coverage.py` |
+
+**Cómo pasó.** El SCOPE los nombra sin extensión, y el comprobador que usé fue
+`[ -x tests/$t.sh ]`, luego busqué un `.sh` donde hay un `.py`. Con eso los dos
+dieron `MISSING`, y en lugar de dudar del instrumento escribí en el recibo que no
+existían y ejecuté **otros** gates (`test_deny_lint_zero_hits.sh` y
+`test_advisory_lint_explanations.sh`) aunque la intención del SCOPE era otra. Ni
+siquiera miré `scripts/release.sh`, donde la lista de gates está escrita y nombra
+los dos con su extensión real.
+
+**Medido al descubrirlo:**
+
+```
+tests/test_docs_script_contamination.py  -> PASS, ninguna contaminación nueva;
+                                            6 entradas preexistentes en allowlist
+tests/test_gate_coverage.py              -> PASS, 41 tests · 36 con runner ·
+                                            5 excepcionados con motivo ·
+                                            SIN runner y SIN motivo: 0
+```
+
+**Consecuencia sobre §6: desaparece.** Los dos gates del SCOPE se ejecutaron y
+pasaron. La sustitución por los de lint no era una «interpretación» sino una
+puerta equivocada, y el texto que lo reconocía («es una interpretación, no
+equivalencia demostrada») era la forma elegante de no haber comprobado el nombre.
+
+**Se conserva §6 sin tocar**, como manda la regla del diario: una corrección sin
+la afirmación falsa al lado no explica por qué se escribió así. Y queda escrito
+el patrón, porque es la **tercera vez en esta sesión** que una conclusión sale de
+medir la superficie equivocada —la primera fue el `ledger watch` de session-69f,
+la segunda la variable `env` fuera de ámbito en el falsificador de `vault graph`.
+Las tres comparten la forma: **aceptar el resultado del instrumento antes de
+comprobar que el instrumento es el que cree uno que es.**
