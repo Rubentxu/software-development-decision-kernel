@@ -12,22 +12,22 @@
    reutilizando el patrón de los tests que ya viven ahí (mismo módulo, `super::`,
    `MockForge`), **sin ensanchar ninguna visibilidad**.
 
-   - **T1** la rama delega: la función `apply_release_forge` recibe
+   - **R1** la rama delega: la función `apply_release_forge` recibe
      `&mut dyn Forge` y la CLI la invoca con `GitHubForge`.
-   - **T2** comportamiento: con `MockForge`, la función llega a `apply_release` y
+   - **R2** comportamiento: con `MockForge`, la función llega a `apply_release` y
      devuelve un `ReleaseOutcome` **con los pasos aplicados**, no un `Err`.
-   - **T3** **estructural**: un test lee el fuente y exige que la rama
+   - **R3** **estructural**: un test lee el fuente y exige que la rama
      `ReleaseRoute::Forge` **no** construya `GitHubForge::new` en línea, sino que
      delegue. Sin este guard, re-inlinear deja la rama inalcanzable **con todos
      los tests en verde**.
-   - **T4** **estructural de no-regresión**: mismas capacidades
+   - **R4** **estructural de no-regresión**: mismas capacidades
      (`pr.create`, `pr.merge`, `release.create`), mismo orden
      `CreatePr → MergePr → CreateRelease`, y el `AdmissionTicket` sigue envolviendo
      la cadena completa.
-   - **T5** el doc de `release_cmd.rs` ya **no** afirma que la ruta forge «no tiene
+   - **R5** el doc de `release_cmd.rs` ya **no** afirma que la ruta forge «no tiene
      test» ni que «no es alcanzable sin red», o afirma algo cierto si se
      contradice.
-2. Ejecutar **solo** ese test: **T1, T3, T4 y T5 caen** porque la función no
+2. Ejecutar **solo** ese test: **R1, R3, R4 y R5 caen** porque la función no
    existe todavía. Árbol rojo a propósito y declarado.
 
 ## Lote 2 — implementación (`fix(release)`)
@@ -48,11 +48,11 @@
 5. **Instrumento** `/var/home/rubentxu/f63/15-falsify-forge.py`, que **muta el
    producto** y exige que caigan los guards:
 
-   - **M1** la rama vuelve a construir `GitHubForge::new` en línea → **T3** cae.
-   - **M2** se invierte el orden de los pasos → **T4** cae.
-   - **M3** se quita una autorización de capacidad → **T4** cae.
-   - **M4** se quita el `AdmissionTicket` → **T4** cae.
-   - **M5** la función devuelve el outcome sin llamar a `apply_release` → **T2**
+   - **M1** la rama vuelve a construir `GitHubForge::new` en línea → **R3** cae.
+   - **M2** se invierte el orden de los pasos → **R4** cae.
+   - **M3** se quita una autorización de capacidad → **R4** cae.
+   - **M4** se quita el `AdmissionTicket` → **R4** cae.
+   - **M5** la función devuelve el outcome sin llamar a `apply_release` → **R2**
      cae.
 
    Restaura **por bytes**. El falsificador del ciclo de `ledger watch` se llevó por

@@ -21,27 +21,39 @@ Las seis se comprobaron **leyendo y buscando**, no suponiendo. P1 en particular
 contradicía la comfy assumption de que «no hay test porque necesita red», y lo
 que muestra es que no hay test porque **el call site no ofrece la alternativa**.
 
+## Los guards, en la tabla que el gate lee
+
+Un guard no es un requisito: es un requisito **convertido en algo que puede
+salir falso**. El gate `requirements-testable` lee esta tabla, y por eso tiene
+que estar aquí y no en un fichero aparte — un gate que no puede señalar dónde
+falta su objetivo es insatisfacible, que es lo que pasó con `04-req-testable.py`
+en el ciclo de `ledger export`.
+
+| Guard | Qué exige | Qué pasa si no se cumple |
+|---|---|---|
+| R1 | La rama delega en una función que recibe `&mut dyn Forge` | La rama vuelve a construir el runner real en línea y queda inalcanzable |
+| R2 | Con `MockForge`, la función llega a `apply_release` y devuelve los pasos **aplicados** | Devuelve un `Err`, o un outcome vacío, y el test no mira nada |
+| R3 | **Estructural**: el fuente muestra que el call site **delega** y no construye `GitHubForge::new` en la rama | Re-inlinear deja la rama inalcanzable **con todos los tests en verde** |
+| R4 | **Estructural**: mismas capacidades (`pr.create`, `pr.merge`, `release.create`), mismo orden `CreatePr → MergePr → CreateRelease`, y el `AdmissionTicket` sigue envolviendo la cadena | Una extracción reordena o relaja un control sin que nada lo note |
+| R5 | El doc de `release_cmd.rs` **ya no** afirma que la ruta forge «no tiene test» ni que «no es alcanzable sin red» | La afirmación falsa sobrevive a un test que la contradice |
+
 ## Mapa objetivo → guard
 
-Este mapa va **aquí**, en el PRE-FLIGHT, y no en un fichero aparte: un gate de
-requisitos que no puede señalar dónde falta su objetivo es insatisfacible, y eso
-ya pasó en esta serie con `04-req-testable.py`.
-
-| Objetivo | Requisito | Guard | Dónde se mira |
-|---|---|---|---|
-| **O1** — la rama es alcanzable sin red | R1 | `T1` + `T3` | `T1` comportamiento: la función existe y la CLI delega en ella. `T3` estructural: lee el fuente |
-| **O2** — el test ejercita el cuerpo real | R2 | `T2` | `T2` invoca la función con `MockForge` y comprueba el **resultado** |
-| **O3** — cero cambio de comportamiento | R3, STOP 1 | `T4` | `T4` compara capacidades, orden de pasos y presencia del ticket antes/después |
-| **O4** — la afirmación queda sustituida | R4 | `T5` | `T5` el guard del comentario: el doc ya no afirma «no tiene test» |
+| Objetivo | Guards | Por qué ese |
+|---|---|---|
+| **O1** la rama es alcanzable sin red | R1, R3 | hoy `release_cmd.rs:882` construye el runner real en línea, sin alternativa |
+| **O2** el test ejercita el cuerpo real | R2 | una reimplementación daría verde sin ejecutar la rama |
+| **O3** cero cambio de comportamiento | R4 | una extracción puede reordenar o relajar sin que nadie lo note |
+| **O4** la afirmación queda sustituida | R5 | el comentario sobrevive a un test que lo contradice |
 
 ## Riesgos
 
-- **R-a** — Que `MockForge` sea demasiado permisivo y el test pase con la rama
+- **RA** — Que `MockForge` sea demasiado permisivo y el test pase con la rama
   rota. **Mitigación:** STOP 2, y el falsificador del lote 3 muta la rama para
   comprobar que el test cae por la razón correcta.
-- **R-b** — Que la extracción cambie el comportamiento sin que nadie lo note.
-  **Mitigación:** `T4` structural, no de conteo.
-- **R-c** — Que el guard `T3` se cumpla con la rama inlined. **Mitigación:**
+- **RB** — Que la extracción cambie el comportamiento sin que nadie lo note.
+  **Mitigación:** `R4` structural, no de conteo.
+- **RC** — Que el guard `R3` se cumpla con la rama inlined. **Mitigación:**
   STOP 4, y el falsificador incluye precisamente esa mutación.
 
 ## Decisión

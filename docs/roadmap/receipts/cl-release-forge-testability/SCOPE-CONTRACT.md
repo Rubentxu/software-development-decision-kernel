@@ -7,17 +7,17 @@
 
 ## Qué entra
 
-- **O1** — La rama `ReleaseRoute::Forge` de `release apply` queda **alcanzable por
-  la suite sin red**, extrayendo su cuerpo a una función que reciba
-  `&mut dyn Forge`.
-- **O2** — El test ejercita **el cuerpo real de la rama** —ticket, `plan_release`,
-  `apply_release` y el mapeo de errores— y no una reimplementación.
-- **O3** — **Cero cambio de comportamiento**: mismas capacidades, mismo orden
-  `CreatePr → MergePr → CreateRelease`, mismo `AdmissionTicket`, mismo
-  `version_authority`, mismos mensajes de error.
-- **O4** — La afirmación de `release_cmd.rs:2064` y `:2110` («la ruta forge no
-  tiene test», «no es alcanzable sin red») queda **sustituida por un test que la
-  alcanza**, y las dos se corrigen en el sitio.
+1. **O1.** La rama `ReleaseRoute::Forge` de `release apply` queda **alcanzable por
+   la suite sin red**, extrayendo su cuerpo a una función que reciba
+   `&mut dyn Forge`.
+2. **O2.** El test ejercita **el cuerpo real de la rama** —ticket, `plan_release`,
+   `apply_release` y el mapeo de errores— y no una reimplementación.
+3. **O3.** **Cero cambio de comportamiento**: mismas capacidades, mismo orden
+   `CreatePr → MergePr → CreateRelease`, mismo `AdmissionTicket`, mismo
+   `version_authority`, mismos mensajes de error.
+4. **O4.** La afirmación de `release_cmd.rs:2064` y `:2110` («la ruta forge no
+   tiene test», «no es alcanzable sin red») queda **sustituida por un test que la
+   alcanza**, y las dos se corrigen en el sitio.
 
 ## Qué NO entra
 
@@ -32,19 +32,22 @@
 
 ## Requisitos
 
-- **R1** — El cuerpo de la rama forge vive en una función que recibe
-  `&mut dyn Forge`.
-- **R2** — Un test con `MockForge` llega a `apply_release` y comprueba el
-  **resultado**, no sólo que no entre en pánico.
-- **R3** — Un guard **estructural**: un test lee el fuente y exige que el call
-  site de la CLI **delegate** en esa función. Sin él, alguien puede volver a
-  inlinear `GitHubForge::new(repo)` y dejar la rama inalcanzable **con todos los
-  tests en verde** — que es exactamente el defecto que se viene a cerrar.
-- **R4** — El mapa **objetivo → guard** está escrito **en el PRE-FLIGHT**, antes
-  de implementar. Un gate de requisitos que no puede señalar dónde falta su
+Los guards que los comprueban viven en el PRE-FLIGHT, con la tabla `R1..Rn`, que
+es donde el gate `requirements-testable` los lee. Aquí van los compromisos, sin
+numerar para no duplicar la autoridad:
+
+- El cuerpo de la rama forge vive en una función que recibe `&mut dyn Forge`.
+- Un test con `MockForge` llega a `apply_release` y comprueba el **resultado**, no
+  sólo que no entre en pánico.
+- Un guard **estructural**: un test lee el fuente y exige que el call site de la
+  CLI **delegate** en esa función. Sin él, alguien puede volver a inlinear
+  `GitHubForge::new(repo)` y dejar la rama inalcanzable **con todos los tests en
+  verde** — que es exactamente el defecto que se viene a cerrar.
+- El mapa **objetivo → guard** está escrito **en el PRE-FLIGHT**, antes de
+  implementar. Un gate de requisitos que no puede señalar dónde falta su
   objetivo es insatisfacible, y eso ya pasó una vez en esta serie
   (`04-req-testable.py`).
-- **R5** — Ningún test verde se reescribe.
+- Ningún test verde se reescribe.
 
 ## STOP
 
