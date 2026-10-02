@@ -1,5 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69h, 2026-10-02): los dos comandos que dos sesiones dejaron como «NO MEDIDOS» están medidos. Uno es defecto real y está cerrado; el otro semidió y se descartó. Y un gate de release llevaba rojo en HEAD por un motivo que se encontró al ejecutar su propio remedio.** `HEAD` = `7f2cb04e` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**`vault graph` era un defecto real, y solo aparecía en el caso que la función no promete.** Con un vault **acíclico** de 30 nodos parece correcto: `node_count` 30 cuadra y el orden topológico sale completo, luego nada falla. Con **dos ciclos disjuntos**, `find_sample_cycle` (`graph.rs:88-94`) devuelve el **primero** y para, `GraphView` no tenía ningún campo de recuento, y el resultado daba `sample_cycle` con uno **callando sobre cuántos hay**; además el `topological_order` **desaparecía** sin decir por qué — una línea que no está se lee como «no se computó», que es otra afirmación distinta de «no existe porque el grafo es cíclico».
+
+**La solución obvia se refutó midiendo, y esa es la parte que manda.** Contar ciclos de forma ingenua no es lento: es **incorrecto antes que lento**. Una cadena de 1000 nodos tiene **un** ciclo y el recuento ingenuo devuelve **1000** rotaciones de él (**558 ms**, en el grafo más trivial que existe), y un bouquet de 500 cuenta 1000 porque cada ciclo se recorre en las dos direcciones. Un campo que parece una verdad y no lo es es peor que ningún campo, así que la forma elegida **satura**: `cycle_count` es 0 o 1 exactos y `None` cuando hay más, con `multiple_cycles` al lado para que `None` sea distinguible de «ausente», y `topological_order_absent_because: "cyclic"`. **Todos son campos añadidos, STOP 3 vacío**: el consumidor existente (`cli.rs:8579`) no se reescribe y sus cuatro aserciones siguen verdad sin tocarlo. Es la diferencia con `ledger events` y `vault search`, donde sí hubo que reescribir por cambio de forma.
+
+**`vault show` se midió y NO es de esta clase:** su `backlinks` no tiene cota, es el array completo. **Medir también descarta**, y por eso los dos comandos que session-69f y session-69g dejaron escritos como «no medido» están ahora **medidos** — uno es defecto y el otro no, que era exactamente la distinción que faltó con `ledger watch`.
+
+**Dos bugs del falsificador, ninguno del producto.** F6 fallaba por el arnés dos veces, y las dos por «la razón equivocada»: `vault export` tiene un guard fail-closed (ADR-0082, `writer.rs:76`) que **canonicaliza** el directorio de datos del proyecto y **rechaza si no existe**, y el guion escribía en la raíz temporal; y el segundo leía el `project_id` con un glob sobre el árbol de **data**, que `vault graph` **no crea** — crea el de **state** —, luego la búsqueda no encontraba nada. Se corrigió el arnés. El producto no se tocó para hacerlos pasar.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5388 passed / 0 failed** en 279 binarios (baseline 5384, **+4** exactamente los nuevos) · `clippy -D warnings` exit 0 · `fmt --check` limpio · scanner **CLEAN** · falsificador de graph **PASS=6 FAIL=0** · `test_changelog_coverage` **PASS=54 FAIL=0**.
+
+**Hallazgo colateral, y era un bloqueo de publicación.** `tests/test_vault_adr_mirror_coverage.sh` es gate del pipeline (`release.sh:217,234`) y **fallaba en HEAD limpio** —se comprobó con `git stash`, no se supuesto—: ADR-0151, ADR-0152 y ADR-0153, promovidos a `accepted` en estas últimas sesiones, sin reflejar. Al ejecutar el remedio que el propio gate nombra apareció que **no podía funcionar en ninguna máquina que no sea esta**: `REPO_ROOT` hardcodeado a una ruta que aquí solo funciona por ser symlink, y `Path.glob` sobre directorio inexistente devuelve iterador vacío → el guion imprimía `created: 0, skipped: 0` y salía con **0**. «Un PASS que no midió nada», en el guion que corre **cuando algo ya ha ido mal**. Reparado en `93c80e38` como concernia separada: `REPO_ROOT` derivado de `__file__`, `main` **fallando cerrado** en los tres estados vacíos, y recuento de `accepted` declarado. Falsificado: **PASS=5 FAIL=0**. El gate vuelve a PASS con 57 ADRs reflejados.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador. El gate de espejo ya no se interpone, pero el gate de release sigue sin poder pasar sin ella.
+2. **INC-DEBT-060 sigue `open`**: las 79 filas de `__spine_import__` y los 23 ciclos sin hecho (17 `OPEN`) son decisión del operador, y `get_cycle` sigue dando error en las 2 filas ilegibles (STOP 1).
+3. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
+4. **La réplica HTML de `vault export`** (`export.rs:24-25,41-42`) no muestra los campos nuevos. STOP 4 pide que no se contradigan y no se contradicen, pero HTML y texto JSON dicen cosas distintas. **No verificado** si es intencional: es el siguiente candidato.
+5. **Dos gates que el SCOPE de este ciclo nombra no existen** con ese nombre: `test_docs_script_contamination` y `test_gate_coverage`. Se ejecutaron `test_deny_lint_zero_hits.sh` y `test_advisory_lint_explanations.sh` por cubrir esa intención, y ambos pasan, pero **eso es una interpretación, no equivalencia demostrada**, y queda escrito así en el recibo.
+
+---
+
 **Estado (session-69g, 2026-10-02): `vault search` cerrado — la misma clase de defecto que F63, en la segunda superficie que quedaba.** `HEAD` = este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El defecto, medido antes de decidir nada:** sobre el índice real de esta máquina, `sddk vault search` imprimía **20 de 75 documentos** sin declarar ningún total, con **exit 0**; `--limit 0` devolvía `no hits`; y el JSON era un array desnudo.

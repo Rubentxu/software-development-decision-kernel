@@ -9815,3 +9815,112 @@ bloqueos del operador. Antes, `git fetch origin` y revalidar
 `HEAD`/`origin/main`/tag/workspace/bundle. **No bumpear por conveniencia**: si el
 workspace declara `2.5.3` y el último tag publicado es `v2.5.2`, la siguiente
 release **es 2.5.3**.
+
+### 2026-10-02T22:55:00Z — `p-63676b11dc0ef88f/vault-graph` — miniMax Code (mvs_b98f2520808543c8bfd72b7d38e01c34)
+
+**Baseline:** `f1659281` (`docs(roadmap): session-69g…`), `HEAD == origin/main`.
+**HEAD al cerrar:** `7f2cb04e` + este commit documental. Rama `main`.
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`).
+
+#### WorkItem
+
+Cerrar el «NO MEDIDO» que session-69f y session-69g dejaron escrito sobre dos
+comandos que proyectan datos. El punto de partida lo dice el propio punterior:
+*«esa distinción es la que faltó con `ledger watch`, y repetirla sería repetir el
+error»*.
+
+#### Decisiones
+
+1. **`vault graph` es un defecto real**, y solo en el caso que la función no
+   promete. El acíclico de 30 nodos pasa: `node_count` cuadra y el orden sale
+   completo. Con dos ciclos disjuntos, `find_sample_cycle` (`graph.rs:88-94`)
+   devuelve el primero y para, no hay campo de recuento, y el
+   `topological_order` desaparece sin decir por qué.
+2. **La solución obvia se refutó midiendo.** El recuento ingenuo de ciclos no es
+   lento, es **incorrecto**: cadena de 1000 nodos → 1000 rotaciones de un único
+   ciclo (**558 ms**); bouquet de 500 → 1000 por doble dirección. Un campo que
+   parece verdad y no lo es es peor que ningún campo, luego **saturation**:
+   `0` / `1` / `None` + `multiple_cycles` + `topological_order_absent_because`.
+   Coste: **una pasada extra** (quitar las aristas del sample y volver a buscar).
+3. **Añadir, no cambiar la forma.** Por eso **STOP 3 quedó vacío**: el consumidor
+   `cli.rs:8579` no se reescribe. Contraste con `ledger events` y `vault search`,
+   donde sí hubo que reescribir.
+4. **`vault show` se descarta, medido**: `backlinks` no tiene cota. Medir también
+   descarta, y por eso los dos comandos están **medidos** y no «no medidos».
+5. **Un FAIL de un falsificador se corrige en el arnés.** Los dos de F6 se
+   corrigieron ahí, no en el producto.
+6. **El gate de espejo se arregla en concernia separada** (`93c80e38`), porque
+   mezclarlo con `vault-graph` habría roto la atomicidad de un concern por commit.
+
+#### Evidencia observada
+
+| qué | resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5388 passed / 0 failed**, 279 binarios (baseline 5384, **+4**) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+| scanner de contaminación | **CLEAN** |
+| falsificador `06-falsify-graph.py` | **PASS=6 FAIL=0** |
+| falsificador `07-falsify-mirror.py` | **PASS=5 FAIL=0** |
+| `test_changelog_coverage` | **PASS=54 FAIL=0** |
+| `test_vault_adr_mirror_coverage` | exit 0 — **rojo en HEAD limpio**, verde después |
+| `test_debt_index_coherence` | PASS=12 FAIL=0 |
+| `test_release_state_pointer` · `test_adr_promotion_format` | PASS |
+| `test_deny_lint_zero_hits` · `test_advisory_lint_explanations` | exit 0 |
+
+**Contexto real vs. sintético:** los falsadores construyen vaults de markdown en
+un árbol temporal con `XDG_*` propio y `SDDK_DATA_DIR` eliminado. **Ninguna
+medición de este ciclo se hizo contra el vault real.** La única escritura fuera
+del repo fue el espejo de ADR, **aditivo** (3 creados, 54 saltados, 0 sobrescritos).
+
+#### Hallazgo colateral, y era un bloqueo de publicación
+
+`tests/test_vault_adr_mirror_coverage.sh` es gate de `release.sh` (líneas 217 y
+234) y **fallaba antes de este ciclo**. Se comprobó con `git stash` sobre HEAD
+limpio: falla igual, luego es **preexistente**, no introducido aquí.
+
+Al ejecutar el remedio que el propio gate nombra apareció el defecto mayor: el
+guion **no podía funcionar en ninguna máquina que no sea esta** (`REPO_ROOT`
+hardcodeado a una ruta que aquí solo es symlink), y **fallaría en silencio** —
+`Path.glob` sobre directorio inexistente devuelve iterador vacío → `created: 0,
+skipped: 0`, exit 0. «Un PASS que no midió nada», en el guion que corre cuando
+algo ya ha ido mal.
+
+#### Pruebas NO ejecutadas
+
+- **UAT**: no hay ejecución UAT. Es un cambio de forma de salida sin superficie
+  de usuario final. **No se declara PASS de UAT** y no se ha tocado ninguna fila
+  de `UAT-MATRIX.md`.
+- `test_docs_script_contamination` y `test_gate_coverage`: **no existen** con esos
+  nombres. Se ejecutaron `test_deny_lint_zero_hits` y
+  `test_advisory_lint_explanations` por cubrir esa intención, y ambos pasan, pero
+  **es una interpretación, no equivalencia demostrada**. Escrito así, no reparado.
+- `remove_cycle_edges` con un ciclo de nodos repetidos: **no cubierto**. F4 cubre
+  dos ciclos disjuntos, que es lo que `dfs_cycle` produce.
+
+#### Riesgos
+
+1. `cycle_count` es **saturado por diseño**: 200 ciclos se reportan como `None` +
+   `multiple_cycles: true`. Menos información a cambio de no poder mentir.
+2. La **réplica HTML** de `export.rs:24-25,41-42` no muestra los campos nuevos.
+   STOP 4 pide que no se contradigan y no se contradicen, pero HTML y JSON dicen
+   cosas distintas. **No verificado** si es intencional.
+3. `mirror_adrs_to_vault.py` deriva ahora `REPO_ROOT` de `__file__`; invocado por
+   ruta con symlink intermedio resolvería distinto. **No medido.**
+
+#### Bloqueos que persisten
+
+Clave KMS (**único** bloqueo de 2.5.3; el gate de espejo ya no se interpone);
+79 filas `__spine_import__`; 23 ciclos sin hecho (17 `OPEN`); INC-DEBT-049 (F49);
+ruta forge de `release apply` contra GitHub real; harness Pipelinek-Test-Hardness.
+
+#### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. Luego,
+por orden de valor: **(a)** decidir si la réplica HTML de `vault export` debe
+mostrar los campos nuevos — es la superficie que este ciclo dejó **medida y
+descartada a medias**, y está en el recibo como riesgo 3; **(b)** el nombre real
+de los dos gates que el SCOPE nombra y no existen, porque un SCOPE que exige gates
+inexistentes se cumple solo; **(c)** atender los bloqueos del operador.
+**No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
+publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
