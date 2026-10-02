@@ -117,3 +117,98 @@ Esta deuda se cierra cuando **una** de estas se cumple:
 
 En cualquiera de los dos casos, `AT-UAT-019` debe apuntar a una autoridad que
 exista. Un UAT que cita un ADR inexistente debería fallar por sí mismo.
+
+---
+
+## Addendum session-65i: auditoría de vigencia — UNA de las dos afirmaciones NO se reproduce
+
+Se auditó el documento contra el árbol y el ledger reales antes de aceptarlo como deuda.
+
+### Lo que sigue vigente (verificado)
+
+1. **`arch-spec-A3-S1-knowledge-substrate.md` sigue en `status: proposed`.**
+2. **REQ-A3S1-021 sigue fijando** la derivación "from the sorted `(id, inner_basis_hash)`
+   pairs", sin `revised_at`. El código deriva con
+   `derive_basis_hash_at(&assertions, Some(revised_at))`. **La contradicción está viva** y
+   es real.
+3. **`AT-UAT-019` sigue remitiendo** a un "ADR de identidad" que no existe.
+4. **Impacto en datos: cero, medido sobre el ledger vivo.** `grep basis_hash
+   crates/sddk-storage/src/` → 0 resultados. `grep IntelligenceLoopReceipt
+   crates/sddk-storage/src/` → 0 resultados. En el ledger real de este proyecto no
+   hay ninguna tabla de intelligence/knowledge; las únicas que matchean el patrón
+   (`capability_receipts`, `gate_receipts`) no tienen relación con `KnowledgeBasis`.
+   Esta afirmación del documento **queda confirmada**.
+
+### Lo que NO se reproduce (afirmación caducada, y era condicional)
+
+El documento afirma un segundo defecto de comportamiento:
+
+> `KMT::evaluate` compara hashes **antes** que timestamps, así que con la spec
+> vigente **una revisión puramente temporal es invisible al freshness** (devuelve
+> `Fresh` sin mirar `revised_at`).
+
+**No es alcanzable con el código vigente.** La afirmación es *condicional* a la
+derivación que REQ-A3S1-021 describe (hash solo sobre assertions). Bajo la
+derivación realmente en vigor (**v2**, que mezcla `revised_at` en el digest), una
+revisión puramente temporal produce un hash **distinto**, luego la primera
+comparación de `evaluate_freshness` **falla** y se alcanza la rama de timestamps.
+
+Observado, no inferido — test permanente
+`knowledge::tests::audit_inc_debt_048_pure_temporal_revision_is_not_invisible`:
+
+```text
+observed.revised_at (20) > expected.revised_at (10)
+-> KmtStatus::Unknown { reason: MissingEvidence::FutureEvidence }
+```
+
+**Consecuencia: hay UNA contradicción, no dos.** La de REQ-A3S1-021, que es
+normativa. El segundo defecto solo se materializaría si se eligiera la opción (b)
+—revertir el digest a v1— **sin** arreglar `evaluate_freshness` a la vez. Está
+acoplado a la decisión normativa, no es un hallazgo independiente.
+
+### Radio de impacto subestimado en el criterio de cierre
+
+El documento trata (a) como un acto local sobre una spec `proposed`:
+*"cambiar REQ-A3S1-021 es un acto normativo"*. **El radio es mayor.**
+
+`KnowledgeBasis::basis_hash()` es una entrada de la derivación de
+`IntelligenceLoopReceiptId`, y esa derivación está fijada por
+**ADR-0126** (`status: accepted`, `accepted_at: 2026-09-17`):
+
+```text
+3. Derives `IntelligenceLoopReceiptId` from:
+   - `KnowledgeBasis::basis_hash()`.
+   ...
+```
+
+ADR-0126 menciona `KnowledgeBasis` exactamente ahí: como **consumidor** de
+`basis_hash()`, no como definidor de su derivación (esa sigue siendo REQ-A3S1-021).
+Reescribir REQ-A3S1-021 para incluir `revised_at` cambia una **entrada de
+identidad de un ADR `accepted`**, no solo el texto de una spec `proposed`.
+
+El impacto en **datos** sigue siendo cero (verificado arriba: nada se persiste), pero
+el impacto en **gobernanza** no: la opción (a) exige reconciliar ADR-0126, o
+declarar explícitamente por qué no hace falta. El criterio de cierre (a) del
+documento, tal como está escrito, subestima esto.
+
+### Lo que queda vivo, entonces
+
+- (a) exige: REQ-A3S1-021 reescrita **+** reconciliación o exención explícita de
+  ADR-0126 **+** `AT-UAT-019` apuntando a una autoridad que exista.
+- (b) exige: revertir el digest **y** arreglar `evaluate_freshness` (que hoy
+  funciona *gracias* a v2, no a pesar de él — otro acoplamiento que el documento no
+  nombra).
+
+En ambos casos la decisión sigue siendo de la autoridad normativa. Esta auditoría
+**no la toma**; la que hace es dejar constancia de que una de las dos pruebas que
+la sostenían no se sostiene.
+
+### Hallazgo adyacente (no se implemento aqui)
+
+Ningún gate valida que las citas de `docs/roadmap/UAT-MATRIX.md` resuelvan a algo
+existente. `UAT-MATRIX.md` solo aparece en `tests/` y `scripts/` como *fuente de
+resultados esperados*, nunca como documento cuya integridad se valida. Por eso un
+criterio que remite a un ADR inexistente puede quedarse en PASS PARCIAL
+indefinidamente sin que nada lo delate. Es la misma clase que el resto de
+hallazgos de la sesion: **una cita que no resuelve es un criterio que no puede
+fallar honestamente**, y aqui no hay ni siquiera un guard que la note.

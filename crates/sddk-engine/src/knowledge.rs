@@ -1038,10 +1038,48 @@ mod tests {
         );
     }
 
+    /// AUDITORIA session-65i (INC-DEBT-048). La entrada de deuda afirma que
+    /// `KMT::evaluate` "compara hashes antes que timestamps, asi que una
+    /// revision puramente temporal es invisible al freshness (devuelve
+    /// `Fresh` sin mirar `revised_at`)".
+    ///
+    /// Esa afirmacion es CONDICIONAL a la derivacion que REQ-A3S1-021
+    /// describe (hash solo sobre assertions). Bajo la derivacion realmente en
+    /// vigor (v2, que mezcla `revised_at` en el digest), una revision
+    /// puramente temporal produce un hash DISTINTO, luego la primera
+    /// comparacion falla y se alcanza la rama de timestamps. Este test observa
+    /// cual de las dos cosas es cierta hoy, porque deuda no verificada no es
+    /// deuda.
+    #[test]
+    fn audit_inc_debt_048_pure_temporal_revision_is_not_invisible() {
+        let mut basis = KnowledgeBasis::empty(EventTime(10));
+        basis.insert(declare_one("k", 1)).unwrap();
+        let before = basis.clone();
+        let revised = basis.revise(EventTime(20)).unwrap();
+
+        // Precondicion: mismo contenido, revision distinta.
+        assert_eq!(before.assertions(), revised.assertions());
+        assert_ne!(before.basis_hash(), revised.basis_hash());
+
+        let status = KMT::evaluate(&revised, &before, EventTime(30));
+        assert!(
+            matches!(
+                status,
+                KmtStatus::Unknown {
+                    reason: MissingEvidence::FutureEvidence,
+                    ..
+                }
+            ),
+            "una revision puramente temporal NO debe evaluarse como Fresh: el \
+             digest v2 ya la hace distinguible, luego el defecto de Comportamiento \
+             que INC-DEBT-048 describe NO es alcanzable con el codigo vigente. \
+             status: {status:?}"
+        );
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // REQ-A3S1-030..035 — KmtStatus + evaluate_freshness + KMT
     // ─────────────────────────────────────────────────────────────────
-
     /// REQ-A3S1-033: matching basis hashes → Fresh.
     #[test]
     fn test_kmt_fresh_when_basis_match() {
