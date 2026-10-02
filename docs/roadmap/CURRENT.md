@@ -1,5 +1,39 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69m, 2026-10-03): la cuarta superficie de F63, y la peor de las cuatro porque trunca dentro de un fichero.** `HEAD` = `94cf6832` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El defecto, medido sobre una copia byte-identica del ledger real:** `ledger export --limit 5` escribía 5 eventos de **600** y respondía `exported 5 events to …` con **exit 0**. Los 595 que dejó fuera no se mencionaban. Las otras dos superficies truncan **en pantalla**, donde el lector ve que hay un límite; esta trunca **en un fichero**, y el resultado es un artefacto que parece completo y que otro proceso consume sin ninguna señal de que le falta el 99 %.
+
+**El segundo GAP no salió de buscar truncamientos: salió de leer el mismo fichero. `ExportOutput` derivaba `Serialize` y nunca se serializaba.** El resumen era un `format!` escrito a mano dentro del `match` de éxito, y el comando **no tenía `--format` ninguno** —`--format json` daba exit 2, unexpected argument—, luego la forma declarada no era la que estaba en vigor y una máquina no tenía dónde leer la respuesta.
+
+**El arreglo, y una decisión que NO es la del ciclo anterior.** `ExportOutput` lleva `written`, `total_events` y `pending()` derivado por `saturating_sub`; el total se toma de `all_events.len()` **antes** del `.take(limit)`. **Aquí no se extrae función de filtro**, al contrario que en `ledger watch`: allí el `retain` corría dentro del bucle de sondeo sobre una página acotada y necesitaba un único sitio compartido entre el bucle y la cuenta; aquí hay **un** vector y **un** filtro, ya aplicados por elegir qué listado llamar, y copiar el remedio anterior habría añadido una segunda regla que no puede divergir porque no hay nada de qué divergir. **Un remedio se porta, no se copia.** Y el `Serialize` es **manual**: el derivado emite *campos* y `pending()` es un *método*, luego el primer intento dejó la forma derivada fuera del JSON sin que ningún test lo dijera.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5409 passed / 0 failed** en **283** binarios (baseline 5403 / 282, y el único binario nuevo es `ledger_export_declaration` con sus 6 tests: 5403 + 6, 282 + 1) · `clippy --workspace --all-targets -D warnings` exit 0 · `fmt --check` limpio · changelog **PASS=66 FAIL=0** · índice de deuda **PASS=12** · falsificador **5/5** · `09-medir-export.py` de **2/6 GAP** a **0/6** · scanner **CLEAN**. Ningún verde reescrito.
+
+**Cinco herramientas fallaron en este ciclo, y ninguna tenía razón para pasar como verde. La lección se repite exacta: un instrumento que mide lo que tiene al lado tiene la misma forma que uno que mide bien.**
+
+1. **Un guard que no podía fallar.** El falsificador cerró con `MUTACIONES NO DETECTADAS: 1` para M1 (`total_events = 1usize`) porque R2 no cayó —cuando **R1 y R3 la detectaron**. **Medido antes de tocar el guard:** un ciclo deja **1** evento, dos dejan 2, tres dejan 3. El fixture de R2 era de un solo ciclo, luego su total real era exactamente 1 y la constante coincidía **con la verdad**. Una aserción que no puede fallar por la razón que nombra es decoración. Corregido **en el guard**: dos ciclos y `assert total > 1`.
+2. **El falsificador confundía dos cosas opuestas.** Llamaba «mutación no detectada» a «este guard no disparó donde el propio instrumento esperaba». Consecuencias opuestas —la primera es defecto del producto, la segunda es la matriz mal escrita— y salían bajo el mismo encabezado y con el mismo código de salida. Un instrumento con una lista mal escrita no puede parecer que ha encontrado un fallo de producto. Ahora hay tres desenlaces: `SOBREVIVIDA`, `DETECTADA`, `DERIVA`.
+3. **La sonda de medición mintió tres veces**, y se midió por qué antes de tocarla: **polaridad invertida** (reportaba GAP justo cuando el resumen **sí** se serializaba — no podía decir OK nunca), **leía prosa** (encontró el literal `#[derive(Serialize)]` en la línea 594, **dentro del doc comment** que explica por qué no se usa) y **anclaba un detalle de implementación** que el arreglo abandonó a propósito. Un detector que busca una palabra encuentra la palabra, y un doc que explica el defecto es, para un detector textual, el defecto.
+4. **Y la sonda reparada se falsificó antes de creérsela** (`13-falsify-sonda.py`, **3/3**). Corregir un detector y verlo decir «OK» no prueba nada: un detector que dice OK siempre también pasa.
+5. **El doc de R2 decía «sobre la FORMA, no el numero» mientras afirmaba el numero**, y cuatro tests seguían diciendo «RED today» con el árbol ya verde. Es la misma clase que este ciclo cierra: una declaración que no describe lo que el código hace.
+
+**El ciclo existe en la autoridad con nueve gates y su evidencia real:** `p-63676b11dc0ef88f/ledger-export-total`, `exploration-sufficient` · `requirements-testable` · `architecture-consistent` · `plan-executable` · `implementation-complete` · `tests-pass` · `policy-compliant` · `debt-severity-assigned` · `debt-priority-assigned`, cada uno con `argv`, `exit_code` y `output_digest` de una corrida. **Ninguno se estampó**: `05-diseno.py` marcó en rojo un párrafo del DISEÑO que **rechaza** `COUNT(*)` porque su check era de línea y no de documento, y `06-plan.py` tenía una lista fija `CREATED_BY_THIS_PLAN` escrita a mano —el defecto bajo prueba con otro sombrero—, ahora **deducida** del plan con ventana de dos líneas.
+
+**El ciclo está en `RELEASE_PENDING`, no cerrado:** la release sigue bloqueada por la clave KMS, que es del operador. Siete eventos y seis artefactos en la autoridad.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+4. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente. Se recomienda enmendar; **no se ejecuta aquí** (son documentos de ciclos cerrados).
+5. **INC-DEBT-060**: 79 filas `__spine_import__` y 23 ciclos sin hecho (17 `OPEN`).
+6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+7. **La auditoría de superficies que truncan está agotada** y no se repite: medida, y de 5 candidatas quedaron 2 defectos reales.
+
+---
+
 **Estado (session-69l, 2026-10-02): la tercera superficie de F63, y el primer ciclo de la sesión que nace en la autoridad real de SDDK en vez de en un documento.** `HEAD` = `0aa12fbe` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El defecto, medido sobre el ledger real:** `ledger watch --max-events 5` sobre **598** eventos escribía `[watch] emitted 5 events, exiting` y `{"__watch_complete":true,"emitted":5}`. Ahora escribe `[watch] emitted 5 of 598 (593 not emitted), exiting` y `{"__watch_complete":true,"emitted":5,"total_events":598,"pending":593}`. La frase que lo resume es de session-69f y sigue siendo la buena: **declarar que ha emitido N no es declarar que había M.** Aquella sesión llamó a este comando «el modelo del comportamiento correcto» y **la afirmación era cierta** —escribe lo que emite— y por eso llevó a la conclusión equivocada. Es F63 por construcción: `Storage::list_events_after` (`lib.rs:1022`) recorre todos los streams y luego `.take(limit)`, **tirando el largo en cada poll**, desde un `canonical_events()` que ya había cargado el ledger entero.

@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "0aa12fbe"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (fdfeb78e) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "94cf6832"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (fdfeb78e) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -261,6 +261,43 @@ c3_progress:
 # Hallazgo-meta: los ciclos 69h/69i/69k NO existen en SDDK y sus recibos
 # declaran un cycle_id que la autoridad nunca emitio; no se corrigen
 # retro-creandolos (eso seria escribir historia) y se escala al operador.
+# session-69m: cl-ledger-export-total en RELEASE_PENDING, NO cerrado: la misma
+# clave KMS del operador lo bloquea. Siete eventos, seis artefactos, nueve gates
+# con evidencia reproducible. CUARTA superficie de F63 y la peor, porque trunca
+# DENTRO DE UN FICHERO: las otras truncan en pantalla, donde se ve el limite;
+# un artefacto que parece completo es el que otro proceso consume sin senal.
+# Medido sobre una copia byte-identica del ledger real: `--limit 5` escribia 5
+# de 600, decia `exported 5 events to ...` y salia con exit 0; los 595 que
+# dejo fuera no se mencionaban. El SEGUNDO gap no salio de buscar truncamientos
+# sino de leer el fichero: `ExportOutput` derivaba Serialize y NUNCA se
+# serializaba, con un `format!` a mano de resumen y sin `--format` ninguno
+# (`--format json` daba exit 2). Cerrado con 6 tests (R1-R5 RED antes de tocar
+# nada, R6 estructural) y un falsificador de 5/5 mutaciones.
+# NO se extrajo funcion de filtro, al contrario que en `ledger watch`: aqui hay
+# un vector y un filtro ya aplicados, y copiarse el remedio anterior habria
+# anadido una segunda cuenta sin nada de donde divergir. Un remedio se porta,
+# no se copia. El Serialize es MANUAL porque el derivado emite campos y
+# `pending()` es un metodo.
+# Verificacion: workspace 5409 passed / 0 failed / 24 ignored / 283 binarios
+# (base 5403/24/282, +6 tests y +1 binario, que es exactamente lo nuevo),
+# fmt y clippy --workspace --all-targets en 0, changelog PASS=66, indice de
+# deuda PASS=12, falsificador 5/5, sonda 09-medir-export.py de 2/6 GAP a 0/6,
+# scanner CLEAN. Ningun verde reescrito.
+# CUATRO herramientas fallaron en este ciclo, todas por medir lo que tenian al
+# lado: R2 tenia un fixture de un solo ciclo (que deja 1 evento), luego su
+# asercion del total no podia caer nunca — medido 1/2/3 eventos por ciclo antes
+# de tocarlo; el falsificador confundia "este guard no disparo" con "esta
+# mutacion sobrevivio", que son cosas con consecuencias opuestas; y la sonda de
+# medicion reportaba GAP en una linea que decia
+# `deriva Serialize=True, el RESUMEN se serializa=True` —polaridad invertida,
+# leia prosa en vez de codigo, y anclaba un detalle de implementacion que el
+# arreglo abandono a proposito—. Y la sonda reparada se falsifico antes de
+# creersela (3/3): corregir un detector y verlo decir OK no prueba nada.
+# INC-DEBT-062 pasa a `resolved`. Su seccion Medicion citaba
+# `03-medir-watch.py` y 598 eventos; lo cierto es `09-medir-export.py` y 600.
+# Se corrige al cerrar, no antes.
+# La auditoria de superficies que truncan esta AGOTADA: de 5 candidatas
+# quedaron 2 defectos reales, los dos cerrados. No se repite.
 next_action: "Session-22 addendum (quater). (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"

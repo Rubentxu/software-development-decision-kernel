@@ -10501,3 +10501,122 @@ había escrito: **INC-DEBT-062** (`ledger export`, high/P1) e **INC-DEBT-063**
 (tres recibos con `cycle_id` inexistente, medium/P2). Ninguno nace de una
 Revisión formal: nacen de que el defecto **existe y tiene nombre**, no de que
 alguien vaya a arreglarlo mañana.
+
+---
+
+## Session-69m — `cl-ledger-export-total`: la cuarta superficie de F63, y la peor
+
+**Baseline:** `866699ec` (= `origin/main` al abrir). **Workspace:** 2.5.3 declarada,
+no publicada; último tag remoto `v2.5.2`.
+
+### WorkItem
+
+Cerrar **INC-DEBT-062** (`ledger export`): la misma clase que F63, en la cuarta
+superficie. Medido, con superficie leída y remedio trazado, desde session-69l.
+
+### Decisiones
+
+**Truncar en un fichero es peor que truncar en pantalla.** Las tres superficies
+anteriores lo hacen en la salida de terminal, donde el lector ve que hay un
+límite. `export` escribe un artefacto que parece completo y que otro proceso
+consume sin ninguna señal de que le falta el 99 %. Severidad **high**, no
+`critical`, por el mismo razonamiento que bajó a `high` a INC-DEBT-060: **no hay
+pérdida de datos** —el ledger está íntegro y el rodeo (`ledger events`) existe—.
+
+**El segundo GAP salió de leer el fichero, no de buscar truncamientos.**
+`ExportOutput` derivaba `Serialize` y **nunca se serializaba**: el resumen era un
+`format!` a mano y el comando no tenía `--format` ninguno. La forma declarada no
+era la que estaba en vigor.
+
+**No se extrae función de filtro, al contrario que en `ledger watch`.** Allí el
+`retain` corría dentro del bucle de sondeo sobre una página acotada y necesitaba
+un único sitio compartido entre el bucle y la cuenta. Aquí hay **un** vector y
+**un** filtro, ya aplicados. Copiar el remedio anterior habría añadido una
+segunda regla que no puede divergir porque no hay nada de qué divergir. **Un
+remedio se porta, no se copia.**
+
+**`Serialize` manual, no derivado.** El derivado emite *campos* y `pending()` es
+un *método*: el primer intento dejó la forma derivada fuera del JSON sin que
+ningún test lo dijera. Añadir `pending` como campo arregla eso y reintroduce el
+defecto espejo —un tercer número almacenado que una edición puede contradecir—.
+
+### UAT / gates ejecutados
+
+Nueve gates en la autoridad, **uno a uno**, cada uno con `argv`, `exit_code` y
+`output_digest` de una corrida: `exploration-sufficient`, `requirements-testable`,
+`architecture-consistent`, `plan-executable`, `implementation-complete`,
+`tests-pass`, `policy-compliant`, `debt-severity-assigned`,
+`debt-priority-assigned`. **Ninguno estampado**: `05-diseno.py` marcó en rojo un
+párrafo del DISEÑO que **rechaza** `COUNT(*)` porque su check era de línea y no
+de documento, y `06-plan.py` llevaba una lista fija `CREATED_BY_THIS_PLAN` escrita
+a mano —el defecto bajo prueba con otro sombrero—, ahora deducida del plan.
+
+Perfil completo: `cargo test --workspace --no-fail-fast` **5409 passed / 0
+failed / 24 ignored / 283 binarios** sobre una base de 5403 / 24 / 282. La
+aritmética cierra sola: el único binario nuevo es `ledger_export_declaration` con
+sus 6 tests. `fmt --check` limpio, `clippy --workspace --all-targets -D warnings`
+exit 0, changelog **PASS=66 FAIL=0**, índice de deuda **PASS=12 FAIL=0**, scanner
+**CLEAN**. Falsificador `10-falsify-export.py` **5/5**, sonda `09-medir-export.py`
+de **2/6 GAP** a **0/6**. **Ningún verde reescrito.**
+
+### Instrumentos: cuatro fallos, todos del guard o del instrumento
+
+1. **R2 no podía fallar.** El falsificador cerró con `MUTACIONES NO DETECTADAS: 1`
+   para M1 porque R2 no cayó —cuando **R1 y R3 la detectaron**. Medido **antes**
+   de tocar el guard, con `11-medir-fixture-r2.py`: un ciclo deja **1** evento,
+   dos dejan 2, tres dejan 3. El fixture de R2 era de un ciclo, luego su total
+   real era 1 y la constante `1usize` **coincidía con la verdad**. Corregido en
+   el guard: dos ciclos y `assert total > 1`.
+2. **El falsificador confundía dos cosas opuestas** — «este guard no disparó » con
+   «esta mutación sobrevivió» — y las reportaba bajo el mismo encabezado y con el
+   mismo código de salida. Ahora: `SOBREVIVIDA` / `DETECTADA` / `DERIVA`.
+3. **La sonda de medición mintió tres veces**, medido con `12-medir-sonda.py`:
+   polaridad invertida (no podía decir OK nunca), **leía prosa** —encontró el
+   literal `#[derive(Serialize)]` dentro del doc comment que explica por qué no
+   se usa— y anclaba un detalle de implementación que el arreglo abandonó a
+   propósito.
+4. **Y la sonda reparada se falsificó antes de creérsela** (`13-falsify-sonda.py`,
+   **3/3**). Corregir un detector y verlo decir «OK» no prueba nada.
+
+También: el doc de R2 decía «sobre la FORMA, no el número» mientras afirmaba el
+número, y cuatro tests seguían diciendo «RED today» con el árbol ya verde.
+
+### Deuda
+
+**INC-DEBT-062 → `resolved`.** Su sección *Medición* citaba `03-medir-watch.py` y
+598 eventos; lo cierto es `09-medir-export.py` y **600** (598 era el número del
+ciclo de `ledger watch`, y el ledger había crecido con sus 8 hechos). Corregido
+**al cerrar**: una cita de medición equivocada en un documento de deuda es un
+documento que afirma algo falso sobre cómo se encontró el defecto.
+
+### Lo que NO se verificó, y se declara
+
+La release **2.5.3 no se construye ni se publica** — sigue bloqueada por la clave
+KMS, que es del operador — y por tanto no se regenera el manifest ni se toca
+ninguna superficie del bundle. Ningún resultado de esta sesión depende de la
+release.
+
+### Bloqueos que persisten
+
+Sin cambios: clave KMS (**único** bloqueo de 2.5.3); las dos salidas de
+INC-DEBT-050; los 51 ciclos de INC-DEBT-061; 79 filas `__spine_import__` y 23
+ciclos sin hecho; INC-DEBT-049; ruta forge de `release apply`; harness
+Pipelinek-Test-Hardness; los tres recibos con `cycle_id` inexistente
+(INC-DEBT-063).
+
+### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. **La
+auditoría de superficies que truncan está agotada** — de 5 candidatas quedaron 2
+defectos reales, los dos cerrados — y **no se repite**: repetirla produce
+candidatos, no hallazgos. Lo siguiente es elegir por valor entre las decisiones del
+operador que siguen abiertas, empezando por la que desbloquea distribución: la
+**clave KMS**. **No bumpear por conveniencia**: si el workspace declara `2.5.3` y
+el último tag publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+#### Cierre en la autoridad
+
+El ciclo **no está cerrado**: está en **`RELEASE_PENDING`**
+(`p-63676b11dc0ef88f/ledger-export-total`, `sequence: 7`, 6 artefactos). Cerrado
+de verdad exigiría la release, y la release sigue bloqueada por la clave KMS.
+Nueve gates evaluados con evidencia reproducible.
