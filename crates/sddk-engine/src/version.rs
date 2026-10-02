@@ -36,46 +36,6 @@ impl std::fmt::Display for VersionLockstepError {
 
 impl std::error::Error for VersionLockstepError {}
 
-/// Extract the project version from a parsed `Cargo.toml`.
-///
-/// Precedence is fixed and total, and it is NOT "the first `version` key under
-/// any table whose name starts with `[workspace`" — that is what the
-/// hand-rolled line parser did, and it read `[workspace.dependencies]`
-/// (RED measured, session-65i: `left: "9.9.9" / right: "1.42.5"`), because
-/// that table also starts with `[workspace`. The failure was silent: a
-/// confident number that described a dependency.
-///
-/// The order below is the one Cargo itself resolves with, most specific
-/// first. `[package]` is the single-crate case; a workspace overrides it.
-fn extract_project_version(doc: &toml::Value) -> Option<String> {
-    let str_at = |table: Option<&toml::Value>, key: &str| -> Option<String> {
-        table?
-            .get(key)
-            .and_then(toml::Value::as_str)
-            .map(str::to_owned)
-    };
-
-    // 1. `[workspace.package] version` — the workspace declaration.
-    if let Some(v) = str_at(
-        doc.get("workspace").and_then(|w| w.get("package")),
-        "version",
-    ) {
-        return Some(v);
-    }
-    // 2. `[workspace] version` — accepted by this codebase's own tests and by
-    //    older workspaces, where the key sat directly in the table.
-    if let Some(v) = str_at(doc.get("workspace"), "version") {
-        return Some(v);
-    }
-    // 3. `[package] version` — a single-crate repository has no workspace
-    //    table at all. Without this, the mirror image of the original bug:
-    //    the lockstep would abort on a project whose version is right there.
-    if let Some(v) = str_at(doc.get("package"), "version") {
-        return Some(v);
-    }
-    None
-}
-
 /// Ensure the release tag matches the project version (lockstep rule).
 ///
 /// The lockstep rule: `version tag == project version`. Tags use the "v"
@@ -84,49 +44,47 @@ fn extract_project_version(doc: &toml::Value) -> Option<String> {
 /// Returns `Ok(())` if the tag matches. Returns `Err(VersionLockstepError)` naming
 /// BOTH the project and tag versions on mismatch.
 ///
-/// ## Why this is not stack-agnostic yet
+/// ## Where the version comes from
 ///
-/// This still reads `Cargo.toml`, so a non-Rust project aborts. That is
-/// INC-DEBT-051, and it is a missing *contract*, not a missing branch: the
-/// concept "where a project declares its version" does not exist anywhere in
-/// the engine. Closing it means introducing that concept, not teaching this
-/// function about more file formats. Adding a second format here would be
-/// the same mistake as a third `cp -r` in the release staging (INC-DEBT-056)
-/// — a hard-coded list of places to look, each with its own failure mode.
+/// [`crate::version_source::resolve_project_version`], a declarative registry
+/// (ADR-0153). This function used to open `Cargo.toml` directly, so any
+/// non-Rust project aborted — INC-DEBT-051, against AGENTS.md §2.3. It no
+/// longer names a manifest file at all; adding an ecosystem is a row in that
+/// registry, not a branch here.
+///
+/// A project that declares **no** version anywhere (Go and Bazel do not) yields
+/// [`VersionAuthority::TagIsTheOnlyAuthority`]: the tag is the declaration, and
+/// there was no cross-check. That is *not* a silently passing release, so
+/// [`ensure_version_lockstep_detailed`] reports which of the two happened.
 pub fn ensure_version_lockstep(
     root: &std::path::Path,
     tag: &str,
 ) -> Result<(), VersionLockstepError> {
-    let cargo_toml = root.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml).map_err(|e| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag.to_string(),
-        message: format!(
-            "VERSION LOCKSTEP ERROR: could not read {}: {e}",
-            cargo_toml.display()
-        ),
-    })?;
+    ensure_version_lockstep_detailed(root, tag).map(|_| ())
+}
 
-    let doc: toml::Value = content.parse().map_err(|e| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag.to_string(),
-        message: format!(
-            "VERSION LOCKSTEP ERROR: could not parse {} as TOML: {e}",
-            cargo_toml.display()
-        ),
-    })?;
-
-    let workspace_version = extract_project_version(&doc).ok_or_else(|| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag.to_string(),
-        message: format!(
-            "VERSION LOCKSTEP ERROR: could not find `version` in [workspace.package], \
-             [workspace] or [package] of {}",
-            cargo_toml.display()
-        ),
-    })?;
+/// Same rule, but reports **where the version came from**.
+///
+/// The difference matters: `Ok(())` from a cross-checked version and `Ok(())`
+/// from a project that declares nothing are different facts, and a caller that
+/// cannot tell them apart will read the second as the first.
+pub fn ensure_version_lockstep_detailed(
+    root: &std::path::Path,
+    tag: &str,
+) -> Result<crate::version_source::VersionAuthority, VersionLockstepError> {
+    use crate::version_source::resolve_project_version;
 
     let tag_version = tag.strip_prefix('v').unwrap_or(tag).to_string();
+    let authority = resolve_project_version(root).map_err(|e| VersionLockstepError {
+        workspace_version: String::new(),
+        tag_version: tag_version.clone(),
+        message: e.to_string(),
+    })?;
+
+    let Some(workspace_version) = authority.version() else {
+        return Ok(authority);
+    };
+
     if workspace_version != tag_version {
         let msg = format!(
             "VERSION LOCKSTEP FAILED: project={} vs tag={}. \
@@ -134,12 +92,15 @@ pub fn ensure_version_lockstep(
             workspace_version, tag_version
         );
         return Err(VersionLockstepError {
-            workspace_version,
+            workspace_version: workspace_version.to_string(),
             tag_version,
             message: msg,
         });
     }
-    Ok(())
+    // Kept explicit: the two arms return different values, and collapsing them
+    // here is how the distinction between "checked" and "nothing to check"
+    // would be lost.
+    Ok(authority)
 }
 
 #[cfg(test)]
@@ -192,10 +153,36 @@ mod tests {
     }
 
     #[test]
-    fn lockstep_errors_when_cargo_toml_missing() {
+    fn lockstep_errors_when_no_known_manifest_is_present() {
         let dir = tempfile::tempdir().unwrap();
         let err = ensure_version_lockstep(dir.path(), "v1.0.0").unwrap_err();
-        assert!(err.message.contains("could not read"));
+        // **Este test cambiaba su aserción al pasar al contrato de ADR-0153**, y
+        // conviene que se vea por qué en vez de dejarlo como un ajuste.
+        //
+        // Antes afirmaba `could not read`: en un repo sin `Cargo.toml` no falló
+        // ninguna lectura — el fichero no está, que es el caso NORMAL en un
+        // proyecto Gradle, no un error de E/S. El mensaje nuevo dice lo que de
+        // verdad pasó y **lista los ocho manifiestos que se buscaron**, que es
+        // justo lo que hace falta para diagnosticar.
+        //
+        // Lo que NO se toca es el comportamiento: sigue fallando cerrado. La
+        // aserción sobre "could not read" era sobre redacción; la de abajo
+        // sigue siendo sobre el hecho, y es más específica.
+        assert!(
+            err.message.contains("no known manifest found"),
+            "un repo sin ningun manifiesto conocido debe fallar cerrado: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("Cargo.toml"),
+            "el mensaje debe decir que se busco, no solo que no se encontro: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("go.mod"),
+            "y debe enumerar los demas, no solo el de Rust: {}",
+            err.message
+        );
     }
 
     #[test]
