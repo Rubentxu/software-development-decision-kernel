@@ -75,23 +75,33 @@ amplia en caliente.
    que sean **visibles**.
 5. **NO** se escribe en el almacenamiento real de esta máquina. Ni una fila.
 
-## §3 — Lote 1: los tests RED, y nada más
+## §3 — Lote 1: qué se escribe antes de tocar producción
 
-Escribir los tests que deben caer **antes** de tocar producción, y ejecutarlos para
-que caigan. Si alguno no cae, se para (§4, STOP 2).
+> **Enmienda del lote 1, escrita antes de escribir un solo test.** El borrador de
+> esta sección decía R4 "RED", y era un error: **un test que afirma el
+> comportamiento actual pasa hoy**, y llamarlo RED no lo hace caer. R4 es un test
+> de **caracterización**. Además, R3 no se puede escribir todavía, y la razón es
+> técnica y no de gusto: llama a `list_cycles`, que no existe, luego el fichero no
+> compila y **se cairían también los tests que ya estaban verdes**. Es exactamente
+> STOP 2. R3 se escribe en el lote 2, el mismo día que exista la función.
 
-| # | Test | Por qué tiene que caer hoy |
-|---|---|---|
-| **R1** | `list_cycles` sobre un storage limpio con 3 ciclos ⇒ devuelve **3**, en ese orden estable | la función no existe: no compila |
-| **R2** | un ciclo `CLOSED` aparece en la enumeración | falla si se filtra por estado; la enumeración es de todos |
-| **R3** | un ciclo **sin eventos** aparece | falla si la superficie se construye sobre `events_v1` — el error que produce los 97 |
-| **R4** | `get_cycle` sobre un ciclo con `manifest_json = {}` ⇒ **error**, y el mensaje nombra el campo que falta | **RED hoy y por derecho**: fija el comportamiento actual de D2 antes de que la enumeración lo esquive |
-| **R5** | `sddk cycle list` sobre un storage con un ciclo de manifiesto ilegible ⇒ sale con **0**, y el recuento declara el ilegible | la enumeración no puede abortar por una fila ilegible, ni fingir que no existe |
-| **R6** | el recuento de `cycle list` **iguala** `SELECT COUNT(*) FROM cycles` | O2 literal; es el que cierra O2 |
+| # | Test | Tipo | Por qué |
+|---|---|---|---|
+| **R4** | `get_cycle` sobre un ciclo con `manifest_json = {}` ⇒ **error**, y el mensaje nombra el campo que falta | **caracterización: pasa hoy** | fija D2 **antes** de que la enumeración lo esquive; si alguien lo cambia sin STOP 1, este test lo delata |
+| **R1** | `sddk cycle list` sobre un storage con 3 ciclos ⇒ declara **3** | RED | el subcomando no existe: sale con «unrecognized subcommand» |
+| **R2** | un ciclo **superseded** sigue apareciendo, con su estado | RED | falla si la enumeración filtra por estado; la enumeración es de todos |
+| **R5** | un ciclo de manifiesto ilegible **no aborta** la lista y su recuento lo declara | RED | una fila ilegible no puede hacer fallar la lista entera ni desaparecer |
+| **R6** | el recuento de `cycle list` **iguala** el número de filas de `cycles` | RED | O2 literal; el que cierra O2 |
+| **R3** | un ciclo **sin eventos** aparece | **lote 2** | necesita que `list_cycles` exista para compilar; si no, el RED sería un error de compilación que tumba el crate entero |
 
-R4 es el que más importa y el más fácil de meter mal: fija un comportamiento que
-esta deuda va a querer cambiar. Se fija **antes** de cambiarlo, que es la única
-forma de que el cambio sea una decisión y no una deriva.
+R1, R2, R5 y R6 se escriben **a nivel de CLI**, invocando el binario, y por eso
+caen en tiempo de ejecución sin romper la compilación del crate. Esa es la razón
+de que el lote 1 sea viable y de que R3 no lo sea: un RED que se compra rompiendo
+el build no es un RED, es un apagón.
+
+R4 va **primero de los que tocan almacenamiento**, porque fija el comportamiento
+que este lote no va a cambiar. Si D1 se arreglara sin R4 escrito antes, el cambio
+de ese comportamiento sería una deriva y no una decisión.
 
 ## §4 — STOP conditions
 
