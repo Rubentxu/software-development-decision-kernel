@@ -69,6 +69,22 @@ R4 y R5 son los dos guards que valen el ciclo: R1 y R2 se pueden satisfacer
 declarando un número, y R4/R5 son los que impiden **declarar un número que no
 es el de esta consulta**.
 
+## Cobertura objetivo → guard
+
+Esta tabla no es documentación: es lo que comprueba
+`/var/home/rubentxu/f63/04-req-testable.py`, que es el instrumento cuyo
+`output_digest` sostiene el gate `requirements-testable`. La primera vez que
+corrió **falló con 6 problemas** porque el mapa no existía —los guards estaban
+descritos en prosa y nada decía cuál cubría cuál—. Un objetivo sin guard
+nombrado es una nota, y una nota no es un requisito.
+
+| objetivo | guard | por qué ese guard puede fallar con el defecto presente |
+|---|---|---|
+| **O1** declara el total en texto y JSON | R1, R2 | hoy el pie dice solo `[5]` y el JSON solo `emitted`; ninguno de los dos puede ver el total |
+| **O2** `pending` derivado, aritmética cerrada | R3 | hoy no existe `pending`; y si se escribiera a mano, `emitted + pending != total_events` es exactamente lo que R3 mide |
+| **O3** mismo predicado y mismo cursor que el emisor | R4, R5 | un `COUNT(*)` sin filtro pasa R1 y R2, y **falla** R4; un total contado desde el cursor equivocado pasa todo y **falla** R5 |
+| **O4** declara también cuando no queda nada fuera | R1 | con `pending == 0` un producto que solo declara al truncar no dice nada, y R1 exige la frase con un ledger que cabe entero |
+
 ## Gates que deben seguir verdes al cerrar
 
 `cargo test --workspace` **sin reescribir ningún verde** ·
