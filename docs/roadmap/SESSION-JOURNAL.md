@@ -9238,3 +9238,63 @@ que son los que faltan para promoverlo. El 5 necesita primero una decisión del
 operador sobre qué receipts espurios se retiran del storage real, y el 6 es
 `verify_stream_chain` sobre un stream canónico. Antes de eso, la
 **clave del KMS**, que sigue siendo el único bloqueo de v2.5.3.
+
+---
+
+## session-69c — 2026-10-02 — ADR-0152 promoted a `accepted`, criterio 5 cerrado
+
+**Baseline / HEAD.** `001f7e0f` → `7702b3bf`, rama `main`, cuatro commits
+publicados sin `--no-verify`: `d88c92df`, `9bbd3ac2`, `7702b3bf` y este
+documental. Workspace **2.5.3 declarada, no publicada**; último tag remoto
+`v2.5.2`.
+
+**WorkItem.** Los criterios 5 y 6 de ADR-0152, que era lo único que impedía
+promoverlo.
+
+**Criterio 6 — medido y falsificado, PASS=12 FAIL=0.** `sddk ledger verify`
+sobre `p-63676b11dc0ef88f`: 590 eventos, 114 streams, salida 0. La ruta es
+`Storage::verify_ledger` (`lib.rs:977`), que corre `verify_stream_chain` **y**
+`verify_chain_integrity` sobre todos los streams canónicos —superconjunto de lo
+que el criterio pide—. El candidato evidente, `sddk ledger verify-chain`, es el
+**equivocado**: ese corre solo `verify_chain_integrity`. Medido sobre copia
+byte-idéntica porque `RuntimeContext::open` abre en escritura (`generate_seed` no
+es «solo lectura»); sha256 del original comprobado antes y después.
+
+**Criterio 5 — estuvo ROJO, se cerró declarando el alias.** 1 id divergente:
+`p-74299cf88f51dab9 -> p-b7740b96d79ec013`, de `skillgraph`. La causa se midió
+antes de reparar porque las dos reparaciones son opuestas y una es irreversible.
+Los dos recibos declaran el mismo remoto y la misma ruta canónica: mismo proyecto
+adoptado dos veces por el cambio de normalizador (INC-DEBT-050). El bloqueo por
+sesión concurrente estaba caducado —ciclo `CLOSED`, cero leases— y se comprobó en
+vez de recordarse. Autorizado por el operador por cuestionario. Store 14 → 15;
+audit a **0** huérfanos sobre 161 receipts; filas 4.359 → 4.714 sin ninguna
+decisión a la baja. Falsificador **PASS=20 FAIL=0**.
+
+**Criterio 4 — reescrito, y es el hallazgo.** No existe superficie de borrado, así
+que su falsificador era inejecutable: un criterio sin falsificador no es verde, es
+ausente. La redacción nueva afirma lo comprobable y anota el límite: el
+append-only es de la herramienta, no del almacenamiento.
+
+**Criterios 1 y 2 — medidos para poder promover, PASS=14 FAIL=0 SKIP=1.** El SKIP
+es el del criterio 4.
+
+**Dos FAIL propios, ninguno del producto**, ambos escritos en sus recibos: seis
+proyectos «perdidos» que el baseline ya marcaba `{"missing": true}`, y un guard
+que esperaba que `verify-chain` no viera el rehash de `content_hash`.
+
+**ADR-0152 `proposed` → `accepted`**, con `accepted_at` y `accepted_by_cycle`.
+`closes:` pasa a `[]`; INC-DEBT-050 y INC-DEBT-049 pasan a `addresses:` y
+**siguen `open`**. Lo que este trabajo les aporta queda escrito en ellos mismos.
+
+**UAT observado.** No aplica: no hay UAT de usuario en este lote. La evidencia es
+de medición sobre el storage real y sobre copias byte-idénticas.
+
+**Bloqueos que persisten.** Clave KMS sin aprovisionar (único bloqueo de v2.5.3);
+contrato de read-option de INC-DEBT-049; ruta forge de `release apply` contra un
+GitHub real; publicación del harness Pipelinek-Test-Hardness.
+
+**Primer paso de la sesión siguiente.** Elegir **un** WorkItem READY de
+`docs/roadmap/ROADMAP.md`. Los candidatos propios que no dependen del operador son
+el contrato de read-option de INC-DEBT-049 y la medición de la ruta forge de
+`release apply`. Antes de tocar código: `SDDK PRE-FLIGHT` con
+`Readiness: READY`, y aplicar `prompts/sddk/change-scoped-testing.md`.
