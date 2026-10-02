@@ -8999,3 +8999,73 @@ AGENTS.md §2.3 reserva el perfil completo para `verify`/release.
 **Primer paso de la sesion siguiente:** con D2 cerrado, recorrer los siete
 criterios de ADR-0153 **uno a uno** y promoverlo —y ADR-0152— a `accepted` solo
 cuando todos estén verdes medidas, no declarados verdes por suma.
+
+### 2026-10-02T16:40:00Z — p-63676b11dc0ef88f/version-source (aceptacion) — orchestrator
+
+**SHA antes:** `35445b79` (`HEAD == origin/main`, arbol limpio)
+**SHA despues:** `8abf9354` (fix de F58) + `c35e9a1c` (promocion) + este commit documental
+
+**WorkItem:** promover ADR-0153 a `accepted` y cerrar INC-DEBT-051, con el
+metodo que el goal exige: cada criterio medido, no declarada la suma.
+
+**El criterio 1 no era satisfacible, y no por culpa del codigo.** Decia que
+`Cargo.toml` no aparece en `version.rs`. Medido: **13 apariciones, 0 en codigo
+de produccion** — seis fixtures, dos asserts de mensaje, cinco comentarios de
+historia. Los tests de paridad de Rust **tienen que construir** un `Cargo.toml`
+para comprobar que el lockstep no cambio, luego la letra era insatisfacible por
+construccion. Se reescribio a la propiedad con dientes —«el codigo que resuelve
+nombra ningun manifiesto»— y se hizo cumplir con un test **estructural** que
+ademas esta **falsificado**: inyectar un `root.join("Cargo.toml")` en el lector
+lo hace fallar y nombra el fichero.
+
+**F58 estaba a medio camino y no se dio por bueno.** Al medirlo de extremo a
+extremo, el error listaba los 13 manifiestos que busca pero **no nominaba
+`.sddk/version-source.json`**, que es la salida para un proyecto sin version
+declarada. El criterio 8 del SCOPE del lote 1 lo exigia y el codigo solo
+cumplia la mitad; el test solo afirmaba esa mitad. **Dos mitades de un mismo
+casi que se confundian con el todo.** Corregido, con el test que lo mide.
+
+**El gate nuevo** (`tests/test_adr_0153_criteria.sh`) ejecuta cada criterio por
+separado y **exige que pasen todos** los tests de un criterio que tiene varios:
+un verde agregado no puede tapar uno rojo. Resultado **PASS=7 FAIL=0**.
+
+**Falsificadores de INC-DEBT-051, medidos uno a uno contra el binario:** F56
+fixture Go sin `Cargo.toml` → `exit 0` y `tag_is_the_only_authority` · F57 con
+`Cargo.toml` → `exit 0` y `cross_checked` nombrando el manifiesto, y `exit 1`
+con el rechazo ante `v9.9.9` · F58 repo sin ninguna fuente → `exit 1`, lista
+donde busco **y** la declaracion, cero `No such file or directory` · F59 la
+salida nombra el ecosistema y el manifiesto leido.
+
+**Reconciliacion de redaccion, escrita y no omitida:** F56 y F59 hablan de
+«adapter». El contrato elegido **no tiene adapters** — es un registro de
+ecosistemas y anadir uno es solo datos — luego cambia el sustantivo, no la
+exigencia de que la comprobacion sea auditable.
+
+**Dos fallos propios durante el trabajo, ambos en la infraestructura de la
+medida, ninguno en el producto:**
+
+1. **Edite un script de shell mientras bash lo ejecutaba.** Bash relee un
+   script por offset de byte, luego mi edicion descoloco la lectura y salio un
+   `orden no encontrada` **dentro de un criterio que ya habia reportado verde**.
+   Un criterio que dice `ok` con un test que no llego a correr es un falso
+   verde: relanzado sin tocar nada, dio 7/7 limpio.
+2. **El commit anterior se llevo los dos concerns.** Ya habia stageado las seis
+   rutas del comando previo, asi que el commit del arreglo de F58 se llevo
+   tambien la promocion del ADR, con un mensaje que solo describia la primera.
+   Deshecho con `reset --soft` y partido en dos. Aun deshecho, el mensaje del
+   segundo traia «No such file **over** una ruta», un token en ingles donde
+   iba «sobre» — la segunda clase de contaminacion, que ningun guard cubre.
+
+**Lo que NO se afirma:** la ruta **forge** contra un GitHub real no se ha
+ejecutado. F56, F57 y F59 se midieron con la ruta local, que no necesita red.
+
+**Gates:** criterio de ADR-0153 `PASS=7 FAIL=0` · `engine --lib version` 51/0 ·
+`cli --test cli release` 33/0 · fmt y clippy `-D warnings` limpios ·
+`test_adr_promotion_format` PASS, 56 aceptados, 0 violaciones ·
+`check_debt_index_coherence` PASS · `test_docs_script_contamination` PASS ·
+`test_changelog_coverage` PASS=42 FAIL=0.
+
+**Primer paso de la sesion siguiente:** el mismo metodo para ADR-0152 —recorrer
+sus criterios uno a uno, medir cada uno, y promover solo si todos estan
+verdes— y no promoverlo por simetria con el anterior: son contratos distintos
+con criterios distintos.

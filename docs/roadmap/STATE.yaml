@@ -1,5 +1,5 @@
 schema_version: 1
-updated_at: "2026-10-02T16:00:00Z"
+updated_at: "2026-10-02T16:40:00Z"
   # El conteo de commits sin publicar es auto-referencial: cada commit que lo
   # declara se cuenta a si mismo. Medir con `git log --oneline origin/main..HEAD | wc -l`.
   # Regla (session-41): si el numero importa, anclarlo al SHA donde se midio.
@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "1a8f8ff8"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (b15cf610) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "c35e9a1c"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (b15cf610) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -18,7 +18,9 @@ source:
   # actualizar el puntero lo convierte a su vez en HEAD. El commit documental no
   # es evidencia del SHA que dice contener.
   # session-66: este puntero nombra 462a60a6, que es el ANTERIOR a este fichero: los commits bcd744e1 (cierre de INC-DEBT-048) y 462a60a6 (INC-DEBT-057 + su guard) se publicaron antes de escribirlo. Un commit documental no es evidencia del SHA que dice contener; lo que si es evidencia es que 462a60a6 esta en origin/main.
-  head_at_state_sync: "1a8f8ff8"
+  head_at_state_sync: "c35e9a1c"
+  # session-68: este puntero nombra c35e9a1c, el ANTERIOR a este fichero, misma razon de siempre.
+  session_68_closed: 'ADR-0153 a ACCEPTED e INC-DEBT-051 RESUELTA. La aceptacion no se declaro por suma: tests/test_adr_0153_criteria.sh ejecuta cada criterio por separado y exige que pasen TODOS los tests de un criterio que tiene varios, para que un verde agregado no tape uno rojo. PASS=7 FAIL=0. HALLAZGO: el criterio 1 estaba redactado de forma que ninguna implementacion correcta podia cumplir -- decia que Cargo.toml no aparece en version.rs, y los tests de paridad de Rust tienen que CONSTRUIR un Cargo.toml. Medido: 13 apariciones, 0 en produccion. Reescrito a la propiedad con dientes y hecho cumplir con un test ESTRUCTURAL, ademas falsificado. F58 estaba a medio camino: el error listaba los 13 manifiestos buscados pero no nominaba .sddk/version-source.json, que es la salida; corregido y medido. Falsificadores de la deuda: F56 sale con 0 declarando la autoridad, F57 el lockstep de Rust sigue rechazando el tag discrepante, F58 falla sin No such file y nombra donde busco y la salida, F59 nombra el ecosistema y el manifiesto leido. Reconciliacion de redaccion escrita y no omitida: F56 y F59 hablan de adapter y el contrato elegido no tiene adapters. LO QUE NO SE AFIRMA: la ruta forge contra un GitHub real no se ha ejecutado; F56-F59 se midieron por la ruta local, que no necesita red. >> '
   # session-67b: este puntero nombra 1a8f8ff8, el ANTERIOR a este fichero, por la
   # misma razon que session-67 y session-66: un commit documental no es evidencia
   # del SHA que dice contener.

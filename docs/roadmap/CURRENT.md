@@ -2,6 +2,28 @@
 
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-68, 2026-10-02): ADR-0153 pasa a `accepted` e INC-DEBT-051 queda resuelta, con sus cuatro falsificadores medidos contra el binario. `release plan` ya no está acotado a proyectos Rust.** `HEAD` = `c35e9a1c` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo que cambió, en tres líneas:**
+
+1. **La aceptación no se declaró por suma.** `bash tests/test_adr_0153_criteria.sh` ejecuta cada criterio **por separado** y exige que **pasen todos** los tests de un criterio que tiene varios, para que un verde agregado no pueda tapar uno rojo. **PASS=7 FAIL=0.**
+2. **El criterio 1 estaba redactado de forma que ninguna implementación correcta podía cumplir**: decía «`Cargo.toml` no aparece en `version.rs`», y los tests de paridad de Rust tienen que *construir* un `Cargo.toml`. Medido: trece apariciones, **cero** en producción. Se reescribió a la propiedad con dientes —«el código que resuelve no nombra ningún manifiesto»— y se hizo cumplir con un test **estructural**, además **falsificado**: inyectar un `root.join("Cargo.toml")` lo hace fallar.
+3. **F58 estaba a medio camino y no se dio por bueno.** El error listaba los 13 manifiestos buscados pero **no nominaba `.sddk/version-source.json`**, que es la salida. El mensaje la nombra ahora y un test lo mide.
+
+**Falsificadores de INC-DEBT-051, medidos uno a uno:** F56 salida 0 declarando la autoridad · F57 el lockstep de Rust sigue exigiendo y rechaza el tag discrepante · F58 falla sin un `No such file` y nombra dónde buscó **y** la salida · F59 nombra el ecosistema y el manifiesto leído. **Reconciliación de redacción, escrita y no omitida:** F56 y F59 hablan de «adapter» y el contrato elegido no tiene adapters; cambia el sustantivo, no la exigencia.
+
+**Lo que esto NO afirma:** la ruta **forge** contra un GitHub real no se ha ejecutado. F56, F57 y F59 se midieron con la ruta local, que no necesita red.
+
+**Gates de session-68:** criterio de ADR-0153 `PASS=7 FAIL=0` · `engine --lib version` 51/0 · `cli --test cli release` 33/0 · fmt y clippy `-D warnings` limpios · `test_adr_promotion_format` PASS, 56 aceptados, 0 violaciones · `check_debt_index_coherence` PASS · `test_docs_script_contamination` PASS · `test_changelog_coverage` **PASS=42 FAIL=0**.
+
+**Lo que sigue abierto:** **promover ADR-0152 a `accepted`**, con el mismo método criterio a criterio · la **clave del KMS**, único bloqueo que queda para publicar v2.5.3 · el **contrato de read-option** de INC-DEBT-049 · la **publicación del harness** Pipelinek-Test-Hardness (44 commits sin publicar) · el **alias de skillgraph**, retirado hasta que la sesión concurrente cierre `wi-72-p3-expansion-apply` · la clase ASCII de contaminación en `docs/` (INC-DEBT-058: no automatizable).
+
+**Nota sobre el puntero:** `current_sha` nombra `c35e9a1c`, el commit **anterior** a este fichero documental, por la razón que la tercera sesión ya dejó escrita: actualizar el puntero convierte a este commit en HEAD, y un commit documental no es evidencia del SHA que dice contener.
+
+---
+
+# CURRENT — puntero de reanudación de SDDK
+
 **Estado (session-67b, 2026-10-02): D2 cerrado. `release apply` ya no afirma un lockstep que nadie comprobó, y con esto los siete criterios de ADR-0153 son medibles uno a uno.** `HEAD` = `1a8f8ff8` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Lo que cambió en esta sesión, en dos líneas:**
