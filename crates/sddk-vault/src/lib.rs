@@ -26,8 +26,8 @@ pub use repair::{
     append_repair_receipt, load_repair_queue, verify_receipt_evidence,
 };
 pub use search::{
-    SearchHit, SearchIndexError, SyncSummary, index_has_rows, open_index, rebuild_search_index,
-    search_index, sync_search_index,
+    SearchHit, SearchIndexError, SyncSummary, count_matches, index_has_rows, open_index,
+    rebuild_search_index, search_index, sync_search_index,
 };
 pub use validate::{
     CycleScope, Diagnostic, Severity, VaultDiagnosticError, summary, validate_index,

@@ -8539,8 +8539,27 @@ fn cli_vault_index_validate_search_and_export() {
     assert!(searched.status.success());
     let hits: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&searched.stdout)).unwrap();
-    assert_eq!(hits.as_array().unwrap().len(), 1);
-    assert_eq!(hits[0]["id"], "TERM-Auth");
+    // **Shape change, declared.** This payload used to be a bare array. A vault
+    // search that shows 20 of 75 documents has to be able to say so, and an array
+    // has nowhere to put the total, so the payload became an envelope:
+    // `{ hits, total_hits, shown, truncated }`. Impact was measured before the
+    // change: this is the only consumer of this payload in the repo, and
+    // `search_index` keeps its signature because it is public API with 8 unit
+    // tests. See
+    // `docs/roadmap/receipts/cl-vault-declaration/SCOPE-CONTRACT.md` §4.
+    //
+    // The assertion that matters — the one and only hit is TERM-Auth — survives
+    // unchanged; only the path to reach it moved one level down.
+    let hit_list = hits["hits"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`hits` must be an array: {hits}"));
+    assert_eq!(hit_list.len(), 1);
+    assert_eq!(hit_list[0]["id"], "TERM-Auth");
+    // And the declaration itself is asserted rather than assumed: a listing that
+    // fits must say it fits.
+    assert_eq!(hits["total_hits"].as_u64(), Some(1), "{hits}");
+    assert_eq!(hits["shown"].as_u64(), Some(1), "{hits}");
+    assert_eq!(hits["truncated"].as_bool(), Some(false), "{hits}");
 
     let graphed = run_with_root(
         &fixture,

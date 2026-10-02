@@ -32,11 +32,8 @@ impl Sandbox {
     /// default `--limit` is 20, so `docs > 20` is what makes the truncation case
     /// real rather than hypothetical.
     fn new(name: &str, docs: usize) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "sddk-vault-decl-{}-{}",
-            name,
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("sddk-vault-decl-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let vault = root.join("vault");
         std::fs::create_dir_all(vault.join("terms")).unwrap();
@@ -49,11 +46,20 @@ impl Sandbox {
             )
             .unwrap();
         }
-        // One document that shares nothing with the others, so "no matches" is
-        // reachable with a real index rather than an empty vault.
+        // One document whose body carries a token nothing else has, so "one
+        // match" and "no matches" are both reachable against a real index
+        // rather than an empty vault.
+        //
+        // The token is a whole word and not a prefix of anything: FTS5 matches
+        // the exact token, so a query for `crypto` against a document containing
+        // `cryptography` returns **nothing**. The first version of this fixture
+        // did exactly that, and R1 failed against a product that was declaring
+        // `hits: 0 of 0 (complete)` — correctly, because there was no match. The
+        // bug was in the fixture and it also made R6 vacuous: its "with
+        // matches" branch was silently exercising the no-match branch.
         std::fs::write(
             vault.join("terms/TERM-SOLO.md"),
-            "---\nid: TERM-SOLO\ntype: term\nstatus: active\n---\n# Solo\n\nUnrelated content about cryptography.\n",
+            "---\nid: TERM-SOLO\ntype: term\nstatus: active\n---\n# Solo\n\nUnrelated notes about a xylophone.\n",
         )
         .unwrap();
         let db = root.join("index.sqlite");
@@ -158,13 +164,13 @@ fn declared_total(out: &str) -> Option<u64> {
 fn r1_declares_the_total_even_when_it_does_not_truncate() {
     let s = Sandbox::new("no-truncate", 5);
 
-    let (code, out) = s.search("crypto", &[]);
+    let (code, out) = s.search("xylophone", &[]);
 
     assert_eq!(code, 0, "`vault search` must exit 0: {out}");
     assert_eq!(
         hit_lines(&out).len(),
         1,
-        "the fixture must produce exactly one hit for 'crypto': {out}"
+        "the fixture must produce exactly one hit for 'xylophone': {out}"
     );
     assert_eq!(
         declared_total(&out),
@@ -283,7 +289,10 @@ fn r5_no_matches_declares_zero() {
 fn r6_never_returns_empty_output_for_a_search_that_ran() {
     let s = Sandbox::new("never-silent", 3);
 
-    for (query, label) in [("crypto", "with matches"), ("zzzznone", "without matches")] {
+    for (query, label) in [
+        ("xylophone", "with matches"),
+        ("zzzznone", "without matches"),
+    ] {
         let (code, out) = s.search(query, &[]);
         assert_eq!(code, 0, "`vault search` must exit 0 ({label}): {out}");
         assert!(

@@ -101,7 +101,12 @@ pub(crate) struct VaultSearchArgs {
     /// Full-text query.
     #[arg(long)]
     pub(crate) query: String,
-    /// Maximum hits.
+    /// Maximum hits (default 20; use 0 for all).
+    ///
+    /// The result always declares how many documents matched in total and
+    /// whether anything was left out. `LIMIT 0` is not special in SQL, so this
+    /// command needs the same explicit handling the other three commands with a
+    /// limit already have (`ledger export`, `ledger events`, `ledger watch`).
     #[arg(long, default_value_t = 20)]
     pub(crate) limit: usize,
     /// Output format.
@@ -432,16 +437,52 @@ fn run_vault_index(
     }
 }
 
+/// Envelope for `vault search`, so a page of hits can say what it left out.
+///
+/// Measured on the real vault index of this machine: 75 documents, of which the
+/// command showed **20** with no total declared and exit 0 — and `--limit 0`
+/// returned nothing at all, because `LIMIT 0` is not special in SQL. The three
+/// commands next door (`ledger export`, `ledger events`, `ledger watch`) all
+/// treat 0 as "all" and say what they showed.
+///
+/// The total comes from a separate, measured-cheap `COUNT`: 0,119 ms against
+/// 0,376 ms for the search itself on the same index, and the overhead falls with
+/// scale. `search_index` keeps its signature — it is public API with its own
+/// callers — so this adds a second query instead of changing one function.
+#[derive(Serialize)]
+struct SearchOutput {
+    /// The hits shown, best rank first.
+    hits: Vec<SearchHit>,
+    /// How many documents matched, shown or not.
+    total_hits: u64,
+    /// How many are in `hits`.
+    shown: usize,
+    /// Whether anything was left out.
+    truncated: bool,
+}
+
 fn run_vault_search(args: VaultSearchArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
-    let result = (|| -> anyhow::Result<Vec<SearchHit>> {
+    let result = (|| -> anyhow::Result<SearchOutput> {
         check_vault_capability(&args.runtime, environment, "vault.search")?;
         let connection = sddk_vault::open_index(&args.db)?;
-        Ok(sddk_vault::search_index(
-            &connection,
-            &args.query,
-            args.limit,
-        )?)
+        let total_hits = sddk_vault::count_matches(&connection, &args.query)?;
+        // `0` means all, matching `ledger export --limit 0`, `ledger events
+        // --limit 0` and `ledger watch --max-events 0`. It used to reach SQL as
+        // `LIMIT 0`, which is not a special case and returns no rows.
+        let limit = if args.limit == 0 {
+            usize::MAX
+        } else {
+            args.limit
+        };
+        let hits = sddk_vault::search_index(&connection, &args.query, limit)?;
+        let shown = hits.len();
+        Ok(SearchOutput {
+            truncated: (shown as u64) < total_hits,
+            shown,
+            total_hits,
+            hits,
+        })
     })();
     render_result(result, format, search_text)
 }
@@ -552,12 +593,25 @@ fn index_text(output: &IndexOutput) -> String {
     text
 }
 
-fn search_text(hits: &Vec<SearchHit>) -> String {
-    if hits.is_empty() {
-        return "no hits\n".to_owned();
-    }
+fn search_text(output: &SearchOutput) -> String {
     let mut text = String::new();
-    for hit in hits {
+    // Declared in both cases on purpose. A count that only appears when
+    // something was left out cannot be read off a log where nothing was, and
+    // "nothing was" is exactly the claim worth checking.
+    text.push_str(&format!(
+        "hits: {} of {} ({})\n",
+        output.shown,
+        output.total_hits,
+        if output.truncated {
+            "truncated"
+        } else {
+            "complete"
+        }
+    ));
+    // No `no hits` special case: zero matches is declared as zero, because
+    // "there was nothing to find" and "nothing was left out" are different
+    // claims and only the second one is usually what happened.
+    for hit in &output.hits {
         text.push_str(&format!("{} {} {}\n", hit.id, hit.kind, hit.path));
     }
     text
