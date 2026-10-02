@@ -8522,3 +8522,58 @@ existe en ninguna parte del engine**: `grep -rln "project_version"
 crates/*/src/` → cero. Es un ciclo propio con SCOPE-CONTRACT y ADR. Lo que
 se ha hecho es quitar el defecto que haría ese contrato más difícil de
 verificar: hoy el lockstep es correcto **para Rust**, y se puede demostrar.
+
+## Continuación (session-65i, 2026-10-01) — `adopt status` resolví[a] `conflict` sobre el storage vivo
+
+**Baseline/HEAD:** `e0628686` (publicado, `origin/main` == HEAD) → `35b33e8c` (session-65i). Workspace
+2.5.3 declarada, no publicada; último tag remoto `v2.5.2`.
+
+**WorkItem:** cerrar el `conflict` de `adopt status` en este repo. No venia de un ticket: lo revelo un
+`adopt status` real que respondio `conflict` con el pin activo y el storage ya convergido.
+
+**Diagnóstico (tres sitios, no uno).**
+
+1. `plan_adoption` (rama `Some(pinned)`) construía la identidad con `remote_url: None`. El pin
+   sobreescribe **solo** `project_id`; `remote_url` y `scope` también son identidad.
+2. `same_identity` comparaba `remote_url` **crudo**.
+3. `inspect_ledger` comparaba `existing.remote_url` **crudo** contra la fila `projects`.
+
+Los sitios 2 y 3 son independientes: arreglar el 2 sin el 3 solo traslada el conflicto. Arreglo único:
+`remote_urls_match`, usada por ambos. La comparación cruda contradecía al dominio, que ya normaliza
+owner/repo antes de hashear el `project_id`.
+
+**Falsación — dos direcciones, y la segunda encontró el hueco.**
+
+- RED: cada sitio falla con **su propio** detalle (`receipt identity differs from plan` vs
+  `ledger project identity differs from plan`), no uno solo.
+- MUTACIÓN: `right == *right` (devuelve `true` siempre que ambos lados normalicen) dejó los tests
+  positivos EN VERDE. Fijaban «el mismo repo con otro case ya no es conflicto» pero no «un repo
+  distinto sigue siendo conflicto». **Cuarta vez que un falsador encuentra en sí mismo lo que la
+  inspección no** — aquí, que un arreglo puede *degradar* la detección de drift en vez de afinarla.
+- Los negativos usan **pin** a propósito: sin pin un remoto distinto acuña otro `project_id`, apunta a
+  rutas inexistentes y el veredicto es `Absent`, no `Conflict`. Discriminaban por el guard equivocado.
+
+**Verificación end-to-end (no solo test).** Mismo repo, mismo pin, mismo storage; solo cambia el
+binario. `/home/rubentxu/.local/bin/sddk` (release 2.5.3) → `conflict` (detalle
+`receipt identity differs from plan`); `/var/home/rubentxu/cargo-targets/debug/sddk` → `complete`.
+
+**Gates:** `cargo fmt --check` limpio · `clippy -p sddk-engine --all-targets -D warnings` limpio ·
+**1375/1375** tests del engine (0 fallos, 1 ignorado), 6/6 en `adoption::tests` · 10/10 índice de
+deuda · 3/3 integridad de referencias de superficie.
+
+**Lo que NO se cierra.** INC-DEBT-049 sigue `open`: la parte grave ya estaba resuelta en session-63 y
+la abierta (declarar historial bajo otra identidad) necesita SCOPE + ADR. INC-DEBT-050 **no se ve
+afectada**: esto cambia cómo se **compara** la identidad, no reubica los 25 recibos huérfanos. Este
+repo no necesita migración porque tiene pin; los otros 24 sin pin siguen huérfanos. La comparación
+normalizada es la contraparte **no destructiva** de la migración; ambas pueden convivir.
+
+**Corrección documental.** `surface:` y `references:` de INC-DEBT-049 declaraban
+`crates/sddk-cli/src/adopt.rs`, fichero **inexistente**. Reales: `crates/sddk-engine/src/adoption.rs`
+y `crates/sddk-cli/src/{lib,context_cmd}.rs`.
+
+**Primer paso preciso de la sesión siguiente:** `bash scripts/release.sh` para publicar v2.5.3 (el
+CHANGELOG debe cubrir este `fix(adoption)` — gate 2b) y `sddk dev install`, o bien abrir el ciclo de
+brevedad de las 19 superficies que devuelve `doctor --strict` a verde. Antes, `sddk adopt apply`
+sobre este repo healing-normaliza el recibo: el arreglo hace que `configuration_hash` (bytes crudos)
+difiere y el verbo reescribe el remoto a minúsculas — es una escritura de healing, no una migración.
+

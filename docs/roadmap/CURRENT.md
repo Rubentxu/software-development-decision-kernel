@@ -1,5 +1,24 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-65i, 2026-10-01): `adopt status` reportaba `conflict` sobre el storage ya convergido de este repo. Tres sitios de la cadena de identidad, no uno. Verificado end-to-end contra el binario: release 2.5.3 = `conflict`, binario con el arreglo = `complete`.** `HEAD` = `35b33e8c` (session-65i) sobre `e0628686` ya publicado. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`). **SIGUIENTE: publicar, o abrir el ciclo de brevedad que devuelve `doctor --strict` a verde.**
+
+**Hecho en session-65i:**
+
+1. **El síntoma era real, no un artefacto de tests.** Con el pin activo (`.sddk/project-pin.json` -> `p-63676b11dc0ef88f`) y los 65 ciclos bajo ese id, el release 2.5.3 respondía `status: conflict` con detalle *"receipt identity differs from plan; refresh only accepts runtime metadata drift"*. Contrato absurdo aplicado a un caso que no es runtime drift: es el plan olvidando quien es.
+2. **Tres sitios, y dos de ellos independientes.** `plan_adoption` (rama `Some(pinned)`) construía la identidad con `remote_url: None`, tirando el resto — el pin debe sobreescribir **solo** `project_id`. `same_identity` comparaba `remote_url` **crudo**. `inspect_ledger` comparaba `existing.remote_url` **crudo** contra la fila `projects`. Arreglar el segundo sin el tercero solo traslada el conflicto: de ahí una única función `remote_urls_match` para ambos.
+3. **La comparación cruda contradecía una decisión ya tomada.** El dominio normaliza owner/repo a minúsculas **antes** de hashear el `project_id` (test golden `case_change_in_owner_or_repo_resolves_to_same_project_id`). El recibo y la fila `projects` guardan `Rubentxu/...` porque se acuñaron el 2026-09-30, antes del commit `52182522`. Mismo `project_id`, misma identidad por definición — y `conflict`.
+4. **El falsador encontró la mitad negativa que faltaba.** Sustituir la comparación por `right == *right` —`true` siempre que ambos lados normalicen— dejó los tests positivos **EN VERDE**: fijaban «el mismo repo con otro case ya no es conflicto», pero no «un repo distinto sigue siendo conflicto». Un guard que declara siempre coincidencia era aceptable. **Cuarta vez que un falsador encuentra en sí mismo lo que la inspección no**; aquí encontró algo que ni había considerado: que un arreglo puede **degradar** la detección de drift en vez de afinarla.
+5. **Los negativos usan pin a propósito.** Sin pin, un remoto distinto acuña otro `project_id`, apunta a rutas inexistentes y el veredicto es `Absent`: el test discriminaba, pero por el guard equivocado (las rutas). El pin es la única forma de que dos remotos genuinamente distintos compartan `project_id` y rutas — «esto es el proyecto X» mientras el checkout apunta al repo Y.
+6. **Verificación end-to-end, no solo test.** Mismo repo, mismo pin, mismo storage; solo cambia el binario: `/home/rubentxu/.local/bin/sddk` (2.5.3) -> `conflict`; `/var/home/rubentxu/cargo-targets/debug/sddk` -> `complete`.
+7. **Corrección de superficie en INC-DEBT-049:** declaraba `crates/sddk-cli/src/adopt.rs`, fichero **inexistente**. Las superficies reales son `crates/sddk-engine/src/adoption.rs` y `crates/sddk-cli/src/{lib,context_cmd}.rs`.
+
+**Gates:** `cargo fmt --check` limpio · `clippy -p sddk-engine --all-targets -D warnings` limpio · **1375/1375 tests del engine**, 0 fallos, 6/6 en `adoption::tests` · 4 mutaciones aplicadas (RED crudo + mutación always-true) y las 4 detectadas · 10/10 índice de deuda · 3/3 integridad de referencias de superficie.
+
+**Lo que este slice NO cierra:** INC-DEBT-049 **no se cierra** — la parte grave ya estaba resuelta en session-63 y la abierta (declarar historial bajo otra identidad) sigue necesitando SCOPE + ADR. INC-DEBT-050 **tampoco se ve afectada**: esto cambia cómo se **compara** la identidad, no reubica los 25 recibos huérfanos. Este repo no necesita migración porque tiene pin; los otros 24 sin pin siguen huérfanos. La comparación normalizada es la contraparte **no destructiva** de la migración, y ambas pueden convivir.
+
+
+---
+
 **Estado (session-65h, 2026-10-01): el staging del bundle era una QUINTA copia del contrato, y produjo dos defectos medidos. Uno habría abortado el release; el otro publicaba dos ficheros sin digest.** `HEAD` = `bc6e2cfd`, **sin publicar** (op-5). Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`). **SIGUIENTE: publicar `bc6e2cfd`; después, derivar también la ruta cloud.**
 
 **Hecho en session-65h:**
