@@ -6,8 +6,8 @@ severity: critical
 priority: P1
 partially_resolved_at: 2026-10-02
 partially_resolved_in_session: session-66
-resolved_part: "el apply deja de ser una operacion unica e inejecutable: escritura acotada por WHERE, renombrado de estado declarado y verificado, recuento y escritura comparten predicado, y test propio de la escritura (11 casos, 5 mutaciones detectadas). session-66"
-open_part: "la migracion de los 25 receipts huerfanos son tres operaciones, no un apply: 7 renombrados limpios, 2 con el id nuevo en cascara (0 ciclos) y 6 que exigen fusionar dos ledgers. El storage sigue intacto."
+resolved_part: "el apply deja de ser una operacion unica e inejecutable: escritura acotada por WHERE, renombrado de estado declarado y verificado, recuento y escritura comparten predicado, rechazo del storage traducido a problema legible, y test propio de la escritura (24 casos, 11 mutaciones detectadas). session-66"
+open_part: "la migracion de los 25 receipts NO EXISTE: los 15 proyectos tienen 3477 filas en tablas append-only y el project_id esta horneado en el content_hash del fact log, asi que la identidad es inmutable desde el primer evento. El storage sigue intacto. Camino propuesto: alias de proyecto (tabla from_id->to_id que el CLI resuelve al derivar), que es trabajo de diseño con SCOPE + ADR."
 detected_at: 2026-10-01
 detected_in_session: session-63
 component: identity
@@ -377,3 +377,90 @@ El storage real sigue **intacto**: la auditoría posterior sigue reportando 25
 receipts huérfanos. Lo que cambia es que ahora se sabe que migrarlos no es un
 `apply`, sino tres operaciones con riesgo distinto, y que la de nivel C es una
 decisión del operador, no un paso pendiente.
+
+---
+
+## Addendum session-66 (segunda parte) — la migración no existe: la identidad está sellada
+
+El operador autorizó migrar los 7 renombrados limpios. Se ejecutó el `apply` y
+abortó en el primero de ellos:
+
+```
+sqlite3.IntegrityError: events_v1 are append-only
+```
+
+Nada se escribió — la transacción no llegó a commitear y los renombrados, que
+ocurren al final, no corrieron. La auditoría posterior sigue en 25.
+
+### Lo que se encontró leyendo el storage
+
+Cinco tablas del ledger son **append-only por diseño**, con triggers
+`BEFORE UPDATE` / `BEFORE DELETE` que hacen `RAISE(ABORT)`:
+
+`events_v1`, `attempts_v1`, `workflow_runs_v1`, `node_runs_v1`,
+`workflow_run_events_v1`, `backlog_item_events_v1`
+
+Y hay un test que exige ese invariante:
+`crates/sddk-storage/tests/cross_ledger_consistency.rs:151`
+("UPDATE must be rejected by trigger").
+
+Peor: no es solo el trigger. `EventEnvelopeV1::compute_content_hash`
+(`crates/sddk-domain/src/event_envelope.rs:162`) anula **únicamente**
+`content_hash`, `sequence` y `recorded_at`. `project_id`, `stream_id` y
+`cycle_id` **entran en el hash**. Reescribirlos no sería "relajar un trigger":
+dejaría `verify_stream_chain` fallando con `hash_drift` para siempre.
+
+**El `project_id` está horneado en un fact log encadenado por hash. La
+identidad de un proyecto es inmutable en cuanto tiene un solo evento.**
+
+### Consecuencia: la premisa de INC-DEBT-050 es falsa
+
+Los 25 receipts no se pueden migrar. Ninguno. Los 15 proyectos tienen fact log:
+
+| proyecto | filas append-only | receipts |
+|---|---:|---:|
+| `p-52b95ef55999f9de` | 171 | 2 |
+| `p-63676b11dc0ef88f` | 590 | 1 |
+| `p-733fb505b5a6bd2d` | 582 | 6 |
+| `p-c1fac1fea05615c6` | 698 | 2 |
+| `p-7c4aff45199a2069` | 172 | 2 |
+| `p-f4d8f28cd78d443e` | 348 | 1 |
+| `p-3416cfb8288f8964` | 472 | 1 |
+| (los otros 8) | 26 – 120 | 1 – 2 |
+
+**3.477 filas. 0 migrables.** Da igual que el destino esté libre, que no haya
+colisión de nombres, que el `WHERE` sea correcto y que el backup esté
+verificado: no hay operación.
+
+Esto también explica el nivel C del addendum anterior. Los 8 proyectos con dos
+ids no son un efecto secundario de la normalización: son la **re-adopción**,
+que es la única vía que existe cuando la identidad ya no se puede cambiar. Y la
+re-adopción parte el historial en dos en lugar de unirlo. Los 51 ciclos que
+existen solo en el lado nuevo y la única colisión de nombre
+(`r6-workers-probe-wiring`) son consecuencia de eso.
+
+### Lo que sí se corrigió
+
+`migrate_one` convierte ahora el rechazo del storage en un problema legible en
+vez de un traceback crudo. Antes, un fallo en el quinto de siete habría
+dejado los cuatro anteriores migrados y el único informe habría sido una
+excepción de Python a mitad de un bucle.
+
+`classify` declara una cuarta clase, `blocked_append_only`, que se evalúa
+**antes** que las demás: si hay historia en una tabla append-only, el proyecto
+se declara bloqueado sin intentar nada. El `apply` informa
+`migrados: 0   intactos por clase: 15` y sale limpio.
+
+Test: 24 casos, y falsificado con 11 mutaciones — incluidas "degradar el
+bloqueo append-only" y "quitar la traducción de la excepción SQLite", que son
+las dos queRDEN a copiar sin querer.
+
+### Camino de cierre que sí existe
+
+Un **alias de proyecto**: una tabla `project_aliases(from_id, to_id)` que el
+CLI resuelve al derivar el id. Es lo que hace git con un rename y lo que hace
+cualquier base de datos con una indirección. No toca el fact log, no reescribe
+historia y no pierde los 25 receipts: solo deja de calcular mal.
+
+Es trabajo de diseño (SCOPE + ADR), no un parche de script, y por eso queda
+como el camino propuesto — no como algo ejecutado aquí.

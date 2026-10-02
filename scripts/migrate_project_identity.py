@@ -483,6 +483,129 @@ def foreign_values(db: Path, old_id: str) -> dict[str, int]:
     return out
 
 
+def cycle_names(db: Path) -> set[str]:
+    """Nombres cortos de ciclo (`p-…/nombre` -> `nombre`). Sólo lectura.
+
+    El `project_id` va en el propio `cycle_id`, así que comparar los ids
+    crudos entre dos ledgers de proyectos distintos no dice nada: `p-a/x` y
+    `p-b/x` nunca son iguales aunque sean el mismo ciclo. Lo que decide si una
+    UNION choca es el nombre corto, porque al re-apuntar el id viejo al nuevo
+    los dos pasan a ser `p-nuevo/x`.
+    """
+    if not db.exists():
+        return set()
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        return {
+            r[0].split("/", 1)[1]
+            for r in conn.execute("SELECT cycle_id FROM cycles")
+            if isinstance(r[0], str) and "/" in r[0]
+        }
+    except sqlite3.Error:
+        return set()
+    finally:
+        conn.close()
+
+
+APPEND_ONLY_TABLES = (
+    "events_v1",
+    "attempts_v1",
+    "workflow_runs_v1",
+    "node_runs_v1",
+    "workflow_run_events_v1",
+    "backlog_item_events_v1",
+)
+
+
+def append_only_rows(db: Path, old_id: str) -> dict[str, int]:
+    """Filas propias en tablas que el storage declara inmutables. Sólo lectura.
+
+    Cada una de estas tablas lleva triggers `BEFORE UPDATE`/`BEFORE DELETE` que
+    hacen `RAISE(ABORT, '... are append-only')`, y hay un test que lo exige
+    (`crates/sddk-storage/tests/cross_ledger_consistency.rs`). No es una
+   _CHECK que se pueda relajar: es el invariante del fact log.
+
+    Por eso NO se pueden re-identificar los eventos de un proyecto. Y no es
+    solo el trigger: `EventEnvelopeV1::compute_content_hash` anula unicamente
+    `content_hash`, `sequence` y `recorded_at`, de modo que `project_id`,
+    `stream_id` y `cycle_id` entran en el hash. Reescribirlos no solo dispara
+    el trigger: dejaria `verify_stream_chain` fallando con `hash_drift`.
+    """
+    out: dict[str, int] = {}
+    if not db.exists():
+        return out
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        for t in APPEND_ONLY_TABLES:
+            try:
+                n = conn.execute(
+                    f'SELECT COUNT(*) FROM "{t}" WHERE project_id = ? OR cycle_id LIKE ?',
+                    (old_id, f"{old_id}/%"),
+                ).fetchone()[0]
+            except sqlite3.Error:
+                continue
+            if n:
+                out[t] = n
+    finally:
+        conn.close()
+    return out
+
+
+def classify(old: str, new: str, share: Path, state: Path) -> dict:
+    """Que clase de migracion es esta, y con que evidencia.
+
+    Decidir esto leyendo el storage a mano es una conclusion que no queda
+    escrita en ninguna parte, y la siguiente sesion la vuelve a descubrir o,
+    peor, se la cree. Va en el plan.
+
+      clean_rename  el id nuevo no tiene nada: renombrar y ya.
+      empty_shell   el id nuevo tiene storage pero 0 ciclos: es la cascara de
+                    una re-adopcion. Fusionar directorios, no renombrar.
+      ledger_merge  hay ciclos en los dos lados: los dos histories son
+                    disjuntos, y unirlos no es una operacion escrita.
+    """
+    new_share = share / "projects" / new
+    ledger = state / "projects" / old / "ledger.sqlite"
+    old_names = cycle_names(ledger)
+    new_names = cycle_names(state / "projects" / new / "ledger.sqlite")
+    collisions = sorted(old_names & new_names)
+    evidence = {
+        "new_share_entries": len(list(new_share.rglob("*"))) if new_share.exists() else 0,
+        "old_cycles": len(old_names),
+        "new_cycles": len(new_names),
+        "name_collisions": collisions,
+    }
+
+    # Lo primero de todo: si el proyecto tiene historia en una tabla
+    # append-only, no se puede migrar. Da igual que el destino este libre.
+    sealed = append_only_rows(ledger, old)
+    if sealed:
+        total = sum(sealed.values())
+        return {
+            "class": "blocked_append_only",
+            "why": f"{total} filas en tablas append-only ({', '.join(sealed)}): "
+                   f"el fact log es inmutable y su hash cubre el project_id",
+            "append_only": sealed,
+            **evidence,
+        }
+
+    if not new_share.exists():
+        return {"class": "clean_rename", "why": "el id nuevo no tiene storage", **evidence}
+
+    if not new_names:
+        return {
+            "class": "empty_shell",
+            "why": "el id nuevo tiene directorio y ledger pero 0 ciclos",
+            **evidence,
+        }
+    return {
+        "class": "ledger_merge",
+        "why": f"ciclos en los dos lados: {len(old_names)} viejo, {len(new_names)} nuevo, "
+               f"{len(collisions)} colision(es) de nombre",
+        **evidence,
+    }
+
+
 def build_plan() -> dict:
     ok, problems = selfcheck()
     if not ok:
@@ -541,6 +664,7 @@ def build_plan() -> dict:
             "new_project_id": new,
             "remotes": sorted(r for r in g["remotes"] if r),
             "receipts": sorted(g["receipts"]),
+            **classify(old, new, share, state),
             "share_dirs_to_rename": share_dirs,
             "state_dirs_to_rename": state_dirs,
             "state_dbs": state_dbs,
@@ -718,7 +842,23 @@ def migrate_one(m: dict, out=print) -> list[str]:
                 if key.startswith("__"):
                     continue
                 table, col = key.split(".", 1)
-                conn.execute(rewrite_sql(table, col), (new, len(old) + 1) + owned_params(old))
+                try:
+                    conn.execute(
+                        rewrite_sql(table, col),
+                        (new, len(old) + 1) + owned_params(old),
+                    )
+                except sqlite3.Error as exc:
+                    # Un trigger append-only, un CHECK o una FK pueden rechazar
+                    # la escritura. Sin esto salia un traceback crudo a mitad
+                    # del bucle: lo que se habia migrado antes queda aplicado y
+                    # lo de despues intacto, y el unico informe es una excepcion.
+                    # Se revierte y se devuelve como problema, que es lo que el
+                    # operador puede leer.
+                    conn.rollback()
+                    problems.append(
+                        f"{src.name} {table}.{col}: el storage rechazo la escritura "
+                        f"({type(exc).__name__}: {exc}); reverted, no se escribe nada")
+                    return problems
                 changed = conn.execute("SELECT changes()").fetchone()[0]
                 # El recuento del plan y las filas escritas tienen que ser el
                 # MISMO numero. Si no lo son, se deshace: es la unica prueba
@@ -772,6 +912,24 @@ def migrate_one(m: dict, out=print) -> list[str]:
     return problems
 
 
+MIGRATABLE_CLASS = "clean_rename"
+
+
+def select_migratable(migrations: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Parte el plan en lo que se migra y lo que se declara intacto.
+
+    La decision es del operador (session-66), sobre el contenido real de los
+    ledgers: se migran los renombrados limpios y nada mas. Vive aqui, en una
+    funcion con nombre, porque si viviera dentro del `for` de `cmd_apply` no
+    habria forma de comprobar que existe — y degradarla a «migra todo» pasaria
+    los tests, porque el filtro no estaria en ninguno.
+    """
+    clean, held = [], []
+    for m in migrations:
+        (clean if m.get("class", MIGRATABLE_CLASS) == MIGRATABLE_CLASS else held).append(m)
+    return clean, held
+
+
 def cmd_apply(args) -> int:
     ok, problems = selfcheck()
     if not ok:
@@ -802,9 +960,19 @@ def cmd_apply(args) -> int:
         print("  regenera el plan y revísalo de nuevo.", file=sys.stderr)
         return 3
 
-    for m in plan["migrations"]:
+    # Solo se migra lo que el operador autorizó: los renombrados limpios. Las
+    # otras dos clases se DECLARAN y se dejan intactas. Decidido en session-66
+    # sobre el contenido real de los ledgers, no sobre el plan: fusionar dos
+    # historicos disjuntos es una operacion distinta que aqui no esta escrita.
+    clean, held = select_migratable(plan["migrations"])
+    for m in held:
+        print(f"NO SE TOCA  {m['old_project_id']} -> {m['new_project_id']}  "
+              f"[{m.get('class')}]  {m.get('why', '')}")
+    applied = 0
+    for m in clean:
         old, new = m["old_project_id"], m["new_project_id"]
-        print(f"migrando {old} -> {new}")
+        applied += 1
+        print(f"migrando {old} -> {new}  [{m.get('class')}]")
         problems = migrate_one(m, out=lambda s: print(s, flush=True))
         if problems:
             print("  ABORTO:", file=sys.stderr)
@@ -814,6 +982,9 @@ def cmd_apply(args) -> int:
                 "  Esto ya se habia escrito en las migraciones anteriores. "
                 "Restaura con el backup antes de reintentar.", file=sys.stderr)
             return 3
+
+    print()
+    print(f"migrados: {applied}   intactos por clase: {len(held)}")
 
     print()
     print("PASOS QUE QUEDAN Y ESTE SCRIPT NO HACE:")

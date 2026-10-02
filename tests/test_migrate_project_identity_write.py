@@ -347,11 +347,231 @@ class WriteContract(unittest.TestCase):
         self.assertGreaterEqual(checked, 9)
 
 
+class ClassificationContract(unittest.TestCase):
+    """La clase de una migracion se DECLARA; no depende de quien la mire.
+
+    Decidido por el operador en session-66 sobre el contenido real de los
+    ledgers: se migran los renombrados limpios y nada mas. Si la clasificacion
+    se degrada a `clean_rename` por defecto, un `ledger_merge` pasaria a
+    ejecutarse sin que nadie lo autorizara — que es justo el defecto que
+    corrigio `migrate_one`.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.m = load()
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.share = self.root / "share"
+        self.state = self.root / "state"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _make(self, pid, cycles):
+        d = self.state / "projects" / pid
+        d.mkdir(parents=True)
+        conn = sqlite3.connect(d / "ledger.sqlite")
+        conn.execute("CREATE TABLE cycles (cycle_id TEXT, project_id TEXT)")
+        conn.executemany("INSERT INTO cycles VALUES (?,?)",
+                         [(f"{pid}/{c}", pid) for c in cycles])
+        conn.commit()
+        conn.close()
+        return d / "ledger.sqlite"
+
+    def test_absent_destination_is_a_clean_rename(self) -> None:
+        self.assertEqual(
+            self.m.classify(OLD, NEW, self.share, self.state)["class"], "clean_rename"
+        )
+
+    def test_destination_without_cycles_is_an_empty_shell(self) -> None:
+        (self.share / "projects" / NEW).mkdir(parents=True)
+        (self.share / "projects" / NEW / "workspaces").mkdir()
+        self._make(OLD, ["m1", "m2"])
+        self._make(NEW, [])
+        got = self.m.classify(OLD, NEW, self.share, self.state)
+        self.assertEqual(got["class"], "empty_shell")
+        self.assertEqual(got["old_cycles"], 2)
+        self.assertEqual(got["new_cycles"], 0)
+
+    def test_cycles_on_both_sides_is_a_ledger_merge(self) -> None:
+        (self.share / "projects" / NEW).mkdir(parents=True)
+        self._make(OLD, ["m1", "m2"])
+        self._make(NEW, ["m3"])
+        got = self.m.classify(OLD, NEW, self.share, self.state)
+        self.assertEqual(got["class"], "ledger_merge")
+        self.assertEqual(got["name_collisions"], [])
+
+    def test_merge_records_the_name_collision_not_just_the_count(self) -> None:
+        """El id crudo nunca coincide entre proyectos distintos.
+
+        `p-a/x` y `p-b/x` son distintos aunque `x` sea el mismo ciclo. Lo que
+        choca al re-apuntar el id viejo al nuevo es el NOMBRE corto, asi que
+        la colision tiene que nombrarse, no solo contarse.
+        """
+        (self.share / "projects" / NEW).mkdir(parents=True)
+        self._make(OLD, ["r6-workers-probe-wiring", "m1"])
+        self._make(NEW, ["r6-workers-probe-wiring", "m2"])
+        got = self.m.classify(OLD, NEW, self.share, self.state)
+        self.assertEqual(got["class"], "ledger_merge")
+        self.assertEqual(got["name_collisions"], ["r6-workers-probe-wiring"])
+
+    def test_cycle_names_strips_the_project_prefix(self) -> None:
+        db = self._make(OLD, ["a", "b/c"])
+        self.assertEqual(self.m.cycle_names(db), {"a", "b/c"})
+
+    def test_apply_only_touches_clean_renames(self) -> None:
+        """Un `ledger_merge` marcado como tal NO se ejecuta."""
+        (self.share / "projects" / NEW).mkdir(parents=True)
+        db_old = self._make(OLD, ["m1"])
+        self._make(NEW, ["m2"])
+        m = build_migration(self.m, self.share, self.state, db_old)
+        m["class"] = "ledger_merge"
+        # `migrate_one` se niega a fusionar porque el destino existe: con lo
+        # que ya tiene, la unica defensa que le queda es no llegar a llamarse.
+        self.assertTrue(self.m.migrate_one(m, out=lambda s: None))
+        self.assertTrue((self.state / "projects" / OLD).is_dir())
+        self.assertTrue((self.state / "projects" / NEW).is_dir())
+
+    def test_select_migratable_holds_everything_but_clean_renames(self) -> None:
+        """El filtro de `cmd_apply` es una FUNCION, y esta es su prueba.
+
+        Sin esto, degradar el filtro a «migra todo» pasaria la suite: el filtro
+        estaria dentro del `for` de `cmd_apply` y ningun test lo alcanzaria.
+        """
+        def mig(klass):
+            return {"class": klass, "old_project_id": OLD, "new_project_id": NEW}
+
+        clean, held = self.m.select_migratable(
+            [mig("clean_rename"), mig("empty_shell"), mig("ledger_merge")]
+        )
+        self.assertEqual([m["class"] for m in clean], ["clean_rename"])
+        self.assertEqual([m["class"] for m in held], ["empty_shell", "ledger_merge"])
+
+    def test_select_migratable_never_silently_promotes_a_merge(self) -> None:
+        """Una clase desconocida se RETIENE, no se migra por defecto.
+
+        El valor por defecto de `class` es `clean_rename` para no romper planes
+        viejos, pero una clase que no sea la conocida se queda intacta: perder un
+        proyecto por una etiqueta nueva es reversible; migrar el equivocado, no.
+        """
+        clean, held = self.m.select_migratable([
+            {"class": "clean_rename"},
+            {"class": "lo_que_se_me_ocurra"},
+            {"class": "ledger_merge"},
+        ])
+        self.assertEqual(len(clean), 1)
+        self.assertEqual(len(held), 2)
+
+
+class AppendOnlyContract(unittest.TestCase):
+    """El fact log es inmutable: la identidad del proyecto queda sellada.
+
+    session-66, al ejecutar de verdad el `apply`. `events_v1` tiene triggers
+    `BEFORE UPDATE` que hacen `RAISE(ABORT, 'events_v1 are append-only')`, y
+    `EventEnvelopeV1::compute_content_hash` solo anula `content_hash`,
+    `sequence` y `recorded_at` — `project_id`, `stream_id` y `cycle_id` entran
+    en el hash. Reescribir esas columnas no es "relajar un trigger": deja
+    `verify_stream_chain` fallando con `hash_drift`.
+
+    Los 7 proyectos que el operador autorizo migrar tienen los 7 filas de
+    eventos. La migracion no es que fueradangerosa: es que no existe.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.m = load()
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.share = self.root / "share"
+        self.state = self.root / "state"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _ledger(self, pid, events=0, cycles=()):
+        d = self.state / "projects" / pid
+        d.mkdir(parents=True)
+        conn = sqlite3.connect(d / "ledger.sqlite")
+        conn.executescript("""
+        CREATE TABLE cycles (cycle_id TEXT, project_id TEXT);
+        CREATE TABLE events_v1 (
+            sequence INTEGER, project_id TEXT, cycle_id TEXT,
+            content_hash TEXT);
+        CREATE TRIGGER events_v1_no_update BEFORE UPDATE ON events_v1
+        BEGIN SELECT RAISE(ABORT, 'events_v1 are append-only'); END;
+        """)
+        conn.executemany("INSERT INTO cycles VALUES (?,?)",
+                         [(f"{pid}/{c}", pid) for c in cycles])
+        conn.executemany("INSERT INTO events_v1 VALUES (?,?,?,?)",
+                         [(i, pid, f"{pid}/m1", f"sha256:{i}") for i in range(events)])
+        conn.commit()
+        conn.close()
+        return d / "ledger.sqlite"
+
+    def test_a_real_trigger_turns_into_a_problem_not_a_traceback(self) -> None:
+        """El rechazo del storage se INFORMA; no se propaga como excepcion.
+
+        Sin esto, un `ledger_merge` de los 6 habria aplicado los 5 anteriores y
+        el unico informe seria un traceback a mitad del bucle.
+        """
+        self._ledger(OLD, events=3, cycles=["m1"])
+        (self.share / "projects" / OLD).mkdir(parents=True)
+        m = build_migration(self.m, self.share, self.state,
+                            self.state / "projects" / OLD / "ledger.sqlite")
+        problems = self.m.migrate_one(m, out=lambda s: None)
+        self.assertTrue(problems)
+        self.assertIn("append-only", problems[0])
+        self.assertIn("reverted", problems[0])
+        # Y nada se movio.
+        self.assertTrue((self.state / "projects" / OLD).is_dir())
+
+    def test_classification_blocks_before_even_trying(self) -> None:
+        """Un proyecto con fact log se declara, no se descubre al reventar."""
+        self._ledger(OLD, events=28, cycles=["m1", "m2"])
+        got = self.m.classify(OLD, NEW, self.share, self.state)
+        self.assertEqual(got["class"], "blocked_append_only")
+        self.assertEqual(got["append_only"], {"events_v1": 28})
+        self.assertNotEqual(got["class"], "clean_rename")
+
+    def test_append_only_beats_a_free_destination(self) -> None:
+        """Aunque el destino este libre, el fact log sigue mandando.
+
+        Si el orden de las comprobaciones se invirtiera, este proyecto pasaria
+        por `clean_rename` y el `apply` reventaria contra el trigger.
+        """
+        self._ledger(OLD, events=1, cycles=["m1"])
+        self.assertEqual(
+            self.m.classify(OLD, NEW, self.share, self.state)["class"],
+            "blocked_append_only",
+        )
+
+    def test_a_project_without_fact_log_is_still_migratable(self) -> None:
+        """El bloqueo es por tener historia, no por existir: no anula la clase buena."""
+        self._ledger(OLD, events=0, cycles=["m1"])
+        self.assertEqual(
+            self.m.classify(OLD, NEW, self.share, self.state)["class"], "clean_rename"
+        )
+
+    def test_append_only_rows_ignores_another_projects_events(self) -> None:
+        """`append_only_rows` cuenta las MIA, no las de otro ledger."""
+        db = self._ledger(OLD, events=4, cycles=["m1"])
+        conn = sqlite3.connect(db)
+        conn.executemany("INSERT INTO events_v1 VALUES (?,?,?,?)",
+                         [(i, FOREIGN, f"{FOREIGN}/x", f"sha256:f{i}") for i in range(5)])
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.m.append_only_rows(db, OLD), {"events_v1": 4})
+
+
 def main() -> int:
     import sys
     result = unittest.main(module=__name__, argv=[sys.argv[0]], exit=False).result
     return 0 if result.wasSuccessful() else 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
