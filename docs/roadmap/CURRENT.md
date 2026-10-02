@@ -16,7 +16,7 @@
 
 1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
 2. **INC-DEBT-060 sigue `open`** aunque sus cuatro falsificadores estén verdes: las 79 filas de `__spine_import__` y los 23 ciclos sin hecho (17 `OPEN`) son decisión suya, y `get_cycle` sigue dando error en las 2 filas ilegibles (STOP 1).
-3. **`ledger watch --max-events`** trunca sin declarar lo mismo. Mismo defecto, superficie vecina, excluido por §2.3 del SCOPE. Slice propio, y es el siguiente candidato natural.
+3. **`sddk vault search` repite la misma clase de defecto, medido:** **20 de 75 documentos** sin declarar nada, **`--limit 0` devuelve `no hits`** en vez de todos, y el JSON es un array desnudo. Slice propio con SCOPE propio. **Ojo:** se señaló antes `ledger watch --max-events` como el candidato y **era falso** —medido, `watch` sí declara en texto y JSON y es el modelo del comportamiento correcto—. La afirmación salió de analogía de nombre, sin ejecutar el comando.
 4. **INC-DEBT-049**: el operador reescribe F49 sobre historia ausente, o cierra.
 
 ---

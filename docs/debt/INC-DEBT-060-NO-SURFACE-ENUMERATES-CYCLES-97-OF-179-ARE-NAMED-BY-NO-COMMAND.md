@@ -280,9 +280,21 @@ escrita para que no se lea al revés:
 estado— no se ha cerrado, pero **bajar a `medium` es ahora decisión del
 operador** y no se toma aquí.
 
-**Defecto hermano que este lote dejó escrito y NO arregló:**
-`ledger watch --max-events` trunca sin declarar lo mismo que `ledger events` hacía,
-en el mismo binario y a un comando de distancia. Está excluido por
-`SCOPE-CONTRACT §2.3` de `cl-ledger-declaration` —cada superficie con su
-SCOPE— y queda como slice propio. Que exista un consumidor más de esta familia
-es un hecho, no una hipótesis.
+**Defecto hermano que este lote dejó escrito y que NO era cierto como estaba
+escrito — corregido en session-69f.** Aquí se afirmó que `ledger watch
+--max-events` «trunca sin declarar lo mismo», en el mismo binario y a un comando
+de distancia. **Es falso: `ledger watch` sí declara**, en los dos formatos —
+`[watch] emitted 5 events, exiting` en texto y `{"__watch_complete":true,
+"emitted":N}` en JSON (`ledger.rs:785-788`)—, y su `--max-events` está
+documentado como `0 = unlimited` con default `0`. **Es el modelo del
+comportamiento correcto**, y el propio arreglo de F63 lo usa como referencia.
+
+La afirmación salió de **analogía de nombre**: los tres comandos tienen una
+bandera de tope, luego se les trató el mismo defecto sin ejecutar ninguno.
+Queda escrita y tachada porque el camino que lleva a ella es el mismo que produce
+los demás números falsos de esta sesión: tratar la forma como si fuera el
+comportamiento.
+
+**Lo que sí es la misma clase, medido:** `sddk vault search` — **20 de 75
+documentos** sin declarar, **`--limit 0` devuelve `no hits`** en vez de todos, y
+el JSON es un array desnudo. Superficie distinta, sin tocar, slice propio.

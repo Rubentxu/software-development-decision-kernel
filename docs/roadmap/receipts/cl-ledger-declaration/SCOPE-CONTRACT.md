@@ -76,9 +76,12 @@ presente inmediato y cree que es el inventario.
 2. **NO** se cambia el valor por defecto de `--limit` (50). Que 50 sea un número
    razonable para un humano es discutible; que **no se diga** que hay 590 es un
    defecto. El primero es criterio, el segundo es mentira.
-3. **NO** se toca `ledger export`, `ledger replay` ni `ledger watch`, aunque
-   `watch` tenga su propio `--max-events` con la misma familia de truncamiento.
-   Cada uno con su SCOPE, por el motivo de §2.3 del SCOPE de `cl-cycle-enumeration`.
+3. **NO** se toca `ledger export`, `ledger replay` ni `ledger watch`. Cada uno con
+   su SCOPE, por el motivo de §2.3 del SCOPE de `cl-cycle-enumeration`.
+   `export` ya declara su límite y trata `0` como todos, así que no tiene nada
+   que arreglar. **`watch` se dejó fuera por analogía de nombre, y al medirlo
+   después resultó que SÍ declara y es el modelo del comportamiento correcto.**
+   Ver la corrección de §2.3-bis abajo.
 4. **NO** se cambia el **orden** de los eventos. Se devuelven los 50 últimos en
    orden ascendente, que es lo que hace hoy.
 5. **NO** se escribe en el almacenamiento real de esta máquina.
@@ -174,17 +177,78 @@ sigue mintiendo**, y F63 quedaría verde en el papel y falso en el uso.
 ## §5 — Riesgo
 
 1. **Compatibilidad de la salida JSON.** Es el único riesgo real y está medido en
-   §3. Se mitiga declarando el cambio en el changelog y actualizando el único
-   consumidor.
+   §3 —con la corrección de su recuento—. Se mitiga declarando el cambio en el
+   changelog y actualizando los dos consumidores.
 2. **Coste.** Ninguno: no hay consulta nueva. `list_events` ya carga el vector
    entero; el número se toma de `events.len()` **antes** del `.take`.
-3. **El riesgo de este lote es de alcance**, no de datos: la tentación es arreglar
-   de paso el `--max-events` de `ledger watch`, que es el mismo defecto en la
-   superficie vecina y en el mismo fichero. §2.3 lo prohíbe y por eso es STOP de
-   alcance, no de comportamiento.
+3. **El riesgo de este lote era de alcance**, no de datos. Se escribió como
+   «la tentación es arreglar de paso el `--max-events` de `ledger watch`, que es
+   el mismo defecto en la superficie vecina». **Era falso, y se vio al medirlo**:
+   ver §2.3-bis.
 4. **Lectura, no escritura.** Los tests usan sandboxes con
    `env_remove("SDDK_DATA_DIR")`, porque un `CliSandbox` que hereda el entorno
    escribiría en el storage de verdad.
+
+### §2.3-bis — `ledger watch` NO era el mismo defecto, y se afirmó tres veces
+
+Medido en session-69f, con el binario real sobre copia byte-idéntica:
+
+```
+$ sddk ledger watch --root . --scope . --max-events 5
+   ... 5 lineas de evento ...
+[watch] emitted 5 events, exiting
+
+$ sddk ledger watch ... --format json
+{"__watch_complete":true,"emitted":5}
+```
+
+Código: `ledger.rs:785-788` escribe el cierre **en los dos formatos**, JSON
+incluido, con `__watch_complete` y el recuento emitido. `--max-events` está
+documentado como `0 = unlimited` y su default es `0`.
+
+**`ledger watch` declara lo que emitió y por qué paró, en texto y en JSON. Es el
+modelo del comportamiento correcto, y el propio arreglo de este ciclo lo copia.**
+Lo que se afirmó —«trunca sin declarar lo mismo», tres veces, en el SCOPE, en el
+recibo, en el addendum de la deuda y en los punteros— salió de **analogía de
+nombre**: los tres comandos tienen una bandera de tope, luego se les Tratamiento
+el mismo defecto sin ejecutar ninguno.
+
+**Se corrige en los cuatro sitios y no se borra el original**, por el motivo de
+siempre: dejar la corrección delante y el error tachado al lado explica por qué
+se escribió así; reescribir el apartado sin más no explicaría nada.
+
+**Lo que sí queda, medido, es otra superficie:** `sddk vault search`. Ver
+§2.3-ter.
+
+### §2.3-ter — lo que sí es la misma clase: `vault search`
+
+La auditoría de familia (`/var/home/rubentxu/audit/01-familia.py`) produjo **11
+candidatos** en `crates/sddk-cli/src`, y leerlos los redujo a **uno**. Se deja el
+recuento con su reducción porque «11 defectos» es exactamente el tipo de número
+que viaja a un documento y se convierte en trabajo que nadie necesitaba:
+
+| candidato | veredicto |
+|---|---|
+| `backlog.rs:113`, `metrics.rs:70` | defaults de **escritura** (`priority version`, `correction cycles`), no cotas de lectura |
+| `graph_cmd.rs:47` | cota de **profundidad**, y `0 = unbounded` ya está documentado |
+| `capability.rs:50` | tope de **bytes** sobre la salida de un subproceso: guard de recurso, no ventana de enumeración |
+| `dev/check.rs`, `dev/comments_check.rs`, `lint.rs`, `skill_registry_bridge.rs`, `uat_*` | `.take()` interno, sin superficie de usuario |
+| `ledger.rs`, `cycle.rs`, `dev/cockpit.rs`, `uat.rs`, `stale_cmd.rs`, `memory_cmd.rs`, `dev/entropy.rs`, `dev/update.rs`, `uat_quality/detector.rs` | ya declaran |
+| **`vault_cmd.rs:105`** | **sí es la misma clase.** Medido abajo |
+
+```
+$ sddk vault search --db vault-index.sqlite --query cycle --root . --scope .
+  -> 20 lineas, exit 0, SIN declarar nada
+$ SELECT COUNT(*) FROM vault_fts  ->  75 documentos
+$ sddk vault search ... --limit 0 ->  "no hits"
+$ sddk vault search ... --format json ->  [ ... ]   array desnudo
+```
+
+Las tres cosas que se corrigieron en `ledger events` se repiten una a una: tope
+por defecto sin declaración, **`0` significando cero** en vez de todos, y un array
+JSON sin dónde llevar el total. Es la misma clase, otra superficie, y **no está
+tocada por este ciclo**. Queda como slice propio con SCOPE propio, por el mismo
+motivo que §2.3 aplica a los demás.
 
 ## §6 — Gates que deben seguir verdes al cerrar
 

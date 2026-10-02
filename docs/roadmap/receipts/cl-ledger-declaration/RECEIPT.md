@@ -138,10 +138,20 @@ ambas se corrigieron antes de commitear. Quinta y sexta ocurrencia de la sesión
 
 ## 9. Lo que este lote NO cierra
 
-- **`ledger watch --max-events` sigue sin declarar su truncamiento.** Mismo
-  defecto, superficie vecina, **§2.3 del SCOPE lo excluye explícitamente**: cada
-  uno con su SCOPE. Queda escrito para que no se lea como cerrado.
-- **`ledger export` no se toca.** Ya declara su límite y trata `0` como todos.
+> **CORRECCIÓN session-69f: el primer punto de esta lista era falso.** Se decía
+> que `ledger watch --max-events` «sigue sin declarar su truncamiento». **Medido:
+> sí declara, en los dos formatos** —`[watch] emitted 5 events, exiting` en texto
+> y `{"__watch_complete":true,"emitted":5}` en JSON (`ledger.rs:785-788`)— y su
+> `--max-events` está documentado como `0 = unlimited`. Es **el modelo del
+> comportamiento correcto**, no un defecto. La afirmación salió de analogía de
+> nombre: tres comandos tienen bandera de tope, luego se les trató el mismo
+> defecto sin ejecutar ninguno. Corrección completa en el SCOPE §2.3-bis.
+> Lo que sí es la misma clase, medido, es **`vault search`** (§2.3-ter).
+
+- **`sddk vault search` repite las tres cosas.** Medido: **20 de 75 documentos**
+  sin declarar nada, **`--limit 0` devuelve `no hits`** en vez de todos, y el JSON
+  es un **array desnudo**. Misma clase que `ledger events`, otra superficie,
+  **sin tocar**. Slice propio con SCOPE propio.
 - **INC-DEBT-060 sigue `open`.** F63 es el último de sus cuatro falsificadores,
   pero cerrarlo no es lo mismo que cerrar la incidencia: siguen abiertas la
   decisión del operador sobre las 79 filas de `__spine_import__` y sobre los 23
