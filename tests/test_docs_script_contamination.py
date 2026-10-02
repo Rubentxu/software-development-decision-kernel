@@ -23,9 +23,9 @@ Dos reglas impiden que la allowlist se pudra, las mesmas que en
 `test_gate_coverage.py`:
 
 1. Una entrada que apunta a una línea que ya no coincide es un FAIL. Sin esto,
-   `git mv` o una reescrituraodrTurn dejarían la allowlist apuntando al vacío y
+   un `git mv` o una reescritura dejarían la allowlist apuntando al vacío y
    la exclusión seguiría valiendo para un texto que ya no es el que se revisó.
-2. Una entrada whose fichero ya no contiene el carácter es un FAIL. Sin esto,
+2. Una entrada cuyo fichero ya no contiene el carácter es un FAIL. Sin esto,
    borrar la corrupción del fichero y olvidar quitar la entrada dejaría una
    exclusión permanente de algo que ya está bien.
 
