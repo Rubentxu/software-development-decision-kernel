@@ -78,42 +78,49 @@ pub fn export_html(index: &VaultIndex, graph: &GraphView) -> Result<String, Html
     Ok(html)
 }
 
-/// Fields of [`VaultNode`] that the exported page deliberately does not carry.
-///
-/// This is the *only* list that decides the projection, and it is rendered into
-/// the page, so a consumer can answer "is this everything?" without reading the
-/// code. A projection that omits silently is the defect; a projection that says
-/// what it omits is a decision.
-const OMITTED_NODE_FIELDS: &[&str] = &[
-    "body", // The document itself. Inlining every body makes a self-contained
-           // page grow by the size of the vault, and a node inspector wants
-           // the metadata, not the prose. Stated here rather than left as a
-           // silent omission.
-];
-
 /// The node as the exported page sees it.
 ///
-/// It used to be a hand-written `serde_json::json!` over a type that already
+/// `body` is absent, and that absence **is** the declaration: the page derives
+/// the list of fields it omits by subtracting what this projection carries from
+/// what `VaultNode` serialises, so there is **no second list that could disagree**
+/// with the first. `body` stays out because an inspector wants the metadata, not
+/// the prose — inlining every body makes a self-contained page grow by the size
+/// of the vault — and the reason lives here, next to the field it is about.
+///
+/// **This sentence was, until one falsifier run ago, backed by a lie.** The
+/// omission set used to be a hand-written `OMITTED_NODE_FIELDS`, on the sound
+/// reasoning that a declared omission beats a silent one. Adding `"tags"` to
+/// that list — a field this projection *carries* — left **every test green** and
+/// made the page say: *"carries 7 of 8 fields … Not carried: body, tags"*. Two
+/// claims on one line, contradicting each other (7 + 2 ≠ 8), and the second one
+/// **false**. That is worse than the silence it replaced: a page that lies is not
+/// a page that is merely incomplete. A hand-written list introduced to fix a
+/// hand-written list is the same defect in a new hat, and the test meant to
+/// catch it compared the projection against the *type* and never against the
+/// *list*.
+///
+/// It also used to be a hand-written `serde_json::json!` over a type that already
 /// derives `Serialize`, and that is how `tags` dropped out while `status` stayed,
 /// with no reason anyone could derive and nothing that said so.
 ///
 /// **What deriving it from `VaultNode` buys, stated exactly, because the first
-/// version of this comment claimed more and was falsified:** reading the fields
-/// off the node rather than rebuilding a `Value` by hand removes the class where
-/// a projection and its source **disagree about a value** — a field read from the
-/// wrong place, an enum flattened to a string built locally.
+/// version of this comment claimed more and was falsified too:** reading the
+/// fields off the node rather than rebuilding a `Value` by hand removes the
+/// class where a projection and its source **disagree about a value** — a field
+/// read from the wrong place, an enum flattened to a string built locally.
 ///
-/// **What it does not buy is compile-time enforcement, and the claim that it did
-/// was measured false.** Adding a field to `VaultNode` does not break this build:
-/// `From<&VaultNode> for NodeProjection` maps between two *different* types, so
-/// neither side is exhaustive as far as the compiler is concerned. Verified by
-/// mutation — `mutant_field: String` added to `VaultNode`, the parser updated to
-/// satisfy it, and `cargo build` **succeeded**. The same is true of
+/// **What it does not buy is compile-time enforcement, and that claim was
+/// measured false as well.** Adding a field to `VaultNode` does not break this
+/// build: `From<&VaultNode> for NodeProjection` maps between two *different*
+/// types, so neither side is exhaustive as far as the compiler is concerned.
+/// Verified by mutation — `mutant_field: String` added to `VaultNode`, the parser
+/// updated to satisfy it, and `cargo build` **succeeded**. The same is true of
 /// `GraphExport::from(&GraphView)` above, whose comment claimed the opposite.
 ///
-/// So the coupling is held by [`OMITTED_NODE_FIELDS`] plus the test that pins the
-/// two field sets against each other, not by the type system. A note claiming
-/// otherwise would be the same defect wearing the hat of a guarantee.
+/// So the coupling is held by the derived subtraction plus the tests that pin the
+/// two serialisations against each other, not by the type system. A note
+/// promising a guarantee the compiler does not give is the same defect wearing
+/// the hat of a promise.
 #[derive(Serialize)]
 struct NodeProjection<'a> {
     id: &'a str,
@@ -149,24 +156,34 @@ fn export_node(node: &VaultNode) -> serde_json::Value {
 
 /// The sentence the page carries about its own scope.
 ///
-/// Both counts are **derived from serialisation**, not written down: the number
-/// the page claims to carry is the number its own projection produces, and the
-/// number it compares against is the number `VaultNode` produces. A constant
-/// here would be the same defect one level down — a hand-written list of what
-/// the type has — wearing a different hat.
+/// Everything in it is **derived**, and the derivation is the same one a reader
+/// would do by hand: serialise one node two ways and subtract. The number the
+/// page claims to carry is the number its own projection produces; the number it
+/// compares against is the number `VaultNode` produces; the list it names as
+/// missing is the difference. There is no input here that anyone can edit into
+/// a false statement without also changing what the page actually serves.
 fn projection_note(index: &VaultIndex) -> Option<String> {
     let first = index.nodes.first()?;
-    let carried = serde_json::to_value(NodeProjection::from(first))
-        .ok()?
-        .as_object()
-        .map(|o| o.len())?;
-    let declared = serde_json::to_value(first)
-        .ok()?
-        .as_object()
-        .map(|o| o.len())?;
-    let omitted = OMITTED_NODE_FIELDS.join(", ");
+
+    // Serialise one node twice: once through the projection, once through the
+    // type it projects. Everything the sentence says is the difference between
+    // those two documents.
+    let projected = serde_json::to_value(NodeProjection::from(first)).ok()?;
+    let declared = serde_json::to_value(first).ok()?;
+    let carried_keys = projected.as_object()?;
+    let declared_keys = declared.as_object()?;
+
+    let carried = carried_keys.len();
+    let total = declared_keys.len();
+    let omitted: Vec<&str> = declared_keys
+        .keys()
+        .filter(|k| !carried_keys.contains_key(*k))
+        .map(String::as_str)
+        .collect();
+    let omitted = omitted.join(", ");
+
     Some(format!(
-        "<p><em>Scope:</em> each node below carries {carried} of {declared} fields of \
+        "<p><em>Scope:</em> each node below carries {carried} of {total} fields of \
          <code>VaultNode</code>. Not carried: <code>{omitted}</code>. The page is a \
          projection, not a copy of the vault.</p>"
     ))

@@ -231,6 +231,102 @@ fn r4_body_does_not_travel() {
     );
 }
 
+#[test]
+fn r5_the_scope_sentence_is_true_of_the_projection_it_describes() {
+    // This test exists because the remedy for R1 was wrong twice.
+    //
+    // The page's scope sentence used to name a hand-maintained list of omitted
+    // fields. Adding `"tags"` to that list — a field the projection *carries* —
+    // left every other test green and made the page say:
+    //
+    //     carries 7 of 8 fields … Not carried: body, tags
+    //
+    // Two claims on one line, contradicting each other (7 + 2 ≠ 8), and the
+    // second **false**. That is worse than the silence it replaced.
+    //
+    // So the property checked here is not "the page mentions an omitted field".
+    // It is that the sentence is **arithmetically closed and true**: the carried
+    // count, the declared count and the named-omitted count are three numbers
+    // about the same set, and the third has to be the difference of the first
+    // two, with nothing named that is actually present.
+    let dir = tempfile::tempdir().unwrap();
+    node_with(dir.path(), "TERM-A", "tags: [alpha, beta]\n", "cuerpo");
+    let (_index, html) = vault(dir.path());
+    let nodes = embedded_nodes(&html);
+    let carried: std::collections::HashSet<String> = nodes.as_array().unwrap()[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    let declared: std::collections::HashSet<String> =
+        vault_node_fields(dir.path()).into_iter().collect();
+
+    let sentence = html
+        .split("<em>Scope:</em>")
+        .nth(1)
+        .and_then(|s| s.split("</p>").next())
+        .expect("the page carries a scope sentence");
+    let number = |label: &str| -> usize {
+        sentence
+            .split(label)
+            .nth(1)
+            .and_then(|s| s.split_whitespace().next())
+            .and_then(|w| w.parse().ok())
+            .unwrap_or_else(|| panic!("the sentence has no {label} count: {sentence}"))
+    };
+    let says_carried = number("carries");
+    let says_of: usize = sentence
+        .split(" of ")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+        .and_then(|w| w.parse().ok())
+        .expect("the sentence says how many fields exist in total");
+    let named = sentence
+        .split("Not carried: <code>")
+        .nth(1)
+        .and_then(|s| s.split("</code>").next())
+        .expect("the sentence names what it does not carry");
+    let named: Vec<String> = named
+        .split(", ")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    assert_eq!(
+        says_carried,
+        carried.len(),
+        "the page claims to carry {says_carried} fields and the projection \
+         carries {}. The sentence must be true of the thing it describes. \
+         {sentence}",
+        carried.len()
+    );
+    assert_eq!(
+        says_of,
+        declared.len(),
+        "the page compares against {says_of} fields and `VaultNode` has {}.",
+        declared.len()
+    );
+    assert_eq!(
+        named.len(),
+        declared.len() - carried.len(),
+        "the page names {} omitted fields, and the difference between what it \
+         claims to exist ({declared:?} vs {carried:?}) is {}. Two numbers about \
+         the same set that do not close is a sentence that cannot all be true. \
+         {sentence}",
+        named.len(),
+        declared.len() - carried.len()
+    );
+    for field in &named {
+        assert!(
+            !carried.contains(field),
+            "the page says it does not carry `{field}`, and then carries it. \
+             That is a false statement in the artifact, which is worse than the \
+             silent omission it replaced. carried={carried:?} named={named:?}"
+        );
+    }
+}
+
 // Compile-time reminder of what `NodeKind` contributes, so a change to its
 // serialised form is visible in this file rather than only in the JSON.
 #[test]
