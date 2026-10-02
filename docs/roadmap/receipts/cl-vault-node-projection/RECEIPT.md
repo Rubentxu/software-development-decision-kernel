@@ -150,3 +150,83 @@ No hay ejecución UAT: no hay superficie de usuario final ni página en
 funcionamiento que recorrer —el cambio es sobre el JSON incrustado y una frase
 de alcance—. **No se declara PASS de UAT.** No se ha tocado ninguna fila de
 `docs/roadmap/UAT-MATRIX.md`.
+
+---
+
+## §8 — LOTE 2: el lote 1 se falsificó a sí mismo
+
+El §4 cuenta tres correcciones. Esta es la cuarta, y la más grave, porque la
+causó **el remedio de este mismo ciclo**.
+
+### 8.1 — La segunda lista podía hacer mentir a la página
+
+El lote 1 resolvió O1 con una constante `OMITTED_NODE_FIELDS` escrita a mano,
+con el razonamiento de que una omisión **declarada** es mejor que una silenciosa.
+Se añadió `"tags"` —un campo que la proyección **sí** transporta— y:
+
+```
+cargo test -p sddk-vault   ->  todos los tests verdes
+
+la página dice:
+  each node below carries 7 of 8 fields of VaultNode.
+  Not carried: body, tags.
+```
+
+**Dos afirmaciones en la misma línea que no pueden ser ciertas a la vez**: 7 de 8
+transportados más 2 omitidos son 9. Y la segunda es directamente **falsa** sobre
+`tags`, que viaja en el JSON incrustado.
+
+**Eso es peor que el silencio que sustituyó.** Una proyección incompleta se puede
+completar; una página que afirma algo falso hay que dejar de creer. El lote 1
+cambió un defecto por otro, y este último es más grave que el primero.
+
+**Por qué ningún test lo cazó:** R2 compara la proyección contra el **tipo** y
+nunca contra la **lista**. El hueco era exactamente la dirección que nadie
+miró: la lista es la segunda fuente de verdad sobre el mismo hecho, y un test
+que compara A contra B no dice nada de A contra C.
+
+### 8.2 — La constante desaparece
+
+La frase se **deriva**: se serializa un nodo dos veces —una por `NodeProjection`,
+otra por `VaultNode`— y se nombra la diferencia. Es lo mismo que haría a mano
+quien leyera las dos salidas, y **no queda ninguna entrada que alguien pueda
+editar** para volver a decir algo falso. `body` sigue sin transportarse porque
+`NodeProjection` no tiene el campo, no porque una lista lo diga.
+
+### 8.3 — R5, y la prueba de que añade algo
+
+R5 comprueba que la frase sea **aritméticamente cerrada y cierta**: el recuento
+transportado, el total y el número nombrado tienen que cerrar, y nada nombrado
+puede estar presente. Falsificado con **la misma mutación** que destapó el
+defecto:
+
+```
+r5 ... FAILED
+the page names 2 omitted fields, and the difference between what it claims to
+exist ({...8 campos...} vs {...7 campos...}) is 1. Two numbers about the same set
+that do not close is a sentence that cannot all be true.
+
+r1 ... ok        <-- SEGUIA EN VERDE
+```
+
+Que **R1 siguiera en verde** con esa mutación es la prueba de que R5 aporta algo
+que R1 no daba. Sin ese dato, «he añadido un test» no sería una afirmación.
+
+### 8.4 — El guard más simple detectó lo que los tests no detectaron
+
+`clippy -D warnings` falló con `constant OMITTED_NODE_FIELDS is never used`. La
+constante had quedado muerta al derivarse el conjunto, y **`dead_code` es
+exactamente la condición que una segunda fuente de verdad debe cumplir** para no
+poder mentir: o se usa, o no existe. Ninguno de los cinco tests del ciclo vio el
+problema; el lint que comprueba que no quede código muerto sí.
+
+## §9 — Verificación del lote 2
+
+| comando | resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5397 passed, 0 failed**, 281 binarios (baseline 5396, **+1**, R5) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+| `python3 ce/06-scan.py` | **CLEAN** |
+| `test_changelog_coverage` | **PASS=58 FAIL=0** |
+| `vault_node_projection` | 6 verdes; `vault_html_replica_declaration` 3; librería 27 — **ninguno reescrito** |

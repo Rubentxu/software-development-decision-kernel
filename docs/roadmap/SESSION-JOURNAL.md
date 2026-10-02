@@ -10243,3 +10243,117 @@ INC-DEBT-049. Antes de proponer trabajo nuevo, conviene comprobar si la
 `cycle`, que son las otras dos superficies que truncan. **No bumpear por
 conveniencia**: si el workspace declara `2.5.3` y el último tag publicado es
 `v2.5.2`, la siguiente release **es 2.5.3**.
+
+### 2026-10-03T01:35:00Z — `p-63676b11dc0ef88f/vault-node-projection` (lote 2) — miniMax Code (mvs_b98f2520808543c8bfd72b7d38e01c34)
+
+**Baseline:** `80396aed` (`docs(roadmap): session-69k…`), `HEAD == origin/main`.
+**HEAD al cerrar:** `2bb5119f` + este commit documental. Rama `main`.
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`).
+
+#### WorkItem
+
+El riesgo 3 del recibo de session-69k, que decía: *«`OMITTED_NODE_FIELDS` es una
+lista escrita a mano que R2 contrasta con el tipo pero **no** contra sí misma, y
+eso **no medido**»*. Se mide.
+
+#### El hallazgo: el lote 1 se había falsificado a sí mismo
+
+Su remedio para «la página no dice qué omite» fue una constante escrita a mano.
+Añadirle `"tags"` — un campo que la proyección **sí** transporta — dejó **todos
+los tests en verde** y hizo que la página dijera:
+
+```
+carries 7 of 8 fields of VaultNode. Not carried: body, tags.
+```
+
+Dos afirmaciones en la misma línea que **no pueden ser ciertas a la vez**
+(7 + 2 ≠ 9), y la segunda **falsa**: `tags` viaja en el JSON incrustado.
+
+**Eso es peor que el silencio que sustituyó.** Una proyección incompleta se puede
+completar; una página que afirma algo falso hay que dejar de creer. El lote 1
+cambió un defecto por otro, y este último es más grave que el primero.
+
+**Por qué ningún test lo cazó:** R2 compara la proyección contra el **tipo** y
+nunca contra la **lista**. El hueco era la dirección que nadie miró: un test que
+compara A contra B no dice nada de A contra C, y la lista era la segunda fuente
+de verdad sobre el mismo hecho.
+
+#### Decisiones
+
+1. **La constante desaparece.** La frase se **deriva**: se serializa un nodo dos
+   veces —una por `NodeProjection`, otra por `VaultNode`— y se nombra la
+   diferencia. No queda ninguna entrada que alguien pueda editar para volver a
+   decir algo falso. `body` sigue sin transportarse porque el tipo de la
+   proyección no tiene el campo, no porque una lista lo diga.
+2. **R5 comprueba que la frase sea aritméticamente cerrada y cierta**, no que
+   mencione un campo omitido. Los tres números —transportado, total, nombrado—
+   tienen que cerrar, y nada nombrado puede estar presente.
+3. **No se toca nada más.** El HTML visible sigue igual, y la razón de que
+   `body` no viaje sigue junto al campo, ahora como doc del tipo.
+
+#### R5 aporta algo: la medición que lo demuestra
+
+Falsificado con **la misma mutación** que destapó el defecto:
+
+```
+r5 ... FAILED
+the page names 2 omitted fields, and the difference between what it claims to
+exist ({...8...} vs {...7...}) is 1. Two numbers about the same set that do not
+close is a sentence that cannot all be true.
+
+r1 ... ok        <-- SEGUIA EN VERDE
+```
+
+Que **R1 siguiera en verde** es la prueba de que R5 aporta algo que R1 no daba.
+Sin ese dato, «he añadido un test» no sería una afirmación.
+
+#### Y el guard más simple detectó lo que los tests no detectaron
+
+`clippy -D warnings` falló con `constant OMITTED_NODE_FIELDS is never used`.
+Ninguno de los seis tests del ciclo vio el problema. El lint que comprueba que
+no quede código muerto sí — y **`dead_code` es exactamente la condición que una
+segunda fuente de verdad debe cumplir** para no poder mentir: o se usa, o no
+existe.
+
+#### Evidencia observada
+
+| qué | resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5397 passed / 0 failed**, 281 binarios (baseline 5396, **+1**, R5) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+| scanner | **CLEAN** |
+| `test_changelog_coverage` | **PASS=58 FAIL=0** |
+| `vault_node_projection` | **6** verdes; `vault_html_replica_declaration` **3**; librería **27** — ninguno reescrito |
+
+**Contexto real vs. sintético:** la mutación se midió con la suite del crate y
+con el script `08-medir-nodes.py` contra el binario real. **No se escribió en
+ningún vault real**: la sonda que extrajo la frase usó un árbol temporal con
+`XDG_*` propio y `SDDK_DATA_DIR` eliminado, y se borró después.
+
+#### Riesgos
+
+1. `projection_note` serializa un nodo **tres veces** (proyección, tipo y la
+   diferencia sobre los mismos objetos) por página. Es despreciable frente a
+   renderizar la tabla, y evita una segunda fuente de verdad. **No medido** con
+   un vault grande.
+2. La frase se deriva del **primer** nodo. Si dos nodos tuvieran conjuntos de
+   campos distintos —que no puede pasar con un solo tipo—, la frase describiría
+   solo el primero. **No puede** ocurrir hoy, y está anotado por si el tipo cambia.
+
+#### Bloqueos que persisten
+
+Sin cambios: clave KMS (**único** bloqueo de 2.5.3); las dos salidas de
+INC-DEBT-050; los 51 ciclos de INC-DEBT-061; 79 filas `__spine_import__` y 23
+ciclos sin hecho; INC-DEBT-049; ruta forge de `release apply`; harness
+Pipelinek-Test-Hardness.
+
+#### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle. El hueco
+del riesgo 3 **queda cerrado y medido**. Lo que sigue sin hacer es decisión del
+operador, y ninguna es técnica. Antes de proponer trabajo nuevo: extender la
+**auditoría por criterio** a `ledger` y `cycle`, que son las otras dos superficies
+que truncan, y que es la pregunta que este ciclo demostró que rinde.
+**No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
+publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
