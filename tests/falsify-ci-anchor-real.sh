@@ -44,11 +44,27 @@ fi
 
 build_bundle() {
     # $1 = destination dir, $2 = declared manifest_sha256 value
-    mkdir -p "$1/agents" "$1/skills" "$1/prompts" "$1/assets"
-    cp -r "$ROOT/agents/." "$1/agents/"
-    cp -r "$ROOT/skills/." "$1/skills/"
-    cp -r "$ROOT/prompts/." "$1/prompts/"
-    cp -r "$ROOT/assets/." "$1/assets/" 2>/dev/null
+    #
+    # Staged from MANIFEST.sha256, NOT from a hand-written surface list. This
+    # function WAS a sixth copy of that list and it went stale when `specs` and
+    # `docs/impeccable-reference` became surfaces: it staged only the original
+    # four, then pasted the full manifest on top, so `dev install` refused BOTH
+    # bundles because 16 listed files were missing — and refused them
+    # *identically*. That is the property this file exists to distinguish: a
+    # bundle with the correct anchor must install while a bundle with a wrong
+    # anchor must be refused *for the anchor reason*. Once both fail for an
+    # incidental reason the negative check passes for the wrong reason and the
+    # whole falsification is vacuous. The third assertion below ("refusal names
+    # the manifest anchor") is what caught it; nothing else would have.
+    mkdir -p "$1"
+    while read -r _digest path; do
+        [ -n "${path:-}" ] || continue
+        mkdir -p "$1/$(dirname "$path")"
+        cp "$ROOT/$path" "$1/$path"
+    done < "$ROOT/MANIFEST.sha256"
+    # The manifest cannot list itself, so the loop above never stages it — and
+    # `dev install` needs it to verify against. Same reason `release.sh` copies
+    # it explicitly after deriving the staging from the manifest.
     cp "$ROOT/MANIFEST.sha256" "$1/MANIFEST.sha256"
     printf '[bundle]\nschema_version = 2\nversion = "%s"\nbinary_min_version = "%s"\nbinary_max_version = "%s"\n\n[contents]\nmanifest_sha256 = "%s"\n' \
         "$BINVER" "$BINVER" "$BINVER" "$2" > "$1/BUNDLE.toml"
