@@ -288,8 +288,15 @@ if [ -z "$_rust_identity" ]; then
         | sed -n 's/.*LEGACY_CERT_IDENTITY_REGEXP: &str = r"\(.*\)";.*/\1/p')
 fi
 _rust_issuer=$(sed -n 's/^pub const LEGACY_CERT_ISSUER: &str = "\(.*\)";$/\1/p' "$COSIGN_RS" | head -1)
-_shell_identity=$(grep -m1 "^SDDK_LEGACY_CERT_IDENTITY='" "$INSTALL_SH" | sed "s/^SDDK_LEGACY_CERT_IDENTITY='\(.*\)'$/\1/")
-_shell_issuer=$(grep -m1 "^SDDK_LEGACY_CERT_ISSUER='" "$INSTALL_SH" | sed "s/^SDDK_LEGACY_CERT_ISSUER='\(.*\)'$/\1/")
+# Read the shell copy the way the certification harness reads it: from the
+# parameter-expansion default. install.sh has no named constant for these
+# (shellcheck reported them unused when they existed), and the inline form is
+# what a pre-migration install.sh contains — so reading the same way keeps
+# this drift check meaningful for both shapes.
+_shell_identity=$(grep -o 'SDDK_COSIGN_IDENTITY:-[^}]*' "$INSTALL_SH" | head -1)
+_shell_identity=${_shell_identity#SDDK_COSIGN_IDENTITY:-}
+_shell_issuer=$(grep -o 'SDDK_COSIGN_ISSUER:-[^}]*' "$INSTALL_SH" | head -1)
+_shell_issuer=${_shell_issuer#SDDK_COSIGN_ISSUER:-}
 
 if [ -n "$_rust_identity" ] && [ "$_rust_identity" = "$_shell_identity" ]; then
     ok "install.sh and cosign.rs pin the same certificate identity"

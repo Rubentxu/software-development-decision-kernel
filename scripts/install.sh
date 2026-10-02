@@ -237,8 +237,28 @@ SDDK_RELEASE_VERIFY_KEY_BODY="@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@"
 # Legacy keyless anchor (Fulcio via GitHub Actions), retained only for
 # releases v2.2.11..v2.5.2. Its values are copies of
 # cosign::LEGACY_CERT_IDENTITY_REGEXP and cosign::LEGACY_CERT_ISSUER.
-SDDK_LEGACY_CERT_IDENTITY='^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
-SDDK_LEGACY_CERT_ISSUER='https://token.actions.githubusercontent.com'
+#
+# The defaults are INLINED below rather than hoisted into named constants,
+# which was the second attempt at this and is the form that actually works.
+# The certification harness greps them out of this file by their
+# parameter-expansion shape, and an install.sh from v2.5.2 has exactly this
+# shape. Storing them under another name, or resolving them through an alias,
+# yields a string the harness cannot compare — so the transition window, the
+# releases the legacy anchor exists for, would become uncertifiable. The
+# extractor's target is this file's SHAPE, which makes the shape a contract
+# rather than a style choice.
+#
+# NOTE: the grep pattern itself is deliberately not written out anywhere
+# above. An earlier version of this comment quoted it, and the extractor
+# matched the COMMENT first, returning a truncated fragment — the harness
+# failed with "none of the expected identities matched" while the
+# certificate's subject was exactly right.
+#
+# There are deliberately no named constants for these two values. They are
+# inlined at the point of use in verify_signature, because that inline form
+# is what the certification harness greps and what an install.sh from v2.5.2
+# contains; a named constant here was the first attempt and left shellcheck
+# reporting two genuinely unused variables.
 
 # The transition placeholder is not a key. Refusing to verify against it is
 # the whole point: an unprovisioned anchor must not degrade into "accept
@@ -314,8 +334,11 @@ verify_signature() {
         return 1
     fi
 
-    local cert_identity="${SDDK_COSIGN_IDENTITY:-$SDDK_LEGACY_CERT_IDENTITY}"
-    local cert_issuer="${SDDK_COSIGN_ISSUER:-$SDDK_LEGACY_CERT_ISSUER}"
+    # The defaults are inlined at the point of use — see the note above. This
+    # is unchanged from before ADR-0151, so an operator overriding either
+    # variable gets the same behaviour it always did.
+    local cert_identity="${SDDK_COSIGN_IDENTITY:-^https://github\.com/Rubentxu/software-development-decision-kernel/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$}"
+    local cert_issuer="${SDDK_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
     if [ -z "$cert_identity" ] || [ -z "$cert_issuer" ]; then
         rm -f "$key_file"
         echo "error: SDDK_COSIGN_IDENTITY and SDDK_COSIGN_ISSUER must both be non-empty" >&2
