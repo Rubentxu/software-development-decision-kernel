@@ -239,7 +239,13 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_pipeline_consistency.sh \
              tests/falsify-ci-anchor-real.sh \
              tests/test_vault_mirror_auto.sh \
-             tests/test_debt_index_coherence.sh; do
+             tests/test_debt_index_coherence.sh \
+             tests/test_dev_install_source_guard.sh \
+             tests/test_release_bundle_layout.sh \
+             tests/test_release_bundle_step5.sh \
+             tests/test_changelog_merge.sh \
+             tests/test_release_state_pointer.sh \
+             tests/test_vault_coherence_alignment.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"
@@ -249,6 +255,45 @@ if [ "$SKIP_TESTS" = "0" ]; then
         fi
     done
     ok "shell contract tests green"
+
+    # Session-65j: los tests en Python tenian la misma forma de fallo que los
+    # shell. `ci.yml:58,64` enumera A MANO dos de ellos; los otros cuatro no
+    # los corre nadie, y varios son los que fijan contratos que(session-65g/65h
+    # escribieron y que se ejecutaban a mano en cada slice. Todos son hermeticos
+    # (36-299 ms). Se ejecutan aqui, y `test_gate_coverage.py` es lo que impide
+    # que la lista vuelva a quedar por debajo sin que nadie lo note.
+    for p in tests/test_bundle_surface_coverage.py \
+             tests/test_surface_reference_integrity.py \
+             tests/test_adopt_convergence_contract.py \
+             tests/test_migrate_project_identity_mirror.py \
+             tests/test_gate_coverage.py; do
+        if [ -f "$p" ]; then
+            python3 "$p" >/dev/null \
+                || die "python contract test failed: $p (run manually for details)"
+            ok "python test: $(basename "$p")"
+        else
+            warn "python test missing, skipping: $p"
+        fi
+    done
+
+    # Session-65j: cuatro tests/test_*.sh NO estaban en ningun runner. Tres de
+    # ellos —los que sessions 65g/65h escribieron para fijar el contrato del
+    # bundle— son hermeticos y corren en 0-2s, asi que desde aqui pasan a ser
+    # gates de release: una regresion en el staging de release.sh falla el
+    # release en vez de publicarse.
+    #
+    # Los otros DOS se quedan fuera a proposito, y por razones distintas:
+    #
+    #   - tests/test_release_routes_parity.sh necesita `act` + `podman` y monta
+    #     contenedores. Su cabecera ya dice que la ruta cloud no se puede probar
+    #     aqui. Es una comprobacion opt-in, no un gate de cada release.
+    #
+    #   - tests/test_h05_isolation.sh **pasa sin medir**: si el rlib release no
+    #     existe imprime `skip:` y aun asi reporta `PASS=1 FAIL=0`. Cablearlo
+    #     hoy devolveria un verde vacio, que es exactamente la forma de
+    #     INC-DEBT-054 (`doctor --strict` salia con exit 0 sin medir nada). Un
+    #     PASS que no midio nada es peor que un gate ausente, porque ademas
+    #     tapa el defecto. Medidos: 0s, PASS, 1 skip.
 
     # INC-DEBT-055-adjacent (session-65j): el guard de abajo estaba referenciado
     # SOLO por su propio test de fixtures. `ci.yml:46` hace `shellcheck` de
