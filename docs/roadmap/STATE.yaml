@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "b88cde68"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (fdfeb78e) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "bbeb6301"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (fdfeb78e) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -319,6 +319,50 @@ c3_progress:
 # una severidad no se degrada por el criterio de quien la escribio.
 # La auditoria de superficies que truncan esta AGOTADA: de 5 candidatas
 # quedaron 2 defectos reales, los dos cerrados. No se repite.
+# session-69n: NUEVO ciclo `p-63676b11dc0ef88f/cl-release-forge-testability`
+# en `OPEN/build`, sequence 5, 4 artefactos, 4 gates. El arbol Rust esta
+# INTACTO: este ciclo aun no toca codigo.
+# LA AFIRMACION VERIFICADA ERAN DOS COMENTARIOS DEL PROPIO CODIGO
+# (`release_cmd.rs:2064` y `:2110`): que `release apply --route forge` «no
+# tiene test» y «no es alcanzable sin red». La primera es CIERTA; la segunda
+# NO. Medido: `GitHubForge` guarda `runner: Box<Runner>` y tiene `pub fn
+# with_runner` (forge.rs:133), que DOS TESTS DEL GATEWAY ya usan;
+# `plan_release` toma `&dyn Forge` (release.rs:193) y `apply_release` toma
+# `&mut dyn Forge` (release.rs:422); `MockForge` es pub y esta reexportado
+# (sddk-gateway/src/lib.rs:40-41). El unico test de la CLI que nombra forge
+# comprueba que `--repo` SIN `--route forge` FALLA: ninguno alcanza la rama.
+# TODO EL MECANISMO DE INYECCION EXISTE Y FUNCIONA; lo que falta es el SEAM EN
+# EL CALL SITE, que construye `GitHubForge::new(repo)` con el runner real y no
+# deja sustituirlo. Es la diferencia entre «no se puede probar» y «no se ha
+# conectado para poder probarlo», y la segunda es un defecto de cableado.
+# EL REMEDIO es una extraccion a una funcion que recibe `&mut dyn Forge`: la
+# CLI la llama con `GitHubForge::new(repo)` y el test con `MockForge`. Sin
+# ensanchar `pub`. DESCARTADO: el override global `#[cfg(test)]` del runner,
+# que no moveria una linea y anadiria un test a cambio de ESTADO MUTABLE
+# GLOBAL — tests que se pisan, orden dependiente — que es cambiar un defecto
+# por otro.
+# NO SE EJECUTA CONTRA UN GITHUB REAL: pr.create, pr.merge y create.release
+# son tres escrituras privilegiadas sobre un repositorio ajeno (AGENTS.md §1).
+# No hay evidencia de que la ruta falle; hay evidencia de que NUNCA SE HA
+# EJECUTADO BAJO PRUEBA. Este ciclo entrega que deje de ser imposible
+# comprobarlo, que es condicion NECESARIA y no suficiente.
+# CUATRO GATES, uno a uno, NINGUNO ESTAMPADO, y dos ejercitados contra el
+# documento antes de dejarlo pasar. `04-req-testable.py` dio objetivos=[] y
+# guards=[]: EL DEFECTO ERAN MIS DOCUMENTOS (`**O1** -` y guards T1..T5 en vez
+# de `1. **O1.**` y una tabla `| R1 | ... |`). `05-diseno.py` aplico el perfil
+# watch y dio 5 GAP INSATISFACIBLES, porque tres de sus checks estan
+# CODIFICADOS A LA FAMILIA DEL TRUNCAMIENTO (fn pending, COUNT(*)) y no
+# existen en un ciclo de inyeccion: anadido el perfil `forge` con esos tres
+# como SKIP, y el perfil `export` sigue pasando. `06-plan.py` dio dos GAP de
+# dos clases: uno del INSTRUMENTO (buscaba literalmente «no bumpea» y el plan
+# escribe «**No** bumpea» — la afirmacion esta y fallaba la decoracion, la
+# misma clase que el detector que buscaba «omit») y uno del DOCUMENTO (el plan
+# citaba el instrumento sin marcador de compromiso).
+# SIGUIENTE: lote 1 del PLAN, los tests RED T1-T5 en el mod tests de
+# release_cmd.rs, declarando el arbol rojo. STOP 1 MANDA: si hacer la rama
+# alcanzable exige debilitar una comprobacion de capacidad, reordenar los
+# pasos o mover el AdmissionTicket, el arreglo se descarta AUNQUE LOS TESTS
+# PASSEN.
 next_action: "Session-22 addendum (quater). (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"

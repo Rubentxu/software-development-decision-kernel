@@ -10659,3 +10659,97 @@ Se conservan la afirmación falsa y el texto original al lado de la corrección,
 reescribirlos. **Un inventario de deuda que mantiene `open` un defecto cuyo
 titular contradice una funcionalidad ya entregada es, en sí mismo, una declaración
 falsa** — la misma clase que este trabajo viene a cerrar desde F63.
+
+---
+
+## Session-69n — `cl-release-forge-testability`: la ruta de publicación que nunca se ejecutó bajo prueba
+
+**Baseline:** `4c90a2dd` (= `origin/main`). **Workspace:** 2.5.3 declarada, no
+publicada; último tag remoto `v2.5.2`.
+
+### WorkItem
+
+Verificar la afirmación de dos comentarios del propio código: que `release apply
+--route forge` «no tiene test» y «no es alcanzable sin red»
+(`release_cmd.rs:2064` y `:2110`).
+
+### La premisa, medida
+
+La primera es **cierta**. La segunda **no**, y ahí está el hallazgo:
+
+- `GitHubForge` guarda `runner: Box<Runner>` y tiene `pub fn with_runner`
+  (`forge.rs:133`), que **dos tests del gateway ya usan**.
+- `plan_release(input, &dyn Forge)` y `apply_release(…, &mut dyn Forge, …)`
+  **ya son polimórficos**.
+- `MockForge` es `pub` y está re-exportado (`sddk-gateway/src/lib.rs:40-41`).
+- El único test de la CLI que nombra forge comprueba que `--repo` **sin**
+  `--route forge` **falla**: ninguno alcanza la rama.
+
+**Todo el mecanismo de inyección existe y funciona. Lo que falta es el seam en el
+call site**, que construye `GitHubForge::new(repo)` con el runner real y no deja
+sustituirlo. Es la diferencia entre «esto no se puede probar» y «esto no se ha
+conectado para poder probarse». La segunda es un defecto de cableado.
+
+### Decisiones
+
+**El remedio es una extracción a una función que recibe `&mut dyn Forge`.** La
+CLI la llama con `GitHubForge::new(repo)` y el test con `MockForge`: dos
+llamadores, una sola fuente. **Sin** ensanchar `pub`: los tests del módulo ya
+llegan con `super::`.
+
+**Cuatro alternativas descartadas, y la que más cuesta es la que menos(funciona):**
+un override global `#[cfg(test)]` del runner no movería una línea y añadiría un
+test, a cambio de **estado mutable global** —tests que se pisan, orden
+dependiente— que es cambiar un defecto por otro.
+
+**No se ejecuta contra un GitHub real.** `pr.create`, `pr.merge` y
+`create.release` son tres escrituras privilegiadas sobre un repositorio ajeno, y
+AGENTS.md §1 lo prohíbe. No hay evidencia de que la ruta falle; hay evidencia de
+que **nunca se ha ejecutado bajo prueba**, y este ciclo entrega que deje de ser
+imposible comprobarlo — condición necesaria, no suficiente.
+
+### Gates
+
+Cuatro, uno a uno, cada uno con `argv`, `exit_code` y `output_digest`:
+`exploration-sufficient`, `requirements-testable`, `architecture-consistent`,
+`plan-executable`. **Ninguno estampado, y dos de ellos exercitados contra el
+documento antes de dejarlo pasar:**
+
+1. `04-req-testable.py` devolvió **objetivos=[] y guards=[]**. **El defecto eran
+   mis documentos, no el instrumento**: los escribí con `**O1** —` y guards
+   `T1..T5`, cuando el contrato que el gate lee es `1. **O1.**` y una tabla
+   `| R1 | … |`. Un instrumento que dice «no encuentro nada» puede estar roto o
+   DOCUMENTO, y la diferencia se establece leyendo el caso bueno antes de tocar
+   ninguna de las dos cosas.
+2. `05-diseno.py` aplicó el perfil `watch` y dio 5 GAP insatisfacibles: tres de
+   sus checks están **codificados a la familia del truncamiento** (`fn pending`,
+   `COUNT(*)`) y no existen en un ciclo de inyección de dependencias. Añadido el
+   perfil `forge` y hecho que esos tres checks sean **SKIP por perfil** — un gate
+   insatisfacible no es un gate, la misma clase que arrastraba `06-plan.py`. El
+   perfil `export` sigue pasando tras el cambio.
+3. `06-plan.py` dio 2 GAP de dos clases: **uno del instrumento** (buscaba
+   literalmente `no bumpea` y el plan escribe `**No** bumpea` — la afirmación está
+   y fallaba la decoración, la misma clase que el detector que buscaba `omit`) y
+   **uno del documento** (el plan citaba el instrumento sin marcador de
+   compromiso, que existe justo para distinguir una promesa de una descripción).
+
+### Estado
+
+Ciclo **`OPEN/build`**, `sequence: 5`, 4 artefactos, 4 gates. El árbol Rust está
+**intacto**: este ciclo no ha tocado código todavía.
+
+### Bloqueos que persisten
+
+Sin cambios: clave KMS (**único** bloqueo de 2.5.3); INC-DEBT-060 (las 79 filas
+`__spine_import__` y si su severidad baja a `medium`); INC-DEBT-050; INC-DEBT-061;
+INC-DEBT-063; INC-DEBT-049; harness Pipelinek-Test-Hardness.
+
+### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle.
+Después, **lote 1 del PLAN**: los tests RED T1–T5 en el `mod tests` de
+`release_cmd.rs`, **declarando el árbol rojo**. STOP 1 está activo y es el que
+manda: si hacer la rama alcanzable exige debilitar una comprobación de capacidad,
+reordenar los pasos o mover el `AdmissionTicket`, el arreglo se descarta **aunque
+los tests passen**. **No bumpear por conveniencia**: workspace 2.5.3 sobre tag
+`v2.5.2` → la siguiente release **es 2.5.3**.

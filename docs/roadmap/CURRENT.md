@@ -1,5 +1,34 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69n, 2026-10-03): la ruta de publicación que nunca se ejecutó bajo prueba — y no es por la red.** `HEAD` = `bbeb6301` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La afirmación que había que verificar son dos comentarios del propio código** (`release_cmd.rs:2064` y `:2110`): que `release apply --route forge` «no tiene test» y «no es alcanzable sin red». La primera es **cierta**; la segunda **no**.
+
+Medido: `GitHubForge` guarda `runner: Box<Runner>` y tiene `pub fn with_runner` (`forge.rs:133`), que **dos tests del gateway ya usan**; `plan_release` toma `&dyn Forge` y `apply_release` toma `&mut dyn Forge` (`release.rs:193`, `:422`); `MockForge` es `pub` y está re-exportado (`sddk-gateway/src/lib.rs:40-41`). El único test de la CLI que nombra forge comprueba que `--repo` **sin** `--route forge` **falla** — ninguno alcanza la rama.
+
+**Todo el mecanismo de inyección existe y funciona. Lo único que falta es el seam en el call site**, que construye `GitHubForge::new(repo)` con el runner real y no deja sustituirlo. Es la diferencia entre *«esto no se puede probar»* y *«esto no se ha conectado para poder probarse»*, y la segunda es un defecto de cableado.
+
+**El remedio es una extracción a una función que recibe `&mut dyn Forge`.** La CLI la llama con `GitHubForge::new(repo)` y el test con `MockForge`: dos llamadores, una sola fuente. **Sin** ensanchar `pub`. La alternativa que menos funciona y más cuesta es el override global `#[cfg(test)]` del runner: no movería una línea y añadiría un test, a cambio de estado mutable global, que es cambiar un defecto por otro.
+
+**No se ejecuta contra un GitHub real:** `pr.create`, `pr.merge` y `create.release` son tres escrituras privilegiadas sobre un repositorio ajeno (AGENTS.md §1). No hay evidencia de que la ruta falle; hay evidencia de que **nunca se ha ejecutado bajo prueba**. Este ciclo entrega que deje de ser imposible comprobarlo, que es condición **necesaria y no suficiente**.
+
+**Cuatro gates, uno a uno, y ninguno estampado: dos de ellos se ejercitaron contra el documento antes de dejarlo pasar.** `04-req-testable.py` dio objetivos=[] y guards=[] — **el defecto eran mis documentos**, escritos con `**O1** —` y `T1..T5` cuando el contrato es `1. **O1.**` y una tabla `| R1 | … |`; un instrumento que dice «no encuentro nada» puede estar roto o ser un documento que no habla su idioma, y la diferencia se establece leyendo el caso bueno antes de tocar ninguna de las dos cosas. `05-diseno.py` aplicó el perfil `watch` y dio 5 GAP **insatisfacibles** —tres de sus checks están codificados a la familia del truncamiento y no existen aquí—, así que el perfil `forge` declara esos tres como `SKIP`. `06-plan.py` dio dos GAP de dos clases: **uno del instrumento** (buscaba literalmente `no bumpea` y el plan escribe `**No** bumpea`: la afirmación está y fallaba la decoración) y **uno del documento** (el plan citaba el instrumento sin marcador de compromiso, que existe justo para distinguir una promesa de una descripción).
+
+**Ciclo `p-63676b11dc0ef88f/cl-release-forge-testability` en `OPEN/build`, `sequence: 5`, 4 artefactos, 4 gates.** El árbol Rust está **intacto**: este ciclo aún no toca código.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-060**: solo las 79 filas `__spine_import__`, y si su severidad baja a `medium` al caer el rodeo.
+3. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+4. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+5. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente. Se recomienda enmendar; **no se ejecuta aquí**.
+6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+7. **La auditoría de superficies que truncan está agotada** y no se repite.
+8. **Lote 1 del PLAN de forge**: los tests RED, declarando el árbol rojo. **STOP 1 manda**: si hacer la rama alcanzable exige debilitar una comprobación de capacidad, reordenar los pasos o mover el `AdmissionTicket`, el arreglo se descarta **aunque los tests passen**.
+
+---
+
 **Estado (session-69m, 2026-10-03): la cuarta superficie de F63, y la peor de las cuatro porque trunca dentro de un fichero.** `HEAD` = `94cf6832` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **El defecto, medido sobre una copia byte-identica del ledger real:** `ledger export --limit 5` escribía 5 eventos de **600** y respondía `exported 5 events to …` con **exit 0**. Los 595 que dejó fuera no se mencionaban. Las otras dos superficies truncan **en pantalla**, donde el lector ve que hay un límite; esta trunca **en un fichero**, y el resultado es un artefacto que parece completo y que otro proceso consume sin ninguna señal de que le falta el 99 %.
