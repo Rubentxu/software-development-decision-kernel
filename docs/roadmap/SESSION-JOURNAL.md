@@ -10357,3 +10357,131 @@ operador, y ninguna es técnica. Antes de proponer trabajo nuevo: extender la
 que truncan, y que es la pregunta que este ciclo demostró que rinde.
 **No bumpear por conveniencia**: si el workspace declara `2.5.3` y el último tag
 publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+## session-69l — 2026-10-02 — `cl-ledger-watch-total`
+
+**Baseline:** `b0153dc0` · **HEAD al cierre:** `0aa12fbe` + el commit de punteros
+**Workspace:** 2.5.3 declarada, **no publicada** (último tag remoto `v2.5.2`)
+
+### Qué se cerró
+
+La tercera superficie de INC-DEBT-060 / F63. `ledger watch` **sí declaraba** —y
+por eso la sesión-69f lo llamó «el modelo del comportamiento correcto», con
+razón— pero **declarar que ha emitido N no es declarar que había M**. Medido
+contra una copia del ledger real: `--max-events 5` sobre **598** eventos escribía
+`[watch] emitted 5 events, exiting` y nada más.
+
+Ahora: `[watch] emitted 5 of 598 (593 not emitted), exiting` y
+`{"__watch_complete":true,"emitted":5,"total_events":598,"pending":593}`.
+
+Es F63 **por construcción**: `Storage::list_events_after`
+(`sddk-storage/src/lib.rs:1022`) recorre todos los streams y luego `.take(limit)`,
+tirando el largo en cada poll desde un `canonical_events()` que ya había
+cargado el ledger entero.
+
+### Decisiones que no eran obvias
+
+- **`COUNT(*)` se descartó siendo 51,8× más barato** (0,077 ms vs 4,015 ms sobre
+  591 filas, medido). No por el precio: por la **verdad**. Con `--cycle` y
+  `--frame` habría que probar que el predicado SQL equivale al `retain` en Rust,
+  y esa prueba no está hecha. Barato y posiblemente falso no es una mejora.
+- **Un filtro, dos llamadas.** `apply_watch_filters` es una función libre
+  invocada desde el emisor y desde el recuento. Copiar los dos `retain` sería una
+  segunda regla que declara qué es «un evento de esta consulta», divergente sin
+  que nada lo note.
+- **Cursor inicial, no final.** El inicial responde «cuánto había» y el final
+  «cuánto queda»; el segundo no se puede comparar con `emitted`.
+- **`pending` derivado**, con `saturating_sub` para que un borrado a mitad de
+  corrida no tumbe el binario, y R3 comprueba que la aritmética cierra.
+- **Texto y JSON se pintan del mismo struct**, para que no puedan discrepar.
+
+### La auditoría por criterio, y su reducción
+
+5 candidatas → **2 defectos reales**. `ledger events` ya declara (F63).
+**`cycle list` ya declara** (`cycle.rs:2064-2069`) — responde así que **no hay
+ciclo pendiente para `cycle`**, y eso cierra un elemento de la lista de trabajo
+sin abrir nada. `telemetry status` declara `total_cycles`. `cockpit diff-watch`
+**descartado por lectura**: trae el mismo `{"__watch_complete":true,"emitted":N}`
+y por eso la forma lo trajo, pero emite filas de **deriva** que aparecen por
+comparación de digests, y «cuántas existen» no es una pregunta bien formada.
+
+### Lo que queda MEDIDO y es el siguiente ciclo
+
+**`ledger export --limit 5`** escribe 5 eventos a un fichero y dice `exported 5
+events to …` sin mencionar los 593 que dejó fuera. Misma clase, otra superficie.
+No entra aquí: un ciclo, una concernia.
+
+### El hallazgo que no se buscaba
+
+**Los ciclos de 69h, 69i y 69k no existen en SDDK.** Sus recibos declaran un
+`cycle_id` que la autoridad nunca emitió. Se declara y **no se corrige**
+retro-creándolos: eso sería escribir historia en la autoridad, que es el fallo de
+`INC-DEBT-061` aplicado a los recibos propios. Queda como decisión del operador.
+
+De paso: **`SDDK_DATA_DIR` no manda sobre el ledger**. Con esa variable puesta,
+`cycle list` leyó el ledger real, porque el ledger vive bajo `XDG_STATE_HOME` y
+`SDDK_DATA_DIR` solo rige el control-plane. Un `cycle start` sobre un almacén
+vacío falla por `FOREIGN KEY`.
+
+### Instrumentos: seis FAIL que eran del guard, ninguno del producto
+
+1. El detector de `watch` buscaba palabras en toda la salida, y el payload las
+   contiene: podía pasar con el defecto presente.
+2. `ledger export` invocado con `--format`, que no existe.
+3. El detector de `export` contaba los dígitos del **tmpdir** (`[0, 5, 9]`).
+4. `04-req-testable.py` falló con 6 problemas: el **mapa objetivo → guard no
+   existía** en el PRE-FLIGHT.
+5. `06-plan.py` trataba «lo que este plan va a crear» como «lo que no existe»:
+   gate **insatisfacible**.
+6. El falsificador **vetó su propio guard** (M5) y el **fixture** era el culpable.
+   Y restauraba con `git checkout`, que repone el último commit y **le borró
+   cambios sin commitear** ajenos. Y sus anclas de M3/M5 dejaron de existir al
+   reindentar `cargo fmt` — y en vez de declarar detección **se negó**, que es lo
+   correcto.
+
+### Verificación
+
+`cargo test --workspace --no-fail-fast` **5403 passed / 0 failed**, 24 ignored,
+**282 binarios** (baseline 5397, **+6**) · `sddk-cli` 1449/0 sin reescribir un
+verde · `clippy -D warnings` exit 0 · `fmt --check` limpio · scanner **CLEAN** ·
+`03-medir-watch.py` de **3/3 GAP a 0/3** en `ledger watch` (queda 1 GAP en
+`ledger export`) · changelog **PASS=63 FAIL=0** · falsificador **5/5** mutaciones.
+
+**El ciclo es real:** `p-63676b11dc0ef88f/ledger-watch-total`, con
+`exploration-sufficient`, `requirements-testable`, `architecture-consistent` y
+`plan-executable`, cada uno con `argv`, `exit_code` y `output_digest` de una
+corrida. El primero **corre con `exit_code: 1`**, declarado en su propia
+evidencia con su significado. Ningún gate estampado.
+
+### Contexto real vs. sintético
+
+Todo el código se hizo en el checkout real. La medición corre contra **copia**
+del ledger en árbol temporal con `XDG_*` propio y `SDDK_DATA_DIR` eliminado, y el
+mtime del original se comprueba. Lo único escrito en el ledger real son los
+**8 eventos** de este ciclo: 1 `cycle.created`, 4 `cycle.transitioned`,
+3 `workflow.*`. De 590 a 598.
+
+### Riesgos
+
+1. `ledger watch` añade una materialización del stream al final de la corrida.
+   Es **una iteración más** de un trabajo que el bucle ya hace cada 500 ms, y no
+   se midió con un ledger grande. **No medido.**
+2. El pie en texto **cambió de forma**: `emitted N events` → `emitted N of M
+   (P not emitted)`. Un consumidor que lo comparase carácter a carácter se
+   rompe; el JSON es **aditivo** y conserva `__watch_complete`.
+
+### Bloqueos que persisten
+
+Sin cambios: clave KMS (**único** bloqueo de 2.5.3); las dos salidas de
+INC-DEBT-050; los 51 ciclos de INC-DEBT-061; 79 filas `__spine_import__` y 23
+ciclos sin hecho; INC-DEBT-049; ruta forge de `release apply`; harness
+Pipelinek-Test-Hardness. **Nuevo**: los tres recibos con `cycle_id` inexistente.
+
+### Primer paso de la sesión siguiente
+
+`git fetch origin` y revalidar `HEAD`/`origin/main`/tag/workspace/bundle.
+Después: el ciclo de **`ledger export`**, que está **medido** y es la misma
+clase. La auditoría por criterio ha rentado cinco veces seguidas; la pregunta que
+queda por hacerle es *«qué más trunca, y quién lo declara?»* sobre el resto de
+superficies. **No bumpear por conveniencia**: si el workspace declara `2.5.3` y
+el último tag publicado es `v2.5.2`, la siguiente release **es 2.5.3**.

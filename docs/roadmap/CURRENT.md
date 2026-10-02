@@ -1,5 +1,36 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69l, 2026-10-02): la tercera superficie de F63, y el primer ciclo de la sesión que nace en la autoridad real de SDDK en vez de en un documento.** `HEAD` = `0aa12fbe` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**El defecto, medido sobre el ledger real:** `ledger watch --max-events 5` sobre **598** eventos escribía `[watch] emitted 5 events, exiting` y `{"__watch_complete":true,"emitted":5}`. Ahora escribe `[watch] emitted 5 of 598 (593 not emitted), exiting` y `{"__watch_complete":true,"emitted":5,"total_events":598,"pending":593}`. La frase que lo resume es de session-69f y sigue siendo la buena: **declarar que ha emitido N no es declarar que había M.** Aquella sesión llamó a este comando «el modelo del comportamiento correcto» y **la afirmación era cierta** —escribe lo que emite— y por eso llevó a la conclusión equivocada. Es F63 por construcción: `Storage::list_events_after` (`lib.rs:1022`) recorre todos los streams y luego `.take(limit)`, **tirando el largo en cada poll**, desde un `canonical_events()` que ya había cargado el ledger entero.
+
+**`COUNT(*)` era 51,8× más barato y se descartó.** Medido: 0,077 ms frente a 4,015 ms sobre 591 filas. La objeción no es el precio, es la **verdad**: con `--cycle` y `--frame` habría que probar que el predicado SQL equivale al `retain` en Rust, y esa prueba no está hecha. Barato y posiblemente falso no es una mejora. La vía elegida es una materialización que el bucle **ya paga cada 500 ms**, con **el mismo predicado y el mismo cursor** que el emisor: no puede divergir por construcción. Y el filtro sale del bucle a una función libre con **dos** llamadas, porque copiar los dos `retain` sería una segunda regla.
+
+**La auditoría por criterioredujo 5 candidatas a 2 defectos reales.** `ledger events` ya declara (F63). `cycle list` **ya declara** (`cycle.rs:2064-2069`) —responde así que **no hay ciclo pendiente para `cycle`**, y eso cierra un elemento de la lista de trabajo sin abrir nada. `telemetry status` declara `total_cycles`. **`cockpit diff-watch` quedó descartado por lectura**: trae el mismo `{"__watch_complete":true,"emitted":N}` y por eso lo trajo la forma, pero emite **filas de deriva** que aparecen por comparación de digests, y «cuántas existen» no es una pregunta bien formada. **Quinta vez que el criterio trae por forma algo que no es el mismo hecho.**
+
+**Y queda un defecto medido de la misma clase, que no entra en este ciclo:** `ledger export --limit 5` escribe 5 eventos a un fichero y dice `exported 5 events to …`, sin mencionar los 593 que dejó fuera. Un ciclo, una concernia.
+
+**Dos instrumentos mentían y lo admitieron — seis veces en esta sesión que una herramienta encuentra un defecto en algo que el propio agente acaba de escribir.** El falsificador **vetó** su propio guard: M5 quita el filtro del bucle mientras el recuento lo mantiene, emite los eventos de todos los ciclos declarando el total de uno, y los seis tests seguían verdes. La causa era el **fixture**: elegía el ciclo con menos eventos, y en un fixture de ciclos de un solo evento eso es el **primero** del ledger, luego una corrida sin filtrar emitía justo ese. **Guard, no producto** — segunda vez en este ciclo. Y el propio instrumental se rompió de dos maneras: restauraba con `git checkout`, que repone el **último commit** y por tanto **borró cambios sin commitear** ajenos (el arreglo del doc que estaba en curso), y sus anclas de M3 y M5 dejaron de existir cuando `cargo fmt` reindentó las llamadas — y en vez de declarar detección **se negó**, que es lo correcto.
+
+**Verificación:** `cargo test --workspace --no-fail-fast` **5403 passed / 0 failed** en **282** binarios (baseline 5397, **+6**) · `clippy -D warnings` exit 0 · `fmt --check` limpio · scanner **CLEAN** · `03-medir-watch.py` de **3/3 GAP** a **0/3** en `ledger watch` · changelog **PASS=63 FAIL=0** · falsificador **5/5** mutaciones detectadas.
+
+**El ciclo existe en la autoridad, con sus cuatro gates y su evidencia real:** `p-63676b11dc0ef88f/ledger-watch-total`, `exploration-sufficient` · `requirements-testable` · `architecture-consistent` · `plan-executable`, cada uno con `argv`, `exit_code` y `output_digest` de una corrida. El primero **corre con `exit_code: 1`** y eso está declarado en su propia evidencia, con su significado. **Ningún gate se estampó**, y dos de ellos_FOUND_ lo que pedían porque el documento estaba mal: `04-req-testable.py` falló con 6 problemas porque el **mapa objetivo → guard no existía** en el PRE-FLIGHT, y `06-plan.py` trataba «lo que este plan va a crear» como «lo que no existe», lo que hacía el gate **insatisfacible**.
+
+**El hallazgo que no se buscaba: los ciclos de 69h, 69i y 69k no existen en SDDK.** Sus recibos declaran un `cycle_id` que la autoridad nunca emitió. Se declara y **no se corrige** retro-creándolos — eso sería escribir historia en la autoridad, que es el fallo de `INC-DEBT-061` aplicado a los recibos propios—; queda como decisión del operador. De paso se midió que **`SDDK_DATA_DIR` no manda sobre el ledger**: con esa variable puesta, `cycle list` leyó el ledger real, porque el ledger vive bajo `XDG_STATE_HOME` y `SDDK_DATA_DIR` solo rige el control-plane. Un `cycle start` sobre un almacén vacío falla por `FOREIGN KEY`.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3, del operador.
+2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+4. **Los tres recibos con `cycle_id` inexistente**: enmendar para que declaren lo cierto, o registrar la divergencia como deuda. Se recomienda enmendar; **no se ejecuta aquí** (son documentos de ciclos cerrados).
+5. **INC-DEBT-060**: 79 filas `__spine_import__` y 23 ciclos sin hecho (17 `OPEN`).
+6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+7. **`ledger export`**: misma clase, **medido**, ciclo siguiente.
+
+---
+
+
 **Estado (session-69k, 2026-10-03): la cuarta superficie de la misma clase, y —lo que más vale— el falsificador encontró un defecto en el remedio. Una afirmación mía llevaba dos commits viva y era falsa.** `HEAD` = `1f6072e7` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **La pregunta que los tres ciclos anteriores no se hacían:** *¿qué más declara el mismo hecho, y cada uno lo declara igual?* De **5 superficies candidatas: 1 defecto, 2 ya cerradas, 2 descartadas.** Los dos descartes salen por **homonimia** — `sddk-domain` tiene **otro** `GraphView`, y el nombre compartido es justo lo que hace que una búsqueda por nombre lo traiga. **Sexta vez en esta sesión que el número de candidatos se reduce al leerlos.**

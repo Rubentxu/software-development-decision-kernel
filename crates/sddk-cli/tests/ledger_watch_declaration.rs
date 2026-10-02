@@ -46,8 +46,8 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir()
-            .join(format!("sddk-watch-decl-{}-{}", name, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sddk-watch-decl-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Sandbox { dir }
@@ -146,8 +146,18 @@ fn real_total(dir: &Path) -> u64 {
 /// hangs the suite for five minutes instead of failing.
 fn watch(dir: &Path, extra: &[&str]) -> (i32, String) {
     let mut args = vec![
-        "ledger", "watch", "--root", ".", "--scope", ".", "--remote", REMOTE, "--interval-ms",
-        "20", "--idle-timeout-ms", "400",
+        "ledger",
+        "watch",
+        "--root",
+        ".",
+        "--scope",
+        ".",
+        "--remote",
+        REMOTE,
+        "--interval-ms",
+        "20",
+        "--idle-timeout-ms",
+        "400",
     ];
     args.extend_from_slice(extra);
     run(dir, &args)
@@ -321,7 +331,14 @@ fn r4_the_total_belongs_to_the_queried_cycle() {
 
     let (code, out) = watch(
         s.path(),
-        &["--cycle", &smallest_id, "--max-events", "1", "--format", "json"],
+        &[
+            "--cycle",
+            &smallest_id,
+            "--max-events",
+            "1",
+            "--format",
+            "json",
+        ],
     );
     assert_eq!(code, 0, "`ledger watch --cycle` must exit 0: {out}");
     let summary = json_summary(&out);
@@ -457,7 +474,14 @@ fn r5_the_total_respects_the_start_cursor() {
     let cursor = highest.to_string();
     let (code, out) = watch(
         s.path(),
-        &["--from-sequence", &cursor, "--max-events", "1", "--format", "json"],
+        &[
+            "--from-sequence",
+            &cursor,
+            "--max-events",
+            "1",
+            "--format",
+            "json",
+        ],
     );
     assert_eq!(code, 0, "`ledger watch --from-sequence` must exit 0: {out}");
     let summary = json_summary(&out);
