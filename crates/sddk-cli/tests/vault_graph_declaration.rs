@@ -27,8 +27,8 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir()
-            .join(format!("sddk-vault-graph-{}-{}", name, std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("sddk-vault-graph-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let vault = root.join("vault");
         std::fs::create_dir_all(&vault).unwrap();
@@ -182,8 +182,7 @@ fn r3_absent_topological_order_explains_itself() {
     );
     assert!(
         out.to_lowercase().contains("topological_order")
-            && (out.to_lowercase().contains("absent")
-                || out.to_lowercase().contains("cyclic")),
+            && (out.to_lowercase().contains("absent") || out.to_lowercase().contains("cyclic")),
         "an absent topological order must SAY that it is absent and why. Today \
          the line is simply not printed, which reads like 'not computed' rather \
          than 'does not exist because the graph is cyclic'. Got: {out}"
@@ -207,11 +206,12 @@ fn r4_acyclic_output_is_unchanged() {
         .as_array()
         .unwrap_or_else(|| panic!("an acyclic graph has a topological order: {v}"));
     assert_eq!(
-        order.len(), 3,
+        order.len(),
+        3,
         "the order must cover every node, which is what makes it complete: {v}"
     );
     assert!(
-        v.get("sample_cycle").map_or(true, |s| s.is_null()),
+        v.get("sample_cycle").is_none_or(|s| s.is_null()),
         "an acyclic graph has no sample cycle: {v}"
     );
     let _ = Path::new(".");

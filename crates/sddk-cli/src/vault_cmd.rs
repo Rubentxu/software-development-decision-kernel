@@ -622,11 +622,30 @@ fn graph_text(view: &GraphView) -> String {
         "node_count: {}\nedge_count: {}\ncyclic: {}\n",
         view.node_count, view.edge_count, view.cyclic
     );
+    // The cycle count is saturated on purpose: 0, 1, or absent-with-a-flag.
+    // Printing a count that enumerates simple cycles would be a number that
+    // looks authoritative and is not — a 1000-node ring has one cycle and naive
+    // counting returns 1000 rotations of it.
+    if view.cyclic {
+        match view.cycle_count {
+            Some(1) => text.push_str("cycle_count: 1\n"),
+            _ => text.push_str("cycle_count: 2 or more\n"),
+        }
+        text.push_str(&format!("multiple_cycles: {}\n", view.multiple_cycles));
+    }
     if let Some(cycle) = &view.sample_cycle {
         text.push_str(&format!("sample_cycle: {}\n", cycle.join(" -> ")));
     }
-    if let Some(order) = &view.topological_order {
-        text.push_str(&format!("topological_order: {}\n", order.join(", ")));
+    match &view.topological_order {
+        Some(order) => text.push_str(&format!("topological_order: {}\n", order.join(", "))),
+        // Previously the line was simply not printed, which reads as "not
+        // computed" rather than "does not exist because the graph is cyclic".
+        None => text.push_str(&format!(
+            "topological_order: absent ({})\n",
+            view.topological_order_absent_because
+                .as_deref()
+                .unwrap_or("unspecified")
+        )),
     }
     text
 }
