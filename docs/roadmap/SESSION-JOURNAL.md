@@ -8817,3 +8817,19 @@ release: aprovisionar la clave del KMS y copiar su cuerpo base64 a
 `assets/trust/release-verify-key.pub` y a `SDDK_RELEASE_VERIFY_KEY_BODY` en
 `scripts/install.sh`. Sin eso, v2.5.3 no sale, y la ventana declarada-pero-no-
 publicada sigue abierta.
+
+### Cierre de session-66: dos commits mas, y el puntero va detras
+
+Despues de la entrada anterior se publicaron dos commits mas, ambos sin `--no-verify`:
+
+- `bcd744e1` — cierre de INC-DEBT-048 (spec `accepted`, REQ-A3S1-021, ADR-0126 reconciliado, AT-UAT-019).
+- `462a60a6` — INC-DEBT-057 y su guard.
+
+`STATE.yaml` y `CURRENT.md` nombran `462a60a6`, que es el commit ANTERIOR a esos dos
+ficheros documentales. Es la cuarta vez que el puntero se autocita y se consigna
+expresamente: lo verificable es que `462a60a6` esta en `origin/main`, no que este
+commit lo contenga.
+
+**Deuda abierta tras session-66:** 049 (contrato de read-option), 050 (alias de
+proyecto), 051 (contrato de version por adapter), 057 (corrupcion en docs/). **Cerrada:**
+048. **Bloqueante externo:** la clave del KMS, sin la cual v2.5.3 no se publica.
