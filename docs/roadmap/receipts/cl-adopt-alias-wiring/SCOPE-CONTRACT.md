@@ -127,7 +127,17 @@ Se para y se reporta, sin forzar, si ocurre cualquiera de estas:
 | `crates/sddk-cli/src/context_cmd.rs` | `resolve_identity` y `converge_adoption` resuelven por el canónico; se elimina la condición de reenvío; doc corregido |
 | `crates/sddk-engine/tests/adoption_identity.rs` | los dos tests del pin migran a la CLI |
 | `crates/sddk-cli/tests/adoption_contract.rs` | los tests que cruzan la costura, que hoy no existen |
+| `crates/sddk-cli/tests/alias_adoption_wiring.rs` | **fichero nuevo**, añadido en lote 1: la costura tiene su propio hogar |
 | `docs/architecture/adrs/ADR-0152-…md` | solo si el criterio 3 queda medible y medido |
+
+**Por qué un fichero nuevo y no `adoption_contract.rs`.** El SCOPE inicial solo
+autorizaba el segundo. El doc de ese fichero dice qué es —«migrated from
+`tests/test_adoption_contract.sh`», asserts sobre los tokens que lleva el
+`agents/sddk-adopt.md`— y meter ahí tests de cableado del store de alias
+ensuciaría un contrato que es de otra cosa, para que quien lo lea tenga que
+saltarse medio doc para saber de qué va. El fichero nuevo lleva su propio doc
+explicando **por qué existe**: los dos ficheros que cubren `adopt` y el pin tenían
+**cero** ocurrencias de «alias», medido, luego la costura no la cruzaba nadie.
 
 **Fuera de esta superficie, cualquier cambio necesita otro SCOPE.**
 
