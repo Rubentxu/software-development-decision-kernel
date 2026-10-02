@@ -10485,3 +10485,19 @@ clase. La auditoría por criterio ha rentado cinco veces seguidas; la pregunta q
 queda por hacerle es *«qué más trunca, y quién lo declara?»* sobre el resto de
 superficies. **No bumpear por conveniencia**: si el workspace declara `2.5.3` y
 el último tag publicado es `v2.5.2`, la siguiente release **es 2.5.3**.
+
+#### Cierre en la autoridad
+
+El ciclo **no está cerrado**: está en **`RELEASE_PENDING`** (`p-63676b11dc0ef88f/
+ledger-watch-total`, `sequence: 7`, 6 artefactos). Cerrado de verdad exigiría la
+release, y la release sigue bloqueada por la clave KMS, que es del operador.
+Ocho gates evaluados con `argv`, `exit_code` y `output_digest` de una corrida:
+`exploration-sufficient`, `requirements-testable`, `architecture-consistent`,
+`plan-executable`, `implementation-complete`, `tests-pass`, `policy-compliant`,
+`debt-severity-assigned`, `debt-priority-assigned`.
+
+Los dos últimos gates obligaron a registrar lo que el ciclo había medido y no
+había escrito: **INC-DEBT-062** (`ledger export`, high/P1) e **INC-DEBT-063**
+(tres recibos con `cycle_id` inexistente, medium/P2). Ninguno nace de una
+Revisión formal: nacen de que el defecto **existe y tiene nombre**, no de que
+alguien vaya a arreglarlo mañana.
