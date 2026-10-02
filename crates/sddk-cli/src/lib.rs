@@ -47,6 +47,7 @@ mod metrics;
 mod pack_cmd;
 mod permission;
 mod plan;
+pub mod project_alias;
 mod recover;
 mod release_cmd;
 mod result_cmd;
