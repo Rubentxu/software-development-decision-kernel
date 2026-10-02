@@ -1,7 +1,9 @@
 ---
 id: INC-DEBT-051
 title: "`sddk release plan` y `release apply` exigen `Cargo.toml` y abortan en repos no-Rust, contra el principio de agnosticismo declarado en AGENTS.md §2.3"
-status: open
+status: resolved
+resolved_at: 2026-10-02
+resolved_by: ADR-0153
 severity: high
 priority: P1
 detected_at: 2026-10-01
@@ -301,3 +303,43 @@ Ese contrato, sus tipos, su carga por lenguaje y su punto de integración son
 un ciclo propio con SCOPE-CONTRACT y ADR. Lo que se ha hecho aquí es quitar
 un defecto que hacía que el arreglo futuro fuera más difícil de verificar: hoy
 el lockstep es correcto **para Rust**, y se puede demostrar con tests.
+
+## Resolucion (2026-10-02) — ADR-0153, con los cuatro falsificadores medidos
+
+Los cuatro falsos exigidos cuando se implementara (F56–F59), ejecutados uno a
+uno contra el binario de este checkout y no deducidos:
+
+| falsificador | medido | resultado |
+|---|---|---|
+| **F56** — un fixture **sin** `Cargo.toml` no aborta, produce plan | fixture Go, `go.mod` y nada mas | `exit 0`, plan producido, `version_authority.kind = tag_is_the_only_authority` |
+| **F57** — el mismo fixture **con** `Cargo.toml` sigue exigiendo lockstep | tag correcto / tag discrepante | `exit 0` con `cross_checked` nombrando `Cargo.toml`; `exit 1` con `VERSION LOCKSTEP FAILED: project=1.0.0 vs tag=9.9.9` |
+| **F58** — sin ninguna fuente, el error nombra lo que se busca y **no** un `No such file or directory` | repo vacio | `exit 1`, lista los 13 manifiestos buscados **y** la declaracion explicita; **cero** `No such file or directory` |
+| **F59** — la salida nombra quien resolvio la version | los dos fixtures | proyecto Go: `ecosystems: ["go"]`; proyecto Rust: `candidates[0] = Cargo.toml (rust) = 1.0.0` |
+
+**Reconciliacion de redaccion, declarada en vez de omitida:** F56 y F59 dicen
+«adapter». El contrato elegido **no tiene adapters**: ADR-0153 es un registro
+de **ecosistemas** con formatos declarativos, y por decision propia (criterio 3
+de ese SCOPE) anadir un ecosistema es **solo datos**. La propiedad que F59
+persigue —que la comprobacion sea auditable y no un acto de fe— se cumple con
+el nombre del ecosistema y del manifiesto leido. Lo que cambia es el sustantivo,
+no la exigencia.
+
+**F58 estaba a medio camino y no se dio por bueno por parecer resuelto.** El
+criterio 8 del SCOPE del lote 1 exigia que el error listara donde se busco **y
+nombrara la declaracion explicita**; el codigo solo hacia la primera mitad, y el
+test solo afirmaba la primera mitad — dos mitades de un mismo casi que se
+confundian con el todo. Cerrado: el mensaje nombra `.sddk/version-source.json` y
+el test lo mide.
+
+**Estado de los siete criterios de aceptacion de ADR-0153:** `PASS=7 FAIL=0`,
+ejecutados **uno a uno** por `bash tests/test_adr_0153_criteria.sh`, que reporta
+el veredicto de cada criterio por separado para que un verde agregado no pueda
+tapar uno rojo. El criterio 1 —«el codigo que resuelve no nombra ningun
+manifiesto»— ademas esta **falsificado**: inyectar un `root.join("Cargo.toml")`
+en el codigo de resolucion lo hace fallar.
+
+**Lo que esto NO afirma.** `release plan` y `release apply` sobre un proyecto
+no-Rust **no se han ejecutado de extremo a extremo contra un forge real**: F56,
+F57 y F59 se midieron con la ruta local, que no necesita red. La ruta forge
+comparte el mismo contrato de version y su parte de registro esta cubierta, pero
+publicar de verdad por forge es una medicion que no se ha hecho.

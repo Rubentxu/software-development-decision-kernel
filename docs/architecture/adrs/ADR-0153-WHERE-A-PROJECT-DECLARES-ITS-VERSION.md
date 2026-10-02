@@ -1,9 +1,11 @@
 ---
 id: ADR-0153-WHERE-A-PROJECT-DECLARES-ITS-VERSION
 title: Resolve a project's declared version through a declarative source contract, because two of the eight ecosystems have no manifest to declare it in
-status: proposed
+status: accepted
 proposed_at: 2026-10-02
+accepted_at: 2026-10-02
 cycle: p-63676b11dc0ef88f/version-source
+accepted_by_cycle: p-63676b11dc0ef88f/version-source
 supersedes: null
 superseded_by: null
 component: release
@@ -13,7 +15,7 @@ closes: [INC-DEBT-051]
 
 # ADR-0153 — Dónde declara su versión un proyecto: un contrato declarativo con dos clases de fuente
 
-**Status:** proposed
+**Status:** accepted (2026-10-02)
 **Date:** 2026-10-02
 **Cycle:** `p-63676b11dc0ef88f/version-source`
 **Closes:** INC-DEBT-051 (high/P1)
@@ -184,7 +186,23 @@ encontró».
 
 ## Verification (falsable)
 
-1. `Cargo.toml` **no aparece** en `crates/sddk-engine/src/version.rs`.
+1. **El código que resuelve no nombra ningún manifiesto** — ni `Cargo.toml`, ni
+   `package.json`, ni ninguno de los demás. Medido sobre el fichero entero: el
+   `REGISTRY` **sí** los nombra, y tiene que, porque es el sitio donde vive el
+   dato; lo que se prohíbe es que el *lector* los nombre. Verificado por
+   `the_resolution_code_names_no_manifest`, que es **estructural** a propósito:
+   un reader genérico que hardcodea un nombre se comporta *igual* mientras el
+   nombre siga ahí, luego ningún test de comportamiento lo vería.
+
+   > **Enmienda al redactar la aceptación.** El criterio estaba escrito como
+   > «`Cargo.toml` no aparece en `version.rs`», y esa letra **no era
+   > satisfacible por ninguna implementación correcta**: los tests de paridad
+   > de Rust tienen que *construir* un `Cargo.toml` para comprobar que el
+   > lockstep sigue igual que antes, y sus fixtures lo nombran. Medido: de las
+   > trece apariciones del fichero, **cero** están en código de producción —seis
+   > son fixtures, dos asserts sobre el mensaje de error y cinco comentarios
+   > que cuentan la historia—. Se corrige el criterio para que diga lo que
+   > significa, que es lo que el test hace cumplir.
 2. Los ocho ecosistemas resuelven o fallan por una razón declarada, medido uno
    a uno sobre fixtures, no por inspección.
 3. Añadir un ecosistema es solo datos: un test añade una entrada y comprueba que
@@ -195,3 +213,11 @@ encontró».
 6. Un manifiesto corrupto ⇒ error duro, y el test comprueba que **no** se
    consulta un candidato alternativo.
 7. Go y Bazel ⇒ `TagIsTheOnlyAuthority`, distinto de `CrossChecked`.
+
+**Cómo se comprueban los siete, uno a uno:**
+`bash tests/test_adr_0153_criteria.sh` ejecuta cada criterio por separado y
+reporta su propio veredicto, para que un `PASS` agregado no pueda tapar un
+criterio rojo. Un criterio con varios tests exige que **pasen todos**. Estado
+en la aceptación: **PASS=7 FAIL=0**, con el criterio 1 además **falsificado**
+—inyectar un `root.join("Cargo.toml")` en el código de resolución lo hace fallar
+y nombra el fichero y la regla—.
