@@ -110,7 +110,29 @@ while IFS= read -r SUBJECT; do
 done < <(git -C "$ROOT" log --format=%s "$LAST_TAG"..HEAD)
 
 if [[ "$CHECKED" -eq 0 ]]; then
-  bad "no feat/fix/test commits found in range — the gate cannot vouch for anything"
+  # Rango vacio: hay que distinguir dos cosas que se parecian y no lo son.
+  #
+  # Session-75: al publicar v2.5.5, el workspace queda en la MISMA version que el
+  # ultimo tag, asi que `v2.5.5..HEAD` esta vacio y este gate se quedaba en rojo
+  # permanente con "no commits to vouch for". Eso es un gate que solo puede decir
+  # que no -- y un gate permanentemente rojo es exactamente la condicion que
+  # entrena a ignorar los rojos, que es el defecto que este gate existe para
+  # cazar, aplicado a si mismo.
+  #
+  # La distincion que decide: esta la version del workspace IGUAL a la del tag
+  # publicado, o es ANTERIOR?
+  #   igual     -> no hay nada que enviar. No es un fallo: es el estado limpio
+  #               de un repo recien publicado. Se declara NOT_APPLICABLE y sale 0.
+  #   anterior  -> el tip se ha retardado respecto a lo publicado. Eso SI es un
+  #               fallo: la autoridad de version esta detras de la release, que
+  #               es la razon por la que INC-DEBT-040 existe. Sigue siendo FAIL.
+  WS_VER="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml" | head -1)"
+  TAG_VER="${LAST_TAG#v}"
+  if [[ "$WS_VER" == "$TAG_VER" ]]; then
+    ok "nothing to ship: workspace ($WS_VER) is the published tag ($LAST_TAG) and the range is empty"
+  else
+    bad "no feat/fix/test commits in range AND workspace ($WS_VER) != published tag ($TAG_VER): the version pointer is behind the release, which is the INC-DEBT-040 shape"
+  fi
 elif [[ "$MISSING" -eq 0 ]]; then
   ok "all $CHECKED feat/fix/test commits since $LAST_TAG are represented"
 fi
