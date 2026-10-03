@@ -25,16 +25,31 @@ Ninguna se da por buena. Las que se comprobaron ejecutando llevan el comando.
 no es un detalle de implementación, es lo que hace que la propuesta original
 sea insuficiente.
 
-## 2. Mapa objetivo → guard
+## 2. Guards
 
-| Objetivo | Guard | Cómo se ejercita |
+Cada guard dice qué fija y **cómo se rompe**. Un guard sin modo de fallo escrito
+es una aserción que no puede caer, y un objetivo sin guard es una nota.
+
+| Guard | Qué fija | Cómo se rompe |
 |---|---|---|
-| O1 la identidad se expone sin tocar `--version` | R1 | inspección de la forma de `--version` antes y después |
-| O2 sin fuente, compila y declara `unknown`/`absent` | R2 | build en un directorio sin repo y sin la variable |
-| O3 un checkout sucio no se presenta como limpio | R3 | árbol con un cambio sin commitear |
-| O4 la comparación no dice «bien» por omisión | R4 | sin checkout, y con identidad `unknown` |
-| propiedad del ciclo | R5 | dos binarios reales, uno construido antes del último commit |
-| §3, escenario 4 | R6 | una identidad con procedencia `git` nunca declara `unknown` |
+| R1 | la identidad de build se expone en superficie propia, y `--version` conserva su forma exacta | el SHA se añade al final de `--version` y `install.sh:416` guarda un paréntesis como versión |
+| R2 | sin `SDDK_GIT_SHA` ni repositorio, el binario **compila** y declara `unknown` con procedencia `absent` | el `build.rs` devuelve error y la construcción falla en un directorio sin `.git` |
+| R3 | un checkout con cambios sin commitear se declara sucio, en campo propio | el valor solo lleva el SHA, y un binario construido sobre un árbol sucio se presenta como limpio |
+| R4 | la comparación responde `desconocido` —nunca «al día»— cuando la identidad no se puede establecer | la comparación sale verde por omisión cuando no hay checkout o cuando la identidad es `unknown` |
+| R5 | la comparación dice `retrasado` con dos binarios reales, medido | comparar la fecha del binario en vez del SHA, y dos binarios del mismo día salen «al día» |
+| R6 | la procedencia acompaña siempre al valor, y `unknown` nunca se emite con procedencia `git` | el `build.rs` deriva de `.git` y emite el commit del **primer** build con aspecto de verdad |
+
+### Mapa objetivo → guard
+
+| Objetivo | Guards | Evidencia medida hoy |
+|---|---|---|
+| **O1** la identidad se expone sin alterar `--version` | R1, R6 | `install.sh:416` hace `awk '{print $NF}'`; `sddk --version` es `sddk 2.5.3` |
+| **O2** sin fuente, compila y declara `unknown`/`absent` | R2 | build medido: exit 0, `sha=unknown source=absent` |
+| **O3** un checkout sucio no se presenta como limpio | R3 | hoy el SHA es el del último commit y no dice nada del cambio sin commitear |
+| **O4** la comparación no dice «bien» por omisión | R4, R5 | `cycle list` separa los dos binarios: `False` en el viejo, `True` en el del código |
+
+**R6 no es un guard de conveniencia: es el cuarto escenario del §3 del
+SCOPE**, medido, donde el build declaraba `9b3f0076` con el HEAD en `247e808d`.
 
 ## 3. Qué se necesita del entorno
 
