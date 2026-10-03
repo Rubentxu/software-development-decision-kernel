@@ -467,6 +467,30 @@ pub(super) fn run_dev_doctor(
         }
     }
 
+    // Build identity (INC-DEBT-064 / ciclo cl-doctor-build-identity).
+    //
+    // `dev build-id --check` ya sabia distinguir un binario al dia de uno
+    // atrasado, y no habia NINGUN sitio del producto donde se mirara. Eso
+    // cumple la condicion de escalada que el propio documento de deuda
+    // declara: «si `dev doctor` declara coherencia donde no la hay». Un
+    // binario de mas de un dia podia pasar este doctor en verde.
+    //
+    // Y el check es FALSO cuando el binario no es el de este checkout, porque
+    // eso no es un aviso: es la senal de que todo lo medido con el sale sobre
+    // codigo viejo. Los otros tres estados —sin checkout, repo ajeno,
+    // identidad no concluyente— son «no se puede saber» y salen en VERDE con
+    // su motivo, siguiendo el precedente de `flat_install` mas abajo. Un rojo
+    // para «no se puede saber» seria peor que no tener check.
+    let identity = crate::dev::build_id::identity_verdict_here();
+    if !identity.ok {
+        framework_warnings += 1;
+    }
+    checks.push(DoctorCheck {
+        tool: "binary.build_identity".into(),
+        present: identity.ok,
+        detail: Some(identity.detail),
+    });
+
     // Surface brevity checks (ADR-0150): agent ≤ 300, skill ≤ 150, prompt ≤ 200.
     //
     // INC-DEBT-054: this block used to read from `current_dir()` only, and
