@@ -41,13 +41,47 @@ La segunda la encontró el falsificador y era peor: **O7 afirmaba «ningún vere
 | `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
 | `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
 | `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| `a4-1-generic-verify` | `RELEASE_PENDING`, 5 artefactos, path `A-lite` — **publicado hace semanas y sin archivar**, ver abajo |
 | `INC-DEBT-064` | **`open`, high/P1 — el mecanismo existe, la condición sigue viva** |
+
+**Y una hipótesis mía que la medición desmintió, antes de que se volviera un
+«defecto» inventado.** Buscando regresiones por código duplicado (§4 del
+objetivo) encontré que el predicado de SHA está escrito en **tres** sitios con
+tres expresiones distintas: `is_hex_sha` en `build.rs:83` usa
+`is_ascii_hexdigit()` —que acepta mayúsculas—, y las copias de `release.sh:561`
+y `reconcile_state_pointer.sh:200` usan `[0-9a-f]`, que no. Medido:
+`'ABC1234'` → `Rust=True | bash=False | python=False`.
+
+Concluí que **nadie vigilaba la relación entre las copias** y estuve a punto de
+declararlo defecto. **Es falso, y la medición lo dice: 3 de 3 mutaciones que
+introducen esa divergencia caen.** Las tres la detectan
+`tests/test_build_identity_policy.sh` y `tests/test_doctor_identity_states.sh`.
+**Una hipótesis de hueco que no se falsifica se convierte en deuda inventada**,
+y esta sesión ya lleva siete casos de un guard que resultaba ser otro problema.
+Lo que sí es cierto, y es más pequeño: las tres copias **difieren** en el rango
+de caracteres, y eso **no es alcanzable hoy** — medido, `git rev-parse HEAD`
+devuelve 40 hex en minúsculas — luego no es un fallo de comportamiento, es una
+divergencia latente que nadie sincroniza cuando una de las tres cambie.
+
+**El sexto ciclo no es uno más, y por eso no estaba en la tabla (R0).**
+`a4-1-generic-verify` figura en el ledger como `RELEASE_PENDING` desde el
+**2026-09-16**, y su release **sí salió**: el tag `v1.169.46` existe, y el
+handoff de la sesión lo registra como publicado. Los otros cinco se movieron
+esta semana. Es decir, **no espera la clave KMS ni nada**: está publicado y sin
+transicionar a `archive`, y por eso inflaba el recuento de «ciclos bloqueados»
+a seis cuando los bloqueados son cinco.
+
+**Medido, no supuesto:** `cycle list` sobre los 105 ciclos del proyecto da
+exactamente seis en `RELEASE_PENDING`, y `git tag --list 'v1.169.46'` devuelve
+la etiqueta. Archivar ese ciclo es una escritura sobre el ledger y **queda
+como decisión del operador**; lo que se corrige aquí es el recuento que lo
+presentaba como pendiente.
 
 **Por qué INC-DEBT-064 sigue `open`:** los binarios **ya instalados** declaran `source: git` porque se construyeron antes del cambio de `release.sh`, luego el check es N/A para ellos y **no tiene dientes hasta la próxima release**, bloqueada por la clave KMS. No es un fallo del check: es que el check es honesto con lo que sabe. Severidad sin cambio, `high` y no `critical`: la condición de escalada —*«si `dev doctor` declara coherencia donde no la hay»*— **sigue sin cumplirse**; este trabajo le quita una vía para que se cumpla, no la cumple.
 
 **Lo que sigue abierto, sin adornos:**
 
-1. **Clave KMS** — bloqueo de la release 2.5.3 y de los **seis** ciclos, del operador.
+1. **Clave KMS** — bloqueo de la release 2.5.3 y de los **cinco** ciclos de esta semana, del operador. El sexto de la tabla, `a4-1-generic-verify`, **no espera la KMS**: su release salió como `v1.169.46` y lo que le falta es la transición a `archive`.
 2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
 3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
 4. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
