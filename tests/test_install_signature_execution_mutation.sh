@@ -6,7 +6,7 @@
 # Un guard que solo se ejecuta en verde no demuestra que vigile: puede estar
 # mirando el sitio equivocado y devolver PASS igual. Este fichero SIEMBRA cada
 # defecto por separado sobre una COPIA EN SANDBOX del instalador real y exige
-# que caiga la comprobacion que dice检测arlo, y no una cualquiera.
+# que caiga la comprobacion que dice detectarlo, y no una cualquiera.
 #
 # Dos reglas que este fichero se aplica a si mismo, y que son la parte cara:
 #

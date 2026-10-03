@@ -51,7 +51,14 @@ FAIL=0
 SKIP=0
 ok()  { echo "  [ok]   $1"; PASS=$((PASS + 1)); }
 bad() { echo "  [FAIL] $1"; FAIL=$((FAIL + 1)); }
-skp() { echo "  [skip] $1"; SKIP=$((SKIP + 1)); }
+# Sin `skp()` a proposito. Session-75: existia definida y nunca invocada
+# (shellcheck SC2329, que aqui tiene razon), y su presencia hacia que el
+# informe imprimiera `SKIP=0` como si fuera una MEDICION. No lo era: este es el
+# control sin mutar, sus casos o se ejecutan o fallan, y no hay rama "no
+# medido" que pueda ocurrir, porque no hay mutacion que no se aplique. Un
+# contador que no puede moverse no es una medida. El `SKIP` que SI significa
+# algo vive en `test_release_authenticity_posture_mutation.sh`, donde una
+# mutacion que no cambia el codigo debe aparecer como SKIP y no como PASS.
 
 [ -f "$RELEASE_SH" ] || { echo "FALLO: no existe $RELEASE_SH"; exit 1; }
 

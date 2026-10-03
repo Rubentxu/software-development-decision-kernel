@@ -26,6 +26,18 @@
 # resuelve a la variable que nombran y exige que esa variable apunte a $TMP. Un
 # guard que comparase literales contra un nombre derivado daria verde con el
 # layout roto, que es justo lo que hay que evitar.
+#
+# shellcheck disable=SC2016
+#
+# El disable de arriba es A NIVEL DE FICHERO y es deliberado, y es el mismo
+# motif que en `test_release_authenticity_posture_mutation.sh`. Session-75: este
+# fichero salia con 5 avisos SC2016 al correr `shellcheck` sin filtro de
+# severidad, y los 5 son falsos positivos — las comillas simples contienen
+# `$TMP/$artifact` y `$(basename "$UNIFIED")` como TEXTO LITERAL para comparar
+# contra lo que el bucle de `release.sh` tiene escrito. Si el shell del test
+# las expandiera, el `grep -qF` compararia contra el valor de la variable y daria
+# verde con el layout roto, que es exactamente el falso PASS que este guard
+# existe para cazar. Un unico disable con el motivo, no cinco directivas.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

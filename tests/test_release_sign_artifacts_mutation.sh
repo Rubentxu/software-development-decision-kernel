@@ -15,6 +15,17 @@
 # Y una mutacion que NO LLEGA A APLICARSE es `SKIP`, nunca `PASS`: contar como
 # deteccion una mutacion que no ocurrio es el modo mas barato de tener un guard
 # que parece falso y no lo esta.
+#
+# shellcheck disable=SC2016
+#
+# El disable de arriba es A NIVEL DE FICHERO y es deliberado. Session-75: este
+# fichero salia con 14 avisos SC2016 y `test_build_identity_policy.sh` (que
+# corre shellcheck SIN filtro de severidad) lo contaba como fallo. Los 14 son
+# falsos positivos por el mismo motivo que en los otros dos mutation guards: los
+# argumentos entre comillas simples son el TEXTO LITERAL que se busca o se
+# inyecta en `release.sh`. Si el shell los expandiera, la sustitucion escribiria
+# otra cosa, la mutacion "aplicaria" sin cambiar el codigo y el arnes la
+# contaria como PASS -- el falso PASS que este fichero existe para cazar.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,7 +63,13 @@ mutate_and_expect() {
     local id="$1" desc="$2" old="$3" new="$4" expect="$5"
     cp "$SRC" "$SANDBOX/scripts/release.sh"
 
-    python3 - "$SANDBOX/scripts/release.sh" "$old" "$new" <<'PY'
+    # Session-75 (SC2181): esto era `python3 ... <<'PY' ... PY` seguido de
+    # `if [ $? -ne 0 ]`. El `$?` mide el here-doc, no el python: cualquier
+    # sentencia entre ambos --o un `set -e` parcial, o una redireccion-- puede
+    # reescribirlo y la comprobacion pasa a mirar el codigo de otra cosa. La
+    # forma `if ! comando; then` consulta el comando directamente y no deja
+    # ventana. No era un falso positivo como los SC2016: ese si era cierto.
+    if ! python3 - "$SANDBOX/scripts/release.sh" "$old" "$new" <<'PY'
 import sys
 path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path, encoding="utf-8").read()
@@ -60,7 +77,7 @@ if old not in s:
     sys.exit(3)
 open(path, "w", encoding="utf-8").write(s.replace(old, new, 1))
 PY
-    if [ $? -ne 0 ]; then
+    then
         skip "$id ($desc): el patron no aparecio en el release.sh real"
         return
     fi

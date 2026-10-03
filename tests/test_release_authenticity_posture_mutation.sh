@@ -28,6 +28,21 @@
 #   M5  se antepone el salto al hecho   -> rompe S5 (precedence)
 #   M6  el 9c ignora la postura          -> rompe S4 (cableado)
 #   M7  el cierre deja de calificar      -> rompe S1 y S4
+#
+# shellcheck disable=SC2016
+#
+# El disable de arriba es A NIVEL DE FICHERO y es deliberado.
+#
+# Session-75: `test_build_identity_policy.sh` corria shellcheck sobre el shell
+# tocado y este fichero salia con 7 avisos SC2016. Los siete son FALSOS
+# POSITIVOS, y el mecanismo es la propia tecnica del guard: lo que hay entre
+# comillas simples es el TEXTO LITERAL que se sustituye dentro de
+# `release.sh`. Si el shell de este test expandiera los `${...}` al construir la
+# mutacion, estariamos mutando una cosa distinta de la que queremos mutar, la
+# mutacion "aplicaria" sin cambiar el codigo, y el arnes la contaria como
+# PASS -- exactamente el falso PASS que este fichero existe para cazar. Por eso
+# el disable va aqui, con el motivo escrito, y no como siete directivas
+# sueltas: el motivo es la propiedad, las directivas serian la sintaxis.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

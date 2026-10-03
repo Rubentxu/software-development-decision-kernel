@@ -394,5 +394,74 @@ def main() -> int:
     return 0
 
 
+def delta_hits(added_lines: Path, repo_rel: str) -> list[str]:
+    """Contaminacion en las lineas ANADIDAS de `repo_rel`, bajo la misma politica.
+
+    Session-75. `test_build_identity_policy.sh` barre el delta del cambio con un
+    scanner en `/var/home/rubentxu/ce/06-scan.py` — una ruta ABSOLUTA a un
+    fichero FUERA del repo, en la maquina de quien lo escribio. Tres
+    consecuencias, y la tercera es la grave: (1) la autoridad de la regla de
+    contaminacion no estaba en el repo, luego no se revisa, no se empaqueta y no
+    viaja; (2) en cualquier otra maquina el fichero no existe, `python3` sale con
+    != 0 y el guard reporta contaminacion en TODO lo que escanea, o sea rojo
+    falso; (3) ese scanner tenia sus PROPIAS reglas y su propia lista de
+    excepciones, y no coincidia con las de aqui: senalaba `CHANGELOG.md`, que
+    esta declarado en `KNOWN` como cita intencional, y `SESSION-JOURNAL.md`,
+    que esta en `EXCLUDED_FILES` por ser append-only ("se miden, no se
+    corrigen"). Dos politicas para el mismo concepto, y la que corria era la
+    equivocada.
+
+    Ahora la autoridad es una sola: el mismo `CONTAMINATION`, la misma
+    distincion PROSA/ARTE, las mismas exclusiones y la misma allowlist. Un
+    fichero excluido o declarado aqui NO se vuelve a acusar en el delta: el
+    guardia de las ocurrencias nuevas es el `main()` de este fichero, con su
+    regla 1b, que ya cuenta las que un fichero declarado gana. Contarlo tambien
+    en el delta seria el mismo defecto en dos direcciones — el que la propia
+    docstring de `scan()` reporta haber pagueado una vez.
+    """
+    if excluded(repo_rel):
+        return []
+    if repo_rel in {**KNOWN, **KNOWN_OUTSIDE_DOCS}:
+        return []
+    hits: list[str] = []
+    text = added_lines.read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        if not CONTAMINATION.search(line):
+            continue
+        if is_box_drawing(line):
+            continue
+        hits.append(line.strip()[:100])
+    return hits
+
+
 if __name__ == "__main__":
+    # Modo `--delta <fichero-de-lineas-anadidas> --repo-path <rel>`: lo usa
+    # `test_build_identity_policy.sh` para el barrido del delta. Sale 0 si no
+    # hay contaminacion, 1 si la hay, e imprime una linea HIT por hallazgo.
+    #
+    # Se parsean los pares `--flag valor` en vez de leer posiciones fijas: la
+    # primera version leia `sys.argv[3]` como la ruta del repo, que en esta
+    # invocacion es literalmente la cadena `--repo-path` — luego NINGUN repo
+    # casaba con una exclusion ni con la allowlist y todo se acusaba. Un
+    # control de no-vacuidad que nunca puede pasar es indistinguible de uno que
+    # no mira, y aqui ademas tiraba el veredicto en la direccion de "todo mal".
+    # La condicion es "`--delta` aparece", NO "hay >= 5 argumentos": con la
+    # forma incompleta la version anterior caia al `main()` de abajo, es decir
+    # un uso mal escrito ejecutaba el BARRIDO DE FICHERO ENTERO y salia con
+    # PASS. Un flag mal escrito no puede terminar en un verde: se degrada a
+    # "no se pudo pedir lo que se pidio", que es exit 2 y un mensaje.
+    if "--delta" in sys.argv[1:]:  # noqa: E501
+        _opts = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+        _file = _opts.get("--delta")
+        _rel = _opts.get("--repo-path")
+        if not _file or not _rel:
+            print(
+                "FALLO: uso "
+                "--delta <fichero-de-lineas-anadidas> --repo-path <ruta-del-repo>"
+            )
+            sys.exit(2)
+        _found = delta_hits(Path(_file), _rel)
+        for _h in _found:
+            print(f"HIT {_h}")
+        sys.exit(1 if _found else 0)
     sys.exit(main())

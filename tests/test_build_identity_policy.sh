@@ -113,9 +113,22 @@ for f in $(git diff --name-only "$BASE"..HEAD | grep -E '\.(md|rs|sh|yaml|yml|tx
     fi
     [ -s "$ADDED" ] || continue
     SCANNED=$((SCANNED + 1))
-    if ! python3 /var/home/rubentxu/ce/06-scan.py "$ADDED" >/dev/null 2>&1; then
+    # Session-75: esto llamaba a `/var/home/rubentxu/ce/06-scan.py` -- un scanner
+    # en una ruta ABSOLUTA, FUERA del repo, en la maquina de quien lo escribio.
+    # La autoridad de la regla de contaminacion no estaba en el repo, y ese
+    # scanner tenia reglas y excepciones PROPIAS que no coincidian con
+    # `test_docs_script_contamination.py`: senalaba `CHANGELOG.md` (declarado ahi
+    # como cita intencional) y `SESSION-JOURNAL.md` (excluido ahi por ser
+    # append-only, "se miden no se corrigen"). Ademas, en cualquier maquina sin
+    # ese fichero, `python3` sale con != 0 y este guard.reportaria
+    # contaminacion en todo lo que escanea: rojo falso, no rojo verdadero.
+    # Ahora la autoridad es la misma que la del guard que barre el repo entero,
+    # y por eso los dos NO pueden discrepar.
+    if ! python3 "$ROOT/tests/test_docs_script_contamination.py" \
+            --delta "$ADDED" --repo-path "$f" >/dev/null 2>&1; then
         echo "  [FAIL] contaminacion en las lineas anadidas de $f:"
-        python3 /var/home/rubentxu/ce/06-scan.py "$ADDED" 2>&1 | grep HIT | head -3
+        python3 "$ROOT/tests/test_docs_script_contamination.py" \
+            --delta "$ADDED" --repo-path "$f" 2>&1 | grep '^HIT' | head -3
         HITS=$((HITS + 1))
     fi
 done
