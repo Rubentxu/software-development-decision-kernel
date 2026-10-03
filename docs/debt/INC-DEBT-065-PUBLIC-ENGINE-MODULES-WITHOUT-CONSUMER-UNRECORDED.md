@@ -213,3 +213,53 @@ Cierra cuando exista un registro —por módulo o por categoría— que distinga
 superficie legítima de trabajo inconcluso, **o** cuando los 24 ganen consumidor.
 No cierra por antigüedad ni por el paso del tiempo: cierra con un registro o
 con un consumidor, y en ese momento la entrada dice algo que ya no es verdad.
+
+---
+
+## Corrección 2026-10-03 (C3m.5): 24 → 30
+
+**El 24 de esta entrada era una subestimación. El conjunto correcto son 30.**
+El instrumento de este ciclo se reconstruyó desde cero, dio 37, se contrastó con
+este, y el contraste resultó ser el que destapó el defecto: no era una
+diferencia de criterio sino cuatro medidas que no son consumo.
+
+**No se reescribe lo de arriba.** La medición original y su razonamiento se
+quedan, porque son la evidencia de lo que se sabía entonces y de por qué se
+tomó esa decisión de alcance. Lo que se corrige es el recuento, y se corrige
+en un sitio que se puede contrastar: `§` al final.
+
+**Tres diferencias corrigen a esta entrada** (eran consumidos, y no lo son):
+
+| Módulo | Por qué se contaba como consumido |
+|---|---|
+| `durable_map_fanout` | Por un **enlace en un doc-comment**: `typed_reduce_aggregator.rs:8` cita `[DurableMapFanOut](crate::durable_map_fanout::…)` dentro de un `//!`. Citar no es consumir. |
+| `up_to_date` | Por **coincidencia de subcadena**: `sddk-domain/src/goal.rs:168` declara `pub fn is_up_to_date`, que contiene el texto `up_to_date`. No es el módulo. |
+| `gate_signing`, `inc_generator` | Por `pub use <mod>::*;` (`lib.rs:202` y `:211`). El asterisco no dice quién lo usa; la única referencia externa de cada uno es una cadena en un test. |
+
+**Dos no están en el universo de esta entrada**, que mide los 131 `pub mod` por
+**nombre**: `adoption` (`mod adoption;` en `lib.rs:16` con `pub use
+adoption::*;` en `:155`) y `paths` (`lib.rs:109` y `:222`). Son los dos únicos
+módulos **privados** del crate, y los dos publican sus símbolos sin que exista
+`sddk_engine::<módulo>`. 1.643 líneas de superficie pública a las que un mapa
+por nombre no llega.
+
+**El denominador también se corrige.** Esta entrada mide 131 porque cuenta
+`pub mod`. Hay **133** raíces de módulo en disco: los 131 más esos dos privados.
+Las tres son públicas en símbolos, luego **no hay ninguna raíz realmente
+privada**, y eso no estaba escrito.
+
+**Nada de esto cambia el diagnóstico, y es lo que importa:** el defecto
+registrado sigue siendo la **ausencia del registro**, no la lista. Pasamos de
+«24 módulos sin consumidor» a «30 sin consumidor, 38 anunciados en la superficie
+pública sin que ningún comando los mueva, y 1.643 líneas con superficie pública
+sin nombre de módulo». La gravedad sigue siendo `medium` y la elección sigue
+siendo deliberada: ninguno de estos 30 degrada por sí solo una funcionalidad.
+Lo que sí ha cambiado es el **tamaño del agujero**, y un agujero más grande que
+el registrado es exactamente lo que este registro existe para que no se
+repita en la siguiente medición.
+
+**Instrumento, falsación y convergencia:**
+`docs/roadmap/receipts/c3m5-bounded-contexts/` — autoprueba del parser 16/16,
+3 controles contra el grafo real, **5 mutaciones al source real, 5 detectadas
+y 0 sobrevividas**, y el contraste con el instrumento de C3m.1 declarado módulo
+a módulo.

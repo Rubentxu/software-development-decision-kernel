@@ -1,4 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69r, 2026-10-03): C3m.5 MEDIDO. La decisión de bounded contexts NO se toma como taxonomía de módulos, y el motivo está medido.** `HEAD` = `08081930` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+C3m.5 es literalmente una línea en el roadmap (*«R0 bounded-context decision»*) y **no existe taxonomía declarada en ninguna parte del repo**, así que lo medido no es qué contexto es cada módulo sino **cuánto del motor deja fuera cualquier taxonomía que se escriba**: con una convención de nombres propuesta, **68 de 133 raíces y 36.007 líneas quedan fuera de toda caja**, y ese cajón sin nombre es el mayor de todos.
+
+**Tres hechos invalidan un mapa de contextos dibujado sobre módulos:**
+
+1. **El módulo no es una unidad** — hay tres layouts, y `authority_engine` es raíz-partida: su `.rs` (1.235 líneas) declara `pub mod bridge/runner` cuyas fuentes viven en el directorio homónimo. **1.804 líneas en un módulo con dos estilos de fichero**, y ningún guard lo vigila.
+2. **La superficie pública tiene dos formas** — son **133** raíces, no 131: `adoption` y `paths` son `mod X;` privados con `pub use X::*;`. **1.643 líneas llegan al usuario sin que exista `sddk_engine::<módulo>`.**
+3. **El consumo no va por rutas, va por una fachada** — `pub struct Engine` lo extienden 5 ficheros con 40 `pub fn` y el CLI llama 16 métodos. `cycle.rs:1967` llama `context.engine.cycle_pause(...)` y el método está en `cycle_pause.rs:68`.
+
+**Decisión que la medición sí sostiene:** *la frontera de contexto de `sddk-engine` es el tipo `Engine`, no el directorio de módulos.* El R0 se aplica al conjunto de métodos de la fachada. **C3m.5 queda en `explore` con `Readiness: NOT_READY`**: qué se hace con los **38 módulos, 14.852 líneas**, anunciados en la superficie pública y que ningún comando mueve, es trabajo de `R2`, no de este ciclo.
+
+**`INC-DEBT-065` corregida 24 → 30** en su propio fichero, sin reescribir la medición original. Cuatro diferencias corrigen a la entrada (un enlace en un doc-comment, una subcadena `is_up_to_date` dentro de otro método, dos `pub use X::*` que no prueban consumo) y dos no están en su universo.
+
+**La lección que más cuesta, y va escrita porque es la que se repite:** el instrumento se reconstruyó desde cero, dio **37** contra los 24 publicados, y **el contraste con el instrumento de C3m.1 —escrito por separado, mismo repo, misma pregunta— fue lo que destapó el defecto**. No era criterio: era que un grafo de rutas no ve la vía del método. Al corregir las cuatro vías apareció **un bug propio** (para un módulo fichero, `relative_to(SRC).parts[0]` devuelve el nombre con extensión y la autoexclusión nunca casa). *Dos mediciones que comparten un supuesto no son un contraste.* Y la mutación M2 de la primera falsación **no probaba lo que decía**: se corrigió en el guard.
+
+Verificación: autoprueba **16/16**, **3** controles contra el grafo real, convergencia declarada módulo a módulo (**30 vs 24**, superconjunto estricto, 0 diferencias sin explicar), **falsación 5/5 detectadas y 0 sobrevividas** con el source restaurado y verificado. `shellcheck` limpio, `tests/test_changelog_coverage.sh` **PASS=79 FAIL=0**, escáner `CLEAN`. `cargo test` **NOT_RUN**: no hay cambio de producto.
+
+**Siguiente paso: `R2`** — `INC-DEBT-050` (critical/P1), `061`, `060`, `063`, `049`, y archivar `a4-1-generic-verify`. Es lo único de la cola que no depende de una decisión de seguridad del operador.
+
+**Decisiones del operador que siguen abiertas:** (a) dónde vive la clave de firma de la release (KMS frente a fichero local) — bloquea `R1`; (b) qué superficie de producto produce `HostEvent` — bloquea `C3m.1`.
+
 **Estado (session-69n bis 8, 2026-10-03): fase `verify` de `cl-doctor-build-identity` CERRADA. Los cuatro estados del check se han medido con dos binarios reales, y el instrumento que los midió tenía dos defectos que se han corregido en el propio instrumento.** `HEAD` = `261a578c` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
 
 **Lo que midió la verify, y no es repetir la suite:** que los cuatro estados se distinguen con el **binario real** y el **repo real**, y sobre todo que los dos estados de «no puedo saber» **no dan rojo**. Un rojo falso en `dev doctor` entrena a ignorar los rojos.
