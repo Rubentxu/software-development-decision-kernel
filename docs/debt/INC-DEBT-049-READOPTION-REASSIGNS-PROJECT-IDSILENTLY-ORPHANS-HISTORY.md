@@ -556,3 +556,46 @@ legítimo. Lo que queda abierto de verdad en el neighbourhood está en
 no es historia bajo otra identidad, es que **97 ciclos del propio proyecto
 canónico no los nombra ninguna superficie**, 91 de ellos `OPEN`. Ese sí es un
 defecto vivo, y es de otra clase.
+
+---
+
+## Revalidación 2026-10-03 (R2): la premisa se replaces, y el defecto cambia de forma
+
+**Lo que esta entrada denuncia ya no es cierto, y el defecto que queda no está
+registrado en ninguna parte. Se escribe aquí porque sin esto se cerraría una
+deuda cuya premisa murió y el defecto nuevo se perdería con ella.**
+
+| Lo que el título afirma | Medido 2026-10-03 |
+|---|---|
+| `adopt status` reporta `complete` | **`status: conflict`** — `detail: receipt identity differs from plan; refresh only accepts runtime metadata drift` |
+| sobre un storage vacío | **187 ciclos**, 3,91 MB, **107 `OPEN`** |
+| los 65 ciclos y 3,9 MB viven bajo la identidad anterior | `p-995939af668a53d8` tiene **0 ciclos, 0,38 MB** |
+
+**Causa:** el alias `p-995939af668a53d8 → p-63676b11dc0ef88f`, creado el
+**2026-10-02T10:24:11Z** con razón *«el receipt y el historico estan en
+p-63676b11dc0ef88f (590 eventos frente a 0 en p-995939af668a53d8)»*. **La
+identidad que el CLI resuelve es ahora la que tiene la historia**, que es lo
+contrario de lo que esta entrada denuncia.
+
+**El `status:` no se pone a `resolved` por eso, y el motivo es concreto:** el
+`conflict` es un defecto **vivo y de otra clase**. Ya no es un PASS falso sobre
+un storage vacío — eso lo arregló el alias sin que nadie lo pidiera por escrito.
+Ahora es que **el receipt de adopción y el plan de identidad no coinciden, y
+`refresh` solo acepta deriva de metadatos de runtime**, o sea que el camino de
+auto-reparación del producto **no cubre esta desviación**. Un `conflict` que el
+propio `refresh` no sabe resolver es, por definición, un conflicto que hay que
+resolver a mano — y nadie lo está haciendo.
+
+**El PASS falso se fue; el conflicto sin salida propia es lo que queda, y es
+más difícil de resolver que lo que se iba a resolver.** Por eso la entrada sigue
+`open` y por eso su severidad **no baja** aunque la premisa haya muerto: el
+defecto nuevo no es menos grave, es otro, y se ha medido para que no se confunda
+con el que esta entrada describe.
+
+**Lo que esta revisión NO hace:** no cierra la deuda, no reescribe lo medido
+antes, y no afirma nada sobre si el `conflict` tiene o no causa reparable. Lo
+que sí queda escrito es que **existe, que es del producto y no del entorno, y
+que `refresh` no lo cubre**.
+
+Medición completa y las otras cuatro deudas del mismo clúster:
+`docs/roadmap/receipts/c3m5-bounded-contexts/REVALIDACION-R2.md`.
