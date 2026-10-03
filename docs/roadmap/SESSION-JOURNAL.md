@@ -13026,3 +13026,192 @@ por encima del ultimo tag publicado (`2.5.5 > v2.5.4`). El aviso no es un
 bloqueo, y deberia seguir siendolo: es la firma de que la ventana
 *declarada-pero-no-publicada* sigue abierta, que es exactamente lo que
 `INC-DEBT-040` variante 3 vino a hacer posible.
+
+---
+
+## session_75 — la release salio, y el cierre encontro mas que la release
+
+**Resultado:** `v2.5.5` **PUBLICADA** y el pipeline `bash scripts/release.sh`
+corrio el recorrido `0`..`13` **completo con `EXIT=0`** por primera vez en este
+repo. Commit del tag `886e47cc`, publicada `2026-10-03T22:56:09Z`, 9/9 assets,
+`draft=false`, `prerelease=false`.
+
+| Release | Murio en | Por que |
+|---|---|---|
+| `v2.5.3` | 9c | exigia firma que la via sin firmar no produce |
+| `v2.5.4` | 10 | el instalador negaba lo que el 9c acababa de declarar |
+| **`v2.5.5`** | **nada** | — |
+
+Las dos anteriores eran codigo con el pipeline cortado, y su artefacto era
+**indistinguible** del de una release limpia. Esa indistinguibilidad es
+justamente lo que un receipt por paso elimina: 3b `PASS=16`, 3c `PASS=10`,
+3d `PASS=16` (O6 `NOT_RUN` con su motivo), 3e `PASS=14`, 3f `PASS=9`,
+3g `PASS=8`, 3h autofalsacion `PASS=6 SKIP=0`, manifest de 395 ficheros,
+bundle de 679476 B con staging identico al manifiesto, unified de 12595281 B
+con exec bit, 9/9 assets HTTP 200 en el CDN publico.
+
+**El sha256 del binario local coincide con el que el paso 8 declaro y con el que
+el paso 10 recibio del CDN**: el artefacto publicado, el descargado y el que se
+esta ejecutando son el mismo fichero. Ese round-trip es el unico que prueba que
+la cadena entero, y es lo que nunca se habia visto.
+
+### Y despues del verde aparecieron cuatro defectos mas
+
+Ninguno estaba en el camino de la release. Todos estaban en **la superficie que
+dice que la release esta en verde**, que es otra cosa.
+
+**1. `STATE.yaml` llevaba 41 commits de deriva.** `current_sha` apuntaba a
+`a2b0bd13` y declaraba `2.5.3` con el workspace en `2.5.5`. Lo detecto
+`tests/test_release_state_pointer.sh`, **que alguien ejecuto a mano porque
+estaba en la lista de saltados del log**. Reconciliado con
+`scripts/reconcile_state_pointer.sh`; el puntero quedo en `886e47cc` / `2.5.5` y
+el guard da 9/9.
+
+**2. `manifest.toml` en `2.5.3` mientras todo lo demas estaba en `2.5.5`.**
+Misma clase que el defecto de `BUNDLE.toml` que ya habia arreglado en
+`faddec03`: **un bump es una operacion atomica sobre TODA la superficie
+versionada, y derivar bien no es lo mismo que aplicar a medias.**
+`release-bump.sh:172` ya movia esa clave — la deriva venia de los bumps manuales
+(2.5.3 -> 2.5.4 -> 2.5.5 hechos a mano en `Cargo.toml`), que se saltaron el
+script entero. El comentario de esa linea ya avisa de este caso; lo que faltaba
+era el guard que lo hiciera visible.
+
+**3. CINCO DE LOS TESTS DEL 1b NO SE EJECUTABAN, Y EL 1b LO DECIA EN VERDE.**
+Esta es la pieza cara. `release.sh:268` era:
+
+```sh
+if [ -x "$t" ]; then
+    bash "$t" ... || die
+    ok "shell test: ..."
+else
+    warn "shell test not executable, skipping: $t"   # <- y luego:
+fi
+done
+ok "shell contract tests green"
+```
+
+Cinco de los tests enumerados llevaban `644`, luego se **saltaron en
+`v2.5.3`, `v2.5.4` y `v2.5.5`**, y el paso imprimio `shell contract tests
+green` las tres veces. **Tres releases declaradas verdes con cinco gates sin
+ejecutar**, y uno de ellos llevaba 41 commits de deriva encima.
+
+La leccion no es "hay que ejecutar mas cosas". Es que **la cobertura que cuenta
+el nombre no es la cobertura que ejecuta el bit**: `test_gate_coverage.py`
+declaraba la propiedad "todo test tiene runner" y la cumplia literalmente —
+los cinco estaban *nombrados* en un runner — mientras ninguno corria. Y
+`test_build_identity_policy.sh`, uno de los cinco, tenia **3 checks en rojo**.
+
+Arreglado en tres piezas que se validan entre si:
+
+- **`test_gate_coverage.py` Regla 3**: un test shell en el bucle gateado con
+  `[ -x ]` y sin bit de ejecucion es un FAIL. Falsada **antes** de arreglar
+  nada: dio `9` (los 5 del bucle + 4 que se ejecutan por otra via). La primera
+  version de la regla era demasiado ancha, senalando cuatro guards que si
+  corrian desde su propio paso con `bash` — y **un guard que acusa de rojo a
+  algo que corre bien entrena a ignorar sus rojos**. Acotada al bucle real que
+  usa `[ -x ]`, da exactamente los 5. Y en el camino salio un **bug mio**: la
+  extraccion de la ruta del bucle usaba `argv[3]`, que en
+  `--delta f --repo-path r` es literalmente la cadena `--repo-path`, luego ningun
+  repo casaba y la regla reportaba `0` — un control de no-vacuidad que no puede
+  pasar es indistinguible de uno que no mira.
+- **`release.sh` fail-closed**: `[ -x "$t" ] || die ...`. Un test enumerado que
+  no se ejecuta no es cobertura, es decoracion, y ahora es un fallo del pipeline
+  y no un aviso.
+- **`chmod +x`** sobre los cuatro que ya pasaban, y sobre el quinto cuando
+  quedo verde.
+
+**4. `test_build_identity_policy.sh` tenia 3 fallos reales y una dependencia
+fuera del repo.** Al fin de poder correrlo aparecieron:
+
+- **Contaminacion CJK en lineas anadidas** — en `CHANGELOG.md`, en
+  `SESSION-JOURNAL.md` y **en un test mio**
+  (`test_install_signature_execution_mutation.sh`, que escribi yo). Los dos
+  primeros son la respuesta correcta: `CHANGELOG.md` esta declarado en `KNOWN` como cita
+  intencional, y `SESSION-JOURNAL.md` esta en `EXCLUDED_FILES` por ser
+  append-only — *"se miden, no se corrigen"*. El tercero era mio y se corrigio.
+- **shellcheck**: `SC2329` en `test_release_authenticity_posture.sh` — aqui
+  **shellcheck tiene razon**: `skp()` estaba definida y nunca se invocaba. Y eso
+  significa que el `SKIP=0` que ese guard reportaba **era estructuralmente
+  incapaz de ser otra cosa**: un contador decorativo, no una medida. Borrada,
+  con el motivo escrito. Y `SC2016` en el mutation: siete avisos, y los siete
+  son falsos positivos **por diseno** — las comillas simples contienen el texto
+  literal que se sustituye dentro de `release.sh`, y si el shell del test
+  expandiera los `${...}` estariamos mutando otra cosa, la mutacion "aplicaria"
+  sin cambiar el codigo, y el arnes la contaria como PASS. Disable a nivel de
+  fichero con el motivo, no siete directivas sueltas.
+- **El scanner estaba FUERA del repo**: este guard llamaba a
+  `/var/home/rubentxu/ce/06-scan.py`, una ruta **absoluta** a un fichero de la
+  maquina de quien lo escribio. Tres consecuencias, y la grave no es la primera:
+  la autoridad de la regla de contaminacion no estaba en el repo, luego no se
+  revisa ni se empaqueta; en cualquier otra maquina el fichero no existe,
+  `python3` sale con != 0 y el guard reporta contaminacion en **todo** lo que
+  escanea (rojo falso, no rojo verdadero); y ese scanner tenia reglas y
+  excepciones **propias** que no coincidian con las del guard canonico, que era
+  justo el que senalaba los dos ficheros correctamente declarados.
+  Ahora usa `test_docs_script_contamination.py --delta`, con el mismo regex, la
+  misma distincion PROSA/ARTE, las mismas exclusiones y la misma allowlist:
+  **una autoridad para el concepto**, y por eso los dos guards no pueden
+  discrepar. El modo nuevo se falso en cinco casos (declarado / excluido por
+  fichero / excluido por prefijo / CJK nuevo / limpio) y en la invocacion
+  incompleta, que sale `2` con mensaje en vez de degradar en un PASS.
+
+### Y un gate que solo podia decir que no
+
+`test_changelog_coverage.sh` se quedo en **rojo permanente** al publicar:
+`v2.5.5..HEAD` esta vacio porque el workspace esta en la misma version que el
+tag, y el gate reportaba `no feat/fix/test commits in range`. **Un gate
+permanentemente rojo es la condicion que entrena a ignorar los rojos** — el
+defecto que ese gate existe para cazar, aplicado a si mismo. La distincion que
+decide es si el workspace esta **igual** o **detras** del tag publicado:
+
+- igual -> no hay nada que enviar: `NOT_APPLICABLE`, sale 0. Es el estado limpio
+  de un repo recien publicado.
+- detras -> eso si es un FAIL: la autoridad de version esta detras de la
+  release, que es exactamente la forma de `INC-DEBT-040`.
+
+Falsado en los dos sentidos con restauracion byte-identica por sha256.
+
+### La regla de la sesion, y es la misma de session_74
+
+Session_74 concluyo que **un gate tiene tres estados, no dos: `PASS`, `FAIL` y
+`NO_EJECUTADO`**, y que tratar el tercero como `PASS` es indistinguible de
+estar roto. Esta sesion ha encontrado los **tres estados ausentes** en tres sitios
+distintos y ninguno lo vio nadie:
+
+| | Donde | Como se disfrazaba de verde |
+|---|---|---|
+| `cargo fmt` | paso 1 | gate de un segundo que nadie ejecuto tras mi arreglo |
+| `tests/test_release_state_pointer.sh` | 1b | Enumerado en el `for`, saltado por `[ -x ]`, y el paso decia "green" |
+| `test_build_identity_policy.sh` | 1b | idem, y ademas con 3 checks en rojo y un scanner fuera del repo |
+
+Y una cuarta, que no es un gate sino su enunciado: **`CURRENT.md` declaraba tres
+artefactos de este ciclo que nunca se escribieron en disco.** El directorio no
+existia (medido con `glob` sobre `tests/cycle-artifacts/**/*boundary*`, sin
+coincidencias). Es la misma clase de defecto que el ciclo existe para atacar:
+**una autoridad que declara algo que no esta**. No se reconstruyen desde
+memoria — un `exploration-report.md` escrito tres sesiones despues de la
+exploracion seria una narracion, no una evidencia. Lo que si era restaurable, y
+se restauro, es lo **medido**: la release, su `RECEIPT.md` y su
+`archive-manifest.md`.
+
+### Lo que NO se cierra, escrito para que no se lea como verde
+
+1. **Autenticidad NO verificada.** `SDDK_SKIP_SIGNING=1`, cero firmas, los dos
+   instaladores exigen `SDDK_ALLOW_UNSIGNED=1`. El 9c declaro `NOT_RUN` con su
+   motivo y el cierre del 9b lo califica. La release es valida e instalable;
+   **nadie puede afirmar de donde viene**.
+2. **El ancla sigue siendo el placeholder**
+   `@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@`. **No se fabricara una clave ni un
+   ancla**: eso es fabricar una credencial.
+3. `3h` reporta 7 citas de spec ambiguas de un ID: `SPEC-012` sin autoridad.
+4. `INC-DEBT-064` sigue `open` high/P1: los binarios instalados declaran
+   `source: git`, luego `dev build-id --check` es N/A y no tiene dientes.
+
+### Y lo que decide la proxima sesion
+
+El paso que falta no es un guard: es **una release que ejercite el 1b ya
+fail-closed con los cinco tests por fin ejecutandose**. Nada de lo arreglado
+esta demostrado dentro de un release real, porque los arreglos son de
+tooling — que es justo el patron que ya dio dos veces (v2.2.17, el
+`--strip-components`; y el instalador de tres `local` sin fuente). La prueba es
+`v2.5.6`.
