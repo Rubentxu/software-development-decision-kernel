@@ -12584,3 +12584,57 @@ llame, y eso es un inventario con su propia entrada.
 - UAT / verificacion (este commit, sin cambios en `crates/`): guard de artefactos firmables **PASS=12 FAIL=0** con control que **cuenta** 3 de 3 · su autofalsacion **PASS=7 FAIL=0 SKIP=0** con 5 mutaciones cada una por su comprobacion (quitar el `cp`; romper la resolucion `$TMP`; quitar el incremento del skip; cambiar el all-or-nothing a un `3` literal; devolver `ASSETS` a `$BIN`) · `bash -n` y `shellcheck` limpios · `test_gate_coverage` **SIN runner y SIN motivo: 0** · `test_release_pipeline_consistency` **all checks passed** · `test_changelog_coverage` **PASS=92 FAIL=0** · `test_docs_script_contamination` **PASS**. `cargo test --workspace` **NOT_RUN** aqui: **lo ejecuto el paso `1` de ESTA release, en verde, hace un rato**, y es su recuento. **La prueba que de verdad importa no es un guard verde: es que la release real llegue mas alla del `8c`**, que es lo que todavia no se ha visto.
 - **LO QUE SIGUE ABIERTO Y AHORA ESTA MEDIDO:** (a) **publicar 2.5.3** — la via esta desbloqueada en codigo, falta la ejecucion; (b) **la postura sin firmar** hay que declararla en las notas de release, en `CHANGELOG.md` y en `CURRENT.md`, porque una release sin firmar es una decision de producto y no puede quedar en un flag; (c) el **ancla** sigue siendo el placeholder, luego instalar una release **firmada** sigue siendo imposible sin aprovisionarla, y no la voy a fabricar; (d) `INC-DEBT-067` abierta; (e) la **autoridad de `SPEC-012`**; (f) la superficie de `HostEvent`; (g) la aprobacion de `surface.cycle_state#cycle_supersede`, que no se concede desde aqui.
 - Siguiente paso preciso: **re-ejecutar la release** y leerla entera. Es la segunda vez en esta sesion que un tramo que nadie habia visto resulta no estar roto —o estar roto de una forma que el bug anterior tapaba.
+
+### session_69 — el 8c resolvia el binario donde el binario no vivia (REL-2.5.3)
+
+**Que paso.** La release real (`SDDK_SKIP_SIGNING=1`) llego al paso `8c` con todo lo
+anterior verde y murio: `signed 2 of 3 artifacts. Refusing to publish a partial set`.
+El tramo `8c`..`13` **nunca se habia visto en verde** en la historia de este repo.
+
+**Causa.** El bucle de firma resuelve sus tres artefactos como `"$TMP/$artifact"`.
+El binario desnudo solo vivia en `$BIN` y dentro de `$PACK/bin/sddk` — **en `$TMP` no
+estaba**. Luego `[ -f "$TMP/sddk" ]` era falso, el bucle hacia `continue` sin
+incrementar el contador, y el all-or-nothing contaba 2 de 3.
+
+**Lo que esto demuestra, y es la parte que importa.** **Las dos vias de firma estaban
+rotas por la misma causa.** Con clave, el binario nunca se firmaba. Con
+`SDDK_SKIP_SIGNING=1` — la via que el propio mensaje de error recomendaba — el
+contador nunca llegaba a 3. Es decir: **la recomendacion del error no hacian nada**.
+Un mensaje que dice "pon esta bandera" y la bandera no cambia el resultado es peor que
+un mensaje que dice "no puedo", porque consume un intento y una sesion.
+
+El defecto `3b0dc9dc` entro el 2-oct, **despues** de v2.5.2 (1-oct). Por eso el camino
+local nunca se habia ejercitado: la unica release que paso por el 8c con la firma
+activa es la de la release.yml en cloud, que construye sus artefactos en otro sitio.
+Un camino que solo se ejecuta en produccion se rompe en produccion.
+
+**Arreglo.** Que `$TMP` sea de verdad el unico sitio donde vive cada artefacto
+firmable — que es lo que el bucle **ya asumia**. La alternativa (ensenar al bucle que
+el primero vive en `$BIN`) anade un caso especial y **otra fuente de verdad sobre el
+layout**, que es la clase de defecto que este repo ya ha pagado dos veces.
+
+Ademas `ASSETS` pasa a publicar la copia de `$TMP`, **la misma que firma el 8c**. Con
+`"$BIN"` ahi se publicaba un fichero y se firmaba otro: los bytes coincidian por
+construccion, no por garantia, y una release cuya firma no corresponde a lo publicado
+solo se manifiesta en el usuario.
+
+**Guard.** `tests/test_release_sign_artifacts.sh` (paso `1b`, `PASS=12 FAIL=0`) extrae
+el bucle del producto y comprueba que el 8c es satisfacible en las dos vias.
+Autofalsacion `tests/test_release_sign_artifacts_mutation.sh` (`PASS=7 FAIL=0 SKIP=0`,
+5 mutaciones, cada una cayendo por su comprobacion, 0 `SKIP`).
+
+**Lo que NO se cierra aqui, y por que no.** `assets/trust/release-verify-key.pub` y
+`SDDK_RELEASE_VERIFY_KEY_BODY` en `scripts/install.sh` siguen siendo el placeholder
+`@@SDDK_TRANSITION_ANCHOR_NOT_A_REAL_KEY@@`. **No se fabrica una clave ni un ancla de
+confianza**: eso seria fabricar una credencial, y un ancla de confianza inventada es
+peor que ninguna — parece una garantia y no lo es. Consecuencia honesta: **instalar
+una release firmada sigue bloqueado**, y REL-2.5.3 se publica **sin firmar** por
+`SDDK_SKIP_SIGNING=1`, con los dos instaladores exigiendo `SDDK_ALLOW_UNSIGNED=1` y
+avisos explicitos. La decision queda escrita en el changelog, no solo en la sesion.
+
+**Aprendizaje que se lleva.** Un guard de distribucion tiene que **ejecutar** el
+codigo, no compararlo. Un `local` sin asignar es invisible para un `grep` — de ahi el
+`test_install_signature_execution.sh` de `0f416de2`, con los 7 caminos ejecutados. Y
+un all-or-nothing que no tiene dientes sobre **la existencia** de sus entradas es un
+contador, no una garantia: el 8c contaba 3 y solo encontrava 2, y el numero de
+"firmados" no era el numero de ficheros.
