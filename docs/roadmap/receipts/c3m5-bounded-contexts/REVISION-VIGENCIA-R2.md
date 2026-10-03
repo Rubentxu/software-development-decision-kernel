@@ -241,3 +241,105 @@ mano en estas deudas es una fecha, no un hecho.** El remedio sigue siendo un
 guard que mida la propiedad cada vez, y el guard que falta sigue siendo el
 mismo que la revalidación señaló: por eso R2 **no puede cerrarse** con esta
 revisión, solo puede quedar **revalidada**.
+
+---
+
+## 6. El guard que R2 necesita: **uno sí, otro no**, y el que no se escribe
+
+Las secciones anteriores concluyen que *«cualquier recuento de este clúster
+envejece más rápido de lo que se corrige, y el remedio tiene que ser un guard
+que mida la propiedad cada vez»*. Eso admite **dos** guards distintos, y solo uno
+se puede escribir hoy. Decirlo es parte del trabajo, porque un guard que mide una
+cosa y se llama como si midiera la otra es un guard que miente por el nombre.
+
+### 6.1 `INC-DEBT-060` — guard entregado
+
+`tests/test_cycle_list_total_reconciliation.sh`, con su autofalsación en
+`tests/test_cycle_list_total_reconciliation_mutation.sh`.
+
+**La propiedad que mide, y por qué es la única que no es vacía.** `cycle list`
+imprime su total como `output.cycles.len()` (`crates/sddk-cli/src/cycle.rs:2115`),
+o sea **después** del filtro y sobre el **mismo** vector que emite. Por eso
+*total declarado == filas emitidas* es insatisfacible: no puede fallar sin que el
+comando no corra, y un guard que solo mide eso da verde siempre. **Se intentó
+primero y se descartó por esa razón**, y el error estaba en el diseño del
+guard, no en el producto, que es por lo que va escrito aquí.
+
+La comparación que sí tiene dientes es **de fuente cruzada**: lo que declara el
+producto contra las filas que la autoridad tiene para el proyecto que el propio
+producto declara. Vienen de sitios distintos, luego pueden discrepar, y
+discrepan en cuanto `list_cycles` gana un filtro, un `LIMIT`, un alcance por
+`workspace_id`, o empieza a descartar en vez de contar los manifiestos ilegibles.
+**Ese es exactamente el modo de fallo que produjo las cifras de «187 ciclos» y
+«107 `OPEN`».**
+
+**Hermético y con el producto real, no un mock.** El state home es temporal por
+caso (`SDDK_STATE_HOME`) y el ledger lo crea **el propio producto**, con lo que el
+esquema es el suyo y este guard no lleva una segunda copia de las migraciones. El
+`project_id` se descubre del stdout del producto, no se supone. **Seis** casos:
+una población; **dos poblaciones** (el que discrimina: debe declarar 5, no 9);
+ilegibles contados y marcados; las dos poblaciones con `{}` a la vez; proyecto
+vacío; y el camino del filtro por estado.
+
+**Falsado con nueve modos de mentira, todos detectados, y un control que exige que
+el caso bueno se ACEPTE.** El control es lo que separa un guard de un guard
+vacío: uno que rechazase todo pasaría la falsación sin vigilar nada. **Y cada
+mutación corrompe UNA sola declaración**, porque una mutación compuesta no puede
+decir cuál de las comprobaciones la.CASCADE — que fue el error del primer
+falsificador, que llegó a «descubrir» que cinco comprobaciones eran la misma
+repetida. Y una comprobación sin mutación propia es una comprobación cuya
+necesidad queda sin demostrar: por eso hay nueve y no seis.
+
+**Y la autofalsación de la autofalsación:** el segundo fichero exige que **cada
+comprobación sea load-bearing por separado** (G0..G8), borrándola en una copia de
+sandbox y requiriendo que se pierda exactamente la mutación que dice. Sin eso, un
+guard puede rechazar las nueve mutaciones **por un efecto colateral** y seguir
+pareciendo que vigila la propiedad. `PASS=10 FAIL=0`, con las ocho comprobaciones
+siendo necesarias una por una.
+
+### 6.2 `INC-DEBT-061` — **no hay guard, y está decidido que no lo haya**
+
+`061` **no tiene guard y no se le escribe uno en este ciclo.** No es una
+prioridad pospuesta: es que **no hay superficie de producto que pueda
+reconciliarse contra la autoridad**. La propiedad de `061` —*un `from_id` de
+alias que conserva ciclos y la redirección los esconde*— es cierta **por
+construcción del almacenamiento**, no por un defecto de una declaración. Hoy se
+midió contra la tabla, que es el mismo camino que la revalidación del mismo día ya
+usó, y este guard no puede cerrarlo porque no hay un comando cuya salida contrastar.
+
+Escribir un script que mida esa propiedad y no tenga consumidor sería **reproducir
+exactamente el hueco de `INC-DEBT-065`**: una estructura a medio hacer que nadie
+consulta, con la forma de un gate y el consumo de una nota. **Un guard que mide
+algo que ningún gate consulta no vigila: informa.** Y lo que `061` necesita no es
+un guard, es la **decisión del operador** sobre sus dos salidas, escritas en su
+propio `open_part` y en §3 de este documento.
+
+**La consecuencia práctica, y por qué esto no retrasa nada:** cuando el operador
+decida, el remedio de `061` será una superficie —un comando que nombre la historia
+apartada, o una segunda autoridad de lectura— y **entonces** habrá algo que
+reconciliar y el guard tendrá sentido. **El guard de `060` no espera a esa decisión
+y no la suplanta.**
+
+### 6.3 Lo que este guard **no** demuestra, escrito para que no se lea al revés
+
+- **No demuestra que el ledger real de este repo esté reconciliado.** Mide
+  fixtures cuya verdad el propio guard conoce. El contraste contra el ledger real
+  se hizo **a mano** en §1 (108 de 108) y es evidencia de esta sesión, no del
+  guard. Los fixtures existen para que el guard sea determinista y hermético, no
+  para fingir que vigilan el ledger del operador.
+- **No cubre la población `__spine_import__`.** Esas 79 filas quedan fuera del
+  alcance de `project_id` del proyecto, luego el guard **no puede** detectarlas y
+  su ausencia es correcta. Vigilarla requiere poder *pedir* esa población, y hoy
+  no hay comando que lo haga (§1 lo deja escrito).
+- **No comprueba `sddk ledger events` ni ninguna otra superficie.** Solo la de
+  `cycle list`. La clase de defecto —*declarar una población que la autoridad no
+  tiene*— es la misma que se corrigió en `F63`, pero el guard no la generaliza a
+  otros comandos: hacerlo sin medirlos sería afirmar sin comprobar.
+- **Necesita un binario que tenga `cycle list`, y hoy el del `PATH` no lo tiene.**
+  El guard **falla cerrado** si se le pasa uno sin el subcomando, con el motivo
+  escrito. Es la condición de `INC-DEBT-064` en su forma más literal, y por eso
+  este guard **no puede correr en la ventana declarada-pero-no-publicada sin que
+  se le pase `SDDK_GUARD_BIN` o se construya el binario**: el guard que mide la
+  reconciliación no se puede instalar con el artefacto viejo. Verificado, no
+  supuesto — con `SDDK_GUARD_BIN` apuntando al binario del `PATH` el guard sale
+  con **1** y nombra el motivo.
