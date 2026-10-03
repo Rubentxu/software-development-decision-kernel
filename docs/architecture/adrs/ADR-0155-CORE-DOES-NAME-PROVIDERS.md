@@ -1,3 +1,18 @@
+---
+id: ADR-0155-CORE-DOES-NAME-PROVIDERS
+title: El core no nombra proveedores - capacidad en el tipo, identidad en el valor
+status: accepted
+proposed_at: 2026-10-03
+accepted_at: 2026-10-03
+cycle: p-63676b11dc0ef88f/c3m3-provider-neutral-provenance
+accepted_by_cycle: p-63676b11dc0ef88f/c3m3-provider-neutral-provenance
+supersedes: null
+superseded_by: null
+component: code-intelligence
+surface: crates/sddk-engine/src/code_intelligence_port.rs
+closes: []
+---
+
 # ADR-0155 — El core no nombra proveedores: capacidad en el tipo, identidad en el valor
 
 - **Status:** `accepted`

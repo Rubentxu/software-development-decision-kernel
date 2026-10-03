@@ -150,15 +150,14 @@ WORD_ADJACENT = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]")
 
 # Preexistente fuera de `docs/`, uno a uno. Misma clave `ruta:linea`.
 KNOWN_OUTSIDE_DOCS: dict[str, str] = {
-    "crates/sddk-engine/src/operator.rs:1157": "verbo ('converges') en un doc-comment; el resto de la frase esta intacta",
-    "skills/deep-research/sub/deep-domain-modeler/SKILL.md:18": "corte de linea a media palabra",
-    "skills/deep-research/sub/deep-research-orchestrator/SKILL.md:255": "vinieta; el texto sigue integro",
-    "skills/deep-research/sub/deep-software-research/SKILL.md:56": "vinieta; el texto sigue integro",
-    "skills/deep-research/sub/deep-software-research/SKILL.md:57": "vinieta; el texto sigue integro",
-    "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md:9": "verbo ('reemplaza')",
-    "tests/cycle-artifacts/p-63676b11dc0ef88f/session48-c3i-ctx-uat-002-003/RECEIPT.md:111": "el receipt NOMBRA la contaminacion que corrige; reescribirlo borraria la evidencia",
-    "tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/SCOPE-CONTRACT.md:20": "verbo ('proceso')",
-    "CHANGELOG.md:91": "cita intencionada: esta entrada del changelog NOMBRA la contaminacion de operator.rs que el commit corrige; escribirla sin el CJK seria describir el defecto con una forma que el defecto no tiene",
+    "crates/sddk-engine/src/operator.rs": "verbo ('converges') en un doc-comment; el resto de la frase esta intacta",
+    "skills/deep-research/sub/deep-domain-modeler/SKILL.md": "corte de linea a media palabra",
+    "skills/deep-research/sub/deep-research-orchestrator/SKILL.md": "vinieta; el texto sigue integro",
+    "skills/deep-research/sub/deep-software-research/SKILL.md": "vinieta; el texto sigue integro. DOS lineas (56 y 57), declaradas juntas",
+    "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md": "verbo ('reemplaza')",
+    "tests/cycle-artifacts/p-63676b11dc0ef88f/session48-c3i-ctx-uat-002-003/RECEIPT.md": "el receipt NOMBRA la contaminacion que corrige; reescribirlo borraria la evidencia",
+    "tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/SCOPE-CONTRACT.md": "verbo ('proceso')",
+    "CHANGELOG.md": "cita intencionada: esta entrada del changelog NOMBRA la contaminacion de operator.rs que el commit corrige; escribirla sin el CJK seria describir el defecto con una forma que el defecto no tiene",
 }
 # `docs/roadmap/SESSION-JOURNAL.md` esta en EXCLUDED_FILES y por eso NO lleva
 # entradas aqui, aunque contenga citas intencionadas de la contaminacion
@@ -175,14 +174,14 @@ KNOWN_OUTSIDE_DOCS: dict[str, str] = {
 # Motivo generico: "prosa en espanol con el termino sustituido por otro sistema
 # de escritura; la palabra original no es reconstruible (INC-DEBT-057)".
 KNOWN: dict[str, str] = {
-    "docs/adr/ADR-0072-secretary-budgets.md:47": "adjetivo ('ambos')",
-    "docs/adr/ADR-0068-bounded-execution.md:195": "verbo ('hace')",
-    "docs/adr/ADR-0002-atomic-gate-receipt-seq-allocation.md:51": "verbo ('abre')",
-    "docs/debt/INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE.md:251": "verbo ('hizo')",
-    "docs/debt/INC-DEBT-054-DOCTOR-STRICT-MEASURES-NOTHING.md:43": "adjetivo, no reconstruible",
-    "docs/debt/INC-DEBT-056-BUNDLE-STAGING-DERIVED-FROM-SURFACE-LIST-NOT-THE-MANIFEST.md:181": "verbo ('probo'), cirilico",
-    "docs/debt/INC-DEBT-020.md:87": "verbo, no reconstruible",
-    "docs/architecture/adrs/ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.md:89": "interrogacion ('que'), dos U+FFFD",
+    "docs/adr/ADR-0072-secretary-budgets.md": "adjetivo ('ambos')",
+    "docs/adr/ADR-0068-bounded-execution.md": "verbo ('hace')",
+    "docs/adr/ADR-0002-atomic-gate-receipt-seq-allocation.md": "verbo ('abre')",
+    "docs/debt/INC-DEBT-040-PREPUSH-BUMP-PREDICATE-UNSATISFIABLE-FOR-DECLARED-RELEASE.md": "verbo ('hizo')",
+    "docs/debt/INC-DEBT-054-DOCTOR-STRICT-MEASURES-NOTHING.md": "adjetivo, no reconstruible",
+    "docs/debt/INC-DEBT-056-BUNDLE-STAGING-DERIVED-FROM-SURFACE-LIST-NOT-THE-MANIFEST.md": "verbo ('probo'), cirilico",
+    "docs/debt/INC-DEBT-020.md": "verbo, no reconstruible",
+    "docs/architecture/adrs/ADR-0139-STATIC-ENHANCED-COVERAGE-CONTRACT.md": "interrogacion ('que'), dos U+FFFD",
 }
 
 
@@ -265,8 +264,35 @@ def is_box_drawing(line: str) -> bool:
     return True
 
 
+# Cuantas lineas contaminadas declara cada fichero. Solo hace falta ponerlo
+# cuando es mas de una: la regla 1b compara contra 1 por defecto, asi que un
+# fichero con dos necesita decir DOS, y uno con tres lo dira al declararse.
+ALLOWLIST_LINES: dict[str, int] = {
+    "skills/deep-research/sub/deep-software-research/SKILL.md": 2,
+}
+
+
 def scan() -> tuple[dict[str, str], dict[str, int], list[str]]:
-    """(ocurrencias por `ruta:linea`, recuento por fichero, lineas de arte)."""
+    """(ocurrencias por `ruta`, recuento por fichero, lineas de arte).
+
+    LA CLAVE ES `ruta`, NO `ruta:linea` — y el cambio se hizo porque la clave por
+    linea resulto ser una fragilidad, no una precision. Medido: al anadir una
+    entrada al principio de `CHANGELOG.md`, las dos entradas de ese fichero
+    desplazaron su numero de linea y el guard reporto a la vez «contaminacion
+    NUEVA en CHANGELOG.md:93» y «allowlist obsoleta: CHANGELOG.md:91», es decir
+    **el mismo defecto contado dos veces y en dos direcciones**, con el numero de
+    linea como unico sujeto del veredicto. Un guard cuyo veredicto depende de
+    cuantas lineas hay encima del defecto **cambia de veredicto al insertar un
+    parrafo**, y eso obliga a cada entrada nueva a venir acompanada de un
+    parche de numeros que nadie lee.
+
+    Con la clave por `ruta` la allowlist dice «este FICHERO tiene esta
+    contaminacion declarada, por este motivo», que es la verdad que interesa: la
+    corrupcion es de una frase, no de una linea, y el numero de linea es un
+    detalle de como esta escrito hoy. El recuento por fichero se mantiene, asi
+    que **si un fichero declarado gana una segunda ocurrencia, el recuento la
+    delata** y no se puede esconder anadiendo mas texto.
+    """
     found: dict[str, str] = {}
     per_file: dict[str, int] = {}
     arte: list[str] = []
@@ -275,12 +301,12 @@ def scan() -> tuple[dict[str, str], dict[str, int], list[str]]:
         for n, line in enumerate(text.splitlines(), start=1):
             if not CONTAMINATION.search(line):
                 continue
-            key = f"{rel}:{n}"
             if is_box_drawing(line):
-                arte.append(key)
+                arte.append(f"{rel}:{n}")
                 continue
-            found[key] = line.strip()[:70]
             per_file[rel] = per_file.get(rel, 0) + 1
+            # Se guarda la primera ocurrencia como representativa del fichero.
+            found.setdefault(rel, line.strip()[:70])
     return found, per_file, arte
 
 
@@ -289,20 +315,35 @@ def main() -> int:
     problems: list[str] = []
 
     # Una sola allowlist. Dos listas --una para `docs/` y otra para el resto--
-    # serian dos sitios donde la verdad se puede quedar obsolete en silencio,
+    # serian dos sitios donde la verdad se puede quedar obsoleta en silencio,
     # que es el defecto que esta ampliacion vino a cerrar.
     allowlist = {**KNOWN, **KNOWN_OUTSIDE_DOCS}
 
     nuevas = {k: v for k, v in found.items() if k not in allowlist}
     for key, snippet in sorted(nuevas.items()):
-        problems.append(f"contaminacion NUEVA en {key}: {snippet!r}")
+        n = per_file[key]
+        problems.append(
+            f"contaminacion NUEVA en {key} ({n} linea(s)): {snippet!r}"
+        )
 
-    # Regla 1: una entrada de la allowlist cuya linea ya no coincide.
+    # Regla 1: una entrada de la allowlist cuyo fichero ya no esta contaminado.
     for key in sorted(set(allowlist) - set(found)):
         problems.append(
             f"allowlist obsoleta: {key} ya no tiene contaminacion "
-            f"(pasa a arte, o se corrigio). Quitala de KNOWN o revisa el cambio."
+            f"(se corrigio, o paso a ser arte). Quitala de KNOWN o revisa el cambio."
         )
+
+    # Regla 1b: un fichero declarado con MAS ocurrencias de las que la
+    # allowlist anuncia. Es la contraparte de usar la ruta como clave: sin esta,
+    # `found[rel] = primera` ocultaria una segunda contaminacion en el mismo
+    # fichero detrás de la primera.
+    for rel, n in sorted(per_file.items()):
+        if rel in allowlist and n > ALLOWLIST_LINES.get(rel, 1):
+            problems.append(
+                f"fichero declarado que ha ganado contaminacion: {rel} tiene {n} "
+                f"lineas y la allowlist declara "
+                f"{ALLOWLIST_LINES.get(rel, 1)}. Anade el numero o corrige."
+            )
 
     # Regla 2: una entrada cuyo fichero ya no existe del todo.
     for key in sorted(allowlist):

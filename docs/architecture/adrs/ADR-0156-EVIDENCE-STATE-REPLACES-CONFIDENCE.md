@@ -1,3 +1,19 @@
+---
+id: ADR-0156-EVIDENCE-STATE-REPLACES-CONFIDENCE
+title: G01 exige refs, no confianza - el estado evidencial sustituye a la magnitud
+status: accepted
+proposed_at: 2026-10-03
+accepted_at: 2026-10-03
+cycle: p-63676b11dc0ef88f/c3m4-evidence-states
+accepted_by_cycle: p-63676b11dc0ef88f/c3m4-evidence-states
+supersedes: null
+superseded_by: null
+component: evidence
+surface: crates/sddk-domain/src
+closes:
+  - INC-DEBT-066
+---
+
 # ADR-0156 — G01 exige refs, no confianza: el estado evidencial sustituye a la magnitud
 
 - **Status:** `accepted`
