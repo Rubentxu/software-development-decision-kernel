@@ -11553,3 +11553,68 @@ decidir la publicación del harness Pipelinek-Test-Hardness, 44 commits sin
 publicar. Antes de cualquier medición: construir el binario del repo y
 comprobarlo con `dev build-id --check`; si da `relation: behind` o exit 1, la
 medición es sobre un binario viejo y no vale.
+
+
+---
+
+## session-69n bis 8 (bis) — 2026-10-03 — revisión de vigencia de INC-DEBT-058
+
+**Baseline / HEAD.** `5327c929` = `origin/main` al empezar. Al cerrar,
+`1a802f83` + el commit documental. Workspace **2.5.3 declarada, no publicada**.
+
+**Por qué este trabajo.** El objetivo dice que *alerta «deuda» sin verificar si
+sus criterios siguen vigentes no es deuda real*. Con los seis ciclos
+bloqueados por la clave KMS, lo autónomo que queda es exactamente eso: revisar
+la deuda. Se eligió INC-DEBT-058 porque es la única cuya clase se puede
+comprobar sin ninguna capacidad nueva.
+
+**Lo que se verificó, y el resultado.** Las cinco corrupciones de la tabla se
+volvieron a medir contra el HEAD de hoy, cada una en la línea exacta que el
+documento cita: `ADR-0148:67`, `INC-DEBT-021:309`, `INC-DEBT-040:251`,
+`INC-DEBT-043:62`, `INC-DEBT-046:114`. **5 de 5 siguen presentes.** La clase no
+se ha cerrado sola por el paso del tiempo, luego el criterio sigue vigente y la
+severidad se queda en `low`/`P3`: el remedio depende de detectar idioma, que el
+propio documento declara fuera del alcance de un guard de `tests/`.
+
+**EL HALLAZGO, y es sobre el propio documento: su tabla de evidencia tenía una
+errata.** Citaba `puedeAsociar`; el texto real es `puedeAssociar` — la
+diferencia es una `s`. Cuatro de las cinco citas casaban exactamente, y la
+quinta no.
+
+**No se detectó leyendo el documento, sino verificando la cita.** El `grep`
+que buscaba la palabra que el documento decía haber medido no encontraba nada, y
+un `git cat-file` del blob la devolvía con otra forma. **Una cita que no se
+puede reproducir es una cita falsa**, y es la misma clase de defecto que el
+guard de esa deuda vino a cerrar, cometida en su propia tabla de evidencia.
+
+**Y un error mío que costó veinte minutos y explica el resto de la sesión.**
+Al escribir la corrección creé un fichero **nuevo**: `...-SLICE-...` (56
+caracteres) junto al de git, `...-SLICES-...` (57). Desde entonces *cada* lectura
+del original fallaba con `ENOENT`/`stat` imposible, y `grep` no encontraba
+palabras que existían — síntomas que parecían un disco de red degradado y que
+`git fsck` (exit 0) no respaldaba. **La explicación correcta era una: había dos
+ficheros y el que leía no era el que buscaba.** Fusionado el contenido
+corregido en el de git y eliminado el mío.
+
+**La lección, que es la misma de siempre y por octava vez:** *escribir sobre la
+corrupción la genera.* Y en su forma más difícil de ver: no una letra en
+`U+FFFD` o un CJK, sino **un nombre de fichero mal tecleado** que produce
+síntomas que apuntan al entorno en vez de a la causa.
+
+**Sobre el entorno, medido y no por conjetura:** el repo está íntegro — `git fsck`
+exit 0, `HEAD` y el índice concuerdan, los 104 `.md` de `docs/debt/` se leen
+sin excepción una vez eliminado el duplicado. No hay defecto del disco que
+reportar.
+
+**Contaminación de redacción, dos casos, y los dos los detecta la mitigación
+declarada por esta misma deuda** — que es «barrer a mano antes de commitear»:
+`Made` y `Depending`, ambos en el texto que acababa de escribir, detectados
+leyendo y no escaneando. El scanner dio CLEAN en los dos casos, que es
+precisamente lo que el documento predice.
+
+**Primer paso preciso de la sesión siguiente.** Nada en este ciclo ni en
+INC-DEBT-058 es autonomía-accionable. Lo que espera decisión del operador: la
+**clave KMS** (release 2.5.3 y los seis ciclos en `RELEASE_PENDING`), y
+**INC-DEBT-050, 061, 060, 063, 049**. Antes de cualquier medición, construir el
+binario del repo y comprobarlo con `dev build-id --check`: si da
+`relation: behind` o exit 1, la medición es sobre un binario viejo.
