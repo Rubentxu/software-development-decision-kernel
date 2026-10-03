@@ -71,6 +71,69 @@ All notable changes to this project are documented in this file.
   - fix(uat): el veredicto de sesion salia READY sin haber ejecutado nada — la regla del veredicto estaba escrita **tres veces**, y las dos copias sin plan contra el que cruzar contaban `Fail`/`Blocked`/`NotRun` sobre `results`: con la lista vacía salían tres ceros y caían en el `else` → `READY`. El guard de integridad que ya rechazaba una sesión `executor: human` fabricada es `if executor == Human`, luego una sesión `executor: fara` con `results: []` se aceptaba, se persistía como lista en el control plane, y `total = results.len().max(1)` enmascaraba el vacío en el denominador de cobertura. Peor que los otros dos del género: `verify-chain` y `doctor --strict` contestaban `PASS`/exit 0 —integridad—, y este contesta `READY`, que es afirmación de aptitud para publicar. RED medido `left: "READY" / right: "NOT_READY"`. Ahora hay una sola autoridad, `UatVerdict::from_counts` / `from_results`, y las tres copias delegan: `from_counts` es **la regla que `aggregate_report` ya aplicaba** —la única que contaba `Partial`—, sin cambio de comportamiento donde ya se usaba, y `from_results` añade una sola cosa, `results` vacío → `NOT_READY`. La clase de `Partial` **no se decide aquí**: ADR-012 §6 no la menciona, `aggregate_report` la trata como riesgo y las otras dos ni la contaban, así que se adopta la autoridad previa y se registra el hueco de contrato (INC-DEBT-055)
 
 ### Documentation
+
+### feat(roadmap) + docs(debt): C3m.4 medido, y el «número mágico» tenía pedigree falso
+
+Ciclo `c3m4-evidence-states` abierto y **detenido en `explore` con
+`Readiness: NOT_READY`**, como C3m.1 y por la misma razón: falta una decisión de
+producto que no se deduce leyendo código. Lo que se midió es más fuerte que lo
+que el roadmap suponía.
+
+**El objetivo de C3m.4 era quitar una confidence mágica. La que hay en
+`storage_snapshot_l1_consumer.rs:124` —`if snapshot.log_head > 0 { 0.95 } else
+{ 0.5 }`— no es un número mágico con una base discutible: es un número con
+**pedigree falso**. La cadena, medida fichero a fichero: la fila canónica de
+G01 (`UAT-MATRIX.md:42`) es «snapshot Planning reconciliado, A bloquea B», con
+aceptación «Agenda indica candidato/causa y refs; NO autorización de ejecución por
+`project_next`» — **0 menciones de `confidence`**; el SCOPE que transcribe esa
+fila (`aiw-s7-secretary-attention/SCOPE-CONTRACT.md:43`) **tampoco, en ninguna de
+sus líneas**; la cláusula aparece por primera vez en el `RECEIPT.md:42` del
+propio ciclo, **junto al `PASS` que la cubre**, y la repite `UAT-EVIDENCE.yaml`.
+**Un ciclo escribió una cláusula normativa, se certificó contra su propia
+cláusula, y dejó dos tests que ahora defienden el número como si fuera
+requisito.** El `//! Spec:` del propio módulo apunta a un `SCOPE-CONTRACT.md` que
+**no existe**: el directorio del ciclo tiene `RECEIPT.md` y `UAT-EVIDENCE.yaml`,
+no el SCOPE, y el scope real de G01 está en el ciclo de otro nombre —lo declara
+el propio `UAT-EVIDENCE.yaml:3`.
+
+**Y el número no gobierna nada, medido.** Hay **9** lecturas de un campo
+`confidence` en código de producto y **ninguna es de un `SecretaryProposal`**:
+son de `ContinuationCandidate`, del trigger de `dynamic_expansion`, de
+`AgentContributionEnvelope`, de `UatOracleAssessment` y de `TestSelectionPlanV1`
+— cuatro tipos más, cada uno con su contrato. Los **únicos** consumidores de la
+confianza de un proposal son los **dos tests que comprueban que vale 0.95 o
+0.5**: el número existe porque un test lo afirma, y el test lo afirma porque el
+número existe. Misma clase en `test_select.rs:709`, donde
+`if prop.has_unmapped { 0.0 } else { 1.0 }` convive con un retorno temprano por
+**la misma condición** en `:687`: la rama `0.0` es **código muerto** y
+`confidence` es una **constante `1.0`**.
+
+**Registrado como INC-DEBT-066** (`high`/`P1`, `CL-VERIFICATION`). `high` y no
+`critical` porque no hay pérdida de datos: lo que se rompe es **la veracidad de
+la certificación**, la única moneda del framework, porque un `PASS` que
+certifica algo que la fila no exige hace que `PASS` deje de significar «cumple el
+criterio». Y **bloquea C3m.4**: no se puede quitar el número sin declarar antes
+qué exige G01, porque hoy **dos artefactos commiteados afirman que la exige** y
+la fila que la define **no la menciona** — borrarlo sin eso deja la
+certificación y el código contradiciéndose sin que nadie sepa cuál dice la verdad.
+
+**La medición va autocomprobada y falsificada, y la falsificación encontró dos
+defectos del verificador que importan más que el resultado.** `12 de 12
+detectadas`, `shellcheck` limpio. Pero **la primera pasada dio 8 de 12**, y las
+dos supervivientes eran suyas: una buscaba `PASS` en el **fichero entero** del
+recibo en vez de **en la fila de G01** —y había filas ajenas que también lo
+tienen—, y la otra cortaba `#[cfg(test)]` en el **fin del fichero**, con lo que
+**no veía código de producción escrito después** del módulo de test. **Arreglar
+la segunda subió un número de 8 a 9 lecturas**, porque el verificador corregido
+vio `sddk-cli/src/uat.rs:3896`: *un corte que se salta producción da un número
+más pequeño, y un número más pequeño parece más tranquilizador.* Las dos
+correcciones llevan **mutaciones propias** para que un arreglo hecho «para dar
+verde» no pueda sobrevivir sin que se note.
+
+**Y el defecto que ya venía de antes, nombrado por su propia forma:** el mismo
+error de medir *mención* donde se iba a medir *uso*, por cuarta vez en esta
+sesión. Un verificador que sobrevive a su propia mutación es un documento que
+se certifica solo.
   - docs(debt): INC-DEBT-065, los 24 módulos públicos de `sddk-engine` que nada consume quedan en un inventario y no en 24 fichas — decisión del operador sobre la medición de §3ter, y el motivo de que sea **una** entrada no es de estilo: es la **misma clase que `INC-AUDIT-S14-TEST-PORTS-UNCONSUMED`** —«9 traits del SPI de SPEC-043, implementados dentro del crate pero sin consumidor externo»—, que ya tenía su cluster (`CL-SPECULATIVE-GENERALITY`). 24 filas que nadie puede comparar entre sí no son un inventario; una entrada con la medición permite **ver el conjunto, detectar cuándo cambia y agruparlo con lo que ya estaba registrado**. **`medium` y no `high`, y la elección es deliberada:** 24 módulos sin consumidor no degradan por sí solos ninguna funcionalidad, así que declararlos `high` sería inflar el inventario con una cifra que no se sostiene — **el defecto registrado es la ausencia del registro, no los 24 módulos**. `reactive_verify` sí es de otra gravedad y **no se infla aquí para no contaminar la medición**: tiene su propia vía y su propio bloqueo. **Ningún módulo directorio está sin consumir** —los 23 que son directorio con `mod.rs` (`event_bus`, `architecture_receipt`, `context_compiler`, `verify_kernel`, `observation`, `tasks`) están todos conectados—, o sea que la superficie grande y estructural del engine está bien y lo que falta son 24 módulos planos. **La entrada se niega a decir que «sin consumidor» es «código muerto», y hay un caso dentro de la propia lista que lo refuta:** `gate_evaluator` no lo consume nada y el comando `sddk cycle evaluate-gate` existe y funciona, porque resuelven los gates por caminos distintos —el módulo evalúa `debt-severity-assigned` y `debt-priority-assigned` sobre `DebtReport` (`gate_evaluator.rs:26,29`), el comando va por `GateEvaluationInput`—. *Dos cosas que comparten nombre sin relación*, el mismo patrón que llevó `KMT` a ADR-0154. Los 10 «solo tests» van **aparte**, porque su código corre y lo que no existe es un comando que lo alcance; de ellos `dynamic_expansion` y `ext_outcome` son los que C3n.2 lista como capacidades certificables (*S4 dynamic expansion*), y **una capacidad que se certifica desde pruebas y no desde un comando es una certificación que nadie puede repetir por el camino que la usa**. **Falsificado contra la salida real del instrumento**, comparando las dos listas en las dos direcciones: 24 y 10 exactos, 0 medidos sin citar y 0 citados sin medir. La primera versión de esa comparación dio 34 y 10 porque el parser no entendía el bloque de dos columnas — **un comparador que no se autocomproba también miente, y el primer resultado de la comprobación fue eso**. **No se borra nada**: una entrada de inventario no es una lista de borrables
   - docs(roadmap): si «módulo público sin entrada» es un caso o un patrón, y el instrumento que lo mide estuvo ciego justo a lo que investigaba — el §3bis dejó abierta la pregunta de si `reactive_verify` es un hueco aislado o la misma forma en 24 sitios del engine. Se mide sobre los **131** módulos públicos de `sddk-engine`, con un instrumento que **se autocomprueba contra cuatro casos conocidos verificados a mano** y **no publica ningún número** (exit 2) si alguno falla. **El instrumento dio cuatro números falsos antes de dar uno con base, y cada fallo es un modo distinto de mentir**: (1) buscar sólo en `sddk-engine/src` → 52, porque la CLI vive en otro crate y todo lo que consume salía como «sin entrada»; (2) buscar en todo `crates/` → 41, porque medía *mención del símbolo* y no *consumo*: la CLI llama un **método** (`engine.cycle_pause`) sin construir el struct de entrada; (3) contar quién usa el módulo excluyendo `lib.rs` → 38, porque la CLI consume por el **camino corto** (`use sddk_engine::algo`), sin que el nombre del módulo aparezca en su fichero. **Y el cuarto fallo es el que casi se lleva la conclusión:** el criterio de «fichero base» sólo aceptaba `src/<m>.rs`, así que se saltaba **23 de los 131** —los que son **directorio con `mod.rs`**—, y entre ellos estaba **`architecture_receipt`, que es el consumidor real de la salida de `reactive_verify`**. Un instrumento que se salta al consumidor de lo que investiga no puede después declarar «sin consumidor»: se dice de lo que se mira, no de lo que no se miró. Los 23 resultaron ser 21 con consumidor y 2 sólo desde tests, así que **el número de "sin consumidor" no cambió (24, los mismos 24)** — pero el de v3 estaba mal aunque el resultado coincidiera, y por un motivo que esta vez no movió la respuesta. Eso no es suerte: es la razón por la que el denominador se declara explícito, y por la que la superficie medida pasó de 108 a **131 de 131, con 0 sin clasificar**. El arreglo (`base_de()` + `es_propio()`) trae **dos controles nuevos que son precisamente el camino nuevo**: `event_bus` y `architecture_receipt`, ambos directorio y ambos con consumidor de producto comprobado a mano (`sddk-cli/src/cycle.rs:21` y `architecture_cmd.rs:28`) — sin ellos la corrección no habría tenido con qué autocomprobarse. Resultado: **97 con consumidor de producto, 10 consumidos sólo por pruebas, 24 sin consumidor**, y **ningún módulo directorio sin consumir**. Los 24 incluyen `reactive_verify`, así que el hallazgo se confirma sobre su propio caso, ahora sobre la superficie completa. **Y un módulo sin consumidor no es código muerto**, que es lo que `gate_evaluator` demuestra: el comando `sddk cycle evaluate-gate` existe y funciona, pero resuelve los gates por otro camino — *dos cosas que comparten nombre sin relación*, el mismo patrón que llevó a KMT a ADR-0154. El instrumento queda en el repo junto al SCOPE, con la ruta deducida de su propia ubicación, para que el número sea reproducible y no una afirmación de sesión
   - docs(adr): ADR-0153 a `accepted`, con los siete criterios medidos uno a uno y uno de ellos reescrito — la aceptación no se declara por suma, así que cada criterio se ejecutó por separado: `bash tests/test_adr_0153_criteria.sh` reporta el veredicto de cada uno y **exige que pasen todos** los tests de un criterio que tiene varios, para que un verde agregado no pueda tapar uno rojo. Resultado **PASS=7 FAIL=0**. El **criterio 1 estaba redactado de una forma que ninguna implementación correcta podía cumplir**: decía «`Cargo.toml` no aparece en `version.rs`», y los tests de paridad de Rust tienen que *construir* un `Cargo.toml` para comprobar que el lockstep no ha cambiado. Medido: trece apariciones, **cero** en código de producción —seis fixtures, dos asserts sobre el mensaje y cinco comentarios que cuentan la historia—. Se reescribe a la propiedad que sí tiene dientes, «el código que resuelve no nombra ningún manifiesto», y se hace cumplir con un test **estructural** que recorta el `REGISTRY` —que sí debe nombrarlos, porque es donde vive el dato— y que además está **falsificado**: inyectar un `root.join("Cargo.toml")` en el lector lo hace fallar. Con esto **INC-DEBT-051 queda resuelta** y sus cuatro falsificadores F56–F59 están medidos contra el binario. Reconciliación de redacción, escrita y no omitida: F56 y F59 hablan de «adapter» y el contrato elegido **no tiene adapters** —es un registro de ecosistemas, y añadir uno es solo datos—, así que cambia el sustantivo y no la exigencia de que la comprobación sea auditable

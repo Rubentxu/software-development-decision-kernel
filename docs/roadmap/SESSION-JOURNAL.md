@@ -11931,3 +11931,94 @@ desbloquea: *qué* superficie produce el evento. Fabricar un productor de
 se deduce leyendo código, y construir encima un KMT alimentado por un productor
 inventado es exactamente la forma de INC-DEBT-064. **C3m.1 sigue en `NOT_READY`
 y no se mueve.**
+
+### feat(roadmap) + docs(debt): C3m.4 — el «número mágico» tenía pedigree falso, y la falsificación encontró dos defectos del verificador
+
+Ciclo `p-63676b11dc0ef88f/c3m4-evidence-states` abierto (`OPEN`/`explore`,
+`A-full`, sequence 1) y **detenido con `Readiness: NOT_READY`**, como C3m.1 y por
+la misma razón: falta una decisión que no se deduce leyendo código.
+
+**Lo medido es más fuerte que lo que el roadmap suponía.** C3m.4 quería quitar
+una `confidence` mágica. La que hay en
+`crates/sddk-gateway/src/storage_snapshot_l1_consumer.rs:124` —`if
+snapshot.log_head > 0 { 0.95 } else { 0.5 }`— **no es un número mágico con una
+base discutible: es un número que la fila canónica de G01 no exige.**
+
+La cadena, medida fichero a fichero, y este es el hallazgo:
+
+- La fila canónica de G01 (`UAT-MATRIX.md:42`) es «snapshot Planning
+  reconciliado, A bloquea B», con aceptación «Agenda indica candidato/causa y
+  refs; NO autorización de ejecución por `project_next`». **Cero menciones de
+  `confidence`.**
+- El SCOPE que transcribe esa fila
+  (`aiw-s7-secretary-attention/SCOPE-CONTRACT.md:43`) **tampoco la menciona, en
+  ninguna de sus líneas**.
+- La cláusula aparece por primera vez en el `RECEIPT.md:42` del propio ciclo,
+  **junto al `PASS` que la cubre**: «G01 | PASS | …; confidence 0.95/0.5 by
+  head». `UAT-EVIDENCE.yaml:11` la repite.
+- El `//! Spec:` del propio módulo (`:6`) apunta a un `SCOPE-CONTRACT.md` que
+  **no existe**: el directorio del ciclo tiene `RECEIPT.md` y
+  `UAT-EVIDENCE.yaml`, no el SCOPE. Y `UAT-EVIDENCE.yaml:3` declara que el
+  scope real de G01 está en el ciclo **de otro nombre**.
+
+*Un ciclo escribió una cláusula normativa, se certificó `PASS` contra su propia
+cláusula, y dejó dos tests que ahora defienden el número como si fuera
+requisito.* El `evidence_ref` que el código deriva **sí cumple la fila
+canónica**; lo que se impugna es la cláusula añadida y el `PASS` que la cubre.
+
+**Y el número no gobierna nada.** Hay **9** lecturas de un campo `confidence` en
+código de producto y **ninguna es de un `SecretaryProposal`**: son de
+`ContinuationCandidate`, del trigger de `dynamic_expansion`, de
+`AgentContributionEnvelope`, de `UatOracleAssessment` y de `TestSelectionPlanV1`
+— cuatro tipos más, cada uno con su contrato. `UatOracleAssessment.confidence`
+**sí se discrimina** (`LowAiConfidence: mejor confidence < 0.7`, `uat.rs:540`) y
+el CLI la muestra: el framework ya sabe consumir confianza, y este campo es una
+isla desconectada. Los **únicos** consumidores de la confianza de un proposal son
+los **dos tests que comprueban que vale 0.95 o 0.5** — el número existe porque un
+test lo afirma, y el test lo afirma porque el número existe.
+
+**Segunda instancia, misma clase.** `crates/sddk-domain/src/test_select.rs:709`:
+`let confidence = if prop.has_unmapped { 0.0 } else { 1.0 };` con un retorno
+temprano por **la misma condición** en `:687`, y `has_unmapped` fijado una vez
+en `:247` sin mutarse. **La rama `0.0` es inalcanzable y `confidence` es una
+constante `1.0`.** Ese campo tampoco lo lee nadie.
+
+**Registrado como INC-DEBT-066** (`high`/`P1`, `CL-VERIFICATION`,
+`related: [INC-DEBT-063, INC-DEBT-065]`). `high` y no `critical` porque no hay
+pérdida de datos: lo que se rompe es **la veracidad de la certificación**, que es
+la única moneda del framework — un `PASS` que certifica algo que la fila no
+exige hace que `PASS` deje de significar «cumple el criterio». Es la misma clase
+que INC-DEBT-063 y la que hizo que C3n existiera. **Y bloquea C3m.4**: no se
+puede quitar el número sin declarar antes qué exige G01, porque **dos artefactos
+commiteados afirman que lo exige** y la fila que lo define **no lo menciona**;
+borrarlo sin eso deja certificación y código contradiciéndose sin que nadie sepa
+cuál dice la verdad.
+
+**La medición va autocomprobada y falsificada, y eso es lo instructive.**
+`verificar-medicion.py` comprueba una a una las afirmaciones del SCOPE contra el
+disco y **no publica el documento si alguna no se sostiene**;
+`falsificar-medicion.sh` aplica **12 mutaciones al source real** sobre una copia
+del repo y exige que el verificador caiga en cada una. Resultado: **12
+detectadas, 0 sobrevividas, 0 no medibles**, `shellcheck` limpio.
+
+**La primera pasada dio 8 de 12, y las dos supervividas eran defectos del
+verificador — y una de ellas cambió un número hacia arriba, que es la parte que
+conviene leer:**
+
+1. Una buscaba `PASS` en el **fichero entero** del recibo en vez de **en la fila
+   de G01**; había filas ajenas que también contienen `PASS`, así que el check
+   podía dar verde por el motivo equivocado.
+2. La otra cortaba `#[cfg(test)]` en el **fin del fichero**, con lo que **no
+   veía código de producción escrito después** del módulo de test. **Arreglarla
+   subió el recuento de 8 a 9 lecturas**, porque el verificador corregido vio
+   `sddk-cli/src/uat.rs:3896`, el CLI mostrando la confianza de un assessment:
+   *un corte que se salta producción da un número más pequeño, y un número más
+   pequeño parece más tranquilizador.* La corrección sube el listón; no lo baja.
+
+Ambas correcciones llevan **mutaciones propias** (M11, M12) para que un arreglo
+hecho «para dar verde» no pueda sobrevivir sin que se note.
+
+**El defecto que ya venía de antes, nombrado por su forma:** el mismo error de
+medir *mención* donde se iba a medir *uso*, por cuarta vez en esta sesión. Un
+verificador que sobrevive a su propia mutación es un documento que se certifica
+solo.
