@@ -11292,3 +11292,78 @@ una forma de reproducirlo. Los caracteres no se reproducen aquí.
 **Primer paso preciso de la sesión siguiente.** Readquirir el lease
 (anotando el `fencing_token` nuevo) y ejercer `dev build-id --check` como lo
 usaría un gate real, antes de graduar ningún gate de la verify.
+
+---
+
+## session-69n bis 6 — 2026-10-03 — verify de `cl-build-identity` cerrada; el ciclo pasa a RELEASE_PENDING
+
+**Baseline / HEAD.** `HEAD` = `68874b35` == `origin/main`; este commit
+documental es posterior y no es evidencia de ese SHA. Workspace **2.5.3
+declarada, no publicada**.
+
+**WorkItem.** `p-63676b11dc0ef88f/cl-build-identity`, cerrado de `verify`.
+
+**La medición que sostiene la verify, y que faltaba.** `--check` ejercitado
+como lo usaría un gate real, con el **mismo binario** contra dos checkouts:
+contra `HEAD` → `relation: Matches`, exit 0; contra un checkout un commit
+atrás → exit 1. Es la propiedad que faltaba antes del arreglo de `11c8e1d9`,
+donde ese segundo caso salía con exit 0 mientras su `reason` decía que al
+binario le faltaba trabajo.
+
+**Gates, con evidencia ejecutada.** REQ-IPV (spec-v2, cycle-44) exige un
+comando con `argv`, `exit_code` y `output_digest` en el nivel superior.
+`tests-pass`: `cargo test --workspace --no-fail-fast`, exit 0,
+`sha256:70120e1c1944cd7acd871a8cffe4bc8ca5b0f7b1f298138ba0ab0560645c8288`.
+`policy-compliant`: `bash tests/test_build_identity_policy.sh`, exit 0,
+`sha256:eb688ff0c1fb1ef2ac3a734665eb1eb6184d83bb8d1e8359ddca13f73cb8caf3`.
+`phase.verify.complete.b-direct` aplicada con `verification-report`. Ciclo en
+`RELEASE_PENDING`, sequence 4, 2 artefactos, lease liberado.
+
+**El instrumento de políticas falló tres veces, las tres por su cuenta.**
+`pipefail` con `grep -q` y SIGPIPE, que ponía el guard verde por el motivo
+equivocado en cuanto la salida crecía; escáner mirando ficheros enteros en vez
+del delta, que reportaba los 27 caracteres históricos de `SESSION-JOURNAL.md`
+—deuda declarada que este cambio no introduce—; y `"$filter"` entrecomillado a
+cargo, con lo que el comando nunca llegaba a correr y el guard contestaba
+`no-ok`. **Medir el cambio y medir la historia no es lo mismo**, y **un guard
+que miente porque el comando nunca corrió no es un guard que falla: es un
+guard que dice cosas**.
+
+**Corrección de dato propio.** El `fencing_token` es **1**, no 2. La biseca 5
+afirmaba que readquirirlo lo incrementaba «ya va por 2»: el incremento ocurre
+al reemplazar un lease caducado, pero la transición de fase lo liberó — borró
+la fila — y un lease ausente arranca en 1. Medido antes de propagarlo.
+
+**UAT observado / no ejecutado.** **No se ejecutó ninguna matriz UAT nueva**, y
+conviene que quede dicho: esto son gates y mediciones de comportamiento, no una
+UAT. Observado: workspace 5428 passed / 0 failed / 24 ignored / 283 binarios,
+`test_build_identity_policy.sh` PASS=8 FAIL=0, `test_release_build_identity.sh`
+PASS=22 FAIL=0, changelog PASS=72 FAIL=0, índice de deuda PASS=12 FAIL=0,
+shellcheck sin avisos, scanner CLEAN. **NOT_RUN**: la ruta forge contra un
+GitHub real, y todo lo que exige la clave KMS.
+
+**Bloqueos.** Ninguno técnico. Los del operador sin cambios: clave KMS — ahora
+cubre los **cuatro** ciclos en `RELEASE_PENDING`—, INC-DEBT-050, 061, 060, 063,
+049, y la publicación del harness `Pipelinek-Test-Hardness`.
+
+**Riesgos.** (a) `dev doctor` no invoca el detector: INC-DEBT-064 sigue abierta
+aunque el mecanismo exista, y esa es la pieza que falta. (b) El umbral de
+ficheros sin seguimiento de `release.sh` es más estricto que el preflight solo
+para lo que entra en el binario; si el operador quiere el criterio del preflight
+entero, es un cambio de contrato del gate de release y suya. (c) El informe de
+verify declara explícitamente lo que NO midió, para que nadie lo lea como
+verificado.
+
+**Contaminación de redacción, un caso en esta biseca, y la lección es ya
+conocida.** Al escribir el mensaje de commit se coló un CJK en mitad de una
+palabra. Es la quinta vez en esta sesión, y todas las anteriores tienen la
+misma firma: **escribir sobre la corrupción la genera.** Un diario o un
+mensaje que cita el síntoma en vez de describirlo reintroduce el síntoma, y por
+eso el `SESSION-JOURNAL.md` los describe sin reproducirlos. El scanner lo
+pilló antes de commitear.
+
+**Primer paso preciso de la sesión siguiente.** Leer
+`crates/sddk-cli/src/dev/doctor.rs` y **medir** si el bloque
+`binary.bundle_coherence` (líneas 425-468) invoca hoy la comparación de
+identidad — no suponerlo —, y con esa medición decidir si el check nuevo es un
+`DoctorCheck` más o una sección propia.

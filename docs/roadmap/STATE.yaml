@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "c30dcf89"  # session-69n bis 5: el puntero nombra c30dcf89, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 4 (anterior, conservado): el puntero nombra 11c8e1d9, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. El puntero anterior (86dea47d) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 3 (punterior, conservado): el puntero nombra 86dea47d, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (8a2ebfd3) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "68874b35"  # session-69n bis 6: el puntero nombra 68874b35, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (c30dcf89, 11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md. # session-69n bis 5 (anterior, conservado): el puntero nombra c30dcf89, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 4 (anterior, conservado): el puntero nombra 11c8e1d9, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. El puntero anterior (86dea47d) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 3 (punterior, conservado): el puntero nombra 86dea47d, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (8a2ebfd3) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -554,6 +554,64 @@ c3_progress:
 # y uno en un fichero de borrador, `turned out` en plena prosa espanola, que no
 # llego al arbol porque el borrador se corrigio antes de insertarlo.
 
+# session-69n BISECHA 6: FASE VERIFY DE `cl-build-identity` CERRADA. El ciclo
+# pasa a RELEASE_PENDING, sequence 4, 2 artefactos. Se une a los otros tres
+# ciclos bloqueados por la clave KMS.
+#
+# LA MEDICION QUE SOSTIENE LA VERIFY, y que es la que faltaba: `--check` se
+# EJERCITA COMO LO USARIA UN GATE REAL, con el MISMO binario contra dos
+# checkouts distintos. Contra HEAD: `relation: Matches`, exit 0. Contra un
+# checkout un commit atrasado: exit 1. Un detector que no distingue entre «el
+# binario es el del checkout» y «el checkout tiene trabajo que el binario no
+# tiene» no sirve como gate, y esa es exactamente la propiedad que faltaba
+# antes del arreglo de `11c8e1d9`, donde ese segundo caso salia con EXIT 0
+# mientras su propia linea de `reason` decia lo contrario.
+#
+# GATES GRADUADOS CON EVIDENCIA EJECUTADA, no redactada. REQ-IPV exige UN
+# comando con `argv`, `exit_code` y `output_digest` en el NIVEL SUPERIOR:
+# - tests-pass: `cargo test --workspace --no-fail-fast`, exit 0,
+#   sha256:70120e1c1944cd7acd871a8cffe4bc8ca5b0f7b1f298138ba0ab0560645c8288
+# - policy-compliant: `bash tests/test_build_identity_policy.sh`, exit 0,
+#   sha256:eb688ff0c1fb1ef2ac3a734665eb1eb6184d83bb8d1e8359ddca13f73cb8caf3
+# `phase.verify.complete.b-direct` APLICADA con el artefacto
+# `verification-report`.
+#
+# EL INSTRUMENTO DE POLITICAS FALLO TRES VECES ANTES DE DECIR LA VERDAD, las
+# tres por su cuenta y no por la del producto, y las tres son modos ya
+# registrados:
+# 1. `cargo test | grep -q` con `pipefail` devuelve error, porque `grep -q` sale
+#    al primer match, `cargo test` recibe SIGPIPE escribiendo el resto, y
+#    `pipefail` lo propaga. El guard se ponia verde por el motivo equivocado en
+#    cuanto la salida crecia: con un test filtrado pasaba, con los once de
+#    `dev::build_id` fallaba.
+# 2. El escaner de redaccion pasaba los FICHEROS ENTEROS, y
+#    SESSION-JOURNAL.md esta en el rango porque este cambio le anade una
+#    entrada — luego reportaba los 27 caracteres no latinos HISTORICOS que el
+#    repo declara y no reescribe, y fallaba por deuda ajena. MEDIR EL CAMBIO Y
+#    MEDIR LA HISTORIA NO ES LO MISMO, y es el mismo error que el `case`
+#    gloton de la biseca 5. Ahora escanea las lineas anadidas: 13 ficheros con
+#    delta, CLEAN.
+# 3. Y una nueva: el helper pasaba `"$filter"` entrecomillado a cargo, con lo
+#    que `--lib dev::build_id` llegaba como un argumento unico que cargo no
+#    entiende, fallaba, y el guard contestaba `no-ok`. UN GUARD QUE MIENTE
+#    PORQUE EL COMANDO NUNCA LLEGO A CORRER. Se comprobo contra el mismo
+#    patron ejecutado a mano, que si casaba: la diferencia era la comilla.
+#
+# CORRECCION DE DATO PROPIO: el `fencing_token` de este ciclo es **1**, no 2.
+# La biseca 5 afirmaba que readquirir lo incrementaba «ya va por 2». El
+# incremento ocurre al REEMPLAZAR un lease caducado; la transicion de fase lo
+# LIBERO, borro la fila, y un lease ausente arranca en 1. La afirmacion general
+# era cierta y el numero concreto era falso, y se ha medido antes de
+# propagarlo. Se corrige aqui, en CURRENT.md y en el VERIFICATION-REPORT.
+#
+# LO QUE ESTA VERIFY NO DECLARA, escrito para que no se lea al contrario:
+# INC-DEBT-064 sigue `open` y el changelog dice «avanza», no «cierra». `dev
+# doctor` NO invoca `build-id --check`, luego el detector existe y funciona pero
+# la deteccion depende de que alguien la pida; cablearlo es lo que la convertiria
+# en mecanismo en vez de en dato, y es la leccion de INC-DEBT-061 aplicada donde
+# toca. La ruta forge contra un GitHub real sigue NOT_RUN. Y NO se ha ejecutado
+# ninguna matriz UAT nueva: esto son gates y mediciones de comportamiento.
+
 # session-69n BISECHA 5: HECHO EL PUNTO QUE FALTAVA PARA QUE EL REMEDIO DE
 # INC-DEBT-064 PUEDIESE FUNCIONAR. Y LA DEUDA SIGUE `open`, que no es lo mismo.
 #
@@ -621,7 +679,7 @@ c3_progress:
 # alcanzable exige debilitar una comprobacion de capacidad, reordenar los
 # pasos o mover el AdmissionTicket, el arreglo se descarta AUNQUE LOS TESTS
 # PASSEN. SUPERADO: el lote 1 es 034d098a y el lote 2 es a6dfb5f2.
-next_action: 'Session-69n bis 5. SIGUIENTE PASO UNICO, sin decision del operador: la FASE VERIFY de `cl-build-identity`, que esta en OPEN/verify con sequence 2 y el gate `implementation-complete` ya `passed`. El lease esta LIBERADO porque la transicion de fase lo suelta, asi que hay que readquirirlo con `sddk cycle lock acquire --owner rubentxu`, y OJO: readquirir incrementa el `fencing_token` (ya va por 2), luego hay que usar el token NUEVO en la transicion, no el anterior. La transicion de cierre es `phase.verify.complete.b-direct`. RECORDATORIOS QUE SE HAN PAGADO CON UN RECHAZO O CON UN DEFECTO: (1) la evidencia de un gate `passed` es UN comando con `argv`, `exit_code` y `output_digest` en el NIVEL SUPERIOR, no un lote (REQ-IPV, spec-v2 cycle-44, validador en crates/sddk-domain/src/models/gate_receipt.rs:47); un lote anidado en `commands` se rechaza con `ENGINE_INVALID_PASS_EVIDENCE: passed outcome is missing argv`. (2) Un guard hay que falsificarlo ANTES de creerlo, y si la mutacion no la detecta es que el guard no mira el producto: el guard e2e de build-id PASABA con el defecto puesto porque sin `SDDK_GIT_SHA` la relacion sale siempre `unknown`, y el de release.sh llevaba una COPIA del predicado. (3) El punto de partida de esta verify es, literalmente, ejercer `dev build-id --check` como lo usaria un gate real. DESPUES, y es la pieza que convierte el detector en mecanismo: cablear `build-id --check` al `dev doctor`, que hoy no lo invoca y por eso INC-DEBT-064 sigue `open` aunque el detector exista. Los tres ciclos en RELEASE_PENDING y la release 2.5.3 siguen bloqueados por la clave KMS, del operador, y no se tocan. ANTES DE CUALQUIER MEDICION: construir el binario del repo y comprobarlo; si `dev build-id` responde `unrecognized subcommand`, la medicion es sobre el binario viejo y no vale (INC-DEBT-064, y eso ocurrio en esta sesion). Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio).'
+next_action: 'Session-69n bis 6. SIGUIENTE PASO UNICO, sin decision del operador y sin abrir ningun ciclo nuevo: CABLEAR `build-id --check` AL `dev doctor`, que hoy no lo invoca. Es el unico punto entre «el detector existe» y «el detector vigila»: mientras nadie lo consulte, INC-DEBT-064 sigue viva porque depende de que alguien se acuerde de mirar, que es exactamente el modo de fallo que el documento de la biseca 2_denuncio como «el arreglo no esta roto, no esta desplegado» y que la nota (a) de INC-DEBT-061 ya habia pagado una vez. Antes de escribir nada, MEDIR: leer `dev doctor` (crates/sddk-cli/src/dev/doctor.rs, el bloque de `binary.bundle_coherence` en 425-468) y comprobar que hoy NO invoca la comparacion — no suponerlo —, y decidir con esa medicion si el check nuevo es un `DoctorCheck` mas o una seccion propia. Ojo con una cosa ya vivida: el lease se libera al cambiar de fase y readquirir un lease AUSENTE arranca en `fencing_token` 1; el incremento solo ocurre al REEMPLAZAR uno caducado. Los cuatro ciclos (cl-build-identity, cl-release-forge-testability, cl-ledger-export-total, cl-ledger-watch-total) estan en RELEASE_PENDING y la release 2.5.3 siguen bloqueados por la clave KMS, del operador, y no se tocan. ANTES DE CUALQUIER MEDICION: construir el binario del repo y comprobarlo; si `dev build-id` responde `unrecognized subcommand`, la medicion es sobre el binario viejo y no vale (INC-DEBT-064, y eso ocurrio en esta sesion). Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio).'
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"
   - "RESUELTO session-22 — Cargo.lock stale. Cerro con bump 2.0.8 -> 2.0.9 por la clausula (A) del hook pre-push: Cargo.toml, manifest.toml y Cargo.lock quedan alineados en el mismo rango, y `cargo metadata --locked` paso de exit 101 a exit 0. El hook NO se amendso. Ademas se anadio el check 6 a tests/test_release_state_pointer.sh (compara Cargo.lock contra Cargo.toml), falsificado en los dos sentidos: falla con el lock a 2.0.7, pasa con el lock a 2.0.9. Con esto, publicar 2.0.9 ya no tropezaria en el paso 63 por el lock; lo que queda por delante es la decision de firma (S14 en distribucion), que sigue siendo irreducible sin autorizacion del operador."

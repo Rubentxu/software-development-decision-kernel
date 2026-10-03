@@ -1,4 +1,43 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69n bis 6, 2026-10-03): fase `verify` de `cl-build-identity` CERRADA con los dos gates graduados sobre evidencia ejecutada. El ciclo pasa a `RELEASE_PENDING` y se une a los otros tres, todos bloqueados por la clave KMS.** `HEAD` = `68874b35` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
+
+**La medición que sostiene la verify, y que es la que faltaba:** `--check` se ejercita **como lo usaría un gate real**, con el **mismo binario** contra dos checkouts distintos. Contra `HEAD`: `relation: Matches`, **exit 0**. Contra un checkout un commit atrasado: **exit 1**. Un detector que no distingue entre «el binario es el del checkout» y «el checkout tiene trabajo que el binario no tiene» no sirve como gate — y esa es exactamente la propiedad que faltaba antes del arreglo de `11c8e1d9`, donde el segundo caso salía con **exit 0** mientras su propia línea de `reason` decía lo contrario.
+
+**Los dos gates, con evidencia ejecutada y no redactada.** REQ-IPV exige **un** comando con `argv`, `exit_code` y `output_digest` en el nivel superior; un lote se rechaza con `ENGINE_INVALID_PASS_EVIDENCE`, comprobado.
+
+| Gate | Comando | Exit | Digest |
+|---|---|---|---|
+| `tests-pass` | `cargo test --workspace --no-fail-fast` | 0 | `sha256:70120e1c1944cd…` |
+| `policy-compliant` | `bash tests/test_build_identity_policy.sh` | 0 | `sha256:eb688ff0c1fb1ef…` |
+
+**El instrumento de políticas falló tres veces antes de decir la verdad, las tres por su cuenta y no por la del producto.** (1) `cargo test | grep -q` con `pipefail` devuelve error porque `grep -q` sale al primer match, `cargo test` recibe SIGPIPE y `pipefail` lo propaga: el guard se ponía verde por el motivo equivocado en cuanto la salida crecía. (2) El escáner pasaba los **ficheros enteros**, y `SESSION-JOURNAL.md` está en el rango porque este cambio le añade una entrada — luego reportaba los 27 caracteres no latinos **históricos** que el repo declara y no reescribe, y fallaba por deuda ajena. **Medir el cambio y medir la historia no es lo mismo**, y es el mismo error que el `case` gloton de la biseca 5. (3) Y una nueva: el helper pasaba `"$filter"` entrecomillado a cargo, con lo que `--lib dev::build_id` llegaba como un argumento único, cargo no lo entendía, y el guard contestaba `no-ok` — **un guard que miente porque el comando nunca llegó a correr**. Se comprobó contra el mismo patrón a mano, que sí casaba: la diferencia era la comilla.
+
+**Corrección de dato propio:** el `fencing_token` de este ciclo es **1**, no 2. La biseca 5 afirmaba que readquirirlo lo incrementaba «ya va por 2». El incremento ocurre al **reemplazar** un lease caducado; la transición de fase lo **liberó** — borró la fila — y un lease ausente arranca en 1. La afirmación general era cierta, el número concreto era falso, y se ha medido antes de propagarlo.
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| **`cl-build-identity`** | **`RELEASE_PENDING`, sequence 4, 2 artefactos, 3 gates `passed`** |
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| `INC-DEBT-064` | **`open`, high/P1 — con detector entregado y la condición viva** |
+
+**Lo que esta verify NO declara, escrito para que no se lea al contrario:** INC-DEBT-064 sigue `open` — el changelog dice «avanza», no «cierra». **`dev doctor` no invoca `build-id --check`**, luego el detector existe y funciona pero la detección depende de que alguien la pida. La ruta forge contra un GitHub real sigue `NOT_RUN`. Y no se ejecutó ninguna matriz UAT nueva: esto son gates y mediciones de comportamiento.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Cablear `build-id --check` al `dev doctor`** — único paso propio, y el que convierte el detector en mecanismo en vez de en dato. Antes de escribir, medir: leer el bloque `binary.bundle_coherence` (`doctor.rs:425-468`) y comprobar que hoy no invoca la comparación, no suponerlo.
+2. **Clave KMS** — único bloqueo de la release 2.5.3 y de los cuatro ciclos en `RELEASE_PENDING`, del operador.
+3. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+4. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+5. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
+6. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+7. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+8. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+
+---
 **Estado (session-69n bis 5, 2026-10-03): el punto que faltaba para que el remedio de INC-DEBT-064 pudiese funcionar está hecho — y la deuda sigue `open`, que no es lo mismo.** `HEAD` = `c30dcf89` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **Lo que faltaba:** `release.sh` no exportaba `SDDK_GIT_SHA`, así que `build.rs` caía al fallback `.git`, el binario publicado declaraba `source: git`, y `dev build-id --check` **no salía nunca de `unknown`**. El detector no tenía dónde fallar justo en el caso que motiva INC-DEBT-064: un binario **publicado** y obsoleto. Correcto, pero inútil.
