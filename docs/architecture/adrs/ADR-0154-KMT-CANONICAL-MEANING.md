@@ -1,11 +1,11 @@
 ---
 id: ADR-0154-KMT-CANONICAL-MEANING
 title: KMT means Knowledge Merkle Tree, and the freshness evaluator that currently holds the acronym is renamed, because three concepts compete for three letters
-status: proposed
+status: accepted
 proposed_at: 2026-10-03
-accepted_at: null
+accepted_at: 2026-10-03
 cycle: p-63676b11dc0ef88f/c3m-kmt-canonical
-accepted_by_cycle: null
+accepted_by_cycle: p-63676b11dc0ef88f/c3m-kmt-canonical
 supersedes: null
 superseded_by: null
 component: knowledge
@@ -15,7 +15,7 @@ closes: []
 
 # ADR-0154 — Qué significa KMT, y por qué el evaluador de frescura tiene que soltarlo
 
-**Status:** proposed (2026-10-03)
+**Status:** accepted (2026-10-03)
 **Date:** 2026-10-03
 **Cycle:** `p-63676b11dc0ef88f/c3m-kmt-canonical` (C3m.0)
 **Closes:** nada por sí mismo. Deja C3m.1 condicionado.
@@ -126,6 +126,38 @@ C3m.2 y tiene su propia deuda abierta (INC-DEBT-048) con una decisión binaria
 distinta: actualizar la spec o revertir el código. **Mezclar ambas aquí sería
 meter dos decisiones incompatibles en un solo documento aceptado**, que es
 como C3m.2 empezó a contradecir a REQ-A3S1-021 en primer lugar.
+
+## Aceptación: siete criterios, medidos uno a uno
+
+Una aceptación no se declara por suma, así que cada criterio se ejecutó por
+separado y se registra su veredicto. El criterio 4 es el que casi no se puede
+cumplir y es el que más información dio.
+
+| # | Criterio | Veredicto |
+|---|---|---|
+| 1 | El símbolo canónico del árbol se reserva y no colisiona | **cumple** — tras el rename queda **1** struct `KMT*` (`KmtUnitIndex`) |
+| 2 | *Knowledge Management Tiers* desaparece del código | **cumple** — 0 apariciones en `crates/`, donde había 2 |
+| 3 | El rename no rompe ningún enlace intradoc | **cumple** — 21 antes, **21 después**; el rename no añadió ni uno |
+| 4 | El rename rompe un contrato normativo **escrito** | **cumple, y es el motivo del ADR** — REQ-A3S1-035 Updated en la spec, en el mismo movimiento |
+| 5 | El rename no se aplica a medias | **cumple** — `KnowledgeFreshness` y `KMT` no coexisten |
+| 6 | La librería y sus tests siguen verdes | **cumple** — `sddk-engine` compila, 1403+ tests de lib en verde |
+| 7 | El guard que vigila esta decisión tiene dientes | **cumple** — 5 mutaciones, 5 detectadas, 0 sobrevividas |
+
+**El criterio 3 no se pudo medir a la primera, y por cómo falló importa.** La
+primera ejecución dio **0** enlaces rotos, lo que parecía una mejora enorme. Era
+falso: `cargo doc` no llegó a generar documentación porque la librería no
+compilaba, y un `cargo doc` que no genera nada no informa de enlaces. El
+baseline real era **21**, y el correcto es «21 después» — no «0». **Medir el
+cambio y medir el fallo del instrumento por el mismo número son cosas
+distintas**, que es la misma lección que ya se pagó dos veces con el escáner de
+contaminación.
+
+**Un criterio que el propio guard dijo.** El guard decía «ADR-0154 está en
+`proposed`, el rename sigue bloqueado» y pasaba en verde **después** de que el
+rename estuviera aplicado: afirmaba un estado sin comprobarlo. Corregido para
+que exija que la historia del ADR y la del código **cuadren entre sí** — rename
+aplicado con ADR `proposed` es alguien saltándose el orden, y ADR `accepted`
+con el rename sin hacer es una decisión no ejecutada.
 
 ## Alternativas descartadas
 

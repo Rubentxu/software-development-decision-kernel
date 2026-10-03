@@ -804,7 +804,7 @@ fn acceptance_card_freshness_uses_the_real_kmt_when_evaluable() {
     assert_eq!(
         card.knowledge_status.freshness.as_deref(),
         Some("fresh"),
-        "a matching expected basis evaluates fresh through the real KMT"
+        "a matching expected basis evaluates fresh through the real KnowledgeFreshness"
     );
 
     // A divergent expected basis is stale, not silently fresh.

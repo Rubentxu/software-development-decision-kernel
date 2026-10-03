@@ -34,8 +34,8 @@ use sddk_engine::code_intelligence_port::{
 };
 use sddk_engine::code_intelligence_port_fake::FakeCodeIntelligenceProvider;
 use sddk_engine::knowledge::{
-    EventTime, InvalidatedKnowledgeBasis, InvalidationReason, KMT, KmtStatus, KnowledgeAssertion,
-    KnowledgeBasis, KnowledgeId, KnowledgeKind, KnowledgePayload,
+    EventTime, InvalidatedKnowledgeBasis, InvalidationReason, KmtStatus, KnowledgeAssertion,
+    KnowledgeBasis, KnowledgeFreshness, KnowledgeId, KnowledgeKind, KnowledgePayload,
 };
 
 const HEAD_REV: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
@@ -281,9 +281,9 @@ fn t_uat_c09_contradiction_preserves_prior_assertion_and_records_reconciliation(
         .map(|o| o.text.as_bytes().to_vec())
         .collect::<Vec<_>>();
 
-    // Step 5: KMT evaluates the invalidated basis and reports
+    // Step 5: the freshness evaluator evaluates the invalidated basis and reports
     // `Invalidated`, never `Fresh`. The reason is `Contradicted`.
-    let status = KMT::evaluate_invalidated(&invalidated);
+    let status = KnowledgeFreshness::evaluate_invalidated(&invalidated);
     match status {
         KmtStatus::Invalidated {
             reason,

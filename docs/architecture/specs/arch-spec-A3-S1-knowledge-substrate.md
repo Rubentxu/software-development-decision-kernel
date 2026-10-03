@@ -18,8 +18,8 @@ source: docs/history/legacy-packages/SDDK-Architecture-Conformance-Graph-Evoluti
 
 ## Intent
 
-`KnowledgeAssertion`, `KnowledgeBasis` and `KMT` (Knowledge Management Tiers —
-identity, freshness, invalidation) become first-class SDDK semantic types
+`KnowledgeAssertion`, `KnowledgeBasis` and `KnowledgeFreshness` (the freshness
+and invalidation evaluator) become first-class SDDK semantic types
 **without leaking A4 semantics** (Alignment / Verify / DebVerify) and **without
 introducing provider SDK types into the Knowledge module**.
 
@@ -111,7 +111,19 @@ guarantee.
 > `v1 → v2` no invalida ninguna identidad almacenada; hoy es una propiedad
 > preventiva, no un riesgo operativo.
 
-### KMT identity / freshness / invalidation
+> **Reconciliación (ADR-0154, 2026-10-03).** `KMT` y `KnowledgeFreshness` no son
+> dos nombres del mismo tipo: eran **tres conceptos compitiendo por unas siglas**.
+> `pub struct KMT` evaluaba frescura y `KmtIndex` indexaba unidades del árbol, y
+> la prosa llamaba al segundo con las siglas del primero. **ADR-0154** fija
+> `KMT` = Knowledge Merkle Tree (la estructura, que es lo que C3m.1 construye),
+> y por eso el evaluador pasa a `KnowledgeFreshness` y el índice a
+> `KmtUnitIndex`. *Knowledge Management Tiers* se retira porque **no describe
+> nada que el código tenga**: no hay tiers, ni niveles, ni jerarquía que se
+> evalúe. Esta spec se reescribió en el mismo movimiento porque REQ-A3S1-035
+> declaraba canónico un símbolo que el ADR renombra — una spec que nombra un
+> símbolo que ya no existe declara canónica la nada.
+
+### Knowledge identity / freshness / invalidation
 
 - **REQ-A3S1-030** `KmtStatus` SHALL be `pub enum`:
   - `Fresh { basis_hash: BasisHash }`
@@ -131,7 +143,7 @@ guarantee.
   InvalidationReason, at: EventTime)` SHALL transition the basis to
   `Invalidated`. After invalidation, `evaluate_freshness` SHALL always return
   `Invalidated` (test asserts monotonicity).
-- **REQ-A3S1-035** `KMT::evaluate(basis, expected, now)` is the canonical
+- **REQ-A3S1-035** `KnowledgeFreshness::evaluate(basis, expected, now)` is the canonical
   entry point. Direct construction of `KmtStatus::Fresh` outside this entry
   point SHALL be prevented (private tuple field + `From` only).
 

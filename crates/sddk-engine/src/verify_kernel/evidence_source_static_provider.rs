@@ -89,7 +89,7 @@ pub struct BridgedObservationSet {
 ///   pinning the basis to the analysis result's digest (reproducible
 ///   per IPB-007).
 /// - `freshness` is `None` (no expected basis supplied at this stage;
-///   KMT evaluation belongs to a downstream consumer).
+///   freshness evaluation belongs to a downstream consumer).
 /// - `producer` is `"cognicode-mcp@<provider_version>"` when
 ///   available, otherwise `"cognicode-mcp"`.
 pub fn build(

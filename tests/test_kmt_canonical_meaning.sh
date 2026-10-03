@@ -107,31 +107,61 @@ fi
 # no son un fallo: son lo que el ADR dice que hay que arreglar. Lo que si es un
 # fallo es que aparezcan mas de los conocidos, o que sobrevivan con el ADR ya
 # aceptado — que es cuando el rename deberia habersele aplicado.
+# ── (d) la prosa no puede llamar 'KMT' a lo que no es el índice ─────────────
+# El defecto que el ADR mide: `reactive_verify.rs` y `card.rs` llamaban «KMT» al
+# ARBOL, que era el nombre del EVALUADOR. Post-rename, `KMT` es el nombre
+# canónico del árbol y decir «the KMT index» es correcto — asi que este check
+# ya no puede buscar «KMT cerca de una palabra de arbol», porque AHORA ESO ES
+# LO CORRECTO. Lo que sigue siendo un fallo es el patron original: usar «KMT»
+# como si fuera el evaluador de frescura.
+#
+# Version previa: contaba ficheros con 'KMT' junto a unit/indice/arbol, y en
+# cuanto el rename se aplico dio 1 FAIL sobre dos lineas que eran correctas. Un
+# guard que exige arreglar lo que esta bien entrena a ignorar sus propios rojos.
+# El fallo estaba en el instrumento, y se corrige aqui, no bajando el liston.
 MALO=0
 while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if grep -nE '^\s*(///|//!|//).*\bKMT\b' "$f" 2>/dev/null \
-       | grep -qiE 'unit|namespace|indice|index|arbol|tree'; then
-        MALO=$((MALO + 1))
-    fi
+    # Lo que se busca es 'KMT' hablando de frescura (el evaluador con el nombre
+    # viejo). Se excluye explicitamente 'KMT index'/'KMT unit',
+    # que es el nombre canonico del arbol desde este mismo ADR.
+    n=$(grep -nE '^\s*(///|//!|//)' "$f" 2>/dev/null \
+        | grep -iE '\bKMT\b' \
+        | grep -viE 'kmt (unit )?(index|indice|tree|arbol)' \
+        | grep -c .)
+    MALO=$((MALO + n))
 done < <(grep -rl 'KMT' "$ENGINE" --include=*.rs 2>/dev/null)
 if [ "$MALO" -eq 0 ]; then
-    ok "ningun comentario llama KMT a un arbol o indice"
+    ok "ningun comentario llama KMT al evaluador de frescura (nombre retirado)"
 elif [ "$MALO" -le 2 ] && grep -q '^status: proposed' "$ADR" 2>/dev/null; then
-    ok "$MALO fichero(s) usan KMT para el arbol: la condicion de partida que el ADR mide"
+    ok "$MALO comentario(s) usan KMT para el evaluador: la condicion de partida que el ADR mide"
 else
-    bad "$MALO ficheros llaman 'KMT' a un arbol o indice; el ADR preveia como maximo 2"
+    bad "$MALO comentario(s) siguen llamando 'KMT' al evaluador de frescura, cuyo nombre es KnowledgeFreshness"
 fi
 
-# ── (e) el ADR existe y esta proposed, que es lo que permite el rename ─────
-if [ -f "$ADR" ]; then
-    if grep -q '^status: proposed' "$ADR"; then
-        ok "ADR-0154 existe y esta en proposed (el rename sigue bloqueado por el)"
+# ── (e) el ADR y el codigo tienen que CONTAR LA MISMA HISTORIA ──────────────
+# Este check existia como «el ADR esta proposed», y al aplicarse el rename paso a
+# verde AFIRMANDO «el rename sigue bloqueado» mientras el rename estaba aplicado.
+# Un guard que describe un estado sin comprobarlo es peor que no tener guard, y
+# este es el cuarto caso de la serie.
+#
+# Lo que si es cierto en cualquier estado: el estado del ADR y el del codigo no
+# pueden contradecirse. Rename aplicado con ADR `proposed` significa que alguien
+# se salto el orden que el propio roadmap escribio.
+if [ ! -f "$ADR" ]; then
+    bad "no existe docs/architecture/adrs/ADR-0154-KMT-CANONICAL-MEANING.md"
+elif grep -rqE 'pub struct KnowledgeFreshness' "$ENGINE" 2>/dev/null; then
+    if grep -q '^status: accepted' "$ADR" 2>/dev/null; then
+        ok "ADR-0154 accepted y el rename aplicado: la historia cuadra"
     else
-        bad "ADR-0154 no esta en proposed; revisar si el rename ya se aplico"
+        bad "el rename esta aplicado pero ADR-0154 sigue $(grep -m1 '^status:' "$ADR" | cut -d' ' -f2)"
     fi
 else
-    bad "no existe docs/architecture/adrs/ADR-0154-KMT-CANONICAL-MEANING.md"
+    if grep -q '^status: accepted' "$ADR" 2>/dev/null; then
+        bad "ADR-0154 accepted pero el rename NO esta aplicado: decision sin ejecutar"
+    else
+        ok "ADR-0154 $(grep -m1 '^status:' "$ADR" | cut -d' ' -f2) y el rename pendiente: la historia cuadra"
+    fi
 fi
 
 echo

@@ -1,7 +1,7 @@
 //! Reactive Verify pipeline / AC9 changed-unit contract loop
 //! (arch-spec-025 + arch-spec-037, J5).
 //!
-//! Pipeline: eventos host → coalesced `WorkspaceChangeSet` → KMT
+//! Pipeline: eventos host → coalesced `WorkspaceChangeSet` → evaluador de frescura
 //! (unidades afectadas) → contratos afectados → Verify delta-scoped
 //! → ArchitectureConformanceDelta → ContextDelta útil.
 //!
@@ -100,7 +100,7 @@ impl ChangeSetCoalescer {
 /// Knowledge–Machine Topology projection: which units each
 /// namespace maps to (AC-037-004).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct KmtIndex {
+pub struct KmtUnitIndex {
     /// namespace → affected units.
     pub units_by_namespace: BTreeMap<std::string::String, std::string::String>,
 }
@@ -111,7 +111,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchitecturalContractRef {
     pub contract_id: String,
-    /// Units (KMT) whose changes affect this contract.
+    /// Units whose changes affect this contract, resolved through the KMT index.
     pub guards_units: BTreeSet<String>,
 }
 
@@ -154,18 +154,18 @@ pub struct ArchitectureConformanceDelta {
 }
 
 /// Reactive Verify pipeline (delta-scoped, RHB-005). Given the
-/// change set, KMT and contracts in force, verify only the affected
+/// change set, the freshness evaluator and contracts in force, verify only the affected
 /// slice.
 #[must_use]
 pub fn run_reactive_verify(
     cs: &WorkspaceChangeSet,
-    kmt: &KmtIndex,
+    kmt: &KmtUnitIndex,
     contracts: &[ArchitecturalContractRef],
     // Resolution: (contract_id, unit) -> outcome. Absent entries
     // are EvidenceGap (RHB-006).
     resolve: impl Fn(&str, &str) -> Option<ContractOutcome>,
 ) -> ArchitectureConformanceDelta {
-    // Affected units via KMT (AC-037-004).
+    // Affected units via the KMT unit index (AC-037-004).
     let affected: BTreeSet<&str> = cs
         .namespaces
         .iter()
@@ -224,8 +224,8 @@ pub fn run_reactive_verify(
 mod tests {
     use super::*;
 
-    fn kmt() -> KmtIndex {
-        KmtIndex {
+    fn kmt() -> KmtUnitIndex {
+        KmtUnitIndex {
             units_by_namespace: BTreeMap::from([
                 ("src/engine/ledger.rs".into(), "unit:ledger".into()),
                 ("src/engine/graph.rs".into(), "unit:graph".into()),

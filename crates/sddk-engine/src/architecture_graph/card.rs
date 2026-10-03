@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::architectural_contract::ArchitecturalContract;
 use crate::architecture_graph::ArchitectureGraphOverlay;
 use crate::architecture_graph::SoftwareUnit;
-use crate::knowledge::{KMT, KmtStatus, KnowledgeBasis};
+use crate::knowledge::{KmtStatus, KnowledgeBasis, KnowledgeFreshness};
 use crate::semantic_graph::SemanticGraphProjection;
 
 /// Where a card field's value came from.
@@ -53,7 +53,8 @@ pub struct CardDependency {
 /// The unit's knowledge status, as a bounded statement about the *basis*.
 ///
 /// A basis is global, so the honest per-unit statement is: which basis, whether
-/// the basis carries an assertion keyed on this unit, and what the KMT says about
+/// the basis carries an assertion keyed on this unit, and what the freshness
+/// evaluator says about
 /// that assertion's freshness. Nothing here is invented per unit.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct CardKnowledgeStatus {
@@ -61,10 +62,10 @@ pub struct CardKnowledgeStatus {
     pub basis_hash: String,
     /// `true` iff the basis carries an assertion whose id matches the unit.
     pub has_assertion_for_unit: bool,
-    /// KMT freshness tag, **only when an expected basis was supplied**.
+    /// freshness tag, **only when an expected basis was supplied**.
     ///
     /// `None` means *not evaluated*, never "fresh". That distinction is exactly
-    /// what A3's KMT work exists to keep: absence of an evaluation must not read
+    /// what A3's knowledge work exists to keep: absence of an evaluation must not read
     /// as a passing one.
     pub freshness: Option<String>,
 }
@@ -219,10 +220,10 @@ pub fn card_for_unit(
         .keys()
         .filter(|k| k.as_str() == unit_ref)
         .count();
-    // Freshness comes from the real KMT, and only when an expected basis is
+    // Freshness comes from the real evaluator, and only when an expected basis is
     // supplied. No expected basis means NOT EVALUATED, which is reported as
     // `None` rather than defaulted to fresh.
-    let freshness = expected.map(|exp| match KMT::evaluate(basis, exp, now) {
+    let freshness = expected.map(|exp| match KnowledgeFreshness::evaluate(basis, exp, now) {
         KmtStatus::Fresh { .. } => "fresh".to_string(),
         KmtStatus::Stale { .. } => "stale".to_string(),
         KmtStatus::Invalidated { reason, .. } => format!("invalidated:{}", reason.canonical_tag()),

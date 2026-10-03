@@ -1,4 +1,4 @@
-//! Knowledge substrate and KMT (Knowledge Management Tiers) for SDDK.
+//! Knowledge substrate and KnowledgeFreshness (freshness evaluator) for SDDK.
 //!
 //! Cycle: `p-63676b11dc0ef88f/a3-1-kmt-foundation` (A3-S1)
 //! Spec: `docs/architecture/specs/arch-spec-A3-S1-knowledge-substrate.md`
@@ -12,7 +12,7 @@
 //!   Decision Memory revisions).
 //! - [`KmtStatus`], [`InvalidationReason`], [`KnowledgeKind`],
 //!   [`KnowledgePayload`] — **variant enums**, exhaustive.
-//! - [`evaluate_freshness`] / [`KMT::evaluate`] / [`invalidate`] —
+//! - [`evaluate_freshness`] / [`KnowledgeFreshness::evaluate`] / [`invalidate`] —
 //!   **EPHEMERAL**: pure transformations over `KnowledgeBasis`, no IO.
 //!
 //! # Determinism
@@ -381,7 +381,7 @@ impl KnowledgeBasis {
     ///
     /// That last sentence used to be false. The digest only ever hashed the
     /// assertion set, so revising at a later time left `basis_hash`
-    /// byte-identical, and because [`KMT::evaluate`] compares hashes before
+    /// byte-identical, and because [`KnowledgeFreshness::evaluate`] compares hashes before
     /// timestamps a pure revision was invisible to freshness. Fixed in
     /// C3m.2; see [`derive_basis_hash_at`].
     pub fn revise(self, at: EventTime) -> Result<Self, KnowledgeError> {
@@ -452,7 +452,7 @@ impl KnowledgeBasis {
 /// **unchanged** hash even though `revise`'s own doc claimed "a new basis hash
 /// (because the `revised_at` participates in the hash)". Two bases with
 /// identical content revised at different times were indistinguishable — and
-/// since `KMT::evaluate` compares hashes *before* timestamps, a pure revision
+/// since `KnowledgeFreshness::evaluate` compares hashes *before* timestamps, a pure revision
 /// was invisible to freshness.
 ///
 /// `revised_at: None` reproduces the legacy v1 domain. It exists so the
@@ -523,7 +523,7 @@ pub enum MissingEvidence {
 /// Outcome of evaluating the freshness of an observed basis against an
 /// expected basis.
 ///
-/// Construction is internal to [`KMT::evaluate`]; the variant data is
+/// Construction is internal to [`KnowledgeFreshness::evaluate`]; the variant data is
 /// private so external crates cannot forge a `Fresh` status.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KmtStatus {
@@ -580,7 +580,7 @@ impl KmtStatus {
 /// A [`KnowledgeBasis`] that has been permanently invalidated.
 ///
 /// Constructed exclusively via [`KnowledgeBasis::invalidate`]. After this
-/// transition, [`KMT::evaluate`] always returns [`KmtStatus::Invalidated`].
+/// transition, [`KnowledgeFreshness::evaluate`] always returns [`KmtStatus::Invalidated`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvalidatedKnowledgeBasis {
     assertions: BTreeMap<KnowledgeId, KnowledgeAssertion>,
@@ -608,13 +608,13 @@ impl InvalidatedKnowledgeBasis {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KMT — Knowledge Management Tiers (freshness evaluator)
+// KnowledgeFreshness — evaluador de frescura
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Canonical entry point for freshness evaluation.
-pub struct KMT;
+pub struct KnowledgeFreshness;
 
-impl KMT {
+impl KnowledgeFreshness {
     /// Evaluate the freshness of `observed` relative to `expected`.
     ///
     /// Pure function. Time is passed in as data; no clock reads.
@@ -984,7 +984,7 @@ mod tests {
 
     /// The same revision applied at two different times must not collide.
     ///
-    /// This is the property that matters downstream: `KMT::evaluate` compares
+    /// This is the property that matters downstream: `KnowledgeFreshness::evaluate` compares
     /// hashes *before* timestamps, so if two distinct revisions shared a hash
     /// the freshness evaluation could not see the difference between them.
     #[test]
@@ -1039,7 +1039,7 @@ mod tests {
     }
 
     /// AUDITORIA session-65i (INC-DEBT-048). La entrada de deuda afirma que
-    /// `KMT::evaluate` "compara hashes antes que timestamps, asi que una
+    /// `KnowledgeFreshness::evaluate` "compara hashes antes que timestamps, asi que una
     /// revision puramente temporal es invisible al freshness (devuelve
     /// `Fresh` sin mirar `revised_at`)".
     ///
@@ -1061,7 +1061,7 @@ mod tests {
         assert_eq!(before.assertions(), revised.assertions());
         assert_ne!(before.basis_hash(), revised.basis_hash());
 
-        let status = KMT::evaluate(&revised, &before, EventTime(30));
+        let status = KnowledgeFreshness::evaluate(&revised, &before, EventTime(30));
         assert!(
             matches!(
                 status,
@@ -1078,7 +1078,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // REQ-A3S1-030..035 — KmtStatus + evaluate_freshness + KMT
+    // REQ-A3S1-030..035 — KmtStatus + evaluate_freshness + KnowledgeFreshness
     // ─────────────────────────────────────────────────────────────────
     /// REQ-A3S1-033: matching basis hashes → Fresh.
     #[test]
@@ -1087,7 +1087,7 @@ mod tests {
         basis.insert(declare_one("k", 1)).unwrap();
         let expected = basis.clone();
 
-        let status = KMT::evaluate(&basis, &expected, EventTime(10));
+        let status = KnowledgeFreshness::evaluate(&basis, &expected, EventTime(10));
         assert!(status.is_fresh(), "expected Fresh, got {:?}", status);
         if let KmtStatus::Fresh { basis_hash } = &status {
             assert_eq!(basis_hash, basis.basis_hash());
@@ -1106,7 +1106,7 @@ mod tests {
         // Make expected diverge by adding a second assertion.
         expected.insert(declare_one("k2", 4)).unwrap();
 
-        let status = KMT::evaluate(&observed, &expected, EventTime(10));
+        let status = KnowledgeFreshness::evaluate(&observed, &expected, EventTime(10));
         match status {
             KmtStatus::Stale {
                 observed: o,
@@ -1132,7 +1132,7 @@ mod tests {
         let mut expected = KnowledgeBasis::empty(EventTime(10));
         expected.insert(declare_one("seed", 5)).unwrap();
 
-        let status = KMT::evaluate(&observed, &expected, EventTime(200));
+        let status = KnowledgeFreshness::evaluate(&observed, &expected, EventTime(200));
         match status {
             KmtStatus::Unknown {
                 reason,
@@ -1154,7 +1154,7 @@ mod tests {
 
         let invalidated = basis.invalidate(InvalidationReason::Superseded, EventTime(10));
         assert_eq!(invalidated.reason(), InvalidationReason::Superseded);
-        let status = KMT::evaluate_invalidated(&invalidated);
+        let status = KnowledgeFreshness::evaluate_invalidated(&invalidated);
         assert!(status.is_invalidated());
     }
 
@@ -1165,18 +1165,18 @@ mod tests {
         let mut basis = KnowledgeBasis::empty(EventTime(1));
         basis.insert(declare_one("k", 1)).unwrap();
         let invalidated = basis.invalidate(InvalidationReason::Withdrawn, EventTime(2));
-        let status = KMT::evaluate_invalidated(&invalidated);
+        let status = KnowledgeFreshness::evaluate_invalidated(&invalidated);
         assert!(matches!(status, KmtStatus::Invalidated { .. }));
         assert!(!status.is_fresh());
     }
 
-    /// REQ-A3S1-035: KMT::evaluate is the canonical entry point. We verify
+    /// REQ-A3S1-035: KnowledgeFreshness::evaluate is the canonical entry point. We verify
     /// here that it routes through `evaluate_freshness` (same behaviour).
     #[test]
     fn test_kmt_evaluate_is_canonical_entry_point() {
         let basis = KnowledgeBasis::empty(EventTime(1));
         let via_fn = evaluate_freshness(&basis, &basis, EventTime(2));
-        let via_struct = KMT::evaluate(&basis, &basis, EventTime(2));
+        let via_struct = KnowledgeFreshness::evaluate(&basis, &basis, EventTime(2));
         assert_eq!(via_fn, via_struct);
     }
 
@@ -1434,7 +1434,7 @@ pub const KNOWLEDGE_NODE_KIND: &str = "a3_node_knowledge_assertion";
 /// Project every assertion in a basis into a [`SemanticGraphProjection`].
 ///
 /// This is the knowledge half of the roadmap's "SemanticGraph cross-tree
-/// overlay": per ADR-022 the KMT owns invalidation while the SemanticGraph owns
+/// overlay": per ADR-022 the knowledge substrate owns invalidation while the SemanticGraph owns
 /// cross-tree impact, and this is what lets impact navigation reach knowledge
 /// assertions at all.
 ///
