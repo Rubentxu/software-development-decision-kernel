@@ -11692,3 +11692,68 @@ C3m.2 (INC-DEBT-048, decisión binaria) no depende de esto y sigue abierto, pero
 **no debe mezclarse con el rename**. Después: R1 (clave KMS) y R2 (049/050/060/
 061/063), ambos esperando al operador. Antes de cualquier medición: construir el
 binario del repo y comprobarlo con `dev build-id --check`.
+
+---
+
+## session-69n C3m.0 cierre — 2026-10-03 — ADR-0154 aceptado y el rename aplicado
+
+**Baseline / HEAD.** `e2754504` al empezar; `a5722672` (rename) publicado; al
+cerrar, este commit documental. Workspace **2.5.3 declarada, no publicada**.
+
+**UN ERROR PROPIO, AL PRINCIPIO, QUE CORRIGE EL PUNTO DE PARTIDA.** El diario y
+el ROADMAP de este mismo turno decían que *C3m.2 sigue abierto con su decisión
+binaria pendiente sobre INC-DEBT-048*. **Es falso.** Medido:
+`INC-DEBT-048` está `status: resolved` y `arch-spec-A3-S1-knowledge-substrate.md`
+está `status: accepted` desde session-66. No lo verifiqué antes de repetirlo, que
+es exactamente lo que «no assumas» prohíbe. La lección no es que me haya
+equivocado, es que **un `status:` que no se abre no es evidencia**, y lo había
+copiado de un puntero que yo mismo escribí.
+
+**Y ese hallazgo cambió el trabajo, para bien.** Si INC-DEBT-048 ya estaba
+resuelto por la vía de reescribir la spec y reconciliar la cita rota, entonces
+esa vía **ya estaba probada**, y acepté ADR-0154 por ella en vez de tratarla
+como una decisión nueva que bloquear la sesión. Precedente medido: `c35e9a1c`
+aceptó ADR-0153 «con los siete criterios medidos uno a uno».
+
+**LA ACEPTACIÓN, CON SIETE CRITERIOS UNO A UNO.** El tercero no se pudo medir a
+la primera y por cómo falló importa: `cargo doc` dio **0** enlaces intradoc
+rotos, donde el baseline real es **21** — porque la librería no compilaba y
+`cargo doc` no llegó a generar documentación. **Un `cargo doc` que no genera
+nada no informa de enlaces**, y un 0 ahí se lee como una mejora enorme. El
+criterio correcto era «21 después», y el rename **no añadió ni uno**. Es la
+misma clase que ya se pagó dos veces con el escáner de contaminación:
+**medir el cambio y medir el fallo del instrumento por el mismo número.**
+
+**EL GUARD TENÍA DOS DEFECTOS PROPIOS, ambos corregidos EN EL GUARD.** El
+primero afirmaba «el ADR está proposed, el rename sigue bloqueado» y pasaba en
+verde **después** de que el rename estuviera aplicado: un guard que describe un
+estado sin comprobarlo, el cuarto caso de la serie. El segundo contaba como
+erróneas dos líneas que **tras el rename son correctas**, porque buscaba «KMT
+cerca de una palabra de árbol» y ahora eso es justo lo que KMT significa.
+**Un guard que exige arreglar lo que está bien entrena a ignorar sus propios
+rojos.** Ninguno se arregló bajando el listón.
+
+**Y un dato sobre la falsificación que también es la lección:** tres de las
+seis mutaciones dejaron de aterrizar al aplicarse el rename. No eran fallos del
+guard, eran **mutaciones obsoletas**, calibradas contra un mundo que ya no
+existe, y reportarlas como `SKIP` sin más las camuflaría como falta de
+medición. Rehechas contra el mundo real: **6 detectadas, 0 sobrevividas**.
+
+**Verificación, no declarada:** workspace **5435 passed / 0 failed / 24 ignored
+/ 283 binarios** — idéntico al baseline, porque el diff es puramente nominal.
+`cargo fmt --check` 0, `cargo clippy --workspace --all-targets -D warnings` 0,
+`test_kmt_canonical_meaning.sh` PASS=6 FAIL=0, changelog PASS=75.
+
+**Contaminación de redacción, dos casos, en el propio guard que la huntcha:**
+`KMT'pable` y `via KMT'Applied`. Detectados leyendo el diff, no escaneando.
+Ironía anotada, no resuelta: el guard que mide si la prosa llama «KMT» al
+evaluador tenía su propia prosa contaminada.
+
+**Primer paso preciso de la sesión siguiente.** **C3m.1 — Knowledge Merkle Tree
+real**, ya desbloqueado: ADR-0154 dejó `KMT` reservado para la estructura y el
+nombre ya no colisiona. Es el siguiente bloque autónomo y el primero que
+construye algo, no que renombra. C3m.2 ya no está pendiente (ver la corrección
+de arriba). Después: R1 (clave KMS) y R2 (049/050/060/061/063), ambos esperando
+decisión del operador, igual que archivar `a4-1-generic-verify`. Antes de
+cualquier medición: construir el binario del repo y comprobarlo con
+`dev build-id --check`.
