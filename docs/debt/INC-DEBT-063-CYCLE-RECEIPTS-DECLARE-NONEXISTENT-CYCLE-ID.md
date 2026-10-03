@@ -4,6 +4,8 @@ title: "Tres recibos declaran un cycle_id que SDDK nunca emitió: la documentaci
 status: open
 severity: medium
 priority: P2
+revalidated_at: 2026-10-03
+revalidated_in_session: session-69s
 fingerprint: "cycle_receipts_declare_nonexistent_cycle_id"
 fingerprint_aliases: []
 cluster_id: CL-DOCS
@@ -21,6 +23,37 @@ references:
   - docs/roadmap/receipts/cl-vault-node-projection/RECEIPT.md
   - docs/roadmap/receipts/cl-ledger-watch-total/RECEIPT.md
 ---
+
+> ## ⚠️ REVISIÓN DE VIGENCIA (2026-10-03, sesión 69s) — CONFIRMADA, y una conclusión publicada era falsa
+>
+> `REVALIDACION-R2.md` declaró esta deuda **`NOT_VERIFIABLE`** al no encontrar
+> los tres recibos. **Ese veredicto era un error de directorio, no una propiedad
+> del mundo, y esta deuda queda CONFIRMADA con la evidencia que le faltaba.**
+>
+> Los tres recibos **existen**, y en las rutas que la `references:` de este mismo
+> frontmatter cita:
+>
+> ```
+> docs/roadmap/receipts/cl-vault-graph/RECEIPT.md           10014 bytes
+> docs/roadmap/receipts/cl-vault-html-replica/RECEIPT.md     5538 bytes
+> docs/roadmap/receipts/cl-vault-node-projection/RECEIPT.md 11161 bytes
+> ```
+>
+> Y sus tres `cycle_id` declarados siguen sin existir en la autoridad — **0 filas
+> cada uno** en el ledger real. **Lo que el `NOT_VERIFIABLE` dejó sin medir era
+> precisamente lo que la afirma.**
+>
+> **Cifras del cuerpo que están caducas:** el ledger no tiene «179 ciclos», tiene
+> **187 filas que son dos poblaciones**. Las reales de `p-63676b11dc0ef88f` son
+> **108**; las otras **79** son `__spine_import__` (todas `OPEN`, manifiesto `{}`).
+> El `LIKE '%vault%'` de abajo daba 2 sobre las 187 filas; sobre las **108
+> reales** da **2 también**, luego el ejemplo no se cae, pero su denominador
+> estaba mal. La sección se conserva sin reescribir.
+>
+> `status: open`, severidad y prioridad **sin cambio** (`medium`/`P2`): la deuda
+> no era más grave de lo que decía, era exactamente tan grave como decía.
+>
+> Evidencia: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §0.1.
 
 ## Qué es
 

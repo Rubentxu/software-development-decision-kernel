@@ -1,4 +1,32 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s, 2026-10-03): R2 REVALIDADA, no cerrada. La propiedad de `INC-DEBT-060` es falsa hoy, y el binario del `PATH` es 202 commits más viejo que el código declarando la misma versión.** `HEAD` = `537e73e3` + `0b5a9351` + `a2b0bd13` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+Se ha hecho la **otra mitad** de lo que la revalidación nombró: no comprobar si las deudas siguen diciendo verdad —eso ya está— sino la **revisión de vigencia**, que **no es un cierre**. Ninguna deuda se cierra aquí y **ninguna severidad baja**. Evidencia: [`receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md`](receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md).
+
+**Lo que se corrige, y una de las correcciones es de una conclusión ya publicada:**
+
+| Deuda | Publica | **Medido hoy** |
+|---|---|---|
+| `INC-DEBT-060` | 179 filas, 97 sin nombrar, 91 `OPEN` | **108 ciclos reales, 0 sin nombrar.** 187 filas = 108 reales + **79 `__spine_import__`** |
+| `INC-DEBT-061` | 51 ciclos apartados | **53** (6 de 15 alias, estable) |
+| `INC-DEBT-063` | tres recibos con `cycle_id` inexistente | **CONFIRMADA** — los tres existen, y sus tres ids siguen sin existir |
+| `INC-DEBT-050` | alias existe, historia partida | **VIGENTE** — 12 ciclos, 6 `OPEN`, en el `from_id` |
+
+**`INC-DEBT-060`: el titular es falso y por fin está medido fila a fila.** `sddk cycle list` (build de HEAD, ledger real, sin copia) nombra **108 de 108** ciclos reales, **0 sin nombrar**, y declara `unreadable_manifests: 2` — que **coincide exactamente** con las 2 filas reales cuyo manifiesto no deserializa, o sea que marca lo que no puede leer en vez de omitirlo. Es la tercera medición de la propiedad (`69c`, `69m`, esta) y las tres convergen. **Lo que queda abierto es la segunda población:** las **79** filas `__spine_import__`, que llevan `79, 79, 79` desde `69d`.
+
+**`REVALIDACION-R2.md`-publicó dos números que son la suma de dos poblaciones, y esa corrección va en su propia deuda:** §3 da «187 ciclos» y «107 `OPEN`» contando la tabla entera. Los 187 son 108 + 79 y los 107 son 28 + 79. **Ninguno de los dos describe este proyecto.** El documento de revalidación **no se reescribe** —la descomposición va en `INC-DEBT-060`— pero su §3 y su §5 se marcan como leídos con esta corrección delante.
+
+**`INC-DEBT-063` era `NOT_VERIFIABLE` y era un error de directorio.** Los tres recibos **existen**, en las rutas que la `references:` de la propia deuda cita. La revalidación los buscó en `tests/cycle-artifacts/`. **Séptima vez en esta serie que se mide la cosa equivocada**, y la segunda con consecuencia grave: iba a dejar sin verificar una `medium/P2` **que es cierta**.
+
+**El hallazgo que no estaba en ninguna deuda: el binario instalado no es el código, y no puede decírselo.** `~/.local/bin/sddk` declara **`2.5.3`** —la versión del workspace **sin publicar**— y es de `90f16ad2`, **202 commits por detrás de `HEAD`**. No tiene `sddk cycle list` ni `sddk dev build-id`: **el artefacto que tiene el problema no puede ejecutar el check que lo encuentra.** Es la forma más difícil de la condición de `INC-DEBT-064`, y confirma su `open`/`high` sin cambiarlo.
+
+**Y una medición publicada que fechó mal el binario que usó:** `REVALIDACION-R2.md` dice *«build del 2026-10-03 06:57»*; el fichero es de **2026-10-01 21:17:29 CEST**. **La revalidación de R2 se hizo con el binario viejo**, y por eso no vio que `cycle list` ya existía. Medir la vigencia de una deuda con el artefacto que la deuda describe es medir con el instrumento que la deuda dice que no sirve.
+
+**Siguiente paso: `R2` sigue abierta y su cierre necesita un guard, no un recuento.** La revisión de vigencia fija el estado de las cinco deudas; lo que falta es lo que la revalidación ya señaló y esta sesión confirma con `51 → 52 → 53` en un día: **cualquier número de este clúster es una fecha, no un hecho.** El remedio es un guard que mida la propiedad cada vez.
+
+**Decisiones del operador que siguen abiertas:** (a) dónde vive la clave de firma de la release (KMS frente a fichero local) — bloquea `R1`; (b) qué superficie de producto produce `HostEvent` — bloquea `C3m.1`; (c) las dos salidas de `INC-DEBT-050` y `INC-DEBT-061`, que son un solo hecho; (d) bajar `INC-DEBT-060` a `medium`, reservado al operador desde `69m`; (e) archivar `a4-1-generic-verify` (publicado como `v1.169.46`, sin transicionar).
+
+---
 **Estado (session-69r, 2026-10-03): C3m.5 MEDIDO. La decisión de bounded contexts NO se toma como taxonomía de módulos, y el motivo está medido.** `HEAD` = `08081930` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 C3m.5 es literalmente una línea en el roadmap (*«R0 bounded-context decision»*) y **no existe taxonomía declarada en ninguna parte del repo**, así que lo medido no es qué contexto es cada módulo sino **cuánto del motor deja fuera cualquier taxonomía que se escriba**: con una convención de nombres propuesta, **68 de 133 raíces y 36.007 líneas quedan fuera de toda caja**, y ese cajón sin nombre es el mayor de todos.

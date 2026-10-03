@@ -4,7 +4,9 @@ title: "Ninguna superficie del producto enumera los ciclos: 97 de los 179 de un 
 status: open
 severity: high
 priority: P1
-detected_at: 2026-10-02
+revalidated_at: 2026-10-03
+revalidated_in_session: session-69s
+fingerprint: 2026-10-02
 detected_in_session: session-69c
 component: cycle
 surface: [crates/sddk-storage/src/lib.rs, crates/sddk-cli/src/cycle.rs]
@@ -92,6 +94,46 @@ references:
 > sigue haciendo falta. El propio documento reserva esa bajada a `medium` a la
 > **decisión del operador**, y una severidad no se degrada por el criterio de
 > quien la escribió.
+
+> ## ⚠️ REVISIÓN DE VIGENCIA (2026-10-03, sesión 69s) — tercera medición, y converge
+>
+> La corrección de session-69m ya afirmó que el titular es falso desde session-69c.
+> Esta es la **tercera** medición de la misma propiedad, y sirve para dos cosas:
+> confirmar que la convergencia se sostiene y **corregir dos cifras que otra
+> revalidación publicó mal** (`REVALIDACION-R2.md` §3, que volvía a sumar la
+> tabla entera).
+>
+> Medido hoy con el **binario de HEAD** (`113f84ba` y siguientes) sobre el ledger
+> real, sin copia:
+>
+> | | session-69m | **hoy** |
+> |---|---|---|
+> | filas totales en `cycles` | 181 | **187** |
+> | ciclos reales de `p-63676b11dc0ef88f` | 102 | **108** |
+> | **reales NO nombrados por ninguna superficie** | **0** | **0** |
+> | `OPEN` reales | 25 | **28** |
+> | ilegibles declarados por el comando | 2 | **2** |
+> | filas `__spine_import__` sin nombrar | 79 | **79** |
+>
+> **Contraste fila a fila, no solo el número que el comando declara:** 108 filas
+> reales en la tabla, 108 entradas `cycle:` en la salida, **0** filas reales sin
+> nombrar y **0** nombradas que no sean filas reales. El `unreadable_manifests: 2`
+> que el comando imprime **coincide exactamente** con las 2 filas reales cuyo
+> manifiesto no deserializa, o sea que marca lo que no puede leer en vez de
+> omitirlo en silencio.
+>
+> **Las dos cifras que se corrigen** (venían de sumar dos poblaciones):
+> `REVALIDACION-R2.md` §3 mide la tabla `cycles` entera y publica **«187 ciclos» y
+> «107 `OPEN`»**. Los 187 son 108 reales + 79 `__spine_import__`, y los 107 son
+> 28 reales + 79 importados. **Ninguno de los dos números describe este
+> proyecto.** La sección de abajo no se reescribe; la descomposición, sí.
+>
+> **Lo que queda abierto no ha cambiado en tres mediciones:** las **79** filas
+> `__spine_import__`, que llevan `79, 79, 79` desde session-69d y son el residuo
+> de importación. `status: open`; severidad sin cambio — la bajada a `medium`
+> sigue reservada al operador, como ya decía session-69m.
+>
+> Evidencia: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §1.
 
 ## Qué es
 

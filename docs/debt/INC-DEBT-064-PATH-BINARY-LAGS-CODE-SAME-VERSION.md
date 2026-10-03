@@ -4,6 +4,8 @@ title: "El binario de sddk en el PATH va mas atras que el codigo y declara la MI
 status: open
 severity: high
 priority: P1
+revalidated_at: 2026-10-03
+revalidated_in_session: session-69s
 fingerprint: "path_binary_lags_code_while_declaring_same_version"
 fingerprint_aliases: []
 cluster_id: CL-DIST
@@ -123,6 +125,48 @@ coherencia donde no la hay.
   (`crates/sddk-cli/tests/cli.rs:5626-5660`): `tests-pass`, `policy-compliant`,
   `debt-severity-assigned`, `debt-priority-assigned` y `verification-report`.
   Verificado, no supuesto.
+
+---
+
+## Revisión de vigencia (2026-10-03, sesión 69s)
+
+**Dos de los tres puntos de «Lo que NO se ha hecho» de abajo ya están hechos, y el
+que queda sigue siendo el que importa.** No se reescriben: la sección de abajo se
+conserva como estaba y esta va delante.
+
+| Punto de «NO se ha hecho» | Medido hoy |
+|---|---|
+| «la fase verify de `cl-build-identity` está abierta» | **CADUCADO** — cerrada en `261a578c`, con 2 gates `passed` |
+| «`dev doctor` no lo invoca» | **CADUCADO** — cableado en `a5c18b97`; `doctor` ya publica `binary.build_identity` |
+| «el binario del PATH sigue obsoleto» | **VIGENTE**, y ahora con su distancia exacta |
+
+**La distancia, que el documento solo expresaba en días:** el binario instalado
+es de `90f16ad2` (**2026-10-01 21:10:43 CEST**, construido a las 21:17:29) y
+`HEAD` es `a2b0bd13`: **202 commits de distancia**. `v2.5.2` se publicó a las
+18:22:15Z, luego el binario se construyó **tres horas después de publicar
+v2.5.2**, sobre un árbol que ya declaraba `2.5.3`.
+
+**El dato nuevo, y es la forma más difícil de esta condición:** el binario
+obsoleto **no tiene `sddk dev build-id`**, porque se construyó antes de
+`032e9553`. O sea que **el artefacto que tiene el problema no puede ejecutar el
+check que lo encuentra**, y tampoco puede decir que no lo tiene. La
+autoinspección ausente no es detectable por sí misma; solo se ve desde fuera,
+midiendo la versión que declara contra los subcomandos que expone.
+
+**Y una corrección de una medición publicada.** `REVALIDACION-R2.md` cabecera con
+*«Binario usado: `sddk 2.5.3` (build del 2026-10-03 06:57)»*. El fichero en disco
+es de **2026-10-01 21:17:29 CEST**: la revalidación de R2 se hizo **con el binario
+viejo**, y por eso no vio que `sddk cycle list` ya existía en el código. Medir la
+vigencia de una deuda con el artefacto que la deuda describe es medir con el
+instrumento que la deuda dice que no sirve.
+
+**Sin cambio de estado ni de severidad.** La condición de escalada —que una
+medición con el binario obsoleto llegue a un documento publicado como afirmación
+sobre el producto— **acaba de cumplirse una vez**: durante esta sesión, con el
+binario viejo, se creyó que `sddk cycle list` no existía. Se detectó comparando
+contra el código, no porque el binario lo dijera. `status: open`, `high`/`P1`.
+
+Evidencia completa: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §4.
 
 ---
 

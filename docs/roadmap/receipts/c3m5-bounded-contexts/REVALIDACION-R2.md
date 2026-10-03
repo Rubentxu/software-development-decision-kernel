@@ -1,5 +1,30 @@
 # REVALIDACIÓN R2 — las cinco deudas de identidad, medidas hoy
 
+> ## ⚠️ LÉASE ESTO ANTES QUE §3 Y §5 (corrección de 2026-10-03, sesión 69s)
+>
+> **Este documento no se reescribe**: se conserva entero como evidencia de lo
+> que se midió, y por separado se declara lo que dio mal. Tres de sus resultados
+> están mal, y los tres son del mismo tipo — **medir una tabla sin separar las
+> poblaciones que contiene**, o buscar un artefacto donde la propia deuda dice que
+> no está:
+>
+> | Sección | Afirma | Corrección medida |
+> |---|---|---|
+> | §3 | «187 ciclos», «107 `OPEN`» | **187 = 108 reales + 79 `__spine_import__`**; **107 = 28 + 79**. Ninguno de los dos números describe este proyecto |
+> | §5 | `INC-DEBT-063` **NO VERIFICABLE** | Los tres recibos **existen**, en las rutas que la `references:` de la deuda cita. La deuda queda **confirmada** |
+> | cabecera | «Binario usado: `sddk 2.5.3` (build del 2026-10-03 06:57)» | El fichero es de **2026-10-01 21:17:29 CEST**. **La revalidación se hizo con el binario viejo**, y por eso su §3 no vio que `sddk cycle list` ya existía |
+>
+> Lo que **sí** se sostiene de este documento, y por eso no se toca: `061`
+> VIGENTE con 6 de 15 alias, `050` VIGENTE, `049` con premisa caducada y
+> defecto nuevo vivo, y la observación de que **la población cambia mientras se
+> mide** — que la revisión de vigencia de esta sesión confirma con
+> `51 → 52 → 53` en un día.
+>
+> Corrección completa y su evidencia:
+> [`REVISION-VIGENCIA-R2.md`](REVISION-VIGENCIA-R2.md).
+
+---
+
 **Fecha:** 2026-10-03 · **Alcance:** `INC-DEBT-049`, `050`, `060`, `061`, `063`
 **Binario usado:** `sddk 2.5.3` (build del 2026-10-03 06:57)
 **Ledger de este repo:** `~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite`

@@ -4,6 +4,8 @@ title: "Seis de los quince alias de proyecto ocultan 51 ciclos con nombre: el al
 status: open
 severity: high
 priority: P1
+revalidated_at: 2026-10-03
+revalidated_in_session: session-69s
 fingerprint: "project_alias_redirect_hides_split_history"
 fingerprint_aliases: []
 cluster_id: CL-IDENTITY
@@ -24,6 +26,38 @@ references:
 ---
 
 ## Qué es
+
+> ## Revisión de vigencia (2026-10-03, sesión 69s) — VIGENTE, y el número es una fecha
+>
+> La deuda **sigue diciendo verdad**: **6 de los 15 alias** conservan historia
+> partida. Ese 6 es estable desde que se detectó. **Lo que envejece es el
+> recuento**, y conviene que la tabla de arriba se lea como la medición del día
+> en que se hizo y no como el estado actual:
+>
+> | | publica (session-69j) | revalidación (69s) | **hoy (69s)** |
+> |---|---|---|---|
+> | alias con historia partida | 6 de 15 | 6 de 15 | **6 de 15** |
+> | **ciclos apartados** | **51** | **52** | **53** |
+> | `OPEN` apartados | — | 24 | **25** |
+> | `p-74299cf88f51dab9` → `p-b7740b96d79ec013` | 12 / 442 | 12 / 442 | **12 / 443** |
+>
+> **51 → 52 → 53 en un día, sin que nadie toque el código.** La deriva viene del
+> lado al que se redirige (`p-b7740b96d79ec013` pasó de 442 a 443), no de que el
+> criterio cambie: los 12 ciclos del `from_id` siguen ahí, con 6 `OPEN`, y la
+> redirección los esconde igual. **Un número reescrito a mano en esta deuda es una
+> fecha, no un hecho** — y por eso el remedio que esta deuda necesita sigue siendo
+> un guard que mida la propiedad cada vez.
+>
+> **Una medición mía que falló y va escrita porque es la segunda vez:** consulté
+> `project_id` dentro del ledger de `p-63676b11dc0ef88f` y obtuve **0 alias con
+> historia partida** — un `0` tranquilizador del mismo tipo que el `0 de 15` que
+> la revalidación del mismo día ya había registrado. Los ciclos del lado apartado
+> **no están en ese fichero**: están en el ledger del proyecto apartado. Medir
+> esta deuda exige los **ledgers por proyecto**, no una tabla.
+>
+> `status: open`, `high`/`P1`, severidad sin cambio.
+>
+> Evidencia: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §2.
 
 **El alias de proyecto resuelve un problema que en 6 de 15 casos no era un
 problema de identidad, sino de historia partida.** ADR-0152 autorizó una

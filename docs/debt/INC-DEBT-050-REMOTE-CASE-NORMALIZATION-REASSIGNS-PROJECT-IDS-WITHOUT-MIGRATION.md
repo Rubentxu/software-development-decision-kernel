@@ -6,8 +6,8 @@ severity: critical
 priority: P1
 partially_resolved_at: 2026-10-02
 partially_resolved_in_session: session-66
-revalidated_at: 2026-10-02
-revalidated_in_session: session-69j
+revalidated_at: 2026-10-03
+revalidated_in_session: session-69s
 resolved_part: "el apply deja de ser una operacion unica e inejecutable: escritura acotada por WHERE, renombrado de estado declarado y verificado, recuento y escritura comparten predicado, rechazo del storage traducido a problema legible, y test propio de la escritura (24 casos, 11 mutaciones detectadas). session-66"
 open_part: "NO HAY TRABAJO PENDIENTE, HAY UNA DECISION, Y UNA DE SUS DOS OPCIONES ESTA MEDIDA COMO IMPOSIBLE. Remedido en session-69j: el audit da 0 ids divergentes sobre 177 receipts (selfcheck OK), luego el efecto observable de esta incidencia --'un cuarto de las adopciones quedaron con su ledger fuera del alcance del CLI'-- ya no existe, y la migracion de los 25 receipts NO es necesaria para el efecto observable. El camino del alias que este campo proponia como 'trabajo de diseno con SCOPE + ADR' esta HECHO: ADR-0152 accepted, 15 aliases declarados, 0 divergentes. Lo que queda es la segunda mitad del criterio, que el propio documento dejo sin decidir: si los receipts deben decir el id que hoy se deriva. MEDIDO, ESA MITAD ES INALCANZABLE POR MIGRACION: el project_id entra en el content_hash de events_v1, el trigger BEFORE UPDATE rechaza, y sin trigger la escritura pasa pero el hash NO se recalcula, luego verify_stream_chain falla con hash_drift para siempre. Quedan dos salidas y las dos son del operador: (a) dar la partida por cerrada y dejar los receipts como historia verdadera de cuando se escribieron, o (b) declarar que esos ids deben ser nombrables, en cuyo caso la respuesta es una segunda autoridad de lectura y NO una migracion. El storage sigue intacto."
 detected_at: 2026-10-01
@@ -26,6 +26,41 @@ fingerprint: "remote_case_normalization_reassigns_project_id_without_migration_o
 ---
 
 ## Qué es
+
+> ## Revisión de vigencia (2026-10-03, sesión 69s) — VIGENTE, y sigue siendo `critical`
+>
+> El `open_part` de arriba dice que **no hay trabajo pendiente, hay una decisión**,
+> y esa decisión **sigue siendo del operador y sigue sin tomarse**. Lo que cambia
+> con la medición de hoy es que **la historia partida que el alias escondía no se
+> ha cerrado**, y por eso esta deuda no puede bajar de `critical` mientras siga
+> siendo verdad:
+>
+> ```
+> p-74299cf88f51dab9 -> p-b7740b96d79ec013     (created_at 2026-10-02T17:03:33Z)
+>   from_id conserva  12 ciclos,  6 de ellos OPEN
+>   to_id   tiene     57 ciclos   (era 56 al medir la revalidacion de hoy)
+> ```
+>
+> **El `reason` de ese alias cita esta deuda por su nombre** — *«mismo remoto y
+> misma ruta canonica, dos project_id distintos para el mismo proyecto»* — y el
+> storage lo contradice: la redirección **renombra** pero no **une**, luego los
+> 12 ciclos (6 `OPEN`) siguen en el lado apartado y ningún comando los nombra.
+> **Registrar el caso no lo resolvió entonces y no lo resuelve hoy**: es
+> `INC-DEBT-061` aplicada a la deuda que la originó, y por eso las dos son **un
+> solo hecho medido desde dos ángulos** — resolver una sin la otra deja el hecho
+> entero en pie.
+>
+> **Lo que el `open_part` declara sigue siendo cierto y no se toca:** las dos
+> salidas (dar la partida por cerrada con los recibos como historia verdadera, o
+> declarar esos ids nombrables y responder con una segunda autoridad de lectura)
+> **siguen siendo del operador**, y la segunda sigue siendo inalcanzable por
+> migración por el `content_hash` de `events_v1`.
+>
+> `status: open`, `critical`/`P1`, severidad sin cambio. La medición del audit que
+> el `open_part` cita (0 ids divergentes sobre 177 receipts) no se ha repetido en
+> esta sesión: `REVALIDACION-R2.md` §4 lo corrobora por otra vía, la del alias.
+>
+> Evidencia: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §3.
 
 `project_id` es `hash(remote normalizado, scope)`. El commit `52182522`
 (2026-09-30) añadió `normalize_remote_path` con minúsculas para que un cambio de
