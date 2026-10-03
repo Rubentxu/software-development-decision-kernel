@@ -258,6 +258,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_authenticity_posture.sh \
              tests/test_release_authenticity_posture_mutation.sh \
              tests/test_release_bump_bundle_sync.sh \
+             tests/test_release_unsigned_propagation.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
@@ -1665,8 +1666,38 @@ for i in $(seq 1 "$ATTEMPTS"); do
 done
 
 unset SDDK_BASE_URL SDDK_VERSION
-export SDDK_PREFIX="/home/rubentxu/.local/bin"
-export SDDK_FRAMEWORK_DIR="/home/rubentxu/.local/share/sddk/framework"
+# El pipeline YA decidio en el 8c que esta release se publica SIN FIRMAR, y el
+# instalador no puede saberlo: solo ve que no hay `.sig` en el CDN. Sin esto el
+# paso 10 moria con `no signature asset published` sobre una release que el
+# propio pipeline acababa de publicar a proposito y que su propio 9c acababa
+# de declarar NOT_RUN con ese motivo.
+#
+# Es la TERCERA vez que la misma verdad —"esta release no esta firmada"— se
+# vuelve a decidir en un sitio distinto del que se decidio: el 8c la admitio, el
+# 9c la declaro, y el 10 la vuelve a negar. **El instalador hace bien en
+# negarse**: negarse es exactamente lo que significa unsigned, y por eso lleva
+# la palabra ALLOW en el nombre de la bandera. Lo que esta mal es no
+# comunicarle que la decision ya esta tomada y por quien. Un gate que
+#murio en un tramo porque nadie le dijo lo que el tramo anterior ya habia
+#decidido no es un gate que protege: es un gate que estorba.
+if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then
+    export SDDK_ALLOW_UNSIGNED=1
+    warn "SDDK_SKIP_SIGNING=1 propagado como SDDK_ALLOW_UNSIGNED=1 al instalador"
+    warn "— la release se publico SIN FIRMAR por decision declarada, y sin esto"
+    warn "el paso 10 se negaria a instalar exactamente lo que el pipeline publico."
+fi
+
+# SDDK_PREFIX y SDDK_FRAMEWORK_DIR ya estan resueltos arriba, desde $HOME y con
+# sobreescritura por entorno. Este paso los sobreescribia con rutas absolutas
+# literales: el script llevaba 1600 lineas respetando el entorno y en la
+# installacion lo dejaba de respetar, escribiendo en el home del operador que
+# desarrollo el repo. En otra maquina —o con otro usuario— instalaba ahi y
+# informaba de un exito que no era de este prefix.
+# Los dos `export` de arriba no son un no-op: las variables se resuelven al
+# principio del script como asignaciones simples, y sin exportarlas install.sh
+# las recibiria vacias. Lo que estaba mal era su VALOR, no su export.
+export SDDK_PREFIX="$SDDK_PREFIX"
+export SDDK_FRAMEWORK_DIR="$SDDK_FRAMEWORK_DIR"
 export SDDK_EDITOR="all"
 bash scripts/install.sh --version "$TAG" --editor all \
     || die "install.sh failed"

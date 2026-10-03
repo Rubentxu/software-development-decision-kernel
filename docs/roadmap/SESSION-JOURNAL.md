@@ -12800,3 +12800,72 @@ el arreglo del bump; la release `REL-2.5.4` se re-ejecuta desde el principio.
 Sigue en pie lo de antes: **instalar una release firmada esta bloqueado** por el
 ancla placeholder de `assets/trust/release-verify-key.pub`, y no se fabricara
 una.
+
+### session_72 — el paso 10 volvia a decidir lo que el 8c ya habia decidido
+
+**Que paso.** `v2.5.4` quedo **publicada** (no draft, no prerelease, 9/9 assets) y
+el pipeline llego por primera vez mas alla del 9c: el 9c declaro `UNSIGNED` con su
+motivo, emito el cierre calificado y **continuo**. Eso es exactamente lo que
+perseguia el arreglo de la sesion anterior. Y un paso mas alla, el 10, lanzo
+`scripts/install.sh` y murio:
+
+    error: cannot verify the authenticity of sddk-v2.5.4-sddk-linux-x86_64-musl.tar.gz:
+    no signature asset published
+
+**La tercera vez que la misma verdad se decide en otro sitio.** El 8c admitio la
+publicacion sin firmar, con aviso. El 9c lo declaro NOT_RUN con su motivo. El 10 lo
+vuelve a negar. Tres tramos, una sola realidad —"esta release no esta firmada"—, y
+cada uno la redecide por su cuenta.
+
+**El instalador hace bien en negarse.** Negarse es lo que significa *unsigned*;
+por eso la bandera se llama `ALLOW` y no `SKIP`, y por eso el mensaje explica que
+el `.sha256` prueba que los bytes no cambiaron en transito pero no que sean
+nuestros. Ese refusal es el que hace que la postura *unsigned* signifique algo. Lo
+que estaba mal era que el pipeline no le dijera que la decision ya estaba tomada:
+un gate que muere porque nadie le dijo lo que el tramo anterior ya habia decidido
+no protege, estorba.
+
+**El arreglo** propaga `SDDK_SKIP_SIGNING=1` como `SDDK_ALLOW_UNSIGNED=1` en el
+paso 10, **con aviso visible** — una excepcion silenciosa no es una excepcion— y
+**solo cuando la bandera esta puesta**. Lo ultimo es lo que la hace segura: una
+propagacion incondicional seria un bypass universal de la verificacion de
+supply-chain, y el guard lo comprueba ejecutando el tramo real en los dos
+sentidos.
+
+**Un segundo defecto en el mismo tramo, y de otra familia.** El paso 10
+sobreescribia `SDDK_PREFIX` y `SDDK_FRAMEWORK_DIR` con **rutas absolutas
+literales** —`/home/rubentxu/.local/bin`—, ignorando las variables que el propio
+script resuelve arriba desde `$HOME` con sobreescritura por entorno. El script
+llevaba 1600 lineas respetando el entorno y en la instalacion lo dejaba de
+respetar: escribia en el home del operador que desarrollo el repo e informaba de
+un exito que no era de este prefix. En otra maquina, o con otro usuario, instala
+ahi.
+
+**Dos fallos del arnes, y los dos del mismo tipo: el guard miente sin que nadie
+lo note.**
+
+1. Sustituir `bash scripts/install.sh` **comentando la linea entera** dejaba
+   colgando la continuacion `|| die "install.sh failed"` de la linea siguiente, y
+   el arnes moria por **error de sintaxis**: un fallo del arnes disfrazado de
+   fallo del producto. Se sustituye el NOMBRE y se conservan los argumentos.
+2. Invocar la sonda con `cat` en vez de `bash` imprimia el **propio texto de la
+   sonda** con `${...}` sin expandir. Eso se lee como "todo vacio" y hace fallar
+   el guard entero sin que haya un solo defecto real.
+
+**Y una decision de diseno que el guard respeta.** El guard mide **que llega al
+proceso hijo**, no que exporta el shell padre: un `export` que no se propaga al
+hijo no sirve de nada, y esa es justo la confusion que produjo el defecto. Por eso
+la sonda es un proceso aparte que imprime su entorno.
+
+**Guard** `tests/test_release_unsigned_propagation.sh` (`PASS=6 FAIL=0 SKIP=0`),
+cableado en `1b`: sin la bandera no se propaga, con la bandera se propaga y con
+aviso, el prefix del entorno llega sin ser sobreescrito, y un control de
+no-vacuidad que exige que la propagacion **dependa de la entrada** —sin el, un
+bloque que propagara siempre pasaria la mitad del contrato y dejaria pasar el
+bypass.
+
+**Lo que NO hace falta re-publicar.** El arreglo es de **tooling**: `scripts/` y
+`tests/` no entran en el bundle (395 ficheros = agents 72 + skills 245 + prompts
+44 + assets 18 + specs 14 + impeccable 2). El artefacto publicado de `v2.5.4` es
+correcto y no le afecta. Por eso el tramo `10..13` se completa contra la release
+ya publicada, no re-publicando una identica.
