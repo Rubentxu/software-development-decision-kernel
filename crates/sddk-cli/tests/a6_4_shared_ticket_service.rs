@@ -57,7 +57,6 @@ fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-
 fn sys_actor(service: &str) -> Actor {
     Actor {
         kind: ActorKind::System {
