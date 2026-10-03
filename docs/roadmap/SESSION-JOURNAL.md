@@ -12734,3 +12734,69 @@ prerelease, 9/9 assets en CDN publico) y sin cambios: es un artefacto valido.
 `REL-2.5.4` lleva el arreglo del 9c y es la que debe correr el tramo `10..13`,
 que sigue sin haberse visto verde. **Instalar una release firmada sigue
 bloqueado** por el ancla placeholder, y no se fabricara una.
+
+### session_71 — el bump se dejaba BUNDLE.toml en la version anterior
+
+**Que paso.** Al bumpear el workspace a `2.5.4` para publicar el arreglo del 9c,
+la release llego al paso `1b` y `tests/test_dev_install_source_guard.sh` la veto:
+
+    BUNDLE.toml version 2.5.3 != workspace 2.5.4 (fosil: regenerar; asi rompio
+    dev install --source en session-36)
+
+**La causa no era un fosil. Era el bump.** `scripts/release-bump.sh` movia
+`Cargo.toml`, los `crates/*/Cargo.toml` y `manifest.toml`, y se dejaba el
+`BUNDLE.toml` de la raiz —**trackeado** y leido por la instalacion desde fuente,
+que es la via que el guard mide— sin tocar.
+
+El mensaje de error culpa a un fosil y no menciona que el bump lo produjo. El que
+lee el fallo no sabe que hacer; lo que si sabe es lo de siempre, arreglarlo a
+mano. Y mientras siga asi, **cada release de este repo muere en el primer bump**,
+en el paso mas temprano y con el mensaje mas desconcertante. Un paso manual que
+solo lo caza un gate, en el momento de publicar, es un defecto del bump, no del
+gate.
+
+**Que lo hace atomico.** El bump mueve ahora las **tres** claves del rango
+(`version`, `binary_min_version`, `binary_max_version`) y verifica despues que
+`min` y `max` quedaron en la nueva version. Mover solo `version` deja un rango
+que **excluye el binario que el release acaba de construir**, y
+`dev install --source` lo rechaza con un motivo que no menciona el rango. Y
+cierra un rango que alguien abrio a mano: un rango abierto que no incluye el
+propio bundle es un bundle que no se puede instalar.
+
+**`schema_version` intacto, y no es gratis.** `version = "2"` **casa dentro de**
+`schema_version = "2"`, luego un `sed` sin ancla de linea reescribe el schema y
+`dev install` rechaza el bundle entero por un motivo que no lo menciona.
+
+**Dos caidas al escribir esto, del mismo tipo.** La documentacion de esta serie
+ya sabe que un literal escrito a mano que no casa no degrada a un fallo: degrada
+a silencioso. aqui cae dos veces:
+
+1. Contando `version = "2.5.3"` como subcadena dio `count=3` —porque
+   `binary_min_version = "2.5.3"` la contiene—. La asercion que exigia
+   unicidad lo cazo **antes de escribir**. Anclar a linea con la clave completa
+   lo resolvio.
+2. El `awk` de extraccion del guard empezo a capturar codigo de mas del producto
+   —imprimia `applied: -> 2.5.4` y `changed files:`, que son del resto del
+   script— porque contar anidamiento con `^(if|for|...)` **no alcanza los
+   `for`/`done` indentados**: el `for` nunca suma y su `fi` de cierre queda sin
+   emparejar. El criterio que si funciona es literal: el bloque abre y cierra en
+   columna 0. **Un guard que ejecuta de mas no mide solo lo que dice medir** —y
+   aqui hacia ruido en stdout, que es exactamente la via por la que un guard
+   reporta fallos que no ocurrieron.
+
+**La costura que faltaba.** `test_release_bump_derivation.sh` ya fijaba, con 7
+casos, que el bump **calcula** bien la version. Lo que no fijaba era que la
+**aplica** a toda la superficie versionada. Derivar bien y aplicar a medias son
+dos contratos distintos, y solo uno estaba vigilado.
+
+Guard nuevo `tests/test_release_bump_bundle_sync.sh` (`PASS=5 FAIL=0 SKIP=0`),
+cableado en `1b`: bump normal, rango abierto que se cierra, `schema_version`
+intacto, y un **control de no-vacuidad** que exige que el contenido cambie de
+verdad —sin el, un bloque que no escribiera pasaria el caso del rango abierto sin
+medir nada.
+
+**Estado.** El cambio de `BUNDLE.toml` a `2.5.4` esta aplicado y commiteado con
+el arreglo del bump; la release `REL-2.5.4` se re-ejecuta desde el principio.
+Sigue en pie lo de antes: **instalar una release firmada esta bloqueado** por el
+ancla placeholder de `assets/trust/release-verify-key.pub`, y no se fabricara
+una.

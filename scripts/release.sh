@@ -257,6 +257,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_sign_artifacts_mutation.sh \
              tests/test_release_authenticity_posture.sh \
              tests/test_release_authenticity_posture_mutation.sh \
+             tests/test_release_bump_bundle_sync.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \

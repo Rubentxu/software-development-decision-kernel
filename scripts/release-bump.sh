@@ -171,6 +171,30 @@ done
 # starts with a different anchor and is never touched).
 sed -i "s/^version = \"[^\"]*\"/version = \"$NEXT\"/" manifest.toml
 
+# BUNDLE.toml lleva las TRES versiones del rango, y las tres tienen que moverse
+# juntas. Este paso no es cosmetico: `tests/test_dev_install_source_guard.sh`
+# (paso 1b) exige que la version del bundle sea la del workspace, y sin esto
+# **toda release futura muere en 1b en el primer bump**, con un mensaje que
+# habla de un fosil y no de la causa —que es que el bump se dejaba untracked
+# file por delante sin avisar. Medido en session-70: el bump 2.5.3 -> 2.5.4
+# dejo `BUNDLE.toml` en 2.5.3 y la release murio ahi.
+#
+# `schema_version` empieza por otro ancla y no se toca, igual que en
+# manifest.toml: solo las claves del rango.
+if [ -f BUNDLE.toml ]; then
+    for bundle_key in version binary_min_version binary_max_version; do
+        sed -i "s/^${bundle_key} = \"[^\"]*\"/${bundle_key} = \"$NEXT\"/" BUNDLE.toml
+    done
+    # El rango del bundle es [min, max] y ambos se fijan a la misma version.
+    # Si alguien lo abriera a mano, `dev install --source`
+    # rechazaria un binario que el release acaba de construir; se verifica aqui
+    # en vez de dejarlo para el usuario.
+    B_MIN="$(sed -n 's/^binary_min_version *= *"\([^"]*\)".*/\1/p' BUNDLE.toml | head -1)"
+    B_MAX="$(sed -n 's/^binary_max_version *= *"\([^"]*\)".*/\1/p' BUNDLE.toml | head -1)"
+    [ "$B_MIN" = "$NEXT" ] && [ "$B_MAX" = "$NEXT" ] \
+        || { echo "BUNDLE.toml: el rango [$B_MIN, $B_MAX] no quedo en $NEXT" >&2; exit 1; }
+fi
+
 # Regenerate Cargo.lock from the bumped manifests.
 cargo check --workspace --quiet 2>/dev/null || cargo check --workspace
 
