@@ -97,8 +97,15 @@ impl ChangeSetCoalescer {
     }
 }
 
-/// Knowledge–Machine Topology projection: which units each
-/// namespace maps to (AC-037-004).
+/// KMT unit index: which units each namespace maps to (AC-037-004).
+///
+/// This is the `KMT` that ADR-0154 reserves: the **structure**, not the
+/// freshness evaluator (that one is `KnowledgeFreshness`). The index is one
+/// projection of it — the namespace→unit mapping, not the fingerprints.
+///
+/// It was previously documented as "Knowledge–Machine Topology", the third of
+/// the three expansions ADR-0154 ruled out. The rename fixed the *symbols* and
+/// missed this line, and the guard of that ADR did not look for it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KmtUnitIndex {
     /// namespace → affected units.

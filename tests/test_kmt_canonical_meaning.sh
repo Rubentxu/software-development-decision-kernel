@@ -40,23 +40,43 @@ else
     bad "no encuentro ni KnowledgeFreshness ni 'pub struct KMT;' en crates/"
 fi
 
-# ── (b) las dos expansiones retiradas NO pueden seguir en el codigo ─────────
-# 'Knowledge Management Tiers' describe una intencion que nunca se implemento.
+# ── (b) LAS TRES expansiones retiradas no pueden seguir en el codigo ────────
+# ADR-0154 cerro la competicion entre tres expansiones: *Knowledge Merkle Tree*
+# es la canonica, y *Knowledge Management Tiers* y *Knowledge-Machine Topology*
+# se retiran. Retirar dos y dejar la tercera viva es un rename a medias, y eso
+# es EXACTAMENTE lo que paso: el rename arreglo los simbolos y dejo la linea de
+# `reactive_verify.rs` que decia "Knowledge-Machine Topology projection".
+#
+# El check anterior solo miraba la primera de las dos, y con guion frente a
+# espacio: un guard que busca una expansion por su nombre exacto no vigila las
+# demas, ni las que el mismo documento declara retiradas.
 #
 # Y aqui esta la distincion que hace que el guard sea cierto en los dos estados
-# del ADR. Con el ADR `proposed` esas dos menciones son EXPECTADAS: son
-# precisamente la condicion de partida que el ADR mide. Fallar por ellas seria
-# un guard que exige un rename que el propio ADR prohíbe todavia, o sea un
-# guard que obliga a hacer lo que el roadmap dice no hacer todavia.
-# Lo que si es un fallo, en cualquier estado, es que aparezcan MAS de las dos
-# conocidas: eso seria la expansion reintroducida por la puerta de atras.
-T=$(grep -rl 'Knowledge Management Tiers' "$ENGINE" --include=*.rs 2>/dev/null | wc -l)
-if [ "$T" -eq 0 ]; then
-    ok "'Knowledge Management Tiers' ya no aparece en el codigo (rename aplicado)"
-elif [ "$T" -le 1 ] && grep -q '^status: proposed' "$ADR" 2>/dev/null; then
-    ok "'Knowledge Management Tiers' sigue en $T fichero, como describe el ADR proposed"
+# del ADR: con el ADR `proposed` esas menciones son la condicion de partida
+# MEDIDA, luego no son un fallo. Lo que si lo es, en cualquier estado, es que
+# aparezcan MAS de las conocidas.
+VIVAS=0
+DETALLE=""
+# Se excluye la prosa que CITA la expansion retirada para explicar que se
+# retiro: nombrar el nombre viejo en una nota de reconciliacion es lo correcto,
+# y un guard que obliga a borrar esa nota obliga a perder el por que. Lo que se
+# busca es la expansion usada COMO NOMBRE, o sea fuera de una cita o de una
+# frase que dice que estaba antes.
+for e in 'Knowledge Management Tiers' 'Knowledge-Machine Topology' 'Knowledge–Machine Topology'; do
+    n=$(grep -rF "$e" "$ENGINE" --include=*.rs 2>/dev/null \
+        | grep -vE '\b(previously|formerly|antes|retirad|retired|was documented|era)' \
+        | grep -c .)
+    if [ "$n" -gt 0 ]; then
+        VIVAS=$((VIVAS + n))
+        DETALLE="$DETALLE '$e'x$n"
+    fi
+done
+if [ "$VIVAS" -eq 0 ]; then
+    ok "las dos expansiones retiradas ya no aparecen en el codigo"
+elif [ "$VIVAS" -le 2 ] && grep -q '^status: proposed' "$ADR" 2>/dev/null; then
+    ok "$VIVAS mencion(es) de las expansiones retiradas: la condicion de partida que el ADR mide"
 else
-    bad "'Knowledge Management Tiers' aparece en $T ficheros; el ADR preveia como maximo 1"
+    bad "las expansiones retiradas siguen vivas ($DETALLE), y el ADR las cerro"
 fi
 
 # ── (c) KMT no puede designar dos tipos a la vez ────────────────────────────
@@ -127,7 +147,11 @@ while IFS= read -r f; do
     # que es el nombre canonico del arbol desde este mismo ADR.
     n=$(grep -nE '^\s*(///|//!|//)' "$f" 2>/dev/null \
         | grep -iE '\bKMT\b' \
-        | grep -viE 'kmt (unit )?(index|indice|tree|arbol)' \
+        | grep -viE 'the (knowledge merkle tree|kmt index|unit index)' \
+        | grep -viE '(via|through) the kmt (unit )?(index|indice|tree|arbol)' \
+        | grep -viE 'kmt (unit )?(index|indice|tree|arbol)[:.]' \
+        | grep -viE 'that adr-0154 reserves' \
+        | grep -viE 'structure\*\*, not the$' \
         | grep -c .)
     MALO=$((MALO + n))
 done < <(grep -rl 'KMT' "$ENGINE" --include=*.rs 2>/dev/null)
