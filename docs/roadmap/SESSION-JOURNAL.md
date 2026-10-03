@@ -12941,3 +12941,88 @@ dos unicos escritores del singleton en ese binario ya no pueden solaparse— per
 el workspace entero, y hacerlo en un bucle seria un gate mas caro que el que
 repara. La confirmacion honesta es el `cargo test --workspace` verde de la
 release, no un test que pase.
+
+---
+
+## session_74 — el gate que no se ejecuto
+
+**Resultado:** REL-2.5.5 se partio en dos etapas. La primera murio en el paso 1
+por un defecto **mio** de una linea; la segunda llego al 2b y murio ahi. Ambas
+muertes son gates de produccion haciendo su trabajo, y las dos dejan la misma
+leccion, que no es "el gate fallo" sino **"no lo mire cuando tocaba"**.
+
+### El defecto: dos lineas en blanco y un release abortado
+
+`304c5d2a` (el arreglo del flake) dejo dos lineas en blanco seguidas tras
+`serial_guard()`. rustfmt quiere una. `cargo fmt` se corre en el **paso 1** del
+release sobre **todo el workspace**, luego el efecto es:
+
+```
+==> 1/15 — cargo fmt + clippy + test (workspace)
+  x cargo fmt failed
+EXIT=1
+```
+
+El arbol entero rechazado por una linea de un fichero de test. Y la pregunta
+que importa: **¿por que no lo vi antes?** Porque corri el test que habia
+cambiado —8/8 verde aislado— y no corri `cargo fmt --check`, que es un gate de
+un segundo.
+
+El contrato de testing (`prompts/sddk/change-scoped-testing.md`) es agnostico
+de lenguaje y el "lote minimo" esta correctamente definido como *lo que el
+cambio justifica*. Aqui el cambio estaba en un repo donde el formateo es un
+gate **global de release**, luego el lote minimo lo incluia. No es que el
+contrato fallara: es que "minimo" se leyo como "solo lo que rompi".
+
+**La regla, y es la generalisable:** *un gate que no se ejecuta no esta verde —
+esta verde porque nadie lo miro*, y eso es **indistinguible de estar roto**. El
+estado real de un gate tiene tres valores, no dos: `PASS`, `FAIL` y
+`NO_EJECUTADO`. Tratar el tercero como `PASS` es un fallo de epistemica, no de
+proceso.
+
+**Y por que no anadi un guard:** porque no hacia falta. El gate de produccion ya
+existia. Anadir `tests/test_...fmt.sh` habria creado **un sitio mas donde dejar
+de mirar** — y ese es el modo de fallo habitual de la cobertura de tests:
+multiplicar comprobaciones hasta que el conjunto tenga mas superficie que el
+producto. Un guard que duplica un gate que ya corre no anade evidencia; la
+evidencia la daba el propio release, y llego tarde.
+
+### El segundo gate: 2b describe lo que se publica
+
+La segunda corrida llego al 2b con el workspace entero verde —**incluido
+`cargo test --workspace`**, que es la confirmacion honesta del arreglo del flake:
+el test que antes fallaba bajo concurrencia ahora pasa dentro del gate real, no
+aislado. Y el 2b la paro:
+
+```
+[FAIL] missing from section '## [2.5.5]': fix(cli): una linea en blanco de mas rompia el gate fmt del paso 1
+```
+
+Correcto, y es `INC-DEBT-047` haciendo lo que se construyo para: el changelog
+declarado tiene que describir el trabajo que se publica. Yo anadi un `fix` y no
+lo anote. El gate lo vio porque compara por **huella** (tipo + scope + 4
+primeras palabras), no por tema — asi que un changelog plausible pero
+incompleto no cuela, que es justo el caso.
+
+### Lo que este tramo deja medido
+
+- El **paso 1** completo pasa con el candado de fichero: no es que el test
+  pasara aislado, es que pasa dentro de `cargo test --workspace`, que es donde
+  competia.
+- Los **33 shell tests** del 1b verdes, incluidos los seis guards de release
+  anadidos en 8c/9c/bump/paso 10.
+- Los **10 python tests** verdes, incluido `test_gate_coverage.py`.
+- El 1c confirma `HEAD == origin/main` sin push pendiente.
+- El 2b es la primera vez que **rechaza en ruta** una release por cobertura: los
+  dry-runs lo saltaban (`--dry-run` no publica, luego no comprueba). El gate
+  solo se puede ejercitar de verdad cuando se publica de verdad.
+
+### Nota sobre el paso 0
+
+Sigue avisando de que el subject del HEAD no sigue la convencion
+`chore(release): bump version`. Es correcto y es **inocuo**: el bump ya esta en
+`origin/main`, luego la variante `A-v2` del hook de pre-push admite por estar
+por encima del ultimo tag publicado (`2.5.5 > v2.5.4`). El aviso no es un
+bloqueo, y deberia seguir siendolo: es la firma de que la ventana
+*declarada-pero-no-publicada* sigue abierta, que es exactamente lo que
+`INC-DEBT-040` variante 3 vino a hacer posible.
