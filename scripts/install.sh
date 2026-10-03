@@ -281,7 +281,20 @@ _rebuild_verify_key() {
 
 verify_signature() {
     local file="$1" sig_url="$2" label="$3"
-    local sig_file bundle_file cert_file key_file
+    # Los tres destinos se asignan AQUI, no mas abajo: se leen en 297/298/302 y
+    # en los dos bloques de verificacion. `set -u` convierte un `local` sin valor
+    # en un fallo inmediato, y la reescritura del anchor key-based (3b0dc9dc)
+    # dejo la declaracion `local` y todas las lecturas, pero perdio estas tres
+    # asignaciones -- con lo que el instalador moria en la primera lectura y
+    # `SDDK_ALLOW_UNSIGNED=1` no podia rescatarlo, porque la rama que lo honra
+    # esta DESPUES. Se declaran junto a la firma para que `local` y lectura no
+    # puedan separarse otra vez: un destino que se lee y no se asigna es una
+    # variable sin fuente, y declararla en la misma linea es lo que la hace
+    # visible al leer la funcion entera de arriba abajo.
+    local sig_file="$file.sig"
+    local bundle_file="$file.bundle.json"
+    local cert_file="$file.pem"
+    local key_file="$file.sddk-anchor.pub"
 
     if ! command -v cosign >/dev/null 2>&1; then
         _signature_absent "cosign is not installed" "$label"
@@ -302,7 +315,6 @@ verify_signature() {
         download_optional "$sig_url.pem" "$cert_file" || true
     fi
 
-    key_file="$file.sddk-anchor.pub"
     if ! _rebuild_verify_key >"$key_file"; then
         rm -f "$key_file"
         return 1

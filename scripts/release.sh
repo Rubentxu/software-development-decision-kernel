@@ -219,6 +219,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_ci_contract.sh \
             tests/test_release_pipeline_consistency.sh \
             tests/test_vault_mirror_auto.sh \
+            tests/test_install_signature_execution.sh \
+            tests/test_install_signature_execution_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -245,6 +247,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_bundle_layout.sh \
              tests/test_release_bundle_step5.sh \
              tests/test_install_asset_contract.sh \
+             tests/test_install_signature_execution.sh \
+             tests/test_install_signature_execution_mutation.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
