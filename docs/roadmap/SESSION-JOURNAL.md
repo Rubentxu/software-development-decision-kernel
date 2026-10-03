@@ -11144,3 +11144,84 @@ Pasó `CLEAN` con las cuatro dentro, y hubo que buscarlas aparte.
    sucio, y la comparación que dice `retrasado` con dos binarios reales.
 3. El falsificador tiene que detectar **los cuatro escenarios del §3 del SCOPE**,
    no solo el que el arreglo arregla.
+
+---
+
+## session-69n bis 4 — 2026-10-03 — `cl-build-identity` implementado, y el detector que lo entregaba pasaba sobre un binario obsoleto
+
+**Baseline / HEAD.** `HEAD` = `11c8e1d9` == `origin/main` al cierre de la
+implementación; este commit documental es posterior y no es evidencia de ese
+SHA. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`);
+la siguiente release sigue siendo 2.5.3 y no se bumpeó.
+
+**WorkItem.** `p-63676b11dc0ef88f/cl-build-identity`, cerrado de `build`.
+
+**Lo entregado** (`032e9553`): `crates/sddk-cli/build.rs` que embebe commit,
+procedencia y suciedad; `sddk dev build-id` en texto y JSON; `dev build-id
+--check` que compara contra el checkout y nombra la relación. 12 guards, 6/6
+mutaciones detectadas, workspace 5427 passed. **Fase de build cerrada**
+(`11c8e1d9`): `phase.build.complete.b-direct` aplicada, ciclo en `OPEN/verify`,
+sequence 2, 1 artefacto, gate `implementation-complete` `passed`.
+
+**El hallazgo que domina la sesión.** El detector que acababa de entregar
+**pasaba sobre un binario obsoleto**. Medido reconstruyendo un binario con
+`SDDK_GIT_SHA` clavado a un commit que no es el HEAD, que es el escenario de
+INC-DEBT-064:
+
+```text
+relation: Behind
+reason: ... luego el checkout tiene trabajo que el binario no contiene
+EXIT=0
+```
+
+El texto y el código de salida se decían lo contrario en la misma pantalla. La
+causa era `is_answer()`, que confundía *¿hubo relación?* con *¿este binario es
+del checkout?*. Arreglado en `11c8e1d9` con `is_current()`, que es `Matches` y
+nada más: `Behind` pasa de 0 a 1, verificado reconstruyendo.
+
+**Lo que más pesa que el arreglo: por qué ningún test lo vio.** El guard
+unitario fijaba el predicado, el guard e2e fijaba el formato, y el código de
+salida no lo fijaba nadie. El guard e2e nuevo resultó **ciego por defecto** —
+cuarta vez en esta serie que un guard solo fija el caso donde el defecto no se
+manifiesta — y se comprobó que **pasaba con el defecto puesto**. Falsificado de
+verdad con `SDDK_GIT_SHA=$(git rev-parse HEAD~1)`, donde sí cae. La condición
+de ceguera quedó escrita en el propio guard.
+
+**Y que no lo encontrara ninguna mutación es el dato general:** las seis de
+`23-falsify-build-identity.py` pasaban en verde sobre un `--check` que era peor
+que no tenerlo. Un falsificador que solo muta la implementación no ve los
+defectos de la interfaz observable.
+
+**UAT observado / no ejecutado.** No hay matriz UAT nueva para esta biseca: la
+fase verify de `cl-build-identity` es la que debe ejecutarla, y no se ha
+ejecutado. Lo observado aquí: workspace 5428 passed / 0 failed / 24 ignored /
+283 binarios, `fmt` y `clippy --workspace --all-targets -D warnings` en 0,
+changelog PASS=70 FAIL=0, scanner CLEAN, `git diff --check` limpio. **NOT_RUN**:
+la ruta forge contra un GitHub real, y todo lo que exige la clave KMS.
+
+**Bloqueos.** Ninguno técnico. Los del operador siguen igual: clave KMS
+(2.5.3 y los tres ciclos en `RELEASE_PENDING`), INC-DEBT-050, INC-DEBT-061,
+INC-DEBT-060, INC-DEBT-063, INC-DEBT-049, y la publicación del harness
+`Pipelinek-Test-Hardness`.
+
+**Riesgos.** (a) `release.sh` no exporta `SDDK_GIT_SHA`: una release publicada
+seguirá declarando `source: git`, luego `--check` nunca saldrá de `Unknown`
+para un binario de release. Concernia propia, declarada, no hecha. (b) El
+lease se libera al cambiar de fase y readquirir incrementa el
+`fencing_token`: usar el token viejo en la transición falla cerrado, que es lo
+correcto. (c) El texto imprime la relación con `{:?}` (`Unknown`,
+`NoCheckout`) y el JSON la serializa en snake_case: dos formas, un contrato.
+
+**Contaminación de redacción, dos casos.** El scanner no cubre la segunda
+clase y por eso hay que buscarla aparte: un `tambioen` por «también» en la
+línea del CHANGELOG —detectado antes de commitear— y un `turned out` en plena
+prosa española de un fichero de borrador, corregido antes de insertarlo. En los
+punteros, dos más ya corregidos: un CJK en el lugar de «se coló» y un punto
+colado en medio de un verbo. Los caracteres **no se reproducen aquí**: un
+diario que copia la corrupción la reintroduce, y este bloque dejó de estar
+limpio justo por contarla.
+
+**Primer paso preciso de la sesión siguiente.** Readquirir el lease
+(`sddk cycle lock acquire --owner rubentxu`, anota el `fencing_token` nuevo) y
+ejercer `dev build-id --check` como lo usaría un gate real, antes de graduar
+ningún gate de la verify.

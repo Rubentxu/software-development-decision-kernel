@@ -1,5 +1,52 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69n bis 4, 2026-10-03): `cl-build-identity` implementado y la fase de build CERRADA — pero el detector que lo entregaba pasaba sobre un binario obsoleto, y lo encontró el producto en uso, no un test.** `HEAD` = `11c8e1d9` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo entregado** (`032e9553`): `crates/sddk-cli/build.rs` que embebe commit, procedencia y suciedad; `sddk dev build-id` en texto y JSON; y `dev build-id --check`, que compara contra el checkout y nombra la relación. Verificado con **dos binarios reales**: sin `SDDK_GIT_SHA` declara `source: git` y `--check` sale `Unknown`; con ella declara `source: env` y sale `Matches`.
+
+**El defecto, y por qué importa más que el arreglo.** `is_answer()` metía `Behind` en el conjunto que pasa, con la lectura de que «`Behind` es una respuesta, luego pasa». Y lo es — pero respecto a una pregunta **distinta**: `is_answer` contestaba *¿hubo relación?*, y el código de salida tiene que contestar *¿este binario es el del checkout?*. Medido, reconstruyendo un binario con `SDDK_GIT_SHA` clavado a un commit que no es el HEAD — el escenario de INC-DEBT-064:
+
+```
+relation: Behind
+reason: …el checkout tiene trabajo que el binario no contiene
+EXIT=0
+```
+
+**El texto y el código de salida se decían lo contrario en la misma pantalla.** El `reason` afirma que le falta trabajo; el `EXIT=0` afirma que no le falta nada. Para quien use `--check` como gate, un binario obsoleto se presenta como conforme.
+
+STOP 3 —«una relación que no se pudo establecer no sale con 0»— se cumplía: `Behind` sí establece la relación, la dirección va probada con `--is-ancestor`. Lo que STOP 3 no dice, y este módulo sí tenía que decir, es que **una relación establecida y suficiente para responder no tiene por qué ser suficiente para pasar**. Es el mismo principio un nivel más arriba, y leer STOP 3 como techo en vez de como suelo lo dejó pasar. Arreglo: `is_answer` desaparece, le sigue `is_current`, que es `Matches` y nada más. Con el mismo binario y el mismo checkout, `Behind` pasa de **0** a **1**.
+
+**Por qué ningún test lo vio, que es la parte que pesa más que el arreglo:** el guard unitario fijaba el **predicado** y el guard e2e fijaba el **formato**. El código de salida no lo fijaba nadie. El guard e2e nuevo resultó además **ciego por defecto** — cuarta vez en esta serie que un guard solo fija el caso donde el defecto no se manifiesta: sin `SDDK_GIT_SHA` el binario de test cae por el fallback `.git`, que STOP 6 declara no concluyente, luego la relación es siempre `unknown` y la rama `behind` no se alcanza. **Comprobado que pasaba con el defecto puesto.** Falsificado de verdad con `SDDK_GIT_SHA=$(git rev-parse HEAD~1)`, donde sí cae. La condición de ceguera queda escrita en el propio guard, porque un guard que parece cubrir un caso y no lo cubre es peor que uno ausente.
+
+**Que no lo encontrara ninguna mutación es el dato.** Las seis de `23-falsify-build-identity.py` pasaban en verde sobre un `--check` que era peor que no tenerlo. **Un falsificador que solo muta la implementación no ve los defectos de la interfaz observable.**
+
+**La forma de la evidencia de gate no es la que parecía** (REQ-IPV, spec-v2 cycle-44): es **un** comando con `argv`, `exit_code` y `output_digest` en el nivel superior, no un lote. El lote de ocho que estaba preparado falló con `ENGINE_INVALID_PASS_EVIDENCE: passed outcome is missing argv`; el validador está en `crates/sddk-domain/src/models/gate_receipt.rs:47`.
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| **`cl-build-identity`** | **`OPEN/verify`, `B-direct`, sequence 2, 1 artefacto, 1 gate `passed`** |
+
+`phase.build.complete.b-direct` aplicada con `implementation-complete` graduado sobre `cargo test --workspace --no-fail-fast` (`exit=0`, digest `sha256:6f6258c662…`) y `--artifact implementation-receipt=docs/roadmap/receipts/cl-build-identity/RECEIPT.md`. La transición **liberó el lease** al cambiar de fase; el `fencing_token` pasó de 1 a 2 al readquirirlo, porque estaba caducado.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3 y de los tres ciclos en `RELEASE_PENDING`, del operador.
+2. **Fase verify de `cl-build-identity`**: `phase.verify.complete.b-direct`, que exige `tests-pass` y los demás gates de laverify.
+3. **Concernia propia declarada, no hecha**: `release.sh` no exporta `SDDK_GIT_SHA`, así que una release publicada seguirá declarando `source: git` — correcto pero poco útil, y es lo que hace que el design diga «env es la fuente de verdad».
+4. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+5. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+6. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
+7. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+8. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+9. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+
+---
+
 **Estado (session-69n bis 3, 2026-10-03): abierto `cl-build-identity`, el remedio de INC-DEBT-064, con el SCOPE ya reescrito porque la medición desmontó su propia propuesta.** `HEAD` = `86dea47d` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **La propuesta original del SCOPE era «un `build.rs` embebe el SHA del checkout». Se midió en un crate mínimo con el `build.rs` real, y los cuatro escenarios son fallos:**
