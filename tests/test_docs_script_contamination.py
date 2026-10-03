@@ -158,7 +158,7 @@ KNOWN_OUTSIDE_DOCS: dict[str, str] = {
     "specs/E14-uat-guided-pipeline/E14.4-TEST-DISCOVERY-AGENT.md:9": "verbo ('reemplaza')",
     "tests/cycle-artifacts/p-63676b11dc0ef88f/session48-c3i-ctx-uat-002-003/RECEIPT.md:111": "el receipt NOMBRA la contaminacion que corrige; reescribirlo borraria la evidencia",
     "tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/SCOPE-CONTRACT.md:20": "verbo ('proceso')",
-    "CHANGELOG.md:89": "cita intencionada: esta entrada del changelog NOMBRA la contaminacion de operator.rs que el commit corrige; escribirla sin el CJK seria describir el defecto con una forma que el defecto no tiene",
+    "CHANGELOG.md:91": "cita intencionada: esta entrada del changelog NOMBRA la contaminacion de operator.rs que el commit corrige; escribirla sin el CJK seria describir el defecto con una forma que el defecto no tiene",
 }
 # `docs/roadmap/SESSION-JOURNAL.md` esta en EXCLUDED_FILES y por eso NO lleva
 # entradas aqui, aunque contenga citas intencionadas de la contaminacion

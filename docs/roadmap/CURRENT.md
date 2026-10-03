@@ -1,4 +1,32 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 11, 2026-10-04): C3n.4 VERIFICADO EMPÍRICAMENTE. Los ocho guards de C3n se ejecutaron exactamente como `release.sh` los invoca: 8/8 verdes.** `HEAD` = `59a165e3` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**SDDK es la autoridad del estado.** Ciclo `p-63676b11dc0ef88f/c3n-production-boundary-certification` · path **A-full** · `phase: specify` · lease viva `fencing_token=1` · evento `evt-efa5ecd4`. `exploration-report.md` escrito en el directorio de artefactos del ciclo.
+
+**C3n cerrado en cinco commits:** `87831cc5` (vocabularios reconciliados) · `ee5767a5` (exit gate de Context-First) · `34484a26` (ficheros reales de R2/R5/R8 + mi conclusión retirada) · `89583815` (guard de citas de spec, 3h/15) · `59a165e3` (guard de contaminación ampliado a 6 superficies).
+
+**C3n.4 — la tabla de lo que corre en release, medida y no leída:**
+
+| Paso | Guard | Autofalsación | Medido |
+|---|---|---|---|
+| 3b | `test_cycle_list_total_reconciliation.sh` | — | **PASS** |
+| 3c | `…_mutation.sh` | 9 modos de mentira | **PASS** |
+| 3e | `test_uat_boundary_receipt.sh` | F1, F2 | **PASS** |
+| 3f | `test_uat_naming_boundary_policy.sh` | — | **PASS** |
+| 3g | `…_mutation.sh` | 7 mutaciones | **PASS** |
+| 3h | `test_spec_citation_anchor.py` | — | **PASS** |
+| 1b | `test_contamination_surface_mutation.py` | — | **PASS** |
+| 1b | `test_spec_citation_anchor.py` | — | **PASS** |
+
+**El noveno, `test_doctor_identity_states` (3d), sigue EXCLUIDO con su consecuencia escrita** en `release.sh:314`: exige dos binarios con procedencia distinta y no existe el arnés que los construya. **Es un hueco declarado, no un olvido** — y una excepción sin la consecuencia escrita sería un hueco silencioso.
+
+**Lo que NO se cierra:** `R2`/`R5`/`R8` siguen `IMPLEMENTED`/`NOT_VERIFIED` por defectos de contrato que ningún test unitario falsifica · el preexistente de contaminación no se corrige (INC-DEBT-057) · `release.sh --dry-run` **no ha completado** (timeout en el primer intento, reintentando) · `cargo test --workspace` **NOT_RUN** en cada commit sin cambio en `crates/`.
+
+**Decisiones del operador abiertas:** (a) **clave de firma — BLOQUEA R1 y nada más**; (b) **autoridad de `SPEC-012`** — adoptar el histórico al canónico o reescribir la cita con su ruta; es decisión, no medición; (c) superficie de producto que produce `HostEvent` — bloquea C3m.1; (d) dos salidas de `INC-DEBT-050`/`061`; (e) bajar `INC-DEBT-060` a `medium`; (f) archivar `a4-1-generic-verify`.
+
+**Pendientes de trabajo:** cerrar el ciclo en SDDK (está en `specify`, ya exploratory-superada) · FU-1 (`cycle lock acquire` sin `--cycle` insatisfacible por construcción) · medir si el bundle publicado lleva las mismas `skills/` que el guard vigila (**no comprobado**).
+
+---
 **Estado (session-69s bis 10, 2026-10-03): C3n.3 CERRADO, y el guard de citas tenía un agujero de clase entera.** `HEAD` = `34484a26` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
