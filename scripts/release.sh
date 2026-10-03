@@ -777,6 +777,38 @@ else
          Log: $UAT_BOUNDARY_LOG"
 fi
 
+# 3f y 3g van juntos porque son las dos mitades de la regla 4 de
+# ACCEPTANCE-TRUTHFULNESS-MATRIX.md, que decia -- falsamente medido -- que C3n.1
+# era su aplicacion mecanica. C3n.1 no la cubria. Y el guard, al construirse,
+# encontro el defecto que la regla describe: cuatro de los cinco tests de AIW-S7a
+# se llamaban *_e2e sin cruzar ninguna frontera. Corregido con rename.
+step "3f/14 — la regla 4: un nombre de test no promete una frontera que no cruza"
+NAMES_LOG="$RELEASE_SCRATCH/uat_naming_policy.log"
+if bash tests/test_uat_naming_boundary_policy.sh >"$NAMES_LOG" 2>&1; then
+    ok "politica de nombres: $(grep -m1 '^PASS=' "$NAMES_LOG" || echo 'PASS')"
+else
+    tail -25 "$NAMES_LOG" >&2
+    die "un nombre de test promete una frontera que su fila no declara, o el guard
+         ha dejado de medir. Lo primero informa mal a quien lee el nombre sin
+         abrir el fichero; lo segundo es peor, porque un guard que no mide no
+         avisa de que no mide. Log: $NAMES_LOG"
+fi
+
+# La autofalsacion va en la MISMA release y no como excepcion, por la misma razon
+# que 3c: una falsacion que solo corre cuando alguien edita el guard envejece
+# sin que nadie lo note. Ademas, este guard tiene la propriedade de poder quedar
+# VERDE con su propio veto desconectado, y eso solo se ve falsandolo.
+step "3g/14 — autofalsación de la política de nombres (cada comprobación con dientes)"
+NAMES_MUT_LOG="$RELEASE_SCRATCH/uat_naming_policy_mutation.log"
+if bash tests/test_uat_naming_boundary_policy_mutation.sh >"$NAMES_MUT_LOG" 2>&1; then
+    ok "autofalsación de nombres: $(grep -m1 '^PASS=' "$NAMES_MUT_LOG" || echo 'PASS')"
+else
+    tail -25 "$NAMES_MUT_LOG" >&2
+    die "la autofalsacion de la politica de nombres no pasa: o una comprobacion
+         del guard ha dejado de tener dientes, o una mutacion no llego a aplicarse
+         y se esta contando como deteccion. Log: $NAMES_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/14 — regenerate MANIFEST.sha256"

@@ -8,7 +8,7 @@ use sddk_engine::{
 use sddk_gateway::producer_l0_adapter::{FindingKind, ProducerEvent, ProducerToL0Adapter};
 
 #[test]
-fn cognicode_finding_e2e() {
+fn cognicode_shaped_event_dispatches_registered_rule() {
     // Rule registered against the real engine, same matcher shape the
     // adapter emits for CogniCode findings.
     let engine = SecretaryL0Engine::new();
@@ -112,7 +112,7 @@ fn clone_engine(engine: &SecretaryL0Engine) -> SecretaryL0Engine {
 }
 
 #[test]
-fn chronos_crash_e2e() {
+fn chronos_shaped_crash_dispatches_registered_rule() {
     let engine = SecretaryL0Engine::new();
     engine
         .register(ReactiveRule::new(
@@ -172,7 +172,7 @@ fn engine_for_adapter() -> SecretaryL0Engine {
 }
 
 #[test]
-fn chronos_race_e2e() {
+fn chronos_shaped_race_produces_no_signal() {
     let adapter = ProducerToL0Adapter::with_now(30_000);
     let signals = adapter.dispatch(ProducerEvent::ChronosRace {
         address: "0x7ffd".into(),
@@ -185,7 +185,7 @@ fn chronos_race_e2e() {
 }
 
 #[test]
-fn unknown_event_e2e() {
+fn unknown_event_produces_no_signal() {
     let adapter = ProducerToL0Adapter::with_now(40_000);
     let signals = adapter.dispatch(ProducerEvent::Unknown);
     assert!(

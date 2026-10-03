@@ -1,4 +1,25 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 7, 2026-10-03): la regla 4 tiene dientes. Al construirlos aparecieron dos guards que no median, y el work ya no vivía solo en markdown — ahora hay ciclo en SDDK.** `HEAD` = `ba21caf0` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**WorkItem registrado en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, `sequence 1`. **No existía ningún ciclo `c3n*`**: las dos sesiones anteriores de trabajo C3n se hicieron únicamente en markdown, contra el §1 del protocolo de `~/AGENTS.md`, que hace de SDDK la autoridad del trabajo activo. Corregido. **Además `agent-session` no existe en SDDK 2.5.3** — el protocolo lo exige — así que el estado se recupera con `cycle` / `capability` / `memory` y el hueco queda declarado.
+
+**Lo entregado:** los cuatro tests `*_e2e` de `AIW-S7a` renombrados a lo que describen, con el **mapeo escrito** en los tres artefactos que citan los nombres viejos (sin reescribir su evidencia), más `test_uat_naming_boundary_policy.sh` (paso **3f/14**) y su autofalsación (paso **3g/14**). `PASS=7 FAIL=0` en ambos.
+
+**El guard necesitó tres versiones, y cada una tenía un modo de verde falso que solo la falsación vio:**
+
+1. Comparaba nivel-contenido con `in`, y **`PROCESS` es subcadena de `IN_PROCESS`** → la fila de `AIW-S7a` se contaba como exigente y **se saltaba entera**. El guard pasaba con los cuatro nombres falsos puestos. Un `in` que confunde un nivel con otro que lo contiene no es una lectura permisiva: es un **apagador**, porque el caso que hay que vigilar es el de los que *no* exigen.
+2. El control evaluaba **su propia copia** de la función de clasificación, así que mutar la real no lo movía. **Una copia del código no vigila el código** — séptima vez que esta serie lo paga, y aquí lo repetí yo.
+3. Con el **veto desconectado y el repo limpio el guard quedaba verde**: los controles median el *extractor* y la *clasificación*, ninguno el *veto*. Añadido el control 4, que ejecuta `escanear()` con datos sintéticos.
+
+**Falsado: 6 mutaciones, las 6 caen, ninguna se cuenta como detección si no llegó a aplicarse** (una mutación que no muta es `SKIP`, nunca `PASS` — el falsificador de la v1 reportó M3 como detectada cuando su mutación no encontró el texto). Restauración byte-idéntica por sha en los dos ficheros.
+
+**⚠️ Corrección de un recuento mío, y es la segunda vez seguida.** Escribí «tres de cinco» tests `*_e2e` en el commit anterior; son **cuatro de cinco** — había leído los tres que inspeccioné y no contado el cuarto. **Novena vez en esta serie que se afirma algo sobre el repo sin medirlo, y las dos últimas seguidas son mías y del commit inmediatamente anterior.** La conclusión no cambia; el número sí.
+
+**Siguiente paso preciso:** `tests/test_docs_no_foreign_scripts.sh` (27 caracteres no latinos en 7 líneas del propio diario, con lista de excepciones **motivada**), y después **C3n.3** — recertificación Context-First, que es donde cae la reconciliación de los **dos vocabularios de frontera** que discrepan (8 vs 9 valores, se cruzan en 6, y la matriz viola su propia regla 3).
+
+**Decisiones del operador que siguen abiertas:** (a) clave de firma de la release (KMS vs fichero local) — **bloquea `R1` y nada más**; (b) superficie de producto que produce `HostEvent` — bloquea `C3m.1`; (c) las dos salidas de `INC-DEBT-050`/`061`; (d) bajar `INC-DEBT-060` a `medium`; (e) archivar `a4-1-generic-verify` (publicado como `v1.169.46`, `RELEASE_PENDING` desde 2026-09-16, sin transicionar).
+
+---
 **Estado (session-69s bis 6, 2026-10-03): C3n.2 MEDIDO — tabla de exit gate `AIW-S0..S8` con veredicto y evidence SHA, y una afirmación mía del commit anterior queda desmentida por `grep`.** `HEAD` = `43c7aac2` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **Providers medidos antes de nada:** `cognicode-mcp` **PRESENTE**, `chronos-mcp` **AUSENTE**. Evidence SHA de toda la tabla: `43c7aac2`.

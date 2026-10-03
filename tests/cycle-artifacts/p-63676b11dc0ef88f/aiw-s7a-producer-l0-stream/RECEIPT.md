@@ -92,3 +92,30 @@ promotion but **not pushed and not released**. Running
 `bash scripts/release.sh` requires explicit operator authorization per
 the AIW adoption workflow. Until then, local state is: workspace version
 `1.169.122`, development HEAD = this feature commit, no new tag.
+
+<!-- session-69s bis 7 · RENAME, sin reescribir la evidencia -->
+### RENAME de nombres de test (session-69s bis 7) — las líneas de arriba NO se reescriben
+
+La regla 1 de la matriz dice que la evidencia histórica no se reescribe, y estas
+líneas se conservan **exactas** porque el resultado que[midieron sigue siendo cierto.
+Lo que se corrige es que **los nombres citados ya no existen** tras el rename, y una
+cita que apunta a un test inexistente es peor que un nombre engañoso.
+
+Motivo del rename, medido: los cuatro tests **`*_e2e`** de este fichero construyen
+su `ProducerEvent` **a mano** y lo despachan **in-process** — **no hay CogniCode, no
+hay Chronos, no hay subprocess**. La fila `AIW-S7a` declara `boundary_class:
+IN_PROCESS`, que **no es un nivel exigente** del vocabulario de C3n.1. La regla 4 de
+`ACCEPTANCE-TRUTHFULNESS-MATRIX.md` prohíbe un sufijo `e2e` sin frontera cruzada, y
+decía que C3n.1 era su aplicación mecánica: **no lo era** (C3n.1 no miraba nombres).
+
+Mapeo viejo -> nuevo:
+
+```
+cognicode_finding_e2e   -> cognicode_shaped_event_dispatches_registered_rule
+chronos_crash_e2e       -> chronos_shaped_crash_dispatches_registered_rule
+chronos_race_e2e        -> chronos_shaped_race_produces_no_signal
+unknown_event_e2e       -> unknown_event_produces_no_signal
+```
+
+El **comportamiento no cambia**: mismos cinco tests, mismo `5 passed`. Lo que cambia
+es que el nombre dice lo que el test **cruza** y no lo que el evento **imita**.
