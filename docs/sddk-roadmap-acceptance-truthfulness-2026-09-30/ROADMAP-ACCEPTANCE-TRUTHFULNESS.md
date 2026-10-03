@@ -750,7 +750,7 @@ campo decorativo — un guard que se cumple siempre enseña a leer verde sin lee
 `PURE` (6 filas) tampoco cruza nada. El coste real está en las 5 filas durable y
 en las 2 `MIXED`, y queda escrito arriba para que la decisión sea revisable.
 
-### El nombre del nivel decidía si una fila exigíaReceipt
+### El nombre del nivel decidía si una fila exigía receipt
 
 Medido: **`UAT-MATRIX.md` y el overlay discrepan en el nivel de 4 filas**, y el
 overlay es la fuente declarada por la propia cabecera de la matriz:
@@ -762,14 +762,60 @@ overlay es la fuente declarada por la propia cabecera de la matriz:
 | `AT-UAT-013` | `PROCESS/SQLITE_DURABLE` | `PROCESS` |
 | `AT-UAT-014` | `PROCESS/SQLITE_DURABLE` | `PROCESS` |
 
-`PROCESS/SQLITE_DURABLE` **no aparece en ningún otro documento** y lo usan
-exactamente esas 4 filas. Con el nombre de la matriz las cuatro quedan exentas;
-con el del overlay, **013 y 014 exigen** receipt. **Un nombre decides si una fila
-exige o no**, que es la misma clase de error que el rename de los pins
-`SDDK_LEGACY_CERT_*` que rompió la certificación de cinco releases: **un nombre es
-un contrato con quien lo lee**, y por eso las 4 filas se reconcilian al overlay,
-que es la fuente declarada. Reconciliado en `537e73e3`..(session-69s bis 5) y
-verificado con el guard: las cuatro filas nombran hoy lo que nombra el overlay.
+Con el nombre de la matriz las cuatro quedan exentas; con el del overlay, **013 y
+014 exigen** receipt. **Un nombre decide si una fila exige o no**, que es la misma
+clase de error que el rename de los pins `SDDK_LEGACY_CERT_*` que rompió la
+certificación de cinco releases: **un nombre es un contrato con quien lo lee**, y
+por eso las 4 filas se reconcilian al overlay, que es la fuente declarada.
+Reconciliado en `537e73e3`..(session-69s bis 5) y verificado con el guard: las
+cuatro filas nombran hoy lo que nombra el overlay.
+
+> #### ⚠️ CORRECCIÓN (session-69s bis 6) — una afirmación de arriba era FALSA
+>
+> El párrafo que sigue a la tabla decía, literally:
+> *«`PROCESS/SQLITE_DURABLE` **no aparece en ningún otro documento** y lo usan
+> exactamente esas 4 filas»*. **Es falso, y se comprobó con `grep` sobre todo el
+> repo, no leyendo.** Aparece en **cinco sitios más**:
+>
+> | Sitio | Dónde |
+> |---|---|
+> | `docs/roadmap/ACCEPTANCE-TRUTHFULNESS-MATRIX.md:33` | columna `Frontier real` de **AIW-S8** |
+> | `tests/cycle-artifacts/p-63676b11dc0ef88f/session56-c3l5-x04-multi-process-concurrency/RECEIPT.md:7` | `boundary_class:` |
+> | `tests/cycle-artifacts/p-63676b11dc0ef88f/session58-c3l6-x07-second-binary/RECEIPT.md:6` | `IN_PROCESS` → `PROCESS / SQLITE_DURABLE` |
+> | `crates/sddk-storage/tests/x04_multi_process_concurrency.rs:17` | **fuente de producto** |
+> | (más las 4 filas de la tabla de arriba) | |
+>
+> **Lo que cambia es el diagnóstico, no solo la frase.** El texto daba a entender
+> un *typo* local en cuatro celdas, huérfano y sinsdkel resto. **No lo es:**
+> `PROCESS / SQLITE_DURABLE` es la clasificación **declarada** de `AIW-S8` en la
+> matriz de aceptación, está en los **dos** receipts de X04 y X07, y **un test del
+> producto lo afirma en su propio fuente**. Es decir: es una **clasificación viva**
+> —y lo que ocurre es que **la propia regla 3 de `ACCEPTANCE-TRUTHFULNESS-MATRIX.md`
+> la excluye**, porque su vocabulario cerrado declara `SQLITE_MULTI_PROCESS`, no
+> `SQLITE_DURABLE`.
+>
+> **La conclusión de reconciliación NO cambia** — las 4 filas siguen yendo al
+> overlay, y el guard sigue comprobándolo. Lo que cambia es su **fuerza**: ya no
+> se sostiene en «ese nombre no existe en ningún otro sitio», sino en lo que sí se
+> puede medir, que es que **X04 es literalmente concurrencia de ≥2 PIDs reales**
+> (`x04_multi_process_concurrency.rs`, aserción D0 de identidad de actor), luego
+> `SQLITE_MULTI_PROCESS` **describe lo que el test hace** y `SQLITE_DURABLE` es un
+> nombre que el vocabulario del repo no reconoce.
+>
+> **Y el hallazgo de fondo, que es mayor que la frase equivocada:** este repo tiene
+> **dos vocabularios cerrados de frontera que no coinciden**, en dos documentos que
+> ambos se declaran autoridad:
+>
+> | | valores | solo en este |
+> |---|---|---|
+> | C3n.1 (este §, 8 niveles) | `PURE` `IN_PROCESS` `IN_PROCESS/SQLITE` `SQLITE_MULTI_PROCESS` `PROCESS` `MCP_EXTERNAL` `MIXED` `RELEASE_ARTIFACT` | `IN_PROCESS/SQLITE`, `MIXED` |
+> | `ACCEPTANCE-TRUTHFULNESS-MATRIX.md` regla 3 (9 valores) | `PURE` `IN_PROCESS` `THREAD` `PROCESS` `FILESYSTEM` `SQLITE_MULTI_HANDLE` `SQLITE_MULTI_PROCESS` `MCP_EXTERNAL` `RELEASE_ARTIFACT` | `THREAD`, `FILESYSTEM`, `SQLITE_MULTI_HANDLE` |
+>
+> Se cruzan en **6 de 8 / 6 de 9**. Y la matriz **además viola su propia regla 3**:
+> usa `IN_PROCESS/SQLITE` (que no declara) y `PROCESS / SQLITE_DURABLE` (que no
+> declara). **Un vocabulario cerrado que su propio documento no respeta no es un
+> vocabulario cerrado.** Reconciliar los dos es trabajo de C3n.3 y **no se hace
+> aquí**: este bloque declara el hallazgo, no finge cerrarlo.
 
 
 ---
@@ -795,6 +841,70 @@ AIW-S0 ... AIW-S8
 IMPLEMENTED / VERIFIED / BLOCKED / N/A
 evidence SHA
 ```
+
+#### Tabla de exit gate — medida en session-69s bis 6
+
+**Evidence SHA: `43c7aac2`** (el commit de C3n.1; el árbol estaba limpio).
+Provider: `cognicode-mcp` **PRESENTE** (`~/.cognicode/shims/cognicode-mcp`);
+`chronos-mcp` **AUSENTE**.
+
+| Item | Comando | Resultado medido | Veredicto |
+|---|---|---|---|
+| `AIW-S1` | `cargo test -p sddk-engine --test aiw_s1_cognicode_real` | `2 passed; 3 ignored` | — ver abajo |
+| `AIW-S1` | ídem, con `COGNICODE_MCP_BIN` + `--ignored` | **`3 passed; 0 failed`, 141,60 s** | **VERIFIED, pero fuera del gate** |
+| `AIW-S4` | `--test aiw_s4_dynamic_expansion` | `7 passed` | **IMPLEMENTED** (residual intacto) |
+| `AIW-S4` | `--test c3l3_dynamic_expansion_vertical` | `12 passed` | ídem |
+| `AIW-S5` | `--test aiw_s5_chronos_real` | `2 passed; 2 ignored` | — |
+| `AIW-S5` | ídem, con `--ignored` | `BlockedExternalDependency { env_var: "CHRONOS_MCP_BIN", found: "not on PATH and env var unset or empty" }` | **BLOCKED**, nunca PASS |
+| `AIW-S7a` | `--test aiw_s7a_producer_l0` | `5 passed` | **IMPLEMENTED** (ver el hallazgo de abajo) |
+| `AIW-S8` X04 | `-p sddk-storage --test x04_multi_process_concurrency` | `9 passed` | **VERIFIED** |
+| `AIW-S8` X07 | `-p sddk-cli --test aiw_s8_x07_real_binary_boundary` | `6 passed` | **VERIFIED** |
+
+**Lo que la tabla de arriba NO puede afirmar, y es lo más importante de ella:**
+
+- **`AIW-S4` NO se promueve.** La matriz declara un residual vivo —`executed_node_ids` es un ledger de *selección y contabilidad* de nodos, **no** evaluación de operadores— y ese residual **no ha cambiado**. Sus 19 tests pasan, y pasar no cierra un residual que nadie ha tocado. Se queda en `IMPLEMENTED`.
+- **`AIW-S5` es `BLOCKED`, y el bloqueo tiene tipo.** No es «no ejecutado»: es `BlockedExternalDependency`, que por la regla 5 de la matriz **no cuenta como PASS**. Correcto como está.
+- **`AIW-S1` es el caso raro, y por eso lleva dos filas.** El producto **funciona** contra el provider real: `3 passed` en **141,60 s**. Pero **por defecto el gate no lo ve**: sin `--ignored` la suite da `2 passed; 3 ignored`, y **uno de los dos que corren es `a03_spawn_failure_is_unavailable`**, un test que afirma que el provider **no** está disponible. O sea: el `VERIFIED` de la matriz **solo es reproducible si alguien exporta una variable y pasa un flag**, y **`cargo test --workspace` —el gate de release— no lo cruza nunca**. El coste está medido: **141,60 s** por publicación es lo que costaría, y por eso no se ha conectado. **Es cobertura de sesión, no de pipeline**, igual que el estado O6 de `dev doctor`.
+
+> #### ⚠️ HALLAZGO MEDIDO — la regla 4 no tiene guard, y la fila que la invoca viola la regla 4
+>
+> `ACCEPTANCE-TRUTHFULNESS-MATRIX.md` **regla 4** dice: *«un test no puede llamarse
+> `e2e`, `real`, `external`, `two-cli` ni `second-binary` si no atraviesa esa
+> frontera. **La aplicación mecánica de esta política es C3n.1 (taxonomy gate).**»*
+>
+> **Las dos mitades de esa frase son medidas y las dos son falsas.**
+>
+> **1. El guard de C3n.1 no aplica esa política.** Lee las 26 filas `AT-UAT` de
+> `UAT-MATRIX.md` y de su overlay. **No lee `ACCEPTANCE-TRUTHFULNESS-MATRIX.md`,**
+> que es donde vive la regla 4, **ni mira ningún nombre de test.** Cubre un
+> conjunto de filas distinto del que la regla dice cubrir.
+>
+> **2. La propia fila de la matriz que nombra C3n.2 como re-apertura es la que
+> viola la regla 4.** En `AIW-S7a` hay **cinco** tests, y **tres** se llaman
+> `*_e2e`: `cognicode_finding_e2e`, `chronos_crash_e2e`, `chronos_race_e2e`.
+> **Los tres se leen, los tres, y ninguno cruza la frontera que su nombre
+> promete:**
+>
+> | Test | Lo que el nombre dice | Lo que el test hace (leído) |
+> |---|---|---|
+> | `cognicode_finding_e2e` | finding de CogniCode, extremo a extremo | construye `ProducerEvent::CogniCodeFinding` **a mano** y lo despacha in-process. Su propio comentario lo dice: *«same matcher shape the adapter emits for CogniCode findings»* — **la forma, no el finding** |
+> | `chronos_crash_e2e` | crash de Chronos, extremo a extremo | construye `ProducerEvent::ChronosCrash` **a mano**. **No hay Chronos, no hay crash, no hay proceso** |
+> | `chronos_race_e2e` | carrera de Chronos, extremo a extremo | construye `ProducerEvent::ChronosRace` **a mano** y afirma `signals.is_empty()` |
+>
+> La fila declara su `boundary_class` como **`IN_PROCESS` (tests unit del
+> gateway)**, que **no es un nivel exigente** del vocabulario de C3n.1. Los tres
+> tests **sí hacen trabajo real y valioso** —demuestran que la ruta pública
+> `dispatch()` dispara la regla registrada, que es el defecto de C3l.2— y por eso
+> **`AIW-S7a` NO se degrada**: se queda en `IMPLEMENTED` y el falsificador de C3l.2
+> sigue valiendo. Lo que no vale es el **nombre**: `e2e` aquí no describe lo que
+> el test cruza, y **un nombre es un contrato con quien lo lee** — el mismo
+> criterio con el que se reconciliaron las 4 filas de `AT-UAT` justo arriba.
+>
+> **Lo que NO se hace aquí, y es deliberado:** renombrar los tests, tocar
+> `crates/`, ni degradar la fila. Este bloque **declara y mide**; la corrección
+> (un guard de política de nombres, o el rename) es trabajo con su propio ciclo.
+> **Un hallazgo declarado que nada vigila envejece**, así que queda escrito como
+> siguiente paso preciso, no como nota al pie.
 
 ---
 

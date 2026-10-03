@@ -1,4 +1,29 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 6, 2026-10-03): C3n.2 MEDIDO — tabla de exit gate `AIW-S0..S8` con veredicto y evidence SHA, y una afirmación mía del commit anterior queda desmentida por `grep`.** `HEAD` = `43c7aac2` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**Providers medidos antes de nada:** `cognicode-mcp` **PRESENTE**, `chronos-mcp` **AUSENTE**. Evidence SHA de toda la tabla: `43c7aac2`.
+
+| Item | Medido | Veredicto |
+|---|---|---|
+| `AIW-S1` | `2 passed; 3 ignored` por defecto · con `COGNICODE_MCP_BIN` + `--ignored`: **`3 passed`, 141,60 s** | **VERIFIED, pero fuera del gate** |
+| `AIW-S4` | `7 passed` + `12 passed` | **IMPLEMENTED** — residual intacto, no se promueve |
+| `AIW-S5` | `2 passed; 2 ignored` · con `--ignored`: `BlockedExternalDependency` | **BLOCKED**, nunca PASS |
+| `AIW-S7a` | `5 passed` | **IMPLEMENTED** (ver hallazgo) |
+| `AIW-S8` X04 / X07 | `9 passed` / `6 passed` | **VERIFIED** |
+
+**`AIW-S1` lleva dos filas porque las dos son ciertas, y esa es la parte que importa.** El producto **funciona** contra el provider real. Pero **por defecto el gate no lo ve**: sin `--ignored` la suite da `2 passed; 3 ignored`, y **uno de los dos que corren es `a03_spawn_failure_is_unavailable`** — un test que afirma que el provider **no** está disponible. El `VERIFIED` de la matriz **solo es reproducible si alguien exporta una variable y pasa un flag**; `cargo test --workspace` no lo cruza nunca. El precio está medido (**141,60 s** por publicación) para que la decisión sea revisable. **Es cobertura de sesión, no de pipeline.**
+
+**`AIW-S4` NO se promueve, y es la tentación que este repo rechaza:** sus 19 tests pasan, pero el residual declarado —`executed_node_ids` es contabilidad de nodos, no evaluación de operadores— **no ha cambiado**, y **pasar tests no cierra un residual que nadie tocó**.
+
+**⚠️ Corrección a una afirmación publicada en `43c7aac2` (un commit antes).** Escribí que `PROCESS/SQLITE_DURABLE` «no aparece en ningún otro documento y lo usan exactamente esas 4 filas». **Es falso:** aparece en **cinco sitios más**, uno en **`crates/sddk-storage/tests/x04_multi_process_concurrency.rs:17`**, más la columna `Frontier real` de **AIW-S8** y los receipts de X04 y X07. **Lo que cambia es el diagnóstico, no la frase:** no es un *typo* huérfano, es una clasificación **viva** que la propia regla 3 de la matriz **excluye** (ésta declara `SQLITE_MULTI_PROCESS`, no `SQLITE_DURABLE`). La reconciliación de las 4 filas **no cambia**; cambia su fuerza: ya no se sostiene en «no existe en ningún otro sitio» sino en lo medible — **X04 es concurrencia de ≥2 PIDs reales**, luego `SQLITE_MULTI_PROCESS` describe lo que el test hace.
+
+**Hallazgo de fondo, mayor que la frase equivocada: este repo tiene DOS vocabularios cerrados de frontera que no coinciden**, en dos documentos que ambos se declaran autoridad. C3n.1 declara 8 niveles; `ACCEPTANCE-TRUTHFULNESS-MATRIX.md` regla 3 declara 9. Se cruzan en 6. Y la matriz **además viola su propia regla 3** (usa `IN_PROCESS/SQLITE` y `PROCESS / SQLITE_DURABLE`, que no declara). Reconciliarlos es trabajo de C3n.3 y **no se finge cerrar aquí**.
+
+**⚠️ Y la regla 4 dice que «la aplicación mecánica de esta política es C3n.1», y las dos mitades de esa frase son falsas.** El guard de C3n.1 lee las 26 filas `AT-UAT` y **no lee esa matriz ni ningún nombre de test**. Y en `AIW-S7a`, **tres de cinco** tests se llaman `*_e2e` y **los tres, leídos, construyen su `ProducerEvent` a mano y lo despachan in-process** — no hay CogniCode, no hay Chronos, no hay proceso, y la fila declara `IN_PROCESS`. **`AIW-S7a` no se degrada:** sus 5 tests pasan y el falsificador de C3l.2 sigue valiendo. Lo que no vale es el **nombre**.
+
+**Siguiente paso preciso:** el **guard de política de nombres** que la regla 4 dice existir y no existe — un `e2e`/`real`/`external`/`two-cli`/`second-binary` cuya fila declare un nivel no exigente es un nombre que no describe lo que el test cruza. Con el rename de los tres tests de S7a. **R1** sigue esperando la clave de firma.
+
+---
 **Estado (session-69s bis 5, 2026-10-03): C3n.1 CERRADO — el vocabulario de frontera es una sola autoridad y hay un gate que lo vigila. Ese gate se falsificó a sí mismo dos veces antes de valer.** `HEAD` = `dfd5c306` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **Lo que se entrega:** `tests/test_uat_boundary_receipt.sh` (`PASS=14 FAIL=0`), cableado en `release.sh` como paso **`3e/14`**, más la reescritura de `ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` §C3n.1 con el vocabulario canónico y la reconciliación de las 4 filas discordantes de `UAT-MATRIX.md`.
