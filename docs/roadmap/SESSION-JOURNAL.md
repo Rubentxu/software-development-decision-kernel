@@ -11757,3 +11757,110 @@ de arriba). Después: R1 (clave KMS) y R2 (049/050/060/061/063), ambos esperando
 decisión del operador, igual que archivar `a4-1-generic-verify`. Antes de
 cualquier medición: construir el binario del repo y comprobarlo con
 `dev build-id --check`.
+
+---
+
+## 2026-10-03 — session-69o — C3m.1 §3ter: el hueco son 24 módulos, no uno
+
+**Baseline / HEAD:** `7901b1fc` (`main`, limpio al entrar).
+
+**WorkItem:** C3m.1 Knowledge Merkle Tree — continuar la medición del SCOPE,
+respondiendo a la pregunta que §3bis dejó abierta: si `reactive_verify` es un
+hueco aislado o la misma forma en varios sitios.
+
+**Qué se hizo.** Se midió la superficie pública de `sddk-engine` con un
+instrumento que se autocomprueba contra **cuatro casos conocidos verificados a
+mano** antes de publicar nada. Resultado: **131 declarados, 131 medidos, 0 sin
+clasificar; 97 con consumidor de producto, 10 consumidos sólo por pruebas, 24
+sin consumidor.** `reactive_verify` está entre los 24. **Ningún módulo
+directorio está sin consumir**; los 24 son todos de fichero plano.
+
+**Lo instructive, y es lo que se escribe.** El instrumento **falló cuatro veces
+antes de dar un número con base**, y cada fallo es un modo distinto de mentir:
+alcance (buscaba sólo en el crate del engine, 52), unidad (medía mención y no
+consumo, 41), vía de consumo (la CLI consume por el camino corto y por método,
+38) y —**el cuarto, y el que casi se lleva la conclusión**— denominador: el
+criterio de «fichero base» sólo aceptaba `src/<m>.rs`, de modo que se saltaba
+**23 de los 131**, que son los que son **directorio con `mod.rs`**. Entre los
+saltados estaba **`architecture_receipt`, que es el consumidor real de la salida
+de `reactive_verify`**, según el propio §3bis. *Un instrumento que se salta al
+consumidor de lo que investiga no puede después declarar «sin consumidor».*
+
+**Un resultado que se parece a una corrección y no lo es, anotado como tal:** los
+23 resultaron ser 21 con consumidor y 2 sólo desde tests, así que **el número de
+«sin consumidor» no cambió — 24 antes, 24 después, los mismos 24**. El número de
+v3 estaba mal igualmente, y por un motivo que esta vez no movió la respuesta.
+Eso no es suerte, y por eso el denominador se declara explícito en el SCOPE en
+lugar de dejar «131» a secas.
+
+**Defecto encontrado y corregido en el instrumento, no en el producto.** Al
+escribir `es_propio()` para excluir el subárbol de un módulo directorio, la
+primera versión aplicaba el chequeo de subárbol también al caso plano, donde
+`base.parent` es `src/` y está en `p.parents` de casi todo el engine: habría
+excluido el motor entero y publicado «sin consumidor» para todo — un falso más
+grave que el que se corrige. Detectado leyendo lo escrito, antes de ejecutarlo.
+
+**Defecto propio del entorno, ya conocido y de nuevo presente.** El fichero
+`medir-modulos-v3.py` llevaba el docstring de una versión anterior (`v3 (esta)`)
+mientras su lógica ya era la que el SCOPE llamaba v4: nombre y contenido
+desincronizados, que es la forma documental de la misma desincronización que
+ADR-0154 vino a cerrar. Reconciliado en el fichero, no en el SCOPE.
+
+**Corrupción de redacción, undécima vez y de nuevo en producción.** Al escribir
+el bloque aparecieron dos literales con **caracteres de otro alfabeto pegados
+dentro de una palabra española** en el texto nuevo, y uno solo en un fichero ya
+commiteado en el commit anterior: `SCOPEexists`, por `SCOPE-CONTRACT.md:99`,
+detectado al releer y corregido aquí. Los tres se corrigen **sin reproducir los
+literales**: citarlos los habría convertido en deuda permanente del repo, que es
+lo que el escáner marca para siempre. El escáner dio `CLEAN` sobre los ficheros
+modificados, y aun así hubo que corregir a mano — **el escáner no cubre un token
+de otro alfabeto pegado dentro de una palabra**, que es justo la forma que
+aparece. Y en cuanto se citaron los literales en este diario, el escáner los
+encontró: la contaminación escrita sobre la contaminación se detecta, pero se
+detecta tarde.
+
+**Verificación de la redacción aplicada:** escáner `CLEAN` sobre los cuatro
+ficheros, y comprobación propia de **alfabetos mezclados por palabra** sobre las
+líneas añadidas de cada diff (0 en los tres ficheros de texto). La comprobación
+se hace porque el escáner no la cubre y porque este modo de corrupción ha
+repetido.
+
+**Entregado:** §3ter en el SCOPE, el instrumento **dentro del repo** en
+`docs/roadmap/receipts/c3m1-knowledge-merkle-tree/medir-modulos-consumidor.py`
+con la ruta del repo deducida de su propia ubicación —un instrumento con la ruta
+absoluta escrita dentro no se puede re-ejecutar en otra máquina, y un número que
+no se reproduce es una afirmación de sesión—, entrada de changelog y este
+diario. El instrumento se **re-ejecutó desde su ubicación en el repo** y devolvió
+los mismos números.
+
+**Lo que este trabajo NO hace:** no construye el KMT. El STOP 1 sigue en
+negativo y `Readiness: NOT_READY` no se mueve. Lo único que cambia es que la
+deuda de `reactive_verify` ya no es **un** módulo suelto sino **24**, lo que
+convierte la decisión del operador en una de inventario.
+
+**Riesgos declarados.** (a) «Módulo sin consumidor» **no** es código muerto:
+puede ser superficie pública para adopters externos, y el propio
+`gate_evaluator` lo demuestra — el comando `sddk cycle evaluate-gate` existe y
+funciona, pero resuelve los gates por `GateEvaluationInput`, en otro camino. Es
+**inventario de riesgo con números medidos**, no lista de borrables. (b) El
+recuento depende del criterio de «consumo» elegido, y el criterio está escrito en
+el instrumento; otro criterio daría otro reparto. (c) El guard de ADR-0154 no
+cubre este fichero: es un instrumento de medición, no un guard de
+comportamiento, y no se presenta como tal.
+
+**UAT observado / no ejecutado.** No aplica: cambio documental y de
+instrumentación de medición, sin cambio de comportamiento del producto. No se
+ejecutó `cargo test --workspace` porque no hay cambio en `crates/`; el lote
+scoped de este trabajo es el propio instrumento, ejecutado y con sus cuatro
+controles en `OK`.
+
+**Bloqueos, sin cambio:** clave KMS (R1 y cinco ciclos), INC-DEBT-050/061/060/
+063/049 (R2), archivar `a4-1-generic-verify`, publicación del harness
+Pipelinek-Test-Hardness (44 commits sin publicar).
+
+**Primer paso preciso de la sesión siguiente.** Cerrar el commit de §3ter y
+elevar a decisión del operador **una sola pregunta de inventario**, que es la que
+§3ter cambió de forma: no «¿declaro deuda por `reactive_verify`?» sino «¿los 24
+módulos públicos sin consumidor se declaran deuda uno a uno, o se agrupan bajo
+una entrada de inventario con la medición como evidencia?». La pregunta de
+`HostEvent` sigue bloqueando C3m.1 y no se deduce leyendo código.
