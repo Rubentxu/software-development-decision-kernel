@@ -36,6 +36,16 @@ pub const SUPPORTED_PROTOCOL_MAJOR: u32 = 2025;
 /// Default wait for a JSON-RPC response.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// The id this adapter declares for itself in `ObservationSet::provider_id`.
+///
+/// **The provider's name lives here, in the adapter that talks to it, and not
+/// in the engine's public types** (ADR-0155, C3m.3). That is the whole shape
+/// of provider-neutrality: the core names a *capability*
+/// (`ProviderKind::External`) and the adapter supplies an *identity* as data.
+/// A product name in a closed enum would make registering a new provider a
+/// breaking change to `sddk-engine`'s public API for every adopter.
+pub const PROVIDER_ID: &str = "cognicode-mcp";
+
 enum Reply {
     Message(serde_json::Value),
     #[allow(dead_code)] // wired when timeout handling lands in CC-S1+
@@ -367,7 +377,8 @@ impl CodeIntelligencePort for CogniCodeMcpAdapter {
             digest,
             partial: false,
             observations: ObservationSet {
-                provider_kind: ProviderKind::CogniCode,
+                provider_kind: ProviderKind::External,
+                provider_id: PROVIDER_ID.to_owned(),
                 units,
                 restart_observed: false,
             },
@@ -396,7 +407,8 @@ impl CodeIntelligencePort for CogniCodeMcpAdapter {
             digest,
             partial: false,
             observations: ObservationSet {
-                provider_kind: ProviderKind::CogniCode,
+                provider_kind: ProviderKind::External,
+                provider_id: PROVIDER_ID.to_owned(),
                 units,
                 restart_observed: false,
             },

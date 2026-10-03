@@ -26,6 +26,14 @@ use crate::code_intelligence_port::{
     ScopeRequest, default_coverage_evaluation,
 };
 
+/// The id this fake declares in `ObservationSet::provider_id` (ADR-0155).
+///
+/// Explicit and stable on purpose. An empty id would be indistinguishable from
+/// `ProviderKind::Null`, which says there is *no* provider — and a fake that
+/// cannot be told apart from nothing is a fake that cannot be cited as
+/// evidence of anything.
+pub const PROVIDER_ID: &str = "fake-inprocess";
+
 /// Deterministic in-process provider used by the spike tests.
 #[derive(Debug, Clone)]
 pub struct FakeCodeIntelligenceProvider {
@@ -108,6 +116,7 @@ impl FakeCodeIntelligenceProvider {
         }
         ObservationSet {
             provider_kind: ProviderKind::Fake,
+            provider_id: PROVIDER_ID.to_owned(),
             units,
             restart_observed,
         }
@@ -179,6 +188,7 @@ impl CodeIntelligencePort for FakeCodeIntelligenceProvider {
         self.check_mismatch()?;
         let observations = ObservationSet {
             provider_kind: ProviderKind::Fake,
+            provider_id: PROVIDER_ID.to_owned(),
             units: BTreeMap::new(),
             restart_observed: false,
         };
@@ -243,6 +253,10 @@ impl CodeIntelligencePort for NullCodeIntelligenceProvider {
             partial: false,
             observations: ObservationSet {
                 provider_kind: ProviderKind::Null,
+                // `Null` means there is no provider, so it has no id. Writing
+                // one here would be the same falsehood this change removes: a value
+                // that asserts a provider exists while the enum says it does not.
+                provider_id: String::new(),
                 units: BTreeMap::new(),
                 restart_observed: false,
             },
@@ -259,6 +273,10 @@ impl CodeIntelligencePort for NullCodeIntelligenceProvider {
             partial: false,
             observations: ObservationSet {
                 provider_kind: ProviderKind::Null,
+                // `Null` means there is no provider, so it has no id. Writing
+                // one here would be the same falsehood this change removes: a value
+                // that asserts a provider exists while the enum says it does not.
+                provider_id: String::new(),
                 units: BTreeMap::new(),
                 restart_observed: false,
             },
@@ -275,6 +293,10 @@ impl CodeIntelligencePort for NullCodeIntelligenceProvider {
             partial: false,
             observations: ObservationSet {
                 provider_kind: ProviderKind::Null,
+                // `Null` means there is no provider, so it has no id. Writing
+                // one here would be the same falsehood this change removes: a value
+                // that asserts a provider exists while the enum says it does not.
+                provider_id: String::new(),
                 units: BTreeMap::new(),
                 restart_observed: false,
             },

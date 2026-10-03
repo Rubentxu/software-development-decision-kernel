@@ -239,6 +239,7 @@ fn t_uat_c09_contradiction_preserves_prior_assertion_and_records_reconciliation(
     // ObservationSet carrying an explicit negation observation.
     let contradiction_observations = ObservationSet {
         provider_kind: ProviderKind::Fake,
+        provider_id: "fake-inprocess".to_owned(),
         units: BTreeMap::from([(
             "symbol-42:usages".to_string(),
             vec![Observation {

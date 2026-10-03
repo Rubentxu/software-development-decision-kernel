@@ -105,7 +105,12 @@ fn a01_real_provider_produces_typed_observation() {
     };
     let result = adapter.analyze_scope(&basis, &req).expect("analyze ok");
     assert!(!result.partial);
-    assert_eq!(result.observations.provider_kind, ProviderKind::CogniCode);
+    // ADR-0155: la identidad del proveedor es DATO declarado por el adaptador,
+    // no una variante de un enum del core. El test pasa a afirmar las dos
+    // mitades de la propiedad: que hay un proveedor real (categoria) y que el
+    // adaptador dice cual es (identidad).
+    assert_eq!(result.observations.provider_kind, ProviderKind::External);
+    assert_eq!(result.observations.provider_id, "cognicode-mcp");
     assert!(!result.observations.restart_observed);
     let obs = result
         .observations

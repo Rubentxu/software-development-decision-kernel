@@ -281,23 +281,125 @@ fn t_ar_5b_no_global_threshold_constant_in_module() {
 }
 
 #[test]
-fn t_ar_5c_no_cognicode_type_in_sddk_engine() {
-    // N2 of SCOPE-CONTRACT: no CogniCode* type in sddk-engine's
-    // domain surfaces. The architectural lint
-    // `no_knowledge_to_provider_sdk` enforces this precisely;
-    // here we assert by string match on the port module that no
-    // CogniCode-specific type leaks through the public ADTs.
+fn t_ar_5c_no_provider_name_in_the_core_port() {
+    // N2 of SCOPE-CONTRACT, y C3m.3 / ADR-0155: el puerto de inteligencia de
+    // codigo es la superficie publica que todo adopter ve, y no debe nombrar
+    // ningun proveedor. El nombre del proveedor es DATO que declara el
+    // adaptador (`code_intelligence_port_mcp::PROVIDER_ID`), no una variante
+    // de un enum del core.
+    //
+    // POR QUE ESTE GUARD SE REESCRIBE Y NO SE ANADE. La version anterior se
+    // llamaba `t_ar_5c_no_cognicode_type_in_sddk_engine` —"sin tipo
+    // CogniCode"— y su cuerpo hacia
+    // `assert!(src.contains("ProviderKind::CogniCode"))`: AFIRMABA que el
+    // nombre del proveedor estuviera presente. Su comentario ademas decia que
+    // el lint `no_knowledge_to_provider_sdk` lo aplicaba "precisamente", y ese
+    // lint solo escanea cinco modulos de knowledge
+    // (`context_fitness.rs:114-120`), nunca el puerto. O sea: el guard tenia un
+    // nombre mas estrecho que la propiedad que decia vigilar, y la propiedad
+    // que decia vigilar no la comprobaba. Un guard asi es peor que ninguno,
+    // porque ocupa el sitio del que si la vigila.
+    //
+    // Lo que se comprueba ahora, sobre el fuente del puerto:
+    //   1. Ningun NOMBRE de proveedor como variante de enum publica.
+    //   2. Ningun tipo `pub` cuyo nombre sea el de un proveedor.
+    //   3. Que la identidad del proveedor siga siendo expresable, como dato.
+    // El punto 3 importa: un guard que prohibe el nombre sin comprobar que
+    // quede forma de declararlo empuja al primer que llegue a escribir un
+    // falsehood para no tocar el enum.
     let src = include_str!("../src/code_intelligence_port.rs");
-    // Allowed: a `ProviderKind::CogniCode` variant (enum case),
-    // which is SDDK-owned, not a CogniCode type itself.
-    assert!(src.contains("ProviderKind::CogniCode"));
-    // Forbidden: a struct/enum/type whose name starts with
-    // "CogniCode" (other than the variant case above).
+
+    // (1) Ningun nombre de proveedor puede ser una VARIANTE del enum. Se
+    // parsean las DECLARACIONES de variante, no el cuerpo entero: citar el
+    // nombre retirado en la prosa del enum esta bien y es lo que explica por
+    // que se quito — un guard que prohibe mencionarlo obligaria a borrar la
+    // explicacion, que es el precio de no distinguir citar de usar. La primera
+    // version de este check buscaba el token en el cuerpo crudo y fallo
+    // contra su propio doc; el fix es hacer el check preciso, no callar la
+    // prosa ni bajar la exigencia.
+    let enum_body = src
+        .split("pub enum ProviderKind {")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}").next())
+        .unwrap_or_else(|| panic!("no encuentro `pub enum ProviderKind` en el puerto"));
+    let variantes: Vec<&str> = enum_body
+        .lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            t.strip_suffix(',')
+                .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_alphanumeric() || c == '_'))
+        })
+        .collect();
+    assert!(
+        !variantes.is_empty(),
+        "C3m.3: no se han podido extraer las variantes de ProviderKind; un check que \
+         no encuentra nada que comprobar pasa por el motivo equivocado."
+    );
+    for provider in ["CogniCode", "Chronos", "CodeIntelligence"] {
+        assert!(
+            !variantes.contains(&provider),
+            "C3m.3: `{provider}` ha vuelto como VARIANTE de ProviderKind (variantes \
+             actuales: {variantes:?}). La identidad del proveedor es DATO \
+             (`ObservationSet::provider_id`), no estructura: un enum cerrado de \
+             productos hace que registrar un proveedor sea un cambio incompatible \
+             de la API publica de sddk-engine. Citarlo en la prosa del enum si es \
+             legitimo; declararlo como variante no lo es."
+        );
+    }
+
+    // (2) Ningun tipo publico del puerto puede llamarse como un proveedor.
     for line in src.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("pub struct CogniCode") || trimmed.starts_with("pub enum CogniCode")
-        {
-            panic!("N2 violated: CogniCode type leaked into sddk-engine: {trimmed}");
+        for provider in ["CogniCode", "Chronos"] {
+            if trimmed.starts_with(&format!("pub struct {provider}"))
+                || trimmed.starts_with(&format!("pub enum {provider}"))
+                || trimmed.starts_with(&format!("pub trait {provider}"))
+            {
+                panic!("N2 violated: el tipo `{provider}` se filtre al puerto del core");
+            }
+        }
+    }
+
+    // (3) La identidad del proveedor sigue siendo expresable como dato, y el
+    // enum sigue distinguiendo "hay un proveedor real" de "no hay ninguno".
+    assert!(
+        src.contains("pub provider_id: String"),
+        "C3m.3: sin `provider_id` no hay forma de decir QUE proveedor produjo las \
+         observaciones, y el unico camino que queda es mentir en el enum."
+    );
+    assert!(
+        src.contains("ProviderKind::External"),
+        "C3m.3: the enum must be able to say 'a real provider outside the process'. \
+         Without this variant a real adapter can only report Null or Fake, and \
+         both are false."
+    );
+
+    // (4) `Null` no puede declarar un id. El enum dice «no hay proveedor», y
+    // un id al lado seria la misma mentira que este cambio elimina — de ahi el
+    // comentario en el propio fake. Esta comprobacion se anadio porque la
+    // falsificacion del guard (M6) sobrevivio: el codigo estaba bien escrito
+    // y comentado, pero NADA lo vigilaba, y un comentario no es un guard.
+    //
+    // El recorrido es sobre el texto NORMALIZADO y no sobre lineas: la primera
+    // version contaba tres lineas hacia adelante y `cargo fmt` partio
+    // `provider_id: String::new(),` en varias, con lo que el check encontro una
+    // cadena vacia y fallo. Un check atado al formato no es un check sobre la
+    // propiedad: es un check sobre como esta escrito hoy.
+    let fake = include_str!("../src/code_intelligence_port_fake.rs");
+    let plano: String = fake.split_whitespace().collect::<Vec<_>>().join(" ");
+    for trozo in plano.split("provider_kind: ProviderKind::Null,").skip(1) {
+        // El constructor termina donde empieza el siguiente `provider_kind`,
+        // o donde se acaba el struct literal.
+        let cuerpo = trozo.split("provider_kind:").next().unwrap_or(trozo);
+        if let Some(id) = cuerpo.split("provider_id:").nth(1) {
+            let valor = id.split(',').next().unwrap_or("").trim();
+            assert!(
+                valor.contains("String::new()"),
+                "C3m.3: `Null` significa «no hay proveedor», asi que no puede declarar \
+                 un id. Se ha encontrado: `{valor}`. Un id junto a la negacion de un \
+                 proveedor es la misma mentira que este cambio quita, y por eso se \
+                 comprueba y no se deja en un comentario."
+            );
         }
     }
 }

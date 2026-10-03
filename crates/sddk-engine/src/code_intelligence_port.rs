@@ -129,11 +129,21 @@ impl fmt::Display for ProviderLifecycle {
 }
 
 /// Provider kind, propagated into the ObservationSet so downstream
-/// consumers can identify which provider produced the data.
+/// consumers can identify *what kind of provider* produced the data.
 ///
-/// CC-S0 only models `Null` (no provider) and `Fake` (the spike
-/// provider). Production values (e.g. `CogniCode`) will be
-/// added in CC-S1+.
+/// This enum is **capability state, not product identity** (ADR-0155,
+/// C3m.3). It answers "is there a provider at all, and is it an in-process
+/// fake?", and nothing else. A product name is **not** a variant here: adding
+/// a provider must not be a change to the engine's public API, and a closed
+/// set of products makes every new provider a breaking change for adopters.
+///
+/// **Which** provider produced the data is data, not structure: it travels in
+/// `ObservationSet::provider_id`, a string that the adapter itself declares.
+/// The engine already models provider identity the neutral way elsewhere, in
+/// `circuit_breaker::ProviderIdentity { id, kind, credentials_route, model }`,
+/// whose `kind` is a *category* (`Llm` / `Tool` / …). Before this change the
+/// crate carried **two** `ProviderKind` enums with different meanings; this one
+/// was the one that named products.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ProviderKind {
     /// No provider is registered. Default for Base-mode
@@ -142,9 +152,16 @@ pub enum ProviderKind {
     Null,
     /// In-process deterministic fake used by the spike.
     Fake,
-    /// Real CogniCode binary (future, CC-S1+).
-    #[allow(dead_code)]
-    CogniCode,
+    /// A real provider, outside the process. **Which** one is not a variant:
+    /// it is `ObservationSet::provider_id`, declared by the adapter.
+    ///
+    /// This variant is what the previous product-named variant was actually
+    /// asserting. Removing `CogniCode` and leaving only `Null | Fake` would
+    /// have made it impossible to say "a real provider produced this", and the
+    /// tempting fix — report the real adapter as `Fake` — would have been a
+    /// false statement written to keep an enum tidy. An enum that cannot
+    /// express the truth is worse than one that is too wide.
+    External,
 }
 
 impl fmt::Display for ProviderKind {
@@ -152,7 +169,7 @@ impl fmt::Display for ProviderKind {
         f.write_str(match self {
             ProviderKind::Null => "NULL",
             ProviderKind::Fake => "FAKE",
-            ProviderKind::CogniCode => "COGNICODE",
+            ProviderKind::External => "EXTERNAL",
         })
     }
 }
@@ -307,8 +324,15 @@ pub struct ImpactRequest {
 /// `KnowledgeAssertion`s later (CC-S1+).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ObservationSet {
-    /// Provider kind that produced these observations.
+    /// What kind of provider produced these observations — capability state,
+    /// never a product name (ADR-0155).
     pub provider_kind: ProviderKind,
+    /// Which provider produced them, as **data**. Empty when `provider_kind`
+    /// is `Null` or `Fake`. The adapter that talks to a provider declares its
+    /// own id here, so that adding a provider never means editing the engine's
+    /// public API. This is the neutral shape C3m.3 asks for: capability in the
+    /// type, identity in the value.
+    pub provider_id: String,
     /// Per-unit observations keyed by source unit identifier.
     pub units: BTreeMap<String, Vec<Observation>>,
     /// True iff the provider restarted mid-request (T5).

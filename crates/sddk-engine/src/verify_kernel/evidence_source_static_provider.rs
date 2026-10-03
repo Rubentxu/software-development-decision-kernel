@@ -159,6 +159,7 @@ mod tests {
             partial: false,
             observations: ObservationSet {
                 provider_kind: ProviderKind::Fake,
+                provider_id: crate::code_intelligence_port_fake::PROVIDER_ID.to_owned(),
                 units: BTreeMap::from([(
                     "crates/sddk-cli/src/main.rs".to_string(),
                     vec![
@@ -210,6 +211,7 @@ mod tests {
         let mut a = sample_analysis();
         a.observations = ObservationSet {
             provider_kind: ProviderKind::Fake,
+            provider_id: crate::code_intelligence_port_fake::PROVIDER_ID.to_owned(),
             units: BTreeMap::from([
                 ("crates/sddk-cli/src/main.rs".to_string(), Vec::new()),
                 (

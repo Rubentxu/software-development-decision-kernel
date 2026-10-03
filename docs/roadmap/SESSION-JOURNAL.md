@@ -12022,3 +12022,92 @@ hecho «para dar verde» no pueda sobrevivir sin que se note.
 medir *mención* donde se iba a medir *uso*, por cuarta vez en esta sesión. Un
 verificador que sobrevive a su propia mutación es un documento que se certifica
 solo.
+
+### feat(knowledge) + docs(adr): C3m.3 cerrado — el core deja de nombrar proveedores (ADR-0155)
+
+Ciclo `c3m4-evidence-states` queda junto a este; el de C3m.3 es
+`p-63676b11dc0ef88f/c3m3-provider-neutral-provenance`, abierto y **cerrado en esta
+sesión con ADR-0155 `accepted` y el código aplicado**. Autorizado por el operador
+(*«desbloquea tareas sobre decisiones que quedaron pendientes»*), que es lo que
+convierte esta decisión en una decisión de agente respaldada y no en un bloqueo.
+
+**Lo medido, y era incumplido en un solo sitio y de forma pública.**
+`code_intelligence_port::ProviderKind` era un enum **público del engine** con una
+variante `CogniCode` que nombraba un producto. Tres hechos que lo hacen más que un
+detalle de nomenclatura:
+
+1. Estaba `#[allow(dead_code)]`: **superficie añadida para un consumidor
+   hipotético** — la misma forma que los 24 módulos de INC-DEBT-065.
+2. Su doc prometía que «Production values (e.g. `CogniCode`) **will be added in
+   CC-S1+**»: el plan documentado era **seguir añadiendo nombres de producto a un
+   enum del core**, y un enum cerrado de productos convierte **registrar un
+   proveedor en un cambio incompatible de la API pública de `sddk-engine`**.
+3. El nombre entraba en **evidencia durable**: `AnalysisBasis::provider_build` se
+   mezcla en el digest del análisis, así que no era una etiqueta de memoria.
+
+**Lo que hace el hallazgo útil es que el crate ya tenía la respuesta correcta, en
+otro sitio.** `circuit_breaker::ProviderIdentity { id, kind, credentials_route,
+model }`, con un `ProviderKind { Llm, Tool, Mock, Deterministic }` de
+**categorías**. O sea: **dos enums `ProviderKind` en el mismo crate con
+significados distintos** — el patrón exacto que llevó a ADR-0154 con `KMT`, y
+que aparece por segunda vez en C3m, en otro módulo y con otro nombre.
+
+**Y el guard no guardaba.** `t_ar_5c_no_cognicode_type_in_sddk_engine` se llamaba
+«sin tipo CogniCode» y su cuerpo hacía
+`assert!(src.contains("ProviderKind::CogniCode"))`: **afirmaba que el nombre
+estuviera presente**. Su comentario decía que el lint
+`no_knowledge_to_provider_sdk` lo aplicaba «precisamente», y ese lint
+(`crates/sddk-cli/tests/context_fitness.rs:112`) escanea **cinco módulos de
+knowledge** y **nunca el puerto**. Un guard con un nombre más estrecho que la
+propiedad que decia vigilar, que ocupa el sitio del que sí la vigila.
+
+**Aplicado.** El enum pasa a **estado de capacidad** (`Null | Fake | External`);
+`ObservationSet` gana `provider_id: String`, que declara **el propio adaptador**
+(`PROVIDER_ID` en el puerto MCP y en el fake). **`External` no es cosmética:** sin
+ella, quitar la variante del producto deja al adaptador real sin forma de decir
+«hubo un proveedor», y el único camino que queda es reportar `Null` o `Fake` —
+**las dos falsas**, que es exactamente el falsehood que este cambio viene a
+quitar. Por eso el guard **comprueba que `External` exista**, y no solo que el
+nombre no vuelva. `Null` no lleva id, con comentario, por el mismo motivo.
+
+**El lint no se extiende.** Mide lo que dice medir —los módulos de knowledge no
+dependen de SDKs de proveedor— y el puerto **debe** hablar con el proveedor porque
+es la costura. Lo que se corrige es la cita que lo fijaba como guard de esta
+propiedad. Ampliarlo sería hacer que una comprobación correcta dijera algo falso.
+
+**Hazard comprobado antes de editar, no después.** `ObservationSet` existe **dos
+veces** en `sddk-engine`: el del puerto, sin `Serialize` (16 ficheros), y
+`observation::types::ObservationSet`, que **sí serializa** dentro de un **payload
+de ledger `v1` congelado** validado por `EventSchemaRegistry` (20 ficheros). Un
+cambio por nombre es exactamente el caso donde se toca el equivocado, y
+añadirle un campo habría roto un contrato de durabilidad versionado a cambio de
+una mejora de neutralidad. El homónimo **queda sin converger** y el ADR lo dice
+en vez de dejarlo como surprise.
+
+**El guard falló contra su propio doc, y esa es la parte instructive.** El doc de
+`External` explica por qué se quitó la variante y, al explicarlo, **menciona el
+nombre**; la primera versión del check buscaba el token en el cuerpo crudo y
+falló. **El arreglo no fue borrar la explicación ni bajar la exigencia:** fue
+hacer el check preciso parseando **declaraciones de variante**, y añadir un
+helper `sin_comentarios()` que distingue **citar lo retirado de usarlo**. Es
+**la tercera vez en esta sesión que ese mismo caso muerde**, y la segunda que se
+resuelve con esa distinción en vez de con una exclusión. También se rompió una
+tercera vez por formato: el check de `Null` contaba tres líneas hacia adelante y
+`cargo fmt` partió `provider_id: String::new(),` en varias — *un check atado al
+formato no es un check sobre la propiedad, es un check sobre cómo está escrito
+hoy*— así que se reescribió sobre texto normalizado.
+
+**La falsificación corrió en dos rondas y dio dos clases de supervivida**, ambas
+sobre el guard y no sobre el repo:
+
+| Ronda | Resultado | Sobrevivida y su corrección |
+|---|---|---|
+| 1.ª | **5 de 7** | `Null` con id: el código estaba escrito y comentado, pero **nada lo vigilaba**. Se añadió el punto (4) al guard. Un comentario no es un guard. |
+| 1.ª | | El guard debilitado a un solo nombre: **no es detectable desde dentro del guard por construcción** —un guard más débil sobre un fuente sano *debe* dar verde— así que se midió **desde el verificador**, que lo trata como propiedad del guard. Se declaró `NO MEDIBLE` para el guard en vez de contarlo como una sobrevida que no lo era. |
+
+**Verificación.** `verificar-medicion.py` con **dos controles** del propio
+instrumento, y la decisión de que afirme el estado **post** y no el pre: la
+primera versión afirmaba que el defecto seguía presente y **dio rojo en cuanto se
+corrigió**, que es su propia forma de deshonestidad. `fmt` 0, `clippy -D warnings`
+**0**, workspace **5435 passed / 0 failed**, guard y verificador en verde,
+`shellcheck` limpio.
