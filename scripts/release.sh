@@ -538,6 +538,62 @@ if ! rustup target list --installed 2>/dev/null | grep -qx "$BUILD_TARGET"; then
          nombre del asset y el contrato de install.sh. Ver INC-DEBT-021."
 fi
 
+# La identidad la fija quien lanza el build (crates/sddk-cli/build.rs lee
+# SDDK_GIT_SHA y la declara como fuente de verdad; STOP 6 del SCOPE de
+# cl-build-identity prohibe que el fallback a .git decida nada). Sin esto, un
+# binario publicado declararia `source: git` y `sddk dev build-id --check` no
+# saldria nunca de `unknown` — el detector no podria cumplir su funcion
+# precisamente en el caso que motiva INC-DEBT-064, que es un binario PUBLICADO
+# y obsoleto. Es el unico punto entre el hallazgo y el remedio completo.
+#
+# El SHA se MIDE, no se supone, y por el mismo motivo del que hay unas lineas
+# mas arriba: un detector que emite un valor obsoleto sin senal es peor que no
+# tener detector. Y la suciedad tambien se mide, porque un commit no identifica
+# contenido que tenia cambios sin commitear encima: afirmar `false` sobre un
+# arbol sucio seria publicar una identidad que miente.
+RELEASE_BUILD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+# Mismo predicado que `is_hex_sha` en crates/sddk-cli/build.rs: de 7 a 40
+# caracteres, TODOS hexadecimales. La primera version de esta comprobacion
+# anclaba solo los 7 primeros digitos con un glob `[0-9a-f]{7}*`, y eso
+# aceptaba `abc1234 (HEAD detached)` — porque `*` se come lo que venga
+# detras. La encontro el falsificador de este mismo commit, no la revision:
+# un validador que acepta un valor con basura pegada no valida.
+if ! [[ "$RELEASE_BUILD_SHA" =~ ^[0-9a-f]{7,40}$ ]]; then
+    die "no se pudo resolver el commit a publicar (git rev-parse HEAD devolvio
+         '$RELEASE_BUILD_SHA'). Un binario sin identidad declarada es
+         indistinguible de uno obsoleto, que es INC-DEBT-064. No se publica."
+fi
+
+if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    die "el arbol tiene cambios RASTREADOS sin commitear en el paso 3 (build). El
+         binario se construiria desde contenido que ningun commit identifica, y
+         declararlo 'dirty: false' seria publicar una identidad que miente.
+         El preflight (paso 0) ya exige arbol limpio; si has llegado aqui con el
+         arbol sucio, algo lo ensucio entre medias. Ver INC-DEBT-064."
+fi
+
+# Sin seguimiento solo se bloquea lo que de verdad entra en el binario: un
+# `crates/algo.rs` sin seguimiento lo compila cargo y ningun commit lo
+# identifica, luego la identidad seria falsa por la misma razon que arriba.
+# Un fichero suelto en docs/ o un log no cambia el binario, y bloquear la
+# release por eso seria endurecer el gate del operador sin que nadie lo pidiera:
+# el preflight (paso 0) usa `git diff --quiet`, que no ve ficheros sin
+# seguimiento, y este paso no puede ser mas estricto que el sin avisar.
+UNTRACKED_SOURCES="$(git status --porcelain 2>/dev/null \
+    | sed -n 's/^?? //p' \
+    | grep -E '^(Cargo\.(toml|lock)|crates/|build\.rs)' || true)"
+if [ -n "$UNTRACKED_SOURCES" ]; then
+    die "hay ficheros SIN SEGUIMIENTO que entran en el binario:
+$UNTRACKED_SOURCES
+         cargo los compila y ningun commit los identifica, luego el SHA que se
+         declare no identifica el binario. Sube esos ficheros o muevelos antes
+         de publicar. Ver INC-DEBT-064."
+fi
+
+export SDDK_GIT_SHA="$RELEASE_BUILD_SHA"
+export SDDK_BUILD_DIRTY=false
+printf '    identidad del binario: commit=%s dirty=false (SDDK_GIT_SHA)\n' "$SDDK_GIT_SHA"
+
 cargo build --release --offline --bin sddk --target "$BUILD_TARGET" \
     || die "cargo build failed para target $BUILD_TARGET"
 

@@ -123,3 +123,53 @@ coherencia donde no la hay.
   (`crates/sddk-cli/tests/cli.rs:5626-5660`): `tests-pass`, `policy-compliant`,
   `debt-severity-assigned`, `debt-priority-assigned` y `verification-report`.
   Verificado, no supuesto.
+
+---
+
+## Estado del remedio, y por qué esto sigue `open`
+
+**El detector que faltaba ya existe, y la condición sigue viva.** Son dos
+hechos distintos y confundirlos es exactamente el error que esta sección
+evita.
+
+**Lo entregado** (ciclo `p-63676b11dc0ef88f/cl-build-identity`, fase de build
+cerrada):
+
+- `crates/sddk-cli/build.rs` embebe commit, procedencia y suciedad.
+- `sddk dev build-id` los declara en texto y JSON, y la procedencia acompaña
+  siempre al valor para que un `unknown` no se pueda leer como un commit.
+- `sddk dev build-id --check` compara contra un checkout y **nombra** la
+  relación: `matches`, `behind`, `diverged`, `no_checkout`, `unknown`.
+- `scripts/release.sh` mide el SHA y lo exporta antes de construir, de modo que
+  un binario **publicado** declara `source: env` y `--check` puede salir de
+  `unknown`. Sin ese último punto, el detector no habría podido cumplir su
+  función en el caso que motiva este documento, que es un binario publicado y
+  obsoleto.
+
+**Lo que NO se ha hecho, y por qué el estado no baja a `resolved`:**
+
+- **El binario del PATH sigue obsoleto**, y lo seguirá hasta que se publique una
+  release y se instale. Publicar 2.5.3 es la vía natural y está bloqueada por la
+  clave KMS, que es del operador.
+- **La fase `verify` de `cl-build-identity` está abierta.** Lo entregado está en
+  `OPEN/verify` con el gate `implementation-complete` en `passed`; los gates de
+  la verify todavía no se han graduado.
+- **La ruta de detección no está cableada en ningún sitio automático.** Existe
+  `dev build-id --check` para que un humano o un script lo consulte, pero
+  `dev doctor` **no** lo invoca: hoy `binary.bundle_coherence` sigue sin detectar
+  un binario obsoleto. Conectar la detección al doctor es trabajo por hacer, y
+  mientras no ocurra, la deuda sigue existiendo como deuda: hay que acordarse
+  de mirar.
+
+**Por qué no se escribió «cierra» en el changelog.** Un `CHANGELOG` que dice
+que cierra una deuda que sigue abierta es la misma clase de mentira que este
+documento denuncia: afirmar por el número en lugar de por el estado. El
+changelog dice **«avanza»**, y este documento dice **`open`**, y los dos son
+verdadersos el mismo día.
+
+**Severidad sin cambio: `high`, y no `critical`.** Sigue sin haber pérdida de
+datos: lo que se rompe es un contrato, y en silencio. La condición de
+escalada que este documento ya declaraba —que una medición con el binario
+obsoleto llegue a un documento publicado como afirmación sobre el producto, o
+que `dev doctor` declare coherencia donde no la hay— **sigue sin cumplirse**, y
+por eso la severidad no se toca.
