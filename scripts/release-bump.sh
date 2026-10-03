@@ -12,8 +12,16 @@
 #   fix|refactor|perf|docs|ci|chore|style|test|build -> patch
 #   otherwise                  -> no release
 #
-# Updates: workspace Cargo.toml, 7 crate Cargo.tomls, manifest.toml,
-# Cargo.lock (via cargo check), and CHANGELOG.md.
+# Updates: workspace Cargo.toml, manifest.toml, BUNDLE.toml (las TRES claves
+# del rango), Cargo.lock (via cargo check), and CHANGELOG.md.
+#
+# Los 7 `crates/*/Cargo.toml` tambien entran en el bucle de abajo, pero MEDIDO:
+# todos declaran `version.workspace = true`, luego el sed no encuentra ninguna
+# linea `version = "..."` que cambiar y ninguno aparece en la lista de
+# "changed files". Sigue estando en el bucle por si un crate deja de heredar, y
+# por eso el informe NO los anuncia: una superficie que el resumen nombra y la
+# accion no toca es la misma asimetria lista/accion que ya produjo dos
+# defectos.
 
 set -euo pipefail
 
@@ -150,7 +158,13 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "--- commits ---"
     echo "$COMMITS"
     echo "--- files to update ---"
-    echo "  Cargo.toml (workspace) + crates/*/Cargo.toml + manifest.toml + Cargo.lock + CHANGELOG.md"
+    # Session-75: esta linea decia cinco superficies y el bloque de aplicacion
+    # mueve seis -- `BUNDLE.toml` faltaba en el resumen, no en el codigo. Es la
+    # misma asimetria lista/accion que produjo los dos ultimos defectos: el
+    # informe de una herramienta tiene que decir lo que la herramienta hace,
+    # porque es lo que uno lee antes de confiar en ella. El dry-run es la unica
+    # occasion de verlo sin aplicar el bump.
+    echo "  Cargo.toml (workspace) + manifest.toml + BUNDLE.toml (3 claves) + Cargo.lock + CHANGELOG.md"
     exit 0
 fi
 

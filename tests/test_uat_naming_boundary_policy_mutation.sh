@@ -221,9 +221,9 @@ for que in "$G:$SHA_G" "$F:$SHA_F"; do
     ruta="${que%%:*}"; esperado="${que##*:}"
     actual="$(sha256sum "$ruta" | cut -d' ' -f1)"
     if [[ "$actual" == "$esperado" ]]; then
-        ok "restaurado byte-identico: ${ruta#$ROOT/}"
+        ok "restaurado byte-identico: ${ruta#"$ROOT"/}"
     else
-        bad "NO restaurado byte-identico: ${ruta#$ROOT/}"
+        bad "NO restaurado byte-identico: ${ruta#"$ROOT"/}"
         exit 1
     fi
 done
