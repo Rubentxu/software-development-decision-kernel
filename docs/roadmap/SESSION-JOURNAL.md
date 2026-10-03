@@ -10898,3 +10898,126 @@ ciclo, y la razón de escanear antes de cada commit sigue siendo esta.
    **`sddk vault search`**: 20 de 75 documentos sin declarar nada, `--limit 0`
    devuelve «no hits» en vez de todos, y el JSON es un **array desnudo** — las tres
    cosas que se corrigieron en `ledger events`, una a una, en otra superficie.
+
+---
+
+## Session-69n (bis 2) — 2026-10-03 — el binario del PATH va atrás y dice la misma versión
+
+**Baseline:** `3f143479` (publicado) · **HEAD al cerrar:** este commit
+documental. Rama `main`.
+
+**WorkItem:** el `next_action` que se había escrito una hora antes decía que el
+candidato natural ya medido era `sddk vault search`. Iba a abrir un ciclo sobre
+eso. **Antes de abrirlo, la regla del objetivo es no asumir que la evidencia
+sigue vigente** — y no lo seguía.
+
+### Lo que se encontró
+
+`vault search` **no tiene ningún defecto en el código**. `run_vault_search`
+(`vault_cmd.rs:464-488`) llama `count_matches` para el total, traduce
+`limit == 0` a `usize::MAX` y construye
+`SearchOutput { truncated, shown, total_hits, hits }`. El arreglo es `37870817`,
+del 2026-10-02 21:09, en `origin/main`.
+
+La cronología lo aclara: la auditoría que lo descubrió fue `a61948a2`, del
+**20:52**, y el arreglo es de las **21:09**. El camino fue el normal —se vio,
+se midió, se arregló, se cerró— y la primera lectura de esta sesión, «la
+medición estaba caducada», era **incorrecta**.
+
+### El hallazgo real
+
+`~/.local/bin/sddk` declara `sddk 2.5.3`. El workspace **también** declara
+`2.5.3`. **No son el mismo código**: el binario es del **2026-10-01 21:17** y el
+último commit del **2026-10-03 03:02**, con **1,24 días**.
+
+```
+VERSIONES_COINCIDEN=True          <-- la comprobación habitual dice que sí
+ESTRUCTURAL_tiene_cycle_list=False
+BINARIO_MIDE_EL_CODIGO_ACTUAL=False
+```
+
+No es una anomalía de la máquina. Es **estructural mientras haya una release
+declarada sin publicar**: el binario se instala desde un release y el workspace
+no bumpea entre releases, así que todo el trabajo posterior a la última
+publicación viaja bajo el mismo número.
+
+**La prueba** es la misma superficie con los dos binarios, sobre un fixture
+propio de 25 documentos que no toca ningún vault real:
+
+| | binario del PATH | binario del código |
+|---|---|---|
+| declara el total | **no** | **sí** |
+| `--limit 0` es todos | **no** (`no hits`) | **sí** |
+| JSON con dónde llevar el total | **array desnudo** | **objeto** |
+
+**El daño es de veracidad de la evidencia**: una medición de comportamiento
+hecha con el binario del PATH es evidencia sobre el código viejo, con toda la
+apariencia de ser sobre el actual. Y lo de esta sesión lo demuestra: el
+`next_action` de hace una hora iba a ser un hallazgo falso, y casi llegó al
+árbol.
+
+**El antecedente ya se había pagado.** La nota (a) de **INC-DEBT-061** resolvió
+que «el arreglo no está roto, no está desplegado» con `sddk 2.2.27`. **Esa
+lección se aplicó como dato de un caso y no como mecanismo.** Este es el
+documento que la convierte en mecanismo: **INC-DEBT-064**, high/P1, con el guard
+propuesto —un check en `dev doctor` que compare la fecha del binario con la del
+repo— y la regla escrita: **mientras haya ventana declarada-pero-no-publicada,
+medir con el binario construido del repo, nunca con el del PATH**.
+
+### El instrumento falló tres veces antes de decir la verdad
+
+Las tres son modos **ya registrados** en esta serie, y eso es lo que las hace
+previsibles:
+
+1. **Leyó el canal equivocado.** `--version` escribe en **stderr**; el script
+   leía stdout y devolvía la versión vacía, con lo que `VERSIONES_COINCIDEN`
+   salía `False` por un motivo que no era el medido.
+2. **Leyó prosa.** Buscó la palabra `--cycle` dentro de `--help` y la encontró,
+   porque `--no-infer` explica en prosa que `--cycle` hace falta en los comandos
+   de ciclo. El mismo fallo que la sonda de `ledger export`: buscar una palabra
+   encuentra la palabra.
+3. **Usó un criterio inventado.** `ledger events --cycle` **no existió nunca**:
+   `LedgerEventsArgs` (`ledger.rs:71-87`) solo tiene `--frame`, `--limit` y
+   `--format`. El criterio daba `False` con los dos binarios y, por eso mismo,
+   **parecía corroborar** el veredicto de la fecha. Es el peor de los tres: **un
+   criterio que nunca puede dar `True` no es un criterio, es ruido que confirma
+   lo que ya se creía**.
+
+El que queda es `cycle list`, un **subcomando entero** introducido en session-69c
+(`113f84ba`), que se reconoce o no se reconoce sin ambigüedad. Con él, los dos
+binarios se separan.
+
+### Lo que NO cambia
+
+- **La fase `verify` de `cl-release-forge-testability` es válida.** Los cuatro
+  gates de `phase.verify.complete` y el requisito `verification-report` que
+  aplicó el binario viejo son **los mismos** que declara el código actual
+  (`cli.rs:5626-5660`): `tests-pass`, `policy-compliant`,
+  `debt-severity-assigned`, `debt-priority-assigned`, `verification-report`.
+  Verificado leyendo el código.
+- **Los tres ciclos siguen en `RELEASE_PENDING`**, esperando la clave KMS.
+- **Workspace 2.5.3** sobre tag remoto `v2.5.2` → la siguiente release **es
+  2.5.3**. **No bumpear por conveniencia.**
+
+### Hallazgo lateral, sin registrar
+
+`dev doctor` informa `impeccable-primary.md: missing — exceeds agent line budget
+(300)`. No se ha medido ni registrado: es una línea de superficie del bundle que
+excede un presupuesto, y puede ser intencional. Queda anotado, no investigated.
+
+### Contaminación
+
+Cuatro Slots más en esta sesión, todas detectadas por el escaneo antes de
+commitear: dos en el `VERIFICATION-REPORT.md` y el docstring del medidor de
+sesión verify, y dos en el documento de INC-DEBT-064 (cinese y cirílico). Más un
+`>` suelto en `STATE.yaml`. **Ninguna llegó al árbol.**
+
+### Primer paso de la sesión siguiente
+
+1. Publicar lo commiteado. El rango admite por la **ruta A-v2** (workspace 2.5.3
+   por encima del tag publicado `v2.5.2`), sin `--no-verify` y **sin bumpear**.
+2. Antes de cualquier medición de comportamiento: `22-medir-binario-al-dia.py`
+   contra el binario que se vaya a usar. Si `BINARIO_MIDE_EL_CODIGO_ACTUAL` es
+   `False`, la medición es sobre el código viejo y no vale.
+3. Lo que avanza sin decisión del operador es la propuesta (1) de INC-DEBT-064:
+   el check en `dev doctor`.

@@ -1,5 +1,51 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69n bis 2, 2026-10-03): el binario del PATH va 1,24 días por detrás del código y declara la misma versión. La comprobación que todo el mundo hace sale verde y no dice nada.** `HEAD` = `289bdb98` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La regla que sale de aquí, y que se aplica desde ya:** mientras haya ventana declarada-pero-no-publicada, **las mediciones de comportamiento se hacen con el binario construido del repo** (`CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo build --release --bin sddk`), **nunca con el del PATH**. No es una preferencia: el número de versión no dice qué contiene.
+
+Medido con `22-medir-binario-al-dia.py`:
+
+```
+VERSION_DECLARADA_POR_EL_BINARIO=sddk 2.5.3
+VERSION_DEL_WORKSPACE=2.5.3
+VERSIONES_COINCIDEN=True          <-- la comprobación habitual dice que sí
+ESTRUCTURAL_tiene_cycle_list=False
+DIAS_DE_RETRASO=1.24
+BINARIO_MIDE_EL_CODIGO_ACTUAL=False
+```
+
+**La prueba de que no es cosmético es la misma superficie medida con los dos binarios**, sobre un fixture propio de 25 documentos que no toca ningún vault real:
+
+| Comprobación | binario del PATH | binario del código |
+|---|---|---|
+| `vault search --limit 5` declara el total | **no** | **sí** |
+| `vault search --limit 0` devuelve todos | **no** (`no hits`) | **sí** |
+| JSON con dónde llevar el total | **array desnudo** | **objeto** |
+
+`vault search` **no tiene ningún defecto en el código**: `run_vault_search` (`vault_cmd.rs:464-488`) llama `count_matches`, traduce `limit == 0` a `usize::MAX` y construye `SearchOutput { truncated, shown, total_hits, hits }`. El arreglo es `37870817`, del 2-oct 21:09, en `origin/main`. **Lo roto es el artefacto que se ejecuta.**
+
+**La afirmación que este mismo puntero hizo hace una hora era falsa, y se conserva al lado en vez de borrarse:** decía que el candidato natural ya medido era `vault search` con sus tres defectos. Era cierto **del binario**, no del código.
+
+**El antecedente ya se había pagado una vez.** La nota (a) de INC-DEBT-061 resolvió que «el arreglo no está roto, no está desplegado» con `sddk 2.2.27`. **Esa lección se aplicó como dato de un caso y no como mecanismo**, y este es el documento que la convierte en mecanismo: **INC-DEBT-064**, high/P1, con el guard propuesto (`dev doctor` comparando la fecha del binario con la del repo) y la regla escrita.
+
+**El instrumento que produce la evidencia falló tres veces antes de decir la verdad**, y las tres son modos ya registrados en esta serie: leía stdout cuando `--version` escribe en stderr; buscó la palabra `--cycle` en la prosa del `--help`, donde `--no-infer` la explica; y usó como criterio `ledger events --cycle`, **que es inventado** —`LedgerEventsArgs` (`ledger.rs:71-87`) solo tiene `--frame`, `--limit` y `--format`—. El tercero es el peor: **un criterio que nunca puede dar `True` sale `False` en ambos lados y parece corroborar lo que dice el otro.**
+
+**No invalida la fase `verify`.** Los cuatro gates de `phase.verify.complete` y el requisito `verification-report` que aplicó el binario viejo son **los mismos** que declara el código actual (`cli.rs:5626-5660`). Verificado leyendo el código, no supuesto.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3 y de los tres ciclos en `RELEASE_PENDING`, del operador.
+2. **INC-DEBT-064**: el binario obsoleto. La salida (1), un check en `dev doctor`, y la (3), que es la regla de arriba.
+3. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+4. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+5. **INC-DEBT-060**: solo las 79 filas `__spine_import__`, y si su severidad baja a `medium`.
+6. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente. Se recomienda enmendar; **no se ejecuta aquí**.
+7. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+8. **La ruta forge contra un GitHub real**: `NOT_RUN`. Tres escrituras privilegiadas sobre un repositorio ajeno (AGENTS.md §1).
+
+---
+
 **Estado (session-69n verify, 2026-10-03): el ciclo de la ruta forge está en `RELEASE_PENDING` con nueve gates, y el medidor de deuda resultó ser ciego antes de que su cero sirviera de evidencia.** `HEAD` = `8a2ebfd3` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **La fase `verify` se cerró con evidencia re-ejecutada aquí, no heredada del lote de implementación.** Se comprobó primero que el commit sin publicar no movía código bajo prueba —`git diff --name-only a6dfb5f2..HEAD -- crates/` sale vacío— y luego se corrió todo de nuevo: workspace **5414 passed / 0 failed / 24 ignored / 283 binarios**, `sddk-cli` **1461 passed / 0 failed**, `release_cmd` **15 passed / 0 failed**, `fmt` y `clippy -D warnings` exit 0, changelog **PASS=69**, índice de deuda **PASS=12**, falsificador **5/5**, scanner **CLEAN**.

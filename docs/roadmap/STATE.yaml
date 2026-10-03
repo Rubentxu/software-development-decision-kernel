@@ -404,12 +404,44 @@ c3_progress:
 # en el propio informe y en el docstring del medidor; detectadas por el escaneo y
 # corregidas antes de commitear, y ninguna llego al arbol.
 #
+# session-69n BISECHA 2: INC-DEBT-064, high/P1, open. EL BINARIO DEL PATH VA MAS
+# ATRAS QUE EL CODIGO Y DECLARA LA MISMA VERSION. `~/.local/bin/sddk` dice
+# `2.5.3` y el workspace tambien, pero el binario es del 2026-10-01 21:17 y el
+# ultimo commit del 2026-10-03 03:02: 1,24 dias. La comprobacion habitual -que
+# las versiones coincidan- sale VERDE y no dice nada, y no es una anomalia de la
+# maquina sino la condicion estructural de toda ventana declarada-pero-no-
+# publicada, porque el binario se instala desde un release y el workspace no
+# bumpea entre releases. MEDIDO SOBRE LA MISMA SUPERFICIE CON LOS DOS BINARIOS,
+# fixture propio de 25 documentos que no toca ningun vault real: `vault search`
+# NO DECLARA EL TOTAL, `--limit 0` DEVUELVE `no hits` y EMITE UN ARRAY DESNUDO
+# con el binario del PATH; DECLARA EL TOTAL, DEVUELVE TODOS Y EMITE UN OBJETO
+# con el binario del codigo. `vault search` no tiene ningun defecto en el
+# codigo -`run_vault_search` (vault_cmd.rs:464-488) llama `count_matches`,
+# traduce `limit == 0` a `usize::MAX` y construye `SearchOutput { truncated,
+# shown, total_hits, hits }`-, el arreglo es 37870817 y esta en origin/main. LO
+# ROTO ES EL ARTEFACTO QUE SE EJECUTA. El dano es de VERACIDAD DE LA EVIDENCIA,
+# que es la unica moneda del framework. ANTECEDENTE: la nota (a) de INC-DEBT-061
+# ya habia resuelto que «el arreglo no esta roto, no esta desplegado» con
+# sddk 2.2.27, y esa leccion se aplico como DATO DE UN CASO y no como
+# MECANISMO; este documento es la repeticion. NO INVALIDA la fase verify de
+# cl-release-forge-testability: los cuatro gates de phase.verify.complete y el
+# requisito verification-report que aplico el binario viejo son los mismos que
+# declara el codigo actual (cli.rs:5626-5660), verificado.
+# EL INSTRUMENTO
+# fallo tres veces antes de decir la verdad, y las tres son modos ya
+# registrados en esta serie: leia stdout cuando `--version` escribe en stderr;
+# busco la palabra `--cycle` en la prosa del `--help`, donde `--no-infer` la
+# explica; y uso como criterio `ledger events --cycle`, QUE ES INVENTADO porque
+# `LedgerEventsArgs` (ledger.rs:71-87) solo tiene `--frame`, `--limit` y
+# `--format`. El tercero es el peor: un criterio que nunca puede dar True sale
+# False en ambos lados y parece corroborar lo que dice el otro.
+#
 # SIGUIENTE: lote 1 del PLAN, los tests RED T1-T5 en el mod tests de
 # release_cmd.rs, declarando el arbol rojo. STOP 1 MANDA: si hacer la rama
 # alcanzable exige debilitar una comprobacion de capacidad, reordenar los
 # pasos o mover el AdmissionTicket, el arreglo se descarta AUNQUE LOS TESTS
 # PASSEN. SUPERADO: el lote 1 es 034d098a y el lote 2 es a6dfb5f2.
-next_action: "Session-69n verify (cerrada). cl-release-forge-testability esta en RELEASE_PENDING con 9 gates. Los TRES ciclos abiertos -ledger-watch-total, ledger-export-total y cl-release-forge-testability- esperan la MISMA decision del operador: la clave KMS, unico bloqueo de la release 2.5.3. Publicada esa, `bash scripts/release.sh` lleva los tres a cierre con sus recibos. Mientras tanto lo que avanza sin decision del operador es trabajo de ciclo nuevo, y el candidato natural ya medido es `sddk vault search`: 20 de 75 documentos sin declarar nada, `--limit 0` devuelve «no hits» en vez de todos, y el JSON es un ARRAY DESNUDO. Son las tres cosas que se corrigieron en ledger events, una a una, en otra superficie, con SCOPE propio. Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
+next_action: "Session-69n verify (cerrada). cl-release-forge-testability esta en RELEASE_PENDING con 9 gates. Los TRES ciclos abiertos -ledger-watch-total, ledger-export-total y cl-release-forge-testability- esperan la MISMA decision del operador: la clave KMS, unico bloqueo de la release 2.5.3. Publicada esa, `bash scripts/release.sh` lleva los tres a cierre con sus recibos. CORRECCION DE ESTE MISMO PARRAFO, escrita sin borrar la version anterior: decia que el candidato natural ya medido era `sddk vault search` con sus tres defectos, y eso es FALSO PARA EL CODIGO - se medio con el binario del PATH, que va 1,24 dias por detras, y el codigo lleva el arreglo 37870817 desde el 2026-10-02 21:09. Medido con el binario construido del repo, las tres comprobaciones dan bien. Ver INC-DEBT-064, con la regla que sale de ahi: mientras haya ventana declarada-pero-no-publicada, medir con `CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo build --release --bin sddk` y con ESE binario, nunca con el del PATH, porque el numero de version no dice que contiene. LO QUE AVANZA SIN DECISION DEL OPERADOR, ya sin ese candidato: la propuesta (1) de INC-DEBT-064, un check en `sddk dev doctor` que compare la fecha del binario con la del repo, y la (3), que es la regla misma escrita en los punteros. Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"
   - "RESUELTO session-22 — Cargo.lock stale. Cerro con bump 2.0.8 -> 2.0.9 por la clausula (A) del hook pre-push: Cargo.toml, manifest.toml y Cargo.lock quedan alineados en el mismo rango, y `cargo metadata --locked` paso de exit 101 a exit 0. El hook NO se amendso. Ademas se anadio el check 6 a tests/test_release_state_pointer.sh (compara Cargo.lock contra Cargo.toml), falsificado en los dos sentidos: falla con el lock a 2.0.7, pasa con el lock a 2.0.9. Con esto, publicar 2.0.9 ya no tropezaria en el paso 63 por el lock; lo que queda por delante es la decision de firma (S14 en distribucion), que sigue siendo irreducible sin autorizacion del operador."
