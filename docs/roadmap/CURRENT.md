@@ -1,4 +1,62 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69n bis 8, 2026-10-03): fase `verify` de `cl-doctor-build-identity` CERRADA. Los cuatro estados del check se han medido con dos binarios reales, y el instrumento que los midió tenía dos defectos que se han corregido en el propio instrumento.** `HEAD` = `261a578c` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
+
+**Lo que midió la verify, y no es repetir la suite:** que los cuatro estados se distinguen con el **binario real** y el **repo real**, y sobre todo que los dos estados de «no puedo saber» **no dan rojo**. Un rojo falso en `dev doctor` entrena a ignorar los rojos.
+
+| Objetivo | Escenario | Veredicto | `doctor` |
+|---|---|---|---|
+| O2 | checkout de sddk, binario al día | `present` — `OK: el checkout esta en el mismo commit que el binario` | exit **0** |
+| O3 | **el mismo binario**, checkout atrasado | **`missing`** — nombra la relación | exit **1** |
+| O5 | repo **impostor** | `present` — `N/A: no es un checkout de sddk-framework` | — |
+| O4 | directorio que **no** es repo | `present` — `N/A: no es un checkout de sddk-framework` | — |
+| O6 | identidad **no concluyente** (`source: git`) | `present` — `N/A: …; STOP 6 no le permite decidir` | — |
+
+Los dos binarios son del **mismo commit** y se diferencian solo en la procedencia (`env` frente a `git`), lo que confirma por medición lo que el SCOPE afirmaba: **la identidad sola no basta, la procedencia acompaña siempre al valor**. Se construyen **fuera** del test y se reciben como argumentos: medir con el binario equivocado ocurrió **dos veces** en esta sesión, y la razón está en el SCOPE de `cl-build-identity`.
+
+**El instrumento falló dos veces, y ninguna era del producto.**
+
+La primera: `PASS=10 FAIL=5` con el producto en verde. Los cinco fallos eran del **aserto**, que comparaba contra `"PRESENT|"` cuando `${V%%|*}` ya había quitado la barra. Ninguna medición estaba mal.
+
+La segunda la encontró el falsificador y era peor: **O7 afirmaba «ningún veredicto sin motivo» y medía 2 veredictos de 5.** Los temporales del impostor y del «sin checkout» se enviaban a la basura antes de que O7 los recorriera, y su `[ -d ] || continue` se los saltaba en silencio, mientras los demás asertos de O7 seguían contando lo suyo — de modo que el resultado global seguía en `FAIL=0` y **el hueco era invisible desde el número**. Los veredictos se recogen ahora al medirse, y el recuento de muestras es un aserto por derecho propio.
+
+**Y el aserto nuevo tampoco bastaba, y eso lo dijo la falsificación:** anular la aritmética que contaba los motivos vacíos **no lo detectaba nadie**, porque el único guard que dependía de ella era el propio aserto anulado. El recuento vive ahora en una función que el test **se autocomprueba** contra una lista conocida antes de fiarse de ella — **una copia del código no vigila el código**, séptima vez que esta serie lo paga.
+
+**Falsificación del instrumento: 7 mutaciones, 6 detectadas, 1 declarada.** La que sobrevive se explica en vez de maquillarse: anular el recuento por `grep` **cuando no hay ningún motivo vacío** es indistinguible de la constante `0`, luego es una mutación **equivalente a la base**, no un defecto del guard. Compuesta **con** un motivo vacío sí cae (FAIL=2), que es lo que demuestra que los dos caminos se necesitan el uno al otro. **NO MEDIBLE no es DETECTADA**, y un `7/7` que no se ha medido no se escribe.
+
+**Gates, uno a uno, con evidencia ejecutada y aplanada al formato que el validador exige** (`gate_receipt.rs:51-59` exige `argv`/`exit_code`/`output_digest` **en el nivel superior**; un lote anidado bajo `commands` se rechaza):
+
+| Gate | Comando | Exit | Digest |
+|---|---|---|---|
+| `tests-pass` | `cargo test --workspace --no-fail-fast` | 0 | `sha256:dea6a43469d477a…` |
+| `policy-compliant` | `bash tests/test_doctor_identity_states.sh <2 binarios>` | 0 — **PASS=19 FAIL=0** | `sha256:d884e1b358e38e7…` |
+
+**Recuento de la suite, medido y no heredado:** `passed=5435 failed=0 ignored=24`. El «283 binarios» que afirmaba el borrador del informe **no se había medido en esta sesión** y se ha retirado del texto en vez de dejarlo ahí con la autoridad de un informe.
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| **`cl-doctor-build-identity`** | **`RELEASE_PENDING`, sequence 4, 2 artefactos, 2 gates `passed`** (cerrado) |
+| `cl-build-identity` | `RELEASE_PENDING`, sequence 4, 2 artefactos, 3 gates |
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| `INC-DEBT-064` | **`open`, high/P1 — el mecanismo existe, la condición sigue viva** |
+
+**Por qué INC-DEBT-064 sigue `open`:** los binarios **ya instalados** declaran `source: git` porque se construyeron antes del cambio de `release.sh`, luego el check es N/A para ellos y **no tiene dientes hasta la próxima release**, bloqueada por la clave KMS. No es un fallo del check: es que el check es honesto con lo que sabe. Severidad sin cambio, `high` y no `critical`: la condición de escalada —*«si `dev doctor` declara coherencia donde no la hay»*— **sigue sin cumplirse**; este trabajo le quita una vía para que se cumpla, no la cumple.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — bloqueo de la release 2.5.3 y de los **seis** ciclos, del operador.
+2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+4. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
+5. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+7. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+8. **Aviso lateral sin investigar**: `dev doctor` informa que `impeccable-primary.md` excede el presupuesto de 300 líneas.
+
+---
 **Estado (session-69n bis 7, 2026-10-03): el detector de identidad ya tiene consumidor — `dev doctor` consulta si el binario es el de este checkout. Un detector que funciona y al que nadie pregunta no vigila nada.** `HEAD` = `a5c18b97` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
 
 **Lo que faltaba, medido:** `grep -n 'build_id|BuildIdentity|SDDK_BUILD_SHA|SDDK_GIT_SHA|identity' crates/sddk-cli/src/dev/doctor.rs` devuelve **cero coincidencias**, y `binary.bundle_coherence` valida el recibo, el directorio versionado y el manifiesto — **ningún commit**. Eso cumple la condición de escalada que el propio INC-DEBT-064 declara: *«si `dev doctor` declara coherencia donde no la hay»*.

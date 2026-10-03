@@ -11444,3 +11444,112 @@ corrupción la genera.**
 un lease ausente arranca en 1 y solo un reemplazo lo incrementa— y medir los
 **cuatro** estados del check con el binario real, sobre todo que impostor y «sin
 checkout» no den rojo.
+
+
+---
+
+## session-69n bis 8 — 2026-10-03 — `cl-doctor-build-identity` verify CERRADA
+
+**Baseline / HEAD.** `HEAD` al empezar = `41fcb916` = `origin/main`. Al cerrar,
+`261a578c` + el commit documental de esta biseca. Workspace **2.5.3 declarada,
+no publicada**; tag publicado `v2.5.2`.
+
+**WorkItem.** Cerrar la fase `verify` de `p-63676b11dc0ef88f/cl-doctor-build-identity`
+con la transición `phase.verify.complete.b-direct`, que exige los gates
+`tests-pass` y `policy-compliant` más el artefacto `verification-report`.
+
+**Lo que se midió, y no es repetir la suite.** Que los cuatro estados del check
+`binary.build_identity` se distinguen con el **binario real** y el **repo real**,
+y sobre todo que impostor y «sin checkout» **no den rojo**. Un rojo falso en
+`dev doctor` entrena a ignorar los rojos.
+
+| Objetivo | Escenario | Veredicto |
+|---|---|---|
+| O2 | checkout de sddk, binario al día | `present` — `OK: el checkout esta en el mismo commit que el binario`; exit 0 |
+| O3 | **el mismo binario**, checkout atrasado | **`missing`** — nombra la relación; exit 1 |
+| O5 | repo **impostor** | `present` — `N/A: no es un checkout de sddk-framework` |
+| O4 | directorio que **no** es repo | `present` — `N/A: no es un checkout de sddk-framework` |
+| O6 | identidad **no concluyente** (`source: git`) | `present` — `N/A: …; STOP 6 no le permite decidir` |
+
+Los dos binarios son del **mismo commit** y se diferencian solo en la
+procedencia (`env` frente a `git`), lo que confirma por medición lo que el
+SCOPE afirmaba. Se construyen **fuera** del test y se reciben como argumentos:
+medir con el binario equivocado ocurrió **dos veces** en esta sesión.
+
+**El instrumento falló dos veces, y ninguna era del producto.**
+
+1. `PASS=10 FAIL=5` con el producto en verde. Los cinco fallos eran del
+   **aserto**, que comparaba contra `"PRESENT|"` cuando `${V%%|*}` ya había
+   quitado la barra. Ninguna medición estaba mal.
+2. La segunda la encontró el falsificador y era peor: **O7 afirmaba «ningún
+   veredicto sin motivo» y medía 2 de 5.** Los temporales del impostor y del
+   «sin checkout» se enviaban a la basura antes de que O7 los recorriera, y su
+   `[ -d ] || continue` se los saltaba en silencio, mientras los demás asertos
+   de O7 seguían contando lo suyo — luego `FAIL=0` global y **el hueco era
+   invisible desde el número**. Los veredictos se recogen ahora al medirse, y el
+   **recuento de muestras es un aserto por derecho propio**.
+
+**Y el aserto nuevo tampoco bastaba, y eso lo dijo la falsificación.** Anular la
+aritmética que contaba los motivos vacíos **no lo detectaba nadie**: el único
+guard que dependía de ella era el propio aserto anulado. El recuento vive ahora
+en una función que el test **se autocomprueba** contra una lista conocida antes
+de fiarse de ella. **Una copia del código no vigila el código** — séptima vez
+en la serie que esto se paga.
+
+**Falsificación del instrumento: 7 mutaciones, 6 detectadas, 1 declarada.** La
+que sobrevive se explica en vez de maquillarse: anular el recuento por `grep`
+**cuando no hay ningún motivo vacío** es indistinguible de la constante `0`,
+luego es una mutación **equivalente a la base**, no un defecto del guard.
+Compuesta **con** un motivo vacío sí cae (FAIL=2), que es lo que demuestra que
+los dos caminos se necesitan el uno al otro. **NO MEDIBLE no es DETECTADA**, y
+un `7/7` que no se ha medido no se escribe.
+
+**Gates, uno a uno, con evidencia ejecutada.** `gate_receipt.rs:51-59` exige
+`argv`, `exit_code` y `output_digest` **en el nivel superior**; un lote anidado
+bajo `commands` se rechaza. Las dos evidencias que había eran anidadas, luego se
+regeneraron aplanadas:
+
+| Gate | Comando | Exit | Digest |
+|---|---|---|---|
+| `tests-pass` | `cargo test --workspace --no-fail-fast` | 0 | `sha256:dea6a43469d477a…` |
+| `policy-compliant` | `bash tests/test_doctor_identity_states.sh <2 binarios>` | 0 — PASS=19 FAIL=0 | `sha256:d884e1b358e38e7…` |
+
+Recuento de la suite, **medido y no heredado**: `passed=5435 failed=0
+ignored=24`. El «283 binarios» que afirmaba el borrador del informe **no se
+había medido en esta sesión** y se ha retirado del texto en vez de dejarlo ahí
+con la autoridad de un informe.
+
+**Transición aplicada.** `phase.verify.complete.b-direct` → `outcome: succeeded`,
+`RELEASE_PENDING`, `sequence 4`, evento `evt-3ca0f565…`, hash
+`sha256:15d62657c7b0…`. El ciclo se une a los otros cinco, todos en
+`RELEASE_PENDING`.
+
+**Decisión propia que hay que declarar.** `evaluate-gate` con
+`--cycle cl-doctor-build-identity` responde `cycle not found`; el storage exige
+el identificador con prefijo de proyecto, `p-63676b11dc0ef88f/cl-doctor-build-identity`,
+que es el que devuelve `cycle status`. No es un defecto del CLI —es que hay dos
+formas de nombrar y solo una la acepta el storage— pero obliga a leer el id de
+la salida del estado y no del nombre de la carpeta.
+
+**Contaminación de redacción, tres casos en esta biseca.** Dos `U+FFFD` donde
+debía haber una `o` en el VERIFICATION-REPORT; la palabra inglesa `composing`
+en el mensaje de commit; y dos de la clase que el scanner **no** cubre, que
+encontré leyendo y no escaneando: `yagraduó` (dos palabras pegadas) y `se/generated`
+(en la línea que acababa de escribir). Octava y novena vez en la sesión, con la
+misma firma: **escribir sobre la corrupción la genera.**
+
+**Riesgos, y el más importante no es técnico.** Los binarios **ya instalados**
+declaran `source: git`, luego el check es **N/A y no tiene dientes** hasta la
+próxima release, que sigue bloqueada por la clave KMS. **INC-DEBT-064 continúa
+`open`, high/P1, sin cambio de severidad**: la condición de escalada que la
+deuda declara —*«si `dev doctor` declara coherencia donde no la hay»*— **sigue
+sin cumplirse**. Este trabajo le quita una vía, no la cumple.
+
+**Primer paso preciso de la sesión siguiente.** No queda nada en este ciclo que
+se pueda hacer sin el operador: los seis ciclos esperan la **clave KMS** y la
+release 2.5.3 con ella. Lo autónomo que queda es medir el aviso lateral de
+`dev doctor` (`impeccable-primary.md` excede el presupuesto de 300 líneas) y
+decidir la publicación del harness Pipelinek-Test-Hardness, 44 commits sin
+publicar. Antes de cualquier medición: construir el binario del repo y
+comprobarlo con `dev build-id --check`; si da `relation: behind` o exit 1, la
+medición es sobre un binario viejo y no vale.
