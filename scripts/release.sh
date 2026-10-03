@@ -122,7 +122,7 @@ require() {
 
 # --- 0. preflight: tooling + git state ---
 
-step "0/14 — preflight"
+step "0/15 — preflight"
 require cargo
 require git
 require gh
@@ -182,7 +182,7 @@ ok "on main, clean tree, release admission: $ADMISSION"
 # --- 1. tests ---
 
 if [ "$SKIP_TESTS" = "0" ]; then
-    step "1/14 — cargo fmt + clippy + test (workspace)"
+    step "1/15 — cargo fmt + clippy + test (workspace)"
     cargo fmt --all -- --check || die "cargo fmt failed"
     cargo clippy --workspace --offline --all-targets -- -D warnings \
         || die "cargo clippy failed"
@@ -190,7 +190,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
         || die "cargo test --workspace failed"
     ok "workspace green"
 
-    step "1b/14 — shell contract tests (tests/test_*.sh)"
+    step "1b/15 — shell contract tests (tests/test_*.sh)"
     # The shell contract tests pin invariants that cargo cannot cover
     # (githooks/pre-push behavior, release-receipt authority gate, the
     # cross-crate lockstep between scripts/release-receipt.sh and the
@@ -366,7 +366,7 @@ fi
 # The --skip-tests flag does not skip this step: pushing is part of the
 # release contract, not the test gate.
 
-step "1c/14 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"
+step "1c/15 — sync HEAD to origin/main (closes INC-RELEASE-TAG-FIX)"
 git fetch origin main --quiet \
     || die "git fetch origin main failed — cannot verify remote state"
 LOCAL_HEAD="$(git rev-parse HEAD)"
@@ -400,7 +400,7 @@ fi
 #
 # This step MUST run before version reading because the receipt dir
 # embeds the version string. We read VERSION early here.
-step "1d/14 — EXT auto-activation (cognicode-mcp / chronos-mcp, opt-in)"
+step "1d/15 — EXT auto-activation (cognicode-mcp / chronos-mcp, opt-in)"
 VERSION="$(awk '/^\[workspace\.package\]/{flag=1; next} flag && /^version = /{print $3; exit}' Cargo.toml \
     | tr -d '\"')"
 TAG="v$VERSION"
@@ -489,7 +489,7 @@ ok "version: $VERSION → tag: $TAG"
 # Fail-closed before the build, because a missing entry found at step 9 (after
 # a `gh release create`) costs a deletion; found here it costs a commit.
 if [[ "$DRY_RUN" == "0" ]]; then
-    step "2b/14 — changelog coverage"
+    step "2b/15 — changelog coverage"
     bash tests/test_changelog_coverage.sh \
         || die "changelog coverage failed: the declared section does not describe the work this release ships. Add the missing entries (git log --format=%s <last-tag>..HEAD) and re-run."
     ok "changelog describes the shipped work"
@@ -544,7 +544,7 @@ ok "final tag: $TAG"
 # preferible no publicar a publicar un binario con el nombre equivocado.
 # Esa era exactamente la mentira que INC-021 documentaba.
 
-step "3/14 — cargo build --release --bin sddk"
+step "3/15 — cargo build --release --bin sddk"
 
 BUILD_TARGET="${SDDK_RELEASE_BUILD_TARGET:-x86_64-unknown-linux-musl}"
 
@@ -694,7 +694,7 @@ ok "binary: $BIN ($("$BIN" --version 2>&1)), target=$BUILD_TARGET"
 # construye en release: LA FALSACION OPCIONAL ES UNA FALSACION QUE NO CORRE, y
 # una autofalsacion que solo corre cuando alguien edita el guard es una
 # autofalsacion que envejece sin que nadie lo note.
-step "3b/14 — reconciliación del artefacto contra la autoridad (INC-DEBT-060)"
+step "3b/15 — reconciliación del artefacto contra la autoridad (INC-DEBT-060)"
 RECON_LOG="$RELEASE_SCRATCH/reconciliation.log"
 if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation.sh \
         >"$RECON_LOG" 2>&1; then
@@ -714,7 +714,7 @@ fi
 # modos de mentira, y exige que cada comprobacion siga siendo load-bearing por
 # separado: sin esto el guard puede rechazar las nueve por efecto colateral y
 # seguir pareciendo que vigila.
-step "3c/14 — autofalsación de la reconciliación (cada comprobación con dientes)"
+step "3c/15 — autofalsación de la reconciliación (cada comprobación con dientes)"
 RECON_MUT_LOG="$RELEASE_SCRATCH/reconciliation_mutation.log"
 if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation_mutation.sh \
         >"$RECON_MUT_LOG" 2>&1; then
@@ -748,7 +748,7 @@ fi
 # pipeline. Y eso no se arregla con este paso: se arregla con el arnes que
 # construya los dos binarios, que es trabajo declarado, no una decision tomada
 # aqui.
-step "3d/14 — los cuatro estados de binary.build_identity (dev doctor)"
+step "3d/15 — los cuatro estados de binary.build_identity (dev doctor)"
 IDENT_LOG="$RELEASE_SCRATCH/doctor_identity_states.log"
 if bash tests/test_doctor_identity_states.sh "$BIN" >"$IDENT_LOG" 2>&1; then
     ok "estados de la identidad: $(grep -m1 '^PASS=' "$IDENT_LOG" || echo 'PASS') (O6 declarado NOT_RUN)"
@@ -764,7 +764,7 @@ fi
 # -- que es exactamente como se produjo el hueco de 13 filas de C3n.1. Y porque
 # la mutacion que hace (e) escribe sobre el SPEC, no sobre una copia: por eso el
 # paso va aqui, con el arbol ya en su forma final, y no en el 1b.
-step "3e/14 — receipt de frontera exigible (C3n.1 / AT-UAT-023)"
+step "3e/15 — receipt de frontera exigible (C3n.1 / AT-UAT-023)"
 UAT_BOUNDARY_LOG="$RELEASE_SCRATCH/uat_boundary_receipt.log"
 if bash tests/test_uat_boundary_receipt.sh >"$UAT_BOUNDARY_LOG" 2>&1; then
     ok "receipt de frontera: $(grep -m1 '^PASS=' "$UAT_BOUNDARY_LOG" || echo 'PASS')"
@@ -782,7 +782,7 @@ fi
 # era su aplicacion mecanica. C3n.1 no la cubria. Y el guard, al construirse,
 # encontro el defecto que la regla describe: cuatro de los cinco tests de AIW-S7a
 # se llamaban *_e2e sin cruzar ninguna frontera. Corregido con rename.
-step "3f/14 — la regla 4: un nombre de test no promete una frontera que no cruza"
+step "3f/15 — la regla 4: un nombre de test no promete una frontera que no cruza"
 NAMES_LOG="$RELEASE_SCRATCH/uat_naming_policy.log"
 if bash tests/test_uat_naming_boundary_policy.sh >"$NAMES_LOG" 2>&1; then
     ok "politica de nombres: $(grep -m1 '^PASS=' "$NAMES_LOG" || echo 'PASS')"
@@ -798,7 +798,7 @@ fi
 # que 3c: una falsacion que solo corre cuando alguien edita el guard envejece
 # sin que nadie lo note. Ademas, este guard tiene la propriedade de poder quedar
 # VERDE con su propio veto desconectado, y eso solo se ve falsandolo.
-step "3g/14 — autofalsación de la política de nombres (cada comprobación con dientes)"
+step "3g/15 — autofalsación de la política de nombres (cada comprobación con dientes)"
 NAMES_MUT_LOG="$RELEASE_SCRATCH/uat_naming_policy_mutation.log"
 if bash tests/test_uat_naming_boundary_policy_mutation.sh >"$NAMES_MUT_LOG" 2>&1; then
     ok "autofalsación de nombres: $(grep -m1 '^PASS=' "$NAMES_MUT_LOG" || echo 'PASS')"
@@ -809,9 +809,35 @@ else
          y se esta contando como deteccion. Log: $NAMES_MUT_LOG"
 fi
 
+# 3h. Una cita de spec tiene que anclar a UN documento. Este guard cierra el
+# hueco que el de citas (paso 1, linea 276) declara en su propio docstring: el
+# token SPEC-NNN no estaba en su AUTHORITY_TOKENS, y 202 citas en crates/ no
+# las vigilaba nadie. Va con su autofalsacion en la MISMA release, porque este
+# guard tiene una propiedad particular -- con cero defectos que medir esta
+# indistinguible de uno sin dientes -- y eso solo se ve sembrando el defecto.
+step "3h/15 — una cita de spec ancla a un documento, y se le aplican seis mutaciones"
+SPEC_CITATION_LOG="$RELEASE_SCRATCH/spec_citation_anchor.log"
+if python3 tests/test_spec_citation_anchor.py >"$SPEC_CITATION_LOG" 2>&1; then
+    ok "citas de spec ancladas: $(grep -m1 'citas ambiguas SIN ancla' "$SPEC_CITATION_LOG" || echo PASS)"
+else
+    tail -25 "$SPEC_CITATION_LOG" >&2
+    die "una cita de spec no ancla a un documento. Un SPEC-NNN que sirve cuatro
+         documentos no nombra ninguno, y el guard de citas la daba por buena
+         porque el ID existia en algun sitio. Log: $SPEC_CITATION_LOG"
+fi
+SPEC_CITATION_MUT_LOG="$RELEASE_SCRATCH/spec_citation_anchor_mutation.log"
+if python3 tests/test_spec_citation_anchor_mutation.py >"$SPEC_CITATION_MUT_LOG" 2>&1; then
+    ok "autofalsación de citas de spec: $(grep -m1 '^  PASS=' "$SPEC_CITATION_MUT_LOG" | tr -s ' ')"
+else
+    tail -25 "$SPEC_CITATION_MUT_LOG" >&2
+    die "la autofalsacion de citas de spec no pasa: o una propiedad dejo de tener
+         dientes, o una mutacion cayo por una razon que no es la que dice medir.
+         Log: $SPEC_CITATION_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
-step "4/14 — regenerate MANIFEST.sha256"
+step "4/15 — regenerate MANIFEST.sha256"
 "$BIN" dev manifest --root . --format text \
     || die "sddk dev manifest failed"
 "$BIN" dev manifest --verify --root . --format text \
@@ -820,7 +846,7 @@ ok "MANIFEST.sha256 regenerated and verified"
 
 # --- 5. bundle tarball ---
 
-step "5/14 — bundle tarball"
+step "5/15 — bundle tarball"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$RELEASE_SCRATCH"' EXIT
 
@@ -921,7 +947,7 @@ ok "bundle staging matches MANIFEST.sha256 exactly ($(awk 'END{print NR}' MANIFE
 
 # --- 6. BUNDLE.toml ---
 
-step "6/14 — BUNDLE.toml in tarball (verified in step 5)"
+step "6/15 — BUNDLE.toml in tarball (verified in step 5)"
 # BUNDLE.toml is now written INTO the standalone tarball by step 5 (the
 # stage-then-pack layout); this step only re-derives FW_DIR for the unified
 # tarball below. Kept as an extraction+assertion so a future refactor of
@@ -950,7 +976,7 @@ ok "BUNDLE.toml inside tarball (version=$SHIPPED_VERSION)"
 
 # --- 7. unified tarball ---
 
-step "7/14 — unified tarball (bin/sddk + framework/)"
+step "7/15 — unified tarball (bin/sddk + framework/)"
 UNIFIED="$TMP/sddk-${TAG}-sddk-linux-x86_64-musl.tar.gz"
 PACK="$TMP/pack"
 rm -rf "$PACK"
@@ -983,7 +1009,7 @@ ok "unified: $(basename "$UNIFIED") ($(stat -c%s "$UNIFIED") bytes, exec bit + B
 
 # --- 8. checksums + sbom ---
 
-step "8/14 — sha256 + CHECKSUMS + sbom.json"
+step "8/15 — sha256 + CHECKSUMS + sbom.json"
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
 echo "$BIN_SHA  $(basename "$BIN")" > "$TMP/$(basename "$BIN").sha256"
 ( cd "$TMP" && sha256sum "$(basename "$UNIFIED")" "$(basename "$BUNDLE_TARBALL")" ) \
@@ -1013,7 +1039,7 @@ ok "checksums + sbom ready (binary sha256: ${BIN_SHA:0:16}…)"
 # Always executed (also under --skip-tests and --dry-run) — vault sync
 # is part of the release contract, not the test gate.
 
-step "8b/14 — vault ADR mirror sync (closes INC-VAULT-MIRROR-AUTO)"
+step "8b/15 — vault ADR mirror sync (closes INC-VAULT-MIRROR-AUTO)"
 if MIRROR_OUT="$(python3 "$ROOT/scripts/mirror_adrs_to_vault.py" 2>&1)"; then
     ok "vault mirror sync: $(echo "$MIRROR_OUT" | tr '\n' ' ')"
 else
@@ -1048,7 +1074,7 @@ fi
 # release ABORTS rather than shipping unsigned artifacts whose consumers
 # will reject — publishing artifacts that the installer refuses is
 # strictly worse than failing here.
-step "8c/14 — cosign signatures"
+step "8c/15 — cosign signatures"
 
 # Pull the base64 signature out of a cosign bundle so a detached `.sig`
 # can be published alongside it. The bundle is the current format; the
@@ -1275,7 +1301,7 @@ fi
 
 # --- 9. publish ---
 
-step "9/14 — gh release create $TAG"
+step "9/15 — gh release create $TAG"
 # Anchor the release to the current branch (not the tag SHA). `gh release
 # create --target` accepts a branch name or tag name; passing the raw SHA
 # of HEAD fails with HTTP 422 ("Release.target_commitish is invalid")
@@ -1391,7 +1417,7 @@ if [ "$DRY_RUN" = "1" ]; then
 elif [ "$SKIP_INSTALL" = "1" ]; then
     warn "skipping step 9b (--skip-install)"
 else
-    step "9b/14 — public-release gate for $TAG"
+    step "9b/15 — public-release gate for $TAG"
     require jq
 
     # 1. Tag SHA anchoring: refs/tags/$TAG must equal the release commit
@@ -1477,7 +1503,7 @@ else
     # observed at the moment of release. It is cheap (it re-uses the CDN
     # round trip already paid for) and it is the difference between "the
     # upload worked" and "the upload is trustworthy".
-    step "9c/14 — verify supply-chain authenticity of the published release"
+    step "9c/15 — verify supply-chain authenticity of the published release"
     if [ "${SDDK_SKIP_AUTHENTICITY_CHECK:-0}" = "1" ]; then
         warn "skipping step 9c (SDDK_SKIP_AUTHENTICITY_CHECK=1) — authenticity NOT verified"
     elif ! command -v cosign >/dev/null 2>&1; then
@@ -1518,7 +1544,7 @@ fi
 
 # --- 10. install from real GH URL ---
 
-step "10/14 — install from GitHub Release URL"
+step "10/15 — install from GitHub Release URL"
 # Defense against GH CDN caching: the URL may serve a stale tarball for
 # up to a few minutes after upload. We poll the binary sha256 until it
 # matches what we just uploaded, with a 5-minute budget.
@@ -1548,7 +1574,7 @@ bash scripts/install.sh --version "$TAG" --editor all \
 
 # --- 11. doctor ---
 
-step "11/14 — sddk dev doctor --prefix $SDDK_PREFIX"
+step "11/15 — sddk dev doctor --prefix $SDDK_PREFIX"
 DOCTOR_OUT="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format text)"
 echo "$DOCTOR_OUT" | grep -E "binary\.bundle_coherence|^all_present" \
     || die "doctor output missing expected checks"
@@ -1560,7 +1586,7 @@ ok "binary.bundle_coherence: present, all_present: true"
 
 # --- 12. prune ---
 
-step "12/14 — sddk dev update --prune-only --keep 1"
+step "12/15 — sddk dev update --prune-only --keep 1"
 "$SDDK_PREFIX/sddk" dev update --prune-only --keep 1 \
     --root "$SDDK_FRAMEWORK_DIR" --format text \
     || die "prune failed"
@@ -1568,7 +1594,7 @@ ok "stale bundles pruned"
 
 # --- 13. re-install from distrib (smoke test the published artefact) ---
 
-step "13/14 — re-install from URL (distrib smoke test)"
+step "13/15 — re-install from URL (distrib smoke test)"
 # After step 11 (install from real URL) and step 12 (prune stale bundles),
 # re-run install.sh --editor none against the same GH URL to confirm the
 # published artefact round-trips through `sddk dev install` + `dev use`
@@ -1587,9 +1613,9 @@ bash "$REPO_ROOT/scripts/install.sh" \
     || die "re-install from distrib failed; the published artefact is broken"
 ok "distrib round-trip OK (binary + bundle coherent after prune)"
 
-# --- 14. final state ---
+# --- 15. final state ---
 
-step "14/14 — final state"
+step "15/15 — final state"
 echo
 BIN_VER="$("$SDDK_PREFIX/sddk" --version 2>&1 | head -1)"
 BUNDLE_VER="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null \

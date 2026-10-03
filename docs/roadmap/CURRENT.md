@@ -1,4 +1,27 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 10, 2026-10-03): C3n.3 CERRADO, y el guard de citas tenía un agujero de clase entera.** `HEAD` = `34484a26` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
+
+**Lo cerrado en este tramo:** C3n.3 (a) vocabularios reconciliados `87831cc5` · (b) exit gate de Context-First `ee5767a5` · (c) **los ficheros reales de `R2`/`R5`/`R8` nombrados y mi conclusión retirada** `34484a26` · (d) **guard de citas de spec con 6 autofalsaciones** (este commit).
+
+**El hallazgo que abre y cierra este commit:** la fila `R5` citaba «tests staleness (**SPEC-012**)» y **`test_uat_authority_citations.py` la daba por buena porque `SPEC-012` sí resuelve** — pero hay **dos** `SPEC-012`, y el código implementa el **histórico** (`StalenessState` con sus cinco estados del §2), no el canónico de configuración. **Un guard de citas que sólo comprueba que la cita resuelve no detecta una cita que resuelve al sitio equivocado.** Y la clase estaba **fuera del contrato**: `SPEC-\d{3}` no estaba en `AUTHORITY_TOKENS`, luego **202 citas en `crates/` no las vigilaba nadie**.
+
+**Lo nuevo:** `tests/test_spec_citation_anchor.py` (**3h/15**) + autofalsación `PASS=6 FAIL=0 SKIP=0`, cada propiedad cayendo por su propia razón. Tres propiedades: toda spec citada tiene canónico · toda canónica declara procedencia · cita ambigua en **fila** es FAIL y en **prosa** es aviso. Las **3 citas ambiguas que el guard encontró en la matriz son las que yo mismo escribí en `34484a26`**: corregidas y ancladas.
+
+**⚠️ Dos lecciones de método, y la segunda es el argumento del guard:**
+1. **El índice me casó con 30 IDs antes de que existiera el guard** — leía sólo `package_local_id:` y encontró 18 specs de 66; hay **dos esquemas de frontmatter** y `arch-spec-043` no declara ninguno. Con el índice corto, `SPEC-043` salía **huérfano con 35 citas** y el guard habría publicado **35 filas inexistentes**. *Un índice que no reproduce el mundo inventa los defectos que dice encontrar.*
+2. **La primera autofalsación dio `PASS=1 FAIL=5`** porque mutaba **la detección** sobre un guard ya verde —yo había corregido las tres citas antes de construirlo. **Un guard con cero defectos que medir es indistinguible de un guard sin dientes**, así que ahora **siembra** el defecto en un sandbox desechable en vez de mutar el repo.
+
+**Decisión del operador que queda abierta:** cuál es la autoridad de `SPEC-012` — adoptar el histórico al canónico, o reescribir la cita con su ruta. **Es decisión, no medición.**
+
+**Pendientes:** **C3n.4** (release admission, ya incluye 3b/3c/3e/3f/3g/3h) · ampliar el guard de contaminación fuera de `docs/` (cubre el 8% del problema: hay CJK/cirílico en `CHANGELOG.md`, `crates/`, `skills/`, `specs/`, `tests/`) · FU-1 · archivar `a4-1-generic-verify`.
+
+**BLOQUEO EXTERNO:** la clave de firma (KMS vs fichero local) bloquea **R1** y nada más.
+
+**Otras decisiones abiertas:** (b) superficie de producto que produce `HostEvent` — bloquea C3m.1; (c) dos salidas de `INC-DEBT-050`/`061`; (d) bajar `INC-DEBT-060` a `medium`; (e) archivar `a4-1-generic-verify`.
+
+---
 **Estado (session-69s bis 9, 2026-10-03): C3n.3 MEDIDO. El resultado no es «todo verificado» — es que la mitad de las filas de Context-First no nombra un artefacto ejecutable y por tanto no se pueden re-certificar.** `HEAD` = `87831cc5` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
