@@ -858,67 +858,99 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
                 let repo = args.repo.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("--repo is required when --route forge is selected")
                 })?;
-                // L1 lockstep: el tag tiene que coincidir con la versión
-                // declarada. Se pregunta por la variante que devuelve de
-                // dónde salió, y no por un literal: escribir `true` a mano
-                // informaba un lockstep comprobado en proyectos donde no se
-                // comprobó nada, porque no hay manifiesto contra el que
-                // comparar. Sigue fallando cerrado ante un desajuste.
-                let version_authority = version_authority_or_fail(&root, &args.tag)?;
-                let input = ReleasePlanInput {
-                    project_id,
-                    cycle_id: None,
-                    branch: args.branch.clone(),
-                    base_branch: args.base.clone(),
-                    pr_title: args.title.clone(),
-                    pr_body: format!("Release {} from {}", args.tag, args.branch),
-                    tag: args.tag.clone(),
-                    release_title: args.title.clone(),
-                    release_notes: args.notes.clone(),
-                    approve: args.approve,
-                    timestamp,
-                    actor,
-                };
+                // Building the adapter is this arm's job; running the release is
+                // the function's. Keeping the two apart is the whole seam: with
+                // the `gh` runner chosen HERE and never below, a test can reach
+                // the body with a double instead of only with a repository.
                 let mut forge = GitHubForge::new(repo);
-                let plan = plan_release(input, &forge)?;
-
-                // A6-2: wrap the entire CreatePr → MergePr → CreateRelease
-                // chain under one AdmissionTicket (issue + consume). The body
-                // runs only after the ticket is consumed; if consume fails
-                // (deny / fence expired / policy changed) the chain is
-                // never executed. See ADR-0132.
-                let ticket_actor = sddk_engine::authority_engine::Actor {
-                    kind: sddk_engine::authority_engine::ActorKind::System {
-                        service: "sddk-cli/release-apply".to_string(),
-                    },
-                    capabilities: vec!["cli.execute".to_string()],
-                    lease: None,
-                };
-                with_github_releases_ticket::<_, sddk_gateway::ReleaseOutcome>(
-                    ticket_actor,
-                    &format!("release/{}", args.tag),
-                    || {
-                        Ok(apply_release(
-                            &mut gateway,
-                            &plan,
-                            &mut forge,
-                            version_authority,
-                        )?)
-                    },
+                apply_release_forge(
+                    &mut gateway,
+                    &mut forge,
+                    &project_id,
+                    &args,
+                    &root,
+                    &timestamp,
+                    &actor,
                 )
-                .map_err(|e| match e {
-                    GithubReleasesTicketError::Denied(msg) => {
-                        anyhow::anyhow!("github_releases ticket denied: {msg}")
-                    }
-                    GithubReleasesTicketError::Ticket(err) => {
-                        anyhow::anyhow!("github_releases ticket error: {err:?}")
-                    }
-                    GithubReleasesTicketError::Apply(err) => err,
-                })
             })();
             render_result(result, format, release_outcome_text)
         }
     }
+}
+
+/// The body of `release apply --route forge`, with the forge as a parameter.
+///
+/// It used to be inlined in the `ReleaseRoute::Forge` arm, which built
+/// `GitHubForge::new(repo)` itself and therefore pinned the `gh` runner: no test
+/// could reach this code without publishing to a real repository. Neither the
+/// adapter nor the engine needed anything for that — `GitHubForge::with_runner`
+/// existed and `apply_release` already took `&mut dyn Forge`. The missing piece
+/// was the seam here.
+///
+/// **Nothing about what the route does changed**, and R4 pins each of it:
+/// `authorize_release` still requires the three capabilities, the chain is still
+/// `CreatePr → MergePr → CreateRelease` inside one `AdmissionTicket` (ADR-0132),
+/// and the version is still checked before anything runs. STOP 1 of the
+/// SCOPE-CONTRACT discards this extraction if any of that relaxes — a route made
+/// testable by giving up a control is not a route made testable.
+fn apply_release_forge(
+    gateway: &mut CapabilityGateway,
+    forge: &mut dyn sddk_gateway::Forge,
+    project_id: &str,
+    args: &ReleaseArgs,
+    root: &std::path::Path,
+    timestamp: &str,
+    actor: &str,
+) -> anyhow::Result<sddk_gateway::ReleaseOutcome> {
+    // L1 lockstep: el tag tiene que coincidir con la versión
+    // declarada. Se pregunta por la variante que devuelve de
+    // dónde salió, y no por un literal: escribir `true` a mano
+    // informaba un lockstep comprobado en proyectos donde no se
+    // comprobó nada, porque no hay manifiesto contra el que
+    // comparar. Sigue fallando cerrado ante un desajuste.
+    let version_authority = version_authority_or_fail(root, &args.tag)?;
+    let input = ReleasePlanInput {
+        project_id: project_id.to_string(),
+        cycle_id: None,
+        branch: args.branch.clone(),
+        base_branch: args.base.clone(),
+        pr_title: args.title.clone(),
+        pr_body: format!("Release {} from {}", args.tag, args.branch),
+        tag: args.tag.clone(),
+        release_title: args.title.clone(),
+        release_notes: args.notes.clone(),
+        approve: args.approve,
+        timestamp: timestamp.to_string(),
+        actor: actor.to_string(),
+    };
+    let plan = plan_release(input, &*forge)?;
+
+    // A6-2: wrap the entire CreatePr → MergePr → CreateRelease
+    // chain under one AdmissionTicket (issue + consume). The body
+    // runs only after the ticket is consumed; if consume fails
+    // (deny / fence expired / policy changed) the chain is
+    // never executed. See ADR-0132.
+    let ticket_actor = sddk_engine::authority_engine::Actor {
+        kind: sddk_engine::authority_engine::ActorKind::System {
+            service: "sddk-cli/release-apply".to_string(),
+        },
+        capabilities: vec!["cli.execute".to_string()],
+        lease: None,
+    };
+    with_github_releases_ticket::<_, sddk_gateway::ReleaseOutcome>(
+        ticket_actor,
+        &format!("release/{}", args.tag),
+        || Ok(apply_release(gateway, &plan, forge, version_authority)?),
+    )
+    .map_err(|e| match e {
+        GithubReleasesTicketError::Denied(msg) => {
+            anyhow::anyhow!("github_releases ticket denied: {msg}")
+        }
+        GithubReleasesTicketError::Ticket(err) => {
+            anyhow::anyhow!("github_releases ticket error: {err:?}")
+        }
+        GithubReleasesTicketError::Apply(err) => err,
+    })
 }
 
 fn selected_route(args: &ReleaseArgs) -> anyhow::Result<ReleaseRoute> {
@@ -2060,9 +2092,12 @@ mod tests {
     }
 
     /// Un proyecto Go **no** puede presentarse como comprobado, y este test
-    /// existe porque el falsificador del lote encontro que nadie lo cubria:
-    /// la ruta forge no tiene test, y su call site podia informar un lockstep
-    /// que no se habia comprobado sin que la suite se enterara.
+    /// existe porque el falsificador del lote encontro que nadie lo cubria: el
+    /// call site de la ruta forge podia informar un lockstep que no se habia
+    /// comprobado sin que la suite se enterara. Esa ruta ya no esta fuera del
+    /// alcance de la suite -- `apply_release_forge` recibe `&mut dyn Forge` y R2
+    /// la ejecuta con un doble -- pero este test sigue aqui porque el defecto
+    /// que lo motivo era del comando de al lado, no de la ruta forge.
     #[test]
     fn a_go_project_reports_the_tag_as_the_only_authority() {
         let dir = go_project();
@@ -2199,20 +2234,43 @@ mod tests {
         );
     }
 
-    /// **R3** — estructural de la costura: la rama **no** construye el adaptador
-    /// en linea. Sin este guard, re-inlinear `GitHubForge::new(repo)` devuelve la
-    /// rama a ser inalcanzable **con todos los tests en verde**, que es el
-    /// defecto que este ciclo viene a cerrar cerrandolo otra vez.
+    /// **R3** — estructural de la costura: el brazo **delega**, y no es la
+    /// implementación.
+    ///
+    /// La primera versión de este guard afirmaba que el brazo no puede construir
+    /// `GitHubForge::new`, y eso es **falso**: el DISEÑO dice exactamente que el
+    /// brazo resuelve `--repo`, construye el adaptador y delega. Un guard que
+    /// contradice el diseño obliga a elegir entre romper el diseño o romper el
+    /// guard, y en ese conflicto el que se equivoca es el guard — porque la
+    /// propiedad que de verdad importa no es *quién elige el runner*, sino que
+    /// **el cuerpo no vuelva a la rama**.
+    ///
+    /// El peligro real es otro: que alguien pegue el cuerpo de vuelta en el brazo
+    /// y deje `apply_release_forge` como una envoltura fina. R1 seguiría
+    ///—la función existe— y R2 ejecutaría la envoltura, no la ruta. Por eso
+    /// estos son los anclas: lo que identifica al cuerpo, no lo que identifica
+    /// al brazo.
     #[test]
-    fn r3_the_forge_arm_does_not_build_the_adapter_inline() {
+    fn r3_the_forge_arm_delegates_instead_of_being_the_implementation() {
+        let arm = forge_arm();
         assert!(
-            !forge_arm().contains("GitHubForge::new("),
-            "the ReleaseRoute::Forge arm must NOT construct `GitHubForge::new` \
-             inline: that is what makes it unreachable for the suite, and R1 \
-             would still pass. Building the adapter is the arm's job; running \
-             the release is the function's. The arm is: {}",
-            forge_arm()
+            arm.contains("apply_release_forge("),
+            "the ReleaseRoute::Forge arm must call `apply_release_forge`: {}",
+            arm
         );
+        for inlined in [
+            "with_github_releases_ticket::<",
+            "plan_release(",
+            "apply_release(",
+        ] {
+            assert!(
+                !arm.contains(inlined),
+                "`{inlined}` is back inside the ReleaseRoute::Forge arm. The arm \
+                 must CALL the release, not BE it: if the body is inlined again \
+                 and the function left as a thin wrapper, R1 still passes and R2 \
+                 would exercise the wrapper instead of the route. Arm: {arm}"
+            );
+        }
     }
 
     /// **R4** — estructural de no-regresion. La extraccion es un cambio de FORMA
@@ -2281,20 +2339,116 @@ mod tests {
         );
     }
 
-    /// **R5** — el guard del comentario. El codigo afirma en dos sitios que esta
-    /// rama no tiene test y que no es alcanzable sin red. En cuanto un test la
-    /// alcanza, esas frases son falsas, y una afirmacion falsa en el codigo es
-    /// exactamente lo que este trabajo viene a cerrar.
+    /// **R5** — el guard del comentario. El codigo afirmaba, en dos sitios,
+    /// que esta rama carece de prueba y que no se alcanza sin red. En cuanto un
+    /// test la alcanza, esas frases son falsas, y una afirmacion falsa en el
+    /// codigo es exactamente lo que este trabajo viene a cerrar.
+    ///
+    /// **Se busca solo ANTES de esta misma definicion.** La primera version
+    /// buscaba en el fichero entero y se detectaba a si misma: este doc y el
+    /// array de abajo contienen las frases proibidas, luego el guard caia con el
+    /// defecto ya corregido. Un guard que se veta con su propio texto no vigila
+    /// el codigo, vigila su redaccion.
     #[test]
     fn r5_the_source_no_longer_claims_the_forge_route_is_untested() {
+        let before_self = THIS_FILE
+            .split("fn r5_the_source_no_longer_claims_the_forge_route_is_untested")
+            .next()
+            .expect("this test must exist in its own source");
         for claim in ["no tiene test", "no es alcanzable sin red"] {
             assert!(
-                !THIS_FILE.contains(claim),
+                !before_self.contains(claim),
                 "the source still says `{claim}` about `release apply --route \
                  forge`. If this test passes, that statement is false and has to \
                  go: a comment that contradicts the suite is a comment that will \
                  be believed."
             );
         }
+    }
+
+    /// **R2** — el guard conductual: el cuerpo de la ruta forge se EJECUTA, con
+    /// un doble, y devuelve pasos aplicados. Este test no podía existir antes de
+    /// la extracción: llamaba a una función que no estaba, y eso no es un test
+    /// rojo sino un error de compilación que se lleva el crate entero. Por eso
+    /// llega con el código al que pertenece.
+    ///
+    /// Lo que afirma es concreto y no decorativo: con `MockForge`, la cadena
+    /// `CreatePr → MergePr → CreateRelease` corre hasta el final y el outcome
+    /// trae los pasos **aplicados**. Un `Err`, o un outcome vacío, son las dos
+    /// formas de pasar sin haber hecho nada.
+    #[test]
+    fn r2_the_forge_body_runs_to_completion_with_a_double() {
+        const WORKFLOW_YAML: &str = include_str!("../../../workflow/workflow.yaml");
+        let directory = tempfile::tempdir().unwrap();
+        // The body opens with the L1 lockstep check, and that check fails CLOSED
+        // on a version it cannot read — which is correct behaviour, and the first
+        // thing this test had to accommodate. An empty directory is not a project
+        // that declares no version; it is a project whose version cannot be read.
+        std::fs::write(
+            directory.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let path = directory.path().join("ledger.sqlite");
+        let storage = sddk_storage::Storage::open(&path).unwrap();
+        storage
+            .insert_project(&sddk_storage::ProjectRecord {
+                project_id: "project-1".into(),
+                display_name: "project".into(),
+                remote_url: Some("https://example.test/owner/project".into()),
+                scope: "owner".into(),
+                created_at: "2026-08-04T10:00:00Z".into(),
+            })
+            .unwrap();
+        let workflow = sddk_engine::load_workflow_str(WORKFLOW_YAML).unwrap();
+        let policy = sddk_gateway::CapabilityPolicy::from_workflow(&workflow);
+        let mut gateway = sddk_gateway::CapabilityGateway::new(
+            policy,
+            workflow,
+            sddk_storage::Storage::open(&path).unwrap(),
+        );
+
+        let mut forge = sddk_gateway::MockForge::new();
+        let args = super::ReleaseArgs {
+            runtime: super::RuntimeArgs::default(),
+            route: Some(super::ReleaseRoute::Forge),
+            repo: Some("owner/project".into()),
+            branch: "main".into(),
+            base: "main".into(),
+            title: "SDDK release".into(),
+            tag: "v1.0.0".into(),
+            notes: String::new(),
+            approve: true,
+            cycle: None,
+            previous_tag: None,
+            release_type: None,
+            timestamp: Some("2026-08-04T10:00:00Z".into()),
+            actor: Some("r2".into()),
+            prefix: None,
+            format: crate::OutputFormat::Text,
+        };
+
+        let outcome = super::apply_release_forge(
+            &mut gateway,
+            &mut forge,
+            "project-1",
+            &args,
+            directory.path(),
+            "2026-08-04T10:00:00Z",
+            "r2",
+        )
+        .expect("the forge body must reach `apply_release` with a double");
+
+        assert!(
+            forge.is_published("v1.0.0"),
+            "the body must publish the release through the forge it was given, \
+             not return without doing anything. Forge state: {}",
+            forge.state_text()
+        );
+        assert!(
+            !outcome.applied.is_empty(),
+            "an outcome with no applied step reports a release that did not \
+             happen: {outcome:?}"
+        );
     }
 }
