@@ -223,6 +223,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_install_signature_execution_mutation.sh \
             tests/test_release_sign_artifacts.sh \
             tests/test_release_sign_artifacts_mutation.sh \
+            tests/test_release_authenticity_posture.sh \
+            tests/test_release_authenticity_posture_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -253,6 +255,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_install_signature_execution_mutation.sh \
              tests/test_release_sign_artifacts.sh \
              tests/test_release_sign_artifacts_mutation.sh \
+             tests/test_release_authenticity_posture.sh \
+             tests/test_release_authenticity_posture_mutation.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
@@ -1143,6 +1147,32 @@ SIGN_ARTIFACTS=(
     "$(basename "$BUNDLE_TARBALL")"
 )
 
+# ── Politica de autenticidad del 9c (una sola decision, derivada) ───────────
+# Vive aqui, y no dentro del paso 9c, por una razon que ya ha salido cara dos
+# veces en este repo: una decision que solo existe dentro de un `if` anidado
+# no se puede ejecutar fuera de el, luego ningun guard la puede falsificar y
+# la unica forma de comprobarla es leerla. Leyendola se ve que de la tercera
+# salida —unsigned— no habia ninguna, que es exactamente por lo que una
+# release publicada sin firma moria en 9c con un 404.
+#
+# UNSIGNED NO significa "el flag lo dice": significa "el flag lo dice Y no hay
+# ninguna firma sobre la mesa". Con firmas presentes se verifica igual, porque
+# una propiedad de supply-chain que se puede comprobar y se deja sin comprobar
+# por obedecer una bandera es un downgrade silencioso.
+release_authenticity_posture() {
+    local sig_files_present="${1:-0}"
+    if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ] && [ "$sig_files_present" -eq 0 ]; then
+        echo "UNSIGNED"
+        return 0
+    fi
+    if [ "${SDDK_SKIP_AUTHENTICITY_CHECK:-0}" = "1" ]; then
+        echo "DECLARED_SKIP"
+        return 0
+    fi
+    echo "VERIFY"
+    return 0
+}
+
 # --- 8c. cosign signatures (key-based anchor, ADR-0151) -------------------
 #
 # The anchor used to be a Fulcio certificate minted by GitHub Actions'
@@ -1535,7 +1565,40 @@ else
     # round trip already paid for) and it is the difference between "the
     # upload worked" and "the upload is trustworthy".
     step "9c/15 — verify supply-chain authenticity of the published release"
-    if [ "${SDDK_SKIP_AUTHENTICITY_CHECK:-0}" = "1" ]; then
+
+    # La postura se DERIVA, no se decide otra vez. Antes el 9c exigia `.sig` y
+    # `.pem` sin condicion, y una release sin firmar —que el propio 8c admite
+    # con un aviso, y que el 9b declara completa porque el contrato canonico de
+    # 9 assets no incluye firmas— se publicaba y luego moria aqui con un 404.
+    # La secuencia era incoherente consigo misma: 9b decia "el conjunto esta
+    # completo" y 9c decia "falta la mitad", DESPUES de publicar, con un
+    # exit != 0 que hace creer que la release no salio.
+    #
+    # Que la postura sea UNSIGNED exige DOS cosas, no una:
+    #   (1) que el operador lo declarase (SDDK_SKIP_SIGNING=1), y
+    #   (2) que de verdad no haya ninguna firma que verificar.
+    # La segunda es la que carga el peso. Saltarse porque el flag lo dice
+    # seria afirmar "no hay nada que verificar" sin mirar. Si alguien dejara
+    # un camino que firma pese al flag, esto verifica en vez de callar: una
+    # propiedad de supply-chain que se puede comprobar y se deja sin
+    # comprobar es un downgrade silencioso, que es peor que no tener el paso.
+    SIG_FILES_PRESENT=0
+    for sig_probe in "${SIGN_ARTIFACTS[@]}"; do
+        for sig_ext in .sig .bundle.json .pem; do
+            if [ -f "$TMP/$sig_probe$sig_ext" ]; then
+                SIG_FILES_PRESENT=$((SIG_FILES_PRESENT + 1))
+            fi
+        done
+    done
+    AUTH_POSTURE="$(release_authenticity_posture "$SIG_FILES_PRESENT")"
+    ok "9c posture: $AUTH_POSTURE (signature files present: $SIG_FILES_PRESENT)"
+
+    if [ "$AUTH_POSTURE" = "UNSIGNED" ]; then
+        warn "9c NOT_RUN — la release se publico SIN FIRMAR (SDDK_SKIP_SIGNING=1) y no"
+        warn "hay ninguna firma que verificar. Authenticity NOT verified. Los dos"
+        warn "instaladores exigiran SDDK_ALLOW_UNSIGNED=1 para instalar este tag."
+        ok "9c declarado NOT_RUN con su motivo (release unsigned por decision del operador)"
+    elif [ "$AUTH_POSTURE" = "DECLARED_SKIP" ]; then
         warn "skipping step 9c (SDDK_SKIP_AUTHENTICITY_CHECK=1) — authenticity NOT verified"
     elif ! command -v cosign >/dev/null 2>&1; then
         die "cosign not found — refusing to publish a signed release whose authenticity cannot be verified. Install cosign, or set SDDK_SKIP_AUTHENTICITY_CHECK=1 to acknowledge the gap."
@@ -1564,7 +1627,11 @@ else
         ok "published release verifies under the pinned trust root (9c)"
         ok "9c verified the CDN-served bytes, not a separate download"
     fi
-    ok "public-release gate PASS"
+    if [ "$AUTH_POSTURE" = "UNSIGNED" ] || [ "$AUTH_POSTURE" = "DECLARED_SKIP" ]; then
+        warn "public-release gate PASS — pero la release se publico SIN verificar autenticidad"
+    else
+        ok "public-release gate PASS"
+    fi
 fi
 # <<< REL-1 public-release gate end <<<
 
