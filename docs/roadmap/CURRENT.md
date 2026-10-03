@@ -27,6 +27,16 @@
 
 **Pendiente:** leer el dry-run 5 hasta el final — **los pasos 2..8 de este tramo no los ha visto nadie** y pueden seguir teniendo fallos.
 
+**⚠️ DECISIÓN DEL OPERADOR, NUEVA Y DE GOBERNANZA:** cerrar el ciclo C3n con `cycle supersede` **exige aprobación humana** de `surface.cycle_state#cycle_supersede`. La solicitud está pendiente y registrada (`request_hash: sha256:c128d51c…`, `requested_at: 2026-10-03T17:05:43Z`). **No la he concedido**: aprobar una superficie gobernada desde el mismo agente que pide la mutación sería anular el gate. Para cerrarlo:
+
+```bash
+sddk approval grant --cycle p-63676b11dc0ef88f/c3n-production-boundary-certification \
+  --capability surface.cycle_state#cycle_supersede \
+  --actor <operador> --reason "C3n entregado y medido; las fases design/plan no aplican a un trabajo cuyos guards se construyeron en un solo paso"
+```
+
+**Por qué supersede y no avanzar fases:** el ciclo pide artefactos `design` y `plan`. Este trabajo **no tuvo esas fases** — cada guard se diseñó, construyó, falsó y cableó en el mismo paso. Escribirlos ahora, con el trabajo ya hecho, para desbloquear dos gates, sería **fabricar hacia atrás**: un documento que describe una decisión ya tomada y que nadie tomó. Queda declarado en `closeout.md` en vez de rellenado.
+
 ---
 **Estado (session-69s bis 11, 2026-10-04): C3n.4 VERIFICADO EMPÍRICAMENTE. Los ocho guards de C3n se ejecutaron exactamente como `release.sh` los invoca: 8/8 verdes.** `HEAD` = `59a165e3` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 

@@ -67,18 +67,50 @@ step_line() {
     ' "$RELEASE_SH"
 }
 
-LINE_1B="$(step_line '1b/14')"
-LINE_1C="$(step_line '1c/14')"
+# EL DENOMINADOR SE DERIVA, NO SE ESCRIBE — session-69s bis 12
+# ---------------------------------------------------------
+# Este guard hardcodeaba `1b/14`, `1c/14` y `9/14`, y su propio comentario
+# afirma que «survives any reordering or renumbering of release.sh's step
+# labels». **No sobrevivía: adding step 3h/15 bumped the denominator to 15 and
+# this guard went RED with `FAIL (a): step 1c/14 does not exist`.** El
+# comentario prometia una propiedad que el codigo no tenia, que es la forma mas
+# cara de estar equivocado: un guard que documenta su propia robustez mientras
+# depende de una constante.
+#
+# Un denominador escrito a mano es una segunda fuente de verdad sobre el mismo
+# numero, y las dos divergen en cuanto alguien anade un paso. Por eso se LEE del
+# propio release.sh: si mañana el denominador es 16, este guard lo seguira sin
+# tocar, que es lo que su docstring promete.
+# Se usa `grep -o` + `sort` en vez de `awk match()`: `match()` con RSTART/RLENGTH
+# no es POSIX y `mawk` -- que es el awk de este sistema -- no lo soporta. Un
+# guard que depende de una extension de awk es un guard que no corre en la
+# maquina donde se ejecuta, y su fallo se presenta como «no encontro el paso».
+TOTAL_STEPS="$(
+    grep -oE '^[[:space:]]*step "[0-9]+/[0-9]+' "$RELEASE_SH" \
+        | grep -oE '[0-9]+/[0-9]+' \
+        | cut -d/ -f2 \
+        | sort -n \
+        | tail -1
+)"
+
+if [ "$TOTAL_STEPS" -lt 1 ]; then
+    echo "FAIL: no se pudo derivar el denominador de los pasos desde $RELEASE_SH"
+    exit 1
+fi
+echo "denominador derivado de release.sh: /${TOTAL_STEPS}"
+
+LINE_1B="$(step_line "1b/${TOTAL_STEPS}")"
+LINE_1C="$(step_line "1c/${TOTAL_STEPS}")"
 # "next step after step 1c": next `step "<digits>/<digits>` line. This
 # serves the same semantic role as the historical `step "2/14"` literal
-# did, but is robust to renumbering. Today the next is `step "3/14"`.
+# did, but is robust to renumbering. Today the next is `step "3/15"`.
 NEXT_AFTER_1C="$(awk -v start="$LINE_1C" '
     /^[[:space:]]*step "[0-9]+\/[0-9]+/ && NR > start {
         print NR
         exit
     }
 ' "$RELEASE_SH")"
-LINE_9="$(step_line '9/14')"
+LINE_9="$(step_line "9/${TOTAL_STEPS}")"
 # LINE_NEXT aliased to NEXT_AFTER_1C for terser reference at the assertion
 # sites below (the historic name was LINE_2 for the literal `step "2/14"`).
 LINE_NEXT="$NEXT_AFTER_1C"
@@ -91,7 +123,7 @@ echo "step 9 at line: $LINE_9"
 # --- (a) step 1c ordering ---
 
 if [[ -z "$LINE_1C" ]]; then
-    echo "FAIL (a): step 1c/14 does not exist — INC-RELEASE-TAG-FIX is open"
+    echo "FAIL (a): step 1c/${TOTAL_STEPS} does not exist — INC-RELEASE-TAG-FIX is open"
     exit 1
 fi
 
