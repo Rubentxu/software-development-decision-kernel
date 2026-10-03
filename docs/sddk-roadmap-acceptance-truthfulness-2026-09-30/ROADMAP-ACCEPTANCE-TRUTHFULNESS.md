@@ -702,7 +702,75 @@ process_count:
 falsifier:
 ```
 
-El runner rechaza receipts incompletos para niveles `PROCESS`, `MCP_EXTERNAL` o `RELEASE_ARTIFACT`.
+### El vocabulario de frontera, declarado aquí y en ningún otro sitio
+
+Session-69s bis 5: medido, el conjunto de niveles «que exigen frontera» estaba
+declarado **en dos sitios y no coincidían**, y el nombre del nivel decidía si una
+fila exigía o no. Esto es **la autoridad canónica**; `docs/roadmap/UAT-MATRIX.md`
+referencia esta sección y **no vuelve a nombrar el conjunto**.
+
+**Vocabulario medido sobre las 26 filas `AT-UAT` del overlay** (las dos matrices
+cubren los mismos 26 IDs; no hay filas huérfanas en ninguna dirección):
+
+| Nivel | Filas | Qué frontera cruza |
+|---|---|---|
+| `PURE` | 6 | ninguna: función, memoria, sin proceso ni almacenamiento |
+| `IN_PROCESS` | 6 | misma imagen de proceso; el «binario» es el propio binario de test |
+| `IN_PROCESS/SQLITE` | 3 | **compuesto**: mismo proceso sobre almacenamiento durable |
+| `SQLITE_MULTI_PROCESS` | 2 | **dos procesos** compitiendo por estado durable compartido |
+| `PROCESS` | 4 | proceso hijo real del producto |
+| `MCP_EXTERNAL` | 2 | proveedor externo por MCP, con binario y hash propios |
+| `MIXED` | 2 | **compuesto**: atraviesa más de una frontera |
+| `RELEASE_ARTIFACT` | 1 | el artefacto publicado, tal como lo instala un usuario |
+
+**Conjunto que EXIGE receipt completo de frontera** — *decisión del operador,
+session-69s: literal a esta sección*:
+
+```text
+PROCESS
+MCP_EXTERNAL
+RELEASE_ARTIFACT
+```
+
+El runner rechaza receipts incompletos para esos niveles. La lectura es
+**literal**: una fila exige si y solo si su nivel declarado es **exactamente** uno
+de esos tres.
+
+**Y lo que esa decisión deja sin cubrir, declarado y no omitido** (session-69s
+bis 5, 13 de 26 filas): `IN_PROCESS` (6, ids 002-005, 020, 021),
+`IN_PROCESS/SQLITE` (3: 006-008), `SQLITE_MULTI_PROCESS` (2: 011, 012) y `MIXED`
+(2: 024, 025). **Las unicas que cruzan una frontera de estado durable son
+5** — 006, 007, 008, 011, 012 — y son las filas donde un verde falso es más
+fácil, porque «dos procesos y no se ven» es indistinguible de «se midió y
+no pasó». Queda como **hueco declarado**, no como cobertura.
+
+**Por qué el conjunto pequeño es defendible y no una comodidad:** `IN_PROCESS` es
+el mismo proceso, luego `process_count` valdría 1 trivialmente y exigirlo sería un
+campo decorativo — un guard que se cumple siempre enseña a leer verde sin leer.
+`PURE` (6 filas) tampoco cruza nada. El coste real está en las 5 filas durable y
+en las 2 `MIXED`, y queda escrito arriba para que la decisión sea revisable.
+
+### El nombre del nivel decidía si una fila exigíaReceipt
+
+Medido: **`UAT-MATRIX.md` y el overlay discrepan en el nivel de 4 filas**, y el
+overlay es la fuente declarada por la propia cabecera de la matriz:
+
+| ID | `UAT-MATRIX.md` | overlay (fuente declarada) |
+|---|---|---|
+| `AT-UAT-011` | `PROCESS/SQLITE_DURABLE` | `SQLITE_MULTI_PROCESS` |
+| `AT-UAT-012` | `PROCESS/SQLITE_DURABLE` | `SQLITE_MULTI_PROCESS` |
+| `AT-UAT-013` | `PROCESS/SQLITE_DURABLE` | `PROCESS` |
+| `AT-UAT-014` | `PROCESS/SQLITE_DURABLE` | `PROCESS` |
+
+`PROCESS/SQLITE_DURABLE` **no aparece en ningún otro documento** y lo usan
+exactamente esas 4 filas. Con el nombre de la matriz las cuatro quedan exentas;
+con el del overlay, **013 y 014 exigen** receipt. **Un nombre decides si una fila
+exige o no**, que es la misma clase de error que el rename de los pins
+`SDDK_LEGACY_CERT_*` que rompió la certificación de cinco releases: **un nombre es
+un contrato con quien lo lee**, y por eso las 4 filas se reconcilian al overlay,
+que es la fuente declarada. Reconciliado en `537e73e3`..(session-69s bis 5) y
+verificado con el guard: las cuatro filas nombran hoy lo que nombra el overlay.
+
 
 ---
 

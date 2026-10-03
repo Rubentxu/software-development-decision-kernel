@@ -759,6 +759,24 @@ else
          ignorar los rojos de doctor. Log: $IDENT_LOG"
 fi
 
+# 3e entra porque su comprobacion (e) es la que impide que este repo vuelva a
+# tener el conjunto de niveles exigentes declarado en dos sitios que no coinciden
+# -- que es exactamente como se produjo el hueco de 13 filas de C3n.1. Y porque
+# la mutacion que hace (e) escribe sobre el SPEC, no sobre una copia: por eso el
+# paso va aqui, con el arbol ya en su forma final, y no en el 1b.
+step "3e/14 — receipt de frontera exigible (C3n.1 / AT-UAT-023)"
+UAT_BOUNDARY_LOG="$RELEASE_SCRATCH/uat_boundary_receipt.log"
+if bash tests/test_uat_boundary_receipt.sh >"$UAT_BOUNDARY_LOG" 2>&1; then
+    ok "receipt de frontera: $(grep -m1 '^PASS=' "$UAT_BOUNDARY_LOG" || echo 'PASS')"
+else
+    tail -25 "$UAT_BOUNDARY_LOG" >&2
+    die "un receipt de UAT en un nivel que exige frontera no la declara, o el
+         conjunto canonico ha divergido de la autoridad. La segunda causa es la
+         grave: significa que el gate estaria validando contra un conjunto que
+         ya no es el de ROADMAP-ACCEPTANCE-TRUTHFULNESS.md §C3n.1.
+         Log: $UAT_BOUNDARY_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/14 — regenerate MANIFEST.sha256"

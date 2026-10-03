@@ -1,4 +1,26 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 5, 2026-10-03): C3n.1 CERRADO — el vocabulario de frontera es una sola autoridad y hay un gate que lo vigila. Ese gate se falsificó a sí mismo dos veces antes de valer.** `HEAD` = `dfd5c306` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**Lo que se entrega:** `tests/test_uat_boundary_receipt.sh` (`PASS=14 FAIL=0`), cableado en `release.sh` como paso **`3e/14`**, más la reescritura de `ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` §C3n.1 con el vocabulario canónico y la reconciliación de las 4 filas discordantes de `UAT-MATRIX.md`.
+
+**El problema que resolvió, medido sobre las 26 filas `AT-UAT`:** el conjunto de niveles «que exigen receipt de frontera» estaba escrito **en dos sitios que no coincidían**, y **el nombre del nivel decidía si una fila exigía o no**. 13 filas de las 26 quedaban exentas sin que nadie lo hubiera decidido. Ahora el conjunto está en **un solo sitio** y el guard **lo lee de ahí** — un guard con el conjunto copiado dentro habría sido *la tercera* declaración, y la tercera es la que diverge.
+
+**Conjunto, por decisión explícita del operador y lectura literal de §C3n.1:** exigen `PROCESS` (4 filas), `MCP_EXTERNAL` (2) y `RELEASE_ARTIFACT` (1) = **7**. Quedan **13 declaradas exentas** — y el guard comprueba que ese número **no crece en silencio**. No es un cierre: es una cifra escrita, con un control que la vigila.
+
+**El guard valida tipo, no solo presencia.** `process_count: por medir` —que es el texto literal de un receipt que no midió nada— **no pasa**: `process_count` tiene que ser entero ≥ 1, y `binary_sha256` 64 hexadecimales. La presencia la pone cualquiera; el tipo no.
+
+**Lo que la falsificación encontró, y era el guard, no el producto — dos veces:**
+
+1. **Un literal escrito a mano que no casaba y no fallaba.** El título de la sección estaba escrito **tres veces** en el guard, y una de las tres tenía **las tres últimas letras transpuestas** (`a-r-i-e` donde el documento dice `a-r-i-o`). `find` devolvió **-1 sin error**, y en Python `-1` como segundo argumento de `find` significa «buscar desde el final»: la mutación **no mutó**, escribió un fichero de **42 KB** —el documento entero *más* el bloque nuevo— donde debía escribir el documento con el bloque cambiado. **Un literal escrito a mano que no casa no degrada a un fallo: degrada a silencioso.** Es la misma clase que el guard existe para cazar, escrita en el guard. El título se declara **una vez** (`SEC_HEADING`), los tres lectores lo reciben y salen con código 2, y la mutación **se relee tras escribir**: una mutación que no se puede observar no es una mutación, es un cambio de fichero.
+2. **La comprobación (e) era vacía, y lo dijo el mismo examen.** Afirmaba que el gate no tiene una tercera declaración del conjunto, pero **releía el spec con un extractor propio** — luego con el conjunto copiado dentro del gate habría dado `PASS` igual. Ahora prueba la **decisión**: muta la autoridad a `MIXED` (un nivel que hoy **no** exige), reextrae por la **misma función** que usa (a) y pasa un receipt de ese nivel sin campos de frontera por el **validador real**. Con el conjunto real se acepta (hueco declarado); con el mutado **pasa a RECHAZAR**. Ese cambio de veredicto es la prueba.
+
+**Falsado en las dos direcciones:** inyectando el conjunto dentro de `leer_conjunto` cae (`PASS=13 FAIL=1`, y el único fallo es (e)); y con una mutación imposible declara `(e) no se ha ejecutado` en vez de emitir un veredicto falso. Un guard que sólo sabe decir `PASS`/`FAIL` no distingue «no vigilar» de «mirar y no ver nada».
+
+**Siguiente paso: `C3n.2` (recertificación AIW)**, que es lo que no depende de ninguna decisión del operador. `R1` sigue esperando la clave de firma.
+
+**Decisiones del operador que siguen abiertas:** (a) dónde vive la clave de firma de la release (KMS frente a fichero local) — bloquea `R1`; (b) qué superficie de producto produce `HostEvent` — bloquea `C3m.1`; (c) las dos salidas de `INC-DEBT-050` y `INC-DEBT-061`, que son un solo hecho; (d) bajar `INC-DEBT-060` a `medium`, reservado al operador desde `69m`; (e) archivar `a4-1-generic-verify` (publicado como `v1.169.46`, sin transicionar).
+
+---
 **Estado (session-69s, 2026-10-03): R2 REVALIDADA, no cerrada. La propiedad de `INC-DEBT-060` es falsa hoy, y el binario del `PATH` es 202 commits más viejo que el código declarando la misma versión.** `HEAD` = `537e73e3` + `0b5a9351` + `a2b0bd13` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 Se ha hecho la **otra mitad** de lo que la revalidación nombró: no comprobar si las deudas siguen diciendo verdad —eso ya está— sino la **revisión de vigencia**, que **no es un cierre**. Ninguna deuda se cierra aquí y **ninguna severidad baja**. Evidencia: [`receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md`](receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md).
