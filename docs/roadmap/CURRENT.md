@@ -1,4 +1,33 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 12, 2026-10-04): el dry-run encontró TRES defectos reales que ocho guards en verde no habían visto, y el quinto intento está en curso.** `HEAD` = `a36a3902` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**SDDK es la autoridad del estado.** Ciclo `p-63676b11dc0ef88f/c3n-production-boundary-certification` · path **A-full** · `phase: design` · lease `fencing_token=1`. Artefactos: `exploration-report.md`, `specification.md`, `closeout.md`. **⚠️ La lease dura 60 min y este bloque es más largo: expiró dos veces**, y ambas se presentan como `no active cycle found` — parece un ciclo inexistente y es una lease caducada.
+
+**⚠️ LO QUE ESTE TRAMO DEMOSTRÓ, Y ES MÁS FUERTE QUE CUALQUIER GUARD ENTREGADO:**
+
+| Dry-run | Resultado | Defecto real encontrado |
+|---|---|---|
+| 1 | `EXIT=124` | **timeout, no fallo** — casi escribí «no se puede medir» |
+| 2 | `EXIT=1` en `1b` | `ADR-0155`/`0156` declaraban `accepted` **sin `accepted_at` ni `accepted_by_cycle`** — sin evidencia de gobernanza (ADR-0001 §3.4) |
+| 3 | `EXIT=1` en `1b` | esos 3 ADRs **no estaban espejados en el vault** — *consecuencia correcta del arreglo 2* |
+| 4 | `EXIT=1` en `1` | **`task_executor::http_fetch_dispatch_uses_executor_cached_client`**: sincronización **por tiempo** (accept con presupuesto de 500 ms) que solo expiraba bajo carga |
+| 5 | en curso | — |
+
+**OCHO GUARDS EN VERDE NO SON UN RELEASE EN VERDE.** Los 8/8 de C3n.4 se ejecutaron aislados y el recorrido completo murió en `1b` dos veces y en `1` una vez. Cada guard mide su propiedad; ninguno mide la yuxtaposición de «este fichero está bien» con «el resto del pipeline también». **Solo lo mide el que ejecuta el camino entero.**
+
+**Y LA VERDAD ES UNA CADENA:** el fallo 3 no era un defecto nuevo, era la consecuencia correcta del 2 — al añadir frontmatter, los ADRs pasaron a ser `accepted` legibles y el guard de mirror exigió espejarlos. **Un arreglo que dispara el siguiente fallo no es un arreglo incompleto: cada eslabón se comprueba con lo que el anterior habilitó.**
+
+**C3n cerrado en siete commits:** `87831cc5` (vocabularios) · `ee5767a5` (exit gate) · `34484a26` (ficheros R2/R5/R8 + conclusión retirada) · `89583815` (citas de spec, 3h/15) · `59a165e3` (contaminación, 6 superficies) · `14cb8686` (C3n.4 medido) · `1e238dd6`/`d1d3f61c` (defectos del dry-run + allowlist por ruta) · `a36a3902` (test intermitente).
+
+**FU-1 CONFIRMADO CON SU MATIZ:** sin `--cycle` y **sin** lease viva → `no active cycle found`; **con** lease viva **sí** resuelve el ciclo y falla por `STORAGE_LEASE_CONFLICT`. No es insatisfacible: es un **bootstrap** — el comando se resuelve *por* la lease que debe crear.
+
+**Gates del último commit (con cambio en `crates/`, así que `cargo test --workspace` SÍ se ejecutó):** `cargo fmt --check` exit 0 · `cargo clippy -p sddk-engine --all-targets -D warnings` exit 0 · `cargo test -p sddk-engine --lib` **1403 passed / 0 failed** · `cargo test --workspace` **2/2 runs con 0 fallos de suite** (antes: 1 fallo de 4).
+
+**Decisiones del operador abiertas:** (a) **clave de firma — BLOQUEA R1 y nada más**; (b) **autoridad de `SPEC-012`**; (c) superficie de `HostEvent` — bloquea C3m.1; (d) dos salidas de `INC-DEBT-050`/`061`; (e) bajar `INC-DEBT-060` a `medium`; (f) archivar `a4-1-generic-verify`.
+
+**Pendiente:** leer el dry-run 5 hasta el final — **los pasos 2..8 de este tramo no los ha visto nadie** y pueden seguir teniendo fallos.
+
+---
 **Estado (session-69s bis 11, 2026-10-04): C3n.4 VERIFICADO EMPÍRICAMENTE. Los ocho guards de C3n se ejecutaron exactamente como `release.sh` los invoca: 8/8 verdes.** `HEAD` = `59a165e3` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **SDDK es la autoridad del estado.** Ciclo `p-63676b11dc0ef88f/c3n-production-boundary-certification` · path **A-full** · `phase: specify` · lease viva `fencing_token=1` · evento `evt-efa5ecd4`. `exploration-report.md` escrito en el directorio de artefactos del ciclo.
