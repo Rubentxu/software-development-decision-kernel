@@ -3,6 +3,7 @@ Developer tooling: doctor, gates, and atomic install/verify
 Usage: sddk dev <COMMAND>
 
 Commands:
+  build-id            Report which commit this binary was built from, and how it compares to a checkout
   doctor              Check the toolchain and environment prerequisites
   check               Run repository quality gates (fmt, clippy, tests)
   install             Install this binary atomically into a prefix with a receipt

@@ -15679,3 +15679,105 @@ fn cli_vault_validate_hash_mismatch_blocks_scope_downgrade() {
 }
 
 mod first_class_commands;
+
+/// STOP 2, medido sobre el binario real y no sobre una palabra del fuente.
+///
+/// `scripts/install.sh:416` resuelve la version con
+/// `printf '%s' "$out" | awk '{print $NF}'`, es decir, se queda con el ULTIMO
+/// campo de la salida de `--version`. Anadir el commit de build al final
+/// haria que ese campo fuera un parentesis y el instalador guardaria
+/// `2.5.3 (dc69e6f2)` -> `)` como si fuera una version. Este test fija el
+/// hecho, no una cadena del fuente: si alguien cambia la forma de `--version`,
+/// cae aqui.
+#[test]
+fn r1_version_last_field_is_a_bare_semver() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    // `sddk --version` escribe en stderr, no en stdout.
+    let text = String::from_utf8_lossy(if out.stderr.is_empty() {
+        &out.stdout
+    } else {
+        &out.stderr
+    });
+    let last = text
+        .split_whitespace()
+        .next_back()
+        .expect("--version prints something");
+    assert!(
+        is_semver(last),
+        "el ultimo campo de `--version` debe ser un semver puro, porque es lo que \
+         install.sh guarda como version; encontrado: {:?} (salida completa {:?})",
+        last,
+        text.trim()
+    );
+    assert!(
+        !text.contains("@") && !text.contains("+"),
+        "`--version` no puede llevar metadatos de build: el ultimo campo se guardaria \
+         con ellos (salida completa {:?})",
+        text.trim()
+    );
+}
+
+fn is_semver(s: &str) -> bool {
+    let core = s.strip_prefix('v').unwrap_or(s);
+    let mut parts = core.split('.');
+    let major = parts.next().unwrap_or("");
+    let minor = parts.next().unwrap_or("");
+    let patch = parts.next().unwrap_or("");
+    parts.next().is_none()
+        && !major.is_empty()
+        && major.chars().all(|c| c.is_ascii_digit())
+        && minor.chars().all(|c| c.is_ascii_digit())
+        && !minor.is_empty()
+        && patch.chars().all(|c| c.is_ascii_digit())
+        && !patch.is_empty()
+}
+
+/// La identidad de build se expone en superficie PROPIA, y `dev build-id` la
+/// nombra aunque el binario se haya construido sin fuente declarada. El
+/// contrato que importa es el del formato JSON, que es lo que una maquina lee.
+#[test]
+fn build_id_reports_identity_and_provenance_in_both_formats() {
+    let text = std::process::Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["dev", "build-id"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&text.stdout);
+    for field in ["commit:", "source:", "dirty:"] {
+        assert!(text.contains(field), "falta `{}` en: {}", field, text);
+    }
+    // `source` es una de las tres, y siempre esta: es lo que impide que un
+    // `unknown` se lea como un commit.
+    let source = text
+        .lines()
+        .find_map(|l| l.strip_prefix("source: "))
+        .expect("source");
+    assert!(
+        matches!(source.trim(), "env" | "git" | "absent"),
+        "source debe ser env, git o absent; encontrado {:?}",
+        source
+    );
+
+    let json = std::process::Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["dev", "build-id", "--format", "json"])
+        .output()
+        .unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("dev build-id --format json emits an object");
+    assert!(value.get("identity").is_some(), "{}", value);
+    let source = value["identity"]["source"].as_str().expect("source");
+    assert!(
+        matches!(source, "env" | "git" | "absent"),
+        "el JSON declara la misma procedencia que el texto; encontrado {:?}",
+        source
+    );
+    // Sin `--check` no hay comparacion, y su ausencia se declara omitiendo el
+    // campo en vez de mandando un null que parece una respuesta.
+    assert!(
+        value.get("comparison").is_none(),
+        "sin --check no hay comparacion que declarar: {}",
+        value
+    );
+}

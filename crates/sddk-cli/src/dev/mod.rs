@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 mod agent_models;
 pub(crate) mod arch_lint;
+mod build_id;
 pub(super) mod bundle_manifest;
 mod check;
 mod check_arch;
@@ -157,6 +158,13 @@ pub(super) enum LinkEditor {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum DevCommand {
+    /// Report which commit this binary was built from, and how it compares to a
+    /// checkout.
+    ///
+    /// The version alone cannot answer that: the workspace does not bump
+    /// between releases, so two binaries can declare the same version and hold
+    /// different code (INC-DEBT-064).
+    BuildId(build_id::BuildIdArgs),
     /// Check the toolchain and environment prerequisites.
     Doctor(DoctorArgs),
     /// Run repository quality gates (fmt, clippy, tests).
@@ -485,6 +493,7 @@ pub(super) struct EntropyArgs {
 
 pub(super) fn run_dev(command: DevCommand, environment: &CliEnvironment) -> CommandOutput {
     match command {
+        DevCommand::BuildId(args) => build_id::run_dev_build_id(args),
         DevCommand::Doctor(args) => self::doctor::run_dev_doctor(args, environment),
         DevCommand::Check(args) => self::check::run_dev_check(args),
         DevCommand::Install(args) => self::install::run_dev_install(args),
