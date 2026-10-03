@@ -11618,3 +11618,77 @@ INC-DEBT-058 es autonomía-accionable. Lo que espera decisión del operador: la
 **INC-DEBT-050, 061, 060, 063, 049**. Antes de cualquier medición, construir el
 binario del repo y comprobarlo con `dev build-id --check`: si da
 `relation: behind` o exit 1, la medición es sobre un binario viejo.
+
+---
+
+## session-69n C3m.0 — 2026-10-03 — ADR-0154: KMT tiene tres dueños y hay que elegir uno
+
+**Baseline / HEAD.** `71d553a3` al empezar este tramo; `07be445a` (R0) y
+`ed219392` (ADR-0154) publicados; al cerrar, este commit documental. Workspace
+**2.5.3 declarada, no publicada**.
+
+**R0, el drift que el objetivo nombraba.** La tabla enumeraba cinco ciclos en
+`RELEASE_PENDING` y el texto decía «seis». Medido: hay seis, y el sexto
+(`a4-1-generic-verify`) **no es uno más** — figura así desde el **2026-09-16** y
+su release **sí salió** (`git tag --list 'v1.169.46'` la devuelve). No espera la
+clave KMS: está publicado y sin transicionar a `archive`, y por eso inflaba el
+recuento de bloqueados. Corregido en `CURRENT.md` y `STATE.yaml`; **archivar
+ese ciclo es escritura sobre el ledger y queda como decisión del operador**.
+
+**Y una hipótesis mía que la medición desmintió.** Buscando regresiones por
+código duplicado (regla 4 del objetivo) encontré que el predicado de SHA está
+en **tres** sitios con tres expresiones distintas, y que el canónico acepta
+hex en mayúsculas mientras las dos copias no (`'ABC1234'` → `Rust=True |
+bash=False | python=False`). Concluí que nadie vigilaba la relación y estuve a
+punto de declararlo defecto. **Es falso: 3 de 3 mutaciones que introducen esa
+divergencia caen**, detectadas por `test_build_identity_policy.sh` y
+`test_doctor_identity_states.sh`. Lo que queda es más pequeño y se declara así:
+las tres copias difieren y eso **no es alcanzable hoy** — `git rev-parse HEAD`
+devuelve 40 hex en minúsculas — luego es divergencia latente, no incidente.
+
+**C3m.0 — el ADR que el roadmap pedía antes de tocar nada.**
+`ROADMAP.md` §C3m.0: «una sola definición; **rename solo tras aceptar el ADR**».
+El defecto medido **no es un doc desalignado: son dos tipos distintos
+compartiendo nombre** — `pub struct KMT` (`knowledge.rs:615`, evaluador de
+frescura, 17 llamadas `KMT::` y 36 menciones) y `KmtIndex`
+(`reactive_verify.rs:103`, índice de unidades del árbol, 4 ocurrencias), con la
+prosa de `reactive_verify.rs:157` llamando al árbol con las siglas del
+evaluador. ADR-0154 decide **KMT = Knowledge Merkle Tree**, evaluador →
+`KnowledgeFreshness`, `KmtIndex` → `KmtUnitIndex`, y retira *Knowledge
+Management Tiers* porque no describe nada que el código tenga.
+
+**El rename rompe un contrato normativo escrito** — REQ-A3S1-035 declara
+`KMT::evaluate` punto de entrada canónico — y por eso exige decisión aceptada.
+El ADR queda en `proposed` y **no se ha tocado código**.
+
+**El guard es estado actual, no prospecto**, y esa es la decisión que lo hace
+cierto en los dos estados del ADR: con `proposed` sus límites *son* la condición
+de partida medida (2 structs `KMT*`, 1 fichero con la expansión retirada, 2
+ficheros que llaman KMT al árbol), y lo que falla es que aparezcan más o que
+sobrevivan con el ADR ya aceptado. **PASS=6 FAIL=0**, falsificado con 5
+mutaciones.
+
+**Dos sobrevidas propias en la primera pasada del guard, la octava y novena
+vez que un guard mío resulta ciego.** (1) El patrón `pub struct KMT[A-Za-z]*`
+no casa `KmtShadow` porque el símbolo empieza con «Kmt» y no con «KMT» — un
+guard que solo ve la forma exacta del símbolo que ya conoce. (2) El umbral de
+«un solo struct» estaba calibrado contra un mundo que tiene dos, o sea
+justo la colisión que el ADR viene a medir: el guard fallaba en el estado
+correcto. **Ambas se corrigieron en el guard, no bajando la exigencia.**
+
+**Contaminación de redacción, cinco casos, todos antes de commitear:** `Made` y
+`Depending` en el documento de deuda, `symptoms` y `conjecture` en el diario,
+`lo-medido` en `CURRENT.md`, y cinco en el propio ADR (` appearing`,
+`Expansionas`, ` Meter`, `documentoaccepted` y una línea
+duplicada). El scanner dio CLEAN en todos ellos salvo los no latinos, que es
+exactamente lo que INC-DEBT-058 predice: **la clase de token pegado dentro de
+una palabra no la cubre ninguna herramienta de este repo, y la mitigación
+sigue siendo leer.**
+
+**Primer paso preciso de la sesión siguiente.** **Aceptar o rechazar
+ADR-0154** es la decisión que desbloquea todo C3m: aceptarlo habilita el rename
+y C3m.1, rechazarlo obliga a elegir otro nombre canónico y a reescribir el ADR.
+C3m.2 (INC-DEBT-048, decisión binaria) no depende de esto y sigue abierto, pero
+**no debe mezclarse con el rename**. Después: R1 (clave KMS) y R2 (049/050/060/
+061/063), ambos esperando al operador. Antes de cualquier medición: construir el
+binario del repo y comprobarlo con `dev build-id --check`.
