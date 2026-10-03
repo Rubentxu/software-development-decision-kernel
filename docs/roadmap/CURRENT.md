@@ -1,4 +1,51 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69n bis 7, 2026-10-03): el detector de identidad ya tiene consumidor — `dev doctor` consulta si el binario es el de este checkout. Un detector que funciona y al que nadie pregunta no vigila nada.** `HEAD` = `a5c18b97` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
+
+**Lo que faltaba, medido:** `grep -n 'build_id|BuildIdentity|SDDK_BUILD_SHA|SDDK_GIT_SHA|identity' crates/sddk-cli/src/dev/doctor.rs` devuelve **cero coincidencias**, y `binary.bundle_coherence` valida el recibo, el directorio versionado y el manifiesto — **ningún commit**. Eso cumple la condición de escalada que el propio INC-DEBT-064 declara: *«si `dev doctor` declara coherencia donde no la hay»*.
+
+**Medido end-to-end, con el binario real y el repo real:**
+
+| Escenario | `binary.build_identity` | `all_present` | Exit |
+|---|---|---|---|
+| repo real, binario en HEAD | `present` | `true` | 0 |
+| el mismo repo, binario en HEAD~1 | **`missing` — FALLO**, y nombra la relación | `false` | **1** |
+| repo **impostor** (`crates/sddk-cli/Cargo.toml` de otro paquete) | `present` | — | — |
+
+La tercera fila es la que demuestra que la segunda es una **detección** y no una alarma.
+
+**Son cuatro estados y solo uno es fallo:** al día → verde; **atrás o divergido → ROJO**; **sin checkout de sddk-framework → verde con N/A**; **repo de git ajeno → verde con N/A**. Y la identidad **no concluyente** (el fallback `.git`) también va a verde con su motivo, por STOP 6: decidir con ella reproduciría, en un segundo sitio, el defecto que el módulo existe para quitar.
+
+**Los dos N/A gobiernan el diseño y no estaban en el encargo.** `resolve_root` sube desde el cwd buscando un marcador de proyecto, luego sin esa guarda compararía el commit de sddk contra la historia de **otro** repo y declararía `diverged` con toda la apariencia de un hallazgo. **Un check rojo que se equivoca entrena a ignorar los rojos**, que es peor que no tener check; el precedente está en el propio doctor, en la rama `flat_install`.
+
+**⚠️ Cambia el contrato: `dev doctor` puede salir con 1 donde antes salía con 0.** No es efecto colateral, es el objetivo, y está declarado en el changelog en vez de descubrirse en producción.
+
+**Falsificación: 7 guards, 7/7, y uno sobrevivió a la primera pasada** — sexta vez en la serie que un guard solo fija el caso donde el defecto no se manifiesta, y este lo escribí yo hacía media hora. R5 usaba un repo **sin** `crates/sddk-cli/Cargo.toml`, luego un marcador demasiado permisivo nunca se distinguía del correcto. Le faltaba el **impostor**. Corregido en el guard, conservando el caso viejo.
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| **`cl-doctor-build-identity`** | **`OPEN/verify`, sequence 2, 1 artefacto, 1 gate `passed`** (nuevo) |
+| `cl-build-identity` | `RELEASE_PENDING`, sequence 4, 2 artefactos, 3 gates |
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| `INC-DEBT-064` | **`open`, high/P1 — el mecanismo existe, la condición sigue viva** |
+
+**Por qué INC-DEBT-064 sigue `open`:** los binarios **ya instalados** declaran `source: git` porque se construyeron antes del cambio de `release.sh`, luego el check es N/A para ellos y **no tiene dientes hasta la próxima release**, bloqueada por la clave KMS. No es un fallo del check: es que el check es honesto con lo que sabe. Y el binario del PATH sigue obsoleto. Severidad sin cambio, `high` y no `critical`: la condición de escalada **sigue sin cumplirse** — este commit le quita una vía para que se cumpla, no la cumple.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Fase verify de `cl-doctor-build-identity`** — y lo que tiene que medir no es repetir la suite, sino que los cuatro estados se distinguen con el binario real, sobre todo que impostor y «sin checkout» **no** dan rojo.
+2. **Clave KMS** — bloqueo de la release 2.5.3 y de los cinco ciclos, del operador.
+3. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+4. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+5. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
+6. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+7. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+8. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+
+---
 **Estado (session-69n bis 6, 2026-10-03): fase `verify` de `cl-build-identity` CERRADA con los dos gates graduados sobre evidencia ejecutada. El ciclo pasa a `RELEASE_PENDING` y se une a los otros tres, todos bloqueados por la clave KMS.** `HEAD` = `68874b35` + este commit documental. Workspace **2.5.3 declarada, no publicada**.
 
 **La medición que sostiene la verify, y que es la que faltaba:** `--check` se ejercita **como lo usaría un gate real**, con el **mismo binario** contra dos checkouts distintos. Contra `HEAD`: `relation: Matches`, **exit 0**. Contra un checkout un commit atrasado: **exit 1**. Un detector que no distingue entre «el binario es el del checkout» y «el checkout tiene trabajo que el binario no tiene» no sirve como gate — y esa es exactamente la propiedad que faltaba antes del arreglo de `11c8e1d9`, donde el segundo caso salía con **exit 0** mientras su propia línea de `reason` decía lo contrario.

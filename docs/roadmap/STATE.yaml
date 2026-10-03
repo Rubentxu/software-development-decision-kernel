@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "68874b35"  # session-69n bis 6: el puntero nombra 68874b35, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (c30dcf89, 11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md. # session-69n bis 5 (anterior, conservado): el puntero nombra c30dcf89, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 4 (anterior, conservado): el puntero nombra 11c8e1d9, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. El puntero anterior (86dea47d) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 3 (punterior, conservado): el puntero nombra 86dea47d, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (8a2ebfd3) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "a5c18b97"  # session-69n bis 7: el puntero nombra a5c18b97, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (68874b35, c30dcf89, 11c8e1d9) y sus notas quedan en superseded_pointer y en SESSION-JOURNAL.md. # session-69n bis 6 (anterior, conservado): el puntero nombra 68874b35, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (c30dcf89, 11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md. # session-69n bis 5 (anterior, conservado): el puntero nombra c30dcf89, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. Los punteros anteriores (11c8e1d9, 86dea47d) y sus notas de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 4 (anterior, conservado): el puntero nombra 11c8e1d9, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main. El puntero anterior (86dea47d) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia. # session-69n bis 3 (punterior, conservado): el puntero nombra 86dea47d, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (8a2ebfd3) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -554,6 +554,81 @@ c3_progress:
 # y uno en un fichero de borrador, `turned out` en plena prosa espanola, que no
 # llego al arbol porque el borrador se corrigio antes de insertarlo.
 
+# session-69n BISECHA 7: `dev doctor` CONSULTA LA IDENTIDAD DEL BINARIO. Un
+# detector que funciona y al que nadie pregunta no vigila nada.
+#
+# LO QUE FALTABA, MEDIDO Y NO SUPUESTO:
+# `grep -n 'build_id|BuildIdentity|SDDK_BUILD_SHA|SDDK_GIT_SHA|identity'
+# crates/sddk-cli/src/dev/doctor.rs` devuelve CERO COINCIDENCIAS, y
+# `binary.bundle_coherence` (doctor.rs:420-468) solo valida el recibo de
+# instalacion, el directorio versionado y la compatibilidad del manifiesto.
+# Ningun commit. Eso cumple exactamente la condicion de escalada que el propio
+# INC-DEBT-064 declara: «si `dev doctor` declara coherencia donde no la hay».
+#
+# Y es la REPETICION del «el arreglo no esta roto, no esta desplegado» que la
+# nota (a) de INC-DEBT-061 ya habia pagado una vez — esta vez como MECANISMO y
+# no como dato de un caso, que era exactamente lo que la biseca 2 denuncio y no
+# habia corregido.
+#
+# SON CUATRO ESTADOS Y SOLO UNO ES FALLO. Al dia, verde. Atras o divergido,
+# ROJO: esa es la deteccion. SIN CHECKOUT de sddk-framework, verde con N/A. REPO
+# DE GIT AJENO, verde con N/A. Y una identidad NO CONCLUYENTE (la del fallback
+# `.git`) tambien a verde con detalle, por STOP 6: decidir con ella
+# reproduciria, en un segundo sitio, el defecto que el modulo existe para quitar.
+#
+# LOS DOS ESTADOS N/A GOBIERNAN EL DISENO Y NO ESTABAN EN EL ENCARGO. STOP 1 del
+# SCOPE dice que si el check no puede distinguir «checkout de sddk-framework» de
+# «repo de git cualquiera» el trabajo se descarta entero, porque `resolve_root`
+# sube desde el cwd buscando un marcador de proyecto: sin esa guarda compararia
+# el commit de sddk contra la historia de OTRO repo y declararia `diverged` con
+# toda la apariencia de un hallazgo. Casi todo directorio esta dentro de algun
+# repo de git. El marcador es el manifiesto del paquete propio,
+# `crates/sddk-cli/Cargo.toml`, y el caso dificil es el IMPOSTOR: un repo que
+# tiene el directorio y NO es este proyecto. **Un check rojo que se equivoca
+# entrena a ignorar los rojos**, que es peor que no tener check; el precedente
+# esta en el propio doctor, en la rama `flat_install`.
+#
+# MEDIDO END-TO-END, con el binario real y el repo real:
+# - repo real, binario en HEAD: `binary.build_identity: present`,
+#   `all_present: true`, EXIT 0.
+# - el MISMO repo, binario en HEAD~1: `binary.build_identity: missing - FALLO: el
+#   commit del binario (68874b35) es ancestro del HEAD del checkout, luego el
+#   checkout tiene trabajo que el binario no contiene`, `all_present: false`,
+#   **EXIT 1**.
+# - repo IMPOSTOR (con crates/sddk-cli/Cargo.toml de otro paquete):
+#   `present`, sin falso positivo. Esa medicion es la que demuestra que el rojo
+#   anterior es una DETECCION y no una alarma.
+# **CAMBIA EL CONTRATO: `dev doctor` puede salir con 1 donde antes salia con 0.**
+# No es efecto colateral, es el objetivo, y se declara en el changelog en vez de
+# descubrirse en produccion.
+#
+# FALSIFICACION: 7 guards, 7 mutaciones al SOURCE REAL, 7 detectadas. **Y R5
+# SOBREVIVIO A LA PRIMERA PASADA — sexta vez en la serie que un guard solo fija
+# el caso donde el defecto no se manifiesta, y este lo acababa de escribir yo.**
+# R5 usaba un repo que NO tiene `crates/sddk-cli/Cargo.toml`, luego un marcador
+# demasiado permisivo nunca se distinguia del correcto: sin el fichero,
+# `read_to_string` falla y `unwrap_or(false)` responde igual en las dos
+# variantes. Le faltaba el IMPOSTOR, el unico caso donde «acepta cualquier
+# manifiesto» y «acepta solo el nuestro» dan respuestas distintas. Corregido EN
+# EL GUARD, conservando el caso viejo. Que M5 caiga con el guard nuevo y NO con
+# el viejo es la prueba de que anadirlo aporto. El falsificador fallo dos veces
+# mas por su cuenta: una mutacion no aterrizo porque `cargo fmt` habia cambiado
+# la indentacion del `match`, y otra no compilaba. NO MEDIBLE NO ES DETECTADA.
+#
+# LO QUE NO SE HIZO, declarado: no se toco `--version`, ni `install.sh`, ni el
+# contrato del bundle (STOP 4); no se conecto nada a la red; y NO se forzo a
+# `dev doctor` a pasar.
+#
+# POR QUE INC-DEBT-064 SIGUE `open`. (1) Los binarios YA instalados declaran
+# `source: git`, porque se construyeron antes del cambio de `release.sh` que
+# exporta `SDDK_GIT_SHA`; para ellos el check es N/A y NO tiene dientes hasta la
+# proxima release, que esta bloqueada por la clave KMS. No es un fallo del
+# check: es que el check es honesto con lo que sabe. (2) El binario del PATH
+# sigue obsoleto. (3) La fase verify de este ciclo esta abierta, como es
+# normal. Severidad sin cambio, `high` y no `critical`: no hay perdida de datos,
+# y la condicion de escalada del documento SIGUE SIN CUMPLIRSE — este commit le
+# quita una via para que se cumpla, no la cumple.
+
 # session-69n BISECHA 6: FASE VERIFY DE `cl-build-identity` CERRADA. El ciclo
 # pasa a RELEASE_PENDING, sequence 4, 2 artefactos. Se une a los otros tres
 # ciclos bloqueados por la clave KMS.
@@ -679,7 +754,7 @@ c3_progress:
 # alcanzable exige debilitar una comprobacion de capacidad, reordenar los
 # pasos o mover el AdmissionTicket, el arreglo se descarta AUNQUE LOS TESTS
 # PASSEN. SUPERADO: el lote 1 es 034d098a y el lote 2 es a6dfb5f2.
-next_action: 'Session-69n bis 6. SIGUIENTE PASO UNICO, sin decision del operador y sin abrir ningun ciclo nuevo: CABLEAR `build-id --check` AL `dev doctor`, que hoy no lo invoca. Es el unico punto entre «el detector existe» y «el detector vigila»: mientras nadie lo consulte, INC-DEBT-064 sigue viva porque depende de que alguien se acuerde de mirar, que es exactamente el modo de fallo que el documento de la biseca 2_denuncio como «el arreglo no esta roto, no esta desplegado» y que la nota (a) de INC-DEBT-061 ya habia pagado una vez. Antes de escribir nada, MEDIR: leer `dev doctor` (crates/sddk-cli/src/dev/doctor.rs, el bloque de `binary.bundle_coherence` en 425-468) y comprobar que hoy NO invoca la comparacion — no suponerlo —, y decidir con esa medicion si el check nuevo es un `DoctorCheck` mas o una seccion propia. Ojo con una cosa ya vivida: el lease se libera al cambiar de fase y readquirir un lease AUSENTE arranca en `fencing_token` 1; el incremento solo ocurre al REEMPLAZAR uno caducado. Los cuatro ciclos (cl-build-identity, cl-release-forge-testability, cl-ledger-export-total, cl-ledger-watch-total) estan en RELEASE_PENDING y la release 2.5.3 siguen bloqueados por la clave KMS, del operador, y no se tocan. ANTES DE CUALQUIER MEDICION: construir el binario del repo y comprobarlo; si `dev build-id` responde `unrecognized subcommand`, la medicion es sobre el binario viejo y no vale (INC-DEBT-064, y eso ocurrio en esta sesion). Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio).'
+next_action: 'Session-69n bis 7. SIGUIENTE PASO UNICO, sin decision del operador: la FASE VERIFY de `cl-doctor-build-identity`, que esta en OPEN/verify con sequence 2 y el gate `implementation-complete` ya `passed`. La transicion de cierre es `phase.verify.complete.b-direct` y exige `tests-pass` y `policy-compliant` mas el artefacto `verification-report`. El lease se LIBERA al cambiar de fase: hay que readquirirlo con `sddk cycle lock acquire --owner rubentxu`, y OJO con el numero — medido en la biseca 6, un lease AUSENTE arranca en `fencing_token` 1; el incremento (2, 3...) solo ocurre al REEMPLAZAR uno caducado. Un puntero que diga «el token es N» sin la regla se vuelve a equivocar, y ya se equivoco una vez. LO QUE LA VERIFY TIENE QUE MEDIR, y no es repetir la suite: que los CUATRO estados del check se distinguen con el binario real, y sobre todo que el caso «repo impostor» y el caso «sin checkout de sddk» NO dan rojo, porque un rojo falso en `dev doctor` entrena a ignorar los rojos. La prueba end-to-end ya esta hecha en el RECEIPT y hay que re-ejecutarla, no heredarla. Y un punto de honestidad que la verify debe declarar otra vez: **los binarios ya instalados declaran `source: git` y el check sera N/A para ellos**, luego el mecanismo no tiene dientes hasta que se publique una release — que esta bloqueada por la clave KMS. Los cinco ciclos (cl-doctor-build-identity, cl-build-identity, cl-release-forge-testability, cl-ledger-export-total, cl-ledger-watch-total) estan en RELEASE_PENDING o a punto, y la release 2.5.3 sigue bloqueada por la clave KMS, del operador, y no se tocan. ANTES DE CUALQUIER MEDICION: construir el binario del repo y comprobarlo con `dev build-id --check`; si da `relation: behind` o exit 1, la medicion es sobre un binario viejo y no vale (INC-DEBT-064, y eso ocurrio DOS veces en esta sesion). Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio).'
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"
   - "RESUELTO session-22 — Cargo.lock stale. Cerro con bump 2.0.8 -> 2.0.9 por la clausula (A) del hook pre-push: Cargo.toml, manifest.toml y Cargo.lock quedan alineados en el mismo rango, y `cargo metadata --locked` paso de exit 101 a exit 0. El hook NO se amendso. Ademas se anadio el check 6 a tests/test_release_state_pointer.sh (compara Cargo.lock contra Cargo.toml), falsificado en los dos sentidos: falla con el lock a 2.0.7, pasa con el lock a 2.0.9. Con esto, publicar 2.0.9 ya no tropezaria en el paso 63 por el lock; lo que queda por delante es la decision de firma (S14 en distribucion), que sigue siendo irreducible sin autorizacion del operador."

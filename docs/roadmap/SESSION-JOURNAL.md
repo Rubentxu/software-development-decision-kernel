@@ -11367,3 +11367,80 @@ pilló antes de commitear.
 `binary.bundle_coherence` (líneas 425-468) invoca hoy la comparación de
 identidad — no suponerlo —, y con esa medición decidir si el check nuevo es un
 `DoctorCheck` más o una sección propia.
+
+---
+
+## session-69n bis 7 — 2026-10-03 — el detector de identidad ya tiene consumidor: `dev doctor` lo consulta
+
+**Baseline / HEAD.** `HEAD` = `a5c18b97` == `origin/main`; este commit
+documental es posterior y no es evidencia de ese SHA. Workspace **2.5.3
+declarada, no publicada**.
+
+**WorkItem.** `p-63676b11dc0ef88f/cl-doctor-build-identity`, nuevo, `B-direct`,
+cerrado de `build` a `OPEN/verify` con sequence 2 y `implementation-complete`
+`passed` sobre `cargo test --workspace --no-fail-fast` (5435 passed / 0 failed
+/ 24 ignored / 283 binarios, `sha256:f50e0365b4…`).
+
+**Lo que faltaba, medido.** `dev build-id --check` ya distinguía un binario al
+día de uno atrasado, y **no había ningún sitio del producto donde se mirara**:
+`grep` de `build_id|BuildIdentity|SDDK_BUILD_SHA|SDDK_GIT_SHA|identity` sobre
+`doctor.rs` devuelve **cero coincidencias**, y `binary.bundle_coherence`
+valida el recibo, el directorio versionado y el manifiesto — ningún commit. Eso
+cumple la condición de escalada que el propio INC-DEBT-064 declara, y es la
+repetición del «el arreglo no está roto, no está desplegado» que la nota (a) de
+INC-DEBT-061 ya había pagado una vez: **esta vez como mecanismo, no como dato de
+un caso**, que era lo que la biseca 2 denuncio y no se habia corregido.
+
+**Medido end-to-end, con el binario y el repo reales.** Repo real y binario en
+HEAD: `present`, `all_present: true`, exit 0. El mismo repo con el binario en
+HEAD~1: `missing — FALLO: el commit del binario es ancestro del HEAD del
+checkout`, `all_present: false`, **exit 1**. Repo **impostor** —con
+`crates/sddk-cli/Cargo.toml` de otro paquete—: `present`, sin falso positivo.
+La tercera medición es la que demuestra que la segunda es una detección y no
+una alarma.
+
+**⚠️ Cambio de contrato, declarado en el changelog:** `dev doctor` puede salir
+con 1 donde antes salía con 0. Es el objetivo, no un efecto colateral.
+
+**Falsificación: 7 guards, 7 mutaciones al source real, 7 detectadas. Y R5
+SOBREVIVIÓ A LA PRIMERA PASADA** — sexta vez en la serie que un guard solo fija
+el caso donde el defecto no se manifiesta, y este lo escribí yo hacía media
+hora. R5 usaba un repo sin `crates/sddk-cli/Cargo.toml`, luego un marcador
+demasiado permisivo nunca se distinguía del correcto, porque sin el fichero
+`read_to_string` falla y `unwrap_or(false)` responde igual en las dos variantes.
+Le faltaba el **impostor**: un repo que tiene el directorio y no es este
+proyecto, el único caso donde «acepta cualquier manifiesto» y «acepta solo el
+nuestro» dan respuestas distintas. Corregido en el guard, con el caso viejo
+conservado. Que M5 caiga con el guard nuevo y no con el viejo prueba que
+añadirlo aportó.
+
+**UAT observado / no ejecutado.** No hay matriz UAT nueva: la fase verify de
+este ciclo es la que debe producirla. Observado: workspace 5435 passed / 0
+failed / 24 ignored / 283 binarios, `fmt` y `clippy --workspace --all-targets
+-D warnings` en 0, falsificación 7/7, changelog PASS=73 FAIL=0, scanner CLEAN,
+requisitos `04-req-testable.py` 7 objetivos / 7 guards con exit 0. **NOT_RUN**:
+la ruta forge contra un GitHub real, y todo lo que exige la clave KMS.
+
+**Bloqueos.** Ninguno técnico. Los del operador sin cambios: clave KMS — ahora
+cubre cinco ciclos—, INC-DEBT-050, 061, 060, 063, 049, y la publicación del
+harness `Pipelinek-Test-Hardness`.
+
+**Riesgos, y el más importante no es técnico.** Los binarios **ya instalados**
+declaran `source: git` porque se construyeron antes de que `release.sh`
+exportara `SDDK_GIT_SHA`; para ellos el check nuevo es **N/A y no tiene
+dientes** hasta la próxima release, que está bloqueada por la clave KMS. No es
+un fallo del check — es que el check es honesto con lo que sabe —, pero
+significa que **el mecanismo no vigila nada todavía en la máquina que lo
+ejecutaría**. Y el cambio de contrato puede sorprender a quien use
+`dev doctor` en un script: puede empezar a salir con 1.
+
+**Contaminación de redacción, dos casos en esta biseca.** Un CJK y un cirílico
+en el mensaje de commit, ambos detectados por el scanner antes de commitear.
+Sexta y séptima vez en la sesión, con la misma firma: **escribir sobre la
+corrupción la genera.**
+
+**Primer paso preciso de la sesión siguiente.** Readquirir el lease de
+`cl-doctor-build-identity` — anotando el `fencing_token` que devuelva, porque
+un lease ausente arranca en 1 y solo un reemplazo lo incrementa— y medir los
+**cuatro** estados del check con el binario real, sobre todo que impostor y «sin
+checkout» no den rojo.
