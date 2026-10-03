@@ -1,4 +1,28 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 8, 2026-10-03): los dos vocabularios de frontera son UNO. La reconciliación que C3n.2 declaró pendiente está hecha, y el guard que la vigila tiene una comprobación que faltaba.** `HEAD` = `29be4ad5` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
+
+| | antes | ahora |
+|---|---|---|
+| Dónde se declara el vocabulario | dos sitios, se cruzaban en 6 valores | **sólo** `ROADMAP-ACCEPTANCE-TRUTHFULNESS.md` §C3n.1, **9 niveles** |
+| `ACCEPTANCE-TRUTHFULNESS-MATRIX.md` regla 3 | declaraba sus propios 9 y usaba 2 que no declaraba | **referencia** al spec; usa sólo valores canónicos |
+| `THREAD`, `SQLITE_MULTI_HANDLE` | declarados por la matriz, **usados por nadie** | **retirados** |
+| `FILESYSTEM` | declarado por la matriz, ausente del spec | **en el spec**, porque `AIW-S2` lo usa |
+
+**La mejor evidencia de la reconciliación es una celda que se contradecía sola:** `AIW-S3` decía `SQLITE (durable, **mismo proceso**)` — afirmaba el mismo proceso y usaba un valor **sin** el calificador `IN_PROCESS`. `AIW-S1b` igual. `AIW-S8` pasó de `PROCESS / SQLITE_DURABLE` a `PROCESS / SQLITE_MULTI_PROCESS`, porque X04 afirma **≥2 PIDs reales** y X07 usa un **segundo binario**: eso es multi-proceso por definición. **`AIW-S4` no se tocó**: sus dos valores son canónicos y el `+` entre ellos es una fila con dos boundaries a lo largo del tiempo, que es información.
+
+**El guard crece a `PASS=9 FAIL=0`** (autofalsación `PASS=8 FAIL=0`, 7 mutaciones, todas caídas): ninguna fila puede usar un `boundary_class` fuera del vocabulario canónico, y **no hay allowlist para eso** — un guard con excepciones para el vocabulario sería un segundo sitio con su propia lista, o sea el defecto que se acaba de cerrar.
+
+**⚠️ Y al hacerlo apareció, por tercera vez en esta sesión, el mismo tipo de bug: tokenizar la celda entera contaba la prosa del paréntesis como nivel** (`SHA-256`, `BLOCKED`, `PASS`, `EXT`, `SDDK`) — **9 falsos positivos sobre la propia matriz**. Corregido con `boundary_tokens()`, que corta en el primer `(` y es la **única** extracción que usan tanto `exige()` como la comprobación de vocabulario. Es el mismo patrón que el `in` que confundía `IN_PROCESS` con `PROCESS` y que la copia que no vigilaba: **una heurística escrita dos veces diverge, y la divergencia no se ve hasta que los datos la golpean.**
+
+**También quedó cerrado FU-3, que era un hallazgo mío falso:** el guard de alfabetos ya existía (`tests/test_docs_script_contamination.py`, session-66), **pasa**, y está cableado en `release.sh:275`. Escribí otro que habría hecho **285 falsos positivos** sobre `Δ`/`Σ`/`θ` legítimos, y lo retiré. **Las 27 palabras rotas del diario son una exclusión declarada**, no un descuido: el diario es append-only.
+
+**Siguiente paso preciso:** **C3n.3** — recertificar Context-First (R0, R2/KMT, R5, R6, R8, architecture gate), que es el bloque grande que queda del WorkItem. Y FU-1 sigue abierto: `cycle lock acquire` **sin `--cycle` es insatisfacible por construcción**, porque el ciclo se resuelve por la lease viva que el comando debe crear.
+
+**Decisiones del operador que siguen abiertas:** (a) clave de firma de la release — **bloquea `R1` y nada más**; (b) superficie de producto que produce `HostEvent` — bloquea `C3m.1`; (c) dos salidas de `INC-DEBT-050`/`061`; (d) bajar `INC-DEBT-060` a `medium`; (e) archivar `a4-1-generic-verify` (publicado como `v1.169.46`).
+
+---
 **Estado (session-69s bis 7, 2026-10-03): la regla 4 tiene dientes. Al construirlos aparecieron dos guards que no median, y el work ya no vivía solo en markdown — ahora hay ciclo en SDDK.** `HEAD` = `ba21caf0` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **WorkItem registrado en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, `sequence 1`. **No existía ningún ciclo `c3n*`**: las dos sesiones anteriores de trabajo C3n se hicieron únicamente en markdown, contra el §1 del protocolo de `~/AGENTS.md`, que hace de SDDK la autoridad del trabajo activo. Corregido. **Además `agent-session` no existe en SDDK 2.5.3** — el protocolo lo exige — así que el estado se recupera con `cycle` / `capability` / `memory` y el hueco queda declarado.

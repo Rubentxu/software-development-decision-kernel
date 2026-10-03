@@ -722,6 +722,7 @@ cubren los mismos 26 IDs; no hay filas huérfanas en ninguna dirección):
 | `MCP_EXTERNAL` | 2 | proveedor externo por MCP, con binario y hash propios |
 | `MIXED` | 2 | **compuesto**: atraviesa más de una frontera |
 | `RELEASE_ARTIFACT` | 1 | el artefacto publicado, tal como lo instala un usuario |
+| `FILESYSTEM` | 0 (la usa `AIW-S2`) | superficie de receipt en el sistema de ficheros local, sin runner externo |
 
 **Conjunto que EXIGE receipt completo de frontera** — *decisión del operador,
 session-69s: literal a esta sección*:
@@ -816,6 +817,40 @@ cuatro filas nombran hoy lo que nombra el overlay.
 > declara). **Un vocabulario cerrado que su propio documento no respeta no es un
 > vocabulario cerrado.** Reconciliar los dos es trabajo de C3n.3 y **no se hace
 > aquí**: este bloque declara el hallazgo, no finge cerrarlo.
+
+
+
+### Reconciliación de los dos vocabularios (session-69s bis 8)
+
+Session-69s bis 6 declaró que este repo tenía **dos vocabularios cerrados de
+frontera que no coinciden** y que la matriz de aceptación **violaba su propio
+vocabulario**. Aquí se cierra, y el criterio es uno solo: **un vocabulario, declarado
+en un sitio, referenciado por el resto.**
+
+| | antes | ahora |
+|---|---|---|
+| Dónde se declara | dos sitios (aquí y `ACCEPTANCE-TRUTHFULNESS-MATRIX.md` regla 3) | **sólo aquí** |
+| Valores | 8 aquí, 9 allí, se cruzan en 6 | **9 aquí**, el mismo para los dos documentos |
+| `FILESYSTEM` | lo declara la matriz y aquí no | **aquí**, porque `AIW-S2` lo usa de verdad |
+| `THREAD`, `SQLITE_MULTI_HANDLE` | los declara la matriz y **ninguna fila los usa** | **retirados**: un vocabulario cerrado que declara valores que no existen no es cerrado, es una lista de deseos |
+
+**Las cuatro correcciones, una a una, con la fila que las motiva:**
+
+| Fila | Antes | Ahora | Por qué |
+|---|---|---|---|
+| `AIW-S1b` | `SQLITE (crash/reopen real en test)` | `IN_PROCESS/SQLITE` | crash/reopen dentro del test **es** el mismo proceso sobre almacenamiento durable |
+| `AIW-S3` | `SQLITE (durable, mismo proceso)` | `IN_PROCESS/SQLITE` | **la celda se contradice sola**: dice «mismo proceso» y usa un valor sin el calificador `IN_PROCESS` |
+| `AIW-S8` | `PROCESS / SQLITE_DURABLE` | `PROCESS / SQLITE_MULTI_PROCESS` | X04 afirma **≥2 PIDs reales** y X07 usa un **segundo binario**: eso es multi-proceso por definición, y `SQLITE_DURABLE` no existe en el vocabulario |
+| `AIW-S2` | `FILESYSTEM` (declarado en la matriz, ausente aquí) | `FILESYSTEM` (declarado aquí) | el valor es legítimo; lo que faltaba era **dónde se declara** |
+
+`AIW-S4` usa `IN_PROCESS/SQLITE (nueva) + IN_PROCESS (composition test antigua)`:
+los dos valores son canónicos, luego la fila **no se toca** — y queda dicho, porque
+`+` entre dos niveles es una fila con dos boundaries a lo largo del tiempo y eso es
+información, no ruido.
+
+**Lo que este § NO hace:** no reescribe la regla 3 de la matriz, la **remplaza por
+una referencia**. Y el guard nuevo comprueba que ninguna fila use un valor fuera de
+este vocabulario, para que la unión no vuelva aopenedirse por la vía de los datos.
 
 
 ---

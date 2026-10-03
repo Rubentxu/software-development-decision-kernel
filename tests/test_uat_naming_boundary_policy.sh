@@ -90,6 +90,20 @@ def filas(matriz_path):
     return out
 
 
+def boundary_tokens(celda):
+    """Los niveles que declara una celda de `Frontier real`.
+
+    La celda es `<nivel(es)> (<comentario>)`: el comentario puede contener
+    `SHA-256`, `BLOCKED`, `PASS` o `EXT`, que son prosa y NO clases de frontera.
+    Por eso se corta en el primer parentesis. Antes de esto se tokenizaba la celda
+    entera y salian nueve falsos positivos sobre la propia matriz, que es la razon
+    de que el corte este aqui y no sea una preferencia de estilo.
+    """
+    cabeza = celda.split("(", 1)[0]
+    # Una fila puede declarar dos niveles a lo largo del tiempo: `A + B`.
+    return set(re.findall(r'[A-Z][A-Z_]*(?:/[A-Z][A-Z_]*)*', cabeza))
+
+
 def exige(frontera, niveles):
     """Una fila exige si su boundary_class MENCIONA un nivel exigente.
 
@@ -100,8 +114,7 @@ def exige(frontera, niveles):
     que confunde un nivel con otro que lo contiene no es una lectura permisiva: es
     un apagador, porque el caso que se queria vigilar es el de los que NO exigen.
     """
-    tokens = set(re.findall(r'[A-Z][A-Z_]*', frontera))
-    return bool(tokens & niveles)
+    return bool(boundary_tokens(frontera) & niveles)
 
 
 def nombres_de_test(fuente):
@@ -255,12 +268,17 @@ niveles = politica.niveles_exigentes(sys.argv[1])
 CASOS = [
     ("IN_PROCESS (tests unit del gateway)", False,
      "IN_PROCESS contiene la subcadena PROCESS pero no es un nivel exigente"),
-    ("PROCESS / SQLITE_DURABLE", True,
+    ("PROCESS / SQLITE_MULTI_PROCESS (X04 y X07; ambos cruzan la frontera real)", True,
      "menciona PROCESS: X04 es concurrencia de >=2 PIDs reales"),
-    ("MCP_EXTERNAL (provider externo por MCP)", True, "menciona MCP_EXTERNAL"),
+    ("MCP_EXTERNAL (provider ausente: BLOCKED, nunca PASS; frontera no reportable)", True,
+     "menciona MCP_EXTERNAL, y el comentario con BLOCKED/PASS no se cuela"),
     ("PURE", False, "no cruza nada"),
-    ("IN_PROCESS/SQLITE", False, "compuesto, y ninguno de sus dos token exige"),
+    ("IN_PROCESS/SQLITE (nueva) + IN_PROCESS (composition test antigua)", False,
+     "compuesto y ninguno de sus dos token exige"),
     ("RELEASE_ARTIFACT", True, "el artefacto publicado, tal como lo instala un usuario"),
+    ("IN_PROCESS + RELEASE_ARTIFACT (receipt anclado a 0c2ca56, SDDK 1.169.19)", True,
+     "una fila puede declarar dos niveles; basta con que uno sea exigente"),
+    ("MCP_EXTERNAL (su SHA)", True, "el comentario no crea ni quita niveles"),
 ]
 malos = 0
 for frontera, esperado, porque in CASOS:
@@ -272,7 +290,7 @@ print(malos)
 PY
 )"
 if [[ "${CLASIF:-99}" == "0" ]]; then
-    ok "control: IN_PROCESS no cuenta como PROCESS, y PROCESS / SQLITE_DURABLE si cuenta"
+    ok "control: IN_PROCESS no cuenta como PROCESS, el comentario no crea niveles, y A + B se lee entero"
 else
     bad "control: la clasificacion de niveles exigentes confunde un nivel con otro que lo contiene"
     python3 - "$SPEC" <<'PY'
@@ -325,6 +343,50 @@ if [[ "${VETO:-99}" == "0" ]]; then
     ok "control: el veto senala un nombre prohibido en una fila que no exige, y lo respeta si exige"
 else
     bad "control: el veto no hace lo que dice: no senala lo prohibido, o senala lo permitido"
+fi
+
+# ── (b) NINGUNA fila usa un valor fuera del vocabulario canonico ─────────────
+# El vocabulario esta cerrado en un solo sitio (spec seccion C3n.1) desde session-69s
+# bis 8. Antes lo declaraban dos sitios que no coincidian, y la matriz usaba ademas
+# valores que su PROPIA lista no declaraba. Un vocabulario cerrado que su propio
+# documento no respeta no es un vocabulario cerrado.
+#
+# Aqui no hay excepciones: un `boundary_class` nuevo se anade al spec, con su fila
+# que lo motiva. Un guard con allowlist para el vocabulario seria un segundo sitio
+# con su propia lista, que es exactamente lo que se acaba de cerrar.
+python3 - "$MATRIX" "$SPEC" <<'PY' >"$WORK/vocab.txt"
+import os, re, sys
+sys.path.insert(0, os.path.dirname(os.environ["SDDK_POLITICA"]))
+import politica
+
+spec = open(sys.argv[2], encoding="utf-8").read()
+i = spec.find("### El vocabulario de frontera")
+if i < 0:
+    print("SIN-VOCABULARIO")
+    raise SystemExit
+tabla = spec[i:spec.find("**Conjunto que EXIGE", i)]
+canonicos = set(re.findall(r'^\| `([A-Z][A-Z_/]*)` \|', tabla, re.M))
+malos = 0
+for item, frontera, _ in politica.filas(sys.argv[1]):
+    for tok in politica.boundary_tokens(frontera):
+        if tok not in canonicos:
+            print("FUERA\t%s\t%s" % (item, tok))
+            malos += 1
+print("CANONICOS\t%d" % len(canonicos))
+print("FUERA\t%d" % malos)
+PY
+CANON="$(awk -F'\t' '$1=="CANONICOS"{print $2}' "$WORK/vocab.txt")"
+FUERA="$(awk -F'\t' '$1=="FUERA" && NF>=2 && $2 ~ /^[0-9]+$/{print $2}' "$WORK/vocab.txt")"
+if [[ "${CANON:-0}" -eq 0 ]]; then
+    bad "el vocabulario canonico no se pudo leer del spec: el gate no mide nada"
+else
+    ok "vocabulario canonico leido de la autoridad: $CANON niveles"
+    awk -F'\t' '$1=="FUERA" && $2 !~ /^[0-9]+$/{print "        " $2 ": " $3}' "$WORK/vocab.txt"
+    if [[ "${FUERA:-0}" -eq 0 ]]; then
+        ok "ninguna fila usa un boundary_class fuera del vocabulario canonico"
+    else
+        bad "$FUERA valor(es) de boundary_class fuera del vocabulario canonico (van arriba)"
+    fi
 fi
 
 echo

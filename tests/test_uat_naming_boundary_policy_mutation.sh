@@ -70,10 +70,10 @@ io.open(P,"w",encoding="utf-8").write(s)
 echo "=== autofalsacion del guard de la regla 4 ==="
 
 BASE="$(run)"
-if [[ "$BASE" == "PASS=7 FAIL=0" ]]; then
-    ok "base: el guard esta verde con sus siete comprobaciones ($BASE)"
+if [[ "$BASE" == "PASS=9 FAIL=0" ]]; then
+    ok "base: el guard esta verde con sus nueve comprobaciones ($BASE)"
 else
-    bad "base: se esperaba PASS=7 FAIL=0 y se obtuvo $BASE -- no se puede falsificar sobre una base no verde"
+    bad "base: se esperaba PASS=9 FAIL=0 y se obtuvo $BASE -- no se puede falsificar sobre una base no verde"
 fi
 
 # M1: los cuatro sufijos prohibidos vuelven. Es la falsificacion que importa: el
@@ -94,7 +94,7 @@ if muta "$G" '
 import io
 P="tests/test_uat_naming_boundary_policy.sh"
 s=io.open(P,encoding="utf-8").read()
-viejo="    tokens = set(re.findall(r'"'"'[A-Z][A-Z_]*'"'"', frontera))\n    return bool(tokens & niveles)"
+viejo = "    return bool(boundary_tokens(frontera) & niveles)"
 assert s.count(viejo)==1, "no encontrado: %d" % s.count(viejo)
 io.open(P,"w",encoding="utf-8").write(s.replace(viejo,"    return any(n in frontera for n in niveles)"))
 '; then
@@ -134,9 +134,9 @@ if muta "$G" '
 import io
 P="tests/test_uat_naming_boundary_policy.sh"
 s=io.open(P,encoding="utf-8").read()
-viejo="    return bool(tokens & niveles)"
+viejo = "    return bool(boundary_tokens(frontera) & niveles)"
 assert s.count(viejo)==1, "no encontrado: %d" % s.count(viejo)
-io.open(P,"w",encoding="utf-8").write(s.replace(viejo,"    return bool(tokens) and \"IN_PROCESS\" in frontera"))
+io.open(P,"w",encoding="utf-8").write(s.replace(viejo,"    return bool(boundary_tokens(frontera))"))
 '; then
     R="$(run)"
     if [[ "$R" != "$BASE" ]]; then
@@ -185,10 +185,31 @@ io.open(P,"w",encoding="utf-8").write(s.replace(viejo,"    i = spec.find(\"### U
 fi
 restore
 
+# M7: la extraccion de tokens deja de cortar en el parentesis, con lo que la
+# prosa (`SHA-256`, `BLOCKED`, `PASS`) vuelve a contarse como nivel. Es el bug que
+# esta comprobacion nacio para evitar, y la razon de que `boundary_tokens()` este
+# en `politica.py` y no en linea dentro de un heredoc.
+if muta "$G" '
+import io
+P="tests/test_uat_naming_boundary_policy.sh"
+s=io.open(P,encoding="utf-8").read()
+viejo="    cabeza = celda.split(\"(\", 1)[0]"
+assert s.count(viejo)==1, "no encontrado: %d" % s.count(viejo)
+io.open(P,"w",encoding="utf-8").write(s.replace(viejo,"    cabeza = celda"))
+'; then
+    R="$(run)"
+    if [[ "$R" != "$BASE" ]]; then
+        ok "M7 la prosa del parentesis vuelve a contarse como nivel -> cae ($R)"
+    else
+        bad "M7 extraer del parentesis hacia atras no lo detecta nadie"
+    fi
+fi
+restore
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 if [[ $FAIL -eq 0 ]]; then
-    echo "RESULT: PASS -- las 6 mutaciones caen, ninguna se salto, y el guard quedo verde."
+    echo "RESULT: PASS -- las 7 mutaciones caen, ninguna se salto, y el guard quedo verde."
 else
     echo "RESULT: FAIL -- alguna mutacion no cayo, o no llego a aplicarse."
 fi
