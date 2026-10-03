@@ -80,6 +80,23 @@ EXCEPTIONS: dict[str, str] = {
     "test_release_bump_derivation.sh": (
         "deriva la version consultando el remoto; requiere red."
     ),
+    "test_doctor_identity_states.sh": (
+        "REQUIERE DOS BINARIOS COMO ARGUMENTOS y no es un `bash test.sh` sin "
+        "mas: con `${1:?uso: ...}` sale por argv con codigo 1, que es un rojo "
+        "que no mide nada. Los dos binarios tienen que llevar procedencia "
+        "distinta a proposito --uno construido con SDDK_GIT_SHA (concluyente) y "
+        "otro sin ella-- porque lo que mide son los CUATRO estados de "
+        "`binary.build_identity`, y dos de ellos solo se alcanzan con dos "
+        "procedencias. Esos binarios no estan en el arbol y construir dos "
+        "release por release para ellos es un arnes que este repo todavia no "
+        "tiene. CONSECUENCIA DECLARADA, porque una excepcion es uncec "
+        "silencioso si no se dice: los cuatro estados de la identidad del "
+        "binario NO se verifican en el camino de release. Queda como "
+        "cobertura de sesion, medida a mano en el verify de "
+        "cl-doctor-build-identity (2 binarios reales, 19 comprobaciones). "
+        "Cuando exista el arnes, esta excepcion caduca y el gate lo dira, "
+        "porque una excepcion para un test que ya tiene runner es un FAIL."
+    ),
 }
 
 

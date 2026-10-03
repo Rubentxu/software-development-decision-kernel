@@ -247,7 +247,10 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_install_asset_contract.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
-             tests/test_vault_coherence_alignment.sh; do
+             tests/test_vault_coherence_alignment.sh \
+             tests/test_build_identity_policy.sh \
+             tests/test_kmt_canonical_meaning.sh \
+             tests/test_release_build_identity.sh; do
         if [ -x "$t" ]; then
             bash "$t" >/dev/null \
                 || die "shell test failed: $t (run manually for details)"
@@ -299,6 +302,25 @@ if [ "$SKIP_TESTS" = "0" ]; then
     #     INC-DEBT-054 (`doctor --strict` salia con exit 0 sin medir nada). Un
     #     PASS que no midio nada es peor que un gate ausente, porque ademas
     #     tapa el defecto. Medidos: 0s, PASS, 1 skip.
+    #
+    # Session-69s: `test_gate_coverage.py` —que corre en este mismo bucle y
+    # cuyo fallo hace `die`— estaba en ROJO desde antes de este trabajo, con
+    # cuatro tests sin runner y sin motivo. Medido antes de tocar nada:
+    # `test_build_identity_policy.sh` PASS=8, `test_kmt_canonical_meaning.sh`
+    # PASS=6 y `test_release_build_identity.sh` PASS=22, los tres hermeticos y
+    # con forma de `bash test.sh`; asi que los tres entran aqui. El cuarto,
+    # `test_doctor_identity_states.sh`, NO: exige dos binarios como argv con
+    # procedencia distinta a proposito, porque lo que mide son los cuatro
+    # estados de `binary.build_identity` y dos de ellos solo se alcanzan asi.
+    # Con `${1:?uso: ...}` sale por argv con codigo 1, o sea un rojo que no mide
+    # nada, asi que va a EXCEPTIONS con el motivo escrito -- incluida la
+    # consecuencia: los cuatro estados de la identidad NO se verifican en el
+    # camino de release hasta que exista el arnes que construya los dos
+    # binarios. Una excepcion sin la consecuencia declarada es un hueco
+    # silencioso, que es lo que este bloque lleva siete sesiones evitando.
+    # MEDIDO, no supuesto: con esto el gate de cobertura da
+    # `SIN runner y SIN motivo: 0` y `RESULT: PASS`. Antes de este cambio
+    # cualquier `bash scripts/release.sh` moria en 1b.
 
     # INC-DEBT-055-adjacent (session-65j): el guard de abajo estaba referenciado
     # SOLO por su propio test de fixtures. `ci.yml:46` hace `shellcheck` de
@@ -629,7 +651,81 @@ if [ "$BUILD_TARGET" = "x86_64-unknown-linux-musl" ]; then
          (musl-tools / CC=musl-gcc) antes de reintentar."
     fi
 fi
-ok "binary: $BIN ($("$BIN" --version)), target=$BUILD_TARGET"
+# `sddk --version` escribe en STDERR, no en stdout. Con `$(...)` a secas esta
+# linea imprimia la version vacia -- `binary: /ruta (), target=...` -- en la
+# unica linea que dice que binario se va a publicar. El mismo defecto se
+# encontro el dia antes en el guard de reconciliacion (INC-DEBT-060) y aqui
+# seguia vivo: es la clase de error que aparece en dos sitios porque nadie
+# ejecuto la linea y la leyo.
+ok "binary: $BIN ($("$BIN" --version 2>&1)), target=$BUILD_TARGET"
+
+# --- 3b. reconciliación del artefacto contra la autoridad ---
+
+# INC-DEBT-060. El guard contrasta lo que `sddk cycle list` DECLARA contra las
+# filas que la autoridad tiene para el proyecto que el propio producto declara.
+# Es la unica comparacion con dientes, porque el total declarado sale del mismo
+# vector que el comando emite y por eso `declarado == emitido` no puede fallar.
+#
+# POR QUE AQUI Y NO EN 1b. La 1b corre los shell tests ANTES de compilar, luego
+# en ese punto no hay binario de release: el guard fallaria cerrado y mataria
+# la release por un binario que todavia no existe. Este paso corre DESPUES del
+# build, con lo que el guard reconcilia el ARTEFACTO QUE SE VA A PUBLICAR, que
+# es mas fuerte que reconciliar un binario de desarrollo: es el mismo criterio
+# que el gate de R1 pide para cerrar INC-DEBT-064.
+#
+# NO va detras de --skip-tests a proposito. --skip-tests dice "ya he corrido los
+# gates"; esto no es un gate de codigo, es una comprobacion del artefacto, y es
+# exactamente la que 9b no se deja saltar con --skip-install por el mismo motivo:
+# publicar un binario cuya enumeracion no cuadra con su almacenamiento es
+# exactamente el defecto que este guard existe para que no llegue a un tag.
+#
+# El log cae en $RELEASE_SCRATCH, que ya existe (linea 83) y que el trap de la
+# linea 86 limpia: no hace falta mkdir, el directorio esta. Ademas TMPDIR apunta
+# ahi, con lo que los temporales del propio guard caen en el scratch de la
+# release y no en el /tmp del operador.
+#
+# Y por eso aqui caen los DOS, no solo el guard. Se conecto primero solo el
+# guard, con el argumento de que su autofalsacion cuesta 36,5 s contra 3,6 s
+# --medido con `time`-- y que re-falsar un guard que no ha cambiado no vale esa
+# espera. `tests/test_gate_coverage.py` lo veto por la via correcta: sin runner
+# y sin motivo en EXCEPTIONS es un FAIL, y los motivos que esa lista acepta son
+# SEMANTICOS --un test que pasa sin medir, o uno que necesita contenedores--, no
+# "es lento". Cuesta 40 s a una release que ya compila el workspace entero y
+# construye en release: LA FALSACION OPCIONAL ES UNA FALSACION QUE NO CORRE, y
+# una autofalsacion que solo corre cuando alguien edita el guard es una
+# autofalsacion que envejece sin que nadie lo note.
+step "3b/14 — reconciliación del artefacto contra la autoridad (INC-DEBT-060)"
+RECON_LOG="$RELEASE_SCRATCH/reconciliation.log"
+if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation.sh \
+        >"$RECON_LOG" 2>&1; then
+    ok "reconciliación del artefacto: $(grep -m1 '^PASS=' "$RECON_LOG" || echo 'PASS')"
+else
+    tail -25 "$RECON_LOG" >&2
+    die "la reconciliacion del artefacto no pasa, y el motivo concreto esta en
+         $RECON_LOG (que se imprime arriba). El motivo puede ser que el binario
+         declare una poblacion que su almacenamiento no tiene, o que no pueda
+         ejecutar la comprobacion; NO se afirma aqui cual de los dos es, porque
+         este bloque no lo midio -- solo midio que el guard no quedo en verde.
+         Ver tests/test_cycle_list_total_reconciliation.sh e INC-DEBT-060."
+fi
+
+# La autofalsacion va en la MISMA release y no como excepcion, por el parrafo
+# de arriba. Le pide al guard que siga distinguiendo el caso bueno de los nueve
+# modos de mentira, y exige que cada comprobacion siga siendo load-bearing por
+# separado: sin esto el guard puede rechazar las nueve por efecto colateral y
+# seguir pareciendo que vigila.
+step "3c/14 — autofalsación de la reconciliación (cada comprobación con dientes)"
+RECON_MUT_LOG="$RELEASE_SCRATCH/reconciliation_mutation.log"
+if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation_mutation.sh \
+        >"$RECON_MUT_LOG" 2>&1; then
+    ok "autofalsación: $(grep -m1 '^PASS=' "$RECON_MUT_LOG" || echo 'PASS')"
+else
+    tail -25 "$RECON_MUT_LOG" >&2
+    die "la autofalsacion de la reconciliacion falla: o el guard dejo de
+         distinguir el caso bueno de los modos de mentira, o una de sus
+         comprobaciones dejo de ser load-bearing, que es codigo muerto.
+         Log: $RECON_MUT_LOG"
+fi
 
 # --- 4. manifest ---
 

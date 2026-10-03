@@ -140,6 +140,29 @@ conserva como estaba y esta va delante.
 | «`dev doctor` no lo invoca» | **CADUCADO** — cableado en `a5c18b97`; `doctor` ya publica `binary.build_identity` |
 | «el binario del PATH sigue obsoleto» | **VIGENTE**, y ahora con su distancia exacta |
 
+**Addendum session-69s: los contratos de identidad ahora son gates de release.**
+Tres tests que median esta misma condición —`test_build_identity_policy.sh`
+(PASS=8), `test_release_build_identity.sh` (PASS=22) y
+`test_kmt_canonical_meaning.sh` (PASS=6)— estaban **sin runner**, y
+`tests/test_gate_coverage.py`, que corre en el paso 1b de `release.sh` y cuyo
+fallo hace `die`, estaba **en rojo por eso**. Consecuencia medida: **`bash
+scripts/release.sh` moría antes de compilar.** Los tres están cableados ahora, y
+el gate de cobertura da `RESULT: PASS` con 0 tests sin runner.
+
+**Y queda una pieza sin verificar en el camino de release, y se declara en vez
+de omitirse:** los **cuatro estados** de `binary.build_identity`
+(`test_doctor_identity_states.sh`) **no** corren en release. Exige dos binarios
+como argv con procedencia distinta a propósito, y ese arnés no existe todavía; está
+en `EXCEPTIONS` de `test_gate_coverage.py` con el motivo y con la consecuencia
+escritos. Se midieron a mano en el verify de `cl-doctor-build-identity` (2 binarios
+reales, 19 comprobaciones), pero **eso es cobertura de sesión, no de pipeline.**
+
+**Severidad sin cambio: `high`.** Conectar los contratos al release reduce la
+probabilidad de que un artefacto con identidad rota llegue a un tag, pero **no
+toca la condición**: el binario del `PATH` sigue obsoleto, y mientras la release
+esté bloqueada lo seguirá estando. Un remedy que se acerca al cierre sin
+alcanzarlo es exactamente el estado que esta deuda describe desde su título.
+
 **La distancia, que el documento solo expresaba en días:** el binario instalado
 es de `90f16ad2` (**2026-10-01 21:10:43 CEST**, construido a las 21:17:29) y
 `HEAD` es `a2b0bd13`: **202 commits de distancia**. `v2.5.2` se publicó a las

@@ -320,7 +320,61 @@ apartada, o una segunda autoridad de lectura— y **entonces** habrá algo que
 reconciliar y el guard tendrá sentido. **El guard de `060` no espera a esa decisión
 y no la suplanta.**
 
-### 6.3 Lo que este guard **no** demuestra, escrito para que no se lea al revés
+### 6.3 El guard ya está en el camino de publicación, y eso destapó un gate rojo
+
+**Un guard que no ejecuta nadie no vigila: informa.** Los dos tests van cableados
+en `scripts/release.sh`, y **no en el paso 1b**: el 1b corre *antes* de compilar,
+así que ahí no hay binario de release y el guard fallaría cerrado matando la
+release por un binario que todavía no existe. Van en dos pasos nuevos **después
+del build** (`3/14`), con lo que reconcilian **el artefacto que se va a
+publicar**, que es más fuerte que reconciliar un binario de desarrollo:
+
+| Paso | Qué corre | Medido |
+|---|---|---|
+| `3b/14` | el guard, contra `$BIN` | **3,6 s**, `PASS=16 FAIL=0` |
+| `3c/14` | su autofalsación, contra `$BIN` | **36,5 s**, `PASS=10 FAIL=0` |
+
+**Por qué la autofalsación entra y no va de excepción.** Se conectó primero solo
+el guard, con el argumento de que 36,5 s contra 3,6 s no compensa re-falsar un
+guard que no ha cambiado. `tests/test_gate_coverage.py` lo vetó **por la vía
+correcta**: sin runner y sin motivo en `EXCEPTIONS` es un FAIL, y los motivos que
+esa lista acepta son **semánticos** —un test que pasa sin medir, o uno que
+necesita contenedores—, no «es lento». Una release que ya compila el workspace
+entero y construye en release puede pagar 40 s: **la falsación opcional es una
+falsación que no corre**, y una autofalsación que solo se ejecuta cuando alguien
+edita el guard envejece sin que nadie lo note. La excepción preferida era
+precisamente el atajo que este repo lleva siete sesiones rechazando.
+
+**Y el veto trajo un hallazgo que no estaba en el plan: el gate de cobertura
+estaba en ROJO, y su fallo hace `die`.** `test_gate_coverage.py` corre en el 1b,
+así que **`bash scripts/release.sh` moría antes de compilar** — con cuatro tests
+sin runner. Medidos uno a uno antes de tocar nada: `test_build_identity_policy`
+**PASS=8**, `test_kmt_canonical_meaning` **PASS=6** y
+`test_release_build_identity` **PASS=22**, los tres herméticos y con forma de
+`bash test.sh`, luego los tres entran al bucle. El cuarto,
+`test_doctor_identity_states`, **no**: exige **dos binarios como argv con
+procedencia distinta a propósito**, porque lo que mide son los cuatro estados de
+`binary.build_identity` y dos de ellos solo se alcanzan así; con
+`${1:?uso: …}` sale por argv con código 1, o sea un rojo que no mide nada. Va a
+`EXCEPTIONS` con el motivo escrito **y con la consecuencia declarada**: los
+cuatro estados de la identidad **no se verifican en el camino de release**
+mientras no exista el arnés que construya los dos binarios. Una excepción sin su
+consecuencia escrita es un hueco silencioso.
+
+**El gate de cobertura queda en `RESULT: PASS`, con `SIN runner y SIN motivo: 0`
+sobre 47 tests** (41 con runner, 6 excepcionados con motivo). Antes de este
+cambio eran 5 sin runner, y uno era el guard nuevo de esta sesión.
+
+**Un defecto de `release.sh` que se vio al medir esto y que no estaba buscado:**
+la línea `ok "binary: $BIN ($("$BIN" --version))"` imprimía la versión **vacía**,
+porque `sddk --version` escribe en **stderr**. Es el mismo defecto que se
+corrigió en el guard unas horas antes, **y seguía vivo en el script de
+publicación**: la única línea que dice qué binario se va a publicar no lo decía.
+Dos sitios con el mismo error porque nadie ejecutó la línea y la leyó, que es la
+mitad de por qué existe un gate que *mida* en vez de un guard que afirme.
+
+### 6.4 Lo que estos guards **no** demuestran, escrito para que no se lea al revés
+
 
 - **No demuestra que el ledger real de este repo esté reconciliado.** Mide
   fixtures cuya verdad el propio guard conoce. El contraste contra el ledger real
