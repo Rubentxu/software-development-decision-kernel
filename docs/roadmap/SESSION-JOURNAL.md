@@ -11864,3 +11864,70 @@ elevar a decisión del operador **una sola pregunta de inventario**, que es la q
 módulos públicos sin consumidor se declaran deuda uno a uno, o se agrupan bajo
 una entrada de inventario con la medición como evidencia?». La pregunta de
 `HostEvent` sigue bloqueando C3m.1 y no se deduce leyendo código.
+
+### docs(debt): INC-DEBT-065, y por qué la deuda de un módulo sin consumidor no puede abrir 24 fichas
+
+Decisión del operador sobre la medición de §3ter: **una entrada de inventario
+con la medición como evidencia**, no una ficha por módulo. Registrada como
+**INC-DEBT-065** (`medium`/`P2`, `open`, cluster `CL-SPECULATIVE-GENERALITY`).
+
+**24 de los 131 módulos públicos de `sddk-engine` no los consume ningún fichero
+de producto ni de pruebas.** `reactive_verify` está entre ellos. **Ninguno es un
+módulo directorio**: los 23 que son directorio con `mod.rs` están todos
+conectados, de modo que la superficie grande y estructural del engine está bien
+y lo que falta son 24 módulos planos.
+
+**La severidad es `medium` y no `high`, y la elección es deliberada y está
+escrita en la entrada.** 24 módulos sin consumidor no degradan por sí solos
+ninguna funcionalidad, así que declararlos `high` sería inflar el inventario con
+una cifra que no se sostiene. **El defecto registrado es la ausencia del
+registro**, no los 24 módulos. Y la entrada dice explícitamente que
+`reactive_verify` sí es de otra gravedad **y no se infla aquí para no contaminar
+la medición**: tiene su propia vía y su propio bloqueo.
+
+**Por qué inventario y no 24 fichas, y no es una preferencia de estilo:** es la
+misma clase que `INC-AUDIT-S14-TEST-PORTS-UNCONSUMED` —«9 traits del SPI de
+SPEC-043, implementados dentro del crate pero sin consumidor externo aún»—. El
+cluster `CL-SPECULATIVE-GENERALITY` ya existía y es el correcto. 24 filas que
+nadie puede comparar entre sí no son un inventario; una entrada con la medición
+permite **ver el conjunto, detectar cuándo cambia, y agruparlo con lo que ya
+estaba registrado**.
+
+**Lo que la entrada se niega a decir, y por eso es útil.** Que «sin consumidor»
+es «código muerto», y hay un caso **dentro de la propia lista** que lo refuta:
+`gate_evaluator` no lo consume nada y el comando `sddk cycle evaluate-gate`
+existe y funciona, porque resuelven los gates por caminos distintos — el módulo
+evalúa `debt-severity-assigned` y `debt-priority-assigned` sobre `DebtReport`
+(`gate_evaluator.rs:26,29`) y el comando va por `GateEvaluationInput`.
+**Dos cosas que comparten nombre sin relación**, el mismo patrón que llevó
+`KMT` a ADR-0154. Y los 10 «solo tests» se registran **aparte**, porque su
+código corre y lo que no existe es un comando que lo alcance: reportarlos igual
+que «nadie los mira» sería el mismo error de medir mal. De entre ellos,
+`dynamic_expansion` y `ext_outcome` son los que C3n.2 lista como capacidades
+certificables (*S4 dynamic expansion*): **una capacidad que se certifica desde
+pruebas y no desde un comando es una certificación que nadie puede repetir por
+el camino que la usa.**
+
+**Falsificación de la entrada contra la salida real del instrumento:** las dos
+listas se compararon por parsing del bloque de código de la entrada y del bloque
+salida por el script, en las dos direcciones — 24 y 10 exactos, **0 medidos sin
+citar y 0 citados sin medir**. La primera versión de esa comparación dio
+resultados sin sentido (34 y 10) porque el parser no entendía el bloque de dos
+columnas: **un comparador que no se autocomprueba también miente**, y el primer
+resultado de esta comprobación fue precisamente eso. Comprobado además a mano
+que `sddk cycle evaluate-gate` existe (`cycle.rs:516`, `cycle.rs:1158`) y que los
+dos nombres de gate citados están en el módulo.
+
+**Lo que NO se hace:** no se borra nada, no se infla la gravedad, y no se cierra
+`reactive_verify` con este documento. Una entrada de inventario no es una lista
+de borrables, y borrar módulos públicos por no tener consumidor interno rompería
+a cualquier adopter externo sin saberlo.
+
+**HostEvent sigue sin respuesta, y no se inventa.** La segunda pregunta del
+cuestionario se resolvió por **timeout**, no con respuesta del operador, y la
+opción elegida («lo defines y yo lo implemento») no trae el contenido que la
+desbloquea: *qué* superficie produce el evento. Fabricar un productor de
+`HostEvent` sería inventar la decisión de producto que el STOP 1 declara que no
+se deduce leyendo código, y construir encima un KMT alimentado por un productor
+inventado es exactamente la forma de INC-DEBT-064. **C3m.1 sigue en `NOT_READY`
+y no se mueve.**
