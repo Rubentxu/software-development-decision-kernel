@@ -54,7 +54,7 @@ Y los 41 se reparten así:
   `specVersion`, `payloadPath`, `outputSignature`, `tlogUpload`, `camelCase`.
   Son nombres de campo de JSON, flags de `gh release` y prosa inglesa — el
   repo es bilingüe y ese uso es correcto.
-- **Cinco corruptiones reales**: `puedeAsociar` (ADR-0148:67),
+- **Cinco corruptiones reales**: `puedeAssociar` (ADR-0148:67) — **lo corrupto es la `A` mayúscula**, y el resto de la palabra es legítimo. Este documento citaba antes `puedeAsociar`: **la propia tabla de evidencia era la errata**. No se detectó leyendo, sino porque el `grep` que verificaba la cita no encontraba la palabra que el documento decía haber medido, y una cita que no se puede reproducir es una cita falsa,
   `comoLatest` (INC-DEBT-021:309), `seResolved` (INC-DEBT-040:251),
   `queMHAgent` (INC-DEBT-043:62), `estaINC` (INC-DEBT-046:114).
 
@@ -75,7 +75,7 @@ se revisó a mano. Un guard que nunca falla es un informe que nadie lee, que es 
 defecto que este guard vino a cerrar.
 
 Y a diferencia de INC-DEBT-057, aquí **la palabra original sí es a veces
-reconstruible** (`puedeAsociar` → «puede asociar» es inequívoco) y a veces no
+reconstruible** (`puedeAssociar` → «puede asociar» es inequívoco) y a veces no
 (`queMHAgent`, `estaINC`: no hay forma de saber si el original era «MHAgent»,
 `MHC-Agent` u otra cosa). Una regla de corrección automática sobre esa clase
 fabricaría texto normativo en los casos no reconstruibles.
@@ -99,3 +99,30 @@ palabra con mayúscula incrustada que NO esté en un contexto JSON/flag y que su
 ventana de alrededor sea mayoritariamente española. Es un clasificador, con su
 propio corpus y sus propios falsos positivos, y no es material para un guard de
 `tests/` que se ejecuta en cada commit.
+
+## Revisión de vigencia (session-69n bis 8, 2026-10-03)
+
+Una alerta de deuda sin verificar no es deuda real, así que esta clase se
+volvió a medir en el HEAD de hoy en vez de darla por buena:
+
+| corrompido | fichero:línea | sigue presente |
+|---|---|---|
+| `puedeAssociar` | `docs/architecture/adrs/ADR-0148-…md:67` | sí |
+| `comoLatest` | `docs/debt/INC-DEBT-021-…md:309` | sí |
+| `seResolved` | `docs/debt/INC-DEBT-040-…md:251` | sí |
+| `queMHAgent` | `docs/debt/INC-DEBT-043-…md:62` | sí |
+| `estaINC` | `docs/debt/INC-DEBT-046-…md:114` | sí |
+
+**5 de 5, cada una en la línea exacta que este documento cita.** La clase no
+se ha cerrado sola por el paso del tiempo, luego el criterio de la deuda sigue
+vigente y su severidad se queda donde está: `low`/`P3`, porque el remedio
+sigue dependiendo de una capacidad —detectar idioma— que el propio documento
+declara fuera del alcance de un guard de `tests/`.
+
+**Y la revisión encontró una errata en este mismo documento.** La tabla citaba
+`puedeAsociar` y el texto real es `puedeAssociar`; la diferencia es una `s`.
+No se detectó leyendo el documento, sino al **verificar la cita**: el `grep`
+que buscaba la palabra que el documento decía haber medido no encontraba
+nada, y una cita de evidencia que no se puede reproducir es una cita falsa.
+Es la misma clase de defecto que el guard de esta deuda vino a cerrar,
+hecha en su propia tabla.
