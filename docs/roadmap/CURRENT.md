@@ -1,5 +1,48 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69n bis 3, 2026-10-03): abierto `cl-build-identity`, el remedio de INC-DEBT-064, con el SCOPE ya reescrito porque la medición desmontó su propia propuesta.** `HEAD` = `86dea47d` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La propuesta original del SCOPE era «un `build.rs` embebe el SHA del checkout». Se midió en un crate mínimo con el `build.rs` real, y los cuatro escenarios son fallos:**
+
+| Escenario | Resultado medido |
+|---|---|
+| sin `.git` | exit 0, `sha=unknown source=absent` — degrada bien |
+| con `.git`, sin `rerun-if-changed` | **congelada** en el primer build |
+| con `rerun-if-changed` solo sobre `.git/HEAD` | **congelada**: `.git/HEAD` no cambia de contenido al commitear |
+| con el ref resuelto también, y `packed-refs` | **congelada e incorrecta**: declaraba `9b3f0076` con el HEAD en `247e808d` |
+
+**El cuarto decide el diseño:** un detector que emite un SHA obsoleto sin señal es peor que no tener detector, porque su salida es indistinguible de la correcta. **La identidad la fija quien lanza el build** —`SDDK_GIT_SHA`—, y el `build.rs` queda como respaldo degradado que declara `unknown` con procedencia `absent`. **STOP 6** prohíbe usar la variante `git` para decidir nada: existe como dato de diagnóstico.
+
+**`--version` no se toca, y el motivo es medido:** `install.sh:416` hace `awk '{print $NF}'` sobre su salida, y añadir el SHA al final haría que el último campo fuera `)` — el instalador guardaría un paréntesis como versión.
+
+**El ciclo se abrió con `--path b-direct` y el trabajo de diseño no estaba hecho. Está escrito.** Su única transición de avance es `phase.build.complete.b-direct`, sin fases de diseño. Se intentó superseder y **falló cerrado** con `ADMISSION: approval required before mutating 'cycle_state'`; **no se forzó**, porque forzar una aprobación que el operador no ha dado es el atajo que esta serie critica. Lo que se hizo fue **denegar la aprobación que yo mismo había solicitado**, y `runtime_state: approval-waiting` desapareció.
+
+**Y el instrumento de requisitos llevaba un PASS falso.** `04-req-testable.py` daba `guards=0` porque **mi PRE-FLIGHT** usaba otra forma de declararlos; leído el caso bueno, corregido el documento (4 objetivos, 6 guards, exit 0). Pero **al verificar ese OK**, con la fila de R5 puesta a `| R5 |  |  |` el instrumento seguía reportando `O4 cubierto por ['R4','R5']` y **exit 0**: buscaba el **nombre** del guard y no miraba el contenido. Reparado y falsificado en los dos sentidos; el ciclo forge sigue en verde, luego no es regresión.
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| **`cl-build-identity`** | **`OPEN/build`, `B-direct`, 0 gates, groundwork commiteado** |
+
+`cl-build-identity` tiene SCOPE-CONTRACT y PRE-FLIGHT, **sin implementación y por eso sin gate evaluado**: no se gradúa lo que no está hecho.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3 y de los tres ciclos en `RELEASE_PENDING`, del operador.
+2. **Implementar `cl-build-identity`**: el `build.rs` con degradación, la superficie propia, el estado sucio, y la comparación que dice `retrasado` con dos binarios reales.
+3. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+4. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+5. **INC-DEBT-060**: solo las 79 filas `__spine_import__`, y si su severidad baja a `medium`.
+6. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+7. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+8. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+
+---
+
 **Estado (session-69n bis 2, 2026-10-03): el binario del PATH va 1,24 días por detrás del código y declara la misma versión. La comprobación que todo el mundo hace sale verde y no dice nada.** `HEAD` = `289bdb98` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **La regla que sale de aquí, y que se aplica desde ya:** mientras haya ventana declarada-pero-no-publicada, **las mediciones de comportamiento se hacen con el binario construido del repo** (`CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets cargo build --release --bin sddk`), **nunca con el del PATH**. No es una preferencia: el número de versión no dice qué contiene.

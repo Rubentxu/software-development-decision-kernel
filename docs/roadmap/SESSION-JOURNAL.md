@@ -11021,3 +11021,126 @@ sesión verify, y dos en el documento de INC-DEBT-064 (cinese y cirílico). Más
    `False`, la medición es sobre el código viejo y no vale.
 3. Lo que avanza sin decisión del operador es la propuesta (1) de INC-DEBT-064:
    el check en `dev doctor`.
+
+---
+
+## Session-69n (bis 3) — 2026-10-03 — groundwork de `cl-build-identity`
+
+**Baseline:** `8e262eb8` (publicado) · **HEAD al cerrar:** este commit
+documental. Rama `main`.
+
+**WorkItem:** el remedio de **INC-DEBT-064** — que el binario declare qué commit
+es, porque hoy el número de versión no lo dice y dos binarios con el mismo
+número son indistinguibles.
+
+### El ciclo se abrió con el path equivocado, y está escrito
+
+`cycle start --path b-direct` abre en `OPEN/build`, y su única transición de
+avance es `phase.build.complete.b-direct` con el gate `implementation-complete` y
+el requisito `implementation-receipt`. **No hay fases de explore, specify,
+design ni plan.** Abrí un ciclo cuyo trabajo de diseño no estaba hecho, y lo
+decidí antes de mirar la frontera.
+
+La tentación fue superseder y abrir el sucesor con un path de fases. **Se
+intentó y falló cerrado**: `ADMISSION: approval required before mutating
+'cycle_state'`. **No se forzó.** Forzar una aprobación que el operador no ha
+dado es exactamente el atajo que esta serie de ciclos critica, y la autoridad
+quedaría diciendo que alguien aprobó algo que nadie aprobó.
+
+Lo que se hizo en su lugar: **denegar la aprobación que yo mismo había
+solicitado**, con la capacidad `surface.cycle_state#cycle_supersede` y la razón
+escrita. `runtime_state: approval-waiting` desapareció y el ciclo quedó en
+`OPEN/build` limpio.
+
+**Por qué no hace falta el sucesor.** El path con fases daría sobre todo la
+**falsificación de los documentos de diseño**. Eso se puede hacer igual sin el
+path: los instrumentos se corren contra el SCOPE cuando toque. El guard no es el
+workflow, es el instrumento.
+
+### La medición desmontó la propuesta original del SCOPE
+
+La primera versión del SCOPE proponía, literal, «un `build.rs` embebe el SHA del
+checkout». Se construyó **un crate mínimo con el `build.rs` real** y se midió en
+cuatro escenarios. Los cuatro son fallos:
+
+| Escenario | Resultado |
+|---|---|
+| sin `.git` | exit 0, `sha=unknown source=absent` — degrada bien |
+| con `.git`, sin `rerun-if-changed` | **congelada** en el primer build: cargo cachea el script |
+| con `rerun-if-changed` solo sobre `.git/HEAD` | **congelada**: `.git/HEAD` no cambia al commitear, sigue siendo `ref: refs/heads/<rama>` |
+| con el ref resuelto también, y `packed-refs` | **congelada e incorrecta**: declaraba `9b3f0076` con el HEAD en `247e808d` |
+
+**El cuarto decide el diseño.** Un detector que emite un SHA obsoleto sin señal
+es peor que no tener detector, porque su salida es indistinguible de la
+correcta.
+
+**El diseño que sale:** la identidad la fija **quien lanza el build**, no el
+script. `SDDK_GIT_SHA` es la fuente de verdad; el `build.rs` es respaldo
+degradado y declara `unknown` con procedencia `absent` cuando nadie la fija. La
+procedencia acompaña siempre al valor, y **STOP 6 prohíbe usar la variante `git`
+para decidir nada**: existe como dato de diagnóstico.
+
+El texto original del SCOPE se conserva en su §10 sin borrar, porque explica por
+qué el documento se reescribió.
+
+### Y el instrumento de requisitos llevaba un PASS falso
+
+`04-req-testable.py` dio objetivos=4 y **guards=0**. El defecto no era suyo: mi
+PRE-FLIGHT usaba una tercera forma de declarar guards. Antes de tocar nada se leyó
+el caso bueno, el PRE-FLIGHT de `cl-release-forge-testability`, donde el formato
+es `| Rn | qué fija | cómo se rompe |` más un mapa `| **On** … | Rn, Rm |`.
+Corregido el documento: **4 objetivos, 6 guards, exit 0**.
+
+Pero **al verificar ese OK**, el instrumento dijo PASS sobre un guard que no
+puede caer: con la fila de R5 puesta a `| R5 |  |  |` seguía reportando
+`guards=['R1'..'R6']` y `O4 cubierto por ['R4','R5']`, **exit 0**. La búsqueda
+era `^\|\s*(R\d+)\s*\|`, que encuentra el **nombre** del guard y no mira el
+contenido.
+
+Es el mismo modo de fallo que el falsificador ciego de `cl-release-forge-testability`:
+**un instrumento que dice OK sin mirar lo que dice.** Y aquí es peor que no
+detectar, porque un PASS falso sobre una ausencia es evidencia falsa, y este
+framework mide por evidencia.
+
+Reparado: se exige que **ambas** celdas tengan contenido, y hay comprobación
+nueva que nombra los guards vacíos. Falsificado en los dos sentidos — con R5
+vacío cae (`NO TESTABLES: 1`, exit 1), con el documento bueno pasa (exit 0) — y
+el ciclo forge sigue en 4 objetivos y 5 guards, luego no es regresión.
+
+### El `--version` no se toca, y el motivo está medido
+
+`install.sh:416` hace `printf '%s' "$out" | awk '{print $NF}'` sobre la salida de
+`--version`. Hoy el último campo de `sddk 2.5.3` es `2.5.3`; añadir el SHA
+**al final** haría que el último campo fuera `)` y el instalador guardaría un
+paréntesis como versión. El comentario de la línea 390 documenta que esa línea
+ya dio un fallo parecido en session-16. Por eso STOP 2 existe y la identidad va
+en superficie propia.
+
+### Estado
+
+Ciclo `p-63676b11dc0ef88f/cl-build-identity` en **`OPEN/build`**, `B-direct`,
+sequence 1, **0 gates**, lease de `rubentxu` con token 1. Groundwork:
+SCOPE-CONTRACT y PRE-FLIGHT commiteados. **Sin implementación**, y por eso
+**sin gate evaluado**: no se gradúa lo que no está hecho.
+
+Los otros tres ciclos siguen en `RELEASE_PENDING` esperando la clave KMS.
+Workspace **2.5.3** sobre tag remoto `v2.5.2` → la siguiente release **es
+2.5.3**. **No bumpear por conveniencia.**
+
+### Contaminación
+
+Cuatro más, todas detectadas antes de commitear: dos en el SCOPE (`happened`,
+`quienheckword`, `seJwrites`, `nuncaaccompaned` — esta última en el PRE-FLIGHT) y
+dos en el mensaje de commit. **El scanner no cubre la segunda clase**: una
+palabra inglesa suelta en prosa española, o un token pegado dentro de una palabra.
+Pasó `CLEAN` con las cuatro dentro, y hubo que buscarlas aparte.
+
+### Primer paso de la sesión siguiente
+
+1. Publicar lo commiteado; la ruta admite por **A-v2**, sin `--no-verify` y sin
+   bumpear.
+2. **Implementar `cl-build-identity`**: el `build.rs` con degradación, la
+   superficie propia que expone identidad y procedencia, el campo de estado
+   sucio, y la comparación que dice `retrasado` con dos binarios reales.
+3. El falsificador tiene que detectar **los cuatro escenarios del §3 del SCOPE**,
+   no solo el que el arreglo arregla.
