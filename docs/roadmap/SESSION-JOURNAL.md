@@ -11225,3 +11225,70 @@ limpio justo por contarla.
 (`sddk cycle lock acquire --owner rubentxu`, anota el `fencing_token` nuevo) y
 ejercer `dev build-id --check` como lo usaría un gate real, antes de graduar
 ningún gate de la verify.
+
+---
+
+## session-69n bis 5 — 2026-10-03 — el punto que faltaba para que el remedio de INC-DEBT-064 pudiese funcionar
+
+**Baseline / HEAD.** `HEAD` = `c30dcf89` == `origin/main`; este commit documental
+es posterior y no es evidencia de ese SHA. Workspace **2.5.3 declarada, no
+publicada**; la siguiente release sigue siendo 2.5.3.
+
+**WorkItem.** `p-63676b11dc0ef88f/cl-build-identity` sigue en `OPEN/verify`; lo
+de esta biseca es la concernia que el propio ciclo dejó declarada, más la
+sobreafirmación del changelog.
+
+**Lo hecho.** `scripts/release.sh` mide el SHA con `git rev-parse HEAD`, lo
+valida con el mismo predicado que `is_hex_sha` del `build.rs`, comprueba la
+suciedad con el umbral correcto, y exporta `SDDK_GIT_SHA` y
+`SDDK_BUILD_DIRTY` antes del build. Sin esto, el binario publicado declaraba
+`source: git` y `--check` no salía nunca de `unknown`: el detector no tenía
+dónde fallar en el caso que motiva la deuda.
+
+**Sobreafirmación corregida.** El changelog decía «cierra INC-DEBT-064» con el
+documento en `open`. Ahora dice «avanza». Es la misma clase de mentira que el
+propio documento denuncia.
+
+**Por qué `open`.** Tres razones concretas, todas en el documento de deuda: el
+binario del PATH sigue obsoleto hasta que haya release (bloqueada por la clave
+KMS), la fase verify está abierta, y `dev doctor` no invoca todavía
+`build-id --check`.
+
+**El guard falló tres veces seguidas, las tres por no mirar el producto.**
+Copia del predicado → mutación indetectable; regex gloton que se llevó media
+`release.sh` a la función; extracción sin ancla que cogió el `grep -E` de la
+línea 418 en vez del suyo. Quinta vez en la serie que un guard resulta ciego.
+Y un detalle que también era defecto: el borrado del temporal encadenaba un
+`|| rm -rf` como alternativa al trash, que es el atajo prohibido por AGENTS.md y
+además silencioso.
+
+**UAT observado / no ejecutado.** No hay matriz UAT nueva: la fase verify del
+ciclo es la que debe ejecutarla. Observado aquí:
+`test_release_build_identity.sh` PASS=22 FAIL=0 con tres mutaciones aplicadas
+al source real, shellcheck sin avisos en los ficheros tocados, `bash -n` OK,
+changelog PASS=71 FAIL=0, índice de deuda PASS=12 FAIL=0, scanner CLEAN.
+**NOT_RUN**: la ruta forge contra un GitHub real, y todo lo que exige la clave
+KMS.
+
+**Bloqueos.** Ninguno técnico. Los del operador sin cambios: clave KMS,
+INC-DEBT-050, 061, 060, 063, 049, y la publicación del harness
+`Pipelinek-Test-Hardness`.
+
+**Riesgos.** (a) `dev doctor` no invoca el detector, luego INC-DEBT-064 sigue
+abierta aunque el mecanismo exista — es la pieza que falta. (b) El umbral de
+ficheros sin seguimiento es más estricto que el preflight solo para lo que entra
+en el binario, a propósito; si el operador quiere el criterio del preflight
+entero, es un cambio de contrato del gate de release y suya. (c) El lease se
+libera al cambiar de fase y readquirir incrementa el `fencing_token`.
+
+**Contaminación de redacción, cuatro casos en esta biseca, todos corregidos
+antes de commitear.** El scanner no cubre la segunda clase: un punto colado en
+medio de un verbo en `STATE.yaml`, y dos palabras inglesas o pegadas en
+comentarios y en el mensaje de commit. Más **dos CJK colados mientras
+intentaba describirlos** en este mismo párrafo, que es exactamente la razón por
+la que un diario no debe copiar la corrupción que denuncia: decir el síntoma es
+una forma de reproducirlo. Los caracteres no se reproducen aquí.
+
+**Primer paso preciso de la sesión siguiente.** Readquirir el lease
+(anotando el `fencing_token` nuevo) y ejercer `dev build-id --check` como lo
+usaría un gate real, antes de graduar ningún gate de la verify.

@@ -1,4 +1,41 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69n bis 5, 2026-10-03): el punto que faltaba para que el remedio de INC-DEBT-064 pudiese funcionar está hecho — y la deuda sigue `open`, que no es lo mismo.** `HEAD` = `c30dcf89` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**Lo que faltaba:** `release.sh` no exportaba `SDDK_GIT_SHA`, así que `build.rs` caía al fallback `.git`, el binario publicado declaraba `source: git`, y `dev build-id --check` **no salía nunca de `unknown`**. El detector no tenía dónde fallar justo en el caso que motiva INC-DEBT-064: un binario **publicado** y obsoleto. Correcto, pero inútil.
+
+**El SHA se mide, y el predicado lo encontró el falsificador de su propio commit.** La primera versión anclaba 7 dígitos con un glob `[0-9a-f]{7}*` y **aceptaba `abc1234 (HEAD detached)`** — el `*` se come lo que venga detrás. Ahora es el mismo predicado que `is_hex_sha` en `build.rs`: 7 a 40 caracteres, todos hexadecimales.
+
+**El umbral distingue lo que rompe la identidad de lo que no.** Cambios rastreados bloquean siempre; entre los sin seguimiento solo bloquean los que entran en el binario (`Cargo.toml`, `Cargo.lock`, `crates/**`, `build.rs`), porque cargo los compila y ningún commit los identifica. Un fichero suelto en `docs/` no cambia el binario, y bloquear la release por eso sería **endurecer el gate del operador sin que nadie lo pidiera** — el preflight usa `git diff --quiet`, que no ve sin seguimiento. Medido en repos git de verdad.
+
+**Y se corrigió una sobreafirmación en el mismo commit.** El changelog decía «**cierra** INC-DEBT-064» mientras el documento seguía `open`. Es la misma clase de mentira que el documento denuncia: afirmar por el número en lugar de por el estado. Ahora dice «**avanza**», y los dos son verdaderos el mismo día.
+
+**Por qué la deuda no baja a `resolved`, en tres puntos concretos:** (a) el binario del PATH **sigue obsoleto** y lo seguirá hasta que se publique una release, bloqueada por la clave KMS; (b) la fase `verify` de `cl-build-identity` está abierta; (c) **`dev doctor` todavía no invoca `build-id --check`**, así que la detección depende de que alguien la pida. Conectar la detección al doctor es trabajo por hacer, y mientras tanto la deuda sigue siendo deuda: hay que acordarse de mirar.
+
+**El guard de esta vez falló tres formas seguidas, las tres del mismo tipo: no miraba el producto.** Llevaba una **copia** del predicado, con lo que la primera mutación no tenía nada que detectar. Al cambiarlo a extracción del source, el regex gloton se llevó desde el `if` del paso 2b hasta el `fi` mío — media lista de `release.sh` dentro de la función, y el guard rechazaba SHA válidos sin que nadie supiera por qué. Corregida a extracción por líneas, el filtro de la tercera mutación se extrajo con una búsqueda sobre el fichero entero, y `release.sh` tiene **cinco** `grep -E`: se llevó el de la línea 418, no el suyo. **Un guard que ejercita una copia no vigila el código, y uno que se ancla a la primera coincidencia mide algo distinto de lo que cree.**
+
+**Estado de la autoridad:**
+
+| Ciclo | Estado |
+|---|---|
+| `cl-release-forge-testability` | `RELEASE_PENDING`, 9 gates, sequence 7 |
+| `cl-ledger-export-total` | `RELEASE_PENDING`, 9 gates |
+| `cl-ledger-watch-total` | `RELEASE_PENDING` |
+| **`cl-build-identity`** | **`OPEN/verify`, `B-direct`, sequence 2, 1 artefacto, 1 gate `passed`** |
+| `INC-DEBT-064` | **`open`, high/P1 — con detector entregado y la condición viva** |
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3 y de los tres ciclos en `RELEASE_PENDING`, del operador.
+2. **Fase verify de `cl-build-identity`**: readquirir el lease (el `fencing_token` se incrementa) y ejercitar `--check` como lo usaría un gate real.
+3. **Cablear `build-id --check` al doctor** — es lo que convierte el detector en mecanismo en vez de en dato, y es la lección de INC-DEBT-061 aplicada donde toca: *«el arreglo no está roto, no está desplegado»* como **mecanismo**, no como dato de un caso.
+4. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+5. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+6. **INC-DEBT-060**: solo las 79 filas `__spine_import__`.
+7. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente.
+8. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+9. **La ruta forge contra un GitHub real**: `NOT_RUN`.
+
+---
 
 **Estado (session-69n bis 4, 2026-10-03): `cl-build-identity` implementado y la fase de build CERRADA — pero el detector que lo entregaba pasaba sobre un binario obsoleto, y lo encontró el producto en uso, no un test.** `HEAD` = `11c8e1d9` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
