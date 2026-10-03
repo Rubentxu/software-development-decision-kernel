@@ -377,9 +377,15 @@ mod tests {
         // 2. Sends a minimal HTTP 200 response
         // 3. Closes the connection
         let server_handle = std::thread::spawn(move || {
-            // Use a simple poll loop since listener is non-blocking.
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            for _ in 0..50 {
+            // Use a poll loop since listener is non-blocking. The budget is
+            // generous because this test runs in parallel with the rest of the
+            // workspace suite and `cargo test` schedules threads across cores:
+            // a 500 ms ceiling could expire before the client got scheduled at
+            // all, which is how this test became FLAKY (observed once in
+            // release.sh step 1, passing 3/3 in isolation and in 3 consecutive
+            // re-runs of the crate suite). The client has its own timeout, so
+            // a longer accept budget cannot hang the test.
+            for _ in 0..300 {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         received_clone.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -393,8 +399,12 @@ mod tests {
             }
         });
 
-        // Give the server socket a moment to start listening.
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // `spawn` returns with the thread already started, so this sleep is
+        // NOT waiting for the server to exist -- it is a coarse pause that
+        // happened to be long enough. It is kept only so the client does not
+        // race the very first accept poll, and it is deliberately much shorter
+        // than before: the accept loop above is the real synchronisation.
+        std::thread::sleep(std::time::Duration::from_millis(10));
 
         // Execute http.fetch against the local server via the executor's cached client.
         let executor = RealTaskExecutor::new();
