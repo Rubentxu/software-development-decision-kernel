@@ -51,9 +51,37 @@ fi
 echo "Auditing $RELEASE_SH for INC-VAULT-MIRROR-AUTO closure"
 echo "===================================================="
 
-LINE_8="$(grep -n '^step "8/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-LINE_8B="$(grep -n '^step "8b/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
-LINE_9="$(grep -n '^step "9/14' "$RELEASE_SH" | head -1 | cut -d: -f1)"
+# EL DENOMINADOR SE DERIVA, NO SE ESCRIBE — session-69s bis 12
+# ---------------------------------------------------------
+# Este guard hardcodeaba `8/14`, `8b/14` y `9/14`, y al anadir el paso 3h
+# (release.sh paso a /15) se quedo en RED sin decir nada:
+# `FAIL (a): step 8b/14 does not exist — INC-VAULT-MIRROR-AUTO is open`.
+# Es el MISMO defecto que el de test_release_tag_anchoring.sh, y el hecho de
+# que haya DOS guards con el mismo defecto dice que el problema no era de este
+# guard sino de la convencion: **un denominador escrito a mano es una segunda
+# fuente de verdad sobre el mismo numero, y las dos divergen en cuanto alguien
+# anade un paso.**
+#
+# Se deriva de release.sh, con grep -oE y no con awk match(): match() no es
+# POSIX y el awk de este sistema es mawk, y un guard que depende de una
+# extension no corre donde se ejecuta y falla como si fuera un problema de
+# datos.
+TOTAL_STEPS="$(
+    grep -oE '^[[:space:]]*step "[0-9]+/[0-9]+' "$RELEASE_SH" \
+        | grep -oE '[0-9]+/[0-9]+' \
+        | cut -d/ -f2 \
+        | sort -n \
+        | tail -1
+)"
+if [ "$TOTAL_STEPS" -lt 1 ]; then
+    echo "FAIL: no se pudo derivar el denominador de los pasos desde $RELEASE_SH"
+    exit 1
+fi
+echo "denominador derivado de release.sh: /${TOTAL_STEPS}"
+
+LINE_8="$(grep -n "^step \"8/${TOTAL_STEPS}" "$RELEASE_SH" | head -1 | cut -d: -f1)"
+LINE_8B="$(grep -n "^step \"8b/${TOTAL_STEPS}" "$RELEASE_SH" | head -1 | cut -d: -f1)"
+LINE_9="$(grep -n "^step \"9/${TOTAL_STEPS}" "$RELEASE_SH" | head -1 | cut -d: -f1)"
 # shellcheck disable=SC2034  # diagnostic only
 LINE_9_UNUSED="$LINE_9"
 
@@ -64,7 +92,7 @@ echo "step 9  at line: $LINE_9"
 # --- (a) step 8b ordering ---
 
 if [[ -z "$LINE_8B" ]]; then
-    echo "FAIL (a): step 8b/14 does not exist — INC-VAULT-MIRROR-AUTO is open"
+    echo "FAIL (a): step 8b/${TOTAL_STEPS} does not exist — INC-VAULT-MIRROR-AUTO is open"
     exit 1
 fi
 
