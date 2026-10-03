@@ -956,6 +956,76 @@ Re-evaluar únicamente:
 
 R3 Agent Experience y las partes ya sólidas de R4 no se reabren salvo regresión observada.
 
+
+### Tabla de exit gate — medida en session-69s bis 9
+
+**Evidence SHA: `87831cc5`.** Binario de HEAD, storage real, sin copia. Criterio de
+esta tabla, el mismo que en C3n.2: **una fila que no nombra un artefacto ejecutable
+no se re-certifica; se declara no re-certificable, y eso ya es un veredicto.**
+
+| Fila | Qué cita como evidencia | ¿Ejecutable en HEAD? | Medido | Veredicto |
+|---|---|---|---|---|
+| `R0` contexts | `09-09-CONFORMANCE-RECEIPT` + commit `0c2ca56` | el commit resuelve; el receipt vive en `docs/history/legacy-packages/…`, o sea **un paquete histórico** | — | **VERIFIED sólo para su SHA**, no re-verificable aquí |
+| `R2` KMT/substrate | «tests knowledge existentes» | **NO** — es una descripción, no una ruta | — | **IMPLEMENTED** (sin cambio) |
+| `R5` invalidación | «tests staleness (SPEC-012)» | **NO** — ídem | — | **IMPLEMENTED / NOT_VERIFIED** (sin cambio) |
+| `R6` DebVerify | `debverify_kernel/tests.rs::c3l1_falsifiers` | **SÍ** | **`6/6` passed**; `debverify_kernel` completo **`34/34`** | **IMPLEMENTED → re-verificable** |
+| `R8` runtime | «tests runtime» | **NO** — ídem | — | **IMPLEMENTED** (sin cambio) |
+| `R10` architecture gate | `verdict.rs` 11/11 + `check_architecture_gate.rs` 4/4 | **SÍ** | `check_architecture_gate` **`4/4`**; `verdict` **`15` por filtro**, **`8` en el fichero** | **IMPLEMENTED**, y el `11/11` **no reconcilia** |
+
+### ⚠️ El resultado de C3n.3 no es «todo verificado»: es que la mitad de las filas no se pueden verificar
+
+**De las seis filas que C3n.3 manda re-evaluar, sólo DOS nombran un artefacto
+ejecutable.** Las otras cuatro citan una **descripción** de tests («tests knowledge
+existentes», «tests staleness (SPEC-012)», «tests runtime») o un **receipt de un
+paquete histórico**.
+
+Eso no es un detalle de redacción. Es la diferencia entre un claim que se puede
+volver a comprobar y uno que no: `VERIFIED` cuya evidencia **no se puede ejecutar**
+es un claim que sólo existe como texto, y el día que el texto se queda viejo nadie
+lo nota porque no había nada que ejecutar. **Es la misma clase que el conjunto de
+niveles declarado en dos sitios, y que el nombre `*_e2e` sin frontera: una
+afirmación que parece verificable porque tiene una casilla donde va su evidencia.**
+
+**Por qué las filas AIW no tenían este problema y las R sí:** las filas `AIW-S*`
+nombran **ficheros de test** (`aiw_s5_chronos_real.rs`, `x04_multi_process_concurrency.rs`),
+así que re-ejecutarlas es escribir el nombre. Las filas `R*` nombran **receipts,
+commits y descripciones**, así que re-ejecutarlas exige primero *encontrar* qué
+tests son, y ese trabajo **no está hecho**.
+
+**Lo que C3n.3 deja escrito como trabajo, no como nota:**
+
+1. Nombrar, para `R2`, `R5` y `R8`, el **fichero de test** que respalda cada claim.
+   Sin eso, esas tres filas no son re-certificables por construcción.
+2. `R0` tiene una decisión de fondo que no es de este bloque: su evidencia está en
+   `docs/history/legacy-packages/`, y **verificar contra un paquete histórico es
+   verificar contra algo que por política de traslados ya no se mueve**. O se acepta
+   que `R0` es `VERIFIED` **para `0c2ca56` y nada más**, y se dice en la fila, o se
+   reconstruye la evidencia contra HEAD. Hoy la fila dice «VERIFIED (histórico)» en
+   una columna y «VERIFIED **para su SHA**» en la otra, lo cual es correcto, y por
+   eso **no es un defecto**: es la fila que mejor está escrita de todas y sirve de
+   modelo para las otras tres.
+
+### Dos recuentos de la matriz que no reconcilian, corregidos aquí
+
+| Recuento publicado | Medido en `87831cc5` | Dónde está |
+|---|---|---|
+| «**5** falsificadores C3l.1» | **`6`**: `strategy_failure_is_typed_and_carryable`, `all_strategies_failing_yields_incomplete`, `failure_plus_clean_strategy_still_incomplete`, `failure_plus_contradiction_surfaces_contradiction_not_baseline`, `one_strategy_failure_never_yields_confirmed_baseline`, `strategies_run_counts_completed_not_merely_applicable` | `R6` |
+| «`verdict.rs` **11/11** unitarios» | **8** en el fichero; **15** si se filtra por nombre | `R10` |
+
+**Los dos se corrigen con su cifra, no con una nota**, porque un recuento que no
+reconcilia es exactamente lo que hace que una matriz deje de describir la realidad.
+**Y ninguno de los dos cambia el veredicto de su fila**: `R6` sigue siendo
+`IMPLEMENTED → re-verificable` con sus falsificadores en verde, y `R10` sigue sin
+poder sustentar «architecture conformant». Lo que se corrige es el número que
+quien lea la fila da por bueno.
+
+**Nota de método, y es la quinta vez en esta sesión:** los dos recuentos se
+obtuvieron **contando**, no leyendo. Una regex mia devolvió `0` para
+`c3l1_falsifiers` porque no toleraba atributos intermedios, y la verdad —**6**— la
+dijo `cargo test`. **Cuando dos instrumentos discrepan, el que ejecuta es el
+instrumento**, y un pattern que no reproduce lo que el runner ve es un patron
+roto, no una fila distinta.
+
 ---
 
 ## C3n.4 — Release admission integration

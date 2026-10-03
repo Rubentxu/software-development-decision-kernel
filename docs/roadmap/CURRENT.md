@@ -1,4 +1,32 @@
 # CURRENT — puntero de reanudación de SDDK
+**Estado (session-69s bis 9, 2026-10-03): C3n.3 MEDIDO. El resultado no es «todo verificado» — es que la mitad de las filas de Context-First no nombra un artefacto ejecutable y por tanto no se pueden re-certificar.** `HEAD` = `87831cc5` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
+
+**WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
+
+| Fila | ¿Ejecutable en HEAD? | Medido | Veredicto |
+|---|---|---|---|
+| `R0` contexts | el commit resuelve; el receipt está en `docs/history/legacy-packages/` | — | **VERIFIED sólo para su SHA** |
+| `R2` KMT | **NO** — cita «tests knowledge existentes» | — | IMPLEMENTED (sin cambio) |
+| `R5` invalidación | **NO** — cita «tests staleness (SPEC-012)» | — | IMPLEMENTED / NOT_VERIFIED (sin cambio) |
+| `R6` DebVerify | **SÍ** | **`6/6`**; módulo completo **`34/34`** | IMPLEMENTED → re-verificable |
+| `R8` runtime | **NO** — cita «tests runtime» | — | IMPLEMENTED (sin cambio) |
+| `R10` architecture gate | **SÍ** | `check_architecture_gate` **`4/4`**; `verdict` **8/8** en el fichero | IMPLEMENTED |
+
+**El hallazgo, y es más fuerte que un veredicto:** **`VERIFIED` cuya evidencia no se puede ejecutar es un claim que sólo existe como texto.** El día que el texto se queda viejo nadie lo nota **porque no había nada que ejecutar**. Es la misma clase que el conjunto de niveles declarado en dos sitios y que el nombre `*_e2e` sin frontera: **una afirmación que parece verificable porque tiene una casilla donde va su evidencia.**
+
+**Por qué las filas AIW no tienen ese problema y las R sí:** las `AIW-S*` nombran **ficheros de test** (`aiw_s5_chronos_real.rs`, `x04_multi_process_concurrency.rs`), así que re-ejecutarlas es escribir el nombre. Las `R*` nombran **receipts, commits y descripciones**, así que re-ejecutarlas exige primero *encontrar* qué tests son, y ese trabajo **no está hecho**.
+
+**Dos recuentos corregidos con su cifra, no con una nota:** la matriz decía «**5** falsificadores C3l.1» y hay **6**; decía «`verdict.rs` **11/11**» y hay **8** en el fichero (15 filtrando por nombre). **Ninguno cambia el veredicto de su fila.**
+
+**⚠️ Y una lección de método, la quinta vez en esta sesión:** una regex mía devolvió **`0`** para `c3l1_falsifiers` porque no toleraba atributos intermedios, y la verdad —**6**— la dijo `cargo test`. **Cuando dos instrumentos discrepan, el que ejecuta es el instrumento**, y un patrón que no reproduce lo que el runner ve es un patrón roto, no una fila distinta.
+
+**`R0` es la fila mejor escrita de todas y sirve de modelo:** su evidencia está en un paquete histórico, y su status dice «VERIFIED (histórico)» en una columna y «VERIFIED **para su SHA**» en la otra. Eso es correcto, y es exactamente lo que faltan las otras tres.
+
+**Siguiente paso preciso:** **nombrar el fichero de test de `R2`, `R5` y `R8`** — sin eso no hay re-certificación posible por construcción — y con ello completar C3n.3. Después, **C3n.4** (los falsificadores dentro de release admission). `R1` sigue bloqueada sólo por la clave de firma.
+
+**Decisiones del operador que siguen abiertas:** (a) clave de firma — **bloquea `R1` y nada más**; (b) superficie de producto que produce `HostEvent` — bloquea `C3m.1`; (c) dos salidas de `INC-DEBT-050`/`061`; (d) bajar `INC-DEBT-060` a `medium`; (e) archivar `a4-1-generic-verify`.
+
+---
 **Estado (session-69s bis 8, 2026-10-03): los dos vocabularios de frontera son UNO. La reconciliación que C3n.2 declaró pendiente está hecha, y el guard que la vigila tiene una comprobación que faltaba.** `HEAD` = `29be4ad5` + este commit. Workspace **2.5.3 declarada, no publicada** (último tag `v2.5.2`).
 
 **WorkItem en SDDK:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`, path **A-full**, **lease viva** `fencing_token=1`.
