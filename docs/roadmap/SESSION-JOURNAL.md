@@ -12869,3 +12869,75 @@ bypass.
 44 + assets 18 + specs 14 + impeccable 2). El artefacto publicado de `v2.5.4` es
 correcto y no le afecta. Por eso el tramo `10..13` se completa contra la release
 ya publicada, no re-publicando una identica.
+
+### session_73 — el gate del paso 1 tenia un corredor que nadie havia cerrado
+
+**Que paso.** La release `REL-2.5.5` —que iba a ser la primera en correr `0..13`
+completo— murio en el paso 1, antes de construir nada:
+
+    cross_surface_policy_transition_invalidates_either_surface_ticket ... FAILED
+    panicked at crates/sddk-cli/tests/a6_4_shared_ticket_service.rs:131:10:
+    must refuse: ()
+
+**Medido en tres pasos, porque "test flake" es un diagnostico que aqui no vale
+sinumeros.**
+
+1. **No lo causo ningun cambio mio.** `git log v2.5.4..HEAD --name-only | grep -c
+   '^crates/'` → **0**. Cero commits tocaban `crates/` en ese rango.
+2. **No falla aislado.** El mismo test, `cargo test -p sddk-cli --test
+   a6_4_shared_ticket_service` repetido **8 veces**: `4 passed; 0 failed` las
+   ocho.
+3. **Falla bajo `cargo test --workspace`.** O sea: la causa es la **carrera**, no
+   el contenido.
+
+**La carrera, y el caso la documentaba ya.** `process_service()` es un
+singleton de proceso y Rust ejecuta los `#[test]` de un mismo binario en hilos.
+Los dos tests que quedan en ese fichero escriben `last_policy_digest` sobre el
+MISMO singleton:
+
+| test | escribe |
+|---|---|
+| `cross_surface_shared_seq_strictly_monotonic` | `set_last_policy_digest(framework_bundle_policy())` |
+| `cross_surface_policy_transition_invalidates_either_surface_ticket` | `set_last_policy_digest(github_releases_policy())` |
+
+Si uno se cuela entre el `issue` y el `consume_at_live_now` del otro, el
+`consume_at_live_now` ya no ve cambio de politica, devuelve `Ok`, y el
+`.expect_err("must refuse")` revienta con `must refuse: ()`.
+
+Y el header del propio fichero —lineas 19-26, escritas en 2026-09-19— dice que se
+elimino `cross_surface_facades_share_the_service_instance` *"because it raced with
+parallel tests touching the same `process_service()` singleton"*. **Se quito UNO de
+los dos corredores y se dejo el otro.** El que ha estado fallando desde entonces
+es el superviviente, y el comentario que explicaba el arreglo seguia ahi,
+pareciendo una constante.
+
+**Por que esto no es cosmetico.** `cargo test --workspace` es el **gate del paso 1**
+de la release. Un test que falla con probabilidad en la concurrencia significa que
+**cada release tiene una probabilidad independiente de morir en el paso mas
+temprano**, por un motivo que no tiene nada que ver con lo que se publica. Un gate
+no determinista no es un gate: es una moneda.
+
+**El candado es de fichero, y tiene que serlo.** Los dos unicos usuarios de
+`process_service()` en todo el workspace estan en **paquetes distintos**
+(`crates/sddk-cli/tests/a6_4_shared_ticket_service.rs` y
+`crates/sddk-engine/tests/h05_seam_test_only.rs`), luego son binarios de test
+distintos y corren en procesos distintos: no se pisan. Un candado global de crate
+no evitaria nada y serializaria tests que no compiten.
+
+El tercero de los tests, `shared_service_singleton_is_same_instance_for_both_surfaces`,
+solo compara punteros y **no** toma el candado. Darselo no costaria nada, pero
+entonces el comentario diria "tres tests se pisan el singleton" y solo se pisan
+dos. Un candado de mas no cuesta tiempo; cuesta **precision en lo que el codigo
+afirma sobre si mismo**.
+
+`poison` se recupera con `into_inner` en vez de entrar en panic: un candado
+envenenado por un test que fallo antes es informacion, no una razon para no
+ejecutar el siguiente — y aqui la distinction importa, porque el propio
+veneno seria un flake.
+
+**Lo que NO puedo afirmar todavia.** El arreglo es correcto por construccion —los
+dos unicos escritores del singleton en ese binario ya no pueden solaparse— pero
+**no he falsado el defecto**: reproducir la carrera de forma fiable exige cargar
+el workspace entero, y hacerlo en un bucle seria un gate mas caro que el que
+repara. La confirmacion honesta es el `cargo test --workspace` verde de la
+release, no un test que pase.

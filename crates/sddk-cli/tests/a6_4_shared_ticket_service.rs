@@ -24,6 +24,39 @@ use sddk_engine::authority_ticket_service::{AuthorityTicketServiceError, process
 // `github_releases_policy` is still referenced by the retained
 // `cross_surface_policy_transition_invalidates_either_surface_ticket`
 // test.
+//
+// SEC-WORKSPACE-FLAKE, segunda vuelta (session-72, medido): **el arreglo de
+// 2026-09-19 quito UNO de los dos corredores y dejo el otro.** Los dos tests
+// que quedan en este fichero se pisan el `process_service()` entre si, porque
+// `process_service()` es un singleton de proceso y Rust ejecuta los `#[test]`
+// de un mismo binario en hilos:
+//
+//   `cross_surface_shared_seq_strictly_monotonic`
+//       hace `set_last_policy_digest(framework_bundle_policy())`
+//   `cross_surface_policy_transition_invalidates_either_surface_ticket`
+//       hace `set_last_policy_digest(github_releases_policy())`
+//
+// Si el segundo se cuela entre el `issue` y el `consume_at_live_now` del
+// primero —o al reves— el `consume_at_live_now` ya no ve un cambio de politica
+// y devuelve Ok, y el `.expect_err("must refuse")` revienta con
+// `must refuse: ()`.
+//
+// **Medido, no supuesto:** 8/8 verde aislado
+// (`cargo test -p sddk-cli --test a6_4_shared_ticket_service` repetido), y
+// FALLA bajo `cargo test --workspace`. O sea: la causa es la concurrencia, y
+// el fallo no depende de nada que yo hubiera cambiado — cero commits tocaban
+// `crates/` en ese rango. Es un gate de release no determinista: cada release
+// tiene una probabilidad independiente de morir aqui.
+//
+// El candado es de FICHERO, y tiene que serlo: los binarios de test corren en
+// procesos separados, luego el unico que comparte el singleton son los tests de
+// este fichero. Un candado global de crate no evitaria nada y serializaria
+// tests que no compiten.
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 
 fn sys_actor(service: &str) -> Actor {
     Actor {
@@ -47,6 +80,11 @@ fn shared_service_singleton_is_same_instance_for_both_surfaces() {
 fn cross_surface_shared_seq_strictly_monotonic() {
     // A6-4 §5: framework_bundle ticket ⇒ seq=N, github_releases ticket
     // ⇒ seq=N+1. They share the process-wide monotonic seq.
+    //
+    // El candado serializa este test con el de la transicion de politica: los
+    // dos escriben `last_policy_digest` en el MISMO singleton de proceso, y sin
+    // el uno se cuela entre el `issue` y el `consume_at_live_now` del otro.
+    let _serial = serial_guard();
     let svc = process_service();
     let before = svc.next_seq();
 
@@ -100,6 +138,9 @@ fn cross_surface_policy_transition_invalidates_either_surface_ticket() {
     // fb ticket. The fence advances; the fb ticket can no longer be
     // consumed against the live now. Demonstrates that the fence is no
     // longer local to the helper.
+    // Mismo candado, y por el mismo motivo: este test escribe
+    // `last_policy_digest` y el anterior tambien, sobre el mismo singleton.
+    let _serial = serial_guard();
     let svc = process_service();
     let fb_policy = framework_bundle_policy();
     svc.set_last_policy_digest(fb_policy.policy_digest.clone());
