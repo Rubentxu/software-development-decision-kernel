@@ -221,6 +221,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_vault_mirror_auto.sh \
             tests/test_install_signature_execution.sh \
             tests/test_install_signature_execution_mutation.sh \
+            tests/test_release_sign_artifacts.sh \
+            tests/test_release_sign_artifacts_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -249,6 +251,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_install_asset_contract.sh \
              tests/test_install_signature_execution.sh \
              tests/test_install_signature_execution_mutation.sh \
+             tests/test_release_sign_artifacts.sh \
+             tests/test_release_sign_artifacts_mutation.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
@@ -1017,6 +1021,23 @@ ok "unified: $(basename "$UNIFIED") ($(stat -c%s "$UNIFIED") bytes, exec bit + B
 
 step "8/15 — sha256 + CHECKSUMS + sbom.json"
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
+# El binario DESNUDO se copia a $TMP junto a su .sha256, y no por comodidad.
+#
+# El bucle de firma (8c) resuelve sus tres artefactos como "$TMP/$artifact", y
+# el binario solo vivia en $BIN y dentro de $PACK/bin/sddk — luego en $TMP no
+# estaba. Consecuencia medida, no supuesta: el bucle hacia `continue` sin
+# incrementar el contador, el "all-or-nothing" contaba 2 de 3 y la release
+# moria. **Las dos vias de firma estaban rotas por lo mismo**: con clave, el
+# binario nunca se firmaba; con SDDK_SKIP_SIGNING=1, el contador nunca llegaba
+# a 3 y la via documentada para publicar sin firmar era insatisfacible. El
+# mensaje de error decia "set SDDK_SKIP_SIGNING=1" y eso no hacia nada.
+#
+# El arreglo es que $TMP sea de verdad el unico sitio donde vive cada
+# artefacto firmable, que es lo que el bucle ya asumia. La alternativa —
+#ensenar al bucle que el primero vive en $BIN— anade un caso especial y otra
+# fuente de verdad sobre el layout, que es la clase de defecto que este repo
+# ya ha pagado dos veces.
+cp "$BIN" "$TMP/$(basename "$BIN")"
 echo "$BIN_SHA  $(basename "$BIN")" > "$TMP/$(basename "$BIN").sha256"
 ( cd "$TMP" && sha256sum "$(basename "$UNIFIED")" "$(basename "$BUNDLE_TARBALL")" ) \
     > "$TMP/CHECKSUMS"
@@ -1358,7 +1379,11 @@ ARCH-HEX-001 receipt: ${RECEIPT_SUMMARY}"
 # Forcing re-create of an existing release is handled by deleting first.
 
 ASSETS=(
-    "$BIN"
+    # El binario se publica desde la copia de $TMP, la misma que firma el 8c.
+    # Con "$BIN" aqui se publicaba un fichero y se firmaba otro: los bytes
+    # eran iguales por construccion, no por garantia, y una release cuya firma no
+    # corresponde a lo publicado es un fallo que solo aparece en el usuario.
+    "$TMP/$(basename "$BIN")"
     "$TMP/$(basename "$BIN").sha256"
     "$TMP/CHECKSUMS"
     "$TMP/sbom.json"
