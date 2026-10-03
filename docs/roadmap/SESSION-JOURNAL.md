@@ -12111,3 +12111,83 @@ primera versión afirmaba que el defecto seguía presente y **dio rojo en cuanto
 corrigió**, que es su propia forma de deshonestidad. `fmt` 0, `clippy -D warnings`
 **0**, workspace **5435 passed / 0 failed**, guard y verificador en verde,
 `shellcheck` limpio.
+
+### fix(secretary) + docs(adr): C3m.4 cerrado — el estado evidencial sustituye a la magnitud (ADR-0156), e INC-DEBT-066 queda `resolved`
+
+Con el operador desbloqueando las decisiones pendientes, la pregunta que el SCOPE
+de C3m.4 planteaba tiene respuesta y el ciclo se cierra.
+
+**La respuesta a «¿qué exige G01?» es la que su fila dice, y la respuesta a «¿qué
+es la confianza?» es que no lo era.** G01 exige que la agenda indique
+candidato/causa y refs sin autorizar ejecución — lo cumple el `evidence_ref`
+derivado del par reconciliado — y la cláusula de `confidence 0.95/0.5` **no está
+ni en la fila canónica ni en el SCOPE que la transcribe**. Se retira de los dos
+artefactos que la habían introducido, se renombran los dos tests para afirmar lo
+que G01 sí pide, y **la fila canónica no se reescribe**: el error estaba en la
+evidencia que la sostenía, y reescribir el criterio para acomodar una evidencia
+equivocada habría convertido un error de certificación en un criterio permanente.
+Se arregla la evidencia y se deja por escrito qué significa el `PASS` y qué nunca
+debe significar.
+
+**En el código**, `SecretaryProposal.confidence: f64` pasa a `evidence:
+EvidenceState` (`Missing`/`Observed`/`Empty`/`Stale`/`Conflicted`), y el consumidor
+mapea `log_head > 0` a `Observed`, si no a `Empty`. La frase del código viejo que
+no se podía sostener —«an empty fact log is reported at half confidence»—
+desaparece porque era falsa: **un log vacío no es media observación, es la
+ausencia de una**, y `0.5` frente a `0.95` no expresaba esa diferencia, la
+disfrazaba de magnitud. `Stale` y `Conflicted` son distinciones que un número no
+puede hacer en absoluto.
+
+**La validación desaparece con el número, no por descuido.** `propose()` tenía un
+`0.0..=1.0` y un `InvalidConfidence` que solo existían para decidir si un `f64`
+caía en un intervalo. **El test que comprobaba ese rechazo no se borra:** se
+sustituye por el que fija la propiedad nueva —que el estado declarado llegue
+intacto a la emisión—, porque dejar un hueco donde había un test es la forma de
+que nadie vuelva a mirar.
+
+**Hallazgo que produce el propio cierre:** `ExpansionTrigger` llevaba
+`confidence: f64` **dentro de su identidad content-addressed**, lo que lo hacía
+parecer un discriminante real. Medido: tiene **un solo punto de construcción en
+todo el repo**, un helper de test con `0.9` constante — ese componente del hash
+**nunca ha discriminado nada**. También pasa a `EvidenceState`.
+
+**Una afirmación mía, ya publicada, que la implementación desmintió — y por eso
+queda escrita:** el `SCOPE-CONTRACT` de este ciclo afirmaba «un sitio escribe
+`confidence`, ninguno lo lee». Al implementar apareció un **segundo** escritor en
+producción, `dynamic_expansion.rs:415`, que pasa `trigger.confidence` — una
+**variable**, no un literal. El grep que produjo la afirmación buscaba el literal.
+**Quinta vez en esta sesión que se mide mención donde se iba a medir uso, y la
+primera que falsea algo ya publicado.** El ADR y el cierre de INC-DEBT-066 la
+recogen en vez de limitarla a corregirla en silencio.
+
+**Dos fallos de instrumento propios, y ninguno se resolvió bajando el listón:** un
+regex de migración se comió los paréntesis de cierre de doce llamadas a
+`propose()` —se restauraron y el fallo quedó visible en el historial del build en
+lugar de disimularlo—, y la primera versión de un verificador afirmaba el estado
+**pre** y dio rojo en cuanto el defecto se corrigió: un verificador que se pone
+rojo cuando arreglas el bug verifica que el defecto siga ahí.
+
+**Corrupción de redacción, de nuevo y en cadena.** Al escribir el ADR, el
+changelog, la nota de reconciliación y un comentario del código aparecieron cinco
+literales con caracteres de otro alfabeto pegados dentro de palabras españolas.
+**No se reproducen aquí:** citarlos los convertiría en deuda permanente del repo,
+que es justo lo que el escáner marca para siempre — el mismo criterio que se aplicó
+en la entrada anterior de esta sesión. Todas corregidas antes de commitear. El
+escáner dio `CLEAN` sobre los ocho ficheros afectados en dos de las tres rondas:
+**el escáner no cubre un token de otro alfabeto pegado dentro de una palabra**, y
+esa ha sido la forma de todos los casos de esta sesión. Se conserva la
+comprobación propia de alfabetos mezclados por palabra sobre las líneas añadidas
+de cada diff, y fue ella la que encontró los dos casos que el escáner dejó pasar.
+
+**Verificado con el perfil completo:** `fmt` 0, `clippy --workspace --all-targets
+-D warnings` **0 errores**, workspace **5435 passed / 0 failed**. Los seis
+llamadores migrados los localizó el compilador, no una búsqueda previa.
+
+**Lo que queda intacto a propósito, y conviene que no se lea como olvido:**
+`UatOracleAssessment.confidence` **sí se discrimina** (`LowAiConfidence: mejor
+confidence < 0.7`, `uat.rs:540`) y el CLI la muestra. Es un tipo distinto con
+consumidores reales, y borrarla tiraría una propiedad que existe. Este cierre fija
+**dónde termina el alcance** del hallazgo: en el campo que nadie leía. Y
+`dynamic_expansion` sigue sin consumidor de producto —es uno de los 10 módulos
+«solo tests» de INC-DEBT-065—: cambiarle el campo no le da un comando que lo
+llame, y eso es un inventario con su propia entrada.

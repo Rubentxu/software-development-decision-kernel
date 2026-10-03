@@ -39,7 +39,7 @@ into a closed-set `SecretaryProposal` via the real
 
 | UAT id | Status | Why |
 |---|---|---|
-| G01 | PASS | evidence ref = `storage:{adapter_id}:{log_head}` (reconciled pair, A blocks B); confidence 0.95/0.5 by head, asserted in unit + integration |
+| G01 | PASS | evidence ref = `storage:{adapter_id}:{log_head}` (reconciled pair, A blocks B), asserted in unit + integration. **La cláusula de `confidence` 0.95/0.5 se retira de esta fila: no estaba en la fila canónica de G01 ni en el SCOPE que la transcribe** (ADR-0156, INC-DEBT-066). El `PASS` se sostiene sobre el `evidence_ref`, que es lo que la fila pide. Ver «Reconciliación de G01» más abajo. |
 | G03 | PASS | proposal issued from `StorageSnapshot` alone; no `Storage` in scope anywhere |
 
 ## §3 Real verification output (cargo, 2026-09-21)
@@ -102,3 +102,49 @@ This slice is committed locally on top of the S7a feature commit but
 requires explicit operator authorization per the AIW adoption workflow.
 Until then, local state is: workspace version `1.169.122`, development
 HEAD = this feature commit, no new tag.
+
+## Reconciliación de G01 (2026-10-03, ADR-0156)
+
+Esta fila declaraba `G01 | PASS` incluyendo una cláusula de `confidence 0.95/0.5`
+que **no está en la fila canónica de G01** (`UAT-MATRIX.md` §G01: «snapshot
+Planning reconciliado, A bloquea B» / «Agenda indica candidato/causa y refs; NO
+autorización de ejecución por `project_next`») **ni en el SCOPE que la transcribe**
+(`aiw-s7-secretary-attention/SCOPE-CONTRACT.md` §S7-STOP-2), que no la menciona en
+ninguna de sus líneas.
+
+Medido, además, que el valor no decidía nada: el campo `confidence` de una
+`SecretaryProposal` **no lo leía ningún código de producto** — sus únicos
+consumidores eran los dos tests que comprobaban que valía 0.95 o 0.5. El número
+existía porque un test lo afirmaba, y el test lo afirmaba porque el número existía.
+
+**Qué se hace y qué no:**
+
+- Se retira la cláusula de esta fila y de `UAT-EVIDENCE.yaml`.
+- Los dos tests se renombran para afirmar lo que G01 sí pide
+  (`empty_log_head_is_empty_not_weaker`,
+  `evidence_state_reflects_whether_the_log_had_anything_e2e`) y comprueban el
+  `EvidenceState` (`Observed` / `Empty`) en vez de una magnitud.
+- **La fila canónica NO se modifica.** El error estaba en la evidencia que la
+  sostenía, no en el criterio, y reescribir el criterio para acomodar a una
+  evidencia equivocada habría sido la forma de hacer permanente el defecto.
+- El `//!` del módulo, que citaba un `SCOPE-CONTRACT.md` de este ciclo que nunca
+  se commiteó, pasa a citar las dos rutas que existen.
+
+**Lo que este `PASS` sí sigue significando:** que la agenda indica
+candidato/causa y refs mediante el par reconciliado `(adapter_id, log_head)`, y
+que no se emite autorización de ejecución. Eso es exactamente la fila.
+
+**Lo que este `PASS` nunca debe significar:** que existe una propiedad de
+confianza medida. No la hay, y ahora el registro lo dice en vez de inventarla.
+
+**Una afirmación del SCOPE de este ciclo que la implementación desmintió, y que se
+deja escrita porque el número estaba publicado.** Ese SCOPE afirmaba «un sitio
+escribe `confidence`, ninguno lo lee». Al implementar apareció un **segundo**
+escritor en producción, `dynamic_expansion.rs:415`, que pasa `trigger.confidence`
+— un `f64` que además participaba en la identidad content-addressed del trigger y
+por eso parecía un discriminante. Medido: `ExpansionTrigger` tiene **un solo punto
+de construcción en todo el repo**, y es un helper de test con `0.9` constante, de
+modo que el componente del hash nunca ha discriminado nada. Pasa a `EvidenceState`
+con ADR-0156. *El grep que produjo la afirmación anterior buscaba el literal y no
+vio la variable: es la quinta vez en esta sesión que se mide mención donde se iba
+a medir uso, y la primera que falsea algo ya publicado.*

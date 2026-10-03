@@ -3,7 +3,7 @@
 //! with no live `Storage` handle anywhere in the loop.
 
 use sddk_engine::context_compiler::storage_adapter::StorageSnapshot;
-use sddk_engine::{ClosedSetKind, SecretaryId};
+use sddk_engine::{ClosedSetKind, EvidenceState, SecretaryId};
 use sddk_gateway::storage_snapshot_l1_consumer::{SnapshotConsumerError, SnapshotL1Consumer};
 
 #[test]
@@ -54,14 +54,17 @@ fn durable_snapshot_e2e() {
 }
 
 #[test]
-fn empty_log_head_e2e() {
-    // Real engine: non-zero head → full confidence and reconciled
-    // evidence ref; zero head → halved confidence (G01 observability).
+fn evidence_state_reflects_whether_the_log_had_anything_e2e() {
+    // ADR-0156. G01 (fila canónica) exige que la agenda indique candidato,
+    // causa y refs. Lo que se afirma aquí es exactamente eso: el `evidence_ref`
+    // reconciliado distingue snapshots distintos. La cláusula de `confidence`
+    // que este test afirmaba **no estaba en la fila** — se la había añadido el
+    // propio recibo de este ciclo, y se retiró con ADR-0156 (INC-DEBT-066).
     let durable = StorageSnapshot::from_bytes("storage.ledger_head", 99, vec![7]);
     let p_hi = SnapshotL1Consumer::new(2000)
         .consume(&durable)
         .expect("consume ok");
-    assert_eq!(p_hi.confidence, 0.95);
+    assert_eq!(p_hi.evidence, EvidenceState::Observed);
     assert_eq!(
         p_hi.evidence_refs,
         vec!["storage:storage.ledger_head:99".to_string()]
@@ -71,7 +74,7 @@ fn empty_log_head_e2e() {
     let p_lo = SnapshotL1Consumer::new(2000)
         .consume(&empty)
         .expect("consume ok");
-    assert_eq!(p_lo.confidence, 0.5);
+    assert_eq!(p_lo.evidence, EvidenceState::Empty);
     assert_eq!(
         p_lo.evidence_refs,
         vec!["storage:storage.ledger_head:0".to_string()]

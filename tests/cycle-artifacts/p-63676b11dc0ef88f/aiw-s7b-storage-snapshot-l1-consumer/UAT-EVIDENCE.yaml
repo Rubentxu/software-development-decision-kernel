@@ -1,14 +1,32 @@
 UAT-EVIDENCE — AIW-S7b — StorageSnapshot → SecretaryL1 consumer
 generated: 2026-09-21
 scope: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s7-secretary-attention/SCOPE-CONTRACT.md §S7-STOP-2 (G01+G03)
+urow: docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md §G01
+reconciled: 2026-10-03, ADR-0156 (INC-DEBT-066)
+reconciled_note: >-
+  G01 se certificó PASS contra una cláusula de `confidence` que la fila canónica
+  y el SCOPE que la transcribe NO contienen. La cláusula la introduce este mismo
+  ciclo en su RECEIPT, y los dos tests que la fijaban eran los únicos consumidores
+  del valor: el número existía porque un test lo afirmaba, y el test lo afirmaba
+  porque el número existía. Se retira la cláusula y los tests se renombran para
+  afirmar lo que G01 sí pide. La fila canónica NO se modifica: el error estaba en
+  la evidencia que la sostenía, no en el criterio.
 
 - id: G01
   title: Snapshot planning reconciliado (A bloquea B)
   status: PASS
   evidence:
-    - test: sddk-gateway::storage_snapshot_l1_consumer::tests::empty_log_head_reduces_confidence (unit)
-    - test: aiw_s7b_snapshot_l1_consumer::empty_log_head_e2e (integration)
-    - observation: evidence_ref is derived from the reconciled (adapter_id, log_head) pair — "storage:storage.ledger_head:99" vs "storage:storage.ledger_head:0" — so proposals from different snapshot heads are never conflated; confidence tracks durability (0.95 with head > 0, 0.5 otherwise) via the real SecretaryL1Engine.
+    - test: sddk-gateway::storage_snapshot_l1_consumer::tests::empty_log_head_is_empty_not_weaker (unit)
+    - test: aiw_s7b_snapshot_l1_consumer::evidence_state_reflects_whether_the_log_had_anything_e2e (integration)
+    - observation: >-
+        evidence_ref is derived from the reconciled (adapter_id, log_head) pair —
+        "storage:storage.ledger_head:99" vs "storage:storage.ledger_head:0" — so
+        proposals from different snapshot heads are never conflated. This is what
+        the canonical row asks for: the agenda indicates candidate/cause and refs,
+        and no execution authorization is issued. The proposal additionally
+        carries an EvidenceState (Observed / Empty) that says whether the log had
+        anything, which is a fact about the source rather than a magnitude with no
+        defined scale.
   type: OBSERVED
 
 - id: G03

@@ -181,7 +181,7 @@ fn trigger(expected_base: &str) -> ExpansionTrigger {
         expected_base_revision: expected_base.to_string(),
         restage_to: RestageTo::Design,
         template_id: "c3l3.template.expand".into(),
-        confidence: 0.9,
+        evidence: sddk_engine::secretary_l1::EvidenceState::Observed,
     }
 }
 

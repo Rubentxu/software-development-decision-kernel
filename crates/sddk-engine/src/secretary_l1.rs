@@ -5,6 +5,7 @@
 //! ADR:  ~/.sddk-knowledge/sddk-framework/adrs/ADR-090-SECRETARY-L1-CLOSED-SET-PROPOSALS.md
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,55 @@ impl ProposalTemplate {
     }
 }
 
+/// What was actually observed behind an issuance (ADR-0156, C3m.4).
+///
+/// Replaces the `confidence: f64` this type carried. That number was measured
+/// (INC-DEBT-066) to have **no consumer in production**: the only production
+/// caller was the storage-snapshot consumer, which derived `0.95` from
+/// `log_head > 0` and `0.5` otherwise, and the only readers of the result were
+/// the two tests asserting those two constants. *The number existed because a
+/// test asserted it, and the test asserted it because the number existed.*
+///
+/// The states are the ones the roadmap names for C3m.4, and each one says
+/// something a magnitude cannot:
+///
+/// - `Observed` — the source was there and was read. **Not** "0.95 sure": a
+///   snapshot with `log_head = 42` is exactly as observed as one with 43, and
+///   no amount of log makes an observation more observed.
+/// - `Empty` — the source was there and was read, and it held nothing. This is
+///   **not** "half as good as observed": it is a different fact, and calling it
+///   0.5 is what made an empty ledger look like a weak observation instead of
+///   an absence of one.
+/// - `Stale` / `Conflicted` / `Missing` — the source was not usable as-is, and
+///   each of those needs a different response from the consumer. A single
+///   number cannot distinguish them at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum EvidenceState {
+    /// No source was consulted: the issuance is not evidence-backed.
+    #[default]
+    Missing,
+    /// The source was read and had content.
+    Observed,
+    /// The source was read and was empty.
+    Empty,
+    /// The source was read but is behind the issuing time.
+    Stale,
+    /// Two sources disagree and nothing adjudicated them.
+    Conflicted,
+}
+
+impl fmt::Display for EvidenceState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            EvidenceState::Missing => "MISSING",
+            EvidenceState::Observed => "OBSERVED",
+            EvidenceState::Empty => "EMPTY",
+            EvidenceState::Stale => "STALE",
+            EvidenceState::Conflicted => "CONFLICTED",
+        })
+    }
+}
+
 /// An issuance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SecretaryProposal {
@@ -96,7 +146,9 @@ pub struct SecretaryProposal {
     pub coverage_satisfied: Vec<String>,
     pub coverage_missing: Vec<String>,
     pub evidence_refs: Vec<String>,
-    pub confidence: f64,
+    /// What was observed behind this issuance (ADR-0156). Replaces the
+    /// `confidence: f64` that INC-DEBT-066 measured as having no consumer.
+    pub evidence: EvidenceState,
     pub issued_at_ms: i64,
     pub expires_at_ms: i64,
 }
@@ -231,11 +283,14 @@ impl SecretaryL1Engine {
         coverage_satisfied: Vec<String>,
         coverage_missing: Vec<String>,
         summary: impl Into<String>,
-        confidence: f64,
+        evidence: EvidenceState,
     ) -> Result<SecretaryProposal, SecretaryL1Error> {
-        if !confidence.is_finite() || !(0.0..=1.0).contains(&confidence) {
-            return Err(SecretaryL1Error::InvalidConfidence { value: confidence });
-        }
+        // Sin validacion de rango: un enum es valido o no lo es. El campo que
+        // ocupaba este sitio (`confidence: f64`) tenia una comprobacion
+        // `0.0..=1.0` y un error `InvalidConfidence` que solo existia para
+        // decidir si un numero arbitrario caia dentro de un intervalo. La
+        // comprobacion desaparece CON el numero, no por descuido: no hay ningun
+        // rango que un estado evidencial pueda incumplir.
         let g = self
             .templates
             .lock()
@@ -284,7 +339,7 @@ impl SecretaryL1Engine {
             coverage_satisfied,
             coverage_missing,
             evidence_refs,
-            confidence,
+            evidence,
             issued_at_ms: now_ms,
             expires_at_ms: t.bounded.valid_until_ms,
         };
@@ -355,11 +410,11 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "first proposal",
-                0.8,
+                EvidenceState::Observed,
             )
             .unwrap();
         assert_eq!(p.kind, ClosedSetKind::SuggestCandidate);
-        assert_eq!(p.confidence, 0.8);
+        assert_eq!(p.evidence, EvidenceState::Observed);
         assert_eq!(e.proposal_count(), 1);
     }
 
@@ -376,7 +431,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .unwrap_err();
         assert!(matches!(err, SecretaryL1Error::OutOfWindow { .. }));
@@ -393,7 +448,7 @@ mod tests {
             vec!["c1".into()],
             Vec::new(),
             "x",
-            0.5,
+            EvidenceState::Observed,
         )
         .unwrap();
         let err = e
@@ -404,18 +459,18 @@ mod tests {
                 vec!["c2".into()],
                 Vec::new(),
                 "y",
-                0.5,
+                EvidenceState::Observed,
             )
             .unwrap_err();
         assert!(matches!(err, SecretaryL1Error::MaxUsesReached { .. }));
     }
 
     #[test]
-    fn invalid_confidence_rejected() {
+    fn evidence_state_survives_to_the_issuance() {
         let e = SecretaryL1Engine::new();
         e.register_template(template_with_uses("t1", u32::MAX))
             .unwrap();
-        let err = e
+        let p = e
             .propose(
                 1_500,
                 "t1",
@@ -423,10 +478,21 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                1.5,
+                EvidenceState::Empty,
             )
-            .unwrap_err();
-        assert!(matches!(err, SecretaryL1Error::InvalidConfidence { .. }));
+            .expect("un estado evidencial es valido por construccion");
+        // Este test se llamaba `invalid_confidence_rejected` y afirmaba que
+        // `propose(1.5, …)` devolvía `InvalidConfidence`. Con ADR-0156 esa
+        // comprobación desaparece CON el número: un enum no tiene rango que
+        // incumplir, y el error que existía solo para decidir si un `f64`
+        // caía en `[0,1]` ya no es alcanzable desde `propose()`.
+        //
+        // No se borra y se deja un hueco: se sustituye por la propiedad que
+        // sustituye a la anterior. La anterior comprobaba que un número
+        // arbitrario fuera rechazado; la nueva comprueba que el estado
+        // evidencial que declara el llamador llega intacto a la emisión, que es
+        // lo que ahora puede estar mal y lo que un consumidor necesita saber.
+        assert_eq!(p.evidence, EvidenceState::Empty);
     }
 
     #[test]
@@ -435,7 +501,15 @@ mod tests {
         e.register_template(template_with_uses("t1", u32::MAX))
             .unwrap();
         let err = e
-            .propose(1_500, "t1", Vec::new(), Vec::new(), Vec::new(), "x", 0.5)
+            .propose(
+                1_500,
+                "t1",
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                "x",
+                EvidenceState::Observed,
+            )
             .unwrap_err();
         assert!(matches!(err, SecretaryL1Error::EmptyCoverage { .. }));
     }
@@ -459,7 +533,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .unwrap();
         assert_eq!(p.kind, ClosedSetKind::AcknowledgeDecision);
@@ -476,7 +550,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .unwrap_err();
         assert!(matches!(err, SecretaryL1Error::UnknownTemplate { .. }));
@@ -495,7 +569,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .ok();
         assert!(err.is_some());
@@ -508,7 +582,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .ok();
         assert!(ok.is_some());
@@ -520,7 +594,7 @@ mod tests {
                 vec!["c1".into()],
                 Vec::new(),
                 "x",
-                0.5,
+                EvidenceState::Observed,
             )
             .unwrap_err();
         assert!(matches!(err, SecretaryL1Error::OutOfWindow { .. }));

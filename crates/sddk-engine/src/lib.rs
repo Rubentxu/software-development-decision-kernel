@@ -243,7 +243,7 @@ pub use secretary_l0::{
     SecretaryL0Engine, SecretaryL0Error,
 };
 pub use secretary_l1::{
-    BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
+    BoundedWindow, ClosedSetKind, EvidenceState, ProposalTemplate, SecretaryId, SecretaryL1Engine,
     SecretaryL1Error, SecretaryProposal,
 };
 pub use secretary_l2_replan::{

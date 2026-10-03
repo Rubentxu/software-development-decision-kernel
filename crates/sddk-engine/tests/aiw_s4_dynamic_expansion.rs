@@ -368,7 +368,7 @@ fn w11_perf_no_template_yields_zero_replans() {
         vec!["co-1".into()],
         vec![],
         "no template",
-        0.5,
+        sddk_engine::secretary_l1::EvidenceState::Observed,
     );
     assert!(res.is_err(), "L1 propose with no template must fail-closed");
     assert_eq!(l1.proposal_count(), 0);
@@ -408,7 +408,7 @@ fn w11_perf_irrelevant_trigger_yields_zero_proposals() {
         vec![],
         vec![],
         "no coverage",
-        0.5,
+        sddk_engine::secretary_l1::EvidenceState::Observed,
     );
     assert!(res.is_err(), "no coverage must fail-closed");
     assert_eq!(l1.proposal_count(), 0);

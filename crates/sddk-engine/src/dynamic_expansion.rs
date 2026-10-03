@@ -61,7 +61,7 @@ use sddk_domain::{LedgerEvent, LedgerEventInput};
 
 use crate::risk_approval_policy::RiskTier;
 use crate::secretary_l1::{
-    BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
+    BoundedWindow, ClosedSetKind, EvidenceState, ProposalTemplate, SecretaryId, SecretaryL1Engine,
     SecretaryProposal,
 };
 use crate::{
@@ -105,14 +105,26 @@ pub struct ExpansionTrigger {
     pub restage_to: RestageTo,
     /// Secretary L1 template used to issue the proposal.
     pub template_id: String,
-    /// Confidence carried by the proposal.
-    pub confidence: f64,
+    /// Evidence state carried by the proposal (ADR-0156, C3m.4).
+    ///
+    /// Esto era `confidence: f64` y participaba en la identidad
+    /// content-addressed del trigger, lo que lo hacía parecer un discriminante.
+    /// Medido: `ExpansionTrigger` tiene **un solo punto de construcción en todo
+    /// el repo**, y es un helper de test con `0.9` constante — el componente
+    /// del hash nunca ha discriminado nada. Sustituirlo por el estado
+    /// evidencial no pierde nada y hace que el hash describa lo que de verdad
+    /// distingue un trigger de otro.
+    ///
+    /// Lo que este cambio NO hace: darle un consumidor de producto al módulo.
+    /// `dynamic_expansion` sigue siendo uno de los 10 módulos «solo tests» que
+    /// midió INC-DEBT-065, y eso es un inventario con su propia entrada.
+    pub evidence: EvidenceState,
 }
 
 impl ExpansionTrigger {
     /// Content-addressed identity of the expansion request.
     ///
-    /// Two triggers with the same cycle, gap, evidence, template, confidence
+    /// Two triggers with the same cycle, gap, evidence, template, evidence state
     /// and proposed plan share a fingerprint **regardless of the base they were
     /// proposed against**: the base is a concurrency pin, not part of the
     /// request's identity.
@@ -124,7 +136,7 @@ impl ExpansionTrigger {
             "gap_summary": self.gap_summary,
             "evidence_refs": refs,
             "template_id": self.template_id,
-            "confidence": self.confidence,
+            "evidence": self.evidence,
             "proposed_ir": self.proposed_ir,
         });
         format!("{:064x}", Sha256::digest(material.to_string().as_bytes()))
@@ -412,7 +424,7 @@ impl<L: sddk_domain::Ledger> Engine<L> {
                 Vec::new(),
                 vec![trigger.gap_summary.clone()],
                 trigger.gap_summary.clone(),
-                trigger.confidence,
+                trigger.evidence,
             )
             .map_err(|e| ExpansionError::NoProposal {
                 reason: e.to_string(),

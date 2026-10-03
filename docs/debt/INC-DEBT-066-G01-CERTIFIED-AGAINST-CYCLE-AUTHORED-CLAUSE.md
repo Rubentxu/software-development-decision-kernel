@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-066
 title: "G01 se certifico PASS contra una clausula que el ciclo mismo escribio y que ni la fila canonica ni el SCOPE que define el criterio contienen, y el numero que la clausula invento (confidence 0.95/0.5) no lo lee nadie"
-status: open
+status: resolved
 severity: high
 priority: P1
 fingerprint: "uat_row_certified_against_cycle_authored_clause"
@@ -15,6 +15,7 @@ detected_in_session: session-69o
 component: sddk-gateway / AIW-S7b
 surface: G01 (UAT-MATRIX) vs el RECEIPT.md y UAT-EVIDENCE.yaml del ciclo aiw-s7b
 related: [INC-DEBT-063, INC-DEBT-065]
+resolved_by: ADR-0156 (C3m.4)
 references:
   - docs/roadmap/receipts/c3m4-evidence-states/SCOPE-CONTRACT.md
   - docs/roadmap/receipts/c3m4-evidence-states/verificar-medicion.py
@@ -161,3 +162,50 @@ Cierra cuando los **tres** artefactos sean coherentes entre sí y con el código
 verificado leyendo los tres — no leyendo un `status:`. **No cierra por antigüedad
 ni porque el número desaparezca**: cerrar cuando el número ya no está, sin
 declarar qué exigía G01, deja el mismo hueco con menos código.
+
+## Cierre (2026-10-03, ADR-0156)
+
+**Resuelto.** Cierre con ADR-0156 (`accepted`) y el cambio aplicado en el mismo
+movimiento, verificado con el perfil completo del repositorio.
+
+**Qué se reconcilió, y por qué en los tres sitios a la vez:**
+
+| Artefacto | Antes | Ahora |
+|---|---|---|
+| Fila canónica de G01 (`UAT-MATRIX.md` §G01) | «Agenda indica candidato/causa y refs; NO autorización de ejecución» | **sin cambios** — el error estaba en la evidencia, no en el criterio |
+| `RECEIPT.md:42` | `G01 \| PASS \| … ; confidence 0.95/0.5 by head` | la cláusula se retira; el `PASS` se sostiene sobre el `evidence_ref`, con nota de reconciliación en el propio fichero |
+| `UAT-EVIDENCE.yaml` | `confidence tracks durability (0.95 …, 0.5 …)` | observación reescrita; se declara `urow:` y `reconciled:` con el ADR |
+| Código | `confidence: f64` | `evidence: EvidenceState` (`Missing`/`Observed`/`Empty`/`Stale`/`Conflicted`) |
+| Tests | `empty_log_head_reduces_confidence`, `empty_log_head_e2e` | `empty_log_head_is_empty_not_weaker`, `evidence_state_reflects_whether_the_log_had_anything_e2e` |
+| `//!` del módulo | citaba un `SCOPE-CONTRACT.md` **inexistente** | cita la fila canónica y el SCOPE de `aiw-s7-secretary-attention` §S7-STOP-2, que existen |
+
+**La fila canónica no se reescribe, y esa es la decisión.** Reescribir el criterio
+para acomodar una evidencia equivocada habría convertido un error de
+certificación en un criterio permanente: la fila volvería a ser «correcta» y
+nadie volvería a poder notar que la evidencia se había inventado. Lo que se hace
+es **arreglar la evidencia y dejar constancia escrita de lo que el `PASS`
+significa y lo que nunca debe significar**.
+
+**Un hallazgo adicional que este cierre produce y que no estaba en el registro
+original:** `ExpansionTrigger` llevaba `confidence: f64` **dentro de su identidad
+content-addressed**, lo que lo hacía parecer un discriminante real. Medido: tiene
+**un solo punto de construcción en todo el repo**, un helper de test con `0.9`
+constante, así que ese componente del hash **nunca ha discriminado nada**. También
+pasa a `EvidenceState`. Y aquí hay una **afirmación publicada que la
+implementación desmintió**: el `SCOPE-CONTRACT` de este ciclo decía «un sitio
+escribe `confidence`, ninguno lo lee», y el segundo escritor apareció al
+implementar. El grep que produjo esa afirmación buscaba el literal y no vio la
+variable.
+
+**Lo que este cierre NO arregla, y sigue abierto:**
+
+- `UatOracleAssessment.confidence` **sí se discrimina** (`< 0.7`) y el CLI la
+  muestra. Es un tipo distinto con consumidores reales y **queda intacto a
+  propósito**: borrarlo tiraría una propiedad que existe. Este cierre fija
+  **dónde termina el alcance** del hallazgo — en el campo que nadie leía.
+- `dynamic_expansion` sigue sin consumidor de producto: es uno de los 10 módulos
+  «solo tests» de **INC-DEBT-065**, con su propia entrada. Cambiarle el campo no
+  le da un comando que lo llame.
+- La fila canónica de G01 y el SCOPE de `aiw-s7-secretary-attention` **no se
+  tocan**: se reconcilia lo que los sostenía.
+- La recertificación de AIW-S7b entera es **C3n.2**, no este cierre.

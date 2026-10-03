@@ -14,6 +14,7 @@ use sddk_engine::risk_approval_policy::RiskTier;
 use sddk_engine::secretary_closed_set::{
     SECRETARY_PROHIBITED_PREFIXES, SecretaryClosedSetError, is_secretary, validate_secretary_event,
 };
+use sddk_engine::secretary_l1::EvidenceState;
 use sddk_engine::secretary_l1::{
     BoundedWindow, ClosedSetKind, ProposalTemplate, SecretaryId, SecretaryL1Engine,
     SecretaryL1Error,
@@ -190,7 +191,7 @@ fn secretary_l1_proposal_with_high_tier_requires_evidence() {
         vec!["satisfied".into()],
         Vec::new(),
         "test",
-        0.8,
+        EvidenceState::Observed,
     );
     assert!(matches!(
         result,
@@ -208,7 +209,7 @@ fn secretary_l1_unknown_template_rejected() {
         vec!["sat".into()],
         Vec::new(),
         "test",
-        0.5,
+        EvidenceState::Observed,
     );
     assert!(matches!(
         result,
@@ -236,7 +237,7 @@ fn secretary_proposal_kind_matches_template() {
             vec!["satisfied".into()],
             Vec::new(),
             "ok",
-            0.9,
+            EvidenceState::Observed,
         )
         .expect("propose");
     assert_eq!(proposal.template_id, "low-tier-test");

@@ -3,12 +3,26 @@
 //! Closes G01 (snapshot planning reconciliado, A bloquea B) and G03
 //! (proposal surfaces from durable state without holding live Storage).
 //!
-//! Spec: tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s7b-storage-snapshot-l1-consumer/SCOPE-CONTRACT.md
+//! Spec: `G01` **NO** se define aquí. Su fila canónica está en
+//! `docs/history/proposals/all-proposals/2026-09-19-adaptive-inputs-workflows/uat/UAT-MATRIX.md`
+//! y el enunciado que la transcribe, en
+//! `tests/cycle-artifacts/p-63676b11dc0ef88f/aiw-s7-secretary-attention/SCOPE-CONTRACT.md`
+//! §S7-STOP-2.
+//!
+//! La cita que ocupaba esta línea apuntaba a un `SCOPE-CONTRACT.md` de este
+//! mismo ciclo que **nunca se commiteó** (INC-DEBT-066). El error no era de
+//! ruta sino de clase: un módulo que cita una spec inexistente declara canónica
+//! la nada, y un recibo que declara un criterio que la spec no contiene declara
+//! canónica una invención. Lo que este módulo cumple de G01 es exactamente lo
+//! que la fila pide —agenda candidato/causa y refs, sin autorización de
+//! ejecución— mediante el `evidence_ref` derivado del par reconciliado. La
+//! cláusula de `confidence` que el recibo de este ciclo le añadía **no está en
+//! la fila** y se retiró con ADR-0156.
 
 use sddk_engine::context_compiler::storage_adapter::StorageSnapshot;
 use sddk_engine::{
-    BoundedWindow, ClosedSetKind, ProposalTemplate, RiskTier, SecretaryId, SecretaryL1Engine,
-    SecretaryL1Error, SecretaryProposal,
+    BoundedWindow, ClosedSetKind, EvidenceState, ProposalTemplate, RiskTier, SecretaryId,
+    SecretaryL1Engine, SecretaryL1Error, SecretaryProposal,
 };
 
 /// Error taxonomy for the snapshot consumer.
@@ -118,10 +132,20 @@ impl SnapshotL1Consumer {
             ));
         }
         let evidence_ref = format!("storage:{}:{}", snapshot.adapter_id, snapshot.log_head);
-        // A non-zero ledger head means the snapshot actually observed
-        // durable events; an empty fact log is reported at half
-        // confidence.
-        let confidence = if snapshot.log_head > 0 { 0.95 } else { 0.5 };
+        // ADR-0156 / C3m.4. Esto era `if log_head > 0 { 0.95 } else { 0.5 }`, con
+        // el comentario «an empty fact log is reported at half confidence» — y
+        // esa frase es la que no se sostiene: un log vacío no es media
+        // observación, es la ausencia de una. El numero no podia distinguir
+        // `Empty` de `Observed`, que es justo la distincion que el consumidor
+        // de la propuesta necesita, y por eso el numero era 0.5 y no «0.5 por
+        // alguna razon». El `evidence_ref` ya lleva el hecho exacto
+        // (`…:{log_head}`), luego el estado no pierde nada y dice lo que el
+        // numero no decia.
+        let evidence = if snapshot.log_head > 0 {
+            EvidenceState::Observed
+        } else {
+            EvidenceState::Empty
+        };
         self.engine
             .propose(
                 self.now_ms,
@@ -130,7 +154,7 @@ impl SnapshotL1Consumer {
                 vec!["durable-snapshot".into()],
                 vec![],
                 format!("rehydrate from snapshot {}", snapshot.adapter_id),
-                confidence,
+                evidence,
             )
             .map_err(SnapshotConsumerError::ProposalRejected)
     }
@@ -178,7 +202,7 @@ mod tests {
         let proposal = consumer().consume(&snapshot).expect("consume ok");
         assert_eq!(proposal.template_id, "snapshot-rehydrate");
         assert_eq!(proposal.kind, ClosedSetKind::SuggestRehydrationStep);
-        assert_eq!(proposal.confidence, 0.5);
+        assert_eq!(proposal.evidence, EvidenceState::Empty);
         assert_eq!(
             proposal.evidence_refs,
             vec!["storage:storage.ledger_head:0".to_string()]
@@ -186,12 +210,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_log_head_reduces_confidence() {
-        // Real engine path: a snapshot with a positive ledger head gets
-        // full confidence; an empty log is halved.
+    fn empty_log_head_is_empty_not_weaker() {
+        // ADR-0156. Este test se llamaba `empty_log_head_reduces_confidence` y
+        // afirmaba `0.95` / `0.5`. La distincion que realmente importa no es de
+        // magnitud: un log vacio no es una observacion mas debil, es la
+        // ausencia de una observacion, y `Empty` dice eso mientras que `0.5`
+        // solo decia «la mitad de algo que nadie definio».
         let durable = StorageSnapshot::from_bytes("storage.ledger_head", 42, vec![1, 2, 3]);
         let p_hi = consumer().consume(&durable).expect("consume ok");
-        assert_eq!(p_hi.confidence, 0.95);
+        assert_eq!(p_hi.evidence, EvidenceState::Observed);
         assert_eq!(
             p_hi.evidence_refs,
             vec!["storage:storage.ledger_head:42".to_string()]
@@ -199,6 +226,6 @@ mod tests {
 
         let empty = StorageSnapshot::from_bytes("storage.ledger_head", 0, vec![]);
         let p_lo = consumer().consume(&empty).expect("consume ok");
-        assert_eq!(p_lo.confidence, 0.5);
+        assert_eq!(p_lo.evidence, EvidenceState::Empty);
     }
 }
