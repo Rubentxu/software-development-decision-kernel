@@ -1,5 +1,32 @@
 # CURRENT — puntero de reanudación de SDDK
 
+**Estado (session-69n verify, 2026-10-03): el ciclo de la ruta forge está en `RELEASE_PENDING` con nueve gates, y el medidor de deuda resultó ser ciego antes de que su cero sirviera de evidencia.** `HEAD` = `8a2ebfd3` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
+
+**La fase `verify` se cerró con evidencia re-ejecutada aquí, no heredada del lote de implementación.** Se comprobó primero que el commit sin publicar no movía código bajo prueba —`git diff --name-only a6dfb5f2..HEAD -- crates/` sale vacío— y luego se corrió todo de nuevo: workspace **5414 passed / 0 failed / 24 ignored / 283 binarios**, `sddk-cli` **1461 passed / 0 failed**, `release_cmd` **15 passed / 0 failed**, `fmt` y `clippy -D warnings` exit 0, changelog **PASS=69**, índice de deuda **PASS=12**, falsificador **5/5**, scanner **CLEAN**.
+
+**Un error aritmético propio, corregido antes de dejarlo en un documento.** El `RECEIPT.md` decía «los 11 tests previos del módulo». Medido por commit, la base es **10**: `034d098a~1` tiene 10 `#[test]`, el lote 1 sube a **14** —añade R1, R3, **R4** y R5— y el lote 2 a **15**, con R2 y el renombre de R3. Los diez nombres originales siguen intactos en `HEAD`, luego la afirmación de fondo —ningún verde reescrito— sí era cierta; la cifra no lo era.
+
+**Y el instrumento que iba a demostrar «cero deuda introducida» era tan inútil como el falsificador que ya se había condemned en este ciclo.** `19-medir-deuda-forge.py` respondía `DEUDA_INTRODUCIDA=0` en las cinco clases de deuda a la vez: comparaba `git diff base..HEAD`, o sea *commits*, y una mutación aterriza en el árbol de trabajo, que ese diff no ve. Falsificado con `20-falsify-medidor-deuda.py` dio **0/5**. Reparado para leer el árbol: **5/5**. Al repararlo apareció un segundo defecto, también del falsificador: D1 escribe en `Cargo.toml` y su `finally` solo restauraba `release_cmd.rs`, así que **dejó el repo sucio** sin que su propio chequeo de sha lo notara, porque vigilaba el otro fichero. Es la segunda vez en este ciclo que un instrumento resulta ciego por mirar donde no debía, y la razón por la que se comprueba: **un instrumento que siempre contesta «0» es indistinguible de uno que no mide.**
+
+**El resultado de fondo no cambia:** el ciclo introduce cero deuda, con 369 líneas añadidas, 87 de producción y 282 de tests. Lo que cambia es que la cifra tiene ahora un medidor al que se le ha visto fallar y detectar.
+
+**Autoridad:** `p-63676b11dc0ef88f/cl-release-forge-testability` en **`RELEASE_PENDING`**, fase `release`, `sequence: 7`, **9 gates** todos `passed`. Ojo con el identificador: este ciclo es el único de los tres que lleva el prefijo `cl-`, y el slug desnudo da `STORAGE_NOT_FOUND` sin que sea un fallo del ciclo.
+
+**La fase `release` exige `no-pending-effects`, `release-uat-approved` y los requisitos `merge-receipt` y `release-receipt`.** Está bloqueada por la misma clave KMS que los otros dos ciclos. Los tres están ahora en el mismo punto: `ledger-watch-total`, `ledger-export-total` y `cl-release-forge-testability`, todos `RELEASE_PENDING`, ninguno publicable sin la clave.
+
+**Lo que sigue abierto, sin adornos:**
+
+1. **Clave KMS** — único bloqueo de 2.5.3 y de los tres ciclos, del operador.
+2. **INC-DEBT-050**: las dos salidas. La migración está **medida como inalcanzable**.
+3. **INC-DEBT-061**: los 51 ciclos de la mitad apartada.
+4. **INC-DEBT-060**: solo las 79 filas `__spine_import__`, y si su severidad baja a `medium` al caer el rodeo.
+5. **INC-DEBT-063**: los tres recibos con `cycle_id` inexistente. Se recomienda enmendar; **no se ejecuta aquí**.
+6. **INC-DEBT-049**: el operador reescribe F49 o cierra.
+7. **La ruta forge contra un GitHub real**: `NOT_RUN`. Tres escrituras privilegiadas sobre un repositorio ajeno (AGENTS.md §1), y es decisión del operador.
+8. **La auditoría de superficies que truncan está agotada** y no se repite.
+
+---
+
 **Estado (session-69n, 2026-10-03): la ruta de publicación que nunca se ejecutó bajo prueba — y no es por la red.** `HEAD` = `bbeb6301` + este commit documental. Workspace **2.5.3 declarada, no publicada** (último tag remoto `v2.5.2`).
 
 **La afirmación que había que verificar son dos comentarios del propio código** (`release_cmd.rs:2064` y `:2110`): que `release apply --route forge` «no tiene test» y «no es alcanzable sin red». La primera es **cierta**; la segunda **no**.

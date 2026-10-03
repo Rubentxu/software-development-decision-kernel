@@ -10753,3 +10753,148 @@ manda: si hacer la rama alcanzable exige debilitar una comprobación de capacida
 reordenar los pasos o mover el `AdmissionTicket`, el arreglo se descarta **aunque
 los tests passen**. **No bumpear por conveniencia**: workspace 2.5.3 sobre tag
 `v2.5.2` → la siguiente release **es 2.5.3**.
+
+---
+
+## Session-69n (verify) — 2026-10-03 — cierre de `verify` en `cl-release-forge-testability`
+
+**Baseline:** `4c90a2dd` (publicado) · **HEAD al abrir:** `13076dda` · **HEAD al
+cerrar:** este commit documental. Rama `main`, árbol limpio.
+
+**WorkItem:** cerrar la fase `verify` del ciclo
+`p-63676b11dc0ef88f/cl-release-forge-testability`.
+
+### Lo primero, un despiste que casi costó el trabajo
+
+El `cycle status` con el slug `p-63676b11dc0ef88f/release-forge-testability`
+devolvió `STORAGE_NOT_FOUND`. El identificador real lleva prefijo `cl-`. No era un
+fallo del ciclo; era el `cycle_id`. Se,self-corrected leyendo la tabla `cycles`
+del ledger, y conviene dejarlo escrito porque `ledger export` y
+`ledger watch` **no** llevan prefijo y los dos intentos fallan igual.
+
+También: `~/.local/state/sddk/ledger.sqlite` pesa **0 bytes**. El ledger real está
+en `~/.local/state/sddk/projects/<project_id>/ledger.sqlite`. Buscar el primero da
+la sensación de que el almacenamiento está vacío.
+
+### Evidencia re-ejecutada, no heredada
+
+El commit sin publicar `13076dda` solo toca `CHANGELOG.md` y el `RECEIPT.md`, y
+`git diff --name-only a6dfb5f2..HEAD -- crates/` sale **vacío**: no había código
+nuevo bajo prueba. Aun así se corrió todo de nuevo, porque una cifra heredada
+tras una compactación es una cifra que nadie ha mirado.
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **5414 passed / 0 failed / 24 ignored / 283 binarios**, EXIT=0 |
+| `cargo test -p sddk-cli` | **1461 passed / 0 failed / 3 ignored** |
+| `cargo test -p sddk-cli --lib release_cmd` | **15 passed / 0 failed** |
+| `cargo fmt --check` | exit 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `tests/test_changelog_coverage.sh` | **PASS=69 FAIL=0** |
+| `tests/test_debt_index_coherence.sh` | **PASS=12 FAIL=0** |
+| `15-falsify-forge.py` | **5/5 DETECTADA**, 0 no medibles, exit 0 |
+| scanner no latinos | CLEAN |
+
+La aritmética cierra: base 5409 / 24 / 283, más los **5** guards nuevos
+(R1–R5, in-module en `release_cmd.rs`) → 5414 / 24 / 283. En el crate: 1456 + 5 →
+**1461**. Ningún verde reescrito.
+
+### Error aritmético propio, corregido
+
+El `RECEIPT.md` afirmaba «los 11 tests previos del módulo». Medido por commit:
+
+| Commit | `#[test]` en `release_cmd.rs` |
+|---|---|
+| `034d098a~1` | **10** |
+| `034d098a` (lote 1) | 14 — añade R1, R3, **R4** y R5 |
+| `a6dfb5f2` (lote 2) | 15 — añade R2, renombra R3 |
+| `HEAD` | 15 |
+
+La base es **10**. El lote 1 añade **cuatro** tests, no tres: R4 entró ahí, verde
+por diseño, porque es el guard de no-regresión. Los diez nombres originales
+siguen intactos en `HEAD`, luego la afirmación de fondo sí era cierta; la cifra
+no. Corregido en el sitio, con la serie al lado para que se pueda comprobar.
+
+### El instrumento que iba a demostrar «cero deuda» era ciego
+
+Para los gates de deuda hacía falta una medición, así que se escribió
+`19-medir-deuda-forge.py`: cinco criterios objetivos sobre el diff —dependencias,
+`#[allow]` nuevos, marcadores TODO/FIXME/HACK, `unimplemented!`/`todo!`, y código
+alcanzable-nunca. Dio `DEUDA_INTRODUCIDA=0`.
+
+Era **inútil**. Falsificado con `20-falsify-medidor-deuda.py`, que mete deuda de
+verdad en las cinco clases, dio **0/5**. La causa: comparaba `git diff base..HEAD`,
+o sea *commits*, y una mutación aterriza en el **árbol de trabajo**, que ese diff
+no ve. Reparado para leer el árbol: **5/5**.
+
+Es el **mismo modo de fallo** que el del falsificador de los guards de este
+ciclo —el conjunto de fallos siempre vacío— y la segunda vez aquí. La razón por
+la que se comprueba: **un instrumento que siempre contesta «0» es indistinguible
+de uno que no mide**, y si no se le mete deuda de verdad, su cero es
+indistinguible del silencio.
+
+Al repararlo apareció un **segundo defecto, también del falsificador**: D1 escribe
+en `Cargo.toml` y su `finally` solo restauraba `release_cmd.rs`, así que **dejó el
+repo sucio**, y su propio chequeo de sha no lo notaba porque vigilaba el otro
+fichero. Restauración por fichero tocado y `git status --porcelain` comprobado
+tras cada mutación. Sin ese segundo arreglo, el primer falsificador habría
+contaminado el árbol que después se declara limpio.
+
+El resultado de fondo no cambia: **cero deuda introducida**, 369 líneas añadidas,
+87 de producción y 282 de tests. Lo que cambia es que la cifra tiene ahora un
+medidor al que se le ha visto fallar y detectar.
+
+### Autoridad
+
+`p-63676b11dc0ef88f/cl-release-forge-testability` → **`RELEASE_PENDING`**, fase
+`release`, `sequence: 7`, **9 gates** todos `passed`:
+`exploration-sufficient` · `requirements-testable` · `architecture-consistent` ·
+`plan-executable` · `implementation-complete` · `tests-pass` ·
+`policy-compliant` · `debt-severity-assigned` · `debt-priority-assigned`.
+
+Los dos gates de deuda se cumplen con la medición como evidencia, **sin inventar
+un INC para tener algo que clasificar**. Se clasifica lo que existe. El ciclo
+tampoco cerró ninguno: su hallazgo —las dos afirmaciones falsas del propio
+código— se corrigió dentro del fichero y R5 lo fija, pero no era un ítem del
+índice.
+
+### Lo que NO se verificó
+
+- **La ruta forge contra un GitHub real: `NOT_RUN`.** Tres escrituras
+  privilegiadas sobre un repositorio ajeno (AGENTS.md §1). Decisión del operador.
+- **La instalación.** La release 2.5.3 sigue sin construir ni publicar por la
+  clave KMS.
+- **Los instrumentos viven fuera del repo**, en `/var/home/rubentxu/f63/`. Quien
+  lea el informe puede re-ejecutar los tests —que sí están en el repo— pero no la
+  falsificación sin ese fichero. Limitación de la evidencia, dicha en vez de
+  dejarse implícita.
+- `pipelinek validate`: **NO_APPLICABLE**, no hay script `.kts` en este repo.
+
+### Los tres ciclos, en el mismo punto
+
+`ledger-watch-total`, `ledger-export-total` y `cl-release-forge-testability`
+están los tres en `RELEASE_PENDING`. La fase `release` de cada uno exige
+`no-pending-effects`, `release-uat-approved` y los requisitos `merge-receipt` y
+`release-receipt`. **Los tres esperan la misma decisión del operador: la clave
+KMS.** Workspace **2.5.3** sobre tag remoto `v2.5.2` → la siguiente release
+**es 2.5.3**. **No bumpear por conveniencia.**
+
+### Contaminación
+
+Se colaron caracteres CJK **dos veces** en esta sesión: dos caracteres en el
+propio `VERIFICATION-REPORT.md` y dos en el docstring del medidor. Los cuatro
+detectados por el escaneo y corregidos antes de commitear; ninguno llegó al
+árbol. Se describen en vez de citarse porque el scanner no distingue «colado» de
+«citado a propósito», y un gate documental que solo puede correr en rojo no
+sirve de gate. Es la tercera y la cuarta vez que la redacción se contamina en un
+ciclo, y la razón de escanear antes de cada commit sigue siendo esta.
+
+### Primer paso de la sesión siguiente
+
+1. Publicar lo commiteado: el rango admite por la **ruta A-v2** (workspace 2.5.3
+   por encima del tag publicado v2.5.2), sin `--no-verify` y **sin bumpear**.
+2. Los tres ciclos siguen bloqueados por la clave KMS. Lo único que avanza sin
+   decisión del operador es un ciclo nuevo, y el candidato ya medido es
+   **`sddk vault search`**: 20 de 75 documentos sin declarar nada, `--limit 0`
+   devuelve «no hits» en vez de todos, y el JSON es un **array desnudo** — las tres
+   cosas que se corrigieron en `ledger events`, una a una, en otra superficie.

@@ -7,7 +7,7 @@ status: C1_CLOSED_C2A_C2B_C2C_EVIDENCED_WITH_LIMITATIONS_C3_A_B_C_D_E_F_G_H_PASS
 source:
   baseline_branch: main
   baseline_sha: "bb32ae786cdee7883ae63e2e4996ff1fc163b9bf"
-  current_sha: "bbeb6301"  # reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (fdfeb78e) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
+  current_sha: "8a2ebfd3"  # session-69n verify: el puntero nombra 8a2ebfd3, el ANTERIOR a este fichero, misma razon de siempre. Reconciliado por scripts/reconcile_state_pointer.sh sobre main (la version vigente vive en workspace_version_at_current). El puntero anterior (bbeb6301) y su nota de evidencia quedan en superseded_pointer y en SESSION-JOURNAL.md; este script no reescribe historia.
   # session-65c: == origin/main == peel del tag ligero v2.5.2, el commit sobre el que se publico y certico la release. Punteros previos (5fc0d925, 60274ff0) y su evidencia conservados en superseded_pointer/superseded_development_head y en SESSION-JOURNAL.md; no se reescribe historia.
   # session-65c: los commits de session-65/65b/65c estan publicados. Workspace 2.5.2
   # declarado Y publicado (tag v2.5.2). El binario del PATH seguia siendo sddk 2.4.2
@@ -358,12 +358,58 @@ c3_progress:
 # escribe «**No** bumpea» — la afirmacion esta y fallaba la decoracion, la
 # misma clase que el detector que buscaba «omit») y uno del DOCUMENTO (el plan
 # citaba el instrumento sin marcador de compromiso).
+# session-69n VERIFY: el ciclo `p-63676b11dc0ef88f/cl-release-forge-testability`
+# esta en `RELEASE_PENDING`, fase release, sequence 7, con NUEVE GATES todos
+# passed: los cuatro de plan, implementation-complete, tests-pass,
+# policy-compliant, debt-severity-assigned y debt-priority-assigned. OJO CON
+# EL IDENTIFICADOR: es el unico de los tres ciclos con prefijo `cl-`; el slug
+# desnudo da STORAGE_NOT_FOUND sin que sea fallo del ciclo.
+# TODA CIFRA DE ESTA FASE SE RE-EJECUTO AQUI, no se heredo del lote de
+# implementacion. Primero se comprobo que el commit sin publicar no movia codigo
+# bajo prueba: `git diff --name-only a6dfb5f2..HEAD -- crates/` sale vacio.
+# MEDIDAS: cargo test --workspace --no-fail-fast 5414 passed 0 failed 24
+# ignored en 283 binarios, EXIT=0; cargo test -p sddk-cli 1461 passed 0 failed
+# 3 ignored; release_cmd 15 passed 0 failed; fmt --check exit 0; clippy
+# --workspace --all-targets -D warnings exit 0; test_changelog_coverage
+# PASS=69 FAIL=0; test_debt_index_coherence PASS=12 FAIL=0; falsificador de los
+# guards 5/5 DETECTADA con 0 no medibles; scanner CLEAN.
+# ERROR PROPIO CORREGIDO: el RECEIPT decia «los 11 tests previos del modulo» y
+# la base medida es 10. Serie real por commit: 034d098a~1 tiene 10 `#[test]`,
+# el lote 1 sube a 14 (anade R1, R3, R4 y R5), el lote 2 a 15 (anade R2 y
+# renombra R3). Los diez nombres originales siguen intactos en HEAD, luego la
+# afirmacion de fondo -ningun verde reescrito- si era cierta; la cifra no lo
+# era.
+# Y EL INSTRUMENTO QUE IBA A DEMOSTRAR «cero deuda» ERA CIEGO. El medidor
+# 19-medir-deuda-forge.py respondia DEUDA_INTRODUCIDA=0 en las cinco clases de
+# deuda a la vez porque comparaba `git diff base..HEAD`, o sea COMMITS, y una
+# mutacion aterriza en el ARBOL DE TRABAJO, que ese diff no ve. Falsificado con
+# 20-falsify-medidor-deuda.py dio 0/5. Reparado para leer el arbol: 5/5 con
+# dependencia nueva, `#[allow(dead_code)]`, marcador TODO, fn inalcanzable y
+# `unimplemented!`. Al repararlo aparecio un SEGUNDO defecto, tambien del
+# falsificador: D1 escribe en Cargo.toml y su `finally` solo restauraba
+# release_cmd.rs, de modo que DEJO EL REPO SUCIO, y su propio chequeo de sha no
+# lo notaba porque vigilaba el otro fichero. Es la segunda vez en este ciclo
+# que un instrumento resulta ciego por mirar donde no debia, y la razon de
+# comprobarlo: un instrumento que siempre contesta «0» es indistinguible de uno
+# que no mide. El resultado de fondo no cambia -cero deuda, 369 lineas anadidas,
+# 87 de produccion y 282 de tests-; lo que cambia es que la cifra tiene un
+# medidor al que se le ha visto fallar y detectar.
+# LO QUE SIGUE ABIERTO: los TRES ciclos -ledger-watch-total, ledger-export-total
+# y cl-release-forge-testability- estan en RELEASE_PENDING y ninguno es
+# publicable sin la clave KMS, que es decision del operador. La fase release
+# exige no-pending-effects, release-uat-approved y los requisitos merge-receipt y
+# release-receipt. La ruta forge contra un GitHub real sigue NOT_RUN: tres
+# escrituras privilegiadas sobre un repositorio ajeno (AGENTS.md §1).
+# CONTAMINACION: al redactar se colaron caracteres CJK dos veces en esta sesion,
+# en el propio informe y en el docstring del medidor; detectadas por el escaneo y
+# corregidas antes de commitear, y ninguna llego al arbol.
+#
 # SIGUIENTE: lote 1 del PLAN, los tests RED T1-T5 en el mod tests de
 # release_cmd.rs, declarando el arbol rojo. STOP 1 MANDA: si hacer la rama
 # alcanzable exige debilitar una comprobacion de capacidad, reordenar los
 # pasos o mover el AdmissionTicket, el arreglo se descarta AUNQUE LOS TESTS
-# PASSEN.
-next_action: "Session-22 addendum (quater). (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
+# PASSEN. SUPERADO: el lote 1 es 034d098a y el lote 2 es a6dfb5f2.
+next_action: "Session-69n verify (cerrada). cl-release-forge-testability esta en RELEASE_PENDING con 9 gates. Los TRES ciclos abiertos -ledger-watch-total, ledger-export-total y cl-release-forge-testability- esperan la MISMA decision del operador: la clave KMS, unico bloqueo de la release 2.5.3. Publicada esa, `bash scripts/release.sh` lleva los tres a cierre con sus recibos. Mientras tanto lo que avanza sin decision del operador es trabajo de ciclo nuevo, y el candidato natural ya medido es `sddk vault search`: 20 de 75 documentos sin declarar nada, `--limit 0` devuelve «no hits» en vez de todos, y el JSON es un ARRAY DESNUDO. Son las tres cosas que se corrigieron en ledger events, una a una, en otra superficie, con SCOPE propio. Session-22 addendum (quater): publicar 2.0.9 sigue siendo decision del operador, sin cambios respecto a lo escrito mas abajo. (CERRADO) El bloqueo del Cargo.lock stale se resolvio en 8136bbf: bump 2.0.8 -> 2.0.9 con Cargo.toml, manifest.toml y Cargo.lock en el mismo rango, admisible por clausula (A) del hook pre-push sin tocar la allowlist. `cargo metadata --locked` paso de exit 101 a exit 0, y el check 6 de test_release_state_pointer.sh (commit bd9a622, falsificado en ambos sentidos) impide la reincidencia. LO QUE QUEDA ES UNA SOLO DECISION, DEL OPERADOR, Y YA NO ES TECNICA: publicar 2.0.9 o no. (1) Publicar con --skip-signing: el release queda instalable solo con opt-out explicito, S14 permanece abierta en distribucion, y 2.0.9 pasa a ser Latest. (2) Publicar con firma keyless real via CI (id-token: write): cierra S14 de verdad, sin dejar un release sin firmar en Latest. (3) No publicar todavia: 2.0.9 se acumula sin publicar y el drift de puntero vuelve a acumularse (ya fallo dos veces, session-18 y session-22). Publicar es IRREVERSIBLE (git.release=human_gate) y no se hace sin autorizacion. Ademas, si se publica, INC-021 (el asset musl publico de v2.0.1 es en realidad el binario glibc) queda resuelto de paso al sustituir ese release. Pendientes de menor valor, ya registrados: tripwire para el R-flake de operator_snapshot_arc_tests.rs; guard que escriba el puntero al cerrar sesion (fallo 2 veces seguidas); C2 bloqueado por chronos-mcp ausente (externo, no resoluble con trabajo propio)."
 blockers:
   - "ACTIVO session-58 — release v2.5.0 BLOQUEADO en `scripts/release.sh` step 3/14: falta el compilador C `x86_64-linux-musl-gcc` (target Rust musl SI instalado). Bazzite 44 inmutable; `sudo` requiere contrasena => intervencion del operador: `rpm-ostree install --idempotent musl-gcc` + reboot, luego `bash scripts/release.sh` sin mas cambios (2.5.0 ya es la version correcta y el bump ya esta commiteado). NO se forzo build glibc. Detalle: docs/architecture/adrs/BLOCKER-MUSL-TOOLCHAIN-MISSING.md"
   - "RESUELTO session-22 — Cargo.lock stale. Cerro con bump 2.0.8 -> 2.0.9 por la clausula (A) del hook pre-push: Cargo.toml, manifest.toml y Cargo.lock quedan alineados en el mismo rango, y `cargo metadata --locked` paso de exit 101 a exit 0. El hook NO se amendso. Ademas se anadio el check 6 a tests/test_release_state_pointer.sh (compara Cargo.lock contra Cargo.toml), falsificado en los dos sentidos: falla con el lock a 2.0.7, pasa con el lock a 2.0.9. Con esto, publicar 2.0.9 ya no tropezaria en el paso 63 por el lock; lo que queda por delante es la decision de firma (S14 en distribucion), que sigue siendo irreducible sin autorizacion del operador."
