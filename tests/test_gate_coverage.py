@@ -41,6 +41,7 @@ Salida: exit 0 si la propiedad se sostiene; 1 con el detalle si no.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import sys
@@ -151,6 +152,52 @@ def main() -> int:
             "de sastre"
         )
 
+    # Regla 3: enumerado NO es ejecutado. El `for t in` del paso 1b de
+    # release.sh esta gateado por `[ -x ]`, luego un test shell citado ahi sin
+    # bit de ejecucion se SALTA con un `warn` y el paso imprime despues
+    # "shell contract tests green". MEDIDO en session-75: cinco de los
+    # enumerados llevaban 644 y se saltaron en v2.5.3, v2.5.4 y v2.5.5, y uno
+    # de ellos (test_release_state_pointer.sh) arrastraba 41 commits de deriva
+    # y `manifest.toml` dos versiones atras sin que nada lo delatara -- porque
+    # el guard que lo detecta jamas habia corrido. La cobertura que cuenta el
+    # nombre no es la cobertura que ejecuta el bit.
+    #
+    # El alcance es el bucle gateado, NO todo el fichero: cuatro tests mas
+    # (changelog_coverage, doctor_identity_states y las dos de la politica de
+    # nombres) aparecen citados en release.sh pero se ejecutan desde su propio
+    # paso con `bash`, sin pasar por `[ -x ]`. Medido: una primera version de
+    # esta regla los senalo y habria exigido un `chmod +x` inutil -- un guard
+    # que acusa de rojo a algo que corre bien entrena a ignorar sus rojos.
+    non_executable: list[str] = []
+    release_runner_path = ROOT / "scripts" / "release.sh"
+    if release_runner_path.exists():
+        release_runner = release_runner_path.read_text(encoding="utf-8").splitlines()
+        gated: set[str] = set()
+        for i, line in enumerate(release_runner):
+            if '[ -x "$t" ]' not in line:
+                continue
+            # Recoger hacia atras las continuaciones del `for t in` que abre el
+            # bucle gateado, hasta la linea `for t in`.
+            for back in range(i, -1, -1):
+                prev = release_runner[back]
+                gated.update(re.findall(r"tests/[A-Za-z0-9_.-]+\.sh", prev))
+                if re.search(r"\bfor\s+\w+\s+in\b", prev):
+                    break
+        for rel in sorted(gated):
+            bare = rel.rsplit("/", 1)[-1]
+            t = ROOT / rel
+            if bare in EXCEPTIONS or not t.exists():
+                continue
+            if not os.access(t, os.X_OK):
+                non_executable.append(bare)
+                failures.append(
+                    f"{bare}: esta en el bucle gateado con `[ -x ]` de "
+                    "scripts/release.sh pero no es ejecutable; el paso 1b lo "
+                    f"saltaria en silencio. `chmod +x {rel}`"
+                )
+
+    print(f"  en el bucle `[ -x ]` sin bit de ejecucion:  {len(non_executable)}")
+
     for name in uncovered:
         notes.append(f"  [sin runner] {name}")
 
@@ -164,7 +211,7 @@ def main() -> int:
         print()
         print(
             "RESULT: FAIL — la superficie de gates es una lista escrita a mano y "
-            "se ha quedado corta."
+            "se ha quedado corta, o hay entradas enumeradas que el 1b no ejecuta."
         )
         print(
             "         Cablear el test en scripts/release.sh (o .github/workflows) "

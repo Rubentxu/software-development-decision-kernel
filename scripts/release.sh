@@ -265,13 +265,23 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_build_identity_policy.sh \
              tests/test_kmt_canonical_meaning.sh \
              tests/test_release_build_identity.sh; do
-        if [ -x "$t" ]; then
-            bash "$t" >/dev/null \
-                || die "shell test failed: $t (run manually for details)"
-            ok "shell test: $(basename "$t")"
-        else
-            warn "shell test not executable, skipping: $t"
-        fi
+        # Fail-closed. Session-75: este `if [ -x ]` con `warn` + skip era un
+        # agujero silencioso. Cinco de los tests enumerados llevaban 644, se
+        # saltaron en v2.5.3, v2.5.4 y v2.5.5, y el paso seguia imprimiendo
+        # "shell contract tests green" — tres releases declaradas verdes con
+        # cinco gates sin ejecutar. Uno de ellos, test_release_state_pointer.sh,
+        # arrastraba 41 commits de deriva y `manifest.toml` dos versiones
+        # atras, y `test_build_identity_policy.sh` tenia 3 checks en rojo: nadie
+        # lo vio porque el guard que lo detecta jamas habia corrido. Un test
+        # enumerado que no se ejecuta no es cobertura, es decoracion, asi que
+        # ahora es un fallo del pipeline y no un aviso. La razon por la que
+        # el gate es fail-closed y no un `--if-executable` opcional esta en
+        # `tests/test_gate_coverage.py` Regla 3, que lo comprueba estatico.
+        [ -x "$t" ] \
+            || die "shell test enumerated but not executable (1b would skip it silently): $t — chmod +x $t"
+        bash "$t" >/dev/null \
+            || die "shell test failed: $t (run manually for details)"
+        ok "shell test: $(basename "$t")"
     done
     ok "shell contract tests green"
 
