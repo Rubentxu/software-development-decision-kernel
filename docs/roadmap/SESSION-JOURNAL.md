@@ -12638,3 +12638,99 @@ codigo, no compararlo. Un `local` sin asignar es invisible para un `grep` — de
 un all-or-nothing que no tiene dientes sobre **la existencia** de sus entradas es un
 contador, no una garantia: el 8c contaba 3 y solo encontrava 2, y el numero de
 "firmados" no era el numero de ficheros.
+
+### session_70 — el 9c exigia una firma que la propia via sin firmar no produce (REL-2.5.4)
+
+**Que paso.** Publicada `v2.5.3` con `SDDK_SKIP_SIGNING=1`, el pipeline llego al
+paso 9c con la release **ya en GitHub** y murio: `could not fetch sddk.sig`
+(HTTP 404), `EXIT=1`. Un paso antes, el 9b habia dicho `9/9 canonical assets
+reachable from public CDN (HTTP 200)`. Los pasos 10-13 —install local, doctor,
+prune, estado final— no llegaron a correr.
+
+**La incoherencia era interna, no un incidente externo.** Tres gates del mismo
+pipeline discrepaban sobre el mismo conjunto de assets:
+
+  - el 8c **admite y avisa** `SDDK_SKIP_SIGNING=1`;
+  - el 9b declara el conjunto **completo**, porque el contrato canonico de 9
+    assets **no incluye firmas** —las firmas son aditivas
+    (`allowed_signature_assets`)—;
+  - el 9c exigia `.sig` y `.pem` **sin condicion**.
+
+Dos gates del mismo pipeline discrepando, resueltos por orden de aparicion. Un
+gate que exige un fichero que otro gate declara opcional no es un gate: es una
+contradiccion, y aqui se resolvia **despues de publicar**, con un exit != 0 que
+hace creer que la release no salio.
+
+**Lo que NO era el defecto, y conviene no volver a sospechar.** El camino con
+firma esta sano: el paso 9 publica `.sig`, `.bundle.json` y `.pem`
+(`scripts/release.sh:1410-1422`, guardado por existencia). El 404 no venia de
+una firma que no se publico, sino de una que el 9c pedia y nadie iba a
+producir. Medido antes de tocar nada.
+
+**El arreglo.** La postura de autenticidad se **deriva** de la postura de firma.
+Funcion unica `release_authenticity_posture`, tres salidas: `UNSIGNED`,
+`DECLARED_SKIP`, `VERIFY`. Vive **fuera** del paso 9c, y no por estetica: una
+decision que solo existe dentro de un `if` anidado no se puede ejecutar fuera de
+el, luego ningun guard la puede falsificar.
+
+**La parte que carga el peso: `UNSIGNED` exige DOS cosas, no una.** Que el
+operador lo declarase **Y que no haya ninguna firma sobre la mesa**. Lo segundo
+es lo que evita que esto sea una excusa: saltarse porque el flag lo dice seria
+afirmar "no hay nada que verificar" sin mirar. Con firmas presentes se verifica
+igual, porque una propiedad de supply-chain que se puede comprobar y se deja
+sin comprobar por obedecer una bandera es un **downgrade silencioso**, que es
+peor que no tener el paso. Sin esa segunda condicion, el "arreglo" habria
+convertido el 9c en decoracion con una bandera.
+
+Y el cierre: una release sin verificar **nunca** emite
+`ok "public-release gate PASS"` a pelo.
+
+**Precedente ya existente en el repo, no inventado aqui.** El paso 3d ya declara
+`O6 NOT_RUN` con su motivo. Esto es la misma forma, aplicada a una propiedad de
+supply-chain.
+
+**Guard.** `tests/test_release_authenticity_posture.sh` (`PASS=8 FAIL=0
+SKIP=0`): extrae **la funcion Y el bloque del 9c** del fichero real y los
+ejecuta en 5 casos contradictorios mas un control de no-vacuidad. Extraer las
+dos cosas y no una es deliberado —medir solo la funcion deja pasar un arreglo
+que nadie llama; medir solo el bloque deja pasar una politica correcta que el
+9c ignora— y por eso hay una mutacion (M6) que rompe el cableado sin tocar la
+politica. Autofalsacion: 7 mutaciones, `PASS=8 FAIL=0 SKIP=0`, restauracion
+byte-identica por sha.
+
+**Los tres defectos del propio falsador, y por que importan mas que el
+arreglo.** Los tres son "el guard mintio sin que nadie lo notara":
+
+1. `grep -F` con un ancla multilinea trata **cada linea** como patron
+   independiente y acierta si encuentra cualquiera. Las mutaciones M2, M3 y M4
+   cambian `echo "DECLARED_SKIP"` y dejan intacto el `if` de encima, luego el
+   ancla "seguia presente" **con el fichero ya mutado**: cuatro `SKIP` y un
+   `INCOMPLETO` contra un guard que funcionaba. Ahora las tres verificaciones
+   (ancla presente, la sustitucion cambio algo, el ancla desaparecio) se hacen
+   con subcadena exacta.
+2. Un array **no cruza como asignacion de prefijo**:
+   `SIGN_ARTIFACTS=(a b) bash -c ...` deja a `SIGN_ARTIFACTS` con el escalar
+   `"(a b)"`, y `export` de un array no lo exporta. El bucle que cuenta firmas
+   iteraba una vez sobre `"(a b)"` y contaba **cero, sin error**. El guard moria
+   diciendo "no hay firmas" habiendolas — y habria dado **verde** al caso que
+   sostiene todo lo demas, que es precisamente el que distingue "no hay nada
+   que verificar" de "no mire".
+3. El harness acumulaba su salida en una variable del **subshell**, que no sale
+   de el. El guard leia un log vacio sin veredicto y reportaba seis fallos
+   contra el producto, que no habian ocurrido. Por eso los stubs **emiten** y
+   los contadores se reconstruyen leyendo el log.
+
+**Errores mios en esta sesion, que tambien son el mismo tema.** Al aplicar el
+parche con un `edit` cuyo `new_string` salio corrupto, `scripts/release.sh`
+crecio de 84.700 a 221.599 bytes con un bloque de caracteres repetidos. Se
+detecto midiendo bytes, se revirtio con `git checkout --` y se reaplico con un
+script Python que **verifica que cada ancla aparece exactamente una vez** antes
+de sustituir — el mismo contrato que aplican los guards. Y un `rm -f` de un
+fichero inexistente, interceptado por `mavis-trash`, rompio una cadena `&&` y
+dejo creyendo que la release estaba corriendo cuando no habia arrancado.
+
+**Estado tras esta sesion.** `v2.5.3` **queda publicada** (no draft, no
+prerelease, 9/9 assets en CDN publico) y sin cambios: es un artefacto valido.
+`REL-2.5.4` lleva el arreglo del 9c y es la que debe correr el tramo `10..13`,
+que sigue sin haberse visto verde. **Instalar una release firmada sigue
+bloqueado** por el ancla placeholder, y no se fabricara una.
