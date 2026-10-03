@@ -727,6 +727,38 @@ else
          Log: $RECON_MUT_LOG"
 fi
 
+# Los CUATRO estados de `binary.build_identity` de `dev doctor`. Se ejecuta en
+# MODO DE UN SOLO BINARIO, y el modo existe por una medicion, no por comodidad:
+# pasando el binario concluyente en los dos huecos, O2, O3, O4, O5 y O7 pasan y
+# SOLO O6 falla -- O6 es el unico objetivo que depende de la procedencia NO
+# concluyente, y los demas dependen solo de la identidad concluyente y del
+# checkout contra el que se compara.
+#
+# MEDIDO Y POR QUE NO SE CONSTRUYE EL SEGUNDO BINARIO AQUI: una compilacion en
+# frio del perfil debug son 118,77 s (medido con `time`, target dir limpio).
+# Pagar ~2 min por publicacion para medir UN estado --el de STOP 6, en el que el
+# check por diseno NO decide-- no es lo que este paso tiene que decidir. El modo
+# de uno DECLARA O6 como NOT_RUN con su motivo y baja la cuenta de veredictos de
+# 5 a 4, que es lo que de verdad se midio; no lo cuenta como passed ni lo salta
+# en silencio. Para la version completa con los dos binarios, construirlos fuera
+# y pasar las dos rutas, que es como la uso el verify de cl-doctor-build-identity.
+#
+# LO QUE ESTE PASO NO CUBRE, y queda escrito para que no se lea al reves: el
+# estado de procedencia no concluyente sigue siendo cobertura de SESION, no de
+# pipeline. Y eso no se arregla con este paso: se arregla con el arnes que
+# construya los dos binarios, que es trabajo declarado, no una decision tomada
+# aqui.
+step "3d/14 — los cuatro estados de binary.build_identity (dev doctor)"
+IDENT_LOG="$RELEASE_SCRATCH/doctor_identity_states.log"
+if bash tests/test_doctor_identity_states.sh "$BIN" >"$IDENT_LOG" 2>&1; then
+    ok "estados de la identidad: $(grep -m1 '^PASS=' "$IDENT_LOG" || echo 'PASS') (O6 declarado NOT_RUN)"
+else
+    tail -25 "$IDENT_LOG" >&2
+    die "dev doctor no distingue los estados de identidad sobre el binario que se
+         va a publicar. Un rojo falso aqui es PEOR que no comprobar: entrena a
+         ignorar los rojos de doctor. Log: $IDENT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/14 — regenerate MANIFEST.sha256"

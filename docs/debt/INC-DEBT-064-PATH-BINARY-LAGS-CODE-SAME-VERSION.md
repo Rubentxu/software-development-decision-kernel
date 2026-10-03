@@ -149,13 +149,25 @@ fallo hace `die`, estaba **en rojo por eso**. Consecuencia medida: **`bash
 scripts/release.sh` moría antes de compilar.** Los tres están cableados ahora, y
 el gate de cobertura da `RESULT: PASS` con 0 tests sin runner.
 
-**Y queda una pieza sin verificar en el camino de release, y se declara en vez
-de omitirse:** los **cuatro estados** de `binary.build_identity`
-(`test_doctor_identity_states.sh`) **no** corren en release. Exige dos binarios
-como argv con procedencia distinta a propósito, y ese arnés no existe todavía; está
-en `EXCEPTIONS` de `test_gate_coverage.py` con el motivo y con la consecuencia
-escritos. Se midieron a mano en el verify de `cl-doctor-build-identity` (2 binarios
-reales, 19 comprobaciones), pero **eso es cobertura de sesión, no de pipeline.**
+**Addendum session-69s bis 4: los cuatro estados de `binary.build_identity` ya
+corren en release**, en el paso `3d/14`, en contra de lo que decía el párrafo
+anterior — que queda corregido aquí y no se borra. Estaban excepcionados porque
+`test_doctor_identity_states.sh` exige **dos binarios como argv** y el release solo
+tiene el concluyente. **Medido:** pasando el concluyente en los dos huecos,
+**O2–O5 y O7 pasan y solo O6 falla** (`PASS=17 FAIL=2`); O6 es el único objetivo
+que depende de la procedencia **no** concluyente. Y el precio de medirlo entero
+está medido también: una compilación en frío de debug son **118,77 s**, o sea ~2
+min por publicación para medir un estado en el que el check **por diseño no
+decide**. El guard ganó un **modo de un solo binario** que declara O6 `NOT_RUN` con
+su motivo y baja la cuenta de veredictos de 5 a 4. El umbral se **falsificó**:
+quitar un `registrar` lo detectan dos mecanismos independientes en ambos modos.
+
+**Lo que sigue sin cubrirse, y es el residuo honesto:** el estado de procedencia
+**no concluyente** (`source: git`) continúa siendo **cobertura de sesión, no de
+pipeline**. Se mide en el verify de `cl-doctor-build-identity` (2 binarios reales,
+19 comprobaciones) y en cualquier ejecución del guard con dos argumentos, pero no
+en el camino de publicación. Cerrarlo requiere el arnés que construya los dos
+binarios, que es trabajo declarado y no una excepción.
 
 **Severidad sin cambio: `high`.** Conectar los contratos al release reduce la
 probabilidad de que un artefacto con identidad rota llegue a un tag, pero **no

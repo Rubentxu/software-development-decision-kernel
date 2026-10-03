@@ -373,7 +373,58 @@ publicación**: la única línea que dice qué binario se va a publicar no lo de
 Dos sitios con el mismo error porque nadie ejecutó la línea y la leyó, que es la
 mitad de por qué existe un gate que *mida* en vez de un guard que afirme.
 
-### 6.4 Lo que estos guards **no** demuestran, escrito para que no se lea al revés
+### 6.4 El residuo que queda, y por qué no se ha cerrado declarándolo cerrado
+
+Los **cuatro estados** de `binary.build_identity` de `dev doctor`
+(`tests/test_doctor_identity_states.sh`) corren ahora en el paso `3d/14`, contra
+el binario que se va a publicar — y eso **corrige** lo que §6.3 decía, que era
+cierto cuando se escribió.
+
+**El modo de un solo binario se produjo por medición, no por comodidad.** El
+guard estaba excepcionado porque exige **dos binarios como argv** y el release
+solo tiene el concluyente. Midiendo qué depende de cuál:
+
+| | O2 | O3 | O4 | O5 | O6 | O7 |
+|---|---|---|---|---|---|---|
+| necesita el binario **no concluyente** | no | no | no | no | **sí** | no |
+
+Pasando el concluyente en los dos huecos: `PASS=17 FAIL=2`, y los dos fallos son
+de O6. **Y el precio de medirlo entero está medido también:** una compilación en
+frío del perfil debug son **118,77 s** (`time`, target dir limpio) — ~2 min por
+publicación para medir **un** estado, el de STOP 6, en el que el check **por
+diseño no decide**.
+
+El guard ganó entonces un modo de un solo binario que corre O2–O5 y O7,
+**declara O6 `NOT_RUN` con su motivo**, y **baja la cuenta de veredictos de 5 a
+4**, que es lo que de verdad midió. No lo cuenta como `passed`, no lo salta en
+silencio, y es **una** autoridad para la propiedad: duplicar el guard con un
+subconjunto de aserciones sería la misma clase de violación de autoridad canónica
+que este repo ya corrigió una vez.
+
+**El umbral parametrizado se falsificó, no se declaró.** Quitar el `registrar` de
+un escenario baja el recuento en **exactamente 1**, y O7 lo detecta **por dos
+mecanismos independientes** (contador y líneas) **en los dos modos**, sin que
+ningún otro aserto se mueva: `PASS=14 FAIL=2` y `PASS=17 FAIL=2`. Un umbral que
+nadie ha visto caer es decoración.
+
+**Y cómo se falsificó mal la primera vez, que también va escrito:** la copia se
+ejecutó desde `/tmp`, con lo que el guard calculó `REPO` como `/` y el escenario
+de atraso no pudo clonar. Dos fallos de más, **de la copia y no del guard**, que
+casi se leyeron como un defecto del umbral. La falsificación correcta es una
+copia **dentro de `tests/`**, para que `REPO` resuelva al repo de verdad — y ahí
+solo cae el recuento. Es la tercera vez en esta sesión que un falsificador
+mide su propia rotura.
+
+**Lo que queda sin cubrir, y es el residuo honesto:** el estado de procedencia
+**no concluyente** (`source: git`) sigue siendo **cobertura de sesión, no de
+pipeline**. Se mide con dos argumentos —como en el verify de
+`cl-doctor-build-identity`, 2 binarios reales y 19 comprobaciones— pero no en el
+camino de publicación. **No lo arregla este trabajo:** lo arregla el arnés que
+construya los dos binarios con procedencia distinta, que es trabajo declarado, no
+una excepción.
+
+### 6.5 Lo que estos guards **no** demuestran, escrito para que no se lea al revés
+
 
 
 - **No demuestra que el ledger real de este repo esté reconciliado.** Mide
