@@ -70,6 +70,7 @@ implementación.
 | `tests/test_changelog_coverage.sh` | **PASS=69 FAIL=0** |
 | `tests/test_debt_index_coherence.sh` | **PASS=12 FAIL=0** |
 | `15-falsify-forge.py` (5 mutaciones) | **5/5 DETECTADA**, 0 no medibles, exit 0 |
+| `20-falsify-medidor-deuda.py` (5 clases de deuda) | **5/5 DETECTADA**, exit 0, árbol limpio |
 | scanner de caracteres no latinos | CLEAN |
 
 La aritmética del workspace cierra sola: base 5409 / 24 / 283, más **5 tests**
@@ -145,7 +146,7 @@ instrumento lee `1. **O1.**`. Se corrigieron los documentos.
 ## §8 — Deuda
 
 **Este ciclo introduce cero deuda**, y no por declaración sino por medición, con
-cinco criterios objetivos sobre el diff `034d098a~1..HEAD`:
+cinco criterios objetivos sobre el diff `034d098a~1` contra el árbol de trabajo:
 
 | Criterio | Medido |
 |---|---|
@@ -158,6 +159,22 @@ cinco criterios objetivos sobre el diff `034d098a~1..HEAD`:
 Las 369 líneas añadidas se reparten **87 en producción** y **282 en tests**. Las
 87 de producción son el brazo, el cuerpo extraído y su documentación: es código
 movido, no lógica nueva.
+
+**El medidor de esa tabla hubo que repararse antes de servir de nada.** La
+primera versión daba `DEUDA_INTRODUCIDA=0` en las cinco clases de deuda
+simultáneamente, y era **inútil**: comparaba `git diff base..HEAD`, o sea
+*commits*, y una mutación aterriza en el árbol de trabajo, que ese diff no ve.
+Falsificado con `20-falsify-medidor-deuda.py` dio **0/5**. El defecto estaba en
+el instrumento, igual que el del falsificador de §6.1 —es el mismo modo de
+fallo, y por eso se comprueba: un instrumento que siempre contesta «0» es
+indistinguible de uno que no mide.
+
+Reparado para leer el árbol de trabajo, da **5/5** con las cinco clases, y
+restaura **por bytes** lo que toca. Al repararlo apareció un segundo defecto,
+también del falsificador: D1 escribe en `Cargo.toml` y su `finally` solo
+restauraba `release_cmd.rs`, así que **dejó el repo sucio** — y su propio chequeo
+de sha no lo notaba, porque vigilaba el otro fichero. Restauración por
+fichero, y `git status --porcelain` comprobado tras cada mutación.
 
 Sin deuda nueva que clasificar, `debt-severity-assigned` y
 `debt-priority-assigned` se cumplen con esta medición como evidencia, y no
