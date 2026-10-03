@@ -38,16 +38,71 @@ Leyenda de estados: `VERIFIED` (frontera observada, anclada a SHA) · `IMPLEMENT
 |---|---|---|---|---|---|---|---|---|
 | R0 | Context boundary cut (módulos domain/engine + fitness) | Layout de módulos vigente; conformance receipt histórica | IN_PROCESS + RELEASE_ARTIFACT (receipt anclado a `0c2ca56`, SDDK 1.169.19) | 09-09-CONFORMANCE-RECEIPT (100% PASS, SOLO su SHA) | bundle 08-BASELINE-CONFORMANCE | VERIFIED (histórico) | VERIFIED **para su SHA** + gate actual comprometido (ver fila gate) | C3l.7 + C3m.5 (AT-UAT-015/022) |
 | R1 | Consolidación Semantic Core (Fact/Object/Projection/Ephemeral, Evidence universal, Goal→…→Run) | Crates domain/engine/storage según ADRs 0044..0097 | IN_PROCESS | suites engine/storage | `docs/architecture/README.md` + ADRs | VERIFIED | VERIFIED (sin re-clasificar; sin defecto del paquete) | — |
-| R2 | Decision + Knowledge substrate (KnowledgeAssertion/Basis, KMT v1, SemanticGraph) | Decision Memory (SPEC-004) estable; **KMT con TRES significados coexistentes** (C3m.0); `revise` ya no miente sobre la identidad (C3m.2, session-62) **pero el cambio contradice REQ-A3S1-021 y el UAT cita un ADR inexistente** ⇒ INC-DEBT-048 abierto | IN_PROCESS | tests knowledge existentes | C3m.0/C3m.2 del paquete | VERIFIED (substrate) | **IMPLEMENTED** — substrate decision OK; claims de conocimiento con terminología/identidad sin resolver | C3m.0 + C3m.2 (AT-UAT-016/019) |
+| R2 | Decision + Knowledge substrate (KnowledgeAssertion/Basis, KMT v1, SemanticGraph) | Decision Memory (SPEC-004) estable; **KMT con TRES significados coexistentes** (C3m.0); `revise` ya no miente sobre la identidad (C3m.2, session-62) **pero el cambio contradice REQ-A3S1-021 y el UAT cita un ADR inexistente** ⇒ INC-DEBT-048 abierto | IN_PROCESS | **`crates/sddk-engine/src/knowledge.rs`** 25/25 (`knowledge::` 26, 1 `#[ignore]` declarado: `s1_does_not_introduce_new_corenodekind_variants`, *historical anchor only*) + **`semantic_graph.rs`** 4/4 + **`crates/sddk-cli/src/knowledge_cmd.rs`** 5/5. *Medido en `ee5767a5`; antes decía «tests knowledge existentes»* | C3m.0/C3m.2 del paquete; `falsifier_f19_identity_is_load_bearing`, `audit_inc_debt_048_pure_temporal_revision_is_not_invisible` | VERIFIED (substrate) | **IMPLEMENTED** — substrate decision OK; claims de conocimiento con terminología/identidad sin resolver | C3m.0 + C3m.2 (AT-UAT-016/019) |
 | R3 | Agent Experience advisory split | `advisory_context` + fitness Alignment≠EffectiveInstructions | IN_PROCESS | fitness tests existentes | C3n.3: NO se reabre | VERIFIED | VERIFIED (sin re-clasificar) | solo regresión observada |
 | R4 | Software Alignment core BASE (lenses, workbooks) | Núcleo sólido; **Snapshot L1 con confidence mágica 0.95** (C3m.4) | IN_PROCESS | tests alignment | C3m.4 | VERIFIED (BASE) | BASE sólido VERIFIED; **snapshot → IMPLEMENTED** | C3m.4 (AT-UAT-021) |
-| R5 | Verify delta knowledge sync (KMT diff, invalidación incremental) | **La invalidación incremental requiere KMT real que no existe** (C3m.1); staleness/cards sí | IN_PROCESS | tests staleness (SPEC-012) | C3m.1 + C3n.3 | VERIFIED (sync) | sync parts IMPLEMENTED/VERIFIED; **invalidación incremental → NOT_VERIFIED** | C3m.1 (AT-UAT-017/018) |
+| R5 | Verify delta knowledge sync (KMT diff, invalidación incremental) | **La invalidación incremental requiere KMT real que no existe** (C3m.1); staleness/cards sí | IN_PROCESS | **`crates/sddk-domain/src/staleness.rs`** 7/7 + **`crates/sddk-cli/tests/cli_stale_e2e.rs`** 5/5. *Medido en `ee5767a5`; antes decía «tests staleness (SPEC-012)», y esa cita era además **ambigua**: ver nota ⚠️ debajo de la tabla* | C3m.1 + C3n.3; `stale_when_change_and_invalidation`, `invalidated_marks_invalidated` | VERIFIED (sync) | sync parts IMPLEMENTED/VERIFIED; **invalidación incremental → NOT_VERIFIED** | C3m.1 (AT-UAT-017/018) |
 | R6 | DebVerify global reconciliation | `reconcile` respeta `ChallengeError` desde session-52 (`22459708`): `StrategyFailure{strategy_id, reason}` tipado, variante `Incomplete`, `ConfirmedBaseline`/`AcceptedDebt` inalcanzables con fallos, `strategies_run` cuenta completadas | IN_PROCESS (tests unit del kernel) | **6 falsificadores C3l.1 en `debverify_kernel/tests.rs::c3l1_falsifiers`** (contados, no leidos; session-69s bis 9) (RED observado antes del fix por tipos ausentes; GREEN 34/34 después) | commit `22459708`; engine 1358/0 | VERIFIED | **IMPLEMENTED → re-verificable**: el defecto C3l.1 está cerrado con falsificadores; el estado definitivo (VERIFIED) lo fija C3n.2 re-ejecutando AT-UAT-002/003 sobre el nuevo SHA | C3n.2 (re-ejecución de los falsificadores ya en el suite) |
 | R7 | Static Enhanced provider (CogniCode RPC) | Adaptador real ejercitado con binario real (misma evidencia que AIW-S1) | MCP_EXTERNAL (su SHA) | EXT S1 | receipt S1 | VERIFIED | VERIFIED (su SHA) + trigger C3l.4/C3n.2 | C3l.4 (AT-UAT-009/010) |
-| R8 | Runtime Enhanced provider (Chronos RPC, fingerprints) | Provenance hardcodeada `chronos-mcp`/`ProviderKind::Null` en el path genérico (C3m.3); confidence mágica (C3m.4) | IN_PROCESS (declaraba provider-neutral) | tests runtime | C3m.3/C3m.4 | VERIFIED | **IMPLEMENTED** | C3m.3 + C3m.4 (AT-UAT-020/021) |
+| R8 | Runtime Enhanced provider (Chronos RPC, fingerprints) | Provenance hardcodeada `chronos-mcp`/`ProviderKind::Null` en el path genérico (C3m.3); confidence mágica (C3m.4) | IN_PROCESS (declaraba provider-neutral) | **`crates/sddk-engine/src/fingerprint.rs`** 5/5. *Medido en `ee5767a5`; antes decía «tests runtime», que no nombraba nada. El path Chronos RPC **no se cita porque no tiene fichero propio**: lo cubre `aiw_s5_chronos_real.rs` (fila `AIW-S5`), y esa fila es la autoridad, no esta* | C3m.3/C3m.4; `test_fingerprint_determinism`, `test_fingerprint_strategy_128` | VERIFIED | **IMPLEMENTED** | C3m.3 + C3m.4 (AT-UAT-020/021) |
 | R9 | Control tower + lens ecosystem | Dashboards UAT + kits presentes | RELEASE_ARTIFACT (dashboards generados) | uat dashboard renders | `docs/uat`, kits | IMPLEMENTED/VERIFIED parcial | sin re-clasificar (sin defecto del paquete) | — |
 | R10 | Governance ratchets, waivers expirables | El gate computa un **veredicto tipado** (`sddk_domain::rules::verdict`): `Conformant`/`OpenDebt`/`Waived`/`NotEvaluated`; `is_conformant()` es true **sólo** para `Conformant` | **PROCESS** (gate ejecutado como binario real; antes el test hacía `skip` y reportaba `ok` en 0.00s) | `verdict.rs` 8/8 unitarios (15 si se filtra por nombre; la cifra publicada 11/11 no reconcilia, session-69s bis 9) · `check_architecture_gate.rs` 4/4 con el binario real · F15 y F16 OBSERVED | `session60-c3l7-architecture-gate-verdict/RECEIPT.md` | DELIVERED | **IMPLEMENTED → el gate ya NO puede sustentar el claim "architecture conformant"**: exit 0 queda reservado a `Conformant`, y `Waived`/`NotEvaluated` salen con exit 2. **AT-UAT-015 sigue sin PASS** (el repo tiene 2 waivers vivos y 10 evaluadores sin implementar ⇒ veredicto actual `WAIVED`). D1: el test que certificaba el gate no lo ejecutaba (`skip` por binario ausente en target dir compartido). D2: afirmaba `ARCH001 FAIL`+exit 1, obsoleto — la edge engine→storage ya no existe. D3: `RuleStatus` no tenía `OPEN_DEBT` | C3l.7 cierra como slice; **conformar el repo** (eliminar waivers / implementar evaluadores) es trabajo de C5 |
 | R11 | Evaluate crate splits (por métricas) | Sin split; condicionado a métricas (C5) | — | — | ROADMAP C5 | DEFERRED | DEFERRED (sin re-clasificar) | C5 triggers |
+
+## ⚠️ Corrección de session-69s bis 10: las tres filas SÍ tienen evidencia, y mi tabla anterior las declaró no ejecutables
+
+La tabla de exit gate de C3n.3 (`ee5767a5`) escribió que `R2`, `R5` y `R8` **no nombran
+un artefacto ejecutable** y por tanto no son re-certificables. **Eso era cierto de la
+casilla y falso del mundo**: lo que no existía era el **nombre** en la casilla, no el
+test. Los tres módulos existen, compilan y pasan:
+
+| Fila | Lo que la casilla decía | Lo que hay | Medido en `ee5767a5` |
+|---|---|---|---|
+| `R2` | «tests knowledge existentes» | `crates/sddk-engine/src/knowledge.rs` · `semantic_graph.rs` · `crates/sddk-cli/src/knowledge_cmd.rs` | **25/25** + `1` `#[ignore]` declarado · **4/4** · **5/5** |
+| `R5` | «tests staleness (SPEC-012)» | `crates/sddk-domain/src/staleness.rs` · `crates/sddk-cli/tests/cli_stale_e2e.rs` | **7/7** · **5/5** |
+| `R8` | «tests runtime» | `crates/sddk-engine/src/fingerprint.rs` | **5/5** |
+
+**El diagnóstico que sostengo y el que retiro.** Sostengo que *una casilla de evidencia
+que contiene prosa donde debería contener una ruta es un claim que no se puede
+re-ejecutar*, y que por eso una fila así envejece sin que nadie lo note. Retiro la
+conclusión práctica que escribí —*«nombrar los ficheros es el trabajo que C3n.3 no puede
+hacer él solo porque no sabe cuáles son»*— porque **era falsa, y la forma de esa
+falsedad es la que la delata**: afirmé que no sabía cuáles eran **sin haber mirado**. El
+mapa estaba a un `grep` de distancia, en nombres de fichero obvios
+(`knowledge.rs`, `staleness.rs`, `fingerprint.rs`). **Es la sexta afirmación seguida en
+esta sesión que no sobrevive a medir**, y la quinta tras el mismo patrón: usar una
+ausencia de dato como si fuera un dato.
+
+**Lo que NO cambia:** el status de las tres filas. `R2` sigue `IMPLEMENTED` por el
+defecto KMT de tres significados (C3m.0), `R5` sigue con la invalidación incremental
+`NOT_VERIFIED` (C3m.1), `R8` sigue `IMPLEMENTED` por la provenance hardcodeada
+(C3m.3). **Nombrar la evidencia no arregla el defecto de la fila**; sólo hace que el
+status tenga una base que se puede volver a comprobar. Y esto es exactamente por lo que
+`R0` —que sí citaba su SHA— sigue siendo la mejor escrita.
+
+### La cita de `SPEC-012` en la fila `R5` era ambigua, y el código la resuelve
+
+`R5` citaba «tests staleness (**SPEC-012**)». **Hay dos `SPEC-012` en este repo** y la
+cita no decidía entre ellos:
+
+- `docs/architecture/specs/arch-spec-012-configuration.md` — el **canónico**
+  (`arch-spec-012`, CONFIGURATION, `status: proposed`);
+- `docs/history/legacy-packages/sddk-2.0-architecture-consolidation/specs/SPEC-012-staleness-impact.md`
+  — el **histórico** (Staleness, Impact and Drift Propagation).
+
+**El código implementa el histórico, no el canónico.** `crates/sddk-domain/src/staleness.rs`
+abre con `//! Universal staleness derivation over the reactive graph (SPEC-012, Phase 6)` y
+su `StalenessState` tiene **exactamente los cinco estados** del §2 del SPEC-012 histórico
+(`Fresh`, `PossiblyStale`, `Stale`, `Invalidated`, `Unknown`), con un
+`assert_variant_count_eq!(StalenessState, 5, …)` que los fija. El canónico es de
+**configuración de agentes** y no tiene ninguna de esas secciones.
+
+**Y el guard que debería haberlo visto no lo ve:** `test_uat_authority_citations.py`
+resuelve una cita `SPEC-*` contra `SPEC_DIR.glob("*.md")`, es decir contra el **canónico**,
+y da por buena la cita porque **`SPEC-012` sí resuelve** — hacia el documento que el
+código *no* implementa. **Un guard de citas que sólo comprueba que la cita resuelve no
+detecta una cita que resuelve al sitio equivocado**, y esa es la mitad del trabajo que el
+guard dice hacer.
 
 ## Fila transversal: gate de arquitectura
 

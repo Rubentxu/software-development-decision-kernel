@@ -1026,9 +1026,45 @@ dijo `cargo test`. **Cuando dos instrumentos discrepan, el que ejecuta es el
 instrumento**, y un pattern que no reproduce lo que el runner ve es un patron
 roto, no una fila distinta.
 
----
+### ⚠️ Corrección de session-69s bis 10: `R2`, `R5` y `R8` SÍ tienen evidencia ejecutable
 
-## C3n.4 — Release admission integration
+La tabla de arriba dice que esas tres filas **no nombran un artefacto ejecutable**.
+Medido en `ee5767a5`, **la casilla estaba vacía de nombre y el mundo lleno de tests**:
+
+| Fila | Módulos reales | Resultado |
+|---|---|---|
+| `R2` | `crates/sddk-engine/src/knowledge.rs` · `semantic_graph.rs` · `crates/sddk-cli/src/knowledge_cmd.rs` | **25/25** + `1` `#[ignore]` declarado · **4/4** · **5/5** |
+| `R5` | `crates/sddk-domain/src/staleness.rs` · `crates/sddk-cli/tests/cli_stale_e2e.rs` | **7/7** · **5/5** |
+| `R8` | `crates/sddk-engine/src/fingerprint.rs` | **5/5** |
+
+**Lo que se retira es la conclusión, no el diagnóstico.** El diagnóstico —*una casilla con
+prosa donde debería haber una ruta es una evidencia que no se puede re-ejecutar*— sigue
+cierto y es la razón de que el fallo pasara inadvertido. Se retira la frase «*nombrar los
+ficheros es el trabajo que C3n.3 no puede hacer él solo porque no sabe cuáles son*»:
+**no sabía cuáles son porque no miró**, y estaban a un `grep`. La sexta afirmación seguida
+de esta sesión que no sobrevive a medir.
+
+**Los status de las tres filas NO cambian**, y es lo importante: `R2` sigue `IMPLEMENTED`
+(KMT, tres significados), `R5` sigue `NOT_VERIFIED` en invalidación incremental, `R8`
+sigue `IMPLEMENTED` (provenance hardcodeada). **Nombrar la evidencia no arregla el defecto
+de la fila**; le da una base re-ejecutable sobre la que seguir sin resolverlo. Por eso
+`R0`, que sí citaba su SHA, sigue siendo la fila mejor escrita: no es la única bien
+escrita por casualidad, es la única cuya casilla contiene algo que corre.
+
+### El guard de citas resuelve `SPEC-012` hacia el documento que el código NO implementa
+
+`R5` citaba «tests staleness (**SPEC-012**)» y **hay dos**. `staleness.rs` implementa los
+cinco estados del §2 del SPEC-012 **histórico** (Staleness/Impact/Drift, en
+`docs/history/legacy-packages/sddk-2.0-architecture-consolidation/`), con
+`assert_variant_count_eq!(StalenessState, 5, …)`. El **canónico**
+`docs/architecture/specs/arch-spec-012-configuration.md` es de configuración de agentes.
+
+`test_uat_authority_citations.py` resuelve `SPEC-*` contra `SPEC_DIR.glob("*.md")` — el
+canónico — y **da la cita por buena porque `SPEC-012` sí resuelve**, hacia el documento
+equivocado. **Un guard de citas que sólo comprueba que la cita resuelve no detecta una
+cita que resuelve al sitio equivocado**, que es la mitad de lo que el guard dice hacer.
+Queda como trabajo con su propio ciclo; aquí se declara y se mide.
+
 
 Añadir al perfil que reclame estas capacidades:
 
