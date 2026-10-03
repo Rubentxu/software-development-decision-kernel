@@ -54,7 +54,11 @@ descartaba el arreglo si la extracción relajara cualquiera de esas cosas.
 | `15-falsify-forge.py` (5 mutaciones) | **5/5 DETECTADA**, 0 no medibles, exit 0 |
 | scanner de caracteres no latinos | CLEAN |
 
-Ningún verde reescrito: los 11 tests previos del módulo pasaron sin tocarlos.
+Ningún verde reescrito: los **10** tests previos del módulo pasaron sin tocarlos.
+Medido por commit, porque el «11» que decía antes esta línea no cuadraba con nada:
+`034d098a~1` tenía **10** `#[test]`, el lote 1 subió a **14** (añade R1, R3, R4 y
+R5) y el lote 2 a **15** (añade R2, y renombra R3). Los diez nombres originales
+siguen presentes, idénticos, en `HEAD`.
 
 ## Falsificación
 
