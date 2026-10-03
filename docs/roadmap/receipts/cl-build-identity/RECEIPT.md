@@ -143,3 +143,83 @@ eliminación, ningún renombrado — que es lo que el contrato llama regresión.
 Ciclo en `OPEN/build`, `B-direct`, sequence 1. **0 gates**: la transición
 `phase.build.complete.b-direct` exige `implementation-complete` y
 `implementation-receipt`, que se graduarán con este recibo.
+
+---
+
+# Corrección posterior: `--check` pasaba sobre un binario atrasado
+
+> Añadido tras publicar `032e9553`. **Este bloque se conserva aunque se corrija**,
+> porque explica por qué el defecto era invisible hasta que se miró con un binario
+> real en lugar de con un test.
+
+## El defecto, medido
+
+Construyendo el binario con `SDDK_GIT_SHA` apuntando a un commit que **no** es el
+HEAD — que es exactamente el escenario de INC-DEBT-064 — la salida fue:
+
+```text
+commit: dc69e6f2676c9c70c812c58f4b5195f6826f15fc
+source: env
+checkout_head: 032e9553decb697a3cba42897e76ae2a8a71b907
+relation: Behind
+reason: el commit del binario (dc69e6f2) es ancestro del HEAD del checkout, luego
+        el checkout tiene trabajo que el binario no contiene
+EXIT=0
+```
+
+**El texto y el código de salida se decían lo contrario en la misma pantalla.** El
+`reason` afirma que al binario le falta trabajo; el `EXIT=0` afirma que no le falta
+nada. Para cualquiera que use `--check` como gate —un script, un pipeline, un
+humano leyendo solo el código— un binario obsoleto se presenta como conforme.
+
+## Por qué estaba, y por qué los tests no lo vieron
+
+La causa es `is_answer()`, que metía `Behind` en el conjunto que pasa. La lectura
+detrás era: "`Behind` es una respuesta, luego pasa". Y lo es — **pero respecto a una
+pregunta distinta**. `is_answer` contestaba *¿hubo relación?*, y el código de salida
+tenía que contestar *¿este binario es el del checkout?*.
+
+STOP 3 dice «una relación que **no se pudo establecer** no sale con 0», y eso se
+cumplía: `Behind` sí establece la relación, la dirección va probada con
+`--is-ancestor`. Lo que STOP 3 no dice —y lo que el módulo sí tiene que decir— es que
+**una relación establecida y suficiente para responder no tiene por qué ser
+suficiente para pasar**. Establecida y aun así insuficiente: el binario no contiene
+el trabajo del checkout. Es el mismo principio de STOP 3 un nivel más arriba, y el
+lectura de STOP 3 como techo en vez de como suelo lo dejó pasar.
+
+Los tests no lo vieron por una razón distinta y declarada: el guard unitario fijaba
+`is_answer` —el predicado, no el efecto— y el guard e2e fijaba el **formato**, nunca
+el código de salida. Entre ambos, el código de salida no lo fijaba nadie.
+
+## El arreglo
+
+`is_answer` desaparece y le sigue `is_current`, que es `Matches` y nada más. El
+nombre nuevo dice lo que el viejo no decía: el código de salida responde a una
+sola pregunta. Con el mismo binario y el mismo checkout, `Behind` pasa de **0** a
+**1**; verificado reconstruyendo, no por lectura.
+
+## Falsificación, incluida la del guard que no detectaba nada
+
+- El guard unitario R4 estaba cambiado a `Matches` y `Behind`, es decir, fijaba el
+  comportamiento defectuoso. Corregido **en el guard** (el código era correcto
+  sobre su pregunta y la pregunta estaba mal), y se le añadió el caso `Behind`
+  como no pasante, que es el que antes no existía.
+- Reintroduciendo el defecto en el producto, R4 **cae** con el motivo que lo
+  explica. Falsificado.
+- El guard e2e nuevo, con el defecto puesto y el entorno normal, **PASABA**. Cuarta
+  vez en esta serie que un guard resulta ciego: sin `SDDK_GIT_SHA` el binario de
+  test cae por el fallback `.git`, que STOP 6 declara no concluyente, luego la
+  relación es siempre `unknown` y la rama `behind` —la única que hacía pasar al
+  defecto— no se alcanza nunca. Falsificado de verdad construyendo el binario de
+  test en un commit que no es el HEAD (`SDDK_GIT_SHA=$(git rev-parse HEAD~1)`),
+  donde **sí cae** con el código contradictorio. La condición de ceguera queda
+  escrita en el propio guard, porque un guard que parece cubrir un caso y no lo
+  cubre es peor que un guard ausente.
+
+## Lo que este defecto dice del proceso
+
+No lo encontró ninguna mutación del falsificador. Lo encontró **usar el producto
+como se usa**: declarar un commit viejo en la construcción y mirar qué salía. Las
+seis mutaciones de `23-falsify-build-identity.py` pasaban en verde sobre un
+`--check` que era peor que no tenerlo. Un falsificador que solo muta la
+implementación no ve los defectos de la *interfaz observable*.

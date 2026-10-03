@@ -130,10 +130,20 @@ pub enum CheckoutRelation {
 }
 
 impl CheckoutRelation {
-    /// Whether this binary can be trusted to reflect the checkout. Only
-    /// `Matches` and `Behind` are answers; the rest are the absence of one.
-    fn is_answer(self) -> bool {
-        matches!(self, CheckoutRelation::Matches | CheckoutRelation::Behind)
+    /// Whether this binary IS the checkout, which is the only question the
+    /// exit code answers.
+    ///
+    /// Only `Matches`. `Behind` used to be included here on the reading that
+    /// it is "an answer", and that made `dev build-id --check` exit 0 on a
+    /// binary that is a commit behind — measured, not assumed: a binary
+    /// declaring `dc69e6f2` against a checkout at `032e9553` printed
+    /// `relation: Behind` with the reason "el checkout tiene trabajo que el
+    /// binario no contiene" and still exited 0. The text and the exit code
+    /// contradicted each other, and a check that passes on a stale binary is
+    /// indistinguishable from one that passes on a current one — which is the
+    /// failure this module exists to remove, reached through the other door.
+    fn is_current(self) -> bool {
+        matches!(self, CheckoutRelation::Matches)
     }
 }
 
@@ -198,12 +208,21 @@ pub(super) fn run_dev_build_id(args: BuildIdArgs) -> CommandOutput {
             // establish the relation must NOT exit 0. A check that passes when
             // it does not know is worse than no check, because its success is
             // indistinguishable from a real pass.
-            let answered = value
+            //
+            // STOP 3 is the floor, not the ceiling, and reading it as the whole
+            // rule is what put `Behind` in the passing set. STOP 3 only says an
+            // *unestablished* relation must not pass; it says nothing about an
+            // established one that says the binary is out of date. The exit
+            // code answers one question — is THIS binary the one this checkout
+            // describes? — and only `Matches` answers yes. A second principle
+            // the module already had to state, applied one level up: success
+            // that cannot be told apart from a real pass is not a pass.
+            let current = value
                 .comparison
                 .as_ref()
-                .is_some_and(|c| c.relation.is_answer());
+                .is_some_and(|c| c.relation.is_current());
             let mut out = render_result(Ok(value), format, build_id_text);
-            if args.check && !answered {
+            if args.check && !current {
                 out.status = 1;
             }
             out
@@ -368,20 +387,33 @@ mod tests {
         assert!(env_identity().is_conclusive());
     }
 
-    // R4 / STOP 3: ninguna relacion es "bien" por omision. Solo `Matches` y
-    // `Behind` son respuestas; las demas son la ausencia de una.
+    // R4 / STOP 3: ninguna relacion es "bien" por omision, y el unico codigo de
+    // salida 0 es `Matches`.
+    //
+    // La primera version de este guard decia `Matches` y `Behind`, y era el
+    //Reflectido fiel de un producto defectuoso: un binario un commit atrasado
+    // salia con 0. Se falsifico con un binario real, no con una mutacion. Lo
+    // que lo distingue de R5 es que `Behind` SI establece una relacion — la
+    // direccion esta probada con `--is-ancestor` — y aun asi dice que el
+    // binario no contiene el trabajo del checkout. Establecida y aun asi
+    // insuficiente: un check que pasa ahi tiene un exito indistinguible del de
+    // un binario al dia.
     #[test]
-    fn r4_only_matches_and_behind_are_answers() {
-        assert!(CheckoutRelation::Matches.is_answer());
-        assert!(CheckoutRelation::Behind.is_answer());
+    fn r4_only_matches_makes_a_check_pass() {
+        assert!(CheckoutRelation::Matches.is_current());
+        assert!(
+            !CheckoutRelation::Behind.is_current(),
+            "STOP 3 aplicado un nivel mas: `Behind` prueba la direccion pero dice que \
+             el binario NO contiene el trabajo del checkout, luego no puede pasar"
+        );
         for relation in [
             CheckoutRelation::Diverged,
             CheckoutRelation::NoCheckout,
             CheckoutRelation::Unknown,
         ] {
             assert!(
-                !relation.is_answer(),
-                "{:?} no es una respuesta y no puede hacer pasar un check",
+                !relation.is_current(),
+                "{:?} no es el checkout y no puede hacer pasar un check",
                 relation
             );
         }
@@ -546,7 +578,7 @@ mod tests {
             "{}",
             comparison.reason
         );
-        assert!(!comparison.relation.is_answer());
+        assert!(!comparison.relation.is_current());
 
         let inconclusive = BuildIdentity {
             sha: "c".repeat(40),
@@ -560,7 +592,7 @@ mod tests {
             "{}",
             comparison.reason
         );
-        assert!(!comparison.relation.is_answer());
+        assert!(!comparison.relation.is_current());
     }
 
     // R2 no es un test de rust: es una propiedad del `build.rs`, y se verifica

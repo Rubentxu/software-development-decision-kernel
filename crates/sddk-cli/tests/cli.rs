@@ -15781,3 +15781,77 @@ fn build_id_reports_identity_and_provenance_in_both_formats() {
         value
     );
 }
+
+/// El codigo de salida de `--check` y la relacion que imprime dicen LO MISMO.
+///
+/// El guard anterior fijaba el FORMATO y nunca el codigo de salida, y ahi es
+/// donde estaba el defecto: `Behind` se contaba como respuesta, luego un
+/// binario un commit atrasado salia con 0 mientras su propia linea de `reason`
+/// decia que no contenia el trabajo del checkout. Un check que dice «pasa» y
+/// en la misma pantalla dice «no contiene tu trabajo» no es un check.
+///
+/// El invariante se fija aqui como relacion entre las dos salidas, no como un
+/// valor absoluto: el binario de test se construye con o sin `SDDK_GIT_SHA`
+/// segun el entorno, luego afirmar «sale 0» o «sale 1» seria fijar el entorno.
+/// Lo que no puede cambiar es que **salga 0 exactamente cuando y solo cuando
+/// la relacion sea `matches`**. Asi el guard cae ante cualquiera de las dos
+/// metades del defecto: el que hacia pasar a `Behind`, y el que hiciera fallar
+/// a un binario al dia.
+///
+/// Se lee el JSON y no el texto a proposito: el texto imprime la relacion con
+/// `{:?}` —`Unknown`, `NoCheckout`— y el JSON la serializa en snake_case, que
+/// es el contrato que fija `the_json_forms_are_stable_and_machine_readable`.
+/// La primera version de este guard leyo texto y fallo por eso.
+///
+/// **ESTE GUARD ES CIEGO EN EL ENTORNO POR DEFECTO, y hay que decirlo.**
+/// Sin `SDDK_GIT_SHA` el binario de test se construye por el fallback `.git`,
+/// que STOP 6 declara no concluyente, luego la relacion sale siempre `unknown`
+/// y la rama `behind` —la unica que hacia pasar al defecto— NO se alcanza
+/// nunca. Se comprobó: con el defecto reintroducido y el entorno normal este
+/// guard PASABA. Falsificado de verdad, con el binario de test construido en
+/// un commit que no es el HEAD:
+///
+/// ```text
+/// SDDK_GIT_SHA=$(git rev-parse HEAD~1) cargo test -p sddk-cli --test cli build_id
+/// ```
+///
+/// asi el binario declara el commit atrasado, `--check` llega a `behind`, y el
+/// guard cae con el codigo de salida contradictorio. Sin esa variable el guard
+/// vigila el resto de las relaciones y **no** esta; quien lo lea tiene que
+/// saberlo, porque un guard que parece cubrir un caso y no lo cubre es peor
+/// que un guard ausente.
+#[test]
+fn build_id_check_exit_code_agrees_with_the_relation_it_prints() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sddk"))
+        .args(["dev", "build-id", "--check", "--format", "json"])
+        .output()
+        .unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--check --format json` emits an object");
+    let relation = value["comparison"]["relation"]
+        .as_str()
+        .unwrap_or_else(|| panic!("`--check` no declara relacion: {}", value))
+        .to_string();
+
+    assert!(
+        matches!(
+            relation.as_str(),
+            "matches" | "behind" | "diverged" | "no_checkout" | "unknown"
+        ),
+        "relacion desconocida {:?} en: {}",
+        relation,
+        value
+    );
+
+    let is_current = relation == "matches";
+    assert_eq!(
+        is_current,
+        out.status.success(),
+        "`--check` salio {} pero declaro `relation: {}`; el codigo de salida responde a \
+         una sola pregunta —si ESTE binario es el del checkout— y `matches` es la unica \
+         respuesta que si. JSON completo: {}",
+        out.status,
+        relation,
+        value
+    );
+}
