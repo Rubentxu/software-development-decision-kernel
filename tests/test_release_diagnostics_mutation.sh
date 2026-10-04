@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
+# SC2016, MEDIDO y deliberado: cada mutacion es un payload de python que se
+# pasa entre comillas simples precisamente para que el shell NO lo expanda —
+# el codigo python tiene que llegar a `python3` con sus `$` intactos, porque
+# forma parte de los strings que se comparan con el fichero—. Pasarlos a
+# comillas dobles los expandiria aqui y la mutacion buscaria otra cosa, luego
+# caeria por el motivo equivocado y el falsador contaria una deteccion que no
+# ha medido la propiedad. Mismo motivo, misma directiva de fichero entero.
+
+
 # Autofalsacion del diagnostico de release, y de su cableado.
 #
 # QUE FALSA ESTE SCRIPT

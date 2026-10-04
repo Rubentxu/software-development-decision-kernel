@@ -93,6 +93,17 @@ export RELEASE_DIAGNOSED_FILE
 # `|| true` por la misma razon que la de la linea 1223 y por la misma causa
 # medida: esta corre en el camino de salida, con `set -e` activo, y una
 # limpieza que falla se convierte en el codigo de salida del release.
+#
+# SC2329, MEDIDO: shellcheck dice que esta funcion no se invoca nunca, y es
+# FALSO -- la invoca `release_on_exit`, que va por `trap`, y shellcheck no
+# traza los `trap`. MEDIDO el alcance: la redireccion la INTRODUCE el trabajo
+# de diagnostico de esta misma sesion --`v2.7.0`, `v2.8.0` y `v2.8.1` dan
+# CERO SC2329-- y lleva varios intentos sin detectarse porque los gates
+# ANTERIORES del 1b fallaban antes: un gate latente que otro gate tapa es un
+# gate que nadie mira. La segunda definicion, la del paso 5, tampoco la ve
+# ShellCheck porque redefine el mismo nombre, luego la directiva va en la
+# primera, que es la que el aviso senala.
+# shellcheck disable=SC2329
 cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH" || true; }
 
 # Una sola salida para el release, con dos responsabilidades que antes vivian
@@ -115,7 +126,14 @@ release_on_exit() {
     if [ "$code" != "0" ] && [ -n "${RELEASE_DIE_CODE:-}" ]; then
         diag="$RELEASE_DIE_CODE"
     fi
-    RELEASE_PROCESS_CODE="$code"
+    # `export` y no una asignacion a secas: lo consume `release_diagnostics.sh`,
+    # que es otro fichero, y shellcheck no cruza ficheros. MEDIDO: sin el
+    # `export` salia SC2034 en este linea y `test_build_identity_policy.sh` lo
+    # convierte en fallo del release —que corre shellcheck SIN filtro de
+    # severidad, luego un `info` para el gate es igual que un `error`—. El
+    # `export` no es cosmetico: es la declaracion de que el valor cruza ficheros,
+    # igual que lo hace `RELEASE_DIAGNOSED_FILE` unas lineas mas arriba.
+    export RELEASE_PROCESS_CODE="$code"
     release_diagnose_exit "$diag" || true
     cleanup_release_scratch
     return "$code"

@@ -110,6 +110,13 @@ limpiar_marcador() { rm -f "$RELEASE_DIAGNOSED_FILE"; }
 # que lo produce es un fixture a medias; este lo reproduce siempre.
 : > "$RELEASE_DIAGNOSED_FILE"
 
+# SC2329, MEDIDO: shellcheck dice que esta funcion no se invoca nunca y es
+# FALSO -- la invoca el `trap` de la linea siguiente, y shellcheck no traza
+# los `trap`. El aviso es `info`, pero `test_build_identity_policy.sh` corre
+# ShellCheck sin filtro de severidad, luego para ese gate es un fallo, y eso
+# detiene el release en el 1b. El fichero no existia en v2.8.1, luego la
+# aparicion es de este bloque y no deuda heredada.
+# shellcheck disable=SC2329
 cleanup() {
     local pid
     for pid in "${FAKE_CARGO_PIDS[@]:-}"; do
@@ -120,6 +127,12 @@ cleanup() {
 trap cleanup EXIT
 
 # shellcheck source=../scripts/lib/release_diagnostics.sh
+# SC1091, MEDIDO: el gate `test_build_identity_policy.sh` corre shellcheck SIN
+# `-x`, luego el `source=` de arriba —que es la forma correcta cuando si se
+# sigue el fichero— no evita el aviso. Se dice explicitamente en vez de dejar
+# que el gate decida por el codigo de salida: un `info` sin explicar es un
+# fallo que aparece de noche.
+# shellcheck disable=SC1091
 source "$LIB"
 
 # --- C0: control. Sin nada roto, el diagnostico calla y no inventa ------------
@@ -223,8 +236,8 @@ caso_termina C6
 caso_empieza
 export RELEASE_SCRATCH="$TMPROOT"
 export SDDK_RELEASE_MIN_FREE_MB=1 SDDK_RELEASE_MIN_AVAIL_MB=1
-release_check_resources "$TMPROOT" >/dev/null 2>&1
-asert "C7: con margen de sobra devuelve 0" "$([ $? -eq 0 ] && echo 1 || echo 0)"
+if release_check_resources "$TMPROOT" >/dev/null 2>&1; then C7_RC=1; else C7_RC=0; fi
+asert "C7: con margen de sobra devuelve 0" "$C7_RC"
 
 # Un umbral que el scratch no puede cumplir, y un `df` que dice la cifra: la
 # cifra del mensaje tiene que ser la que el stub devuelve, no una del script. Por
@@ -266,10 +279,10 @@ rc=$?
 asert "C8: memoria por debajo del margen devuelve 1" "$([ $rc -eq 1 ] && echo 1 || echo 0)" "rc=$rc"
 asert "C8: nombra la memoria y su cifra" \
     "$([[ "$out" == *memoria* && "$out" == *"512 MiB"* ]] && echo 1 || echo 0)" "obtenido: $out"
-out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 \
+if out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 \
     SDDK_RELEASE_MIN_FREE_MB=1 SDDK_RELEASE_MIN_AVAIL_MB=4096 \
-    release_check_resources "$TMPROOT" 2>&1)"
-asert "C8: memoria suficiente devuelve 0" "$([ $? -eq 0 ] && echo 1 || echo 0)"
+    release_check_resources "$TMPROOT" 2>&1)"; then C8_RC=1; else C8_RC=0; fi
+asert "C8: memoria suficiente devuelve 0" "$C8_RC"
 # Disco y memoria son reglas DISTINTAS: basta con que una falle, y el mensaje
 # tiene que senalar la que fallo, no la otra.
 #
@@ -298,11 +311,11 @@ asert "C8: y el mensaje no culpa a la memoria" \
     "$([[ "$out" == *disco* && "$out" != *memoria* ]] && echo 1 || echo 0)" "obtenido: $out"
 # Y el otro lado de la misma regla, con la cifra del stub: disco y memoria son
 # independientes, asi que con las dos de sobra tiene que devolver 0 sin hablar.
-out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 FAKE_FREE_MB=999999999 FAKE_MOUNT=/mnt/scratch-falso \
+if out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 FAKE_FREE_MB=999999999 FAKE_MOUNT=/mnt/scratch-falso \
     SDDK_RELEASE_MIN_FREE_MB=4096 SDDK_RELEASE_MIN_AVAIL_MB=4096 \
-    release_check_resources "$TMPROOT" 2>&1)"
+    release_check_resources "$TMPROOT" 2>&1)"; then C8_RC=1; else C8_RC=0; fi
 asert "C8: y con las dos de sobra devuelve 0 en silencio" \
-    "$([ $? -eq 0 ] && echo 1 || echo 0)" "obtenido: $out"
+    "$C8_RC" "obtenido: $out"
 rm -f "$STUBS/free" "$STUBS/df"
 caso_termina C8
 

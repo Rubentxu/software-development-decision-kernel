@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
+# SC2016, MEDIDO y deliberado: los needles de estos casos llevan `\$` DENTRO de
+# comillas simples a proposito —lo que se busca en el fichero es la barra
+# literal followed de dollar, porque asi esta escrito en el codigo que se
+# comprueba—. Pasarlos a comillas dobles haria que el shell expandiera el
+# dollar y el needle buscara otra cosa, luego el caso pasaria por vacuidad
+# comparando contra un patron que no es el del codigo. Los payloads de
+# python y los `bash -c` de composicion van en comillas simples por la misma
+# razon. La directiva es de fichero entero porque el patron se repite en
+# decenas de needles y es la misma decision en todos.
+
+
 # Que release.sh USE el diagnostico, y no solo que la libreria exista.
 #
 # POR QUE ESTE TEST ES SEPARADO Y NO UN CASO MAS DE test_release_diagnostics.sh
@@ -380,9 +392,21 @@ asert "E2: y en efecto no se detuvo por recursos" \
 # Lo que si se exige es el implicado, que es verdadero con y sin muerte y por
 # eso no presupone ninguna: si el dry-run se para, tiene que decir por que y en
 # que paso.
+# SC2015, MEDIDO: estaba escrito como `[ ... ] && echo 1 || { ...; }`, que no
+# es un if-else -- el `{...}` corre tambien si el `echo 1` de en medio falla--.
+# Aqui no puede fallar, luego el aviso es tecnicamente correcto y la forma es
+# correcta tambien; se reescribe igual porque un `A && B || C` que solo es
+# seguro por casualidad se lee como seguro, y ese es el tipo de cosa que
+# somebody copia a un sitio donde B si puede fallar.
+if [ "$e2_rc" = "0" ]; then
+    E2_IMPLICA=1
+elif grep -q 'por que fallo el release' "$e2_log"; then
+    E2_IMPLICA=1
+else
+    E2_IMPLICA=0
+fi
 asert "E2: y si aun asi se para, el bloque nombra su propio paso" \
-    "$([ "$e2_rc" = "0" ] && echo 1 || { grep -q 'por que fallo el release' "$e2_log" && echo 1 || echo 0; })" \
-    "rc=$e2_rc"
+    "$E2_IMPLICA" "rc=$e2_rc"
 asert "E2: este dry-run tampoco llega al 1b" \
     "$(grep -q '1b/15' "$e2_log" && echo 0 || echo 1)"
 caso_termina E2
