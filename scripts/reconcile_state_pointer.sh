@@ -110,17 +110,38 @@ sha_reconcilable=1
 TOLERANCE="${PUNCTUAL_TOLERANCE_OVERRIDE:-3}"
 
 if [ -n "$current_sha" ] && git rev-parse --verify --quiet "$current_sha^{commit}" >/dev/null; then
-  behind=$(git rev-list --count "$current_sha..$target_sha")
-  if [ "$behind" -le "$TOLERANCE" ]; then
-    # El SHA NO se mueve (esta dentro de tolerancia y su nota de
-    # evidencia es más informativa que la que escribiria este script),
-    # pero la version puede seguir desalineada: son dos campos
-    # independientes y drift en uno no absuelve al otro.
-    echo "  current_sha: $current_sha, $behind commit(s) por detras (tolerancia $TOLERANCE) -- se conserva"
-  else
-    echo "  current_sha va $behind commit(s) por detras (tolerancia $TOLERANCE) -- se reconcilia"
+  # ALCANZABILIDAD, y va ANTES que la tolerancia. MEDIDO: un puntero cuyo
+  # commit fue reescrito (un `commit --amend` deja el objeto vivo pero fuera
+  # de toda rama) RESUELVE, luego pasaba el `rev-parse` de arriba, y
+  # `rev-list --count sha..main` devuelve un numero pequeno —1 o 2— porque
+  # el commit reescrito tenia practicamente el mismo historial. Cabia en
+  # tolerancia, luego este script anunciaba "nada que reparar" mientras
+  # `tests/test_release_state_pointer.sh` daba FAIL en dos comprobaciones
+  # ("no esta en origin/main" y "no es ancestro de HEAD").
+  #
+  # Dos herramientas del mismo repo discrepando sobre el mismo fichero, y la
+  # mas facil de obedecer es la que dice PASS: el operador reconcilia, no pasa
+  # nada, y el guard sigue rojo. La tolerancia mide RETRASO de un puntero
+  # sano; no puede Absolver un puntero que ya no esta en el arbol.
+  if ! git merge-base --is-ancestor "$current_sha" "$target_sha" 2>/dev/null; then
+    echo "  current_sha $current_sha RESUELVE pero NO es ancestro de main: commit"
+    echo "    reescrito o en una rama abandonada. La tolerancia no aplica a un"
+    echo "    puntero que no esta en el arbol -- se reconcilia."
     drift=1
     sha_reconcilable=0
+  else
+    behind=$(git rev-list --count "$current_sha..$target_sha")
+    if [ "$behind" -le "$TOLERANCE" ]; then
+      # El SHA NO se mueve (esta dentro de tolerancia y su nota de
+      # evidencia es más informativa que la que escribiria este script),
+      # pero la version puede seguir desalineada: son dos campos
+      # independientes y drift en uno no absuelve al otro.
+      echo "  current_sha: $current_sha, $behind commit(s) por detras (tolerancia $TOLERANCE) -- se conserva"
+    else
+      echo "  current_sha va $behind commit(s) por detras (tolerancia $TOLERANCE) -- se reconcilia"
+      drift=1
+      sha_reconcilable=0
+    fi
   fi
 else
   echo "  current_sha ausente o irresoluble: drift estructural -- se reconcilia"
