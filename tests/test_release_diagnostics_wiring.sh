@@ -126,6 +126,56 @@ asert "E0: el preflight de recursos falla CERRADO (die), el de lock solo avisa" 
 n_skips="$(grep -cE '^[[:space:]]*bash "\$RELEASE" --dry-run --skip-tests' "$RELEASE_WIRE")"
 asert "E0: las dos invocaciones del release llevan --skip-tests (si no, este guard se re-dispara)" \
     "$([ "$n_skips" -eq 2 ] && echo 1 || echo 0)" "invocaciones con --skip-tests: $n_skips"
+
+# La salida de un test que falla se MUESTRA, no se tira. MEDIDO: el 1b era
+# `bash "$t" >/dev/null || die "... (run manually for details)"`, que es la
+# misma clase de defecto que los 32 `die` sin causa en la forma mas frecuente
+# de todas, y ademas hacia que el bloque de diagnostico —que declara "para eso
+# esta el log de arriba"— remitiera a un log que el propio release habia
+# descartado. Un diagnostico que manda a un log que no existe no diagnostica.
+#
+# TODOS los needles de este bloque pasan por `codigo()` y por `presenta()`.
+#
+# `codigo()` filtra los comentarios: sin eso, un needle que busca el defecto
+# encuentra tambien la frase que lo EXplica, y el caso queda en rojo con el
+# defecto ya arreglado. MEDIDO, buscando `bash "$t" >/dev/null`.
+#
+# `presenta()` usa `grep -c` y no `grep -q`, y no es un detalle. MEDIDO, con
+# `set -o pipefail` —que este test tiene—: `codigo | grep -q` falla cuando SI
+# encuentra, porque `grep -q` sale en cuanto casa, el escritor recibe SIGPIPE
+# y el pipeline devuelve el fallo del escritor. Un needle que acierta reporta
+# que falla. `grep -c` lee el flujo entero y no sufre eso.
+#
+# Es la TERCERA forma de needle roto del bloque, y las tres son la misma: el
+# needle no mide lo que dice. (1) buscabamos una cadena que no existe en
+# ninguna linea y hallabamos una mencion dentro de un comentario. (2)
+# buscabamos el defecto en el fichero entero y lo encontramos en el comentario
+# que lo explica. (3) el needle acierta y el mecanismo que lo rodea lo declara
+# fallido. En un repo que documenta sus propios errores, un needle tiene que
+# mirar CODIGO y no depender de como se comporta lo que tiene delante.
+#
+# Y una CUARTA, anadida al construir lo de arriba, que es la mas silenciosa de
+# las cuatro: escribir `coincide X && echo 0 || echo 1` donde `coincide`
+# IMPRIME 1 y por tanto devuelve 0. El `&&` evalua el ESTADO DE SALIDA, no el
+# valor impreso, luego ese `&&` se cumple siempre y el asert nunca puede caer.
+# Un needle que no puede fallar es peor que uno sin needle, porque compra
+# cobertura. Por eso `coincide` se consume SIEMPRE por `[ "$(coincide ...)" = N ]`
+# y nunca por su codigo de retorno.
+codigo() { grep -vE '^[[:space:]]*#' "$1"; }
+coincide() { [ "$(codigo "$RELEASE" | grep -c "$1")" -gt 0 ] && echo 1 || echo 0; }
+ausente() { [ "$(coincide "$1")" = 0 ] && echo 1 || echo 0; }
+asert "E0: el bucle de shell NO descarta la salida del test (>/dev/null)" \
+    "$(ausente 'bash "\$t" >/dev/null')"
+asert "E0: el bucle de shell escribe la salida en un log del scratch" \
+    "$(coincide 't_log="\$RELEASE_SCRATCH/shell-test-')"
+asert "E0: y muestra las ultimas lineas ANTES de morir" \
+    "$(coincide 'tail -30 "\$t_log" >&2')"
+asert "E0: el die nombra DONDE esta el log completo" \
+    "$(coincide 'salida completa en \$t_log')"
+asert "E0: el bucle de python tampoco la descarta (mismo defecto, mismo paso)" \
+    "$(ausente 'python3 "\$p" >/dev/null')"
+asert "E0: y no queda ningun 'run manually for details' que no diga donde esta" \
+    "$(ausente 'die ".*run manually for details')"
 caso_termina E0
 
 # --- E1: margen imposible -> el release para nombrando el recurso ------------

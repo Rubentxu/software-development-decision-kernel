@@ -342,8 +342,24 @@ if [ "$SKIP_TESTS" = "0" ]; then
         # `tests/test_gate_coverage.py` Regla 3, que lo comprueba estatico.
         [ -x "$t" ] \
             || die "shell test enumerated but not executable (1b would skip it silently): $t — chmod +x $t"
-        bash "$t" >/dev/null \
-            || die "shell test failed: $t (run manually for details)"
+        # La salida del test va a un log, y si falla se MUESTRA antes de morir.
+        #
+        # MEDIDO: estaba `bash "$t" >/dev/null || die "... (run manually for
+        # details)"`. Eso es la misma clase de defecto que los 32 `die` sin
+        # causa que este bloque vino a cerrar, en la forma mas frecuente de
+        # todas: el release se negaba a decir por que fallo y su unica
+        # consigna era "miralo a mano", sin decir donde. Peor: el bloque de
+        # diagnostico declara "esto NO dice cual test fallo; para eso esta el
+        # log de arriba", y el log **no estaba arriba porque se habia
+        # descartado**. Un diagnostico que remite a un log que el propio
+        # release tiro no diagnostica: manda al operador a buscar con una
+        # referencia que no existe.
+        t_log="$RELEASE_SCRATCH/shell-test-$(basename "$t" .sh).log"
+        if ! bash "$t" >"$t_log" 2>&1; then
+            printf '\n\033[1;31m  ✗ ultimas lineas de %s:\033[0m\n' "$t" >&2
+            tail -30 "$t_log" >&2
+            die "shell test failed: $t — salida completa en $t_log"
+        fi
         ok "shell test: $(basename "$t")"
     done
     ok "shell contract tests green"
@@ -365,8 +381,15 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_contamination_surface_mutation.py \
              tests/test_gate_coverage.py; do
         if [ -f "$p" ]; then
-            python3 "$p" >/dev/null \
-                || die "python contract test failed: $p (run manually for details)"
+            # Mismo arreglo que en el bucle de shell, y por el mismo motivo: un
+            # `>/dev/null` seguido de "run manually for details" es el release
+            # negandose a decir por que fallo, dos veces en el mismo paso.
+            p_log="$RELEASE_SCRATCH/python-test-$(basename "$p" .py).log"
+            if ! python3 "$p" >"$p_log" 2>&1; then
+                printf '\n\033[1;31m  ✗ ultimas lineas de %s:\033[0m\n' "$p" >&2
+                tail -30 "$p_log" >&2
+                die "python contract test failed: $p — salida completa en $p_log"
+            fi
             ok "python test: $(basename "$p")"
         else
             warn "python test missing, skipping: $p"
@@ -1050,7 +1073,7 @@ else
          Log: $CHANGELOG_BASELINE_MUT_LOG"
 fi
 
-step "3m/15 — el release nombra su propia causa de fallo, y se le aplican diez mutaciones"
+step "3m/15 — el release nombra su propia causa de fallo, y se le aplican once mutaciones"
 RELEASE_DIAG_MUT_LOG="$RELEASE_SCRATCH/release_diagnostics_mutation.log"
 # El falsador corre los dos guards por dentro, asi que esto no es un test mas:
 # es la prueba de que los 42 casos de diagnostico y los 24 de cableado CAEN
@@ -1061,7 +1084,7 @@ if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1
 else
     tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
     die "la autofalsacion del diagnostico de release no pasa. Eso significa que una de
-         las diez comprobaciones no tiene dientes, o que el release vuelve a morir
+         las once comprobaciones no tienen dientes, o que el release vuelve a morir
          sin decir por que —que es exactamente el defecto que este paso existe para
          cerrar. Un gate que puede quedarse mudo y seguir contando como verde no
          es un gate.

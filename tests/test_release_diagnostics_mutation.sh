@@ -228,12 +228,26 @@ s = s.replace("\"$RELEASE\" --dry-run --skip-tests", "\"$RELEASE\" --dry-run")
 open(p, "w").write(s)
 '
 
+mutar "M11 el 1b vuelve a descartar la salida del test que falla" "$RELEASE" "$WIRE" E0 \
+    "con >/dev/null, el release vuelve a no decir por que fallo y su unica consigna es mirar a mano sin decir donde." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+s = s.replace(
+    "        if ! bash \"$t\" >\"$t_log\" 2>&1; then",
+    "        if ! bash \"$t\" >/dev/null; then")
+s = s.replace(
+    "            python3 \"$p\" >\"$p_log\" 2>&1; then",
+    "            python3 \"$p\" >/dev/null; then")
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las diez comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las once comprobaciones tienen dientes, y el arbol quedo intacto.\n'
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then
