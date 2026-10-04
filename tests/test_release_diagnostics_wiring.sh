@@ -237,11 +237,36 @@ caso_empieza
 # garantia es estructural, no una bandera: no depende de que el preflight
 # funcione.
 export SDDK_SKIP_SIGNING=1
+
+# MEDIDO: dentro del release, E2 caia con UNA asercion —"el diagnostico de ese
+# fallo tambien nombra su propio paso"— y fuera pasaba entero. La causa es la
+# misma que la del defecto C4/C5 de la libreria, y la clase es "un caso de test
+# no puede heredar el estado que le impone el entorno": `release.sh` exporta
+# `RELEASE_DIAGNOSED_FILE` apuntando a SU scratch, y ese marcador ya existe
+# cuando corre el 1b. El dry-run anidado lo hereda, su `release_on_exit` ve el
+# marcador y **no imprime el bloque** —porque la idempotencia hace exactamente
+# lo que debe hacer—, luego el asert que busca el paso no lo encuentra. El
+# defecto era invisible fuera del entorno que lo produce, que es la forma mas
+# dificil de encontrar.
+#
+# El arreglo es que el test sea dueno de su marcador, no que la idempotencia
+# afloje: la idempotencia esta bien en produccion —es lo que hace que el bloque
+# salga una vez cuando `die` y el manejador corren los dos—, y lo que estaba mal
+# era que el test lo compartia. Cada invocacion borra el marcador antes de
+# arrancar, que es el estado fresco real de un proceso nuevo, y por eso el
+# diagnostico se tiene que imprimir.
+WIRE_TMPDIR="$(mktemp -d)"
+WIRE_DIAG_MARKER="$WIRE_TMPDIR/.sddk-diagnosed-wiring"
+export RELEASE_DIAGNOSED_FILE="$WIRE_DIAG_MARKER"
+limpiar_marcador() { rm -f "$WIRE_DIAG_MARKER"; }
+limpiar_marcador
+
 e1_log="$(mktemp)"
 e2_log="$(mktemp)"
 e1_rc=0
 e2_rc=0
 
+limpiar_marcador
 SDDK_RELEASE_MIN_FREE_MB=999999999 SDDK_RELEASE_MIN_AVAIL_MB=1 \
     bash "$RELEASE" --dry-run --skip-tests > "$e1_log" 2>&1 || e1_rc=$?
 
@@ -290,6 +315,7 @@ caso_empieza
 # el desarrollo, que es cuando mas hace falta. La afirmacion util —"el gate se
 # puede superar"— no depende de nada de eso.
 
+limpiar_marcador
 SDDK_RELEASE_MIN_FREE_MB=1 SDDK_RELEASE_MIN_AVAIL_MB=1 \
     bash "$RELEASE" --dry-run --skip-tests > "$e2_log" 2>&1 || e2_rc=$?
 
@@ -370,6 +396,45 @@ asert "E5: y lo que declara nombra el flag y el gate, no dice solo 'skipping'" \
     "$(printf '%s' "$DECLARA" | grep -q 'NO_EJECUTADO (--skip-tests)' && printf '%s' "$DECLARA" | grep -q 'NOMBRE_DEL_GATE' && echo 1 || echo 0)" \
     "declaracion: $(printf '%s' "$DECLARA" | tr -d '\n' | cut -c1-60)"
 caso_termina E5
+
+# --- E6: el guard no depende del entorno que lo invoca ------------------------
+#
+# MEDIDO: dentro del release, E2 caia con UNA asercion —"el diagnostico de ese
+# fallo tambien nombra su propio paso"— y fuera pasaba entero. La clase es
+# "un caso de test no puede heredar el estado que le impone el entorno": el
+# release exporta `TMPDIR="$RELEASE_SCRATCH"` y `RELEASE_DIAGNOSED_FILE`, luego
+# el test hereda estado del proceso que lo invoca, y un asert que depende de
+# ese estado tiene un fallo que SOLO aparece cuando lo hay. Un guard que solo
+# se puede ver fallar dentro de un release es un guard cuyo fallo se descubre
+# cuando el release se para, que es la forma mas cara de descubrirlo.
+#
+# Este caso comprueba la PROPIEDAD que hace al guard independiente del entorno:
+# es dueno de su marcador y lo limpia antes de CADA invocacion, luego E1 no le
+# deja a E2 un marcador ya escrito. Se comprueba sobre el codigo del propio test
+# y NO ejecutandose a si mismo con un entorno falso: la primera version de este
+# caso hacia justo eso, se lanzaba a si mismo, y eso es **la misma clase de
+# regresion** que el arreglo de la sesion-80 —una prueba que se re-dispara a si
+# misma—, y se produjo en el primer intento con decenas de procesos vivos. Un guard
+# que se prueba asi necesita un guard que lo vigile, y el unico que puede
+# vigilarlo es el mismo mecanismo que evita que la prueba se repita.
+#
+# LO QUE NO SE AFIRMA, escrito para que nadie lo lea mas fuerte: esto demuestra
+# que el marcador es del test, no que el fallo original este causado por el
+# marcador. Quitar el arreglo **no reproduce** el fallo fuera del release, luego
+# la causa exacta sigue sin estar aislada y se dice aqui para que nadie la de
+# por cerrada.
+caso_empieza E6
+CODIGO_WIRE="$(codigo "$RELEASE_WIRE")"
+asert "E6: el test exporta SU marcador, y no hereda el del release" \
+    "$(printf '%s' "$CODIGO_WIRE" | grep -q 'export RELEASE_DIAGNOSED_FILE="\$WIRE_DIAG_MARKER"' && echo 1 || echo 0)"
+asert "E6: y el marcador cuelga de un temporal suyo, no de un caminho heredado" \
+    "$(printf '%s' "$CODIGO_WIRE" | grep -q 'WIRE_DIAG_MARKER="\$WIRE_TMPDIR/' && echo 1 || echo 0)"
+n_limpia="$(printf '%s' "$CODIGO_WIRE" | grep -c '^limpiar_marcador$')"
+asert "E6: limpia el marcador ANTES de cada dry-run, para que E1 no se lo deje a E2" \
+    "$([ "$n_limpia" -ge 3 ] && echo 1 || echo 0)" "llamadas: $n_limpia"
+asert "E6: la propiedad se comprueba por codigo y no relanzando el test (una autorrecursion es la regresion que se arranco)" \
+    "$(printf '%s' "$CODIGO_WIRE" | grep -qE 'bash "\$\{BASH_SOURCE\[0\]\}"' && echo 0 || echo 1)"
+caso_termina E6
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
