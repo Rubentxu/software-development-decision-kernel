@@ -115,6 +115,24 @@ LINE_9="$(step_line "9/${TOTAL_STEPS}")"
 # sites below (the historic name was LINE_2 for the literal `step "2/14"`).
 LINE_NEXT="$NEXT_AFTER_1C"
 
+# MEDIDO: este guard usaba `sed -n ... | grep -q` CON `set -o pipefail`, y eso
+# falla CUANDO ACIERTA. `grep -q` sale en cuanto casa, `sed` recibe SIGPIPE y el
+# pipeline devuelve el fallo del escritor. Con una slice de ~180 lineas la
+# carrera se gana o se pierde segun el reparto, luego el guard pasaba fuera del
+# release y caia dentro: MEDIDO, el release 2.9.0 murio en el 1b con
+# `FAIL (e): step 1c does not use merge-base ancestor check` mientras el mismo
+# test daba 5 de 5 al correrlo solo, con los MISMOS limites calculados.
+#
+# La clase ya estaba escrita en el CHANGELOG de la 2.8.0, con su arreglo —
+#`grep -c` lee el flujo entero y no sufre SIGPIPE—. Aqui se hace mejor que
+# cambiar `-q` por `-c`: la slice se lee UNA vez a una variable y se busca
+# DENTRO, sin tuberia, y de paso el fichero se abre una vez en vez de seis.
+SECCION_1C="$(sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH")"
+# Imprime CUANTAS lineas casan, nunca su codigo de salida: el codigo dice si
+# grep fallo, no si el needle acerto, y esos dos no son lo mismo.
+casan_1c() { printf '%s' "$SECCION_1C" | grep -c -- "$1"; }
+casan_1c_sin() { printf '%s' "$SECCION_1C" | grep -v -- "$1" | grep -cE "$2"; }
+
 echo "step 1b at line: $LINE_1B"
 echo "step 1c at line: $LINE_1C"
 echo "next step after 1c at line: $NEXT_AFTER_1C (semantic step 2)"
@@ -141,14 +159,12 @@ echo "PASS (a): step 1c is between step 1b and step 2"
 
 # --- (b) step 1c invokes `git push origin main` (branch, not tag) ---
 
-if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q 'git push origin main'; then
+if [ "$(casan_1c 'git push origin main')" = "0" ]; then
     echo "FAIL (b): step 1c does not invoke 'git push origin main'"
     exit 1
 fi
 
-if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q 'git push origin v\?[0-9]'; then
+if [ "$(casan_1c 'git push origin v\?[0-9]')" -gt 0 ]; then
     echo "FAIL (b): step 1c pushes a tag directly — that bypasses the"
     echo "        pre-push hook and the branch-based target resolution."
     echo "        The contract is: push the branch, let gh release create"
@@ -156,9 +172,7 @@ if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
     exit 1
 fi
 
-if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -v -- '--force-version' \
-        | grep -qE '(^|[[:space:],])(--force|--force-with-lease)([[:space:]]|$)'; then
+if [ "$(casan_1c_sin '--force-version' '(^|[[:space:],])(--force|--force-with-lease)([[:space:]]|$)')" -gt 0 ]; then
     echo "FAIL (b): step 1c uses --force on the branch push — this masks"
     echo "        non-fast-forward failures and silently clobbers origin."
     exit 1
@@ -205,8 +219,7 @@ echo "PASS (c): step 1c is outside the SKIP_TESTS guard"
 # a second predicate (e.g. checking `git log -1 --format=%s` itself), it
 # creates two governance surfaces that can drift. We assert that step 1c
 # does not parse `git log -1 --format=%s` itself; it relies on the hook.
-if sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q 'git log -1 --format=%s'; then
+if [ "$(casan_1c 'git log -1 --format=%s')" -gt 0 ]; then
     echo "FAIL (d): step 1c duplicates the bump-commit predicate"
     echo "        The pre-push hook is the single source of truth."
     exit 1
@@ -218,16 +231,14 @@ echo "PASS (d): step 1c delegates the predicate to the pre-push hook"
 # If origin/main has advanced concurrently, step 1c must refuse to
 # release (rather than silently force-pushing or skipping). The block
 # uses `git merge-base --is-ancestor` to detect divergence.
-if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q 'git merge-base --is-ancestor'; then
+if [ "$(casan_1c 'git merge-base --is-ancestor')" = "0" ]; then
     echo "FAIL (e): step 1c does not use merge-base ancestor check"
     echo "        Without that check, concurrent advances are not detected"
     echo "        and the script may silently push over a faster remote."
     exit 1
 fi
 
-if ! sed -n "${LINE_1C},$((LINE_NEXT - 1))p" "$RELEASE_SH" \
-        | grep -q 'die.*origin/main.*ahead'; then
+if [ "$(casan_1c 'die.*origin/main.*ahead')" = "0" ]; then
     echo "FAIL (e): step 1c does not fail-closed with a clear message"
     echo "        on origin/main ahead-of-HEAD."
     exit 1
