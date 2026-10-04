@@ -26,6 +26,11 @@
 # 2. UNA MUTACION QUE NO SE APLICA ES `SKIP`, NUNCA `PASS`. Cada mutacion
 #    comprueba por sha que el fichero cambio antes de exigir nada, y la
 #    restauracion se comprueba byte a byte al final.
+# shellcheck disable=SC2016
+# SC2016: los textos de mutacion van entre comillas simples A PROPOSITO y llevan
+# backticks de comentarios Rust (`reason`, `BacklogDiscardReason`). Expandirlos
+# ejecutaria el contenido y corromperia el literal que hay que buscar: el
+# falsador compararia contra otra cosa y supondria que la mutacion no aplico.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,10 +68,16 @@ skp() { echo "  [SKIP] $1"; SKIP=$((SKIP + 1)); }
 # Aplica una mutacion y EXIGE que el fichero haya cambiado. Sin esta comprobacion
 # un texto que ya no existe hace que la mutacion no haga nada, el guard no caiga
 # por su culpa, y el paso se reporte como deteccion.
+#
+# El codigo de salida de python se recoge con `|| rc=$?` y no con un `$?` a
+# posteriori: un `if [ $? -ne 0 ]` colocado despues del here-doc mide lo que
+# devolvio el comando anterior, que no es necesariamente python. Es el mismo
+# error que ya se corrigio en otro falsador de este repo, y lo repite aqui el
+# mismo patron.
 muta() {  # muta <ruta> <viejo> <nuevo>
-    local ruta="$1" viejo="$2" nuevo="$3" antes despues
+    local ruta="$1" viejo="$2" nuevo="$3" antes despues rc=0
     antes="$(sha256sum "$ruta" | cut -d' ' -f1)"
-    RUTA="$ruta" VIEJO="$viejo" NUEVO="$nuevo" python3 - <<'PY'
+    RUTA="$ruta" VIEJO="$viejo" NUEVO="$nuevo" python3 - <<'PY' || rc=$?
 import os, sys
 ruta, viejo, nuevo = os.environ["RUTA"], os.environ["VIEJO"], os.environ["NUEVO"]
 with open(ruta, encoding="utf-8") as fh:
@@ -76,7 +87,7 @@ if viejo not in src:
 with open(ruta, "w", encoding="utf-8") as fh:
     fh.write(src.replace(viejo, nuevo, 1))
 PY
-    if [[ $? -ne 0 ]]; then
+    if [[ "$rc" -ne 0 ]]; then
         skp "la mutacion no encontro su texto en ${ruta##*/}; NO cuenta como deteccion"
         return 2
     fi
@@ -88,27 +99,24 @@ PY
     return 0
 }
 
-# Corre un test y dice si FALLO. El segundo argumento, si se da, es un texto que
-# debe aparecer en la salida: asi una mutacion que rompe el codigo por otra
-# causa no se contabiliza como si hubieracaido el guard previsto.
 # Corre un test y dice si FALLO. El segundo argumento, si se da, es el NOMBRE del
 # test que tiene que caer. La granularidad es deliberada: lo que se exige es que
-# el guard nominado caiga, no cual de sus aserciones Habria sido un error
-#needle: al medir por el texto exacto de una asercion, esta mutacion cayo por la
+# el guard nominado caiga, no cual de sus aserciones. Habria sido un error
+# medir por el texto exacto de una asercion: una mutacion cayo por la
 # comprobacion de grafia (que dispara antes) y el falsador la declaro "fallo por
-# una causa distinta" -- cuando en realidad la habia detectado bien. Fijarse en
-# la asercion hace que el falsador dependa del ORDEN en que un test se comprueba, que
-# no es la propiedad que se quiere vigilar. El nombre del test separa "cayo este
-# guard" de "no compilo", que es la distincion que si importa.
+# una causa distinta" cuando en realidad la habia detectado bien. Fijarse en la
+# asercion hace que el falsador dependa del ORDEN en que un test se comprueba, y
+# ese orden no es la propiedad que se quiere vigilar. El nombre del test separa
+# "cayo este guard" de "no compilo", que es la distincion que si importa.
 falls() {  # falls <etiqueta> <filtro-cargo> [nombre-del-test-que-debe-caer]
     local etiqueta="$1" filtro="$2" needle="${3:-}" salida
-    # El filtro se expande SIN comillas a proposito: son varios argumentos de
-    # cargo (`-p crate --lib nombre`). Comillarlo los convierte en un unico
-    # argumento, cargo lo toma por nombre de paquete, y el guard "cae" por una
-    # causa que no es la suya — exactamente la confusion que este script existe
-    # para no repetir.
-    salida="$(cargo test $filtro 2>&1)"
-    if [[ $? -eq 0 ]]; then
+    local -a args
+    # El filtro son VARIOS argumentos de cargo (`-p crate --lib nombre`).
+    # Comillarlo los convierte en uno solo, cargo lo toma por nombre de paquete,
+    # y el guard "cae" por una causa que no es la suya. Un array los separa sin
+    # recurrir a la expansion sin comillas, que es lo que dispara SC2086.
+    read -r -a args <<<"$filtro"
+    if salida="$(cargo test "${args[@]}" 2>&1)"; then
         bad "$etiqueta: el test SIGUE EN VERDE tras la mutacion (no tiene dientes)"
         return 1
     fi

@@ -78,6 +78,12 @@ if git remote | grep -qx "$LAST_PUB_REMOTE"; then
         exit 1
     fi
     # shellcheck source=scripts/lib/release_admission.sh
+    # shellcheck disable=SC1091
+    # SC1091: la ruta del source es una variable ($ADMISSION_LIB) porque el
+    # script se copia a fixtures aislados donde $ROOT no es este repo, y la
+    # herramienta de analisis no puede seguir un source dinamico. La existencia
+    # del fichero se comprueba justo arriba y su ausencia es un error
+    # explicito, no un source silencioso que continua sin la autoridad.
     . "$ADMISSION_LIB"
     if ! _last_published_resolve; then
         echo "error: cannot read published tags from '$LAST_PUB_REMOTE' ($LAST_PUB_OUTCOME)" >&2

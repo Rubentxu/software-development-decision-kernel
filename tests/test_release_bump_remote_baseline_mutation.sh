@@ -46,7 +46,8 @@ echo "== Autofalsacion de la linea base remota de release-bump.sh =="
 echo
 
 echo "-- M1: la linea base vuelve a leerse de los tags locales"
-BUMP="$BUMP" python3 - <<'PY'
+rc=0
+BUMP="$BUMP" python3 - <<'PY' || rc=$?
 import os, sys
 p = os.environ["BUMP"]
 s = open(p, encoding="utf-8").read()
@@ -57,7 +58,7 @@ legacy = ("LAST_TAG=\"$(git tag --sort=-v:refname "
           'LAST_PUB_SOURCE="local (reverted)"\n\n')
 open(p, "w", encoding="utf-8").write(s[:start] + legacy + s[end:])
 PY
-if [[ $? -ne 0 ]]; then
+if [[ "$rc" -ne 0 ]]; then
     skp "la mutacion no encontro su texto; NO cuenta como deteccion"
     restore
     exit 1
