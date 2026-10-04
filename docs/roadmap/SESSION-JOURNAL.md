@@ -13783,3 +13783,68 @@ exactamente los tests anadidos en este bloque.
   `bl-bl-01M42JGYG4000388551BF9NZ40`, con segunda via de muerte medida.
 - **Las 2 aprobaciones siguen sin conceder** — es decision del operador, y este
   bloque hace que se vean, no que se concedan.
+
+### Cierre de session-79: REL-2.8.0 publicada e instalada
+
+**PUBLICADA** `2026-10-04T13:45:22Z`, tag `v2.8.0` -> `1efa8702212475e3d7b6f505c489c90857a3bc57`,
+`isDraft=false`, `isPrerelease=false`, **9/9 assets con HTTP 200** por CDN (los
+nombres se sacaron de la API, no se supusieron: el primer sondeo con nombres
+inventados dio 404 y 302 y habria parecido un fallo de publicacion). UNSIGNED
+declarado `NOT_RUN` con su motivo, como en 2.7.0. Instalada: `sddk 2.8.0`,
+`framework/current -> 2.8.0`.
+
+**El paso 3k corro dentro de la release real y no en una build de desarrollo**:
+`PASS=5 FAIL=0 SKIP=0`. Los guards 3b a 3j tambien verdes, incluidos
+`PASS=16` (3b), `PASS=10` (3c), `PASS=16` (3d), `PASS=14` (3e), `PASS=9` (3f),
+`PASS=8` (3g), `PASS=6` (3h), `PASS=5` (3i), `PASS=2` (3i-b), `PASS=4` (3j).
+
+**La release MURIO una vez antes, en el 1b, y la causa fue el puntero de
+estado.** `test_release_state_pointer.sh` exigia que `current_sha` estuviera
+**en `origin/main`**, luego el orden correcto es **push primero, reconciliar
+despues**: el puntero afirma algo publicado y no puede afirmar algo local. La
+reparacion es la del propio guard (`scripts/reconcile_state_pointer.sh`), que
+conserva el puntero anterior como `superseded_pointer` en vez de reescribirlo.
+Push admitido por el hook **sin `--no-verify`**, por la ruta A-v2: workspace
+2.8.0 por encima del mayor tag publicado v2.7.0.
+
+**Comportamiento verificado EN EL BINARIO PUBLICADO, no en el arbol de trabajo:**
+
+```
+pending_human_decisions: 2
+undetermined_runtime_states: 2
+unreadable_manifests: 2
+cycles: 109
+```
+
+- `c0-t01-pointer-mutation` y `c3n-production-boundary-certification` ->
+  `runtime_state: approval-waiting`, `runtime_state_known: true`,
+  `pending_approval: surface.cycle_state#cycle_supersede`.
+- `cl-build-identity` -> `runtime_state:` vacio con `runtime_state_known: true`.
+  **Las tres Outcome existen a la vez y son distinguibles**, que es la propiedad
+  entera del bloque.
+- `architecture-adoption-m0-supersession` y `m0-inventory-baseline` ->
+  `runtime_state: unknown`, y **no** contam el contador de pendientes.
+- Contraste con `sddk approval list`: los mismos 2 ciclos, misma capacidad.
+- 0.10 s en caliente (0.41 s la primera, con cache frio) frente a los 2.38 s
+  previos a la lectura unica.
+
+**INC-DEBT-069 registrada** (medium/P2): `/tmp` es un tmpfs con tope de 48 GB que
+los sandboxes de los tests llenan, y al saturarse la suite y la release mueren
+con `os error 122` sin decir que el disco es la causa. Es la **tercera via de
+muerte** de la familia "el release depende del estado de una maquina que no es
+el repo", junto al OOM del backlog P1 y al `CARGO_TARGET_DIR` compartido. Se
+declaran dos caminos y **no se elige ninguno** en este bloque.
+
+### Lo que sigue abierto
+
+- **Las 2 aprobaciones siguen sin conceder.** Es decision del operador, y este
+  bloque hizo que se vieran; no las concedio.
+- **La lease de `c3n` sigue caducada y sin dueno**, con el ciclo OPEN en
+  `approval-waiting`.
+- **Backlog P1** `bl-bl-01M42JGYG4000388551BF9NZ40`: OOM y `CARGO_TARGET_DIR`
+  compartido, ambos confirmados en vivo otra vez en esta sesion.
+- **Deuda P1 re-medida, sin abrir frente**: 060 titular **refutado** en tres
+  mediciones (0 ciclos reales sin nombrar; lo que queda son 79 filas
+  `__spine_import__`, que es decision del operador), 064 con los cuatro criterios
+  **parecen cumplidos** y su ciclo en `RELEASE_PENDING`, 061/049 reasignacion de
+  `project_id` que es decision del operador.
