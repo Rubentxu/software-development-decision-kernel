@@ -13685,3 +13685,101 @@ verdes, incluidos los dos de la sesion anterior (`PASS=5 FAIL=0 SKIP=0` y
 - **La causa de fondo del doble fallo del 1b no esta arreglada**: nada obliga
   a que un bump manual mueva los tres ficheros de version. Solo se detecta
   cuando se intenta publicar, y para entonces ya se han gastado dos intentos.
+
+---
+
+## session-79 — hacer visible lo que necesita decision humana
+
+**WorkItem.** Que el operador pueda responder "¿que necesita mi decision?" sin
+saber de antemano el id del ciclo. INC-DEBT-067 (session-78) cerro el bucle un
+paso mas atras: la narrativa ya derivaba lo que decia, pero solo se llegaba a
+ella si ya se conocia el ciclo.
+
+### El hueco, medido antes de tocar nada
+
+`sddk approval list` **exige `--cycle`**, y las **662 lineas** de `cycle list` no
+mencionaban ni `runtime_state` ni `approval`: **0 menciones**. Un ciclo bloqueado
+por una persona era byte-identico a uno que no necesitaba nada. MEDIDO sobre el
+ledger real de `p-63676b11dc0ef88f`: **2 ciclos** sostienen un
+`approval.capability.requested` sin resolver entre 29 ciclos OPEN, y ninguno era
+visible sin conocer su id.
+
+**Correccion de una medicion propia.** Una consulta SQL a mano de esta sesion
+conto **3** y nombro tambien a `cl-build-identity`. El producto tenia razon y la
+consulta estaba mal: ese ciclo ya se habia decidido. La autoridad de "cuantas
+decisiones hay abiertas" es `sddk approval list`, y la enumeracion nueva coincide
+con ella **por construccion** —las dos leen los mismos hechos por el mismo
+productor—, verificado ciclo a ciclo.
+
+### Dos defectos, y el segundo solo se ve siInstrumentas el coste
+
+**1. Una funcion escrita y nunca cableada.** `derive_all_cycle_summaries` existia
+en el engine desde el bloque anterior y **no la llamaba nada**: la CLI invocaba
+`derive_cycle_summary` **dentro del bucle por fila**, y cada llamada re-lee el log
+entero. MEDIDO en **release** (un binario debug contra uno release convierte la
+medicion en una calumnia): **2.38 s** frente a los **0.05 s** publicados. 109
+lecturas de un log de 651 eventos para llenar 109 filas.
+
+**2. El arreglo ingenuo era peor que el defecto.** Esa funcion hacia
+`get_cycle(&id)?` y propagaba con `?`. Hay **2 manifiestos ilegibles** en este
+ledger, luego cablearla tal cual convertia **UNA fila ilegible en las 109** leyendo
+`unknown` — peor que el comportamiento por fila al que sustituye, y peor justo
+donde el producto es mas fino. Por eso `CycleRuntimeFacts` nace **sin** el estado
+persistido: la derivacion no lee ninguna fila de ciclo, y su unica superficie de
+fallo es la lectura unica del log, que envenena todas las filas o ninguna.
+
+**Resultado, medido en release sobre el ledger real:** `cycle list` de **2.38 s a
+0.07 s**, con la base publicada en 0.05 s. `pending_human_decisions: 2` y
+`undetermined_runtime_states: 2` — este ultimo es el numero que **no** es 109.
+
+### M5 no tenia dientes, y por que es la leccion mas cara de las cinco
+
+Cinco mutaciones, cada una exigiendo que caiga el test **NOMBRADO**. La primera
+pasada dio `PASS=4 FAIL=1`: **M5 se aplico, cambio el fichero por sha, y el suite
+quedo VERDE**. No porque el guard fuera blando, sino porque **en el sandbox no
+habia ni un ciclo sin eventos** — `cycle start` emite el evento inicial del ciclo
+que arranca, luego todos los ciclos tenian eventos. La mutacion no rompio la
+garantia: **no habia garantia que romper, porque el sujeto no existia**.
+
+Un falsador que solo sabe decir "el test nominado sigue en verde" no distingue
+"el guard es blando" de "**el guard no tiene sujeto**", y son defectos opuestos
+con el mismo sintoma. Se planta el sujeto (manifest copiado de una fila que
+escribio el propio producto, deserializable por construccion) y se exige que M5
+caiga **un test que lo describa**. Segunda pasada: `PASS=5 FAIL=0 SKIP=0`.
+
+### El test rojo que no era mio: /tmp al 100 %
+
+La suite completa dio 1 —y luego 6— tests `dev install` en rojo con
+`Disk quota exceeded (os error 122)`. **No era el cambio.** `/tmp` es un **tmpfs
+con tope de 48 G** y estaba al 100 % por **144 sandboxes `mktemp` de 27 GB**. El
+sistema de ficheros de `/var/home` tenia 269 G libres: el tope era el tmpfs, no el
+disco. Liberados **92 sandboxes de mas de 6 h, 20.3 GB, ninguno abierto por un
+proceso vivo** (comprobado con `lsof`), al trash recuperable. `/tmp` de 79 % a
+37 %. Comprobado despues que `/tmp` sigue intacto y montado.
+
+### Verificacion de integracion
+
+`cargo fmt --check` **exit 0**, `cargo clippy --workspace --all-targets -D
+warnings` **exit 0**, `test_gate_coverage.py` **PASS** (65 tests, 0 sin runner),
+reconciliacion 3b **`PASS=16 FAIL=0`** y su autofalsacion **`PASS=10 FAIL=0`**,
+falsador nuevo **`PASS=5 FAIL=0 SKIP=0`**. Suite completa: **286 bloques, 0
+FAILED, 5468 pasados, 24 ignorados** (cada uno con motivo declarado) — los +6
+exactamente los tests anadidos en este bloque.
+
+### Commits
+
+`refactor(engine)` · `test(engine)` · `feat(cli)` · `test(cli)` · `test(uat)` ·
+`docs(debt)` · `chore(release)`.
+
+### Lo que queda abierto, por lo medido
+
+- **`/tmp` lleno rompe la suite y la release, y no hay guard que avise.** El
+  modo de fallo es ruidoso (ENOSPC), pero el diagnostico no senala la causa: seis
+  tests de `dev install` parecen rotos y no lo estan. **No se abre frente aqui**;
+  queda anotado.
+- **El `CARGO_TARGET_DIR` compartido con otra maquina**, confirmado en vivo otra
+  vez: un `cargo test --workspace` ajeno (toolchain `stable`) compite por el
+  mismo lock durante toda la sesion. Es el backlog P1
+  `bl-bl-01M42JGYG4000388551BF9NZ40`, con segunda via de muerte medida.
+- **Las 2 aprobaciones siguen sin conceder** — es decision del operador, y este
+  bloque hace que se vean, no que se concedan.
