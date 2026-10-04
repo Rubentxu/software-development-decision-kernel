@@ -356,9 +356,20 @@ if [ "$SKIP_TESTS" = "0" ]; then
         # referencia que no existe.
         t_log="$RELEASE_SCRATCH/shell-test-$(basename "$t" .sh).log"
         if ! bash "$t" >"$t_log" 2>&1; then
-            printf '\n\033[1;31m  ✗ ultimas lineas de %s:\033[0m\n' "$t" >&2
-            tail -30 "$t_log" >&2
-            die "shell test failed: $t — salida completa en $t_log"
+            # Los FALLOS primero, no la cola. MEDIDO: la primera version de este
+            # arreglo hacia `tail -30` y el log entero se perdia. En el fallo que
+            # lo motivator, los tres `[FAIL]` estaban entre C0 y C6 —al
+            # principio del log— y el `tail` mostraba desde C7, o sea la mitad
+            # verde. Un informe que enseña la cola corta del log equivocado es
+            # peor que no enseñar nada: parece completo.
+            printf '\n\033[1;31m  ✗ FALLOS en %s:\033[0m\n' "$t" >&2
+            grep -nE '\[FAIL\]|\[FAIL-CASO\]|^FAIL=|RESULT: FAIL|FATAL' "$t_log" | tail -20 >&2 || true
+            printf '  ... ultimas lineas del log:\n' >&2
+            tail -10 "$t_log" >&2
+            # El log COMPLETO se va con el scratch al salir el release, y se dice
+            # aqui en vez de prometer un sitio donde no va a estar. Prometer una
+            # ruta que desaparece es la forma corta de volver a mentir.
+            die "shell test failed: $t — log hasta la salida en $t_log (se borra con el scratch al salir; copia lo que necesites antes)"
         fi
         ok "shell test: $(basename "$t")"
     done
@@ -386,9 +397,11 @@ if [ "$SKIP_TESTS" = "0" ]; then
             # negandose a decir por que fallo, dos veces en el mismo paso.
             p_log="$RELEASE_SCRATCH/python-test-$(basename "$p" .py).log"
             if ! python3 "$p" >"$p_log" 2>&1; then
-                printf '\n\033[1;31m  ✗ ultimas lineas de %s:\033[0m\n' "$p" >&2
-                tail -30 "$p_log" >&2
-                die "python contract test failed: $p — salida completa en $p_log"
+                printf '\n\033[1;31m  ✗ FALLOS en %s:\033[0m\n' "$p" >&2
+                grep -nE '\[FAIL\]|\[FAIL-CASO\]|^FAIL=|RESULT: FAIL|FATAL|FAILED' "$p_log" | tail -20 >&2 || true
+                printf '  ... ultimas lineas del log:\n' >&2
+                tail -10 "$p_log" >&2
+                die "python contract test failed: $p — log hasta la salida en $p_log (se borra con el scratch al salir; copia lo que necesites antes)"
             fi
             ok "python test: $(basename "$p")"
         else
@@ -1073,7 +1086,7 @@ else
          Log: $CHANGELOG_BASELINE_MUT_LOG"
 fi
 
-step "3m/15 — el release nombra su propia causa de fallo, y se le aplican once mutaciones"
+step "3m/15 — el release nombra su propia causa de fallo, y se le aplica una mutacion por cada propiedad y por cada fallo de needle"
 RELEASE_DIAG_MUT_LOG="$RELEASE_SCRATCH/release_diagnostics_mutation.log"
 # El falsador corre los dos guards por dentro, asi que esto no es un test mas:
 # es la prueba de que los 42 casos de diagnostico y los 24 de cableado CAEN
@@ -1084,7 +1097,7 @@ if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1
 else
     tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
     die "la autofalsacion del diagnostico de release no pasa. Eso significa que una de
-         las once comprobaciones no tienen dientes, o que el release vuelve a morir
+         las doce comprobaciones no tienen dientes, o que el release vuelve a morir
          sin decir por que —que es exactamente el defecto que este paso existe para
          cerrar. Un gate que puede quedarse mudo y seguir contando como verde no
          es un gate.

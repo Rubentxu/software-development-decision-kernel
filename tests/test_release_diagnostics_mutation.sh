@@ -237,8 +237,18 @@ s = s.replace(
     "        if ! bash \"$t\" >\"$t_log\" 2>&1; then",
     "        if ! bash \"$t\" >/dev/null; then")
 s = s.replace(
-    "            python3 \"$p\" >\"$p_log\" 2>&1; then",
-    "            python3 \"$p\" >/dev/null; then")
+    "            if ! python3 \"$p\" >\"$p_log\" 2>&1; then",
+    "            if ! python3 \"$p\" >/dev/null; then")
+open(p, "w").write(s)
+'
+
+mutar "M12 el 1b vuelve a enseñar solo la cola del log" "$RELEASE" "$WIRE" E0 \
+    "con tail, los fallos del principio del log desaparecen y el informe parece completo sin estarlo." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+s = s.replace("            tail -10 \"$t_log\" >&2", "            true")
+s = s.replace("            tail -10 \"$p_log\" >&2", "            true")
 open(p, "w").write(s)
 '
 
@@ -247,7 +257,7 @@ open(p, "w").write(s)
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las once comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las doce comprobaciones tienen dientes, y el arbol quedo intacto.\n'
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then

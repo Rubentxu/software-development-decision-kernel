@@ -169,9 +169,44 @@ asert "E0: el bucle de shell NO descarta la salida del test (>/dev/null)" \
 asert "E0: el bucle de shell escribe la salida en un log del scratch" \
     "$(coincide 't_log="\$RELEASE_SCRATCH/shell-test-')"
 asert "E0: y muestra las ultimas lineas ANTES de morir" \
-    "$(coincide 'tail -30 "\$t_log" >&2')"
-asert "E0: el die nombra DONDE esta el log completo" \
-    "$(coincide 'salida completa en \$t_log')"
+    "$(coincide 'tail -10 "\$t_log" >&2')"
+# Los FALLOS se muestran por NOMBRE, no solo la cola del log. MEDIDO: con
+# `tail -30` los tres `[FAIL]` estaban entre C0 y C6 —al principio del log— y
+# el informe enseñaba desde C7, o sea la mitad verde. Un informe que enseña la
+# cola corta del log equivocado es peor que no enseñar nada: parece completo.
+#
+# NEEDLES ROTOS AL CONSTRUIR ESTOS CASOS. La lista va SIN NUMERO a proposito:
+# un contador de needles que se desincroniza es el mismo defecto que el primer
+# needle, y se desincronizo dos veces mientras se escribia este mismo
+# comentario. Todos son la misma cosa: el needle no media lo que decia.
+#
+#   * una cadena que no existe en ninguna linea y aparecia hallada en un
+#     comentario;
+#   * un needle que busca el defecto en el fichero entero y encuentra el
+#     comentario que lo EXplica, con el defecto ya arreglado;
+#   * `codigo | grep -q` con `set -o pipefail`: `grep -q` sale en cuanto casa,
+#     el escritor recibe SIGPIPE y el pipeline devuelve SU fallo, luego
+#     acertar se reportaba como fallar. `grep -c` lee el flujo entero;
+#   * `coincide X && echo 0 || echo 1` donde `coincide` imprime 1 y devuelve 0:
+#     el `&&` evalua el ESTADO DE SALIDA y no el valor impreso, luego el asert
+#     no podia caer nunca —un needle que no puede fallar compra cobertura—;
+#   * un `.*` que cruza una alternancia: entre dos needle hay un `|`, que en
+#     ERE no es un caracter;
+#   * needle escrito contra lo que uno ESPERA en vez de contra lo que el
+#     codigo ESCRIBE: se buscaba una corcheta escapada donde lo que hay es un
+#     backslash literal, y `FALLOS en $t` donde lo que hay es `FALLOS en %s:`.
+#
+# De la lista sale la regla: un needle tiene que ser lo mas CORTO que
+# distingue el caso, debe mirar CODIGO y no el fichero entero, y debe
+# comprobarse contra el fichero real antes de darlo por bueno.
+asert "E0: el 1b presenta una seccion de FALLOS, no solo la cola" \
+    "$(coincide 'FALLOS en %s')"
+asert "E0: y esa seccion esta acotada a las lineas de fallo" \
+    "$(coincide 'tail -20 >&2 || true')"
+asert "E0: y el die no promete un log que se va con el scratch" \
+    "$(coincide 'se borra con el scratch al salir')"
+asert "E0: el die nombra DONDE esta el log" \
+    "$(coincide 'log hasta la salida en \$t_log')"
 asert "E0: el bucle de python tampoco la descarta (mismo defecto, mismo paso)" \
     "$(ausente 'python3 "\$p" >/dev/null')"
 asert "E0: y no queda ningun 'run manually for details' que no diga donde esta" \
