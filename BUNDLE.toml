@@ -1,8 +1,8 @@
 [bundle]
 schema_version = 2
-version = "2.8.1"
-binary_min_version = "2.8.1"
-binary_max_version = "2.8.1"
+version = "2.9.0"
+binary_min_version = "2.9.0"
+binary_max_version = "2.9.0"
 
 [contents]
 agents_count = 72
