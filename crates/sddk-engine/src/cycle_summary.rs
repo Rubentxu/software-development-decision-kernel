@@ -20,9 +20,9 @@
 //! function in this module writes a cycle row or constructs a
 //! runtime-derived `CycleStatus` value (decode-only since C3).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use sddk_domain::{CycleStatus, Ledger, StorageError};
+use sddk_domain::{CycleStatus, Ledger, LedgerEvent, StorageError};
 
 /// Derived runtime state of one cycle, computed from durable facts.
 ///
@@ -64,13 +64,113 @@ pub fn derive_cycle_summary(
 ) -> Result<CycleRuntimeSummary, StorageError> {
     let record = ledger.get_cycle(cycle_id)?;
     let events = ledger.list_cycle_events(cycle_id)?;
+    Ok(summarize_cycle_events(record.manifest.status, &events))
+}
 
-    // ── Approval facts ──────────────────────────────────────────────────
-    // Same fact family as ApprovalProjection: a requested event whose
-    // (capability, request_hash) has no later granted/denied decision.
+/// The event-derived half of [`CycleRuntimeSummary`], without the persisted
+/// status.
+///
+/// The split exists because the two halves fail differently. The persisted
+/// status lives in a cycle ROW, and a row this build cannot deserialize is a
+/// real population — 81 of 179 on the project that motivated `list_cycles`
+/// (INC-DEBT-060, D1). The derived facts live in the event log, and the log
+/// costs one read regardless of how many cycles are asked about.
+///
+/// An earlier version of [`derive_all_cycle_facts`] read the row per cycle
+/// (`get_cycle`) and propagated its error with `?`. On a ledger holding two
+/// unreadable manifests that turns ONE unreadable row into the whole
+/// enumeration reading `unknown` — strictly worse than the per-row behaviour
+/// it replaced, and worse precisely where the product is thinnest. Hence: the
+/// derivation here never reads a cycle row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CycleRuntimeFacts {
+    /// True while at least one approval request awaits a decision.
+    pub approval_waiting: bool,
+    /// Capabilities with an unresolved approval request, sorted.
+    pub approval_waiting_on: Vec<String>,
+    /// True while a UAT sync has succeeded without a later completion.
+    pub uat_waiting: bool,
+    /// True while the latest failure has no remediation completion after it.
+    pub remediating: bool,
+    /// Number of failed-gate (remediation/recovery round) transitions.
+    pub remediation_rounds: u32,
+    /// The single label these facts derive (empty when none apply).
+    ///
+    /// Same precedence as [`CycleRuntimeSummary::derived_state`], because it
+    /// is the same function computing it.
+    pub derived_state: String,
+}
+
+/// Derives the runtime facts for every REQUESTED cycle, reading the event log
+/// **once**.
+///
+/// Why one read and not one per cycle, measured: `list_cycle_events` is
+/// "materialise the whole event log, then filter by cycle", so calling it per
+/// cycle re-reads the entire log once per cycle. On `p-63676b11dc0ef88f` that
+/// is 109 reads of a 651-event log to answer a question about 188 rows, and
+/// it took `cycle list` from **0.05 s to 2.38 s** in a *release* build — on a
+/// surface that release gates and scripts call on every run.
+///
+/// Why the caller names the cycles instead of this function discovering them:
+/// the enumeration's rows come from `cycles`, not from the event log, so only
+/// the caller knows the full set. Returning one entry per requested id —
+/// including for a cycle that has no events at all — means the caller never
+/// has to read an ABSENCE as "nothing pending". Absence-as-proof is sound (the
+/// read either succeeded, or this function returned `Err` and no entry exists
+/// for anyone), but it is an argument the reader has to reconstruct. A row
+/// that is explicitly present, with a label, is a fact.
+///
+/// The output is exactly one entry per distinct requested id: the request is
+/// collected into a `BTreeSet` first, so a repeated id cannot produce a
+/// half-answered map, and the only fallible call happens before any entry is
+/// written, so a failure can never leave a partial answer behind.
+pub fn derive_all_cycle_facts<'a, I>(
+    ledger: &dyn Ledger,
+    cycle_ids: I,
+) -> Result<BTreeMap<String, CycleRuntimeFacts>, StorageError>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    // The single read. If it fails this returns `Err` and NO row is derivable,
+    // which the caller must render as "unknown" on every row rather than as
+    // "nothing pending" on any.
+    let events = ledger.list_events_after(0, i64::MAX)?;
+    let mut by_cycle: BTreeMap<&str, Vec<&LedgerEvent>> = BTreeMap::new();
+    for event in &events {
+        if let Some(cycle_id) = event.cycle_id.as_deref() {
+            by_cycle.entry(cycle_id).or_default().push(event);
+        }
+    }
+    let requested: BTreeSet<&str> = cycle_ids.into_iter().collect();
+    let mut out = BTreeMap::new();
+    for cycle_id in requested {
+        let mut cycle_events: Vec<LedgerEvent> = by_cycle
+            .get(cycle_id)
+            .map(|events| events.iter().map(|event| (*event).clone()).collect())
+            .unwrap_or_default();
+        // Ordered per cycle. The `remediating` label is last-writer-wins over
+        // transitions, so the rule genuinely needs a sequence order.
+        // `list_events_after` returns the log globally ordered and a
+        // per-cycle subsequence of an ordered sequence is ordered — but this
+        // function is handed a `&dyn Ledger` it does not control, so it
+        // re-establishes the invariant locally instead of inheriting it.
+        cycle_events.sort_by_key(|event| event.sequence);
+        out.insert(cycle_id.to_owned(), derive_runtime_facts(&cycle_events));
+    }
+    Ok(out)
+}
+
+/// The derivation itself, over events already in hand.
+///
+/// THE single implementation of the rule. Every entry point in this module —
+/// `derive_cycle_summary` for one cycle, `derive_all_cycle_facts` for an
+/// enumeration — reaches its label through here. Two private copies of a
+/// precedence rule is exactly how the operator view and `cycle status` end up
+/// disagreeing, which is what INC-DEBT-067 existed to stop.
+fn derive_runtime_facts(events: &[LedgerEvent]) -> CycleRuntimeFacts {
     let mut requested: Vec<(String, String)> = Vec::new();
     let mut decided: BTreeSet<(String, String)> = BTreeSet::new();
-    for event in &events {
+    for event in events {
         let Some(capability) = event.payload.get("capability").and_then(|v| v.as_str()) else {
             continue;
         };
@@ -106,7 +206,7 @@ pub fn derive_cycle_summary(
     let mut uat_completed = false;
     let mut remediation_open = false;
     let mut remediation_rounds: u32 = 0;
-    for event in &events {
+    for event in events {
         let transition_id = event
             .payload
             .get("transition_id")
@@ -150,13 +250,34 @@ pub fn derive_cycle_summary(
         String::new()
     };
 
-    Ok(CycleRuntimeSummary {
-        persisted_status: record.manifest.status,
+    CycleRuntimeFacts {
         approval_waiting,
         approval_waiting_on,
         uat_waiting,
         remediating: remediation_open,
         remediation_rounds,
         derived_state,
-    })
+    }
+}
+
+/// [`derive_runtime_facts`] plus the persisted status of the cycle row.
+///
+/// Mechanical, and carrying no rule of its own: the mapping is six field
+/// copies so that adding a derived fact cannot silently leave this
+/// constructor behind, but the VALUE of every field comes from
+/// `derive_runtime_facts`.
+fn summarize_cycle_events(
+    persisted_status: CycleStatus,
+    events: &[LedgerEvent],
+) -> CycleRuntimeSummary {
+    let facts = derive_runtime_facts(events);
+    CycleRuntimeSummary {
+        persisted_status,
+        approval_waiting: facts.approval_waiting,
+        approval_waiting_on: facts.approval_waiting_on,
+        uat_waiting: facts.uat_waiting,
+        remediating: facts.remediating,
+        remediation_rounds: facts.remediation_rounds,
+        derived_state: facts.derived_state,
+    }
 }
