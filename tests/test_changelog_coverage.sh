@@ -63,7 +63,88 @@ else
 fi
 
 # ── (b)/(c) every feat/fix/test commit since the last published tag ─────────
-LAST_TAG="$(git -C "$ROOT" tag --sort=-version:refname | head -1)"
+#
+# "Que version esta publicada" tiene DOS respuestas, y por eso INC-DEBT-070:
+# `git ls-remote` lee el remoto y `git tag` lee el clon local. `gh release create`
+# publica en el remoto y NADA del pipeline actualiza el clon, luego la lista local
+# se queda vieja version tras version — MEDIDO en session-79: tras publicar
+# v2.8.0 el clon seguia en v2.7.0, y este gate habria comparado `v2.7.0..HEAD`
+# con 4 commits feat/fix/test YA publicados en 2.8.0. La forma facil de ponerlo
+# verde era duplicarlos en la seccion siguiente, que es un changelog describiendo
+# trabajo que ya salio.
+#
+# La autoridad es la MISMA que ya usa `release-bump.sh` y el gate 9b
+# (`scripts/lib/release_admission.sh`), con sus tres resultados que no se pueden
+# confundir, y los tres se tratan distinto a proposito:
+#   remoto responde y hay tag  -> autoridad (el unico caso que decide)
+#   remoto responde sin tags   -> bootstrap legitimo
+#   remoto no responde         -> FAIL CERRADO. Degradar a la lista local aqui es
+#                                 exactamente el defecto: "no veo el remoto" y "no
+#                                 hay nada publicado" no pueden leerse igual.
+LAST_PUB_REMOTE="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
+LAST_PUB_SOURCE=""
+LAST_TAG=""
+
+if git -C "$ROOT" remote | grep -qx "$LAST_PUB_REMOTE"; then
+    ADMISSION_LIB="$ROOT/scripts/lib/release_admission.sh"
+    if [ ! -f "$ADMISSION_LIB" ]; then
+        bad "remote '$LAST_PUB_REMOTE' is configured but $ADMISSION_LIB is missing: there is no authority for the published version"
+        echo
+        echo "PASS=$PASS FAIL=$FAIL"
+        echo "RESULT: FAIL -- the published version has no authority to read."
+        exit 1
+    fi
+    # shellcheck source=scripts/lib/release_admission.sh
+    # shellcheck disable=SC1091
+    # SC1091: la ruta del source es una variable porque este gate se copia a
+    # fixtures aislados donde $ROOT no es este repo, y el analisis estatico no
+    # puede seguir un source dinamico. La existencia se comprueba justo arriba.
+    . "$ADMISSION_LIB"
+    if ! _last_published_resolve; then
+        bad "cannot read published tags from '$LAST_PUB_REMOTE' ($LAST_PUB_OUTCOME): refusing to compare against a local tag list that may be stale"
+        echo
+        echo "PASS=$PASS FAIL=$FAIL"
+        echo "RESULT: FAIL -- the remote did not answer, and a stale local list is not an answer."
+        exit 1
+    fi
+    if [ "$LAST_PUB_OUTCOME" = "bootstrap" ]; then
+        LAST_PUB_SOURCE="remote ($LAST_PUB_REMOTE: no v* tags yet)"
+    else
+        LAST_TAG="v${LAST_PUB_OUTCOME#v}"
+        LAST_PUB_SOURCE="remote ($LAST_PUB_REMOTE)"
+    fi
+else
+    # Sin remoto no puede haber un clon viejo RESPECTO de un remoto que no
+    # existe: la lista local es la autoridad entera. Mismo criterio que
+    # `release-bump.sh`, y por el mismo motivo.
+    LAST_TAG="$(git -C "$ROOT" tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+    LAST_PUB_SOURCE="local (no '$LAST_PUB_REMOTE' remote configured)"
+fi
+
+if [ -n "$LAST_TAG" ]; then
+    # El rango se calcula como "${LAST_TAG}..HEAD", luego la referencia tiene que
+    # existir AQUI. Un tag publicado desde este clon esta en el remoto y falta
+    # localmente hasta que se trae — el estado exacto que se midio al cerrar
+    # 2.8.0. El commit al que apunta ya esta en este historial, luego traer la
+    # referencia no introduce objetos nuevos. Si no se puede traer, el rango NO es
+    # calculable, y adivinarlo fabricaria la lista de commits que decide el nivel.
+    if ! git -C "$ROOT" rev-parse -q --verify "refs/tags/$LAST_TAG" >/dev/null; then
+        echo "  resolving $LAST_TAG: published on '$LAST_PUB_REMOTE' but absent locally; fetching the ref"
+        if ! GIT_TERMINAL_PROMPT=0 git -C "$ROOT" fetch -q --tags "$LAST_PUB_REMOTE" "refs/tags/$LAST_TAG:refs/tags/$LAST_TAG" 2>&1; then
+            bad "cannot fetch '$LAST_TAG' from '$LAST_PUB_REMOTE': it is published but unavailable here, so the commits since the last release cannot be read. Refusing to guess."
+            echo
+            echo "PASS=$PASS FAIL=$FAIL"
+            echo "RESULT: FAIL -- an uncomputable range is not a range."
+            exit 1
+        fi
+    fi
+fi
+
+# De donde salio la linea base, en cada corrida. Un lector que no puede ver QUE
+# authority respondio no puede distinguir un bootstrap limpio de un clon viejo,
+# y esa es la distincion que decidio este arreglo.
+echo "  (published-version authority: $LAST_PUB_SOURCE)"
+
 if [[ -z "$LAST_TAG" ]]; then
   echo "  [skip] no published tag found; coverage cannot be checked"
   echo

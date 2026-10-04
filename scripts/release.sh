@@ -227,6 +227,9 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_authenticity_posture_mutation.sh \
             tests/test_backlog_discard_reason_enforcement_mutation.sh \
             tests/test_release_bump_remote_baseline_mutation.sh \
+            tests/test_changelog_coverage.sh \
+            tests/test_changelog_coverage_baseline.sh \
+            tests/test_changelog_coverage_baseline_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -263,6 +266,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_bump_derivation.sh \
              tests/test_release_unsigned_propagation.sh \
              tests/test_changelog_merge.sh \
+             tests/test_changelog_coverage_baseline.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
              tests/test_build_identity_policy.sh \
@@ -962,6 +966,32 @@ else
          medir. Sin esto, la unica superficie que enumera los ciclos del proyecto
          puede volver a esconder las decisiones abiertas sin que nada lo note.
          Log: $ATTENTION_ENUM_MUT_LOG"
+fi
+
+# La autofalsacion de la linea base de la version publicada del gate 2b
+# (INC-DEBT-070). Mismo motivo que 3c/3g/3h/3i/3j: una comprobacion que solo se
+# ejecuta cuando alguien edita el guard envejece sin que nadie lo note.
+#
+# El defecto que corrige es de los que un suite verde NO detecta: en el repo real
+# el clon y el remoto coinciden siempre cuando corre el gate, luego alli leer la
+# linea base del clon local daria el mismo veredicto que leerla del remoto. La
+# propiedad solo es visible con un clon deliberadamente viejo, y un clon viejo se
+# fabrica. Por eso el test construye fixtures donde las DOS respuestas digan
+# cosas distintas: sin esa divergencia, gate roto y gate arreglado darian lo
+# mismo y el test no mediria nada.
+step "3l/15 — la linea base publicada del gate 2b tiene una sola autoridad, y se le aplican tres mutaciones"
+CHANGELOG_BASELINE_MUT_LOG="$RELEASE_SCRATCH/changelog_coverage_baseline_mutation.log"
+if bash tests/test_changelog_coverage_baseline_mutation.sh >"$CHANGELOG_BASELINE_MUT_LOG" 2>&1; then
+    ok "autofalsación de la linea base publicada: $(grep -m1 '^PASS=' "$CHANGELOG_BASELINE_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$CHANGELOG_BASELINE_MUT_LOG" >&2
+    die "la autofalsacion de la linea base publicada no pasa: o el gate 2b vuelve a leer el
+         clon local —y entonces la proxima release exigira en su changelog commits
+         que ya salieron—, o un remoto que no responde degrada a una lista local
+         que puede estar vieja, o un rango inc calculable se lee como 'no hay nada
+         que comprobar'. Los tres producen un veredicto que no se sabe de donde
+         sale, que es lo que un gate de cobertura no puede tolerar.
+         Log: $CHANGELOG_BASELINE_MUT_LOG"
 fi
 
 # --- 4. manifest ---
