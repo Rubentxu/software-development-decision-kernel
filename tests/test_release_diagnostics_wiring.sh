@@ -87,8 +87,31 @@ asert "E0: release_on_exit llama al diagnostico ANTES de limpiar el scratch" \
     "$(awk '/^release_on_exit\(\)/,/^}/' "$RELEASE" \
         | awk '/release_diagnose_exit/{d=NR} /cleanup_release_scratch/{c=NR} END{print (d && c && d<c) ? 1 : 0}')"
 
+# Se comprueba la PROPIEDAD --que la limpieza del paso 5 cubra `$TMP` y que sea
+# no fatal-- y no la forma literal. MEDIDO: este aserto tenia escrita la cadena
+# exacta `rm -rf "$RELEASE_SCRATCH" "$TMP"; }` y cayo al arreglar el orden de los
+# dos operandos (el hijo antes que el padre, por el motivo que esta escrito en
+# E8), sin que la cobertura hubiera cambiado en nada. Un aserto que mide la
+# puntuacion literal de una linea mide lo que uno escribio, que es la clase de
+# fallo que E4 vino a cerrar aplicada a otro sitio.
+E0_LIMPIA_PASO5="$(awk '
+    /^cleanup_release_scratch\(\)/ {
+        collecting = 1; buf = $0 "\n"
+        if ($0 ~ /\}/) { last = buf; collecting = 0 }
+        next
+    }
+    collecting {
+        buf = buf $0 "\n"
+        if ($0 ~ /^\}/) { last = buf; collecting = 0 }
+    }
+    END { printf "%s", last }
+' "$RELEASE")"
 asert "E0: la limpieza del scratch cubre tambien TMP, que se creo en el paso 5" \
-    "$(grep -q 'cleanup_release_scratch() { rm -rf "\$RELEASE_SCRATCH" "\$TMP"; }' "$RELEASE" && echo 1 || echo 0)"
+    "$(printf '%s' "$E0_LIMPIA_PASO5" | grep -q 'TMP' && echo 1 || echo 0)" \
+    "definicion: $(printf '%s' "$E0_LIMPIA_PASO5" | tr -d '\n' | cut -c1-60)"
+asert "E0: y es no fatal, o el release sale con el codigo de su propia limpieza" \
+    "$(printf '%s' "$E0_LIMPIA_PASO5" | grep -q '|| true' && echo 1 || echo 0)" \
+    "definicion: $(printf '%s' "$E0_LIMPIA_PASO5" | tr -d '\n' | cut -c1-60)"
 
 asert "E0: el marcador de 'ya diagnostique' se crea DENTRO del scratch" \
     "$(grep -q 'RELEASE_DIAGNOSED_FILE="\$RELEASE_SCRATCH/\.sddk-release-diagnosed"' "$RELEASE" && echo 1 || echo 0)"
@@ -554,6 +577,128 @@ esac
 asert "E7: un die sin comando fallido sigue dando diagnostico (publicar un 0 lo borraria)" \
     "$E7_SIN_CAUSA" "bloque: $(printf '%s' "$E7_BLOQUE" | tr -d '\n' | cut -c1-70)"
 caso_termina E7
+
+# --- E8: una limpieza no puede decidir el resultado del release ---------------
+#
+# MEDIDO en el decimo intento de 2.9.0: el dry-run anidado de E2 llegaba a su
+# `exit 0` y salia con **1**, sin imprimir bloque. `bash -x` lo deja claro: el
+# manejador entra con `local code=0`, `release_diagnose_exit 0` sale sin
+# imprimir —bien, un release verde no se diagnostica— y ahi mismo revienta. La
+# causa es que `$TMP` es un SUBDIRECTORIO del scratch (`TMPDIR="$RELEASE_SCRATCH"`
+# en la linea 86 y `mktemp -d` en la 1217), luego `rm -rf "$RELEASE_SCRATCH"
+# "$TMP"` borra el padre PRIMERO y el hijo ya no existe cuando le llega el
+# turno; con `set -euo pipefail` ese fallo aborta el manejador antes de su
+# `return "$code"`, y el codigo que sale es el de la limpieza.
+#
+# Es la clase mas cara que hay: **un release que termina bien se declara
+# fallido, y el bloque de diagnostico no dice nada**, porque el codigo que se
+# capturo era 0 y 0 no se diagnostica. Y el efecto de rebote es peor: E2
+# afirmaba "el release sigue y muere por otra causa (rc no cero)", y pasaba
+# **por el motivo equivocado** -- no habia muerto por ninguna causa, se habia
+# muerto en su limpieza--. Una asercion cuyo nombre dice una cosa y cuyo motivo
+# es otra es peor que no tenerla, porque ocupa el sitio de la que diria la
+# verdad. Ese fue el aviso, y por eso este caso existe.
+#
+# POR QUE SE COMPONE Y NO SE EJECUTA UN DRY-RUN ENTERO, que es la pregunta
+# obvia y la que casi se cometio: un dry-run completo solo pasa de preflight con
+# el ARBOL LIMPIO, y el preflight dice `working tree is dirty` si no lo esta.
+# MEDIDO: al escribir este caso con el arbol sucio, las tres primeras
+# aserciones cayeron y E2 "pasaba" por la causa que su propio comentario
+# advertia. Un caso que solo puede correr en un arbol limpio es un caso que no
+# se puede correr mientras se desarrolla, que es justo cuando hace falta, y
+# tampoco tendria dientes en el falsador --que muta el fichero en el sitio y
+# por tanto SIEMPRE working tree dirty--. Se compone entonces el camino real
+# —las DOS definiciones de `cleanup_release_scratch`, el manejador y la
+# libreria, extraidas del release.sh de verdad— con el mismo `set -euo pipefail`
+# que tiene el release, y se le pide lo que se le pide al release: terminar.
+caso_empieza E8
+# Las dos definiciones se extraen enteras; la de la 1223 es la que reintroduce
+# `$TMP`, y es la que falla. `awk` en vez de `sed` porque hay dos bloques con la
+# misma firma y hay que quedarse con la ULTIMA completa, no con una linea suelta
+# de cualquiera de las dos —medido: `tail -1` de las dos daba solo el `}` y la
+# composicion no arrancaba, o sea un fallo de instrumentacion disfrazado de
+# fallo del producto—.
+E8_LIMPIA_FN="$(awk '
+    /^cleanup_release_scratch\(\)/ {
+        collecting = 1; buf = $0 "\n"
+        if ($0 ~ /\}/) { last = buf; collecting = 0 }
+        next
+    }
+    collecting {
+        buf = buf $0 "\n"
+        if ($0 ~ /^\}/) { last = buf; collecting = 0 }
+    }
+    END { printf "%s", last }
+' "$RELEASE")"
+E8_LIMPIA_PILA="$({ printf '%s\n' ". \"$LIB\""; sed -n '/^die()/,/^}/p' "$RELEASE"; sed -n '/^release_on_exit()/,/^}/p' "$RELEASE"; printf '%s\n' "$E8_LIMPIA_FN"; } | bash -c 'source /dev/stdin; echo OK' 2>&1)"
+asert "E8: el sujeto EXISTE - la composicion arranca y trae las dos piezas reales" \
+    "$(printf '%s' "$E8_LIMPIA_PILA" | grep -c 'OK' >/dev/null && printf '%s' "$E8_LIMPIA_PILA" | grep -q 'OK' && echo 1 || echo 0)" \
+    "salida: $(printf '%s' "$E8_LIMPIA_PILA" | tr -d '\n' | cut -c1-60)"
+asert "E8: y la limpieza que se compone es la del paso 5, la que reintroduce TMP" \
+    "$(printf '%s' "$E8_LIMPIA_FN" | grep -q 'TMP' && echo 1 || echo 0)" \
+    "definicion: $(printf '%s' "$E8_LIMPIA_FN" | tr -d '\n' | cut -c1-70)"
+
+# El escenario que se midio, montado de verdad: un scratch con un HIJO dentro,
+# que es la forma que tiene en el release (`$TMP` cuelga del scratch), y el
+# padre se borra antes que el hijo.
+escenario_release() {
+    local raiz="$WIRE_TMPDIR/e8-scratch"
+    { printf '%s\n' ". \"$LIB\""
+      sed -n '/^die()/,/^}/p' "$RELEASE"
+      sed -n '/^release_on_exit()/,/^}/p' "$RELEASE"
+      printf '%s\n' "$E8_LIMPIA_FN"
+    } | bash -c '
+        set -euo pipefail
+        cleanup_tmp() { :; }
+        RELEASE_SCRATCH="$1"
+        TMP="$RELEASE_SCRATCH/tmp.hijo"
+        mkdir -p "$TMP"
+        source /dev/stdin
+        trap release_on_exit EXIT
+        cleanup_tmp
+        exit "$2"
+    ' _ "$raiz" "$1" >/dev/null 2>"$WIRE_TMPDIR/e8-salida.txt"
+    echo $?
+}
+
+# La primera mitad, y es la que estaba rota: termina bien -> sale 0.
+E8_RC_OK="$(escenario_release 0)"
+E8_SALIDA_OK="$(sed 's/\x1b\[[0-9;]*m//g' "$WIRE_TMPDIR/e8-salida.txt")"
+E8_BLOQUE=0
+case "$E8_SALIDA_OK" in
+    *"por que fallo el release"*) E8_BLOQUE=1 ;;
+esac
+asert "E8: un release que TERMINA BIEN sale con 0, no con el codigo de su limpieza" \
+    "$([ "$E8_RC_OK" = "0" ] && echo 1 || echo 0)" "rc real: '$E8_RC_OK'"
+asert "E8: y no imprime bloque de fallo, porque no fallo" \
+    "$([ "$E8_BLOQUE" = "0" ] && echo 1 || echo 0)"
+
+# La segunda mitad, que es la que evita que E2 pase por el motivo equivocado y
+# la que impide "arreglar" esto tapando la senal en vez de arreglar la causa: un
+# release que se para SALE CON BLOQUE y nombra su causa.
+#
+# El codigo que se espera aqui es 137 y NO 1, y se declara por que: este
+# escenario sale con `exit 137` DIRECTO, sin pasar por `die`, luego es el
+# camino de una muerte por senal y ahi el release propaga su codigo real. El 1
+# pertenece al camino de `die`, que es el unico que lo aplana a proposito. Los
+# dos caminos se nombran porque confundirlos seria justo el defecto que E7 vino
+# a cerrar.
+E8_RC_KO="$(escenario_release 137)"
+E8_SALIDA_KO="$(sed 's/\x1b\[[0-9;]*m//g' "$WIRE_TMPDIR/e8-salida.txt")"
+E8_BLOQUE2=0
+case "$E8_SALIDA_KO" in
+    *"por que fallo el release"*) E8_BLOQUE2=1 ;;
+esac
+E8_NOMBRA2=0
+case "$E8_SALIDA_KO" in
+    *"SIGKILL"*) E8_NOMBRA2=1 ;;
+esac
+asert "E8: y uno que se PARA sale con bloque, luego el 0 de antes no es una senal tapada" \
+    "$([ "$E8_BLOQUE2" = "1" ] && [ "$E8_NOMBRA2" = "1" ] && echo 1 || echo 0)" \
+    "rc=$E8_RC_KO, bloque=$E8_BLOQUE2, nombra=$E8_NOMBRA2"
+asert "E8: una muerte por senal que NO pasa por die conserva su codigo; el 1 es solo de die" \
+    "$([ "$E8_RC_KO" = "137" ] && echo 1 || echo 0)" "rc real: '$E8_RC_KO'"
+caso_termina E8
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

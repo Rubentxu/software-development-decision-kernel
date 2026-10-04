@@ -90,7 +90,10 @@ export TMPDIR="$RELEASE_SCRATCH"
 RELEASE_DIAGNOSED_FILE="$RELEASE_SCRATCH/.sddk-release-diagnosed"
 export RELEASE_DIAGNOSED_FILE
 
-cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
+# `|| true` por la misma razon que la de la linea 1223 y por la misma causa
+# medida: esta corre en el camino de salida, con `set -e` activo, y una
+# limpieza que falla se convierte en el codigo de salida del release.
+cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH" || true; }
 
 # Una sola salida para el release, con dos responsabilidades que antes vivian
 # separadas: limpiar el scratch y, si el release termino mal, decir POR QUE.
@@ -1220,7 +1223,27 @@ TMP="$(mktemp -d)"
 # uno que solo limpia $TMP dejaba el scratch en disco y, con el, el marcador de
 # diagnostico. Se encadena en `release_on_exit` para que las dos obligaciones
 # tengan un solo dueño y no se pisen.
-cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH" "$TMP"; }
+#
+# MEDIDO en el decimo intento de 2.9.0, y es un fallo de la clase mas cara que
+# hay: **un release que termina bien se declara fallido**. `$TMP` es un
+# SUBDIRECTORIO del scratch —`TMPDIR="$RELEASE_SCRATCH"` en la linea 86 y
+# `mktemp -d` aqui—, luego `rm -rf "$RELEASE_SCRATCH" "$TMP"` borra el padre
+# PRIMERO y el hijo ya no existe cuando le llega su turno. Con
+# `set -euo pipefail` (linea 55) ese fallo ABORTA el manejador de salida antes
+# de su `return "$code"`, y el codigo que sale es el de la limpieza, no el del
+# release. MEDIDO con `bash -x`: el dry-run llega a `exit 0`, el manejador
+# entra con `local code=0`, `release_diagnose_exit 0` sale sin imprimir —bien,
+# un release verde no se diagnostica—, y ahi mismo revienta.
+#
+# Las dos cosas que lo arreglan, y las dos hacen falta: el **orden** (el hijo
+# antes que el padre, para que no haya nada que ya no exista) y el **carácter
+# no fatal** (`|| true`, porque una limpieza que corre en el camino de salida no
+# tiene autoridad para cambiar el resultado de la operacion que va a limpiar).
+# Con el orden solo, basta un temporal unexpected para volver a Deck el mismo
+# fallo; con `|| true` solo, el dry-run sigue dejando el hijo en el trash por
+# el ruido de una segunda pasada. Juntas, la propiedad es que da igual lo que
+# haya en disco: el release devuelve el codigo que MERECE.
+cleanup_release_scratch() { rm -rf "$TMP" "$RELEASE_SCRATCH" || true; }
 
 BUNDLE_TARBALL="$TMP/software-development-decision-kernel.tar.gz"
 # Stage the EXACT tarball contents (repo surfaces + injected BUNDLE.toml) in

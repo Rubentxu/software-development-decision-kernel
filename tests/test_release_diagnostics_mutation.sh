@@ -373,6 +373,22 @@ s = s.replace(viejo, nuevo, 1)
 open(p, "w").write(s)
 '
 
+# M20: la limpieza vuelve a decidir el resultado del release. Se devuelve la
+# forma MEDIDA del decimo intento —el padre antes que el hijo y sin `|| true`—,
+# que con `set -euo pipefail` hace que un release que termina bien salga con 1 y
+# sin bloque de diagnostico. E8 debe caer en la asercion del rc 0.
+mutar "M20 la limpieza vuelve a abortar el manejador y un release verde sale con 1" "$RELEASE" "$WIRE" E8 \
+    "sin el orden hijo-antes-de-padre ni el || true, el rm falla, set -e aborta el manejador antes de su return, y el codigo del release pasa a ser el de la limpieza." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "cleanup_release_scratch() { rm -rf \"$TMP\" \"$RELEASE_SCRATCH\" || true; }"
+nuevo = "cleanup_release_scratch() { rm -rf \"$RELEASE_SCRATCH\" \"$TMP\"; }"
+assert viejo in s, "la limpieza del paso 5 no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
