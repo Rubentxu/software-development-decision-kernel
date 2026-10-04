@@ -184,6 +184,18 @@ fn facade_deny_yields_zero_side_effects_on_real_service() {
     // against the real shared service by constructing an actor without
     // capabilities and observing that `Denied` propagates through the
     // facade and the body closure never runs.
+    //
+    // MEDIDO: este test NO tomaba `serial_guard()` y los otros tres del fichero
+    // si. `with_framework_bundle_ticket` va al MISMO `process_service()`
+    // singleton, luego este test corria en paralelo con
+    // `cross_surface_policy_transition_invalidates_either_surface_ticket`, que
+    // escribe `last_policy_digest` y decide en consecuencia: la carrera hacia
+    // que el consume devolviera Ok donde deberia devolver PolicyChanged, y el
+    // aserto reventaba con `must refuse: ()`. Solo se manifestaba en el run
+    // completo del workspace —con los 4 tests en hilo, la ventana es mayor— y
+    // no al correr el fichero solo, que es justo la forma de fallo que hace
+    // que uno crea que el suite esta verde.
+    let _serial = serial_guard();
     let actor = Actor {
         kind: ActorKind::System {
             service: "no-cap-shared".to_string(),
