@@ -108,6 +108,11 @@ use sddk_engine::{
 /// without a direct `use sddk_storage::Storage` import (ARCH003 edge elimination).
 pub use sddk_storage::Storage;
 
+/// Re-exported alongside `Storage` because `emit_canonical_event` takes it, and
+/// a type that is not reachable from the crate that re-exports its constructor's
+/// argument forces every caller to add a second dependency for no reason.
+pub use sddk_domain::LedgerEventInput;
+
 /// Wall-clock milliseconds since the UNIX epoch, computed once at the
 /// CLI composition root. Engine code MUST call this instead of
 /// dereferencing `SystemTime::now()` directly so that production paths

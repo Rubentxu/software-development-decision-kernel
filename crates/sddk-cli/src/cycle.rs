@@ -17,7 +17,7 @@ use sddk_engine::{
         CycleNarrative, CycleNarrativeWriter, DefaultCycleNarrativeWriter, NarrativeAudience,
         NarrativeFacts, NarrativeLease, NarrativeTone, derive_claims,
     },
-    cycle_summary::derive_cycle_summary,
+    cycle_summary::{derive_all_cycle_facts, derive_cycle_summary},
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
 };
 use sddk_storage::SqliteEventStore;
@@ -2158,25 +2158,94 @@ fn run_cycle_list(args: CycleListArgs, environment: &CliEnvironment) -> CommandO
             acc
         });
 
-        Ok(CycleListOutput {
-            project_id,
-            cycles: cycles
-                .into_iter()
-                .map(|c| CycleListEntry {
+        // Derive the runtime label for every row, from the authority that
+        // already owns it. Two reasons this is not optional polish:
+        //
+        // 1. Without it, a cycle blocked on a human decision is byte-identical
+        //    to one that needs nothing. Measured on the real ledger: 2 cycles
+        //    hold an unresolved `approval.capability.requested`, and before
+        //    this none of them was distinguishable in the enumeration — the
+        //    operator had to already know the cycle id to learn it was
+        //    waiting on them.
+        // 2. A derivation that FAILS must say so. The natural rendering of a
+        //    failure is the empty string, which reads as "nothing pending" —
+        //    the same lie INC-DEBT-067 was about.
+        //
+        // ONE read for the whole enumeration, not one per row. The first
+        // version of this called `derive_cycle_summary` inside the row loop,
+        // and each call re-read the entire event log: 109 reads of 651 events
+        // to fill 188 rows, and `cycle list` went from 0.05 s to 2.38 s in a
+        // release build. This is a surface release gates call.
+        let cycle_ids: Vec<String> = cycles.iter().map(|c| c.cycle_id.clone()).collect();
+        let all_facts =
+            derive_all_cycle_facts(&context.storage, cycle_ids.iter().map(String::as_str));
+
+        let mut undetermined_runtime_states = 0usize;
+        let mut pending_human_decisions = 0usize;
+        let entries: Vec<CycleListEntry> = cycles
+            .into_iter()
+            .map(|c| {
+                // Fail-closed, on two independent grounds.
+                //
+                // `all_facts` is `Err` when the single read of the event log
+                // failed, and that poisons EVERY row, not just one. And a row
+                // whose manifest could not be deserialized cannot be vouched
+                // for either, however many events it has — `manifest_readable`
+                // above already says why.
+                let facts = all_facts.as_ref().ok().and_then(|all| all.get(&c.cycle_id));
+                let runtime_state_known = facts.is_some() && c.manifest_readable;
+                if !runtime_state_known {
+                    undetermined_runtime_states += 1;
+                }
+                // A pending approval is reported EVEN ON A ROW WE CANNOT
+                // VOUCH FOR. Suppressing it would hide a real decision behind
+                // a row this build cannot fully read, which is the one thing
+                // this surface exists to stop. `runtime_state_known: false`
+                // says what is missing; it does not retract what is not.
+                let pending_approvals = facts
+                    .map(|facts| facts.approval_waiting_on.clone())
+                    .unwrap_or_default();
+                if !pending_approvals.is_empty() {
+                    pending_human_decisions += 1;
+                }
+                let runtime_state = if runtime_state_known {
+                    facts
+                        .map(|facts| facts.derived_state.clone())
+                        .unwrap_or_default()
+                } else {
+                    UNKNOWN_RUNTIME_STATE.to_string()
+                };
+                CycleListEntry {
                     cycle_id: c.cycle_id,
                     status: c.status,
                     phase: c.phase,
                     created_at: c.created_at,
                     updated_at: c.updated_at,
                     manifest_readable: c.manifest_readable,
-                })
-                .collect(),
+                    runtime_state,
+                    pending_approvals,
+                    runtime_state_known,
+                }
+            })
+            .collect();
+
+        Ok(CycleListOutput {
+            project_id,
+            cycles: entries,
             by_status,
             unreadable_manifests: unreadable,
+            undetermined_runtime_states,
+            pending_human_decisions,
         })
     })();
     render_result(result, format, cycle_list_text)
 }
+
+/// Rendered in the `runtime_state` slot when the derivation could not be made.
+///
+/// A literal word, not an empty string, precisely because the empty string is
+/// the rendering of "nothing is pending" and these two must never look alike.
+const UNKNOWN_RUNTIME_STATE: &str = "unknown";
 
 fn cycle_list_text(output: &CycleListOutput) -> String {
     let mut out = String::new();
@@ -2191,19 +2260,39 @@ fn cycle_list_text(output: &CycleListOutput) -> String {
     for (status, count) in &output.by_status {
         out.push_str(&format!("status[{status}]: {count}\n"));
     }
+    // The two counters that answer "what needs me?" and "what could not be
+    // read?", declared before the rows so truncation cannot hide them. They
+    // are cross-checked against the rows by the falsifier for the same reason
+    // `cycles:` is: a number nothing verifies is a claim, not evidence.
+    out.push_str(&format!(
+        "pending_human_decisions: {}\n",
+        output.pending_human_decisions
+    ));
+    out.push_str(&format!(
+        "undetermined_runtime_states: {}\n",
+        output.undetermined_runtime_states
+    ));
     for entry in &output.cycles {
         // `manifest_readable` is rendered inline rather than in a column: it is
         // a property of the row, and a reader scanning the list needs to see
         // which rows are less readable than the others without a second lookup.
+        // `runtime_state` and `pending_approvals` are inline for the same
+        // reason, and one step further: they are what turns "29 OPEN" into
+        // "these 3 are waiting on you".
         out.push_str(&format!(
-            "cycle: {}\n  status: {}\n  phase: {}\n  created_at: {}\n  updated_at: {}\n  manifest_readable: {}\n",
+            "cycle: {}\n  status: {}\n  phase: {}\n  created_at: {}\n  updated_at: {}\n  manifest_readable: {}\n  runtime_state: {}\n  runtime_state_known: {}\n",
             entry.cycle_id,
             entry.status,
             entry.phase,
             entry.created_at,
             entry.updated_at,
             entry.manifest_readable,
+            entry.runtime_state,
+            entry.runtime_state_known,
         ));
+        for capability in &entry.pending_approvals {
+            out.push_str(&format!("  pending_approval: {capability}\n"));
+        }
     }
     out
 }
@@ -2214,6 +2303,17 @@ struct CycleListOutput {
     cycles: Vec<CycleListEntry>,
     by_status: BTreeMap<String, usize>,
     unreadable_manifests: usize,
+    /// Rows whose runtime state could NOT be derived, and therefore say so.
+    ///
+    /// This is a separate counter from the pending count on purpose: the two
+    /// failures look alike from the outside and must not be added together. A
+    /// cycle whose state could not be read is not a cycle that needs nothing.
+    undetermined_runtime_states: usize,
+    /// Rows with at least one unresolved approval request.
+    ///
+    /// Cross-checked against the rows by the falsifier, for the same reason
+    /// `cycles:` is: a count nothing verifies is a declaration that rots.
+    pending_human_decisions: usize,
 }
 
 #[derive(Serialize)]
@@ -2224,6 +2324,26 @@ struct CycleListEntry {
     created_at: String,
     updated_at: String,
     manifest_readable: bool,
+    /// Derived runtime label: `approval-waiting`, `uat-waiting`,
+    /// `remediating`, or empty when nothing is pending.
+    ///
+    /// Derived by `derive_cycle_summary`, never computed here: the label is a
+    /// fact about Run/Authority events, and a second derivation in the CLI
+    /// would be a private copy that diverges the moment one of the two is
+    /// touched.
+    runtime_state: String,
+    /// Capabilities with an unresolved approval request, sorted.
+    pending_approvals: Vec<String>,
+    /// `false` when the runtime state could not be derived for this row.
+    ///
+    /// Fail-closed by construction: this is what stops a row the enumeration
+    /// cannot vouch for from rendering as "nothing pending". It goes false in
+    /// two cases, both real: the single read of the event log failed (which
+    /// affects every row at once), or this row's manifest could not be
+    /// deserialized, which `manifest_readable` above already declares. The
+    /// naive rendering of either failure is the empty string — which is
+    /// precisely the claim this surface exists to make falsifiable.
+    runtime_state_known: bool,
 }
 
 fn run_cycle_next(args: CycleNextArgs, environment: &CliEnvironment) -> CommandOutput {
