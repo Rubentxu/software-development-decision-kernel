@@ -62,6 +62,8 @@ SDDK_FRAMEWORK_DIR="${SDDK_FRAMEWORK_DIR:-$HOME/.local/share/sddk/framework}"
 cd "$ROOT"
 # shellcheck disable=SC1091  # se valida su existencia en tests/test_release_receipt_authority.sh
 source "$ROOT/scripts/release-assets-contract.sh"
+# shellcheck disable=SC1091  # existe en tests/test_release_diagnostics_wiring.sh
+source "$ROOT/scripts/lib/release_diagnostics.sh"
 
 # Isolate TMPDIR for the whole release run so the test gate is deterministic
 # regardless of the ambient TMPDIR. The scratch MUST live OUTSIDE the repo
@@ -82,8 +84,24 @@ SCRATCH_ROOT="$(readlink -f "${CARGO_TARGET_DIR:-$HOME}" 2>/dev/null || echo "$R
 mkdir -p "$SCRATCH_ROOT"
 RELEASE_SCRATCH="$(mktemp -d "$SCRATCH_ROOT/sddk-release-tmp.XXXXXX")"
 export TMPDIR="$RELEASE_SCRATCH"
+# El marcador de "ya diagnostique" vive DENTRO del scratch, no en una variable:
+# `die` corre en este shell pero el manejador de salida corre en otro, y con una
+# variable el bloque del fallo salia dos veces. Ver `release_diagnose_exit`.
+RELEASE_DIAGNOSED_FILE="$RELEASE_SCRATCH/.sddk-release-diagnosed"
+
 cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
-trap cleanup_release_scratch EXIT
+
+# Una sola salida para el release, con dos responsabilidades que antes vivian
+# separadas: limpiar el scratch y, si el release termino mal, decir POR QUE.
+# Que sean la misma funcion es lo que evita el fallo de Twice: dos trampas
+# EXIT, la segunda pisa a la primera y el scratch se queda en disco.
+release_on_exit() {
+    local code=$?
+    release_diagnose_exit "$code" || true
+    cleanup_release_scratch
+    return "$code"
+}
+trap release_on_exit EXIT
 
 # --- args ---
 
@@ -110,9 +128,17 @@ done
 
 # --- helpers ---
 
-step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
+# `step` delega en `release_step`: una sola linea decide que se anuncia al
+# operador y que se recuerda para poder nombrarlo si el release se detiene. Dos
+# copias de esa idea divergen en cuanto se toca una, y esta es la que decide si
+# un fallo dice donde estaba.
+step() { release_step "$@"; }
 ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
+# `die` imprime su frase (que es lo que el release QUIERE decir) y despues deja
+# que el manejador de salida añada el paso, el codigo y la causa. La idempotencia
+# la garantiza el marcador del scratch, asi que el bloque sale una sola vez
+# aunque el `exit` de aqui y el trap se ejecuten los dos.
 die()  { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 require() {
@@ -130,6 +156,29 @@ require tar
 require sha256sum
 require curl
 require jq
+
+# Los recursos van aqui, y no mas adelante, por una razon que sale de lo
+# MEDIDO: los sandboxes que crean los tests viven bajo TMPDIR, que este release
+# acaba de apuntar al scratch, y `/tmp` es un tmpfs con tope (INC-DEBT-069). Con
+# el tmpfs saturado la suite cae con `os error 122` en tests que no estan rotos,
+# y ningun mensaje de la suite nombra el disco — el fallo se presenta como "un
+# test rojo" y el operador busca el defecto en el codigo del test. Fallar
+# cerrado AQUI, nombrando el recurso, el punto de montaje y las dos cifras,
+# convierte un fallo opaco en uno accionable. El margen es configurable para
+# que una maquina con otro perfil pueda ajustarlo sin tocar el script.
+release_check_resources "$RELEASE_SCRATCH" \
+    || die "sin margen de recursos para la release (el mensaje de arriba nombra cual falta y donde)"
+
+# El lock del target dir compartido AVISA, no muere. MEDIDO en session-79b: este
+# mismo release paso 12 min 30 s en `Blocking waiting for file lock on build
+# directory` y no dijo nada; el aviso lo dio cargo, porque cargo decide ser
+# verboso. Una retencion no invalida la release, la ralentiza — asi que la
+# severidad correcta es informar, y la decision de esperar es del operador con
+# el dato delante. Morir aqui impediria releases legitimas en una maquina que
+# compila dos proyectos a la vez, que es el uso normal de un target dir
+# compartido.
+release_check_cargo_lock "${CARGO_TARGET_DIR:-$SCRATCH_ROOT}"
+ok "recursos comprobados: scratch con margen, memoria con margen, lock del target dir informado"
 
 gh auth status >/dev/null 2>&1 \
     || die "gh CLI not authenticated — run: gh auth login"
@@ -230,6 +279,10 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_changelog_coverage.sh \
             tests/test_changelog_coverage_baseline.sh \
             tests/test_changelog_coverage_baseline_mutation.sh \
+            scripts/lib/release_diagnostics.sh \
+            tests/test_release_diagnostics.sh \
+            tests/test_release_diagnostics_wiring.sh \
+            tests/test_release_diagnostics_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -267,6 +320,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_unsigned_propagation.sh \
              tests/test_changelog_merge.sh \
              tests/test_changelog_coverage_baseline.sh \
+             tests/test_release_diagnostics.sh \
+             tests/test_release_diagnostics_wiring.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
              tests/test_build_identity_policy.sh \
@@ -994,6 +1049,24 @@ else
          Log: $CHANGELOG_BASELINE_MUT_LOG"
 fi
 
+step "3m/15 — el release nombra su propia causa de fallo, y se le aplican nueve mutaciones"
+RELEASE_DIAG_MUT_LOG="$RELEASE_SCRATCH/release_diagnostics_mutation.log"
+# El falsador corre los dos guards por dentro, asi que esto no es un test mas:
+# es la prueba de que los 42 casos de diagnostico y los 24 de cableado CAEN
+# cuando se quita cada punto de enforcement. Un diagnostico bonito que nadie
+# ha intentado romper es texto, y el texto se degrada en silencio.
+if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1; then
+    ok "autofalsacion del diagnostico de release: $(grep -m1 '^PASS=' "$RELEASE_DIAG_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
+    die "la autofalsacion del diagnostico de release no pasa. Eso significa que una de
+         las nueve comprobaciones no tiene dientes, o que el release vuelve a morir
+         sin decir por que —que es exactamente el defecto que este paso existe para
+         cerrar. Un gate que puede quedarse mudo y seguir contando como verde no
+         es un gate.
+         Log: $RELEASE_DIAG_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"
@@ -1007,7 +1080,12 @@ ok "MANIFEST.sha256 regenerated and verified"
 
 step "5/15 — bundle tarball"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$RELEASE_SCRATCH"' EXIT
+# Este trap NO vuelve a ser `rm -rf ... EXIT`: en bash un trap nuevo REEMPLAZA al
+# anterior, y sustituir el de la linea 104 (que ademas limpia el scratch) por
+# uno que solo limpia $TMP dejaba el scratch en disco y, con el, el marcador de
+# diagnostico. Se encadena en `release_on_exit` para que las dos obligaciones
+# tengan un solo dueño y no se pisen.
+cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH" "$TMP"; }
 
 BUNDLE_TARBALL="$TMP/software-development-decision-kernel.tar.gz"
 # Stage the EXACT tarball contents (repo surfaces + injected BUNDLE.toml) in
