@@ -14024,3 +14024,123 @@ carencia. Queda como el siguiente bloque de valor.
 - El clon local se queda viejo tras cada publicacion; el efecto ya esta
   neutralizado por el gate, la causa no.
 - Firmado: `UNSIGNED` declarado, no se fabrica clave ni ancla.
+
+
+## session-80 cierre: REL-2.9.0 publicada e instalada (14 intentos)
+
+### La release salio, y lo que salio con ella
+
+`RELEASE_RC=0` en el **decimo cuarto** intento. Verificado contra la API y no
+solo contra el log del release:
+
+- tag remoto `v2.9.0` -> `af28ab13e13596bc79d0743ecd9872664e14695d`
+- release: `isDraft=false`, `isPrerelease=false`, **9 assets**
+- CDN real, no la API: `sddk` HTTP 200 (31 866 816 bytes) y
+  `software-development-decision-kernel.tar.gz` HTTP 200 (679 501 bytes)
+- instalado: `sddk 2.9.0`, `framework/current -> 2.9.0`
+- `sddk dev doctor`: `binary.bundle_coherence: present`, `all_present: True`
+
+**Y la linea de abajo es la que hay que leer con calma:**
+
+```
+  binary:        sddk 2.9.0
+  bundle:        None
+  current:       2.9.0
+```
+
+`bundle: None` en una release correcta. Registrado como
+**INC-DEBT-072** (low/P3) con su causa medida: el recibo tiene
+`layout: flat`, luego no hay bundle con version propia y `bundle_version`
+es `null` **a proposito**; el defecto es el fallback de la linea que
+resume, que imprime la ausencia con formato de dato. El gate 11 lo
+comprueba y da verde, luego es una linea mal escrita, no un artefacto
+roto. **La primera redaccion del documento afirmaba que la clave no
+existia en el recibo, y es falso**; queda escrito en el propio documento
+porque un `.get()` que devuelve `None` se lee de un vistazo como "clave
+ausente", que es justo el caso que el documento demuestra que no es.
+
+### Los cinco fallos que el release Islas y que no eran ruido
+
+Ninguno de los cinco era "el release se paro". Cada uno era un defecto
+real, y cuatro de ellos los metio este mismo bloque.
+
+1. **`die` no podia decir nada.** `die()` es `exit 1` y el manejador de
+   salida leia `$?` **despues**, luego el bloque de "por que fallo el
+   release" decia SIEMPRE `codigo : 1`. Como `die` es la unica via de
+   salida no-cero de `release.sh`, las ramas 137/139/134/135 de
+   `cause_of_exit_code` -- las unicas que separan "el comando fallo" de
+   "el proceso murio" -- eran **inalcanzables por construccion**. La
+   tabla estaba escrita y probada caso por caso, y no podia activarse
+   nunca. Arreglo: `die` publica el codigo que recibe y el trap lo
+   diagnostica; el codigo de proceso sigue siendo 1. Guards **E7** (que
+   compone el camino real y exige que dos muertes por senal **distintas**
+   se distingan) y mutaciones **M18**, **M19**.
+2. **La limpieza decidia el resultado.** `$TMP` es un subdirectorio del
+   scratch, luego `rm -rf "$RELEASE_SCRATCH" "$TMP"` borra el padre
+   primero y el hijo ya no existe; con `set -euo pipefail` eso **aborta
+   el manejador antes de su `return "$code"`** y **un release que
+   termina bien sale con 1 sin decir nada**. El efecto de rebote fue lo
+   que mas dano hizo: E2 afirmaba "el release sigue y muere por otra
+   causa" y **pasaba porque la limpieza se comia el codigo**. Arreglo con
+   las dos piezas -- orden (hijo antes que padre) y `|| true` -- porque
+   con una sola el fallo vuelve. Guard **E8**, mutacion **M20**.
+3. **E2 estaba pegado al defecto que el arreglo anterior quito.** Al
+   arreglar (2), el dry-run completo y salio con 0, y las dos
+   aserciones de E2 cayeron sin que el producto hubiera cambiado. Un
+   caso que exige que el sistema falle para poder pasar no mide una
+   propiedad: mide lo que se rompio ayer. Reescrito a lo que el caso
+   siempre dijo comprobar, con un implicado en vez de una premisa. El
+   reparto E1+E2 es lo que demuestra que el gate es un umbral y no una
+   puerta, y la mutacion **M21** lo separa: el gate que siempre para
+   deja verde a E1 y tumba a E2.
+4. **Un gate latente de este bloque llevaba intentos bloqueando el 1b.**
+   `test_build_identity_policy.sh` corre shellcheck **sin filtro de
+   severidad**, luego un `info` le es igual que un `error`. MEDIDO: los
+   avisos eran **introducidos por el trabajo de diagnostico de esta
+   sesion** -- `v2.7.0`, `v2.8.0` y `v2.8.1` dan **cero** SC2329 y
+   `tests/test_release_diagnostics.sh` **no existia** en v2.8.1. Cuatro
+   de ellos tapados por gates anteriores que fallaban antes: **un gate
+   latente que otro gate tapa es un gate que nadie mira**. Corregidos
+   SC2329 (falsos: `trap` no se traza), SC2034 (mio, con `export`),
+   SC2181 (cuatro aserciones que median `$?` de forma indirecta) y SC2016
+   (27 needles con `\$` en comillas simples **a proposito**: pasarlos a
+   dobles haria que el shell expandiera y el needle comparara contra un
+   patron que no es el del codigo, luego el caso pasaria por vacuidad).
+   **Aqui hay una correccion mia**: la primera version de la reescritura
+   de SC2181 **invirtio la convencion de `asert`** -- que espera `1`
+   para pasar -- y dejo el guard en `PASS=40 FAIL=3` sin que nadie
+   entendiera por que.
+5. **El puntero de estado iba 30 commits atras.** No es un defecto del
+   release: es el trabajo de cierre que el propio repo exige y que este
+   bloque tenia pendiente. Reconciliado con `scripts/reconcile_state_pointer.sh`
+   a `e4ad8638` / 2.9.0. **Y el script dejo la prosa del campo
+   diciendo lo que decia cuando valia 2.8.1** -- "DECLARADA, NO
+   PUBLICADA", ddfd2b51 bumpeo 2.5.2 -> 2.5.3 -- colgando de un campo
+   que ya declara 2.9.0. Es la misma mentira que el check 3d del guard
+   prohibe en `current_sha`, y **ese check todavia no mira aqui**: una
+   exclusion, no una garantia, y se declara en vez de sellarse.
+
+### Lo que sigue abierto y sin frente
+
+- **INC-DEBT-071** (high/P1): `| grep -q` con `pipefail` falla cuando
+  acierta. Alcance medido: 35 ficheros, **candidatos y no defectos
+  confirmados**. Arreglado solo el que fallo.
+- **INC-DEBT-072** (low/P3): `bundle: None` en el paso 15.
+- Firmado: `UNSIGNED` declarado, no se fabrica clave ni ancla. El ancla y
+  `SDDK_RELEASE_VERIFY_KEY_BODY` en `scripts/install.sh:235` siguen siendo
+  placeholder.
+- El clon local se queda viejo tras cada publicacion; el gate 2b neutraliza
+  el efecto, la causa no.
+- **Sin medir, y por tanto sin afirmar**: la causa del fallo sin
+  diagnostico del noveno intento. La mejor evidencia es de **hardware**:
+  `nvme 0000:01:00.0: PCIe Bus Error ... [12] Timeout` a las **21:04:50**,
+  diecinueve segundos antes de que el release muriera (su scratch en la
+  papelera tiene `DeletionDate` 21:05:09), y `BadTLP` en el mismo puerto
+  raiz una vez por minuto durante toda la ventana. `severity=Correctable`
+  significa que el kernel reintento y sigo, luego **no es prueba**; el
+  mismo `cargo test --workspace` reejecutado dio `rc=0` en 142,66 s tres
+  veces. Lo que si se sostiene es el arreglo del instrumento: la proxima
+  vez el bloque **nombra** la causa en vez de decir 1.
+- La exclusion del check 3d sobre `workspace_version_at_current` (arriba).
+- No hay ningun guard que mida que las directivas de shellcheck sigan
+  puestas: un `disable` que alguien quite no lo detecta nadie.
