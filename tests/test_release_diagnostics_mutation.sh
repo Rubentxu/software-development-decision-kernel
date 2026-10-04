@@ -219,12 +219,21 @@ s = s.replace("trap release_on_exit EXIT", "trap cleanup_release_scratch EXIT")
 open(p, "w").write(s)
 '
 
+mutar "M10 el guard de wiring se quita --skip-tests y vuelve a dispararse" "$WIRE" "$WIRE" E0 \
+    "sin --skip-tests el dry-run alcanza el 1b, el 1b corre este fichero, y el guard se llama a si mismo." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+s = s.replace("\"$RELEASE\" --dry-run --skip-tests", "\"$RELEASE\" --dry-run")
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las nueve comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las diez comprobaciones tienen dientes, y el arbol quedo intacto.\n'
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then

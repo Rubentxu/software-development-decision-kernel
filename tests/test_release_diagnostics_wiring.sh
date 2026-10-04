@@ -30,6 +30,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE="$ROOT/scripts/release.sh"
+RELEASE_WIRE="${BASH_SOURCE[0]}"
 LIB="$ROOT/scripts/lib/release_diagnostics.sh"
 
 PASS=0
@@ -108,11 +109,48 @@ asert "E0: el aviso de lock esta antes de gastar la suite tambien" \
     "lock en $linea_lock, suite en $linea_suite"
 asert "E0: el preflight de recursos falla CERRADO (die), el de lock solo avisa" \
     "$(awk '/release_check_resources "\$RELEASE_SCRATCH"/{getline; print (/die /) ? 1 : 0; exit}' "$RELEASE")"
+
+# Las dos invocaciones del release llevan `--skip-tests`. Se comprueba sobre el
+# TEXTO y no sobre el comportamiento a proposito: quitarlo en caliente haria que
+# el dry-run alcanzara el 1b, el 1b volveria a correr este fichero, y el
+# falsador se quedaria colgado en vez de reportar un fallo. Un falsador que se
+# cuelga no mide nada, asi que la garantia de no-recursion se mide aqui de forma
+# segura, y los casos E1/E2 la confirman en su propio sitio con el dry-run real.
+#
+# El needle apunta a la INVOCACION (`bash "$RELEASE" ...`) y no a la cadena
+# `release.sh --dry-run --skip-tests` tal cual: el needle tiene que existir en el
+# fichero. MEDIDO — la primera version contaba 1 con las dos invocaciones
+# correctas, porque buscaba un texto que no aparece en ninguna linea y solo
+# hallaba una mencion dentro de un comentario. Un needle que no casa con lo que
+# el codigo escribe no falla: falla de otra manera, mas tarde y peor.
+n_skips="$(grep -cE '^[[:space:]]*bash "\$RELEASE" --dry-run --skip-tests' "$RELEASE_WIRE")"
+asert "E0: las dos invocaciones del release llevan --skip-tests (si no, este guard se re-dispara)" \
+    "$([ "$n_skips" -eq 2 ] && echo 1 || echo 0)" "invocaciones con --skip-tests: $n_skips"
 caso_termina E0
 
 # --- E1: margen imposible -> el release para nombrando el recurso ------------
 caso_empieza
 
+# --- E1: margen imposible -> el release para nombrando el recurso ------------
+#
+# `--skip-tests` NO es una optimizacion: es la garantia de que este guard no
+# puede dispararse a si mismo. MEDIDO, y el modo de fallo es el peor posible.
+#
+# La primera version lanzaba `release.sh --dry-run` a secas. Ese dry-run llega
+# al paso 1b, y 1b corre este mismo fichero, que lanza OTRO dry-run, cuyo 1b
+# corre este fichero otra vez. La cadena medida fue:
+#
+#   release.sh --dry-run -> test_release_diagnostics_wiring.sh
+#                        -> release.sh --dry-run -> 1b -> test_release_admission.sh
+#                        -> ... y de ahi otra vez al wiring
+#
+# No es un bucle visible en el log: el dry-run mas externo se queda esperando y
+# el 1b del release que lo invoco se queda esperando tambien, luego el sintoma
+# es "el release tarda mucho" y la causa esta a tres niveles de profundidad.
+# Con `--skip-tests` el dry-run muere en el paso 0 —que es donde vive lo que
+# este guard mide— y no puede alcanzar el 1b, luego no puede re-entrar. La
+# garantia es estructural, no una bandera: no depende de que el preflight
+# funcione.
 export SDDK_SKIP_SIGNING=1
 e1_log="$(mktemp)"
 e2_log="$(mktemp)"
@@ -120,7 +158,7 @@ e1_rc=0
 e2_rc=0
 
 SDDK_RELEASE_MIN_FREE_MB=999999999 SDDK_RELEASE_MIN_AVAIL_MB=1 \
-    bash "$RELEASE" --dry-run > "$e1_log" 2>&1 || e1_rc=$?
+    bash "$RELEASE" --dry-run --skip-tests > "$e1_log" 2>&1 || e1_rc=$?
 
 asert "E1: el release se detiene" "$([ "$e1_rc" -ne 0 ] && echo 1 || echo 0)" "rc=$e1_rc"
 asert "E1: nombra el disco como el recurso que falta" \
@@ -142,6 +180,16 @@ asert "E1: el bloque de diagnostico sale con el paso en curso" \
 asert "E1: el diagnostico nombra el paso '0/15'" \
     "$(grep -qE 'paso *: 0/15' "$e1_log" && echo 1 || echo 0)" \
     "$(grep -E 'paso *:' "$e1_log" | head -1)"
+# No-vacuidad de la garantia estructural: si el dry-run llegara al 1b, este
+# guard volveria a dispararse a si mismo. Afirmarlo es lo que convierte
+# `--skip-tests` de un comentario en una garantia comprobada: quitarlo de las
+# dos invocaciones hace caer ESTE caso, no solo un test lento.
+asert "E1: el dry-run muere en el paso 0 y NO alcanza el 1b (si lo alcanzara, este guard se repetiria)" \
+    "$(grep -q '1b/15' "$e1_log" && echo 0 || echo 1)" \
+    "$(grep -E '^==>' "$e1_log" | tail -1)"
+asert "E1: y no llego a compilar nada" \
+    "$(grep -qE '1/15|Compiling|Checking' "$e1_log" && echo 0 || echo 1)" \
+    "$(grep -E '^(==>|   Compiling)' "$e1_log" | tail -1)"
 caso_termina E1
 
 # --- E2: margen suficiente -> el preflight NO es una puerta trasera ----------
@@ -158,7 +206,7 @@ caso_empieza
 # puede superar"— no depende de nada de eso.
 
 SDDK_RELEASE_MIN_FREE_MB=1 SDDK_RELEASE_MIN_AVAIL_MB=1 \
-    bash "$RELEASE" --dry-run > "$e2_log" 2>&1 || e2_rc=$?
+    bash "$RELEASE" --dry-run --skip-tests > "$e2_log" 2>&1 || e2_rc=$?
 
 asert "E2: con margen el preflight se supera y lo DICE" \
     "$(grep -q 'recursos comprobados' "$e2_log" && echo 1 || echo 0)" \
@@ -170,6 +218,8 @@ asert "E2: el release sigue y muere por otra causa (rc no cero esta vez tambien)
     "$([ "$e2_rc" -ne 0 ] && echo 1 || echo 0)" "rc=$e2_rc -- un preflight que nunca dejara pasar nada daria rc=0 aqui"
 asert "E2: el diagnostico de ese fallo tambien nombra su propio paso" \
     "$(grep -q 'por que fallo el release' "$e2_log" && echo 1 || echo 0)"
+asert "E2: este dry-run tampoco llega al 1b" \
+    "$(grep -q '1b/15' "$e2_log" && echo 0 || echo 1)"
 caso_termina E2
 
 # --- E3: el diagnostico no se repite entre die y trap ------------------------

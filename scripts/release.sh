@@ -88,6 +88,7 @@ export TMPDIR="$RELEASE_SCRATCH"
 # `die` corre en este shell pero el manejador de salida corre en otro, y con una
 # variable el bloque del fallo salia dos veces. Ver `release_diagnose_exit`.
 RELEASE_DIAGNOSED_FILE="$RELEASE_SCRATCH/.sddk-release-diagnosed"
+export RELEASE_DIAGNOSED_FILE
 
 cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
 
@@ -1049,7 +1050,7 @@ else
          Log: $CHANGELOG_BASELINE_MUT_LOG"
 fi
 
-step "3m/15 — el release nombra su propia causa de fallo, y se le aplican nueve mutaciones"
+step "3m/15 — el release nombra su propia causa de fallo, y se le aplican diez mutaciones"
 RELEASE_DIAG_MUT_LOG="$RELEASE_SCRATCH/release_diagnostics_mutation.log"
 # El falsador corre los dos guards por dentro, asi que esto no es un test mas:
 # es la prueba de que los 42 casos de diagnostico y los 24 de cableado CAEN
@@ -1060,7 +1061,7 @@ if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1
 else
     tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
     die "la autofalsacion del diagnostico de release no pasa. Eso significa que una de
-         las nueve comprobaciones no tiene dientes, o que el release vuelve a morir
+         las diez comprobaciones no tiene dientes, o que el release vuelve a morir
          sin decir por que —que es exactamente el defecto que este paso existe para
          cerrar. Un gate que puede quedarse mudo y seguir contando como verde no
          es un gate.
