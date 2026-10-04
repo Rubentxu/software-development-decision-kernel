@@ -904,6 +904,32 @@ else
          tag que ya existe. Log: $BUMP_BASELINE_MUT_LOG"
 fi
 
+# La autofalsacion de la vista del operador. Mismo motivo que 3c/3g/3h/3i/3i-b:
+# una comprobacion que solo se ejecuta cuando alguien edita el guard envejece
+# sin que nadie lo note. Y aqui el defecto que corrige es del que mas fácil
+# sobrevive a un suite verde — INC-DEBT-067: `sddk cycle narrative` afirmaba
+# "Cycle completed." para TODO ciclo, incluido uno inexistente (exit 0), porque
+# las dos frases eran constantes y `human_action_required` no tenia productor en
+# todo el workspace. La mutacion que mas importa es M2, y su historia esta
+# escrita en el propio falsador: la primera version rompia la RESOLUCION del
+# ciclo y el test seguia en verde, porque el enlace que decide —la lectura del
+# store— seguia intacto. Un guard que se queda verde cuando se le rompe lo que
+# dice vigilar declara una cobertura que no tiene, y por eso se mide por
+# nombre de test y no por el texto de una asercion.
+step "3j/15 — la vista del operador deriva sus afirmaciones, y se le aplican cuatro mutaciones"
+NARRATIVE_VIEW_MUT_LOG="$RELEASE_SCRATCH/cycle_narrative_operator_view_mutation.log"
+if bash tests/test_cycle_narrative_operator_view_mutation.sh >"$NARRATIVE_VIEW_MUT_LOG" 2>&1; then
+    ok "autofalsación de la vista del operador: $(grep -m1 '^PASS=' "$NARRATIVE_VIEW_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$NARRATIVE_VIEW_MUT_LOG" >&2
+    die "la autofalsacion de la vista del operador no pasa: o la narrativa vuelve a
+         afirmar sin derivar, o un ciclo que no existe vuelve a narrarse como
+         completado, o una mutacion cayo por una razon que no es la que dice
+         medir. Sin esto, la superficie que se describe como operator view puede
+         volver a mentirle al operador sin que nada lo note.
+         Log: $NARRATIVE_VIEW_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"
