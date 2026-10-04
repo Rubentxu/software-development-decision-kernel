@@ -7,6 +7,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write as _;
 use std::hash::Hasher;
 
+use sddk_domain::CycleStatus;
+
 // ── Audit guard constants ────────────────────────────────────────────────
 
 /// Closed-set size of [`NarrativeAudience`]. Bump when a variant is added.
@@ -263,6 +265,179 @@ impl NextStepSuggestionBuilder {
     }
 }
 
+// ── Operator-view claims: derived, never asserted ───────────────────────
+//
+// `human_action_required` existed with NO PRODUCER: it was declared, set to
+// `None` in the constructor, read once by the footer, and never received a
+// `Some(..)` anywhere in the workspace. The footer therefore could not print
+// anything but "Nada por ahora.", by construction — and a narrative that
+// cannot say "an action is required" says "no action is required" to every
+// operator, including the ones who are about to leave a cycle waiting
+// forever on a decision only they can make.
+//
+// Worse than an absent derivation: `sddk cycle narrative` never opened the
+// store. It rendered "Cycle completed." with exit 0 for a cycle id that does
+// not exist, because the command is a template, not a view.
+//
+// So the two claims the operator view makes are now DERIVED from facts the
+// caller reads out of the ledger, and the derivation lives here — in the
+// engine — rather than in the command that needs it, for the same reason
+// `remote_urls_equivalent` lives in the domain (session-76): two callers with
+// private copies diverge the moment one is touched and the other is not.
+
+/// Lease liveness, as the operator view needs to judge it.
+///
+/// `Expired` is separated from `Absent` because they are different facts with
+/// different recoveries: an expired lease needs renewing, an absent one needs
+/// taking. Collapsing them would tell the operator the wrong remedy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NarrativeLease {
+    /// A lease whose expiry is in the future at the reference instant.
+    Live {
+        /// Lease owner recorded in the ledger.
+        owner: String,
+        /// Expiry, epoch milliseconds.
+        expires_at_ms: i64,
+    },
+    /// A lease exists but had already expired at the reference instant.
+    Expired {
+        /// Lease owner recorded in the ledger.
+        owner: String,
+        /// Expiry, epoch milliseconds.
+        expired_at_ms: i64,
+    },
+    /// No lease row for this cycle.
+    Absent,
+}
+
+/// The facts the operator view is allowed to assert.
+///
+/// Every field is read from the ledger by the caller. The narrative derives
+/// its two central claims from these and from nothing else — that is the whole
+/// point: a claim that is not derivable from a fact is a guess, and a guess
+/// rendered as a certainty is the defect this type exists to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NarrativeFacts {
+    /// Persisted cycle status, from the cycle record.
+    pub status: CycleStatus,
+    /// Human-readable phase from the cycle record.
+    pub phase: String,
+    /// Derived runtime state (e.g. `approval-waiting`); empty when none apply.
+    pub runtime_state: String,
+    /// Capabilities with an unresolved approval request.
+    pub approval_waiting_on: Vec<String>,
+    /// Lease liveness at [`Self::now_ms`].
+    pub lease: NarrativeLease,
+    /// Reference instant for lease liveness, epoch milliseconds.
+    ///
+    /// Supplied by the caller, never read from the clock here: the narrative
+    /// is a deterministic artifact and two renders of the same facts must be
+    /// byte-identical.
+    pub now_ms: i64,
+}
+
+/// The two claims the operator view makes, derived.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NarrativeClaims {
+    /// One sentence describing what the cycle actually is.
+    pub what_was_done: String,
+    /// What the operator must do, when something is pending. `None` only when
+    /// the facts show nothing is pending.
+    pub human_action_required: Option<String>,
+}
+
+/// Derives the operator view's two central claims from ledger facts.
+///
+/// The precedence below is fixed and total: for the same facts there is
+/// exactly one answer, and the first matching rule wins. An operator view
+/// whose answer depends on evaluation order is a view whose answer depends on
+/// nothing.
+#[must_use]
+pub fn derive_claims(facts: &NarrativeFacts) -> NarrativeClaims {
+    // ── Claim 1: what the cycle IS ──────────────────────────────────────
+    // A live cycle is never described as completed. Before this, every
+    // status rendered the same sentence, so a CLOSED cycle and an OPEN one
+    // were indistinguishable in the one surface a human reads.
+    let what_was_done = match facts.status {
+        CycleStatus::Closed => format!("The cycle closed at phase \"{}\".", facts.phase),
+        CycleStatus::Abandoned => format!("The cycle was abandoned at phase \"{}\".", facts.phase),
+        CycleStatus::Released => format!("The cycle was released at phase \"{}\".", facts.phase),
+        other => format!(
+            "The cycle is {} at phase \"{}\"{}.",
+            wire_status(other),
+            facts.phase,
+            if facts.runtime_state.is_empty() {
+                String::new()
+            } else {
+                format!(" (runtime: {})", facts.runtime_state)
+            }
+        ),
+    };
+
+    // ── Claim 2: what the operator must do ──────────────────────────────
+    // First match wins, in the same precedence the runtime summary already
+    // uses (approval > uat > remediation), so the footer and the status view
+    // cannot disagree about what is blocking.
+    let mut pending: Vec<String> = facts.approval_waiting_on.clone();
+    pending.sort();
+    pending.dedup();
+
+    let human_action_required = if !pending.is_empty() {
+        let n = pending.len();
+        let plural = if n == 1 { "request" } else { "requests" };
+        Some(format!(
+            "Decide {n} pending approval {plural}: {}.",
+            pending.join(", ")
+        ))
+    } else if facts.runtime_state.contains("uat-waiting") {
+        Some("Give the pending UAT verdict for this cycle.".to_string())
+    } else if matches!(facts.status, CycleStatus::Open)
+        && !lease_is_live(&facts.lease, facts.now_ms)
+    {
+        // Total by construction: every arm of the lease is handled, and
+        // none of them panics. A lease LABELLED live whose expiry is
+        // already past at the reference instant is a reachable state — the
+        // label is a claim and the expiry is the fact, and this function
+        // judges by the fact. An `unreachable!` here was reached by a test
+        // that passed a stale label, which is exactly the kind of input a
+        // public function has to survive.
+        Some(match &facts.lease {
+            NarrativeLease::Absent => {
+                "This cycle holds no lease; take one before applying.".to_string()
+            }
+            NarrativeLease::Expired { owner, .. } => {
+                format!("The lease held by {owner} expired; take a fresh one before applying.")
+            }
+            NarrativeLease::Live { owner, .. } => {
+                format!(
+                    "The lease held by {owner} is no longer live; take a fresh one before applying."
+                )
+            }
+        })
+    } else {
+        None
+    };
+
+    NarrativeClaims {
+        what_was_done,
+        human_action_required,
+    }
+}
+
+/// Whether the lease is live at `now_ms`.
+fn lease_is_live(lease: &NarrativeLease, now_ms: i64) -> bool {
+    match lease {
+        NarrativeLease::Live { expires_at_ms, .. } => *expires_at_ms > now_ms,
+        NarrativeLease::Expired { .. } => false,
+        NarrativeLease::Absent => false,
+    }
+}
+
+/// Lowercase wire form of a [`CycleStatus`], matching `sddk cycle status`.
+fn wire_status(status: CycleStatus) -> String {
+    format!("{status:?}").to_lowercase()
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CycleNarrative {
@@ -343,6 +518,40 @@ impl CycleNarrative {
             h.write(s.effort.label().as_bytes());
         }
         h.finish()
+    }
+
+    /// Recompute the digest from the current identity fields.
+    ///
+    /// The digest covers `what_was_done`, so anything that mutates it must
+    /// come through here. A digest computed before a mutation fingerprints a
+    /// document that is not the one the operator is handed, and a digest
+    /// that fingerprints the wrong document is worse than no digest.
+    pub fn recompute_digest(&mut self) {
+        self.cycle_digest = Self::compute_digest(
+            &self.cycle_id,
+            &self.title,
+            &self.what_was_done,
+            &self.next_step_suggestions,
+        );
+    }
+
+    /// Apply derived operator-view claims to this narrative.
+    ///
+    /// This is the producer `human_action_required` never had.
+    pub fn apply_claims(&mut self, claims: &NarrativeClaims) {
+        self.what_was_done = claims.what_was_done.clone();
+        self.human_action_required = claims.human_action_required.clone();
+        self.recompute_digest();
+    }
+
+    /// Replace the derived sentence with a caller-supplied one.
+    ///
+    /// The override wins over a DERIVED default, never over a constant —
+    /// that ordering is the whole difference between an escape hatch and the
+    /// reason the field had no producer.
+    pub fn override_what_was_done(&mut self, text: &str) {
+        self.what_was_done = text.to_string();
+        self.recompute_digest();
     }
 
     pub fn sort_suggestions(&mut self) {
@@ -530,6 +739,259 @@ impl CycleNarrativeWriter for DefaultCycleNarrativeWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Facts for a cycle that is open, at phase `design`, with a live
+    /// lease and nothing pending — the only combination in which the
+    /// operator view is allowed to say "nothing to do".
+    fn quiet_open() -> NarrativeFacts {
+        NarrativeFacts {
+            status: CycleStatus::Open,
+            phase: "design".into(),
+            runtime_state: String::new(),
+            approval_waiting_on: Vec::new(),
+            lease: NarrativeLease::Live {
+                owner: "mvs-test".into(),
+                expires_at_ms: 2_000,
+            },
+            now_ms: 1_000,
+        }
+    }
+
+    /// A live cycle is never described as completed. Before the producer
+    /// existed, every status rendered the same sentence, so a CLOSED cycle
+    /// and an OPEN one were byte-identical in the one surface a human reads.
+    ///
+    /// The sweep is driven by the PERSISTED statuses plus every label
+    /// `derive_cycle_summary` can derive, rather than by naming the
+    /// runtime-derived variants. That is a constraint with a reason: since the
+    /// WU-C3 cutover those variants are decode-only — wait/remediation/recovery
+    /// truth lives in Run/Authority facts and the label is DERIVED — so a
+    /// `conf09b` ratchet forbids referencing them from here. Enumerating them
+    /// in a test would have been asserting against a status the domain no
+    /// longer treats as canonical Cycle truth.
+    ///
+    /// Sweeping the derived labels instead is the stronger claim: the
+    /// narrative stays honest for every combination the authority can
+    /// actually produce, including ones a hand-written list would miss.
+    #[test]
+    fn a_live_cycle_is_never_described_as_completed() {
+        // Every label `derive_cycle_summary` derives, in its own precedence
+        // order, plus a representative not-derived one.
+        let runtime_labels = [
+            "",                 // nothing pending: only the persisted status counts
+            "approval-waiting", // highest precedence
+            "uat-waiting",
+            "remediating",
+            "recovering",
+        ];
+        let persisted = [
+            CycleStatus::Open,
+            CycleStatus::Blocked,
+            CycleStatus::ReleasePending,
+        ];
+
+        for status in persisted {
+            for label in runtime_labels {
+                let facts = NarrativeFacts {
+                    status,
+                    runtime_state: label.to_string(),
+                    ..quiet_open()
+                };
+                let claims = derive_claims(&facts);
+                let what = &claims.what_was_done;
+                assert!(
+                    !what.contains("completed"),
+                    "{status:?}/{label:?} rendered as completed: {what}"
+                );
+                assert!(
+                    !what.contains("closed"),
+                    "{status:?}/{label:?} rendered as closed: {what}"
+                );
+            }
+        }
+    }
+
+    /// Two cycles whose truth differs must not render the same sentence.
+    /// This is the property the debt record measured as violated across
+    /// three cycles: CLOSED, OPEN, and OPEN+approval-waiting all rendered
+    /// identically.
+    #[test]
+    fn cycles_in_different_states_derive_different_sentences() {
+        let closed = derive_claims(&NarrativeFacts {
+            status: CycleStatus::Closed,
+            ..quiet_open()
+        });
+        let open = derive_claims(&quiet_open());
+        let waiting = derive_claims(&NarrativeFacts {
+            status: CycleStatus::Open,
+            runtime_state: "approval-waiting".into(),
+            approval_waiting_on: vec!["surface.cycle_state#cycle_supersede".into()],
+            ..quiet_open()
+        });
+        assert_ne!(closed.what_was_done, open.what_was_done);
+        assert_ne!(open.what_was_done, waiting.what_was_done);
+        assert_ne!(closed.what_was_done, waiting.what_was_done);
+        assert!(closed.what_was_done.contains("closed"));
+        assert!(open.what_was_done.contains("is open"));
+        assert!(waiting.what_was_done.contains("approval-waiting"));
+    }
+
+    /// A cycle waiting on a human decision must NAME the decision, and must
+    /// not say nothing is needed. Before, `human_action_required` had no
+    /// producer at all, so the footer could not print anything else.
+    #[test]
+    fn a_pending_approval_names_what_has_to_be_decided() {
+        let claims = derive_claims(&NarrativeFacts {
+            approval_waiting_on: vec!["surface.cycle_state#cycle_supersede".into()],
+            runtime_state: "approval-waiting".into(),
+            ..quiet_open()
+        });
+        let action = claims
+            .human_action_required
+            .expect("a pending approval must produce a human action");
+        assert!(
+            action.contains("surface.cycle_state#cycle_supersede"),
+            "{action}"
+        );
+    }
+
+    /// Precedence is total and deterministic: approval beats the lease,
+    /// because the operator's decision is the blocking one. Two
+    /// derivations of the same facts must be equal, always.
+    #[test]
+    fn derivation_is_deterministic_and_total() {
+        let facts = NarrativeFacts {
+            approval_waiting_on: vec!["b".into(), "a".into(), "b".into()],
+            runtime_state: "approval-waiting".into(),
+            lease: NarrativeLease::Absent,
+            ..quiet_open()
+        };
+        let first = derive_claims(&facts);
+        let second = derive_claims(&facts);
+        assert_eq!(first, second, "the same facts must derive the same claims");
+        // Duplicates collapse and the list is sorted, so the operator sees
+        // one item per pending decision in a stable order.
+        let action = first.human_action_required.unwrap();
+        assert!(action.contains("2 pending approval requests"), "{action}");
+        assert!(action.contains("a, b"), "{action}");
+    }
+
+    /// An OPEN cycle without a live lease needs one before anything is
+    /// applied. Expired and absent are different facts with different
+    /// remedies, so they must not collapse into one sentence.
+    #[test]
+    fn an_open_cycle_without_a_live_lease_says_so() {
+        let expired = derive_claims(&NarrativeFacts {
+            lease: NarrativeLease::Expired {
+                owner: "mvs-old".into(),
+                expired_at_ms: 500,
+            },
+            ..quiet_open()
+        });
+        let absent = derive_claims(&NarrativeFacts {
+            lease: NarrativeLease::Absent,
+            ..quiet_open()
+        });
+        let e = expired
+            .human_action_required
+            .expect("an expired lease must produce an action");
+        let a = absent
+            .human_action_required
+            .expect("an absent lease must produce an action");
+        assert!(
+            e.contains("mvs-old"),
+            "the expired owner must be named: {e}"
+        );
+        assert!(
+            a.contains("no lease"),
+            "the absent lease reads differently: {a}"
+        );
+        assert_ne!(e, a);
+    }
+
+    /// A lease is live only while its expiry is in the future. The boundary
+    /// is exclusive: at exactly the expiry instant it is not live.
+    ///
+    /// The last two cases are the ones that matter for totality: a caller
+    /// that LABELS a lease `Live` while its expiry is already past must get
+    /// a sentence, not a panic. That case was reached by this test and hit
+    /// an `unreachable!` that the guard `lease_is_live` did not actually
+    /// exclude — the guard re-judges liveness, so a stale label contradicts
+    /// it rather than being excluded by it.
+    #[test]
+    fn lease_liveness_boundary_is_exclusive() {
+        let at = |expires: i64, now: i64| {
+            derive_claims(&NarrativeFacts {
+                lease: NarrativeLease::Live {
+                    owner: "o".into(),
+                    expires_at_ms: expires,
+                },
+                now_ms: now,
+                ..quiet_open()
+            })
+            .human_action_required
+        };
+        assert!(
+            at(2_000, 1_999).is_none(),
+            "before expiry the lease is live"
+        );
+        let at_boundary = at(2_000, 2_000)
+            .expect("at the expiry instant the lease is not live and must still answer");
+        let after = at(2_000, 2_001).expect("after expiry the lease is not live");
+        assert_eq!(at_boundary, after, "both must name the same remedy");
+    }
+
+    /// The claim the operator actually reads must not depend on the runtime
+    /// summary being available. A summary that failed to derive leaves an
+    /// empty runtime state, and the sentence must still be true.
+    #[test]
+    fn an_absent_runtime_summary_still_yields_a_true_sentence() {
+        let mut facts = quiet_open();
+        facts.runtime_state = String::new();
+        let claims = derive_claims(&facts);
+        assert!(claims.what_was_done.contains("is open"));
+        assert!(
+            !claims.what_was_done.contains("()"),
+            "an empty runtime state must not render empty parentheses: {}",
+            claims.what_was_done
+        );
+    }
+
+    /// Applying the claims is what gives `human_action_required` its
+    /// producer, and it must recompute the digest: a digest computed
+    /// before the claims were applied would fingerprint a document that
+    /// is not the one the operator is handed.
+    #[test]
+    fn applying_claims_moves_the_field_and_the_digest() {
+        let mut n = CycleNarrative::new(
+            "C-1",
+            "H13 (Narration)",
+            "operator",
+            NarrativeAudience::Maintainer,
+            NarrativeTone::Explanatory,
+            "Cycle C-1",
+            "The cycle is open at phase \"design\".",
+            "2026-10-04T00:00:00Z",
+        );
+        assert!(
+            n.human_action_required.is_none(),
+            "the constructor still leaves it unset; the producer is apply_claims"
+        );
+        let before = n.cycle_digest;
+
+        let mut facts = quiet_open();
+        facts.approval_waiting_on = vec!["surface.cycle_state#cycle_supersede".into()];
+        n.apply_claims(&derive_claims(&facts));
+
+        assert_eq!(
+            n.human_action_required.as_deref(),
+            Some("Decide 1 pending approval request: surface.cycle_state#cycle_supersede.")
+        );
+        assert_ne!(
+            n.cycle_digest, before,
+            "the digest must cover the claims that were applied"
+        );
+    }
 
     fn narrative() -> CycleNarrative {
         CycleNarrative {
