@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sddk_domain::error::SddkErrorCode;
 use sddk_domain::{
     AdoptionReceipt, IdentityError, IdentitySource, Ledger, ProjectId, ResolvedProjectIdentity,
-    normalize_remote_url, stable_workspace_id,
+    stable_workspace_id,
 };
 use sddk_domain::{ProjectRecord, StorageError, WorkspaceRecord};
 use serde::{Deserialize, Serialize};
@@ -543,8 +543,10 @@ fn inspect_ledger(plan: &AdoptionPlan, ledger: &impl Ledger) -> LedgerInspection
         return LedgerInspection::conflict("ledger belongs to a different project".into());
     }
     if let Some(existing) = &project
-        && (!remote_urls_match(&existing.remote_url, &plan.identity.remote_url)
-            || existing.scope != plan.identity.scope)
+        && (!sddk_domain::remote_urls_equivalent(
+            existing.remote_url.as_deref(),
+            plan.identity.remote_url.as_deref(),
+        ) || existing.scope != plan.identity.scope)
     {
         return LedgerInspection::conflict("ledger project identity differs from plan".into());
     }
@@ -647,7 +649,7 @@ fn configuration_hash(receipt: &AdoptionReceipt) -> Result<String, AdoptionError
 /// `actor`, `configuration_hash`) is excluded so that CLI bumps can be
 /// refreshed without re-adoption.
 ///
-/// `remote_url` is compared as IDENTITY via `remote_urls_match`, not as a raw
+/// `remote_url` is compared as IDENTITY via `sddk_domain::remote_urls_equivalent`, not as a raw
 /// string: the domain normalizes it before minting `project_id`, so the case
 /// of the owner is not part of the identity. See that function for the
 /// observed failure this encodes.
@@ -667,43 +669,14 @@ fn same_identity(left: &AdoptionReceipt, right: &AdoptionReceipt) -> bool {
     left.schema_version == right.schema_version
         && left.project_id == right.project_id
         && left.workspace_id == right.workspace_id
-        && remote_urls_match(&left.remote_url, &right.remote_url)
+        && sddk_domain::remote_urls_equivalent(
+            left.remote_url.as_deref(),
+            right.remote_url.as_deref(),
+        )
         && left.scope == right.scope
         && left.fallback_seed == right.fallback_seed
         && left.canonical_workspace_path == right.canonical_workspace_path
         && left.paths == right_paths
-}
-
-/// Compara dos remotos opcionales COMO IDENTIDAD.
-///
-/// El dominio ya decidio que la identidad es insensible al case en el remoto:
-/// `normalize_remote_path` (sddk-domain) baja cada segmento a minuscula antes
-/// de hashear el `project_id`, de modo que `Rubentxu/repo` y `rubentxu/repo`
-/// acuñan el MISMO `project_id` — fijado por el test golden
-/// `case_change_in_owner_or_repo_resolves_to_same_project_id`. Comparar aqui
-/// las cadenas CRUDAS contradedia esa decision.
-///
-/// OBSERVADO (session-65i, este repo): el recibo y la fila `projects` se
-/// acuñaron el 2026-09-30 con `https://github.com/Rubentxu/...` en mayusculas,
-/// antes de que existiera esa normalizacion. El `project_id` derivado hoy es
-/// identico, pero `adopt status` reportaba `conflict` — dos sitios distintos,
-/// `same_identity` (recibo) e `inspect_ledger` (fila), cada uno con su propio
-/// mensaje. Un solo guard los cubre a los dos.
-///
-/// Se normalizan LOS DOS lados para que la comparacion sea simetrica. Si
-/// alguno no normaliza, se cae a la igualdad cruda: una URL invalida nunca
-/// declara coincidencia solo porque la otra parte si normalizo.
-fn remote_urls_match(left: &Option<String>, right: &Option<String>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => {
-            match (normalize_remote_url(left), normalize_remote_url(right)) {
-                (Ok(left), Ok(right)) => left == right,
-                _ => left == right,
-            }
-        }
-        _ => false,
-    }
 }
 
 /// Returns the legacy vault path (`$project_data/vault`) inferred from the
@@ -1105,13 +1078,25 @@ mod tests {
     /// Mismo caso sobre la fila de la tabla `projects`. Si solo se arreglara
     /// `same_identity`, este `conflict` pasaria a ser el unico que sobrevive.
     ///
-    /// NOTA sobre como se fosiliza la fila: `Storage::register_project_workspace`
-    /// RECHAZA hoy un remoto distinto (`RegistrationConflict`), asi que esa fila
-    /// solo pudo escribirla un binario anterior a la normalizacion — que es
-    /// exactamente el estado real de este repo (fila `projects` con
-    /// `Rubentxu/...`, verificado sobre el ledger vivo). Por eso se escribe con
-    /// SQL directo: el guard que se esta falsando es `inspect_ledger`, no el
-    /// guard del storage, que aqui hace bien su trabajo.
+    /// NOTA sobre como se fosiliza la fila: se escribe con SQL directo porque
+    /// la fila tiene que quedar como la dejo un binario ANTERIOR a la
+    /// normalizacion — que es exactamente el estado real de este repo (fila
+    /// `projects` con `Rubentxu/...`, verificado sobre el ledger vivo).
+    ///
+    /// Session-76: la nota anterior decia que `register_project_workspace`
+    /// "RECHAZA eso hoy por diseno (RegistrationConflict)" y que por eso el
+    /// guard bajo prueba era `inspect_ledger` y no el del storage. **Era un
+    /// workaround disfrazado de decision**, y sostenia el defecto: el storage
+    /// seguia negando una fila que el motor declaraba la MISMA identidad, asi
+    /// que `adopt status` decia `complete` y `adopt apply` decia conflicto
+    /// sobre el mismo estado. Con la comparacion unica en el dominio, esa
+    /// fila se registra por la API normal y el atajo de SQL crudo ya solo hace
+    /// falta para FABRICAR el estado fosilizado, que es justo para lo que
+    /// este test lo usa.
+    ///
+    /// Y el test ahora exige las DOS mitades — lectura Y escritura. Solo
+    /// asertando el `status` (que es lo que hacia antes) la divergencia era
+    /// invisible: el test pasaba mientras `apply_adoption` fallaba.
     #[test]
     fn fossilized_capitalized_ledger_row_is_still_the_same_identity() {
         let directory = tempfile::tempdir().unwrap();
@@ -1132,6 +1117,7 @@ mod tests {
             .unwrap();
         drop(connection);
 
+        // Mitad 1 — LECTURA. `inspect_ledger` dice que es la misma identidad.
         let ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
         let status = adoption_status(&plan, &ledger).unwrap();
         assert_eq!(
@@ -1140,6 +1126,24 @@ mod tests {
             "la fila del ledger con el owner en mayusculas es la misma identidad: \
              detail: {:?}",
             status.detail
+        );
+
+        // Mitad 2 — ESCRITURA, y es la que faltaba. El status de arriba dice
+        // `complete`, luego el comando de aplicar NO puede responder
+        // `RegistrationConflict` sobre ese mismo ledger. ANTES de session-76
+        // lo hacia, porque la comparacion del remoto en
+        // `Storage::register_project_workspace` era byte a byte mientras las
+        // dos del motor eran case-insensitive: un fallo abierto en la lectura
+        // contra uno cerrado en la escritura, con veredictos incompatibles.
+        let mut ledger = sddk_storage::Storage::open(&plan.paths.ledger).unwrap();
+        let applied = apply_adoption(&plan, &mut ledger).expect(
+            "`adopt status` acaba de decir complete: la escritura tiene que poder converger",
+        );
+        assert_eq!(
+            applied.status,
+            AdoptionStatusKind::Complete,
+            "aplicar sobre una fila fosilizada del mismo proyecto converge: detail: {:?}",
+            applied.detail
         );
     }
 

@@ -565,9 +565,23 @@ impl Storage {
         self.with_busy_retry(|transaction| {
             let existing_project = project_optional_on(transaction, &project.project_id)?;
             match existing_project {
+                // Session-76: esta comparacion era byte a byte, y era la UNICA
+                // de las tres que contestan "¿es el mismo remoto?" sin mirar el
+                // case. El motor ya lo hacia case-insensitive desde session-65i
+                // (en el recibo y en la fila). Consecuencia medida en este repo:
+                // `adopt status` declaraba `complete` y `adopt apply` /
+                // `adopt repair` / `context bootstrap` respondian
+                // `RegistrationConflict` sobre el MISMO estado — un fallo
+                // abierto en la lectura contra uno cerrado en la escritura, con
+                // veredictos incompatibles. Se llama a la MISMA funcion del
+                // dominio que las otras dos capas, para que no puedan volver a
+                // divergir: mientras cada crate tenga su copia, divergen en
+                // cuanto una se toque y la otra no.
                 Some(existing)
-                    if existing.remote_url != project.remote_url
-                        || existing.scope != project.scope =>
+                    if !sddk_domain::remote_urls_equivalent(
+                        existing.remote_url.as_deref(),
+                        project.remote_url.as_deref(),
+                    ) || existing.scope != project.scope =>
                 {
                     return Err(StorageError::RegistrationConflict {
                         entity: "project",

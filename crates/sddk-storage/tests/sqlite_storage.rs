@@ -92,6 +92,109 @@ fn adoption_registration_is_transactional_idempotent_and_conflict_safe() {
     );
 }
 
+/// Session-76: la MISMA pregunta —"¿estas dos filas son el mismo remoto?"—
+/// tenia tres respuestas, y la de esta capa era byte a byte mientras las otras
+/// dos (recibo y fila, en `sddk-engine`) eran case-insensitive desde
+/// session-65i. Consecuencia medida en este repo: `adopt status` declaraba
+/// `complete` y `adopt apply` / `adopt repair` / `context bootstrap` respondian
+/// `RegistrationConflict` sobre el MISMO estado. El comando de estado no podia
+/// detectar la condicion que el de aplicar iba a rechazar.
+///
+/// Este test tiene DOS dientes, y por separado:
+///
+///  (1) las grafias del MISMO remoto tienen que converger. Con el codigo
+///      anterior estos casos fallaban con `RegistrationConflict`, luego es el
+///      falsador del defecto: si vuelve a la comparacion cruda, cae.
+///  (2) un remoto de OTRO proyecto tiene que seguir AYUDANDO conflicto. Sin
+///      este segundo diente, el arreglo (1) seria valido tambien para el
+///      un arreglo que se limitase a volverlo todo verde — que es como se
+///      compraria el defecto en la direccion contraria.
+#[test]
+fn session76_same_remote_in_any_spelling_converges_but_a_different_remote_still_conflicts() {
+    let mut storage = Storage::open_in_memory().unwrap();
+    let project = project_record();
+    let workspace = workspace_record();
+    storage
+        .register_project_workspace(&project, &workspace)
+        .unwrap();
+
+    // (1) Mismo remoto, grafias distintas. La fila se guardo con
+    // `project_record()`, cuyo remoto es `https://example.com/owner/project`;
+    // estas son las formas en que ese MISMO remoto se escribe de verdad en un
+    // checkout. Ojo al elegir las grafias: la primera version de este test
+    // usó `acme` en vez de `owner` y el guard cayo — no porque el arreglo
+    // estuviera mal, sino porque `acme/project` es OTRO remoto y el conflicto
+    // era correcto. Un falsador que solo sabe decir "cayo" no distingue las dos
+    // direcciones, y esta es la que hay que distinguir.
+    for spelling in [
+        "https://EXAMPLE.com/Owner/Project",
+        "https://example.com/owner/project.git",
+        "https://example.com/owner/project/",
+        "https://example.com/owner/project?tab=readme#top",
+        "https://build-bot@example.com/owner/project",
+        "ssh://git@example.com/owner/project",
+    ] {
+        let same_remote = ProjectRecord {
+            remote_url: Some(spelling.into()),
+            ..project.clone()
+        };
+        storage
+            .register_project_workspace(
+                &same_remote,
+                &WorkspaceRecord {
+                    created_at: "2026-08-04T00:00:00Z".into(),
+                    ..workspace.clone()
+                },
+            )
+            .unwrap_or_else(|error| {
+                panic!("`{spelling}` is the same remote and must converge, got: {error}")
+            });
+    }
+
+    // (2) Remoto genuinamente distinto: el conflicto REAL tiene que seguir
+    // mandando, o el arreglo habria comprado coherencia a costa de
+    // seguridad.
+    for other in [
+        "https://example.com/other/project",
+        "https://example.com/owner/renamed-project",
+        "https://evil.example.com/owner/project",
+    ] {
+        let conflicting = ProjectRecord {
+            remote_url: Some(other.into()),
+            ..project.clone()
+        };
+        assert!(
+            matches!(
+                storage.register_project_workspace(&conflicting, &workspace),
+                Err(StorageError::RegistrationConflict {
+                    entity: "project",
+                    ..
+                })
+            ),
+            "`{other}` is a different remote and must still conflict"
+        );
+    }
+
+    // (3) El case del OWNER no es parte de la identidad porque el project_id
+    // ya se acuña normalizado. Este es el caso exacto que se midio en disco:
+    // la fila guardaba `Rubentxu` y el plan producia `rubentxu`.
+    let mut case_storage = Storage::open_in_memory().unwrap();
+    let mixed_case = ProjectRecord {
+        remote_url: Some("https://github.com/Rubentxu/software-development-decision-kernel".into()),
+        ..project.clone()
+    };
+    let lower_case = ProjectRecord {
+        remote_url: Some("https://github.com/rubentxu/software-development-decision-kernel".into()),
+        ..project.clone()
+    };
+    case_storage
+        .register_project_workspace(&mixed_case, &workspace)
+        .unwrap();
+    case_storage
+        .register_project_workspace(&lower_case, &workspace)
+        .expect("the owner's case is not part of the project identity");
+}
+
 #[test]
 fn ledger_is_hash_linked_ordered_and_append_only() {
     let directory = tempdir().unwrap();

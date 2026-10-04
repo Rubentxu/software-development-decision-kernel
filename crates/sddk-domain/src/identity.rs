@@ -467,6 +467,54 @@ pub fn normalize_remote_url(url: &str) -> Result<String, IdentityError> {
     Ok(format!("https://{authority}/{path}"))
 }
 
+/// Compara dos remotos opcionales COMO IDENTIDAD. Esta es la UNICA regla del
+/// sistema para esa pregunta, y vive aqui a proposito.
+///
+/// Session-76 (OBSERVADO en este repo, no supuesto). La pregunta "estas dos
+/// filas son el mismo remoto" tenia TRES respuestas distintas, y las tres se
+/// ejecutaban en el MISMO comando:
+///
+///   (a) `sddk-engine` `same_identity`, sobre el recibo: case-insensitive,
+///       corregido en session-65i cuando `adopt status` reportaba `conflict`
+///       por un recibo acuñado con `Rubentxu` antes de que existiera la
+///       normalizacion.
+///   (b) `sddk-engine` `inspect_ledger`, sobre la fila: case-insensitive, la
+///       misma funcion que (a).
+///   (c) `sddk-storage` `register_project_workspace`: byte a byte. Esa tercera
+///       nunca recibio el arreglo.
+///
+/// Consecuencia medida: `adopt status` lee con (a) y (b) y declara `complete`;
+/// `adopt apply`, `adopt repair` y `sddk context bootstrap` escriben con (c) y
+/// responden `RegistrationConflict` sobre el MISMO estado. Es decir: **el
+/// comando de estado no puede detectar la condicion que el de aplicar va a
+/// rechazar** — un fallo abierto en la lectura contra uno cerrado en la
+/// escritura, con dos veredictos incompatibles para el mismo hecho. Quien lee
+/// `status: complete` se lleva la conclusion contraria de la que la
+/// herramienta va a sostener un segundo despues.
+///
+/// Por eso la comparacion no vive en la capa que la necesita sino en el
+/// dominio: mientras cada crate tenga su copia, las dos vuelven a divergir en
+/// cuanto una se toque y la otra no. Y el por que de que el case no sea parte
+/// de la identidad esta en `normalize_remote_path`: el `project_id` lo acuña ya
+/// normalizado, con cada segmento en minusculas (test golden
+/// `case_change_in_owner_or_repo_resolves_to_same_project_id`).
+///
+/// La caida a igualdad cruda es deliberada: si alguna de las dos no normaliza,
+/// no se declara coincidencia **solo porque la otra si normalizo**. Una URL
+/// invalida no puede ganar por el case de su vecina.
+pub fn remote_urls_equivalent(left: Option<&str>, right: Option<&str>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            match (normalize_remote_url(left), normalize_remote_url(right)) {
+                (Ok(left), Ok(right)) => left == right,
+                _ => left == right,
+            }
+        }
+        _ => false,
+    }
+}
+
 fn normalize_authority(authority: &str, scheme: &str) -> Result<String, IdentityError> {
     if authority.is_empty() {
         return Err(IdentityError::InvalidRemoteUrl);
